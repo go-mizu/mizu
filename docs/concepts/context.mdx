@@ -1,0 +1,55 @@
+---
+title: "Context"
+description: "Use Ctx to access the request, response, and logger inside a handler."
+---
+
+Each handler in Mizu receives a `*mizu.Ctx`.
+It gives you access to the request, response, and tools like the logger and context cancellation.
+
+### Access request and response
+
+```go
+req := c.Request()
+res := c.Response()
+```
+
+You can still use all helpers like `c.Query()` or `c.JSON()`, but these give you full access to the underlying Go types if needed.
+
+### Logger
+
+Every request has a logger you can use for structured logs.
+
+```go
+c.Logger().Info("processing", "path", c.Request().URL.Path)
+```
+
+### Request context
+
+Use the built-in context for cancellation or deadlines.
+
+```go
+select {
+case <-c.Context().Done():
+	return c.Context().Err()
+default:
+}
+```
+
+### Headers
+
+You can read or set headers directly.
+
+```go
+c.Header().Set("X-App", "mizu")
+```
+
+### Example
+
+```go
+app.Get("/ping", func(c *mizu.Ctx) error {
+	c.Logger().Info("ping")
+	return c.Text(200, "pong")
+})
+```
+
+`Ctx` keeps everything connected—request, response, and logging—without hiding Go’s standard behavior.

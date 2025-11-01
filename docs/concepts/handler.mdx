@@ -1,0 +1,86 @@
+---
+title: "Handler"
+description: "Write clear request handlers that connect routing, context, and responses."
+---
+
+Handlers are the core of a Mizu application.
+Each handler is a simple Go function with this signature:
+
+```go
+func(c *mizu.Ctx) error
+```
+
+It receives a `*mizu.Ctx` that gives you full control over the request and response.
+
+### Basic example
+
+```go
+app.Get("/", func(c *mizu.Ctx) error {
+	return c.Text(200, "Hello, Mizu!")
+})
+```
+
+You can return an error to signal a problem. If an error handler is set, it will handle the error and send a response.
+
+### Reading data
+
+Handlers can read path parameters, queries, forms, JSON, and cookies.
+
+```go
+app.Post("/users/{id}", func(c *mizu.Ctx) error {
+	id := c.Param("id")
+	form, _ := c.Form()
+	name := form.Get("name")
+	return c.JSON(200, map[string]string{
+		"id":   id,
+		"name": name,
+	})
+})
+```
+
+### Writing responses
+
+Handlers use small helpers on `c` to send different response types.
+
+```go
+return c.Text(200, "OK")
+return c.JSON(201, map[string]string{"status": "created"})
+return c.Redirect(302, "/welcome")
+return c.NoContent()
+```
+
+### Central error handling
+
+Define one error handler for the entire app.
+
+```go
+app.ErrorHandler(func(c *mizu.Ctx, err error) {
+	c.Logger().Error("request failed", "err", err)
+	_ = c.JSON(500, map[string]string{"error": "internal"})
+})
+```
+
+Then your routes can stay short and clear.
+
+```go
+return fmt.Errorf("something went wrong")
+```
+
+### Middleware
+
+Use middleware to wrap handlers with shared logic such as logging or authentication.
+
+```go
+app.Use(func(next mizu.Handler) mizu.Handler {
+	return func(c *mizu.Ctx) error {
+		start := time.Now()
+		err := next(c)
+		c.Logger().Info("done", "path", c.Request().URL.Path, "time", time.Since(start))
+		return err
+	}
+})
+```
+
+Handlers in Mizu are just Go functions.
+They read data, write responses, and can be combined with middleware and groups.
+No special syntax, no hidden state, and no magic.

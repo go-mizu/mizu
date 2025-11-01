@@ -1,0 +1,53 @@
+---
+title: "Overview"
+description: "A tour of Mizu’s main concepts and how they fit together."
+---
+
+Mizu is designed to feel like Go itself: clear, small, and predictable.
+It adds only the essentials you need for real applications without hiding how Go works.
+
+#### [App](/concepts/app)
+
+Start with a single file or scale into a full application.
+Mizu provides small building blocks that grow with your project instead of locking you into a strict structure.
+
+#### [Routing](/concepts/routing)
+
+Define routes using plain Go.
+No annotations or code generation—just simple, readable functions that are easy to test and compose.
+
+#### [Handler](/concepts/handler)
+
+Handlers are just Go functions that return an error.
+Mizu takes care of error handling so you can focus on the logic.
+
+#### [Context](/concepts/context)
+
+Every request has a `Ctx` that wraps `net/http` and adds small, useful helpers for headers, logging, and responses.
+
+#### [Request](/concepts/request)
+
+Read path parameters, queries, headers, forms, or JSON input with simple methods.
+No reflection or hidden parsing.
+
+#### [Response](/concepts/response)
+
+Send text, JSON, HTML, or files directly through `Ctx`.
+Mizu keeps it consistent and close to the standard library.
+
+#### [Static](/concepts/static)
+
+Serve assets like images, CSS, or JavaScript easily from a local or embedded directory.
+No setup scripts or plugins required.
+
+#### [Logging](/concepts/logging)
+
+Use structured logging powered by Go’s `slog`.
+Log within any handler or middleware with simple, consistent output for both development and production.
+
+#### [Error](/concepts/error)
+
+Handle all errors in one place.
+Mizu lets you define a single global error handler that catches both returned errors and panics, keeping your code predictable and clean.
+
+

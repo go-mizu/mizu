@@ -1,0 +1,58 @@
+---
+title: "Quick Start"
+description: "Build your first Mizu app using plain Go."
+---
+
+This guide shows how to create a simple Mizu app from scratch.
+If you have used Go before, you will feel right at home.
+
+### Install Mizu
+
+Run this command inside your Go project to install Mizu.
+
+```bash
+go get github.com/go-mizu/mizu@latest
+```
+
+That is all you need. No extra setup or tools required.
+
+### Write your first app
+
+Create a file called `main.go` and add this code.
+
+```go
+package main
+
+import "github.com/go-mizu/mizu"
+
+func main() {
+	app := mizu.New()
+
+	app.Get("/", func(c *mizu.Ctx) error {
+		return c.Text(200, "Hello, Mizu!")
+	})
+
+	app.Listen(":3000")
+}
+```
+
+### Run the app
+
+Start your server with:
+
+```bash
+go run main.go
+```
+
+Then open [http://localhost:3000](http://localhost:3000) in your browser.
+You should see "Hello, Mizu!" on the page.
+
+### What's next
+
+Now that your first app is running, you can:
+
+- Add routes and return JSON or HTML responses.
+- Use middleware for logging and recovery.
+- Learn about graceful shutdowns for production use.
+
+Mizu keeps things simple. You write normal Go code, and it takes care of the details.

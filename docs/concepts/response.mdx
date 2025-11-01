@@ -1,0 +1,142 @@
+---
+title: "Response"
+description: "Send responses with helpers that manage headers, status codes, and body writes."
+---
+
+Mizu keeps responses simple. Every handler gets a `*mizu.Ctx`, which helps you send text, JSON, HTML, files, or streams without touching `http.ResponseWriter` directly.
+
+### Setting status codes
+
+Set a status code before writing the body:
+
+```go
+c.Status(202)
+return c.Text(0, "Accepted")
+```
+
+If you pass `0` to a write helper, it uses the current status code.
+
+You can read it anytime:
+
+```go
+code := c.StatusCode()
+c.Logger().Info("status", "code", code)
+```
+
+### Sending text
+
+Use `Text` to write plain UTF-8 text:
+
+```go
+return c.Text(200, "Hello, world")
+```
+
+If the text is not valid UTF-8, it falls back to binary.
+
+### JSON responses
+
+For structured responses:
+
+```go
+return c.JSON(200, map[string]any{
+	"message": "ok",
+	"id":      1,
+})
+```
+
+Mizu automatically sets `Content-Type` to `application/json; charset=utf-8`.
+If you call `JSON(0, v)`, it reuses the current status.
+
+### HTML responses
+
+Use `HTML` when rendering markup:
+
+```go
+return c.HTML(200, "<h1>Welcome</h1>")
+```
+
+The header `Content-Type: text/html; charset=utf-8` is added automatically.
+
+### Headers
+
+To set or check headers:
+
+```go
+c.Header().Set("Cache-Control", "no-store")
+c.HeaderIfNone("Content-Type", "text/plain")
+```
+
+Headers sent after the first write may not reach the client, so set them early.
+
+### Redirects
+
+Redirect users to another location:
+
+```go
+return c.Redirect(302, "/login")
+```
+
+If you pass `0` as the code, it defaults to `302 Found`.
+
+### No content
+
+Send a 204 response with no body:
+
+```go
+return c.NoContent()
+```
+
+### Files and downloads
+
+Serve files directly:
+
+```go
+return c.File("./public/logo.png")
+```
+
+Or send a file as a download:
+
+```go
+return c.Download("./report.csv", "report.csv")
+```
+
+These use standard Go’s file serving, so range requests and caching work as expected.
+
+### Streaming and real-time
+
+Send output gradually:
+
+```go
+return c.Stream(func(w io.Writer) error {
+	for i := 0; i < 3; i++ {
+		fmt.Fprintf(w, "chunk %d\n", i)
+	}
+	return nil
+})
+```
+
+Server-Sent Events:
+
+```go
+ch := make(chan any)
+go func() {
+	for i := 0; i < 3; i++ {
+		ch <- map[string]int{"count": i}
+	}
+	close(ch)
+}()
+return c.SSE(ch)
+```
+
+### Low-level control
+
+If you need fine control:
+
+```go
+_ = c.Flush()
+conn, rw, _ := c.Hijack()
+_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
+_ = c.EnableFullDuplex()
+```
+
+These features let you use websockets, raw connections, or long-running responses using plain Go semantics.

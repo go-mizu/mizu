@@ -1,0 +1,59 @@
+---
+title: "App"
+description: "The main entry point that runs your Mizu application."
+---
+
+A Mizu application is the core of your server.
+It creates the router, manages middleware, runs the HTTP server, and shuts down gracefully when stopped.
+
+### Create an app
+
+Every project starts by creating an `App` instance:
+
+```go
+package main
+
+import "github.com/go-mizu/mizu"
+
+func main() {
+	app := mizu.New()
+
+	app.Get("/", func(c *mizu.Ctx) error {
+		return c.Text(200, "Hello, Mizu!")
+	})
+
+	app.Listen(":3000")
+}
+````
+
+`mizu.New()` builds the app.
+`app.Get()` adds a route, and `app.Listen()` starts the server.
+
+### How it works
+
+`App` embeds Mizu’s `Router`, so you can define routes and middleware directly on it.
+When you call `Listen`, Mizu starts a `net/http` server, listens for requests, and manages graceful shutdown when the process receives a stop signal.
+
+Mizu automatically handles:
+
+- Graceful shutdown with OS signals
+- Logging for start and stop events
+- Panic recovery inside handlers
+
+### Health checks
+
+You can expose a readiness endpoint with:
+
+```go
+http.Handle("/healthz", app.HealthzHandler())
+```
+
+It returns `200 OK` when running and `503` when shutting down.
+
+### Next steps
+
+* [Routing](/concepts/routing) – define routes and methods
+* [Handler](/concepts/handler) – write business logic
+* [Logging](/concepts/logging) – integrate structured logging
+* [Error](/concepts/error) – handle application errors in one place
+

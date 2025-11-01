@@ -1,0 +1,651 @@
+// ctx_test.go
+package mizu
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"io"
+	"mime/multipart"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"log/slog"
+)
+
+type flusherRecorder struct {
+	*httptest.ResponseRecorder
+}
+
+func (f flusherRecorder) Flush() {}
+
+type hijackableRecorder struct {
+	*httptest.ResponseRecorder
+	hijacked bool
+	pr       net.Conn
+	pw       net.Conn
+	rw       *bufio.ReadWriter
+}
+
+func newHijackableRecorder() *hijackableRecorder {
+	pr, pw := net.Pipe()
+	return &hijackableRecorder{
+		ResponseRecorder: httptest.NewRecorder(),
+		pr:               pr,
+		pw:               pw,
+		rw:               bufio.NewReadWriter(bufio.NewReader(pr), bufio.NewWriter(pw)),
+	}
+}
+
+func (h *hijackableRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h.hijacked = true
+	return h.pw, h.rw, nil
+}
+
+func TestAccessorsAndLogger(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://x.test/a?b=1", nil)
+	w := httptest.NewRecorder()
+	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	c := newCtx(w, r, lg)
+
+	if c.Request() != r {
+		t.Fatal("Request accessor mismatch")
+	}
+	if c.Response() != w {
+		t.Fatal("Response accessor mismatch")
+	}
+	if c.Header() == nil {
+		t.Fatal("Header should not be nil")
+	}
+	if c.Context() != r.Context() {
+		t.Fatal("Context accessor mismatch")
+	}
+	if c.Logger() != lg {
+		t.Fatal("custom logger not returned")
+	}
+
+	// nil logger should fall back to default
+	c2 := newCtx(w, r, nil)
+	if c2.Logger() == nil {
+		t.Fatal("default logger should be non-nil")
+	}
+}
+
+func TestParamQueryFormCookie(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://x.test/p?x=1&y=2&y=3", nil)
+	r.SetPathValue("id", "42")
+	w := httptest.NewRecorder()
+	c := newCtx(w, r, nil)
+
+	if got := c.Param("id"); got != "42" {
+		t.Fatalf("Param got %q want %q", got, "42")
+	}
+	if got := c.Query("x"); got != "1" {
+		t.Fatalf("Query got %q want %q", got, "1")
+	}
+	qs := c.QueryValues()
+	if qs.Get("y") != "2" || len(qs["y"]) != 2 {
+		t.Fatal("QueryValues should return all values")
+	}
+
+	// Form
+	r2 := httptest.NewRequest(http.MethodPost, "http://x.test/form", strings.NewReader("a=1&b=2"))
+	r2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	c2 := newCtx(httptest.NewRecorder(), r2, nil)
+	form, err := c2.Form()
+	if err != nil {
+		t.Fatalf("Form error: %v", err)
+	}
+	if form.Get("a") != "1" || form.Get("b") != "2" {
+		t.Fatal("Form values wrong")
+	}
+
+	// Cookie
+	ck := &http.Cookie{Name: "sid", Value: "abc"}
+	r.AddCookie(ck)
+	got, err := c.Cookie("sid")
+	if err != nil || got.Value != "abc" {
+		t.Fatalf("Cookie got %v err %v", got, err)
+	}
+}
+
+func buildMultipartBody(t *testing.T) (contentType string, bodyBytes []byte) {
+	t.Helper()
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	fw, err := mw.CreateFormField("name")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.WriteString(fw, "mizu")
+	pw, err := mw.CreateFormFile("file", "x.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.WriteString(pw, "hello")
+	_ = mw.Close()
+	return mw.FormDataContentType(), body.Bytes()
+}
+
+func TestMultipartAndCleanup(t *testing.T) {
+	// First request
+	ct1, b1 := buildMultipartBody(t)
+	r := httptest.NewRequest(http.MethodPost, "http://x.test/upload", bytes.NewReader(b1))
+	r.Header.Set("Content-Type", ct1)
+	w := httptest.NewRecorder()
+	c := newCtx(w, r, nil)
+
+	form, cleanup1, err := c.MultipartForm(32 << 10)
+	if err != nil {
+		t.Fatalf("MultipartForm error: %v", err)
+	}
+	defer cleanup1()
+	if form.Value["name"][0] != "mizu" {
+		t.Fatal("Multipart value mismatch")
+	}
+
+	// Second request with a fresh body and content type
+	ct2, b2 := buildMultipartBody(t)
+	r2 := httptest.NewRequest(http.MethodPost, "http://x.test/upload", bytes.NewReader(b2))
+	r2.Header.Set("Content-Type", ct2)
+	c2 := newCtx(httptest.NewRecorder(), r2, nil)
+
+	form2, cleanup2, err := c2.MultipartForm(32 << 10)
+	if err != nil {
+		t.Fatalf("MultipartForm error: %v", err)
+	}
+	if form2.File["file"] == nil || form2.Value["name"][0] != "mizu" {
+		t.Fatal("Multipart form contents unexpected")
+	}
+	cleanup2() // should not panic
+}
+
+func TestClientIP(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+	w := httptest.NewRecorder()
+	c := newCtx(w, r, nil)
+
+	// RemoteAddr host:port
+	r.RemoteAddr = "203.0.113.10:5555"
+	if ip := c.ClientIP(); ip != "203.0.113.10" {
+		t.Fatalf("ClientIP got %q", ip)
+	}
+
+	// X-Real-IP
+	r.Header.Set("X-Real-IP", "203.0.113.11")
+	if ip := c.ClientIP(); ip != "203.0.113.11" {
+		t.Fatalf("ClientIP X-Real-IP got %q", ip)
+	}
+
+	// X-Forwarded-For first hop
+	r.Header.Set("X-Forwarded-For", "203.0.113.12, 10.0.0.1")
+	if ip := c.ClientIP(); ip != "203.0.113.12" {
+		t.Fatalf("ClientIP XFF got %q", ip)
+	}
+
+	// Invalid headers fallback to RemoteAddr string
+	r.Header.Set("X-Forwarded-For", "not-an-ip")
+	r.Header.Set("X-Real-IP", "still-bad")
+	r.RemoteAddr = "unparseable"
+	if ip := c.ClientIP(); ip != "unparseable" {
+		t.Fatalf("ClientIP fallback got %q", ip)
+	}
+}
+
+func TestBindJSON(t *testing.T) {
+	type In struct {
+		Name string `json:"name"`
+	}
+	// OK
+	body := `{"name":"mizu"}`
+	r := httptest.NewRequest(http.MethodPost, "http://x.test", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	c := newCtx(w, r, nil)
+	var in In
+	if err := c.BindJSON(&in, 1024); err != nil || in.Name != "mizu" {
+		t.Fatalf("BindJSON ok err=%v name=%q", err, in.Name)
+	}
+	// Unknown field
+	r2 := httptest.NewRequest(http.MethodPost, "http://x.test", strings.NewReader(`{"name":"x","extra":1}`))
+	c2 := newCtx(httptest.NewRecorder(), r2, nil)
+	if err := c2.BindJSON(&in, 1024); err == nil {
+		t.Fatal("BindJSON should fail on unknown field")
+	}
+	// Trailing data
+	r3 := httptest.NewRequest(http.MethodPost, "http://x.test", strings.NewReader(`{"name":"x"}{"oops":1}`))
+	c3 := newCtx(httptest.NewRecorder(), r3, nil)
+	if err := c3.BindJSON(&in, 1024); err == nil {
+		t.Fatal("BindJSON should fail on trailing data")
+	}
+	// Too large
+	r4 := httptest.NewRequest(http.MethodPost, "http://x.test", strings.NewReader(strings.Repeat("a", 2048)))
+	c4 := newCtx(httptest.NewRecorder(), r4, nil)
+	if err := c4.BindJSON(&in, 10); err == nil {
+		t.Fatal("BindJSON should fail on size limit")
+	}
+}
+
+func TestStatusHeadersAndWrites(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+	w := httptest.NewRecorder()
+	c := newCtx(w, r, nil)
+
+	c.Status(201)
+	if c.StatusCode() != 201 {
+		t.Fatal("StatusCode not set")
+	}
+	c.HeaderIfNone("X-Test", "a")
+	c.HeaderIfNone("X-Test", "b")
+	if w.Header().Get("X-Test") != "a" {
+		t.Fatal("HeaderIfNone should not overwrite")
+	}
+
+	// JSON writes once and sets header
+	err := c.JSON(0, map[string]string{"ok": "1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != 201 || w.Header().Get("Content-Type") != "application/json; charset=utf-8" {
+		t.Fatal("JSON status or content-type wrong")
+	}
+	// Second JSON should not change code
+	_ = c.JSON(0, map[string]string{"ok": "2"})
+	if w.Code != 201 {
+		t.Fatal("second JSON changed status")
+	}
+
+	// HTML
+	r2 := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+	w2 := httptest.NewRecorder()
+	c2 := newCtx(w2, r2, nil)
+	_ = c2.HTML(200, "<b>hi</b>")
+	if w2.Code != 200 || !strings.Contains(w2.Body.String(), "hi") {
+		t.Fatal("HTML write failed")
+	}
+
+	// Text valid
+	r3 := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+	w3 := httptest.NewRecorder()
+	c3 := newCtx(w3, r3, nil)
+	_ = c3.Text(0, "hello")
+	if w3.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
+		t.Fatal("Text content-type wrong")
+	}
+
+	// Text invalid UTF-8 -> Bytes path
+	r4 := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+	w4 := httptest.NewRecorder()
+	c4 := newCtx(w4, r4, nil)
+	invalid := string([]byte{0xff, 0xfe, 0xfd})
+	_ = c4.Text(0, invalid)
+	if w4.Header().Get("Content-Type") != "application/octet-stream" {
+		t.Fatal("invalid UTF-8 should use octet-stream")
+	}
+
+	// Bytes default content type
+	r5 := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+	w5 := httptest.NewRecorder()
+	c5 := newCtx(w5, r5, nil)
+	_ = c5.Bytes(0, []byte{1, 2, 3}, "")
+	if w5.Header().Get("Content-Type") != "application/octet-stream" {
+		t.Fatal("Bytes default content type expected")
+	}
+
+	// Write and WriteString
+	r6 := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+	w6 := httptest.NewRecorder()
+	c6 := newCtx(w6, r6, nil)
+	c6.Status(202)
+	_, _ = c6.Write([]byte("a"))
+	_, _ = c6.WriteString("b")
+	if w6.Code != 202 || w6.Body.String() != "ab" {
+		t.Fatal("Write/WriteString behavior wrong")
+	}
+
+	// NoContent
+	r7 := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+	w7 := httptest.NewRecorder()
+	c7 := newCtx(w7, r7, nil)
+	_ = c7.NoContent()
+	if w7.Code != http.StatusNoContent {
+		t.Fatal("NoContent status wrong")
+	}
+
+	// Redirect
+	r8 := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+	w8 := httptest.NewRecorder()
+	c8 := newCtx(w8, r8, nil)
+	_ = c8.Redirect(0, "/to")
+	if w8.Code != http.StatusFound || w8.Header().Get("Location") != "/to" {
+		t.Fatal("Redirect behavior wrong")
+	}
+}
+
+func TestSetCookie(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+	w := httptest.NewRecorder()
+	c := newCtx(w, r, nil)
+	c.SetCookie(&http.Cookie{Name: "a", Value: "b"})
+	if got := w.Header().Values("Set-Cookie"); len(got) == 0 {
+		t.Fatal("Set-Cookie not set")
+	}
+}
+
+func TestFileAndDownload(t *testing.T) {
+	dir := t.TempDir()
+	fp := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(fp, []byte("content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// File with default 200
+	{
+		r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+		w := httptest.NewRecorder()
+		c := newCtx(w, r, nil)
+		if err := c.File(fp); err != nil {
+			t.Fatal(err)
+		}
+		if w.Code != 200 || !strings.Contains(w.Body.String(), "content") {
+			t.Fatal("File default failed")
+		}
+	}
+
+	// File respecting preset status
+	{
+		r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+		w := httptest.NewRecorder()
+		c := newCtx(w, r, nil)
+		c.Status(206)
+		if err := c.File(fp); err != nil {
+			t.Fatal(err)
+		}
+		if w.Code != 206 {
+			t.Fatalf("File should respect preset status, got %d", w.Code)
+		}
+	}
+
+	// FileCode explicit
+	{
+		r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+		w := httptest.NewRecorder()
+		c := newCtx(w, r, nil)
+		if err := c.FileCode(203, fp); err != nil {
+			t.Fatal(err)
+		}
+		if w.Code != 203 {
+			t.Fatalf("FileCode status got %d", w.Code)
+		}
+	}
+
+	// Download headers and status
+	{
+		r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+		w := httptest.NewRecorder()
+		c := newCtx(w, r, nil)
+		if err := c.Download(fp, "name.txt"); err != nil {
+			t.Fatal(err)
+		}
+		cd := w.Header().Get("Content-Disposition")
+		if !strings.Contains(cd, `attachment;`) || !strings.Contains(cd, `filename="name.txt"`) {
+			t.Fatalf("Content-Disposition missing or invalid: %q", cd)
+		}
+		if w.Header().Get("Content-Type") != "text/plain; charset=utf-8" && w.Header().Get("Content-Type") != "text/plain" {
+			t.Fatalf("Content-Type unexpected: %q", w.Header().Get("Content-Type"))
+		}
+	}
+
+	// DownloadCode explicit
+	{
+		r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+		w := httptest.NewRecorder()
+		c := newCtx(w, r, nil)
+		if err := c.DownloadCode(207, fp, "name.txt"); err != nil {
+			t.Fatal(err)
+		}
+		if w.Code != 207 {
+			t.Fatalf("DownloadCode status got %d", w.Code)
+		}
+	}
+}
+
+func TestStream(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+	w := httptest.NewRecorder()
+	c := newCtx(w, r, nil)
+
+	err := c.Stream(func(w io.Writer) error {
+		_, _ = io.WriteString(w, "x")
+		return nil
+	})
+	if err != nil || w.Body.String() != "x" {
+		t.Fatalf("Stream failed: err=%v body=%q", err, w.Body.String())
+	}
+}
+
+// A ResponseWriter that does NOT implement http.Flusher.
+type nonFlusherRW struct {
+	header http.Header
+	code   int
+	body   bytes.Buffer
+}
+
+func newNonFlusherRW() *nonFlusherRW {
+	return &nonFlusherRW{header: make(http.Header)}
+}
+
+func (n *nonFlusherRW) Header() http.Header { return n.header }
+func (n *nonFlusherRW) Write(b []byte) (int, error) {
+	if n.code == 0 {
+		n.code = http.StatusOK
+	}
+	return n.body.Write(b)
+}
+func (n *nonFlusherRW) WriteHeader(statusCode int) { n.code = statusCode }
+
+func TestSSE_NoFlusher(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+	w := newNonFlusherRW() // does not implement http.Flusher
+	c := newCtx(w, r, nil)
+
+	ch := make(chan any)
+	go func() {
+		ch <- map[string]string{"a": "b"}
+		close(ch)
+	}()
+
+	if err := c.SSE(ch); err == nil {
+		t.Fatal("SSE should fail without http.Flusher")
+	}
+}
+
+func TestSSE_WithFlusher(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+	w := flusherRecorder{httptest.NewRecorder()}
+	c := newCtx(w, r, nil)
+
+	ch := make(chan any)
+	done := make(chan struct{})
+	go func() {
+		_ = c.SSE(ch)
+		close(done)
+	}()
+
+	// Send two events then close
+	ch <- map[string]string{"k": "v"}
+	ch <- "plain"
+	close(ch)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("SSE did not finish after channel close")
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "data:") || !strings.Contains(body, "event: end") {
+		t.Fatalf("SSE output unexpected:\n%s", body)
+	}
+}
+
+func TestSSE_EndFrameIsEmptyObject(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+	w := flusherRecorder{httptest.NewRecorder()} // implements http.Flusher
+	c := newCtx(w, r, nil)
+
+	ch := make(chan any)
+	done := make(chan struct{})
+
+	go func() {
+		_ = c.SSE(ch) // should write the end frame with data: {}
+		close(done)
+	}()
+
+	// Close without sending any events to trigger the end branch
+	close(ch)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("SSE did not finish after channel close")
+	}
+
+	// Assert required SSE headers were set
+	if ct := w.Header().Get("Content-Type"); ct != "text/event-stream; charset=utf-8" {
+		t.Fatalf("unexpected Content-Type: %q", ct)
+	}
+	if cc := w.Header().Get("Cache-Control"); cc != "no-cache" {
+		t.Fatalf("unexpected Cache-Control: %q", cc)
+	}
+	if conn := w.Header().Get("Connection"); conn != "keep-alive" {
+		t.Fatalf("unexpected Connection: %q", conn)
+	}
+	if nab := w.Header().Get("X-Accel-Buffering"); nab != "no" {
+		t.Fatalf("unexpected X-Accel-Buffering: %q", nab)
+	}
+
+	// Assert the end event frame contains the empty JSON object
+	body := w.Body.String()
+	want := "event: end\ndata: {}\n\n"
+	if !strings.Contains(body, want) {
+		t.Fatalf("SSE end frame missing or malformed.\nBody:\n%s", body)
+	}
+}
+
+func TestFlushHijackAndRC(t *testing.T) {
+	// Flush with and without flusher
+	r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+	w := httptest.NewRecorder()
+	c := newCtx(w, r, nil)
+	if err := c.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	w2 := flusherRecorder{httptest.NewRecorder()}
+	c2 := newCtx(w2, r, nil)
+	if err := c2.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Hijack unsupported
+	if _, _, err := c.Hijack(); err == nil {
+		t.Fatal("Hijack should fail on recorder")
+	}
+
+	// Hijack supported
+	hw := newHijackableRecorder()
+	c3 := newCtx(hw, r, nil)
+	conn, rw, err := c3.Hijack()
+	if err != nil || conn == nil || rw == nil || !hw.hijacked {
+		t.Fatalf("Hijack expected success, got err=%v hijacked=%v", err, hw.hijacked)
+	}
+	_ = conn.Close()
+
+	// ResponseController passthroughs should not panic
+	_ = c.SetWriteDeadline(time.Now().Add(time.Second))
+	_ = c.EnableFullDuplex()
+}
+
+func TestInternalHelpers(t *testing.T) {
+	if got := firstNonZero(0, 2); got != 2 {
+		t.Fatal("firstNonZero failed A")
+	}
+	if got := firstNonZero(3, 2); got != 3 {
+		t.Fatal("firstNonZero failed B")
+	}
+
+	// sanitizeToken removes bad chars and controls
+	in := "na\"me\r\n<>/[];:\t{}"
+	out := sanitizeToken(in)
+	if strings.ContainsAny(out, "\"\r\n<>/[];:\t{}") {
+		t.Fatalf("sanitizeToken did not clean: %q", out)
+	}
+
+	// writeHeaderNow sets content type when provided
+	r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+	w := httptest.NewRecorder()
+	c := newCtx(w, r, nil)
+	if err := c.writeHeaderNow(201, "text/plain"); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != 201 || w.Header().Get("Content-Type") != "text/plain" {
+		t.Fatal("writeHeaderNow did not apply code or content type")
+	}
+	// second call should be no-op
+	if err := c.writeHeaderNow(202, "x/y"); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != 201 {
+		t.Fatal("writeHeaderNow should not change after first write")
+	}
+}
+
+func TestRedirectAndURLNilSafety(t *testing.T) {
+	// Ensure Query and QueryValues are safe if URL is nil
+	r := &http.Request{} // intentionally minimal
+	w := httptest.NewRecorder()
+	c := newCtx(w, r, nil)
+	if c.Query("x") != "" || len(c.QueryValues()) != 0 {
+		t.Fatal("Query helpers should be safe on nil URL")
+	}
+	// Redirect sanity already tested, assert Location formatting again
+	r2 := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+	w2 := httptest.NewRecorder()
+	c2 := newCtx(w2, r2, nil)
+	if err := c2.Redirect(307, "/again"); err != nil {
+		t.Fatal(err)
+	}
+	if w2.Code != 307 || w2.Header().Get("Location") != "/again" {
+		t.Fatal("Redirect status or location wrong")
+	}
+}
+
+func TestJSONEncoderEscaping(t *testing.T) {
+	// Verify SetEscapeHTML(false) preserves characters
+	r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+	w := httptest.NewRecorder()
+	c := newCtx(w, r, nil)
+	type S struct {
+		X string `json:"x"`
+	}
+	_ = c.JSON(200, S{X: "<b>&"})
+	if !strings.Contains(w.Body.String(), `"<b>&"`) {
+		t.Fatalf("JSON should not escape html: %q", w.Body.String())
+	}
+}
+
+func TestContextPropagation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r := httptest.NewRequest(http.MethodGet, "http://x.test", nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+	c := newCtx(w, r, nil)
+	if c.Context() != ctx {
+		t.Fatal("Context should propagate")
+	}
+}

@@ -1,0 +1,56 @@
+---
+title: "Static"
+description: "Serve static files like images, CSS, and JavaScript directly from your app."
+---
+
+Mizu makes it easy to serve static files with the `Static` method on the router.
+You can mount any directory or embedded filesystem at a URL path.
+
+### Serve files from a local directory
+
+If you have a `public/` folder with assets like CSS and images:
+
+```go
+app := mizu.New()
+app.Static("/assets/", http.Dir("public"))
+app.Listen(":3000")
+```
+
+This serves `public/logo.png` at `http://localhost:3000/assets/logo.png`.
+
+The path should end with a `/` to match all files under that directory.
+
+### Use Go's embedded filesystem
+
+You can use Go's `embed` package to include files inside your binary.
+
+```go
+import (
+	"embed"
+	"github.com/go-mizu/mizu"
+	"net/http"
+)
+
+//go:embed public/*
+var publicFS embed.FS
+
+func main() {
+	app := mizu.New()
+	app.Static("/assets/", http.FS(publicFS))
+	app.Listen(":3000")
+}
+```
+
+Now your app can serve assets without needing external files at runtime.
+
+### Mount external handlers
+
+You can also mount any standard `http.Handler` at a specific route:
+
+```go
+fs := http.FileServer(http.Dir("uploads"))
+app.Mount("/files", http.StripPrefix("/files", fs))
+```
+
+This lets you integrate static serving with other routers or libraries that use `net/http`.
+

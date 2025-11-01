@@ -1,0 +1,92 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Mizu",
+  "colors": {
+    "primary": "#60A5FA",
+    "light": "#60A5FA",
+    "dark": "#60A5FA"
+  },
+  "icons": {
+    "library": "fontawesome"
+  },
+  "favicon": "favicon.png",
+  "navigation": {
+    "global": {
+      "anchors": [
+        {
+          "anchor": "Discord",
+          "href": "https://discord.gg/8QpMsNBB8n",
+          "icon": "discord"
+        },
+        {
+          "anchor": "GitHub",
+          "href": "https://github.com/go-mizu/mizu",
+          "icon": "github"
+        }
+      ]
+    },
+    "groups": [
+      {
+        "group": "Overview",
+        "pages": [
+          "overview/intro",
+          "overview/why",
+          "overview/features",
+          "overview/use-cases",
+          "overview/roadmap"
+        ]
+      },
+      {
+        "group": "Get Started",
+        "pages": [
+          "get-started/quick-start",
+          "get-started/deployment"
+        ]
+      },
+      {
+        "group": "Concepts",
+        "pages": [
+          "concepts/overview",
+          "concepts/app",
+          "concepts/routing",
+          "concepts/handler",
+          "concepts/context",
+          "concepts/request",
+          "concepts/response",
+          "concepts/static",
+          "concepts/logging",
+          "concepts/error"
+        ]
+      },
+      {
+        "group": "Examples",
+        "pages": []
+      },
+      {
+        "group": "References",
+        "pages": []
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "icon": "github",
+        "label": "GitHub",
+        "href": "https://github.com/go-mizu/mizu"
+      }
+    ]
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      "mcp",
+      "cursor",
+      "vscode"
+    ]
+  }
+}

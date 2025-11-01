@@ -1,0 +1,118 @@
+---
+title: "Deployment"
+description: "How to deploy a Mizu app in a simple, reliable way."
+---
+
+Deploying a Mizu app is very similar to running any Go program. You build a binary, copy it to a server, and run it. The process is simple and does not need any special tools.
+
+### Build your app
+
+Open a terminal inside your project folder and build the app.
+If you are building for Linux from a macOS or Windows computer, use:
+
+```bash
+GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o app
+```
+
+This command tells Go to compile your program for Linux 64-bit systems.
+It creates a small executable file named `app` in your project folder.
+
+Now you have a single binary file that contains your Mizu app.
+
+### Run on a server
+
+Upload the file to your server.
+If you are using SSH, you can copy it with this command:
+
+```bash
+scp app user@server:/opt/mizu/app
+```
+
+Then log in and start the server:
+
+```bash
+ssh user@server
+cd /opt/mizu
+PORT=3000 ENV=production ./app
+```
+
+Your app will start listening on port 3000.
+Open a browser and go to `http://your-server:3000` to see it running.
+If the page does not load, check that the port is open in your firewall settings.
+
+### Keep it running
+
+When you close your SSH session, the app will stop.
+To keep it running in the background, use a small process manager like `systemd`.
+
+Create a file at `/etc/systemd/system/mizu.service` with this content:
+
+```ini
+[Service]
+ExecStart=/opt/mizu/app
+Restart=always
+Environment=PORT=3000
+```
+
+Then enable and start it:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable mizu
+sudo systemctl start mizu
+```
+
+You can check the logs anytime:
+
+```bash
+journalctl -u mizu -f
+```
+
+### Add HTTPS
+
+To make your app available over HTTPS, set up a reverse proxy.
+Caddy is one of the easiest ways to do this, because it can get certificates automatically.
+
+Example Caddyfile:
+
+```
+yourdomain.com {
+  reverse_proxy localhost:3000
+}
+```
+
+Reload Caddy to apply the change:
+
+```bash
+sudo systemctl reload caddy
+```
+
+Now you can open your app with `https://yourdomain.com`.
+
+### Deploy with Docker
+
+If you prefer Docker, you can package your app in a container.
+Create a `Dockerfile` like this:
+
+```dockerfile
+FROM golang:1.25 as build
+WORKDIR /src
+COPY . .
+RUN GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o /app
+
+FROM gcr.io/distroless/base-debian12
+COPY --from=build /app /app
+EXPOSE 3000
+CMD ["/app"]
+```
+
+Then build and run your container:
+
+```bash
+docker build -t mizu-app .
+docker run -p 3000:3000 mizu-app
+```
+
+Open `http://localhost:3000` to confirm it is running.
+Docker is useful when you want consistent deployments across different machines.
+

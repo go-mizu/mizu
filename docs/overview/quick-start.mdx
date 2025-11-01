@@ -1,0 +1,47 @@
+---
+icon: "rocket"
+title: "Get Started"
+description: "The journey of thousand web apps begins with `Hello, world!`."
+---
+
+### Install
+
+Start by installing Mizu with the `go get` command:
+
+```bash
+go get -u github.com/go-mizu/mizu
+````
+
+### Hello, Mizu 👋
+
+Create a new file named `main.go` and add this code:
+
+```go
+package main
+
+import "github.com/go-mizu/mizu"
+
+func main() {
+    app := mizu.New()
+
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.Text(200, "Hello, Mizu 👋")
+    })
+
+    app.Listen(":3000")
+}
+```
+
+### Run Your App
+
+Run your app with:
+
+```bash
+go run main.go
+```
+
+Then open your browser and go to [http://localhost:3000](http://localhost:3000).
+You will see a friendly greeting: **Hello, Mizu 👋**
+
+That's it! You have built your first Mizu app. From here, you can start adding routes, templates, and other features to bring your ideas to life.
+

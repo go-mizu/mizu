@@ -1,0 +1,85 @@
+---
+title: "Logging"
+description: "Use structured logging for requests, errors, and custom messages."
+---
+
+Mizu uses Go's `slog` package for structured logging.
+You can log inside any handler or middleware using `c.Logger()`, or set your own logger for the entire app.
+
+### Basic logging
+
+Every `*mizu.Ctx` has a request-scoped logger:
+
+```go
+app.Get("/", func(c *mizu.Ctx) error {
+	c.Logger().Info("handling request", "path", c.Request().URL.Path)
+	return c.Text(200, "ok")
+})
+```
+
+The default logger prints to standard error in text mode for development and JSON mode for production.
+
+### Set a custom logger
+
+You can set a logger at the router or app level.
+
+```go
+logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+app.SetLogger(logger)
+```
+
+All requests and middlewares will use this logger automatically.
+
+### Request logging middleware
+
+Mizu includes a built-in logger middleware that records basic request details.
+
+```go
+app.Use(mizu.Logger(mizu.LoggerOptions{}))
+```
+
+You can customize the behavior:
+
+```go
+app.Use(mizu.Logger(mizu.LoggerOptions{
+	Mode:      mizu.Dev,   // or mizu.Prod
+	Color:     true,        // colored output in Dev
+	UserAgent: true,        // include User-Agent
+}))
+```
+
+This middleware logs start time, method, path, duration, and status code.
+
+### Logging levels
+
+You can use standard log levels anywhere:
+
+```go
+c.Logger().Debug("debug message")
+c.Logger().Info("processing request", "id", 42)
+c.Logger().Warn("slow response", "duration", "200ms")
+c.Logger().Error("failed to save", "err", err)
+```
+
+### Development mode
+
+Enable developer-friendly output that shows logs in color:
+
+```go
+app.Dev(true)
+```
+
+This switches logging to text format, colored output, and adds request logging automatically.
+
+### Example
+
+```go
+app.Dev(true)
+
+app.Get("/hello", func(c *mizu.Ctx) error {
+	c.Logger().Info("say hello")
+	return c.Text(200, "Hello")
+})
+```
+
+Structured logs make it easy to trace requests, measure latency, and debug errors without extra setup.

@@ -1,0 +1,133 @@
+---
+title: "Request"
+description: "Read incoming data from URL, query, headers, forms, and JSON bodies."
+---
+
+Each route handler in Mizu receives a `*mizu.Ctx` that gives you access to the incoming request.
+You can read URL parameters, query values, form data, JSON bodies, and cookies with small, clear helpers.
+
+### Path parameters
+
+Go 1.22 routing syntax uses `{name}` for parameters.
+You can access them with `c.Param()`.
+
+```go
+app.Get("/users/{id}", func(c *mizu.Ctx) error {
+	id := c.Param("id")
+	return c.Text(200, "User "+id)
+})
+```
+
+### Query parameters
+
+To read data from the query string like `/search?q=go`:
+
+```go
+app.Get("/search", func(c *mizu.Ctx) error {
+	q := c.Query("q")
+	return c.Text(200, "Search for "+q)
+})
+```
+
+To read multiple values:
+
+```go
+params := c.QueryValues()
+page := params.Get("page")
+sort := params.Get("sort")
+```
+
+### Headers
+
+You can access request headers through `Request()`.
+
+```go
+ua := c.Request().Header.Get("User-Agent")
+auth := c.Request().Header.Get("Authorization")
+```
+
+### Forms
+
+If your request uses form data:
+
+```go
+form, err := c.Form()
+if err != nil {
+	return c.Text(400, "Invalid form")
+}
+name := form.Get("name")
+email := form.Get("email")
+```
+
+### File uploads
+
+To handle multipart forms:
+
+```go
+form, cleanup, err := c.MultipartForm(32 << 20)
+if err != nil {
+	return c.Text(400, "Bad upload")
+}
+defer cleanup()
+
+file, hdr, err := c.Request().FormFile("upload")
+if err != nil {
+	return c.Text(400, "Missing file")
+}
+return c.Text(200, "Uploaded "+hdr.Filename)
+```
+
+### Cookies
+
+Read and set cookies easily:
+
+```go
+ck, err := c.Cookie("session")
+if err == nil {
+	c.Logger().Info("session", "value", ck.Value)
+}
+
+c.SetCookie(&http.Cookie{
+	Name:  "lang",
+	Value: "en",
+	Path:  "/",
+})
+```
+
+### JSON body
+
+You can bind JSON directly to a struct.
+It validates the input and prevents unknown fields or extra data.
+
+```go
+var input struct {
+	Name string `json:"name"`
+}
+if err := c.BindJSON(&input, 1<<20); err != nil {
+	return c.Text(400, err.Error())
+}
+return c.JSON(200, map[string]string{"hello": input.Name})
+```
+
+### Client IP
+
+To find the request origin:
+
+```go
+ip := c.ClientIP()
+c.Logger().Info("client", "ip", ip)
+```
+
+### Context
+
+For request cancellation or timeouts:
+
+```go
+select {
+case <-c.Context().Done():
+	return c.Context().Err()
+default:
+}
+```
+
+These helpers make request handling simple and readable, staying close to Go’s standard library while reducing boilerplate.

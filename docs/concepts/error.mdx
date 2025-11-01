@@ -1,0 +1,76 @@
+---
+title: "Error"
+description: "Handle errors in a clear and consistent way across your application."
+---
+
+Mizu keeps error handling simple.
+Each handler can return an error, and the router will send it to a central error handler if one is defined.
+
+### Returning errors
+
+In any handler, you can return an error directly:
+
+```go
+app.Get("/fail", func(c *mizu.Ctx) error {
+	return fmt.Errorf("something went wrong")
+})
+```
+
+If no error handler is set, Mizu logs the error and responds with a `500 Internal Server Error`.
+
+### Global error handler
+
+You can define a single error handler for all routes.
+It receives the context and the error, so you can log and format responses in one place.
+
+```go
+app.ErrorHandler(func(c *mizu.Ctx, err error) {
+	c.Logger().Error("request failed", "error", err)
+	_ = c.JSON(500, map[string]string{"error": "internal server error"})
+})
+```
+
+This keeps individual handlers focused on business logic.
+
+### Handling panics
+
+Mizu automatically recovers from panics in handlers and sends them to the same error handler.
+You can log the panic and return a safe response.
+
+```go
+app.ErrorHandler(func(c *mizu.Ctx, err error) {
+	if perr, ok := err.(*mizu.PanicError); ok {
+		c.Logger().Error("panic recovered", "value", perr.Value)
+	}
+	_ = c.Text(500, "internal error")
+})
+```
+
+### Custom error responses
+
+You can return JSON, HTML, or plain text depending on your app type.
+
+```go
+app.ErrorHandler(func(c *mizu.Ctx, err error) {
+	c.Logger().Warn("error", "err", err)
+	if strings.Contains(err.Error(), "not found") {
+		_ = c.JSON(404, map[string]string{"error": "not found"})
+		return
+	}
+	_ = c.Text(500, "something went wrong")
+})
+```
+
+### Example
+
+```go
+app.Get("/users/{id}", func(c *mizu.Ctx) error {
+	id := c.Param("id")
+	if id == "0" {
+		return fmt.Errorf("user not found")
+	}
+	return c.JSON(200, map[string]string{"id": id})
+})
+```
+
+Combined with a global error handler, this approach keeps your routes clean and your responses consistent.
