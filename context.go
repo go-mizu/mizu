@@ -3,7 +3,6 @@ package mizu
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,10 +19,12 @@ import (
 	"unicode/utf8"
 )
 
-// Handler is the function signature for request handlers.
+// Handler is Mizu's handler shape.
+// It composes well with middleware and central error handling.
 type Handler func(*Ctx) error
 
-// Ctx wraps request and response with small helpers and is not safe for concurrent use.
+// Ctx wraps an HTTP request and response with small, explicit helpers.
+// Not safe for concurrent use without external synchronization.
 type Ctx struct {
 	req         *http.Request
 	res         http.ResponseWriter
@@ -33,7 +34,7 @@ type Ctx struct {
 	log         *slog.Logger
 }
 
-// newCtx builds a Ctx from net/http types.
+// newCtx creates a Ctx from net/http types (router adapter).
 func newCtx(w http.ResponseWriter, r *http.Request, lg *slog.Logger) *Ctx {
 	if lg == nil {
 		lg = slog.Default()
@@ -49,7 +50,7 @@ func newCtx(w http.ResponseWriter, r *http.Request, lg *slog.Logger) *Ctx {
 
 // --- Accessors ---
 
-// Request returns the underlying *http.Request.
+// Request returns the underlying http.Request.
 func (c *Ctx) Request() *http.Request { return c.req }
 
 // Response returns the underlying http.ResponseWriter.
@@ -61,15 +62,17 @@ func (c *Ctx) Header() http.Header { return c.res.Header() }
 // Context returns the request context.
 func (c *Ctx) Context() context.Context { return c.req.Context() }
 
-// Logger returns the request scoped logger.
-func (c *Ctx) Logger() *slog.Logger { return c.log }
+// Logger returns the request-scoped logger (from the router).
+func (c *Ctx) Logger() *slog.Logger {
+	return c.log
+}
 
 // --- Request helpers ---
 
-// Param gets a path parameter captured by the Go 1.22 router.
+// Param returns a path parameter captured by Go 1.22 router.
 func (c *Ctx) Param(name string) string { return c.req.PathValue(name) }
 
-// Query gets the first query value for a key.
+// Query returns the first query value for key.
 func (c *Ctx) Query(key string) string {
 	if c.req.URL == nil {
 		return ""
@@ -85,7 +88,7 @@ func (c *Ctx) QueryValues() url.Values {
 	return c.req.URL.Query()
 }
 
-// Form parses and returns form values from URL encoded or multipart forms.
+// Form parses and returns form values.
 func (c *Ctx) Form() (url.Values, error) {
 	if err := c.req.ParseForm(); err != nil {
 		return nil, err
@@ -93,7 +96,14 @@ func (c *Ctx) Form() (url.Values, error) {
 	return c.req.Form, nil
 }
 
-// MultipartForm parses multipart form data and returns a cleanup function.
+// MultipartForm parses multipart form data and returns a cleanup func
+// to remove any temporary files created on disk.
+// Always call the returned cleanup function when done:
+//
+//	form, cleanup, err := c.MultipartForm(32 << 20)
+//	if err != nil { return err }
+//	defer cleanup()
+//	// use form.File and form.Value safely
 func (c *Ctx) MultipartForm(maxMemory int64) (*multipart.Form, func(), error) {
 	if err := c.req.ParseMultipartForm(maxMemory); err != nil {
 		return nil, func() {}, err
@@ -108,7 +118,9 @@ func (c *Ctx) MultipartForm(maxMemory int64) (*multipart.Form, func(), error) {
 // Cookie returns a named cookie or http.ErrNoCookie.
 func (c *Ctx) Cookie(name string) (*http.Cookie, error) { return c.req.Cookie(name) }
 
-// ClientIP returns the best effort client IP.
+// ClientIP returns the client IP (best-effort).
+// It trusts X-Forwarded-For and X-Real-IP only if they contain a parseable IP.
+// For production behind proxies, consider injecting a stricter resolver.
 func (c *Ctx) ClientIP() string {
 	if xff := c.req.Header.Get("X-Forwarded-For"); xff != "" {
 		ip := strings.TrimSpace(strings.Split(xff, ",")[0])
@@ -128,48 +140,53 @@ func (c *Ctx) ClientIP() string {
 
 // --- Request body binding ---
 
-// BindJSON reads JSON into v with size limit and rejects unknown fields and trailing data.
+// BindJSON reads JSON into v with a max size limit.
+// It disallows unknown fields and rejects trailing data.
 func (c *Ctx) BindJSON(v any, max int64) error {
 	r := c.req.Body
 	if max > 0 {
 		r = http.MaxBytesReader(c.res, r, max)
 	}
-	dec := json.NewDecoder(r)
-	dec.DisallowUnknownFields()
+	dec := newJSONDecoder(r)
+	decDisallowUnknownFields(dec)
 	if err := dec.Decode(v); err != nil {
 		return fmt.Errorf("invalid JSON: %w", err)
 	}
-	if dec.More() {
-		return errors.New("invalid JSON: trailing data")
+	// Ensure single JSON value by verifying no more tokens remain
+	if _, err := dec.Token(); err != io.EOF {
+		if err == nil {
+			return errors.New("invalid JSON: trailing data")
+		}
+		return fmt.Errorf("invalid JSON: %w", err)
 	}
 	return nil
 }
 
 // --- Response helpers ---
 
-// Status sets the response status code to apply on first write.
+// Status sets the response status (applied on first write).
 func (c *Ctx) Status(code int) {
 	if code > 0 {
 		c.status = code
 	}
 }
 
-// StatusCode returns the current status code with default 200.
+// StatusCode returns the currently set status code (default 200).
 func (c *Ctx) StatusCode() int { return c.status }
 
-// HeaderIfNone sets a header only if it is not already present.
+// HeaderIfNone sets header key to value only if key is not already present.
 func (c *Ctx) HeaderIfNone(key, value string) {
 	if c.Header().Get(key) == "" {
 		c.Header().Set(key, value)
 	}
 }
 
-// NoContent sends 204 No Content.
+// NoContent sends a 204 No Content response.
 func (c *Ctx) NoContent() error {
 	return c.writeHeaderNow(http.StatusNoContent, "")
 }
 
-// Redirect sends a redirect with Location and optional status.
+// Redirect sends a redirect with Location header.
 func (c *Ctx) Redirect(code int, location string) error {
 	if code == 0 {
 		code = http.StatusFound
@@ -185,7 +202,7 @@ func (c *Ctx) SetCookie(ck *http.Cookie) {
 	}
 }
 
-// JSON writes JSON with optional status and sets Content-Type.
+// JSON writes a JSON response.
 func (c *Ctx) JSON(code int, v any) error {
 	if code > 0 {
 		c.status = code
@@ -195,12 +212,12 @@ func (c *Ctx) JSON(code int, v any) error {
 		c.res.WriteHeader(c.status)
 		c.wroteHeader = true
 	}
-	enc := json.NewEncoder(c.res)
-	enc.SetEscapeHTML(false)
+	enc := newJSONEncoder(c.res)
+	encSetEscapeHTML(enc, false)
 	return enc.Encode(v)
 }
 
-// HTML writes UTF-8 HTML with optional status.
+// HTML writes a UTF-8 HTML response.
 func (c *Ctx) HTML(code int, html string) error {
 	if code > 0 {
 		c.status = code
@@ -214,7 +231,7 @@ func (c *Ctx) HTML(code int, html string) error {
 	return err
 }
 
-// Text writes UTF-8 text with optional status and falls back to octet stream for invalid UTF-8.
+// Text writes a UTF-8 text response. If s is not valid UTF-8, it is sent as octet-stream.
 func (c *Ctx) Text(code int, s string) error {
 	if !utf8.ValidString(s) {
 		return c.Bytes(code, []byte(s), "application/octet-stream")
@@ -231,7 +248,8 @@ func (c *Ctx) Text(code int, s string) error {
 	return err
 }
 
-// Bytes writes raw bytes with optional status and content type.
+// Bytes writes raw bytes with an optional content type.
+// If contentType is empty and no Content-Type is set, it defaults to application/octet-stream.
 func (c *Ctx) Bytes(code int, b []byte, contentType string) error {
 	if code > 0 {
 		c.status = code
@@ -249,7 +267,7 @@ func (c *Ctx) Bytes(code int, b []byte, contentType string) error {
 	return err
 }
 
-// Write writes bytes and ensures headers are sent once.
+// Write writes bytes, ensuring headers are sent once.
 func (c *Ctx) Write(b []byte) (int, error) {
 	if !c.wroteHeader {
 		c.res.WriteHeader(c.status)
@@ -258,32 +276,39 @@ func (c *Ctx) Write(b []byte) (int, error) {
 	return c.res.Write(b)
 }
 
-// WriteString writes a string and ensures headers are sent once.
+// WriteString writes a string, ensuring headers are sent once.
 func (c *Ctx) WriteString(s string) (int, error) {
 	return c.Write([]byte(s))
 }
 
-// File serves a file from disk and respects any preset status.
+// File serves a file from disk.
+// If a non-200 status has been set via Status, it will be respected and
+// a best-effort Content-Type will be applied before delegating to ServeFile.
 func (c *Ctx) File(path string) error {
 	return c.fileWithCode(0, path)
 }
 
 // Download serves a file as an attachment with RFC 5987 filename support.
+// If a non-200 status has been set via Status, it will be respected.
 func (c *Ctx) Download(path, name string) error {
 	return c.downloadWithCode(0, path, name)
 }
 
 // FileCode serves a file with an explicit status code.
+// If code is 0, it behaves like File.
 func (c *Ctx) FileCode(code int, path string) error {
 	return c.fileWithCode(code, path)
 }
 
 // DownloadCode serves an attachment with an explicit status code.
+// If code is 0, it behaves like Download.
 func (c *Ctx) DownloadCode(code int, path, name string) error {
 	return c.downloadWithCode(code, path, name)
 }
 
 func (c *Ctx) fileWithCode(code int, path string) error {
+	// If caller wants a non-default status, or c.status != 200,
+	// write headers now with a best-effort Content-Type so ServeFile will not override status.
 	needHeader := (code > 0) || (c.status != http.StatusOK)
 	if needHeader && !c.wroteHeader {
 		ct := ""
@@ -322,7 +347,7 @@ func (c *Ctx) downloadWithCode(code int, path, name string) error {
 	return nil
 }
 
-// Stream writes streamed output and flushes at the end.
+// Stream streams output using fn.
 func (c *Ctx) Stream(fn func(io.Writer) error) error {
 	if !c.wroteHeader {
 		if c.Header().Get("Content-Type") == "" {
@@ -338,7 +363,7 @@ func (c *Ctx) Stream(fn func(io.Writer) error) error {
 	return nil
 }
 
-// SSE sends Server Sent Events with keepalive pings and returns on disconnect.
+// SSE writes Server-Sent Events from ch.
 func (c *Ctx) SSE(ch <-chan any) error {
 	if _, ok := c.res.(http.Flusher); !ok {
 		return errors.New("SSE requires http.Flusher")
@@ -364,7 +389,7 @@ func (c *Ctx) SSE(ch <-chan any) error {
 				_ = c.Flush()
 				return nil
 			}
-			buf, err := json.Marshal(v)
+			buf, err := jsonMarshal(v)
 			if err != nil {
 				buf = []byte(strconv.Quote(fmt.Sprint(v)))
 			}
@@ -381,7 +406,7 @@ func (c *Ctx) SSE(ch <-chan any) error {
 
 // --- Low-level passthroughs ---
 
-// Flush flushes buffered data to the client if supported.
+// Flush flushes buffered data to the client.
 func (c *Ctx) Flush() error {
 	if f, ok := c.res.(http.Flusher); ok {
 		f.Flush()
@@ -389,7 +414,7 @@ func (c *Ctx) Flush() error {
 	return nil
 }
 
-// Hijack takes over the connection if supported.
+// Hijack hijacks the underlying connection.
 func (c *Ctx) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if h, ok := c.res.(http.Hijacker); ok {
 		return h.Hijack()
@@ -397,10 +422,10 @@ func (c *Ctx) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return nil, nil, errors.New("hijack not supported")
 }
 
-// SetWriteDeadline sets the write deadline via ResponseController.
+// SetWriteDeadline sets the write deadline on the connection.
 func (c *Ctx) SetWriteDeadline(t time.Time) error { return c.rc.SetWriteDeadline(t) }
 
-// EnableFullDuplex allows concurrent read and write via ResponseController.
+// EnableFullDuplex enables concurrent read and write on the connection.
 func (c *Ctx) EnableFullDuplex() error { return c.rc.EnableFullDuplex() }
 
 // --- Internal helpers ---
@@ -421,6 +446,7 @@ func (c *Ctx) writeHeaderNow(code int, contentType string) error {
 }
 
 func sanitizeToken(s string) string {
+	// Replace control chars and tspecials with underscore
 	const bad = "()<>@,;:\\\"/[]?={} \t\r\n"
 	repl := func(r rune) rune {
 		if r < 0x20 || r >= 0x7f || strings.ContainsRune(bad, r) {

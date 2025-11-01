@@ -1,3 +1,4 @@
+// app.go
 package mizu
 
 import (
@@ -10,26 +11,28 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
-// App is your HTTP server container that embeds Router and handles start, logging, readiness, and graceful shutdown.
+// App owns the HTTP server lifecycle and embeds Router.
+// It favors the standard library for graceful shutdown.
+// Extras kept small: readiness flip, optional pre-shutdown delay, structured logs.
 type App struct {
 	*Router
 
-	preShutdownDelay time.Duration // wait after flipping readiness before starting shutdown
-	shutdownTimeout  time.Duration // graceful drain window
-	forceCloseDelay  time.Duration // extra wait before forced close after grace expires
-	signals          []os.Signal   // which signals trigger graceful shutdown
-	shuttingDown     atomic.Bool   // readiness flag exposed via HealthzHandler
+	preShutdownDelay time.Duration // wait after marking unready
+	shutdownTimeout  time.Duration // max drain window
+
+	shuttingDown atomic.Bool // exposed by HealthzHandler
+	log          *slog.Logger
 }
 
-// AppOption lets you tune App in New; zero values are ignored.
+// AppOption configures App.
 type AppOption func(*App)
 
-// WithLogger sets the slog logger for this app; if nil then slog.Default is used.
+// WithLogger sets the logger. If nil, slog.Default is used.
 func WithLogger(l *slog.Logger) AppOption {
 	return func(a *App) {
 		if l != nil {
@@ -38,7 +41,7 @@ func WithLogger(l *slog.Logger) AppOption {
 	}
 }
 
-// WithPreShutdownDelay waits this long after marking not ready before starting shutdown.
+// WithPreShutdownDelay sets the delay after flipping readiness and before Shutdown.
 func WithPreShutdownDelay(d time.Duration) AppOption {
 	return func(a *App) {
 		if d >= 0 {
@@ -47,7 +50,7 @@ func WithPreShutdownDelay(d time.Duration) AppOption {
 	}
 }
 
-// WithShutdownTimeout gives in flight requests up to this long to finish during shutdown.
+// WithShutdownTimeout sets the maximum duration for http.Server.Shutdown.
 func WithShutdownTimeout(d time.Duration) AppOption {
 	return func(a *App) {
 		if d > 0 {
@@ -56,46 +59,28 @@ func WithShutdownTimeout(d time.Duration) AppOption {
 	}
 }
 
-// WithForceCloseDelay waits this long after the grace period before forcing close.
-func WithForceCloseDelay(d time.Duration) AppOption {
-	return func(a *App) {
-		if d > 0 {
-			a.forceCloseDelay = d
-		}
-	}
-}
-
-// WithSignals chooses which OS signals start graceful shutdown.
-func WithSignals(sigs ...os.Signal) AppOption {
-	return func(a *App) {
-		if len(sigs) > 0 {
-			a.signals = sigs
-		}
-	}
-}
-
-// New creates an App with sensible defaults.
+// New creates an App with conservative defaults.
 func New(opts ...AppOption) *App {
 	r := NewRouter()
 	a := &App{
 		Router:           r,
 		preShutdownDelay: 1 * time.Second,
 		shutdownTimeout:  15 * time.Second,
-		forceCloseDelay:  3 * time.Second,
-		signals:          defaultSignals(),
+		log:              r.Logger(),
 	}
 	for _, o := range opts {
 		o(a)
+	}
+	if a.log == nil {
+		a.log = slog.Default()
 	}
 	return a
 }
 
 // Logger returns the app logger.
-func (a *App) Logger() *slog.Logger {
-	return a.log
-}
+func (a *App) Logger() *slog.Logger { return a.log }
 
-// HealthzHandler returns a readiness handler that reports 200 OK until shutdown then 503.
+// HealthzHandler reports 200 while serving and 503 after shutdown begins.
 func (a *App) HealthzHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if a.shuttingDown.Load() {
@@ -107,39 +92,32 @@ func (a *App) HealthzHandler() http.Handler {
 	})
 }
 
-// Listen starts an HTTP server on addr and shuts down gracefully on signal.
+// Listen starts an HTTP server at addr and handles SIGINT and SIGTERM.
 func (a *App) Listen(addr string) error {
-	srv := &http.Server{
-		Addr:    addr,
-		Handler: a,
-	}
-	return a.listenContext(context.Background(), srv, addr, func() error { return srv.ListenAndServe() })
+	srv := &http.Server{Addr: addr, Handler: a}
+	return a.serveWithSignals(srv, func() error { return srv.ListenAndServe() })
 }
 
-// ListenTLS starts an HTTPS server on addr with cert and key and shuts down gracefully.
+// ListenTLS starts an HTTPS server and handles SIGINT and SIGTERM.
 func (a *App) ListenTLS(addr, certFile, keyFile string) error {
-	srv := &http.Server{
-		Addr:    addr,
-		Handler: a,
-	}
-	return a.listenContext(context.Background(), srv, addr, func() error { return srv.ListenAndServeTLS(certFile, keyFile) })
+	srv := &http.Server{Addr: addr, Handler: a}
+	return a.serveWithSignals(srv, func() error { return srv.ListenAndServeTLS(certFile, keyFile) })
 }
 
-// Serve runs the server on a provided listener, useful for tests or custom listeners.
+// Serve serves on a custom listener and handles SIGINT and SIGTERM.
 func (a *App) Serve(l net.Listener) error {
-	srv := &http.Server{
-		Handler: a,
-	}
-	return a.listenContext(context.Background(), srv, l.Addr().String(), func() error { return srv.Serve(l) })
+	srv := &http.Server{Addr: l.Addr().String(), Handler: a}
+	return a.serveWithSignals(srv, func() error { return srv.Serve(l) })
 }
 
-// listenContext manages server lifetime, signal handling, and graceful shutdown.
-func (a *App) listenContext(parent context.Context, srv *http.Server, addr string, serveFn func() error) error {
-	ongoingCtx, stopOngoing := context.WithCancel(context.Background())
-	srv.BaseContext = func(_ net.Listener) context.Context { return ongoingCtx }
+// ServeContext runs the server until ctx is canceled, then performs a graceful drain.
+func (a *App) ServeContext(ctx context.Context, srv *http.Server, serveFn func() error) error {
+	baseCtx, cancelBase := context.WithCancel(context.Background())
+	defer cancelBase()
+	srv.BaseContext = func(net.Listener) context.Context { return baseCtx }
 
 	log := a.Logger().With(
-		slog.String("addr", addr),
+		slog.String("addr", srv.Addr),
 		slog.Int("pid", os.Getpid()),
 		slog.String("go_version", runtime.Version()),
 	)
@@ -154,38 +132,11 @@ func (a *App) listenContext(parent context.Context, srv *http.Server, addr strin
 		errCh <- nil
 	}()
 
-	sigCh := make(chan os.Signal, 2)
-	signal.Notify(sigCh, a.signals...)
-	defer signal.Stop(sigCh)
-
-	ctx, cancel := context.WithCancel(parent)
-	defer cancel()
-
-	go func() {
-		select {
-		case <-parent.Done():
-			cancel()
-		case <-sigCh:
-			cancel()
-		}
-	}()
-
-	var once sync.Once
-	force := func() {
-		once.Do(func() {
-			log.Warn("second signal received, forcing close")
-			_ = srv.Close()
-			stopOngoing()
-		})
-	}
-	go func() {
-		<-ctx.Done()
-		<-sigCh
-		force()
-	}()
-
 	select {
 	case err := <-errCh:
+		if err != nil {
+			log.Error("server start failed", slog.Any("error", err))
+		}
 		return err
 
 	case <-ctx.Done():
@@ -197,52 +148,32 @@ func (a *App) listenContext(parent context.Context, srv *http.Server, addr strin
 			time.Sleep(a.preShutdownDelay)
 		}
 
-		srv.SetKeepAlivesEnabled(false)
-
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), a.shutdownTimeout)
+		drainCtx, cancel := context.WithTimeout(context.Background(), a.shutdownTimeout)
 		defer cancel()
 
-		done := make(chan struct{})
-		var shutdownErr error
-		go func() {
-			shutdownErr = srv.Shutdown(shutdownCtx)
-			close(done)
-		}()
-
-		select {
-		case <-done:
-		case <-shutdownCtx.Done():
-			log.Warn("graceful shutdown timed out, waiting before hard close", slog.Duration("wait", a.forceCloseDelay))
-			time.Sleep(a.forceCloseDelay)
-			force()
-			<-errCh
+		if err := srv.Shutdown(drainCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			// Grace period expired or other failure. Close and cancel base to nudge handlers.
+			log.Warn("graceful shutdown incomplete", slog.Any("error", err))
+			_ = srv.Close()
+			cancelBase()
+		} else {
+			// Drain completed. Cancel base to release any background waiters tied to BaseContext.
+			cancelBase()
 		}
 
-		stopOngoing()
-
-		if shutdownErr != nil && !errors.Is(shutdownErr, http.ErrServerClosed) {
-			log.Error("server shutdown error", slog.Any("error", shutdownErr), slog.Duration("duration", time.Since(start)))
-			return shutdownErr
-		}
-
-		select {
-		case err := <-errCh:
-			if err != nil {
-				log.Error("server exit error after shutdown", slog.Any("error", err), slog.Duration("duration", time.Since(start)))
-				return err
-			}
-		default:
-			select {
-			case <-ctx.Done():
-			case err := <-errCh:
-				if err != nil {
-					log.Error("server exit error after shutdown", slog.Any("error", err), slog.Duration("duration", time.Since(start)))
-					return err
-				}
-			}
+		if err := <-errCh; err != nil {
+			log.Error("server exit error after shutdown", slog.Any("error", err))
+			return err
 		}
 
 		log.Info("server stopped gracefully", slog.Duration("duration", time.Since(start)))
 		return nil
 	}
+}
+
+// serveWithSignals wraps ServeContext with a signal-aware parent context.
+func (a *App) serveWithSignals(srv *http.Server, serveFn func() error) error {
+	parent, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	return a.ServeContext(parent, srv, serveFn)
 }

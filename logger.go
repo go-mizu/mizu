@@ -39,31 +39,10 @@ type LoggerOptions struct {
 
 // Logger returns a middleware that logs one line per request with useful fields.
 func Logger(o LoggerOptions) Middleware {
-	if o.RequestIDHeader == "" {
-		o.RequestIDHeader = "X-Request-Id"
-	}
-	if o.Output == nil {
-		o.Output = os.Stderr
-	}
+	o = normalizeLoggerOptions(o)
 
 	effectiveMode := resolveMode(o.Mode, o.Output)
-
-	var fallback *slog.Logger
-	if o.Logger == nil {
-		switch effectiveMode {
-		case Prod:
-			fallback = slog.New(slog.NewJSONHandler(o.Output, &slog.HandlerOptions{Level: slog.LevelInfo}))
-		case Dev:
-			if forceColorOn() || (o.Color && supportsColorEnv()) {
-				fallback = slog.New(newColorTextHandler(o.Output, &slog.HandlerOptions{Level: slog.LevelInfo}))
-			} else {
-				fallback = slog.New(slog.NewTextHandler(o.Output, &slog.HandlerOptions{Level: slog.LevelInfo}))
-			}
-		default:
-			fallback = slog.New(slog.NewTextHandler(o.Output, &slog.HandlerOptions{Level: slog.LevelInfo}))
-		}
-	}
-
+	fallback := buildFallbackLogger(effectiveMode, o.Output, o.Color)
 	pureAutoNoPrefs := o.Mode == Auto && !o.Color && o.Output == os.Stderr && o.Logger == nil
 
 	return func(next Handler) Handler {
@@ -71,90 +50,135 @@ func Logger(o LoggerOptions) Middleware {
 			start := time.Now()
 			r := c.Request()
 
-			lg := o.Logger
-			if lg == nil {
-				if pureAutoNoPrefs {
-					if ctxLog := c.Logger(); ctxLog != nil {
-						lg = ctxLog
-					}
-				}
-				if lg == nil {
-					lg = fallback
-				}
-			}
-
-			reqID := r.Header.Get(o.RequestIDHeader)
-			if reqID == "" {
-				reqID = c.Header().Get(o.RequestIDHeader)
-			}
-			if reqID == "" && o.RequestIDGen != nil {
-				if id := o.RequestIDGen(); id != "" {
-					reqID = id
-					c.Header().Set(o.RequestIDHeader, id)
-				}
-			}
+			lg := selectLogger(c, o, fallback, pureAutoNoPrefs)
+			reqID := resolveRequestID(r, c, o)
 
 			err := next(c)
 
-			if reqID == "" {
-				if v := c.Header().Get(o.RequestIDHeader); v != "" {
-					reqID = v
-				}
-			}
-
-			status := c.StatusCode()
-			if status == 0 {
-				status = http.StatusOK
-			}
-			d := time.Since(start)
-
-			path := r.URL.EscapedPath()
-			if path == "" {
-				path = r.URL.Path
-			}
-
-			attrs := []slog.Attr{
-				slog.Int("status", status),
-				slog.String("method", r.Method),
-				slog.String("path", path),
-				slog.String("proto", r.Proto),
-				slog.String("host", r.Host),
-				slog.Int64("duration_ms", d.Milliseconds()),
-				slog.String("remote_ip", c.ClientIP()),
-			}
-			if effectiveMode == Dev {
-				attrs = append(attrs, slog.String("latency_human", humanDuration(d)))
-			}
-			if q := r.URL.RawQuery; q != "" {
-				attrs = append(attrs, slog.String("query", q))
-			}
-			if reqID != "" {
-				attrs = append(attrs, slog.String("request_id", reqID))
-			}
-			if o.UserAgent {
-				if ua := r.UserAgent(); ua != "" {
-					attrs = append(attrs, slog.String("user_agent", ua))
-				}
-			}
-			if o.TraceExtractor != nil {
-				if tid, sid, sampled := o.TraceExtractor(r.Context()); tid != "" {
-					attrs = append(attrs, slog.String("trace_id", tid))
-					if sid != "" {
-						attrs = append(attrs, slog.String("span_id", sid))
-					}
-					attrs = append(attrs, slog.Bool("trace_sampled", sampled))
-				}
-			}
+			status := statusOrOK(c.StatusCode())
+			dur := time.Since(start)
+			attrs := buildLogAttrs(c, r, status, dur, reqID, effectiveMode, o)
 
 			level := levelFor(status, err)
 			if err != nil {
 				attrs = append(attrs, slog.String("error", err.Error()))
 			}
-
 			lg.LogAttrs(r.Context(), level, "request", attrs...)
 			return err
 		}
 	}
+}
+
+func normalizeLoggerOptions(o LoggerOptions) LoggerOptions {
+	if o.RequestIDHeader == "" {
+		o.RequestIDHeader = "X-Request-Id"
+	}
+	if o.Output == nil {
+		o.Output = os.Stderr
+	}
+	return o
+}
+
+func buildFallbackLogger(mode Mode, out io.Writer, color bool) *slog.Logger {
+	switch mode {
+	case Prod:
+		return slog.New(slog.NewJSONHandler(out, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	case Dev:
+		if forceColorOn() || (color && supportsColorEnv()) {
+			return slog.New(newColorTextHandler(out, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		}
+		return slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	default:
+		return slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	}
+}
+
+func selectLogger(c *Ctx, o LoggerOptions, fallback *slog.Logger, pureAutoNoPrefs bool) *slog.Logger {
+	if o.Logger != nil {
+		return o.Logger
+	}
+	if pureAutoNoPrefs {
+		if ctxLog := c.Logger(); ctxLog != nil {
+			return ctxLog
+		}
+	}
+	return fallback
+}
+
+func resolveRequestID(r *http.Request, c *Ctx, o LoggerOptions) string {
+	// read from request or response header
+	if v := r.Header.Get(o.RequestIDHeader); v != "" {
+		return v
+	}
+	if v := c.Header().Get(o.RequestIDHeader); v != "" {
+		return v
+	}
+
+	// generate if configured
+	if o.RequestIDGen != nil {
+		if id := o.RequestIDGen(); id != "" {
+			c.Header().Set(o.RequestIDHeader, id)
+			return id
+		}
+	}
+
+	// after handler run, response header might be set; call site rechecks
+	return ""
+}
+
+func statusOrOK(code int) int {
+	if code == 0 {
+		return http.StatusOK
+	}
+	return code
+}
+
+func requestPath(r *http.Request) string {
+	if p := r.URL.EscapedPath(); p != "" {
+		return p
+	}
+	return r.URL.Path
+}
+
+func buildLogAttrs(c *Ctx, r *http.Request, status int, d time.Duration, reqID string, mode Mode, o LoggerOptions) []slog.Attr {
+	attrs := []slog.Attr{
+		slog.Int("status", status),
+		slog.String("method", r.Method),
+		slog.String("path", requestPath(r)),
+		slog.String("proto", r.Proto),
+		slog.String("host", r.Host),
+		slog.Int64("duration_ms", d.Milliseconds()),
+		slog.String("remote_ip", c.ClientIP()),
+	}
+	if mode == Dev {
+		attrs = append(attrs, slog.String("latency_human", humanDuration(d)))
+	}
+	if q := r.URL.RawQuery; q != "" {
+		attrs = append(attrs, slog.String("query", q))
+	}
+	if reqID == "" {
+		if v := c.Header().Get(o.RequestIDHeader); v != "" {
+			reqID = v
+		}
+	}
+	if reqID != "" {
+		attrs = append(attrs, slog.String("request_id", reqID))
+	}
+	if o.UserAgent {
+		if ua := r.UserAgent(); ua != "" {
+			attrs = append(attrs, slog.String("user_agent", ua))
+		}
+	}
+	if o.TraceExtractor != nil {
+		if tid, sid, sampled := o.TraceExtractor(r.Context()); tid != "" {
+			attrs = append(attrs, slog.String("trace_id", tid))
+			if sid != "" {
+				attrs = append(attrs, slog.String("span_id", sid))
+			}
+			attrs = append(attrs, slog.Bool("trace_sampled", sampled))
+		}
+	}
+	return attrs
 }
 
 func resolveMode(m Mode, out io.Writer) Mode {
