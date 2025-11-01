@@ -2,7 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/go-mizu/mizu.svg)](https://pkg.go.dev/github.com/go-mizu/mizu)
 [![Go Report Card](https://goreportcard.com/badge/github.com/go-mizu/mizu)](https://goreportcard.com/report/github.com/go-mizu/mizu)
-[![Build Status](https://github.com/go-mizu/mizu/actions/workflows/ci.yml/badge.svg)](https://github.com/go-mizu/mizu/actions)
+[![Codecov](https://codecov.io/gh/go-mizu/mizu/graph/badge.svg?token=zgSciJ8HJz)](https://codecov.io/gh/go-mizu/mizu)
 
 > A lightweight, composable web framework for Go.
 
