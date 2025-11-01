@@ -111,5 +111,5 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }} # omit for public repos with tokenless upload
           files: coverage.out
-          slug: go-mizu/mizu.v0
+          slug: go-mizu/mizu
           fail_ci_if_error: true
