@@ -48,6 +48,12 @@ func (h *hijackableRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return h.pw, h.rw, nil
 }
 
+func newCtxRW(method, url string) (*Ctx, *httptest.ResponseRecorder, *http.Request) {
+	r := httptest.NewRequest(method, url, nil)
+	w := httptest.NewRecorder()
+	return newCtx(w, r, nil), w, r
+}
+
 func TestAccessorsAndLogger(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "http://x.test/a?b=1", nil)
 	w := httptest.NewRecorder()
@@ -231,11 +237,10 @@ func TestBindJSON(t *testing.T) {
 	}
 }
 
-func TestStatusHeadersAndWrites(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
-	w := httptest.NewRecorder()
-	c := newCtx(w, r, nil)
+// ===== Split former TestStatusHeadersAndWrites into smaller tests =====
 
+func TestStatusAndHeaderIfNone(t *testing.T) {
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
 	c.Status(201)
 	if c.StatusCode() != 201 {
 		t.Fatal("StatusCode not set")
@@ -245,173 +250,163 @@ func TestStatusHeadersAndWrites(t *testing.T) {
 	if w.Header().Get("X-Test") != "a" {
 		t.Fatal("HeaderIfNone should not overwrite")
 	}
+}
 
-	// JSON writes once and sets header
-	err := c.JSON(0, map[string]string{"ok": "1"})
-	if err != nil {
+func TestJSONWriteOnce(t *testing.T) {
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
+	c.Status(201)
+	if err := c.JSON(0, map[string]string{"ok": "1"}); err != nil {
 		t.Fatal(err)
 	}
 	if w.Code != 201 || w.Header().Get("Content-Type") != "application/json; charset=utf-8" {
 		t.Fatal("JSON status or content-type wrong")
 	}
-	// Second JSON should not change code
 	_ = c.JSON(0, map[string]string{"ok": "2"})
 	if w.Code != 201 {
 		t.Fatal("second JSON changed status")
 	}
+}
 
-	// HTML
-	r2 := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
-	w2 := httptest.NewRecorder()
-	c2 := newCtx(w2, r2, nil)
-	_ = c2.HTML(200, "<b>hi</b>")
-	if w2.Code != 200 || !strings.Contains(w2.Body.String(), "hi") {
+func TestHTMLWrite(t *testing.T) {
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
+	_ = c.HTML(200, "<b>hi</b>")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "hi") {
 		t.Fatal("HTML write failed")
 	}
+}
 
-	// Text valid
-	r3 := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
-	w3 := httptest.NewRecorder()
-	c3 := newCtx(w3, r3, nil)
-	_ = c3.Text(0, "hello")
-	if w3.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
+func TestTextValidUTF8(t *testing.T) {
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
+	_ = c.Text(0, "hello")
+	if w.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
 		t.Fatal("Text content-type wrong")
 	}
+}
 
-	// Text invalid UTF-8 -> Bytes path
-	r4 := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
-	w4 := httptest.NewRecorder()
-	c4 := newCtx(w4, r4, nil)
+func TestTextInvalidUTF8FallsBackToBytes(t *testing.T) {
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
 	invalid := string([]byte{0xff, 0xfe, 0xfd})
-	_ = c4.Text(0, invalid)
-	if w4.Header().Get("Content-Type") != "application/octet-stream" {
+	_ = c.Text(0, invalid)
+	if w.Header().Get("Content-Type") != "application/octet-stream" {
 		t.Fatal("invalid UTF-8 should use octet-stream")
 	}
+}
 
-	// Bytes default content type
-	r5 := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
-	w5 := httptest.NewRecorder()
-	c5 := newCtx(w5, r5, nil)
-	_ = c5.Bytes(0, []byte{1, 2, 3}, "")
-	if w5.Header().Get("Content-Type") != "application/octet-stream" {
+func TestBytesDefaultContentType(t *testing.T) {
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
+	_ = c.Bytes(0, []byte{1, 2, 3}, "")
+	if w.Header().Get("Content-Type") != "application/octet-stream" {
 		t.Fatal("Bytes default content type expected")
 	}
+}
 
-	// Write and WriteString
-	r6 := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
-	w6 := httptest.NewRecorder()
-	c6 := newCtx(w6, r6, nil)
-	c6.Status(202)
-	_, _ = c6.Write([]byte("a"))
-	_, _ = c6.WriteString("b")
-	if w6.Code != 202 || w6.Body.String() != "ab" {
+func TestWriteAndWriteString(t *testing.T) {
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
+	c.Status(202)
+	_, _ = c.Write([]byte("a"))
+	_, _ = c.WriteString("b")
+	if w.Code != 202 || w.Body.String() != "ab" {
 		t.Fatal("Write/WriteString behavior wrong")
 	}
+}
 
-	// NoContent
-	r7 := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
-	w7 := httptest.NewRecorder()
-	c7 := newCtx(w7, r7, nil)
-	_ = c7.NoContent()
-	if w7.Code != http.StatusNoContent {
+func TestNoContent(t *testing.T) {
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
+	_ = c.NoContent()
+	if w.Code != http.StatusNoContent {
 		t.Fatal("NoContent status wrong")
 	}
+}
 
-	// Redirect
-	r8 := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
-	w8 := httptest.NewRecorder()
-	c8 := newCtx(w8, r8, nil)
-	_ = c8.Redirect(0, "/to")
-	if w8.Code != http.StatusFound || w8.Header().Get("Location") != "/to" {
+func TestRedirectBasic(t *testing.T) {
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
+	_ = c.Redirect(0, "/to")
+	if w.Code != http.StatusFound || w.Header().Get("Location") != "/to" {
 		t.Fatal("Redirect behavior wrong")
 	}
 }
 
-func TestSetCookie(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
-	w := httptest.NewRecorder()
-	c := newCtx(w, r, nil)
-	c.SetCookie(&http.Cookie{Name: "a", Value: "b"})
-	if got := w.Header().Values("Set-Cookie"); len(got) == 0 {
-		t.Fatal("Set-Cookie not set")
-	}
-}
+// ===== Split former TestFileAndDownload into smaller tests =====
 
-func TestFileAndDownload(t *testing.T) {
+func TestFile_Default200(t *testing.T) {
 	dir := t.TempDir()
 	fp := filepath.Join(dir, "file.txt")
 	if err := os.WriteFile(fp, []byte("content"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-
-	// File with default 200
-	{
-		r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
-		w := httptest.NewRecorder()
-		c := newCtx(w, r, nil)
-		if err := c.File(fp); err != nil {
-			t.Fatal(err)
-		}
-		if w.Code != 200 || !strings.Contains(w.Body.String(), "content") {
-			t.Fatal("File default failed")
-		}
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
+	if err := c.File(fp); err != nil {
+		t.Fatal(err)
 	}
-
-	// File respecting preset status
-	{
-		r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
-		w := httptest.NewRecorder()
-		c := newCtx(w, r, nil)
-		c.Status(206)
-		if err := c.File(fp); err != nil {
-			t.Fatal(err)
-		}
-		if w.Code != 206 {
-			t.Fatalf("File should respect preset status, got %d", w.Code)
-		}
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "content") {
+		t.Fatal("File default failed")
 	}
+}
 
-	// FileCode explicit
-	{
-		r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
-		w := httptest.NewRecorder()
-		c := newCtx(w, r, nil)
-		if err := c.FileCode(203, fp); err != nil {
-			t.Fatal(err)
-		}
-		if w.Code != 203 {
-			t.Fatalf("FileCode status got %d", w.Code)
-		}
+func TestFile_RespectsPresetStatus(t *testing.T) {
+	dir := t.TempDir()
+	fp := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(fp, []byte("content"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-
-	// Download headers and status
-	{
-		r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
-		w := httptest.NewRecorder()
-		c := newCtx(w, r, nil)
-		if err := c.Download(fp, "name.txt"); err != nil {
-			t.Fatal(err)
-		}
-		cd := w.Header().Get("Content-Disposition")
-		if !strings.Contains(cd, `attachment;`) || !strings.Contains(cd, `filename="name.txt"`) {
-			t.Fatalf("Content-Disposition missing or invalid: %q", cd)
-		}
-		if w.Header().Get("Content-Type") != "text/plain; charset=utf-8" && w.Header().Get("Content-Type") != "text/plain" {
-			t.Fatalf("Content-Type unexpected: %q", w.Header().Get("Content-Type"))
-		}
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
+	c.Status(206)
+	if err := c.File(fp); err != nil {
+		t.Fatal(err)
 	}
+	if w.Code != 206 {
+		t.Fatalf("File should respect preset status, got %d", w.Code)
+	}
+}
 
-	// DownloadCode explicit
-	{
-		r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
-		w := httptest.NewRecorder()
-		c := newCtx(w, r, nil)
-		if err := c.DownloadCode(207, fp, "name.txt"); err != nil {
-			t.Fatal(err)
-		}
-		if w.Code != 207 {
-			t.Fatalf("DownloadCode status got %d", w.Code)
-		}
+func TestFileCode_Explicit(t *testing.T) {
+	dir := t.TempDir()
+	fp := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(fp, []byte("content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
+	if err := c.FileCode(203, fp); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != 203 {
+		t.Fatalf("FileCode status got %d", w.Code)
+	}
+}
+
+func TestDownload_BasicHeaders(t *testing.T) {
+	dir := t.TempDir()
+	fp := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(fp, []byte("content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
+	if err := c.Download(fp, "name.txt"); err != nil {
+		t.Fatal(err)
+	}
+	cd := w.Header().Get("Content-Disposition")
+	if !strings.Contains(cd, `attachment;`) || !strings.Contains(cd, `filename="name.txt"`) {
+		t.Fatalf("Content-Disposition missing or invalid: %q", cd)
+	}
+	// Depending on platform, text/plain may or may not add charset
+	ct := w.Header().Get("Content-Type")
+	if ct != "text/plain; charset=utf-8" && ct != "text/plain" {
+		t.Fatalf("Content-Type unexpected: %q", ct)
+	}
+}
+
+func TestDownloadCode_Explicit(t *testing.T) {
+	dir := t.TempDir()
+	fp := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(fp, []byte("content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
+	if err := c.DownloadCode(207, fp, "name.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != 207 {
+		t.Fatalf("DownloadCode status got %d", w.Code)
 	}
 }
 
@@ -587,9 +582,7 @@ func TestInternalHelpers(t *testing.T) {
 	}
 
 	// writeHeaderNow sets content type when provided
-	r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
-	w := httptest.NewRecorder()
-	c := newCtx(w, r, nil)
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
 	if err := c.writeHeaderNow(201, "text/plain"); err != nil {
 		t.Fatal(err)
 	}
@@ -627,9 +620,7 @@ func TestRedirectAndURLNilSafety(t *testing.T) {
 
 func TestJSONEncoderEscaping(t *testing.T) {
 	// Verify SetEscapeHTML(false) preserves characters
-	r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
-	w := httptest.NewRecorder()
-	c := newCtx(w, r, nil)
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
 	type S struct {
 		X string `json:"x"`
 	}

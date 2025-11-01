@@ -11,6 +11,11 @@
     "library": "fontawesome"
   },
   "favicon": "favicon.png",
+  "seo": {
+    "metatags": {
+      "canonical": "https://docs.go-mizu.dev"
+    }
+  },
   "navigation": {
     "global": {
       "anchors": [
