@@ -1,4 +1,4 @@
-//go:build !windows && !js && !wasip1
+//go:build !windows
 
 package mizu
 
