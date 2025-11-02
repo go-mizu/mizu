@@ -63,8 +63,8 @@ func TestAccessorsAndLogger(t *testing.T) {
 	if c.Request() != r {
 		t.Fatal("Request accessor mismatch")
 	}
-	if c.Response() != w {
-		t.Fatal("Response accessor mismatch")
+	if c.Writer() != w {
+		t.Fatal("Writer accessor mismatch")
 	}
 	if c.Header() == nil {
 		t.Fatal("Header should not be nil")
@@ -638,5 +638,28 @@ func TestContextPropagation(t *testing.T) {
 	c := newCtx(w, r, nil)
 	if c.Context() != ctx {
 		t.Fatal("Context should propagate")
+	}
+}
+
+func TestCtx_SetCookie(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	c := newCtx(w, req, nil)
+
+	ck := &http.Cookie{
+		Name:  "session_id",
+		Value: "abc123",
+		Path:  "/",
+	}
+
+	c.SetCookie(ck)
+
+	hdr := w.Header().Get("Set-Cookie")
+	if hdr == "" {
+		t.Fatalf("expected Set-Cookie header, got empty")
+	}
+	if want := "session_id=abc123"; hdr[:len(want)] != want {
+		t.Fatalf("expected cookie %q, got %q", want, hdr)
 	}
 }

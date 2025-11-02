@@ -3,12 +3,12 @@ title: "Static"
 description: "Serve static files like images, CSS, and JavaScript directly from your app."
 ---
 
-Mizu makes it easy to serve static files with the `Static` method on the router.
-You can mount any directory or embedded filesystem at a URL path.
+Mizu can serve static files such as images, CSS, and JavaScript using the `Static` method on the router.<br/>
+You can serve files from a local directory or from Go's embedded filesystem.
 
 ### Serve files from a local directory
 
-If you have a `public/` folder with assets like CSS and images:
+If you have a `public/` folder containing assets:
 
 ```go
 app := mizu.New()
@@ -16,19 +16,20 @@ app.Static("/assets/", http.Dir("public"))
 app.Listen(":3000")
 ```
 
-This serves `public/logo.png` at `http://localhost:3000/assets/logo.png`.
+This makes `public/logo.png` available at `http://localhost:3000/assets/logo.png`.
+You do not have to include the trailing slash in the prefix — Mizu automatically adds it internally.
 
-The path should end with a `/` to match all files under that directory.
+### Serve embedded files
 
-### Use Go's embedded filesystem
-
-You can use Go's `embed` package to include files inside your binary.
+You can include static files directly in your Go binary using the `embed` package.
+To serve files correctly, use `fs.Sub` to remove the folder prefix.
 
 ```go
 import (
 	"embed"
-	"github.com/go-mizu/mizu"
+	"io/fs"
 	"net/http"
+	"github.com/go-mizu/mizu"
 )
 
 //go:embed public/*
@@ -36,21 +37,27 @@ var publicFS embed.FS
 
 func main() {
 	app := mizu.New()
-	app.Static("/assets/", http.FS(publicFS))
+
+	sub, err := fs.Sub(publicFS, "public")
+	if err != nil {
+		panic(err)
+	}
+
+	app.Static("/assets/", http.FS(sub))
 	app.Listen(":3000")
 }
 ```
 
-Now your app can serve assets without needing external files at runtime.
+This serves `/assets/logo.png` from the embedded file `public/logo.png`.
 
 ### Mount external handlers
 
-You can also mount any standard `http.Handler` at a specific route:
+You can mount any standard `http.Handler` at a specific path.
+This works well with `http.FileServer` or other middleware built for `net/http`.
 
 ```go
 fs := http.FileServer(http.Dir("uploads"))
 app.Mount("/files", http.StripPrefix("/files", fs))
 ```
 
-This lets you integrate static serving with other routers or libraries that use `net/http`.
-
+Mizu's `Static` method works the same way internally, using `http.FileServer` and `http.StripPrefix` to ensure correct path handling.

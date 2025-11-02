@@ -253,12 +253,6 @@ func TestShutdownTimeout_ClosesAndCancelsBaseContext(t *testing.T) {
 	}
 }
 
-func TestListen_WrapsServeWithSignals(t *testing.T) {
-	// The Listen wrappers are thin OS-signal shims around ServeContext.
-	// They are platform-sensitive; ServeContext is fully covered above.
-	t.Skip("Listen uses OS signals; ServeContext already covers core logic. Wrapper lines are trivial.")
-}
-
 // helper: send SIGINT to self, portable where possible
 func sendInterrupt(t *testing.T) {
 	t.Helper()
@@ -356,6 +350,9 @@ func TestApp_Serve_WithSignals(t *testing.T) {
 }
 
 func TestApp_Listen_WithSignals(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Listen not supported on this platform")
+	}
 	// Install a temporary handler to avoid interrupt propagating to outer test harness on some platforms
 	defer func() {
 		// drain any pending signals to restore default behavior for next tests
@@ -384,7 +381,7 @@ func TestApp_Listen_WithSignals(t *testing.T) {
 }
 
 func TestApp_ListenTLS_WithSignals(t *testing.T) {
-	if runtime.GOOS == "js" || runtime.GOOS == "wasip1" {
+	if runtime.GOOS == "js" || runtime.GOOS == "wasip1" || runtime.GOOS == "windows" {
 		t.Skip("TLS listen not supported on this platform")
 	}
 

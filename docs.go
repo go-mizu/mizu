@@ -186,9 +186,9 @@ Use httptest to call routes in unit tests.
 	app := mizu.New()
 	app.Get("/ping", func(c *mizu.Ctx) error { return c.Text(200, "pong") })
 
-	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	request := httptest.NewRequest(http.MethodGet, "/ping", nil)
 	rr := httptest.NewRecorder()
-	app.ServeHTTP(rr, req)
+	app.ServeHTTP(rr, request)
 
 	if rr.Code != 200 || strings.TrimSpace(rr.Body.String()) != "pong" {
 		t.Fatal("unexpected response")

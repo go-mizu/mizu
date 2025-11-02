@@ -3,33 +3,46 @@ title: "Request"
 description: "Read incoming data from URL, query, headers, forms, and JSON bodies."
 ---
 
-Each route handler in Mizu receives a `*mizu.Ctx` that gives you access to the incoming request.
-You can read URL parameters, query values, form data, JSON bodies, and cookies with small, clear helpers.
+When a request comes in, your handler receives a `*mizu.Ctx` that provides access to everything sent by the client.
+You can read data from the URL, query string, headers, forms, cookies, or JSON body using clear helper methods.
 
 ### Path parameters
 
-Go 1.22 routing syntax uses `{name}` for parameters.
-You can access them with `c.Param()`.
+Use `{name}` in the route to mark a variable part of the path.
+Read it with `c.Param()`.
 
 ```go
-app.Get("/users/{id}", func(c *mizu.Ctx) error {
+func showUser(c *mizu.Ctx) error {
 	id := c.Param("id")
 	return c.Text(200, "User "+id)
-})
+}
+
+func main() {
+	app := mizu.New()
+	app.Get("/users/{id}", showUser)
+	app.Listen(":3000")
+}
 ```
 
 ### Query parameters
 
-To read data from the query string like `/search?q=go`:
+Query strings appear after a `?` in the URL, such as `/search?q=go`.
+Read them with `c.Query()`.
 
 ```go
-app.Get("/search", func(c *mizu.Ctx) error {
+func search(c *mizu.Ctx) error {
 	q := c.Query("q")
 	return c.Text(200, "Search for "+q)
-})
+}
+
+func main() {
+	app := mizu.New()
+	app.Get("/search", search)
+	app.Listen(":3000")
+}
 ```
 
-To read multiple values:
+If you need multiple query values, use `c.QueryValues()`.
 
 ```go
 params := c.QueryValues()
@@ -39,7 +52,8 @@ sort := params.Get("sort")
 
 ### Headers
 
-You can access request headers through `Request()`.
+Request headers contain metadata such as content type or authorization.
+You can read them from the request object.
 
 ```go
 ua := c.Request().Header.Get("User-Agent")
@@ -48,7 +62,7 @@ auth := c.Request().Header.Get("Authorization")
 
 ### Forms
 
-If your request uses form data:
+When a request sends form data, you can read it using `c.Form()`.
 
 ```go
 form, err := c.Form()
@@ -61,7 +75,7 @@ email := form.Get("email")
 
 ### File uploads
 
-To handle multipart forms:
+To receive uploaded files, use `c.MultipartForm()` for multipart data.
 
 ```go
 form, cleanup, err := c.MultipartForm(32 << 20)
@@ -79,7 +93,7 @@ return c.Text(200, "Uploaded "+hdr.Filename)
 
 ### Cookies
 
-Read and set cookies easily:
+You can read and set cookies directly.
 
 ```go
 ck, err := c.Cookie("session")
@@ -96,8 +110,8 @@ c.SetCookie(&http.Cookie{
 
 ### JSON body
 
-You can bind JSON directly to a struct.
-It validates the input and prevents unknown fields or extra data.
+You can decode a JSON body into a struct with `BindJSON()`.
+It validates the data and rejects unknown fields.
 
 ```go
 var input struct {
@@ -111,7 +125,7 @@ return c.JSON(200, map[string]string{"hello": input.Name})
 
 ### Client IP
 
-To find the request origin:
+Get the IP address of the client that sent the request.
 
 ```go
 ip := c.ClientIP()
@@ -120,7 +134,7 @@ c.Logger().Info("client", "ip", ip)
 
 ### Context
 
-For request cancellation or timeouts:
+Use the request context to detect cancellation or timeouts.
 
 ```go
 select {
@@ -130,4 +144,4 @@ default:
 }
 ```
 
-These helpers make request handling simple and readable, staying close to Go’s standard library while reducing boilerplate.
+These helpers make it easy to read data from any kind of request using plain Go code.

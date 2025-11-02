@@ -452,7 +452,7 @@ func TestRouter_Dev_Disabled_NoChange(t *testing.T) {
 	}
 
 	// Router still works
-	r.Get("/ok", func(c *Ctx) error { c.Response().WriteHeader(200); return nil })
+	r.Get("/ok", func(c *Ctx) error { c.Writer().WriteHeader(200); return nil })
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/ok", nil)
 	r.ServeHTTP(rr, req)
@@ -510,7 +510,7 @@ func TestAdaptStdMiddleware_ErrorFallback500(t *testing.T) {
 // Covers Router.Handle uppercasing of method and registration path.
 func TestRouter_Handle_LowercaseMethod(t *testing.T) {
 	r := NewRouter()
-	r.Handle("post", "/h", func(c *Ctx) error { c.Response().WriteHeader(201); return nil })
+	r.Handle("post", "/h", func(c *Ctx) error { c.Writer().WriteHeader(201); return nil })
 
 	// POST works
 	rr := httptest.NewRecorder()
