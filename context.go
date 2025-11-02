@@ -26,8 +26,8 @@ type Handler func(*Ctx) error
 // Ctx wraps an HTTP request and response with small, explicit helpers.
 // Not safe for concurrent use without external synchronization.
 type Ctx struct {
-	req         *http.Request
-	res         http.ResponseWriter
+	request     *http.Request
+	writer      http.ResponseWriter
 	rc          *http.ResponseController
 	status      int
 	wroteHeader bool
@@ -40,27 +40,27 @@ func newCtx(w http.ResponseWriter, r *http.Request, lg *slog.Logger) *Ctx {
 		lg = slog.Default()
 	}
 	return &Ctx{
-		req:    r,
-		res:    w,
-		rc:     http.NewResponseController(w),
-		status: http.StatusOK,
-		log:    lg,
+		request: r,
+		writer:  w,
+		rc:      http.NewResponseController(w),
+		status:  http.StatusOK,
+		log:     lg,
 	}
 }
 
 // --- Accessors ---
 
 // Request returns the underlying http.Request.
-func (c *Ctx) Request() *http.Request { return c.req }
+func (c *Ctx) Request() *http.Request { return c.request }
 
-// Response returns the underlying http.ResponseWriter.
-func (c *Ctx) Response() http.ResponseWriter { return c.res }
+// Writer returns the underlying http.ResponseWriter.
+func (c *Ctx) Writer() http.ResponseWriter { return c.writer }
 
 // Header returns the response headers.
-func (c *Ctx) Header() http.Header { return c.res.Header() }
+func (c *Ctx) Header() http.Header { return c.writer.Header() }
 
 // Context returns the request context.
-func (c *Ctx) Context() context.Context { return c.req.Context() }
+func (c *Ctx) Context() context.Context { return c.request.Context() }
 
 // Logger returns the request-scoped logger (from the router).
 func (c *Ctx) Logger() *slog.Logger {
@@ -70,30 +70,30 @@ func (c *Ctx) Logger() *slog.Logger {
 // --- Request helpers ---
 
 // Param returns a path parameter captured by Go 1.22 router.
-func (c *Ctx) Param(name string) string { return c.req.PathValue(name) }
+func (c *Ctx) Param(name string) string { return c.request.PathValue(name) }
 
 // Query returns the first query value for key.
 func (c *Ctx) Query(key string) string {
-	if c.req.URL == nil {
+	if c.request.URL == nil {
 		return ""
 	}
-	return c.req.URL.Query().Get(key)
+	return c.request.URL.Query().Get(key)
 }
 
 // QueryValues returns all query parameters.
 func (c *Ctx) QueryValues() url.Values {
-	if c.req.URL == nil {
+	if c.request.URL == nil {
 		return url.Values{}
 	}
-	return c.req.URL.Query()
+	return c.request.URL.Query()
 }
 
 // Form parses and returns form values.
 func (c *Ctx) Form() (url.Values, error) {
-	if err := c.req.ParseForm(); err != nil {
+	if err := c.request.ParseForm(); err != nil {
 		return nil, err
 	}
-	return c.req.Form, nil
+	return c.request.Form, nil
 }
 
 // MultipartForm parses multipart form data and returns a cleanup func
@@ -105,37 +105,37 @@ func (c *Ctx) Form() (url.Values, error) {
 //	defer cleanup()
 //	// use form.File and form.Value safely
 func (c *Ctx) MultipartForm(maxMemory int64) (*multipart.Form, func(), error) {
-	if err := c.req.ParseMultipartForm(maxMemory); err != nil {
+	if err := c.request.ParseMultipartForm(maxMemory); err != nil {
 		return nil, func() {}, err
 	}
-	return c.req.MultipartForm, func() {
-		if c.req.MultipartForm != nil {
-			_ = c.req.MultipartForm.RemoveAll()
+	return c.request.MultipartForm, func() {
+		if c.request.MultipartForm != nil {
+			_ = c.request.MultipartForm.RemoveAll()
 		}
 	}, nil
 }
 
 // Cookie returns a named cookie or http.ErrNoCookie.
-func (c *Ctx) Cookie(name string) (*http.Cookie, error) { return c.req.Cookie(name) }
+func (c *Ctx) Cookie(name string) (*http.Cookie, error) { return c.request.Cookie(name) }
 
 // ClientIP returns the client IP (best-effort).
 // It trusts X-Forwarded-For and X-Real-IP only if they contain a parseable IP.
 // For production behind proxies, consider injecting a stricter resolver.
 func (c *Ctx) ClientIP() string {
-	if xff := c.req.Header.Get("X-Forwarded-For"); xff != "" {
+	if xff := c.request.Header.Get("X-Forwarded-For"); xff != "" {
 		ip := strings.TrimSpace(strings.Split(xff, ",")[0])
 		if net.ParseIP(ip) != nil {
 			return ip
 		}
 	}
-	if xr := c.req.Header.Get("X-Real-IP"); xr != "" && net.ParseIP(xr) != nil {
+	if xr := c.request.Header.Get("X-Real-IP"); xr != "" && net.ParseIP(xr) != nil {
 		return xr
 	}
-	host, _, err := net.SplitHostPort(c.req.RemoteAddr)
+	host, _, err := net.SplitHostPort(c.request.RemoteAddr)
 	if err == nil && net.ParseIP(host) != nil {
 		return host
 	}
-	return c.req.RemoteAddr
+	return c.request.RemoteAddr
 }
 
 // --- Request body binding ---
@@ -143,9 +143,9 @@ func (c *Ctx) ClientIP() string {
 // BindJSON reads JSON into v with a max size limit.
 // It disallows unknown fields and rejects trailing data.
 func (c *Ctx) BindJSON(v any, max int64) error {
-	r := c.req.Body
+	r := c.request.Body
 	if max > 0 {
-		r = http.MaxBytesReader(c.res, r, max)
+		r = http.MaxBytesReader(c.writer, r, max)
 	}
 	dec := newJSONDecoder(r)
 	decDisallowUnknownFields(dec)
@@ -162,7 +162,7 @@ func (c *Ctx) BindJSON(v any, max int64) error {
 	return nil
 }
 
-// --- Response helpers ---
+// --- Writer helpers ---
 
 // Status sets the response status (applied on first write).
 func (c *Ctx) Status(code int) {
@@ -198,7 +198,7 @@ func (c *Ctx) Redirect(code int, location string) error {
 // SetCookie adds a Set-Cookie header.
 func (c *Ctx) SetCookie(ck *http.Cookie) {
 	if ck != nil {
-		http.SetCookie(c.res, ck)
+		http.SetCookie(c.writer, ck)
 	}
 }
 
@@ -209,10 +209,10 @@ func (c *Ctx) JSON(code int, v any) error {
 	}
 	if !c.wroteHeader {
 		c.HeaderIfNone("Content-Type", "application/json; charset=utf-8")
-		c.res.WriteHeader(c.status)
+		c.writer.WriteHeader(c.status)
 		c.wroteHeader = true
 	}
-	enc := newJSONEncoder(c.res)
+	enc := newJSONEncoder(c.writer)
 	encSetEscapeHTML(enc, false)
 	return enc.Encode(v)
 }
@@ -224,10 +224,10 @@ func (c *Ctx) HTML(code int, html string) error {
 	}
 	if !c.wroteHeader {
 		c.HeaderIfNone("Content-Type", "text/html; charset=utf-8")
-		c.res.WriteHeader(c.status)
+		c.writer.WriteHeader(c.status)
 		c.wroteHeader = true
 	}
-	_, err := io.WriteString(c.res, html)
+	_, err := io.WriteString(c.writer, html)
 	return err
 }
 
@@ -241,10 +241,10 @@ func (c *Ctx) Text(code int, s string) error {
 	}
 	if !c.wroteHeader {
 		c.HeaderIfNone("Content-Type", "text/plain; charset=utf-8")
-		c.res.WriteHeader(c.status)
+		c.writer.WriteHeader(c.status)
 		c.wroteHeader = true
 	}
-	_, err := io.WriteString(c.res, s)
+	_, err := io.WriteString(c.writer, s)
 	return err
 }
 
@@ -260,20 +260,20 @@ func (c *Ctx) Bytes(code int, b []byte, contentType string) error {
 		} else if c.Header().Get("Content-Type") == "" {
 			c.Header().Set("Content-Type", "application/octet-stream")
 		}
-		c.res.WriteHeader(c.status)
+		c.writer.WriteHeader(c.status)
 		c.wroteHeader = true
 	}
-	_, err := c.res.Write(b)
+	_, err := c.writer.Write(b)
 	return err
 }
 
 // Write writes bytes, ensuring headers are sent once.
 func (c *Ctx) Write(b []byte) (int, error) {
 	if !c.wroteHeader {
-		c.res.WriteHeader(c.status)
+		c.writer.WriteHeader(c.status)
 		c.wroteHeader = true
 	}
-	return c.res.Write(b)
+	return c.writer.Write(b)
 }
 
 // WriteString writes a string, ensuring headers are sent once.
@@ -321,7 +321,7 @@ func (c *Ctx) fileWithCode(code int, path string) error {
 			return err
 		}
 	}
-	http.ServeFile(c.res, c.req, path)
+	http.ServeFile(c.writer, c.request, path)
 	return nil
 }
 
@@ -343,7 +343,7 @@ func (c *Ctx) downloadWithCode(code int, path, name string) error {
 			return err
 		}
 	}
-	http.ServeFile(c.res, c.req, path)
+	http.ServeFile(c.writer, c.request, path)
 	return nil
 }
 
@@ -353,10 +353,10 @@ func (c *Ctx) Stream(fn func(io.Writer) error) error {
 		if c.Header().Get("Content-Type") == "" {
 			c.Header().Set("Content-Type", "application/octet-stream")
 		}
-		c.res.WriteHeader(c.status)
+		c.writer.WriteHeader(c.status)
 		c.wroteHeader = true
 	}
-	if err := fn(c.res); err != nil {
+	if err := fn(c.writer); err != nil {
 		return err
 	}
 	_ = c.Flush()
@@ -365,7 +365,7 @@ func (c *Ctx) Stream(fn func(io.Writer) error) error {
 
 // SSE writes Server-Sent Events from ch.
 func (c *Ctx) SSE(ch <-chan any) error {
-	if _, ok := c.res.(http.Flusher); !ok {
+	if _, ok := c.writer.(http.Flusher); !ok {
 		return errors.New("SSE requires http.Flusher")
 	}
 	if !c.wroteHeader {
@@ -374,7 +374,7 @@ func (c *Ctx) SSE(ch <-chan any) error {
 		h.Set("Cache-Control", "no-cache")
 		h.Set("Connection", "keep-alive")
 		h.Set("X-Accel-Buffering", "no")
-		c.res.WriteHeader(c.status)
+		c.writer.WriteHeader(c.status)
 		c.wroteHeader = true
 	}
 	tick := time.NewTicker(30 * time.Second)
@@ -385,7 +385,7 @@ func (c *Ctx) SSE(ch <-chan any) error {
 			return c.Context().Err()
 		case v, ok := <-ch:
 			if !ok {
-				_, _ = io.WriteString(c.res, "event: end\ndata: {}\n\n")
+				_, _ = io.WriteString(c.writer, "event: end\ndata: {}\n\n")
 				_ = c.Flush()
 				return nil
 			}
@@ -398,7 +398,7 @@ func (c *Ctx) SSE(ch <-chan any) error {
 			}
 			_ = c.Flush()
 		case <-tick.C:
-			_, _ = io.WriteString(c.res, ": ping\n\n")
+			_, _ = io.WriteString(c.writer, ": ping\n\n")
 			_ = c.Flush()
 		}
 	}
@@ -408,7 +408,7 @@ func (c *Ctx) SSE(ch <-chan any) error {
 
 // Flush flushes buffered data to the client.
 func (c *Ctx) Flush() error {
-	if f, ok := c.res.(http.Flusher); ok {
+	if f, ok := c.writer.(http.Flusher); ok {
 		f.Flush()
 	}
 	return nil
@@ -416,7 +416,7 @@ func (c *Ctx) Flush() error {
 
 // Hijack hijacks the underlying connection.
 func (c *Ctx) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if h, ok := c.res.(http.Hijacker); ok {
+	if h, ok := c.writer.(http.Hijacker); ok {
 		return h.Hijack()
 	}
 	return nil, nil, errors.New("hijack not supported")
@@ -440,7 +440,7 @@ func (c *Ctx) writeHeaderNow(code int, contentType string) error {
 	if contentType != "" {
 		c.Header().Set("Content-Type", contentType)
 	}
-	c.res.WriteHeader(c.status)
+	c.writer.WriteHeader(c.status)
 	c.wroteHeader = true
 	return nil
 }

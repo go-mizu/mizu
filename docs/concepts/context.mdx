@@ -3,53 +3,89 @@ title: "Context"
 description: "Use Ctx to access the request, response, and logger inside a handler."
 ---
 
-Each handler in Mizu receives a `*mizu.Ctx`.
-It gives you access to the request, response, and tools like the logger and context cancellation.
+Each handler in Mizu receives a `*mizu.Ctx`, short for *context*.<br/>
+Think of `Ctx` as a small helper that connects three things:
 
-### Access request and response
+- The **request** (what the user sends),
+- The **response** (what your app sends back), and
+- The **logger** (to record what happens).
+
+### Getting the request and writer
+
+When a browser or client sends a request, it becomes an `*http.Request`.
+You can get it directly with:
 
 ```go
 req := c.Request()
-res := c.Response()
 ```
 
-You can still use all helpers like `c.Query()` or `c.JSON()`, but these give you full access to the underlying Go types if needed.
-
-### Logger
-
-Every request has a logger you can use for structured logs.
+The response is what your handler writes back to the client.
+You can write to it manually using the standard Go type `http.ResponseWriter`:
 
 ```go
-c.Logger().Info("processing", "path", c.Request().URL.Path)
+w := c.Writer()
+fmt.Fprintln(w, "Hello from Mizu")
 ```
 
-### Request context
+Most of the time, you will use helpers like `c.Text()`, `c.JSON()`, or `c.HTML()`,
+but `c.Writer()` is available when you need full control for low-level operations.
 
-Use the built-in context for cancellation or deadlines.
+### Logging request information
+
+Each request in Mizu has its own logger:
+
+```go
+c.Logger().Info("processing request", "path", c.Request().URL.Path)
+```
+
+The exact log format and output depend on your logger configuration.
+
+### Handling cancellation and timeouts
+
+Each request includes a built-in context that helps handle timeouts or canceled requests.
+For example, if a user closes their browser before the response is ready,
+you can detect it and stop processing early:
 
 ```go
 select {
 case <-c.Context().Done():
-	return c.Context().Err()
+	return c.Context().Err() // Stop because client disconnected
 default:
 }
 ```
 
-### Headers
+This prevents your server from wasting time or resources.
 
-You can read or set headers directly.
+### Working with headers
+
+Headers are small pieces of information sent with every request and response.
+You can read or set them directly:
 
 ```go
 c.Header().Set("X-App", "mizu")
 ```
 
-### Example
+Always set headers before writing the response body,
+because once data is written, headers are sent and cannot be changed.
+
+### Putting it together
+
+Here is a simple example showing how to use the context and logger together:
 
 ```go
-app.Get("/ping", func(c *mizu.Ctx) error {
-	c.Logger().Info("ping")
+func ping(c *mizu.Ctx) error {
+	c.Logger().Info("received ping")
 	return c.Text(200, "pong")
-})
+}
+
+func main() {
+	app := mizu.New()
+	app.Get("/ping", ping)
+	app.Listen(":3000")
+}
 ```
 
-`Ctx` keeps everything connected—request, response, and logging—without hiding Go’s standard behavior.
+When you visit [http://localhost:3000/ping](http://localhost:3000/ping),
+Mizu logs the request and responds with "pong".
+
+`Ctx` gives you one place to access the request, write responses, manage headers, and log activity, while staying compatible with Go's standard `net/http` package.

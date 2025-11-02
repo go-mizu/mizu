@@ -63,8 +63,8 @@ func TestAccessorsAndLogger(t *testing.T) {
 	if c.Request() != r {
 		t.Fatal("Request accessor mismatch")
 	}
-	if c.Response() != w {
-		t.Fatal("Response accessor mismatch")
+	if c.Writer() != w {
+		t.Fatal("Writer accessor mismatch")
 	}
 	if c.Header() == nil {
 		t.Fatal("Header should not be nil")

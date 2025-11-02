@@ -87,7 +87,7 @@ func (r *Router) NotFound(h http.Handler) {
 		return
 	}
 	r.notFoundCore = func(c *Ctx) error {
-		h.ServeHTTP(c.Response(), c.Request())
+		h.ServeHTTP(c.Writer(), c.Request())
 		return nil
 	}
 }
@@ -280,7 +280,7 @@ func (r *Router) adaptStdMiddleware(sm func(http.Handler) http.Handler) Middlewa
 		})
 		wrapped := sm(base)
 		return func(c *Ctx) error {
-			wrapped.ServeHTTP(c.Response(), c.Request())
+			wrapped.ServeHTTP(c.Writer(), c.Request())
 			return nil
 		}
 	}

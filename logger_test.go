@@ -197,7 +197,7 @@ func Test_resolveRequestID_AllPaths(t *testing.T) {
 	c := newCtx(w, r, nil)
 	r.Header.Set("X-Request-Id", "rid1")
 	if got := resolveRequestID(r, c, LoggerOptions{RequestIDHeader: "X-Request-Id"}); got != "rid1" {
-		t.Fatalf("resolve from req header got %q", got)
+		t.Fatalf("resolve from request header got %q", got)
 	}
 
 	r2 := httptest.NewRequest(http.MethodGet, "http://x", nil)
