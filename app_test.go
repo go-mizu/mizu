@@ -384,7 +384,7 @@ func TestApp_Listen_WithSignals(t *testing.T) {
 }
 
 func TestApp_ListenTLS_WithSignals(t *testing.T) {
-	if runtime.GOOS == "js" || runtime.GOOS == "wasip1" {
+	if runtime.GOOS == "js" || runtime.GOOS == "wasip1" || runtime.GOOS == "windows" {
 		t.Skip("TLS listen not supported on this platform")
 	}
 
