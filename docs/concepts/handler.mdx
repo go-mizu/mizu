@@ -3,31 +3,39 @@ title: "Handler"
 description: "Write clear request handlers that connect routing, context, and responses."
 ---
 
-Handlers are the core of a Mizu application.
-Each handler is a simple Go function with this signature:
+Handlers control what your app does when it receives a request.<br/>
+Each handler is a Go function with this signature:
 
 ```go
 func(c *mizu.Ctx) error
 ```
 
-It receives a `*mizu.Ctx` that gives you full control over the request and response.
+It takes a `*mizu.Ctx`, which gives access to the request, response, and helper methods for reading input and writing output.
 
-### Basic example
+### Define handlers
+
+Here is a simple example that sends a plain text response.
 
 ```go
-app.Get("/", func(c *mizu.Ctx) error {
+func home(c *mizu.Ctx) error {
 	return c.Text(200, "Hello, Mizu!")
-})
+}
+
+func main() {
+	app := mizu.New()
+	app.Get("/", home)
+	app.Listen(":3000")
+}
 ```
 
-You can return an error to signal a problem. If an error handler is set, it will handle the error and send a response.
+If a handler returns an error, Mizu catches it and passes it to the global error handler if one is set.
 
-### Reading data
+### Read request data
 
-Handlers can read path parameters, queries, forms, JSON, and cookies.
+Handlers can read data from path parameters, query strings, forms, JSON bodies, or cookies.
 
 ```go
-app.Post("/users/{id}", func(c *mizu.Ctx) error {
+func createUser(c *mizu.Ctx) error {
 	id := c.Param("id")
 	form, _ := c.Form()
 	name := form.Get("name")
@@ -35,52 +43,60 @@ app.Post("/users/{id}", func(c *mizu.Ctx) error {
 		"id":   id,
 		"name": name,
 	})
-})
+}
+
+func main() {
+	app := mizu.New()
+	app.Post("/users/{id}", createUser)
+	app.Listen(":3000")
+}
 ```
 
-### Writing responses
+Each method is clear and explicit, so you always control how data is read and validated.
 
-Handlers use small helpers on `c` to send different response types.
+### Write responses
+
+Handlers can send different response types using helper methods on `c`.
 
 ```go
-return c.Text(200, "OK")
-return c.JSON(201, map[string]string{"status": "created"})
-return c.Redirect(302, "/welcome")
-return c.NoContent()
+func showOK(c *mizu.Ctx) error {
+	return c.Text(200, "OK")
+}
+
+func showCreated(c *mizu.Ctx) error {
+	return c.JSON(201, map[string]string{"status": "created"})
+}
+
+func redirectHome(c *mizu.Ctx) error {
+	return c.Redirect(302, "/welcome")
+}
+
+func noContent(c *mizu.Ctx) error {
+	return c.NoContent()
+}
 ```
 
-### Central error handling
+These helpers set the right headers and status codes automatically.
 
-Define one error handler for the entire app.
+### Add middleware
 
-```go
-app.ErrorHandler(func(c *mizu.Ctx, err error) {
-	c.Logger().Error("request failed", "err", err)
-	_ = c.JSON(500, map[string]string{"error": "internal"})
-})
-```
-
-Then your routes can stay short and clear.
+Middleware wraps handlers to add shared behavior such as logging or authentication.
 
 ```go
-return fmt.Errorf("something went wrong")
-```
-
-### Middleware
-
-Use middleware to wrap handlers with shared logic such as logging or authentication.
-
-```go
-app.Use(func(next mizu.Handler) mizu.Handler {
+func requestLogger(next mizu.Handler) mizu.Handler {
 	return func(c *mizu.Ctx) error {
 		start := time.Now()
 		err := next(c)
 		c.Logger().Info("done", "path", c.Request().URL.Path, "time", time.Since(start))
 		return err
 	}
-})
+}
+
+func main() {
+	app := mizu.New()
+	app.Use(requestLogger)
+	app.Listen(":3000")
+}
 ```
 
-Handlers in Mizu are just Go functions.
-They read data, write responses, and can be combined with middleware and groups.
-No special syntax, no hidden state, and no magic.
+You can apply middleware globally, to route groups, or to individual routes.

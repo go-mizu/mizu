@@ -640,3 +640,26 @@ func TestContextPropagation(t *testing.T) {
 		t.Fatal("Context should propagate")
 	}
 }
+
+func TestCtx_SetCookie(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	c := newCtx(w, req, nil)
+
+	ck := &http.Cookie{
+		Name:  "session_id",
+		Value: "abc123",
+		Path:  "/",
+	}
+
+	c.SetCookie(ck)
+
+	hdr := w.Header().Get("Set-Cookie")
+	if hdr == "" {
+		t.Fatalf("expected Set-Cookie header, got empty")
+	}
+	if want := "session_id=abc123"; hdr[:len(want)] != want {
+		t.Fatalf("expected cookie %q, got %q", want, hdr)
+	}
+}

@@ -3,39 +3,39 @@ title: "Response"
 description: "Send responses with helpers that manage headers, status codes, and body writes."
 ---
 
-Mizu keeps responses simple. Every handler gets a `*mizu.Ctx`, which helps you send text, JSON, HTML, files, or streams without touching `http.ResponseWriter` directly.
+Every handler in Mizu uses a `*mizu.Ctx` to send responses.
+You can return text, JSON, HTML, files, or streams easily without working directly with `http.ResponseWriter`.
 
-### Setting status codes
+### Set status codes
 
-Set a status code before writing the body:
+You can set a status code before writing the response body.
 
 ```go
 c.Status(202)
 return c.Text(0, "Accepted")
 ```
 
-If you pass `0` to a write helper, it uses the current status code.
-
-You can read it anytime:
+If you pass `0` as the status code, Mizu uses the one already set.
+You can check it anytime.
 
 ```go
 code := c.StatusCode()
 c.Logger().Info("status", "code", code)
 ```
 
-### Sending text
+### Send text
 
-Use `Text` to write plain UTF-8 text:
+Send a plain text response.
 
 ```go
 return c.Text(200, "Hello, world")
 ```
 
-If the text is not valid UTF-8, it falls back to binary.
+If the text is not valid UTF-8, it will be written as binary data.
 
-### JSON responses
+### Send JSON
 
-For structured responses:
+Send structured data as JSON.
 
 ```go
 return c.JSON(200, map[string]any{
@@ -44,67 +44,67 @@ return c.JSON(200, map[string]any{
 })
 ```
 
-Mizu automatically sets `Content-Type` to `application/json; charset=utf-8`.
-If you call `JSON(0, v)`, it reuses the current status.
+The content type is automatically set to `application/json; charset=utf-8`.
+If you pass `0`, Mizu keeps the current status code.
 
-### HTML responses
+### Send HTML
 
-Use `HTML` when rendering markup:
+Send HTML content.
 
 ```go
 return c.HTML(200, "<h1>Welcome</h1>")
 ```
 
-The header `Content-Type: text/html; charset=utf-8` is added automatically.
+The response will include `Content-Type: text/html; charset=utf-8`.
 
-### Headers
+### Work with headers
 
-To set or check headers:
+You can set or check headers directly.
 
 ```go
 c.Header().Set("Cache-Control", "no-store")
 c.HeaderIfNone("Content-Type", "text/plain")
 ```
 
-Headers sent after the first write may not reach the client, so set them early.
+Set headers before writing the body so they are included in the response.
 
-### Redirects
+### Redirect
 
-Redirect users to another location:
+Redirect the client to another page.
 
 ```go
 return c.Redirect(302, "/login")
 ```
 
-If you pass `0` as the code, it defaults to `302 Found`.
+If you pass `0`, the default is `302 Found`.
 
 ### No content
 
-Send a 204 response with no body:
+Send an empty response with status code 204.
 
 ```go
 return c.NoContent()
 ```
 
-### Files and downloads
+### Serve files and downloads
 
-Serve files directly:
+Serve files directly from disk.
 
 ```go
 return c.File("./public/logo.png")
 ```
 
-Or send a file as a download:
+Send files as downloads.
 
 ```go
 return c.Download("./report.csv", "report.csv")
 ```
 
-These use standard Go’s file serving, so range requests and caching work as expected.
+Mizu uses standard Go file serving, so range requests and caching work automatically.
 
-### Streaming and real-time
+### Stream data
 
-Send output gradually:
+Send data gradually as it becomes available.
 
 ```go
 return c.Stream(func(w io.Writer) error {
@@ -115,7 +115,9 @@ return c.Stream(func(w io.Writer) error {
 })
 ```
 
-Server-Sent Events:
+### Server-Sent Events
+
+Send live updates to the client using Server-Sent Events.
 
 ```go
 ch := make(chan any)
@@ -130,7 +132,7 @@ return c.SSE(ch)
 
 ### Low-level control
 
-If you need fine control:
+For more control, you can access lower-level response features.
 
 ```go
 _ = c.Flush()
@@ -139,4 +141,4 @@ _ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
 _ = c.EnableFullDuplex()
 ```
 
-These features let you use websockets, raw connections, or long-running responses using plain Go semantics.
+These allow you to handle websockets, raw connections, or long-lived responses using normal Go behavior.

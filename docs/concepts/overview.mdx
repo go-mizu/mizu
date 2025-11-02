@@ -3,51 +3,58 @@ title: "Overview"
 description: "A tour of Mizu’s main concepts and how they fit together."
 ---
 
-Mizu is designed to feel like Go itself: clear, small, and predictable.
-It adds only the essentials you need for real applications without hiding how Go works.
+Mizu is built to feel like Go itself: clear, small, and easy to understand.
+It adds only the essential tools needed to build real web applications while keeping everything familiar.<br/>
+You still use standard library types and patterns, but with a simpler structure for routing, context, and middleware.
 
 #### [App](/concepts/app)
 
-Start with a single file or scale into a full application.
-Mizu provides small building blocks that grow with your project instead of locking you into a strict structure.
+An app is the main entry point of a Mizu project.
+You can start with a single file or grow it into a larger application.
+Mizu does not force any layout or configuration style; it provides small, composable parts that scale with your needs.
 
 #### [Routing](/concepts/routing)
 
-Define routes using plain Go.
-No annotations or code generation—just simple, readable functions that are easy to test and compose.
+Routing defines how your app responds to different paths and methods.
+You write routes with plain Go functions, without annotations or generators.
+Everything stays explicit and easy to test, just like with `net/http`.
 
 #### [Handler](/concepts/handler)
 
-Handlers are just Go functions that return an error.
-Mizu takes care of error handling so you can focus on the logic.
+A handler is a small Go function that returns an error.
+You write your logic directly, and Mizu handles errors or panics safely.
+This keeps your handlers short, clear, and predictable.
 
 #### [Context](/concepts/context)
 
-Every request has a `Ctx` that wraps `net/http` and adds small, useful helpers for headers, logging, and responses.
+Each incoming request has a `Ctx`, a small wrapper around `http.ResponseWriter` and `*http.Request`.
+It provides helper methods for headers, responses, and logging, while still giving you access to the original Go objects.
 
 #### [Request](/concepts/request)
 
-Read path parameters, queries, headers, forms, or JSON input with simple methods.
-No reflection or hidden parsing.
+Reading input from a request is simple.
+You can get path parameters, query values, headers, form data, or JSON with clear, direct methods.
+There is no reflection, code generation, or hidden behavior.
 
 #### [Response](/concepts/response)
 
-Send text, JSON, HTML, or files directly through `Ctx`.
-Mizu keeps it consistent and close to the standard library.
+Sending output works the same way.
+You can return plain text, JSON, HTML, or serve files directly through `Ctx`.
+Everything follows Go’s HTTP design for consistency.
 
 #### [Static](/concepts/static)
 
-Serve assets like images, CSS, or JavaScript easily from a local or embedded directory.
-No setup scripts or plugins required.
+Mizu can serve static files like images, CSS, or JavaScript from a folder or embedded data.
+It only takes one line to enable and needs no extra setup or plugins.
 
 #### [Logging](/concepts/logging)
 
-Use structured logging powered by Go’s `slog`.
-Log within any handler or middleware with simple, consistent output for both development and production.
+Logging in Mizu uses Go’s `slog` package for structured logs.
+It provides clean, consistent output for both development and production.
+You can log from any handler or middleware.
 
 #### [Error](/concepts/error)
 
-Handle all errors in one place.
-Mizu lets you define a single global error handler that catches both returned errors and panics, keeping your code predictable and clean.
-
-
+Error handling is centralized in Mizu.
+You can define a global error handler that catches all returned errors and panics.
+This keeps your app behavior consistent and your code easy to maintain.

@@ -3,74 +3,96 @@ title: "Error"
 description: "Handle errors in a clear and consistent way across your application."
 ---
 
-Mizu keeps error handling simple.
-Each handler can return an error, and the router will send it to a central error handler if one is defined.
+Mizu simplifies error handling by letting you return errors directly from handlers.
+You can define one global error handler to control how all errors are logged and sent to the client.
 
-### Returning errors
+### Return errors from handlers
 
-In any handler, you can return an error directly:
+A handler can return an error to indicate something went wrong.
 
 ```go
-app.Get("/fail", func(c *mizu.Ctx) error {
+func fail(c *mizu.Ctx) error {
 	return fmt.Errorf("something went wrong")
-})
+}
+
+func main() {
+	app := mizu.New()
+	app.Get("/fail", fail)
+	app.Listen(":3000")
+}
 ```
 
-If no error handler is set, Mizu logs the error and responds with a `500 Internal Server Error`.
+If you do not define a global error handler, Mizu logs the error and responds with a `500 Internal Server Error`.
 
 ### Global error handler
 
-You can define a single error handler for all routes.
-It receives the context and the error, so you can log and format responses in one place.
+You can define one central error handler for the entire app.
+It receives the current context and the error, so you can log details and send a formatted response.
 
 ```go
-app.ErrorHandler(func(c *mizu.Ctx, err error) {
+func onError(c *mizu.Ctx, err error) {
 	c.Logger().Error("request failed", "error", err)
 	_ = c.JSON(500, map[string]string{"error": "internal server error"})
-})
+}
+
+func main() {
+	app := mizu.New()
+	app.ErrorHandler(onError)
+	app.Listen(":3000")
+}
 ```
 
-This keeps individual handlers focused on business logic.
+This keeps your route handlers simple and focused on their logic.
 
-### Handling panics
+### Handle panics
 
-Mizu automatically recovers from panics in handlers and sends them to the same error handler.
-You can log the panic and return a safe response.
+Mizu automatically recovers from panics inside handlers and passes them to the same global error handler.
 
 ```go
-app.ErrorHandler(func(c *mizu.Ctx, err error) {
+func onError(c *mizu.Ctx, err error) {
 	if perr, ok := err.(*mizu.PanicError); ok {
 		c.Logger().Error("panic recovered", "value", perr.Value)
 	}
 	_ = c.Text(500, "internal error")
-})
+}
 ```
+
+This prevents your server from crashing and provides a consistent way to handle unexpected situations.
 
 ### Custom error responses
 
-You can return JSON, HTML, or plain text depending on your app type.
+You can customize responses based on error content.
+Send JSON, HTML, or plain text depending on what your app returns.
 
 ```go
-app.ErrorHandler(func(c *mizu.Ctx, err error) {
+func onError(c *mizu.Ctx, err error) {
 	c.Logger().Warn("error", "err", err)
 	if strings.Contains(err.Error(), "not found") {
 		_ = c.JSON(404, map[string]string{"error": "not found"})
 		return
 	}
 	_ = c.Text(500, "something went wrong")
-})
+}
 ```
 
 ### Example
 
 ```go
-app.Get("/users/{id}", func(c *mizu.Ctx) error {
+func getUser(c *mizu.Ctx) error {
 	id := c.Param("id")
 	if id == "0" {
 		return fmt.Errorf("user not found")
 	}
 	return c.JSON(200, map[string]string{"id": id})
-})
+}
+
+func main() {
+	app := mizu.New()
+	app.ErrorHandler(onError)
+	app.Get("/users/{id}", getUser)
+	app.Listen(":3000")
+}
 ```
 
-Combined with a global error handler, this approach keeps your routes clean and your responses consistent.
+With a global error handler, all routes share the same consistent error handling and response format.
+

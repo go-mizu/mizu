@@ -1,126 +1,181 @@
-icon: "route"
+---
 title: "Routing"
-description: "Define routes and handlers using Go 1.22 style patterns."
+description: "Learn how to connect URLs to handlers."
+---
 
-Routing in Mizu builds directly on top of Go 1.22’s `ServeMux`.
-You register routes with clear, method-aware patterns like `GET /users` or `POST /upload`.
-Every route connects to a handler that uses Mizu’s `*Ctx` for request and response handling.
+Routing controls which part of your code runs for each incoming request.<br/>
+Mizu uses Go 1.22's `ServeMux` for routing.
+You define routes using simple patterns that connect a path and a handler function.
 
-### Basic routes
+### Define routes
 
-Each route is defined with an HTTP method and a path.
+Each route has an HTTP method and a path.<br/>
+A handler is a Go function that takes a `*mizu.Ctx` and returns an error.
 
 ```go
-app.Get("/", func(c *mizu.Ctx) error {
-	return c.Text(200, "Home")
-})
+package main
 
-app.Post("/submit", func(c *mizu.Ctx) error {
+import "github.com/go-mizu/mizu"
+
+func home(c *mizu.Ctx) error {
+	return c.Text(200, "Home")
+}
+
+func submit(c *mizu.Ctx) error {
 	name := c.FormValue("name")
 	return c.Text(200, "Submitted by "+name)
-})
+}
+
+func main() {
+	app := mizu.New()
+	app.Get("/", home)
+	app.Post("/submit", submit)
+	app.Listen(":3000")
+}
 ```
 
-All routes are plain Go functions that return an error.
-You can register routes for any HTTP method: `Get`, `Post`, `Put`, `Patch`, `Delete`, and more.
+You can register routes for any HTTP method such as `Get`, `Post`, `Put`, `Patch`, or `Delete`.
 
-### Path parameters
+### Use path parameters
 
-Mizu supports Go 1.22 path parameters using braces `{}`.
-You can capture parts of the path and read them inside your handler.
+You can capture variable parts of a URL using braces `{}`.<br/>
+For example, `/users/{id}` matches `/users/42`.
 
 ```go
-app.Get("/users/{id}", func(c *mizu.Ctx) error {
+func showUser(c *mizu.Ctx) error {
 	id := c.Param("id")
 	return c.Text(200, "User ID: "+id)
-})
-```
+}
 
-When a request comes to `/users/42`, the handler reads `"42"` as the `{id}` parameter.
-
-You can define multiple parameters:
-
-```go
-app.Get("/teams/{team}/members/{id}", func(c *mizu.Ctx) error {
+func showMember(c *mizu.Ctx) error {
 	team := c.Param("team")
 	id := c.Param("id")
 	return c.Text(200, "Team "+team+" Member "+id)
-})
+}
+
+func main() {
+	app := mizu.New()
+	app.Get("/users/{id}", showUser)
+	app.Get("/teams/{team}/members/{id}", showMember)
+	app.Listen(":3000")
+}
 ```
 
-### Query strings
+### Handle query strings
 
-For URL queries like `/search?q=go`, use `c.Query()`:
+When a URL includes a query string such as `/search?q=go`, you can read it with `c.Query()`.
 
 ```go
-app.Get("/search", func(c *mizu.Ctx) error {
+func search(c *mizu.Ctx) error {
 	q := c.Query("q")
 	return c.Text(200, "Search for "+q)
-})
+}
+
+func main() {
+	app := mizu.New()
+	app.Get("/search", search)
+	app.Listen(":3000")
+}
 ```
 
-### Grouping routes
+You can also use `c.QueryValues()` to read multiple parameters at once.
 
-Use `Group` to organize routes under a shared prefix.
+### Group related routes
+
+Groups help you organize routes with a common prefix, such as all `/api` endpoints.
 
 ```go
-app.Group("/api", func(g *mizu.Router) {
-	g.Get("/status", func(c *mizu.Ctx) error {
-		return c.JSON(200, map[string]string{"status": "ok"})
+func status(c *mizu.Ctx) error {
+	return c.JSON(200, map[string]string{"status": "ok"})
+}
+
+func listUsers(c *mizu.Ctx) error {
+	return c.JSON(200, []string{"alice", "bob"})
+}
+
+func main() {
+	app := mizu.New()
+	app.Group("/api", func(g *mizu.Router) {
+		g.Get("/status", status)
+		g.Get("/users", listUsers)
 	})
-	g.Get("/users", func(c *mizu.Ctx) error {
-		return c.JSON(200, []string{"alice", "bob"})
-	})
-})
+	app.Listen(":3000")
+}
 ```
 
-This registers `/api/status` and `/api/users` in one block.
-Groups help you organize versioned APIs or related endpoints.
+This example creates `/api/status` and `/api/users`.
 
-### Mounting other handlers
+### Mount other handlers
 
-You can mount any `http.Handler` directly.
-This is useful for integrating third-party tools or static file servers.
+You can use existing `http.Handler` objects with Mizu routes.
 
 ```go
-app.Mount("/admin", adminHandler)
+package main
+
+import (
+	"net/http"
+	"github.com/go-mizu/mizu"
+)
+
+func main() {
+	app := mizu.New()
+	adminHandler := http.FileServer(http.Dir("admin"))
+	app.Mount("/admin", adminHandler)
+	app.Listen(":3000")
+}
 ```
 
-You can also serve static files:
+You can also serve static files.
 
 ```go
 app.Static("/assets/", http.Dir("public"))
 ```
 
-If you embed files using Go’s `embed` package:
+Or serve embedded files using Go's `embed` package.
 
 ```go
 //go:embed public/*
 var publicFS embed.FS
 
-app.Static("/assets/", http.FS(publicFS))
+func main() {
+	app := mizu.New()
+	app.Static("/assets/", http.FS(publicFS))
+	app.Listen(":3000")
+}
 ```
 
-### Not found handler
+### Customize not found behavior
 
 If no route matches, Mizu uses a default 404 page.
-You can replace it with your own handler:
+You can replace it with your own handler.
 
 ```go
-app.NotFound(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func notFound(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "Page not found", http.StatusNotFound)
-}))
+}
+
+func main() {
+	app := mizu.New()
+	app.NotFound(http.HandlerFunc(notFound))
+	app.Listen(":3000")
+}
 ```
 
-### Error handling
+### Handle errors globally
 
-If a handler returns an error or panics, Mizu passes it to the central error handler you set with `ErrorHandler`.
+You can define a global error handler to catch returned errors or panics.
 
 ```go
-app.ErrorHandler(func(c *mizu.Ctx, err error) {
+func onError(c *mizu.Ctx, err error) {
 	c.Logger().Error("failed", "error", err)
 	_ = c.JSON(500, map[string]string{"error": "internal"})
-})
+}
+
+func main() {
+	app := mizu.New()
+	app.ErrorHandler(onError)
+	app.Listen(":3000")
+}
 ```
 
-This keeps your error logic in one place and makes responses consistent.
+This makes error handling consistent for all routes.

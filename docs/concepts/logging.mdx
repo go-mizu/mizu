@@ -3,12 +3,13 @@ title: "Logging"
 description: "Use structured logging for requests, errors, and custom messages."
 ---
 
-Mizu uses Go's `slog` package for structured logging.
-You can log inside any handler or middleware using `c.Logger()`, or set your own logger for the entire app.
+Mizu uses Go’s `slog` package for structured, consistent logging.
+You can log messages inside any handler or middleware using `c.Logger()`, or configure a global logger for your entire application.
 
 ### Basic logging
 
-Every `*mizu.Ctx` has a request-scoped logger:
+Every request in Mizu has its own logger.
+You can use it to record information while processing a request.
 
 ```go
 app.Get("/", func(c *mizu.Ctx) error {
@@ -17,42 +18,42 @@ app.Get("/", func(c *mizu.Ctx) error {
 })
 ```
 
-The default logger prints to standard error in text mode for development and JSON mode for production.
+By default, Mizu prints logs in text format for development and JSON format for production.
 
 ### Set a custom logger
 
-You can set a logger at the router or app level.
+You can set a custom logger that all handlers and middleware will use.
 
 ```go
 logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 app.SetLogger(logger)
 ```
 
-All requests and middlewares will use this logger automatically.
+All logs created with `c.Logger()` will use this logger.
 
 ### Request logging middleware
 
-Mizu includes a built-in logger middleware that records basic request details.
+Mizu provides a built-in logging middleware that records basic details for every request.
 
 ```go
 app.Use(mizu.Logger(mizu.LoggerOptions{}))
 ```
 
-You can customize the behavior:
+You can adjust how it works with options.
 
 ```go
 app.Use(mizu.Logger(mizu.LoggerOptions{
 	Mode:      mizu.Dev,   // or mizu.Prod
-	Color:     true,        // colored output in Dev
-	UserAgent: true,        // include User-Agent
+	Color:     true,        // enable colors in development
+	UserAgent: true,        // include User-Agent in logs
 }))
 ```
 
-This middleware logs start time, method, path, duration, and status code.
+This middleware logs the method, path, response time, and status code for each request.
 
 ### Logging levels
 
-You can use standard log levels anywhere:
+You can use standard log levels anywhere in your code.
 
 ```go
 c.Logger().Debug("debug message")
@@ -61,15 +62,17 @@ c.Logger().Warn("slow response", "duration", "200ms")
 c.Logger().Error("failed to save", "err", err)
 ```
 
+These levels help separate development messages, runtime events, and actual errors.
+
 ### Development mode
 
-Enable developer-friendly output that shows logs in color:
+Enable developer mode to get colorized logs and automatic request logging.
 
 ```go
 app.Dev(true)
 ```
 
-This switches logging to text format, colored output, and adds request logging automatically.
+This switches logging to a text-based format and makes it easier to read during development.
 
 ### Example
 
@@ -82,4 +85,4 @@ app.Get("/hello", func(c *mizu.Ctx) error {
 })
 ```
 
-Structured logs make it easy to trace requests, measure latency, and debug errors without extra setup.
+Structured logs make it simple to follow requests, measure response times, and debug problems while keeping your output clean and readable.
