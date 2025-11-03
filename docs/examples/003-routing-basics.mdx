@@ -1,0 +1,109 @@
+---
+title: "Routing Basics"
+---
+
+In this lesson, you will learn how routing works in Mizu. Routing is how your web app decides what to do when someone visits a specific URL. You can define routes for different paths such as `/`, `/about`, or `/api`, and Mizu will call the right handler automatically.
+
+This lesson shows how to create multiple routes using regular functions instead of anonymous ones. Each handler is a plain Go function that takes a `*mizu.Ctx` and returns an error.
+
+### Code
+
+Copy this program into a file named `main.go`:
+
+```go
+package main
+
+import (
+	"log"
+	"time"
+	"github.com/go-mizu/mizu"
+)
+
+// Home page handler
+func home(c *mizu.Ctx) error {
+	return c.Text(200, "Welcome to Mizu!")
+}
+
+// About page handler
+func about(c *mizu.Ctx) error {
+	return c.Text(200, "This is the About page.")
+}
+
+// Hello page handler with path parameter
+func hello(c *mizu.Ctx) error {
+	name := c.Param("name")
+	return c.Text(200, "Hello, "+name)
+}
+
+// Time API handler returning JSON
+func apiTime(c *mizu.Ctx) error {
+	return c.JSON(200, map[string]string{
+		"time": time.Now().Format(time.RFC3339),
+	})
+}
+
+func main() {
+	app := mizu.New()
+
+	// Register routes
+	app.Get("/", home)
+	app.Get("/about", about)
+	app.Get("/hello/{name}", hello)
+	app.Get("/api/time", apiTime)
+
+	// Start the web server on port 8080
+	if err := app.Listen(":8080"); err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+### Run the lesson
+
+From your terminal, run:
+
+```
+go run .
+```
+
+Then open your browser and try the following links:
+
+* [http://localhost:8080/](http://localhost:8080/)
+  Displays "Welcome to Mizu!"
+
+* [http://localhost:8080/about](http://localhost:8080/about)
+  Displays "This is the About page."
+
+* [http://localhost:8080/hello/Alice](http://localhost:8080/hello/Alice)
+  Displays "Hello, Alice"
+
+* [http://localhost:8080/api/time](http://localhost:8080/api/time)
+  Displays the current time in JSON format.
+
+### How it works
+
+Each route is linked to a function that handles incoming requests. The route pattern `/hello/{name}` includes a placeholder, and Mizu automatically extracts that value so you can access it using `c.PathParam("name")`.
+
+When a request matches a path, Mizu calls the corresponding function. Inside your handler, you can use helpers like `c.Text()` to send plain text or `c.JSON()` to return structured data. Each handler returns an error, which you can use later for custom error handling if needed.
+
+### Try something new
+
+Add another route that returns HTML content or a different status code. For example:
+
+```go
+func notFound(c *mizu.Ctx) error {
+	return c.Text(404, "Page not found")
+}
+```
+
+Then register it with:
+
+```go
+app.Get("/404", notFound)
+```
+
+Visit [http://localhost:8080/404](http://localhost:8080/404) to see how it works.
+
+Routing is the foundation of every Mizu app. Once you are comfortable defining routes and handlers, you can start building full web pages and APIs with ease.
+
+Continue to the next lesson: [JSON Responses](./004-json-responses) to learn how to send structured data from your routes.

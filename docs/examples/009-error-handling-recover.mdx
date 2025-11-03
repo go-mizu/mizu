@@ -1,0 +1,174 @@
+---
+title: "Error Handling and Recover"
+---
+
+In this lesson, you will learn how Mizu handles errors and how to use recovery middleware to prevent crashes from panics. Every web app eventually faces unexpected issues such as invalid inputs, timeouts, or missing files. Mizu provides a simple and predictable way to manage them, keeping your app stable and your responses clear.
+
+
+
+### Code
+
+Copy this program into a file named `main.go`:
+
+```go
+package main
+
+import (
+	"errors"
+	"log"
+
+	"github.com/go-mizu/mizu"
+)
+
+// Custom handler that returns an error
+func mightFail(c *mizu.Ctx) error {
+	return errors.New("something went wrong")
+}
+
+// Handler that triggers a panic
+func panicHandler(c *mizu.Ctx) error {
+	panic("unexpected panic occurred")
+}
+
+// Middleware to recover from panics
+func recoverMiddleware(next mizu.Handler) mizu.Handler {
+	return func(c *mizu.Ctx) error {
+		defer func() {
+			if r := recover(); r != nil {
+				c.Logger().Error("panic recovered", "error", r)
+				_ = c.Text(500, "Internal Server Error")
+			}
+		}()
+		return next(c)
+	}
+}
+
+// Global error handler middleware
+func errorHandler(next mizu.Handler) mizu.Handler {
+	return func(c *mizu.Ctx) error {
+		err := next(c)
+		if err != nil {
+			c.Logger().Error("handler error", "err", err)
+			return c.Text(500, "Something went wrong: "+err.Error())
+		}
+		return nil
+	}
+}
+
+// Normal route
+func home(c *mizu.Ctx) error {
+	return c.Text(200, "Home page - all good")
+}
+
+func main() {
+	app := mizu.New()
+
+	// Global middleware for recovery and error logging
+	app.Use(recoverMiddleware)
+	app.Use(errorHandler)
+
+	app.Get("/", home)
+	app.Get("/fail", mightFail)
+	app.Get("/panic", panicHandler)
+
+	if err := app.Listen(":8080"); err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+
+
+### Run the lesson
+
+Start the server:
+
+```bash
+go run .
+```
+
+Then visit the following routes:
+
+#### Normal request
+
+[http://localhost:8080/](http://localhost:8080/)
+Response:
+
+```
+Home page - all good
+```
+
+#### Handler that returns an error
+
+[http://localhost:8080/fail](http://localhost:8080/fail)
+Response:
+
+```
+Something went wrong: something went wrong
+```
+
+The server logs will show:
+
+```
+ERROR handler error err="something went wrong"
+```
+
+#### Handler that panics
+
+[http://localhost:8080/panic](http://localhost:8080/panic)
+Response:
+
+```
+Internal Server Error
+```
+
+The panic is safely recovered, and the server keeps running.
+
+
+
+### How it works
+
+Mizu’s design lets you handle errors in two main ways: **returning an error from handlers** or **recovering from panics with middleware**.
+
+| Pattern            | What it handles                                    | Example                                        |
+|  | -- | - |
+| Returning an error | Expected problems like bad input or failed queries | `return errors.New("invalid ID")`              |
+| Recover middleware | Unexpected problems like panics or runtime crashes | `defer func() { if r := recover() { ... } }()` |
+
+* Every Mizu handler returns `error`. You can use this to simplify error paths instead of writing inline condition checks.
+* Recovery middleware uses Go’s `defer` and `recover()` to catch panics and convert them into proper HTTP 500 responses.
+* Logging errors with `c.Logger().Error()` gives you structured details about what went wrong, including paths and status codes.
+
+
+
+### Try something new
+
+You can customize error responses for different status codes. For example, add this handler to show user-friendly pages:
+
+```go
+func errorPage(code int, message string) mizu.Handler {
+	return func(c *mizu.Ctx) error {
+		c.Status(code)
+		return c.HTML(code, "<h1>"+message+"</h1><p>Try again later.</p>")
+	}
+}
+```
+
+Then use it in your error handler middleware:
+
+```go
+if err != nil {
+	switch {
+	case strings.Contains(err.Error(), "not found"):
+		return errorPage(404, "Page not found")(c)
+	default:
+		return errorPage(500, "Internal Server Error")(c)
+	}
+}
+```
+
+Now your app will respond with friendly HTML error pages while still logging the technical details.
+
+Error handling keeps your app stable and predictable. Even if a handler panics or fails, users will see a clean response, and your server will continue running normally.
+
+Continue to the next lesson: [Logging with slog](./010-logging-with-slog) to learn how to add structured, colorful, and context-aware logs to your Mizu app.

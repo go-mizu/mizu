@@ -1,0 +1,151 @@
+---
+title: "Query, Form, and Path Parameters"
+---
+
+In this lesson, you will learn how to read data sent by users through query strings, form submissions, and path parameters. These are the main ways a client can send information to your server. Mizu gives you small helper methods on `Ctx` so you can keep handlers clear and easy to follow.
+
+### Code
+
+Copy this program into a file named `main.go`:
+
+```go
+package main
+
+import (
+	"log"
+
+	"github.com/go-mizu/mizu"
+)
+
+// Handle query parameters like /search?q=go
+func search(c *mizu.Ctx) error {
+	query := c.Query("q")
+	if query == "" {
+		return c.Text(400, "Missing query parameter 'q'")
+	}
+	return c.Text(200, "You searched for: "+query)
+}
+
+// Handle form submissions from HTML forms
+func submit(c *mizu.Ctx) error {
+	form, err := c.Form()
+	if err != nil {
+		return c.Text(400, "Invalid form data")
+	}
+
+	name := form.Get("name")
+	email := form.Get("email")
+
+	if name == "" || email == "" {
+		return c.Text(400, "Both name and email are required")
+	}
+
+	return c.Text(200, "Form submitted by "+name+" ("+email+")")
+}
+
+// Handle dynamic paths like /hello/alice
+func greet(c *mizu.Ctx) error {
+	name := c.Param("name")
+	if name == "" {
+		return c.Text(400, "Name is required")
+	}
+	return c.Text(200, "Hello, "+name)
+}
+
+func main() {
+	app := mizu.New()
+
+	app.Get("/search", search)
+	app.Post("/submit", submit)
+	app.Get("/hello/{name}", greet)
+
+	if err := app.Listen(":8080"); err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+### Run the lesson
+
+Start your server with:
+
+```bash
+go run .
+```
+
+Once it’s running, open your browser or terminal and try a few examples to see how each route behaves.
+
+
+Go to [http://localhost:8080/search?q=mizu](http://localhost:8080/search?q=mizu).
+You should see this response:
+
+```
+You searched for: mizu
+```
+
+
+You can test this using `curl` in your terminal:
+
+```bash
+curl -X POST -d "name=Alice&email=alice@example.com" http://localhost:8080/submit
+```
+
+The server will respond with:
+
+```
+Form submitted by Alice (alice@example.com)
+```
+
+
+Visit [http://localhost:8080/hello/Bob](http://localhost:8080/hello/Bob).
+You’ll see:
+
+```
+Hello, Bob
+```
+
+
+ ### How it works
+
+ Each helper in Mizu’s `Ctx` type wraps a part of Go’s `http.Request` to make it easier to get user input.
+ Here’s a quick overview:
+
+ | Method            | Reads From      | Example URL or Data                       |
+ | ----------------- | --------------- | ----------------------------------------- |
+ | `c.Query("key")`  | Query string    | `/search?q=mizu`                          |
+ | `c.Form()`        | Form body       | `name=Alice&email=alice@example.com`      |
+ | `c.Param("name")` | Path parameters | `/hello/Alice` with route `/hello/{name}` |
+
+ - **Query** reads values from the URL, such as search terms or filters.
+ - **Form** parses key–value pairs from POST requests and gives you all submitted data.
+ - **Param** extracts variables directly from the route path
+
+Each helper returns strings that are safe to use. If a key is missing, you get an empty string. If parsing fails, `c.Form()` returns an error that you can handle easily. These helpers keep your code short and clear while staying close to Go’s `net/http` design.
+
+### Try something new
+
+You can add an HTML form to test the `/submit` route in your browser. Create a file named `form.html`:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Submit Example</title>
+  </head>
+  <body>
+    <h1>Submit Form</h1>
+    <form action="/submit" method="post">
+      <input type="text" name="name" placeholder="Your name" required><br><br>
+      <input type="email" name="email" placeholder="Your email" required><br><br>
+      <button type="submit">Send</button>
+    </form>
+  </body>
+</html>
+```
+
+Serve it with the static file helper you learned earlier, then open it in your browser and send the form. You will see the response from your `submit` handler.
+
+You now know how to read data from query strings, forms, and path segments in Mizu.
+
+Continue to the next lesson: [Cookies](./007-cookies) to learn how to store small pieces of data between requests.

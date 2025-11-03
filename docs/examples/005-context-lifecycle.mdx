@@ -1,0 +1,92 @@
+---
+title: "Context Lifecycle"
+---
+
+In this lesson, you will learn how Mizu manages the lifecycle of an HTTP request. Every request in Mizu has its own context, which lets you control timeouts, cancellations, and background operations safely. The context makes it easy to write clean, responsive handlers that stop working when the client disconnects or when the server shuts down.
+
+### Code
+
+Copy this program into a file named `main.go`:
+
+```go
+package main
+
+import (
+	"context"
+	"log"
+	"time"
+
+	"github.com/go-mizu/mizu"
+)
+
+// Slow handler that respects request context
+func slow(c *mizu.Ctx) error {
+	ctx := c.Request().Context()
+
+	select {
+	case <-time.After(3 * time.Second):
+		return c.Text(200, "Finished after 3 seconds")
+	case <-ctx.Done():
+		// Context cancelled (client disconnected or timeout reached)
+		return c.Text(499, "Request cancelled")
+	}
+}
+
+// Fast handler that uses timeout manually
+func timed(c *mizu.Ctx) error {
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 2*time.Second)
+	defer cancel()
+
+	select {
+	case <-time.After(1 * time.Second):
+		return c.Text(200, "Completed within timeout")
+	case <-ctx.Done():
+		return c.Text(504, "Operation timed out")
+	}
+}
+
+func main() {
+	app := mizu.New()
+
+	app.Get("/slow", slow)
+	app.Get("/timed", timed)
+
+	if err := app.Listen(":8080"); err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+### Run the lesson
+
+Run the server with:
+
+```
+go run .
+```
+
+Then visit these URLs in your browser or with `curl`:
+
+- [http://localhost:8080/slow](http://localhost:8080/slow)
+  Wait a few seconds to see the message *Finished after 3 seconds*.
+  If you stop loading the page early, the handler notices and stops its work.
+
+- [http://localhost:8080/timed](http://localhost:8080/timed)
+  Returns quickly with *Completed within timeout*.
+  If you change the delay in the code to be longer than 2 seconds, you will get *Operation timed out*.
+
+### How it works
+
+Every HTTP request in Go carries a `context.Context` that automatically cancels when the request ends. Mizu passes this context to your handlers so you can use it for timeouts or cancellations. This prevents unnecessary work when the client disconnects or when the server shuts down gracefully.
+
+In the example above, the `/slow` handler simulates a long-running task. If the user cancels the request, the context is closed and your code can stop early. The `/timed` route shows how to add your own timeout around a section of work.
+
+This pattern is essential for tasks like database queries, streaming, or background jobs where you need safe cleanup when requests end.
+
+### Try something new
+
+Change the duration inside `time.After()` or `context.WithTimeout()` to see how timeouts behave. You can also log `ctx.Err()` to understand why the context was cancelled.
+
+You now know how Mizu’s context helps you manage request lifecycles in a clean and predictable way.
+
+Continue to the next lesson: [Query, Form, and Path](./006-query-form-path) to learn how to read data from incoming requests.
