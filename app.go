@@ -1,3 +1,4 @@
+// app.go
 package mizu
 
 import (
@@ -21,19 +22,21 @@ type App struct {
 	shutdownTimeout  time.Duration
 
 	shuttingDown atomic.Bool
-	log          *slog.Logger
 }
 
+// AppOption configures App.
 type AppOption func(*App)
 
+// WithLogger sets the router logger used by the app.
 func WithLogger(l *slog.Logger) AppOption {
 	return func(a *App) {
 		if l != nil {
-			a.log = l
+			a.Router.SetLogger(l)
 		}
 	}
 }
 
+// WithPreShutdownDelay sets a delay between flipping unready and starting shutdown.
 func WithPreShutdownDelay(d time.Duration) AppOption {
 	return func(a *App) {
 		if d >= 0 {
@@ -42,6 +45,7 @@ func WithPreShutdownDelay(d time.Duration) AppOption {
 	}
 }
 
+// WithShutdownTimeout sets the maximum graceful drain window.
 func WithShutdownTimeout(d time.Duration) AppOption {
 	return func(a *App) {
 		if d > 0 {
@@ -50,25 +54,24 @@ func WithShutdownTimeout(d time.Duration) AppOption {
 	}
 }
 
+// New creates an App with sane defaults.
 func New(opts ...AppOption) *App {
 	r := NewRouter()
 	a := &App{
 		Router:           r,
 		preShutdownDelay: 1 * time.Second,
 		shutdownTimeout:  15 * time.Second,
-		log:              r.Logger(),
 	}
 	for _, o := range opts {
 		o(a)
 	}
-	if a.log == nil {
-		a.log = slog.Default()
-	}
 	return a
 }
 
-func (a *App) Logger() *slog.Logger { return a.log }
+// Logger returns the router logger.
+func (a *App) Logger() *slog.Logger { return a.Router.Logger() }
 
+// HealthzHandler reports readiness and liveness.
 func (a *App) HealthzHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if a.shuttingDown.Load() {
@@ -80,21 +83,25 @@ func (a *App) HealthzHandler() http.Handler {
 	})
 }
 
+// Listen starts an HTTP server on addr and manages signals.
 func (a *App) Listen(addr string) error {
 	srv := &http.Server{Addr: addr, Handler: a}
 	return a.serveWithSignals(srv, func() error { return srv.ListenAndServe() })
 }
 
+// ListenTLS starts an HTTPS server and manages signals.
 func (a *App) ListenTLS(addr, certFile, keyFile string) error {
 	srv := &http.Server{Addr: addr, Handler: a}
 	return a.serveWithSignals(srv, func() error { return srv.ListenAndServeTLS(certFile, keyFile) })
 }
 
+// Serve serves on an existing listener and manages signals.
 func (a *App) Serve(l net.Listener) error {
 	srv := &http.Server{Addr: l.Addr().String(), Handler: a}
 	return a.serveWithSignals(srv, func() error { return srv.Serve(l) })
 }
 
+// ServeContext runs the server with a parent context and graceful shutdown.
 func (a *App) ServeContext(ctx context.Context, srv *http.Server, serveFn func() error) error {
 	baseCtx, cancelBase := context.WithCancel(context.Background())
 	defer cancelBase()

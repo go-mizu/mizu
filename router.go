@@ -12,7 +12,7 @@ import (
 	"sync"
 )
 
-// Middleware wraps a Handler to add cross cutting behavior like logging or auth.
+// Middleware wraps a Handler to add cross-cutting behavior like logging or auth.
 type Middleware func(Handler) Handler
 
 // PanicError describes a recovered panic with its value and stack for error handling.
@@ -35,27 +35,46 @@ type Router struct {
 	notFoundCore     Handler
 	notFoundBindOnce sync.Once
 
-	allow      map[string]map[string]struct{} // path -> set(method)
-	allowMu    *sync.RWMutex
-	registerMu *sync.Mutex
+	allow   map[string]map[string]struct{} // path -> set(method)
+	allowMu *sync.RWMutex
+
+	// true if a path-only "/" handler has been registered already
+	rootPathTaken bool
 
 	// Compat exposes a net/http-first facade for interop.
 	Compat *httpRouter
 }
 
-// NewRouter creates a root Router with its own ServeMux and sane defaults.
+// NewRouter creates a router with colored slog logging and default middleware.
 func NewRouter() *Router {
-	r := &Router{
-		mux:        http.NewServeMux(),
-		allow:      make(map[string]map[string]struct{}),
-		allowMu:    &sync.RWMutex{},
-		registerMu: &sync.Mutex{},
-		log:        slog.Default(),
+	// Choose handler: color if environment or TTY supports it, else plain text.
+	var h slog.Handler
+	if forceColorOn() || supportsColorEnv() {
+		h = newColorTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})
+	} else {
+		h = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})
 	}
+
+	logger := slog.New(h)
+	slog.SetDefault(logger)
+
+	r := &Router{
+		mux:     http.NewServeMux(),
+		allow:   make(map[string]map[string]struct{}),
+		allowMu: &sync.RWMutex{},
+		log:     logger,
+	}
+
 	r.notFoundCore = func(c *Ctx) error {
 		return c.Text(http.StatusNotFound, http.StatusText(http.StatusNotFound))
 	}
 	r.Compat = &httpRouter{r: r}
+
+	// Always include request logger middleware so requests are logged by default.
+	r.Use(Logger(LoggerOptions{
+		Logger: r.Logger(),
+	}))
+
 	return r
 }
 
@@ -114,15 +133,15 @@ func (r *Router) Group(prefix string, fn func(g *Router)) {
 // Prefix returns a child router that shares state and adds a URL prefix.
 func (r *Router) Prefix(prefix string) *Router {
 	child := &Router{
-		mux:          r.mux,
-		base:         joinPath(r.base, prefix),
-		chain:        slices.Clone(r.chain),
-		errh:         r.errh,
-		log:          r.log,
-		notFoundCore: r.notFoundCore,
-		allow:        r.allow,
-		allowMu:      r.allowMu,
-		registerMu:   r.registerMu,
+		mux:           r.mux,
+		base:          joinPath(r.base, prefix),
+		chain:         slices.Clone(r.chain),
+		errh:          r.errh,
+		log:           r.log,
+		notFoundCore:  r.notFoundCore,
+		allow:         r.allow,
+		allowMu:       r.allowMu,
+		rootPathTaken: r.rootPathTaken,
 	}
 	child.Compat = &httpRouter{r: child}
 	return child
@@ -158,12 +177,21 @@ func (r *Router) Handle(method, p string, h Handler) {
 }
 
 // Static serves files from a provided http.FileSystem at the given URL prefix.
+// It goes through the middleware chain so logger and other middleware still run.
 func (r *Router) Static(prefix string, fsys http.FileSystem) {
 	if !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
 	}
+	full := r.fullPath(prefix)
 	fs := http.FileServer(fsys)
-	r.Compat.Handle(prefix, http.StripPrefix(prefix, fs))
+
+	handler := func(c *Ctx) error {
+		http.StripPrefix(full, fs).ServeHTTP(c.Writer(), c.Request())
+		return nil
+	}
+
+	// Register as a normal GET route so middleware (logger, recover, etc) apply.
+	r.handle(http.MethodGet, prefix, handler)
 }
 
 // Mount mounts any http.Handler at a path.
@@ -175,35 +203,12 @@ func (r *Router) handle(method, p string, h Handler) {
 	adapted := r.adapt(composed)
 	pattern := fmt.Sprintf("%s %s", method, full)
 
-	r.registerMu.Lock()
 	r.mux.Handle(pattern, adapted)
-
-	// Install 405 guard once per path if not present yet.
-	needGuard := false
-	r.allowMu.RLock()
-	if _, ok := r.allow[full]; !ok {
-		needGuard = true
-	}
-	r.allowMu.RUnlock()
-	if needGuard {
-		guard := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			allow := r.allowHeader(full)
-			if allow == "" {
-				allow = "OPTIONS"
-			}
-			w.Header().Set("Allow", allow)
-			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		})
-		// Path-only pattern, does not shadow "METHOD path" entries.
-		r.mux.Handle(full, guard)
-	}
-	r.registerMu.Unlock()
 
 	r.allowAdd(full, method)
 	if method == http.MethodGet {
 		r.allowAdd(full, http.MethodHead)
 	}
-	// No auto OPTIONS registration to keep behavior simple and explicit.
 }
 
 // compose wraps the handler with middleware from right to left.
@@ -286,13 +291,51 @@ func (r *Router) adaptStdMiddleware(sm func(http.Handler) http.Handler) Middlewa
 	}
 }
 
+// ensureNotFoundBound installs a single fallback at "/" that decides 404 vs 405.
 func (r *Router) ensureNotFoundBound() {
 	r.notFoundBindOnce.Do(func() {
-		adapted := r.adapt(r.compose(r.notFoundCore))
-		r.registerMu.Lock()
-		// Bind "/" once to act as NotFound while letting method patterns win.
-		r.mux.Handle("/", adapted)
-		r.registerMu.Unlock()
+		// If user already mounted a path-only "/" handler (for example Compat.Handle("/")),
+		// do not register a fallback to avoid ServeMux conflicts.
+		if r.rootPathTaken {
+			return
+		}
+
+		adaptedCore := r.adapt(r.compose(r.notFoundCore))
+
+		fallback := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			path := req.URL.Path
+			if path == "" {
+				path = "/"
+			}
+
+			// Check if there are any methods registered for this exact path.
+			r.allowMu.RLock()
+			set, ok := r.allow[path]
+			r.allowMu.RUnlock()
+
+			if ok {
+				method := req.Method
+				_, hasExact := set[method]
+				_, hasGet := set[http.MethodGet]
+
+				allowed := hasExact || (method == http.MethodHead && hasGet)
+				if !allowed {
+					allow := r.allowHeader(path)
+					if allow == "" {
+						allow = http.MethodOptions
+					}
+					w.Header().Set("Allow", allow)
+					http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+					return
+				}
+			}
+
+			// Otherwise treat as NotFound via the composed NotFound core.
+			adaptedCore.ServeHTTP(w, req)
+		})
+
+		r.mux.Handle("/", fallback)
+		r.rootPathTaken = true
 	})
 }
 
@@ -352,7 +395,7 @@ func (r *Router) allowHeader(full string) string {
 	r.allowMu.RUnlock()
 
 	if !ok {
-		return "OPTIONS"
+		return http.MethodOptions
 	}
 	list := make([]string, 0, len(set)+1)
 	for m := range set {
@@ -373,30 +416,6 @@ func (r *Router) allowHeader(full string) string {
 	return strings.Join(list, ", ")
 }
 
-// Dev enables a friendly colored logger and installs the request logger middleware.
-func (r *Router) Dev(enable bool) *Router {
-	if !enable {
-		return r
-	}
-
-	// Dev writes to Stderr, color controlled by env.
-	var h slog.Handler
-	if forceColorOn() || supportsColorEnv() {
-		h = newColorTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})
-	} else {
-		h = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})
-	}
-
-	r.SetLogger(slog.New(h))
-	slog.SetDefault(r.Logger())
-
-	r.Use(Logger(LoggerOptions{
-		Logger: r.Logger(),
-	}))
-
-	return r
-}
-
 type httpRouter struct{ r *Router }
 
 // Use appends standard net/http middlewares to the Mizu chain.
@@ -410,9 +429,10 @@ func (h *httpRouter) Use(mw ...func(http.Handler) http.Handler) *httpRouter {
 // Handle registers an http.Handler at a path on the shared ServeMux.
 func (h *httpRouter) Handle(p string, hh http.Handler) *httpRouter {
 	full := h.r.fullPath(p)
-	h.r.registerMu.Lock()
+	if full == "/" {
+		h.r.rootPathTaken = true
+	}
 	h.r.mux.Handle(full, hh)
-	h.r.registerMu.Unlock()
 	return h
 }
 
@@ -421,27 +441,7 @@ func (h *httpRouter) HandleMethod(method, p string, hh http.Handler) *httpRouter
 	full := h.r.fullPath(p)
 	pattern := fmt.Sprintf("%s %s", strings.ToUpper(method), full)
 
-	h.r.registerMu.Lock()
 	h.r.mux.Handle(pattern, hh)
-	// 405 guard once per path.
-	needGuard := false
-	h.r.allowMu.RLock()
-	if _, ok := h.r.allow[full]; !ok {
-		needGuard = true
-	}
-	h.r.allowMu.RUnlock()
-	if needGuard {
-		guard := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			allow := h.r.allowHeader(full)
-			if allow == "" {
-				allow = "OPTIONS"
-			}
-			w.Header().Set("Allow", allow)
-			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		})
-		h.r.mux.Handle(full, guard)
-	}
-	h.r.registerMu.Unlock()
 
 	h.r.allowAdd(full, strings.ToUpper(method))
 	if strings.EqualFold(method, http.MethodGet) {
