@@ -1,0 +1,119 @@
+---
+title: "JSON Responses"
+---
+
+
+In this lesson, you will learn how to send JSON responses using Mizu. JSON is the standard way web apps exchange data, especially in APIs. Mizu makes this easy with a simple helper method that turns your Go values into JSON automatically.
+
+This lesson will show you how to send structured data from your handlers and how Mizu takes care of setting the correct headers for you.
+
+### Code
+
+Copy this program into a file named `main.go`:
+
+```go
+package main
+
+import (
+	"log"
+	"time"
+	"github.com/go-mizu/mizu"
+)
+
+// Welcome handler returning JSON
+func welcome(c *mizu.Ctx) error {
+	data := map[string]string{
+		"message": "Welcome to Mizu JSON API",
+	}
+	return c.JSON(200, data)
+}
+
+// Current time handler
+func currentTime(c *mizu.Ctx) error {
+	data := map[string]any{
+		"time":   time.Now().Format(time.RFC3339),
+		"status": "ok",
+	}
+	return c.JSON(200, data)
+}
+
+// User info handler
+func userInfo(c *mizu.Ctx) error {
+	user := struct {
+		Name  string `json:"name"`
+		Email string `json:"email"`
+	}{
+		Name:  "Alice",
+		Email: "alice@example.com",
+	}
+	return c.JSON(200, user)
+}
+
+func main() {
+	app := mizu.New()
+
+	app.Get("/", welcome)
+	app.Get("/time", currentTime)
+	app.Get("/user", userInfo)
+
+	// Start the web server on port 8080
+	if err := app.Listen(":8080"); err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+### Run the lesson
+
+Run the server:
+
+```
+go run .
+```
+
+Then open these links in your browser or run them with `curl`:
+
+* [http://localhost:8080/](http://localhost:8080/)
+  Returns:
+  `{"message":"Welcome to Mizu JSON API"}`
+
+* [http://localhost:8080/time](http://localhost:8080/time)
+  Returns the current server time and a status field.
+
+* [http://localhost:8080/user](http://localhost:8080/user)
+  Returns:
+  `{"name":"Alice","email":"alice@example.com"}`
+
+### How it works
+
+The method `c.JSON(statusCode, data)` converts any Go value into JSON, sets the `Content-Type: application/json` header automatically, and writes the response to the client.
+
+You can use maps, slices, or structs. Mizu uses Go’s built-in JSON encoder, so you can add struct tags to control field names. If the encoding fails for any reason, Mizu will return an error response automatically.
+
+This is ideal for APIs that return structured data to front-end clients or other services. You don’t need to handle JSON encoding manually.
+
+### Try something new
+
+Add another route that returns a list of items:
+
+```go
+func listPosts(c *mizu.Ctx) error {
+	posts := []map[string]any{
+		{"id": 1, "title": "First Post"},
+		{"id": 2, "title": "Learning Mizu"},
+	}
+	return c.JSON(200, posts)
+}
+```
+
+Then register it in `main()`:
+
+```go
+app.Get("/posts", listPosts)
+```
+
+Visit [http://localhost:8080/posts](http://localhost:8080/posts) and you’ll get a small JSON array.
+
+Now you can send JSON data from any route with just one line of code.
+
+Continue to the next lesson: [Context and Lifecycle](./005-context-lifecycle) to understand how Mizu handles requests, deadlines, and cleanup.

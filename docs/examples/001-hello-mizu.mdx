@@ -1,0 +1,84 @@
+---
+title: "Hello, Mizu"
+---
+
+**001. Hello, Mizu**
+
+Welcome to your very first Mizu lesson. In this lesson, you will create a simple web server that prints "Hello, Mizu" in your browser. It only takes a few lines of Go code and helps you understand how Mizu works from the very beginning.
+
+Mizu is built directly on top of Go's standard library. That means if you have seen `net/http` before, this will feel natural. The goal here is just to get something running and see how Mizu handles requests and responses.
+
+### Code
+
+Let's look at the full program. You can copy this code into a file named `main.go`:
+
+```go
+package main
+
+import (
+	"log"
+	"github.com/go-mizu/mizu"
+)
+
+func main() {
+	// Create a new Mizu app
+	app := mizu.New()
+
+	// Define a simple route that responds to GET /
+	app.Get("/", func(c *mizu.Ctx) error {
+		// Send a plain text message back to the browser
+		return c.Text(200, "Hello, Mizu")
+	})
+
+	// Start the web server on port 8080
+	if err := app.Listen(":8080"); err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+This short program does everything you need for a basic web server. It sets up an app, defines a route, sends a text response, and starts listening for connections.
+
+Each part is simple to read. You can think of it like this:
+
+- `mizu.New()` creates your app.
+- `app.Get()` registers what should happen when someone visits a specific URL.
+- Inside the function, `c.Text(200, "Hello, Mizu")` sends a response.
+- `app.Listen(":8080")` runs the server and waits for requests.
+
+### Run the lesson
+
+From the terminal, run the command:
+
+```
+go run .
+```
+
+You will see something like "Listening on :8080" in your terminal.
+Then open your browser and visit [http://localhost:8080](http://localhost:8080).
+
+If everything is set up correctly, you will see the words **Hello, Mizu** on the screen.
+
+### What is happening
+
+When Mizu receives a request, it looks for a matching route. In this lesson, that route is `/`. When it finds a match, it runs the handler function you provided. Inside that function, you use the context `c` to send a response.
+
+The code `c.Text(200, "Hello, Mizu")` means: send a text response with the HTTP status code 200 and the message "Hello, Mizu". It is clear, readable, and very close to how the standard library works.
+
+### Try something new
+
+You can change the message inside `c.Text()` to something else, such as "Hello, Go!" or "Welcome to Mizu".
+
+You can also create another route. For example:
+
+```go
+app.Get("/about", func(c *mizu.Ctx) error {
+	return c.Text(200, "This is the about page.")
+})
+```
+
+Now when you visit [http://localhost:8080/about](http://localhost:8080/about), you will see the new message.
+
+This small lesson shows how easy it is to get started with Mizu. You have built your first web server, handled a request, and sent a response all in a few clear lines of Go.
+
+Continue to the next lesson: [Static Files](./002-static-files) to learn how to serve HTML, CSS, and images.
