@@ -1,16 +1,16 @@
 ---
-title: "Static Files"
+title: Static Files
+description: Learn how to serve static HTML, CSS, and JS files.
+mode: wide
 ---
 
-**002. Static Files**
+In this lesson, you will learn how to serve HTML, CSS, JavaScript, and image files using Mizu. Static files make your web pages come alive with layout, color, and style. Mizu makes this simple with the `Static` method, which connects a URL path to a folder of files that your browser can load directly.
 
-In this lesson, you will learn how to serve HTML, CSS, and image files using Mizu. Static files bring life to your web pages by adding layout, typography, and structure. Mizu makes this simple with the `Static` method, which maps a URL path to a folder of files that your browser can load directly.
-
-Serving static files is one of the most common steps when building a web app. It allows you to show pages, styles, and scripts without writing separate routes for each one.
+Serving static files is a common part of web development. It lets you show pages and assets without writing routes for each file.
 
 ### Code
 
-Copy this program into a file named `main.go`:
+Create a file named `main.go`:
 
 ```go
 package main
@@ -18,23 +18,23 @@ package main
 import (
 	"log"
 	"net/http"
+
 	"github.com/go-mizu/mizu"
 )
 
 func main() {
 	app := mizu.New()
 
-	// Serve files under / from the local "public" directory
-	app.Router.Static("/", http.Dir("./public"))
+	// Serve files from the local "public" directory
+	app.Static("/", http.Dir("./public"))
 
-	// Start the web server on port 8080
 	if err := app.Listen(":8080"); err != nil {
 		log.Fatal(err)
 	}
 }
 ```
 
-Now create a folder named `public` in the same directory as your code, and add an `index.html` file:
+Now create a folder named `public` in the same directory and add a file `index.html`:
 
 ```html
 <!DOCTYPE html>
@@ -71,33 +71,37 @@ Now create a folder named `public` in the same directory as your code, and add a
 </html>
 ```
 
-### Run the lesson
+### Run
 
-From your terminal, run:
+In your terminal, run:
 
 ```
 go run .
 ```
 
-Then open your browser and visit [http://localhost:8080](http://localhost:8080).
-You should see your clean and centered HTML page that says "Hello, Mizu!" on the screen.
+Then open your browser and go to [http://localhost:8080](http://localhost:8080).
+You should see your HTML page with **Hello, Mizu!** centered on the screen.
 
 ### How it works
 
-Under the hood, the `Static` method uses Go’s standard `http.FileServer` to serve files from a file system.
-
-This function registers a file handler for the provided prefix. When you visit `/`, Mizu looks inside the folder you passed (`./public`) and serves any matching file automatically. Files like `/index.html`, `/style.css`, and `/script.js` are all served without you needing to create extra routes.
+The `Static` method uses Go's built-in `http.FileServer` to serve files from a folder.
+When you visit `/`, Mizu looks inside the `./public` folder and finds the file that matches the requested path. Files like `/index.html`, `/style.css`, and `/script.js` are served automatically without defining routes.
 
 ### Try something new
 
-You can expand your page easily. Add a `script.js` file inside your `public` folder and link it to your HTML:
+Add a new file called `script.js` inside your `public` folder:
 
 ```js
 console.log("Hello from Mizu static files");
 ```
 
-Then reload your browser and open the console to see the message.
+Link it to your HTML file:
 
-You now know how to serve HTML pages, CSS, JavaScript, and images directly from your Go app using Mizu.
+```html
+<script src="/script.js"></script>
+```
 
-Continue to the next lesson: [Routing Basics](./003-routing-basics) to learn how to create multiple pages and routes for your app.
+Reload your browser and open the console to see the message.
+
+You now know how to serve HTML, CSS, JavaScript, and images directly from your Go app using Mizu.
+Next, move on to [Routing Basics](./003-routing-basics) to learn how to create multiple pages and routes.

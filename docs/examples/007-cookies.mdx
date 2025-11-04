@@ -1,12 +1,15 @@
 ---
-title: "Cookies"
+title: Cookies
+description: Learn how to manage cookies data.
+mode: wide
 ---
 
-In this lesson, you will learn how to use cookies in Mizu to store and read small pieces of data between requests. Cookies are one of the simplest ways to remember users, track sessions, or store preferences like language or theme. Mizu makes cookie handling straightforward through `Ctx.Cookie()` and `Ctx.SetCookie()`.
+In this lesson, you will learn how to use cookies in Mizu to store and read small pieces of data between requests.<br/>
+Cookies are a simple way to remember users, track sessions, or save preferences like language or theme. Mizu provides two helpers, `Ctx.Cookie()` and `Ctx.SetCookie()`, that make cookie handling easy.
 
 ### Code
 
-Copy this program into a file named `main.go`:
+Create a file named `main.go` and add this code:
 
 ```go
 package main
@@ -34,16 +37,16 @@ func setCookie(c *mizu.Ctx) error {
 		Expires:  time.Now().Add(24 * time.Hour),
 	})
 
-	return c.Text(200, "Cookie set for "+name)
+	return c.Text(http.StatusOK, "Cookie set for "+name)
 }
 
 // Read a cookie named "username"
 func getCookie(c *mizu.Ctx) error {
 	cookie, err := c.Cookie("username")
 	if err != nil {
-		return c.Text(404, "No cookie found")
+		return c.Text(http.StatusNotFound, "No cookie found")
 	}
-	return c.Text(200, "Welcome back, "+cookie.Value)
+	return c.Text(http.StatusOK, "Welcome back, "+cookie.Value)
 }
 
 // Delete the cookie by setting expiration to the past
@@ -55,7 +58,7 @@ func clearCookie(c *mizu.Ctx) error {
 		Expires: time.Unix(0, 0),
 		MaxAge:  -1,
 	})
-	return c.Text(200, "Cookie cleared")
+	return c.Text(http.StatusOK, "Cookie cleared")
 }
 
 func main() {
@@ -71,30 +74,33 @@ func main() {
 }
 ```
 
-### Run the lesson
+### Run
 
 Start the server:
 
-```bash
+```
 go run .
 ```
 
-Then try these examples:
+Then try the following examples:
 
 #### Set a cookie
 
 Visit [http://localhost:8080/set?name=Alice](http://localhost:8080/set?name=Alice)
-You’ll see `Cookie set for Alice`, and your browser now has a cookie named `username`.
+Response: `Cookie set for Alice`
+Your browser now stores a cookie named `username`.
 
 #### Get the cookie
 
 Visit [http://localhost:8080/get](http://localhost:8080/get)
-You’ll see `Welcome back, Alice`. The value is read from the cookie you just set.
+Response: `Welcome back, Alice`
+The value comes from the cookie you set earlier.
 
 #### Clear the cookie
 
 Visit [http://localhost:8080/clear](http://localhost:8080/clear)
-You’ll see `Cookie cleared`, and the browser cookie is deleted.
+Response: `Cookie cleared`
+The browser cookie is now deleted.
 
 ### How it works
 
@@ -103,15 +109,15 @@ You’ll see `Cookie cleared`, and the browser cookie is deleted.
 | `c.SetCookie(ck *http.Cookie)` | Sends a cookie to the client      | Sets name, value, expiry, and options like `HttpOnly` or `Secure`. |
 | `c.Cookie("name")`             | Reads a cookie sent by the client | Returns a `*http.Cookie` and an error if not found.                |
 
-- **Setting a cookie** adds a `Set-Cookie` header to the HTTP response.
-- **Reading a cookie** checks the request headers for a matching cookie name.
-- **Deleting a cookie** works by sending a new cookie with an empty value and an expiration date in the past.
+* Setting a cookie adds a `Set-Cookie` header to the HTTP response.
+* Reading a cookie checks the request headers for the matching cookie name.
+* Deleting a cookie works by sending a new cookie with an empty value and an expiration date in the past.
 
-This pattern gives you complete control over session-like behavior without needing an external dependency or database.
+This approach lets you manage sessions or preferences without needing a database or external storage.
 
 ### Try something new
 
-Add another handler that counts how many times a user has visited your site:
+Add a handler that counts how many times a user has visited your site:
 
 ```go
 func visitCount(c *mizu.Ctx) error {
@@ -129,13 +135,12 @@ func visitCount(c *mizu.Ctx) error {
 		Expires: time.Now().Add(24 * time.Hour),
 	})
 
-	return c.Text(200, fmt.Sprintf("You’ve visited %d times", count))
+	return c.Text(http.StatusOK, fmt.Sprintf("You have visited %d times", count))
 }
 ```
 
-Register it with `app.Get("/visits", visitCount)` and reload the page several times.
-You’ll see the count increase with every visit.
+Register it with `app.Get("/visits", visitCount)` and refresh the page several times.
+The count will increase with each visit.
 
-Cookies are the foundation for sessions, login tracking, and personalization.
-
-Continue to the next lesson: [Middleware Basics](./008-middleware-basics) to learn how to wrap your handlers with reusable logic such as logging, timing, and authentication checks.
+Cookies form the basis for session handling, login tracking, and simple user personalization.
+Next, continue to [Middleware Basics](./008-middleware-basics) to learn how to wrap your handlers with reusable logic like logging, timing, and authentication.
