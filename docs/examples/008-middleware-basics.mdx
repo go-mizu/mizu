@@ -1,22 +1,23 @@
 ---
-title: "Middleware Basics"
+title: Middleware Basics
+description: Learn how to create and use middleware functions.
+mode: wide
 ---
 
+In this lesson, you will learn what middleware is and how to use it in Mizu. Middleware is a function that runs before or after your main handler. It can log requests, check authentication, handle errors, or modify responses, all without changing your route logic.
 
-In this lesson, you will learn what middleware is and how to use it in Mizu. Middleware is a function that runs before or after your main handler. It can log requests, check authentication, handle errors, or modify responses — all without touching your core route logic.
-
-Mizu middleware is fully compatible with Go’s `net/http` design, so you can use standard handlers or write your own in a clean, composable way.
-
+Mizu middleware follows Go’s `net/http` design, so you can use standard handlers or write your own in a simple, composable way.
 
 ### Code
 
-Copy this program into a file named `main.go`:
+Create a file named `main.go` and add this code:
 
 ```go
 package main
 
 import (
 	"log"
+	"net/http"
 	"time"
 
 	"github.com/go-mizu/mizu"
@@ -42,7 +43,7 @@ func auth(next mizu.Handler) mizu.Handler {
 	return func(c *mizu.Ctx) error {
 		token := c.Query("token")
 		if token != "secret" {
-			return c.Text(401, "Unauthorized")
+			return c.Text(http.StatusUnauthorized, "Unauthorized")
 		}
 		return next(c)
 	}
@@ -50,12 +51,12 @@ func auth(next mizu.Handler) mizu.Handler {
 
 // Protected route
 func dashboard(c *mizu.Ctx) error {
-	return c.Text(200, "Welcome to your dashboard")
+	return c.Text(http.StatusOK, "Welcome to your dashboard")
 }
 
 // Public route
 func home(c *mizu.Ctx) error {
-	return c.Text(200, "Home page - no auth required")
+	return c.Text(http.StatusOK, "Home page - no auth required")
 }
 
 func main() {
@@ -67,7 +68,7 @@ func main() {
 	// Public route
 	app.Get("/", home)
 
-	// Protected route with per-route middleware
+	// Protected route with route-specific middleware
 	app.With(auth).Get("/dashboard", dashboard)
 
 	if err := app.Listen(":8080"); err != nil {
@@ -76,67 +77,47 @@ func main() {
 }
 ```
 
-### Run the lesson
+### Run
 
 Start your server:
 
-```bash
+```
 go run .
 ```
 
-Then open your browser and visit these routes:
+Then open your browser and try these routes:
 
-#### Public route
+* [http://localhost:8080/](http://localhost:8080/)
+Response:
+`Home page - no auth required`
+The logger middleware runs for this route and prints something like:
+`INFO request completed method=GET path=/ status=200 duration=1.2ms`
 
-Go to [http://localhost:8080/](http://localhost:8080/)
-You’ll see:
+* [http://localhost:8080/dashboard](http://localhost:8080/dashboard)
+Response:
+`Unauthorized`
 
-```
-Home page - no auth required
-```
-
-The logger middleware still runs and prints something like:
-
-```
-INFO request completed method=GET path=/ status=200 duration=1.2ms
-```
-
-#### Protected route
-
-Now visit [http://localhost:8080/dashboard](http://localhost:8080/dashboard)
-You’ll see:
-
-```
-Unauthorized
-```
-
-Add a `?token=secret` query to simulate an authenticated request:
+* Add a token to simulate an authenticated request:
 [http://localhost:8080/dashboard?token=secret](http://localhost:8080/dashboard?token=secret)
-
-Now it returns:
-
-```
-Welcome to your dashboard
-```
+Response:
+`Welcome to your dashboard`
 
 ### How it works
 
 Middleware in Mizu is a function that takes a `mizu.Handler` and returns another `mizu.Handler`.
 Each middleware can decide whether to continue to the next handler or stop early.
 
-| Concept                       | Description                                                  | Example                                       |
-| ----------------------------- | ------------------------------------------------------------ | --------------------------------------------- |
-| **Global middleware**         | Runs for every route, usually for logging or recovery.       | `app.Use(logger)`                             |
-| **Route-specific middleware** | Runs only for selected routes.                               | `app.With(auth).Get("/dashboard", dashboard)` |
-| **Middleware chain**          | Middlewares wrap one another like layers around the handler. | Logging → Auth → Handler                      |
+| Type of Middleware        | Description                                       | Example                                       |
+| ------------------------- | ------------------------------------------------- | --------------------------------------------- |
+| Global middleware         | Runs for every route, used for logging or errors. | `app.Use(logger)`                             |
+| Route-specific middleware | Runs only on certain routes.                      | `app.With(auth).Get("/dashboard", dashboard)` |
+| Middleware chain          | Wraps multiple layers around your handler.        | Logging → Auth → Handler                      |
 
-Every middleware gets the same `*mizu.Ctx` object, so it can read or modify the request and response. The `next(c)` call executes the next handler in the chain.
-
----
+Every middleware gets the same `*mizu.Ctx` object and can read or modify the request and response. The `next(c)` call runs the next function in the chain.
 
 ### Try something new
 
-Add a timing middleware that measures how long each request takes:
+Add a timing middleware to measure how long each request takes:
 
 ```go
 func timing(next mizu.Handler) mizu.Handler {
@@ -144,20 +125,20 @@ func timing(next mizu.Handler) mizu.Handler {
 		start := time.Now()
 		err := next(c)
 		elapsed := time.Since(start)
-		return c.Text(200, "Took "+elapsed.String())
+		return c.Text(http.StatusOK, "Took "+elapsed.String())
 	}
 }
 ```
 
-Then apply it only to a specific route:
+Apply it to a specific route:
 
 ```go
 app.With(timing).Get("/slow", func(c *mizu.Ctx) error {
 	time.Sleep(2 * time.Second)
-	return c.Text(200, "Finished slow task")
+	return c.Text(http.StatusOK, "Finished slow task")
 })
 ```
 
-Middleware gives you the power to keep your core handlers clean while layering shared logic like authentication, logging, metrics, and caching.
+Middleware helps you keep your handlers clean while layering shared logic such as authentication, logging, metrics, and caching.
 
-Continue to the next lesson: [Error Handling and Recover](./009-error-handling-recover) to learn how to manage panics and return friendly error messages.
+Next, continue to [Error Handling and Recover](./009-error-handling-recover) to learn how to handle panics and send friendly error messages.

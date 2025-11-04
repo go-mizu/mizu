@@ -1,22 +1,26 @@
 ---
-title: "JSON Responses"
+title: JSON Responses
+description: Learn how to send JSON data from your routes.
+mode: wide
 ---
 
 
-In this lesson, you will learn how to send JSON responses using Mizu. JSON is the standard way web apps exchange data, especially in APIs. Mizu makes this easy with a simple helper method that turns your Go values into JSON automatically.
+In this lesson, you will learn how to send JSON responses using Mizu. JSON is a common format for web apps and APIs to exchange data. Mizu provides a helper method that automatically converts your Go values to JSON and sets the correct headers.
 
-This lesson will show you how to send structured data from your handlers and how Mizu takes care of setting the correct headers for you.
+You will see how to return structured data from handlers in a clean and simple way.
 
 ### Code
 
-Copy this program into a file named `main.go`:
+Create a file named `main.go` and add this code:
 
 ```go
 package main
 
 import (
 	"log"
+	"net/http"
 	"time"
+
 	"github.com/go-mizu/mizu"
 )
 
@@ -25,7 +29,7 @@ func welcome(c *mizu.Ctx) error {
 	data := map[string]string{
 		"message": "Welcome to Mizu JSON API",
 	}
-	return c.JSON(200, data)
+	return c.JSON(http.StatusOK, data)
 }
 
 // Current time handler
@@ -34,7 +38,7 @@ func currentTime(c *mizu.Ctx) error {
 		"time":   time.Now().Format(time.RFC3339),
 		"status": "ok",
 	}
-	return c.JSON(200, data)
+	return c.JSON(http.StatusOK, data)
 }
 
 // User info handler
@@ -46,7 +50,7 @@ func userInfo(c *mizu.Ctx) error {
 		Name:  "Alice",
 		Email: "alice@example.com",
 	}
-	return c.JSON(200, user)
+	return c.JSON(http.StatusOK, user)
 }
 
 func main() {
@@ -56,14 +60,13 @@ func main() {
 	app.Get("/time", currentTime)
 	app.Get("/user", userInfo)
 
-	// Start the web server on port 8080
 	if err := app.Listen(":8080"); err != nil {
 		log.Fatal(err)
 	}
 }
 ```
 
-### Run the lesson
+### Run
 
 Run the server:
 
@@ -71,30 +74,27 @@ Run the server:
 go run .
 ```
 
-Then open these links in your browser or run them with `curl`:
+Then open these links in your browser or use `curl`:
 
 * [http://localhost:8080/](http://localhost:8080/)
-  Returns:
-  `{"message":"Welcome to Mizu JSON API"}`
+Returns: `{"message":"Welcome to Mizu JSON API"}`
 
 * [http://localhost:8080/time](http://localhost:8080/time)
-  Returns the current server time and a status field.
+Returns the current server time and a status field.
 
 * [http://localhost:8080/user](http://localhost:8080/user)
-  Returns:
-  `{"name":"Alice","email":"alice@example.com"}`
+Returns: `{"name":"Alice","email":"alice@example.com"}`
 
 ### How it works
 
-The method `c.JSON(statusCode, data)` converts any Go value into JSON, sets the `Content-Type: application/json` header automatically, and writes the response to the client.
+The `c.JSON(statusCode, data)` method converts any Go value to JSON, sets the `Content-Type: application/json` header, and sends the response.
+You can return maps, slices, or structs. Mizu uses Go's built-in JSON encoder, and you can use struct tags to define custom field names.
 
-You can use maps, slices, or structs. Mizu uses Go’s built-in JSON encoder, so you can add struct tags to control field names. If the encoding fails for any reason, Mizu will return an error response automatically.
-
-This is ideal for APIs that return structured data to front-end clients or other services. You don’t need to handle JSON encoding manually.
+If encoding fails, Mizu sends an error response automatically. This makes it easy to build APIs that return structured data without handling JSON manually.
 
 ### Try something new
 
-Add another route that returns a list of items:
+Add another route that returns a list of posts:
 
 ```go
 func listPosts(c *mizu.Ctx) error {
@@ -102,7 +102,7 @@ func listPosts(c *mizu.Ctx) error {
 		{"id": 1, "title": "First Post"},
 		{"id": 2, "title": "Learning Mizu"},
 	}
-	return c.JSON(200, posts)
+	return c.JSON(http.StatusOK, posts)
 }
 ```
 
@@ -112,8 +112,7 @@ Then register it in `main()`:
 app.Get("/posts", listPosts)
 ```
 
-Visit [http://localhost:8080/posts](http://localhost:8080/posts) and you’ll get a small JSON array.
+Visit [http://localhost:8080/posts](http://localhost:8080/posts) to see the JSON array.
 
-Now you can send JSON data from any route with just one line of code.
-
-Continue to the next lesson: [Context and Lifecycle](./005-context-lifecycle) to understand how Mizu handles requests, deadlines, and cleanup.
+Now you can send structured JSON data from any route with just one line of code.
+Next, continue to [Context and Lifecycle](./005-context-lifecycle) to learn how Mizu manages requests, deadlines, and cleanup.

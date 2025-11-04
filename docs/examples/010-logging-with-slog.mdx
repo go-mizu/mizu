@@ -1,17 +1,22 @@
 ---
-title: "Logging with slog"
+title: Logging with slog
+description: Learn how to add structured logging with slog.
+mode: wide
 ---
 
-In this lesson, you will learn how to add structured logging to your Mizu applications using Go’s built-in `log/slog` package. Structured logs make it easier to debug, trace requests, and monitor your app in production. Mizu integrates smoothly with `slog`, allowing you to attach context information such as request paths, methods, and latency.
+# Logging with slog
+
+In this lesson, you will learn how to add structured logging to your Mizu applications using Go’s built-in `log/slog` package. Logs help you see what your app is doing, measure how long things take, and understand when something goes wrong. Mizu already includes a built-in request logger, so every request is automatically logged in a human-readable format by default. You can customize the log output, format, and level using your own `slog` setup.
 
 ### Code
 
-Copy this program into a file named `main.go`:
+Create a file named `main.go` and add this code:
 
 ```go
 package main
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -19,49 +24,63 @@ import (
 	"github.com/go-mizu/mizu"
 )
 
-// Custom middleware to log each request
-func requestLogger(next mizu.Handler) mizu.Handler {
-	return func(c *mizu.Ctx) error {
-		start := time.Now()
-		err := next(c)
-		duration := time.Since(start)
-
-		c.Logger().Info("request completed",
-			"method", c.Request().Method,
-			"path", c.Request().URL.Path,
-			"status", c.StatusCode(),
-			"duration", duration.String(),
-			"client_ip", c.ClientIP(),
-		)
-
-		return err
-	}
-}
-
-// Example routes
+// Example route that adds custom log entries
 func home(c *mizu.Ctx) error {
+	c.Logger().Info("user visited home",
+		"method", c.Request().Method,
+		"path", c.Request().URL.Path,
+		"client_ip", c.ClientIP(),
+	)
 	return c.Text(200, "Home page")
 }
 
+// Simulate a slow route
 func slow(c *mizu.Ctx) error {
+	start := time.Now()
 	time.Sleep(2 * time.Second)
-	return c.Text(200, "This was slow")
+	elapsed := time.Since(start)
+
+	c.Logger().Info("slow request finished",
+		"path", c.Request().URL.Path,
+		"duration", elapsed.String(),
+	)
+	return c.Text(200, "Finished slow operation")
+}
+
+// Simulate an error and log the details
+func fail(c *mizu.Ctx) error {
+	err := doSomething()
+	if err != nil {
+		c.Logger().Error("operation failed",
+			"error", err,
+			"user_agent", c.Request().UserAgent(),
+			"client_ip", c.ClientIP(),
+		)
+		return c.Text(500, "Something went wrong")
+	}
+	return c.Text(200, "Success")
+}
+
+func doSomething() error {
+	return fmt.Errorf("database connection lost")
 }
 
 func main() {
-	// Configure slog for console output
-	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
+	// Mizu logs in plain text by default.
+	// You can still attach your own structured logger if you want.
+	handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
 	logger := slog.New(handler)
 
 	app := mizu.New(
 		mizu.WithLogger(logger),
 	)
 
-	// Apply logging middleware
-	app.Use(requestLogger)
+	// Mizu automatically logs every request,
+	// so you do not need to add another logging middleware.
 
 	app.Get("/", home)
 	app.Get("/slow", slow)
+	app.Get("/fail", fail)
 
 	if err := app.Listen(":8080"); err != nil {
 		logger.Error("server failed", "error", err)
@@ -69,72 +88,91 @@ func main() {
 }
 ```
 
-### Run the lesson
+### Run
 
 Start the server:
 
-```bash
+```
 go run .
 ```
 
-Then open:
+Then open these routes in your browser:
 
-* [http://localhost:8080/](http://localhost:8080/)
-  You’ll see the response:
-  `Home page`
+* [http://localhost:8080/](http://localhost:8080/) <br/>
+You will see:
+`Home page`
+And in your terminal:
 
-* [http://localhost:8080/slow](http://localhost:8080/slow)
-  Wait a few seconds, and you’ll see:
-  `This was slow`
+```
+INFO request completed method=GET path=/ status=200 duration=1.3ms
+INFO user visited home method=GET path=/ client_ip=127.0.0.1
+  ```
 
-Your terminal will show structured JSON logs such as:
+* [http://localhost:8080/slow](http://localhost:8080/slow) <br/>
+Wait a few seconds, then you will see:
+`Finished slow operation`
+And in your terminal:
+
+```
+INFO request completed method=GET path=/slow status=200 duration=2.001s
+INFO slow request finished path=/slow duration=2.001s
+  ```
+
+* [http://localhost:8080/fail](http://localhost:8080/fail) <br/>
+You will see:
+`Something went wrong`
+And in your terminal:
+
+```
+ERROR operation failed error=database connection lost user_agent=curl/8.1.0 client_ip=127.0.0.1
+  ```
+
+By default, Mizu logs all requests using a readable text format. If you run your app in a terminal, it will even use color output if your environment supports it.
+
+### How it works
+
+Mizu automatically adds a request logger middleware when your app starts. It logs details such as:
+
+* HTTP method
+* Path
+* Status code
+* Duration
+* Any errors returned by handlers
+
+When you pass a custom `slog.Logger` using `mizu.WithLogger`, all logs from Mizu and your handlers use that logger instance.
+
+| Feature           | What it does                         | Example                                                  |
+| ----------------- | ------------------------------------ | -------------------------------------------------------- |
+| Built-in logs     | Logs every request automatically     | `INFO request completed method=GET path=/`               |
+| `mizu.WithLogger` | Use your own `slog` configuration    | `app := mizu.New(mizu.WithLogger(logger))`               |
+| `c.Logger()`      | Log custom messages inside a handler | `c.Logger().Info("event", "path", c.Request().URL.Path)` |
+| `c.ClientIP()`    | Get the visitor’s IP for logs        | Useful for tracking and debugging                        |
+
+### Try something new
+
+You can switch to JSON output for production environments:
+
+```go
+handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
+logger := slog.New(handler)
+```
+
+That will print structured logs like this:
 
 ```json
 {
-  "time": "2025-11-03T17:10:00Z",
+  "time": "2025-11-04T10:30:00Z",
   "level": "INFO",
   "msg": "request completed",
   "method": "GET",
   "path": "/slow",
   "status": 200,
-  "duration": "2.001s",
-  "client_ip": "127.0.0.1"
+  "duration": "2.001s"
 }
 ```
 
-### How it works
+You can also set `LevelDebug` to get more detailed logs during development.
 
-| Component    | Purpose                                                   | Example                                                    |
-| ------------ | --------------------------------------------------------- | ---------------------------------------------------------- |
-| `slog.New()` | Creates a structured logger                               | `slog.New(slog.NewJSONHandler(os.Stdout, nil))`            |
-| `app.Use()`  | Adds a middleware that logs before and after each request | `app.Use(requestLogger)`                                   |
-| `c.Logger()` | Returns the logger scoped to this request                 | `c.Logger().Info("message", "path", c.Request().URL.Path)` |
+Logging gives you a clear picture of what your app is doing, helps you understand user behavior, and makes it easy to spot and fix problems.
 
-Mizu attaches your logger to every request context, so all logs within a handler automatically include consistent information. You can add your own fields to describe what’s happening, like timing, parameters, or user identifiers.
-
-### Try something new
-
-You can change the log output style easily:
-
-```go
-handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})
-logger := slog.New(handler)
-```
-
-This prints cleaner, human-readable logs:
-
-```
-INFO 2025/11/03 17:15:00 request completed method=GET path=/slow status=200 duration=2.002s
-```
-
-You can also adjust the log level:
-
-```go
-handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})
-```
-
-This helps you capture detailed debug logs during development and fewer logs in production.
-
-Logging gives you visibility into your app’s behavior. Every request, error, and timing detail becomes traceable and easy to understand.
-
-Continue to the next lesson: [Request IDs and Correlation](./011-request-ids-correlation) to learn how to add unique IDs to every request for easier debugging and tracing across services.
+Continue to the next lesson: [Request IDs and Correlation](./011-request-ids-correlation) to learn how to attach unique IDs to each request for tracing across logs and services.

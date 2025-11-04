@@ -1,0 +1,101 @@
+---
+title: "Overview"
+---
+
+Learning by examples is the best way to learn how to use **Mizu**.<br/>
+*Mizu by Examples* is a practical, hands-on collection of runnable Go projects that guide you through building modern web applications step by step.
+
+All examples are open source and available at [github.com/go-mizu/examples](https://github.com/go-mizu/examples).
+You can clone the repository and start exploring right away:
+
+```
+git clone https://github.com/go-mizu/examples
+cd examples
+```
+
+Each folder contains a small, focused Go program that demonstrates one clear idea: from serving pages to handling APIs, middleware, and real-time features.
+Run any example instantly with a single command:
+
+```
+go run ./examples/001-hello-mizu
+```
+
+## How it is organized
+
+The collection is divided into ten chapters, each focusing on a specific part of building Go web applications. Every chapter introduces new concepts while keeping the examples short and approachable.
+
+#### Getting Started ✓
+
+Learn the basics of creating servers, defining routes, and sending responses. You will build your first working web app in just a few lines of Go code.
+
+- [Hello, Mizu](./001-hello-mizu)
+- [Static Files](./002-static-files)
+- [Routing Basics](./003-routing-basics)
+- [JSON Responses](./004-json-responses)
+- [Context and Lifecycle](./005-context-lifecycle)
+- [Query, Form, and Path Parameters](./006-query-form-path)
+- [Cookies and Sessions](./007-cookies-sessions)
+- [Middleware Basics](./008-middleware-basics)
+- [Error Handling and Recover](./009-error-handling-recover)
+- [Logging with slog](./010-logging-with-slog)
+
+#### HTTP Essentials ⏳
+
+Understand how HTTP really works. Explore timeouts, request IDs, streaming responses, file uploads, and graceful shutdowns.
+
+- [Request IDs and Correlation](./011-request-ids-correlation)
+- [Timeout and Context Deadline](./012-timeout-context-deadline)
+- [Method Override](./013-method-override)
+- [Body Limit](./014-body-limit)
+- [File Uploads](./015-file-uploads)
+- [Streaming and Chunked Responses](./016-streaming-chunked-responses)
+- [Custom Middleware](./017-custom-middleware)
+- [Route Groups and Sub-Routers](./018-route-groups-sub-routers)
+- [Graceful Shutdown](./019-graceful-shutdown)
+- [Testing Mizu Apps](./020-testing-mizu-apps)
+
+#### Security and Access 🔜
+
+Add safety to your apps with CORS, CSRF protection, authentication, rate limiting, and secure headers.
+
+#### Real-Time and WebSockets
+
+Add live updates and push events with Server-Sent Events and WebSockets. Build interactive apps like chat systems and activity feeds.
+
+#### Rendering and Views
+
+Work with HTML templates, layouts, and static files to serve user interfaces that mix static and dynamic content.
+
+
+#### Data and Persistence
+
+Connect your app to databases such as SQLite or DuckLake. Learn how to query, manage transactions, and organize data access in a clear and idiomatic way.
+
+#### Caching and Performance
+
+Improve response times with in-memory caching, compression, and background jobs. Learn how to measure, profile, and optimize performance.
+
+
+#### CLI and Tooling
+
+Create command-line tools and configuration systems. Automate your development workflow and streamline how your app runs and deploys.
+
+#### Full Applications
+
+Combine everything into complete projects such as blogs, dashboards, and chat servers that demonstrate full-stack patterns.
+
+#### Data Lakes and AI Agents
+
+Explore advanced examples that merge data processing with intelligence. Use DuckLake for data storage and build AI-assisted workflows that query and respond to information dynamically.
+
+### What you will learn
+
+By completing this series, you will learn how to:
+
+- Build web applications using Go and Mizu
+- Write clear and composable handlers and middleware
+- Connect to databases and add caching for performance
+- Secure your applications and handle errors properly
+- Add real-time features and experiment with intelligent data-driven components
+
+Begin with [Hello, Mizu](./001-hello-mizu) and learn step by step at your own pace.
