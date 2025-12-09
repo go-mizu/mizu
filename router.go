@@ -9,7 +9,6 @@ import (
 	"runtime/debug"
 	"slices"
 	"strings"
-	"sync"
 )
 
 // Middleware wraps a Handler to add cross-cutting behavior like logging or auth.
@@ -31,16 +30,6 @@ type Router struct {
 	errh  func(*Ctx, error)
 	log   *slog.Logger
 
-	// NotFound handler is composed with middleware and bound once on first serve.
-	notFoundCore     Handler
-	notFoundBindOnce sync.Once
-
-	allow   map[string]map[string]struct{} // path -> set(method)
-	allowMu *sync.RWMutex
-
-	// true if a path-only "/" handler has been registered already
-	rootPathTaken bool
-
 	// Compat exposes a net/http-first facade for interop.
 	Compat *httpRouter
 }
@@ -59,15 +48,10 @@ func NewRouter() *Router {
 	slog.SetDefault(logger)
 
 	r := &Router{
-		mux:     http.NewServeMux(),
-		allow:   make(map[string]map[string]struct{}),
-		allowMu: &sync.RWMutex{},
-		log:     logger,
+		mux: http.NewServeMux(),
+		log: logger,
 	}
 
-	r.notFoundCore = func(c *Ctx) error {
-		return c.Text(http.StatusNotFound, http.StatusText(http.StatusNotFound))
-	}
 	r.Compat = &httpRouter{r: r}
 
 	// Always include request logger middleware so requests are logged by default.
@@ -78,9 +62,43 @@ func NewRouter() *Router {
 	return r
 }
 
+// canonicalPath normalizes a request path so that "/s3" and "/s3/"
+// are treated the same, and dot segments are cleaned.
+// Root "/" is preserved as "/".
+func canonicalPath(p string) string {
+	if p == "" || p == "/" {
+		return "/"
+	}
+	// Ensure leading slash for path.Clean to behave as expected.
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	// path.Clean removes duplicate slashes and trailing slash (except for root).
+	p = path.Clean(p)
+	if p == "/" {
+		return "/"
+	}
+	// Strip trailing slash if any, to unify "/s3" and "/s3/".
+	p = strings.TrimRight(p, "/")
+	if p == "" {
+		return "/"
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return p
+}
+
 // ServeHTTP implements http.Handler and delegates to the internal ServeMux.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	r.ensureNotFoundBound()
+	if req.URL != nil {
+		cp := canonicalPath(req.URL.Path)
+		if cp != req.URL.Path {
+			clone := req.Clone(req.Context())
+			clone.URL.Path = cp
+			req = clone
+		}
+	}
 	r.mux.ServeHTTP(w, req)
 }
 
@@ -100,15 +118,13 @@ func (r *Router) SetLogger(l *slog.Logger) *Router {
 // ErrorHandler sets a central error handler for returned errors or recovered panics.
 func (r *Router) ErrorHandler(h func(*Ctx, error)) { r.errh = h }
 
-// NotFound sets the handler used when no route matches.
+// NotFound installs a simple fallback handler at "/".
+// No 405 logic, no auto HEAD, just what you register.
 func (r *Router) NotFound(h http.Handler) {
 	if h == nil {
 		return
 	}
-	r.notFoundCore = func(c *Ctx) error {
-		h.ServeHTTP(c.Writer(), c.Request())
-		return nil
-	}
+	r.mux.Handle("/", h)
 }
 
 // Use appends middleware so later items run closer to the handler.
@@ -133,15 +149,11 @@ func (r *Router) Group(prefix string, fn func(g *Router)) {
 // Prefix returns a child router that shares state and adds a URL prefix.
 func (r *Router) Prefix(prefix string) *Router {
 	child := &Router{
-		mux:           r.mux,
-		base:          joinPath(r.base, prefix),
-		chain:         slices.Clone(r.chain),
-		errh:          r.errh,
-		log:           r.log,
-		notFoundCore:  r.notFoundCore,
-		allow:         r.allow,
-		allowMu:       r.allowMu,
-		rootPathTaken: r.rootPathTaken,
+		mux:   r.mux,
+		base:  joinPath(r.base, prefix),
+		chain: slices.Clone(r.chain),
+		errh:  r.errh,
+		log:   r.log,
 	}
 	child.Compat = &httpRouter{r: child}
 	return child
@@ -179,19 +191,39 @@ func (r *Router) Handle(method, p string, h Handler) {
 // Static serves files from a provided http.FileSystem at the given URL prefix.
 // It goes through the middleware chain so logger and other middleware still run.
 func (r *Router) Static(prefix string, fsys http.FileSystem) {
-	if !strings.HasSuffix(prefix, "/") {
-		prefix += "/"
+	if prefix == "" {
+		prefix = "/"
 	}
-	full := r.fullPath(prefix)
+	if !strings.HasPrefix(prefix, "/") {
+		prefix = "/" + prefix
+	}
+
+	// Canonical base path for the static subtree.
+	base := r.fullPath(prefix)
+	subtree := base
+	if !strings.HasSuffix(subtree, "/") {
+		subtree += "/"
+	}
+
 	fs := http.FileServer(fsys)
 
 	handler := func(c *Ctx) error {
-		http.StripPrefix(full, fs).ServeHTTP(c.Writer(), c.Request())
+		// Example:
+		//   request path:  /assets/img/logo.png
+		//   subtree:       /assets/
+		//   StripPrefix -> /img/logo.png
+		http.StripPrefix(subtree, fs).ServeHTTP(c.Writer(), c.Request())
 		return nil
 	}
 
-	// Register as a normal GET route so middleware (logger, recover, etc) apply.
-	r.handle(http.MethodGet, prefix, handler)
+	// Register as a GET subtree handler, with middleware and adapt().
+	composed := r.compose(handler)
+	adapted := r.adapt(composed)
+
+	// Go 1.22 ServeMux treats patterns ending with "/" as subtree matches.
+	// For root, subtree is "/", which is also a subtree.
+	pattern := http.MethodGet + " " + subtree
+	r.mux.Handle(pattern, adapted)
 }
 
 // Mount mounts any http.Handler at a path.
@@ -201,14 +233,9 @@ func (r *Router) handle(method, p string, h Handler) {
 	full := r.fullPath(p)
 	composed := r.compose(h)
 	adapted := r.adapt(composed)
-	pattern := fmt.Sprintf("%s %s", method, full)
+	pattern := fmt.Sprintf("%s %s", strings.ToUpper(method), full)
 
 	r.mux.Handle(pattern, adapted)
-
-	r.allowAdd(full, method)
-	if method == http.MethodGet {
-		r.allowAdd(full, http.MethodHead)
-	}
 }
 
 // compose wraps the handler with middleware from right to left.
@@ -291,71 +318,15 @@ func (r *Router) adaptStdMiddleware(sm func(http.Handler) http.Handler) Middlewa
 	}
 }
 
-// ensureNotFoundBound installs a single fallback at "/" that decides 404 vs 405.
-func (r *Router) ensureNotFoundBound() {
-	r.notFoundBindOnce.Do(func() {
-		// If user already mounted a path-only "/" handler (for example Compat.Handle("/")),
-		// do not register a fallback to avoid ServeMux conflicts.
-		if r.rootPathTaken {
-			return
-		}
-
-		adaptedCore := r.adapt(r.compose(r.notFoundCore))
-
-		fallback := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			path := req.URL.Path
-			if path == "" {
-				path = "/"
-			}
-
-			// Check if there are any methods registered for this exact path.
-			r.allowMu.RLock()
-			set, ok := r.allow[path]
-			r.allowMu.RUnlock()
-
-			if ok {
-				method := req.Method
-				_, hasExact := set[method]
-				_, hasGet := set[http.MethodGet]
-
-				allowed := hasExact || (method == http.MethodHead && hasGet)
-				if !allowed {
-					allow := r.allowHeader(path)
-					if allow == "" {
-						allow = http.MethodOptions
-					}
-					w.Header().Set("Allow", allow)
-					http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-					return
-				}
-			}
-
-			// Otherwise treat as NotFound via the composed NotFound core.
-			adaptedCore.ServeHTTP(w, req)
-		})
-
-		r.mux.Handle("/", fallback)
-		r.rootPathTaken = true
-	})
-}
-
+// fullPath joins base and p without extra trailing-slash magic, then canonicalizes.
 func (r *Router) fullPath(p string) string {
 	if p == "" {
 		p = "/"
 	}
-	// Preserve subtree intent by remembering a trailing slash.
-	wantTrailing := strings.HasSuffix(p, "/") && p != "/"
-
 	if !strings.HasPrefix(p, "/") {
 		p = "/" + p
 	}
-	joined := joinPath(r.base, p)
-
-	// Re-apply trailing slash for subtree patterns so ServeMux matches subpaths.
-	if wantTrailing && joined != "/" && !strings.HasSuffix(joined, "/") {
-		joined += "/"
-	}
-	return joined
+	return canonicalPath(joinPath(r.base, p))
 }
 
 // joinPath joins URL path segments, cleans dot segments, and keeps a single leading slash.
@@ -380,42 +351,6 @@ func cleanLeading(p string) string {
 	return p
 }
 
-func (r *Router) allowAdd(full, method string) {
-	r.allowMu.Lock()
-	if _, ok := r.allow[full]; !ok {
-		r.allow[full] = make(map[string]struct{})
-	}
-	r.allow[full][strings.ToUpper(method)] = struct{}{}
-	r.allowMu.Unlock()
-}
-
-func (r *Router) allowHeader(full string) string {
-	r.allowMu.RLock()
-	set, ok := r.allow[full]
-	r.allowMu.RUnlock()
-
-	if !ok {
-		return http.MethodOptions
-	}
-	list := make([]string, 0, len(set)+1)
-	for m := range set {
-		list = append(list, m)
-	}
-	// Ensure OPTIONS appears so 405 responses are predictable.
-	hasOptions := false
-	for _, m := range list {
-		if m == http.MethodOptions {
-			hasOptions = true
-			break
-		}
-	}
-	if !hasOptions {
-		list = append(list, http.MethodOptions)
-	}
-	slices.Sort(list)
-	return strings.Join(list, ", ")
-}
-
 type httpRouter struct{ r *Router }
 
 // Use appends standard net/http middlewares to the Mizu chain.
@@ -429,9 +364,6 @@ func (h *httpRouter) Use(mw ...func(http.Handler) http.Handler) *httpRouter {
 // Handle registers an http.Handler at a path on the shared ServeMux.
 func (h *httpRouter) Handle(p string, hh http.Handler) *httpRouter {
 	full := h.r.fullPath(p)
-	if full == "/" {
-		h.r.rootPathTaken = true
-	}
 	h.r.mux.Handle(full, hh)
 	return h
 }
@@ -442,11 +374,6 @@ func (h *httpRouter) HandleMethod(method, p string, hh http.Handler) *httpRouter
 	pattern := fmt.Sprintf("%s %s", strings.ToUpper(method), full)
 
 	h.r.mux.Handle(pattern, hh)
-
-	h.r.allowAdd(full, strings.ToUpper(method))
-	if strings.EqualFold(method, http.MethodGet) {
-		h.r.allowAdd(full, http.MethodHead)
-	}
 	return h
 }
 
@@ -460,3 +387,17 @@ func (h *httpRouter) Group(prefix string, fn func(g *httpRouter)) {
 
 // Mount mounts an http.Handler at a path using the compatibility facade.
 func (h *httpRouter) Mount(p string, hh http.Handler) *httpRouter { return h.Handle(p, hh) }
+
+// With returns a child router that shares state but has extra middleware
+// appended to the chain. It is useful for route-specific middleware.
+func (r *Router) With(mw ...Middleware) *Router {
+	child := &Router{
+		mux:   r.mux,
+		base:  r.base,
+		chain: append(slices.Clone(r.chain), mw...),
+		errh:  r.errh,
+		log:   r.log,
+	}
+	child.Compat = &httpRouter{r: child}
+	return child
+}

@@ -22,7 +22,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -53,17 +52,21 @@ func tryGetBody(url string) (int, string, error) {
 	return res.StatusCode, string(b), nil
 }
 
-func TestLoggerOptionAndGetter(t *testing.T) {
-	var buf atomic.Value
-	h := slog.NewTextHandler(os.Stderr, nil)
-	lg := slog.New(h)
-	app := New(WithLogger(lg))
+func TestLoggerGetterAndSetLogger(t *testing.T) {
+	app := New()
 	if app.Logger() == nil {
 		t.Fatal("Logger() returned nil")
 	}
-	// Smoke log to ensure logger path is exercised.
+
+	// Swap in a custom logger via the embedded router.
+	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	app.SetLogger(lg)
+	if app.Logger() != lg {
+		t.Fatal("Logger() did not reflect SetLogger change")
+	}
+
+	// Smoke log to ensure the logger path is exercised.
 	app.Logger().Info("test-log", "k", "v")
-	buf.Store(app.Logger()) // keep a use
 }
 
 func TestServeContext_EarlyServeError(t *testing.T) {
@@ -256,8 +259,6 @@ func TestShutdownTimeout_ClosesAndCancelsBaseContext(t *testing.T) {
 // helper: send SIGINT to self, portable where possible
 func sendInterrupt(t *testing.T) {
 	t.Helper()
-	// On Windows, os.Interrupt is delivered via GenerateConsoleCtrlEvent which Go emulates.
-	// For Unix, this maps to SIGINT.
 	p, err := os.FindProcess(os.Getpid())
 	if err != nil {
 		t.Fatalf("FindProcess: %v", err)

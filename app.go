@@ -1,4 +1,3 @@
-// app.go
 package mizu
 
 import (
@@ -27,15 +26,6 @@ type App struct {
 // AppOption configures App.
 type AppOption func(*App)
 
-// WithLogger sets the router logger used by the app.
-func WithLogger(l *slog.Logger) AppOption {
-	return func(a *App) {
-		if l != nil {
-			a.Router.SetLogger(l)
-		}
-	}
-}
-
 // WithPreShutdownDelay sets a delay between flipping unready and starting shutdown.
 func WithPreShutdownDelay(d time.Duration) AppOption {
 	return func(a *App) {
@@ -56,9 +46,8 @@ func WithShutdownTimeout(d time.Duration) AppOption {
 
 // New creates an App with sane defaults.
 func New(opts ...AppOption) *App {
-	r := NewRouter()
 	a := &App{
-		Router:           r,
+		Router:           NewRouter(),
 		preShutdownDelay: 1 * time.Second,
 		shutdownTimeout:  15 * time.Second,
 	}
@@ -85,19 +74,28 @@ func (a *App) HealthzHandler() http.Handler {
 
 // Listen starts an HTTP server on addr and manages signals.
 func (a *App) Listen(addr string) error {
-	srv := &http.Server{Addr: addr, Handler: a}
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: a,
+	}
 	return a.serveWithSignals(srv, func() error { return srv.ListenAndServe() })
 }
 
 // ListenTLS starts an HTTPS server and manages signals.
 func (a *App) ListenTLS(addr, certFile, keyFile string) error {
-	srv := &http.Server{Addr: addr, Handler: a}
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: a,
+	}
 	return a.serveWithSignals(srv, func() error { return srv.ListenAndServeTLS(certFile, keyFile) })
 }
 
 // Serve serves on an existing listener and manages signals.
 func (a *App) Serve(l net.Listener) error {
-	srv := &http.Server{Addr: l.Addr().String(), Handler: a}
+	srv := &http.Server{
+		Addr:    l.Addr().String(),
+		Handler: a,
+	}
 	return a.serveWithSignals(srv, func() error { return srv.Serve(l) })
 }
 
