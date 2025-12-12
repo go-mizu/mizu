@@ -141,7 +141,7 @@ func WithOptions(opts Options) mizu.Middleware {
 				payload, err = opts.PayloadGetter(c)
 			} else {
 				payload, err = io.ReadAll(r.Body)
-				r.Body.Close()
+				_ = r.Body.Close()
 				if err == nil {
 					r.Body = io.NopCloser(bytes.NewReader(payload))
 				}
@@ -245,7 +245,7 @@ func Stripe(secret string) mizu.Middleware {
 		PayloadGetter: func(c *mizu.Ctx) ([]byte, error) {
 			// Stripe includes timestamp in signature
 			body, err := io.ReadAll(c.Request().Body)
-			c.Request().Body.Close()
+			_ = c.Request().Body.Close()
 			if err != nil {
 				return nil, err
 			}
@@ -267,7 +267,7 @@ func Slack(signingSecret string) mizu.Middleware {
 			// Slack signature: v0=HMAC(v0:timestamp:body)
 			timestamp := c.Request().Header.Get("X-Slack-Request-Timestamp")
 			body, err := io.ReadAll(c.Request().Body)
-			c.Request().Body.Close()
+			_ = c.Request().Body.Close()
 			if err != nil {
 				return nil, err
 			}
@@ -315,7 +315,7 @@ func AWS(secretKey string) mizu.Middleware {
 		PayloadGetter: func(c *mizu.Ctx) ([]byte, error) {
 			// Simplified - real AWS Sig V4 is more complex
 			body, err := io.ReadAll(c.Request().Body)
-			c.Request().Body.Close()
+			_ = c.Request().Body.Close()
 			if err != nil {
 				return nil, err
 			}
@@ -361,7 +361,7 @@ func (s *Signer) SignRequest(r *http.Request) error {
 	}
 
 	body, err := io.ReadAll(r.Body)
-	r.Body.Close()
+	_ = r.Body.Close()
 	if err != nil {
 		return err
 	}

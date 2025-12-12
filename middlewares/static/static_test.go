@@ -15,8 +15,8 @@ import (
 func TestNew(t *testing.T) {
 	// Create temp directory with test files
 	tmpDir := t.TempDir()
-	os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("hello"), 0644)
-	os.WriteFile(filepath.Join(tmpDir, "index.html"), []byte("<html>index</html>"), 0644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("hello"), 0644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "index.html"), []byte("<html>index</html>"), 0644)
 
 	app := mizu.NewRouter()
 	app.Use(New(tmpDir))
@@ -190,8 +190,8 @@ func TestWithOptions_CustomIndex(t *testing.T) {
 func TestWithOptions_Browse(t *testing.T) {
 	tmpDir := t.TempDir()
 	subDir := filepath.Join(tmpDir, "subdir")
-	os.Mkdir(subDir, 0755)
-	os.WriteFile(filepath.Join(subDir, "file.txt"), []byte("content"), 0644)
+	_ = os.Mkdir(subDir, 0755)
+	_ = os.WriteFile(filepath.Join(subDir, "file.txt"), []byte("content"), 0644)
 
 	app := mizu.NewRouter()
 	app.Use(WithOptions(Options{

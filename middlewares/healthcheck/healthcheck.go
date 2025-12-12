@@ -164,7 +164,7 @@ func HTTPCheck(name, url string) Check {
 			if err != nil {
 				return err
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			if resp.StatusCode >= 400 {
 				return http.ErrNotSupported
 			}

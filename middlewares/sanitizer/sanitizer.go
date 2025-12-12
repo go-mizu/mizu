@@ -79,7 +79,7 @@ func WithOptions(opts Options) mizu.Middleware {
 			// Parse form if POST/PUT/PATCH
 			if r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH" {
 				if r.Form == nil {
-					r.ParseForm()
+					_ = r.ParseForm()
 				}
 				for key, values := range r.Form {
 					if shouldSanitize(key, fieldMap, excludeMap, opts) {

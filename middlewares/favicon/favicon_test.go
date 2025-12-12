@@ -20,7 +20,7 @@ var testPNG = []byte{
 func TestNew(t *testing.T) {
 	tmpDir := t.TempDir()
 	faviconPath := filepath.Join(tmpDir, "favicon.ico")
-	os.WriteFile(faviconPath, testPNG, 0644)
+	_ = os.WriteFile(faviconPath, testPNG, 0644)
 
 	app := mizu.NewRouter()
 	app.Use(New(faviconPath))

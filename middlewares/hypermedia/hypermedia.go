@@ -112,7 +112,7 @@ func WithOptions(opts Options) mizu.Middleware {
 			if !strings.Contains(contentType, "application/json") {
 				// Write original response
 				c.Writer().WriteHeader(rec.statusCode)
-				c.Writer().Write(rec.body.Bytes())
+				_, _ = c.Writer().Write(rec.body.Bytes())
 				return nil
 			}
 
@@ -121,7 +121,7 @@ func WithOptions(opts Options) mizu.Middleware {
 			if finalLinks == nil || len(*finalLinks) == 0 {
 				// No links to add
 				c.Writer().WriteHeader(rec.statusCode)
-				c.Writer().Write(rec.body.Bytes())
+				_, _ = c.Writer().Write(rec.body.Bytes())
 				return nil
 			}
 
@@ -130,7 +130,7 @@ func WithOptions(opts Options) mizu.Middleware {
 			if err := json.Unmarshal(rec.body.Bytes(), &data); err != nil {
 				// Not a JSON object, return as-is
 				c.Writer().WriteHeader(rec.statusCode)
-				c.Writer().Write(rec.body.Bytes())
+				_, _ = c.Writer().Write(rec.body.Bytes())
 				return nil
 			}
 
@@ -141,13 +141,13 @@ func WithOptions(opts Options) mizu.Middleware {
 			modified, err := json.Marshal(data)
 			if err != nil {
 				c.Writer().WriteHeader(rec.statusCode)
-				c.Writer().Write(rec.body.Bytes())
+				_, _ = c.Writer().Write(rec.body.Bytes())
 				return nil
 			}
 
 			c.Header().Set("Content-Type", "application/json")
 			c.Writer().WriteHeader(rec.statusCode)
-			c.Writer().Write(modified)
+			_, _ = c.Writer().Write(modified)
 			return nil
 		}
 	}

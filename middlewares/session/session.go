@@ -287,6 +287,6 @@ func (s *MemoryStore) cleanup() {
 
 func generateSessionID() string {
 	b := make([]byte, 32)
-	rand.Read(b)
+	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }

@@ -138,6 +138,7 @@ func TestOnComplete(t *testing.T) {
 	app.Use(hedger.Middleware())
 
 	app.Get("/", func(c *mizu.Ctx) error {
+		time.Sleep(time.Millisecond) // Ensure measurable duration on Windows
 		return c.Text(http.StatusOK, "ok")
 	})
 

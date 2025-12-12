@@ -46,9 +46,10 @@ func TestNew(t *testing.T) {
 	okCount := 0
 	rejectCount := 0
 	for _, code := range results {
-		if code == http.StatusOK {
+		switch code {
+		case http.StatusOK:
 			okCount++
-		} else if code == http.StatusServiceUnavailable {
+		case http.StatusServiceUnavailable:
 			rejectCount++
 		}
 	}

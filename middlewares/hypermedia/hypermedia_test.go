@@ -57,7 +57,7 @@ func TestSelfLink(t *testing.T) {
 	app.ServeHTTP(rec, req)
 
 	var data map[string]any
-	json.Unmarshal(rec.Body.Bytes(), &data)
+	_ = json.Unmarshal(rec.Body.Bytes(), &data)
 
 	links := data["_links"].([]any)
 	selfLink := links[0].(map[string]any)
@@ -90,7 +90,7 @@ func TestAddLink(t *testing.T) {
 	app.ServeHTTP(rec, req)
 
 	var data map[string]any
-	json.Unmarshal(rec.Body.Bytes(), &data)
+	_ = json.Unmarshal(rec.Body.Bytes(), &data)
 
 	links := data["_links"].([]any)
 	if len(links) != 1 {
@@ -120,7 +120,7 @@ func TestAddLinks(t *testing.T) {
 	app.ServeHTTP(rec, req)
 
 	var data map[string]any
-	json.Unmarshal(rec.Body.Bytes(), &data)
+	_ = json.Unmarshal(rec.Body.Bytes(), &data)
 
 	links := data["_links"].([]any)
 	if len(links) != 2 {
@@ -190,7 +190,7 @@ func TestCustomLinksKey(t *testing.T) {
 	app.ServeHTTP(rec, req)
 
 	var data map[string]any
-	json.Unmarshal(rec.Body.Bytes(), &data)
+	_ = json.Unmarshal(rec.Body.Bytes(), &data)
 
 	if _, ok := data["links"]; !ok {
 		t.Error("expected custom links key")
@@ -213,7 +213,7 @@ func TestResource(t *testing.T) {
 	}
 
 	var parsed map[string]any
-	json.Unmarshal(data, &parsed)
+	_ = json.Unmarshal(data, &parsed)
 
 	if _, ok := parsed["data"]; !ok {
 		t.Error("expected data field")
@@ -315,7 +315,7 @@ func TestHAL(t *testing.T) {
 	}
 
 	var parsed map[string]any
-	json.Unmarshal(data, &parsed)
+	_ = json.Unmarshal(data, &parsed)
 
 	if parsed["id"] != "123" {
 		t.Error("expected id property")
@@ -345,7 +345,7 @@ func TestHALEmbedded(t *testing.T) {
 	data, _ := json.Marshal(user)
 
 	var parsed map[string]any
-	json.Unmarshal(data, &parsed)
+	_ = json.Unmarshal(data, &parsed)
 
 	embedded, ok := parsed["_embedded"].(map[string]any)
 	if !ok {

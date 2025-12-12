@@ -136,13 +136,13 @@ func handleUpgrade(c *mizu.Ctx, next mizu.Handler, r *http.Request) error {
 	if err != nil {
 		return next(c)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Send 101 Switching Protocols
 	response := "HTTP/1.1 101 Switching Protocols\r\n" +
 		"Connection: Upgrade\r\n" +
 		"Upgrade: h2c\r\n\r\n"
-	conn.Write([]byte(response))
+	_, _ = conn.Write([]byte(response))
 
 	// For a full implementation, we would need to:
 	// 1. Parse the HTTP2-Settings header
@@ -151,7 +151,7 @@ func handleUpgrade(c *mizu.Ctx, next mizu.Handler, r *http.Request) error {
 	// This is a simplified version
 
 	// Read and echo back (simplified)
-	io.Copy(conn, brw)
+	_, _ = io.Copy(conn, brw)
 
 	return nil
 }
@@ -218,13 +218,13 @@ func (h *ServerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.Handler.ServeHTTP(w, r)
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		// Send switching protocols response
 		response := "HTTP/1.1 101 Switching Protocols\r\n" +
 			"Connection: Upgrade\r\n" +
 			"Upgrade: h2c\r\n\r\n"
-		conn.Write([]byte(response))
+		_, _ = conn.Write([]byte(response))
 
 		return
 	}

@@ -183,7 +183,7 @@ func TransformBody(fn func([]byte) ([]byte, error)) RequestTransformer {
 		}
 
 		body, err := io.ReadAll(r.Body)
-		r.Body.Close()
+		_ = r.Body.Close()
 		if err != nil {
 			return err
 		}

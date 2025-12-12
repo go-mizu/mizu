@@ -125,7 +125,7 @@ func WithOptions(opts Options) mizu.Middleware {
 				}
 				c.Writer().Header().Set("Idempotent-Replayed", "true")
 				c.Writer().WriteHeader(cached.StatusCode)
-				c.Writer().Write(cached.Body)
+				_, _ = c.Writer().Write(cached.Body)
 				return nil
 			}
 
@@ -146,7 +146,7 @@ func WithOptions(opts Options) mizu.Middleware {
 				Body:       rw.body.Bytes(),
 				ExpiresAt:  time.Now().Add(opts.Lifetime),
 			}
-			opts.Store.Set(cacheKey, resp)
+			_ = opts.Store.Set(cacheKey, resp)
 
 			return err
 		}

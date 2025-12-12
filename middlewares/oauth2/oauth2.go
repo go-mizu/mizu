@@ -163,7 +163,7 @@ func introspectToken(opts Options, token string) (*Token, error) {
 	if err != nil {
 		return nil, ErrInvalidToken
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Active    bool     `json:"active"`

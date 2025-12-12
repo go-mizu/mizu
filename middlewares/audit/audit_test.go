@@ -19,6 +19,7 @@ func TestNew(t *testing.T) {
 	}))
 
 	app.Get("/test", func(c *mizu.Ctx) error {
+		time.Sleep(time.Millisecond) // Ensure measurable latency on Windows
 		return c.Text(http.StatusOK, "ok")
 	})
 

@@ -124,7 +124,7 @@ func (h *Hedger) Middleware() mizu.Middleware {
 			var bodyBuf []byte
 			if c.Request().Body != nil {
 				bodyBuf, _ = io.ReadAll(c.Request().Body)
-				c.Request().Body.Close()
+				_ = c.Request().Body.Close()
 			}
 
 			// Create work group
@@ -226,7 +226,7 @@ func (h *Hedger) Middleware() mizu.Middleware {
 					}
 				}
 				c.Writer().WriteHeader(res.recorder.statusCode)
-				c.Writer().Write(res.recorder.body.Bytes())
+				_, _ = c.Writer().Write(res.recorder.body.Bytes())
 
 				return res.err
 

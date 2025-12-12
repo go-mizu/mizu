@@ -312,9 +312,9 @@ func (h *Hub) captureEvent(event *Event) {
 
 	// Send via transport
 	if h.opts.Transport != nil {
-		go h.opts.Transport.Send(event)
+		go func() { _ = h.opts.Transport.Send(event) }()
 	} else if h.opts.DSN != "" {
-		go sendToSentry(h.opts.DSN, event)
+		go func() { _ = sendToSentry(h.opts.DSN, event) }()
 	}
 }
 
@@ -493,7 +493,7 @@ func (t *HTTPTransport) Send(event *Event) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return nil
 }

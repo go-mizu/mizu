@@ -208,6 +208,7 @@ func TestDefaultPages(t *testing.T) {
 		page := defaultPages[code]
 		if page == nil {
 			t.Errorf("expected default page for %d", code)
+			continue
 		}
 		if page.Code != code {
 			t.Errorf("expected code %d, got %d", code, page.Code)

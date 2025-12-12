@@ -145,9 +145,9 @@ func TestMultipleWrites(t *testing.T) {
 	}))
 
 	app.Get("/", func(c *mizu.Ctx) error {
-		c.Writer().Write([]byte("first"))
-		c.Writer().Write([]byte("second"))
-		c.Writer().Write([]byte("third"))
+		_, _ = c.Writer().Write([]byte("first"))
+		_, _ = c.Writer().Write([]byte("second"))
+		_, _ = c.Writer().Write([]byte("third"))
 		return nil
 	})
 

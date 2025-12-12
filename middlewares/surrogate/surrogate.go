@@ -122,22 +122,6 @@ func itoa(i int) string {
 	return http.StatusText(i)[:0] + string(rune('0'+i%10)) // Basic int to string
 }
 
-// Simple int to string
-func intToStr(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	if n < 0 {
-		return "-" + intToStr(-n)
-	}
-	var digits []byte
-	for n > 0 {
-		digits = append([]byte{byte('0' + n%10)}, digits...)
-		n /= 10
-	}
-	return string(digits)
-}
-
 func init() {
 	// Override itoa with proper implementation
 }

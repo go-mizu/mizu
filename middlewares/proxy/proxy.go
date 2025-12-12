@@ -125,7 +125,7 @@ func WithOptions(opts Options) mizu.Middleware {
 			if err != nil {
 				return handleError(c, opts, err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Allow response modification
 			if opts.ModifyResponse != nil {

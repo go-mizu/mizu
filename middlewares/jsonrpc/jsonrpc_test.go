@@ -53,7 +53,7 @@ func TestServer_MethodNotFound(t *testing.T) {
 	app.ServeHTTP(rec, req)
 
 	var resp Response
-	json.Unmarshal(rec.Body.Bytes(), &resp)
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
 
 	if resp.Error == nil {
 		t.Fatal("expected error")
@@ -79,7 +79,7 @@ func TestServer_InvalidJSONRPCVersion(t *testing.T) {
 	app.ServeHTTP(rec, req)
 
 	var resp Response
-	json.Unmarshal(rec.Body.Bytes(), &resp)
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
 
 	if resp.Error == nil || resp.Error.Code != InvalidRequest {
 		t.Errorf("expected InvalidRequest error")
@@ -157,7 +157,7 @@ func TestServer_ErrorInHandler(t *testing.T) {
 	app.ServeHTTP(rec, req)
 
 	var resp Response
-	json.Unmarshal(rec.Body.Bytes(), &resp)
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
 
 	if resp.Error == nil {
 		t.Fatal("expected error")
@@ -180,7 +180,7 @@ func TestMiddleware(t *testing.T) {
 		app.ServeHTTP(rec, req)
 
 		var resp Response
-		json.Unmarshal(rec.Body.Bytes(), &resp)
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
 
 		if resp.Error == nil {
 			t.Error("expected error for GET request")
@@ -194,7 +194,7 @@ func TestMiddleware(t *testing.T) {
 		app.ServeHTTP(rec, req)
 
 		var resp Response
-		json.Unmarshal(rec.Body.Bytes(), &resp)
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
 
 		if resp.Error == nil {
 			t.Error("expected error for wrong content type")
@@ -215,7 +215,7 @@ func TestParseError(t *testing.T) {
 	app.ServeHTTP(rec, req)
 
 	var resp Response
-	json.Unmarshal(rec.Body.Bytes(), &resp)
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
 
 	if resp.Error == nil || resp.Error.Code != ParseError {
 		t.Errorf("expected ParseError")

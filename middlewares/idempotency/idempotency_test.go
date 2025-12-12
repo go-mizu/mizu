@@ -283,7 +283,7 @@ func TestMemoryStore_Expiry(t *testing.T) {
 		ExpiresAt:  time.Now().Add(-time.Hour), // Already expired
 	}
 
-	store.Set("expired", resp)
+	_ = store.Set("expired", resp)
 
 	got, _ := store.Get("expired")
 	if got != nil {

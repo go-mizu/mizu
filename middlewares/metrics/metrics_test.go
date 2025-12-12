@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-mizu/mizu"
 )
@@ -213,6 +214,7 @@ func TestMetrics_AverageDuration(t *testing.T) {
 	app.Use(middleware)
 
 	app.Get("/", func(c *mizu.Ctx) error {
+		time.Sleep(time.Millisecond) // Ensure measurable duration on Windows
 		return c.Text(http.StatusOK, "ok")
 	})
 

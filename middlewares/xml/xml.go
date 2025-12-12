@@ -64,7 +64,7 @@ func WithOptions(opts Options) mizu.Middleware {
 				if strings.Contains(contentType, "application/xml") ||
 					strings.Contains(contentType, "text/xml") {
 					body, err := io.ReadAll(c.Request().Body)
-					c.Request().Body.Close()
+					_ = c.Request().Body.Close()
 					if err == nil {
 						ctx = context.WithValue(ctx, bodyKey, body)
 						c.Request().Body = io.NopCloser(bytes.NewReader(body))
@@ -108,7 +108,7 @@ func Bind(c *mizu.Ctx, v any) error {
 
 	// Read body directly
 	data, err := io.ReadAll(c.Request().Body)
-	c.Request().Body.Close()
+	_ = c.Request().Body.Close()
 	if err != nil {
 		return err
 	}
@@ -142,7 +142,7 @@ func Response(c *mizu.Ctx, status int, v any) error {
 
 	if opts == nil || opts.XMLDeclaration {
 		c.Writer().WriteHeader(status)
-		c.Writer().Write([]byte(xml.Header))
+		_, _ = c.Writer().Write([]byte(xml.Header))
 		_, err = c.Writer().Write(data)
 	} else {
 		c.Writer().WriteHeader(status)

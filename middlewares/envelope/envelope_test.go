@@ -22,7 +22,7 @@ func TestNew(t *testing.T) {
 	app.ServeHTTP(rec, req)
 
 	var resp map[string]any
-	json.Unmarshal(rec.Body.Bytes(), &resp)
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
 
 	if resp["success"] != true {
 		t.Error("expected success: true")
@@ -48,7 +48,7 @@ func TestWithOptions_IncludeMeta(t *testing.T) {
 	app.ServeHTTP(rec, req)
 
 	var resp map[string]any
-	json.Unmarshal(rec.Body.Bytes(), &resp)
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
 
 	if meta, ok := resp["meta"].(map[string]any); ok {
 		if meta["request_id"] != "req-123" {
@@ -80,7 +80,7 @@ func TestWithOptions_CustomFields(t *testing.T) {
 	app.ServeHTTP(rec, req)
 
 	var resp map[string]any
-	json.Unmarshal(rec.Body.Bytes(), &resp)
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
 
 	if resp["ok"] != true {
 		t.Error("expected ok: true")
@@ -102,7 +102,7 @@ func TestSuccess(t *testing.T) {
 	app.ServeHTTP(rec, req)
 
 	var resp Response
-	json.Unmarshal(rec.Body.Bytes(), &resp)
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
 
 	if !resp.Success {
 		t.Error("expected success: true")
@@ -125,7 +125,7 @@ func TestError(t *testing.T) {
 	}
 
 	var resp Response
-	json.Unmarshal(rec.Body.Bytes(), &resp)
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
 
 	if resp.Success {
 		t.Error("expected success: false")
