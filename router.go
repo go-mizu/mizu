@@ -1,6 +1,7 @@
 package mizu
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -24,11 +25,12 @@ func (e *PanicError) Error() string { return fmt.Sprintf("panic: %v", e.Value) }
 
 // Router is a small wrapper over Go 1.22 ServeMux with method patterns and middleware.
 type Router struct {
-	mux   *http.ServeMux
-	base  string
-	chain []Middleware
-	errh  func(*Ctx, error)
-	log   *slog.Logger
+	mux         *http.ServeMux
+	base        string
+	chain       []Middleware
+	globalChain []Middleware // runs for ALL requests, before route matching
+	errh        func(*Ctx, error)
+	log         *slog.Logger
 
 	// Compat exposes a net/http-first facade for interop.
 	Compat *httpRouter
@@ -91,6 +93,78 @@ func canonicalPath(p string) string {
 
 // ServeHTTP implements http.Handler and delegates to the internal ServeMux.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// Run global middleware chain first with original path
+	// (middleware like slash needs to see original trailing slashes)
+	if len(r.globalChain) > 0 {
+		c := newCtx(w, req, r.log)
+
+		// Build handler that delegates to the mux
+		var handler Handler = func(c *Ctx) error {
+			req := c.Request()
+			// Canonicalize path for mux routing
+			if req.URL != nil {
+				cp := canonicalPath(req.URL.Path)
+				if cp != req.URL.Path {
+					clone := req.Clone(req.Context())
+					clone.URL.Path = cp
+					req = clone
+				}
+			}
+			r.mux.ServeHTTP(c.Writer(), req)
+
+			// Check if route handler stored an error in context
+			if err, ok := req.Context().Value(routeErrorKey{}).(error); ok {
+				return err
+			}
+			return nil
+		}
+
+		// Wrap with global middleware (right to left)
+		for i := len(r.globalChain) - 1; i >= 0; i-- {
+			handler = r.globalChain[i](handler)
+		}
+
+		// Execute with panic recovery and error handling
+		defer func() {
+			if rec := recover(); rec != nil {
+				perr := &PanicError{Value: rec, Stack: debug.Stack()}
+				if r.errh != nil {
+					r.errh(c, perr)
+					return
+				}
+				if r.log != nil {
+					r.log.Error("panic recovered",
+						slog.Any("value", rec),
+						slog.String("method", req.Method),
+						slog.String("path", req.URL.Path),
+					)
+				}
+				if !c.wroteHeader {
+					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				}
+			}
+		}()
+
+		if err := handler(c); err != nil {
+			if r.errh != nil {
+				r.errh(c, err)
+				return
+			}
+			if r.log != nil {
+				r.log.Error("handler error",
+					slog.String("method", req.Method),
+					slog.String("path", req.URL.Path),
+					slog.Any("error", err),
+				)
+			}
+			if !c.wroteHeader {
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			}
+		}
+		return
+	}
+
+	// Canonicalize path for mux routing (no global middleware case)
 	if req.URL != nil {
 		cp := canonicalPath(req.URL.Path)
 		if cp != req.URL.Path {
@@ -127,17 +201,18 @@ func (r *Router) NotFound(h http.Handler) {
 	r.mux.Handle("/", h)
 }
 
-// Use appends middleware so later items run closer to the handler.
+// Use appends global middleware that runs for ALL requests before routing.
+// Later middleware runs closer to the handler.
 func (r *Router) Use(mw ...Middleware) {
-	r.chain = append(r.chain, mw...)
+	r.globalChain = append(r.globalChain, mw...)
 }
 
-// UseFirst prepends middleware so they run outside the rest of the chain.
+// UseFirst prepends global middleware so they run outside the rest of the chain.
 func (r *Router) UseFirst(mw ...Middleware) {
 	if len(mw) == 0 {
 		return
 	}
-	r.chain = append(append([]Middleware{}, mw...), r.chain...)
+	r.globalChain = append(append([]Middleware{}, mw...), r.globalChain...)
 }
 
 // Group creates a child router with a path prefix and runs the given function.
@@ -149,11 +224,12 @@ func (r *Router) Group(prefix string, fn func(g *Router)) {
 // Prefix returns a child router that shares state and adds a URL prefix.
 func (r *Router) Prefix(prefix string) *Router {
 	child := &Router{
-		mux:   r.mux,
-		base:  joinPath(r.base, prefix),
-		chain: slices.Clone(r.chain),
-		errh:  r.errh,
-		log:   r.log,
+		mux:         r.mux,
+		base:        joinPath(r.base, prefix),
+		chain:       slices.Clone(r.chain),
+		globalChain: r.globalChain,
+		errh:        r.errh,
+		log:         r.log,
 	}
 	child.Compat = &httpRouter{r: child}
 	return child
@@ -246,46 +322,20 @@ func (r *Router) compose(h Handler) Handler {
 	return h
 }
 
-// adapt converts a Mizu Handler into http.Handler with panic recovery and error handling.
+// routeErrorKey is used to store route handler errors in context.
+type routeErrorKey struct{}
+
+// adapt converts a Mizu Handler into http.Handler.
+// Note: panic recovery and error handling are done by ServeHTTP, allowing global middleware
+// (like recover/sentry middleware) to intercept panics and errors first.
 func (r *Router) adapt(h Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		c := newCtx(w, req, r.log)
 
-		defer func() {
-			if rec := recover(); rec != nil {
-				perr := &PanicError{Value: rec, Stack: debug.Stack()}
-				if r.errh != nil {
-					r.errh(c, perr)
-					return
-				}
-				if r.log != nil {
-					r.log.Error("panic recovered",
-						slog.Any("value", rec),
-						slog.String("method", req.Method),
-						slog.String("path", req.URL.Path),
-					)
-				}
-				if !c.wroteHeader {
-					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-				}
-			}
-		}()
-
 		if err := h(c); err != nil {
-			if r.errh != nil {
-				r.errh(c, err)
-				return
-			}
-			if r.log != nil {
-				r.log.Error("handler error",
-					slog.String("method", req.Method),
-					slog.String("path", req.URL.Path),
-					slog.Any("error", err),
-				)
-			}
-			if !c.wroteHeader {
-				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			}
+			// Store error in context so global middleware can access it
+			ctx := context.WithValue(req.Context(), routeErrorKey{}, err)
+			*req = *req.WithContext(ctx)
 		}
 	})
 }
@@ -353,10 +403,10 @@ func cleanLeading(p string) string {
 
 type httpRouter struct{ r *Router }
 
-// Use appends standard net/http middlewares to the Mizu chain.
+// Use appends standard net/http middlewares to the global Mizu chain.
 func (h *httpRouter) Use(mw ...func(http.Handler) http.Handler) *httpRouter {
 	for _, sm := range mw {
-		h.r.chain = append(h.r.chain, h.r.adaptStdMiddleware(sm))
+		h.r.globalChain = append(h.r.globalChain, h.r.adaptStdMiddleware(sm))
 	}
 	return h
 }
@@ -392,11 +442,12 @@ func (h *httpRouter) Mount(p string, hh http.Handler) *httpRouter { return h.Han
 // appended to the chain. It is useful for route-specific middleware.
 func (r *Router) With(mw ...Middleware) *Router {
 	child := &Router{
-		mux:   r.mux,
-		base:  r.base,
-		chain: append(slices.Clone(r.chain), mw...),
-		errh:  r.errh,
-		log:   r.log,
+		mux:         r.mux,
+		base:        r.base,
+		chain:       append(slices.Clone(r.chain), mw...),
+		globalChain: r.globalChain,
+		errh:        r.errh,
+		log:         r.log,
 	}
 	child.Compat = &httpRouter{r: child}
 	return child
