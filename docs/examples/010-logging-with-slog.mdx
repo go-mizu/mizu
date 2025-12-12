@@ -66,14 +66,13 @@ func doSomething() error {
 }
 
 func main() {
+	app := mizu.New()
+
 	// Mizu logs in plain text by default.
-	// You can still attach your own structured logger if you want.
+	// You can attach your own structured logger if you want.
 	handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
 	logger := slog.New(handler)
-
-	app := mizu.New(
-		mizu.WithLogger(logger),
-	)
+	app.SetLogger(logger)
 
 	// Mizu automatically logs every request,
 	// so you do not need to add another logging middleware.
@@ -139,14 +138,14 @@ Mizu automatically adds a request logger middleware when your app starts. It log
 * Duration
 * Any errors returned by handlers
 
-When you pass a custom `slog.Logger` using `mizu.WithLogger`, all logs from Mizu and your handlers use that logger instance.
+When you set a custom `slog.Logger` using `app.SetLogger()`, all logs from Mizu and your handlers use that logger instance.
 
 | Feature           | What it does                         | Example                                                  |
 | ----------------- | ------------------------------------ | -------------------------------------------------------- |
 | Built-in logs     | Logs every request automatically     | `INFO request completed method=GET path=/`               |
-| `mizu.WithLogger` | Use your own `slog` configuration    | `app := mizu.New(mizu.WithLogger(logger))`               |
+| `app.SetLogger()` | Use your own `slog` configuration    | `app.SetLogger(logger)`                                  |
 | `c.Logger()`      | Log custom messages inside a handler | `c.Logger().Info("event", "path", c.Request().URL.Path)` |
-| `c.ClientIP()`    | Get the visitor’s IP for logs        | Useful for tracking and debugging                        |
+| `c.ClientIP()`    | Get the visitor's IP for logs        | Useful for tracking and debugging                        |
 
 ### Try something new
 

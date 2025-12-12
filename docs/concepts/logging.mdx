@@ -25,11 +25,13 @@ By default, Mizu prints logs in text format for development and JSON format for 
 You can set a custom logger that all handlers and middleware will use.
 
 ```go
+import "log/slog"
+
 logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 app.SetLogger(logger)
 ```
 
-All logs created with `c.Logger()` will use this logger.
+All logs created with `c.Logger()` will use this logger. The router's built-in request logger will also use your custom logger.
 
 ### Request logging middleware
 
@@ -64,21 +66,24 @@ c.Logger().Error("failed to save", "err", err)
 
 These levels help separate development messages, runtime events, and actual errors.
 
-### Development mode
+### Log modes
 
-Enable developer mode to get colorized logs and automatic request logging.
+The built-in logger supports different output modes:
+
+- `mizu.Auto` - Uses colored text for terminals, JSON for non-terminals (default)
+- `mizu.Dev` - Always uses readable text format
+- `mizu.Prod` - Always uses JSON format
 
 ```go
-app.Dev(true)
+app.Use(mizu.Logger(mizu.LoggerOptions{
+	Mode:  mizu.Dev,
+	Color: true,
+}))
 ```
-
-This switches logging to a text-based format and makes it easier to read during development.
 
 ### Example
 
 ```go
-app.Dev(true)
-
 app.Get("/hello", func(c *mizu.Ctx) error {
 	c.Logger().Info("say hello")
 	return c.Text(200, "Hello")

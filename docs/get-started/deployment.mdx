@@ -95,12 +95,14 @@ If you prefer Docker, you can package your app in a container.
 Create a `Dockerfile` like this:
 
 ```dockerfile
-FROM golang:1.25 as build
+FROM golang:1.23 AS build
 WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
 COPY . .
-RUN GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o /app
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /app
 
-FROM gcr.io/distroless/base-debian12
+FROM gcr.io/distroless/static-debian12
 COPY --from=build /app /app
 EXPOSE 3000
 CMD ["/app"]

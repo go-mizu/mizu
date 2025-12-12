@@ -33,15 +33,47 @@ When you visit [http://localhost:3000](http://localhost:3000), the server respon
 
 ### How it works
 
-The `App` type includes Mizu's `Router`, so you can define routes and middleware on it directly.<br/>
-When `Listen` is called, Mizu starts a standard Go `net/http` server.<br/>
-When the server receives a stop signal, Mizu performs a graceful shutdown and lets running requests finish first.
+The `App` type embeds Mizu's `Router`, so you can define routes and middleware on it directly.
+When `Listen` is called, Mizu starts a standard Go `net/http` server.
+When the server receives a stop signal (SIGINT or SIGTERM), Mizu performs a graceful shutdown and lets running requests finish first.
 
 Mizu automatically handles:
 
 - Graceful shutdown when system signals are received
 - Structured logging for startup and shutdown
 - Panic recovery in handlers to prevent crashes
+
+### Configuration options
+
+You can customize shutdown behavior when creating the app:
+
+```go
+app := mizu.New(
+	mizu.WithPreShutdownDelay(2 * time.Second),
+	mizu.WithShutdownTimeout(30 * time.Second),
+)
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `WithPreShutdownDelay` | 1 second | Time to wait after receiving shutdown signal before starting drain. Useful for load balancers to stop sending traffic. |
+| `WithShutdownTimeout` | 15 seconds | Maximum time to wait for active requests to complete during shutdown. |
+
+### Starting the server
+
+Mizu provides three ways to start your server:
+
+```go
+// Listen on a TCP address
+app.Listen(":3000")
+
+// Listen with TLS
+app.ListenTLS(":443", "cert.pem", "key.pem")
+
+// Use an existing listener
+listener, _ := net.Listen("tcp", ":3000")
+app.Serve(listener)
+```
 
 ### Health checks
 

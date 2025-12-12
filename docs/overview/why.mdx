@@ -4,92 +4,73 @@ title: "Why Mizu"
 description: "The idea and purpose behind the Mizu framework."
 ---
 
-Mizu is made to feel natural for Go developers.
-It stays small, clear, and close to the standard library so you can build web applications confidently without learning a new framework language.
+Mizu exists because web frameworks often add complexity that Go developers do not need. Go already has excellent HTTP primitives. Mizu builds on them with a thin layer that improves ergonomics without hiding what is happening underneath.
 
-### Clear routing
+### Stay close to the standard library
 
-Routing follows Go 1.22 patterns and remains compatible with `net/http`.
-You can define routes by method and use `{param}` syntax for path parameters.
+Mizu uses Go 1.22's enhanced `ServeMux` for routing. Your handlers receive a context that wraps `http.ResponseWriter` and `*http.Request`. You can access the underlying types anytime:
 
 ```go
-app.Get("/users/{id}", showUser)
-app.Post("/users", createUser)
+func handler(c *mizu.Ctx) error {
+    w := c.Writer()    // http.ResponseWriter
+    r := c.Request()   // *http.Request
+    return c.Text(200, "ok")
+}
 ```
 
-You can group routes or mix in any standard `http.Handler` when needed.
+Any `http.Handler` can be mounted directly. Any middleware that works with `net/http` works with Mizu.
 
-### Simple request and response helpers
+### Return errors from handlers
 
-Each handler receives a `*mizu.Ctx` that makes it easy to read input and write responses.
+Standard Go handlers have no return value. Errors must be handled inline, which leads to repeated patterns. Mizu handlers return an error:
 
 ```go
-id := c.Param("id")
-return c.JSON(200, map[string]string{"id": id})
+func createUser(c *mizu.Ctx) error {
+    var input UserInput
+    if err := c.BindJSON(&input, 1<<20); err != nil {
+        return err // handled centrally
+    }
+    // ...
+}
 ```
 
-All operations are explicit, with no hidden globals, reflection, or magic.
+One central error handler catches all returned errors and recovered panics. Your route handlers stay focused on business logic.
 
-### Composable middleware
+### No reflection or magic
 
-Middleware in Mizu is a simple function that wraps another handler.
-Use it for logging, authentication, recovery, or any shared behavior.
+Mizu does not scan struct tags to bind parameters. It does not generate code. It does not use dependency injection. You read data with explicit method calls and write responses with explicit helpers.
 
 ```go
-app.Use(func(next mizu.Handler) mizu.Handler {
-	return func(c *mizu.Ctx) error {
-		start := time.Now()
-		err := next(c)
-		c.Logger().Info("done", "took", time.Since(start))
-		return err
-	}
-})
+id := c.Param("id")           // path parameter
+q := c.Query("search")        // query string
+form, _ := c.Form()           // form data
+name := form.Get("name")
 ```
 
-### Structured logging
+This makes debugging straightforward. You can step through Mizu code and understand what happens at each line.
 
-Mizu uses Go’s `slog` for structured logs.
-You can log request and response details anywhere in your code.
+### Production defaults
 
-```go
-c.Logger().Info("handled request", "path", c.Request().URL.Path)
-```
+Mizu includes what you need for production without extra setup:
 
-It supports color text output for development and JSON logs for production.
+- Graceful shutdown that drains connections
+- Structured logging with `slog`
+- Panic recovery with stack traces
+- Health check endpoints for load balancers
 
-### Graceful shutdown
+You can configure shutdown timing and swap out the logger, but sensible defaults work out of the box.
 
-Mizu automatically handles shutdown signals and waits for active requests to finish before stopping.
-You do not need extra code to handle cleanup or race conditions.
+### Small surface area
 
-### Static files and templates
+The entire framework fits in a few files. There are no plugins, no lifecycle hooks beyond middleware, and no framework-specific conventions to learn. If you understand Go's `net/http`, you understand Mizu.
 
-You can serve static assets or HTML templates using built-in helpers.
+### When to use Mizu
 
-```go
-app.Static("/assets/", http.Dir("public"))
-```
+Mizu works well when you want:
 
-For server-rendered pages, the `mizu/render` package integrates with Go’s `html/template` to make rendering simple and fast.
+- A lightweight wrapper over Go's HTTP server
+- Explicit code without hidden behavior
+- Easy integration with existing `net/http` code
+- Production-ready defaults without external dependencies
 
-### Streaming and real-time
-
-Mizu supports streaming and real-time communication.
-You can send chunks of data or use Server-Sent Events with minimal setup.
-
-```go
-return c.SSE(ch)
-```
-
-### Config and CLI
-
-Mizu supports configuration using `.env`, JSON, or YAML files.
-It includes a simple command-line tool for creating and running projects, helping you move quickly from idea to running code.
-
-### Small and extensible
-
-Mizu is built from small, focused parts that can be extended easily.
-You can add your own packages or use standard libraries without losing simplicity or performance.
-
-Mizu lets you write web servers that look and feel like Go code.
-It stays clean, consistent, and easy to maintain over time.
+If you need an opinionated full-stack framework with ORM, auth, and admin panels built in, Mizu is probably not the right choice. Mizu stays small so you can compose it with the libraries you prefer.

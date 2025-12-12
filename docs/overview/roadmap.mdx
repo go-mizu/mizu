@@ -4,37 +4,39 @@ title: "Roadmap"
 description: "The planned milestones for Mizu development."
 ---
 
-The roadmap shows how Mizu is growing step by step. Each stage focuses on a small, clear goal that improves the developer experience while keeping the core simple and stable.
+Mizu development follows a principle of incremental improvement. Each release adds focused functionality while keeping the core simple and stable.
 
-### v0.1 - Core and Middleware
+### Current - Core Framework
 
-Focus on the foundation.
-Routing, context, logging, recovery, and graceful shutdown.
+The foundation is in place:
 
-### v0.2 - Real-Time and Streaming
+- Routing with Go 1.22 `ServeMux` patterns
+- Context wrapper with request/response helpers
+- Middleware system compatible with `net/http`
+- Structured logging with `slog`
+- Graceful shutdown with configurable timeouts
+- Server-Sent Events (SSE) and streaming responses
+- Static file serving
+- Error handling with panic recovery
 
-Add real-time communication.
-Server-Sent Events (SSE), WebSocket support, and streaming responses.
+### Planned
 
-### v0.3 - Templates and Rendering
+Future development will focus on ecosystem packages that integrate with the core:
 
-Bring rendering to life.
-HTML templates, layouts, partials, and live reload for local development.
+**Templates and Rendering**
+- HTML templates with layouts and partials
+- Integration with Go's `html/template`
 
-### v0.4 - Configuration and CLI
+**Testing Utilities**
+- Test helpers for handlers and middleware
+- Request/response mocking
 
-Make setup easier.
-Environment file support, config loader, and a simple `mizu` command-line tool.
+**Documentation**
+- More examples covering common patterns
+- Guides for deployment and production use
 
-### v0.5 - Data and Persistence
+### Philosophy
 
-Introduce database utilities.
-Query builder, migrations, and connections for Postgres, MySQL, and SQLite.
+Mizu stays small by design. Features that require significant complexity will be separate packages rather than additions to the core. This keeps the framework predictable and easy to understand.
 
-### Future
-
-Beyond v1.0, the focus is on expanding the ecosystem:
-auth, background jobs, queues, caching, and community-driven packages.
-
-Mizu aims to stay steady, predictable, and easy to learn.
-Each release builds on the same principles: small steps, visible progress, and clear Go code.
+If you need functionality beyond what Mizu provides, you can use any Go library that works with `net/http`. Mizu does not lock you into a specific ecosystem.
