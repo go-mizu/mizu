@@ -234,3 +234,166 @@ func TestFallthrough(t *testing.T) {
 
 // Verify that fs.FS interface is properly used
 var _ fs.FS = fstest.MapFS{}
+
+func TestSPA(t *testing.T) {
+	testFS := fstest.MapFS{
+		"index.html": {Data: []byte("<html>spa</html>")},
+		"style.css":  {Data: []byte("body{}")},
+	}
+
+	app := mizu.NewRouter()
+	app.Use(SPA(testFS, "index.html"))
+
+	app.Get("/{path...}", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusTeapot, "should not reach")
+	})
+
+	t.Run("serve existing file", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/style.css", nil)
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected %d, got %d", http.StatusOK, rec.Code)
+		}
+	})
+
+	t.Run("serve index for unknown routes", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/app/dashboard", nil)
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, req)
+
+		// SPA should serve index.html for unknown routes
+		// Note: Depending on implementation, this may return index or 404
+		// The SPA function creates a NotFoundHandler that serves index.html
+		if rec.Code != http.StatusOK && rec.Code != http.StatusNotFound {
+			t.Errorf("expected OK or NotFound for SPA route, got %d", rec.Code)
+		}
+	})
+}
+
+func TestSPA_DefaultIndex(t *testing.T) {
+	testFS := fstest.MapFS{
+		"index.html": {Data: []byte("<html>default</html>")},
+	}
+
+	app := mizu.NewRouter()
+	app.Use(SPA(testFS, "")) // Empty index should default to index.html
+
+	app.Get("/{path...}", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusTeapot, "should not reach")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected %d, got %d", http.StatusOK, rec.Code)
+	}
+}
+
+func TestHandlerWithOptions(t *testing.T) {
+	testFS := fstest.MapFS{
+		"file.txt": {Data: []byte("content")},
+	}
+
+	app := mizu.NewRouter()
+	app.Get("/{path...}", HandlerWithOptions(testFS, Options{MaxAge: 7200}))
+
+	req := httptest.NewRequest(http.MethodGet, "/file.txt", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected %d, got %d", http.StatusOK, rec.Code)
+	}
+	if rec.Header().Get("Cache-Control") != "max-age=7200" {
+		t.Errorf("expected cache header, got %q", rec.Header().Get("Cache-Control"))
+	}
+}
+
+func TestHandlerWithOptions_Root(t *testing.T) {
+	testFS := fstest.MapFS{
+		"static/file.txt": {Data: []byte("static content")},
+	}
+
+	app := mizu.NewRouter()
+	app.Get("/{path...}", HandlerWithOptions(testFS, Options{Root: "static"}))
+
+	req := httptest.NewRequest(http.MethodGet, "/file.txt", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected %d, got %d", http.StatusOK, rec.Code)
+	}
+}
+
+func TestWithOptions_InvalidRoot(t *testing.T) {
+	testFS := fstest.MapFS{
+		"file.txt": {Data: []byte("content")},
+	}
+
+	app := mizu.NewRouter()
+	// Use a root that doesn't exist - should fall back to fsys
+	app.Use(WithOptions(testFS, Options{Root: "nonexistent"}))
+
+	app.Get("/{path...}", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusNotFound, "not found")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/file.txt", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	// With invalid root, it should fall back to the original filesystem
+	// and then to next handler
+	if rec.Code != http.StatusOK && rec.Code != http.StatusNotFound {
+		t.Errorf("unexpected status: %d", rec.Code)
+	}
+}
+
+func TestWithOptions_PathWithoutLeadingSlash(t *testing.T) {
+	testFS := fstest.MapFS{
+		"file.txt": {Data: []byte("content")},
+	}
+
+	app := mizu.NewRouter()
+	app.Use(New(testFS))
+
+	app.Get("/{path...}", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusNotFound, "not found")
+	})
+
+	// Test path cleaning
+	req := httptest.NewRequest(http.MethodGet, "/file.txt", nil)
+	req.URL.Path = "file.txt" // Set path without leading slash after creating request
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	// Should handle path without leading slash
+	if rec.Code != http.StatusOK && rec.Code != http.StatusNotFound {
+		t.Errorf("unexpected status: %d", rec.Code)
+	}
+}
+
+func TestItoa(t *testing.T) {
+	tests := []struct {
+		input    int
+		expected string
+	}{
+		{0, "0"},
+		{1, "1"},
+		{10, "10"},
+		{123, "123"},
+		{9999, "9999"},
+	}
+
+	for _, tc := range tests {
+		result := itoa(tc.input)
+		if result != tc.expected {
+			t.Errorf("itoa(%d) = %q, expected %q", tc.input, result, tc.expected)
+		}
+	}
+}

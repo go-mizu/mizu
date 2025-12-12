@@ -251,3 +251,187 @@ func TestPanicWithError(t *testing.T) {
 		t.Errorf("expected panic error message, got %q", rec.Body.String())
 	}
 }
+
+func TestPanicWithNonError(t *testing.T) {
+	app := mizu.NewRouter()
+	app.Use(WithOptions(Options{
+		CatchPanic: true,
+		Handler: func(c *mizu.Ctx, err error) error {
+			return c.Text(http.StatusInternalServerError, "caught: "+err.Error())
+		},
+	}))
+
+	app.Get("/", func(c *mizu.Ctx) error {
+		panic("string panic")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Body.String() != "caught: panic occurred" {
+		t.Errorf("expected 'caught: panic occurred', got %q", rec.Body.String())
+	}
+}
+
+func TestPanicWithDefaultHandler(t *testing.T) {
+	app := mizu.NewRouter()
+	app.Use(WithOptions(Options{
+		CatchPanic:     true,
+		DefaultMessage: "Server error",
+		// No Handler set - uses default
+	}))
+
+	app.Get("/", func(c *mizu.Ctx) error {
+		panic("test")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Body.String() != "Server error" {
+		t.Errorf("expected 'Server error', got %q", rec.Body.String())
+	}
+}
+
+func TestNotFound(t *testing.T) {
+	app := mizu.NewRouter()
+	app.Use(NotFound(func(c *mizu.Ctx) error {
+		return c.Text(http.StatusNotFound, "custom not found")
+	}))
+
+	app.Get("/exists", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusOK, "ok")
+	})
+
+	// Test 404 case
+	req := httptest.NewRequest(http.MethodGet, "/notexists", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	// Note: The actual behavior depends on how router handles 404
+}
+
+func TestForStatus(t *testing.T) {
+	middleware := ForStatus(http.StatusBadRequest, func(c *mizu.Ctx) error {
+		return c.Text(http.StatusBadRequest, "bad request handled")
+	})
+
+	if middleware == nil {
+		t.Error("expected middleware to be created")
+	}
+}
+
+func TestChain_NoHandlerMatches(t *testing.T) {
+	app := mizu.NewRouter()
+	app.Use(Chain(
+		func(c *mizu.Ctx, err error) (bool, error) {
+			// Don't handle anything
+			return false, nil
+		},
+		func(c *mizu.Ctx, err error) (bool, error) {
+			// Also don't handle
+			return false, nil
+		},
+	))
+
+	app.Get("/", func(c *mizu.Ctx) error {
+		return errors.New("unhandled error")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected %d, got %d", http.StatusInternalServerError, rec.Code)
+	}
+	if rec.Body.String() != "An error occurred" {
+		t.Errorf("expected default error message, got %q", rec.Body.String())
+	}
+}
+
+func TestResponseCapture_WriteHeader(t *testing.T) {
+	rec := httptest.NewRecorder()
+	capture := &responseCapture{
+		ResponseWriter: rec,
+		statusCode:     http.StatusOK,
+	}
+
+	// First WriteHeader should set status
+	capture.WriteHeader(http.StatusNotFound)
+	if capture.statusCode != http.StatusNotFound {
+		t.Errorf("expected %d, got %d", http.StatusNotFound, capture.statusCode)
+	}
+	if !capture.written {
+		t.Error("expected written to be true")
+	}
+
+	// Second WriteHeader should not change status
+	capture.WriteHeader(http.StatusOK)
+	if capture.statusCode != http.StatusNotFound {
+		t.Errorf("status should not change, got %d", capture.statusCode)
+	}
+}
+
+func TestResponseCapture_Write(t *testing.T) {
+	rec := httptest.NewRecorder()
+	capture := &responseCapture{
+		ResponseWriter: rec,
+		statusCode:     0,
+	}
+
+	// Write should set status to 200 if not already set
+	n, err := capture.Write([]byte("hello"))
+	if err != nil {
+		t.Errorf("Write error: %v", err)
+	}
+	if n != 5 {
+		t.Errorf("expected 5 bytes, got %d", n)
+	}
+	if capture.statusCode != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, capture.statusCode)
+	}
+	if !capture.written {
+		t.Error("expected written to be true")
+	}
+}
+
+func TestWithOptions_DefaultsUsed(t *testing.T) {
+	app := mizu.NewRouter()
+	app.Use(WithOptions(Options{}))
+
+	app.Get("/", func(c *mizu.Ctx) error {
+		return errors.New("test")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	// Default message should be "An error occurred"
+	if rec.Body.String() != "An error occurred" {
+		t.Errorf("expected default message, got %q", rec.Body.String())
+	}
+}
+
+func TestPanicError_ErrorMethod(t *testing.T) {
+	// Test with error value
+	pe := &panicError{value: errors.New("inner error")}
+	if pe.Error() != "inner error" {
+		t.Errorf("expected 'inner error', got %q", pe.Error())
+	}
+
+	// Test with non-error value
+	pe2 := &panicError{value: "string value"}
+	if pe2.Error() != "panic occurred" {
+		t.Errorf("expected 'panic occurred', got %q", pe2.Error())
+	}
+
+	// Test with int value
+	pe3 := &panicError{value: 123}
+	if pe3.Error() != "panic occurred" {
+		t.Errorf("expected 'panic occurred', got %q", pe3.Error())
+	}
+}

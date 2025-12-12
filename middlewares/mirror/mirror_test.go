@@ -1,8 +1,10 @@
 package mirror
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,11 +22,9 @@ func TestNew(t *testing.T) {
 	}))
 	defer mirrorServer.Close()
 
+	// Test using the New() helper
 	app := mizu.NewRouter()
-	app.Use(WithOptions(Options{
-		Targets: []Target{{URL: mirrorServer.URL, Percentage: 100}},
-		Async:   false,
-	}))
+	app.Use(New(mirrorServer.URL))
 
 	app.Get("/test", func(c *mizu.Ctx) error {
 		return c.Text(http.StatusOK, "ok")
@@ -252,5 +252,106 @@ func TestPercentage(t *testing.T) {
 	}
 	if target.Percentage != 25 {
 		t.Errorf("expected Percentage 25, got %d", target.Percentage)
+	}
+}
+
+func TestWithOptions_CopyBody(t *testing.T) {
+	var receivedBody string
+
+	mirrorServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		receivedBody = string(body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mirrorServer.Close()
+
+	app := mizu.NewRouter()
+	app.Use(WithOptions(Options{
+		Targets:  []Target{{URL: mirrorServer.URL, Percentage: 100}},
+		Async:    false,
+		CopyBody: true,
+	}))
+
+	app.Post("/test", func(c *mizu.Ctx) error {
+		// Read body in handler
+		body, _ := io.ReadAll(c.Request().Body)
+		return c.Text(http.StatusOK, string(body))
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader("test body"))
+	req.Header.Set("Content-Type", "text/plain")
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if receivedBody != "test body" {
+		t.Errorf("expected mirror to receive body, got %q", receivedBody)
+	}
+}
+
+func TestWithOptions_NoCopyBody(t *testing.T) {
+	var receivedBody string
+
+	mirrorServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		receivedBody = string(body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mirrorServer.Close()
+
+	app := mizu.NewRouter()
+	app.Use(WithOptions(Options{
+		Targets:  []Target{{URL: mirrorServer.URL, Percentage: 100}},
+		Async:    false,
+		CopyBody: false,
+	}))
+
+	app.Post("/test", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusOK, "ok")
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader("test body"))
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	// With CopyBody=false, mirror shouldn't receive body
+	if receivedBody != "" {
+		t.Errorf("expected mirror to receive empty body, got %q", receivedBody)
+	}
+}
+
+func TestNew_MultipleTargets(t *testing.T) {
+	var target1Received, target2Received int32
+
+	target1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&target1Received, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target1.Close()
+
+	target2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&target2Received, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target2.Close()
+
+	app := mizu.NewRouter()
+	app.Use(New(target1.URL, target2.URL))
+
+	app.Get("/test", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusOK, "ok")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	// Wait for async mirrors to complete
+	time.Sleep(100 * time.Millisecond)
+
+	if target1Received != 1 {
+		t.Errorf("expected target1 to receive 1 request, got %d", target1Received)
+	}
+	if target2Received != 1 {
+		t.Errorf("expected target2 to receive 1 request, got %d", target2Received)
 	}
 }
