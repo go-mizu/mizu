@@ -1,0 +1,189 @@
+---
+title: "JWT"
+description: "JSON Web Token authentication middleware for secure API access."
+---
+
+## Overview
+
+The `jwt` middleware provides JSON Web Token (JWT) authentication. It validates tokens from the Authorization header and makes claims available to handlers.
+
+Use it when you need:
+- Stateless API authentication
+- Token-based user sessions
+- Microservices authentication
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/jwt"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+secret := []byte("your-secret-key-at-least-32-bytes")
+
+// Protect routes with JWT
+app.Use(jwt.New(secret))
+
+app.Get("/protected", func(c *mizu.Ctx) error {
+    // Access claims
+    claims := jwt.GetClaims(c)
+    userID := jwt.Subject(c)
+    return c.JSON(200, map[string]string{"user": userID})
+})
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Secret` | `[]byte` | Required | HMAC secret key |
+| `TokenLookup` | `string` | `"header:Authorization"` | Where to find token |
+| `AuthScheme` | `string` | `"Bearer"` | Authorization scheme |
+| `Issuer` | `string` | `""` | Expected token issuer |
+| `ErrorHandler` | `func(*mizu.Ctx, error) error` | - | Custom error handler |
+| `SuccessHandler` | `func(*mizu.Ctx) error` | - | Called after validation |
+
+### TokenLookup Formats
+
+- `header:Authorization` - From Authorization header
+- `query:token` - From query parameter
+- `cookie:jwt` - From cookie
+
+## Examples
+
+### Basic Usage
+
+```go
+secret := []byte("your-secret-key-at-least-32-bytes")
+app.Use(jwt.New(secret))
+```
+
+### With Issuer Validation
+
+```go
+app.Use(jwt.WithOptions(jwt.Options{
+    Secret: secret,
+    Issuer: "my-app",
+}))
+```
+
+### Token from Query Parameter
+
+```go
+app.Use(jwt.WithOptions(jwt.Options{
+    Secret:      secret,
+    TokenLookup: "query:token",
+    AuthScheme:  "", // No scheme for query params
+}))
+```
+
+### Token from Cookie
+
+```go
+app.Use(jwt.WithOptions(jwt.Options{
+    Secret:      secret,
+    TokenLookup: "cookie:auth_token",
+}))
+```
+
+### Custom Error Handler
+
+```go
+app.Use(jwt.WithOptions(jwt.Options{
+    Secret: secret,
+    ErrorHandler: func(c *mizu.Ctx, err error) error {
+        return c.JSON(401, map[string]string{
+            "error": "Invalid or expired token",
+        })
+    },
+}))
+```
+
+### Accessing Claims
+
+```go
+app.Get("/profile", func(c *mizu.Ctx) error {
+    // Get all claims
+    claims := jwt.GetClaims(c)
+
+    // Get specific claim
+    email := claims["email"].(string)
+
+    // Get subject (user ID)
+    userID := jwt.Subject(c)
+
+    return c.JSON(200, map[string]any{
+        "user_id": userID,
+        "email":   email,
+    })
+})
+```
+
+### Protected Group
+
+```go
+// Public routes
+app.Get("/", publicHandler)
+
+// Protected API routes
+api := app.Group("/api")
+api.Use(jwt.New(secret))
+
+api.Get("/users", listUsers)
+api.Post("/users", createUser)
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates JWT middleware with secret
+func New(secret []byte) mizu.Middleware
+
+// WithOptions creates JWT middleware with full configuration
+func WithOptions(opts Options) mizu.Middleware
+
+// GetClaims returns claims from context
+func GetClaims(c *mizu.Ctx) map[string]any
+
+// Subject returns the "sub" claim
+func Subject(c *mizu.Ctx) string
+```
+
+## Standard Claims
+
+| Claim | Description |
+|-------|-------------|
+| `sub` | Subject (user ID) |
+| `iss` | Issuer |
+| `exp` | Expiration time |
+| `iat` | Issued at |
+| `aud` | Audience |
+
+## Security Considerations
+
+1. **Use strong secrets** - At least 32 bytes for HS256
+2. **Always validate expiration** - The middleware checks `exp` automatically
+3. **Use HTTPS** - Never transmit tokens over HTTP
+4. **Short expiration times** - Use refresh tokens for long sessions
+5. **Validate issuer** - Prevent tokens from other applications
+
+## Best Practices
+
+- Store secrets in environment variables
+- Use short-lived access tokens with refresh tokens
+- Include only necessary data in claims
+- Validate additional claims in handlers when needed
+
+## Related Middlewares
+
+- [bearerauth](/middlewares/bearerauth) - Simple bearer token auth
+- [keyauth](/middlewares/keyauth) - API key authentication
+- [session](/middlewares/session) - Session-based authentication

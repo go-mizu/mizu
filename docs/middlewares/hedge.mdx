@@ -1,0 +1,113 @@
+---
+title: "Hedge"
+description: "Hedged requests middleware for latency reduction through parallel requests."
+---
+
+## Overview
+
+The `hedge` middleware sends parallel backup requests after a delay, returning the first successful response. This reduces tail latency by hedging against slow responses.
+
+Use it when you need:
+- Reduce p99 latency
+- Handle slow backend responses
+- Improve user experience
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/hedge"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Send hedge request after 100ms
+app.Use(hedge.New(100 * time.Millisecond))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Delay` | `time.Duration` | Required | Time before hedge |
+| `MaxHedges` | `int` | `1` | Max parallel hedges |
+| `Skip` | `func(*mizu.Ctx) bool` | `nil` | Skip hedging |
+
+## Examples
+
+### Basic Hedging
+
+```go
+// Hedge after 200ms
+app.Use(hedge.New(200 * time.Millisecond))
+```
+
+### Multiple Hedges
+
+```go
+app.Use(hedge.WithOptions(hedge.Options{
+    Delay:     100 * time.Millisecond,
+    MaxHedges: 2, // Up to 2 parallel requests
+}))
+```
+
+### Skip Non-Idempotent
+
+```go
+app.Use(hedge.WithOptions(hedge.Options{
+    Delay: 100 * time.Millisecond,
+    Skip: func(c *mizu.Ctx) bool {
+        // Don't hedge mutations
+        return c.Request().Method != http.MethodGet
+    },
+}))
+```
+
+## How It Works
+
+1. Request arrives
+2. Start processing
+3. After delay, if no response, send hedge request
+4. Return first successful response
+5. Cancel other requests
+
+## API Reference
+
+### Functions
+
+```go
+// New creates hedge middleware
+func New(delay time.Duration) mizu.Middleware
+
+// WithOptions creates with configuration
+func WithOptions(opts Options) mizu.Middleware
+```
+
+## When to Use
+
+- High-latency backends
+- P99 latency optimization
+- Read-heavy workloads
+
+## When NOT to Use
+
+- Non-idempotent operations (POST, PUT, DELETE)
+- Resource-intensive operations
+- When backend can't handle extra load
+
+## Best Practices
+
+- Only use for idempotent operations
+- Set delay based on p50 latency
+- Monitor hedge rate
+- Ensure backend can handle increased load
+
+## Related Middlewares
+
+- [timeout](/middlewares/timeout) - Request timeout
+- [retry](/middlewares/retry) - Automatic retries
+- [circuitbreaker](/middlewares/circuitbreaker) - Circuit breaker

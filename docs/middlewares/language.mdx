@@ -1,0 +1,120 @@
+---
+title: "Language"
+description: "Language detection middleware for internationalization."
+---
+
+## Overview
+
+The `language` middleware detects user language preference from Accept-Language header, cookies, or query parameters.
+
+Use it when you need:
+- Multi-language support
+- Content localization
+- Language-based routing
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/language"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Use(language.New(language.Options{
+    Supported: []string{"en", "es", "fr", "de"},
+    Default:   "en",
+}))
+
+app.Get("/", func(c *mizu.Ctx) error {
+    lang := language.Get(c)
+    return c.JSON(200, map[string]string{"language": lang})
+})
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Supported` | `[]string` | Required | Supported languages |
+| `Default` | `string` | First supported | Default language |
+| `QueryKey` | `string` | `"lang"` | Query parameter |
+| `CookieName` | `string` | `"lang"` | Cookie name |
+
+## Examples
+
+### Basic Detection
+
+```go
+app.Use(language.New(language.Options{
+    Supported: []string{"en", "es", "fr"},
+    Default:   "en",
+}))
+```
+
+### From Query Parameter
+
+```go
+// GET /page?lang=es
+app.Use(language.New(language.Options{
+    Supported: []string{"en", "es"},
+    QueryKey:  "language",
+}))
+```
+
+### Persist in Cookie
+
+```go
+app.Use(language.New(language.Options{
+    Supported:  []string{"en", "es", "fr"},
+    CookieName: "preferred_language",
+}))
+```
+
+### Language-Based Routing
+
+```go
+app.Get("/:lang/page", func(c *mizu.Ctx) error {
+    lang := c.Param("lang")
+    // Validate and use language
+    return c.JSON(200, getContent(lang))
+})
+```
+
+## Detection Order
+
+1. Query parameter (?lang=es)
+2. Cookie (lang=es)
+3. Accept-Language header
+4. Default language
+
+## API Reference
+
+### Functions
+
+```go
+// New creates language middleware
+func New(opts Options) mizu.Middleware
+
+// Get returns detected language
+func Get(c *mizu.Ctx) string
+
+// Set sets language preference
+func Set(c *mizu.Ctx, lang string)
+```
+
+## Best Practices
+
+- Support common language codes
+- Provide language switcher UI
+- Persist user preference
+- Use ISO 639-1 codes (en, es, fr)
+
+## Related Middlewares
+
+- [timezone](/middlewares/timezone) - Timezone detection
+- [vary](/middlewares/vary) - Vary headers

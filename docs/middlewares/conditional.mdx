@@ -1,0 +1,117 @@
+---
+title: "Conditional"
+description: "Conditional middleware execution based on request properties."
+---
+
+## Overview
+
+The `conditional` middleware enables conditional execution of other middleware based on request properties.
+
+Use it when you need:
+- Skip middleware for certain routes
+- Apply middleware conditionally
+- Dynamic middleware chains
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/conditional"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Only apply auth for /api routes
+app.Use(conditional.If(
+    func(c *mizu.Ctx) bool {
+        return strings.HasPrefix(c.Request().URL.Path, "/api")
+    },
+    authMiddleware,
+))
+```
+
+## Examples
+
+### Path-Based
+
+```go
+// Skip for health checks
+app.Use(conditional.Unless(
+    func(c *mizu.Ctx) bool {
+        return c.Request().URL.Path == "/health"
+    },
+    rateLimitMiddleware,
+))
+```
+
+### Method-Based
+
+```go
+// Only for mutations
+app.Use(conditional.If(
+    func(c *mizu.Ctx) bool {
+        m := c.Request().Method
+        return m == "POST" || m == "PUT" || m == "DELETE"
+    },
+    csrfMiddleware,
+))
+```
+
+### Header-Based
+
+```go
+// Only for API requests
+app.Use(conditional.If(
+    func(c *mizu.Ctx) bool {
+        return c.Request().Header.Get("Accept") == "application/json"
+    },
+    apiMiddleware,
+))
+```
+
+### Combine Conditions
+
+```go
+app.Use(conditional.If(
+    conditional.And(
+        conditional.PathPrefix("/api"),
+        conditional.Not(conditional.Path("/api/public")),
+    ),
+    authMiddleware,
+))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// If applies middleware when condition is true
+func If(cond func(*mizu.Ctx) bool, m mizu.Middleware) mizu.Middleware
+
+// Unless applies middleware when condition is false
+func Unless(cond func(*mizu.Ctx) bool, m mizu.Middleware) mizu.Middleware
+
+// Condition helpers
+func Path(path string) func(*mizu.Ctx) bool
+func PathPrefix(prefix string) func(*mizu.Ctx) bool
+func Method(methods ...string) func(*mizu.Ctx) bool
+func Header(key, value string) func(*mizu.Ctx) bool
+func And(conditions ...func(*mizu.Ctx) bool) func(*mizu.Ctx) bool
+func Or(conditions ...func(*mizu.Ctx) bool) func(*mizu.Ctx) bool
+func Not(cond func(*mizu.Ctx) bool) func(*mizu.Ctx) bool
+```
+
+## Best Practices
+
+- Use clear condition names
+- Keep conditions simple
+- Document conditional behavior
+- Test edge cases
+
+## Related Middlewares
+
+- [filter](/middlewares/filter) - Request filtering
+- [feature](/middlewares/feature) - Feature flags

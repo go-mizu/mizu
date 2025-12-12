@@ -1,0 +1,224 @@
+---
+title: "Middleware"
+description: "Extend your application with reusable middleware components."
+---
+
+Middleware in Mizu are functions that wrap handlers to add functionality before or after request processing.
+They follow a simple pattern: receive a handler, return a new handler with added behavior.
+
+### How middleware works
+
+A middleware is a function that takes a handler and returns a new handler:
+
+```go
+type Middleware func(Handler) Handler
+```
+
+When a request arrives, it passes through each middleware in order.
+Each middleware can:
+
+- Execute code **before** calling the next handler
+- Execute code **after** the next handler returns
+- Decide to **stop** the chain early
+
+```go
+func Logger() mizu.Middleware {
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            start := time.Now()
+            c.Logger().Info("request started", "path", c.Request().URL.Path)
+
+            err := next(c) // Call the next handler
+
+            c.Logger().Info("request completed",
+                "duration", time.Since(start),
+                "status", c.StatusCode(),
+            )
+            return err
+        }
+    }
+}
+```
+
+### Using middleware
+
+Apply middleware globally to all routes with `Use`:
+
+```go
+app := mizu.New()
+app.Use(recover.New())
+app.Use(requestid.New())
+app.Use(timeout.New(30 * time.Second))
+```
+
+Apply middleware to specific routes by passing it to the route definition:
+
+```go
+app.Get("/admin", adminHandler, basicauth.New(credentials))
+```
+
+Apply middleware to a group of routes:
+
+```go
+api := app.Group("/api")
+api.Use(ratelimit.PerMinute(100))
+api.Get("/users", listUsers)
+api.Post("/users", createUser)
+```
+
+### Execution order
+
+Middleware executes in the order you add them.
+For a request, middleware runs top-to-bottom before the handler,
+and bottom-to-top after the handler returns:
+
+```go
+app.Use(A()) // First in, last out
+app.Use(B()) // Second in, second out
+app.Use(C()) // Third in, first out
+app.Get("/", handler)
+```
+
+Request flow: `A → B → C → handler → C → B → A`
+
+### Built-in middlewares
+
+Mizu provides a comprehensive collection of production-ready middlewares:
+
+| Category | Middlewares |
+|----------|-------------|
+| **Authentication** | `basicauth`, `bearerauth`, `keyauth`, `csrf` |
+| **Security** | `helmet`, `secure`, `ipfilter`, `honeypot`, `captcha` |
+| **Rate Limiting** | `ratelimit`, `circuitbreaker` |
+| **Request Processing** | `bodylimit`, `contenttype`, `validator`, `header` |
+| **Caching** | `cache`, `nocache` |
+| **URL Handling** | `redirect`, `slash`, `rewrite` |
+| **Networking** | `proxy`, `forwarded`, `realip` |
+| **Context** | `requestid`, `timeout`, `recover`, `timing` |
+| **Real-time** | `websocket`, `sse` |
+| **Operations** | `version`, `maintenance`, `pprof` |
+| **Advanced** | `feature`, `multitenancy`, `chaos`, `mirror` |
+
+Each middleware follows Go conventions:
+
+- Zero external dependencies
+- Sensible defaults
+- Options pattern for configuration
+- Safe for concurrent use
+
+### Writing custom middleware
+
+Create your own middleware for application-specific needs:
+
+```go
+func RequireAdmin() mizu.Middleware {
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            user := GetUser(c)
+            if user == nil || !user.IsAdmin {
+                return c.Text(http.StatusForbidden, "Admin access required")
+            }
+            return next(c)
+        }
+    }
+}
+```
+
+### Middleware with options
+
+Use the Options pattern for configurable middleware:
+
+```go
+type AuthOptions struct {
+    Header       string
+    ErrorHandler func(c *mizu.Ctx) error
+}
+
+func Auth(opts AuthOptions) mizu.Middleware {
+    if opts.Header == "" {
+        opts.Header = "Authorization"
+    }
+
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            token := c.Request().Header.Get(opts.Header)
+            if token == "" {
+                if opts.ErrorHandler != nil {
+                    return opts.ErrorHandler(c)
+                }
+                return c.Text(http.StatusUnauthorized, "Unauthorized")
+            }
+            return next(c)
+        }
+    }
+}
+```
+
+### Storing values in context
+
+Pass data between middleware and handlers using Go's context:
+
+```go
+type contextKey struct{}
+
+func UserMiddleware() mizu.Middleware {
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            user := loadUser(c)
+
+            ctx := context.WithValue(c.Context(), contextKey{}, user)
+            req := c.Request().WithContext(ctx)
+            *c.Request() = *req
+
+            return next(c)
+        }
+    }
+}
+
+func GetUser(c *mizu.Ctx) *User {
+    if user, ok := c.Context().Value(contextKey{}).(*User); ok {
+        return user
+    }
+    return nil
+}
+```
+
+### Common patterns
+
+**Skip middleware for certain paths:**
+
+```go
+func SkipPaths(paths []string, mw mizu.Middleware) mizu.Middleware {
+    pathMap := make(map[string]bool)
+    for _, p := range paths {
+        pathMap[p] = true
+    }
+
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            if pathMap[c.Request().URL.Path] {
+                return next(c)
+            }
+            return mw(next)(c)
+        }
+    }
+}
+```
+
+**Conditional middleware:**
+
+```go
+func ConditionalMiddleware(condition func(*mizu.Ctx) bool, mw mizu.Middleware) mizu.Middleware {
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            if condition(c) {
+                return mw(next)(c)
+            }
+            return next(c)
+        }
+    }
+}
+```
+
+Middleware keeps your handlers focused on business logic while adding cross-cutting concerns
+like authentication, logging, and error handling in a clean, composable way.

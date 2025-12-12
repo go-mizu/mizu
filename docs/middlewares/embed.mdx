@@ -1,0 +1,125 @@
+---
+title: "Embed"
+description: "Embedded filesystem middleware for serving bundled assets."
+---
+
+## Overview
+
+The `embed` middleware provides helpers for serving files from Go's embedded filesystem (embed.FS), enabling single-binary deployments.
+
+Use it when you need:
+- Single binary deployment
+- Bundled static assets
+- Embedded templates
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/embed"
+```
+
+## Quick Start
+
+```go
+//go:embed static/*
+var staticFS embed.FS
+
+app := mizu.New()
+app.Use(embed.Static(staticFS, "static"))
+```
+
+## Examples
+
+### Serve Static Files
+
+```go
+//go:embed static/*
+var staticFS embed.FS
+
+app.Use(embed.Static(staticFS, "static"))
+// Files at static/css/app.css available at /css/app.css
+```
+
+### With Prefix
+
+```go
+//go:embed assets/*
+var assetsFS embed.FS
+
+app.Use(embed.WithOptions(embed.Options{
+    FS:     assetsFS,
+    Root:   "assets",
+    Prefix: "/assets",
+}))
+// /assets/js/app.js -> assets/js/app.js
+```
+
+### Multiple Embeds
+
+```go
+//go:embed static/*
+var staticFS embed.FS
+
+//go:embed templates/*
+var templatesFS embed.FS
+
+// Serve static files
+app.Use(embed.Static(staticFS, "static"))
+
+// Load templates
+tmpl := embed.MustParseTemplates(templatesFS, "templates/*.html")
+```
+
+### SPA with Embed
+
+```go
+//go:embed dist/*
+var distFS embed.FS
+
+app.Use(embed.SPA(distFS, "dist"))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// Static serves embedded static files
+func Static(fs embed.FS, root string) mizu.Middleware
+
+// SPA serves embedded SPA
+func SPA(fs embed.FS, root string) mizu.Middleware
+
+// WithOptions creates with configuration
+func WithOptions(opts Options) mizu.Middleware
+
+// Helper functions
+func MustParseTemplates(fs embed.FS, pattern string) *template.Template
+func ReadFile(fs embed.FS, name string) ([]byte, error)
+```
+
+## Build Considerations
+
+```go
+// Embed entire directory
+//go:embed static/*
+
+// Embed specific files
+//go:embed favicon.ico robots.txt
+
+// Embed with pattern
+//go:embed templates/*.html templates/**/*.html
+```
+
+## Best Practices
+
+- Use for production deployments
+- Keep embedded files small
+- Use content hashing for cache busting
+- Test embedded files in CI
+
+## Related Middlewares
+
+- [static](/middlewares/static) - File system static files
+- [spa](/middlewares/spa) - SPA support
+- [favicon](/middlewares/favicon) - Favicon serving

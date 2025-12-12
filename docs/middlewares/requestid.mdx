@@ -1,0 +1,122 @@
+---
+title: "Request ID"
+description: "Request ID generation and propagation middleware for tracing."
+---
+
+## Overview
+
+The `requestid` middleware generates or propagates unique request IDs for distributed tracing and debugging. Each request gets a unique identifier that can be logged and passed to downstream services.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/requestid"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+app.Use(requestid.New())
+```
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Header` | `string` | `"X-Request-ID"` | Header name |
+| `Generator` | `func() string` | UUID v4 | ID generator function |
+
+## Examples
+
+### Basic Usage
+
+```go
+app.Use(requestid.New())
+
+app.Get("/", func(c *mizu.Ctx) error {
+    id := requestid.Get(c)
+    c.Logger().Info("processing", "request_id", id)
+    return c.JSON(200, map[string]string{"id": id})
+})
+```
+
+### Custom Header
+
+```go
+app.Use(requestid.WithOptions(requestid.Options{
+    Header: "X-Trace-ID",
+}))
+```
+
+### Custom Generator
+
+```go
+var counter uint64
+
+app.Use(requestid.WithOptions(requestid.Options{
+    Generator: func() string {
+        return fmt.Sprintf("req-%d-%d", time.Now().Unix(), atomic.AddUint64(&counter, 1))
+    },
+}))
+```
+
+### ID Propagation
+
+If the incoming request has a request ID header, it's preserved:
+
+```
+Client → X-Request-ID: abc123 → Server
+                              → Response X-Request-ID: abc123
+```
+
+If not, a new one is generated:
+
+```
+Client → (no header) → Server generates: xyz789
+                    → Response X-Request-ID: xyz789
+```
+
+### Logging with Request ID
+
+```go
+app.Use(requestid.New())
+
+app.Get("/", func(c *mizu.Ctx) error {
+    logger := c.Logger().With("request_id", requestid.Get(c))
+    logger.Info("handling request")
+    // ...
+    return c.JSON(200, data)
+})
+```
+
+### Pass to Downstream Services
+
+```go
+func callService(c *mizu.Ctx) error {
+    req, _ := http.NewRequest("GET", "http://service/api", nil)
+    req.Header.Set("X-Request-ID", requestid.Get(c))
+    // ...
+}
+```
+
+## API Reference
+
+```go
+func New() mizu.Middleware
+func WithOptions(opts Options) mizu.Middleware
+func FromContext(c *mizu.Ctx) string
+func Get(c *mizu.Ctx) string  // Alias for FromContext
+```
+
+## Best Practices
+
+- Add early in middleware chain
+- Include in all logs
+- Pass to downstream services
+- Use for error correlation
+
+## Related Middlewares
+
+- [timing](/middlewares/timing) - Performance tracing
+- [recover](/middlewares/recover) - Panic recovery with context

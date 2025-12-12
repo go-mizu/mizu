@@ -1,0 +1,110 @@
+---
+title: "Filter"
+description: "Request filtering middleware for conditional routing."
+---
+
+## Overview
+
+The `filter` middleware provides request filtering capabilities, allowing or blocking requests based on custom conditions.
+
+Use it when you need:
+- Block specific requests
+- Conditional access
+- Request validation
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/filter"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Block requests without API key
+app.Use(filter.New(func(c *mizu.Ctx) bool {
+    return c.Request().Header.Get("X-API-Key") != ""
+}))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Allow` | `func(*mizu.Ctx) bool` | Required | Allow function |
+| `ErrorHandler` | `func(*mizu.Ctx) error` | 403 | Custom rejection |
+
+## Examples
+
+### Allow Function
+
+```go
+app.Use(filter.New(func(c *mizu.Ctx) bool {
+    // Allow if condition is true
+    return isAllowed(c)
+}))
+```
+
+### Block by User-Agent
+
+```go
+app.Use(filter.New(func(c *mizu.Ctx) bool {
+    ua := c.Request().UserAgent()
+    return !strings.Contains(ua, "BadBot")
+}))
+```
+
+### Custom Error
+
+```go
+app.Use(filter.WithOptions(filter.Options{
+    Allow: allowFunc,
+    ErrorHandler: func(c *mizu.Ctx) error {
+        return c.JSON(403, map[string]string{
+            "error": "Access denied",
+        })
+    },
+}))
+```
+
+### Combine Conditions
+
+```go
+app.Use(filter.New(func(c *mizu.Ctx) bool {
+    hasKey := c.Request().Header.Get("X-API-Key") != ""
+    isGet := c.Request().Method == http.MethodGet
+    return hasKey || isGet
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates filter middleware
+func New(allow func(*mizu.Ctx) bool) mizu.Middleware
+
+// WithOptions creates with configuration
+func WithOptions(opts Options) mizu.Middleware
+
+// Block creates blocking filter
+func Block(block func(*mizu.Ctx) bool) mizu.Middleware
+```
+
+## Best Practices
+
+- Keep filter logic simple
+- Log blocked requests
+- Use descriptive error messages
+- Combine with rate limiting
+
+## Related Middlewares
+
+- [ipfilter](/middlewares/ipfilter) - IP-based filtering
+- [keyauth](/middlewares/keyauth) - API key auth
+- [rbac](/middlewares/rbac) - Role-based access

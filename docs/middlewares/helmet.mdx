@@ -1,0 +1,249 @@
+---
+title: "Helmet"
+description: "Security headers middleware for protecting against common web vulnerabilities."
+---
+
+## Overview
+
+The `helmet` middleware sets security-related HTTP headers to protect your application from common vulnerabilities like clickjacking, XSS, and content-type sniffing.
+
+Use it when you need:
+- Protection against common web vulnerabilities
+- Content Security Policy (CSP)
+- HTTP Strict Transport Security (HSTS)
+- Compliance with security best practices
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/helmet"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Use recommended security headers
+app.Use(helmet.Default())
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `ContentSecurityPolicy` | `string` | - | Content-Security-Policy header |
+| `XFrameOptions` | `string` | `"SAMEORIGIN"` | X-Frame-Options header |
+| `XContentTypeOptions` | `bool` | `true` | X-Content-Type-Options: nosniff |
+| `ReferrerPolicy` | `string` | `"strict-origin-when-cross-origin"` | Referrer-Policy header |
+| `StrictTransportSecurity` | `*HSTSOptions` | - | HSTS configuration |
+| `PermissionsPolicy` | `string` | - | Permissions-Policy header |
+| `CrossOriginOpenerPolicy` | `string` | `"same-origin"` | Cross-Origin-Opener-Policy |
+| `CrossOriginEmbedderPolicy` | `string` | - | Cross-Origin-Embedder-Policy |
+| `CrossOriginResourcePolicy` | `string` | `"same-origin"` | Cross-Origin-Resource-Policy |
+| `OriginAgentCluster` | `bool` | `true` | Origin-Agent-Cluster: ?1 |
+| `XDNSPrefetchControl` | `*bool` | `false` | X-DNS-Prefetch-Control |
+| `XDownloadOptions` | `bool` | `true` | X-Download-Options: noopen |
+| `XPermittedCrossDomainPolicies` | `string` | `"none"` | X-Permitted-Cross-Domain-Policies |
+
+### HSTSOptions
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `MaxAge` | `time.Duration` | - | Time to remember HTTPS-only |
+| `IncludeSubDomains` | `bool` | `false` | Apply to subdomains |
+| `Preload` | `bool` | `false` | Enable HSTS preload |
+
+## Examples
+
+### Default Security Headers
+
+```go
+// Recommended settings for most applications
+app.Use(helmet.Default())
+```
+
+Sets these headers:
+```
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+X-DNS-Prefetch-Control: off
+X-Download-Options: noopen
+X-Permitted-Cross-Domain-Policies: none
+Referrer-Policy: strict-origin-when-cross-origin
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Resource-Policy: same-origin
+Origin-Agent-Cluster: ?1
+```
+
+### Content Security Policy
+
+```go
+app.Use(helmet.ContentSecurityPolicy(
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline' cdn.example.com; " +
+    "style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data: https:; " +
+    "font-src 'self' fonts.gstatic.com",
+))
+```
+
+### HTTP Strict Transport Security
+
+```go
+app.Use(helmet.StrictTransportSecurity(
+    365*24*time.Hour, // 1 year
+    true,             // include subdomains
+    true,             // preload
+))
+```
+
+### Frame Options
+
+```go
+// Prevent any framing
+app.Use(helmet.XFrameOptions("DENY"))
+
+// Allow same origin only
+app.Use(helmet.XFrameOptions("SAMEORIGIN"))
+```
+
+### Full Custom Configuration
+
+```go
+app.Use(helmet.New(helmet.Options{
+    ContentSecurityPolicy: "default-src 'self'",
+    XFrameOptions:         "DENY",
+    XContentTypeOptions:   true,
+    ReferrerPolicy:        "no-referrer",
+    StrictTransportSecurity: &helmet.HSTSOptions{
+        MaxAge:            365 * 24 * time.Hour,
+        IncludeSubDomains: true,
+        Preload:           true,
+    },
+    PermissionsPolicy:             "geolocation=(), microphone=()",
+    CrossOriginOpenerPolicy:       "same-origin-allow-popups",
+    CrossOriginEmbedderPolicy:     "require-corp",
+    CrossOriginResourcePolicy:     "same-site",
+}))
+```
+
+### Individual Header Functions
+
+```go
+// Apply only specific headers
+app.Use(helmet.XContentTypeOptions())      // X-Content-Type-Options: nosniff
+app.Use(helmet.XFrameOptions("DENY"))       // X-Frame-Options: DENY
+app.Use(helmet.ReferrerPolicy("no-referrer"))
+app.Use(helmet.OriginAgentCluster())
+```
+
+### Permissions Policy
+
+```go
+// Disable dangerous browser features
+app.Use(helmet.PermissionsPolicy(
+    "geolocation=(), " +
+    "microphone=(), " +
+    "camera=(), " +
+    "payment=(self), " +
+    "usb=()",
+))
+```
+
+### DNS Prefetch Control
+
+```go
+// Enable DNS prefetching for performance
+on := true
+app.Use(helmet.XDNSPrefetchControl(true))
+
+// Disable for privacy
+app.Use(helmet.XDNSPrefetchControl(false))
+```
+
+### Cross-Origin Policies
+
+```go
+app.Use(helmet.New(helmet.Options{
+    // Isolate browsing context
+    CrossOriginOpenerPolicy: "same-origin",
+
+    // Require CORP for subresources
+    CrossOriginEmbedderPolicy: "require-corp",
+
+    // Control resource sharing
+    CrossOriginResourcePolicy: "same-origin",
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// Default creates middleware with recommended headers
+func Default() mizu.Middleware
+
+// New creates middleware with custom options
+func New(opts Options) mizu.Middleware
+```
+
+### Individual Header Functions
+
+```go
+func ContentSecurityPolicy(policy string) mizu.Middleware
+func XFrameOptions(value string) mizu.Middleware
+func XContentTypeOptions() mizu.Middleware
+func ReferrerPolicy(policy string) mizu.Middleware
+func StrictTransportSecurity(maxAge time.Duration, includeSubDomains, preload bool) mizu.Middleware
+func PermissionsPolicy(policy string) mizu.Middleware
+func CrossOriginOpenerPolicy(policy string) mizu.Middleware
+func CrossOriginEmbedderPolicy(policy string) mizu.Middleware
+func CrossOriginResourcePolicy(policy string) mizu.Middleware
+func OriginAgentCluster() mizu.Middleware
+func XDNSPrefetchControl(on bool) mizu.Middleware
+func XDownloadOptions() mizu.Middleware
+func XPermittedCrossDomainPolicies(policy string) mizu.Middleware
+```
+
+## Security Headers Explained
+
+| Header | Protection |
+|--------|------------|
+| `Content-Security-Policy` | XSS, injection attacks |
+| `X-Frame-Options` | Clickjacking |
+| `X-Content-Type-Options` | MIME type sniffing |
+| `Referrer-Policy` | Information leakage |
+| `Strict-Transport-Security` | Downgrade attacks |
+| `Permissions-Policy` | Feature abuse |
+| `Cross-Origin-*-Policy` | Cross-origin attacks |
+
+## Best Practices
+
+1. **Start with Default()** - Then customize as needed
+2. **Content Security Policy** - Start strict, loosen as needed
+3. **HSTS** - Enable for HTTPS-only sites
+4. **Test thoroughly** - Security headers can break functionality
+5. **Report-Only mode** - Test CSP before enforcing
+
+### CSP Development Strategy
+
+```go
+// Development: Report-only mode
+app.Use(helmet.New(helmet.Options{
+    ContentSecurityPolicy: "default-src 'self'; report-uri /csp-report",
+}))
+
+// Production: Enforce
+app.Use(helmet.New(helmet.Options{
+    ContentSecurityPolicy: "default-src 'self'",
+}))
+```
+
+## Related Middlewares
+
+- [secure](/middlewares/secure) - HTTPS enforcement
+- [csrf](/middlewares/csrf) - CSRF protection

@@ -1,0 +1,258 @@
+---
+title: "Mirror"
+description: "Request mirroring middleware for traffic shadowing."
+---
+
+## Overview
+
+The `mirror` middleware duplicates requests to one or more target servers for traffic shadowing, testing, and analysis. Mirrored requests run asynchronously and don't affect the original response.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/mirror"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Mirror all traffic to staging server
+app.Use(mirror.New("https://staging.example.com"))
+```
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Targets` | `[]Target` | - | Mirror target URLs |
+| `Timeout` | `time.Duration` | `5s` | Timeout for mirrored requests |
+| `Async` | `bool` | `true` | Run mirror requests asynchronously |
+| `CopyBody` | `bool` | `true` | Copy request body |
+| `OnError` | `func(string, error)` | - | Error callback |
+| `OnSuccess` | `func(string, *http.Response)` | - | Success callback |
+
+## Examples
+
+### Single Target
+
+```go
+app.Use(mirror.New("https://staging.example.com"))
+
+// All requests are mirrored to staging
+app.Get("/api/users", usersHandler)
+```
+
+### Multiple Targets
+
+```go
+app.Use(mirror.New(
+    "https://staging.example.com",
+    "https://analytics.example.com",
+))
+```
+
+### Percentage-Based Mirroring
+
+```go
+app.Use(mirror.WithOptions(mirror.Options{
+    Targets: []mirror.Target{
+        mirror.Percentage("https://staging.example.com", 50), // 50% of traffic
+        mirror.Percentage("https://canary.example.com", 10),  // 10% of traffic
+    },
+}))
+```
+
+### Custom Timeout
+
+```go
+app.Use(mirror.WithOptions(mirror.Options{
+    Targets: []mirror.Target{
+        {URL: "https://staging.example.com", Percentage: 100},
+    },
+    Timeout: 10 * time.Second,
+}))
+```
+
+### Synchronous Mirroring
+
+```go
+// Wait for mirror requests to complete
+app.Use(mirror.WithOptions(mirror.Options{
+    Targets: []mirror.Target{
+        {URL: "https://backup.example.com", Percentage: 100},
+    },
+    Async: false,
+}))
+```
+
+### Error Handling
+
+```go
+app.Use(mirror.WithOptions(mirror.Options{
+    Targets: []mirror.Target{
+        {URL: "https://staging.example.com", Percentage: 100},
+    },
+    OnError: func(target string, err error) {
+        log.Printf("Mirror to %s failed: %v", target, err)
+        metrics.IncrementCounter("mirror_errors", target)
+    },
+}))
+```
+
+### Success Callback
+
+```go
+app.Use(mirror.WithOptions(mirror.Options{
+    Targets: []mirror.Target{
+        {URL: "https://staging.example.com", Percentage: 100},
+    },
+    OnSuccess: func(target string, resp *http.Response) {
+        log.Printf("Mirror to %s: status %d", target, resp.StatusCode)
+
+        // Compare responses
+        if resp.StatusCode >= 500 {
+            alertOps("Staging returned error")
+        }
+    },
+}))
+```
+
+### Response Comparison
+
+```go
+var mu sync.Mutex
+var prodResponses = make(map[string]int)
+var stagingResponses = make(map[string]int)
+
+app.Use(mirror.WithOptions(mirror.Options{
+    Targets: []mirror.Target{
+        {URL: "https://staging.example.com", Percentage: 100},
+    },
+    OnSuccess: func(target string, resp *http.Response) {
+        mu.Lock()
+        defer mu.Unlock()
+        stagingResponses[resp.Request.URL.Path] = resp.StatusCode
+    },
+}))
+
+// Middleware to track production responses
+app.Use(func(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        err := next(c)
+        // Track and compare...
+        return err
+    }
+})
+```
+
+### Route-Specific Mirroring
+
+```go
+// Only mirror specific routes
+api := app.Group("/api")
+api.Use(mirror.New("https://staging.example.com"))
+
+// Other routes are not mirrored
+app.Get("/health", healthHandler)
+```
+
+### Canary Testing
+
+```go
+// Mirror small percentage to canary for testing
+app.Use(mirror.WithOptions(mirror.Options{
+    Targets: []mirror.Target{
+        mirror.Percentage("https://canary.example.com", 5),
+    },
+    OnSuccess: func(target string, resp *http.Response) {
+        if resp.StatusCode >= 500 {
+            // Alert on canary errors
+            alertCanaryError(target, resp.StatusCode)
+        }
+    },
+    OnError: func(target string, err error) {
+        alertCanaryError(target, -1)
+    },
+}))
+```
+
+### A/B Testing Analysis
+
+```go
+app.Use(mirror.WithOptions(mirror.Options{
+    Targets: []mirror.Target{
+        {URL: "https://experiment-a.example.com", Percentage: 50},
+        {URL: "https://experiment-b.example.com", Percentage: 50},
+    },
+    OnSuccess: func(target string, resp *http.Response) {
+        // Log response times for analysis
+        latency := resp.Header.Get("X-Response-Time")
+        analytics.TrackLatency(target, latency)
+    },
+}))
+```
+
+### Skip Body for GET Requests
+
+```go
+app.Use(mirror.WithOptions(mirror.Options{
+    Targets: []mirror.Target{
+        {URL: "https://staging.example.com", Percentage: 100},
+    },
+    CopyBody: false, // Don't copy body (faster for GET)
+}))
+```
+
+## Target Structure
+
+```go
+type Target struct {
+    URL        string // Target base URL
+    Percentage int    // Percentage of requests to mirror (0-100)
+}
+```
+
+## Helper Functions
+
+```go
+// Create target with percentage
+mirror.Percentage("https://example.com", 50) // 50% of traffic
+```
+
+## Mirrored Request Headers
+
+Each mirrored request includes:
+- All original headers
+- `X-Mirrored-From: <original-host>`
+
+## API Reference
+
+```go
+func New(targets ...string) mizu.Middleware
+func WithOptions(opts Options) mizu.Middleware
+func Percentage(url string, pct int) Target
+```
+
+## Use Cases
+
+1. **Shadow Testing**: Test new versions with production traffic
+2. **Load Testing**: Send copies to test infrastructure
+3. **Analytics**: Duplicate to analytics services
+4. **Backup**: Sync to backup systems
+5. **Canary Deployment**: Route small percentage to canary
+
+## Best Practices
+
+- Use async mode (default) to avoid latency
+- Set appropriate timeouts
+- Monitor error rates on mirror targets
+- Use percentage-based mirroring for gradual rollouts
+- Log and compare responses for validation
+- Don't mirror to targets with side effects (unless intended)
+
+## Related Middlewares
+
+- [proxy](/middlewares/proxy) - Reverse proxy
+- [chaos](/middlewares/chaos) - Chaos engineering

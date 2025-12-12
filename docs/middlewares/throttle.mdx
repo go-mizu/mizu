@@ -1,0 +1,112 @@
+---
+title: "Throttle"
+description: "Request throttling middleware for controlling request flow."
+---
+
+## Overview
+
+The `throttle` middleware controls the rate of request processing by introducing delays, ensuring smooth traffic flow and preventing burst overloads.
+
+Use it when you need:
+- Smooth out traffic spikes
+- Prevent burst overloads
+- Gradual request processing
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/throttle"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Process 100 requests per second max
+app.Use(throttle.New(100))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Rate` | `int` | Required | Requests per second |
+| `Burst` | `int` | Rate | Burst capacity |
+| `WaitTimeout` | `time.Duration` | `0` | Max wait time |
+| `Skip` | `func(*mizu.Ctx) bool` | `nil` | Skip throttling |
+
+## Examples
+
+### Simple Throttle
+
+```go
+// 100 requests per second
+app.Use(throttle.New(100))
+```
+
+### With Burst
+
+```go
+// 50 rps with burst of 100
+app.Use(throttle.WithOptions(throttle.Options{
+    Rate:  50,
+    Burst: 100,
+}))
+```
+
+### With Timeout
+
+```go
+// Wait max 10 seconds
+app.Use(throttle.WithOptions(throttle.Options{
+    Rate:        50,
+    WaitTimeout: 10 * time.Second,
+}))
+```
+
+### Skip Certain Paths
+
+```go
+app.Use(throttle.WithOptions(throttle.Options{
+    Rate: 100,
+    Skip: func(c *mizu.Ctx) bool {
+        return c.Request().URL.Path == "/health"
+    },
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates throttle with rate limit
+func New(rate int) mizu.Middleware
+
+// WithOptions creates throttle with configuration
+func WithOptions(opts Options) mizu.Middleware
+```
+
+## Throttle vs Rate Limit
+
+| Feature | Throttle | Rate Limit |
+|---------|----------|------------|
+| Purpose | Smooth traffic | Limit total requests |
+| Behavior | Delays requests | Rejects excess |
+| Use case | Burst protection | Abuse prevention |
+
+## Best Practices
+
+- Use for upstream service protection
+- Set reasonable wait timeouts
+- Monitor queue depths
+- Combine with rate limiting for full control
+
+## Related Middlewares
+
+- [ratelimit](/middlewares/ratelimit) - Rate limiting
+- [bulkhead](/middlewares/bulkhead) - Concurrency isolation
+- [adaptive](/middlewares/adaptive) - Adaptive rate limiting

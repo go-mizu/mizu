@@ -1,0 +1,259 @@
+---
+title: "Chaos"
+description: "Chaos engineering middleware for resilience testing."
+---
+
+## Overview
+
+The `chaos` middleware injects failures and latency into your application for chaos engineering and resilience testing. Use it to verify how your system handles errors and delays.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/chaos"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Inject 10% errors with random latency
+app.Use(chaos.WithOptions(chaos.Options{
+    Enabled:    true,
+    ErrorRate:  10,
+    LatencyMin: 100 * time.Millisecond,
+    LatencyMax: 500 * time.Millisecond,
+}))
+```
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Enabled` | `bool` | `false` | Enable chaos injection |
+| `ErrorRate` | `int` | `0` | Percentage of requests to fail (0-100) |
+| `ErrorCode` | `int` | `500` | HTTP status code for errors |
+| `LatencyMin` | `time.Duration` | `0` | Minimum latency to inject |
+| `LatencyMax` | `time.Duration` | `0` | Maximum latency to inject |
+| `Selector` | `func(*mizu.Ctx) bool` | - | Filter which requests to affect |
+
+## Examples
+
+### Error Injection
+
+```go
+// Fail 20% of requests with 500 error
+app.Use(chaos.Error(20, 500))
+```
+
+### Latency Injection
+
+```go
+// Add 100-500ms latency to all requests
+app.Use(chaos.Latency(100*time.Millisecond, 500*time.Millisecond))
+```
+
+### Combined Chaos
+
+```go
+app.Use(chaos.WithOptions(chaos.Options{
+    Enabled:    true,
+    ErrorRate:  5,          // 5% errors
+    ErrorCode:  503,        // Service Unavailable
+    LatencyMin: 50 * time.Millisecond,
+    LatencyMax: 200 * time.Millisecond,
+}))
+```
+
+### Selective Chaos (Path-based)
+
+```go
+app.Use(chaos.WithOptions(chaos.Options{
+    Enabled:   true,
+    ErrorRate: 50,
+    Selector:  chaos.PathSelector("/api/orders", "/api/payments"),
+}))
+// Only affects /api/orders and /api/payments
+```
+
+### Selective Chaos (Method-based)
+
+```go
+app.Use(chaos.WithOptions(chaos.Options{
+    Enabled:   true,
+    ErrorRate: 10,
+    Selector:  chaos.MethodSelector("POST", "PUT", "DELETE"),
+}))
+// Only affects write operations
+```
+
+### Header-triggered Chaos
+
+```go
+app.Use(chaos.WithOptions(chaos.Options{
+    Enabled:   true,
+    ErrorRate: 100,
+    Selector:  chaos.HeaderSelector("X-Chaos-Test"),
+}))
+// Only affects requests with X-Chaos-Test header
+```
+
+### Dynamic Control
+
+```go
+controller := chaos.NewController()
+
+app.Use(controller.Middleware())
+
+// Control chaos via admin endpoints
+app.Post("/admin/chaos/enable", func(c *mizu.Ctx) error {
+    controller.Enable()
+    return c.Text(200, "Chaos enabled")
+})
+
+app.Post("/admin/chaos/disable", func(c *mizu.Ctx) error {
+    controller.Disable()
+    return c.Text(200, "Chaos disabled")
+})
+
+app.Post("/admin/chaos/config", func(c *mizu.Ctx) error {
+    rate, _ := strconv.Atoi(c.FormValue("error_rate"))
+    controller.SetErrorRate(rate)
+
+    latencyMs, _ := strconv.Atoi(c.FormValue("latency_ms"))
+    controller.SetLatency(
+        time.Duration(latencyMs/2)*time.Millisecond,
+        time.Duration(latencyMs)*time.Millisecond,
+    )
+
+    return c.Text(200, "Configured")
+})
+
+app.Get("/admin/chaos/status", func(c *mizu.Ctx) error {
+    return c.JSON(200, map[string]bool{
+        "enabled": controller.IsEnabled(),
+    })
+})
+```
+
+### Environment-Based
+
+```go
+// Only enable in testing environment
+if os.Getenv("CHAOS_ENABLED") == "true" {
+    rate, _ := strconv.Atoi(os.Getenv("CHAOS_ERROR_RATE"))
+    app.Use(chaos.WithOptions(chaos.Options{
+        Enabled:   true,
+        ErrorRate: rate,
+    }))
+}
+```
+
+### Custom Selector
+
+```go
+app.Use(chaos.WithOptions(chaos.Options{
+    Enabled:   true,
+    ErrorRate: 30,
+    Selector: func(c *mizu.Ctx) bool {
+        // Only affect non-admin users
+        userRole := c.Get("user_role")
+        return userRole != "admin"
+    },
+}))
+```
+
+### Per-Route Chaos
+
+```go
+// Global middleware (disabled)
+app.Use(chaos.New())
+
+// Enable chaos for specific route
+app.Get("/test/chaos",
+    chaos.Error(50, 500),
+    func(c *mizu.Ctx) error {
+        return c.Text(200, "Success!")
+    },
+)
+```
+
+### Simulate Downstream Failures
+
+```go
+app.Get("/api/external", func(c *mizu.Ctx) error {
+    // Middleware adds latency/errors before reaching here
+    result, err := callExternalService()
+    if err != nil {
+        return c.JSON(500, map[string]string{"error": err.Error()})
+    }
+    return c.JSON(200, result)
+})
+```
+
+## Selectors
+
+| Selector | Description |
+|----------|-------------|
+| `PathSelector(paths...)` | Match specific URL paths |
+| `MethodSelector(methods...)` | Match HTTP methods |
+| `HeaderSelector(header)` | Match requests with header |
+
+## Controller Methods
+
+```go
+func NewController() *Controller
+func (c *Controller) Enable()
+func (c *Controller) Disable()
+func (c *Controller) IsEnabled() bool
+func (c *Controller) SetErrorRate(rate int)
+func (c *Controller) SetErrorCode(code int)
+func (c *Controller) SetLatency(min, max time.Duration)
+func (c *Controller) SetSelector(selector func(*mizu.Ctx) bool)
+func (c *Controller) Middleware() mizu.Middleware
+```
+
+## API Reference
+
+```go
+func New() mizu.Middleware
+func WithOptions(opts Options) mizu.Middleware
+func Error(rate int, code int) mizu.Middleware
+func Latency(min, max time.Duration) mizu.Middleware
+
+// Selectors
+func PathSelector(paths ...string) func(*mizu.Ctx) bool
+func MethodSelector(methods ...string) func(*mizu.Ctx) bool
+func HeaderSelector(header string) func(*mizu.Ctx) bool
+```
+
+## Safety
+
+Always protect chaos endpoints:
+
+```go
+// Restrict chaos control to admin
+admin := app.Group("/admin")
+admin.Use(basicauth.New(basicauth.Options{
+    Users: map[string]string{"admin": "secret"},
+}))
+
+// Add chaos control routes to admin group
+admin.Post("/chaos/enable", enableChaosHandler)
+```
+
+## Best Practices
+
+- Never enable in production without safeguards
+- Use selectors to limit scope
+- Start with low error rates
+- Monitor during chaos testing
+- Use header-triggered chaos for CI/CD tests
+- Implement circuit breakers in your clients
+
+## Related Middlewares
+
+- [timeout](/middlewares/timeout) - Request timeout
+- [circuitbreaker](/middlewares/circuitbreaker) - Circuit breaker
+- [recover](/middlewares/recover) - Panic recovery

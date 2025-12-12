@@ -1,0 +1,237 @@
+---
+title: "Maintenance"
+description: "Maintenance mode middleware for scheduled downtime."
+---
+
+## Overview
+
+The `maintenance` middleware enables maintenance mode for your application, returning a 503 Service Unavailable response with optional whitelist support for IPs and paths.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/maintenance"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Enable maintenance mode
+app.Use(maintenance.New(true))
+```
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Enabled` | `bool` | `false` | Enable maintenance mode |
+| `Message` | `string` | `"Service is under maintenance"` | Response message |
+| `RetryAfter` | `int` | `3600` | Retry-After header in seconds |
+| `StatusCode` | `int` | `503` | HTTP status code |
+| `Handler` | `mizu.Handler` | - | Custom maintenance handler |
+| `Whitelist` | `[]string` | - | Allowed IP addresses |
+| `WhitelistPaths` | `[]string` | - | Paths that bypass maintenance |
+| `Check` | `func() bool` | - | Dynamic maintenance check |
+
+## Examples
+
+### Basic Maintenance Mode
+
+```go
+// Enabled from start
+app.Use(maintenance.New(true))
+// All requests return 503
+```
+
+### Custom Message
+
+```go
+app.Use(maintenance.WithOptions(maintenance.Options{
+    Enabled: true,
+    Message: "We're upgrading our systems. Back soon!",
+}))
+```
+
+### Custom Handler
+
+```go
+app.Use(maintenance.WithOptions(maintenance.Options{
+    Enabled: true,
+    Handler: func(c *mizu.Ctx) error {
+        return c.HTML(503, `
+            <html>
+                <head><title>Maintenance</title></head>
+                <body>
+                    <h1>Under Maintenance</h1>
+                    <p>We'll be back shortly.</p>
+                </body>
+            </html>
+        `)
+    },
+}))
+```
+
+### Whitelist IPs
+
+```go
+app.Use(maintenance.WithOptions(maintenance.Options{
+    Enabled: true,
+    Whitelist: []string{
+        "192.168.1.100",    // Admin workstation
+        "10.0.0.0/8",       // Internal network
+    },
+}))
+```
+
+### Whitelist Paths
+
+```go
+app.Use(maintenance.WithOptions(maintenance.Options{
+    Enabled: true,
+    WhitelistPaths: []string{
+        "/health",          // Health checks
+        "/status",          // Status endpoint
+        "/api/webhooks",    // Critical webhooks
+    },
+}))
+```
+
+### Dynamic Control
+
+```go
+mode := maintenance.NewMode(maintenance.Options{
+    Message: "Maintenance in progress",
+})
+
+app.Use(mode.Middleware())
+
+// Enable/disable dynamically
+app.Post("/admin/maintenance/enable", func(c *mizu.Ctx) error {
+    mode.Enable()
+    return c.Text(200, "Maintenance enabled")
+})
+
+app.Post("/admin/maintenance/disable", func(c *mizu.Ctx) error {
+    mode.Disable()
+    return c.Text(200, "Maintenance disabled")
+})
+
+app.Get("/admin/maintenance/status", func(c *mizu.Ctx) error {
+    return c.JSON(200, map[string]bool{
+        "enabled": mode.IsEnabled(),
+    })
+})
+```
+
+### Toggle Maintenance
+
+```go
+mode := maintenance.NewMode(maintenance.Options{})
+
+app.Post("/admin/maintenance/toggle", func(c *mizu.Ctx) error {
+    mode.Toggle()
+    return c.JSON(200, map[string]bool{
+        "enabled": mode.IsEnabled(),
+    })
+})
+```
+
+### Scheduled Maintenance
+
+```go
+// Maintenance window: Dec 15, 2024 2:00 AM - 4:00 AM UTC
+start := time.Date(2024, 12, 15, 2, 0, 0, 0, time.UTC)
+end := time.Date(2024, 12, 15, 4, 0, 0, 0, time.UTC)
+
+app.Use(maintenance.ScheduledMaintenance(start, end))
+```
+
+### Check Function
+
+```go
+app.Use(maintenance.WithOptions(maintenance.Options{
+    Check: func() bool {
+        // Check external flag (e.g., from database or config)
+        return config.IsMaintenanceMode()
+    },
+}))
+```
+
+### Environment-Based
+
+```go
+app.Use(maintenance.WithOptions(maintenance.Options{
+    Check: func() bool {
+        return os.Getenv("MAINTENANCE_MODE") == "true"
+    },
+    WhitelistPaths: []string{"/health"},
+}))
+```
+
+### With Retry-After
+
+```go
+app.Use(maintenance.WithOptions(maintenance.Options{
+    Enabled:    true,
+    RetryAfter: 1800, // 30 minutes
+}))
+// Response includes: Retry-After: 1800
+```
+
+### JSON Response
+
+```go
+app.Use(maintenance.WithOptions(maintenance.Options{
+    Enabled: true,
+    Handler: func(c *mizu.Ctx) error {
+        c.Writer().Header().Set("Retry-After", "3600")
+        return c.JSON(503, map[string]any{
+            "status":     "maintenance",
+            "message":    "Service is under maintenance",
+            "retry_after": 3600,
+        })
+    },
+}))
+```
+
+## API Reference
+
+```go
+func New(enabled bool) mizu.Middleware
+func WithOptions(opts Options) mizu.Middleware
+func ScheduledMaintenance(start, end time.Time) mizu.Middleware
+func NewMode(opts Options) *Mode
+
+// Mode methods
+func (m *Mode) Enable()
+func (m *Mode) Disable()
+func (m *Mode) Toggle()
+func (m *Mode) IsEnabled() bool
+func (m *Mode) Middleware() mizu.Middleware
+```
+
+## Response Headers
+
+```
+HTTP/1.1 503 Service Unavailable
+Retry-After: 3600
+Content-Type: text/plain
+
+Service is under maintenance
+```
+
+## Best Practices
+
+- Whitelist health check endpoints for monitoring
+- Use scheduled maintenance for planned downtime
+- Whitelist admin IPs for debugging
+- Set appropriate Retry-After values
+- Provide helpful maintenance messages
+- Use dynamic control for emergency maintenance
+
+## Related Middlewares
+
+- [version](/middlewares/version) - API versioning
+- [ratelimit](/middlewares/ratelimit) - Rate limiting

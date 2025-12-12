@@ -1,0 +1,91 @@
+---
+title: "Rewrite"
+description: "URL rewriting middleware for path transformation without redirects."
+---
+
+## Overview
+
+The `rewrite` middleware transforms URL paths internally without sending redirects to the client. The browser URL remains unchanged while the server processes a different path.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/rewrite"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Rewrite /api/v1/* to /api/*
+app.Use(rewrite.New(rewrite.Prefix("/api/v1", "/api")))
+```
+
+## Examples
+
+### Prefix Rewrite
+
+```go
+// /old/* → /new/*
+app.Use(rewrite.New(rewrite.Prefix("/old", "/new")))
+```
+
+### Regex Rewrite
+
+```go
+// /posts/123 → /articles/123
+app.Use(rewrite.New(rewrite.Regex(`^/posts/(\d+)$`, "/articles/$1")))
+```
+
+### Multiple Rules
+
+```go
+app.Use(rewrite.New(
+    rewrite.Prefix("/api/v1", "/api"),
+    rewrite.Prefix("/legacy", "/current"),
+    rewrite.Regex(`^/user/(\d+)$`, "/users/$1"),
+))
+```
+
+### Version Stripping
+
+```go
+// Remove API version from path
+app.Use(rewrite.New(
+    rewrite.Regex(`^/v\d+/(.*)$`, "/$1"),
+))
+```
+
+## API Reference
+
+```go
+func New(rules ...Rule) mizu.Middleware
+func WithOptions(opts Options) mizu.Middleware
+func Prefix(from, to string) Rule
+func Regex(pattern, replacement string) Rule
+```
+
+### Rule Type
+
+```go
+type Rule struct {
+    Match   string  // Pattern to match
+    Rewrite string  // Replacement pattern
+    Regex   bool    // Is Match a regex?
+}
+```
+
+## Rewrite vs Redirect
+
+| Feature | Rewrite | Redirect |
+|---------|---------|----------|
+| Client sees | Original URL | New URL |
+| HTTP round trip | No | Yes |
+| SEO | Hidden | Visible |
+| Use case | Internal routing | URL changes |
+
+## Related Middlewares
+
+- [redirect](/middlewares/redirect) - URL redirects
+- [slash](/middlewares/slash) - Trailing slash

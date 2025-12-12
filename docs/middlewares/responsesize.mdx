@@ -1,0 +1,89 @@
+---
+title: "Response Size"
+description: "Response size tracking middleware for monitoring and metrics."
+---
+
+## Overview
+
+The `responsesize` middleware tracks response sizes for monitoring, logging, and metrics collection.
+
+Use it when you need:
+- Monitor response sizes
+- Collect bandwidth metrics
+- Detect response size anomalies
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/responsesize"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Use(responsesize.New())
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Handler` | `func(*mizu.Ctx, int64)` | `nil` | Size callback |
+
+## Examples
+
+### Track in Context
+
+```go
+app.Use(responsesize.New())
+```
+
+### With Callback
+
+```go
+app.Use(responsesize.WithHandler(func(c *mizu.Ctx, size int64) {
+    metrics.RecordResponseSize(c.Request().URL.Path, size)
+}))
+```
+
+### Log Large Responses
+
+```go
+app.Use(responsesize.WithHandler(func(c *mizu.Ctx, size int64) {
+    if size > 1024*1024 { // > 1MB
+        log.Printf("Large response: %s %d bytes", c.Request().URL.Path, size)
+    }
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates response size middleware
+func New() mizu.Middleware
+
+// WithHandler creates with callback
+func WithHandler(handler func(*mizu.Ctx, int64)) mizu.Middleware
+
+// Get returns response size from context
+func Get(c *mizu.Ctx) int64
+```
+
+## Best Practices
+
+- Track alongside request sizes
+- Set alerts for unusually large responses
+- Use for bandwidth billing
+- Monitor compression effectiveness
+
+## Related Middlewares
+
+- [requestsize](/middlewares/requestsize) - Request size tracking
+- [compress](/middlewares/compress) - Response compression
+- [metrics](/middlewares/metrics) - Metrics collection

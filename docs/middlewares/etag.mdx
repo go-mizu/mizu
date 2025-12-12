@@ -1,0 +1,120 @@
+---
+title: "ETag"
+description: "ETag generation middleware for HTTP caching and conditional requests."
+---
+
+## Overview
+
+The `etag` middleware automatically generates ETag headers for responses, enabling efficient HTTP caching with conditional requests. When a client sends a matching `If-None-Match` header, it returns 304 Not Modified.
+
+Use it when you need:
+- Bandwidth optimization through caching
+- Conditional GET requests
+- Cache validation
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/etag"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Enable ETag generation
+app.Use(etag.New())
+
+app.Get("/api/data", func(c *mizu.Ctx) error {
+    return c.JSON(200, data)
+})
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Weak` | `bool` | `false` | Generate weak ETags |
+| `HashFunc` | `func([]byte) string` | MD5 hash | Custom hash function |
+
+## Examples
+
+### Strong ETags (Default)
+
+```go
+app.Use(etag.New())
+// Generates: ETag: "abc123def456"
+```
+
+### Weak ETags
+
+```go
+app.Use(etag.Weak())
+// Generates: ETag: W/"abc123def456"
+```
+
+### Custom Hash Function
+
+```go
+app.Use(etag.WithOptions(etag.Options{
+    HashFunc: func(body []byte) string {
+        h := sha256.Sum256(body)
+        return hex.EncodeToString(h[:16])
+    },
+}))
+```
+
+## How It Works
+
+1. Request comes in without `If-None-Match`
+2. Response is generated with ETag header
+3. Client caches response with ETag
+4. Next request includes `If-None-Match: "etag-value"`
+5. If content unchanged, returns 304 Not Modified
+6. If changed, returns new response with new ETag
+
+## API Reference
+
+### Functions
+
+```go
+// New creates ETag middleware with defaults
+func New() mizu.Middleware
+
+// Weak creates middleware generating weak ETags
+func Weak() mizu.Middleware
+
+// WithOptions creates middleware with configuration
+func WithOptions(opts Options) mizu.Middleware
+```
+
+## Behavior
+
+- Only generates ETags for GET and HEAD requests
+- Skips error responses (4xx, 5xx)
+- Returns 304 Not Modified for matching ETags
+- Supports wildcard `If-None-Match: *`
+- Same content always produces same ETag
+
+## Strong vs Weak ETags
+
+| Type | Format | Use Case |
+|------|--------|----------|
+| Strong | `"abc123"` | Byte-for-byte identical |
+| Weak | `W/"abc123"` | Semantically equivalent |
+
+## Best Practices
+
+- Use strong ETags for static files
+- Use weak ETags for dynamic content that may vary slightly
+- Combine with Cache-Control for full caching strategy
+- Place after compression middleware
+
+## Related Middlewares
+
+- [cache](/middlewares/cache) - Cache-Control headers
+- [lastmodified](/middlewares/lastmodified) - Last-Modified headers
+- [compress](/middlewares/compress) - Response compression

@@ -1,0 +1,88 @@
+---
+title: "H2C"
+description: "HTTP/2 cleartext middleware for unencrypted HTTP/2 connections."
+---
+
+## Overview
+
+The `h2c` middleware enables HTTP/2 cleartext (h2c) connections, allowing HTTP/2 over unencrypted connections for development and internal services.
+
+Use it when you need:
+- HTTP/2 without TLS
+- Development HTTP/2 testing
+- Internal service communication
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/h2c"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Enable h2c
+server := h2c.Server(app)
+server.ListenAndServe(":8080")
+```
+
+## Examples
+
+### Basic H2C Server
+
+```go
+app := mizu.New()
+
+app.Get("/", func(c *mizu.Ctx) error {
+    return c.Text(200, "HTTP/2 Cleartext!")
+})
+
+// Wrap with h2c
+server := h2c.Server(app)
+log.Fatal(server.ListenAndServe(":8080"))
+```
+
+### With Custom Server
+
+```go
+app := mizu.New()
+
+server := &http.Server{
+    Addr:    ":8080",
+    Handler: h2c.Handler(app),
+}
+
+server.ListenAndServe()
+```
+
+## API Reference
+
+### Functions
+
+```go
+// Server creates h2c-enabled server
+func Server(handler http.Handler) *http.Server
+
+// Handler wraps handler for h2c support
+func Handler(handler http.Handler) http.Handler
+```
+
+## Security Warning
+
+H2C transmits data unencrypted. Only use for:
+- Development environments
+- Internal services behind TLS termination
+- Testing scenarios
+
+## Best Practices
+
+- Never use h2c in production over public networks
+- Use behind TLS-terminating load balancer
+- Test with `curl --http2-prior-knowledge`
+
+## Related Middlewares
+
+- [secure](/middlewares/secure) - HTTPS enforcement
+- [proxy](/middlewares/proxy) - Reverse proxy

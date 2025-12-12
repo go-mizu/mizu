@@ -1,0 +1,144 @@
+---
+title: "Bot"
+description: "Bot detection middleware for identifying automated traffic."
+---
+
+## Overview
+
+The `bot` middleware detects bot traffic based on user-agent patterns, behavior analysis, and known bot signatures.
+
+Use it when you need:
+- Bot traffic identification
+- Search engine crawler handling
+- Automated traffic filtering
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/bot"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Use(bot.New())
+
+app.Get("/", func(c *mizu.Ctx) error {
+    if bot.IsBot(c) {
+        return c.Text(200, "Hello, bot!")
+    }
+    return c.HTML(200, fullPage)
+})
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Block` | `bool` | `false` | Block detected bots |
+| `AllowGood` | `bool` | `true` | Allow known good bots |
+| `Patterns` | `[]string` | Built-in | Additional patterns |
+
+## Examples
+
+### Detect Bots
+
+```go
+app.Use(bot.New())
+
+app.Get("/", func(c *mizu.Ctx) error {
+    if bot.IsBot(c) {
+        // Serve simplified content
+        return c.Text(200, "Content")
+    }
+    return c.HTML(200, richContent)
+})
+```
+
+### Block Bad Bots
+
+```go
+app.Use(bot.New(bot.Options{
+    Block:     true,
+    AllowGood: true, // Allow Google, Bing, etc.
+}))
+```
+
+### Custom Patterns
+
+```go
+app.Use(bot.New(bot.Options{
+    Patterns: []string{
+        "MyCustomBot",
+        "InternalCrawler",
+    },
+}))
+```
+
+### Bot-Specific Routes
+
+```go
+app.Get("/sitemap.xml", func(c *mizu.Ctx) error {
+    return c.XML(200, sitemap)
+})
+
+app.Get("/", func(c *mizu.Ctx) error {
+    info := bot.Info(c)
+    if info.IsSearchEngine {
+        // SEO-optimized content
+    }
+    return c.HTML(200, content)
+})
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates bot detection middleware
+func New(opts ...Options) mizu.Middleware
+
+// IsBot returns true if request is from bot
+func IsBot(c *mizu.Ctx) bool
+
+// Info returns detailed bot information
+func Info(c *mizu.Ctx) *BotInfo
+```
+
+### BotInfo
+
+```go
+type BotInfo struct {
+    IsBot          bool
+    IsGoodBot      bool
+    IsSearchEngine bool
+    Name           string
+    Category       string
+}
+```
+
+## Known Good Bots
+
+- Googlebot
+- Bingbot
+- Slurp (Yahoo)
+- DuckDuckBot
+- Baiduspider
+
+## Best Practices
+
+- Allow search engine bots for SEO
+- Serve simplified content to bots
+- Log bot traffic for analysis
+- Rate limit suspicious bots
+
+## Related Middlewares
+
+- [ratelimit](/middlewares/ratelimit) - Rate limiting
+- [ipfilter](/middlewares/ipfilter) - IP filtering
+- [xrequestedwith](/middlewares/xrequestedwith) - AJAX detection

@@ -1,0 +1,146 @@
+---
+title: "Body Limit"
+description: "Request body size limiting middleware for security and resource protection."
+---
+
+## Overview
+
+The `bodylimit` middleware limits the size of request bodies to protect against large payload attacks and resource exhaustion.
+
+Use it when you need:
+- Protection against oversized requests
+- Memory usage control
+- Upload size limits
+- DoS attack prevention
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/bodylimit"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Limit to 10MB
+app.Use(bodylimit.New(bodylimit.MB(10)))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Limit` | `int64` | `1MB` | Maximum body size in bytes |
+| `ErrorHandler` | `func(*mizu.Ctx) error` | - | Custom error handler |
+
+## Examples
+
+### Basic Limit
+
+```go
+// 1MB limit (default)
+app.Use(bodylimit.New(1 << 20))
+
+// Using helper functions
+app.Use(bodylimit.New(bodylimit.KB(500)))  // 500KB
+app.Use(bodylimit.New(bodylimit.MB(10)))   // 10MB
+app.Use(bodylimit.New(bodylimit.GB(1)))    // 1GB
+```
+
+### Custom Error Handler
+
+```go
+app.Use(bodylimit.WithHandler(bodylimit.MB(10), func(c *mizu.Ctx) error {
+    return c.JSON(413, map[string]string{
+        "error":   "Request body too large",
+        "max_size": "10MB",
+    })
+}))
+```
+
+### Full Options
+
+```go
+app.Use(bodylimit.WithOptions(bodylimit.Options{
+    Limit: bodylimit.MB(5),
+    ErrorHandler: func(c *mizu.Ctx) error {
+        return c.Text(413, "File too large. Maximum size is 5MB.")
+    },
+}))
+```
+
+### Different Limits Per Route
+
+```go
+// Global: 1MB
+app.Use(bodylimit.New(bodylimit.MB(1)))
+
+// File upload route: 100MB
+app.Post("/upload", uploadHandler, bodylimit.New(bodylimit.MB(100)))
+
+// Avatar upload: 2MB
+app.Post("/avatar", avatarHandler, bodylimit.New(bodylimit.MB(2)))
+```
+
+### API vs Upload Routes
+
+```go
+// API routes: small limit
+api := app.Group("/api")
+api.Use(bodylimit.New(bodylimit.KB(100))) // 100KB for JSON
+
+// Upload routes: large limit
+uploads := app.Group("/uploads")
+uploads.Use(bodylimit.New(bodylimit.MB(50))) // 50MB for files
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates middleware with byte limit
+func New(limit int64) mizu.Middleware
+
+// WithHandler creates middleware with custom error handler
+func WithHandler(limit int64, handler func(*mizu.Ctx) error) mizu.Middleware
+
+// WithOptions creates middleware with full options
+func WithOptions(opts Options) mizu.Middleware
+```
+
+### Helper Functions
+
+```go
+// KB returns bytes for kilobytes
+func KB(n int64) int64
+
+// MB returns bytes for megabytes
+func MB(n int64) int64
+
+// GB returns bytes for gigabytes
+func GB(n int64) int64
+```
+
+## How It Works
+
+1. **Content-Length Check**: If `Content-Length` header exceeds limit, returns 413 immediately
+2. **Body Wrapping**: Wraps request body with `http.MaxBytesReader`
+3. **Read Enforcement**: If body read exceeds limit, returns error
+
+## Best Practices
+
+- Set appropriate limits based on expected data
+- Use smaller limits for JSON APIs
+- Use larger limits for file uploads
+- Consider user experience in error messages
+- Monitor rejected requests
+
+## Related Middlewares
+
+- [contenttype](/middlewares/contenttype) - Content-Type validation
+- [requestsize](/middlewares/requestsize) - Track request size

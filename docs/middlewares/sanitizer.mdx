@@ -1,0 +1,119 @@
+---
+title: "Sanitizer"
+description: "Input sanitization middleware for security and data cleaning."
+---
+
+## Overview
+
+The `sanitizer` middleware sanitizes request data to prevent XSS, SQL injection, and other injection attacks.
+
+Use it when you need:
+- XSS prevention
+- Input cleaning
+- Data normalization
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/sanitizer"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Sanitize all string inputs
+app.Use(sanitizer.New())
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `StripHTML` | `bool` | `true` | Remove HTML tags |
+| `TrimSpace` | `bool` | `true` | Trim whitespace |
+| `StripScripts` | `bool` | `true` | Remove script tags |
+| `EscapeHTML` | `bool` | `false` | HTML escape |
+| `Fields` | `[]string` | All | Specific fields |
+
+## Examples
+
+### Default Sanitization
+
+```go
+app.Use(sanitizer.New())
+```
+
+### Strip HTML
+
+```go
+app.Use(sanitizer.WithOptions(sanitizer.Options{
+    StripHTML: true,
+}))
+```
+
+### Escape Instead of Strip
+
+```go
+app.Use(sanitizer.WithOptions(sanitizer.Options{
+    StripHTML:  false,
+    EscapeHTML: true,
+}))
+```
+
+### Specific Fields
+
+```go
+app.Use(sanitizer.WithOptions(sanitizer.Options{
+    Fields: []string{"name", "email", "comment"},
+}))
+```
+
+### Custom Sanitizer
+
+```go
+app.Use(sanitizer.WithOptions(sanitizer.Options{
+    Custom: func(field string, value string) string {
+        // Custom sanitization logic
+        return strings.TrimSpace(value)
+    },
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates sanitizer middleware
+func New() mizu.Middleware
+
+// WithOptions creates with configuration
+func WithOptions(opts Options) mizu.Middleware
+
+// SanitizeString sanitizes a single string
+func SanitizeString(s string, opts Options) string
+```
+
+## What Gets Sanitized
+
+- Query parameters
+- Form data
+- JSON body fields
+- Path parameters
+
+## Best Practices
+
+- Use as defense in depth
+- Don't rely solely on sanitization
+- Use parameterized queries for SQL
+- Use proper output encoding
+
+## Related Middlewares
+
+- [validator](/middlewares/validator) - Input validation
+- [bodylimit](/middlewares/bodylimit) - Size limits
+- [helmet](/middlewares/helmet) - Security headers

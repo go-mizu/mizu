@@ -1,0 +1,119 @@
+---
+title: "Timezone"
+description: "Timezone detection middleware for time localization."
+---
+
+## Overview
+
+The `timezone` middleware detects user timezone from headers, cookies, or client hints for proper time display.
+
+Use it when you need:
+- Time localization
+- Timezone-aware scheduling
+- User time preferences
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/timezone"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Use(timezone.New())
+
+app.Get("/time", func(c *mizu.Ctx) error {
+    tz := timezone.Get(c)
+    loc, _ := time.LoadLocation(tz)
+    now := time.Now().In(loc)
+    return c.JSON(200, map[string]string{
+        "timezone": tz,
+        "time":     now.Format(time.RFC3339),
+    })
+})
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Default` | `string` | `"UTC"` | Default timezone |
+| `Header` | `string` | `"X-Timezone"` | Timezone header |
+| `CookieName` | `string` | `"tz"` | Cookie name |
+
+## Examples
+
+### Basic Detection
+
+```go
+app.Use(timezone.New())
+```
+
+### Custom Header
+
+```go
+app.Use(timezone.New(timezone.Options{
+    Header: "X-User-Timezone",
+}))
+```
+
+### With Default
+
+```go
+app.Use(timezone.New(timezone.Options{
+    Default: "America/New_York",
+}))
+```
+
+### Client-Side Detection
+
+```javascript
+// Set timezone cookie
+document.cookie = `tz=${Intl.DateTimeFormat().resolvedOptions().timeZone}`;
+```
+
+```go
+app.Use(timezone.New(timezone.Options{
+    CookieName: "tz",
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates timezone middleware
+func New(opts ...Options) mizu.Middleware
+
+// Get returns detected timezone
+func Get(c *mizu.Ctx) string
+
+// Location returns time.Location
+func Location(c *mizu.Ctx) *time.Location
+```
+
+## Common Timezones
+
+| Timezone | Description |
+|----------|-------------|
+| `UTC` | Coordinated Universal Time |
+| `America/New_York` | Eastern Time |
+| `Europe/London` | UK Time |
+| `Asia/Tokyo` | Japan Time |
+
+## Best Practices
+
+- Default to UTC for storage
+- Convert to user timezone for display
+- Use IANA timezone names
+- Detect via JavaScript for accuracy
+
+## Related Middlewares
+
+- [language](/middlewares/language) - Language detection

@@ -1,0 +1,223 @@
+---
+title: "Healthcheck"
+description: "Health check endpoints middleware for Kubernetes liveness and readiness probes."
+---
+
+## Overview
+
+The `healthcheck` middleware provides liveness and readiness probe endpoints for container orchestration platforms like Kubernetes. It supports custom health checks for databases, caches, and other dependencies.
+
+Use it when you need:
+- Kubernetes liveness/readiness probes
+- Load balancer health checks
+- Dependency health monitoring
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/healthcheck"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Register default endpoints
+healthcheck.Register(app, healthcheck.Options{})
+
+// Or add custom checks
+healthcheck.Register(app, healthcheck.Options{
+    Checks: []healthcheck.Check{
+        healthcheck.DBCheck("postgres", db.Ping),
+    },
+})
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `LivenessPath` | `string` | `"/healthz"` | Liveness endpoint path |
+| `ReadinessPath` | `string` | `"/readyz"` | Readiness endpoint path |
+| `Checks` | `[]Check` | `[]` | Health checks to run |
+
+### Check
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `Name` | `string` | Check name for reporting |
+| `Check` | `func(context.Context) error` | Check function |
+| `Timeout` | `time.Duration` | Check timeout |
+
+## Examples
+
+### Basic Endpoints
+
+```go
+healthcheck.Register(app, healthcheck.Options{})
+// Creates:
+// GET /healthz - liveness probe
+// GET /readyz - readiness probe
+```
+
+### With Database Check
+
+```go
+healthcheck.Register(app, healthcheck.Options{
+    Checks: []healthcheck.Check{
+        {
+            Name: "postgres",
+            Check: func(ctx context.Context) error {
+                return db.PingContext(ctx)
+            },
+            Timeout: 5 * time.Second,
+        },
+    },
+})
+```
+
+### Multiple Dependencies
+
+```go
+healthcheck.Register(app, healthcheck.Options{
+    Checks: []healthcheck.Check{
+        healthcheck.DBCheck("postgres", db.Ping),
+        {
+            Name: "redis",
+            Check: func(ctx context.Context) error {
+                return redisClient.Ping(ctx).Err()
+            },
+            Timeout: 2 * time.Second,
+        },
+        {
+            Name: "elasticsearch",
+            Check: func(ctx context.Context) error {
+                _, _, err := esClient.Ping()
+                return err
+            },
+            Timeout: 3 * time.Second,
+        },
+    },
+})
+```
+
+### Custom Paths
+
+```go
+healthcheck.Register(app, healthcheck.Options{
+    LivenessPath:  "/health/live",
+    ReadinessPath: "/health/ready",
+})
+```
+
+### Standalone Handlers
+
+```go
+// Just liveness
+app.Get("/healthz", healthcheck.Liveness())
+
+// Just readiness with checks
+app.Get("/readyz", healthcheck.Readiness(
+    healthcheck.Check{Name: "db", Check: db.Ping},
+))
+```
+
+### Using DBCheck Helper
+
+```go
+check := healthcheck.DBCheck("postgres", func(ctx context.Context) error {
+    return db.PingContext(ctx)
+})
+// Creates check with 5s default timeout
+```
+
+## API Reference
+
+### Functions
+
+```go
+// Register adds health check routes to the app
+func Register(app *mizu.App, opts Options)
+
+// Liveness returns a simple liveness handler
+func Liveness() mizu.Handler
+
+// Readiness returns a readiness handler with checks
+func Readiness(checks ...Check) mizu.Handler
+
+// New creates a combined health handler
+func New(opts Options) mizu.Handler
+
+// DBCheck creates a database check with default timeout
+func DBCheck(name string, pingFn func(context.Context) error) Check
+```
+
+## Response Format
+
+### Liveness Response
+```
+ok
+```
+
+### Readiness Response (Success)
+```json
+{
+    "status": "ok",
+    "checks": {
+        "postgres": "ok",
+        "redis": "ok"
+    }
+}
+```
+
+### Readiness Response (Failure)
+```json
+{
+    "status": "error",
+    "checks": {
+        "postgres": "ok",
+        "redis": "connection failed"
+    }
+}
+```
+
+## HTTP Status Codes
+
+| Code | Meaning |
+|------|---------|
+| 200 | Healthy |
+| 503 | Unhealthy (one or more checks failed) |
+
+## Kubernetes Configuration
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 5
+```
+
+## Best Practices
+
+- Keep liveness checks simple (no external dependencies)
+- Include all critical dependencies in readiness checks
+- Set appropriate timeouts for each check
+- Use readiness to control traffic during startup/shutdown
+
+## Related Middlewares
+
+- [pprof](/middlewares/pprof) - Profiling endpoints
+- [metrics](/middlewares/metrics) - Metrics collection
+- [version](/middlewares/version) - API versioning

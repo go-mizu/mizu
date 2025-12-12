@@ -1,0 +1,112 @@
+---
+title: "Adaptive"
+description: "Adaptive rate limiting middleware that adjusts based on system load."
+---
+
+## Overview
+
+The `adaptive` middleware dynamically adjusts rate limits based on system metrics like latency, error rate, and resource utilization.
+
+Use it when you need:
+- Auto-scaling rate limits
+- Load-based throttling
+- Self-tuning protection
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/adaptive"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Adaptive limiting based on latency
+app.Use(adaptive.New(adaptive.Options{
+    MinRate:         10,
+    MaxRate:         1000,
+    TargetLatency:   100 * time.Millisecond,
+}))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `MinRate` | `int` | `10` | Minimum requests/sec |
+| `MaxRate` | `int` | `1000` | Maximum requests/sec |
+| `TargetLatency` | `time.Duration` | `100ms` | Target response time |
+| `TargetErrorRate` | `float64` | `0.01` | Target error rate (1%) |
+| `Window` | `time.Duration` | `10s` | Measurement window |
+| `AdjustInterval` | `time.Duration` | `1s` | Rate adjustment interval |
+
+## Examples
+
+### Latency-Based
+
+```go
+app.Use(adaptive.New(adaptive.Options{
+    MinRate:       50,
+    MaxRate:       500,
+    TargetLatency: 200 * time.Millisecond,
+}))
+```
+
+### Error Rate-Based
+
+```go
+app.Use(adaptive.New(adaptive.Options{
+    MinRate:         10,
+    MaxRate:         1000,
+    TargetErrorRate: 0.05, // 5% error rate
+}))
+```
+
+### Combined Metrics
+
+```go
+app.Use(adaptive.New(adaptive.Options{
+    MinRate:         50,
+    MaxRate:         500,
+    TargetLatency:   100 * time.Millisecond,
+    TargetErrorRate: 0.01,
+    Window:          30 * time.Second,
+    AdjustInterval:  5 * time.Second,
+}))
+```
+
+## How It Works
+
+1. Measure latency and error rate in sliding window
+2. If metrics exceed targets, decrease rate
+3. If metrics are good, gradually increase rate
+4. Rate stays within min/max bounds
+
+## API Reference
+
+### Functions
+
+```go
+// New creates adaptive rate limiter
+func New(opts Options) mizu.Middleware
+
+// GetCurrentRate returns current rate limit
+func GetCurrentRate(c *mizu.Ctx) int
+```
+
+## Best Practices
+
+- Start with conservative limits
+- Set reasonable target latency
+- Monitor rate adjustments
+- Use with circuit breaker for full protection
+
+## Related Middlewares
+
+- [ratelimit](/middlewares/ratelimit) - Fixed rate limiting
+- [circuitbreaker](/middlewares/circuitbreaker) - Circuit breaker
+- [bulkhead](/middlewares/bulkhead) - Bulkhead pattern

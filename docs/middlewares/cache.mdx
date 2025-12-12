@@ -1,0 +1,130 @@
+---
+title: "Cache"
+description: "Cache-Control header middleware for HTTP caching."
+---
+
+## Overview
+
+The `cache` middleware sets Cache-Control headers to control HTTP caching behavior. It helps optimize performance by instructing browsers and CDNs how to cache responses.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/cache"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Cache for 1 hour
+app.Use(cache.New(time.Hour))
+```
+
+## Configuration
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `MaxAge` | `time.Duration` | Browser cache duration |
+| `SMaxAge` | `time.Duration` | CDN/proxy cache duration |
+| `Public` | `bool` | Allow public caching |
+| `Private` | `bool` | Restrict to browser only |
+| `NoCache` | `bool` | Require revalidation |
+| `NoStore` | `bool` | Don't cache at all |
+| `NoTransform` | `bool` | Prevent transformations |
+| `MustRevalidate` | `bool` | Must check freshness |
+| `Immutable` | `bool` | Content never changes |
+| `StaleWhileRevalidate` | `time.Duration` | Serve stale while fetching |
+| `StaleIfError` | `time.Duration` | Serve stale on errors |
+
+## Examples
+
+### Basic Caching
+
+```go
+// Cache for 1 hour
+app.Use(cache.New(time.Hour))
+```
+
+### Public Cache (CDN)
+
+```go
+// Allow CDN caching
+app.Get("/static/*", staticHandler, cache.Public(24*time.Hour))
+```
+
+### Private Cache (Browser Only)
+
+```go
+// User-specific data, browser only
+app.Get("/profile", profileHandler, cache.Private(time.Hour))
+```
+
+### Immutable Assets
+
+```go
+// Never changes (versioned assets)
+app.Get("/assets/*", assetHandler, cache.Immutable(365*24*time.Hour))
+```
+
+### Stale-While-Revalidate
+
+```go
+// Serve stale for 1 hour while revalidating
+app.Get("/api/feed", feedHandler, cache.SWR(time.Minute, time.Hour))
+```
+
+### Full Configuration
+
+```go
+app.Use(cache.WithOptions(cache.Options{
+    MaxAge:               time.Hour,
+    SMaxAge:              24 * time.Hour,
+    Public:               true,
+    MustRevalidate:       true,
+    StaleWhileRevalidate: 10 * time.Minute,
+}))
+```
+
+### Different Cache Strategies
+
+```go
+// API: Short cache with revalidation
+api := app.Group("/api")
+api.Use(cache.SWR(time.Minute, 5*time.Minute))
+
+// Static: Long cache, immutable
+static := app.Group("/static")
+static.Use(cache.Immutable(365*24*time.Hour))
+
+// Private data: Browser only
+private := app.Group("/user")
+private.Use(cache.Private(5*time.Minute))
+```
+
+## API Reference
+
+```go
+func New(maxAge time.Duration) mizu.Middleware
+func WithOptions(opts Options) mizu.Middleware
+func Public(maxAge time.Duration) mizu.Middleware
+func Private(maxAge time.Duration) mizu.Middleware
+func Immutable(maxAge time.Duration) mizu.Middleware
+func Static(maxAge time.Duration) mizu.Middleware
+func SWR(maxAge, stale time.Duration) mizu.Middleware
+```
+
+## Common Patterns
+
+| Use Case | Directive |
+|----------|-----------|
+| Static files | `public, max-age=31536000, immutable` |
+| API responses | `private, max-age=60` |
+| CDN cached | `public, s-maxage=86400, max-age=60` |
+| User data | `private, no-cache` |
+| Never cache | `no-store` |
+
+## Related Middlewares
+
+- [nocache](/middlewares/nocache) - Prevent caching

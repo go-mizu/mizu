@@ -1,0 +1,108 @@
+---
+title: "Favicon"
+description: "Favicon serving middleware for efficient favicon.ico handling."
+---
+
+## Overview
+
+The `favicon` middleware serves favicon files efficiently, caching them in memory and handling HEAD requests properly. It prevents favicon requests from reaching your application routes.
+
+Use it when you need:
+- Serve favicon from memory
+- Prevent favicon 404 logs
+- Custom favicon handling
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/favicon"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Serve favicon from file
+app.Use(favicon.New("./static/favicon.ico"))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `File` | `string` | Required | Path to favicon file |
+| `Data` | `[]byte` | `nil` | Favicon data (alternative to file) |
+| `CacheControl` | `string` | `"public, max-age=31536000"` | Cache-Control header |
+
+## Examples
+
+### From File
+
+```go
+app.Use(favicon.New("./static/favicon.ico"))
+```
+
+### From Embedded Data
+
+```go
+//go:embed favicon.ico
+var faviconData []byte
+
+app.Use(favicon.FromData(faviconData))
+```
+
+### Custom Cache Control
+
+```go
+app.Use(favicon.WithOptions(favicon.Options{
+    File:         "./static/favicon.ico",
+    CacheControl: "public, max-age=86400", // 1 day
+}))
+```
+
+### Disable Favicon
+
+```go
+// Return empty response for favicon requests
+app.Use(favicon.Disabled())
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates favicon middleware from file
+func New(file string) mizu.Middleware
+
+// FromData creates middleware from byte data
+func FromData(data []byte) mizu.Middleware
+
+// WithOptions creates middleware with configuration
+func WithOptions(opts Options) mizu.Middleware
+
+// Disabled returns empty response for favicon requests
+func Disabled() mizu.Middleware
+```
+
+## Behavior
+
+- Caches favicon in memory after first read
+- Sets proper Content-Type (image/x-icon)
+- Handles both GET and HEAD requests
+- Only matches exact `/favicon.ico` path
+
+## Best Practices
+
+- Use embedded data for portable deployments
+- Set long cache duration for production
+- Place before other middleware to avoid unnecessary processing
+
+## Related Middlewares
+
+- [static](/middlewares/static) - Static file serving
+- [spa](/middlewares/spa) - Single Page Application
+- [cache](/middlewares/cache) - Cache headers

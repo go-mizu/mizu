@@ -1,0 +1,130 @@
+---
+title: "Error Page"
+description: "Custom error page middleware for handling HTTP errors."
+---
+
+## Overview
+
+The `errorpage` middleware provides custom error pages for HTTP error responses, replacing default error responses with branded pages.
+
+Use it when you need:
+- Custom 404 pages
+- Branded error pages
+- User-friendly error messages
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/errorpage"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Use(errorpage.New(errorpage.Options{
+    404: errorpage.File("./errors/404.html"),
+    500: errorpage.File("./errors/500.html"),
+}))
+```
+
+## Configuration
+
+### Options
+
+Error code to handler mapping:
+
+```go
+type Options map[int]Handler
+```
+
+## Examples
+
+### HTML Files
+
+```go
+app.Use(errorpage.New(errorpage.Options{
+    404: errorpage.File("./errors/404.html"),
+    500: errorpage.File("./errors/500.html"),
+}))
+```
+
+### Inline HTML
+
+```go
+app.Use(errorpage.New(errorpage.Options{
+    404: errorpage.HTML(`
+        <html>
+        <body>
+            <h1>Page Not Found</h1>
+            <p>The page you requested does not exist.</p>
+        </body>
+        </html>
+    `),
+}))
+```
+
+### JSON Errors
+
+```go
+app.Use(errorpage.New(errorpage.Options{
+    404: errorpage.JSON(map[string]string{
+        "error": "Resource not found",
+        "code":  "NOT_FOUND",
+    }),
+}))
+```
+
+### Custom Handler
+
+```go
+app.Use(errorpage.New(errorpage.Options{
+    404: func(c *mizu.Ctx) error {
+        // Log the 404
+        log.Printf("404: %s", c.Request().URL.Path)
+        // Return custom response
+        return c.HTML(404, custom404Page)
+    },
+}))
+```
+
+### Catch All Errors
+
+```go
+app.Use(errorpage.New(errorpage.Options{
+    400: errorHandler,
+    401: errorHandler,
+    403: errorHandler,
+    404: errorHandler,
+    500: errorHandler,
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates error page middleware
+func New(opts Options) mizu.Middleware
+
+// Response helpers
+func File(path string) Handler
+func HTML(content string) Handler
+func JSON(data any) Handler
+func Template(tmpl *template.Template, data any) Handler
+```
+
+## Best Practices
+
+- Keep error pages simple and fast
+- Include navigation back to home
+- Log errors for monitoring
+- Use different pages for client vs server errors
+
+## Related Middlewares
+
+- [recover](/middlewares/recover) - Panic recovery
+- [envelope](/middlewares/envelope) - Response wrapping
+- [logger](/middlewares/logger) - Request logging

@@ -1,0 +1,104 @@
+---
+title: "Request Size"
+description: "Request size tracking middleware for monitoring and metrics."
+---
+
+## Overview
+
+The `requestsize` middleware tracks request sizes for monitoring, logging, and metrics collection.
+
+Use it when you need:
+- Monitor request sizes
+- Collect bandwidth metrics
+- Analyze traffic patterns
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/requestsize"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Use(requestsize.New())
+
+app.Post("/upload", func(c *mizu.Ctx) error {
+    size := requestsize.Get(c)
+    log.Printf("Request size: %d bytes", size)
+    return c.Text(200, "OK")
+})
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Handler` | `func(*mizu.Ctx, int64)` | `nil` | Size callback |
+
+## Examples
+
+### Track in Context
+
+```go
+app.Use(requestsize.New())
+
+app.Post("/api", func(c *mizu.Ctx) error {
+    size := requestsize.Get(c)
+    // Use size for logging, metrics, etc.
+    return c.JSON(200, map[string]int64{"received": size})
+})
+```
+
+### With Callback
+
+```go
+app.Use(requestsize.WithHandler(func(c *mizu.Ctx, size int64) {
+    metrics.RecordRequestSize(c.Request().URL.Path, size)
+}))
+```
+
+### Combined with Response Size
+
+```go
+app.Use(requestsize.New())
+app.Use(responsesize.New())
+
+app.Post("/api", func(c *mizu.Ctx) error {
+    reqSize := requestsize.Get(c)
+    // Response size available after response
+    return c.JSON(200, data)
+})
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates request size middleware
+func New() mizu.Middleware
+
+// WithHandler creates with callback
+func WithHandler(handler func(*mizu.Ctx, int64)) mizu.Middleware
+
+// Get returns request size from context
+func Get(c *mizu.Ctx) int64
+```
+
+## Best Practices
+
+- Use for bandwidth monitoring
+- Track alongside response sizes
+- Set alerts for unusually large requests
+- Combine with body limit for enforcement
+
+## Related Middlewares
+
+- [responsesize](/middlewares/responsesize) - Response size tracking
+- [bodylimit](/middlewares/bodylimit) - Size enforcement
+- [metrics](/middlewares/metrics) - Metrics collection

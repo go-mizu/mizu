@@ -1,0 +1,228 @@
+---
+title: "Version"
+description: "API versioning middleware for managing multiple API versions."
+---
+
+## Overview
+
+The `version` middleware provides API versioning support through headers, query parameters, or URL path prefixes. It helps manage multiple API versions and handles deprecation warnings.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/version"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Use(version.New(version.Options{
+    DefaultVersion: "v1",
+}))
+
+app.Get("/users", func(c *mizu.Ctx) error {
+    v := version.Get(c)
+    // Handle based on version
+    return c.JSON(200, users)
+})
+```
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `DefaultVersion` | `string` | - | Default version when not specified |
+| `Header` | `string` | `"Accept-Version"` | Header name for version |
+| `QueryParam` | `string` | `"version"` | Query parameter name |
+| `PathPrefix` | `bool` | `false` | Extract version from URL path |
+| `Supported` | `[]string` | - | List of supported versions |
+| `Deprecated` | `[]string` | - | List of deprecated versions |
+| `ErrorHandler` | `func(*mizu.Ctx, string) error` | - | Custom error handler |
+
+## Examples
+
+### Version from Header
+
+```go
+app.Use(version.New(version.Options{
+    DefaultVersion: "v1",
+    Header:         "Accept-Version",
+}))
+
+app.Get("/api/users", func(c *mizu.Ctx) error {
+    switch version.Get(c) {
+    case "v2":
+        return c.JSON(200, usersV2)
+    default:
+        return c.JSON(200, usersV1)
+    }
+})
+```
+
+Client request:
+```
+GET /api/users HTTP/1.1
+Accept-Version: v2
+```
+
+### Version from Query Parameter
+
+```go
+app.Use(version.New(version.Options{
+    DefaultVersion: "v1",
+    QueryParam:     "api_version",
+}))
+```
+
+Request: `GET /users?api_version=v2`
+
+### Version from URL Path
+
+```go
+app.Use(version.New(version.Options{
+    PathPrefix: true,
+}))
+
+// GET /v1/users → version "v1"
+// GET /v2/users → version "v2"
+```
+
+### Supported Versions Only
+
+```go
+app.Use(version.New(version.Options{
+    DefaultVersion: "v2",
+    Supported:      []string{"v1", "v2", "v3"},
+    ErrorHandler: func(c *mizu.Ctx, v string) error {
+        return c.JSON(400, map[string]string{
+            "error": "Unsupported API version: " + v,
+            "supported": "v1, v2, v3",
+        })
+    },
+}))
+```
+
+### Deprecation Warnings
+
+```go
+app.Use(version.New(version.Options{
+    DefaultVersion: "v3",
+    Supported:      []string{"v1", "v2", "v3"},
+    Deprecated:     []string{"v1"},
+}))
+
+// Requests with v1 will include:
+// Deprecation: true
+// Sunset: See documentation for migration guide
+```
+
+### Using Helper Functions
+
+```go
+// Version from header only
+app.Use(version.FromHeader("X-API-Version"))
+
+// Version from path only
+app.Use(version.FromPath())
+
+// Version from query only
+app.Use(version.FromQuery("v"))
+```
+
+### Version-Specific Routes
+
+```go
+app.Use(version.New(version.Options{
+    PathPrefix: true,
+}))
+
+app.Get("/v1/users", usersV1Handler)
+app.Get("/v2/users", usersV2Handler)
+app.Get("/v3/users", usersV3Handler)
+```
+
+### Content Negotiation
+
+```go
+app.Get("/users", func(c *mizu.Ctx) error {
+    v := version.Get(c)
+
+    switch v {
+    case "v3":
+        return c.JSON(200, map[string]any{
+            "data":  users,
+            "meta":  metadata,
+            "links": links,
+        })
+    case "v2":
+        return c.JSON(200, map[string]any{
+            "users": users,
+            "total": len(users),
+        })
+    default:
+        return c.JSON(200, users)
+    }
+})
+```
+
+### Feature Flags by Version
+
+```go
+app.Get("/users", func(c *mizu.Ctx) error {
+    v := version.Get(c)
+
+    users := getUsers()
+
+    // New field only in v2+
+    if v >= "v2" {
+        for i := range users {
+            users[i].Avatar = getAvatar(users[i].ID)
+        }
+    }
+
+    return c.JSON(200, users)
+})
+```
+
+## API Reference
+
+```go
+func New(opts Options) mizu.Middleware
+func FromHeader(header string) mizu.Middleware
+func FromPath() mizu.Middleware
+func FromQuery(param string) mizu.Middleware
+func GetVersion(c *mizu.Ctx) string
+func Get(c *mizu.Ctx) string  // Alias for GetVersion
+```
+
+## Version Detection Order
+
+When multiple sources are configured:
+1. Header (e.g., `Accept-Version: v2`)
+2. Query parameter (e.g., `?version=v2`)
+3. Path prefix (e.g., `/v2/users`)
+4. Default version
+
+## Response Headers
+
+For deprecated versions:
+```
+Deprecation: true
+Sunset: See documentation for migration guide
+```
+
+## Best Practices
+
+- Always set a default version
+- Document supported versions
+- Add deprecation warnings before removal
+- Use semantic versioning (v1, v2, v3)
+- Maintain backward compatibility within major versions
+- Provide migration guides for deprecated versions
+
+## Related Middlewares
+
+- [maintenance](/middlewares/maintenance) - Maintenance mode
+- [header](/middlewares/header) - Custom headers

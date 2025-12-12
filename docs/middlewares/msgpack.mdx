@@ -1,0 +1,107 @@
+---
+title: "MessagePack"
+description: "MessagePack content handling middleware for binary serialization."
+---
+
+## Overview
+
+The `msgpack` middleware provides MessagePack content negotiation and serialization for efficient binary data transfer.
+
+Use it when you need:
+- Binary serialization
+- Reduced payload size
+- Faster parsing
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/msgpack"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Use(msgpack.New())
+
+app.Get("/data", func(c *mizu.Ctx) error {
+    // Auto-negotiates based on Accept header
+    return c.Negotiate(200, data)
+})
+```
+
+## Examples
+
+### Enable MessagePack
+
+```go
+app.Use(msgpack.New())
+```
+
+### Explicit MessagePack Response
+
+```go
+app.Get("/data", func(c *mizu.Ctx) error {
+    return msgpack.Send(c, 200, data)
+})
+```
+
+### Parse MessagePack Request
+
+```go
+app.Post("/data", func(c *mizu.Ctx) error {
+    var data MyStruct
+    if err := msgpack.Bind(c, &data); err != nil {
+        return err
+    }
+    return c.JSON(200, data)
+})
+```
+
+### Content Negotiation
+
+```go
+app.Use(msgpack.New())
+
+app.Get("/data", func(c *mizu.Ctx) error {
+    // Returns MessagePack if Accept: application/msgpack
+    // Returns JSON if Accept: application/json
+    return c.Negotiate(200, data)
+})
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates MessagePack middleware
+func New() mizu.Middleware
+
+// Send sends MessagePack response
+func Send(c *mizu.Ctx, status int, data any) error
+
+// Bind parses MessagePack request body
+func Bind(c *mizu.Ctx, v any) error
+```
+
+## Content Types
+
+| Type | Description |
+|------|-------------|
+| `application/msgpack` | Standard MessagePack |
+| `application/x-msgpack` | Alternative |
+
+## Best Practices
+
+- Use for internal APIs
+- Fall back to JSON for browsers
+- Consider client library support
+- Benchmark for your use case
+
+## Related Middlewares
+
+- [contenttype](/middlewares/contenttype) - Content-Type validation
+- [compress](/middlewares/compress) - Response compression
+- [xml](/middlewares/xml) - XML handling

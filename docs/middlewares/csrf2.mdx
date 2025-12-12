@@ -1,0 +1,148 @@
+---
+title: "CSRF2"
+description: "Enhanced CSRF protection with double submit cookie pattern."
+---
+
+## Overview
+
+The `csrf2` middleware provides enhanced CSRF protection using the double submit cookie pattern, where a token is stored in both a cookie and must be submitted in a header or form field.
+
+Use it when you need:
+- Stateless CSRF protection
+- Cookie-based token validation
+- Enhanced security for SPAs
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/csrf2"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Use(csrf2.New(csrf2.Options{}))
+
+app.Post("/submit", func(c *mizu.Ctx) error {
+    return c.JSON(200, map[string]string{"status": "ok"})
+})
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `CookieName` | `string` | `"csrf_token"` | Cookie name |
+| `HeaderName` | `string` | `"X-CSRF-Token"` | Header name |
+| `FormField` | `string` | `"csrf_token"` | Form field name |
+| `CookiePath` | `string` | `"/"` | Cookie path |
+| `CookieSecure` | `bool` | `false` | HTTPS only |
+| `CookieSameSite` | `http.SameSite` | `Lax` | SameSite policy |
+| `IgnoreMethods` | `[]string` | `["GET", "HEAD", "OPTIONS"]` | Methods to skip |
+| `ErrorHandler` | `func(*mizu.Ctx) error` | - | Custom error handler |
+
+## Examples
+
+### Basic Usage
+
+```go
+app.Use(csrf2.New(csrf2.Options{}))
+```
+
+### Secure Configuration
+
+```go
+app.Use(csrf2.New(csrf2.Options{
+    CookieName:     "_csrf",
+    HeaderName:     "X-CSRF-Token",
+    CookieSecure:   true,
+    CookieSameSite: http.SameSiteStrictMode,
+}))
+```
+
+### Custom Error Handler
+
+```go
+app.Use(csrf2.New(csrf2.Options{
+    ErrorHandler: func(c *mizu.Ctx) error {
+        return c.JSON(403, map[string]string{
+            "error": "Invalid CSRF token",
+        })
+    },
+}))
+```
+
+### Get Token for Forms
+
+```go
+app.Get("/form", func(c *mizu.Ctx) error {
+    token := csrf2.Token(c)
+    return c.HTML(200, `
+        <form method="POST" action="/submit">
+            <input type="hidden" name="csrf_token" value="`+token+`">
+            <button type="submit">Submit</button>
+        </form>
+    `)
+})
+```
+
+## How It Works
+
+1. Middleware sets CSRF token in cookie
+2. Client reads cookie and includes token in header/form
+3. On state-changing requests, token is validated
+4. If tokens match, request proceeds
+5. If not, returns 403 Forbidden
+
+## API Reference
+
+### Functions
+
+```go
+// New creates CSRF2 middleware
+func New(opts Options) mizu.Middleware
+
+// Token returns CSRF token from context
+func Token(c *mizu.Ctx) string
+```
+
+## Client Implementation
+
+### JavaScript (SPA)
+
+```javascript
+// Read token from cookie
+function getCsrfToken() {
+    return document.cookie
+        .split('; ')
+        .find(row => row.startsWith('csrf_token='))
+        ?.split('=')[1];
+}
+
+// Include in requests
+fetch('/api/submit', {
+    method: 'POST',
+    headers: {
+        'X-CSRF-Token': getCsrfToken(),
+        'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(data)
+});
+```
+
+## Best Practices
+
+- Always use HTTPS in production
+- Use SameSite Strict for sensitive applications
+- Include token in all state-changing requests
+- Regenerate tokens on authentication changes
+
+## Related Middlewares
+
+- [csrf](/middlewares/csrf) - Basic CSRF protection
+- [session](/middlewares/session) - Session management
+- [secure](/middlewares/secure) - Security settings

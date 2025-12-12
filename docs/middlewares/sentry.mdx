@@ -1,0 +1,136 @@
+---
+title: "Sentry"
+description: "Sentry error tracking middleware for error monitoring."
+---
+
+## Overview
+
+The `sentry` middleware integrates with Sentry for error tracking, performance monitoring, and debugging.
+
+Use it when you need:
+- Error tracking
+- Performance monitoring
+- Issue management
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/sentry"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Initialize Sentry
+sentry.Init(sentry.Options{
+    DSN: "https://key@sentry.io/project",
+})
+
+app.Use(sentry.Middleware())
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `DSN` | `string` | Required | Sentry DSN |
+| `Environment` | `string` | `""` | Environment name |
+| `Release` | `string` | `""` | Release version |
+| `SampleRate` | `float64` | `1.0` | Error sample rate |
+| `TracesSampleRate` | `float64` | `0` | Performance sample rate |
+
+## Examples
+
+### Basic Setup
+
+```go
+sentry.Init(sentry.Options{
+    DSN: os.Getenv("SENTRY_DSN"),
+})
+
+app.Use(sentry.Middleware())
+```
+
+### With Environment
+
+```go
+sentry.Init(sentry.Options{
+    DSN:         os.Getenv("SENTRY_DSN"),
+    Environment: os.Getenv("ENV"),
+    Release:     "v1.0.0",
+})
+```
+
+### Performance Monitoring
+
+```go
+sentry.Init(sentry.Options{
+    DSN:              os.Getenv("SENTRY_DSN"),
+    TracesSampleRate: 0.1, // 10% of transactions
+})
+```
+
+### Manual Error Capture
+
+```go
+app.Get("/", func(c *mizu.Ctx) error {
+    if err := doSomething(); err != nil {
+        sentry.CaptureError(c, err)
+        return c.JSON(500, map[string]string{"error": "Internal error"})
+    }
+    return c.JSON(200, data)
+})
+```
+
+### Add Context
+
+```go
+app.Use(func(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        sentry.SetUser(c, sentry.User{
+            ID:    getUserID(c),
+            Email: getEmail(c),
+        })
+        sentry.SetTag(c, "feature", "checkout")
+        return next(c)
+    }
+})
+```
+
+## API Reference
+
+### Functions
+
+```go
+// Init initializes Sentry
+func Init(opts Options) error
+
+// Middleware creates Sentry middleware
+func Middleware() mizu.Middleware
+
+// CaptureError sends error to Sentry
+func CaptureError(c *mizu.Ctx, err error)
+
+// SetUser sets user context
+func SetUser(c *mizu.Ctx, user User)
+
+// SetTag sets a tag
+func SetTag(c *mizu.Ctx, key, value string)
+```
+
+## Best Practices
+
+- Use environment for staging/production
+- Set release for version tracking
+- Add user context for debugging
+- Sample transactions in production
+
+## Related Middlewares
+
+- [recover](/middlewares/recover) - Panic recovery
+- [otel](/middlewares/otel) - OpenTelemetry
+- [logger](/middlewares/logger) - Request logging

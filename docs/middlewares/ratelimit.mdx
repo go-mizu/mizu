@@ -1,0 +1,286 @@
+---
+title: "Rate Limit"
+description: "Token bucket rate limiting middleware to protect against abuse."
+---
+
+## Overview
+
+The `ratelimit` middleware implements token bucket rate limiting to control request rates. It protects your application from abuse, ensures fair usage, and prevents resource exhaustion.
+
+Use it when you need:
+- API rate limiting
+- Protection against brute force attacks
+- Fair usage enforcement
+- Resource protection
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/ratelimit"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// 100 requests per minute
+app.Use(ratelimit.PerMinute(100))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Rate` | `int` | `100` | Requests allowed per interval |
+| `Interval` | `time.Duration` | `1m` | Time window |
+| `Burst` | `int` | Same as Rate | Maximum burst capacity |
+| `KeyFunc` | `func(*mizu.Ctx) string` | Client IP | Rate limit key extractor |
+| `Headers` | `bool` | `true` | Include rate limit headers |
+| `ErrorHandler` | `func(*mizu.Ctx) error` | - | Custom error handler |
+| `Skip` | `func(*mizu.Ctx) bool` | - | Skip rate limiting |
+
+## Examples
+
+### Basic Rate Limiting
+
+```go
+// 100 requests per minute per IP
+app.Use(ratelimit.PerMinute(100))
+
+// 10 requests per second
+app.Use(ratelimit.PerSecond(10))
+
+// 1000 requests per hour
+app.Use(ratelimit.PerHour(1000))
+```
+
+### Custom Rate and Interval
+
+```go
+// 50 requests per 30 seconds
+app.Use(ratelimit.New(50, 30*time.Second))
+```
+
+### With Burst
+
+```go
+// Allow burst of 200, refill at 100/minute
+app.Use(ratelimit.WithOptions(ratelimit.Options{
+    Rate:     100,
+    Interval: time.Minute,
+    Burst:    200,
+}))
+```
+
+### Rate Limit by API Key
+
+```go
+app.Use(ratelimit.WithOptions(ratelimit.Options{
+    Rate:     1000,
+    Interval: time.Hour,
+    KeyFunc: func(c *mizu.Ctx) string {
+        // Use API key instead of IP
+        return c.Request().Header.Get("X-API-Key")
+    },
+}))
+```
+
+### Rate Limit by User
+
+```go
+app.Use(ratelimit.WithOptions(ratelimit.Options{
+    Rate:     100,
+    Interval: time.Minute,
+    KeyFunc: func(c *mizu.Ctx) string {
+        if user := GetUser(c); user != nil {
+            return user.ID
+        }
+        return c.ClientIP() // Fallback to IP
+    },
+}))
+```
+
+### Skip Certain Requests
+
+```go
+app.Use(ratelimit.WithOptions(ratelimit.Options{
+    Rate:     100,
+    Interval: time.Minute,
+    Skip: func(c *mizu.Ctx) bool {
+        // Skip health checks
+        if c.Request().URL.Path == "/health" {
+            return true
+        }
+        // Skip authenticated admins
+        if user := GetUser(c); user != nil && user.IsAdmin {
+            return true
+        }
+        return false
+    },
+}))
+```
+
+### Custom Error Handler
+
+```go
+app.Use(ratelimit.WithOptions(ratelimit.Options{
+    Rate:     100,
+    Interval: time.Minute,
+    ErrorHandler: func(c *mizu.Ctx) error {
+        return c.JSON(429, map[string]any{
+            "error":       "Rate limit exceeded",
+            "retry_after": c.Header().Get("Retry-After"),
+        })
+    },
+}))
+```
+
+### Disable Headers
+
+```go
+app.Use(ratelimit.WithOptions(ratelimit.Options{
+    Rate:     100,
+    Interval: time.Minute,
+    Headers:  false, // Don't include rate limit headers
+}))
+```
+
+### Different Limits for Different Routes
+
+```go
+// Global: 100 requests/minute
+app.Use(ratelimit.PerMinute(100))
+
+// API: More restrictive
+api := app.Group("/api")
+api.Use(ratelimit.PerMinute(60))
+
+// Expensive operations: Very restrictive
+app.Post("/api/export", exportHandler, ratelimit.PerMinute(5))
+```
+
+### Tiered Rate Limits
+
+```go
+func tierRateLimit() mizu.Middleware {
+    free := ratelimit.WithOptions(ratelimit.Options{
+        Rate: 100, Interval: time.Hour,
+        KeyFunc: func(c *mizu.Ctx) string { return "free:" + c.ClientIP() },
+    })
+
+    pro := ratelimit.WithOptions(ratelimit.Options{
+        Rate: 10000, Interval: time.Hour,
+        KeyFunc: func(c *mizu.Ctx) string { return "pro:" + GetUser(c).ID },
+    })
+
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            user := GetUser(c)
+            if user != nil && user.Plan == "pro" {
+                return pro(next)(c)
+            }
+            return free(next)(c)
+        }
+    }
+}
+```
+
+### Custom Store
+
+```go
+// Implement Store interface for Redis, etc.
+type redisStore struct {
+    client *redis.Client
+}
+
+func (s *redisStore) Allow(key string, rate int, interval time.Duration, burst int) (bool, ratelimit.RateLimitInfo) {
+    // Redis implementation
+}
+
+app.Use(ratelimit.WithStore(&redisStore{client}, ratelimit.Options{
+    Rate:     100,
+    Interval: time.Minute,
+}))
+```
+
+## Response Headers
+
+When `Headers` is enabled (default), these headers are included:
+
+| Header | Description |
+|--------|-------------|
+| `X-RateLimit-Limit` | Maximum requests allowed |
+| `X-RateLimit-Remaining` | Remaining requests in window |
+| `X-RateLimit-Reset` | Unix timestamp when limit resets |
+| `Retry-After` | Seconds until retry (when limited) |
+
+## API Reference
+
+### Functions
+
+```go
+// Convenience constructors
+func PerSecond(n int) mizu.Middleware
+func PerMinute(n int) mizu.Middleware
+func PerHour(n int) mizu.Middleware
+
+// Custom rate and interval
+func New(rate int, interval time.Duration) mizu.Middleware
+
+// Full configuration
+func WithOptions(opts Options) mizu.Middleware
+
+// Custom store
+func WithStore(store Store, opts Options) mizu.Middleware
+```
+
+### Store Interface
+
+```go
+type Store interface {
+    Allow(key string, rate int, interval time.Duration, burst int) (bool, RateLimitInfo)
+}
+```
+
+### RateLimitInfo
+
+```go
+type RateLimitInfo struct {
+    Limit     int
+    Remaining int
+    Reset     time.Time
+}
+```
+
+## Token Bucket Algorithm
+
+The middleware uses the token bucket algorithm:
+
+1. **Bucket** starts full with `Burst` tokens
+2. **Requests** consume one token
+3. **Tokens** refill at `Rate` per `Interval`
+4. **Burst** allows temporary spikes
+
+```
+Bucket: [████████████] 100 tokens
+Request → [███████████ ] 99 tokens
+Request → [██████████  ] 98 tokens
+...
+Refill  → [████████████] 100 tokens (after interval)
+```
+
+## Best Practices
+
+- Set reasonable limits based on expected usage
+- Use different limits for different endpoints
+- Include rate limit headers for client awareness
+- Monitor rate limit hits for tuning
+- Consider user tiers for fair access
+
+## Related Middlewares
+
+- [circuitbreaker](/middlewares/circuitbreaker) - Circuit breaker pattern
+- [timeout](/middlewares/timeout) - Request timeout

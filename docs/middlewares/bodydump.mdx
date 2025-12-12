@@ -1,0 +1,116 @@
+---
+title: "Body Dump"
+description: "Request/response body dumping middleware for debugging."
+---
+
+## Overview
+
+The `bodydump` middleware captures and logs request and response bodies for debugging purposes.
+
+Use it when you need:
+- Debug API requests
+- Log request/response pairs
+- Troubleshoot integrations
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/bodydump"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Use(bodydump.New(func(c *mizu.Ctx, reqBody, resBody []byte) {
+    log.Printf("Request: %s", reqBody)
+    log.Printf("Response: %s", resBody)
+}))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Handler` | `func(*mizu.Ctx, []byte, []byte)` | Required | Dump callback |
+| `MaxSize` | `int` | `10KB` | Max body size to capture |
+| `Skip` | `func(*mizu.Ctx) bool` | `nil` | Skip dumping |
+
+## Examples
+
+### Basic Logging
+
+```go
+app.Use(bodydump.New(func(c *mizu.Ctx, req, res []byte) {
+    log.Printf("[%s %s] Req: %s Res: %s",
+        c.Request().Method,
+        c.Request().URL.Path,
+        req, res)
+}))
+```
+
+### Skip Large Bodies
+
+```go
+app.Use(bodydump.WithOptions(bodydump.Options{
+    Handler: dumpHandler,
+    MaxSize: 1024, // Only dump first 1KB
+}))
+```
+
+### Skip Health Checks
+
+```go
+app.Use(bodydump.WithOptions(bodydump.Options{
+    Handler: dumpHandler,
+    Skip: func(c *mizu.Ctx) bool {
+        return c.Request().URL.Path == "/health"
+    },
+}))
+```
+
+### JSON Formatting
+
+```go
+app.Use(bodydump.New(func(c *mizu.Ctx, req, res []byte) {
+    entry := map[string]any{
+        "method":   c.Request().Method,
+        "path":     c.Request().URL.Path,
+        "request":  string(req),
+        "response": string(res),
+    }
+    json.NewEncoder(os.Stdout).Encode(entry)
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates body dump middleware
+func New(handler func(*mizu.Ctx, []byte, []byte)) mizu.Middleware
+
+// WithOptions creates with configuration
+func WithOptions(opts Options) mizu.Middleware
+```
+
+## Security Warning
+
+Body dump may capture sensitive data. Never use in production without proper filtering.
+
+## Best Practices
+
+- Only enable in development/debugging
+- Filter sensitive data
+- Set reasonable size limits
+- Skip high-volume endpoints
+
+## Related Middlewares
+
+- [logger](/middlewares/logger) - Request logging
+- [audit](/middlewares/audit) - Audit logging
+- [requestlog](/middlewares/requestlog) - Detailed logging

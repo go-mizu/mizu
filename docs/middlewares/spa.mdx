@@ -1,0 +1,157 @@
+---
+title: "SPA"
+description: "Single Page Application middleware for client-side routing support."
+---
+
+## Overview
+
+The `spa` middleware serves Single Page Applications by returning the index file for any unmatched routes, enabling client-side routing to work correctly.
+
+Use it when you need:
+- React/Vue/Angular app hosting
+- Client-side routing support
+- HTML5 pushState routing
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/spa"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Serve SPA from ./dist directory
+app.Use(spa.New("./dist"))
+
+// API routes still work
+app.Get("/api/users", listUsers)
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Root` | `string` | Required | Root directory |
+| `FS` | `fs.FS` | `nil` | Filesystem to serve from |
+| `Index` | `string` | `"index.html"` | Index file name |
+| `Prefix` | `string` | `""` | URL prefix |
+| `SkipPaths` | `[]string` | `[]` | Paths to skip (pass through) |
+
+## Examples
+
+### Basic Usage
+
+```go
+app.Use(spa.New("./dist"))
+```
+
+### From Embedded FS
+
+```go
+//go:embed dist/*
+var distFS embed.FS
+
+app.Use(spa.WithFS(distFS, "dist"))
+```
+
+### Skip API Routes
+
+```go
+app.Use(spa.WithOptions(spa.Options{
+    Root:      "./dist",
+    SkipPaths: []string{"/api", "/health"},
+}))
+```
+
+### Custom Index
+
+```go
+app.Use(spa.WithOptions(spa.Options{
+    Root:  "./public",
+    Index: "app.html",
+}))
+```
+
+### With Prefix
+
+```go
+app.Use(spa.WithOptions(spa.Options{
+    Root:   "./dist",
+    Prefix: "/app",
+}))
+// SPA available at /app/*
+```
+
+## How It Works
+
+1. Request comes in for `/users/123`
+2. Check if file exists at `./dist/users/123`
+3. If file exists: serve it
+4. If not: serve `./dist/index.html`
+5. Client-side router handles `/users/123`
+
+## API Reference
+
+### Functions
+
+```go
+// New creates SPA middleware for directory
+func New(root string) mizu.Middleware
+
+// WithFS creates SPA middleware for fs.FS
+func WithFS(fsys fs.FS, root string) mizu.Middleware
+
+// WithOptions creates SPA middleware with configuration
+func WithOptions(opts Options) mizu.Middleware
+```
+
+## Complete Example
+
+```go
+package main
+
+import (
+    "embed"
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/spa"
+)
+
+//go:embed dist/*
+var distFS embed.FS
+
+func main() {
+    app := mizu.New()
+
+    // API routes
+    api := app.Group("/api")
+    api.Get("/users", listUsers)
+    api.Post("/users", createUser)
+
+    // Serve SPA for everything else
+    app.Use(spa.WithOptions(spa.Options{
+        FS:        distFS,
+        Root:      "dist",
+        SkipPaths: []string{"/api"},
+    }))
+
+    app.Listen(":3000")
+}
+```
+
+## Best Practices
+
+- Define API routes before SPA middleware
+- Use embedded FS for portable deployments
+- Skip API and health check paths
+- Set proper cache headers for static assets
+
+## Related Middlewares
+
+- [static](/middlewares/static) - Static file serving
+- [favicon](/middlewares/favicon) - Favicon serving
+- [embed](/middlewares/embed) - Embedded filesystem

@@ -1,0 +1,184 @@
+---
+title: "Audit"
+description: "Audit logging middleware for tracking and recording all HTTP requests."
+---
+
+## Overview
+
+The `audit` middleware captures detailed information about every HTTP request for compliance, debugging, and security monitoring. It provides flexible handlers for storing audit logs.
+
+Use it when you need:
+- Compliance audit trails
+- Security event logging
+- Request debugging and analysis
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/audit"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Log all requests
+app.Use(audit.New(func(entry *audit.Entry) {
+    log.Printf("%s %s -> %d", entry.Method, entry.Path, entry.Status)
+}))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Handler` | `func(*Entry)` | Required | Callback for each entry |
+| `Skip` | `func(*mizu.Ctx) bool` | `nil` | Skip logging for requests |
+| `IncludeRequestBody` | `bool` | `false` | Include request body |
+| `MaxBodySize` | `int` | `1024` | Max body size to capture |
+| `Metadata` | `func(*mizu.Ctx) map[string]string` | `nil` | Custom metadata |
+
+### Entry Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `Timestamp` | `time.Time` | Request time |
+| `Method` | `string` | HTTP method |
+| `Path` | `string` | Request path |
+| `Query` | `string` | Query string |
+| `Status` | `int` | Response status |
+| `Latency` | `time.Duration` | Request duration |
+| `IP` | `string` | Client IP |
+| `UserAgent` | `string` | User-Agent header |
+| `RequestID` | `string` | X-Request-ID header |
+| `RequestBody` | `string` | Request body (if enabled) |
+| `Metadata` | `map[string]string` | Custom metadata |
+
+## Examples
+
+### Basic Logging
+
+```go
+app.Use(audit.New(func(entry *audit.Entry) {
+    fmt.Printf("[%s] %s %s %d %v\n",
+        entry.Timestamp.Format(time.RFC3339),
+        entry.Method,
+        entry.Path,
+        entry.Status,
+        entry.Latency,
+    )
+}))
+```
+
+### With Request Body
+
+```go
+app.Use(audit.WithOptions(audit.Options{
+    Handler: func(entry *audit.Entry) {
+        log.Printf("Body: %s", entry.RequestBody)
+    },
+    IncludeRequestBody: true,
+    MaxBodySize:        4096,
+}))
+```
+
+### Skip Health Checks
+
+```go
+app.Use(audit.WithOptions(audit.Options{
+    Handler: logEntry,
+    Skip: func(c *mizu.Ctx) bool {
+        return c.Request().URL.Path == "/health"
+    },
+}))
+```
+
+### With Custom Metadata
+
+```go
+app.Use(audit.WithOptions(audit.Options{
+    Handler: logEntry,
+    Metadata: func(c *mizu.Ctx) map[string]string {
+        return map[string]string{
+            "version": "1.0",
+            "env":     os.Getenv("ENV"),
+            "user_id": getUserID(c),
+        }
+    },
+}))
+```
+
+### Channel Handler (Async)
+
+```go
+ch := make(chan *audit.Entry, 100)
+
+// Consumer goroutine
+go func() {
+    for entry := range ch {
+        // Process entries asynchronously
+        saveToDatabase(entry)
+    }
+}()
+
+app.Use(audit.New(audit.ChannelHandler(ch)))
+```
+
+### Buffered Handler (Batch)
+
+```go
+handler := audit.NewBufferedHandler(
+    100,           // Batch size
+    time.Minute,   // Flush interval
+    func(entries []*audit.Entry) {
+        // Process batch
+        bulkInsert(entries)
+    },
+)
+defer handler.Close()
+
+app.Use(audit.New(handler.Handler()))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates audit middleware with handler
+func New(handler func(*Entry)) mizu.Middleware
+
+// WithOptions creates middleware with configuration
+func WithOptions(opts Options) mizu.Middleware
+
+// ChannelHandler creates async handler
+func ChannelHandler(ch chan *Entry) func(*Entry)
+
+// NewBufferedHandler creates batching handler
+func NewBufferedHandler(maxSize int, interval time.Duration, flush func([]*Entry)) *BufferedHandler
+```
+
+### BufferedHandler Methods
+
+```go
+func (h *BufferedHandler) Handler() func(*Entry)
+func (h *BufferedHandler) Flush()
+func (h *BufferedHandler) Close()
+```
+
+## Best Practices
+
+- Use async handlers for high-traffic applications
+- Set reasonable `MaxBodySize` to prevent memory issues
+- Skip logging for health checks and metrics endpoints
+- Include request IDs for correlation with other logs
+- Buffer writes for database storage
+
+## Related Middlewares
+
+- [logger](/middlewares/logger) - Simple request logging
+- [requestid](/middlewares/requestid) - Request ID generation
+- [timing](/middlewares/timing) - Performance timing

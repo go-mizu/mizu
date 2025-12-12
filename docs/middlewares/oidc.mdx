@@ -1,0 +1,169 @@
+---
+title: "OIDC"
+description: "OpenID Connect authentication middleware for identity provider integration."
+---
+
+## Overview
+
+The `oidc` middleware provides OpenID Connect authentication, extending OAuth 2.0 with standardized identity tokens and user information endpoints.
+
+Use it when you need:
+- Enterprise SSO integration
+- Standardized identity claims
+- ID token validation
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/oidc"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Configure OIDC provider
+provider, _ := oidc.NewProvider("https://accounts.google.com")
+
+config := oidc.Config{
+    Provider:     provider,
+    ClientID:     "your-client-id",
+    ClientSecret: "your-client-secret",
+    RedirectURL:  "http://localhost:3000/callback",
+    Scopes:       []string{"openid", "email", "profile"},
+}
+
+app.Get("/login", oidc.Login(config))
+app.Get("/callback", oidc.Callback(config, handleUser))
+```
+
+## Configuration
+
+### Config
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `Provider` | `*Provider` | OIDC provider |
+| `ClientID` | `string` | Client ID |
+| `ClientSecret` | `string` | Client secret |
+| `RedirectURL` | `string` | Callback URL |
+| `Scopes` | `[]string` | Requested scopes |
+
+## Examples
+
+### Google OIDC
+
+```go
+provider, _ := oidc.NewProvider("https://accounts.google.com")
+
+config := oidc.Config{
+    Provider:     provider,
+    ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+    ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+    RedirectURL:  "http://localhost:3000/auth/callback",
+    Scopes:       []string{"openid", "email", "profile"},
+}
+
+app.Get("/auth/login", oidc.Login(config))
+app.Get("/auth/callback", oidc.Callback(config, func(c *mizu.Ctx, claims *oidc.Claims) error {
+    // claims.Subject - User ID
+    // claims.Email - User email
+    // claims.Name - User name
+    return c.Redirect(302, "/dashboard")
+}))
+```
+
+### Auth0
+
+```go
+provider, _ := oidc.NewProvider("https://your-tenant.auth0.com/")
+
+config := oidc.Config{
+    Provider:     provider,
+    ClientID:     os.Getenv("AUTH0_CLIENT_ID"),
+    ClientSecret: os.Getenv("AUTH0_CLIENT_SECRET"),
+    RedirectURL:  "http://localhost:3000/callback",
+    Scopes:       []string{"openid", "email", "profile"},
+}
+```
+
+### Keycloak
+
+```go
+provider, _ := oidc.NewProvider("https://keycloak.example.com/realms/myrealm")
+
+config := oidc.Config{
+    Provider:     provider,
+    ClientID:     "my-app",
+    ClientSecret: os.Getenv("KEYCLOAK_SECRET"),
+    RedirectURL:  "http://localhost:3000/callback",
+    Scopes:       []string{"openid", "email", "roles"},
+}
+```
+
+### Token Validation Middleware
+
+```go
+verifier := oidc.NewVerifier(provider, oidc.VerifierConfig{
+    ClientID: "your-client-id",
+})
+
+// Protect routes with ID token
+app.Use(oidc.Verify(verifier))
+
+app.Get("/api/me", func(c *mizu.Ctx) error {
+    claims := oidc.GetClaims(c)
+    return c.JSON(200, claims)
+})
+```
+
+## API Reference
+
+### Functions
+
+```go
+// NewProvider creates OIDC provider from issuer URL
+func NewProvider(issuer string) (*Provider, error)
+
+// Login starts OIDC flow
+func Login(config Config) mizu.Handler
+
+// Callback handles OIDC callback
+func Callback(config Config, handler func(*mizu.Ctx, *Claims) error) mizu.Handler
+
+// Verify creates ID token verification middleware
+func Verify(verifier *Verifier) mizu.Middleware
+
+// GetClaims returns claims from context
+func GetClaims(c *mizu.Ctx) *Claims
+```
+
+### Standard Claims
+
+```go
+type Claims struct {
+    Subject           string   // sub
+    Issuer            string   // iss
+    Audience          []string // aud
+    Email             string   // email
+    EmailVerified     bool     // email_verified
+    Name              string   // name
+    PreferredUsername string   // preferred_username
+    Picture           string   // picture
+    ExpiresAt         time.Time
+}
+```
+
+## Best Practices
+
+- Use OIDC discovery (/.well-known/openid-configuration)
+- Validate ID tokens for security
+- Store only necessary claims in sessions
+- Implement proper logout with end_session_endpoint
+
+## Related Middlewares
+
+- [oauth2](/middlewares/oauth2) - OAuth 2.0 authentication
+- [jwt](/middlewares/jwt) - JWT validation
+- [session](/middlewares/session) - Session management

@@ -1,0 +1,121 @@
+---
+title: "Hypermedia"
+description: "Hypermedia response helpers for HATEOAS APIs."
+---
+
+## Overview
+
+The `hypermedia` middleware provides helpers for building HATEOAS (Hypermedia as the Engine of Application State) APIs with links and embedded resources.
+
+Use it when you need:
+- RESTful hypermedia APIs
+- Self-documenting responses
+- Discoverable APIs
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/hypermedia"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Use(hypermedia.New())
+
+app.Get("/users/:id", func(c *mizu.Ctx) error {
+    user := getUser(c.Param("id"))
+
+    return hypermedia.JSON(c, 200, user,
+        hypermedia.Self("/users/"+user.ID),
+        hypermedia.Link("orders", "/users/"+user.ID+"/orders"),
+    )
+})
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `BaseURL` | `string` | `""` | Base URL for links |
+| `Format` | `string` | `"hal"` | HAL or JSON:API |
+
+## Examples
+
+### HAL Format
+
+```go
+app.Get("/users/:id", func(c *mizu.Ctx) error {
+    return hypermedia.HAL(c, 200, user,
+        hypermedia.Self("/users/1"),
+        hypermedia.Link("orders", "/users/1/orders"),
+    )
+})
+// {
+//   "id": 1,
+//   "name": "John",
+//   "_links": {
+//     "self": {"href": "/users/1"},
+//     "orders": {"href": "/users/1/orders"}
+//   }
+// }
+```
+
+### Embedded Resources
+
+```go
+app.Get("/users/:id", func(c *mizu.Ctx) error {
+    return hypermedia.HAL(c, 200, user,
+        hypermedia.Self("/users/1"),
+        hypermedia.Embed("orders", orders),
+    )
+})
+```
+
+### Collection with Pagination
+
+```go
+app.Get("/users", func(c *mizu.Ctx) error {
+    return hypermedia.Collection(c, 200, users,
+        hypermedia.Self("/users"),
+        hypermedia.Link("next", "/users?page=2"),
+        hypermedia.Link("prev", "/users?page=0"),
+    )
+})
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates hypermedia middleware
+func New() mizu.Middleware
+
+// HAL returns HAL+JSON response
+func HAL(c *mizu.Ctx, status int, data any, links ...Link) error
+
+// Collection returns HAL collection
+func Collection(c *mizu.Ctx, status int, items any, links ...Link) error
+
+// Link helpers
+func Self(href string) Link
+func Link(rel, href string) Link
+func Embed(rel string, data any) Link
+```
+
+## Best Practices
+
+- Always include self link
+- Use consistent link relations
+- Document link relations
+- Consider client library support
+
+## Related Middlewares
+
+- [envelope](/middlewares/envelope) - Response wrapping
+- [version](/middlewares/version) - API versioning

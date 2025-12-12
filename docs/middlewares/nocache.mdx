@@ -1,0 +1,74 @@
+---
+title: "No Cache"
+description: "Prevent caching middleware for sensitive or dynamic content."
+---
+
+## Overview
+
+The `nocache` middleware sets headers to prevent browsers and proxies from caching responses. Use it for sensitive data or frequently changing content.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/nocache"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+app.Use(nocache.New())
+```
+
+## Headers Set
+
+```
+Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0
+Pragma: no-cache
+Expires: 0
+Surrogate-Control: no-store
+```
+
+## Examples
+
+### Global No-Cache
+
+```go
+app.Use(nocache.New())
+```
+
+### Specific Routes
+
+```go
+// Don't cache sensitive endpoints
+app.Get("/api/user", userHandler, nocache.New())
+app.Get("/api/account", accountHandler, nocache.New())
+```
+
+### API Group
+
+```go
+api := app.Group("/api")
+api.Use(nocache.New())
+
+api.Get("/users", listUsers)
+api.Get("/data", getData)
+```
+
+## API Reference
+
+```go
+func New() mizu.Middleware
+```
+
+## When to Use
+
+- User-specific data
+- Authentication responses
+- Frequently changing data
+- Sensitive information
+- Real-time data
+
+## Related Middlewares
+
+- [cache](/middlewares/cache) - Enable caching

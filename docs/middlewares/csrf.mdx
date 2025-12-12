@@ -1,0 +1,280 @@
+---
+title: "CSRF"
+description: "Cross-Site Request Forgery protection middleware for secure form submissions."
+---
+
+## Overview
+
+The `csrf` middleware protects against Cross-Site Request Forgery attacks by generating and validating tokens. It ensures that form submissions originate from your application, not from malicious sites.
+
+Use it when you have:
+- HTML forms that modify data
+- Server-rendered applications
+- Any POST/PUT/DELETE endpoints accessed via browser
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/csrf"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Production: secure cookies
+app.Use(csrf.Protect([]byte("32-byte-secret-key-here-12345")))
+
+// Development: insecure cookies (HTTP)
+app.Use(csrf.ProtectDev([]byte("32-byte-secret-key-here-12345")))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Secret` | `[]byte` | **required** | Secret key for token generation |
+| `TokenLength` | `int` | `32` | Length of random token |
+| `TokenLookup` | `string` | `"header:X-CSRF-Token"` | Where to find token in request |
+| `CookieName` | `string` | `"_csrf"` | Name of CSRF cookie |
+| `CookiePath` | `string` | `"/"` | Cookie path |
+| `CookieMaxAge` | `int` | `86400` | Cookie max age in seconds |
+| `CookieSecure` | `bool` | `false` | Secure cookie flag |
+| `CookieHTTPOnly` | `bool` | `true` | HTTPOnly cookie flag |
+| `SameSite` | `http.SameSite` | `Lax` | SameSite cookie attribute |
+| `ErrorHandler` | `func(*mizu.Ctx, error) error` | - | Custom error handler |
+| `SkipPaths` | `[]string` | - | Paths to skip CSRF validation |
+
+### TokenLookup Format
+
+The `TokenLookup` option uses `"source:name"` format:
+
+| Source | Example | Description |
+|--------|---------|-------------|
+| `header` | `"header:X-CSRF-Token"` | Read from request header |
+| `form` | `"form:_csrf"` | Read from form field |
+| `query` | `"query:csrf"` | Read from query parameter |
+
+## Examples
+
+### Basic Form Protection
+
+```go
+secret := csrf.GenerateSecret() // Or use a fixed 32-byte secret
+
+app.Use(csrf.New(csrf.Options{
+    Secret:       secret,
+    CookieSecure: true, // Use in production with HTTPS
+}))
+
+app.Get("/form", func(c *mizu.Ctx) error {
+    token := csrf.Token(c)
+    return c.HTML(200, `
+        <form method="POST" action="/submit">
+            <input type="hidden" name="_csrf" value="`+token+`">
+            <input type="text" name="data">
+            <button type="submit">Submit</button>
+        </form>
+    `)
+})
+
+app.Post("/submit", func(c *mizu.Ctx) error {
+    // CSRF validated automatically
+    return c.Text(200, "Form submitted!")
+})
+```
+
+### Using Template Field Helper
+
+```go
+app.Get("/form", func(c *mizu.Ctx) error {
+    // TemplateField returns a complete hidden input element
+    field := csrf.TemplateField(c)
+    return c.HTML(200, `
+        <form method="POST" action="/submit">
+            `+field+`
+            <input type="text" name="data">
+            <button type="submit">Submit</button>
+        </form>
+    `)
+})
+```
+
+### JavaScript AJAX Requests
+
+```go
+app.Use(csrf.New(csrf.Options{
+    Secret:      secret,
+    TokenLookup: "header:X-CSRF-Token",
+}))
+```
+
+```html
+<!-- Get token from cookie or meta tag -->
+<meta name="csrf-token" content="{{ .CSRFToken }}">
+
+<script>
+const token = document.querySelector('meta[name="csrf-token"]').content;
+
+fetch('/api/data', {
+    method: 'POST',
+    headers: {
+        'X-CSRF-Token': token,
+        'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(data)
+});
+</script>
+```
+
+### Skip API Routes
+
+```go
+app.Use(csrf.New(csrf.Options{
+    Secret: secret,
+    SkipPaths: []string{
+        "/api/webhook",    // External webhooks
+        "/api/public",     // Public API endpoints
+    },
+}))
+```
+
+### Custom Error Handler
+
+```go
+app.Use(csrf.New(csrf.Options{
+    Secret: secret,
+    ErrorHandler: func(c *mizu.Ctx, err error) error {
+        if err == csrf.ErrTokenMissing {
+            return c.HTML(403, `
+                <h1>Security Error</h1>
+                <p>Missing security token. Please try again.</p>
+            `)
+        }
+        return c.HTML(403, `
+            <h1>Security Error</h1>
+            <p>Invalid security token. Please refresh and try again.</p>
+        `)
+    },
+}))
+```
+
+### Multiple Token Sources
+
+```go
+// Accept token from either header or form
+app.Use(csrf.New(csrf.Options{
+    Secret:      secret,
+    TokenLookup: "form:_csrf", // Primary: form field
+}))
+
+// Alternative: Check header if form field missing
+// (Requires custom implementation)
+```
+
+### Development vs Production
+
+```go
+func setupCSRF(app *mizu.App, isDev bool) {
+    secret := []byte(os.Getenv("CSRF_SECRET"))
+
+    if isDev {
+        app.Use(csrf.ProtectDev(secret))
+    } else {
+        app.Use(csrf.Protect(secret))
+    }
+}
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates CSRF middleware with options
+func New(opts Options) mizu.Middleware
+
+// Protect creates middleware with secure cookies (production)
+func Protect(secret []byte) mizu.Middleware
+
+// ProtectDev creates middleware with insecure cookies (development)
+func ProtectDev(secret []byte) mizu.Middleware
+
+// GenerateSecret generates a secure random secret
+func GenerateSecret() []byte
+```
+
+### Token Functions
+
+```go
+// Token extracts CSRF token from context
+func Token(c *mizu.Ctx) string
+
+// TemplateField returns HTML hidden input field
+func TemplateField(c *mizu.Ctx) string
+
+// TokenExpiry returns token expiration time
+func TokenExpiry(opts Options) time.Time
+```
+
+### Error Types
+
+```go
+var (
+    ErrTokenMissing // CSRF token not found in request
+    ErrTokenInvalid // CSRF token validation failed
+)
+```
+
+## How It Works
+
+1. **Token Generation**: On GET requests, a token is generated and stored in a cookie
+2. **Token Validation**: On POST/PUT/DELETE requests, the token must be included
+3. **Double Submit**: The cookie token must match the request token
+4. **HMAC Signature**: Tokens are signed to prevent tampering
+
+```
+GET /form
+  ← Sets _csrf cookie with token
+  ← Provides token for form
+
+POST /submit
+  → Sends _csrf cookie (automatic)
+  → Sends token in form/header
+  ← Server validates both match
+```
+
+## Security Considerations
+
+1. **Secret Key** - Use a strong, random 32-byte secret
+2. **Cookie Settings** - Use `Secure`, `HttpOnly`, and `SameSite` in production
+3. **Token Rotation** - Tokens are per-session, not per-request
+4. **HTTPS Required** - Always use HTTPS in production
+
+### Recommended Production Settings
+
+```go
+app.Use(csrf.New(csrf.Options{
+    Secret:         []byte(os.Getenv("CSRF_SECRET")),
+    CookieSecure:   true,
+    CookieHTTPOnly: true,
+    SameSite:       http.SameSiteStrictMode,
+    CookieMaxAge:   3600, // 1 hour
+}))
+```
+
+## Best Practices
+
+- Always include CSRF protection for forms
+- Use secure cookies in production
+- Skip CSRF for API endpoints using Bearer auth
+- Regenerate token after login/logout
+- Set appropriate cookie expiration
+
+## Related Middlewares
+
+- [secure](/middlewares/secure) - HTTPS enforcement
+- [helmet](/middlewares/helmet) - Security headers

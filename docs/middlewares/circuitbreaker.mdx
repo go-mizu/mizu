@@ -1,0 +1,252 @@
+---
+title: "Circuit Breaker"
+description: "Circuit breaker pattern middleware for fault tolerance and resilience."
+---
+
+## Overview
+
+The `circuitbreaker` middleware implements the circuit breaker pattern to prevent cascading failures. When errors exceed a threshold, it "opens" the circuit, immediately failing requests without calling the handler, giving the system time to recover.
+
+Use it when you need:
+- Protection against cascading failures
+- Graceful degradation
+- System resilience
+- External service call protection
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/circuitbreaker"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Default settings: 5 failures opens circuit for 30s
+app.Use(circuitbreaker.New())
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Threshold` | `int` | `5` | Failures before opening |
+| `Timeout` | `time.Duration` | `30s` | Time before half-open |
+| `MaxRequests` | `int` | `1` | Requests allowed in half-open |
+| `OnStateChange` | `func(from, to State)` | - | State change callback |
+| `IsFailure` | `func(error) bool` | Any error | Failure detection |
+| `ErrorHandler` | `func(*mizu.Ctx) error` | - | Open circuit handler |
+
+### States
+
+```go
+const (
+    StateClosed   // Normal operation, requests pass through
+    StateOpen     // Circuit tripped, requests fail immediately
+    StateHalfOpen // Testing recovery, limited requests allowed
+)
+```
+
+## Examples
+
+### Basic Circuit Breaker
+
+```go
+// Opens after 5 failures, resets after 30s
+app.Use(circuitbreaker.New())
+```
+
+### Custom Threshold
+
+```go
+app.Use(circuitbreaker.WithOptions(circuitbreaker.Options{
+    Threshold: 10,           // Open after 10 failures
+    Timeout:   time.Minute,  // Stay open for 1 minute
+}))
+```
+
+### Custom Failure Detection
+
+```go
+app.Use(circuitbreaker.WithOptions(circuitbreaker.Options{
+    Threshold: 5,
+    IsFailure: func(err error) bool {
+        // Only count specific errors as failures
+        if err == nil {
+            return false
+        }
+        // Don't count client errors
+        var httpErr *HTTPError
+        if errors.As(err, &httpErr) && httpErr.Code < 500 {
+            return false
+        }
+        return true
+    },
+}))
+```
+
+### State Change Monitoring
+
+```go
+app.Use(circuitbreaker.WithOptions(circuitbreaker.Options{
+    Threshold: 5,
+    OnStateChange: func(from, to circuitbreaker.State) {
+        log.Printf("Circuit breaker: %s -> %s", from, to)
+
+        if to == circuitbreaker.StateOpen {
+            // Alert operations team
+            alertOps("Circuit breaker opened!")
+        }
+    },
+}))
+```
+
+### Custom Error Response
+
+```go
+app.Use(circuitbreaker.WithOptions(circuitbreaker.Options{
+    Threshold: 5,
+    ErrorHandler: func(c *mizu.Ctx) error {
+        return c.JSON(503, map[string]string{
+            "error":   "Service temporarily unavailable",
+            "message": "Please try again in a few moments",
+        })
+    },
+}))
+```
+
+### Per-Route Circuit Breakers
+
+```go
+// Separate circuit breakers for different services
+externalAPI := circuitbreaker.WithOptions(circuitbreaker.Options{
+    Threshold: 3,
+    Timeout:   time.Minute,
+})
+
+database := circuitbreaker.WithOptions(circuitbreaker.Options{
+    Threshold: 5,
+    Timeout:   30 * time.Second,
+})
+
+app.Get("/api/external", externalHandler, externalAPI)
+app.Get("/api/data", dataHandler, database)
+```
+
+### Recovery Testing
+
+```go
+app.Use(circuitbreaker.WithOptions(circuitbreaker.Options{
+    Threshold:   5,
+    Timeout:     30 * time.Second,
+    MaxRequests: 3, // Allow 3 test requests in half-open state
+}))
+```
+
+### With Metrics
+
+```go
+var (
+    circuitOpens   = prometheus.NewCounter(...)
+    circuitCloses  = prometheus.NewCounter(...)
+)
+
+app.Use(circuitbreaker.WithOptions(circuitbreaker.Options{
+    Threshold: 5,
+    OnStateChange: func(from, to circuitbreaker.State) {
+        switch to {
+        case circuitbreaker.StateOpen:
+            circuitOpens.Inc()
+        case circuitbreaker.StateClosed:
+            circuitCloses.Inc()
+        }
+    },
+}))
+```
+
+### Fallback Response
+
+```go
+func withFallback(fallback func(*mizu.Ctx) error) mizu.Middleware {
+    cb := circuitbreaker.WithOptions(circuitbreaker.Options{
+        Threshold: 5,
+        ErrorHandler: func(c *mizu.Ctx) error {
+            return fallback(c)
+        },
+    })
+    return cb
+}
+
+// Use cached data when circuit opens
+app.Get("/api/data", dataHandler, withFallback(func(c *mizu.Ctx) error {
+    cached := cache.Get("api_data")
+    return c.JSON(200, map[string]any{
+        "data":   cached,
+        "cached": true,
+    })
+}))
+```
+
+## State Machine
+
+```
+                    ┌─────────────┐
+         success    │             │  failure >= threshold
+    ┌──────────────│   Closed    │──────────────┐
+    │               │             │              │
+    │               └─────────────┘              ▼
+    │                     ▲               ┌─────────────┐
+    │                     │               │             │
+    │              success│               │    Open     │
+    │              (all)  │               │             │
+    │                     │               └──────┬──────┘
+    │               ┌─────┴─────┐                │
+    │               │           │                │ timeout
+    │               │ Half-Open │◄───────────────┘
+    │               │           │
+    │               └─────┬─────┘
+    │                     │
+    │                     │ failure
+    └─────────────────────┼─────────────────────►
+                          │
+                          ▼
+                         Open
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates circuit breaker with defaults
+func New() mizu.Middleware
+
+// WithOptions creates circuit breaker with custom options
+func WithOptions(opts Options) mizu.Middleware
+```
+
+### State Type
+
+```go
+type State int
+
+func (s State) String() string // Returns "closed", "open", or "half-open"
+```
+
+## Best Practices
+
+- Set thresholds based on normal error rates
+- Use meaningful timeout values
+- Monitor state changes for alerting
+- Consider different breakers for different dependencies
+- Implement fallback responses when possible
+
+## Related Middlewares
+
+- [ratelimit](/middlewares/ratelimit) - Rate limiting
+- [timeout](/middlewares/timeout) - Request timeout
+- [recover](/middlewares/recover) - Panic recovery

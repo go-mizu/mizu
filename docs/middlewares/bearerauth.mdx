@@ -1,0 +1,229 @@
+---
+title: "Bearer Auth"
+description: "Bearer token authentication middleware for API protection."
+---
+
+## Overview
+
+The `bearerauth` middleware validates Bearer tokens from the `Authorization` header. It's commonly used for API authentication with JWTs, OAuth tokens, or custom tokens.
+
+Use it when you need:
+- API authentication with tokens
+- JWT validation
+- OAuth 2.0 Bearer token protection
+- Custom token authentication
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/bearerauth"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Simple token validation
+app.Use(bearerauth.New(func(token string) bool {
+    return token == "my-secret-token"
+}))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Validator` | `TokenValidator` | - | Validates the token |
+| `ValidatorWithContext` | `TokenValidatorWithContext` | - | Validates and returns claims |
+| `Header` | `string` | `"Authorization"` | Header to read token from |
+| `AuthScheme` | `string` | `"Bearer"` | Expected auth scheme prefix |
+| `ErrorHandler` | `func(*mizu.Ctx, error) error` | - | Custom error handler |
+
+### Validator Types
+
+```go
+// Simple validator
+type TokenValidator func(token string) bool
+
+// Validator that returns claims
+type TokenValidatorWithContext func(token string) (claims any, valid bool)
+```
+
+## Examples
+
+### Simple Token Validation
+
+```go
+validTokens := map[string]bool{
+    "token-1": true,
+    "token-2": true,
+}
+
+app.Use(bearerauth.New(func(token string) bool {
+    return validTokens[token]
+}))
+```
+
+### JWT Validation with Claims
+
+```go
+type UserClaims struct {
+    UserID   string
+    Username string
+    Role     string
+}
+
+app.Use(bearerauth.WithOptions(bearerauth.Options{
+    ValidatorWithContext: func(token string) (any, bool) {
+        // Parse and validate JWT
+        claims, err := parseJWT(token)
+        if err != nil {
+            return nil, false
+        }
+        return &UserClaims{
+            UserID:   claims["sub"].(string),
+            Username: claims["username"].(string),
+            Role:     claims["role"].(string),
+        }, true
+    },
+}))
+
+// Access claims in handler
+func protectedHandler(c *mizu.Ctx) error {
+    claims, ok := bearerauth.Claims[*UserClaims](c)
+    if !ok {
+        return c.Text(401, "Unauthorized")
+    }
+    return c.JSON(200, map[string]string{
+        "user": claims.Username,
+        "role": claims.Role,
+    })
+}
+```
+
+### Custom Header
+
+```go
+// Use X-API-Token instead of Authorization
+app.Use(bearerauth.WithHeader("X-API-Token", func(token string) bool {
+    return validateToken(token)
+}))
+```
+
+### Custom Auth Scheme
+
+```go
+// Use "Token" instead of "Bearer"
+app.Use(bearerauth.WithOptions(bearerauth.Options{
+    AuthScheme: "Token",
+    Validator: func(token string) bool {
+        return validateToken(token)
+    },
+}))
+```
+
+### Custom Error Handler
+
+```go
+app.Use(bearerauth.WithOptions(bearerauth.Options{
+    Validator: validateToken,
+    ErrorHandler: func(c *mizu.Ctx, err error) error {
+        switch err {
+        case bearerauth.ErrTokenMissing:
+            return c.JSON(401, map[string]string{
+                "error": "Authentication required",
+            })
+        case bearerauth.ErrTokenInvalid:
+            return c.JSON(403, map[string]string{
+                "error": "Invalid token",
+            })
+        default:
+            return c.JSON(401, map[string]string{
+                "error": err.Error(),
+            })
+        }
+    },
+}))
+```
+
+### Database Token Lookup
+
+```go
+app.Use(bearerauth.WithOptions(bearerauth.Options{
+    ValidatorWithContext: func(token string) (any, bool) {
+        // Look up token in database
+        session, err := db.GetSession(token)
+        if err != nil || session.IsExpired() {
+            return nil, false
+        }
+
+        // Return user info as claims
+        return &UserInfo{
+            ID:    session.UserID,
+            Email: session.UserEmail,
+        }, true
+    },
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates middleware with simple validator
+func New(validator TokenValidator) mizu.Middleware
+
+// WithHeader creates middleware reading from custom header
+func WithHeader(header string, validator TokenValidator) mizu.Middleware
+
+// WithOptions creates middleware with full configuration
+func WithOptions(opts Options) mizu.Middleware
+```
+
+### Extracting Data
+
+```go
+// FromContext extracts token or claims
+func FromContext(c *mizu.Ctx) any
+
+// Token extracts the token string
+func Token(c *mizu.Ctx) string
+
+// Claims extracts typed claims (generic)
+func Claims[T any](c *mizu.Ctx) (T, bool)
+```
+
+### Error Types
+
+```go
+var (
+    ErrTokenMissing  // Token not found in request
+    ErrTokenInvalid  // Token validation failed
+    ErrInvalidScheme // Auth scheme doesn't match
+)
+```
+
+## Security Considerations
+
+1. **Token Security** - Use cryptographically secure tokens
+2. **HTTPS Required** - Always use HTTPS to protect tokens in transit
+3. **Token Expiration** - Implement token expiration
+4. **Secure Storage** - Store tokens securely on the client
+5. **Revocation** - Implement token revocation for logout/security
+
+## Best Practices
+
+- Use short-lived tokens with refresh tokens for better security
+- Validate token claims (expiration, issuer, audience)
+- Log authentication failures for security monitoring
+- Consider rate limiting failed attempts
+
+## Related Middlewares
+
+- [basicauth](/middlewares/basicauth) - Username/password authentication
+- [keyauth](/middlewares/keyauth) - API key authentication
+- [csrf](/middlewares/csrf) - CSRF protection

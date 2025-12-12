@@ -1,7 +1,7 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
-  "name": "\uD83D\uDCA7Mizu",
+  "name": "Mizu",
   "colors": {
     "primary": "#60A5FA",
     "light": "#60A5FA",
@@ -15,6 +15,9 @@
     "metatags": {
       "canonical": "https://docs.go-mizu.dev"
     }
+  },
+  "background": {
+   "decoration": "grid"
   },
   "navigation": {
     "global": {
@@ -64,7 +67,204 @@
               "concepts/response",
               "concepts/static",
               "concepts/logging",
-              "concepts/error"
+              "concepts/error",
+              "concepts/middleware"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Middlewares",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "middlewares/overview"
+            ]
+          },
+          {
+            "group": "Authentication",
+            "pages": [
+              "middlewares/basicauth",
+              "middlewares/bearerauth",
+              "middlewares/keyauth",
+              "middlewares/csrf",
+              "middlewares/csrf2",
+              "middlewares/jwt",
+              "middlewares/oauth2",
+              "middlewares/oidc"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "middlewares/helmet",
+              "middlewares/secure",
+              "middlewares/ipfilter",
+              "middlewares/honeypot",
+              "middlewares/captcha",
+              "middlewares/cors",
+              "middlewares/cors2",
+              "middlewares/rbac",
+              "middlewares/signature"
+            ]
+          },
+          {
+            "group": "Rate Limiting & Resilience",
+            "pages": [
+              "middlewares/ratelimit",
+              "middlewares/circuitbreaker",
+              "middlewares/bulkhead",
+              "middlewares/throttle",
+              "middlewares/concurrency",
+              "middlewares/adaptive"
+            ]
+          },
+          {
+            "group": "Request Processing",
+            "pages": [
+              "middlewares/bodylimit",
+              "middlewares/contenttype",
+              "middlewares/validator",
+              "middlewares/header",
+              "middlewares/methodoverride",
+              "middlewares/bodyclose",
+              "middlewares/bodydump",
+              "middlewares/requestsize",
+              "middlewares/sanitizer",
+              "middlewares/transformer",
+              "middlewares/filter"
+            ]
+          },
+          {
+            "group": "Response Processing",
+            "pages": [
+              "middlewares/compress",
+              "middlewares/envelope",
+              "middlewares/responsesize",
+              "middlewares/vary",
+              "middlewares/errorpage",
+              "middlewares/hypermedia"
+            ]
+          },
+          {
+            "group": "Caching",
+            "pages": [
+              "middlewares/cache",
+              "middlewares/nocache",
+              "middlewares/etag",
+              "middlewares/lastmodified"
+            ]
+          },
+          {
+            "group": "URL Handling",
+            "pages": [
+              "middlewares/redirect",
+              "middlewares/slash",
+              "middlewares/rewrite"
+            ]
+          },
+          {
+            "group": "Networking & Proxy",
+            "pages": [
+              "middlewares/proxy",
+              "middlewares/forwarded",
+              "middlewares/realip",
+              "middlewares/h2c",
+              "middlewares/surrogate"
+            ]
+          },
+          {
+            "group": "Request Context",
+            "pages": [
+              "middlewares/requestid",
+              "middlewares/timeout",
+              "middlewares/recover",
+              "middlewares/timing",
+              "middlewares/trace",
+              "middlewares/conditional"
+            ]
+          },
+          {
+            "group": "Real-time",
+            "pages": [
+              "middlewares/websocket",
+              "middlewares/sse"
+            ]
+          },
+          {
+            "group": "Static Files",
+            "pages": [
+              "middlewares/static",
+              "middlewares/spa",
+              "middlewares/favicon",
+              "middlewares/embed"
+            ]
+          },
+          {
+            "group": "Operations & Monitoring",
+            "pages": [
+              "middlewares/version",
+              "middlewares/maintenance",
+              "middlewares/pprof",
+              "middlewares/healthcheck",
+              "middlewares/metrics",
+              "middlewares/prometheus",
+              "middlewares/expvar",
+              "middlewares/logger",
+              "middlewares/requestlog",
+              "middlewares/responselog"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "middlewares/feature",
+              "middlewares/multitenancy",
+              "middlewares/chaos",
+              "middlewares/mirror",
+              "middlewares/fingerprint",
+              "middlewares/canary",
+              "middlewares/audit",
+              "middlewares/idempotency",
+              "middlewares/retry",
+              "middlewares/hedge",
+              "middlewares/fallback",
+              "middlewares/mock"
+            ]
+          },
+          {
+            "group": "Connection & Protocol",
+            "pages": [
+              "middlewares/keepalive",
+              "middlewares/maxconns",
+              "middlewares/msgpack",
+              "middlewares/jsonrpc",
+              "middlewares/graphql",
+              "middlewares/xml"
+            ]
+          },
+          {
+            "group": "Internationalization",
+            "pages": [
+              "middlewares/language",
+              "middlewares/timezone",
+              "middlewares/nonce"
+            ]
+          },
+          {
+            "group": "External Integrations",
+            "pages": [
+              "middlewares/otel",
+              "middlewares/sentry",
+              "middlewares/session"
+            ]
+          },
+          {
+            "group": "Bot & Client Detection",
+            "pages": [
+              "middlewares/bot",
+              "middlewares/xrequestedwith"
             ]
           }
         ]

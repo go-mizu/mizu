@@ -1,0 +1,209 @@
+---
+title: "Pprof"
+description: "Profiling endpoints middleware for performance analysis."
+---
+
+## Overview
+
+The `pprof` middleware exposes Go's built-in profiling endpoints for performance analysis and debugging. It integrates the standard `net/http/pprof` package with Mizu.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/pprof"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Expose pprof endpoints at /debug/pprof
+app.Use(pprof.New())
+```
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Prefix` | `string` | `"/debug/pprof"` | URL prefix for pprof endpoints |
+
+## Endpoints
+
+| Path | Description |
+|------|-------------|
+| `/debug/pprof/` | Index page with all profiles |
+| `/debug/pprof/cmdline` | Command line arguments |
+| `/debug/pprof/profile` | CPU profile (30s default) |
+| `/debug/pprof/symbol` | Symbol lookup |
+| `/debug/pprof/trace` | Execution trace |
+| `/debug/pprof/heap` | Heap memory profile |
+| `/debug/pprof/goroutine` | Goroutine stack traces |
+| `/debug/pprof/block` | Blocking profile |
+| `/debug/pprof/mutex` | Mutex contention profile |
+| `/debug/pprof/allocs` | Memory allocations |
+| `/debug/pprof/threadcreate` | Thread creation profile |
+
+## Examples
+
+### Basic Usage
+
+```go
+app := mizu.New()
+
+// Add pprof middleware
+app.Use(pprof.New())
+
+// Access at http://localhost:8080/debug/pprof/
+```
+
+### Custom Prefix
+
+```go
+app.Use(pprof.WithOptions(pprof.Options{
+    Prefix: "/internal/profiling",
+}))
+
+// Access at http://localhost:8080/internal/profiling/
+```
+
+### Protected Pprof
+
+```go
+// Create a sub-app for admin routes
+admin := app.Group("/admin")
+
+// Add authentication
+admin.Use(basicauth.New(basicauth.Options{
+    Users: map[string]string{
+        "admin": "secret",
+    },
+}))
+
+// Add pprof to admin group
+admin.Use(pprof.WithOptions(pprof.Options{
+    Prefix: "/admin/pprof",
+}))
+```
+
+### Conditional Pprof
+
+```go
+// Only enable in development
+if os.Getenv("ENV") == "development" {
+    app.Use(pprof.New())
+}
+```
+
+### IP Restricted
+
+```go
+// Only allow from localhost
+app.Use(ipfilter.WithOptions(ipfilter.Options{
+    Whitelist: []string{"127.0.0.1", "::1"},
+    PathPrefix: "/debug/pprof",
+}))
+
+app.Use(pprof.New())
+```
+
+## Using the Profiles
+
+### CPU Profile
+
+Capture a 30-second CPU profile:
+
+```bash
+go tool pprof http://localhost:8080/debug/pprof/profile
+```
+
+Or with a custom duration:
+
+```bash
+curl "http://localhost:8080/debug/pprof/profile?seconds=60" > cpu.prof
+go tool pprof cpu.prof
+```
+
+### Heap Profile
+
+```bash
+go tool pprof http://localhost:8080/debug/pprof/heap
+```
+
+### Goroutine Dump
+
+```bash
+curl http://localhost:8080/debug/pprof/goroutine?debug=2
+```
+
+### Execution Trace
+
+```bash
+curl "http://localhost:8080/debug/pprof/trace?seconds=5" > trace.out
+go tool trace trace.out
+```
+
+### Memory Allocations
+
+```bash
+go tool pprof http://localhost:8080/debug/pprof/allocs
+```
+
+## Common Pprof Commands
+
+Inside `go tool pprof`:
+
+```bash
+# Top functions by CPU/memory
+top 10
+
+# View call graph
+web
+
+# List function source
+list <function_name>
+
+# Show flamegraph (web view)
+web
+```
+
+## API Reference
+
+```go
+func New() mizu.Middleware
+func WithOptions(opts Options) mizu.Middleware
+```
+
+## Security Warning
+
+Pprof endpoints can expose sensitive information about your application. In production:
+
+1. Use authentication
+2. Restrict by IP address
+3. Use a separate admin port
+4. Or disable entirely
+
+```go
+// Production-safe setup
+if os.Getenv("ENABLE_PPROF") == "true" {
+    app.Use(ipfilter.WithOptions(ipfilter.Options{
+        Whitelist: []string{"10.0.0.0/8"},
+        PathPrefix: "/debug/pprof",
+    }))
+    app.Use(pprof.New())
+}
+```
+
+## Best Practices
+
+- Never expose pprof publicly in production
+- Use authentication for protected access
+- Enable only when debugging is needed
+- Use execution traces sparingly (high overhead)
+- CPU profiles should be short (30-60 seconds)
+
+## Related Middlewares
+
+- [basicauth](/middlewares/basicauth) - Basic authentication
+- [ipfilter](/middlewares/ipfilter) - IP filtering
+- [timing](/middlewares/timing) - Performance timing

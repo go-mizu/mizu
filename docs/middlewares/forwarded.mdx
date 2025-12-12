@@ -1,0 +1,114 @@
+---
+title: "Forwarded"
+description: "X-Forwarded-* header parsing middleware for proxy environments."
+---
+
+## Overview
+
+The `forwarded` middleware parses X-Forwarded-* headers set by load balancers and proxies, extracting client IP, protocol, host, and other forwarded information.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/forwarded"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+app.Use(forwarded.New())
+```
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `TrustProxy` | `bool` | `true` | Trust forwarded headers |
+| `TrustedProxies` | `[]string` | - | List of trusted proxy IPs/CIDRs |
+
+## Headers Parsed
+
+| Header | Information |
+|--------|-------------|
+| `X-Forwarded-For` | Client IP chain |
+| `X-Forwarded-Host` | Original host |
+| `X-Forwarded-Proto` | Protocol (http/https) |
+| `X-Forwarded-Port` | Original port |
+| `X-Forwarded-Prefix` | Path prefix |
+| `Forwarded` | RFC 7239 header |
+
+## Examples
+
+### Basic Usage
+
+```go
+app.Use(forwarded.New())
+
+app.Get("/", func(c *mizu.Ctx) error {
+    info := forwarded.Get(c)
+    return c.JSON(200, map[string]any{
+        "clientIP": info.ClientIP,
+        "proto":    info.Proto,
+        "host":     info.Host,
+    })
+})
+```
+
+### Trusted Proxies Only
+
+```go
+app.Use(forwarded.WithOptions(forwarded.Options{
+    TrustProxy: true,
+    TrustedProxies: []string{
+        "10.0.0.0/8",
+        "192.168.1.0/24",
+    },
+}))
+```
+
+### Helper Functions
+
+```go
+// Get client IP
+ip := forwarded.ClientIP(c)
+
+// Get protocol
+proto := forwarded.Proto(c)
+
+// Get host
+host := forwarded.Host(c)
+```
+
+## Info Struct
+
+```go
+type Info struct {
+    For      string    // X-Forwarded-For value
+    Host     string    // Original host
+    Proto    string    // http or https
+    Port     string    // Original port
+    Prefix   string    // Path prefix
+    ClientIP net.IP    // Parsed client IP
+}
+```
+
+## API Reference
+
+```go
+func New() mizu.Middleware
+func WithOptions(opts Options) mizu.Middleware
+func Get(c *mizu.Ctx) *Info
+func ClientIP(c *mizu.Ctx) net.IP
+func Proto(c *mizu.Ctx) string
+func Host(c *mizu.Ctx) string
+```
+
+## Security Note
+
+Only enable `TrustProxy` when behind a trusted proxy. Untrusted clients can spoof these headers.
+
+## Related Middlewares
+
+- [realip](/middlewares/realip) - Simple IP extraction
+- [proxy](/middlewares/proxy) - Reverse proxy

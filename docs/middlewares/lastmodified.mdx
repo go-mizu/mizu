@@ -1,0 +1,96 @@
+---
+title: "Last Modified"
+description: "Last-Modified header middleware for conditional requests."
+---
+
+## Overview
+
+The `lastmodified` middleware handles Last-Modified headers and If-Modified-Since conditional requests for efficient caching.
+
+Use it when you need:
+- Date-based caching
+- Conditional GET requests
+- Bandwidth optimization
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/lastmodified"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Use(lastmodified.New())
+
+app.Get("/resource", func(c *mizu.Ctx) error {
+    lastmodified.Set(c, resource.UpdatedAt)
+    return c.JSON(200, resource)
+})
+```
+
+## Examples
+
+### Set Last-Modified
+
+```go
+app.Get("/article/:id", func(c *mizu.Ctx) error {
+    article := getArticle(c.Param("id"))
+    lastmodified.Set(c, article.UpdatedAt)
+    return c.JSON(200, article)
+})
+```
+
+### Auto Last-Modified
+
+```go
+app.Use(lastmodified.Auto(func(c *mizu.Ctx) time.Time {
+    // Return modification time based on request
+    return getModTime(c.Request().URL.Path)
+}))
+```
+
+### Static Files
+
+```go
+// Last-Modified is automatic for static files
+app.Use(static.New("./public"))
+```
+
+## How It Works
+
+1. Handler sets Last-Modified
+2. Client receives Last-Modified header
+3. Next request includes If-Modified-Since
+4. If not modified, returns 304 Not Modified
+5. If modified, returns full response
+
+## API Reference
+
+### Functions
+
+```go
+// New creates Last-Modified middleware
+func New() mizu.Middleware
+
+// Set sets Last-Modified for response
+func Set(c *mizu.Ctx, t time.Time)
+
+// Auto creates auto Last-Modified middleware
+func Auto(getModTime func(*mizu.Ctx) time.Time) mizu.Middleware
+```
+
+## Best Practices
+
+- Use with ETag for robust caching
+- Set accurate modification times
+- Use for static and semi-static content
+- Combine with Cache-Control
+
+## Related Middlewares
+
+- [etag](/middlewares/etag) - ETag generation
+- [cache](/middlewares/cache) - Cache-Control headers
+- [static](/middlewares/static) - Static files

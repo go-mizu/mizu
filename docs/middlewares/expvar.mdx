@@ -1,0 +1,106 @@
+---
+title: "Expvar"
+description: "Expvar metrics endpoint middleware for Go runtime metrics."
+---
+
+## Overview
+
+The `expvar` middleware exposes Go's expvar metrics including runtime stats, memory usage, and custom variables.
+
+Use it when you need:
+- Go runtime metrics
+- Memory usage monitoring
+- Custom variable export
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/expvar"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Expose expvar endpoint
+app.Get("/debug/vars", expvar.Handler())
+```
+
+## Examples
+
+### Basic Setup
+
+```go
+app.Get("/debug/vars", expvar.Handler())
+```
+
+### Custom Variables
+
+```go
+import "expvar"
+
+// Publish custom variable
+var requests = expvar.NewInt("requests")
+
+app.Use(func(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        requests.Add(1)
+        return next(c)
+    }
+})
+
+app.Get("/debug/vars", expvar.Handler())
+```
+
+### With Auth Protection
+
+```go
+debug := app.Group("/debug")
+debug.Use(basicauth.New(adminCredentials))
+debug.Get("/vars", expvar.Handler())
+```
+
+## Default Variables
+
+| Variable | Description |
+|----------|-------------|
+| `cmdline` | Command line arguments |
+| `memstats` | Memory statistics |
+
+## API Reference
+
+### Functions
+
+```go
+// Handler returns expvar HTTP handler
+func Handler() mizu.Handler
+```
+
+## Response Format
+
+```json
+{
+    "cmdline": ["./myapp"],
+    "memstats": {
+        "Alloc": 1234567,
+        "TotalAlloc": 9876543,
+        "Sys": 12345678,
+        ...
+    },
+    "requests": 42
+}
+```
+
+## Best Practices
+
+- Protect endpoint in production
+- Use for debugging and monitoring
+- Combine with custom metrics
+- Don't expose sensitive data
+
+## Related Middlewares
+
+- [prometheus](/middlewares/prometheus) - Prometheus metrics
+- [pprof](/middlewares/pprof) - Profiling
+- [healthcheck](/middlewares/healthcheck) - Health checks

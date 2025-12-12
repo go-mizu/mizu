@@ -1,0 +1,161 @@
+---
+title: "Timing"
+description: "Server-Timing header middleware for performance monitoring."
+---
+
+## Overview
+
+The `timing` middleware adds Server-Timing headers to responses, allowing you to measure and report server-side performance metrics. These metrics are visible in browser DevTools.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/timing"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+app.Use(timing.New())
+```
+
+## Examples
+
+### Basic Usage
+
+```go
+app.Use(timing.New())
+
+app.Get("/", func(c *mizu.Ctx) error {
+    // Total time is automatically tracked
+    return c.JSON(200, data)
+})
+// Response header: Server-Timing: total;dur=12.34
+```
+
+### Track Custom Metrics
+
+```go
+app.Get("/users", func(c *mizu.Ctx) error {
+    // Track database query time
+    start := time.Now()
+    users, err := db.GetUsers()
+    timing.Add(c, "db", time.Since(start), "Database query")
+
+    // Track serialization time
+    start = time.Now()
+    data := serialize(users)
+    timing.Add(c, "serialize", time.Since(start), "JSON serialization")
+
+    return c.JSON(200, data)
+})
+// Server-Timing: total;dur=45.67, db;dur=30.12;desc="Database query", serialize;dur=5.23;desc="JSON serialization"
+```
+
+### Using Start/Stop Pattern
+
+```go
+app.Get("/data", func(c *mizu.Ctx) error {
+    // Start a timing measurement
+    stop := timing.Start(c, "external_api")
+
+    resp, err := http.Get("https://api.example.com/data")
+    if err != nil {
+        return err
+    }
+    defer resp.Body.Close()
+
+    // Stop and record with description
+    stop("External API call")
+
+    return c.JSON(200, resp.Body)
+})
+```
+
+### Using Track Helper
+
+```go
+app.Get("/compute", func(c *mizu.Ctx) error {
+    var result int
+
+    // Track a function call
+    timing.Track(c, "calculation", func() {
+        result = expensiveCalculation()
+    })
+
+    return c.JSON(200, map[string]int{"result": result})
+})
+```
+
+### Multiple Metrics
+
+```go
+app.Get("/dashboard", func(c *mizu.Ctx) error {
+    // Track multiple operations
+    stopAuth := timing.Start(c, "auth")
+    user := authenticateUser(c)
+    stopAuth("Authentication")
+
+    stopData := timing.Start(c, "data")
+    dashboard := loadDashboard(user.ID)
+    stopData("Load dashboard data")
+
+    stopRender := timing.Start(c, "render")
+    html := renderTemplate(dashboard)
+    stopRender("Template rendering")
+
+    return c.HTML(200, html)
+})
+// Server-Timing: total;dur=120.50, auth;dur=15.20;desc="Authentication", data;dur=80.30;desc="Load dashboard data", render;dur=25.00;desc="Template rendering"
+```
+
+## API Reference
+
+```go
+func New() mizu.Middleware
+func Add(c *mizu.Ctx, name string, duration time.Duration, description string)
+func Start(c *mizu.Ctx, name string) func(description string)
+func Track(c *mizu.Ctx, name string, fn func())
+```
+
+### Functions
+
+| Function | Description |
+|----------|-------------|
+| `New()` | Creates the timing middleware |
+| `Add()` | Adds a metric with name, duration, and optional description |
+| `Start()` | Starts timing and returns a stop function |
+| `Track()` | Times a function execution |
+
+## Response Header Format
+
+```
+Server-Timing: <name>;dur=<milliseconds>;desc="<description>"
+```
+
+Multiple metrics are comma-separated:
+
+```
+Server-Timing: total;dur=150.00, db;dur=45.20;desc="Query users", cache;dur=2.10;desc="Redis lookup"
+```
+
+## Viewing in Browser
+
+Open DevTools → Network → Select request → Timing tab to see:
+- Total server processing time
+- Individual metric breakdowns
+- Descriptions for each metric
+
+## Best Practices
+
+- Track database queries, cache lookups, and external API calls
+- Use descriptive names for metrics
+- Add descriptions for clarity
+- Keep metric names short and consistent
+- Use the Start/Stop pattern for cleaner code
+
+## Related Middlewares
+
+- [requestid](/middlewares/requestid) - Request tracing
+- [timeout](/middlewares/timeout) - Request timeout

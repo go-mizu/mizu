@@ -1,0 +1,123 @@
+---
+title: "Transformer"
+description: "Request/response transformation middleware for data manipulation."
+---
+
+## Overview
+
+The `transformer` middleware transforms request and response data, enabling format conversion, field mapping, and data manipulation.
+
+Use it when you need:
+- API version compatibility
+- Field renaming/mapping
+- Format conversion
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/transformer"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Transform request JSON
+app.Use(transformer.Request(func(data map[string]any) map[string]any {
+    // Rename field
+    data["user_name"] = data["username"]
+    delete(data, "username")
+    return data
+}))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `Request` | `func(map[string]any) map[string]any` | Transform request |
+| `Response` | `func(map[string]any) map[string]any` | Transform response |
+
+## Examples
+
+### Request Transformation
+
+```go
+app.Use(transformer.Request(func(data map[string]any) map[string]any {
+    // Snake case to camel case
+    if v, ok := data["first_name"]; ok {
+        data["firstName"] = v
+        delete(data, "first_name")
+    }
+    return data
+}))
+```
+
+### Response Transformation
+
+```go
+app.Use(transformer.Response(func(data map[string]any) map[string]any {
+    // Add metadata
+    return map[string]any{
+        "data":    data,
+        "version": "2.0",
+    }
+}))
+```
+
+### Field Mapping
+
+```go
+fieldMap := map[string]string{
+    "userName": "username",
+    "firstName": "first_name",
+    "lastName": "last_name",
+}
+
+app.Use(transformer.WithFieldMap(fieldMap))
+```
+
+### Version Compatibility
+
+```go
+// v1 to v2 transformation
+app.Use(transformer.Request(func(data map[string]any) map[string]any {
+    // v1 had "name", v2 expects "fullName"
+    if name, ok := data["name"]; ok {
+        data["fullName"] = name
+        delete(data, "name")
+    }
+    return data
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// Request creates request transformer
+func Request(fn func(map[string]any) map[string]any) mizu.Middleware
+
+// Response creates response transformer
+func Response(fn func(map[string]any) map[string]any) mizu.Middleware
+
+// WithFieldMap creates field mapping transformer
+func WithFieldMap(fieldMap map[string]string) mizu.Middleware
+```
+
+## Best Practices
+
+- Use for API version compatibility
+- Keep transformations simple
+- Document transformation rules
+- Test edge cases thoroughly
+
+## Related Middlewares
+
+- [version](/middlewares/version) - API versioning
+- [envelope](/middlewares/envelope) - Response wrapping
+- [filter](/middlewares/filter) - Field filtering
