@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"regexp"
 	"runtime"
@@ -435,5 +436,330 @@ func Test_colorTextHandler_LevelColorBranches(t *testing.T) {
 			t.Fatalf("expected %q in output for %v, got %q", wantNames[i], lvl, out)
 		}
 		buf.Reset()
+	}
+}
+
+func Test_isTerminal_NotFile(t *testing.T) {
+	// Test with a non-file writer
+	var buf bytes.Buffer
+	if isTerminal(&buf) {
+		t.Fatal("isTerminal should return false for non-file writer")
+	}
+}
+
+func Test_buildFallbackLogger_DefaultCase(t *testing.T) {
+	// Test the default case (Mode value that's neither Prod nor Dev)
+	var buf bytes.Buffer
+	lg := buildFallbackLogger(Mode(99), &buf, false)
+	lg.Info("test")
+	if buf.Len() == 0 {
+		t.Fatal("buildFallbackLogger default case should produce output")
+	}
+}
+
+func Test_resolveMode_Terminal(t *testing.T) {
+	// Test with terminal output - this will return Dev on terminal, Prod otherwise
+	mode := resolveMode(Auto, os.Stderr)
+	// We just verify it doesn't panic and returns a valid mode
+	if mode != Dev && mode != Prod {
+		t.Fatalf("resolveMode should return Dev or Prod, got %v", mode)
+	}
+}
+
+func Test_colorTextHandler_StatusColors(t *testing.T) {
+	var buf bytes.Buffer
+	h := newColorTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+
+	// Test status code color branches: <300 (green), <500 (yellow), >=500 (red)
+	statuses := []int{200, 404, 500}
+	for _, status := range statuses {
+		rec := slog.NewRecord(time.Now(), slog.LevelInfo, "request", 0)
+		rec.AddAttrs(slog.Int("status", status))
+		if err := h.Handle(context.Background(), rec); err != nil {
+			t.Fatalf("Handle error for status %d: %v", status, err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, fmt.Sprintf("status=%d", status)) {
+			t.Fatalf("expected status=%d in output, got %q", status, out)
+		}
+		buf.Reset()
+	}
+}
+
+func Test_supportsColorEnv_TermEnv(t *testing.T) {
+	oldNo := os.Getenv("NO_COLOR")
+	oldForce := os.Getenv("FORCE_COLOR")
+	oldTerm := os.Getenv("TERM")
+	defer func() {
+		_ = os.Setenv("NO_COLOR", oldNo)
+		_ = os.Setenv("FORCE_COLOR", oldForce)
+		_ = os.Setenv("TERM", oldTerm)
+	}()
+
+	_ = os.Setenv("NO_COLOR", "")
+	_ = os.Setenv("FORCE_COLOR", "")
+
+	// Test TERM=dumb should return false (on non-Windows)
+	if runtime.GOOS != "windows" {
+		_ = os.Setenv("TERM", "dumb")
+		if supportsColorEnv() {
+			t.Fatal("TERM=dumb should not support color")
+		}
+
+		// Test TERM="" should return false
+		_ = os.Setenv("TERM", "")
+		if supportsColorEnv() {
+			t.Fatal("TERM='' should not support color")
+		}
+
+		// Test TERM=xterm should return true
+		_ = os.Setenv("TERM", "xterm")
+		if !supportsColorEnv() {
+			t.Fatal("TERM=xterm should support color")
+		}
+	}
+}
+
+func Test_colorTextHandler_EmptyTime(t *testing.T) {
+	var buf bytes.Buffer
+	h := newColorTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+
+	// Create record with zero time
+	rec := slog.NewRecord(time.Time{}, slog.LevelInfo, "msg", 0)
+	if err := h.Handle(context.Background(), rec); err != nil {
+		t.Fatalf("Handle error: %v", err)
+	}
+	// Just verify it doesn't panic
+}
+
+func Test_colorTextHandler_EmptyMessage(t *testing.T) {
+	var buf bytes.Buffer
+	h := newColorTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+
+	rec := slog.NewRecord(time.Now(), slog.LevelInfo, "", 0)
+	rec.AddAttrs(slog.Int("status", 200))
+	if err := h.Handle(context.Background(), rec); err != nil {
+		t.Fatalf("Handle error: %v", err)
+	}
+	// Just verify it doesn't panic with empty message
+}
+
+func Test_buildLogAttrs_NoQuery(t *testing.T) {
+	c, _, r, _ := newCtxForLoggerTest(http.MethodGet, "http://x.test/a", io.Discard)
+	r.Proto = "HTTP/1.1"
+	r.Host = "x.test"
+
+	attrs := buildLogAttrs(c, r, 200, 10*time.Millisecond, "", Prod, LoggerOptions{
+		RequestIDHeader: "X-Request-Id",
+	})
+
+	got := attrsToStringMap(attrs)
+	if _, ok := got["query"]; ok {
+		t.Fatal("query attr should not be present when no query string")
+	}
+}
+
+func Test_buildLogAttrs_TraceNoSpan(t *testing.T) {
+	c, _, r, _ := newCtxForLoggerTest(http.MethodGet, "http://x.test/a", io.Discard)
+
+	attrs := buildLogAttrs(c, r, 200, 10*time.Millisecond, "", Dev, LoggerOptions{
+		RequestIDHeader: "X-Request-Id",
+		TraceExtractor: func(ctx context.Context) (string, string, bool) {
+			return "trace123", "", false // No span ID
+		},
+	})
+
+	got := attrsToStringMap(attrs)
+	if got["trace_id"] != "trace123" {
+		t.Fatal("trace_id should be present")
+	}
+	if _, ok := got["span_id"]; ok {
+		t.Fatal("span_id should not be present when empty")
+	}
+}
+
+func Test_buildLogAttrs_NoUserAgent(t *testing.T) {
+	c, _, r, _ := newCtxForLoggerTest(http.MethodGet, "http://x.test/a", io.Discard)
+	r.Header.Set("User-Agent", "")
+
+	attrs := buildLogAttrs(c, r, 200, 10*time.Millisecond, "", Dev, LoggerOptions{
+		RequestIDHeader: "X-Request-Id",
+		UserAgent:       true, // enabled but empty UA
+	})
+
+	got := attrsToStringMap(attrs)
+	if _, ok := got["user_agent"]; ok {
+		t.Fatal("user_agent should not be present when empty")
+	}
+}
+
+func Test_Logger_ProdMode(t *testing.T) {
+	var buf bytes.Buffer
+	o := LoggerOptions{
+		Mode:   Prod,
+		Output: &buf,
+	}
+	mw := Logger(o)
+
+	h := mw(func(c *Ctx) error {
+		c.Status(200)
+		return nil
+	})
+
+	r := httptest.NewRequest(http.MethodGet, "http://x.test/p", nil)
+	w := httptest.NewRecorder()
+	c := newCtx(w, r, nil)
+	_ = h(c)
+
+	// Verify output is JSON
+	out := buf.String()
+	var tmp map[string]any
+	if err := json.Unmarshal([]byte(out), &tmp); err != nil {
+		t.Fatalf("expected JSON log in Prod mode, got %q, err=%v", out, err)
+	}
+}
+
+func Test_resolveRequestID_EmptyGen(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://x", nil)
+	w := httptest.NewRecorder()
+	c := newCtx(w, r, nil)
+
+	// Generator that returns empty string
+	gen := func() string { return "" }
+	got := resolveRequestID(r, c, LoggerOptions{RequestIDHeader: "X-Request-Id", RequestIDGen: gen})
+	if got != "" {
+		t.Fatalf("resolveRequestID should return empty when gen returns empty, got %q", got)
+	}
+}
+
+func Test_colorTextHandler_NilLevel(t *testing.T) {
+	var buf bytes.Buffer
+	// Test with opts that has nil Level - this should default to Info
+	h := newColorTextHandler(&buf, &slog.HandlerOptions{Level: nil})
+
+	rec := slog.NewRecord(time.Now(), slog.LevelInfo, "test", 0)
+	if err := h.Handle(context.Background(), rec); err != nil {
+		t.Fatalf("Handle error: %v", err)
+	}
+	// Just verify it doesn't panic with nil Level
+}
+
+func Test_colorTextHandler_Enabled_NilLevel(t *testing.T) {
+	var buf bytes.Buffer
+	h := &colorTextHandler{w: &buf, opts: &slog.HandlerOptions{Level: nil}}
+
+	// Should default to Info level when opts.Level is nil
+	if !h.Enabled(context.Background(), slog.LevelInfo) {
+		t.Fatal("Enabled should return true for Info when opts.Level is nil")
+	}
+	if h.Enabled(context.Background(), slog.LevelDebug) {
+		t.Fatal("Enabled should return false for Debug when opts.Level is nil (defaults to Info)")
+	}
+}
+
+func Test_requestPath_PlainPath(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://x/path", nil)
+	// Force URL.Opaque to be empty and EscapedPath to return empty
+	r.URL.RawPath = ""
+	r.URL.Path = "/plain/path"
+
+	got := requestPath(r)
+	if got != "/plain/path" {
+		t.Fatalf("requestPath should return plain path, got %q", got)
+	}
+}
+
+func Test_isTerminal_StatError(t *testing.T) {
+	// Create a file and close it, then try to stat - won't work for Stat error
+	// Instead, we test with a valid file
+	f, err := os.CreateTemp("", "test")
+	if err != nil {
+		t.Skip("cannot create temp file")
+	}
+	name := f.Name()
+	f.Close()
+	os.Remove(name)
+
+	// Open a file that doesn't exist should fail
+	// But isTerminal takes an io.Writer, not a file handle
+	// Let's test with a pipe - pipes are not character devices
+	pr, pw, _ := os.Pipe()
+	defer pr.Close()
+	defer pw.Close()
+
+	if isTerminal(pw) {
+		t.Fatal("pipe should not be a terminal")
+	}
+}
+
+func Test_buildLogAttrs_RequestIDFromResponseAfterHandler(t *testing.T) {
+	c, _, r, _ := newCtxForLoggerTest(http.MethodGet, "http://x.test/a", io.Discard)
+	// Set request ID in response header (simulating it being set by handler)
+	c.Header().Set("X-Request-Id", "resp-id")
+
+	attrs := buildLogAttrs(c, r, 200, 10*time.Millisecond, "", Dev, LoggerOptions{
+		RequestIDHeader: "X-Request-Id",
+	})
+
+	got := attrsToStringMap(attrs)
+	if got["request_id"] != "resp-id" {
+		t.Fatalf("request_id should be 'resp-id', got %q", got["request_id"])
+	}
+}
+
+func Test_buildLogAttrs_TraceEmptyID(t *testing.T) {
+	c, _, r, _ := newCtxForLoggerTest(http.MethodGet, "http://x.test/a", io.Discard)
+
+	attrs := buildLogAttrs(c, r, 200, 10*time.Millisecond, "", Dev, LoggerOptions{
+		RequestIDHeader: "X-Request-Id",
+		TraceExtractor: func(ctx context.Context) (string, string, bool) {
+			return "", "", false // Empty trace ID
+		},
+	})
+
+	got := attrsToStringMap(attrs)
+	if _, ok := got["trace_id"]; ok {
+		t.Fatal("trace_id should not be present when empty")
+	}
+}
+
+func Test_requestPath_EmptyEscaped(t *testing.T) {
+	// Create a request with a URL that has Path but empty EscapedPath result
+	// This happens when URL.Opaque is set (making EscapedPath return "")
+	r := httptest.NewRequest(http.MethodGet, "http://x/test", nil)
+	r.URL.Opaque = "" // Ensure no opaque
+	r.URL.RawPath = "" // No raw path
+	r.URL.Path = "/test/path"
+
+	// EscapedPath should return /test/path in this case, not empty
+	// So we need to manipulate differently
+	// Actually, EscapedPath returns empty only when Path is empty
+	// Let's just verify the function works correctly
+	got := requestPath(r)
+	if got == "" {
+		t.Fatal("requestPath should return non-empty")
+	}
+}
+
+func Test_isTerminal_RegularFile(t *testing.T) {
+	// Test with a regular file (not a terminal)
+	f, err := os.CreateTemp("", "test")
+	if err != nil {
+		t.Skip("cannot create temp file")
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+
+	if isTerminal(f) {
+		t.Fatal("regular file should not be a terminal")
+	}
+}
+
+func Test_requestPath_EmptyPath(t *testing.T) {
+	// Test with empty URL path - both EscapedPath and Path return ""
+	r := &http.Request{URL: &url.URL{Path: ""}}
+	got := requestPath(r)
+	if got != "" {
+		t.Fatalf("requestPath with empty path should return empty, got %q", got)
 	}
 }

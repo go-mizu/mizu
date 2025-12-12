@@ -16,6 +16,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -440,4 +441,71 @@ func TestAddrFormatting(t *testing.T) {
 		t.Fatalf("bad addr: %q", addr)
 	}
 	_ = fmt.Sprintf("addr=%s", addr)
+}
+
+func TestHealthzHandler_HealthyState(t *testing.T) {
+	app := New()
+
+	// Create a request to the healthz handler
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	w := httptest.NewRecorder()
+
+	// Get the healthz handler and serve the request
+	handler := app.HealthzHandler()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("HealthzHandler should return 200 when healthy, got %d", w.Code)
+	}
+	if body := w.Body.String(); body != "ok\n" {
+		t.Fatalf("HealthzHandler should return 'ok\\n', got %q", body)
+	}
+}
+
+func TestHealthzHandler_ShuttingDownState(t *testing.T) {
+	app := New()
+
+	// Simulate shutting down state
+	app.shuttingDown.Store(true)
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	w := httptest.NewRecorder()
+
+	handler := app.HealthzHandler()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("HealthzHandler should return 503 when shutting down, got %d", w.Code)
+	}
+}
+
+func TestAppOptions_Negative(t *testing.T) {
+	// Test WithPreShutdownDelay with negative duration
+	app := New(WithPreShutdownDelay(-1 * time.Second))
+	// Should use default (1 second) when negative
+	if app.preShutdownDelay != 1*time.Second {
+		t.Fatalf("negative preShutdownDelay should use default, got %v", app.preShutdownDelay)
+	}
+
+	// Test WithShutdownTimeout with zero duration
+	app2 := New(WithShutdownTimeout(0))
+	// Should use default (15 seconds) when zero
+	if app2.shutdownTimeout != 15*time.Second {
+		t.Fatalf("zero shutdownTimeout should use default, got %v", app2.shutdownTimeout)
+	}
+
+	// Test WithShutdownTimeout with negative duration
+	app3 := New(WithShutdownTimeout(-1 * time.Second))
+	// Should use default (15 seconds) when negative
+	if app3.shutdownTimeout != 15*time.Second {
+		t.Fatalf("negative shutdownTimeout should use default, got %v", app3.shutdownTimeout)
+	}
+}
+
+func TestAppOptions_Zero(t *testing.T) {
+	// Test WithPreShutdownDelay with zero duration (should be accepted)
+	app := New(WithPreShutdownDelay(0))
+	if app.preShutdownDelay != 0 {
+		t.Fatalf("zero preShutdownDelay should be accepted, got %v", app.preShutdownDelay)
+	}
 }

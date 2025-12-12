@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"testing/fstest"
 )
@@ -457,5 +458,234 @@ func TestAdaptStdMiddleware(t *testing.T) {
 	// Status code semantics here depend on Ctx/logger; just ensure we got a response.
 	if rec.Result() == nil {
 		t.Fatalf("/mid produced nil response")
+	}
+}
+
+func TestPanicError_String(t *testing.T) {
+	pe := &PanicError{Value: "test panic", Stack: []byte("stack trace")}
+	expected := "panic: test panic"
+	if pe.Error() != expected {
+		t.Fatalf("PanicError.Error() = %q, want %q", pe.Error(), expected)
+	}
+}
+
+func TestCompat_Mount(t *testing.T) {
+	r := NewRouter()
+
+	// Use Compat.Mount method
+	r.Compat.Mount("/api", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("api-mounted"))
+	}))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://example.invalid/api", nil)
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != 200 || bodyString(t, rec) != "api-mounted" {
+		t.Fatalf("Compat.Mount: status=%d body=%q", rec.Code, bodyString(t, rec))
+	}
+}
+
+func TestNotFound_NilHandler(t *testing.T) {
+	r := NewRouter()
+	// Should not panic and be no-op
+	r.NotFound(nil)
+}
+
+func TestUseFirst_EmptySlice(t *testing.T) {
+	r := NewRouter()
+	initialLen := len(r.chain)
+	r.UseFirst()
+	if len(r.chain) != initialLen {
+		t.Fatalf("UseFirst with empty slice should be no-op, chain length changed from %d to %d", initialLen, len(r.chain))
+	}
+}
+
+func TestCanonicalPath_AllBranches(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"", "/"},
+		{"/", "/"},
+		{"foo", "/foo"},
+		{"/foo", "/foo"},
+		{"/foo/", "/foo"},
+		{"/foo/bar", "/foo/bar"},
+		{"/foo/bar/", "/foo/bar"},
+		{"/foo//bar", "/foo/bar"},
+		{"/foo/../bar", "/bar"},
+		{"foo/bar", "/foo/bar"},
+		{"/./foo", "/foo"},
+	}
+
+	for _, tc := range tests {
+		got := canonicalPath(tc.input)
+		if got != tc.expected {
+			t.Errorf("canonicalPath(%q) = %q, want %q", tc.input, got, tc.expected)
+		}
+	}
+}
+
+func TestFullPath_AllBranches(t *testing.T) {
+	// Test with base prefix
+	r := NewRouter()
+	api := r.Prefix("/api")
+
+	// fullPath with empty p
+	fp := api.fullPath("")
+	if fp != "/api" {
+		t.Fatalf("fullPath(\"\") with base /api = %q, want /api", fp)
+	}
+
+	// fullPath with path without leading slash
+	fp2 := api.fullPath("users")
+	if fp2 != "/api/users" {
+		t.Fatalf("fullPath(\"users\") with base /api = %q, want /api/users", fp2)
+	}
+
+	// fullPath with path with leading slash
+	fp3 := api.fullPath("/users")
+	if fp3 != "/api/users" {
+		t.Fatalf("fullPath(\"/users\") with base /api = %q, want /api/users", fp3)
+	}
+}
+
+func TestCleanLeading_AllBranches(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"", "/"},
+		{"/", "/"},
+		{"foo", "/foo"},
+		{"/foo", "/foo"},
+	}
+
+	for _, tc := range tests {
+		got := cleanLeading(tc.input)
+		if got != tc.expected {
+			t.Errorf("cleanLeading(%q) = %q, want %q", tc.input, got, tc.expected)
+		}
+	}
+}
+
+func TestNewRouter_ColorBranches(t *testing.T) {
+	// Just verify NewRouter doesn't panic and creates valid router
+	r := NewRouter()
+	if r == nil || r.mux == nil || r.log == nil {
+		t.Fatal("NewRouter should create valid router")
+	}
+}
+
+func TestStatic_WithPrefix(t *testing.T) {
+	fs := fstest.MapFS{
+		"style.css": &fstest.MapFile{Data: []byte("body{}")},
+	}
+
+	r := NewRouter()
+	// Test Static with path that doesn't have leading slash
+	r.Static("css", http.FS(fs))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://example.invalid/css/style.css", nil)
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != 200 || bodyString(t, rec) != "body{}" {
+		t.Fatalf("Static with prefix: status=%d body=%q", rec.Code, bodyString(t, rec))
+	}
+}
+
+func TestAdaptStdMiddleware_WithErrorHandler(t *testing.T) {
+	r := NewRouter()
+
+	var gotErr error
+	r.ErrorHandler(func(c *Ctx, err error) {
+		gotErr = err
+		c.Writer().WriteHeader(499)
+	})
+
+	// std middleware
+	mid := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			next.ServeHTTP(w, req)
+		})
+	}
+
+	r.Compat.Use(mid)
+
+	r.Get("/err", func(c *Ctx) error {
+		return errors.New("handler error")
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://example.invalid/err", nil)
+	r.ServeHTTP(rec, req)
+
+	if gotErr == nil || gotErr.Error() != "handler error" {
+		t.Fatalf("ErrorHandler should receive error, got %v", gotErr)
+	}
+}
+
+func TestSetLogger_Nil(t *testing.T) {
+	r := NewRouter()
+	oldLogger := r.Logger()
+	r.SetLogger(nil)
+	if r.Logger() != oldLogger {
+		t.Fatal("SetLogger(nil) should not change logger")
+	}
+}
+
+func TestCanonicalPath_RootAfterClean(t *testing.T) {
+	// Test path that becomes "/" after path.Clean
+	if got := canonicalPath("/."); got != "/" {
+		t.Fatalf("canonicalPath(\"/.\") = %q, want \"/\"", got)
+	}
+	// Test path that becomes empty after TrimRight
+	if got := canonicalPath("///"); got != "/" {
+		t.Fatalf("canonicalPath(\"///\") = %q, want \"/\"", got)
+	}
+}
+
+func TestNewRouter_TextHandler(t *testing.T) {
+	// Test NewRouter when color is not supported
+	// Save and restore environment
+	oldForce := os.Getenv("FORCE_COLOR")
+	oldNo := os.Getenv("NO_COLOR")
+	defer func() {
+		_ = os.Setenv("FORCE_COLOR", oldForce)
+		_ = os.Setenv("NO_COLOR", oldNo)
+	}()
+
+	_ = os.Setenv("FORCE_COLOR", "")
+	_ = os.Setenv("NO_COLOR", "1")
+
+	r := NewRouter()
+	if r == nil || r.Logger() == nil {
+		t.Fatal("NewRouter should create valid router with text handler")
+	}
+}
+
+func TestCanonicalPath_AdditionalCases(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		// Additional edge cases
+		{".", "/"},
+		{"..", "/"},
+		{"./foo", "/foo"},
+		{"../foo", "/foo"},
+		{"/foo/.", "/foo"},
+		{"/foo/..", "/"},
+		{"foo/.", "/foo"},
+		{"//foo//", "/foo"},
+	}
+
+	for _, tc := range tests {
+		got := canonicalPath(tc.input)
+		if got != tc.expected {
+			t.Errorf("canonicalPath(%q) = %q, want %q", tc.input, got, tc.expected)
+		}
 	}
 }

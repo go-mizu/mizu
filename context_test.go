@@ -663,3 +663,287 @@ func TestCtx_SetCookie(t *testing.T) {
 		t.Fatalf("expected cookie %q, got %q", want, hdr)
 	}
 }
+
+func TestCtx_SetWriter(t *testing.T) {
+	w1 := httptest.NewRecorder()
+	w2 := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	c := newCtx(w1, req, nil)
+
+	// Initial writer should be w1
+	if c.Writer() != w1 {
+		t.Fatal("initial writer mismatch")
+	}
+
+	// Set a new writer
+	c.SetWriter(w2)
+
+	// Writer should now be w2
+	if c.Writer() != w2 {
+		t.Fatal("SetWriter did not change the writer")
+	}
+
+	// Write should go to w2
+	_, _ = c.Write([]byte("test"))
+	if w2.Body.String() != "test" {
+		t.Fatalf("expected w2 to have 'test', got %q", w2.Body.String())
+	}
+	if w1.Body.String() != "" {
+		t.Fatalf("w1 should be empty, got %q", w1.Body.String())
+	}
+}
+
+func TestCtx_SetCookie_Nil(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	c := newCtx(w, req, nil)
+
+	// Should not panic with nil cookie
+	c.SetCookie(nil)
+
+	if hdr := w.Header().Get("Set-Cookie"); hdr != "" {
+		t.Fatalf("expected no Set-Cookie header for nil cookie, got %q", hdr)
+	}
+}
+
+func TestForm_ParseError(t *testing.T) {
+	// Create a request that will fail form parsing
+	// POST request with content-type but invalid body
+	r := httptest.NewRequest(http.MethodPost, "http://x.test/form", strings.NewReader("%invalid"))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	c := newCtx(httptest.NewRecorder(), r, nil)
+
+	_, err := c.Form()
+	if err == nil {
+		t.Fatal("Form should return error for invalid form data")
+	}
+}
+
+func TestMultipartForm_ParseError(t *testing.T) {
+	// Create a request with invalid multipart content
+	r := httptest.NewRequest(http.MethodPost, "http://x.test/upload", strings.NewReader("not valid multipart"))
+	r.Header.Set("Content-Type", "multipart/form-data; boundary=xxx")
+	c := newCtx(httptest.NewRecorder(), r, nil)
+
+	_, cleanup, err := c.MultipartForm(32 << 10)
+	if err == nil {
+		t.Fatal("MultipartForm should return error for invalid multipart data")
+	}
+	// cleanup should be a no-op function even on error
+	cleanup()
+}
+
+func TestSSE_ContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	r := httptest.NewRequest(http.MethodGet, "http://x.test", nil).WithContext(ctx)
+	w := flusherRecorder{httptest.NewRecorder()}
+	c := newCtx(w, r, nil)
+
+	ch := make(chan any)
+	done := make(chan error, 1)
+
+	go func() {
+		done <- c.SSE(ch)
+	}()
+
+	// Cancel context while SSE is running
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != context.Canceled {
+			t.Fatalf("SSE should return context.Canceled, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("SSE did not exit on context cancellation")
+	}
+}
+
+func TestSSE_WriteError(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+	ew := &errorWriter{ResponseRecorder: httptest.NewRecorder()}
+	c := newCtx(ew, r, nil)
+
+	ch := make(chan any, 1)
+	ch <- "test"
+
+	err := c.SSE(ch)
+	if err == nil {
+		t.Fatal("SSE should return error on write failure")
+	}
+}
+
+type errorWriter struct {
+	*httptest.ResponseRecorder
+}
+
+func (e *errorWriter) Write(b []byte) (int, error) {
+	return 0, io.EOF
+}
+
+func (e *errorWriter) Flush() {}
+
+func TestStream_ContentTypePreset(t *testing.T) {
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
+	c.Header().Set("Content-Type", "text/plain")
+
+	err := c.Stream(func(w io.Writer) error {
+		_, _ = io.WriteString(w, "streamed")
+		return nil
+	})
+	if err != nil || w.Header().Get("Content-Type") != "text/plain" {
+		t.Fatal("Stream should respect preset Content-Type")
+	}
+}
+
+func TestStream_Error(t *testing.T) {
+	c, _, _ := newCtxRW(http.MethodGet, "http://x.test")
+
+	err := c.Stream(func(w io.Writer) error {
+		return io.EOF
+	})
+	if err != io.EOF {
+		t.Fatalf("Stream should return handler error, got %v", err)
+	}
+}
+
+func TestBytes_ContentTypePreset(t *testing.T) {
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
+	c.Header().Set("Content-Type", "application/xml")
+
+	_ = c.Bytes(200, []byte("<xml/>"), "")
+	if w.Header().Get("Content-Type") != "application/xml" {
+		t.Fatal("Bytes should respect preset Content-Type when empty string passed")
+	}
+}
+
+func TestFileWithCode_NoExtension(t *testing.T) {
+	dir := t.TempDir()
+	fp := filepath.Join(dir, "noext")
+	if err := os.WriteFile(fp, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
+	c.Status(201)
+	if err := c.File(fp); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != 201 {
+		t.Fatalf("File should respect preset status, got %d", w.Code)
+	}
+}
+
+func TestDownloadWithCode_EmptyName(t *testing.T) {
+	dir := t.TempDir()
+	fp := filepath.Join(dir, "myfile.txt")
+	if err := os.WriteFile(fp, []byte("content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
+	c.Status(201)
+	if err := c.Download(fp, ""); err != nil {
+		t.Fatal(err)
+	}
+	cd := w.Header().Get("Content-Disposition")
+	if !strings.Contains(cd, "myfile.txt") {
+		t.Fatalf("Download with empty name should use base name, got %q", cd)
+	}
+}
+
+func TestDownloadWithCode_NoExtension(t *testing.T) {
+	dir := t.TempDir()
+	fp := filepath.Join(dir, "noext")
+	if err := os.WriteFile(fp, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	c, w, _ := newCtxRW(http.MethodGet, "http://x.test")
+	c.Status(201)
+	if err := c.Download(fp, "noext"); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != 201 {
+		t.Fatalf("Download should respect preset status, got %d", w.Code)
+	}
+}
+
+func TestStatus_ZeroOrNegative(t *testing.T) {
+	c, _, _ := newCtxRW(http.MethodGet, "http://x.test")
+
+	c.Status(0)
+	if c.StatusCode() != http.StatusOK {
+		t.Fatal("Status(0) should not change default")
+	}
+
+	c.Status(-1)
+	if c.StatusCode() != http.StatusOK {
+		t.Fatal("Status(-1) should not change status")
+	}
+
+	c.Status(201)
+	if c.StatusCode() != 201 {
+		t.Fatal("Status(201) should set status")
+	}
+}
+
+func TestBindJSON_DecodeError(t *testing.T) {
+	type In struct {
+		Name string `json:"name"`
+	}
+	// Malformed JSON
+	r := httptest.NewRequest(http.MethodPost, "http://x.test", strings.NewReader(`{malformed`))
+	c := newCtx(httptest.NewRecorder(), r, nil)
+	var in In
+	if err := c.BindJSON(&in, 1024); err == nil {
+		t.Fatal("BindJSON should fail on malformed JSON")
+	}
+}
+
+func TestBindJSON_TokenError(t *testing.T) {
+	type In struct {
+		Name string `json:"name"`
+	}
+	// Valid JSON but reader fails after first object
+	// Use a reader that will succeed for decode but then fail for Token()
+	// by sending a stream that can't be fully tokenized
+	r := httptest.NewRequest(http.MethodPost, "http://x.test", strings.NewReader(`{"name":"x"}extra-not-json`))
+	c := newCtx(httptest.NewRecorder(), r, nil)
+	var in In
+	if err := c.BindJSON(&in, 1024); err == nil {
+		t.Fatal("BindJSON should fail on trailing non-JSON data")
+	}
+}
+
+func TestSSE_MarshalError(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://x.test", nil)
+	w := flusherRecorder{httptest.NewRecorder()}
+	c := newCtx(w, r, nil)
+
+	ch := make(chan any, 1)
+	done := make(chan struct{})
+
+	go func() {
+		_ = c.SSE(ch)
+		close(done)
+	}()
+
+	// Send something that can't be marshaled to JSON (channel type)
+	ch <- make(chan int)
+	close(ch)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("SSE did not finish")
+	}
+
+	// The body should contain a quoted fallback representation
+	body := w.Body.String()
+	if !strings.Contains(body, "data:") {
+		t.Fatalf("SSE output should contain fallback data, got %q", body)
+	}
+}
