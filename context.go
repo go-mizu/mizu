@@ -414,6 +414,10 @@ func (c *Ctx) Flush() error {
 	return nil
 }
 
+func (c *Ctx) SetWriter(w http.ResponseWriter) {
+	c.writer = w
+}
+
 // Hijack hijacks the underlying connection.
 func (c *Ctx) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if h, ok := c.writer.(http.Hijacker); ok {
