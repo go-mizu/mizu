@@ -78,7 +78,7 @@ func TestNew(t *testing.T) {
 		// Now POST with the token
 		req := httptest.NewRequest(http.MethodPost, "/submit", nil)
 		req.AddCookie(csrfCookie)
-		req.Header.Set("X-CSRF-Token", token)
+		req.Header.Set("X-Csrf-Token", token)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 
@@ -103,7 +103,7 @@ func TestNew(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodPost, "/submit", nil)
 		req.AddCookie(csrfCookie)
-		req.Header.Set("X-CSRF-Token", "invalid-token")
+		req.Header.Set("X-Csrf-Token", "invalid-token")
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 

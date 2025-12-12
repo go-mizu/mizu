@@ -27,7 +27,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("overrides via header", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/test", nil)
-		req.Header.Set("X-HTTP-Method-Override", "PUT")
+		req.Header.Set("X-Http-Method-Override", "PUT")
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 
@@ -61,7 +61,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("ignores non-POST", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req.Header.Set("X-HTTP-Method-Override", "DELETE")
+		req.Header.Set("X-Http-Method-Override", "DELETE")
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 
@@ -70,7 +70,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("ignores invalid method", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/test", nil)
-		req.Header.Set("X-HTTP-Method-Override", "INVALID")
+		req.Header.Set("X-Http-Method-Override", "INVALID")
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 
@@ -124,7 +124,7 @@ func TestWithOptions_CustomMethods(t *testing.T) {
 
 	t.Run("allows custom method", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/test", nil)
-		req.Header.Set("X-HTTP-Method-Override", "GET")
+		req.Header.Set("X-Http-Method-Override", "GET")
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 
@@ -135,7 +135,7 @@ func TestWithOptions_CustomMethods(t *testing.T) {
 
 	t.Run("blocks non-allowed method", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/test", nil)
-		req.Header.Set("X-HTTP-Method-Override", "DELETE")
+		req.Header.Set("X-Http-Method-Override", "DELETE")
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 
@@ -160,7 +160,7 @@ func TestWithOptions_CaseInsensitive(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/test", nil)
-	req.Header.Set("X-HTTP-Method-Override", "delete") // lowercase
+	req.Header.Set("X-Http-Method-Override", "delete") // lowercase
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 

@@ -28,9 +28,9 @@ func TestNew(t *testing.T) {
 			t.Errorf("expected status %d, got %d", http.StatusOK, rec.Code)
 		}
 
-		respID := rec.Header().Get("X-Request-ID")
+		respID := rec.Header().Get("X-Request-Id")
 		if respID == "" {
-			t.Error("expected X-Request-ID header to be set")
+			t.Error("expected X-Request-Id header to be set")
 		}
 		if capturedID == "" {
 			t.Error("expected request ID in context")
@@ -43,11 +43,11 @@ func TestNew(t *testing.T) {
 	t.Run("uses existing request ID", func(t *testing.T) {
 		existingID := "existing-request-id-123"
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req.Header.Set("X-Request-ID", existingID)
+		req.Header.Set("X-Request-Id", existingID)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 
-		respID := rec.Header().Get("X-Request-ID")
+		respID := rec.Header().Get("X-Request-Id")
 		if respID != existingID {
 			t.Errorf("expected %q, got %q", existingID, respID)
 		}

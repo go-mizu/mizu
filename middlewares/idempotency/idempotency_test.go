@@ -296,7 +296,7 @@ func TestWithOptions_CustomKeyGenerator(t *testing.T) {
 	app.Use(WithOptions(Options{
 		KeyGenerator: func(key string, c *mizu.Ctx) string {
 			// Include user ID in key
-			userID := c.Request().Header.Get("X-User-ID")
+			userID := c.Request().Header.Get("X-User-Id")
 			return key + "-" + userID
 		},
 	}))
@@ -310,13 +310,13 @@ func TestWithOptions_CustomKeyGenerator(t *testing.T) {
 	// Same idempotency key but different users
 	req := httptest.NewRequest(http.MethodPost, "/create", nil)
 	req.Header.Set("Idempotency-Key", "key")
-	req.Header.Set("X-User-ID", "user1")
+	req.Header.Set("X-User-Id", "user1")
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 
 	req = httptest.NewRequest(http.MethodPost, "/create", nil)
 	req.Header.Set("Idempotency-Key", "key")
-	req.Header.Set("X-User-ID", "user2")
+	req.Header.Set("X-User-Id", "user2")
 	rec = httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 

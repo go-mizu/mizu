@@ -119,7 +119,7 @@ func TestW3CTracePropagation(t *testing.T) {
 
 	// Send request with traceparent header
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("traceparent", "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")
+	req.Header.Set("Traceparent", "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 
@@ -141,7 +141,7 @@ func TestW3CTracePropagation(t *testing.T) {
 	}
 
 	// Response should have traceparent header
-	if rec.Header().Get("traceparent") == "" {
+	if rec.Header().Get("Traceparent") == "" {
 		t.Error("expected traceparent header in response")
 	}
 }
@@ -161,7 +161,7 @@ func TestB3Propagation(t *testing.T) {
 
 	// Single header format
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("b3", "80f198ee56343ba864fe8b2a57d3eff7-e457b5a2e4d86bd1-1")
+	req.Header.Set("B3", "80f198ee56343ba864fe8b2a57d3eff7-e457b5a2e4d86bd1-1")
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 
@@ -172,8 +172,8 @@ func TestB3Propagation(t *testing.T) {
 	}
 
 	// Response should have B3 headers
-	if rec.Header().Get("X-B3-TraceId") == "" {
-		t.Error("expected X-B3-TraceId header in response")
+	if rec.Header().Get("X-B3-Traceid") == "" {
+		t.Error("expected X-B3-Traceid header in response")
 	}
 }
 
@@ -192,8 +192,8 @@ func TestB3MultiHeaderPropagation(t *testing.T) {
 
 	// Multi-header format
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-B3-TraceId", "463ac35c9f6413ad48485a3953bb6124")
-	req.Header.Set("X-B3-SpanId", "0020000000000001")
+	req.Header.Set("X-B3-Traceid", "463ac35c9f6413ad48485a3953bb6124")
+	req.Header.Set("X-B3-Spanid", "0020000000000001")
 	req.Header.Set("X-B3-Sampled", "1")
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)

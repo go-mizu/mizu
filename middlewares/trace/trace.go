@@ -247,7 +247,7 @@ func HTTPHeaders(c *mizu.Ctx) http.Header {
 	}
 
 	headers := make(http.Header)
-	headers.Set("X-Trace-ID", span.TraceID)
-	headers.Set("X-Parent-ID", span.SpanID)
+	headers.Set("X-Trace-Id", span.TraceID)
+	headers.Set("X-Parent-Id", span.SpanID)
 	return headers
 }

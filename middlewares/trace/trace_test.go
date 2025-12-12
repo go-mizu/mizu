@@ -70,7 +70,7 @@ func TestWithOptions_PropagateTraceID(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-Trace-ID", "existing-trace-id")
+	req.Header.Set("X-Trace-Id", "existing-trace-id")
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 
@@ -91,8 +91,8 @@ func TestWithOptions_ParentID(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-Trace-ID", "trace-1")
-	req.Header.Set("X-Parent-ID", "parent-span-1")
+	req.Header.Set("X-Trace-Id", "trace-1")
+	req.Header.Set("X-Parent-Id", "parent-span-1")
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 
@@ -286,8 +286,8 @@ func TestResponseHeader(t *testing.T) {
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 
-	if rec.Header().Get("X-Trace-ID") == "" {
-		t.Error("expected X-Trace-ID response header")
+	if rec.Header().Get("X-Trace-Id") == "" {
+		t.Error("expected X-Trace-Id response header")
 	}
 }
 
@@ -305,10 +305,10 @@ func TestHTTPHeaders(t *testing.T) {
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 
-	if headers.Get("X-Trace-ID") == "" {
+	if headers.Get("X-Trace-Id") == "" {
 		t.Error("expected trace ID in headers")
 	}
-	if headers.Get("X-Parent-ID") == "" {
+	if headers.Get("X-Parent-Id") == "" {
 		t.Error("expected parent ID in headers")
 	}
 }

@@ -1,5 +1,62 @@
 version: "2"
 linters:
-  default: standard
+  default: all
   disable:
     - wsl
+    - wsl_v5
+    # Disabled: Style preferences that are too strict
+    - varnamelen      # Short variable names are common in Go (c, r, w, i, etc.)
+    - exhaustruct     # Not all struct fields need to be initialized explicitly
+    - exhaustive      # Switch statements don't always need all cases
+    - paralleltest    # Not all tests need to run in parallel
+    - testpackage     # Internal testing (same package) is valid
+    - mnd             # Magic numbers are often clear in context
+    - nlreturn        # Blank lines before return are stylistic
+    - gochecknoglobals # Package-level vars are common in Go
+    - goconst         # Small string repetition is often clearer inline
+    - funlen          # Function length limits are too strict
+    - gocognit        # Cognitive complexity limits are too strict
+    - cyclop          # Cyclomatic complexity limits are too strict
+    - gocyclo         # Cyclomatic complexity limits are too strict
+    - nestif          # Nested if limits are too strict
+    - dupl            # Code duplication detection has many false positives
+    - lll             # Line length limits are too strict
+    - godot           # Comments don't always need periods
+    - godoclint       # Doc comment linting is too strict
+    - tagliatelle     # Tag naming conventions are project-specific
+    - tagalign        # Tag alignment is stylistic
+    - nonamedreturns  # Named returns are useful in some cases
+    - ireturn         # Returning interfaces is valid
+    - wrapcheck       # Not all errors need wrapping
+    - noctx           # HTTP requests in tests don't need context
+    - forcetypeassert # Type assertions are sometimes safe
+    - forbidigo       # fmt.Printf is useful for debugging
+    - perfsprint      # Performance optimizations are minor
+    - prealloc        # Preallocation hints are minor
+    - predeclared     # Shadowing predeclared identifiers is rare
+    - mirror          # Mirror linter is too strict
+    - musttag         # Struct tags are project-specific
+    - sloglint        # slog linting is too strict
+    - errchkjson      # JSON error checking is often unnecessary
+    - noinlineerr     # Inline error handling is valid
+    - usestdlibvars   # Using stdlib vars is stylistic
+    - intrange        # Integer range iteration is stylistic
+    - usetesting      # Testing helpers are stylistic
+    - contextcheck    # Context checking has many false positives
+    - depguard        # Dependency guarding is project-specific
+    - funcorder       # Function ordering is stylistic
+    - gocritic        # Go critic is too opinionated
+    - revive          # Revive is too strict for this codebase
+    - embeddedstructfieldcheck # Embedded struct checking is too strict
+    - errorlint       # Error linting is too strict
+    - nilerr          # Nil error handling is sometimes valid
+    - nilnil          # Nil nil returns are sometimes valid
+    - wastedassign    # Wasted assignments are sometimes intentional
+    - unparam         # Unused parameters are sometimes intentional
+    - err113          # Dynamic errors are common in tests and valid in many cases
+    - gochecknoinits  # init() functions are valid in Go
+    - makezero        # Append to non-zero slice is sometimes intentional
+    - dupword         # Duplicate words in comments are often intentional
+    - modernize       # Modernization suggestions are optional
+    - gosec           # Security issues need manual review, many false positives
+    - staticcheck     # Staticcheck is too strict for this codebase

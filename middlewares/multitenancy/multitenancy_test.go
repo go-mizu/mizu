@@ -110,7 +110,7 @@ func TestSubdomainResolver(t *testing.T) {
 
 func TestHeaderResolver(t *testing.T) {
 	app := mizu.NewRouter()
-	app.Use(New(HeaderResolver("X-Tenant-ID")))
+	app.Use(New(HeaderResolver("X-Tenant-Id")))
 
 	var capturedTenant *Tenant
 	app.Get("/", func(c *mizu.Ctx) error {
@@ -119,7 +119,7 @@ func TestHeaderResolver(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-Tenant-ID", "tenant-123")
+	req.Header.Set("X-Tenant-Id", "tenant-123")
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 
@@ -186,7 +186,7 @@ func TestLookupResolver(t *testing.T) {
 	}
 
 	app := mizu.NewRouter()
-	app.Use(New(LookupResolver(HeaderResolver("X-Tenant-ID"), func(id string) (*Tenant, error) {
+	app.Use(New(LookupResolver(HeaderResolver("X-Tenant-Id"), func(id string) (*Tenant, error) {
 		if tenant, ok := tenants[id]; ok {
 			return tenant, nil
 		}
@@ -200,7 +200,7 @@ func TestLookupResolver(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-Tenant-ID", "acme")
+	req.Header.Set("X-Tenant-Id", "acme")
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 
@@ -218,7 +218,7 @@ func TestLookupResolver(t *testing.T) {
 func TestChainResolver(t *testing.T) {
 	app := mizu.NewRouter()
 	app.Use(New(ChainResolver(
-		HeaderResolver("X-Tenant-ID"),
+		HeaderResolver("X-Tenant-Id"),
 		QueryResolver("tenant"),
 		SubdomainResolver(),
 	)))
