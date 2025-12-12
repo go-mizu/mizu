@@ -4,15 +4,58 @@ title: "Use Cases"
 description: "What you can build with Mizu."
 ---
 
-Mizu works well for many kinds of Go projects. Its small core and clear structure make it easy to use for any type of application.
+Mizu is a good fit when you want a lightweight HTTP layer without framework lock-in.
 
-- **APIs**: Build REST or RPC services with simple routes and clean handlers.
-- **Web Apps**: Render HTML templates, handle forms, and serve static files in one place.
-- **Microservices**: Create small, focused services that are easy to deploy, scale, and test.
-- **Prototypes**: Turn ideas into working demos quickly with minimal setup.
-- **SPA and Mobile Backends**: Serve JSON data for React, Vue, or mobile applications.
-- **Internal Tools**: Build dashboards, admin panels, or monitoring pages using standard Go templates.
-- **Real-Time Features**: Stream live updates, notifications, or logs using Go’s concurrency and WebSocket support.
+### REST APIs
 
-Mizu gives you full control from start to finish.
-You write plain Go code, add only what you need, and use the same tools whether you are building a small project or a large production system.
+Build JSON APIs with typed handlers and central error handling:
+
+```go
+app.Get("/users/{id}", getUser)
+app.Post("/users", createUser)
+app.ErrorHandler(handleAPIError)
+```
+
+### Backend for SPAs and Mobile
+
+Serve JSON data for React, Vue, or mobile applications. Mizu's JSON helpers and CORS-compatible middleware make this straightforward.
+
+### Microservices
+
+Create small, focused services. Mizu's minimal footprint means fast startup times and low memory usage. The built-in health check endpoint integrates with container orchestrators.
+
+### Prototypes
+
+Go from idea to running server quickly. A complete Mizu app fits in a single file:
+
+```go
+func main() {
+    app := mizu.New()
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{"status": "ok"})
+    })
+    app.Listen(":3000")
+}
+```
+
+### Server-Side Rendering
+
+Serve HTML pages with Go's `html/template` package. Mizu handles routing and static files while you use standard library templates for rendering.
+
+### Real-Time Updates
+
+Stream data to clients using Server-Sent Events:
+
+```go
+app.Get("/events", func(c *mizu.Ctx) error {
+    ch := make(chan any)
+    go produceEvents(ch)
+    return c.SSE(ch)
+})
+```
+
+### When Mizu is not the right choice
+
+- If you need WebSocket support, you will need to add a separate library
+- If you want an opinionated full-stack framework with ORM and auth built in, consider other options
+- If you prefer convention over configuration, Mizu's explicit approach may feel verbose

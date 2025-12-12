@@ -1,40 +1,41 @@
 ---
 icon: "book-open"
 title: Introduction
-description: A lightweight and Go-idiomatic web framework that feels as simple as writing plain Go code.
+description: A lightweight web framework for Go that stays close to the standard library.
 ---
 
 <img
 src="/logo.png"
-alt="Illustration of a Gopher in water"
+alt="Mizu logo"
 style={{width: "200px"}}
 noZoom
 />
 
-Mizu is a lightweight web framework for Go that focuses on simplicity and clarity.
-The name *Mizu* means "water" in Japanese. It is designed to be clean, adaptable, and easy to flow with.
+Mizu is a lightweight web framework for Go. The name means "water" in Japanese.
 
-Everything in Mizu is written in plain Go. You define routes, handlers, and middleware the same way you would in standard Go code. There are no hidden abstractions or surprises.
+Mizu adds a thin layer over Go's `net/http` package:
 
-Mizu helps you build web apps and APIs that stay easy to read, maintain, and extend over time. You can start with a single file and gradually grow into a full project structure without changing your coding style.
+- Routes with path parameters using Go 1.22's `ServeMux`
+- A context wrapper with helpers for JSON, forms, and cookies
+- Middleware that works like standard Go handlers
+- Graceful shutdown with configurable timeouts
+- Structured logging with `slog`
 
-### Learn about
+Everything stays explicit. There is no reflection, code generation, or hidden behavior. If you know Go's `net/http`, you already understand how Mizu works.
 
-Explore these short guides to get started with Mizu.
+### Get started
 
 <Columns cols={2}>
-  <Card title="Why Mizu" href="/overview/why">
-    Learn why developers choose Mizu for its simple, Go-first approach.
-  </Card>
   <Card title="Quick Start" href="/overview/quick-start">
-    Create your first Mizu app in just a few minutes.
+    Build your first app in five minutes.
+  </Card>
+  <Card title="Why Mizu" href="/overview/why">
+    Understand the design philosophy.
   </Card>
   <Card title="Features" href="/overview/features">
-    Discover the key features that make Mizu fast and practical.
+    See what Mizu provides.
   </Card>
-  <Card title="Use Cases" href="/overview/use-cases">
-    See how Mizu works for APIs, web apps, and more.
+  <Card title="Concepts" href="/concepts/overview">
+    Learn how routing, handlers, and middleware work.
   </Card>
 </Columns>
-
-At its heart, Mizu flows like water, simple, flexible, and ready to take the shape of whatever you build.

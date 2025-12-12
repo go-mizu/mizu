@@ -2,100 +2,40 @@
 title: "Overview"
 ---
 
-Learning by examples is the best way to learn how to use **Mizu**.<br/>
-*Mizu by Examples* is a practical, hands-on collection of runnable Go projects that guide you through building modern web applications step by step.
+Learn Mizu through practical, runnable examples. Each example focuses on one concept and includes complete, working code.
 
-All examples are open source and available at [github.com/go-mizu/examples](https://github.com/go-mizu/examples).
-You can clone the repository and start exploring right away:
+All examples are available at [github.com/go-mizu/examples](https://github.com/go-mizu/examples):
 
 ```
 git clone https://github.com/go-mizu/examples
 cd examples
+go run ./001-hello-mizu
 ```
 
-Each folder contains a small, focused Go program that demonstrates one clear idea: from serving pages to handling APIs, middleware, and real-time features.
-Run any example instantly with a single command:
+## Getting Started
 
-```
-go run ./examples/001-hello-mizu
-```
+These examples cover the fundamentals of building web applications with Mizu:
 
-## How it is organized
+1. [Hello, Mizu](./001-hello-mizu) - Your first web server
+2. [Static Files](./002-static-files) - Serve HTML, CSS, and JavaScript
+3. [Routing Basics](./003-routing-basics) - Define routes and handlers
+4. [JSON Responses](./004-json-responses) - Return structured data
+5. [Context and Lifecycle](./005-context-lifecycle) - Handle timeouts and cancellation
+6. [Query, Form, and Path Parameters](./006-query-form-path) - Read request data
+7. [Cookies](./007-cookies) - Store data between requests
+8. [Middleware Basics](./008-middleware-basics) - Add logging, auth, and shared logic
+9. [Error Handling and Recover](./009-error-handling-recover) - Handle errors and panics
+10. [Logging with slog](./010-logging-with-slog) - Structured request logging
 
-The collection is divided into ten chapters, each focusing on a specific part of building Go web applications. Every chapter introduces new concepts while keeping the examples short and approachable.
+## What you will learn
 
-#### Getting Started ✓
+By working through these examples, you will understand how to:
 
-Learn the basics of creating servers, defining routes, and sending responses. You will build your first working web app in just a few lines of Go code.
+- Create routes and handlers
+- Read data from requests (path, query, form, JSON)
+- Send responses (text, JSON, HTML, files)
+- Use middleware for cross-cutting concerns
+- Handle errors consistently
+- Log requests and application events
 
-- [Hello, Mizu](./001-hello-mizu)
-- [Static Files](./002-static-files)
-- [Routing Basics](./003-routing-basics)
-- [JSON Responses](./004-json-responses)
-- [Context and Lifecycle](./005-context-lifecycle)
-- [Query, Form, and Path Parameters](./006-query-form-path)
-- [Cookies and Sessions](./007-cookies-sessions)
-- [Middleware Basics](./008-middleware-basics)
-- [Error Handling and Recover](./009-error-handling-recover)
-- [Logging with slog](./010-logging-with-slog)
-
-#### HTTP Essentials ⏳
-
-Understand how HTTP really works. Explore timeouts, request IDs, streaming responses, file uploads, and graceful shutdowns.
-
-- [Request IDs and Correlation](./011-request-ids-correlation)
-- [Timeout and Context Deadline](./012-timeout-context-deadline)
-- [Method Override](./013-method-override)
-- [Body Limit](./014-body-limit)
-- [File Uploads](./015-file-uploads)
-- [Streaming and Chunked Responses](./016-streaming-chunked-responses)
-- [Custom Middleware](./017-custom-middleware)
-- [Route Groups and Sub-Routers](./018-route-groups-sub-routers)
-- [Graceful Shutdown](./019-graceful-shutdown)
-- [Testing Mizu Apps](./020-testing-mizu-apps)
-
-#### Security and Access 🔜
-
-Add safety to your apps with CORS, CSRF protection, authentication, rate limiting, and secure headers.
-
-#### Real-Time and WebSockets
-
-Add live updates and push events with Server-Sent Events and WebSockets. Build interactive apps like chat systems and activity feeds.
-
-#### Rendering and Views
-
-Work with HTML templates, layouts, and static files to serve user interfaces that mix static and dynamic content.
-
-
-#### Data and Persistence
-
-Connect your app to databases such as SQLite or DuckLake. Learn how to query, manage transactions, and organize data access in a clear and idiomatic way.
-
-#### Caching and Performance
-
-Improve response times with in-memory caching, compression, and background jobs. Learn how to measure, profile, and optimize performance.
-
-
-#### CLI and Tooling
-
-Create command-line tools and configuration systems. Automate your development workflow and streamline how your app runs and deploys.
-
-#### Full Applications
-
-Combine everything into complete projects such as blogs, dashboards, and chat servers that demonstrate full-stack patterns.
-
-#### Data Lakes and AI Agents
-
-Explore advanced examples that merge data processing with intelligence. Use DuckLake for data storage and build AI-assisted workflows that query and respond to information dynamically.
-
-### What you will learn
-
-By completing this series, you will learn how to:
-
-- Build web applications using Go and Mizu
-- Write clear and composable handlers and middleware
-- Connect to databases and add caching for performance
-- Secure your applications and handle errors properly
-- Add real-time features and experiment with intelligent data-driven components
-
-Begin with [Hello, Mizu](./001-hello-mizu) and learn step by step at your own pace.
+Start with [Hello, Mizu](./001-hello-mizu) and work through each example in order.

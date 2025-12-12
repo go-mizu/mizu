@@ -4,93 +4,70 @@ title: "Features"
 description: "What makes Mizu enjoyable to build with."
 ---
 
-Mizu is designed to feel natural for Go developers.
-It keeps things small, clear, and close to the standard library so you can build confidently without learning a new framework language.
+Mizu provides a focused set of features for building web applications in Go. Each feature is designed to feel familiar if you already know Go's standard library.
 
-### Clear routing
+### Routing
 
-Routing follows Go 1.22 patterns and stays compatible with `net/http`.
-You can define routes by method and use `{param}` syntax for path parameters.
+- Go 1.22 `ServeMux` patterns with `{param}` path parameters
+- HTTP method helpers: `Get`, `Post`, `Put`, `Patch`, `Delete`, and more
+- Route groups with `Group()` and `Prefix()` for organizing endpoints
+- Route-specific middleware with `With()`
+- Mount any `http.Handler` for interoperability
 
-```go
-app.Get("/users/{id}", showUser)
-app.Post("/users", createUser)
-```
+### Request handling
 
-Group routes or mix in standard handlers whenever you need flexibility.
+- `c.Param("name")` for path parameters
+- `c.Query("key")` and `c.QueryValues()` for query strings
+- `c.Form()` for form data
+- `c.MultipartForm()` for file uploads with automatic cleanup
+- `c.BindJSON()` for JSON body parsing with size limits
+- `c.Cookie()` for reading cookies
+- `c.ClientIP()` for client IP detection
 
-### Simple request and response helpers
+### Response helpers
 
-Each handler gets a `*mizu.Ctx` that makes reading and writing data easy.
+- `c.Text()`, `c.JSON()`, `c.HTML()` for common response types
+- `c.File()` and `c.Download()` for serving files
+- `c.Stream()` for streaming responses
+- `c.SSE()` for Server-Sent Events
+- `c.Redirect()` and `c.NoContent()` for redirects and empty responses
+- `c.Hijack()` for WebSocket upgrades and raw connections
 
-```go
-id := c.Param("id")
-return c.JSON(200, map[string]string{"id": id})
-```
+### Middleware
 
-Everything stays explicit—no hidden globals, reflection, or magic.
+- Simple function signature: `func(Handler) Handler`
+- Global middleware with `app.Use()`
+- Prepend middleware with `app.UseFirst()`
+- Route-specific middleware with `app.With()`
+- Compatible with standard `net/http` middleware via `Compat.Use()`
 
-### Composable middleware
+### Logging
 
-Middleware in Mizu is just a function that wraps another handler.
-You can use it for logging, authentication, or recovery in a few lines of code.
+- Built-in request logger using Go's `slog`
+- Automatic color output for terminals
+- JSON output for production environments
+- Configurable with `LoggerOptions` for request IDs, user agent logging, and trace extraction
+- Access logger from any handler with `c.Logger()`
 
-```go
-app.Use(func(next mizu.Handler) mizu.Handler {
-	return func(c *mizu.Ctx) error {
-		start := time.Now()
-		err := next(c)
-		c.Logger().Info("done", "took", time.Since(start))
-		return err
-	}
-})
-```
+### Error handling
 
-### Structured logging
+- Return errors directly from handlers
+- Central error handler with `app.ErrorHandler()`
+- Automatic panic recovery with stack traces via `PanicError`
+- Consistent error responses across your application
 
-Mizu uses Go’s `slog` for structured logs.
-You can log details about requests and responses anywhere in your code.
+### Server lifecycle
 
-```go
-c.Logger().Info("handled request", "path", c.Request().URL.Path)
-```
+- Graceful shutdown on SIGINT/SIGTERM
+- Configurable pre-shutdown delay with `WithPreShutdownDelay()`
+- Configurable shutdown timeout with `WithShutdownTimeout()`
+- Health check endpoint with `app.HealthzHandler()`
+- Support for `Listen()`, `ListenTLS()`, and `Serve()` with custom listeners
 
-It supports color text logs for development and JSON logs for production.
+### Static files
 
-### Graceful shutdown
+- Serve files from disk with `app.Static()`
+- Works with `http.Dir` or embedded filesystems via `http.FS`
+- Automatic content-type detection
 
-Mizu handles shutdown signals automatically and finishes active requests before stopping.
-You don’t need extra code to manage cleanup or race conditions.
-
-### Static files and templates
-
-Serve static assets or HTML templates directly with built-in helpers.
-
-```go
-app.Static("/assets/", http.Dir("public"))
-```
-
-For server-rendered pages, `mizu/render` provides simple template functions that integrate naturally with Go’s `html/template`.
-
-### Streaming and real-time
-
-Mizu works well for streaming, long responses, and real-time updates.
-You can send chunks or server-sent events easily.
-
-```go
-return c.SSE(ch)
-```
-
-### Config and CLI
-
-Mizu supports configuration through `.env`, JSON, or YAML files, and includes a simple CLI for creating and running projects.
-It’s designed for fast iteration, especially when you want to go from idea to running code quickly.
-
-### Small and extensible
-
-Mizu is built around small, focused components.
-You can extend it with standard libraries or your own packages without losing clarity or performance.
-
-
-Mizu is enjoyable because it lets you write code that stays close to Go.
-It feels natural, clear, and built for long-term simplicity.
+Mizu stays small and predictable. Everything is plain Go code with no hidden behavior.

@@ -24,12 +24,10 @@ import (
 
 // Slow handler that respects the request context
 func slow(c *mizu.Ctx) error {
-	ctx := c.Request().Context()
-
 	select {
 	case <-time.After(3 * time.Second):
 		return c.Text(http.StatusOK, "Finished after 3 seconds")
-	case <-ctx.Done():
+	case <-c.Context().Done():
 		// Context canceled (client disconnected or timeout reached)
 		return c.Text(499, "Request cancelled")
 	}
@@ -37,7 +35,7 @@ func slow(c *mizu.Ctx) error {
 
 // Fast handler that uses a manual timeout
 func timed(c *mizu.Ctx) error {
-	ctx, cancel := context.WithTimeout(c.Request().Context(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(c.Context(), 2*time.Second)
 	defer cancel()
 
 	select {
@@ -80,7 +78,7 @@ If you increase the delay past 2 seconds, it will show "Operation timed out".
 
 ### How it works
 
-Each request in Go includes a `context.Context` that ends when the request finishes. Mizu passes this context to your handlers automatically. You can use it to cancel work early, set timeouts, or handle cleanup when the request is done.
+Each request in Go includes a `context.Context` that ends when the request finishes. Mizu provides `c.Context()` to access it easily. You can use it to cancel work early, set timeouts, or handle cleanup when the request is done.
 
 In the `/slow` example, the handler simulates a long operation. If the user closes the browser or the server shuts down, the context is canceled and your code exits early.
 In `/timed`, you create your own timeout with `context.WithTimeout`, giving full control over how long the handler should run.

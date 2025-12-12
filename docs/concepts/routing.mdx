@@ -22,7 +22,8 @@ func home(c *mizu.Ctx) error {
 }
 
 func submit(c *mizu.Ctx) error {
-	name := c.FormValue("name")
+	form, _ := c.Form()
+	name := form.Get("name")
 	return c.Text(200, "Submitted by "+name)
 }
 
