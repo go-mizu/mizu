@@ -149,7 +149,7 @@ func (w *auditResponseWriter) Write(b []byte) (int, error) {
 }
 
 func defaultHandler(entry *Entry) {
-	json.NewEncoder(io.Discard).Encode(entry)
+	_ = json.NewEncoder(io.Discard).Encode(entry)
 }
 
 // ChannelHandler creates a handler that sends entries to a channel.

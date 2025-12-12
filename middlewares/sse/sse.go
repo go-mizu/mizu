@@ -100,7 +100,7 @@ func WithOptions(handler Handler, opts Options) mizu.Middleware {
 
 			// Send initial retry
 			if opts.Retry > 0 {
-				fmt.Fprintf(c.Writer(), "retry: %d\n\n", opts.Retry)
+				_, _ = fmt.Fprintf(c.Writer(), "retry: %d\n\n", opts.Retry)
 				flusher.Flush()
 			}
 
@@ -166,22 +166,22 @@ func (c *Client) send(event *Event) {
 	defer c.mu.Unlock()
 
 	if event.ID != "" {
-		fmt.Fprintf(c.w, "id: %s\n", event.ID)
+		_, _ = fmt.Fprintf(c.w, "id: %s\n", event.ID)
 	}
 	if event.Event != "" {
-		fmt.Fprintf(c.w, "event: %s\n", event.Event)
+		_, _ = fmt.Fprintf(c.w, "event: %s\n", event.Event)
 	}
 	if event.Retry > 0 {
-		fmt.Fprintf(c.w, "retry: %d\n", event.Retry)
+		_, _ = fmt.Fprintf(c.w, "retry: %d\n", event.Retry)
 	}
 	if event.Data != "" {
 		// Split data by newlines
 		lines := strings.Split(event.Data, "\n")
 		for _, line := range lines {
-			fmt.Fprintf(c.w, "data: %s\n", line)
+			_, _ = fmt.Fprintf(c.w, "data: %s\n", line)
 		}
 	}
-	fmt.Fprintf(c.w, "\n")
+	_, _ = fmt.Fprintf(c.w, "\n")
 	c.flusher.Flush()
 }
 
@@ -215,9 +215,7 @@ func (b *Broker) run() {
 			b.mu.Unlock()
 		case client := <-b.unregister:
 			b.mu.Lock()
-			if _, ok := b.clients[client]; ok {
-				delete(b.clients, client)
-			}
+			delete(b.clients, client)
 			b.mu.Unlock()
 		case event := <-b.broadcast:
 			b.mu.RLock()

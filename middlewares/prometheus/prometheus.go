@@ -202,7 +202,7 @@ func (m *Metrics) Handler() mizu.Handler {
 		c.Writer().WriteHeader(http.StatusOK)
 
 		output := m.Export()
-		c.Writer().Write([]byte(output))
+		_, _ = c.Writer().Write([]byte(output))
 		return nil
 	}
 }
@@ -292,21 +292,21 @@ func (m *Metrics) writeHistogram(sb *strings.Builder, name, labels string, h *hi
 		cumulative += h.counts[i]
 		le := strconv.FormatFloat(b, 'f', -1, 64)
 		if baseLabels != "" {
-			sb.WriteString(fmt.Sprintf("%s_bucket{%s,le=\"%s\"} %d\n", name, baseLabels, le, cumulative))
+			fmt.Fprintf(sb, "%s_bucket{%s,le=\"%s\"} %d\n", name, baseLabels, le, cumulative)
 		} else {
-			sb.WriteString(fmt.Sprintf("%s_bucket{le=\"%s\"} %d\n", name, le, cumulative))
+			fmt.Fprintf(sb, "%s_bucket{le=\"%s\"} %d\n", name, le, cumulative)
 		}
 	}
 
 	cumulative += h.counts[len(h.buckets)]
 	if baseLabels != "" {
-		sb.WriteString(fmt.Sprintf("%s_bucket{%s,le=\"+Inf\"} %d\n", name, baseLabels, cumulative))
-		sb.WriteString(fmt.Sprintf("%s_sum{%s} %f\n", name, baseLabels, h.sum))
-		sb.WriteString(fmt.Sprintf("%s_count{%s} %d\n", name, baseLabels, h.count))
+		fmt.Fprintf(sb, "%s_bucket{%s,le=\"+Inf\"} %d\n", name, baseLabels, cumulative)
+		fmt.Fprintf(sb, "%s_sum{%s} %f\n", name, baseLabels, h.sum)
+		fmt.Fprintf(sb, "%s_count{%s} %d\n", name, baseLabels, h.count)
 	} else {
-		sb.WriteString(fmt.Sprintf("%s_bucket{le=\"+Inf\"} %d\n", name, cumulative))
-		sb.WriteString(fmt.Sprintf("%s_sum %f\n", name, h.sum))
-		sb.WriteString(fmt.Sprintf("%s_count %d\n", name, h.count))
+		fmt.Fprintf(sb, "%s_bucket{le=\"+Inf\"} %d\n", name, cumulative)
+		fmt.Fprintf(sb, "%s_sum %f\n", name, h.sum)
+		fmt.Fprintf(sb, "%s_count %d\n", name, h.count)
 	}
 }
 

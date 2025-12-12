@@ -124,7 +124,7 @@ func newCompressor(encoding string, level int, opts Options) mizu.Middleware {
 				gzipPool:       &gzipPool,
 				flatePool:      &flatePool,
 			}
-			defer cw.Close()
+			defer func() { _ = cw.Close() }()
 
 			c.SetWriter(cw)
 			c.Header().Set("Vary", "Accept-Encoding")
@@ -206,9 +206,9 @@ func (w *compressWriter) flushHeader() {
 	// Write buffered content
 	if len(w.buf) > 0 {
 		if w.writer != nil {
-			w.writer.Write(w.buf)
+			_, _ = w.writer.Write(w.buf)
 		} else {
-			w.ResponseWriter.Write(w.buf)
+			_, _ = w.ResponseWriter.Write(w.buf)
 		}
 		w.buf = nil
 	}
@@ -255,7 +255,7 @@ func (w *compressWriter) Close() error {
 func (w *compressWriter) Flush() {
 	if w.writer != nil {
 		if f, ok := w.writer.(interface{ Flush() error }); ok {
-			f.Flush()
+			_ = f.Flush()
 		}
 	}
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {

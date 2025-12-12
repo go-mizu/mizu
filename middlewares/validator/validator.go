@@ -159,7 +159,7 @@ func applyRule(field, value, rule, customMessage string) *ValidationError {
 	case "alpha":
 		valid = true
 		for _, r := range value {
-			if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')) {
+			if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
 				valid = false
 				break
 			}
@@ -169,7 +169,7 @@ func applyRule(field, value, rule, customMessage string) *ValidationError {
 	case "alphanum":
 		valid = true
 		for _, r := range value {
-			if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')) {
+			if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') {
 				valid = false
 				break
 			}

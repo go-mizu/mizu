@@ -86,7 +86,7 @@ func WithOptions(fsys fs.FS, opts Options) mizu.Middleware {
 					return next(c)
 				}
 			}
-			file.Close()
+			_ = file.Close()
 
 			// Set cache headers
 			if opts.MaxAge > 0 {
@@ -174,7 +174,7 @@ func SPA(fsys fs.FS, index string) mizu.Middleware {
 			if err != nil {
 				return c.Text(http.StatusNotFound, "Not Found")
 			}
-			defer file.Close()
+			defer func() { _ = file.Close() }()
 
 			stat, err := file.Stat()
 			if err != nil {

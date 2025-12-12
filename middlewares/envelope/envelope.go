@@ -110,7 +110,7 @@ func WithOptions(opts Options) mizu.Middleware {
 			// Parse original body as JSON
 			var data any
 			if rw.body.Len() > 0 {
-				json.Unmarshal(rw.body.Bytes(), &data)
+				_ = json.Unmarshal(rw.body.Bytes(), &data)
 			}
 
 			if success {
@@ -144,7 +144,7 @@ func WithOptions(opts Options) mizu.Middleware {
 			// Write to original writer
 			c.Writer().Header().Set("Content-Type", "application/json")
 			rw.ResponseWriter.WriteHeader(rw.status)
-			rw.ResponseWriter.Write(respBody)
+			_, _ = rw.ResponseWriter.Write(respBody)
 
 			return err
 		}

@@ -18,7 +18,7 @@ func TestNew(t *testing.T) {
 		info = Get(c)
 		// Read the body
 		body := make([]byte, 100)
-		c.Request().Body.Read(body)
+		_, _ = c.Request().Body.Read(body)
 		return c.Text(http.StatusOK, "ok")
 	})
 
@@ -44,7 +44,7 @@ func TestWithOptions_Callback(t *testing.T) {
 
 	app.Post("/", func(c *mizu.Ctx) error {
 		body := make([]byte, 100)
-		c.Request().Body.Read(body)
+		_, _ = c.Request().Body.Read(body)
 		return c.Text(http.StatusOK, "ok")
 	})
 
@@ -94,7 +94,7 @@ func TestBytesRead(t *testing.T) {
 	app.Post("/", func(c *mizu.Ctx) error {
 		// Read only part of the body
 		buf := make([]byte, 3)
-		c.Request().Body.Read(buf)
+		_, _ = c.Request().Body.Read(buf)
 		return c.Text(http.StatusOK, "ok")
 	})
 

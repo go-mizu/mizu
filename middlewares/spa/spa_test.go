@@ -13,8 +13,8 @@ import (
 
 func TestNew(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.WriteFile(filepath.Join(tmpDir, "index.html"), []byte("<html>spa</html>"), 0644)
-	os.WriteFile(filepath.Join(tmpDir, "app.js"), []byte("console.log('app')"), 0644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "index.html"), []byte("<html>spa</html>"), 0644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "app.js"), []byte("console.log('app')"), 0644)
 
 	app := mizu.NewRouter()
 	app.Use(New(tmpDir))

@@ -107,7 +107,7 @@ func TestCapturePanic(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	defer func() {
-		recover() // Catch the re-panic
+		_ = recover() // Catch the re-panic
 
 		if captured == nil {
 			t.Fatal("expected panic to be captured")
@@ -357,7 +357,7 @@ func TestMockTransport(t *testing.T) {
 
 func TestHubEvents(t *testing.T) {
 	hub := &Hub{
-		opts:   Options{},
+		opts:   Options{SampleRate: 1.0},
 		events: make([]*Event, 0),
 	}
 

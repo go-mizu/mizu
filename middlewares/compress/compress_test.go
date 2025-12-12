@@ -40,7 +40,7 @@ func TestGzip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create gzip reader: %v", err)
 		}
-		defer gr.Close()
+		defer func() { _ = gr.Close() }()
 
 		body, err := io.ReadAll(gr)
 		if err != nil {

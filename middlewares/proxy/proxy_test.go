@@ -15,7 +15,7 @@ func TestNew(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Custom", "upstream")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("upstream response"))
+		_, _ = w.Write([]byte("upstream response"))
 	}))
 	defer upstream.Close()
 
@@ -254,13 +254,13 @@ func TestBalancer(t *testing.T) {
 	var calls []string
 	upstream1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls = append(calls, "1")
-		w.Write([]byte("1"))
+		_, _ = w.Write([]byte("1"))
 	}))
 	defer upstream1.Close()
 
 	upstream2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls = append(calls, "2")
-		w.Write([]byte("2"))
+		_, _ = w.Write([]byte("2"))
 	}))
 	defer upstream2.Close()
 

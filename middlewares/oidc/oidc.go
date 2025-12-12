@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-mizu/mizu"
@@ -104,10 +103,8 @@ func (c *Claims) HasRole(role string) bool {
 
 // Verifier verifies OIDC tokens.
 type Verifier struct {
-	opts      Options
-	keys      map[string]*rsa.PublicKey
-	mu        sync.RWMutex
-	lastFetch time.Time
+	opts Options
+	keys map[string]*rsa.PublicKey
 }
 
 // contextKey is a private type for context keys.

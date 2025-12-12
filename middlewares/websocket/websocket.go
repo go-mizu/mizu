@@ -132,8 +132,8 @@ func WithOptions(handler Handler, opts Options) mizu.Middleware {
 			}
 			response += "\r\n"
 
-			bufrw.WriteString(response)
-			bufrw.Flush()
+			_, _ = bufrw.WriteString(response)
+			_ = bufrw.Flush()
 
 			// Create WebSocket connection
 			ws := &Conn{
@@ -146,7 +146,7 @@ func WithOptions(handler Handler, opts Options) mizu.Middleware {
 			err = handler(c, ws)
 
 			// Close connection
-			conn.Close()
+			_ = conn.Close()
 
 			return err
 		}
@@ -195,13 +195,14 @@ func (c *Conn) ReadMessage() (messageType int, data []byte, err error) {
 	length := int(b & 0x7F)
 
 	// Extended payload length
-	if length == 126 {
+	switch length {
+	case 126:
 		lenBytes := make([]byte, 2)
 		if _, err := io.ReadFull(c.reader, lenBytes); err != nil {
 			return 0, nil, err
 		}
 		length = int(lenBytes[0])<<8 | int(lenBytes[1])
-	} else if length == 127 {
+	case 127:
 		lenBytes := make([]byte, 8)
 		if _, err := io.ReadFull(c.reader, lenBytes); err != nil {
 			return 0, nil, err
@@ -240,25 +241,25 @@ func (c *Conn) WriteMessage(messageType int, data []byte) error {
 	defer c.mu.Unlock()
 
 	// First byte: FIN + opcode
-	c.writer.WriteByte(0x80 | byte(messageType))
+	_ = c.writer.WriteByte(0x80 | byte(messageType))
 
 	// Second byte: payload length (server never masks)
 	length := len(data)
 	if length <= 125 {
-		c.writer.WriteByte(byte(length))
+		_ = c.writer.WriteByte(byte(length))
 	} else if length <= 65535 {
-		c.writer.WriteByte(126)
-		c.writer.WriteByte(byte(length >> 8))
-		c.writer.WriteByte(byte(length))
+		_ = c.writer.WriteByte(126)
+		_ = c.writer.WriteByte(byte(length >> 8))
+		_ = c.writer.WriteByte(byte(length))
 	} else {
-		c.writer.WriteByte(127)
+		_ = c.writer.WriteByte(127)
 		for i := 7; i >= 0; i-- {
-			c.writer.WriteByte(byte(length >> (8 * i)))
+			_ = c.writer.WriteByte(byte(length >> (8 * i)))
 		}
 	}
 
 	// Write payload
-	c.writer.Write(data)
+	_, _ = c.writer.Write(data)
 
 	return c.writer.Flush()
 }
@@ -275,7 +276,7 @@ func (c *Conn) WriteBinary(data []byte) error {
 
 // Close closes the WebSocket connection.
 func (c *Conn) Close() error {
-	c.WriteMessage(CloseMessage, []byte{0x03, 0xe8}) // 1000 normal closure
+	_ = c.WriteMessage(CloseMessage, []byte{0x03, 0xe8}) // 1000 normal closure
 	return c.conn.Close()
 }
 

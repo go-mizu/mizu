@@ -65,7 +65,7 @@ func WithOptions(opts Options) mizu.Middleware {
 			if err != nil {
 				panic("favicon: cannot open file: " + err.Error())
 			}
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 			iconData, err = io.ReadAll(f)
 			if err != nil {
 				panic("favicon: cannot read file: " + err.Error())

@@ -184,7 +184,7 @@ func WithOptions(opts Options) mizu.Middleware {
 
 func generateToken(secret string, length int) string {
 	b := make([]byte, length)
-	rand.Read(b)
+	_, _ = rand.Read(b)
 
 	// Add timestamp for rotation
 	timestamp := time.Now().Unix()
@@ -353,7 +353,7 @@ func Mask(token string) string {
 	}
 
 	mask := make([]byte, len(tokenBytes))
-	rand.Read(mask)
+	_, _ = rand.Read(mask)
 
 	masked := make([]byte, len(tokenBytes)*2)
 	copy(masked, mask)

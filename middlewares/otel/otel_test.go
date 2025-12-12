@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-mizu/mizu"
 )
@@ -352,6 +353,7 @@ func TestSpanDuration(t *testing.T) {
 	}))
 
 	app.Get("/", func(c *mizu.Ctx) error {
+		time.Sleep(time.Millisecond) // Ensure measurable duration on Windows
 		return c.Text(http.StatusOK, "ok")
 	})
 

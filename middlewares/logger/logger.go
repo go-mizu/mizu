@@ -71,7 +71,7 @@ func WithOptions(opts Options) mizu.Middleware {
 			}
 
 			log := formatLog(opts.Format, c, status, latency, rw.size, opts.TimeFormat)
-			opts.Output.Write([]byte(log))
+			_, _ = opts.Output.Write([]byte(log))
 
 			return err
 		}

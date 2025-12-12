@@ -134,7 +134,7 @@ func mirrorRequest(client *http.Client, target string, r *http.Request, body []b
 		}
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if opts.OnSuccess != nil {
 		opts.OnSuccess(target, resp)

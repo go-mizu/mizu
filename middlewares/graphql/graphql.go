@@ -170,12 +170,13 @@ func calculateDepth(query string) int {
 	currentDepth := 0
 
 	for _, c := range query {
-		if c == '{' {
+		switch c {
+		case '{':
 			currentDepth++
 			if currentDepth > maxDepth {
 				maxDepth = currentDepth
 			}
-		} else if c == '}' {
+		case '}':
 			currentDepth--
 		}
 	}

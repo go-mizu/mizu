@@ -54,7 +54,7 @@ func WithOptions(opts Options) mizu.Middleware {
 			for ct := range contentTypes {
 				if strings.Contains(contentType, ct) {
 					body, err := io.ReadAll(c.Request().Body)
-					c.Request().Body.Close()
+					_ = c.Request().Body.Close()
 					if err == nil {
 						ctx := context.WithValue(c.Context(), bodyKey, body)
 						req := c.Request().WithContext(ctx)
@@ -137,10 +137,10 @@ func (e *Encoder) encodeValue(v any) error {
 		return e.encodeUint(val)
 	case float32:
 		e.buf.WriteByte(0xca) // float 32
-		binary.Write(e.buf, binary.BigEndian, val)
+		_ = binary.Write(e.buf, binary.BigEndian, val)
 	case float64:
 		e.buf.WriteByte(0xcb) // float 64
-		binary.Write(e.buf, binary.BigEndian, val)
+		_ = binary.Write(e.buf, binary.BigEndian, val)
 	case string:
 		return e.encodeString(val)
 	case []byte:
@@ -166,13 +166,13 @@ func (e *Encoder) encodeInt(v int64) error {
 		e.buf.WriteByte(byte(v))
 	case v >= -32768 && v <= 32767:
 		e.buf.WriteByte(0xd1) // int 16
-		binary.Write(e.buf, binary.BigEndian, int16(v))
+		_ = binary.Write(e.buf, binary.BigEndian, int16(v))
 	case v >= -2147483648 && v <= 2147483647:
 		e.buf.WriteByte(0xd2) // int 32
-		binary.Write(e.buf, binary.BigEndian, int32(v))
+		_ = binary.Write(e.buf, binary.BigEndian, int32(v))
 	default:
 		e.buf.WriteByte(0xd3) // int 64
-		binary.Write(e.buf, binary.BigEndian, v)
+		_ = binary.Write(e.buf, binary.BigEndian, v)
 	}
 	return nil
 }
@@ -186,13 +186,13 @@ func (e *Encoder) encodeUint(v uint64) error {
 		e.buf.WriteByte(byte(v))
 	case v <= 65535:
 		e.buf.WriteByte(0xcd) // uint 16
-		binary.Write(e.buf, binary.BigEndian, uint16(v))
+		_ = binary.Write(e.buf, binary.BigEndian, uint16(v))
 	case v <= 4294967295:
 		e.buf.WriteByte(0xce) // uint 32
-		binary.Write(e.buf, binary.BigEndian, uint32(v))
+		_ = binary.Write(e.buf, binary.BigEndian, uint32(v))
 	default:
 		e.buf.WriteByte(0xcf) // uint 64
-		binary.Write(e.buf, binary.BigEndian, v)
+		_ = binary.Write(e.buf, binary.BigEndian, v)
 	}
 	return nil
 }
@@ -207,10 +207,10 @@ func (e *Encoder) encodeString(s string) error {
 		e.buf.WriteByte(byte(l))
 	case l <= 65535:
 		e.buf.WriteByte(0xda) // str 16
-		binary.Write(e.buf, binary.BigEndian, uint16(l))
+		_ = binary.Write(e.buf, binary.BigEndian, uint16(l))
 	default:
 		e.buf.WriteByte(0xdb) // str 32
-		binary.Write(e.buf, binary.BigEndian, uint32(l))
+		_ = binary.Write(e.buf, binary.BigEndian, uint32(l))
 	}
 	e.buf.WriteString(s)
 	return nil
@@ -224,10 +224,10 @@ func (e *Encoder) encodeBinary(b []byte) error {
 		e.buf.WriteByte(byte(l))
 	case l <= 65535:
 		e.buf.WriteByte(0xc5) // bin 16
-		binary.Write(e.buf, binary.BigEndian, uint16(l))
+		_ = binary.Write(e.buf, binary.BigEndian, uint16(l))
 	default:
 		e.buf.WriteByte(0xc6) // bin 32
-		binary.Write(e.buf, binary.BigEndian, uint32(l))
+		_ = binary.Write(e.buf, binary.BigEndian, uint32(l))
 	}
 	e.buf.Write(b)
 	return nil
@@ -240,10 +240,10 @@ func (e *Encoder) encodeArray(arr []any) error {
 		e.buf.WriteByte(0x90 | byte(l)) // fixarray
 	case l <= 65535:
 		e.buf.WriteByte(0xdc) // array 16
-		binary.Write(e.buf, binary.BigEndian, uint16(l))
+		_ = binary.Write(e.buf, binary.BigEndian, uint16(l))
 	default:
 		e.buf.WriteByte(0xdd) // array 32
-		binary.Write(e.buf, binary.BigEndian, uint32(l))
+		_ = binary.Write(e.buf, binary.BigEndian, uint32(l))
 	}
 	for _, v := range arr {
 		if err := e.encodeValue(v); err != nil {
@@ -260,10 +260,10 @@ func (e *Encoder) encodeMap(m map[string]any) error {
 		e.buf.WriteByte(0x80 | byte(l)) // fixmap
 	case l <= 65535:
 		e.buf.WriteByte(0xde) // map 16
-		binary.Write(e.buf, binary.BigEndian, uint16(l))
+		_ = binary.Write(e.buf, binary.BigEndian, uint16(l))
 	default:
 		e.buf.WriteByte(0xdf) // map 32
-		binary.Write(e.buf, binary.BigEndian, uint32(l))
+		_ = binary.Write(e.buf, binary.BigEndian, uint32(l))
 	}
 	for k, v := range m {
 		if err := e.encodeString(k); err != nil {
@@ -513,7 +513,7 @@ func Bind(c *mizu.Ctx) (any, error) {
 	}
 
 	data, err := io.ReadAll(c.Request().Body)
-	c.Request().Body.Close()
+	_ = c.Request().Body.Close()
 	if err != nil {
 		return nil, err
 	}

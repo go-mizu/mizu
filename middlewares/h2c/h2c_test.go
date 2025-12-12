@@ -235,7 +235,7 @@ func TestOnUpgrade(t *testing.T) {
 
 func TestServerHandler(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	})
 
 	h2cHandler := NewServerHandler(handler, Options{
@@ -254,7 +254,7 @@ func TestServerHandler(t *testing.T) {
 
 func TestWrap(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	})
 
 	wrapped := Wrap(handler)

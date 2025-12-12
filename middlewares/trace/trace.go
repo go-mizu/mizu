@@ -146,7 +146,7 @@ func WithOptions(opts Options) mizu.Middleware {
 
 func generateID() string {
 	bytes := make([]byte, 16)
-	rand.Read(bytes)
+	_, _ = rand.Read(bytes)
 	return hex.EncodeToString(bytes)
 }
 
