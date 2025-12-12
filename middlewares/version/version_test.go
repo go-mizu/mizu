@@ -153,7 +153,7 @@ func TestFromHeader(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	req.Header.Set("X-API-Version", "2.0")
+	req.Header.Set("X-Api-Version", "2.0")
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 

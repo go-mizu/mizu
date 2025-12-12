@@ -260,7 +260,7 @@ func extractContext(r *http.Request, propagator string) SpanContext {
 }
 
 func extractW3CTraceContext(r *http.Request) SpanContext {
-	traceparent := r.Header.Get("traceparent")
+	traceparent := r.Header.Get("Traceparent")
 	if traceparent == "" {
 		return SpanContext{}
 	}
@@ -281,13 +281,13 @@ func extractW3CTraceContext(r *http.Request) SpanContext {
 		TraceID:    parts[1],
 		SpanID:     parts[2],
 		TraceFlags: traceFlags,
-		TraceState: r.Header.Get("tracestate"),
+		TraceState: r.Header.Get("Tracestate"),
 	}
 }
 
 func extractB3Context(r *http.Request) SpanContext {
 	// Check single header format first
-	b3 := r.Header.Get("b3")
+	b3 := r.Header.Get("B3")
 	if b3 != "" {
 		parts := strings.Split(b3, "-")
 		if len(parts) >= 2 {
@@ -303,8 +303,8 @@ func extractB3Context(r *http.Request) SpanContext {
 	}
 
 	// Multi-header format
-	traceID := r.Header.Get("X-B3-TraceId")
-	spanID := r.Header.Get("X-B3-SpanId")
+	traceID := r.Header.Get("X-B3-Traceid")
+	spanID := r.Header.Get("X-B3-Spanid")
 	if traceID == "" || spanID == "" {
 		return SpanContext{}
 	}
@@ -334,9 +334,9 @@ func injectContext(h http.Header, ctx SpanContext, propagator string) {
 
 func injectW3CTraceContext(h http.Header, ctx SpanContext) {
 	traceparent := fmt.Sprintf("00-%s-%s-%02x", ctx.TraceID, ctx.SpanID, ctx.TraceFlags)
-	h.Set("traceparent", traceparent)
+	h.Set("Traceparent", traceparent)
 	if ctx.TraceState != "" {
-		h.Set("tracestate", ctx.TraceState)
+		h.Set("Tracestate", ctx.TraceState)
 	}
 }
 
@@ -345,8 +345,8 @@ func injectB3Context(h http.Header, ctx SpanContext) {
 	if ctx.IsSampled() {
 		sampled = "1"
 	}
-	h.Set("X-B3-TraceId", ctx.TraceID)
-	h.Set("X-B3-SpanId", ctx.SpanID)
+	h.Set("X-B3-Traceid", ctx.TraceID)
+	h.Set("X-B3-Spanid", ctx.SpanID)
 	h.Set("X-B3-Sampled", sampled)
 }
 

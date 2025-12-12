@@ -21,7 +21,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("valid key", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/protected", nil)
-		req.Header.Set("X-API-Key", "valid-key")
+		req.Header.Set("X-Api-Key", "valid-key")
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 
@@ -32,7 +32,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("invalid key", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/protected", nil)
-		req.Header.Set("X-API-Key", "invalid-key")
+		req.Header.Set("X-Api-Key", "invalid-key")
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 
@@ -131,7 +131,7 @@ func TestWithOptions_ErrorHandler(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api", nil)
-	req.Header.Set("X-API-Key", "bad")
+	req.Header.Set("X-Api-Key", "bad")
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 
@@ -153,7 +153,7 @@ func TestWithOptions_ValidatorError(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api", nil)
-	req.Header.Set("X-API-Key", "key")
+	req.Header.Set("X-Api-Key", "key")
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 
@@ -173,7 +173,7 @@ func TestFromContext(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	req.Header.Set("X-API-Key", "my-api-key")
+	req.Header.Set("X-Api-Key", "my-api-key")
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 
@@ -194,7 +194,7 @@ func TestGet(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	req.Header.Set("X-API-Key", "key")
+	req.Header.Set("X-Api-Key", "key")
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 

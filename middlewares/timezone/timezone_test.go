@@ -242,7 +242,7 @@ func TestNow(t *testing.T) {
 
 func TestFromHeader(t *testing.T) {
 	app := mizu.NewRouter()
-	app.Use(FromHeader("X-User-TZ"))
+	app.Use(FromHeader("X-User-Tz"))
 
 	var name string
 	app.Get("/", func(c *mizu.Ctx) error {
@@ -251,7 +251,7 @@ func TestFromHeader(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-User-TZ", "Pacific/Auckland")
+	req.Header.Set("X-User-Tz", "Pacific/Auckland")
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 

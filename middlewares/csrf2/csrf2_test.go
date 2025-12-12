@@ -93,7 +93,7 @@ func TestValidateTokenHeader(t *testing.T) {
 	// POST with valid token
 	req = httptest.NewRequest(http.MethodPost, "/submit", nil)
 	req.AddCookie(csrfCookie)
-	req.Header.Set("X-CSRF-Token", token)
+	req.Header.Set("X-Csrf-Token", token)
 	rec = httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 
@@ -191,7 +191,7 @@ func TestInvalidToken(t *testing.T) {
 	// POST with invalid token
 	req = httptest.NewRequest(http.MethodPost, "/submit", nil)
 	req.AddCookie(csrfCookie)
-	req.Header.Set("X-CSRF-Token", "invalid-token")
+	req.Header.Set("X-Csrf-Token", "invalid-token")
 	rec = httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 
@@ -311,7 +311,7 @@ func TestCustomHeaderName(t *testing.T) {
 	app := mizu.NewRouter()
 	app.Use(WithOptions(Options{
 		Secret:     "test-secret",
-		HeaderName: "X-My-CSRF",
+		HeaderName: "X-My-Csrf",
 	}))
 
 	var token string
@@ -342,7 +342,7 @@ func TestCustomHeaderName(t *testing.T) {
 	// POST with custom header
 	req = httptest.NewRequest(http.MethodPost, "/submit", nil)
 	req.AddCookie(csrfCookie)
-	req.Header.Set("X-My-CSRF", token)
+	req.Header.Set("X-My-Csrf", token)
 	rec = httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 

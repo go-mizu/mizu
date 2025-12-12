@@ -46,7 +46,7 @@ func TestNew(t *testing.T) {
 	t.Run("uses CF-Connecting-IP", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		req.RemoteAddr = "10.0.0.1:1234"
-		req.Header.Set("CF-Connecting-IP", "192.0.2.1")
+		req.Header.Set("Cf-Connecting-Ip", "192.0.2.1")
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 
@@ -137,7 +137,7 @@ func TestWithOptions_CustomHeaders(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	req.RemoteAddr = "10.0.0.1:1234"
-	req.Header.Set("X-Custom-IP", "5.6.7.8")
+	req.Header.Set("X-Custom-Ip", "5.6.7.8")
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 

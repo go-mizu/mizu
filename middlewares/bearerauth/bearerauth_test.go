@@ -64,7 +64,7 @@ func TestNew(t *testing.T) {
 
 func TestWithHeader(t *testing.T) {
 	app := mizu.NewRouter()
-	app.Use(WithHeader("X-API-Token", func(token string) bool {
+	app.Use(WithHeader("X-Api-Token", func(token string) bool {
 		return token == "api-key-123"
 	}))
 
@@ -73,7 +73,7 @@ func TestWithHeader(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api", nil)
-	req.Header.Set("X-API-Token", "Bearer api-key-123")
+	req.Header.Set("X-Api-Token", "Bearer api-key-123")
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 
