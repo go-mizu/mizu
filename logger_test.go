@@ -677,15 +677,15 @@ func Test_isTerminal_StatError(t *testing.T) {
 		t.Skip("cannot create temp file")
 	}
 	name := f.Name()
-	f.Close()
-	os.Remove(name)
+	_ = f.Close()
+	_ = os.Remove(name)
 
 	// Open a file that doesn't exist should fail
 	// But isTerminal takes an io.Writer, not a file handle
 	// Let's test with a pipe - pipes are not character devices
 	pr, pw, _ := os.Pipe()
-	defer pr.Close()
-	defer pw.Close()
+	defer func() { _ = pr.Close() }()
+	defer func() { _ = pw.Close() }()
 
 	if isTerminal(pw) {
 		t.Fatal("pipe should not be a terminal")
@@ -747,8 +747,8 @@ func Test_isTerminal_RegularFile(t *testing.T) {
 	if err != nil {
 		t.Skip("cannot create temp file")
 	}
-	defer os.Remove(f.Name())
-	defer f.Close()
+	defer func() { _ = os.Remove(f.Name()) }()
+	defer func() { _ = f.Close() }()
 
 	if isTerminal(f) {
 		t.Fatal("regular file should not be a terminal")
