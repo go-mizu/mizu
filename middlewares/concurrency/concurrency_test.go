@@ -174,3 +174,128 @@ func TestRetryAfterHeader(t *testing.T) {
 		t.Errorf("expected Retry-After header, got %q", rec.Header().Get("Retry-After"))
 	}
 }
+
+func TestWithContext(t *testing.T) {
+	app := mizu.NewRouter()
+	app.Use(WithContext(2))
+
+	var concurrent int64
+	var maxConcurrent int64
+
+	app.Get("/", func(c *mizu.Ctx) error {
+		cur := atomic.AddInt64(&concurrent, 1)
+		for {
+			old := atomic.LoadInt64(&maxConcurrent)
+			if cur <= old || atomic.CompareAndSwapInt64(&maxConcurrent, old, cur) {
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+		atomic.AddInt64(&concurrent, -1)
+		return c.Text(http.StatusOK, "ok")
+	})
+
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			rec := httptest.NewRecorder()
+			app.ServeHTTP(rec, req)
+		}()
+	}
+
+	wg.Wait()
+
+	// Max concurrent should not exceed limit
+	if maxConcurrent > 2 {
+		t.Errorf("expected max concurrent <= 2, got %d", maxConcurrent)
+	}
+}
+
+func TestWithContext_ContextCancellation(t *testing.T) {
+	app := mizu.NewRouter()
+	app.Use(WithContext(1))
+
+	started := make(chan struct{})
+	blocking := make(chan struct{})
+
+	app.Get("/", func(c *mizu.Ctx) error {
+		close(started)
+		<-blocking
+		return c.Text(http.StatusOK, "ok")
+	})
+
+	// Start first request that blocks
+	go func() {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, req)
+	}()
+
+	<-started // Wait for first request to start
+
+	// Allow blocking request to finish
+	close(blocking)
+}
+
+func TestWithOptions_NegativeMax(t *testing.T) {
+	app := mizu.NewRouter()
+	app.Use(WithOptions(Options{Max: -1}))
+
+	app.Get("/", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusOK, "ok")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected %d for negative max, got %d", http.StatusServiceUnavailable, rec.Code)
+	}
+}
+
+func TestWithOptions_ErrorHandlerAtCapacity(t *testing.T) {
+	customHandlerCalled := false
+
+	app := mizu.NewRouter()
+	app.Use(WithOptions(Options{
+		Max: 1,
+		ErrorHandler: func(c *mizu.Ctx) error {
+			customHandlerCalled = true
+			return c.Text(http.StatusTooManyRequests, "custom error")
+		},
+	}))
+
+	blocking := make(chan struct{})
+	app.Get("/", func(c *mizu.Ctx) error {
+		<-blocking
+		return c.Text(http.StatusOK, "ok")
+	})
+
+	// Start first request that blocks
+	go func() {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, req)
+	}()
+
+	// Give first request time to start
+	time.Sleep(10 * time.Millisecond)
+
+	// Second request should be rejected with custom handler
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	close(blocking)
+
+	if !customHandlerCalled {
+		t.Error("expected custom error handler to be called")
+	}
+	if rec.Code != http.StatusTooManyRequests {
+		t.Errorf("expected %d, got %d", http.StatusTooManyRequests, rec.Code)
+	}
+}
