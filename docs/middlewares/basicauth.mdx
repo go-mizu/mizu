@@ -1,0 +1,180 @@
+---
+title: "Basic Auth"
+description: "HTTP Basic Authentication middleware for protecting routes with username/password."
+---
+
+## Overview
+
+The `basicauth` middleware provides HTTP Basic Authentication, a simple authentication scheme built into the HTTP protocol. It prompts users for a username and password, which are sent with each request.
+
+Use it when you need:
+- Simple password protection for admin areas
+- Quick authentication for internal tools
+- Development/staging environment protection
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/basicauth"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Define credentials
+credentials := map[string]string{
+    "admin": "secret",
+    "user":  "password",
+}
+
+// Protect all routes
+app.Use(basicauth.New(credentials))
+
+// Or protect specific routes
+app.Get("/admin", adminHandler, basicauth.New(credentials))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Realm` | `string` | `"Restricted"` | Authentication realm shown in browser prompt |
+| `Validator` | `ValidatorFunc` | - | Custom function to validate credentials |
+| `ErrorHandler` | `func(*mizu.Ctx) error` | - | Custom handler for auth failures |
+
+### ValidatorFunc
+
+```go
+type ValidatorFunc func(username, password string) bool
+```
+
+## Examples
+
+### Static Credentials
+
+```go
+credentials := basicauth.Accounts{
+    "admin": "secret123",
+    "api":   "token456",
+}
+
+app.Use(basicauth.New(credentials))
+```
+
+### Custom Realm
+
+```go
+app.Use(basicauth.WithRealm("Admin Area", map[string]string{
+    "admin": "secret",
+}))
+```
+
+### Custom Validator
+
+Validate against a database or external service:
+
+```go
+app.Use(basicauth.WithValidator(func(user, pass string) bool {
+    // Query database
+    dbUser, err := db.GetUser(user)
+    if err != nil {
+        return false
+    }
+
+    // Verify password (use proper hashing!)
+    return bcrypt.CompareHashAndPassword(
+        []byte(dbUser.PasswordHash),
+        []byte(pass),
+    ) == nil
+}))
+```
+
+### Custom Error Handler
+
+```go
+app.Use(basicauth.WithOptions(basicauth.Options{
+    Validator: func(user, pass string) bool {
+        return user == "admin" && pass == "secret"
+    },
+    ErrorHandler: func(c *mizu.Ctx) error {
+        return c.JSON(401, map[string]string{
+            "error": "Invalid credentials",
+        })
+    },
+}))
+```
+
+### Route-Specific Protection
+
+```go
+// Public routes
+app.Get("/", publicHandler)
+app.Get("/about", aboutHandler)
+
+// Protected admin routes
+adminAuth := basicauth.New(map[string]string{"admin": "secret"})
+app.Get("/admin", adminDashboard, adminAuth)
+app.Get("/admin/users", adminUsers, adminAuth)
+```
+
+### Group Protection
+
+```go
+admin := app.Group("/admin")
+admin.Use(basicauth.New(map[string]string{"admin": "secret"}))
+
+admin.Get("/", adminDashboard)
+admin.Get("/users", adminUsers)
+admin.Post("/users", createUser)
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates middleware with static credentials
+func New(credentials map[string]string) mizu.Middleware
+
+// WithValidator creates middleware with custom validator
+func WithValidator(fn ValidatorFunc) mizu.Middleware
+
+// WithRealm creates middleware with custom realm
+func WithRealm(realm string, credentials map[string]string) mizu.Middleware
+
+// WithOptions creates middleware with full configuration
+func WithOptions(opts Options) mizu.Middleware
+```
+
+### Types
+
+```go
+// Accounts is a convenience type for credentials
+type Accounts map[string]string
+```
+
+## Security Considerations
+
+1. **Always use HTTPS** - Basic auth sends credentials base64-encoded (not encrypted)
+2. **Use strong passwords** - Avoid dictionary words and short passwords
+3. **Hash stored passwords** - Never store plain-text passwords in your validator
+4. **Consider rate limiting** - Combine with `ratelimit` to prevent brute force attacks
+5. **Timing attacks** - The built-in validator uses constant-time comparison
+
+## Best Practices
+
+- Use Basic Auth for simple internal tools, not production user-facing auth
+- Combine with HTTPS redirect middleware
+- Add rate limiting to prevent brute force attacks
+- Use Bearer auth or session-based auth for APIs
+
+## Related Middlewares
+
+- [bearerauth](/middlewares/bearerauth) - Token-based authentication
+- [keyauth](/middlewares/keyauth) - API key authentication
+- [secure](/middlewares/secure) - HTTPS enforcement
+- [ratelimit](/middlewares/ratelimit) - Rate limiting

@@ -1,0 +1,131 @@
+---
+title: "CORS"
+description: "Cross-Origin Resource Sharing middleware for handling browser cross-origin requests."
+---
+
+## Overview
+
+The `cors` middleware handles Cross-Origin Resource Sharing (CORS), allowing your API to be safely accessed from different domains. It automatically handles preflight requests and sets the appropriate headers.
+
+Use it when you need:
+- API access from browser applications on different domains
+- Single-page applications calling your backend
+- Mobile apps using web views
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/cors"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Allow all origins (development only)
+app.Use(cors.AllowAll())
+
+// Or allow specific origins
+app.Use(cors.WithOrigins("https://example.com", "https://app.example.com"))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `AllowOrigins` | `[]string` | `["*"]` | Allowed origins |
+| `AllowMethods` | `[]string` | `["GET", "POST", "HEAD"]` | Allowed HTTP methods |
+| `AllowHeaders` | `[]string` | `["Origin", "Content-Type", "Accept"]` | Allowed request headers |
+| `ExposeHeaders` | `[]string` | `[]` | Headers exposed to browser |
+| `AllowCredentials` | `bool` | `false` | Allow credentials (cookies) |
+| `MaxAge` | `time.Duration` | `0` | Preflight cache duration |
+| `AllowOriginFunc` | `func(string) bool` | `nil` | Custom origin validator |
+| `AllowPrivateNetwork` | `bool` | `false` | Enable Private Network Access |
+
+## Examples
+
+### Allow All Origins (Development)
+
+```go
+app.Use(cors.AllowAll())
+```
+
+### Specific Origins
+
+```go
+app.Use(cors.New(cors.Options{
+    AllowOrigins: []string{
+        "https://example.com",
+        "https://admin.example.com",
+    },
+}))
+```
+
+### With Credentials
+
+```go
+app.Use(cors.New(cors.Options{
+    AllowOrigins:     []string{"https://app.example.com"},
+    AllowCredentials: true,
+    AllowMethods:     []string{"GET", "POST", "PUT", "DELETE"},
+    AllowHeaders:     []string{"Authorization", "Content-Type"},
+}))
+```
+
+### Custom Origin Validation
+
+```go
+app.Use(cors.New(cors.Options{
+    AllowOriginFunc: func(origin string) bool {
+        // Allow all subdomains of example.com
+        return strings.HasSuffix(origin, ".example.com")
+    },
+}))
+```
+
+### Preflight Caching
+
+```go
+app.Use(cors.New(cors.Options{
+    AllowOrigins: []string{"https://example.com"},
+    MaxAge:       12 * time.Hour, // Cache preflight for 12 hours
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates CORS middleware with options
+func New(opts Options) mizu.Middleware
+
+// AllowAll creates permissive CORS (development only)
+func AllowAll() mizu.Middleware
+
+// WithOrigins creates CORS allowing specific origins
+func WithOrigins(origins ...string) mizu.Middleware
+```
+
+## Security Considerations
+
+1. **Never use `AllowAll()` in production** - It exposes your API to any origin
+2. **Be careful with credentials** - When `AllowCredentials` is true, you cannot use wildcard origins
+3. **Validate origins** - Use `AllowOriginFunc` for dynamic origin validation
+4. **Limit exposed headers** - Only expose headers that clients actually need
+
+## Best Practices
+
+- Use specific origins in production
+- Cache preflight requests with `MaxAge` to reduce OPTIONS requests
+- Combine with authentication middleware for protected endpoints
+- Use `AllowPrivateNetwork` only when needed for local network access
+
+## Related Middlewares
+
+- [cors2](/middlewares/cors2) - Enhanced CORS with additional features
+- [secure](/middlewares/secure) - HTTPS enforcement
+- [helmet](/middlewares/helmet) - Security headers

@@ -1,0 +1,129 @@
+---
+title: "OpenTelemetry"
+description: "OpenTelemetry integration middleware for distributed tracing and metrics."
+---
+
+## Overview
+
+The `otel` middleware integrates with OpenTelemetry for distributed tracing, metrics, and observability.
+
+Use it when you need:
+- Distributed tracing
+- OpenTelemetry integration
+- Observability platforms (Jaeger, Zipkin, etc.)
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/otel"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Initialize OpenTelemetry
+shutdown := otel.Init(otel.Options{
+    ServiceName: "my-service",
+    Endpoint:    "localhost:4317",
+})
+defer shutdown()
+
+app.Use(otel.Middleware())
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `ServiceName` | `string` | Required | Service name |
+| `Endpoint` | `string` | Required | Collector endpoint |
+| `Insecure` | `bool` | `false` | Skip TLS |
+| `Propagators` | `[]string` | W3C | Propagation formats |
+
+## Examples
+
+### Basic Setup
+
+```go
+shutdown := otel.Init(otel.Options{
+    ServiceName: "api",
+    Endpoint:    "localhost:4317",
+})
+defer shutdown()
+
+app.Use(otel.Middleware())
+```
+
+### With Jaeger
+
+```go
+shutdown := otel.Init(otel.Options{
+    ServiceName: "api",
+    Endpoint:    "jaeger:4317",
+    Propagators: []string{"jaeger", "w3c"},
+})
+```
+
+### Custom Spans
+
+```go
+app.Get("/process", func(c *mizu.Ctx) error {
+    ctx, span := otel.StartSpan(c, "process-data")
+    defer span.End()
+
+    // Add attributes
+    span.SetAttributes(
+        attribute.String("user.id", userID),
+    )
+
+    // Do work
+    result := processData(ctx)
+
+    return c.JSON(200, result)
+})
+```
+
+### Propagate to Downstream
+
+```go
+app.Get("/", func(c *mizu.Ctx) error {
+    req, _ := http.NewRequestWithContext(c.Context(), "GET", url, nil)
+    otel.Inject(c.Context(), req.Header)
+    // Make request...
+})
+```
+
+## API Reference
+
+### Functions
+
+```go
+// Init initializes OpenTelemetry
+func Init(opts Options) func()
+
+// Middleware creates OTel middleware
+func Middleware() mizu.Middleware
+
+// StartSpan creates child span
+func StartSpan(c *mizu.Ctx, name string) (context.Context, trace.Span)
+
+// Inject propagates context
+func Inject(ctx context.Context, headers http.Header)
+```
+
+## Best Practices
+
+- Use consistent service names
+- Add meaningful span attributes
+- Propagate context to all calls
+- Sample appropriately in production
+
+## Related Middlewares
+
+- [trace](/middlewares/trace) - Simple tracing
+- [prometheus](/middlewares/prometheus) - Prometheus metrics
+- [sentry](/middlewares/sentry) - Error tracking

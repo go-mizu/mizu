@@ -1,0 +1,117 @@
+---
+title: "Nonce"
+description: "Cryptographic nonce generation middleware for CSP and security."
+---
+
+## Overview
+
+The `nonce` middleware generates cryptographic nonces for Content Security Policy (CSP) inline scripts and styles.
+
+Use it when you need:
+- CSP nonce-based security
+- Inline script authorization
+- Dynamic nonce generation
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/nonce"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Use(nonce.New())
+
+app.Get("/", func(c *mizu.Ctx) error {
+    n := nonce.Get(c)
+    return c.HTML(200, `<script nonce="`+n+`">alert('Safe!')</script>`)
+})
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Length` | `int` | `16` | Nonce byte length |
+| `Header` | `string` | `""` | Expose in header |
+
+## Examples
+
+### Basic Usage
+
+```go
+app.Use(nonce.New())
+
+app.Get("/", func(c *mizu.Ctx) error {
+    n := nonce.Get(c)
+    html := fmt.Sprintf(`
+        <html>
+        <head>
+            <style nonce="%s">body { color: blue; }</style>
+        </head>
+        <body>
+            <script nonce="%s">console.log('Hello');</script>
+        </body>
+        </html>
+    `, n, n)
+    return c.HTML(200, html)
+})
+```
+
+### With CSP Header
+
+```go
+app.Use(nonce.New())
+app.Use(helmet.WithOptions(helmet.Options{
+    ContentSecurityPolicy: func(c *mizu.Ctx) string {
+        n := nonce.Get(c)
+        return fmt.Sprintf("script-src 'nonce-%s'", n)
+    },
+}))
+```
+
+### Expose in Header
+
+```go
+app.Use(nonce.New(nonce.Options{
+    Header: "X-Nonce",
+}))
+// Response header: X-Nonce: abc123...
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates nonce middleware
+func New(opts ...Options) mizu.Middleware
+
+// Get returns nonce from context
+func Get(c *mizu.Ctx) string
+```
+
+## Security
+
+- Nonces are cryptographically random
+- New nonce per request
+- Base64-encoded for HTML safety
+- Use with strict CSP
+
+## Best Practices
+
+- Use with Content-Security-Policy
+- Generate new nonce per request
+- Include in all inline scripts/styles
+- Don't reuse nonces
+
+## Related Middlewares
+
+- [helmet](/middlewares/helmet) - Security headers
+- [csrf](/middlewares/csrf) - CSRF protection
+- [secure](/middlewares/secure) - Security settings

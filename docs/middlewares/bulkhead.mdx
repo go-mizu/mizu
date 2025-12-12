@@ -1,0 +1,132 @@
+---
+title: "Bulkhead"
+description: "Bulkhead pattern middleware for isolating failures and limiting concurrency."
+---
+
+## Overview
+
+The `bulkhead` middleware implements the bulkhead pattern, limiting concurrent requests to prevent cascade failures and ensure fair resource allocation.
+
+Use it when you need:
+- Failure isolation between services
+- Concurrent request limiting
+- Resource protection
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/bulkhead"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Limit to 10 concurrent requests
+app.Use(bulkhead.New(10))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `MaxConcurrent` | `int` | Required | Max concurrent requests |
+| `MaxWaiting` | `int` | `0` | Max waiting requests (0 = reject) |
+| `Timeout` | `time.Duration` | `0` | Wait timeout |
+| `ErrorHandler` | `func(*mizu.Ctx) error` | - | Custom rejection handler |
+
+## Examples
+
+### Simple Limit
+
+```go
+// Reject if more than 10 concurrent
+app.Use(bulkhead.New(10))
+```
+
+### With Waiting Queue
+
+```go
+// Allow 10 concurrent, 20 waiting
+app.Use(bulkhead.WithOptions(bulkhead.Options{
+    MaxConcurrent: 10,
+    MaxWaiting:    20,
+}))
+```
+
+### With Timeout
+
+```go
+// Wait up to 5 seconds for slot
+app.Use(bulkhead.WithOptions(bulkhead.Options{
+    MaxConcurrent: 10,
+    MaxWaiting:    50,
+    Timeout:       5 * time.Second,
+}))
+```
+
+### Per-Route Limits
+
+```go
+// Different limits for different routes
+api := app.Group("/api")
+api.Use(bulkhead.New(100))
+
+heavy := app.Group("/heavy")
+heavy.Use(bulkhead.New(5))
+```
+
+### Custom Error
+
+```go
+app.Use(bulkhead.WithOptions(bulkhead.Options{
+    MaxConcurrent: 10,
+    ErrorHandler: func(c *mizu.Ctx) error {
+        return c.JSON(503, map[string]string{
+            "error": "Service temporarily unavailable",
+        })
+    },
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates bulkhead with max concurrent
+func New(maxConcurrent int) mizu.Middleware
+
+// WithOptions creates bulkhead with configuration
+func WithOptions(opts Options) mizu.Middleware
+```
+
+## How It Works
+
+1. Request arrives
+2. Check if under concurrent limit
+3. If under: acquire slot, process, release
+4. If over: check waiting queue
+5. If queue full or timeout: reject with 503
+
+## HTTP Status Codes
+
+| Code | Meaning |
+|------|---------|
+| 503 | Service unavailable (bulkhead full) |
+
+## Best Practices
+
+- Set limits based on resource capacity
+- Use different bulkheads for different services
+- Monitor rejection rates
+- Combine with circuit breaker for full resilience
+
+## Related Middlewares
+
+- [circuitbreaker](/middlewares/circuitbreaker) - Circuit breaker pattern
+- [ratelimit](/middlewares/ratelimit) - Rate limiting
+- [concurrency](/middlewares/concurrency) - Concurrency control

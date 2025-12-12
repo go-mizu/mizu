@@ -1,0 +1,74 @@
+---
+title: "Body Close"
+description: "Auto body close middleware to ensure request bodies are properly closed."
+---
+
+## Overview
+
+The `bodyclose` middleware ensures request bodies are properly closed after processing, preventing resource leaks.
+
+Use it when you need:
+- Prevent connection leaks
+- Ensure proper resource cleanup
+- Handle abandoned requests
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/bodyclose"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Auto-close request bodies
+app.Use(bodyclose.New())
+```
+
+## Examples
+
+### Basic Usage
+
+```go
+app.Use(bodyclose.New())
+```
+
+### With Drain
+
+```go
+// Drain body before closing (for keep-alive)
+app.Use(bodyclose.WithDrain())
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates body close middleware
+func New() mizu.Middleware
+
+// WithDrain creates middleware that drains before closing
+func WithDrain() mizu.Middleware
+```
+
+## Why It Matters
+
+Without proper body closing:
+- Connections may not be reused
+- Memory leaks can occur
+- Connection pool exhaustion
+
+## Best Practices
+
+- Place early in middleware chain
+- Use with connection pooling
+- Consider draining for HTTP keep-alive
+
+## Related Middlewares
+
+- [bodylimit](/middlewares/bodylimit) - Limit body size
+- [bodydump](/middlewares/bodydump) - Dump request bodies
+- [timeout](/middlewares/timeout) - Request timeout

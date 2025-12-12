@@ -1,0 +1,121 @@
+---
+title: "GraphQL"
+description: "GraphQL request handling middleware for GraphQL APIs."
+---
+
+## Overview
+
+The `graphql` middleware provides GraphQL request handling, context integration, and query execution helpers.
+
+Use it when you need:
+- GraphQL API endpoints
+- Query execution helpers
+- GraphQL context management
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/graphql"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+schema := graphql.MustParseSchema(schemaString, resolver)
+
+app.Post("/graphql", graphql.Handler(schema))
+app.Get("/graphql", graphql.PlaygroundHandler())
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Schema` | `*graphql.Schema` | Required | GraphQL schema |
+| `Playground` | `bool` | `false` | Enable playground |
+| `Introspection` | `bool` | `true` | Allow introspection |
+
+## Examples
+
+### Basic Setup
+
+```go
+schemaString := `
+    type Query {
+        user(id: ID!): User
+    }
+    type User {
+        id: ID!
+        name: String!
+    }
+`
+
+type resolver struct{}
+
+func (r *resolver) User(args struct{ ID string }) *userResolver {
+    return &userResolver{id: args.ID}
+}
+
+schema := graphql.MustParseSchema(schemaString, &resolver{})
+app.Post("/graphql", graphql.Handler(schema))
+```
+
+### With Playground
+
+```go
+app.Post("/graphql", graphql.Handler(schema))
+app.Get("/graphql", graphql.PlaygroundHandler())
+```
+
+### Context Integration
+
+```go
+app.Post("/graphql", graphql.HandlerWithContext(schema, func(c *mizu.Ctx) context.Context {
+    ctx := c.Context()
+    ctx = context.WithValue(ctx, "user", getUser(c))
+    return ctx
+}))
+```
+
+### Disable Introspection
+
+```go
+app.Post("/graphql", graphql.Handler(schema, graphql.Options{
+    Introspection: false, // Production security
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// Handler creates GraphQL handler
+func Handler(schema *graphql.Schema, opts ...Options) mizu.Handler
+
+// HandlerWithContext creates handler with context
+func HandlerWithContext(schema *graphql.Schema, ctxFn func(*mizu.Ctx) context.Context) mizu.Handler
+
+// PlaygroundHandler returns GraphQL Playground
+func PlaygroundHandler() mizu.Handler
+
+// MustParseSchema parses schema or panics
+func MustParseSchema(schema string, resolver any) *graphql.Schema
+```
+
+## Best Practices
+
+- Disable introspection in production
+- Use DataLoader for batching
+- Implement proper authorization
+- Rate limit complex queries
+
+## Related Middlewares
+
+- [jsonrpc](/middlewares/jsonrpc) - JSON-RPC support
+- [ratelimit](/middlewares/ratelimit) - Rate limiting
+- [timeout](/middlewares/timeout) - Request timeout

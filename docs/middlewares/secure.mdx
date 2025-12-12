@@ -1,0 +1,225 @@
+---
+title: "Secure"
+description: "HTTPS enforcement and comprehensive security middleware."
+---
+
+## Overview
+
+The `secure` middleware enforces HTTPS connections and adds security headers. It's a comprehensive security solution that combines SSL redirect with security header management.
+
+Use it when you need:
+- Automatic HTTP to HTTPS redirect
+- Security headers in one middleware
+- Flexible security configuration
+- Development/production toggle
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/secure"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Default security settings
+app.Use(secure.New())
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `SSLRedirect` | `bool` | `true` | Redirect HTTP to HTTPS |
+| `SSLHost` | `string` | `""` | Host for SSL redirect |
+| `SSLTemporaryRedirect` | `bool` | `false` | Use 307 instead of 301 |
+| `STSSeconds` | `int64` | `0` | HSTS max-age (0 = disabled) |
+| `STSIncludeSubdomains` | `bool` | `false` | HSTS includeSubDomains |
+| `STSPreload` | `bool` | `false` | HSTS preload |
+| `ForceSTSHeader` | `bool` | `false` | Send HSTS on HTTP |
+| `ContentTypeNosniff` | `bool` | `true` | X-Content-Type-Options |
+| `FrameDeny` | `bool` | `true` | X-Frame-Options: DENY |
+| `CustomFrameOptions` | `string` | `""` | Custom X-Frame-Options |
+| `XSSProtection` | `string` | `"1; mode=block"` | X-XSS-Protection |
+| `ContentSecurityPolicy` | `string` | `""` | CSP header |
+| `ReferrerPolicy` | `string` | `""` | Referrer-Policy |
+| `IsDevelopment` | `bool` | `false` | Disable all features |
+| `ProxyHeaders` | `[]string` | `["X-Forwarded-Proto"]` | Headers for HTTPS detection |
+
+## Examples
+
+### Basic HTTPS Redirect
+
+```go
+// Redirect all HTTP to HTTPS
+app.Use(secure.New())
+```
+
+### Production Configuration
+
+```go
+app.Use(secure.WithOptions(secure.Options{
+    SSLRedirect:         true,
+    STSSeconds:          31536000, // 1 year
+    STSIncludeSubdomains: true,
+    STSPreload:          true,
+    ContentTypeNosniff:  true,
+    FrameDeny:           true,
+    ContentSecurityPolicy: "default-src 'self'",
+    ReferrerPolicy:      "strict-origin-when-cross-origin",
+}))
+```
+
+### Development Mode
+
+```go
+app.Use(secure.WithOptions(secure.Options{
+    IsDevelopment: true, // Disables all security features
+}))
+```
+
+### Behind a Proxy
+
+```go
+app.Use(secure.WithOptions(secure.Options{
+    SSLRedirect: true,
+    ProxyHeaders: []string{
+        "X-Forwarded-Proto",
+        "X-Forwarded-SSL",
+    },
+}))
+```
+
+### Custom SSL Host
+
+```go
+// Redirect to different host
+app.Use(secure.WithOptions(secure.Options{
+    SSLRedirect: true,
+    SSLHost:     "secure.example.com",
+}))
+```
+
+### Temporary Redirect
+
+```go
+// Use 307 for testing, preserves method
+app.Use(secure.WithOptions(secure.Options{
+    SSLRedirect:          true,
+    SSLTemporaryRedirect: true,
+}))
+```
+
+### Frame Options
+
+```go
+// Allow framing from same origin
+app.Use(secure.WithOptions(secure.Options{
+    FrameDeny:          false,
+    CustomFrameOptions: "SAMEORIGIN",
+}))
+```
+
+### Environment-Based Configuration
+
+```go
+func setupSecurity(app *mizu.App) {
+    isDev := os.Getenv("ENV") == "development"
+
+    app.Use(secure.WithOptions(secure.Options{
+        IsDevelopment:       isDev,
+        SSLRedirect:         !isDev,
+        STSSeconds:          31536000,
+        STSIncludeSubdomains: true,
+        ContentTypeNosniff:  true,
+        FrameDeny:           true,
+    }))
+}
+```
+
+### Full Security Setup
+
+```go
+app.Use(secure.WithOptions(secure.Options{
+    // SSL
+    SSLRedirect:          true,
+    SSLTemporaryRedirect: false,
+
+    // HSTS
+    STSSeconds:           31536000,
+    STSIncludeSubdomains: true,
+    STSPreload:           true,
+
+    // Security Headers
+    ContentTypeNosniff:    true,
+    FrameDeny:             true,
+    XSSProtection:         "1; mode=block",
+    ContentSecurityPolicy: "default-src 'self'; script-src 'self'",
+    ReferrerPolicy:        "strict-origin-when-cross-origin",
+
+    // Proxy support
+    ProxyHeaders: []string{"X-Forwarded-Proto"},
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates middleware with default options
+func New() mizu.Middleware
+
+// WithOptions creates middleware with custom options
+func WithOptions(opts Options) mizu.Middleware
+```
+
+## Headers Set
+
+The middleware sets these headers based on configuration:
+
+| Header | Condition | Value |
+|--------|-----------|-------|
+| `Strict-Transport-Security` | STSSeconds > 0 | `max-age=X; includeSubDomains; preload` |
+| `X-Content-Type-Options` | ContentTypeNosniff | `nosniff` |
+| `X-Frame-Options` | FrameDeny or Custom | `DENY` or custom |
+| `X-XSS-Protection` | XSSProtection set | Configured value |
+| `Content-Security-Policy` | CSP set | Configured policy |
+| `Referrer-Policy` | ReferrerPolicy set | Configured policy |
+
+## Security Considerations
+
+1. **HSTS Commitment** - Once set, browsers remember for max-age duration
+2. **SSL Certificate** - Ensure valid certificate before enabling HSTS
+3. **Subdomains** - Only enable STSIncludeSubdomains if all subdomains support HTTPS
+4. **Preload** - Apply at hstspreload.org for browser built-in list
+
+### HSTS Timeline
+
+```go
+// Start with short duration
+app.Use(secure.WithOptions(secure.Options{
+    STSSeconds: 3600, // 1 hour for testing
+}))
+
+// Increase gradually
+// STSSeconds: 86400    // 1 day
+// STSSeconds: 604800   // 1 week
+// STSSeconds: 31536000 // 1 year (production)
+```
+
+## Best Practices
+
+- Start with short HSTS duration, increase gradually
+- Test thoroughly before enabling preload
+- Use `IsDevelopment` flag for local development
+- Configure `ProxyHeaders` when behind load balancers
+
+## Related Middlewares
+
+- [helmet](/middlewares/helmet) - Detailed security headers
+- [redirect](/middlewares/redirect) - URL redirection

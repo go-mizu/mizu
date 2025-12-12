@@ -1,0 +1,132 @@
+---
+title: "Redirect"
+description: "URL redirection middleware for HTTPS, WWW, and custom redirects."
+---
+
+## Overview
+
+The `redirect` middleware provides URL redirection capabilities including HTTPS enforcement, WWW handling, and custom redirect rules.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/redirect"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Redirect HTTP to HTTPS
+app.Use(redirect.HTTPSRedirect())
+```
+
+## Functions
+
+| Function | Description |
+|----------|-------------|
+| `HTTPSRedirect()` | Redirect HTTP to HTTPS (301) |
+| `HTTPSRedirectCode(code)` | Redirect with custom code |
+| `WWWRedirect()` | Redirect to www subdomain |
+| `NonWWWRedirect()` | Remove www subdomain |
+| `TrailingSlashRedirect()` | Add trailing slash |
+| `New(rules)` | Custom redirect rules |
+
+## Examples
+
+### HTTPS Redirect
+
+```go
+// Permanent redirect to HTTPS
+app.Use(redirect.HTTPSRedirect())
+
+// Temporary redirect (307)
+app.Use(redirect.HTTPSRedirectCode(307))
+```
+
+### WWW Handling
+
+```go
+// Add www prefix
+app.Use(redirect.WWWRedirect())
+
+// Remove www prefix
+app.Use(redirect.NonWWWRedirect())
+```
+
+### Trailing Slash
+
+```go
+// Add trailing slash: /about → /about/
+app.Use(redirect.TrailingSlashRedirect())
+```
+
+### Custom Redirect Rules
+
+```go
+app.Use(redirect.New([]redirect.Rule{
+    {From: "/old-page", To: "/new-page", Code: 301},
+    {From: "/blog", To: "/articles", Code: 302},
+}))
+```
+
+### Regex Redirects
+
+```go
+app.Use(redirect.New([]redirect.Rule{
+    {
+        From:  `^/posts/(\d+)$`,
+        To:    "/articles/$1",
+        Regex: true,
+        Code:  301,
+    },
+}))
+```
+
+### Combined Redirects
+
+```go
+app.Use(redirect.HTTPSRedirect())
+app.Use(redirect.NonWWWRedirect())
+```
+
+## API Reference
+
+```go
+func HTTPSRedirect() mizu.Middleware
+func HTTPSRedirectCode(code int) mizu.Middleware
+func WWWRedirect() mizu.Middleware
+func WWWRedirectCode(code int) mizu.Middleware
+func NonWWWRedirect() mizu.Middleware
+func NonWWWRedirectCode(code int) mizu.Middleware
+func TrailingSlashRedirect() mizu.Middleware
+func TrailingSlashRedirectCode(code int) mizu.Middleware
+func New(rules []Rule) mizu.Middleware
+```
+
+### Rule Type
+
+```go
+type Rule struct {
+    From  string  // Source path or regex
+    To    string  // Target URL ($1, $2 for captures)
+    Code  int     // HTTP status code (default: 301)
+    Regex bool    // Is From a regex pattern?
+}
+```
+
+## Status Codes
+
+| Code | Type | Use Case |
+|------|------|----------|
+| 301 | Permanent | SEO, permanent moves |
+| 302 | Found | Temporary redirect |
+| 307 | Temporary | Preserve method |
+| 308 | Permanent | Preserve method |
+
+## Related Middlewares
+
+- [slash](/middlewares/slash) - Trailing slash handling
+- [rewrite](/middlewares/rewrite) - URL rewriting (no redirect)
+- [secure](/middlewares/secure) - HTTPS with security headers

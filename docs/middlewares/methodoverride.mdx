@@ -1,0 +1,102 @@
+---
+title: "Method Override"
+description: "HTTP method override middleware for HTML forms."
+---
+
+## Overview
+
+The `methodoverride` middleware allows HTML forms to use HTTP methods other than GET and POST. Since HTML forms only support GET and POST, this middleware lets you override the method using a header or form field.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/methodoverride"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+app.Use(methodoverride.New())
+```
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Header` | `string` | `"X-HTTP-Method-Override"` | Override header |
+| `FormField` | `string` | `"_method"` | Form field name |
+| `Methods` | `[]string` | `["PUT", "PATCH", "DELETE"]` | Allowed override methods |
+
+## Examples
+
+### HTML Form with PUT
+
+```html
+<form method="POST" action="/users/123">
+    <input type="hidden" name="_method" value="PUT">
+    <input type="text" name="name" value="John">
+    <button type="submit">Update</button>
+</form>
+```
+
+```go
+app.Use(methodoverride.New())
+app.Put("/users/:id", updateUser)  // Handles the form above
+```
+
+### DELETE via Form
+
+```html
+<form method="POST" action="/users/123">
+    <input type="hidden" name="_method" value="DELETE">
+    <button type="submit">Delete</button>
+</form>
+```
+
+### Header Override (AJAX)
+
+```javascript
+fetch('/users/123', {
+    method: 'POST',
+    headers: {
+        'X-HTTP-Method-Override': 'PUT',
+        'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({name: 'John'})
+});
+```
+
+### Custom Configuration
+
+```go
+app.Use(methodoverride.WithOptions(methodoverride.Options{
+    Header:    "X-Method",
+    FormField: "method",
+    Methods:   []string{"PUT", "DELETE"}, // Only allow PUT/DELETE
+}))
+```
+
+## How It Works
+
+1. Only processes POST requests
+2. Checks header, then query, then form field for override value
+3. If valid method found, changes request method
+4. Subsequent handlers see the overridden method
+
+## API Reference
+
+```go
+func New() mizu.Middleware
+func WithOptions(opts Options) mizu.Middleware
+```
+
+## Security Notes
+
+- Only POST requests can be overridden
+- Only allowed methods (PUT, PATCH, DELETE by default) can be used
+- Use with CSRF protection for forms
+
+## Related Middlewares
+
+- [csrf](/middlewares/csrf) - Form protection

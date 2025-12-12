@@ -1,0 +1,101 @@
+---
+title: "Max Connections"
+description: "Maximum connections limit middleware for resource protection."
+---
+
+## Overview
+
+The `maxconns` middleware limits the maximum number of concurrent connections to protect server resources.
+
+Use it when you need:
+- Connection limiting
+- Resource protection
+- DoS mitigation
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/maxconns"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Limit to 1000 concurrent connections
+app.Use(maxconns.New(1000))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Max` | `int` | Required | Max connections |
+| `ErrorHandler` | `func(*mizu.Ctx) error` | 503 | Custom error handler |
+
+## Examples
+
+### Basic Limit
+
+```go
+app.Use(maxconns.New(1000))
+```
+
+### Custom Error
+
+```go
+app.Use(maxconns.New(maxconns.Options{
+    Max: 1000,
+    ErrorHandler: func(c *mizu.Ctx) error {
+        return c.JSON(503, map[string]string{
+            "error": "Server at capacity",
+        })
+    },
+}))
+```
+
+### With Monitoring
+
+```go
+m := maxconns.NewWithMetrics(1000)
+app.Use(m.Middleware())
+
+// Monitor in handler
+app.Get("/stats", func(c *mizu.Ctx) error {
+    return c.JSON(200, map[string]int{
+        "active":  m.Active(),
+        "max":     m.Max(),
+    })
+})
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates max connections middleware
+func New(max int) mizu.Middleware
+
+// NewWithOptions creates with configuration
+func NewWithOptions(opts Options) mizu.Middleware
+
+// NewWithMetrics creates with metrics tracking
+func NewWithMetrics(max int) *MaxConns
+```
+
+## Best Practices
+
+- Set based on server capacity
+- Monitor connection counts
+- Use with rate limiting
+- Return appropriate error response
+
+## Related Middlewares
+
+- [bulkhead](/middlewares/bulkhead) - Bulkhead pattern
+- [ratelimit](/middlewares/ratelimit) - Rate limiting
+- [keepalive](/middlewares/keepalive) - Connection persistence

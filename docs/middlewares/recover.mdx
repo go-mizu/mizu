@@ -1,0 +1,126 @@
+---
+title: "Recover"
+description: "Panic recovery middleware for graceful error handling."
+---
+
+## Overview
+
+The `recover` middleware catches panics in handlers and converts them to proper error responses. It prevents your server from crashing and logs stack traces for debugging.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/recover"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Add as first middleware
+app.Use(recover.New())
+```
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `StackSize` | `int` | `4096` | Stack trace buffer size |
+| `DisableStackAll` | `bool` | `false` | Limit to current goroutine |
+| `DisablePrintStack` | `bool` | `false` | Disable stack logging |
+| `ErrorHandler` | `func(*mizu.Ctx, any, []byte) error` | - | Custom panic handler |
+| `Logger` | `*slog.Logger` | `c.Logger()` | Custom logger |
+
+## Examples
+
+### Basic Recovery
+
+```go
+app.Use(recover.New())
+
+app.Get("/", func(c *mizu.Ctx) error {
+    panic("something went wrong") // Caught by recover
+})
+// Returns 500 Internal Server Error
+```
+
+### Custom Error Handler
+
+```go
+app.Use(recover.WithOptions(recover.Options{
+    ErrorHandler: func(c *mizu.Ctx, err any, stack []byte) error {
+        // Log to error tracking service
+        errorTracker.Report(err, string(stack))
+
+        return c.JSON(500, map[string]string{
+            "error": "Internal server error",
+        })
+    },
+}))
+```
+
+### Disable Stack Trace
+
+```go
+// Production: don't log stack traces
+app.Use(recover.WithOptions(recover.Options{
+    DisablePrintStack: true,
+}))
+```
+
+### Custom Logger
+
+```go
+logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+app.Use(recover.WithOptions(recover.Options{
+    Logger: logger,
+}))
+```
+
+### With Request ID
+
+```go
+app.Use(requestid.New())
+app.Use(recover.WithOptions(recover.Options{
+    ErrorHandler: func(c *mizu.Ctx, err any, stack []byte) error {
+        c.Logger().Error("panic recovered",
+            "error", err,
+            "request_id", requestid.Get(c),
+            "stack", string(stack),
+        )
+        return c.Text(500, "Internal Server Error")
+    },
+}))
+```
+
+## API Reference
+
+```go
+func New() mizu.Middleware
+func WithOptions(opts Options) mizu.Middleware
+```
+
+## Log Output
+
+```json
+{
+    "level": "ERROR",
+    "msg": "panic recovered",
+    "error": "runtime error: index out of range",
+    "stack": "goroutine 1 [running]:\nmain.handler..."
+}
+```
+
+## Best Practices
+
+- Always add as the first middleware
+- Log panics for debugging
+- Don't expose stack traces to users in production
+- Use with request ID for correlation
+
+## Related Middlewares
+
+- [requestid](/middlewares/requestid) - Request tracing
+- [timeout](/middlewares/timeout) - Request timeout

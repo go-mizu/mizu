@@ -1,0 +1,317 @@
+---
+title: "Multi-tenancy"
+description: "Multi-tenant middleware for SaaS applications."
+---
+
+## Overview
+
+The `multitenancy` middleware extracts and provides tenant information for multi-tenant SaaS applications. It supports various resolution strategies including subdomain, header, path, and query parameters.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/multitenancy"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Resolve tenant from subdomain
+app.Use(multitenancy.New(multitenancy.SubdomainResolver()))
+
+app.Get("/", func(c *mizu.Ctx) error {
+    tenant := multitenancy.Get(c)
+    return c.JSON(200, map[string]string{
+        "tenant_id": tenant.ID,
+    })
+})
+```
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Resolver` | `Resolver` | Subdomain | Tenant resolution function |
+| `ErrorHandler` | `func(*mizu.Ctx, error) error` | - | Error handler |
+| `Required` | `bool` | `true` | Require tenant resolution |
+
+## Tenant Structure
+
+```go
+type Tenant struct {
+    ID       string
+    Name     string
+    Domain   string
+    Metadata map[string]any
+}
+```
+
+## Resolution Strategies
+
+### Subdomain Resolution
+
+```go
+// tenant1.example.com → tenant_id: "tenant1"
+app.Use(multitenancy.New(multitenancy.SubdomainResolver()))
+```
+
+### Header Resolution
+
+```go
+// X-Tenant-ID: tenant1 → tenant_id: "tenant1"
+app.Use(multitenancy.New(multitenancy.HeaderResolver("X-Tenant-ID")))
+```
+
+### Path Resolution
+
+```go
+// /tenant1/users → tenant_id: "tenant1", path: /users
+app.Use(multitenancy.New(multitenancy.PathResolver()))
+```
+
+### Query Parameter Resolution
+
+```go
+// /users?tenant=tenant1 → tenant_id: "tenant1"
+app.Use(multitenancy.New(multitenancy.QueryResolver("tenant")))
+```
+
+## Examples
+
+### Basic Subdomain Tenant
+
+```go
+app.Use(multitenancy.New(multitenancy.SubdomainResolver()))
+
+app.Get("/dashboard", func(c *mizu.Ctx) error {
+    tenant := multitenancy.Get(c)
+    data := loadDashboard(tenant.ID)
+    return c.JSON(200, data)
+})
+```
+
+### Database Lookup
+
+```go
+resolver := multitenancy.LookupResolver(
+    multitenancy.SubdomainResolver(),
+    func(id string) (*multitenancy.Tenant, error) {
+        // Look up full tenant info from database
+        var tenant Tenant
+        err := db.QueryRow(
+            "SELECT id, name, plan FROM tenants WHERE slug = ?",
+            id,
+        ).Scan(&tenant.ID, &tenant.Name, &tenant.Plan)
+
+        if err != nil {
+            return nil, multitenancy.ErrTenantNotFound
+        }
+
+        return &multitenancy.Tenant{
+            ID:   tenant.ID,
+            Name: tenant.Name,
+            Metadata: map[string]any{
+                "plan": tenant.Plan,
+            },
+        }, nil
+    },
+)
+
+app.Use(multitenancy.New(resolver))
+```
+
+### Chain Multiple Resolvers
+
+```go
+// Try subdomain first, then header, then query param
+resolver := multitenancy.ChainResolver(
+    multitenancy.SubdomainResolver(),
+    multitenancy.HeaderResolver("X-Tenant-ID"),
+    multitenancy.QueryResolver("tenant"),
+)
+
+app.Use(multitenancy.New(resolver))
+```
+
+### Custom Error Handler
+
+```go
+app.Use(multitenancy.WithOptions(multitenancy.Options{
+    Resolver: multitenancy.SubdomainResolver(),
+    ErrorHandler: func(c *mizu.Ctx, err error) error {
+        return c.JSON(400, map[string]string{
+            "error":   "Invalid tenant",
+            "message": err.Error(),
+        })
+    },
+}))
+```
+
+### Optional Tenant
+
+```go
+app.Use(multitenancy.WithOptions(multitenancy.Options{
+    Resolver: multitenancy.SubdomainResolver(),
+    Required: false, // Allow requests without tenant
+}))
+
+app.Get("/", func(c *mizu.Ctx) error {
+    tenant := multitenancy.Get(c)
+    if tenant == nil {
+        return c.JSON(200, "Welcome to the platform")
+    }
+    return c.JSON(200, "Welcome, "+tenant.Name)
+})
+```
+
+### MustGet (Panic on Missing)
+
+```go
+app.Get("/settings", func(c *mizu.Ctx) error {
+    // Panics if tenant not found - use in required tenant routes
+    tenant := multitenancy.MustGet(c)
+    settings := loadSettings(tenant.ID)
+    return c.JSON(200, settings)
+})
+```
+
+### Custom Resolver
+
+```go
+func JWTTenantResolver() multitenancy.Resolver {
+    return func(c *mizu.Ctx) (*multitenancy.Tenant, error) {
+        claims := c.Get("jwt_claims").(jwt.MapClaims)
+        tenantID, ok := claims["tenant_id"].(string)
+        if !ok || tenantID == "" {
+            return nil, multitenancy.ErrTenantNotFound
+        }
+
+        return &multitenancy.Tenant{
+            ID:   tenantID,
+            Name: tenantID,
+        }, nil
+    }
+}
+
+app.Use(jwtauth.New(jwtSecret))
+app.Use(multitenancy.New(JWTTenantResolver()))
+```
+
+### Tenant-Scoped Database
+
+```go
+app.Get("/users", func(c *mizu.Ctx) error {
+    tenant := multitenancy.Get(c)
+
+    // Use tenant ID for database scoping
+    users, err := db.Query(
+        "SELECT * FROM users WHERE tenant_id = ?",
+        tenant.ID,
+    )
+    if err != nil {
+        return err
+    }
+
+    return c.JSON(200, users)
+})
+```
+
+### Tenant Middleware Chain
+
+```go
+// Create tenant-aware middleware
+func TenantRateLimit() mizu.Middleware {
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            tenant := multitenancy.Get(c)
+            limiter := rateLimiters[tenant.ID]
+
+            if !limiter.Allow() {
+                return c.Text(429, "Rate limit exceeded")
+            }
+            return next(c)
+        }
+    }
+}
+
+app.Use(multitenancy.New(multitenancy.SubdomainResolver()))
+app.Use(TenantRateLimit())
+```
+
+### Tenant Metadata
+
+```go
+resolver := multitenancy.LookupResolver(
+    multitenancy.SubdomainResolver(),
+    func(id string) (*multitenancy.Tenant, error) {
+        tenant := loadTenantFromDB(id)
+        return &multitenancy.Tenant{
+            ID:     tenant.ID,
+            Name:   tenant.Name,
+            Domain: tenant.Domain,
+            Metadata: map[string]any{
+                "plan":          tenant.Plan,
+                "max_users":     tenant.MaxUsers,
+                "features":      tenant.Features,
+                "custom_domain": tenant.CustomDomain,
+            },
+        }, nil
+    },
+)
+
+// Access metadata in handlers
+app.Get("/plan", func(c *mizu.Ctx) error {
+    tenant := multitenancy.Get(c)
+    plan := tenant.Metadata["plan"].(string)
+    return c.JSON(200, map[string]string{"plan": plan})
+})
+```
+
+## Built-in Resolvers
+
+| Resolver | Source | Example |
+|----------|--------|---------|
+| `SubdomainResolver()` | Subdomain | `tenant1.example.com` |
+| `HeaderResolver(h)` | HTTP Header | `X-Tenant-ID: tenant1` |
+| `PathResolver()` | URL Path | `/tenant1/api/users` |
+| `QueryResolver(p)` | Query Param | `?tenant=tenant1` |
+| `ChainResolver(...)` | Multiple | Tries each in order |
+| `LookupResolver(r, fn)` | Database | Enriches with lookup |
+
+## API Reference
+
+```go
+func New(resolver Resolver) mizu.Middleware
+func WithOptions(opts Options) mizu.Middleware
+func Get(c *mizu.Ctx) *Tenant
+func FromContext(c *mizu.Ctx) *Tenant  // Alias
+func MustGet(c *mizu.Ctx) *Tenant
+
+// Resolvers
+func SubdomainResolver() Resolver
+func HeaderResolver(header string) Resolver
+func PathResolver() Resolver
+func QueryResolver(param string) Resolver
+func LookupResolver(resolver Resolver, lookup func(id string) (*Tenant, error)) Resolver
+func ChainResolver(resolvers ...Resolver) Resolver
+
+// Errors
+var ErrTenantNotFound = errors.New("tenant not found")
+var ErrTenantInvalid = errors.New("tenant invalid")
+```
+
+## Best Practices
+
+- Use subdomain resolution for user-friendly URLs
+- Implement database lookup for rich tenant data
+- Use chain resolver for flexibility
+- Always validate tenant access to resources
+- Include tenant ID in all database queries
+- Cache tenant lookups for performance
+
+## Related Middlewares
+
+- [feature](/middlewares/feature) - Feature flags
+- [ratelimit](/middlewares/ratelimit) - Rate limiting

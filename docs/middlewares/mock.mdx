@@ -1,0 +1,140 @@
+---
+title: "Mock"
+description: "Request mocking middleware for testing and development."
+---
+
+## Overview
+
+The `mock` middleware provides request mocking capabilities for testing and development, returning predefined responses for specified routes.
+
+Use it when you need:
+- API mocking for frontend development
+- Test fixtures
+- Stubbing external services
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/mock"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Mock a response
+app.Use(mock.New(mock.Routes{
+    "GET /api/users": mock.JSON(200, users),
+}))
+```
+
+## Configuration
+
+### Routes Map
+
+```go
+type Routes map[string]Response
+
+// Pattern: "METHOD /path"
+```
+
+## Examples
+
+### JSON Response
+
+```go
+app.Use(mock.New(mock.Routes{
+    "GET /api/users": mock.JSON(200, []User{
+        {ID: 1, Name: "John"},
+        {ID: 2, Name: "Jane"},
+    }),
+}))
+```
+
+### Multiple Routes
+
+```go
+app.Use(mock.New(mock.Routes{
+    "GET /api/users":     mock.JSON(200, users),
+    "GET /api/users/1":   mock.JSON(200, user),
+    "POST /api/users":    mock.JSON(201, newUser),
+    "DELETE /api/users/1": mock.Status(204),
+}))
+```
+
+### With Headers
+
+```go
+app.Use(mock.New(mock.Routes{
+    "GET /api/data": mock.Response{
+        Status:  200,
+        Body:    `{"data": "test"}`,
+        Headers: map[string]string{
+            "Content-Type":  "application/json",
+            "X-Custom":      "value",
+        },
+    },
+}))
+```
+
+### From File
+
+```go
+app.Use(mock.New(mock.Routes{
+    "GET /api/users": mock.File("testdata/users.json"),
+}))
+```
+
+### Conditional Mocking
+
+```go
+app.Use(mock.WithOptions(mock.Options{
+    Routes: mockRoutes,
+    Enabled: func() bool {
+        return os.Getenv("MOCK_API") == "true"
+    },
+}))
+```
+
+### Delay Response
+
+```go
+app.Use(mock.New(mock.Routes{
+    "GET /api/slow": mock.Response{
+        Status: 200,
+        Body:   `{"data": "slow"}`,
+        Delay:  2 * time.Second,
+    },
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates mock middleware
+func New(routes Routes) mizu.Middleware
+
+// WithOptions creates with configuration
+func WithOptions(opts Options) mizu.Middleware
+
+// Response helpers
+func JSON(status int, data any) Response
+func Text(status int, body string) Response
+func Status(status int) Response
+func File(path string) Response
+```
+
+## Best Practices
+
+- Use environment variable to enable/disable
+- Keep mock data in separate files
+- Match production response structure
+- Add realistic delays for latency testing
+
+## Related Middlewares
+
+- [static](/middlewares/static) - Static file serving
+- [proxy](/middlewares/proxy) - Reverse proxy

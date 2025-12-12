@@ -1,0 +1,321 @@
+---
+title: "Fingerprint"
+description: "Request fingerprinting middleware for client identification."
+---
+
+## Overview
+
+The `fingerprint` middleware generates unique fingerprints for incoming requests based on headers, IP addresses, and other request attributes. Useful for bot detection, analytics, and rate limiting.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/fingerprint"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+app.Use(fingerprint.New())
+
+app.Get("/", func(c *mizu.Ctx) error {
+    hash := fingerprint.Hash(c)
+    return c.JSON(200, map[string]string{"fingerprint": hash})
+})
+```
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Headers` | `[]string` | Common headers | Headers to include |
+| `IncludeIP` | `bool` | `true` | Include client IP |
+| `IncludeMethod` | `bool` | `false` | Include HTTP method |
+| `IncludePath` | `bool` | `false` | Include request path |
+| `Custom` | `func(*mizu.Ctx) map[string]string` | - | Custom components |
+
+## Default Headers
+
+```go
+[]string{
+    "User-Agent",
+    "Accept",
+    "Accept-Language",
+    "Accept-Encoding",
+    "Connection",
+    "Sec-Ch-Ua",
+    "Sec-Ch-Ua-Mobile",
+    "Sec-Ch-Ua-Platform",
+}
+```
+
+## Examples
+
+### Basic Usage
+
+```go
+app.Use(fingerprint.New())
+
+app.Get("/", func(c *mizu.Ctx) error {
+    info := fingerprint.Get(c)
+    return c.JSON(200, map[string]any{
+        "hash":       info.Hash,
+        "components": info.Components,
+    })
+})
+```
+
+### With IP Address
+
+```go
+app.Use(fingerprint.WithIP())
+
+// Fingerprint includes client IP
+```
+
+### Headers Only
+
+```go
+app.Use(fingerprint.HeadersOnly(
+    "User-Agent",
+    "Accept-Language",
+))
+```
+
+### Full Fingerprint
+
+```go
+app.Use(fingerprint.Full())
+// Includes IP, method, path, and all default headers
+```
+
+### Custom Headers
+
+```go
+app.Use(fingerprint.WithOptions(fingerprint.Options{
+    Headers: []string{
+        "User-Agent",
+        "Accept",
+        "Accept-Language",
+        "Accept-Encoding",
+        "X-Custom-Header",
+    },
+}))
+```
+
+### Include Request Path
+
+```go
+app.Use(fingerprint.WithOptions(fingerprint.Options{
+    IncludeIP:     true,
+    IncludeMethod: true,
+    IncludePath:   true,
+}))
+```
+
+### Custom Components
+
+```go
+app.Use(fingerprint.WithOptions(fingerprint.Options{
+    Custom: func(c *mizu.Ctx) map[string]string {
+        return map[string]string{
+            "session_id": c.Cookie("session_id"),
+            "user_id":    getUserID(c),
+        }
+    },
+}))
+```
+
+### Rate Limiting by Fingerprint
+
+```go
+app.Use(fingerprint.New())
+
+var requestCounts = make(map[string]int)
+var mu sync.Mutex
+
+app.Use(func(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        hash := fingerprint.Hash(c)
+
+        mu.Lock()
+        requestCounts[hash]++
+        count := requestCounts[hash]
+        mu.Unlock()
+
+        if count > 100 {
+            return c.Text(429, "Rate limit exceeded")
+        }
+
+        return next(c)
+    }
+})
+```
+
+### Bot Detection
+
+```go
+app.Use(fingerprint.New())
+
+// Known bot fingerprints
+var knownBots = map[string]bool{
+    "abc123...": true,
+    "def456...": true,
+}
+
+app.Use(func(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        hash := fingerprint.Hash(c)
+
+        if knownBots[hash] {
+            return c.Text(403, "Bot detected")
+        }
+
+        return next(c)
+    }
+})
+```
+
+### Analytics Tracking
+
+```go
+app.Use(fingerprint.New())
+
+app.Use(func(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        info := fingerprint.Get(c)
+
+        // Track unique visitors
+        analytics.TrackVisitor(info.Hash, map[string]any{
+            "path":       c.Request().URL.Path,
+            "components": info.Components,
+        })
+
+        return next(c)
+    }
+})
+```
+
+### Session Correlation
+
+```go
+app.Use(fingerprint.WithOptions(fingerprint.Options{
+    IncludeIP: true,
+    Custom: func(c *mizu.Ctx) map[string]string {
+        return map[string]string{
+            "session": c.Cookie("session_id"),
+        }
+    },
+}))
+
+app.Get("/", func(c *mizu.Ctx) error {
+    hash := fingerprint.Hash(c)
+
+    // Correlate with existing sessions
+    existingSession := findSession(hash)
+    if existingSession != nil {
+        return c.JSON(200, existingSession)
+    }
+
+    // Create new session
+    return c.JSON(200, createSession(hash))
+})
+```
+
+### Debugging Fingerprint
+
+```go
+app.Get("/debug/fingerprint", func(c *mizu.Ctx) error {
+    info := fingerprint.Get(c)
+
+    return c.JSON(200, map[string]any{
+        "hash":       info.Hash,
+        "components": info.Components,
+    })
+})
+```
+
+Response:
+```json
+{
+    "hash": "a1b2c3d4e5f6...",
+    "components": {
+        "User-Agent": "Mozilla/5.0...",
+        "Accept": "text/html,application/xhtml+xml...",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "IP": "192.168.1.1"
+    }
+}
+```
+
+### Fraud Detection
+
+```go
+app.Use(fingerprint.Full())
+
+app.Post("/checkout", func(c *mizu.Ctx) error {
+    hash := fingerprint.Hash(c)
+    userID := c.Get("user_id").(string)
+
+    // Check if fingerprint is associated with fraud
+    if isFraudulent(hash) {
+        return c.JSON(403, map[string]string{
+            "error": "Transaction blocked",
+        })
+    }
+
+    // Check for fingerprint/account mismatch
+    if !matchesUser(hash, userID) {
+        flagForReview(userID, hash)
+    }
+
+    return processCheckout(c)
+})
+```
+
+## Info Structure
+
+```go
+type Info struct {
+    Hash       string            // SHA256 hash of components
+    Components map[string]string // Individual fingerprint components
+}
+```
+
+## API Reference
+
+```go
+func New() mizu.Middleware
+func WithOptions(opts Options) mizu.Middleware
+func HeadersOnly(headers ...string) mizu.Middleware
+func WithIP() mizu.Middleware
+func Full() mizu.Middleware
+func Get(c *mizu.Ctx) *Info
+func Hash(c *mizu.Ctx) string
+```
+
+## Hash Algorithm
+
+The fingerprint hash is generated by:
+1. Collecting all components (headers, IP, etc.)
+2. Sorting component keys alphabetically
+3. Concatenating as `key:value|key:value|...`
+4. Computing SHA256 hash
+5. Returning hex-encoded string
+
+## Best Practices
+
+- Use minimal headers for privacy compliance
+- Don't rely solely on fingerprints for authentication
+- Store fingerprints hashed, not raw
+- Combine with other signals for bot detection
+- Consider GDPR implications when storing fingerprints
+- Use for analytics and fraud detection, not tracking
+
+## Related Middlewares
+
+- [realip](/middlewares/realip) - Client IP extraction
+- [ratelimit](/middlewares/ratelimit) - Rate limiting
+- [ipfilter](/middlewares/ipfilter) - IP filtering

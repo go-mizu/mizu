@@ -1,0 +1,104 @@
+---
+title: "Keep-Alive"
+description: "Connection keep-alive control middleware for HTTP connections."
+---
+
+## Overview
+
+The `keepalive` middleware controls HTTP keep-alive behavior, managing connection persistence for performance optimization.
+
+Use it when you need:
+- Connection persistence control
+- Resource management
+- Performance optimization
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/keepalive"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Enable keep-alive with defaults
+app.Use(keepalive.New())
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Enabled` | `bool` | `true` | Enable keep-alive |
+| `MaxRequests` | `int` | `100` | Max requests per connection |
+| `Timeout` | `time.Duration` | `5s` | Keep-alive timeout |
+
+## Examples
+
+### Enable Keep-Alive
+
+```go
+app.Use(keepalive.New())
+```
+
+### Custom Settings
+
+```go
+app.Use(keepalive.New(keepalive.Options{
+    Timeout:     10 * time.Second,
+    MaxRequests: 200,
+}))
+```
+
+### Disable Keep-Alive
+
+```go
+app.Use(keepalive.New(keepalive.Options{
+    Enabled: false,
+}))
+```
+
+### Per-Route Control
+
+```go
+// Disable for long-polling
+app.Get("/events", handler, keepalive.Disable())
+
+// Enable for API
+app.Get("/api", handler, keepalive.New())
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates keep-alive middleware
+func New(opts ...Options) mizu.Middleware
+
+// Disable creates middleware that disables keep-alive
+func Disable() mizu.Middleware
+```
+
+## HTTP Headers
+
+```
+Connection: keep-alive
+Keep-Alive: timeout=5, max=100
+```
+
+## Best Practices
+
+- Use for high-traffic APIs
+- Set reasonable timeouts
+- Monitor connection counts
+- Consider disabling for long-polling
+
+## Related Middlewares
+
+- [timeout](/middlewares/timeout) - Request timeout
+- [maxconns](/middlewares/maxconns) - Connection limits

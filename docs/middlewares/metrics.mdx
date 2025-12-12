@@ -1,0 +1,128 @@
+---
+title: "Metrics"
+description: "Custom metrics collection middleware for application monitoring."
+---
+
+## Overview
+
+The `metrics` middleware collects custom application metrics including request counts, latencies, and error rates.
+
+Use it when you need:
+- Application monitoring
+- Custom metric collection
+- Performance tracking
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/metrics"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+m := metrics.New()
+app.Use(m.Middleware())
+
+// Expose metrics endpoint
+app.Get("/metrics", m.Handler())
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Namespace` | `string` | `"http"` | Metric namespace |
+| `Buckets` | `[]float64` | Standard | Latency buckets |
+
+## Examples
+
+### Basic Metrics
+
+```go
+m := metrics.New()
+app.Use(m.Middleware())
+app.Get("/metrics", m.Handler())
+```
+
+### Custom Namespace
+
+```go
+m := metrics.New(metrics.Options{
+    Namespace: "myapp",
+})
+```
+
+### Custom Buckets
+
+```go
+m := metrics.New(metrics.Options{
+    Buckets: []float64{0.01, 0.05, 0.1, 0.5, 1, 5},
+})
+```
+
+### Add Custom Metrics
+
+```go
+m := metrics.New()
+
+// Counter
+m.Counter("jobs_processed", "Total jobs processed")
+m.Inc("jobs_processed")
+
+// Gauge
+m.Gauge("active_connections", "Active connections")
+m.Set("active_connections", 42)
+
+// Histogram
+m.Histogram("job_duration", "Job duration", buckets)
+m.Observe("job_duration", 1.5)
+```
+
+## Default Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `http_requests_total` | Counter | Total requests |
+| `http_request_duration_seconds` | Histogram | Request latency |
+| `http_requests_in_flight` | Gauge | Active requests |
+
+## API Reference
+
+### Functions
+
+```go
+// New creates metrics collector
+func New(opts ...Options) *Metrics
+
+// Middleware returns metrics middleware
+func (m *Metrics) Middleware() mizu.Middleware
+
+// Handler returns metrics HTTP handler
+func (m *Metrics) Handler() mizu.Handler
+
+// Custom metrics
+func (m *Metrics) Counter(name, help string)
+func (m *Metrics) Gauge(name, help string)
+func (m *Metrics) Histogram(name, help string, buckets []float64)
+func (m *Metrics) Inc(name string)
+func (m *Metrics) Set(name string, value float64)
+func (m *Metrics) Observe(name string, value float64)
+```
+
+## Best Practices
+
+- Use meaningful metric names
+- Add labels for dimensions
+- Set appropriate histogram buckets
+- Monitor metric cardinality
+
+## Related Middlewares
+
+- [prometheus](/middlewares/prometheus) - Prometheus format
+- [timing](/middlewares/timing) - Server-Timing header
+- [healthcheck](/middlewares/healthcheck) - Health checks

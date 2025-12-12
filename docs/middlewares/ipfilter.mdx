@@ -1,0 +1,230 @@
+---
+title: "IP Filter"
+description: "IP whitelist and blacklist middleware for access control."
+---
+
+## Overview
+
+The `ipfilter` middleware filters requests based on client IP addresses. Use it to allow or deny access from specific IPs or IP ranges (CIDR notation).
+
+Use it when you need:
+- Whitelist access to admin panels
+- Block known malicious IPs
+- Restrict access to internal networks
+- Geo-blocking based on IP ranges
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/ipfilter"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Allow only specific IPs
+app.Use(ipfilter.Allow("192.168.1.0/24", "10.0.0.1"))
+
+// Block specific IPs
+app.Use(ipfilter.Deny("192.168.1.100", "10.0.0.0/8"))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `AllowList` | `[]string` | - | IPs/CIDRs to allow |
+| `DenyList` | `[]string` | - | IPs/CIDRs to deny |
+| `DenyByDefault` | `bool` | `false` | Deny unless in allow list |
+| `TrustProxy` | `bool` | `false` | Use X-Forwarded-For |
+| `ErrorHandler` | `func(*mizu.Ctx) error` | - | Custom denial handler |
+
+## Examples
+
+### Whitelist Mode
+
+Only allow specific IPs, deny everything else:
+
+```go
+app.Use(ipfilter.Allow(
+    "192.168.1.0/24",  // Office network
+    "10.0.0.5",        // Specific server
+    "203.0.113.50",    // Remote developer
+))
+```
+
+### Blacklist Mode
+
+Allow everything except specific IPs:
+
+```go
+app.Use(ipfilter.Deny(
+    "192.168.1.100",   // Blocked user
+    "10.0.0.0/8",      // Blocked network
+))
+```
+
+### Combined Allow and Deny
+
+```go
+app.Use(ipfilter.New(ipfilter.Options{
+    AllowList: []string{"192.168.1.0/24"},
+    DenyList:  []string{"192.168.1.100"},  // Even within allowed range
+}))
+```
+
+### Localhost Only
+
+```go
+// Only allow localhost connections
+app.Use(ipfilter.Localhost())
+```
+
+### Private Networks Only
+
+```go
+// Only allow private network IPs
+app.Use(ipfilter.Private())
+```
+
+### Behind a Proxy
+
+```go
+app.Use(ipfilter.New(ipfilter.Options{
+    AllowList:  []string{"203.0.113.0/24"},
+    TrustProxy: true, // Use X-Forwarded-For header
+}))
+```
+
+### Custom Error Handler
+
+```go
+app.Use(ipfilter.New(ipfilter.Options{
+    AllowList:     []string{"192.168.1.0/24"},
+    DenyByDefault: true,
+    ErrorHandler: func(c *mizu.Ctx) error {
+        return c.JSON(403, map[string]string{
+            "error": "Access denied from your location",
+            "ip":    c.ClientIP(),
+        })
+    },
+}))
+```
+
+### Route-Specific Filtering
+
+```go
+// Public routes
+app.Get("/", publicHandler)
+app.Get("/api", apiHandler)
+
+// Admin routes - localhost only
+adminFilter := ipfilter.Localhost()
+app.Get("/admin", adminHandler, adminFilter)
+app.Post("/admin/config", configHandler, adminFilter)
+```
+
+### Group Filtering
+
+```go
+admin := app.Group("/admin")
+admin.Use(ipfilter.Allow("192.168.1.0/24"))
+
+admin.Get("/", adminDashboard)
+admin.Get("/users", listUsers)
+```
+
+### Dynamic IP List
+
+```go
+func dynamicFilter() mizu.Middleware {
+    var blockedIPs sync.Map
+
+    // Background goroutine to update blocked IPs
+    go func() {
+        for {
+            ips := fetchBlockedIPs() // From database/API
+            for _, ip := range ips {
+                blockedIPs.Store(ip, true)
+            }
+            time.Sleep(5 * time.Minute)
+        }
+    }()
+
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            if _, blocked := blockedIPs.Load(c.ClientIP()); blocked {
+                return c.Text(403, "Forbidden")
+            }
+            return next(c)
+        }
+    }
+}
+```
+
+## API Reference
+
+### Functions
+
+```go
+// Allow creates whitelist middleware (deny by default)
+func Allow(ips ...string) mizu.Middleware
+
+// Deny creates blacklist middleware
+func Deny(ips ...string) mizu.Middleware
+
+// New creates middleware with full options
+func New(opts Options) mizu.Middleware
+
+// Private allows only private network IPs
+func Private() mizu.Middleware
+
+// Localhost allows only localhost
+func Localhost() mizu.Middleware
+```
+
+## CIDR Notation
+
+The middleware supports both single IPs and CIDR notation:
+
+| Format | Description | Example |
+|--------|-------------|---------|
+| Single IP | Exact match | `192.168.1.100` |
+| IPv4 CIDR | Network range | `192.168.1.0/24` |
+| IPv6 | IPv6 address | `::1` |
+| IPv6 CIDR | IPv6 range | `fc00::/7` |
+
+### Common CIDR Blocks
+
+```go
+"10.0.0.0/8"       // 10.x.x.x (Class A private)
+"172.16.0.0/12"    // 172.16-31.x.x (Class B private)
+"192.168.0.0/16"   // 192.168.x.x (Class C private)
+"127.0.0.0/8"      // Localhost
+"0.0.0.0/0"        // All IPv4
+"::/0"             // All IPv6
+```
+
+## Security Considerations
+
+1. **Proxy Headers** - Only enable `TrustProxy` if behind a trusted proxy
+2. **IP Spoofing** - X-Forwarded-For can be spoofed if not behind trusted proxy
+3. **IPv6** - Consider both IPv4 and IPv6 addresses
+4. **VPNs/Proxies** - Users may bypass IP restrictions using VPNs
+
+## Best Practices
+
+- Use CIDR notation for ranges to simplify management
+- Enable `TrustProxy` only behind trusted load balancers
+- Combine with other authentication for sensitive areas
+- Log denied attempts for security monitoring
+
+## Related Middlewares
+
+- [ratelimit](/middlewares/ratelimit) - Rate limiting by IP
+- [honeypot](/middlewares/honeypot) - Detect malicious IPs
+- [realip](/middlewares/realip) - Extract real client IP

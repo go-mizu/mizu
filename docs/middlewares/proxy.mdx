@@ -1,0 +1,128 @@
+---
+title: "Proxy"
+description: "Reverse proxy middleware for forwarding requests to upstream servers."
+---
+
+## Overview
+
+The `proxy` middleware provides reverse proxy functionality, forwarding requests to upstream servers. It supports load balancing, request modification, and response handling.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/proxy"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Forward all requests to upstream
+app.Use(proxy.New("http://backend:8080"))
+```
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Target` | `*url.URL` | required | Upstream server URL |
+| `Rewrite` | `func(string) string` | - | Path rewriter |
+| `ModifyRequest` | `func(*http.Request)` | - | Request modifier |
+| `ModifyResponse` | `func(*http.Response) error` | - | Response modifier |
+| `Transport` | `http.RoundTripper` | Default | HTTP transport |
+| `Timeout` | `time.Duration` | `30s` | Request timeout |
+| `PreserveHost` | `bool` | `false` | Keep original Host header |
+| `ErrorHandler` | `func(*mizu.Ctx, error) error` | - | Error handler |
+
+## Examples
+
+### Basic Proxy
+
+```go
+app.Get("/api/*", nil, proxy.New("http://api-server:3000"))
+```
+
+### Path Rewriting
+
+```go
+app.Use(proxy.WithOptions(proxy.Options{
+    Target: mustParseURL("http://backend:8080"),
+    Rewrite: func(path string) string {
+        return strings.TrimPrefix(path, "/api/v1")
+    },
+}))
+```
+
+### Load Balancing
+
+```go
+app.Use(proxy.Balancer([]string{
+    "http://server1:8080",
+    "http://server2:8080",
+    "http://server3:8080",
+}))
+```
+
+### Request Modification
+
+```go
+app.Use(proxy.WithOptions(proxy.Options{
+    Target: mustParseURL("http://backend:8080"),
+    ModifyRequest: func(req *http.Request) {
+        req.Header.Set("X-Source", "gateway")
+        req.Header.Del("Authorization") // Strip auth
+    },
+}))
+```
+
+### Response Modification
+
+```go
+app.Use(proxy.WithOptions(proxy.Options{
+    Target: mustParseURL("http://backend:8080"),
+    ModifyResponse: func(resp *http.Response) error {
+        resp.Header.Set("X-Proxy", "mizu")
+        return nil
+    },
+}))
+```
+
+### Preserve Host Header
+
+```go
+app.Use(proxy.WithOptions(proxy.Options{
+    Target:       mustParseURL("http://backend:8080"),
+    PreserveHost: true,
+}))
+```
+
+### Custom Timeout
+
+```go
+app.Use(proxy.WithOptions(proxy.Options{
+    Target:  mustParseURL("http://backend:8080"),
+    Timeout: 60 * time.Second,
+}))
+```
+
+## API Reference
+
+```go
+func New(target string) mizu.Middleware
+func WithOptions(opts Options) mizu.Middleware
+func Balancer(targets []string) mizu.Middleware
+```
+
+## Headers Added
+
+| Header | Value |
+|--------|-------|
+| `X-Forwarded-For` | Client IP chain |
+| `X-Forwarded-Host` | Original host |
+| `X-Forwarded-Proto` | http or https |
+
+## Related Middlewares
+
+- [forwarded](/middlewares/forwarded) - Parse forwarded headers
+- [realip](/middlewares/realip) - Extract real client IP

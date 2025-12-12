@@ -1,0 +1,130 @@
+---
+title: "Prometheus"
+description: "Prometheus metrics endpoint middleware for monitoring."
+---
+
+## Overview
+
+The `prometheus` middleware exposes metrics in Prometheus format, enabling integration with Prometheus monitoring systems.
+
+Use it when you need:
+- Prometheus monitoring
+- Grafana dashboards
+- AlertManager integration
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/prometheus"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Collect metrics
+app.Use(prometheus.New())
+
+// Expose endpoint
+app.Get("/metrics", prometheus.Handler())
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Namespace` | `string` | `""` | Metric namespace |
+| `Subsystem` | `string` | `""` | Metric subsystem |
+| `Buckets` | `[]float64` | Standard | Latency buckets |
+| `Skip` | `func(*mizu.Ctx) bool` | `nil` | Skip paths |
+
+## Examples
+
+### Basic Setup
+
+```go
+app.Use(prometheus.New())
+app.Get("/metrics", prometheus.Handler())
+```
+
+### With Namespace
+
+```go
+app.Use(prometheus.New(prometheus.Options{
+    Namespace: "myapp",
+    Subsystem: "api",
+}))
+```
+
+### Skip Metrics Endpoint
+
+```go
+app.Use(prometheus.New(prometheus.Options{
+    Skip: func(c *mizu.Ctx) bool {
+        return c.Request().URL.Path == "/metrics"
+    },
+}))
+```
+
+### Custom Labels
+
+```go
+app.Use(prometheus.New(prometheus.Options{
+    Labels: func(c *mizu.Ctx) map[string]string {
+        return map[string]string{
+            "service": "api",
+            "version": "1.0",
+        }
+    },
+}))
+```
+
+## Default Metrics
+
+```
+# HELP http_requests_total Total HTTP requests
+# TYPE http_requests_total counter
+http_requests_total{method="GET",path="/api",status="200"} 1234
+
+# HELP http_request_duration_seconds Request latency
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_bucket{...}
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates Prometheus middleware
+func New(opts ...Options) mizu.Middleware
+
+// Handler returns metrics handler
+func Handler() mizu.Handler
+```
+
+## Prometheus Config
+
+```yaml
+scrape_configs:
+  - job_name: 'myapp'
+    static_configs:
+      - targets: ['localhost:8080']
+    metrics_path: '/metrics'
+```
+
+## Best Practices
+
+- Use consistent naming
+- Avoid high cardinality labels
+- Skip health/metrics endpoints
+- Set appropriate scrape interval
+
+## Related Middlewares
+
+- [metrics](/middlewares/metrics) - Custom metrics
+- [healthcheck](/middlewares/healthcheck) - Health checks
+- [otel](/middlewares/otel) - OpenTelemetry

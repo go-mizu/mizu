@@ -1,0 +1,172 @@
+---
+title: "Idempotency"
+description: "Idempotency key middleware for safe request retries and duplicate prevention."
+---
+
+## Overview
+
+The `idempotency` middleware ensures that repeated requests with the same idempotency key return the same response, preventing duplicate operations like double charges or duplicate records.
+
+Use it when you need:
+- Safe payment processing retries
+- Duplicate request prevention
+- Reliable webhook handling
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/idempotency"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Enable idempotency
+app.Use(idempotency.New())
+
+app.Post("/payments", func(c *mizu.Ctx) error {
+    // This will only execute once per idempotency key
+    result := processPayment()
+    return c.JSON(200, result)
+})
+```
+
+Client sends:
+```
+POST /payments
+Idempotency-Key: unique-key-123
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `KeyHeader` | `string` | `"Idempotency-Key"` | Header name for key |
+| `Methods` | `[]string` | `["POST", "PUT", "PATCH"]` | Methods to track |
+| `TTL` | `time.Duration` | `24h` | How long to store responses |
+| `KeyGenerator` | `func(string, *mizu.Ctx) string` | Identity | Custom key generation |
+
+## Examples
+
+### Basic Usage
+
+```go
+app.Use(idempotency.New())
+```
+
+### Custom Header
+
+```go
+app.Use(idempotency.WithOptions(idempotency.Options{
+    KeyHeader: "X-Request-Id",
+}))
+```
+
+### Specific Methods Only
+
+```go
+app.Use(idempotency.WithOptions(idempotency.Options{
+    Methods: []string{http.MethodPost}, // Only POST
+}))
+```
+
+### User-Scoped Keys
+
+```go
+app.Use(idempotency.WithOptions(idempotency.Options{
+    KeyGenerator: func(key string, c *mizu.Ctx) string {
+        userID := c.Request().Header.Get("X-User-ID")
+        return userID + ":" + key
+    },
+}))
+```
+
+### Custom Store
+
+```go
+store := idempotency.NewMemoryStore()
+defer store.Close()
+
+app.Use(idempotency.WithStore(store, idempotency.Options{}))
+```
+
+## How It Works
+
+1. Client sends request with `Idempotency-Key` header
+2. Middleware checks if key exists in store
+3. If exists: returns cached response with `Idempotent-Replayed: true`
+4. If not: executes handler, caches response, returns normally
+5. Subsequent requests with same key get cached response
+
+## API Reference
+
+### Functions
+
+```go
+// New creates idempotency middleware
+func New() mizu.Middleware
+
+// WithOptions creates middleware with configuration
+func WithOptions(opts Options) mizu.Middleware
+
+// WithStore creates middleware with custom store
+func WithStore(store Store, opts Options) mizu.Middleware
+
+// NewMemoryStore creates in-memory response store
+func NewMemoryStore() *MemoryStore
+```
+
+### Store Interface
+
+```go
+type Store interface {
+    Get(key string) (*Response, error)
+    Set(key string, resp *Response) error
+    Delete(key string) error
+}
+
+type Response struct {
+    StatusCode int
+    Headers    http.Header
+    Body       []byte
+    ExpiresAt  time.Time
+}
+```
+
+## Response Headers
+
+| Header | Description |
+|--------|-------------|
+| `Idempotent-Replayed: true` | Response was replayed from cache |
+
+## Best Practices
+
+- Always use idempotency keys for payment operations
+- Generate unique keys client-side (UUIDs work well)
+- Include user context in key generation for multi-tenant apps
+- Set appropriate TTL based on your use case
+- Use distributed store (Redis) for multi-instance deployments
+
+## Client Example
+
+```javascript
+// JavaScript client
+const response = await fetch('/api/payments', {
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': crypto.randomUUID()
+    },
+    body: JSON.stringify({ amount: 100 })
+});
+```
+
+## Related Middlewares
+
+- [requestid](/middlewares/requestid) - Request ID generation
+- [retry](/middlewares/retry) - Automatic retries
+- [ratelimit](/middlewares/ratelimit) - Rate limiting

@@ -1,0 +1,140 @@
+---
+title: "Envelope"
+description: "Response envelope middleware for consistent API response structure."
+---
+
+## Overview
+
+The `envelope` middleware wraps all responses in a consistent structure, adding metadata like status, pagination, and timestamps.
+
+Use it when you need:
+- Consistent API responses
+- Response metadata
+- Standardized error format
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/envelope"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Use(envelope.New())
+
+app.Get("/users", func(c *mizu.Ctx) error {
+    return c.JSON(200, users)
+})
+// Response: {"success": true, "data": [...users]}
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `SuccessKey` | `string` | `"success"` | Success field name |
+| `DataKey` | `string` | `"data"` | Data field name |
+| `ErrorKey` | `string` | `"error"` | Error field name |
+| `IncludeTimestamp` | `bool` | `false` | Add timestamp |
+| `IncludeRequestID` | `bool` | `false` | Add request ID |
+
+## Examples
+
+### Default Envelope
+
+```go
+app.Use(envelope.New())
+// Success: {"success": true, "data": {...}}
+// Error: {"success": false, "error": "message"}
+```
+
+### With Metadata
+
+```go
+app.Use(envelope.WithOptions(envelope.Options{
+    IncludeTimestamp: true,
+    IncludeRequestID: true,
+}))
+// {"success": true, "data": {...}, "timestamp": "...", "request_id": "..."}
+```
+
+### Custom Structure
+
+```go
+app.Use(envelope.WithOptions(envelope.Options{
+    SuccessKey: "ok",
+    DataKey:    "result",
+    ErrorKey:   "message",
+}))
+// {"ok": true, "result": {...}}
+```
+
+### With Pagination
+
+```go
+app.Use(envelope.New())
+
+app.Get("/users", func(c *mizu.Ctx) error {
+    envelope.SetMeta(c, map[string]any{
+        "page":       1,
+        "per_page":   20,
+        "total":      100,
+        "total_pages": 5,
+    })
+    return c.JSON(200, users)
+})
+// {"success": true, "data": [...], "meta": {"page": 1, ...}}
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates envelope middleware
+func New() mizu.Middleware
+
+// WithOptions creates with configuration
+func WithOptions(opts Options) mizu.Middleware
+
+// SetMeta adds metadata to response
+func SetMeta(c *mizu.Ctx, meta map[string]any)
+```
+
+## Response Format
+
+### Success Response
+```json
+{
+    "success": true,
+    "data": { ... },
+    "meta": { ... }
+}
+```
+
+### Error Response
+```json
+{
+    "success": false,
+    "error": "Error message",
+    "code": "ERROR_CODE"
+}
+```
+
+## Best Practices
+
+- Use consistent structure across APIs
+- Include relevant metadata
+- Document envelope format
+- Handle nested errors properly
+
+## Related Middlewares
+
+- [transformer](/middlewares/transformer) - Response transformation
+- [requestid](/middlewares/requestid) - Request IDs
+- [errorpage](/middlewares/errorpage) - Error pages

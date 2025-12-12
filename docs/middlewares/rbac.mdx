@@ -1,0 +1,170 @@
+---
+title: "RBAC"
+description: "Role-based access control middleware for authorization."
+---
+
+## Overview
+
+The `rbac` middleware provides role-based access control, allowing you to restrict routes based on user roles and permissions.
+
+Use it when you need:
+- Role-based route protection
+- Permission-based access control
+- Multi-level authorization
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/rbac"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Get user role from context
+getRoles := func(c *mizu.Ctx) []string {
+    user := c.Get("user").(User)
+    return user.Roles
+}
+
+// Require admin role
+adminOnly := rbac.RequireRole(getRoles, "admin")
+
+app.Get("/admin", adminHandler, adminOnly)
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `GetRoles` | `func(*mizu.Ctx) []string` | Function to get user roles |
+| `GetPermissions` | `func(*mizu.Ctx) []string` | Function to get permissions |
+| `ErrorHandler` | `func(*mizu.Ctx) error` | Custom 403 handler |
+
+## Examples
+
+### Simple Role Check
+
+```go
+getRoles := func(c *mizu.Ctx) []string {
+    claims := jwt.GetClaims(c)
+    return claims["roles"].([]string)
+}
+
+// Single role
+app.Get("/admin", handler, rbac.RequireRole(getRoles, "admin"))
+
+// Any of multiple roles
+app.Get("/dashboard", handler, rbac.RequireAnyRole(getRoles, "admin", "manager"))
+
+// All roles required
+app.Get("/super", handler, rbac.RequireAllRoles(getRoles, "admin", "superuser"))
+```
+
+### Permission-Based
+
+```go
+getPerms := func(c *mizu.Ctx) []string {
+    return getUserPermissions(c)
+}
+
+// Single permission
+app.Post("/users", createUser, rbac.RequirePermission(getPerms, "users:create"))
+
+// Multiple permissions
+app.Delete("/users/:id", deleteUser, rbac.RequireAllPermissions(getPerms, "users:delete", "admin:access"))
+```
+
+### Hierarchical Roles
+
+```go
+hierarchy := rbac.NewHierarchy()
+hierarchy.Add("superadmin", "admin", "user")
+hierarchy.Add("admin", "moderator", "user")
+hierarchy.Add("moderator", "user")
+
+// superadmin and admin can access
+app.Get("/manage", handler, rbac.RequireRoleWithHierarchy(getRoles, hierarchy, "admin"))
+```
+
+### Custom Error Handler
+
+```go
+app.Use(rbac.WithOptions(rbac.Options{
+    GetRoles: getRoles,
+    ErrorHandler: func(c *mizu.Ctx) error {
+        return c.JSON(403, map[string]string{
+            "error": "You don't have permission to access this resource",
+        })
+    },
+}))
+```
+
+### Route Groups
+
+```go
+// Admin routes
+admin := app.Group("/admin")
+admin.Use(rbac.RequireRole(getRoles, "admin"))
+admin.Get("/users", listUsers)
+admin.Post("/users", createUser)
+
+// Manager routes
+manager := app.Group("/manager")
+manager.Use(rbac.RequireAnyRole(getRoles, "admin", "manager"))
+manager.Get("/reports", viewReports)
+```
+
+## API Reference
+
+### Functions
+
+```go
+// RequireRole requires a specific role
+func RequireRole(getRoles func(*mizu.Ctx) []string, role string) mizu.Middleware
+
+// RequireAnyRole requires any of the specified roles
+func RequireAnyRole(getRoles func(*mizu.Ctx) []string, roles ...string) mizu.Middleware
+
+// RequireAllRoles requires all specified roles
+func RequireAllRoles(getRoles func(*mizu.Ctx) []string, roles ...string) mizu.Middleware
+
+// RequirePermission requires a specific permission
+func RequirePermission(getPerms func(*mizu.Ctx) []string, perm string) mizu.Middleware
+
+// RequireAllPermissions requires all permissions
+func RequireAllPermissions(getPerms func(*mizu.Ctx) []string, perms ...string) mizu.Middleware
+
+// WithOptions creates middleware with configuration
+func WithOptions(opts Options) mizu.Middleware
+```
+
+### Hierarchy
+
+```go
+// NewHierarchy creates role hierarchy
+func NewHierarchy() *Hierarchy
+
+// Add defines parent-child relationships
+func (h *Hierarchy) Add(parent string, children ...string)
+
+// RequireRoleWithHierarchy checks against hierarchy
+func RequireRoleWithHierarchy(getRoles func(*mizu.Ctx) []string, h *Hierarchy, role string) mizu.Middleware
+```
+
+## Best Practices
+
+- Use JWT claims or session for role storage
+- Implement role hierarchy for complex permissions
+- Cache permission checks for performance
+- Log authorization failures for security monitoring
+
+## Related Middlewares
+
+- [jwt](/middlewares/jwt) - JWT authentication
+- [basicauth](/middlewares/basicauth) - Basic authentication
+- [keyauth](/middlewares/keyauth) - API key authentication

@@ -1,0 +1,147 @@
+---
+title: "Logger"
+description: "Request logging middleware with customizable format and output."
+---
+
+## Overview
+
+The `logger` middleware logs HTTP requests with configurable format, output destination, and filtering. It captures method, path, status, latency, and custom fields.
+
+Use it when you need:
+- HTTP request logging
+- Access logs for debugging
+- Request timing metrics
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/logger"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Default logger (stdout)
+app.Use(logger.New())
+
+app.Get("/", func(c *mizu.Ctx) error {
+    return c.Text(200, "Hello!")
+})
+// Output: 2024/01/15 10:30:00 | 200 | 1.2ms | GET /
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Output` | `io.Writer` | `os.Stdout` | Log output destination |
+| `Format` | `string` | Default format | Log format template |
+| `Skip` | `func(*mizu.Ctx) bool` | `nil` | Skip logging for requests |
+
+### Format Tags
+
+| Tag | Description |
+|-----|-------------|
+| `${method}` | HTTP method |
+| `${path}` | Request path |
+| `${status}` | Response status code |
+| `${latency}` | Request duration |
+| `${ip}` | Client IP address |
+| `${host}` | Request host |
+| `${protocol}` | HTTP protocol |
+| `${referer}` | Referer header |
+| `${user_agent}` | User-Agent header |
+| `${bytes_out}` | Response size |
+| `${query}` | Query string |
+| `${header:X-Name}` | Custom header value |
+
+## Examples
+
+### Default Logger
+
+```go
+app.Use(logger.New())
+```
+
+### Custom Format
+
+```go
+app.Use(logger.WithOptions(logger.Options{
+    Format: "[${method}] ${path} -> ${status}\n",
+}))
+// Output: [GET] /api/users -> 200
+```
+
+### JSON Format
+
+```go
+app.Use(logger.WithOptions(logger.Options{
+    Format: `{"method":"${method}","path":"${path}","status":${status},"latency":"${latency}"}` + "\n",
+}))
+```
+
+### Write to File
+
+```go
+file, _ := os.OpenFile("access.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+
+app.Use(logger.WithOptions(logger.Options{
+    Output: file,
+}))
+```
+
+### Skip Health Checks
+
+```go
+app.Use(logger.WithOptions(logger.Options{
+    Skip: func(c *mizu.Ctx) bool {
+        return c.Request().URL.Path == "/health"
+    },
+}))
+```
+
+### Include Request ID
+
+```go
+app.Use(logger.WithOptions(logger.Options{
+    Format: "${header:X-Request-ID} | ${method} ${path} | ${status}\n",
+}))
+```
+
+### Full Access Log
+
+```go
+app.Use(logger.WithOptions(logger.Options{
+    Format: `${ip} - [${time}] "${method} ${path} ${protocol}" ${status} ${bytes_out} "${referer}" "${user_agent}"` + "\n",
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates logger middleware with defaults
+func New() mizu.Middleware
+
+// WithOptions creates logger middleware with configuration
+func WithOptions(opts Options) mizu.Middleware
+```
+
+## Best Practices
+
+- Skip logging for health check endpoints
+- Use structured (JSON) format for log aggregation
+- Include request IDs for tracing
+- Log to stderr in containers for proper log handling
+
+## Related Middlewares
+
+- [requestid](/middlewares/requestid) - Request ID generation
+- [requestlog](/middlewares/requestlog) - Detailed request logging
+- [audit](/middlewares/audit) - Audit logging
+- [timing](/middlewares/timing) - Server-Timing header

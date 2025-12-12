@@ -1,0 +1,95 @@
+---
+title: "Concurrency"
+description: "Concurrency limiting middleware for controlling parallel request processing."
+---
+
+## Overview
+
+The `concurrency` middleware limits the number of requests processed in parallel, preventing resource exhaustion and ensuring stable performance.
+
+Use it when you need:
+- Limit CPU-intensive operations
+- Control database connection usage
+- Prevent memory exhaustion
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/concurrency"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Max 50 concurrent requests
+app.Use(concurrency.New(50))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Limit` | `int` | Required | Max concurrent |
+| `ErrorHandler` | `func(*mizu.Ctx) error` | - | Custom error handler |
+
+## Examples
+
+### Basic Limit
+
+```go
+app.Use(concurrency.New(50))
+```
+
+### Custom Error
+
+```go
+app.Use(concurrency.WithOptions(concurrency.Options{
+    Limit: 50,
+    ErrorHandler: func(c *mizu.Ctx) error {
+        return c.JSON(503, map[string]string{
+            "error": "Too many concurrent requests",
+        })
+    },
+}))
+```
+
+### Per-Route Limits
+
+```go
+// Heavy endpoints
+heavy := app.Group("/heavy")
+heavy.Use(concurrency.New(5))
+
+// Light endpoints
+light := app.Group("/api")
+light.Use(concurrency.New(100))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates concurrency limiter
+func New(limit int) mizu.Middleware
+
+// WithOptions creates with configuration
+func WithOptions(opts Options) mizu.Middleware
+```
+
+## Best Practices
+
+- Set limits based on resource capacity
+- Monitor concurrent request counts
+- Use different limits for different workloads
+- Combine with timeout for hung requests
+
+## Related Middlewares
+
+- [bulkhead](/middlewares/bulkhead) - Bulkhead pattern
+- [ratelimit](/middlewares/ratelimit) - Rate limiting
+- [timeout](/middlewares/timeout) - Request timeout

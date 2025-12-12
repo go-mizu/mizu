@@ -1,0 +1,189 @@
+---
+title: "Session"
+description: "Server-side session management middleware with cookie-based tracking."
+---
+
+## Overview
+
+The `session` middleware provides server-side session management with secure cookie-based tracking. Sessions can store user data across requests with configurable storage backends.
+
+Use it when you need:
+- User login sessions
+- Shopping cart persistence
+- Multi-step form wizards
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/session"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Enable sessions
+app.Use(session.New(session.Options{}))
+
+app.Get("/login", func(c *mizu.Ctx) error {
+    sess := session.Get(c)
+    sess.Set("user_id", "123")
+    return c.Text(200, "Logged in")
+})
+
+app.Get("/profile", func(c *mizu.Ctx) error {
+    sess := session.Get(c)
+    userID, _ := sess.Get("user_id").(string)
+    return c.Text(200, "User: "+userID)
+})
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `CookieName` | `string` | `"session_id"` | Session cookie name |
+| `CookiePath` | `string` | `"/"` | Cookie path |
+| `CookieDomain` | `string` | `""` | Cookie domain |
+| `CookieSecure` | `bool` | `false` | HTTPS only |
+| `CookieHTTPOnly` | `bool` | `true` | HTTP only (no JS access) |
+| `SameSite` | `http.SameSite` | `Lax` | SameSite policy |
+| `MaxAge` | `time.Duration` | `24h` | Session lifetime |
+
+## Examples
+
+### Basic Sessions
+
+```go
+app.Use(session.New(session.Options{}))
+
+app.Post("/login", func(c *mizu.Ctx) error {
+    sess := session.Get(c)
+    sess.Set("user", "john")
+    sess.Set("role", "admin")
+    return c.JSON(200, map[string]string{"status": "logged in"})
+})
+```
+
+### Secure Cookie Settings
+
+```go
+app.Use(session.New(session.Options{
+    CookieName:   "my_app_session",
+    CookieSecure: true,
+    CookiePath:   "/",
+    SameSite:     http.SameSiteStrictMode,
+    MaxAge:       7 * 24 * time.Hour, // 1 week
+}))
+```
+
+### Custom Store
+
+```go
+store := session.NewMemoryStore()
+
+app.Use(session.WithStore(store, session.Options{}))
+```
+
+### Session Operations
+
+```go
+app.Get("/session", func(c *mizu.Ctx) error {
+    sess := session.Get(c)
+
+    // Set value
+    sess.Set("key", "value")
+
+    // Get value
+    val := sess.Get("key")
+
+    // Delete value
+    sess.Delete("key")
+
+    // Clear all values
+    sess.Clear()
+
+    // Get session ID
+    id := sess.ID
+
+    return c.Text(200, id)
+})
+```
+
+### Logout
+
+```go
+app.Post("/logout", func(c *mizu.Ctx) error {
+    sess := session.Get(c)
+    sess.Clear()
+    return c.JSON(200, map[string]string{"status": "logged out"})
+})
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates session middleware
+func New(opts Options) mizu.Middleware
+
+// WithStore creates middleware with custom store
+func WithStore(store Store, opts Options) mizu.Middleware
+
+// Get returns session from context
+func Get(c *mizu.Ctx) *Session
+
+// FromContext returns session from context (alias)
+func FromContext(c *mizu.Ctx) *Session
+
+// NewMemoryStore creates in-memory session store
+func NewMemoryStore() *MemoryStore
+```
+
+### Session Methods
+
+```go
+type Session struct {
+    ID string
+}
+
+func (s *Session) Set(key string, value any)
+func (s *Session) Get(key string) any
+func (s *Session) Delete(key string)
+func (s *Session) Clear()
+```
+
+### Store Interface
+
+```go
+type Store interface {
+    Get(id string) (*Session, error)
+    Save(sess *Session) error
+    Delete(id string) error
+}
+```
+
+## Security Considerations
+
+1. **Use HTTPS** - Always set `CookieSecure: true` in production
+2. **HTTPOnly cookies** - Keep default to prevent XSS access
+3. **Strict SameSite** - Use `SameSiteStrictMode` for sensitive apps
+4. **Regenerate ID** - After login to prevent session fixation
+5. **Set expiration** - Don't use infinite sessions
+
+## Best Practices
+
+- Use secure cookie settings in production
+- Store minimal data in sessions
+- Implement session store cleanup for expired sessions
+- Consider Redis or database store for distributed systems
+
+## Related Middlewares
+
+- [jwt](/middlewares/jwt) - Stateless token authentication
+- [csrf](/middlewares/csrf) - CSRF protection
+- [secure](/middlewares/secure) - Security settings

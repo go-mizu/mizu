@@ -1,0 +1,81 @@
+---
+title: "Slash"
+description: "Trailing slash handling middleware for consistent URLs."
+---
+
+## Overview
+
+The `slash` middleware handles trailing slashes in URLs by adding or removing them with redirects. Use it for URL consistency and SEO.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/slash"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Add trailing slash: /about → /about/
+app.Use(slash.Add())
+
+// Remove trailing slash: /about/ → /about
+app.Use(slash.Remove())
+```
+
+## Functions
+
+| Function | Description |
+|----------|-------------|
+| `Add()` | Add trailing slash (301 redirect) |
+| `AddCode(code)` | Add with custom status code |
+| `Remove()` | Remove trailing slash (301 redirect) |
+| `RemoveCode(code)` | Remove with custom status code |
+
+## Examples
+
+### Add Trailing Slash
+
+```go
+app.Use(slash.Add())
+// /about    → 301 → /about/
+// /contact  → 301 → /contact/
+// /about/   → (no redirect)
+// /         → (no redirect)
+```
+
+### Remove Trailing Slash
+
+```go
+app.Use(slash.Remove())
+// /about/   → 301 → /about
+// /contact/ → 301 → /contact
+// /about    → (no redirect)
+// /         → (no redirect)
+```
+
+### Temporary Redirect
+
+```go
+app.Use(slash.AddCode(302))     // Temporary redirect
+app.Use(slash.RemoveCode(307))  // Preserve HTTP method
+```
+
+## Behavior
+
+- Root path `/` is never modified
+- Query strings are preserved
+- Uses 301 (Permanent) by default
+
+## Best Practices
+
+- Choose one style and be consistent
+- Use 301 for permanent SEO benefit
+- Apply early in middleware chain
+
+## Related Middlewares
+
+- [redirect](/middlewares/redirect) - General redirects
+- [rewrite](/middlewares/rewrite) - URL rewriting

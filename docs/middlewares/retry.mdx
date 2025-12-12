@@ -1,0 +1,128 @@
+---
+title: "Retry"
+description: "Automatic retry middleware for handling transient failures."
+---
+
+## Overview
+
+The `retry` middleware automatically retries failed requests with configurable backoff strategies, handling transient failures gracefully.
+
+Use it when you need:
+- Handle temporary network issues
+- Retry on specific error codes
+- Implement exponential backoff
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/retry"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Retry up to 3 times on 5xx errors
+app.Use(retry.New(3))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `MaxRetries` | `int` | `3` | Maximum retry attempts |
+| `Delay` | `time.Duration` | `100ms` | Initial delay |
+| `MaxDelay` | `time.Duration` | `10s` | Maximum delay |
+| `Multiplier` | `float64` | `2.0` | Backoff multiplier |
+| `RetryOn` | `[]int` | `[500-599]` | Status codes to retry |
+| `RetryIf` | `func(*mizu.Ctx, error) bool` | - | Custom retry condition |
+
+## Examples
+
+### Basic Retry
+
+```go
+app.Use(retry.New(3))
+```
+
+### With Backoff
+
+```go
+app.Use(retry.WithOptions(retry.Options{
+    MaxRetries: 5,
+    Delay:      100 * time.Millisecond,
+    MaxDelay:   5 * time.Second,
+    Multiplier: 2.0, // Exponential backoff
+}))
+```
+
+### Specific Status Codes
+
+```go
+app.Use(retry.WithOptions(retry.Options{
+    MaxRetries: 3,
+    RetryOn:    []int{502, 503, 504}, // Gateway errors only
+}))
+```
+
+### Custom Condition
+
+```go
+app.Use(retry.WithOptions(retry.Options{
+    MaxRetries: 3,
+    RetryIf: func(c *mizu.Ctx, err error) bool {
+        // Retry on timeout errors
+        return errors.Is(err, context.DeadlineExceeded)
+    },
+}))
+```
+
+### Constant Delay
+
+```go
+app.Use(retry.WithOptions(retry.Options{
+    MaxRetries: 3,
+    Delay:      1 * time.Second,
+    Multiplier: 1.0, // No increase
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates retry middleware
+func New(maxRetries int) mizu.Middleware
+
+// WithOptions creates with configuration
+func WithOptions(opts Options) mizu.Middleware
+```
+
+## Backoff Calculation
+
+```
+delay = min(initialDelay * (multiplier ^ attempt), maxDelay)
+```
+
+Example with defaults:
+- Attempt 1: 100ms
+- Attempt 2: 200ms
+- Attempt 3: 400ms
+
+## Best Practices
+
+- Use exponential backoff to prevent thundering herd
+- Set reasonable max retries (3-5)
+- Only retry idempotent operations
+- Add jitter for distributed systems
+- Log retry attempts for debugging
+
+## Related Middlewares
+
+- [circuitbreaker](/middlewares/circuitbreaker) - Circuit breaker
+- [timeout](/middlewares/timeout) - Request timeout
+- [idempotency](/middlewares/idempotency) - Idempotency keys

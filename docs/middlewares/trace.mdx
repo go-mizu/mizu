@@ -1,0 +1,133 @@
+---
+title: "Trace"
+description: "Distributed tracing context middleware for observability."
+---
+
+## Overview
+
+The `trace` middleware propagates distributed tracing context (trace ID, span ID) across service boundaries for observability.
+
+Use it when you need:
+- Distributed tracing
+- Request correlation
+- Service observability
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/trace"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Use(trace.New())
+
+app.Get("/api", func(c *mizu.Ctx) error {
+    traceID := trace.ID(c)
+    log.Printf("Trace: %s", traceID)
+    return c.JSON(200, data)
+})
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `TraceHeader` | `string` | `"X-Trace-ID"` | Trace ID header |
+| `SpanHeader` | `string` | `"X-Span-ID"` | Span ID header |
+| `ParentHeader` | `string` | `"X-Parent-ID"` | Parent span header |
+| `Generator` | `func() string` | UUID | ID generator |
+
+## Examples
+
+### Basic Tracing
+
+```go
+app.Use(trace.New())
+```
+
+### W3C Trace Context
+
+```go
+app.Use(trace.W3C())
+// Uses traceparent header
+```
+
+### Custom Headers
+
+```go
+app.Use(trace.WithOptions(trace.Options{
+    TraceHeader:  "X-Request-ID",
+    SpanHeader:   "X-Span-ID",
+    ParentHeader: "X-Parent-Span-ID",
+}))
+```
+
+### Access Trace Info
+
+```go
+app.Get("/", func(c *mizu.Ctx) error {
+    traceID := trace.ID(c)
+    spanID := trace.SpanID(c)
+    parentID := trace.ParentID(c)
+
+    // Include in logs
+    log.Printf("[%s] Request processed", traceID)
+
+    return c.JSON(200, data)
+})
+```
+
+### Propagate to Downstream
+
+```go
+app.Get("/", func(c *mizu.Ctx) error {
+    // Create HTTP client with trace context
+    req, _ := http.NewRequest("GET", "http://service-b/api", nil)
+    trace.Inject(c, req.Header)
+
+    resp, _ := http.DefaultClient.Do(req)
+    // ...
+})
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates trace middleware
+func New() mizu.Middleware
+
+// W3C creates W3C trace context middleware
+func W3C() mizu.Middleware
+
+// WithOptions creates with configuration
+func WithOptions(opts Options) mizu.Middleware
+
+// Context access
+func ID(c *mizu.Ctx) string
+func SpanID(c *mizu.Ctx) string
+func ParentID(c *mizu.Ctx) string
+
+// Propagation
+func Inject(c *mizu.Ctx, headers http.Header)
+```
+
+## Best Practices
+
+- Use consistent format across services
+- Include trace ID in all logs
+- Propagate to all downstream calls
+- Consider W3C standard for interoperability
+
+## Related Middlewares
+
+- [requestid](/middlewares/requestid) - Request IDs
+- [otel](/middlewares/otel) - OpenTelemetry
+- [logger](/middlewares/logger) - Request logging

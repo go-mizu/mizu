@@ -1,0 +1,117 @@
+---
+title: "Fallback"
+description: "Fallback handler middleware for graceful degradation."
+---
+
+## Overview
+
+The `fallback` middleware provides fallback responses when the primary handler fails, enabling graceful degradation of services.
+
+Use it when you need:
+- Graceful degradation
+- Default responses on failure
+- Service resilience
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/fallback"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Return cached data on error
+app.Use(fallback.New(func(c *mizu.Ctx) error {
+    return c.JSON(200, cachedResponse)
+}))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Handler` | `mizu.Handler` | Required | Fallback handler |
+| `OnError` | `func(error) bool` | All errors | Which errors trigger fallback |
+| `OnStatus` | `[]int` | `[]` | Status codes that trigger fallback |
+
+## Examples
+
+### Basic Fallback
+
+```go
+app.Use(fallback.New(func(c *mizu.Ctx) error {
+    return c.JSON(200, map[string]string{
+        "message": "Service temporarily unavailable",
+        "status":  "degraded",
+    })
+}))
+```
+
+### On Specific Errors
+
+```go
+app.Use(fallback.WithOptions(fallback.Options{
+    Handler: fallbackHandler,
+    OnError: func(err error) bool {
+        return errors.Is(err, ErrDatabaseUnavailable)
+    },
+}))
+```
+
+### On Status Codes
+
+```go
+app.Use(fallback.WithOptions(fallback.Options{
+    Handler:  fallbackHandler,
+    OnStatus: []int{500, 502, 503, 504},
+}))
+```
+
+### Cached Response
+
+```go
+var cachedData atomic.Value
+
+// Update cache periodically
+go func() {
+    for {
+        data := fetchData()
+        cachedData.Store(data)
+        time.Sleep(time.Minute)
+    }
+}()
+
+app.Use(fallback.New(func(c *mizu.Ctx) error {
+    return c.JSON(200, cachedData.Load())
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates fallback middleware
+func New(handler mizu.Handler) mizu.Middleware
+
+// WithOptions creates with configuration
+func WithOptions(opts Options) mizu.Middleware
+```
+
+## Best Practices
+
+- Keep fallback responses lightweight
+- Log when fallback is triggered
+- Monitor fallback rate
+- Use cached data when possible
+
+## Related Middlewares
+
+- [circuitbreaker](/middlewares/circuitbreaker) - Circuit breaker
+- [retry](/middlewares/retry) - Automatic retries
+- [cache](/middlewares/cache) - Response caching

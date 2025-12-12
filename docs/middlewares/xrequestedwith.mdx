@@ -1,0 +1,126 @@
+---
+title: "X-Requested-With"
+description: "X-Requested-With header validation middleware for AJAX request detection."
+---
+
+## Overview
+
+The `xrequestedwith` middleware validates the X-Requested-With header, commonly used to identify AJAX requests and prevent CSRF attacks.
+
+Use it when you need:
+- AJAX request validation
+- CSRF protection layer
+- Request origin verification
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/xrequestedwith"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Require X-Requested-With: XMLHttpRequest
+app.Use(xrequestedwith.New())
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Required` | `bool` | `true` | Require header |
+| `Value` | `string` | `"XMLHttpRequest"` | Expected value |
+| `Methods` | `[]string` | State-changing | Methods to check |
+
+## Examples
+
+### Basic Validation
+
+```go
+app.Use(xrequestedwith.New())
+// Requires: X-Requested-With: XMLHttpRequest
+```
+
+### Custom Value
+
+```go
+app.Use(xrequestedwith.New(xrequestedwith.Options{
+    Value: "MyApp",
+}))
+// Requires: X-Requested-With: MyApp
+```
+
+### Specific Methods
+
+```go
+app.Use(xrequestedwith.New(xrequestedwith.Options{
+    Methods: []string{"POST", "PUT", "DELETE"},
+}))
+```
+
+### Detection Only
+
+```go
+app.Use(xrequestedwith.New(xrequestedwith.Options{
+    Required: false, // Don't reject, just detect
+}))
+
+app.Get("/", func(c *mizu.Ctx) error {
+    if xrequestedwith.IsAJAX(c) {
+        return c.JSON(200, data)
+    }
+    return c.HTML(200, page)
+})
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates X-Requested-With middleware
+func New(opts ...Options) mizu.Middleware
+
+// IsAJAX returns true if AJAX request
+func IsAJAX(c *mizu.Ctx) bool
+```
+
+## Client Usage
+
+```javascript
+// jQuery sets this automatically
+$.ajax({url: '/api', type: 'POST', data: data});
+
+// Fetch/XMLHttpRequest
+fetch('/api', {
+    method: 'POST',
+    headers: {
+        'X-Requested-With': 'XMLHttpRequest'
+    }
+});
+```
+
+## Security Note
+
+While X-Requested-With adds a layer of protection, it should not be the sole CSRF defense. Combine with:
+- CSRF tokens
+- SameSite cookies
+- Origin validation
+
+## Best Practices
+
+- Use as additional security layer
+- Combine with CSRF middleware
+- Don't rely on it alone
+- Document header requirement for clients
+
+## Related Middlewares
+
+- [csrf](/middlewares/csrf) - CSRF protection
+- [cors](/middlewares/cors) - CORS handling
+- [bot](/middlewares/bot) - Bot detection

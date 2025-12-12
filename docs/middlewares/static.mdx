@@ -1,0 +1,164 @@
+---
+title: "Static"
+description: "Static file serving middleware for serving files from the filesystem or embedded FS."
+---
+
+## Overview
+
+The `static` middleware serves static files from a directory or embedded filesystem. It supports index files, directory browsing, and cache control.
+
+Use it when you need:
+- Serve static assets (CSS, JS, images)
+- Serve a web application's static files
+- Serve files from embedded filesystem
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/static"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Serve files from ./public directory
+app.Use(static.New("./public"))
+
+// Or serve from embedded filesystem
+//go:embed static/*
+var staticFS embed.FS
+app.Use(static.WithFS(staticFS))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Root` | `string` | Required | Root directory path |
+| `FS` | `fs.FS` | `nil` | Filesystem to serve from |
+| `Prefix` | `string` | `""` | URL prefix for static files |
+| `Index` | `string` | `"index.html"` | Default index file |
+| `Browse` | `bool` | `false` | Enable directory browsing |
+| `MaxAge` | `int` | `0` | Cache-Control max-age in seconds |
+| `NotFoundHandler` | `func(*mizu.Ctx) error` | `nil` | Custom 404 handler |
+
+## Examples
+
+### Basic File Serving
+
+```go
+app.Use(static.New("./public"))
+```
+
+### With URL Prefix
+
+```go
+app.Use(static.WithOptions(static.Options{
+    Root:   "./public",
+    Prefix: "/static",
+}))
+// Files available at /static/css/style.css, etc.
+```
+
+### From Embedded Filesystem
+
+```go
+//go:embed static/*
+var staticFS embed.FS
+
+app.Use(static.WithFS(staticFS))
+```
+
+### With Cache Control
+
+```go
+app.Use(static.WithOptions(static.Options{
+    Root:   "./public",
+    MaxAge: 86400, // 1 day
+}))
+```
+
+### Directory Browsing
+
+```go
+app.Use(static.WithOptions(static.Options{
+    Root:   "./files",
+    Browse: true,
+}))
+```
+
+### Custom Index File
+
+```go
+app.Use(static.WithOptions(static.Options{
+    Root:  "./public",
+    Index: "default.htm",
+}))
+```
+
+### Custom 404 Handler
+
+```go
+app.Use(static.WithOptions(static.Options{
+    Root: "./public",
+    NotFoundHandler: func(c *mizu.Ctx) error {
+        return c.Text(404, "File not found")
+    },
+}))
+```
+
+### Multiple Static Directories
+
+```go
+// Serve assets with prefix
+app.Use(static.WithOptions(static.Options{
+    Root:   "./assets",
+    Prefix: "/assets",
+}))
+
+// Serve uploads with different prefix
+app.Use(static.WithOptions(static.Options{
+    Root:   "./uploads",
+    Prefix: "/uploads",
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates static middleware for a directory
+func New(root string) mizu.Middleware
+
+// WithFS creates static middleware for an fs.FS
+func WithFS(fsys fs.FS) mizu.Middleware
+
+// WithOptions creates static middleware with full configuration
+func WithOptions(opts Options) mizu.Middleware
+```
+
+## Behavior
+
+- Falls through to next handler if file not found (unless NotFoundHandler set)
+- Automatically serves `index.html` for directory requests
+- Sets appropriate Content-Type based on file extension
+- Supports conditional requests with If-Modified-Since
+
+## Best Practices
+
+- Use embedded filesystem for portable deployments
+- Set appropriate `MaxAge` for caching static assets
+- Use versioned filenames for cache busting
+- Disable directory browsing in production
+
+## Related Middlewares
+
+- [spa](/middlewares/spa) - Single Page Application support
+- [favicon](/middlewares/favicon) - Favicon serving
+- [embed](/middlewares/embed) - Embedded filesystem helpers
+- [cache](/middlewares/cache) - Cache control headers

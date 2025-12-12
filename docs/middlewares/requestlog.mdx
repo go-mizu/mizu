@@ -1,0 +1,139 @@
+---
+title: "Request Log"
+description: "Detailed request logging middleware with structured output."
+---
+
+## Overview
+
+The `requestlog` middleware provides detailed structured logging of HTTP requests with configurable fields and formats.
+
+Use it when you need:
+- Structured request logs
+- Detailed debugging info
+- Log aggregation integration
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/requestlog"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Use(requestlog.New())
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Logger` | `*slog.Logger` | Default | Structured logger |
+| `Level` | `slog.Level` | Info | Log level |
+| `Fields` | `[]string` | Standard | Fields to log |
+| `Skip` | `func(*mizu.Ctx) bool` | `nil` | Skip logging |
+
+## Examples
+
+### Default Logging
+
+```go
+app.Use(requestlog.New())
+```
+
+### With slog
+
+```go
+logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+app.Use(requestlog.WithLogger(logger))
+```
+
+### Custom Fields
+
+```go
+app.Use(requestlog.WithOptions(requestlog.Options{
+    Fields: []string{
+        "method",
+        "path",
+        "status",
+        "latency",
+        "ip",
+        "user_agent",
+    },
+}))
+```
+
+### Skip Health Checks
+
+```go
+app.Use(requestlog.WithOptions(requestlog.Options{
+    Skip: func(c *mizu.Ctx) bool {
+        return c.Request().URL.Path == "/health"
+    },
+}))
+```
+
+### Error Level for Errors
+
+```go
+app.Use(requestlog.WithOptions(requestlog.Options{
+    LevelFunc: func(status int) slog.Level {
+        if status >= 500 {
+            return slog.LevelError
+        }
+        if status >= 400 {
+            return slog.LevelWarn
+        }
+        return slog.LevelInfo
+    },
+}))
+```
+
+## Log Output
+
+```json
+{
+    "time": "2024-01-15T10:30:00Z",
+    "level": "INFO",
+    "msg": "request",
+    "method": "GET",
+    "path": "/api/users",
+    "status": 200,
+    "latency": "1.234ms",
+    "ip": "192.168.1.1",
+    "user_agent": "Mozilla/5.0..."
+}
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates request log middleware
+func New() mizu.Middleware
+
+// WithLogger creates with custom logger
+func WithLogger(logger *slog.Logger) mizu.Middleware
+
+// WithOptions creates with configuration
+func WithOptions(opts Options) mizu.Middleware
+```
+
+## Best Practices
+
+- Use structured logging for aggregation
+- Skip noisy endpoints
+- Include request IDs for correlation
+- Set appropriate log levels
+
+## Related Middlewares
+
+- [logger](/middlewares/logger) - Simple logging
+- [audit](/middlewares/audit) - Audit logging
+- [requestid](/middlewares/requestid) - Request IDs

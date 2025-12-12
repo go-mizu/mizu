@@ -1,0 +1,287 @@
+---
+title: "SSE"
+description: "Server-Sent Events middleware for real-time server-to-client streaming."
+---
+
+## Overview
+
+The `sse` middleware enables Server-Sent Events (SSE) for real-time server-to-client communication. Unlike WebSocket, SSE is unidirectional and uses standard HTTP.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/sse"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Get("/events", sse.New(func(c *mizu.Ctx, client *sse.Client) {
+    // Send events to client
+    client.SendData("Hello!")
+
+    // Keep connection open
+    <-client.Done
+}))
+```
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `BufferSize` | `int` | `10` | Event channel buffer size |
+| `Retry` | `int` | `3000` | Reconnection time in ms |
+
+## Examples
+
+### Basic Usage
+
+```go
+app.Get("/events", sse.New(func(c *mizu.Ctx, client *sse.Client) {
+    // Send simple data events
+    client.SendData("Event 1")
+    client.SendData("Event 2")
+
+    // Wait for client to disconnect
+    <-client.Done
+}))
+```
+
+### Periodic Updates
+
+```go
+app.Get("/time", sse.New(func(c *mizu.Ctx, client *sse.Client) {
+    ticker := time.NewTicker(1 * time.Second)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case t := <-ticker.C:
+            client.SendData(t.Format(time.RFC3339))
+        case <-client.Done:
+            return
+        }
+    }
+}))
+```
+
+### Named Events
+
+```go
+app.Get("/notifications", sse.New(func(c *mizu.Ctx, client *sse.Client) {
+    // Send different event types
+    client.SendEvent("message", "New message received")
+    client.SendEvent("alert", "System alert!")
+    client.SendEvent("update", `{"version": "2.0"}`)
+
+    <-client.Done
+}))
+```
+
+### Full Event Control
+
+```go
+app.Get("/events", sse.New(func(c *mizu.Ctx, client *sse.Client) {
+    // Send event with all fields
+    client.Send(&sse.Event{
+        ID:    "1",
+        Event: "notification",
+        Data:  "You have a new message",
+        Retry: 5000,
+    })
+
+    // Send with ID for resumption
+    client.Send(&sse.Event{
+        ID:   "2",
+        Data: "Important update",
+    })
+
+    <-client.Done
+}))
+```
+
+### Using Broker for Broadcasting
+
+```go
+// Create a broker for managing multiple clients
+broker := sse.NewBroker()
+
+app.Get("/stream", sse.New(func(c *mizu.Ctx, client *sse.Client) {
+    // Register client with broker
+    broker.Register(client)
+
+    // Wait for disconnect
+    <-client.Done
+}))
+
+// Broadcast to all clients from anywhere
+app.Post("/broadcast", func(c *mizu.Ctx) error {
+    message := c.FormValue("message")
+    broker.BroadcastData(message)
+    return c.Text(200, "Sent to "+strconv.Itoa(broker.ClientCount())+" clients")
+})
+```
+
+### Broadcast Named Events
+
+```go
+broker := sse.NewBroker()
+
+// Broadcast different event types
+broker.BroadcastEvent("chat", `{"user": "alice", "message": "Hello!"}`)
+broker.BroadcastEvent("typing", `{"user": "bob"}`)
+broker.BroadcastEvent("presence", `{"user": "carol", "status": "online"}`)
+```
+
+### Custom Options
+
+```go
+app.Get("/events", sse.WithOptions(
+    func(c *mizu.Ctx, client *sse.Client) {
+        // Handler
+    },
+    sse.Options{
+        BufferSize: 50,  // Larger buffer
+        Retry:      5000, // 5 second retry
+    },
+))
+```
+
+### Resume from Last Event ID
+
+```go
+app.Get("/events", sse.New(func(c *mizu.Ctx, client *sse.Client) {
+    // Check if client is resuming
+    lastID := client.ID
+    if lastID != "" {
+        // Send missed events since lastID
+        missedEvents := getEventsSince(lastID)
+        for _, event := range missedEvents {
+            client.Send(event)
+        }
+    }
+
+    // Continue with new events
+    for event := range newEvents {
+        client.Send(&sse.Event{
+            ID:   event.ID,
+            Data: event.Data,
+        })
+    }
+}))
+```
+
+### Real-time Notifications
+
+```go
+broker := sse.NewBroker()
+
+app.Get("/notifications", sse.New(func(c *mizu.Ctx, client *sse.Client) {
+    userID := c.Query("user_id")
+
+    // Register with user-specific logic
+    broker.Register(client)
+
+    // Send welcome event
+    client.SendEvent("connected", `{"status": "ok"}`)
+
+    <-client.Done
+}))
+
+// Send notification from other parts of your app
+func notifyUser(userID string, message string) {
+    broker.BroadcastEvent("notification", message)
+}
+```
+
+## Event Structure
+
+```go
+type Event struct {
+    ID    string // Event ID (for resumption)
+    Event string // Event type name
+    Data  string // Event payload
+    Retry int    // Retry time in ms
+}
+```
+
+## Client Methods
+
+```go
+func (c *Client) Send(event *Event)
+func (c *Client) SendData(data string)
+func (c *Client) SendEvent(eventType, data string)
+func (c *Client) Close()
+```
+
+## Broker Methods
+
+```go
+func NewBroker() *Broker
+func (b *Broker) Register(client *Client)
+func (b *Broker) Broadcast(event *Event)
+func (b *Broker) BroadcastData(data string)
+func (b *Broker) BroadcastEvent(eventType, data string)
+func (b *Broker) ClientCount() int
+```
+
+## API Reference
+
+```go
+func New(handler Handler) mizu.Middleware
+func WithOptions(handler Handler, opts Options) mizu.Middleware
+func NewBroker() *Broker
+
+type Handler func(c *mizu.Ctx, client *Client)
+```
+
+## Client Example (JavaScript)
+
+```javascript
+const events = new EventSource('/events');
+
+// Listen for all events
+events.onmessage = (e) => {
+    console.log('Data:', e.data);
+};
+
+// Listen for specific event types
+events.addEventListener('notification', (e) => {
+    console.log('Notification:', e.data);
+});
+
+events.addEventListener('update', (e) => {
+    const data = JSON.parse(e.data);
+    console.log('Update:', data);
+});
+
+events.onerror = () => {
+    console.log('Connection lost, reconnecting...');
+};
+```
+
+## Event Format
+
+```
+id: 123
+event: notification
+retry: 5000
+data: Hello, World!
+
+```
+
+## Best Practices
+
+- Use event IDs for client resumption
+- Set appropriate retry intervals
+- Close connections when done
+- Use Broker for multi-client scenarios
+- Keep payload sizes reasonable
+- Handle client disconnections gracefully
+
+## Related Middlewares
+
+- [websocket](/middlewares/websocket) - Bidirectional communication
+- [timeout](/middlewares/timeout) - Request timeout

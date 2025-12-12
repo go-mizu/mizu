@@ -1,0 +1,314 @@
+---
+title: "Feature Flags"
+description: "Feature flag middleware for controlled feature rollouts."
+---
+
+## Overview
+
+The `feature` middleware provides feature flag support for controlled rollouts, A/B testing, and gradual feature deployment. It supports static flags, in-memory providers, and custom providers.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/feature"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Static feature flags
+app.Use(feature.New(feature.Flags{
+    "dark_mode":    &feature.Flag{Name: "dark_mode", Enabled: true},
+    "new_checkout": &feature.Flag{Name: "new_checkout", Enabled: false},
+}))
+
+app.Get("/", func(c *mizu.Ctx) error {
+    if feature.IsEnabled(c, "dark_mode") {
+        return c.JSON(200, darkModeResponse)
+    }
+    return c.JSON(200, normalResponse)
+})
+```
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Provider` | `Provider` | Static | Flag provider |
+| `Flags` | `Flags` | - | Static flags map |
+
+## Flag Structure
+
+```go
+type Flag struct {
+    Name        string
+    Enabled     bool
+    Description string
+    Metadata    map[string]any
+}
+```
+
+## Examples
+
+### Static Flags
+
+```go
+app.Use(feature.New(feature.Flags{
+    "feature_a": &feature.Flag{
+        Name:        "feature_a",
+        Enabled:     true,
+        Description: "New dashboard design",
+    },
+    "feature_b": &feature.Flag{
+        Name:    "feature_b",
+        Enabled: false,
+    },
+}))
+```
+
+### Check Flag in Handler
+
+```go
+app.Get("/dashboard", func(c *mizu.Ctx) error {
+    if feature.IsEnabled(c, "new_dashboard") {
+        return renderNewDashboard(c)
+    }
+    return renderOldDashboard(c)
+})
+```
+
+### Get Flag Details
+
+```go
+app.Get("/features", func(c *mizu.Ctx) error {
+    flag := feature.Get(c, "beta_feature")
+    if flag != nil {
+        return c.JSON(200, map[string]any{
+            "name":        flag.Name,
+            "enabled":     flag.Enabled,
+            "description": flag.Description,
+        })
+    }
+    return c.JSON(404, "Feature not found")
+})
+```
+
+### Memory Provider (Dynamic)
+
+```go
+// Create a mutable provider
+provider := feature.NewMemoryProvider()
+
+app.Use(feature.WithProvider(provider))
+
+// Enable/disable flags at runtime
+app.Post("/admin/features/:name/enable", func(c *mizu.Ctx) error {
+    provider.Enable(c.Param("name"))
+    return c.Text(200, "Enabled")
+})
+
+app.Post("/admin/features/:name/disable", func(c *mizu.Ctx) error {
+    provider.Disable(c.Param("name"))
+    return c.Text(200, "Disabled")
+})
+
+app.Post("/admin/features/:name/toggle", func(c *mizu.Ctx) error {
+    provider.Toggle(c.Param("name"))
+    return c.Text(200, "Toggled")
+})
+```
+
+### Require Flag Middleware
+
+```go
+// Route requires feature to be enabled
+app.Get("/beta",
+    feature.Require("beta_access", nil),
+    func(c *mizu.Ctx) error {
+        return c.Text(200, "Welcome to beta!")
+    },
+)
+
+// Custom handler when disabled
+app.Get("/new-feature",
+    feature.Require("new_feature", func(c *mizu.Ctx) error {
+        return c.JSON(403, map[string]string{
+            "error": "Feature not available",
+        })
+    }),
+    newFeatureHandler,
+)
+```
+
+### Require All Flags
+
+```go
+// Requires ALL flags to be enabled
+app.Get("/admin/super",
+    feature.RequireAll([]string{"admin_access", "super_powers"}, nil),
+    superAdminHandler,
+)
+```
+
+### Require Any Flag
+
+```go
+// Requires ANY flag to be enabled
+app.Get("/premium",
+    feature.RequireAny([]string{"premium_user", "trial_active"}, nil),
+    premiumHandler,
+)
+```
+
+### Custom Provider
+
+```go
+type DatabaseProvider struct {
+    db *sql.DB
+}
+
+func (p *DatabaseProvider) GetFlags(c *mizu.Ctx) (feature.Flags, error) {
+    rows, err := p.db.Query("SELECT name, enabled FROM feature_flags")
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    flags := make(feature.Flags)
+    for rows.Next() {
+        var name string
+        var enabled bool
+        rows.Scan(&name, &enabled)
+        flags[name] = &feature.Flag{Name: name, Enabled: enabled}
+    }
+    return flags, nil
+}
+
+app.Use(feature.WithProvider(&DatabaseProvider{db: db}))
+```
+
+### User-Specific Flags
+
+```go
+type UserProvider struct {
+    db *sql.DB
+}
+
+func (p *UserProvider) GetFlags(c *mizu.Ctx) (feature.Flags, error) {
+    userID := c.Get("user_id").(string)
+
+    // Get user-specific flags
+    flags := make(feature.Flags)
+
+    // Check if user is in beta program
+    var inBeta bool
+    p.db.QueryRow("SELECT beta FROM users WHERE id = ?", userID).Scan(&inBeta)
+    flags["beta_features"] = &feature.Flag{Name: "beta_features", Enabled: inBeta}
+
+    return flags, nil
+}
+```
+
+### Percentage Rollout
+
+```go
+type RolloutProvider struct {
+    percentages map[string]int
+}
+
+func (p *RolloutProvider) GetFlags(c *mizu.Ctx) (feature.Flags, error) {
+    userID := c.Get("user_id").(string)
+    hash := hashUserID(userID)
+
+    flags := make(feature.Flags)
+    for name, pct := range p.percentages {
+        flags[name] = &feature.Flag{
+            Name:    name,
+            Enabled: (hash % 100) < pct,
+        }
+    }
+    return flags, nil
+}
+```
+
+### List All Flags
+
+```go
+app.Get("/features", func(c *mizu.Ctx) error {
+    flags := feature.GetFlags(c)
+
+    result := make([]map[string]any, 0)
+    for name, flag := range flags {
+        result = append(result, map[string]any{
+            "name":    name,
+            "enabled": flag.Enabled,
+        })
+    }
+    return c.JSON(200, result)
+})
+```
+
+### Flag with Metadata
+
+```go
+provider := feature.NewMemoryProvider()
+
+provider.SetFlag(&feature.Flag{
+    Name:        "new_checkout",
+    Enabled:     true,
+    Description: "New checkout flow",
+    Metadata: map[string]any{
+        "rollout_percentage": 50,
+        "target_users":       "premium",
+        "experiment_id":      "exp-123",
+    },
+})
+
+app.Use(feature.WithProvider(provider))
+```
+
+## API Reference
+
+```go
+func New(flags Flags) mizu.Middleware
+func WithProvider(provider Provider) mizu.Middleware
+func WithOptions(opts Options) mizu.Middleware
+func GetFlags(c *mizu.Ctx) Flags
+func Get(c *mizu.Ctx, name string) *Flag
+func IsEnabled(c *mizu.Ctx, name string) bool
+func IsDisabled(c *mizu.Ctx, name string) bool
+func Require(name string, handler mizu.Handler) mizu.Middleware
+func RequireAll(names []string, handler mizu.Handler) mizu.Middleware
+func RequireAny(names []string, handler mizu.Handler) mizu.Middleware
+
+// Provider functions
+func StaticProvider(flags Flags) Provider
+func NewMemoryProvider() *MemoryProvider
+```
+
+## Memory Provider Methods
+
+```go
+func (p *MemoryProvider) Set(name string, enabled bool)
+func (p *MemoryProvider) SetFlag(flag *Flag)
+func (p *MemoryProvider) Delete(name string)
+func (p *MemoryProvider) Enable(name string)
+func (p *MemoryProvider) Disable(name string)
+func (p *MemoryProvider) Toggle(name string)
+```
+
+## Best Practices
+
+- Use descriptive flag names
+- Document flag purposes
+- Clean up old flags after rollout
+- Use percentage rollouts for risky features
+- Implement a custom provider for production
+- Include metadata for analytics
+
+## Related Middlewares
+
+- [multitenancy](/middlewares/multitenancy) - Multi-tenant support
+- [version](/middlewares/version) - API versioning

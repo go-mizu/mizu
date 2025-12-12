@@ -1,0 +1,339 @@
+---
+title: "Overview"
+description: "A comprehensive collection of common middlewares for Mizu."
+---
+
+Mizu provides a rich set of middlewares to handle common web application concerns.
+All middlewares follow these principles:
+
+- **Zero external dependencies** - Only uses Go standard library
+- **Sensible defaults** - Works out of the box
+- **Options pattern** - Fully configurable when needed
+- **Concurrent safe** - Safe for use across goroutines
+
+## Installation
+
+Middlewares are included with Mizu. Import the specific middleware you need:
+
+```go
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/recover"
+    "github.com/go-mizu/mizu/middlewares/requestid"
+    "github.com/go-mizu/mizu/middlewares/timeout"
+)
+```
+
+## Quick Start
+
+A typical production setup:
+
+```go
+package main
+
+import (
+    "time"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/helmet"
+    "github.com/go-mizu/mizu/middlewares/ratelimit"
+    "github.com/go-mizu/mizu/middlewares/recover"
+    "github.com/go-mizu/mizu/middlewares/requestid"
+    "github.com/go-mizu/mizu/middlewares/timeout"
+)
+
+func main() {
+    app := mizu.New()
+
+    // Essential middlewares
+    app.Use(recover.New())              // Panic recovery
+    app.Use(requestid.New())            // Request tracing
+    app.Use(timeout.New(30*time.Second)) // Request timeout
+    app.Use(helmet.Default())           // Security headers
+    app.Use(ratelimit.PerMinute(100))   // Rate limiting
+
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.Text(200, "Hello, World!")
+    })
+
+    app.Listen(":3000")
+}
+```
+
+## Categories
+
+### Authentication
+
+Secure your endpoints with various authentication methods:
+
+| Middleware | Description |
+|------------|-------------|
+| [basicauth](/middlewares/basicauth) | HTTP Basic Authentication |
+| [bearerauth](/middlewares/bearerauth) | Bearer token authentication |
+| [keyauth](/middlewares/keyauth) | API key authentication |
+| [csrf](/middlewares/csrf) | Cross-Site Request Forgery protection |
+| [csrf2](/middlewares/csrf2) | Enhanced CSRF with double submit |
+| [jwt](/middlewares/jwt) | JWT token authentication |
+| [oauth2](/middlewares/oauth2) | OAuth 2.0 authentication flows |
+| [oidc](/middlewares/oidc) | OpenID Connect authentication |
+
+### Security
+
+Protect your application from common web vulnerabilities:
+
+| Middleware | Description |
+|------------|-------------|
+| [helmet](/middlewares/helmet) | Security headers (CSP, HSTS, etc.) |
+| [secure](/middlewares/secure) | HTTPS enforcement and security features |
+| [ipfilter](/middlewares/ipfilter) | IP whitelist/blacklist |
+| [honeypot](/middlewares/honeypot) | Detect and block malicious requests |
+| [captcha](/middlewares/captcha) | CAPTCHA verification (reCAPTCHA, hCaptcha, Turnstile) |
+| [cors](/middlewares/cors) | Cross-Origin Resource Sharing |
+| [cors2](/middlewares/cors2) | Enhanced CORS with preflight caching |
+| [rbac](/middlewares/rbac) | Role-based access control |
+| [signature](/middlewares/signature) | Request signature verification |
+
+### Rate Limiting & Resilience
+
+Control request rates and protect against overload:
+
+| Middleware | Description |
+|------------|-------------|
+| [ratelimit](/middlewares/ratelimit) | Token bucket rate limiting |
+| [circuitbreaker](/middlewares/circuitbreaker) | Circuit breaker pattern |
+| [bulkhead](/middlewares/bulkhead) | Bulkhead isolation pattern |
+| [throttle](/middlewares/throttle) | Request throttling |
+| [concurrency](/middlewares/concurrency) | Concurrency limiting |
+| [adaptive](/middlewares/adaptive) | Adaptive rate limiting |
+
+### Request Processing
+
+Validate and transform incoming requests:
+
+| Middleware | Description |
+|------------|-------------|
+| [bodylimit](/middlewares/bodylimit) | Limit request body size |
+| [contenttype](/middlewares/contenttype) | Validate Content-Type |
+| [validator](/middlewares/validator) | Request validation rules |
+| [header](/middlewares/header) | Header manipulation |
+| [methodoverride](/middlewares/methodoverride) | HTTP method override |
+| [bodyclose](/middlewares/bodyclose) | Auto-close request body |
+| [bodydump](/middlewares/bodydump) | Dump request/response bodies |
+| [requestsize](/middlewares/requestsize) | Request size tracking |
+| [sanitizer](/middlewares/sanitizer) | Input sanitization |
+| [transformer](/middlewares/transformer) | Request/response transformation |
+| [filter](/middlewares/filter) | Request filtering |
+
+### Response Processing
+
+Transform and enhance outgoing responses:
+
+| Middleware | Description |
+|------------|-------------|
+| [compress](/middlewares/compress) | Gzip/deflate compression |
+| [envelope](/middlewares/envelope) | Response envelope wrapper |
+| [responsesize](/middlewares/responsesize) | Response size tracking |
+| [vary](/middlewares/vary) | Vary header management |
+| [errorpage](/middlewares/errorpage) | Custom error pages |
+| [hypermedia](/middlewares/hypermedia) | Hypermedia response helpers |
+
+### Caching
+
+Control HTTP caching behavior:
+
+| Middleware | Description |
+|------------|-------------|
+| [cache](/middlewares/cache) | Set Cache-Control headers |
+| [nocache](/middlewares/nocache) | Prevent caching |
+| [etag](/middlewares/etag) | ETag generation |
+| [lastmodified](/middlewares/lastmodified) | Last-Modified headers |
+
+### URL Handling
+
+Redirect and rewrite URLs:
+
+| Middleware | Description |
+|------------|-------------|
+| [redirect](/middlewares/redirect) | URL redirection (HTTPS, WWW) |
+| [slash](/middlewares/slash) | Trailing slash handling |
+| [rewrite](/middlewares/rewrite) | URL rewriting |
+
+### Networking & Proxy
+
+Handle proxy headers and reverse proxying:
+
+| Middleware | Description |
+|------------|-------------|
+| [proxy](/middlewares/proxy) | Reverse proxy |
+| [forwarded](/middlewares/forwarded) | X-Forwarded-* headers |
+| [realip](/middlewares/realip) | Extract real client IP |
+| [h2c](/middlewares/h2c) | HTTP/2 cleartext support |
+| [surrogate](/middlewares/surrogate) | CDN surrogate headers |
+
+### Request Context
+
+Enhance request handling:
+
+| Middleware | Description |
+|------------|-------------|
+| [requestid](/middlewares/requestid) | Generate/propagate request IDs |
+| [timeout](/middlewares/timeout) | Request timeout |
+| [recover](/middlewares/recover) | Panic recovery |
+| [timing](/middlewares/timing) | Server-Timing header |
+| [trace](/middlewares/trace) | Distributed tracing context |
+| [conditional](/middlewares/conditional) | Conditional middleware execution |
+
+### Real-time
+
+Support real-time communication:
+
+| Middleware | Description |
+|------------|-------------|
+| [websocket](/middlewares/websocket) | WebSocket connections |
+| [sse](/middlewares/sse) | Server-Sent Events |
+
+### Static Files
+
+Serve static content:
+
+| Middleware | Description |
+|------------|-------------|
+| [static](/middlewares/static) | Static file serving |
+| [spa](/middlewares/spa) | Single Page Application support |
+| [favicon](/middlewares/favicon) | Favicon serving |
+| [embed](/middlewares/embed) | Embedded filesystem serving |
+
+### Operations & Monitoring
+
+Tools for production operations:
+
+| Middleware | Description |
+|------------|-------------|
+| [version](/middlewares/version) | API versioning |
+| [maintenance](/middlewares/maintenance) | Maintenance mode |
+| [pprof](/middlewares/pprof) | Profiling endpoints |
+| [healthcheck](/middlewares/healthcheck) | Health check endpoints |
+| [metrics](/middlewares/metrics) | Custom metrics collection |
+| [prometheus](/middlewares/prometheus) | Prometheus metrics endpoint |
+| [expvar](/middlewares/expvar) | Expvar metrics endpoint |
+| [logger](/middlewares/logger) | Request logging |
+| [requestlog](/middlewares/requestlog) | Detailed request logging |
+| [responselog](/middlewares/responselog) | Response logging |
+
+### Advanced
+
+Specialized functionality:
+
+| Middleware | Description |
+|------------|-------------|
+| [feature](/middlewares/feature) | Feature flags |
+| [multitenancy](/middlewares/multitenancy) | Multi-tenant support |
+| [chaos](/middlewares/chaos) | Chaos engineering |
+| [mirror](/middlewares/mirror) | Request mirroring |
+| [fingerprint](/middlewares/fingerprint) | Request fingerprinting |
+| [canary](/middlewares/canary) | Canary deployment routing |
+| [audit](/middlewares/audit) | Audit logging |
+| [idempotency](/middlewares/idempotency) | Idempotency key handling |
+| [retry](/middlewares/retry) | Automatic request retries |
+| [hedge](/middlewares/hedge) | Hedged requests |
+| [fallback](/middlewares/fallback) | Fallback handlers |
+| [mock](/middlewares/mock) | Request mocking |
+
+### Connection & Protocol
+
+Connection and protocol handling:
+
+| Middleware | Description |
+|------------|-------------|
+| [keepalive](/middlewares/keepalive) | Connection keep-alive control |
+| [maxconns](/middlewares/maxconns) | Maximum connections limit |
+| [msgpack](/middlewares/msgpack) | MessagePack handling |
+| [jsonrpc](/middlewares/jsonrpc) | JSON-RPC protocol support |
+| [graphql](/middlewares/graphql) | GraphQL request handling |
+| [xml](/middlewares/xml) | XML request/response handling |
+
+### Internationalization
+
+Locale and timezone handling:
+
+| Middleware | Description |
+|------------|-------------|
+| [language](/middlewares/language) | Language detection |
+| [timezone](/middlewares/timezone) | Timezone detection |
+| [nonce](/middlewares/nonce) | Cryptographic nonce generation |
+
+### External Integrations
+
+Third-party service integrations:
+
+| Middleware | Description |
+|------------|-------------|
+| [otel](/middlewares/otel) | OpenTelemetry integration |
+| [sentry](/middlewares/sentry) | Sentry error tracking |
+| [session](/middlewares/session) | Session management |
+
+### Bot & Client Detection
+
+Client identification and validation:
+
+| Middleware | Description |
+|------------|-------------|
+| [bot](/middlewares/bot) | Bot detection |
+| [xrequestedwith](/middlewares/xrequestedwith) | X-Requested-With validation |
+
+## Usage Patterns
+
+### Global middleware
+
+Apply to all routes:
+
+```go
+app.Use(recover.New())
+```
+
+### Route-specific middleware
+
+Apply to specific routes:
+
+```go
+app.Get("/admin", adminHandler, basicauth.New(credentials))
+```
+
+### Group middleware
+
+Apply to a group of routes:
+
+```go
+api := app.Group("/api")
+api.Use(keyauth.New(validateKey))
+
+api.Get("/users", listUsers)
+api.Post("/users", createUser)
+```
+
+### Conditional middleware
+
+Skip middleware based on conditions:
+
+```go
+app.Use(ratelimit.WithOptions(ratelimit.Options{
+    Rate:     100,
+    Interval: time.Minute,
+    Skip: func(c *mizu.Ctx) bool {
+        return c.Request().URL.Path == "/health"
+    },
+}))
+```
+
+## Best Practices
+
+1. **Order matters** - Place `recover` first to catch all panics
+2. **Use timeouts** - Always set request timeouts in production
+3. **Rate limit** - Protect public endpoints from abuse
+4. **Security headers** - Use `helmet` for recommended security headers
+5. **Request IDs** - Add `requestid` for tracing and debugging
+
+## Next Steps
+
+- Learn about [writing custom middleware](/concepts/middleware)
+- Explore individual middleware documentation in the sidebar

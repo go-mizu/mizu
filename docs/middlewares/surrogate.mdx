@@ -1,0 +1,120 @@
+---
+title: "Surrogate"
+description: "CDN surrogate headers middleware for cache control."
+---
+
+## Overview
+
+The `surrogate` middleware manages Surrogate-Control and Surrogate-Key headers for CDN cache control (Fastly, Varnish, etc.).
+
+Use it when you need:
+- CDN cache purging
+- Edge cache control
+- Cache tagging
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/surrogate"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Use(surrogate.New())
+
+app.Get("/article/:id", func(c *mizu.Ctx) error {
+    surrogate.Key(c, "article-"+c.Param("id"))
+    return c.JSON(200, article)
+})
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `MaxAge` | `time.Duration` | `0` | Surrogate max-age |
+| `StaleWhileRevalidate` | `time.Duration` | `0` | Stale-while-revalidate |
+
+## Examples
+
+### Set Surrogate Keys
+
+```go
+app.Get("/article/:id", func(c *mizu.Ctx) error {
+    surrogate.Key(c, "article-"+c.Param("id"))
+    surrogate.Key(c, "articles")
+    return c.JSON(200, article)
+})
+// Surrogate-Key: article-123 articles
+```
+
+### Surrogate Control
+
+```go
+app.Use(surrogate.WithOptions(surrogate.Options{
+    MaxAge:               time.Hour,
+    StaleWhileRevalidate: 10 * time.Minute,
+}))
+// Surrogate-Control: max-age=3600, stale-while-revalidate=600
+```
+
+### Per-Route Control
+
+```go
+app.Get("/dynamic", func(c *mizu.Ctx) error {
+    surrogate.Control(c, "no-store")
+    return c.JSON(200, data)
+})
+
+app.Get("/static", func(c *mizu.Ctx) error {
+    surrogate.Control(c, "max-age=86400")
+    return c.JSON(200, data)
+})
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates surrogate middleware
+func New() mizu.Middleware
+
+// WithOptions creates with configuration
+func WithOptions(opts Options) mizu.Middleware
+
+// Key adds surrogate key
+func Key(c *mizu.Ctx, keys ...string)
+
+// Control sets surrogate control
+func Control(c *mizu.Ctx, control string)
+```
+
+## CDN Integration
+
+### Fastly
+```
+Surrogate-Key: article-123 homepage
+Surrogate-Control: max-age=3600
+```
+
+### Varnish
+Uses same headers with xkey support.
+
+## Best Practices
+
+- Use meaningful, granular keys
+- Group related content with shared keys
+- Set appropriate TTLs
+- Plan purge strategy
+
+## Related Middlewares
+
+- [cache](/middlewares/cache) - Cache-Control headers
+- [etag](/middlewares/etag) - ETag generation
+- [vary](/middlewares/vary) - Vary headers

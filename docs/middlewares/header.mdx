@@ -1,0 +1,136 @@
+---
+title: "Header"
+description: "Request and response header manipulation middleware."
+---
+
+## Overview
+
+The `header` middleware provides flexible request and response header manipulation. Add, modify, or remove headers for security, caching, or custom requirements.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/header"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Set response header
+app.Use(header.Set("X-Powered-By", "Mizu"))
+```
+
+## Functions
+
+### Response Headers
+
+| Function | Description |
+|----------|-------------|
+| `Set(key, value)` | Set response header |
+| `New(headers)` | Set multiple response headers |
+| `Remove(keys...)` | Remove response headers |
+
+### Request Headers
+
+| Function | Description |
+|----------|-------------|
+| `SetRequest(key, value)` | Set request header |
+| `RemoveRequest(keys...)` | Remove request headers |
+
+### Security Headers
+
+| Function | Header |
+|----------|--------|
+| `XSSProtection()` | X-XSS-Protection |
+| `NoSniff()` | X-Content-Type-Options |
+| `FrameDeny()` | X-Frame-Options: DENY |
+| `FrameSameOrigin()` | X-Frame-Options: SAMEORIGIN |
+| `HSTS(maxAge, subdomains, preload)` | Strict-Transport-Security |
+| `CSP(policy)` | Content-Security-Policy |
+| `ReferrerPolicy(policy)` | Referrer-Policy |
+| `PermissionsPolicy(policy)` | Permissions-Policy |
+
+### Content Headers
+
+| Function | Content-Type |
+|----------|--------------|
+| `JSON()` | application/json |
+| `HTML()` | text/html |
+| `Text()` | text/plain |
+| `XML()` | application/xml |
+
+## Examples
+
+### Set Single Header
+
+```go
+app.Use(header.Set("X-Custom-Header", "value"))
+```
+
+### Set Multiple Headers
+
+```go
+app.Use(header.New(map[string]string{
+    "X-App-Name":    "MyApp",
+    "X-App-Version": "1.0.0",
+}))
+```
+
+### Remove Headers
+
+```go
+// Remove sensitive headers
+app.Use(header.Remove("Server", "X-Powered-By"))
+```
+
+### Security Headers
+
+```go
+app.Use(header.XSSProtection())
+app.Use(header.NoSniff())
+app.Use(header.FrameDeny())
+```
+
+### HSTS
+
+```go
+app.Use(header.HSTS(31536000, true, true)) // 1 year, subdomains, preload
+```
+
+### Content Security Policy
+
+```go
+app.Use(header.CSP("default-src 'self'; script-src 'self' cdn.example.com"))
+```
+
+### Full Configuration
+
+```go
+app.Use(header.WithOptions(header.Options{
+    Response: map[string]string{
+        "X-Frame-Options":        "DENY",
+        "X-Content-Type-Options": "nosniff",
+    },
+    ResponseRemove: []string{"Server"},
+    Request: map[string]string{
+        "X-Request-Source": "web",
+    },
+}))
+```
+
+## API Reference
+
+```go
+func Set(key, value string) mizu.Middleware
+func SetRequest(key, value string) mizu.Middleware
+func New(headers map[string]string) mizu.Middleware
+func Remove(keys ...string) mizu.Middleware
+func RemoveRequest(keys ...string) mizu.Middleware
+func WithOptions(opts Options) mizu.Middleware
+```
+
+## Related Middlewares
+
+- [helmet](/middlewares/helmet) - Comprehensive security headers

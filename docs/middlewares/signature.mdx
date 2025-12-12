@@ -1,0 +1,177 @@
+---
+title: "Signature"
+description: "Request signature verification middleware for secure API access."
+---
+
+## Overview
+
+The `signature` middleware verifies request signatures using HMAC or other algorithms, ensuring requests haven't been tampered with and come from authorized sources.
+
+Use it when you need:
+- Webhook signature verification
+- API request authentication
+- Tamper detection
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/signature"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Verify HMAC-SHA256 signatures
+app.Use(signature.New(signature.Options{
+    Secret: []byte("your-secret-key"),
+    Header: "X-Signature",
+}))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Secret` | `[]byte` | Required | Signing secret |
+| `Header` | `string` | `"X-Signature"` | Signature header name |
+| `Algorithm` | `string` | `"sha256"` | Hash algorithm |
+| `Encoding` | `string` | `"hex"` | Signature encoding |
+| `TimestampHeader` | `string` | `""` | Timestamp header |
+| `TimestampTolerance` | `time.Duration` | `5m` | Max timestamp age |
+| `GetSecret` | `func(*mizu.Ctx) []byte` | - | Dynamic secret lookup |
+
+## Examples
+
+### Basic HMAC Verification
+
+```go
+app.Use(signature.New(signature.Options{
+    Secret: []byte("webhook-secret"),
+    Header: "X-Signature",
+}))
+```
+
+### GitHub Webhook
+
+```go
+app.Post("/webhook/github", handler, signature.New(signature.Options{
+    Secret:   []byte(os.Getenv("GITHUB_WEBHOOK_SECRET")),
+    Header:   "X-Hub-Signature-256",
+    Prefix:   "sha256=",
+    Algorithm: "sha256",
+}))
+```
+
+### Stripe Webhook
+
+```go
+app.Post("/webhook/stripe", handler, signature.New(signature.Options{
+    Secret:           []byte(os.Getenv("STRIPE_WEBHOOK_SECRET")),
+    Header:           "Stripe-Signature",
+    TimestampHeader:  "Stripe-Signature",
+    ParseStripeStyle: true,
+}))
+```
+
+### With Timestamp Validation
+
+```go
+app.Use(signature.New(signature.Options{
+    Secret:             []byte("api-secret"),
+    Header:             "X-Signature",
+    TimestampHeader:    "X-Timestamp",
+    TimestampTolerance: 5 * time.Minute,
+}))
+```
+
+### Per-Client Secrets
+
+```go
+app.Use(signature.New(signature.Options{
+    Header: "X-Signature",
+    GetSecret: func(c *mizu.Ctx) []byte {
+        clientID := c.Request().Header.Get("X-Client-ID")
+        return getClientSecret(clientID)
+    },
+}))
+```
+
+### Custom Signature Format
+
+```go
+app.Use(signature.New(signature.Options{
+    Secret:    secret,
+    Header:    "Authorization",
+    Prefix:    "HMAC-SHA256 ",
+    Algorithm: "sha256",
+    Encoding:  "base64",
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates signature verification middleware
+func New(opts Options) mizu.Middleware
+
+// Sign generates signature for data
+func Sign(data, secret []byte, algorithm string) string
+
+// Verify checks if signature is valid
+func Verify(data, secret []byte, signature, algorithm string) bool
+```
+
+## Signature Algorithms
+
+| Algorithm | Description |
+|-----------|-------------|
+| `sha256` | HMAC-SHA256 (recommended) |
+| `sha512` | HMAC-SHA512 |
+| `sha1` | HMAC-SHA1 (legacy) |
+
+## Creating Signatures (Client Side)
+
+```go
+// Go client
+func signRequest(body []byte, secret string) string {
+    mac := hmac.New(sha256.New, []byte(secret))
+    mac.Write(body)
+    return hex.EncodeToString(mac.Sum(nil))
+}
+```
+
+```javascript
+// JavaScript client
+async function signRequest(body, secret) {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+        'raw', encoder.encode(secret),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false, ['sign']
+    );
+    const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(body));
+    return Array.from(new Uint8Array(sig))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+}
+```
+
+## Best Practices
+
+- Use SHA-256 or stronger algorithms
+- Include timestamp to prevent replay attacks
+- Use secure random secrets (32+ bytes)
+- Rotate secrets periodically
+- Log signature failures for security monitoring
+
+## Related Middlewares
+
+- [keyauth](/middlewares/keyauth) - API key authentication
+- [jwt](/middlewares/jwt) - JWT authentication
+- [hmac](/middlewares/hmac) - HMAC utilities

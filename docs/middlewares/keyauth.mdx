@@ -1,0 +1,260 @@
+---
+title: "Key Auth"
+description: "API key authentication middleware for securing APIs."
+---
+
+## Overview
+
+The `keyauth` middleware provides API key authentication. It validates API keys from headers, query parameters, or cookies. Perfect for machine-to-machine authentication and public APIs.
+
+Use it when you need:
+- API key authentication
+- Service-to-service authentication
+- Third-party API access control
+- Simple API protection without user sessions
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/keyauth"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Validate against a list of valid keys
+app.Use(keyauth.New(keyauth.ValidateKeys(
+    "key-abc123",
+    "key-def456",
+)))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Validator` | `KeyValidator` | - | Function to validate API keys |
+| `KeyLookup` | `string` | `"header:X-API-Key"` | Where to find the key |
+| `AuthScheme` | `string` | `""` | Scheme prefix for header lookup |
+| `ErrorHandler` | `func(*mizu.Ctx, error) error` | - | Custom error handler |
+
+### KeyLookup Format
+
+The `KeyLookup` option uses the format `"source:name"`:
+
+| Source | Example | Description |
+|--------|---------|-------------|
+| `header` | `"header:X-API-Key"` | Read from header |
+| `query` | `"query:api_key"` | Read from query parameter |
+| `cookie` | `"cookie:api_key"` | Read from cookie |
+
+## Examples
+
+### Static API Keys
+
+```go
+validKeys := keyauth.ValidateKeys(
+    "production-key-abc",
+    "production-key-xyz",
+)
+
+app.Use(keyauth.New(validKeys))
+```
+
+### Database Lookup
+
+```go
+app.Use(keyauth.New(func(key string) (bool, error) {
+    // Look up key in database
+    apiKey, err := db.GetAPIKey(key)
+    if err != nil {
+        if err == sql.ErrNoRows {
+            return false, nil // Key not found
+        }
+        return false, err // Database error
+    }
+
+    // Check if key is active and not expired
+    if !apiKey.Active || apiKey.ExpiresAt.Before(time.Now()) {
+        return false, nil
+    }
+
+    return true, nil
+}))
+```
+
+### Query Parameter
+
+```go
+// Accept key via ?api_key=xxx
+app.Use(keyauth.WithOptions(keyauth.Options{
+    KeyLookup: "query:api_key",
+    Validator: func(key string) (bool, error) {
+        return key == "valid-key", nil
+    },
+}))
+```
+
+### Multiple Lookup Sources
+
+```go
+// Try header first, then query parameter
+app.Use(keyauth.WithOptions(keyauth.Options{
+    KeyLookup: "header:X-API-Key",
+    Validator: func(key string) (bool, error) {
+        return validateKey(key)
+    },
+}))
+
+// Add fallback for query
+app.Use(keyauth.WithOptions(keyauth.Options{
+    KeyLookup: "query:api_key",
+    Validator: func(key string) (bool, error) {
+        return validateKey(key)
+    },
+}))
+```
+
+### With Auth Scheme
+
+```go
+// Expect "ApiKey xxx" in Authorization header
+app.Use(keyauth.WithOptions(keyauth.Options{
+    KeyLookup:  "header:Authorization",
+    AuthScheme: "ApiKey",
+    Validator:  validateKey,
+}))
+```
+
+### Custom Error Handler
+
+```go
+app.Use(keyauth.WithOptions(keyauth.Options{
+    Validator: validateKey,
+    ErrorHandler: func(c *mizu.Ctx, err error) error {
+        if err == keyauth.ErrKeyMissing {
+            return c.JSON(401, map[string]string{
+                "error":   "API key required",
+                "hint":    "Include X-API-Key header",
+            })
+        }
+        return c.JSON(403, map[string]string{
+            "error": "Invalid API key",
+        })
+    },
+}))
+```
+
+### Access API Key in Handler
+
+```go
+func handler(c *mizu.Ctx) error {
+    // Get the validated API key
+    key := keyauth.Get(c)
+
+    // Log for audit
+    c.Logger().Info("API request", "key", key[:8]+"...")
+
+    return c.JSON(200, data)
+}
+```
+
+### Rate Limiting Per Key
+
+```go
+// Custom rate limiter based on API key
+func rateLimit() mizu.Middleware {
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            key := keyauth.Get(c)
+            if !rateLimiter.Allow(key) {
+                return c.Text(429, "Rate limit exceeded")
+            }
+            return next(c)
+        }
+    }
+}
+
+app.Use(keyauth.New(validateKey))
+app.Use(rateLimit())
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates middleware with validator
+func New(validator KeyValidator) mizu.Middleware
+
+// WithOptions creates middleware with full configuration
+func WithOptions(opts Options) mizu.Middleware
+
+// ValidateKeys creates validator for static key list
+func ValidateKeys(keys ...string) KeyValidator
+```
+
+### Extracting Key
+
+```go
+// FromContext extracts API key from context
+func FromContext(c *mizu.Ctx) string
+
+// Get is an alias for FromContext
+func Get(c *mizu.Ctx) string
+```
+
+### Types
+
+```go
+// KeyValidator validates an API key
+type KeyValidator func(key string) (valid bool, err error)
+```
+
+### Error Types
+
+```go
+var (
+    ErrKeyMissing // API key not found in request
+    ErrKeyInvalid // API key validation failed
+)
+```
+
+## Security Considerations
+
+1. **Key Generation** - Use cryptographically secure random keys
+2. **Key Storage** - Hash keys in database, never store plain text
+3. **Key Rotation** - Support key rotation without downtime
+4. **Scoping** - Consider scoped keys with limited permissions
+5. **Logging** - Log key usage but not full keys
+
+### Secure Key Generation
+
+```go
+import "crypto/rand"
+
+func generateAPIKey() string {
+    b := make([]byte, 32)
+    rand.Read(b)
+    return "sk_" + hex.EncodeToString(b)
+}
+```
+
+## Best Practices
+
+- Use different keys for different environments
+- Implement key expiration
+- Add rate limiting per key
+- Log API key usage for auditing
+- Support multiple keys per user/service
+- Provide key management API
+
+## Related Middlewares
+
+- [basicauth](/middlewares/basicauth) - Username/password authentication
+- [bearerauth](/middlewares/bearerauth) - Bearer token authentication
+- [ratelimit](/middlewares/ratelimit) - Rate limiting

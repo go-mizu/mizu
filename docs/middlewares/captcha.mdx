@@ -1,0 +1,253 @@
+---
+title: "CAPTCHA"
+description: "CAPTCHA verification middleware supporting reCAPTCHA, hCaptcha, and Turnstile."
+---
+
+## Overview
+
+The `captcha` middleware verifies CAPTCHA tokens to protect forms and APIs from bots. It supports multiple providers including Google reCAPTCHA (v2/v3), hCaptcha, and Cloudflare Turnstile.
+
+Use it when you need:
+- Bot protection for forms
+- Spam prevention
+- Account creation protection
+- API abuse prevention
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/captcha"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Google reCAPTCHA v2
+app.Use(captcha.ReCaptchaV2("your-secret-key"))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Provider` | `Provider` | `ProviderRecaptchaV2` | CAPTCHA provider |
+| `Secret` | `string` | - | Secret key from provider |
+| `TokenLookup` | `string` | `"form:g-recaptcha-response"` | Where to find token |
+| `MinScore` | `float64` | `0.5` | Minimum score for v3 providers |
+| `Verifier` | `func(token string, c *mizu.Ctx) (bool, error)` | - | Custom verifier |
+| `ErrorHandler` | `func(*mizu.Ctx, error) error` | - | Custom error handler |
+| `SkipPaths` | `[]string` | - | Paths to skip verification |
+| `Timeout` | `time.Duration` | `10s` | Verification timeout |
+
+### Providers
+
+```go
+const (
+    ProviderRecaptchaV2 // Google reCAPTCHA v2 (checkbox)
+    ProviderRecaptchaV3 // Google reCAPTCHA v3 (invisible)
+    ProviderHCaptcha    // hCaptcha
+    ProviderTurnstile   // Cloudflare Turnstile
+    ProviderCustom      // Custom verification
+)
+```
+
+## Examples
+
+### Google reCAPTCHA v2
+
+```go
+app.Use(captcha.ReCaptchaV2(os.Getenv("RECAPTCHA_SECRET")))
+```
+
+Frontend:
+```html
+<script src="https://www.google.com/recaptcha/api.js" async defer></script>
+<form method="POST" action="/submit">
+    <div class="g-recaptcha" data-sitekey="your-site-key"></div>
+    <button type="submit">Submit</button>
+</form>
+```
+
+### Google reCAPTCHA v3
+
+```go
+// Require minimum score of 0.7
+app.Use(captcha.ReCaptchaV3(os.Getenv("RECAPTCHA_SECRET"), 0.7))
+```
+
+Frontend:
+```html
+<script src="https://www.google.com/recaptcha/api.js?render=your-site-key"></script>
+<script>
+grecaptcha.ready(function() {
+    grecaptcha.execute('your-site-key', {action: 'submit'})
+    .then(function(token) {
+        document.getElementById('captcha-token').value = token;
+    });
+});
+</script>
+<form method="POST" action="/submit">
+    <input type="hidden" id="captcha-token" name="g-recaptcha-response">
+    <button type="submit">Submit</button>
+</form>
+```
+
+### hCaptcha
+
+```go
+app.Use(captcha.HCaptcha(os.Getenv("HCAPTCHA_SECRET")))
+```
+
+Frontend:
+```html
+<script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+<form method="POST" action="/submit">
+    <div class="h-captcha" data-sitekey="your-site-key"></div>
+    <button type="submit">Submit</button>
+</form>
+```
+
+### Cloudflare Turnstile
+
+```go
+app.Use(captcha.Turnstile(os.Getenv("TURNSTILE_SECRET")))
+```
+
+Frontend:
+```html
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+<form method="POST" action="/submit">
+    <div class="cf-turnstile" data-sitekey="your-site-key"></div>
+    <button type="submit">Submit</button>
+</form>
+```
+
+### Skip Certain Paths
+
+```go
+app.Use(captcha.WithOptions(captcha.Options{
+    Provider:  captcha.ProviderRecaptchaV2,
+    Secret:    os.Getenv("RECAPTCHA_SECRET"),
+    SkipPaths: []string{
+        "/api/webhook",    // External webhooks
+        "/api/health",     // Health checks
+    },
+}))
+```
+
+### Custom Token Location
+
+```go
+// Token from header instead of form
+app.Use(captcha.WithOptions(captcha.Options{
+    Provider:    captcha.ProviderRecaptchaV3,
+    Secret:      secret,
+    TokenLookup: "header:X-Captcha-Token",
+}))
+```
+
+### Custom Error Handler
+
+```go
+app.Use(captcha.WithOptions(captcha.Options{
+    Provider: captcha.ProviderRecaptchaV2,
+    Secret:   secret,
+    ErrorHandler: func(c *mizu.Ctx, err error) error {
+        if err == captcha.ErrMissingToken {
+            return c.JSON(400, map[string]string{
+                "error": "Please complete the CAPTCHA",
+            })
+        }
+        return c.JSON(403, map[string]string{
+            "error": "CAPTCHA verification failed. Please try again.",
+        })
+    },
+}))
+```
+
+### Custom Verifier
+
+```go
+app.Use(captcha.Custom(
+    func(token string, c *mizu.Ctx) (bool, error) {
+        // Custom verification logic
+        return myVerifier.Verify(token, c.ClientIP())
+    },
+    "form:my-captcha-token",
+))
+```
+
+### Route-Specific Protection
+
+```go
+// Only protect specific routes
+registerCaptcha := captcha.ReCaptchaV2(secret)
+loginCaptcha := captcha.ReCaptchaV3(secret, 0.5)
+
+app.Post("/register", registerHandler, registerCaptcha)
+app.Post("/login", loginHandler, loginCaptcha)
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates middleware with default provider
+func New(secret string) mizu.Middleware
+
+// WithOptions creates middleware with custom options
+func WithOptions(opts Options) mizu.Middleware
+
+// Provider-specific constructors
+func ReCaptchaV2(secret string) mizu.Middleware
+func ReCaptchaV3(secret string, minScore float64) mizu.Middleware
+func HCaptcha(secret string) mizu.Middleware
+func Turnstile(secret string) mizu.Middleware
+
+// Custom creates middleware with custom verifier
+func Custom(verifier func(string, *mizu.Ctx) (bool, error), tokenLookup string) mizu.Middleware
+```
+
+### Error Types
+
+```go
+var (
+    ErrMissingToken // Token not found in request
+    ErrInvalidToken // Token verification failed
+    ErrVerifyFailed // Verification request failed
+)
+```
+
+## Provider Comparison
+
+| Provider | Type | Privacy | Free Tier |
+|----------|------|---------|-----------|
+| reCAPTCHA v2 | Checkbox | Google | Yes |
+| reCAPTCHA v3 | Invisible | Google | Yes |
+| hCaptcha | Checkbox | Privacy-focused | Yes |
+| Turnstile | Invisible | Cloudflare | Yes |
+
+## Best Practices
+
+- Use v3/invisible CAPTCHAs for better UX
+- Set appropriate score thresholds for v3
+- Monitor verification failures for tuning
+- Have fallback for CAPTCHA failures
+- Test with automation tools
+
+## Security Considerations
+
+1. **Secret Key** - Never expose secret key in frontend code
+2. **Score Tuning** - Adjust v3 scores based on traffic patterns
+3. **Timeout** - Set reasonable timeout for verification
+4. **Fallback** - Have manual review process for edge cases
+
+## Related Middlewares
+
+- [honeypot](/middlewares/honeypot) - Hidden field bot detection
+- [ratelimit](/middlewares/ratelimit) - Rate limiting

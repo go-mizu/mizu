@@ -1,0 +1,127 @@
+---
+title: "Canary"
+description: "Canary deployment middleware for gradual traffic shifting."
+---
+
+## Overview
+
+The `canary` middleware enables canary deployments by routing a percentage of traffic to different handlers, allowing gradual rollouts.
+
+Use it when you need:
+- Gradual feature rollouts
+- A/B testing
+- Blue-green deployments
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/canary"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Route 10% to canary
+app.Use(canary.New(canary.Options{
+    Canary:  canaryHandler,
+    Percent: 10,
+}))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Canary` | `mizu.Handler` | Required | Canary handler |
+| `Percent` | `int` | `0` | Percentage to canary |
+| `Header` | `string` | `""` | Force canary via header |
+| `Cookie` | `string` | `""` | Force canary via cookie |
+| `Sticky` | `bool` | `false` | Sticky sessions |
+
+## Examples
+
+### Percentage-Based
+
+```go
+app.Use(canary.New(canary.Options{
+    Canary:  v2Handler,
+    Percent: 5, // 5% to v2
+}))
+```
+
+### With Sticky Sessions
+
+```go
+app.Use(canary.New(canary.Options{
+    Canary:  v2Handler,
+    Percent: 10,
+    Sticky:  true, // Same user always gets same version
+}))
+```
+
+### Header Override
+
+```go
+app.Use(canary.New(canary.Options{
+    Canary:  v2Handler,
+    Percent: 10,
+    Header:  "X-Canary", // Force canary with X-Canary: true
+}))
+```
+
+### Cookie-Based
+
+```go
+app.Use(canary.New(canary.Options{
+    Canary: v2Handler,
+    Cookie: "canary", // Check canary=true cookie
+}))
+```
+
+### Gradual Rollout
+
+```go
+// Start at 1%, increase over time
+percent := atomic.Int32{}
+percent.Store(1)
+
+app.Use(canary.New(canary.Options{
+    Canary: v2Handler,
+    PercentFunc: func() int {
+        return int(percent.Load())
+    },
+}))
+
+// Increase percentage via admin endpoint
+app.Post("/admin/canary", func(c *mizu.Ctx) error {
+    p, _ := strconv.Atoi(c.Query("percent"))
+    percent.Store(int32(p))
+    return c.Text(200, "OK")
+})
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates canary middleware
+func New(opts Options) mizu.Middleware
+```
+
+## Best Practices
+
+- Start with low percentages (1-5%)
+- Monitor error rates for canary traffic
+- Use sticky sessions for stateful applications
+- Provide override mechanism for testing
+
+## Related Middlewares
+
+- [feature](/middlewares/feature) - Feature flags
+- [mirror](/middlewares/mirror) - Request mirroring
+- [version](/middlewares/version) - API versioning

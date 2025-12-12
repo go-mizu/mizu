@@ -1,0 +1,257 @@
+---
+title: "WebSocket"
+description: "WebSocket upgrade middleware for real-time bidirectional communication."
+---
+
+## Overview
+
+The `websocket` middleware handles WebSocket upgrade requests, enabling real-time bidirectional communication between clients and your server.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/websocket"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Get("/ws", websocket.New(func(c *mizu.Ctx, ws *websocket.Conn) error {
+    for {
+        msgType, data, err := ws.ReadMessage()
+        if err != nil {
+            return err
+        }
+
+        // Echo message back
+        if err := ws.WriteMessage(msgType, data); err != nil {
+            return err
+        }
+    }
+}))
+```
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Origins` | `[]string` | All allowed | Allowed origin domains |
+| `Subprotocols` | `[]string` | - | Supported subprotocols |
+| `CheckOrigin` | `func(*http.Request) bool` | - | Custom origin validator |
+
+## Examples
+
+### Echo Server
+
+```go
+app.Get("/ws", websocket.New(func(c *mizu.Ctx, ws *websocket.Conn) error {
+    for {
+        _, data, err := ws.ReadMessage()
+        if err != nil {
+            return err // Client disconnected
+        }
+
+        if err := ws.WriteText(string(data)); err != nil {
+            return err
+        }
+    }
+}))
+```
+
+### Chat Application
+
+```go
+var clients = make(map[*websocket.Conn]bool)
+var broadcast = make(chan string)
+var mu sync.Mutex
+
+// Broadcast messages to all clients
+go func() {
+    for msg := range broadcast {
+        mu.Lock()
+        for client := range clients {
+            client.WriteText(msg)
+        }
+        mu.Unlock()
+    }
+}()
+
+app.Get("/chat", websocket.New(func(c *mizu.Ctx, ws *websocket.Conn) error {
+    // Register client
+    mu.Lock()
+    clients[ws] = true
+    mu.Unlock()
+
+    defer func() {
+        mu.Lock()
+        delete(clients, ws)
+        mu.Unlock()
+    }()
+
+    for {
+        _, data, err := ws.ReadMessage()
+        if err != nil {
+            return nil
+        }
+        broadcast <- string(data)
+    }
+}))
+```
+
+### Origin Validation
+
+```go
+app.Get("/ws", websocket.WithOptions(
+    func(c *mizu.Ctx, ws *websocket.Conn) error {
+        // Handler
+    },
+    websocket.Options{
+        Origins: []string{
+            "https://example.com",
+            "https://app.example.com",
+        },
+    },
+))
+```
+
+### Custom Origin Check
+
+```go
+app.Get("/ws", websocket.WithOptions(
+    handler,
+    websocket.Options{
+        CheckOrigin: func(r *http.Request) bool {
+            origin := r.Header.Get("Origin")
+            // Custom validation logic
+            return strings.HasSuffix(origin, ".example.com")
+        },
+    },
+))
+```
+
+### Subprotocols
+
+```go
+app.Get("/ws", websocket.WithOptions(
+    handler,
+    websocket.Options{
+        Subprotocols: []string{"graphql-ws", "subscriptions-transport-ws"},
+    },
+))
+```
+
+### Binary Messages
+
+```go
+app.Get("/ws", websocket.New(func(c *mizu.Ctx, ws *websocket.Conn) error {
+    for {
+        msgType, data, err := ws.ReadMessage()
+        if err != nil {
+            return err
+        }
+
+        switch msgType {
+        case websocket.TextMessage:
+            ws.WriteText("Received text: " + string(data))
+        case websocket.BinaryMessage:
+            ws.WriteBinary(processBinary(data))
+        }
+    }
+}))
+```
+
+### Ping/Pong
+
+```go
+app.Get("/ws", websocket.New(func(c *mizu.Ctx, ws *websocket.Conn) error {
+    // Send periodic pings
+    go func() {
+        ticker := time.NewTicker(30 * time.Second)
+        defer ticker.Stop()
+        for range ticker.C {
+            if err := ws.Ping(nil); err != nil {
+                return
+            }
+        }
+    }()
+
+    for {
+        msgType, data, err := ws.ReadMessage()
+        if err != nil {
+            return err
+        }
+
+        // Handle pong automatically
+        if msgType == websocket.PongMessage {
+            continue
+        }
+
+        ws.WriteMessage(msgType, data)
+    }
+}))
+```
+
+## Message Types
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `TextMessage` | 1 | UTF-8 text data |
+| `BinaryMessage` | 2 | Binary data |
+| `CloseMessage` | 8 | Close frame |
+| `PingMessage` | 9 | Ping frame |
+| `PongMessage` | 10 | Pong frame |
+
+## Conn Methods
+
+```go
+func (c *Conn) ReadMessage() (messageType int, data []byte, err error)
+func (c *Conn) WriteMessage(messageType int, data []byte) error
+func (c *Conn) WriteText(text string) error
+func (c *Conn) WriteBinary(data []byte) error
+func (c *Conn) Ping(data []byte) error
+func (c *Conn) Pong(data []byte) error
+func (c *Conn) Close() error
+```
+
+## API Reference
+
+```go
+func New(handler Handler) mizu.Middleware
+func WithOptions(handler Handler, opts Options) mizu.Middleware
+func IsWebSocketUpgrade(r *http.Request) bool
+
+type Handler func(c *mizu.Ctx, ws *Conn) error
+```
+
+## Client Example
+
+```javascript
+const ws = new WebSocket('ws://localhost:8080/ws');
+
+ws.onopen = () => {
+    ws.send('Hello, server!');
+};
+
+ws.onmessage = (event) => {
+    console.log('Received:', event.data);
+};
+
+ws.onclose = () => {
+    console.log('Connection closed');
+};
+```
+
+## Best Practices
+
+- Always validate origins in production
+- Handle disconnections gracefully
+- Use ping/pong for connection health
+- Clean up resources when connections close
+- Consider using a message broker for scaling
+
+## Related Middlewares
+
+- [sse](/middlewares/sse) - Server-Sent Events
+- [timeout](/middlewares/timeout) - Request timeout

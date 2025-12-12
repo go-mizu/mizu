@@ -1,0 +1,160 @@
+---
+title: "Content Type"
+description: "Content-Type validation and enforcement middleware."
+---
+
+## Overview
+
+The `contenttype` middleware validates and enforces Content-Type headers on requests. It ensures requests have the expected content type and can set default content types for responses.
+
+Use it when you need:
+- JSON-only API endpoints
+- Form submission validation
+- Content-Type enforcement
+- Default response types
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/contenttype"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Require JSON for all POST/PUT/PATCH requests
+app.Use(contenttype.RequireJSON())
+```
+
+## Functions
+
+### Request Validation
+
+| Function | Description |
+|----------|-------------|
+| `Require(types...)` | Require specific content types |
+| `RequireJSON()` | Require `application/json` |
+| `RequireForm()` | Require form content types |
+| `Default(type)` | Set default if missing |
+
+### Response Headers
+
+| Function | Description |
+|----------|-------------|
+| `SetResponse(type)` | Set response Content-Type |
+
+## Examples
+
+### Require JSON
+
+```go
+// Only accept JSON requests
+app.Use(contenttype.RequireJSON())
+
+app.Post("/api/users", func(c *mizu.Ctx) error {
+    // Guaranteed to receive JSON
+    var user User
+    if err := c.BindJSON(&user); err != nil {
+        return err
+    }
+    return c.JSON(201, user)
+})
+```
+
+### Require Form Data
+
+```go
+// Only accept form submissions
+app.Post("/contact", contactHandler, contenttype.RequireForm())
+```
+
+### Multiple Content Types
+
+```go
+// Accept either JSON or XML
+app.Use(contenttype.Require("application/json", "application/xml"))
+```
+
+### Set Default Content-Type
+
+```go
+// Set default for requests without Content-Type
+app.Use(contenttype.Default("application/json"))
+```
+
+### Set Response Content-Type
+
+```go
+// All responses are JSON
+app.Use(contenttype.SetResponse("application/json; charset=utf-8"))
+```
+
+### Per-Route Configuration
+
+```go
+// API routes: JSON only
+api := app.Group("/api")
+api.Use(contenttype.RequireJSON())
+
+// Form routes: Form data only
+forms := app.Group("/forms")
+forms.Use(contenttype.RequireForm())
+```
+
+### Combined Request/Response
+
+```go
+// Require JSON input, set JSON output
+app.Use(contenttype.RequireJSON())
+app.Use(contenttype.SetResponse("application/json; charset=utf-8"))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// Require specific content types
+func Require(types ...string) mizu.Middleware
+
+// RequireJSON requires application/json
+func RequireJSON() mizu.Middleware
+
+// RequireForm requires form content types
+func RequireForm() mizu.Middleware
+
+// Default sets default Content-Type if not present
+func Default(contentType string) mizu.Middleware
+
+// SetResponse sets response Content-Type
+func SetResponse(contentType string) mizu.Middleware
+```
+
+## Behavior
+
+- Only validates POST, PUT, PATCH requests (methods with bodies)
+- Compares media type only, ignores parameters (charset, boundary)
+- Returns 415 Unsupported Media Type on validation failure
+
+## Common Content Types
+
+| Type | Description |
+|------|-------------|
+| `application/json` | JSON data |
+| `application/xml` | XML data |
+| `application/x-www-form-urlencoded` | URL-encoded form |
+| `multipart/form-data` | File uploads |
+| `text/plain` | Plain text |
+
+## Best Practices
+
+- Use `RequireJSON()` for REST APIs
+- Use `RequireForm()` for traditional forms
+- Set response Content-Type for consistency
+
+## Related Middlewares
+
+- [bodylimit](/middlewares/bodylimit) - Body size limits
+- [validator](/middlewares/validator) - Request validation

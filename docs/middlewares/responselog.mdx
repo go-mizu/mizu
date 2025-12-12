@@ -1,0 +1,89 @@
+---
+title: "Response Log"
+description: "Response logging middleware for debugging and monitoring."
+---
+
+## Overview
+
+The `responselog` middleware logs HTTP response details including status codes, response times, and response sizes.
+
+Use it when you need:
+- Response monitoring
+- Debugging response issues
+- Performance tracking
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/responselog"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Use(responselog.New())
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Logger` | `*slog.Logger` | Default | Logger instance |
+| `IncludeBody` | `bool` | `false` | Log response body |
+| `MaxBodySize` | `int` | `1024` | Max body to log |
+
+## Examples
+
+### Basic Logging
+
+```go
+app.Use(responselog.New())
+```
+
+### Include Response Body
+
+```go
+app.Use(responselog.WithOptions(responselog.Options{
+    IncludeBody: true,
+    MaxBodySize: 4096,
+}))
+```
+
+### With Custom Logger
+
+```go
+logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+app.Use(responselog.WithLogger(logger))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates response log middleware
+func New() mizu.Middleware
+
+// WithLogger creates with custom logger
+func WithLogger(logger *slog.Logger) mizu.Middleware
+
+// WithOptions creates with configuration
+func WithOptions(opts Options) mizu.Middleware
+```
+
+## Best Practices
+
+- Be careful with body logging (sensitive data)
+- Use for debugging only
+- Set reasonable body size limits
+- Combine with request logging
+
+## Related Middlewares
+
+- [requestlog](/middlewares/requestlog) - Request logging
+- [bodydump](/middlewares/bodydump) - Body dumping
+- [logger](/middlewares/logger) - Simple logging

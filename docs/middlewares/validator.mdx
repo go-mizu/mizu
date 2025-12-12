@@ -1,0 +1,225 @@
+---
+title: "Validator"
+description: "Request validation middleware with declarative rules."
+---
+
+## Overview
+
+The `validator` middleware provides declarative request validation with built-in rules for common validation needs. It validates query parameters, form fields, headers, and path parameters.
+
+Use it when you need:
+- Input validation
+- Form validation
+- API parameter validation
+- Custom validation rules
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/validator"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Post("/users", createUser, validator.New(
+    validator.Field("email", "required", "email"),
+    validator.Field("name", "required", "min:2", "max:50"),
+))
+```
+
+## Built-in Rules
+
+| Rule | Description | Example |
+|------|-------------|---------|
+| `required` | Field must not be empty | `"required"` |
+| `min:n` | Minimum string length | `"min:3"` |
+| `max:n` | Maximum string length | `"max:100"` |
+| `email` | Valid email format | `"email"` |
+| `numeric` | Numeric value | `"numeric"` |
+| `integer` | Integer value | `"integer"` |
+| `alpha` | Letters only | `"alpha"` |
+| `alphanum` | Letters and numbers only | `"alphanum"` |
+| `in:a,b,c` | Must be one of values | `"in:pending,active,done"` |
+| `url` | Valid URL | `"url"` |
+| `uuid` | Valid UUID format | `"uuid"` |
+
+## Examples
+
+### Basic Validation
+
+```go
+app.Post("/register", registerHandler, validator.New(
+    validator.Field("username", "required", "alphanum", "min:3", "max:20"),
+    validator.Field("email", "required", "email"),
+    validator.Field("password", "required", "min:8"),
+))
+```
+
+### Optional Fields
+
+```go
+app.Put("/profile", updateProfile, validator.New(
+    validator.OptionalField("bio", "max:500"),
+    validator.OptionalField("website", "url"),
+))
+```
+
+### Enum Validation
+
+```go
+app.Post("/tasks", createTask, validator.New(
+    validator.Field("title", "required", "min:1", "max:200"),
+    validator.Field("status", "required", "in:pending,in_progress,done"),
+    validator.Field("priority", "required", "in:low,medium,high"),
+))
+```
+
+### JSON Body Validation
+
+```go
+app.Post("/api/users", createUser, validator.JSON(map[string][]string{
+    "email":    {"required", "email"},
+    "name":     {"required", "min:2"},
+    "age":      {"numeric"},
+}))
+```
+
+### Custom Error Handler
+
+```go
+app.Use(validator.WithOptions(validator.Options{
+    Rules: []validator.Rule{
+        validator.Field("email", "required", "email"),
+    },
+    ErrorHandler: func(c *mizu.Ctx, errors validator.ValidationErrors) error {
+        return c.JSON(422, map[string]any{
+            "message": "Validation failed",
+            "errors":  errors,
+        })
+    },
+}))
+```
+
+### Custom Error Messages
+
+```go
+app.Post("/contact", contactHandler, validator.New(
+    validator.Rule{
+        Field:   "email",
+        Rules:   []string{"required", "email"},
+        Message: "Please provide a valid email address",
+    },
+    validator.Rule{
+        Field:   "message",
+        Rules:   []string{"required", "min:10"},
+        Message: "Message must be at least 10 characters",
+    },
+))
+```
+
+### Multiple Validation Groups
+
+```go
+// Login validation
+loginRules := validator.New(
+    validator.Field("email", "required", "email"),
+    validator.Field("password", "required"),
+)
+
+// Registration validation
+registerRules := validator.New(
+    validator.Field("email", "required", "email"),
+    validator.Field("password", "required", "min:8"),
+    validator.Field("name", "required", "min:2"),
+)
+
+app.Post("/login", loginHandler, loginRules)
+app.Post("/register", registerHandler, registerRules)
+```
+
+### Query Parameter Validation
+
+```go
+// GET /users?page=1&limit=20&status=active
+app.Get("/users", listUsers, validator.New(
+    validator.OptionalField("page", "integer"),
+    validator.OptionalField("limit", "integer"),
+    validator.OptionalField("status", "in:active,inactive,pending"),
+))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates validator with rules
+func New(rules ...Rule) mizu.Middleware
+
+// WithOptions creates validator with full configuration
+func WithOptions(opts Options) mizu.Middleware
+
+// JSON validates JSON body against rules
+func JSON(rules map[string][]string) mizu.Middleware
+
+// Field creates a required field rule
+func Field(name string, rules ...string) Rule
+
+// OptionalField creates an optional field rule
+func OptionalField(name string, rules ...string) Rule
+```
+
+### Types
+
+```go
+type Rule struct {
+    Field    string
+    Rules    []string
+    Message  string
+    Optional bool
+}
+
+type ValidationError struct {
+    Field   string `json:"field"`
+    Message string `json:"message"`
+}
+
+type ValidationErrors []ValidationError
+```
+
+### Field Sources
+
+The validator checks these sources in order:
+1. Query parameters
+2. Form values (POST/PUT)
+3. Headers
+4. Path parameters
+
+## Error Response
+
+Default error response format:
+
+```json
+{
+    "error": "validation failed",
+    "errors": [
+        {"field": "email", "message": "is required"},
+        {"field": "name", "message": "must be at least 2 characters"}
+    ]
+}
+```
+
+## Best Practices
+
+- Validate all user input
+- Use appropriate rules for data types
+- Provide clear error messages
+- Validate early in the middleware chain
+
+## Related Middlewares
+
+- [contenttype](/middlewares/contenttype) - Content-Type validation
+- [bodylimit](/middlewares/bodylimit) - Body size limits

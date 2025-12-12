@@ -1,0 +1,130 @@
+---
+title: "Compress"
+description: "Response compression middleware supporting gzip and deflate encoding."
+---
+
+## Overview
+
+The `compress` middleware automatically compresses HTTP responses using gzip or deflate encoding when the client supports it. This reduces bandwidth usage and improves load times for text-based content.
+
+Use it when you need:
+- Reduced bandwidth for API responses
+- Faster page loads for web applications
+- Compression for JSON, HTML, CSS, and JavaScript
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/compress"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Enable gzip compression
+app.Use(compress.Gzip())
+
+// Or enable deflate
+app.Use(compress.Deflate())
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Level` | `int` | `6` | Compression level (1-9) |
+| `MinSize` | `int` | `1024` | Minimum response size to compress |
+| `ContentTypes` | `[]string` | Text types | Content types to compress |
+
+## Examples
+
+### Gzip Compression
+
+```go
+app.Use(compress.Gzip())
+```
+
+### Custom Compression Level
+
+```go
+// Best compression (slower)
+app.Use(compress.GzipLevel(9))
+
+// Fastest compression
+app.Use(compress.GzipLevel(1))
+```
+
+### With Options
+
+```go
+app.Use(compress.New(compress.Options{
+    MinSize: 1000, // Only compress responses > 1KB
+    ContentTypes: []string{
+        "text/plain",
+        "text/html",
+        "text/css",
+        "application/json",
+        "application/javascript",
+    },
+}))
+```
+
+### Auto-Select Encoding
+
+```go
+// Automatically selects gzip or deflate based on Accept-Encoding
+app.Use(compress.New(compress.Options{
+    MinSize: 512,
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// Gzip creates gzip compression middleware
+func Gzip() mizu.Middleware
+
+// GzipLevel creates gzip middleware with specific level
+func GzipLevel(level int) mizu.Middleware
+
+// Deflate creates deflate compression middleware
+func Deflate() mizu.Middleware
+
+// New creates compression middleware with options
+func New(opts Options) mizu.Middleware
+```
+
+### Compression Levels
+
+| Level | Description |
+|-------|-------------|
+| 1 | Best speed, least compression |
+| 6 | Default balance |
+| 9 | Best compression, slowest |
+
+## Behavior
+
+- Automatically sets `Content-Encoding` header
+- Adds `Vary: Accept-Encoding` header
+- Skips compression if client doesn't support it
+- Skips already-encoded responses
+- Skips responses smaller than `MinSize`
+
+## Best Practices
+
+- Use level 6 for most applications (good balance)
+- Set appropriate `MinSize` to avoid compressing tiny responses
+- Only compress text-based content types
+- Place before other response-modifying middleware
+
+## Related Middlewares
+
+- [cache](/middlewares/cache) - HTTP caching
+- [etag](/middlewares/etag) - ETag generation
+- [vary](/middlewares/vary) - Vary header management

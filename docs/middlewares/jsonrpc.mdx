@@ -1,0 +1,122 @@
+---
+title: "JSON-RPC"
+description: "JSON-RPC protocol middleware for RPC-style APIs."
+---
+
+## Overview
+
+The `jsonrpc` middleware provides JSON-RPC 2.0 protocol support for building RPC-style APIs over HTTP.
+
+Use it when you need:
+- JSON-RPC 2.0 APIs
+- RPC-style communication
+- Batch request support
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/jsonrpc"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+rpc := jsonrpc.New()
+rpc.Register("add", func(params []int) (int, error) {
+    return params[0] + params[1], nil
+})
+
+app.Post("/rpc", rpc.Handler())
+```
+
+## Examples
+
+### Register Methods
+
+```go
+rpc := jsonrpc.New()
+
+rpc.Register("math.add", func(a, b int) int {
+    return a + b
+})
+
+rpc.Register("math.multiply", func(a, b int) int {
+    return a * b
+})
+
+app.Post("/rpc", rpc.Handler())
+```
+
+### With Context
+
+```go
+rpc.RegisterWithContext("user.get", func(ctx context.Context, id string) (*User, error) {
+    return userService.Get(ctx, id)
+})
+```
+
+### Batch Requests
+
+Automatically supported:
+```json
+[
+    {"jsonrpc": "2.0", "method": "add", "params": [1, 2], "id": 1},
+    {"jsonrpc": "2.0", "method": "add", "params": [3, 4], "id": 2}
+]
+```
+
+### Error Handling
+
+```go
+rpc.Register("divide", func(a, b int) (int, error) {
+    if b == 0 {
+        return 0, jsonrpc.Error(-32000, "Division by zero")
+    }
+    return a / b, nil
+})
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates JSON-RPC handler
+func New() *JSONRPC
+
+// Register adds a method
+func (j *JSONRPC) Register(name string, fn any)
+
+// RegisterWithContext adds a method with context
+func (j *JSONRPC) RegisterWithContext(name string, fn any)
+
+// Handler returns HTTP handler
+func (j *JSONRPC) Handler() mizu.Handler
+
+// Error creates JSON-RPC error
+func Error(code int, message string) error
+```
+
+## Standard Error Codes
+
+| Code | Description |
+|------|-------------|
+| -32700 | Parse error |
+| -32600 | Invalid request |
+| -32601 | Method not found |
+| -32602 | Invalid params |
+| -32603 | Internal error |
+
+## Best Practices
+
+- Use meaningful method names
+- Validate parameters
+- Return proper error codes
+- Document available methods
+
+## Related Middlewares
+
+- [graphql](/middlewares/graphql) - GraphQL support
+- [validator](/middlewares/validator) - Input validation

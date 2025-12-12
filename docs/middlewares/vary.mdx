@@ -1,0 +1,90 @@
+---
+title: "Vary"
+description: "Vary header management middleware for cache control."
+---
+
+## Overview
+
+The `vary` middleware manages the Vary HTTP header, telling caches which request headers affect response content.
+
+Use it when you need:
+- Proper cache control
+- Content negotiation
+- CDN configuration
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/vary"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Vary by Accept-Encoding
+app.Use(vary.New("Accept-Encoding"))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Headers` | `[]string` | Required | Headers to vary by |
+
+## Examples
+
+### Single Header
+
+```go
+app.Use(vary.New("Accept-Encoding"))
+// Vary: Accept-Encoding
+```
+
+### Multiple Headers
+
+```go
+app.Use(vary.New("Accept-Encoding", "Accept-Language", "Authorization"))
+// Vary: Accept-Encoding, Accept-Language, Authorization
+```
+
+### Common Patterns
+
+```go
+// API with auth
+app.Use(vary.New("Authorization"))
+
+// Multilingual site
+app.Use(vary.New("Accept-Language"))
+
+// Compression
+app.Use(vary.New("Accept-Encoding"))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates vary middleware
+func New(headers ...string) mizu.Middleware
+
+// Add adds to existing Vary header
+func Add(c *mizu.Ctx, header string)
+```
+
+## Best Practices
+
+- Include all headers that affect response
+- Use with compression middleware
+- Consider CDN caching implications
+- Don't over-vary (reduces cache effectiveness)
+
+## Related Middlewares
+
+- [compress](/middlewares/compress) - Response compression
+- [cache](/middlewares/cache) - Cache-Control headers
+- [language](/middlewares/language) - Language detection

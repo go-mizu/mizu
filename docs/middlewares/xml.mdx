@@ -1,0 +1,121 @@
+---
+title: "XML"
+description: "XML content handling middleware for XML request/response processing."
+---
+
+## Overview
+
+The `xml` middleware provides XML content negotiation, parsing, and response helpers for XML-based APIs.
+
+Use it when you need:
+- XML API endpoints
+- SOAP compatibility
+- Legacy system integration
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/xml"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+app.Use(xml.New())
+
+app.Get("/data", func(c *mizu.Ctx) error {
+    return xml.Send(c, 200, data)
+})
+```
+
+## Examples
+
+### XML Response
+
+```go
+type User struct {
+    XMLName xml.Name `xml:"user"`
+    ID      string   `xml:"id"`
+    Name    string   `xml:"name"`
+}
+
+app.Get("/user/:id", func(c *mizu.Ctx) error {
+    user := getUser(c.Param("id"))
+    return xml.Send(c, 200, user)
+})
+// <user><id>1</id><name>John</name></user>
+```
+
+### Parse XML Request
+
+```go
+app.Post("/users", func(c *mizu.Ctx) error {
+    var user User
+    if err := xml.Bind(c, &user); err != nil {
+        return err
+    }
+    // Process user
+    return c.NoContent()
+})
+```
+
+### Content Negotiation
+
+```go
+app.Use(xml.New())
+
+app.Get("/data", func(c *mizu.Ctx) error {
+    // Returns XML if Accept: application/xml
+    // Returns JSON if Accept: application/json
+    return c.Negotiate(200, data)
+})
+```
+
+### With Declaration
+
+```go
+app.Get("/data", func(c *mizu.Ctx) error {
+    return xml.SendWithDeclaration(c, 200, data)
+})
+// <?xml version="1.0" encoding="UTF-8"?><data>...</data>
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates XML middleware
+func New() mizu.Middleware
+
+// Send sends XML response
+func Send(c *mizu.Ctx, status int, data any) error
+
+// SendWithDeclaration sends XML with declaration
+func SendWithDeclaration(c *mizu.Ctx, status int, data any) error
+
+// Bind parses XML request body
+func Bind(c *mizu.Ctx, v any) error
+```
+
+## Content Types
+
+| Type | Description |
+|------|-------------|
+| `application/xml` | Standard XML |
+| `text/xml` | Alternative |
+
+## Best Practices
+
+- Use proper struct tags
+- Handle encoding correctly
+- Validate XML input
+- Consider namespace handling
+
+## Related Middlewares
+
+- [contenttype](/middlewares/contenttype) - Content-Type validation
+- [msgpack](/middlewares/msgpack) - MessagePack handling
+- [validator](/middlewares/validator) - Input validation

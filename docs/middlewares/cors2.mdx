@@ -1,0 +1,110 @@
+---
+title: "CORS2"
+description: "Enhanced CORS middleware with preflight caching and advanced options."
+---
+
+## Overview
+
+The `cors2` middleware provides enhanced Cross-Origin Resource Sharing handling with additional features like pattern-based origin matching, preflight response caching, and more granular control.
+
+Use it when you need:
+- Wildcard subdomain matching
+- Advanced preflight caching
+- More control over CORS behavior
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/cors2"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Allow all subdomains of example.com
+app.Use(cors2.New(cors2.Options{
+    AllowOriginPatterns: []string{"https://*.example.com"},
+}))
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `AllowOrigins` | `[]string` | `["*"]` | Exact origins allowed |
+| `AllowOriginPatterns` | `[]string` | `[]` | Wildcard patterns |
+| `AllowMethods` | `[]string` | Standard methods | Allowed methods |
+| `AllowHeaders` | `[]string` | Standard headers | Allowed headers |
+| `ExposeHeaders` | `[]string` | `[]` | Exposed headers |
+| `AllowCredentials` | `bool` | `false` | Allow credentials |
+| `MaxAge` | `time.Duration` | `0` | Preflight cache time |
+| `AllowPrivateNetwork` | `bool` | `false` | Private network access |
+| `OptionsPassthrough` | `bool` | `false` | Pass OPTIONS to handler |
+
+## Examples
+
+### Wildcard Subdomains
+
+```go
+app.Use(cors2.New(cors2.Options{
+    AllowOriginPatterns: []string{
+        "https://*.example.com",
+        "https://*.staging.example.com",
+    },
+}))
+```
+
+### Combined Exact and Pattern
+
+```go
+app.Use(cors2.New(cors2.Options{
+    AllowOrigins: []string{"https://example.com"},
+    AllowOriginPatterns: []string{"https://*.example.com"},
+}))
+```
+
+### Full Configuration
+
+```go
+app.Use(cors2.New(cors2.Options{
+    AllowOrigins:        []string{"https://app.example.com"},
+    AllowMethods:        []string{"GET", "POST", "PUT", "DELETE"},
+    AllowHeaders:        []string{"Authorization", "Content-Type", "X-Request-ID"},
+    ExposeHeaders:       []string{"X-Total-Count", "X-Page-Count"},
+    AllowCredentials:    true,
+    MaxAge:              12 * time.Hour,
+    AllowPrivateNetwork: false,
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates CORS2 middleware with options
+func New(opts Options) mizu.Middleware
+```
+
+## Pattern Syntax
+
+- `*` matches any sequence of characters
+- `https://*.example.com` matches `https://app.example.com`, `https://api.example.com`
+- Patterns are matched against the full origin including protocol
+
+## Best Practices
+
+- Use exact origins when possible for security
+- Use patterns only for known subdomain structures
+- Set appropriate MaxAge to reduce preflight requests
+- Be cautious with credentials and wildcards
+
+## Related Middlewares
+
+- [cors](/middlewares/cors) - Basic CORS handling
+- [secure](/middlewares/secure) - Security settings
+- [helmet](/middlewares/helmet) - Security headers

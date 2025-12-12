@@ -1,0 +1,88 @@
+---
+title: "Real IP"
+description: "Real client IP extraction middleware for proxy environments."
+---
+
+## Overview
+
+The `realip` middleware extracts the real client IP address from proxy headers. It's essential when running behind load balancers or reverse proxies.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/realip"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+app.Use(realip.New())
+```
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `TrustedProxies` | `[]string` | - | Trusted proxy IPs/CIDRs |
+| `TrustedHeaders` | `[]string` | See below | Headers to check |
+
+### Default Headers (checked in order)
+
+1. `X-Forwarded-For`
+2. `X-Real-IP`
+3. `CF-Connecting-IP` (Cloudflare)
+4. `True-Client-IP`
+
+## Examples
+
+### Basic Usage
+
+```go
+app.Use(realip.New())
+
+app.Get("/", func(c *mizu.Ctx) error {
+    ip := realip.Get(c)
+    return c.Text(200, "Your IP: "+ip)
+})
+```
+
+### Trusted Proxies
+
+```go
+app.Use(realip.WithTrustedProxies(
+    "10.0.0.0/8",
+    "192.168.0.0/16",
+))
+```
+
+### Custom Configuration
+
+```go
+app.Use(realip.WithOptions(realip.Options{
+    TrustedProxies: []string{"10.0.0.0/8"},
+    TrustedHeaders: []string{
+        "X-Real-IP",
+        "X-Forwarded-For",
+    },
+}))
+```
+
+## API Reference
+
+```go
+func New() mizu.Middleware
+func WithTrustedProxies(proxies ...string) mizu.Middleware
+func WithOptions(opts Options) mizu.Middleware
+func FromContext(c *mizu.Ctx) string
+func Get(c *mizu.Ctx) string  // Alias for FromContext
+```
+
+## Security
+
+Only trust proxy headers when behind a trusted proxy. Without `TrustedProxies`, all requests are trusted.
+
+## Related Middlewares
+
+- [forwarded](/middlewares/forwarded) - Full forwarded header parsing
+- [ipfilter](/middlewares/ipfilter) - IP filtering

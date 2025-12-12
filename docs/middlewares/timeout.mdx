@@ -1,0 +1,108 @@
+---
+title: "Timeout"
+description: "Request timeout middleware for preventing long-running requests."
+---
+
+## Overview
+
+The `timeout` middleware enforces a maximum duration for request processing. If a handler takes too long, the request is cancelled and an error response is returned.
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/timeout"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// 30 second timeout
+app.Use(timeout.New(30 * time.Second))
+```
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Timeout` | `time.Duration` | `30s` | Maximum request duration |
+| `ErrorHandler` | `func(*mizu.Ctx) error` | - | Custom timeout handler |
+| `ErrorMessage` | `string` | `"Service Unavailable"` | Error message |
+
+## Examples
+
+### Basic Timeout
+
+```go
+app.Use(timeout.New(30 * time.Second))
+```
+
+### Custom Error Handler
+
+```go
+app.Use(timeout.WithOptions(timeout.Options{
+    Timeout: 10 * time.Second,
+    ErrorHandler: func(c *mizu.Ctx) error {
+        return c.JSON(504, map[string]string{
+            "error": "Request timed out",
+        })
+    },
+}))
+```
+
+### Different Timeouts Per Route
+
+```go
+// Global: 30s
+app.Use(timeout.New(30 * time.Second))
+
+// Slow endpoint: 5 minutes
+app.Post("/export", exportHandler, timeout.New(5*time.Minute))
+
+// Fast endpoint: 5 seconds
+app.Get("/health", healthHandler, timeout.New(5*time.Second))
+```
+
+### Check Context in Handler
+
+```go
+app.Get("/data", func(c *mizu.Ctx) error {
+    for i := 0; i < 100; i++ {
+        select {
+        case <-c.Context().Done():
+            return c.Context().Err() // Timeout reached
+        default:
+            processItem(i)
+        }
+    }
+    return c.JSON(200, results)
+})
+```
+
+## API Reference
+
+```go
+func New(timeout time.Duration) mizu.Middleware
+func WithOptions(opts Options) mizu.Middleware
+```
+
+## How It Works
+
+1. Creates a context with deadline
+2. Runs handler in goroutine
+3. Returns whichever completes first:
+   - Handler completion
+   - Timeout expiration (returns 503)
+
+## Best Practices
+
+- Set reasonable timeouts based on expected duration
+- Use longer timeouts for file uploads/downloads
+- Check context in long-running operations
+- Return 503 (Service Unavailable) on timeout
+
+## Related Middlewares
+
+- [recover](/middlewares/recover) - Panic recovery
+- [circuitbreaker](/middlewares/circuitbreaker) - Failure handling

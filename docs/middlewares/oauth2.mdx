@@ -1,0 +1,169 @@
+---
+title: "OAuth2"
+description: "OAuth 2.0 authentication middleware for third-party login integration."
+---
+
+## Overview
+
+The `oauth2` middleware provides OAuth 2.0 authentication flows for integrating with providers like Google, GitHub, Facebook, and custom OAuth servers.
+
+Use it when you need:
+- Social login (Google, GitHub, etc.)
+- Third-party authentication
+- OAuth 2.0 authorization code flow
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/oauth2"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Configure OAuth provider
+config := oauth2.Config{
+    ClientID:     "your-client-id",
+    ClientSecret: "your-client-secret",
+    RedirectURL:  "http://localhost:3000/callback",
+    AuthURL:      "https://provider.com/oauth/authorize",
+    TokenURL:     "https://provider.com/oauth/token",
+    Scopes:       []string{"email", "profile"},
+}
+
+app.Get("/login", oauth2.Login(config))
+app.Get("/callback", oauth2.Callback(config, handleUser))
+```
+
+## Configuration
+
+### Config
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ClientID` | `string` | OAuth client ID |
+| `ClientSecret` | `string` | OAuth client secret |
+| `RedirectURL` | `string` | Callback URL |
+| `AuthURL` | `string` | Provider's auth endpoint |
+| `TokenURL` | `string` | Provider's token endpoint |
+| `Scopes` | `[]string` | Requested scopes |
+
+## Examples
+
+### Google OAuth
+
+```go
+config := oauth2.Google(oauth2.Config{
+    ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+    ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+    RedirectURL:  "http://localhost:3000/auth/google/callback",
+    Scopes:       []string{"email", "profile"},
+})
+
+app.Get("/auth/google", oauth2.Login(config))
+app.Get("/auth/google/callback", oauth2.Callback(config, func(c *mizu.Ctx, token *oauth2.Token, user *oauth2.User) error {
+    // User authenticated successfully
+    session.Get(c).Set("user_id", user.ID)
+    return c.Redirect(302, "/dashboard")
+}))
+```
+
+### GitHub OAuth
+
+```go
+config := oauth2.GitHub(oauth2.Config{
+    ClientID:     os.Getenv("GITHUB_CLIENT_ID"),
+    ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
+    RedirectURL:  "http://localhost:3000/auth/github/callback",
+    Scopes:       []string{"user:email"},
+})
+
+app.Get("/auth/github", oauth2.Login(config))
+app.Get("/auth/github/callback", oauth2.Callback(config, handleGitHubUser))
+```
+
+### Custom Provider
+
+```go
+config := oauth2.Config{
+    ClientID:     "client-id",
+    ClientSecret: "client-secret",
+    RedirectURL:  "http://localhost:3000/callback",
+    AuthURL:      "https://auth.example.com/authorize",
+    TokenURL:     "https://auth.example.com/token",
+    UserInfoURL:  "https://api.example.com/userinfo",
+    Scopes:       []string{"openid", "profile"},
+}
+```
+
+### State Parameter
+
+```go
+app.Get("/login", oauth2.LoginWithState(config, func(c *mizu.Ctx) string {
+    // Generate state with return URL
+    return base64.URLEncoding.EncodeToString([]byte(c.Query("return_url")))
+}))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// Login starts OAuth flow
+func Login(config Config) mizu.Handler
+
+// LoginWithState starts flow with custom state
+func LoginWithState(config Config, stateFn func(*mizu.Ctx) string) mizu.Handler
+
+// Callback handles OAuth callback
+func Callback(config Config, handler CallbackHandler) mizu.Handler
+
+// Provider presets
+func Google(config Config) Config
+func GitHub(config Config) Config
+func Facebook(config Config) Config
+```
+
+### Types
+
+```go
+type Token struct {
+    AccessToken  string
+    RefreshToken string
+    Expiry       time.Time
+}
+
+type User struct {
+    ID       string
+    Email    string
+    Name     string
+    Picture  string
+    Provider string
+}
+
+type CallbackHandler func(*mizu.Ctx, *Token, *User) error
+```
+
+## Security Considerations
+
+1. **Store secrets securely** - Use environment variables
+2. **Validate state parameter** - Prevents CSRF attacks
+3. **Use HTTPS** - Required for production OAuth
+4. **Verify tokens** - Check expiration and validity
+5. **Limit scopes** - Request only needed permissions
+
+## Best Practices
+
+- Store tokens securely (encrypted if stored)
+- Implement token refresh for long sessions
+- Handle callback errors gracefully
+- Log OAuth events for security monitoring
+
+## Related Middlewares
+
+- [oidc](/middlewares/oidc) - OpenID Connect
+- [jwt](/middlewares/jwt) - JWT authentication
+- [session](/middlewares/session) - Session management

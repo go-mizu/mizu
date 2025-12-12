@@ -1,0 +1,247 @@
+---
+title: "Honeypot"
+description: "Detect and block malicious requests targeting common attack paths."
+---
+
+## Overview
+
+The `honeypot` middleware monitors requests to commonly attacked paths (like `/admin`, `/.env`, `/wp-admin`) and blocks IPs that access them. It acts as a trap for attackers and bots scanning for vulnerabilities.
+
+Use it when you need:
+- Detect automated vulnerability scanners
+- Block malicious IPs proactively
+- Reduce attack surface
+- Log attack attempts
+
+## Installation
+
+```go
+import "github.com/go-mizu/mizu/middlewares/honeypot"
+```
+
+## Quick Start
+
+```go
+app := mizu.New()
+
+// Use default honeypot paths
+app.Use(honeypot.New())
+```
+
+## Configuration
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `Paths` | `[]string` | Common attack paths | Paths to monitor |
+| `BlockDuration` | `time.Duration` | `1h` | How long to block detected IPs |
+| `Response` | `func(*mizu.Ctx) error` | 404 Not Found | Response for honeypot requests |
+| `OnTrap` | `func(ip, path string)` | - | Callback when trap triggered |
+
+### Default Paths
+
+```go
+var defaultPaths = []string{
+    "/admin", "/administrator", "/wp-admin", "/wp-login.php",
+    "/phpmyadmin", "/pma", "/mysql", "/sql",
+    "/.env", "/.git", "/.svn", "/config.php",
+    "/backup", "/backup.sql", "/dump.sql",
+    "/shell", "/cmd", "/exec", "/eval",
+    "/xmlrpc.php", "/wp-config.php",
+    "/server-status", "/server-info",
+}
+```
+
+## Examples
+
+### Default Configuration
+
+```go
+// Monitor default attack paths
+app.Use(honeypot.New())
+```
+
+### Custom Paths
+
+```go
+app.Use(honeypot.Paths(
+    "/secret",
+    "/internal",
+    "/debug",
+    "/test.php",
+))
+```
+
+### Admin Path Honeypot
+
+```go
+// Specifically target admin path attackers
+app.Use(honeypot.AdminPaths())
+```
+
+### Config File Honeypot
+
+```go
+// Target config file scanners
+app.Use(honeypot.ConfigPaths())
+```
+
+### Database Path Honeypot
+
+```go
+// Target database scanners
+app.Use(honeypot.DatabasePaths())
+```
+
+### With Logging
+
+```go
+app.Use(honeypot.WithOptions(honeypot.Options{
+    OnTrap: func(ip, path string) {
+        log.Printf("HONEYPOT: IP %s triggered trap at %s", ip, path)
+
+        // Send to security monitoring
+        alertSecurity(ip, path)
+    },
+}))
+```
+
+### Custom Block Duration
+
+```go
+app.Use(honeypot.WithOptions(honeypot.Options{
+    BlockDuration: 24 * time.Hour, // Block for 24 hours
+}))
+```
+
+### Custom Response
+
+```go
+app.Use(honeypot.WithOptions(honeypot.Options{
+    Response: func(c *mizu.Ctx) error {
+        // Slow down attackers with a delay
+        time.Sleep(5 * time.Second)
+        return c.Text(404, "Not Found")
+    },
+}))
+```
+
+### Form Field Honeypot
+
+Detect bots that fill hidden form fields:
+
+```go
+// Add to forms that might be targeted by bots
+app.Post("/contact", contactHandler, honeypot.Form("website"))
+```
+
+```html
+<!-- Hidden field that humans won't fill -->
+<form method="POST" action="/contact">
+    <input type="text" name="website" style="display:none">
+    <input type="text" name="email">
+    <textarea name="message"></textarea>
+    <button type="submit">Send</button>
+</form>
+```
+
+### Comprehensive Protection
+
+```go
+app.Use(honeypot.WithOptions(honeypot.Options{
+    Paths: append(
+        honeypot.DefaultPaths,
+        "/api/internal",
+        "/debug/vars",
+        "/metrics", // If not used
+    ),
+    BlockDuration: 12 * time.Hour,
+    OnTrap: func(ip, path string) {
+        // Log to file
+        securityLog.Printf("Blocked %s accessing %s", ip, path)
+
+        // Store in database for analysis
+        db.RecordAttackAttempt(ip, path, time.Now())
+
+        // Alert if too many attempts
+        if count := getAttemptCount(ip); count > 10 {
+            alertSecurityTeam(ip)
+        }
+    },
+}))
+```
+
+### Combined with IP Filter
+
+```go
+// First, check honeypot
+app.Use(honeypot.New())
+
+// Then, additional IP filtering
+app.Use(ipfilter.Deny(loadBlockedIPs()...))
+```
+
+## API Reference
+
+### Functions
+
+```go
+// New creates honeypot with default options
+func New() mizu.Middleware
+
+// WithOptions creates honeypot with custom options
+func WithOptions(opts Options) mizu.Middleware
+
+// Paths creates honeypot for specific paths
+func Paths(paths ...string) mizu.Middleware
+
+// AdminPaths creates honeypot for admin paths
+func AdminPaths() mizu.Middleware
+
+// ConfigPaths creates honeypot for config file paths
+func ConfigPaths() mizu.Middleware
+
+// DatabasePaths creates honeypot for database paths
+func DatabasePaths() mizu.Middleware
+
+// Form creates honeypot for form field detection
+func Form(field string) mizu.Middleware
+```
+
+## How It Works
+
+1. **Request arrives** at a honeypot path
+2. **IP recorded** in block list with expiration
+3. **Callback triggered** (if configured) for logging/alerting
+4. **Fake response** returned to attacker
+5. **Future requests** from that IP are blocked
+
+```
+Attacker → /wp-admin → IP Blocked → 403 Forbidden
+                     ↓
+                     OnTrap callback
+                     ↓
+                     Log/Alert
+```
+
+## Security Considerations
+
+1. **False Positives** - Legitimate users might accidentally hit honeypot paths
+2. **IP Rotation** - Attackers may rotate IPs
+3. **Proxy Detection** - Consider X-Forwarded-For for accurate blocking
+4. **Log Analysis** - Monitor trapped IPs for patterns
+
+## Best Practices
+
+- Choose honeypot paths that legitimate users won't access
+- Set appropriate block duration based on attack patterns
+- Log all triggered traps for security analysis
+- Combine with other security measures
+- Don't use paths that might be legitimately requested
+
+## Related Middlewares
+
+- [ipfilter](/middlewares/ipfilter) - IP whitelist/blacklist
+- [ratelimit](/middlewares/ratelimit) - Rate limiting
+- [captcha](/middlewares/captcha) - Bot detection
