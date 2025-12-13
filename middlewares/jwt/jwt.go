@@ -123,7 +123,7 @@ func handleError(c *mizu.Ctx, opts Options, err error) error {
 	if opts.ErrorHandler != nil {
 		return opts.ErrorHandler(c, err)
 	}
-	if err == ErrTokenMissing {
+	if errors.Is(err, ErrTokenMissing) {
 		return c.Text(http.StatusUnauthorized, err.Error())
 	}
 	return c.Text(http.StatusForbidden, err.Error())

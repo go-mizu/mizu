@@ -3,6 +3,7 @@ package keyauth
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -101,7 +102,7 @@ func handleError(c *mizu.Ctx, opts Options, err error) error {
 	if opts.ErrorHandler != nil {
 		return opts.ErrorHandler(c, err)
 	}
-	if err == ErrKeyMissing {
+	if errors.Is(err, ErrKeyMissing) {
 		return c.Text(http.StatusUnauthorized, err.Error())
 	}
 	return c.Text(http.StatusForbidden, err.Error())

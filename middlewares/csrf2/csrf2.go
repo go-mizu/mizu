@@ -188,7 +188,9 @@ func generateToken(secret string, length int) string {
 
 	// Add timestamp for rotation
 	timestamp := time.Now().Unix()
-	data := append(b, byte(timestamp>>24), byte(timestamp>>16), byte(timestamp>>8), byte(timestamp))
+	data := make([]byte, 0, length+4)
+	data = append(data, b...)
+	data = append(data, byte(timestamp>>24), byte(timestamp>>16), byte(timestamp>>8), byte(timestamp))
 
 	// Sign with secret
 	h := sha256.New()

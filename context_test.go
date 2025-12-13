@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"mime/multipart"
 	"net"
@@ -753,7 +754,7 @@ func TestSSE_ContextCancellation(t *testing.T) {
 
 	select {
 	case err := <-done:
-		if err != context.Canceled {
+		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("SSE should return context.Canceled, got %v", err)
 		}
 	case <-time.After(2 * time.Second):
@@ -804,7 +805,7 @@ func TestStream_Error(t *testing.T) {
 	err := c.Stream(func(w io.Writer) error {
 		return io.EOF
 	})
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		t.Fatalf("Stream should return handler error, got %v", err)
 	}
 }

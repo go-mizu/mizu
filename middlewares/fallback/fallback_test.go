@@ -164,7 +164,7 @@ func TestChain(t *testing.T) {
 	app.Use(Chain(
 		// First handler only handles custom errors
 		func(c *mizu.Ctx, err error) (bool, error) {
-			if err == customErr {
+			if errors.Is(err, customErr) {
 				return true, c.Text(http.StatusBadRequest, "custom handled")
 			}
 			return false, nil

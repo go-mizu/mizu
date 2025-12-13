@@ -2,6 +2,7 @@ package msgpack
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -334,7 +335,7 @@ func TestEncoderFloats(t *testing.T) {
 func TestUnsupportedType(t *testing.T) {
 	type custom struct{}
 	_, err := Marshal(custom{})
-	if err != ErrUnsupportedType {
+	if !errors.Is(err, ErrUnsupportedType) {
 		t.Errorf("expected ErrUnsupportedType, got %v", err)
 	}
 }
