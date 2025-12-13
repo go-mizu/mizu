@@ -39,6 +39,8 @@ func New(limit int) mizu.Middleware {
 }
 
 // WithOptions creates throttle middleware with custom options.
+//
+//nolint:cyclop // Throttling requires multiple limit and backoff checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.Limit == 0 {
 		opts.Limit = 100

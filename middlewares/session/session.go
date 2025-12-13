@@ -82,6 +82,8 @@ func New(opts Options) mizu.Middleware {
 }
 
 // WithStore creates session middleware with custom store.
+//
+//nolint:cyclop // Session management requires multiple cookie and storage checks
 func WithStore(store Store, opts Options) mizu.Middleware {
 	if opts.CookieName == "" {
 		opts.CookieName = "session_id"

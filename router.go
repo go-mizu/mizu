@@ -92,6 +92,8 @@ func canonicalPath(p string) string {
 }
 
 // ServeHTTP implements http.Handler and delegates to the internal ServeMux.
+//
+//nolint:cyclop // HTTP routing requires multiple path matching and middleware execution checks
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Run global middleware chain first with original path
 	// (middleware like slash needs to see original trailing slashes)

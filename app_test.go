@@ -72,7 +72,7 @@ func TestLoggerGetterAndSetLogger(t *testing.T) {
 
 func TestServeContext_EarlyServeError(t *testing.T) {
 	app := New()
-	srv := &http.Server{Addr: "127.0.0.1:0", Handler: app}
+	srv := &http.Server{Addr: "127.0.0.1:0", Handler: app} //nolint:gosec // G112: Test server
 
 	want := errors.New("boom")
 	err := app.ServeContext(context.Background(), srv, func() error { return want })
@@ -86,7 +86,7 @@ func TestServe_CloseListenerEarly_Path(t *testing.T) {
 	app := New()
 	ln := mustListen(t)
 	defer func() { _ = ln.Close() }()
-	srv := &http.Server{Addr: ln.Addr().String(), Handler: app}
+	srv := &http.Server{Addr: ln.Addr().String(), Handler: app} //nolint:gosec // G112: Test server
 
 	done := make(chan error, 1)
 	go func() {
@@ -120,7 +120,7 @@ func TestHealthz_ReadinessFlip(t *testing.T) {
 	ln := mustListen(t)
 	defer func() { _ = ln.Close() }()
 
-	srv := &http.Server{Addr: ln.Addr().String(), Handler: app}
+	srv := &http.Server{Addr: ln.Addr().String(), Handler: app} //nolint:gosec // G112: Test server
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -161,7 +161,7 @@ func TestGracefulDrain_CompletesInFlight(t *testing.T) {
 
 	ln := mustListen(t)
 	defer func() { _ = ln.Close() }()
-	srv := &http.Server{Addr: ln.Addr().String(), Handler: app}
+	srv := &http.Server{Addr: ln.Addr().String(), Handler: app} //nolint:gosec // G112: Test server
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -223,7 +223,7 @@ func TestShutdownTimeout_ClosesAndCancelsBaseContext(t *testing.T) {
 
 	ln := mustListen(t)
 	defer func() { _ = ln.Close() }()
-	srv := &http.Server{Addr: ln.Addr().String(), Handler: app}
+	srv := &http.Server{Addr: ln.Addr().String(), Handler: app} //nolint:gosec // G112: Test server
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -413,7 +413,7 @@ func TestServeWithSignals_ParentContextCancel(t *testing.T) {
 	}
 	defer func() { _ = ln.Close() }()
 
-	srv := &http.Server{Addr: ln.Addr().String(), Handler: app}
+	srv := &http.Server{Addr: ln.Addr().String(), Handler: app} //nolint:gosec // G112: Test server
 
 	// Create a parent context we can cancel without sending OS signals
 	parent, cancel := context.WithCancel(context.Background())

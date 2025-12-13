@@ -125,6 +125,8 @@ func New() mizu.Middleware {
 }
 
 // WithOptions creates otel middleware with custom options.
+//
+//nolint:cyclop // OpenTelemetry setup requires multiple configuration checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.ServiceName == "" {
 		opts.ServiceName = "unknown-service"

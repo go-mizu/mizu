@@ -69,6 +69,8 @@ func New(handler func(c *mizu.Ctx, reqBody, respBody []byte)) mizu.Middleware {
 }
 
 // WithOptions creates bodydump middleware with custom options.
+//
+//nolint:cyclop // Body dump requires multiple option and content type checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.MaxSize == 0 {
 		opts.MaxSize = 64 * 1024 // 64KB

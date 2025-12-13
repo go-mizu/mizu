@@ -51,6 +51,8 @@ func New(target string) mizu.Middleware {
 }
 
 // WithOptions creates proxy middleware with custom options.
+//
+//nolint:cyclop // Proxy handling requires multiple header and rewrite checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.Target == nil {
 		panic("proxy: target is required")

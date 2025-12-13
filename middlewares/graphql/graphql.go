@@ -49,6 +49,8 @@ func New() mizu.Middleware {
 }
 
 // WithOptions creates GraphQL validation middleware with custom options.
+//
+//nolint:cyclop // GraphQL validation requires multiple query checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.MaxDepth == 0 {
 		opts.MaxDepth = 10

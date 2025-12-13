@@ -94,6 +94,8 @@ func NonWWWRedirectCode(code int) mizu.Middleware {
 }
 
 // New creates redirect middleware with rules.
+//
+//nolint:cyclop // Redirect processing requires multiple rule and condition checks
 func New(rules []Rule) mizu.Middleware {
 	// Compile regex patterns
 	for i := range rules {

@@ -27,6 +27,8 @@ func New() mizu.Middleware {
 }
 
 // WithOptions creates ETag middleware with options.
+//
+//nolint:cyclop // ETag generation requires multiple conditional checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.HashFunc == nil {
 		opts.HashFunc = func(b []byte) string {

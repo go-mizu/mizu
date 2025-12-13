@@ -53,6 +53,8 @@ func New(enabled bool) mizu.Middleware {
 }
 
 // WithOptions creates maintenance middleware with custom options.
+//
+//nolint:cyclop // Maintenance mode requires multiple bypass and response checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.Message == "" {
 		opts.Message = "Service is under maintenance"

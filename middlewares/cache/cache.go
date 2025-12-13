@@ -49,6 +49,7 @@ func WithOptions(opts Options) mizu.Middleware {
 	}
 }
 
+//nolint:cyclop // Cache-Control header requires multiple directive checks
 func buildCacheControl(opts Options) string {
 	var parts []string
 

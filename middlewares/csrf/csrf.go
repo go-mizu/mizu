@@ -72,6 +72,8 @@ type Options struct {
 }
 
 // New creates a CSRF protection middleware.
+//
+//nolint:cyclop // CSRF protection requires multiple validation checks
 func New(opts Options) mizu.Middleware {
 	if len(opts.Secret) == 0 {
 		panic("csrf: secret is required")

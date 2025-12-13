@@ -45,6 +45,8 @@ func New(supported ...string) mizu.Middleware {
 }
 
 // WithOptions creates language middleware with custom options.
+//
+//nolint:cyclop // Language detection from multiple sources requires conditionals
 func WithOptions(opts Options) mizu.Middleware {
 	if len(opts.Supported) == 0 {
 		opts.Supported = []string{"en"}

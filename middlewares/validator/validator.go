@@ -116,6 +116,7 @@ func getValue(c *mizu.Ctx, field string) string {
 	return ""
 }
 
+//nolint:cyclop // Validation rule application requires checking all rule types
 func applyRule(field, value, rule, customMessage string) *ValidationError {
 	parts := strings.SplitN(rule, ":", 2)
 	ruleName := parts[0]

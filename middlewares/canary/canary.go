@@ -3,7 +3,7 @@ package canary
 
 import (
 	"context"
-	"math/rand"
+	"math/rand" //nolint:gosec // G404: Canary releases use math/rand for non-cryptographic percentage sampling
 	"sync/atomic"
 
 	"github.com/go-mizu/mizu"
@@ -76,7 +76,7 @@ func WithOptions(opts Options) mizu.Middleware {
 			if !isCanary {
 				// Use counter for deterministic distribution
 				current := atomic.AddUint64(&counter, 1)
-				isCanary = int(current%100) < opts.Percentage
+				isCanary = int(current%100) < opts.Percentage //nolint:gosec // G115: Modulo result is always < 100, safe for int
 			}
 
 			// Store in context
@@ -152,13 +152,13 @@ func (m *ReleaseManager) ShouldUseCanary(name string) bool {
 	}
 
 	current := atomic.AddUint64(&release.counter, 1)
-	return int(current%100) < release.Percentage
+	return int(current%100) < release.Percentage //nolint:gosec // G115: Modulo result is always < 100, safe for int
 }
 
 // RandomSelector creates a random-based selector.
 func RandomSelector(percentage int) func(*mizu.Ctx) bool {
 	return func(c *mizu.Ctx) bool {
-		return rand.Intn(100) < percentage
+		return rand.Intn(100) < percentage //nolint:gosec // G404: Canary selection uses weak RNG intentionally
 	}
 }
 

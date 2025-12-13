@@ -90,6 +90,8 @@ func New(secret string) mizu.Middleware {
 }
 
 // WithOptions creates csrf2 middleware with custom options.
+//
+//nolint:cyclop // CSRF protection requires multiple validation and token checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.TokenLength == 0 {
 		opts.TokenLength = 32

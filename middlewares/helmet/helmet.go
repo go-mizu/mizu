@@ -81,6 +81,8 @@ func Default() mizu.Middleware {
 }
 
 // New creates helmet middleware with custom options.
+//
+//nolint:cyclop // Security headers require multiple option checks
 func New(opts Options) mizu.Middleware {
 	return func(next mizu.Handler) mizu.Handler {
 		return func(c *mizu.Ctx) error {

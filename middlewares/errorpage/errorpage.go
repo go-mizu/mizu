@@ -70,6 +70,8 @@ func New() mizu.Middleware {
 }
 
 // WithOptions creates errorpage middleware with custom options.
+//
+//nolint:cyclop // Error page rendering requires multiple status and template checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.Pages == nil {
 		opts.Pages = make(map[int]*Page)

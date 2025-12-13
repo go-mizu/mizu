@@ -43,6 +43,8 @@ func New(validator KeyValidator) mizu.Middleware {
 }
 
 // WithOptions creates API key middleware with options.
+//
+//nolint:cyclop // API key validation requires multiple source and validation checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.Validator == nil {
 		panic("keyauth: validator is required")

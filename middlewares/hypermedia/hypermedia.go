@@ -53,6 +53,8 @@ func New() mizu.Middleware {
 }
 
 // WithOptions creates hypermedia middleware with custom options.
+//
+//nolint:cyclop // Response handling requires multiple conditional checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.LinksKey == "" {
 		opts.LinksKey = "_links"

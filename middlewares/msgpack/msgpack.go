@@ -105,6 +105,7 @@ func (e *Encoder) Encode(v any) error {
 	return e.encodeValue(v)
 }
 
+//nolint:cyclop // Type switch for all MessagePack types is inherently complex
 func (e *Encoder) encodeValue(v any) error {
 	switch val := v.(type) {
 	case nil:
@@ -155,6 +156,7 @@ func (e *Encoder) encodeValue(v any) error {
 	return nil
 }
 
+//nolint:cyclop,gosec // G115: MessagePack integer encoding requires type conversions within checked ranges
 func (e *Encoder) encodeInt(v int64) error {
 	switch {
 	case v >= 0 && v <= 127:
@@ -197,6 +199,7 @@ func (e *Encoder) encodeUint(v uint64) error {
 	return nil
 }
 
+//nolint:gosec // G115: Length conversions are within valid ranges due to switch guards
 func (e *Encoder) encodeString(s string) error {
 	l := len(s)
 	switch {
@@ -216,6 +219,7 @@ func (e *Encoder) encodeString(s string) error {
 	return nil
 }
 
+//nolint:gosec // G115: Length conversions are within valid ranges due to switch guards
 func (e *Encoder) encodeBinary(b []byte) error {
 	l := len(b)
 	switch {
@@ -233,6 +237,7 @@ func (e *Encoder) encodeBinary(b []byte) error {
 	return nil
 }
 
+//nolint:gosec // G115: Length conversions are within valid ranges due to switch guards
 func (e *Encoder) encodeArray(arr []any) error {
 	l := len(arr)
 	switch {
@@ -253,6 +258,7 @@ func (e *Encoder) encodeArray(arr []any) error {
 	return nil
 }
 
+//nolint:gosec // G115: Length conversions are within valid ranges due to switch guards
 func (e *Encoder) encodeMap(m map[string]any) error {
 	l := len(m)
 	switch {
@@ -295,6 +301,7 @@ func (d *Decoder) Decode() (any, error) {
 	return d.decodeValue()
 }
 
+//nolint:cyclop,gosec // G115: MessagePack decoder uses type switches and safe conversions
 func (d *Decoder) decodeValue() (any, error) {
 	if d.pos >= len(d.data) {
 		return nil, ErrBufferTooSmall
@@ -401,6 +408,7 @@ func (d *Decoder) readUint64() uint64 {
 	return v
 }
 
+//nolint:gosec // G115: uint64 to int64 conversion is intentional for MessagePack protocol
 func (d *Decoder) readInt64() (int64, error) {
 	if d.pos+8 > len(d.data) {
 		return 0, ErrBufferTooSmall

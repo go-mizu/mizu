@@ -262,6 +262,7 @@ func attrsToStringMap(attrs []slog.Attr) map[string]string {
 
 /* ========================================================= */
 
+//nolint:cyclop // Test functions commonly have higher complexity due to multiple assertions
 func Test_buildLogAttrs_AllFlags(t *testing.T) {
 	c, _, r, _ := newCtxForLoggerTest(http.MethodGet, "http://x.test/a?x=1", io.Discard)
 	r.Proto = "HTTP/1.1"

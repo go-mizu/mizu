@@ -82,6 +82,8 @@ func New() mizu.Middleware {
 }
 
 // WithOptions creates secure middleware with custom options.
+//
+//nolint:cyclop // Security middleware requires multiple header and policy checks
 func WithOptions(opts Options) mizu.Middleware {
 	if len(opts.ProxyHeaders) == 0 {
 		opts.ProxyHeaders = []string{"X-Forwarded-Proto"}

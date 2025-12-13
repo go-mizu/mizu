@@ -40,6 +40,8 @@ func WithTrustedProxies(proxies ...string) mizu.Middleware {
 }
 
 // WithOptions creates realip middleware with options.
+//
+//nolint:cyclop // Real IP detection requires multiple header and proxy checks
 func WithOptions(opts Options) mizu.Middleware {
 	if len(opts.TrustedHeaders) == 0 {
 		opts.TrustedHeaders = defaultHeaders

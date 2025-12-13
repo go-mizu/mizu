@@ -49,6 +49,8 @@ func New() mizu.Middleware {
 }
 
 // WithOptions creates XML middleware with custom options.
+//
+//nolint:cyclop // XML handling requires multiple content type and encoding checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.ContentType == "" {
 		opts.ContentType = "application/xml"

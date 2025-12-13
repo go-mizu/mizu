@@ -40,6 +40,8 @@ func New() mizu.Middleware {
 }
 
 // WithOptions creates retry middleware with custom options.
+//
+//nolint:cyclop // Retry logic requires multiple condition and backoff checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.MaxRetries == 0 {
 		opts.MaxRetries = 3

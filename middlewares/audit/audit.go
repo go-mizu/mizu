@@ -62,6 +62,8 @@ func New(handler Handler) mizu.Middleware {
 }
 
 // WithOptions creates audit middleware with custom options.
+//
+//nolint:cyclop // Audit logging requires multiple conditional checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.Handler == nil {
 		opts.Handler = defaultHandler
