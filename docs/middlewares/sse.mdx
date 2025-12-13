@@ -272,6 +272,60 @@ data: Hello, World!
 
 ```
 
+## Technical Details
+
+### Architecture
+
+The SSE middleware implements the W3C Server-Sent Events specification using Go's HTTP response writer and flusher interfaces. The implementation consists of three main components:
+
+1. **Client**: Represents an individual SSE connection with buffered event channels and disconnection handling
+2. **Event Loop**: Goroutine-based event processing that listens for both new events and client disconnection signals
+3. **Broker**: Optional multi-client manager for broadcasting events to all connected clients
+
+### Connection Lifecycle
+
+1. **Accept Header Check**: Validates that the client accepts `text/event-stream` or `*/*`
+2. **Flusher Verification**: Ensures the response writer supports HTTP flushing for streaming
+3. **Header Setup**: Sets required SSE headers (Content-Type, Cache-Control, Connection, X-Accel-Buffering)
+4. **Client Creation**: Initializes client with event channel (default buffer: 10) and done channel
+5. **Event Loop Start**: Launches goroutine to process events from the channel
+6. **Handler Execution**: Runs user-provided handler function
+7. **Cleanup**: Waits for client disconnection before returning
+
+### Event Processing
+
+Events are formatted according to SSE specification:
+- **ID field**: Optional event identifier for client resumption (`id: value\n`)
+- **Event field**: Optional event type name (`event: value\n`)
+- **Retry field**: Optional reconnection time in milliseconds (`retry: value\n`)
+- **Data field**: Event payload, split by newlines (`data: value\n` for each line)
+- **Terminator**: Empty line (`\n`) signals end of event
+
+Multiline data is automatically split and prefixed with `data:` for each line.
+
+### Broker Implementation
+
+The broker uses a fan-out pattern with three internal channels:
+- **Register channel**: Adds new clients to the client map
+- **Unregister channel**: Removes disconnected clients from the map
+- **Broadcast channel**: Queues events for distribution (buffer: 100)
+
+The broker runs a dedicated goroutine that:
+1. Manages client registration/unregistration
+2. Broadcasts events to all clients without blocking
+3. Skips clients with full buffers to prevent blocking
+
+### Concurrency Safety
+
+- Client send operations use mutex locks to prevent concurrent writes
+- Broker uses RWMutex for safe concurrent access to the client map
+- Done channel is checked before send operations to prevent panics
+- Multiple Close() calls are safe and non-blocking
+
+### Last-Event-ID Support
+
+The middleware reads the `Last-Event-ID` header from reconnecting clients, allowing handlers to resume event streams from a specific point.
+
 ## Best Practices
 
 - Use event IDs for client resumption
@@ -280,6 +334,31 @@ data: Hello, World!
 - Use Broker for multi-client scenarios
 - Keep payload sizes reasonable
 - Handle client disconnections gracefully
+
+## Testing
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestEvent` | Event structure creation with all fields | Event object correctly stores ID, Event, Data, and Retry fields |
+| `TestClient_Close` | Client close operation | Close() can be called multiple times safely without panic, Done channel is closed |
+| `TestClient_Send` | Sending event to client | Event is successfully sent through the Events channel |
+| `TestClient_SendData` | Sending data-only event | Data is wrapped in Event struct and sent through channel |
+| `TestClient_SendEvent` | Sending named event with data | Event type and data are correctly packaged and sent |
+| `TestClient_SendOnClosedChannel` | Sending to closed client | Send operation does not block or panic after client is closed |
+| `TestClient_send` | Internal send formatting with all fields | Output contains properly formatted id, event, data, and retry fields |
+| `TestClient_sendMultilineData` | Multiline data formatting | Each line is prefixed with "data:" in the output |
+| `TestClient_sendEmptyFields` | Send with minimal event data | Empty fields (ID, Event, Retry=0) are omitted from output |
+| `TestBroker` | Broker client management | Clients register successfully, receive broadcasts, and unregister on disconnect |
+| `TestBroker_BroadcastEvent` | Broadcasting named events | All registered clients receive the event with correct type and data |
+| `TestBroker_Broadcast` | Broadcasting full Event object | Event with all fields (ID, Event, Data, Retry) is delivered to clients |
+| `TestBroker_BroadcastWithFullBuffer` | Broadcast to client with full buffer | Broadcast operation does not block, skips clients with full buffers |
+| `TestOptions` | Options structure configuration | BufferSize and Retry values are correctly stored |
+| `TestNew` | Middleware creation with New() | Middleware is successfully created with default options |
+| `TestWithOptions_DefaultValues` | Middleware with empty options | Default values (BufferSize: 10, Retry: 3000) are applied |
+| `TestWithOptions_CustomValues` | Middleware with custom options | Custom BufferSize and Retry values are used |
+| `TestSSE_NonSSERequest` | Non-SSE Accept header | Request passes through to next handler, normal response returned |
+| `TestSSE_EmptyAcceptAllowed` | Empty Accept header | SSE connection is allowed (treated as accepting all types) |
+| `TestSSE_WildcardAccept` | Accept: */* header | SSE connection is allowed (wildcard matches event-stream) |
 
 ## Related Middlewares
 

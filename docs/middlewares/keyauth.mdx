@@ -224,6 +224,79 @@ var (
 )
 ```
 
+## Technical Details
+
+### Implementation Overview
+
+The keyauth middleware implements a flexible API key authentication system with support for multiple key sources (headers, query parameters, and cookies) and customizable validation logic.
+
+**Key Components:**
+
+1. **Key Extraction**: The middleware parses the `KeyLookup` option to determine where to extract the API key from:
+   - Header extraction with optional auth scheme prefix support
+   - Query parameter extraction
+   - Cookie extraction
+
+2. **Validation Pipeline**:
+   - Extract key from the configured source
+   - Return 401 Unauthorized if key is missing
+   - Execute custom validator function
+   - Return 403 Forbidden if validation fails or returns error
+   - Store validated key in request context for downstream handlers
+
+3. **Context Storage**: Validated keys are stored using a private `contextKey` type, ensuring type-safe retrieval and preventing context key collisions.
+
+4. **Error Handling**: The middleware provides two error handling paths:
+   - Custom error handler (if configured)
+   - Default handler: 401 for missing keys, 403 for invalid keys or validation errors
+
+### Key Extraction Logic
+
+```
+KeyLookup Format: "source:name"
+
+Header Source:
+  - Reads from request.Header.Get(name)
+  - If AuthScheme is set, strips the scheme prefix
+  - Example: "header:Authorization" with AuthScheme="ApiKey"
+    "ApiKey abc123" -> "abc123"
+
+Query Source:
+  - Reads from URL query parameter
+  - Example: "query:api_key" -> ?api_key=value
+
+Cookie Source:
+  - Reads from HTTP cookie
+  - Example: "cookie:auth_token"
+```
+
+### Validator Function
+
+The `KeyValidator` function signature:
+```go
+type KeyValidator func(key string) (valid bool, err error)
+```
+
+**Return Values:**
+- `(true, nil)` - Key is valid, allow request
+- `(false, nil)` - Key is invalid, return 403 Forbidden
+- `(_, error)` - Validation error occurred, return 403 with error
+
+### Static Key Validation
+
+The `ValidateKeys` helper creates a validator using a map for O(1) lookup:
+```go
+func ValidateKeys(keys ...string) KeyValidator {
+    keySet := make(map[string]bool)
+    for _, k := range keys {
+        keySet[k] = true
+    }
+    return func(key string) (bool, error) {
+        return keySet[key], nil
+    }
+}
+```
+
 ## Security Considerations
 
 1. **Key Generation** - Use cryptographically secure random keys
@@ -252,6 +325,44 @@ func generateAPIKey() string {
 - Log API key usage for auditing
 - Support multiple keys per user/service
 - Provide key management API
+
+## Testing
+
+The keyauth middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| **TestNew - valid key** | Valid API key provided in X-API-Key header | Returns 200 OK, allows request through |
+| **TestNew - invalid key** | Invalid API key provided | Returns 403 Forbidden, blocks request |
+| **TestNew - missing key** | No API key provided | Returns 401 Unauthorized, blocks request |
+| **TestWithOptions_QueryLookup** | API key provided via query parameter | Returns 200 OK when key is valid |
+| **TestWithOptions_CookieLookup** | API key provided via cookie | Returns 200 OK when key is valid |
+| **TestWithOptions_AuthScheme** | API key with "ApiKey" scheme in Authorization header | Strips scheme prefix, validates key, returns 200 OK |
+| **TestWithOptions_ErrorHandler** | Custom error handler configured | Custom error handler is invoked, returns custom JSON response |
+| **TestWithOptions_ValidatorError** | Validator returns error (e.g., database error) | Returns 403 Forbidden with error message |
+| **TestFromContext** | Retrieve API key from context after validation | Returns the validated API key string |
+| **TestGet** | Test Get() function as alias for FromContext() | Both functions return the same key value |
+| **TestValidateKeys - key1** | Static validator with "key1" in allowed list | Returns valid=true |
+| **TestValidateKeys - key2** | Static validator with "key2" in allowed list | Returns valid=true |
+| **TestValidateKeys - key3** | Static validator with "key3" in allowed list | Returns valid=true |
+| **TestValidateKeys - key4** | Static validator with "key4" not in allowed list | Returns valid=false |
+| **TestValidateKeys - empty** | Static validator with empty string | Returns valid=false |
+| **TestWithOptions_Panics - no validator** | Create middleware without validator | Panics with error message |
+| **TestWithOptions_Panics - invalid lookup** | Create middleware with invalid KeyLookup format | Panics with error message |
+| **TestErrors** | Verify error constants | ErrKeyMissing and ErrKeyInvalid return correct messages |
+
+### Running Tests
+
+```bash
+# Run all keyauth tests
+go test ./middlewares/keyauth
+
+# Run with coverage
+go test -cover ./middlewares/keyauth
+
+# Run specific test
+go test -run TestNew ./middlewares/keyauth
+```
 
 ## Related Middlewares
 

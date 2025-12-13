@@ -162,6 +162,51 @@ async function signRequest(body, secret) {
 }
 ```
 
+## Technical Details
+
+### Implementation Architecture
+
+The signature middleware implements HMAC-based request verification using Go's crypto packages:
+
+- **Algorithm Support**: SHA-1 (legacy), SHA-256 (default), SHA-512
+- **Encoding Formats**: Hexadecimal (default) and Base64
+- **Signature Verification**: Constant-time comparison using `hmac.Equal()` to prevent timing attacks
+
+### Core Components
+
+#### Middleware Flow
+
+1. **Path & Method Filtering**: Checks if request should skip validation based on configured paths and methods
+2. **Signature Extraction**: Retrieves signature from configured header and validates prefix if specified
+3. **Payload Reading**: Uses default body reader or custom `PayloadGetter` function
+4. **HMAC Verification**: Computes expected signature and performs constant-time comparison
+5. **Context Storage**: Stores verification result in request context for downstream handlers
+
+#### Key Functions
+
+- `New(secret)`: Creates middleware with default options (SHA-256, hex encoding, X-Signature header)
+- `WithOptions(opts)`: Creates middleware with custom configuration
+- `Sign(secret, algo, encoding, payload)`: Generates HMAC signature for given payload
+- `GetInfo(c)`: Retrieves signature verification information from context
+- `IsValid(c)`: Quick check if signature was valid
+
+#### Provider-Specific Helpers
+
+The middleware includes pre-configured functions for popular webhook providers:
+
+- **GitHub**: `X-Hub-Signature-256` header with `sha256=` prefix
+- **Stripe**: `Stripe-Signature` header (simplified implementation)
+- **Slack**: Custom payload format combining version, timestamp, and body
+- **Twilio**: SHA-1 with Base64 encoding, URL + sorted form parameters
+- **AWS**: Signature Version 4 (simplified implementation)
+
+### Security Features
+
+- **Constant-Time Comparison**: Uses `hmac.Equal()` to prevent timing attacks
+- **Body Preservation**: Re-wraps request body after reading for downstream handlers
+- **Configurable Skip Rules**: Allows excluding specific paths and HTTP methods
+- **Custom Error Handling**: Supports custom error responses via `ErrorHandler`
+
 ## Best Practices
 
 - Use SHA-256 or stronger algorithms
@@ -169,6 +214,44 @@ async function signRequest(body, secret) {
 - Use secure random secrets (32+ bytes)
 - Rotate secrets periodically
 - Log signature failures for security monitoring
+
+## Testing
+
+The signature middleware includes comprehensive test coverage for all features and edge cases:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware creation with default options | GET requests skip validation (default behavior) |
+| `TestValidSignature` | Valid HMAC-SHA256 signature verification | Request accepted with 200 OK |
+| `TestInvalidSignature` | Invalid signature provided | Request rejected with 401 Unauthorized |
+| `TestMissingSignature` | No signature header present | Request rejected with 401 Unauthorized |
+| `TestSignaturePrefix` | Signature with prefix (e.g., "sha256=") | Prefix validated and stripped correctly |
+| `TestBase64Encoding` | Base64-encoded signature verification | Signature decoded and verified |
+| `TestSHA1Algorithm` | SHA-1 algorithm (legacy support) | Signature verified with SHA-1 HMAC |
+| `TestSHA512Algorithm` | SHA-512 algorithm verification | Signature verified with SHA-512 HMAC |
+| `TestSkipPaths` | Configured paths excluded from validation | Skipped paths accept requests without signatures |
+| `TestCustomHeaderName` | Custom signature header name | Signature read from custom header |
+| `TestCustomErrorHandler` | Custom error response handler | Custom error format returned on failure |
+| `TestOnValid` | Callback function on successful validation | OnValid callback executed |
+| `TestGetInfo` | Retrieve signature info from context | Info object contains validation details |
+| `TestIsValid` | Check if signature is valid | Returns true for valid signatures |
+| `TestGitHub` | GitHub webhook signature format | X-Hub-Signature-256 with sha256= prefix verified |
+| `TestSign` | Signature generation for various algorithms | Consistent signatures generated for same input |
+| `TestSigner` | Client-side request signing | Signature header added to outgoing requests |
+| `TestSignerWithPrefix` | Signer with prefix configuration | Signature includes configured prefix |
+| `TestSignerNilBody` | Signing request with nil body | Handles nil body gracefully |
+| `TestStripe` | Stripe webhook signature verification | Stripe-Signature header verified |
+| `TestSlack` | Slack signature with timestamp format | v0=HMAC(v0:timestamp:body) format verified |
+| `TestTwilio` | Twilio signature with form parameters | SHA-1 Base64 signature of URL + sorted params |
+| `TestAWS` | AWS Signature Version 4 (simplified) | Authorization header signature verified |
+| `TestGetInfo_NoContext` | GetInfo without signature middleware | Returns nil when middleware not used |
+| `TestIsValid_NoContext` | IsValid without signature middleware | Returns false when middleware not used |
+| `TestSignaturePrefix_Missing` | Required prefix not present | Request rejected with 401 Unauthorized |
+| `TestCustomPayloadGetter` | Custom payload extraction function | Uses custom payload for verification |
+| `TestCustomPayloadGetter_Error` | PayloadGetter returns error | Request rejected with 401 Unauthorized |
+| `TestSignUnknownAlgorithm` | Unknown algorithm specified | Defaults to SHA-256 |
+| `TestSkipMethods_Custom` | Custom skip methods configuration | Configured methods skip validation |
+| `TestSignerSign_Direct` | Direct Sign method on Signer | Signature added with all custom options |
 
 ## Related Middlewares
 

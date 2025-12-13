@@ -103,12 +103,72 @@ func New(handler mizu.Handler) mizu.Middleware
 func WithOptions(opts Options) mizu.Middleware
 ```
 
+## Technical Details
+
+### Implementation Architecture
+
+The fallback middleware operates using a wrapper pattern that intercepts errors from downstream handlers:
+
+1. **Error Interception**: The middleware wraps the next handler in the chain and catches any returned errors
+2. **Panic Recovery**: When `CatchPanic` is enabled, it uses Go's `defer`/`recover` mechanism to catch panics and convert them to errors
+3. **Response Capture**: For status code-based fallbacks (like `NotFound`), it uses a custom `responseCapture` type that wraps `http.ResponseWriter` to intercept status codes
+4. **Handler Delegation**: Based on the configuration, it delegates to the appropriate fallback handler
+
+### Key Components
+
+- **Options**: Configuration structure that defines when and how to trigger fallback responses
+- **responseCapture**: Internal type that captures HTTP response status codes before they're written
+- **panicError**: Custom error type that wraps panic values, converting non-error panics into error types
+
+### Execution Flow
+
+```
+Request → Middleware → [Optional Panic Recovery] → Next Handler → Error Check → Fallback Handler (if needed) → Response
+```
+
+### Error Handling Chain
+
+The middleware provides multiple fallback strategies that can be composed:
+
+1. **New()**: Basic error handler with custom function
+2. **Default()**: Simple text response fallback
+3. **JSON()**: Structured JSON error responses
+4. **Redirect()**: Redirect-based error handling
+5. **Chain()**: Sequential fallback handlers with conditional logic
+6. **NotFound()**: Status code-specific handling for 404s
+7. **ForStatus()**: Generic status code-specific handling
+
 ## Best Practices
 
 - Keep fallback responses lightweight
 - Log when fallback is triggered
 - Monitor fallback rate
 - Use cached data when possible
+
+## Testing
+
+The fallback middleware includes comprehensive test coverage for various scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic fallback middleware creation | Returns custom error message when handler errors |
+| `TestWithOptions_CatchPanic` | Panic recovery with custom handler | Catches panic and returns custom response with 500 status |
+| `TestWithOptions_DefaultMessage` | Default message without custom handler | Returns configured default message on error |
+| `TestWithOptions_NoError` | Successful request handling | Passes through successful responses without triggering fallback |
+| `TestDefault` | Default text fallback | Returns simple text message on error |
+| `TestJSON` | JSON error responses | Returns JSON-formatted error with proper content type |
+| `TestRedirect` | Redirect on error | Redirects to specified URL with correct status code |
+| `TestChain` | Chained fallback handlers | Tries handlers in order, uses first that handles the error |
+| `TestChain_NoHandlerMatches` | Chain with no matches | Returns default "An error occurred" message |
+| `TestPanicWithError` | Panic with error type | Catches error panic and formats message correctly |
+| `TestPanicWithNonError` | Panic with non-error type | Converts non-error panic to "panic occurred" message |
+| `TestPanicWithDefaultHandler` | Panic without custom handler | Uses default message when no custom handler provided |
+| `TestNotFound` | 404 not found handling | Triggers custom handler on 404 status |
+| `TestForStatus` | Status code-specific handling | Creates middleware for specific status codes |
+| `TestWithOptions_DefaultsUsed` | Default configuration values | Uses "An error occurred" when no config provided |
+| `TestResponseCapture_WriteHeader` | Response status capturing | Captures first status code, ignores subsequent writes |
+| `TestResponseCapture_Write` | Response write interception | Sets status to 200 on first write if not set |
+| `TestPanicError_ErrorMethod` | Panic error type behavior | Correctly formats error messages for different panic types |
 
 ## Related Middlewares
 

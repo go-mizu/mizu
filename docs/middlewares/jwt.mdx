@@ -167,6 +167,44 @@ func Subject(c *mizu.Ctx) string
 | `iat` | Issued at |
 | `aud` | Audience |
 
+## Technical Details
+
+### Token Validation Process
+
+The JWT middleware implements a complete token validation workflow:
+
+1. **Token Extraction**: The middleware supports three token sources:
+   - Header: Extracts from Authorization header with configurable scheme (default: "Bearer")
+   - Query: Extracts from URL query parameters
+   - Cookie: Extracts from HTTP cookies
+
+2. **Token Structure Validation**: Validates the token has exactly three parts (header.payload.signature) separated by dots.
+
+3. **Signature Verification**: Uses HMAC-SHA256 to verify the token signature:
+   - Decodes the signature from base64url encoding
+   - Computes expected signature using the provided secret
+   - Performs constant-time comparison to prevent timing attacks
+
+4. **Payload Decoding**: Decodes the base64url-encoded payload and unmarshals JSON claims.
+
+5. **Claims Validation**: Validates standard JWT claims:
+   - `exp` (expiration): Rejects tokens past their expiration time
+   - `nbf` (not before): Rejects tokens used before their valid time
+   - `iss` (issuer): Validates against configured issuer if specified
+   - `aud` (audience): Validates against configured audience list if specified (supports both string and array formats)
+
+### Context Storage
+
+Claims are stored in the request context using a private context key. This prevents key collisions and ensures type safety. The `GetClaims()` and `Subject()` helper functions provide convenient access to the claims.
+
+### Error Handling
+
+The middleware defines specific error types for different failure scenarios:
+- `ErrTokenMissing`: Returns 401 Unauthorized
+- `ErrTokenMalformed`, `ErrTokenInvalid`, `ErrTokenExpired`, `ErrTokenNotYetValid`, `ErrInvalidScheme`, `ErrInvalidIssuer`, `ErrInvalidAudience`: Return 403 Forbidden
+
+Custom error handlers can be configured via the `ErrorHandler` option for application-specific error responses.
+
 ## Security Considerations
 
 1. **Use strong secrets** - At least 32 bytes for HS256
@@ -181,6 +219,45 @@ func Subject(c *mizu.Ctx) string
 - Use short-lived access tokens with refresh tokens
 - Include only necessary data in claims
 - Validate additional claims in handlers when needed
+
+## Testing
+
+The JWT middleware includes comprehensive test coverage for all scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| Valid Token | Token with valid signature and expiration | Returns 200 OK, request proceeds |
+| Missing Token | No Authorization header provided | Returns 401 Unauthorized |
+| Invalid Token | Malformed token structure | Returns 403 Forbidden |
+| Wrong Secret | Token signed with different secret | Returns 403 Forbidden, signature validation fails |
+| Expired Token | Token with past expiration time | Returns 403 Forbidden |
+| Valid Issuer | Token with matching issuer claim | Returns 200 OK |
+| Invalid Issuer | Token with non-matching issuer | Returns 403 Forbidden |
+| Missing Issuer | Token without issuer when required | Returns 403 Forbidden |
+| GetClaims | Extract all claims from context | Returns map with all token claims |
+| Subject | Extract subject claim | Returns "sub" claim value |
+| Query Lookup | Token in query parameter | Returns 200 OK, extracts from query string |
+| Cookie Lookup | Token in HTTP cookie | Returns 200 OK, extracts from cookie |
+| Cookie Missing | No cookie when expected | Returns 401 Unauthorized |
+| Not Before (Invalid) | Token with future "nbf" claim | Returns 403 Forbidden |
+| Not Before (Valid) | Token with past "nbf" claim | Returns 200 OK |
+| Valid Audience (String) | Token with matching audience string | Returns 200 OK |
+| Valid Audience (Array) | Token with matching audience in array | Returns 200 OK |
+| Invalid Audience | Token with non-matching audience | Returns 403 Forbidden |
+| Missing Audience | Token without audience when required | Returns 403 Forbidden |
+| GetClaims (No Claims) | Call GetClaims without JWT middleware | Returns nil |
+| Subject (No Claims) | Call Subject without JWT middleware | Returns empty string |
+| Subject (No Sub Claim) | Token without "sub" claim | Returns empty string |
+| Invalid Scheme | Wrong authorization scheme (e.g., "Basic") | Returns 403 Forbidden |
+| Custom Error Handler | Custom error handling function | Calls custom handler with custom status |
+| Custom Auth Scheme | Non-default scheme (e.g., "Token") | Returns 200 OK with custom scheme |
+| Malformed Parts | Token with wrong number of parts | Returns 403 Forbidden |
+| Invalid Base64 Signature | Signature not properly base64 encoded | Returns 403 Forbidden |
+| Invalid Base64 Payload | Payload not properly base64 encoded | Returns 403 Forbidden |
+| Invalid JSON Payload | Payload is not valid JSON | Returns 403 Forbidden |
+| Query Missing | No query parameter when expected | Returns 401 Unauthorized |
+| Panic (No Secret) | Options without secret | Panics with error message |
+| Panic (Invalid Lookup) | Invalid TokenLookup format | Panics with error message |
 
 ## Related Middlewares
 

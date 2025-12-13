@@ -155,12 +155,86 @@ type Claims struct {
 }
 ```
 
+## Technical Details
+
+### Token Verification Process
+
+The OIDC middleware implements a comprehensive JWT token verification process:
+
+1. **Token Extraction**: Tokens are extracted from the `Authorization` header using the Bearer scheme by default. A custom `TokenExtractor` function can be provided for alternative extraction methods (e.g., from query parameters or cookies).
+
+2. **Token Structure Validation**: The token is split into three parts (header, payload, signature) and validated for correct JWT format.
+
+3. **Header Decoding**: The JWT header is decoded to extract the algorithm (`alg`), key ID (`kid`), and token type (`typ`).
+
+4. **Claims Decoding**: The payload is decoded into standard OIDC claims including issuer, subject, audience, expiration, and custom claims.
+
+5. **Validation Checks**:
+   - **Issuer Validation**: Verifies the token was issued by the expected OIDC provider
+   - **Audience Validation**: Ensures the token is intended for this application (supports both string and array audiences)
+   - **Expiration Check**: Validates the token has not expired using the `exp` claim
+   - **Not Before Check**: Validates the token is valid using the `nbf` claim if present
+
+6. **Context Storage**: Validated claims are stored in the request context for downstream handlers to access via `GetClaims()`.
+
+### Claims Structure
+
+The middleware supports both standard OIDC claims and custom claims:
+
+- **Standard Claims**: `iss`, `sub`, `aud`, `exp`, `iat`, `nbf`, `email`, `name`
+- **Authorization Claims**: `groups`, `roles`, `scope`
+- **Raw Claims**: All claims are also stored in a `Raw` map for accessing custom provider-specific claims
+
+### Authorization Helpers
+
+Three specialized middleware functions provide fine-grained access control:
+
+- **RequireGroup**: Validates the user belongs to a specific group (checks `groups` claim)
+- **RequireRole**: Validates the user has a specific role (checks `roles` claim)
+- **RequireScope**: Validates the token includes a specific OAuth scope (checks space-delimited `scope` claim)
+
+### Error Handling
+
+The middleware provides customizable error handling through the `OnError` callback:
+
+- **Default Behavior**: Returns a 401 Unauthorized JSON response with error details
+- **Custom Handler**: Can be configured to log errors, return custom responses, or redirect to login
+
+### Path Skipping
+
+The `SkipPaths` option allows certain routes to bypass authentication (e.g., health checks, public endpoints) while keeping the middleware globally applied.
+
 ## Best Practices
 
 - Use OIDC discovery (/.well-known/openid-configuration)
 - Validate ID tokens for security
 - Store only necessary claims in sessions
 - Implement proper logout with end_session_endpoint
+- Configure appropriate `RefreshInterval` for JWKS key rotation
+- Use `SkipPaths` for public endpoints instead of conditional middleware application
+- Implement custom `OnError` handlers for security-sensitive logging
+- Leverage `RequireGroup`, `RequireRole`, and `RequireScope` for authorization
+
+## Testing
+
+The OIDC middleware includes comprehensive test coverage for various scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware initialization without token | Returns 401 Unauthorized |
+| `TestWithValidToken` | Valid token with correct issuer, audience, and expiration | Returns 200 OK, claims accessible via GetClaims |
+| `TestExpiredToken` | Token with expiration time in the past | Returns 401 Unauthorized |
+| `TestInvalidIssuer` | Token with incorrect issuer claim | Returns 401 Unauthorized |
+| `TestInvalidAudience` | Token with incorrect audience claim | Returns 401 Unauthorized |
+| `TestSkipPaths` | Configured paths that bypass authentication | Skipped paths return 200 OK without token, protected paths require token |
+| `TestCustomTokenExtractor` | Custom token extraction from query parameters | Successfully authenticates using token from query string |
+| `TestCustomOnError` | Custom error handler configuration | Returns custom error response (403 Forbidden) |
+| `TestClaimsHasAudience` | String and array audience validation | Correctly identifies audience in both string and array formats |
+| `TestClaimsHasGroup` | Group membership validation | Correctly identifies user group membership |
+| `TestClaimsHasRole` | Role membership validation | Correctly identifies user role membership |
+| `TestRequireGroup` | Group-based authorization middleware | Allows access with required group, denies without (403 Forbidden) |
+| `TestRequireScope` | Scope-based authorization middleware | Allows access with required scope, denies without (403 Forbidden) |
+| `TestInvalidToken` | Malformed token format | Returns 401 Unauthorized |
 
 ## Related Middlewares
 

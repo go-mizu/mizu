@@ -92,12 +92,58 @@ func Handler() mizu.Handler
 }
 ```
 
+## Technical Details
+
+### Standard Library Integration
+
+The middleware wraps Go's standard `expvar` package:
+
+- Uses `expvar.Handler()` to serve the variables endpoint
+- Exports all published variables as JSON
+- Includes built-in `cmdline` and `memstats` variables
+
+### Path Matching
+
+- Only intercepts requests to the configured path (default: `/debug/vars`)
+- All other requests pass through to the next handler
+- Efficient path comparison using string equality
+
+### Helper Functions
+
+The package provides convenience wrappers for common expvar types:
+
+- `NewInt(name)`: Creates and publishes an expvar.Int
+- `NewFloat(name)`: Creates and publishes an expvar.Float
+- `NewString(name)`: Creates and publishes an expvar.String
+- `NewMap(name)`: Creates and publishes an expvar.Map
+
+### Thread Safety
+
+All expvar types are safe for concurrent use across goroutines.
+
 ## Best Practices
 
 - Protect endpoint in production
 - Use for debugging and monitoring
 - Combine with custom metrics
 - Don't expose sensitive data
+
+## Testing
+
+The middleware includes comprehensive test coverage. Key test cases:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew/expvar_endpoint` | Request to /debug/vars | Returns 200 OK with expvar JSON |
+| `TestNew/non-expvar_path` | Request to other paths | Passes through to next handler |
+| `TestWithOptions_CustomPath` | Custom expvar path | Returns expvar data at custom path |
+| `TestHelpers/NewInt` | Integer counter helper | Creates and increments counter |
+| `TestHelpers/NewFloat` | Float gauge helper | Creates and sets float value |
+| `TestHelpers/NewString` | String variable helper | Creates and sets string value |
+| `TestHelpers/NewMap` | Map variable helper | Creates map with key-value pairs |
+| `TestHelpers/Get` | Get published variable | Returns published variable by name |
+| `TestHelpers/Do` | Iterate all variables | Iterates over all expvars |
+| `TestJSON` | JSON export function | Returns valid JSON object |
 
 ## Related Middlewares
 

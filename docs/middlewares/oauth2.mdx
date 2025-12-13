@@ -147,6 +147,59 @@ type User struct {
 type CallbackHandler func(*mizu.Ctx, *Token, *User) error
 ```
 
+## Technical Details
+
+### Architecture
+
+The OAuth2 middleware is designed as a resource server implementation that validates OAuth 2.0 access tokens. It follows a flexible architecture that supports multiple validation strategies:
+
+1. **Token Extraction**: Supports multiple token sources (header, query, form) via configurable `TokenLookup` parameter
+2. **Token Validation**: Two validation strategies:
+   - Custom validator function for flexibility
+   - Token introspection endpoint (RFC 7662) for standard OAuth servers
+3. **Scope Verification**: Automatic scope checking against required scopes
+4. **Context Storage**: Validated token information is stored in request context for downstream handlers
+
+### Token Validation Flow
+
+1. Extract token from request based on `TokenLookup` configuration
+2. Validate token using:
+   - Custom `Validator` function if provided, or
+   - OAuth 2.0 token introspection endpoint
+3. Check token expiration if `ExpiresAt` is set
+4. Verify required scopes match token scopes
+5. Store validated token in context
+6. Pass request to next handler
+
+### Token Introspection
+
+When using the introspection endpoint, the middleware:
+- Sends POST request to `IntrospectionURL` with token
+- Uses Basic authentication with `ClientID` and `ClientSecret` if provided
+- Parses introspection response according to RFC 7662
+- Validates the `active` field and extracts token metadata (subject, scopes, expiry)
+
+### Error Handling
+
+The middleware returns appropriate HTTP status codes:
+- `401 Unauthorized`: Missing, invalid, or expired tokens
+- `403 Forbidden`: Insufficient scopes
+- Sets `WWW-Authenticate: Bearer` header on errors
+
+Custom error handling can be implemented via the `ErrorHandler` option.
+
+### Context Access
+
+Helper functions provide convenient access to token information:
+- `Get(c)`: Retrieves full token object
+- `Subject(c)`: Gets token subject
+- `Scopes(c)`: Returns token scopes
+- `HasScope(c, scope)`: Checks for specific scope
+
+### Scope Middleware
+
+The `RequireScopes` middleware can be chained after the main OAuth2 middleware to enforce scope requirements at specific routes or route groups.
+
 ## Security Considerations
 
 1. **Store secrets securely** - Use environment variables
@@ -161,6 +214,44 @@ type CallbackHandler func(*mizu.Ctx, *Token, *User) error
 - Implement token refresh for long sessions
 - Handle callback errors gracefully
 - Log OAuth events for security monitoring
+
+## Testing
+
+The OAuth2 middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` - valid token | Request with valid Bearer token | Returns 200 OK, token validated |
+| `TestNew` - invalid token | Request with invalid Bearer token | Returns 401 Unauthorized |
+| `TestNew` - missing token | Request without Authorization header | Returns 401 Unauthorized |
+| `TestWithOptions_RequiredScopes` | Token with insufficient scopes | Returns 403 Forbidden |
+| `TestWithOptions_ExpiredToken` | Token with past expiration time | Returns 401 Unauthorized |
+| `TestGet` | Retrieve token from context | Token object accessible via Get() |
+| `TestSubject` | Extract subject from token | Subject field returned correctly |
+| `TestHasScope` | Check for specific scope | Returns true/false based on presence |
+| `TestRequireScopes` | Scope enforcement middleware | Blocks request if scopes missing |
+| `TestWWWAuthenticateHeader` | Invalid token response | WWW-Authenticate header present |
+| `TestExtractToken_Query` | Token in query parameter | Token extracted from URL query |
+| `TestExtractToken_Form` | Token in form body | Token extracted from form data |
+| `TestExtractToken_InvalidLookup` | Malformed TokenLookup config | Returns 401, no token found |
+| `TestExtractToken_UnknownSource` | Unknown token source type | Returns 401, no token found |
+| `TestExtractToken_HeaderWithoutBearer` | Plain token without Bearer prefix | Token extracted and validated |
+| `TestWithOptions_NoValidator` | No validator configured | Returns 401 with ErrNoValidator |
+| `TestWithOptions_CustomErrorHandler` | Custom error handler set | Custom handler invoked on error |
+| `TestIntrospectToken` - active | Introspection returns active token | Returns 200 OK |
+| `TestIntrospectToken` - inactive | Introspection returns inactive token | Returns 401 Unauthorized |
+| `TestIntrospectToken_ServerError` | Introspection endpoint error | Returns 401 Unauthorized |
+| `TestIntrospectToken_InvalidJSON` | Malformed introspection response | Returns 401 Unauthorized |
+| `TestIntrospectToken_ConnectionError` | Cannot connect to endpoint | Returns 401 Unauthorized |
+| `TestGet_NoToken` | Get() without middleware | Returns nil |
+| `TestSubject_NoToken` | Subject() without token | Returns empty string |
+| `TestScopes` | Retrieve scopes list | Returns all token scopes |
+| `TestScopes_NoToken` | Scopes() without token | Returns nil |
+| `TestRequireScopes_NoToken` | RequireScopes without auth | Returns 401 Unauthorized |
+| `TestRequireScopes_Sufficient` | Token has required scopes | Returns 200 OK, access granted |
+| `TestHasScope_NoToken` | HasScope() without token | Returns false |
+| `TestErrorTypes` | Error message strings | All error types return correct messages |
+| `TestWithOptions_IntrospectionWithoutClientCreds` | Introspection without client auth | No Basic auth sent, request succeeds |
 
 ## Related Middlewares
 

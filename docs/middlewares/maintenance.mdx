@@ -222,6 +222,44 @@ Content-Type: text/plain
 Service is under maintenance
 ```
 
+## Technical Details
+
+### Implementation Architecture
+
+The maintenance middleware is implemented with a layered approach for flexibility and performance:
+
+1. **Static Configuration** - Uses `Options` struct to configure enabled state, messages, status codes, and retry headers
+2. **Dynamic Mode Control** - `Mode` type provides thread-safe atomic operations for runtime enable/disable toggling
+3. **Bypass Mechanisms** - Implements two bypass layers:
+   - IP-based whitelisting via `Whitelist` option (checks X-Forwarded-For, X-Real-IP, and RemoteAddr)
+   - Path-based whitelisting via `WhitelistPaths` option (exact path matching)
+4. **Custom Check Function** - Supports dynamic maintenance state via `Check` function, which takes precedence over static `Enabled` flag
+5. **Scheduled Maintenance** - Uses time-based checks to automatically enable/disable maintenance during specific windows
+
+### Key Components
+
+- **Options**: Configuration struct with fields for enabled state, messages, status codes, handlers, and whitelists
+- **Mode**: Thread-safe maintenance mode controller using `atomic.Int32` for concurrent read/write operations
+- **WithOptions**: Core middleware factory that processes configuration and returns the middleware function
+- **ScheduledMaintenance**: Helper function that creates time-windowed maintenance middleware
+- **getClientIP**: Helper function to extract client IP from various headers (X-Forwarded-For, X-Real-IP, RemoteAddr)
+- **itoa**: Custom integer-to-string conversion for Retry-After header (avoids fmt package overhead)
+
+### Execution Flow
+
+1. Check if maintenance is enabled (via `Check` function or `Enabled` flag)
+2. If disabled, pass request to next handler
+3. If enabled, check IP whitelist (bypass if matched)
+4. Check path whitelist (bypass if matched)
+5. Execute custom handler if provided, or return default 503 response with Retry-After header
+
+### Thread Safety
+
+The `Mode` type uses `atomic` operations for thread-safe state management:
+- `Enable()` and `Disable()` use `atomic.StoreInt32`
+- `IsEnabled()` uses `atomic.LoadInt32`
+- `Toggle()` uses `atomic.CompareAndSwapInt32` for lock-free toggling
+
 ## Best Practices
 
 - Whitelist health check endpoints for monitoring
@@ -230,6 +268,26 @@ Service is under maintenance
 - Set appropriate Retry-After values
 - Provide helpful maintenance messages
 - Use dynamic control for emergency maintenance
+
+## Testing
+
+The maintenance middleware includes comprehensive test coverage for all scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic maintenance mode enabled | Returns 503 with default message "Service is under maintenance" |
+| `TestNew_Disabled` | Maintenance mode disabled | Returns 200 and passes through to handler |
+| `TestWithOptions_CustomMessage` | Custom maintenance message | Returns 503 with custom message "We'll be back soon!" |
+| `TestWithOptions_RetryAfter` | Custom retry-after value | Sets Retry-After header to 7200 seconds |
+| `TestWithOptions_Whitelist` (whitelisted IP) | IP in whitelist accesses endpoint | Returns 200 and bypasses maintenance mode |
+| `TestWithOptions_Whitelist` (non-whitelisted IP) | IP not in whitelist accesses endpoint | Returns 503 in maintenance mode |
+| `TestWithOptions_WhitelistPaths` (whitelisted path) | Access to /health whitelisted path | Returns 200 and bypasses maintenance mode |
+| `TestWithOptions_WhitelistPaths` (non-whitelisted path) | Access to /api non-whitelisted path | Returns 503 in maintenance mode |
+| `TestWithOptions_CustomHandler` | Custom handler for maintenance response | Returns JSON response with custom handler |
+| `TestMode` | Mode creation, enable, disable, toggle | Correctly changes state: disabled by default, enabled after Enable(), disabled after Disable(), enabled after Toggle() |
+| `TestMode_Middleware` (disabled) | Middleware with Mode disabled | Returns 200 and passes through |
+| `TestMode_Middleware` (enabled) | Middleware with Mode enabled | Returns 503 in maintenance mode |
+| `TestScheduledMaintenance` | Scheduled maintenance in the past | Returns 200 as maintenance period has ended |
 
 ## Related Middlewares
 

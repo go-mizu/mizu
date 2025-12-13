@@ -212,12 +212,123 @@ Default error response format:
 }
 ```
 
+## Technical Details
+
+### Architecture
+
+The validator middleware is built on a pipeline architecture that processes validation rules sequentially:
+
+1. **Field Value Extraction**: The middleware retrieves field values from multiple sources in order of precedence:
+   - Query parameters (highest priority)
+   - Form values (POST/PUT requests)
+   - Headers
+   - Path parameters (lowest priority)
+
+2. **Rule Application**: Each validation rule is parsed and applied to the field value:
+   - Rule format: `ruleName` or `ruleName:parameter`
+   - Rules are checked sequentially for each field
+   - First validation failure stops checking additional rules for that field
+
+3. **Error Handling**: Validation errors are collected and either:
+   - Passed to a custom error handler (if provided)
+   - Returned as JSON with 400 Bad Request (default)
+
+### Implementation Details
+
+**Validation Flow**:
+```
+Request → Extract Field Values → Apply Rules → Collect Errors → Error Handler or Next
+```
+
+**Rule Parsing**:
+- Rules are split on `:` to separate the rule name from its parameter
+- The `applyRule` function handles all built-in validation logic
+- Unknown rules are silently ignored
+
+**Optional Fields**:
+- When a field is marked as optional and empty, all its rules are skipped
+- Empty is defined as an empty string (`""`)
+- If an optional field has a value, all rules are applied normally
+
+**JSON Validation**:
+- Reads the entire request body into memory
+- Parses JSON into `map[string]any`
+- Converts non-string values using `stringify` helper
+- Supports string, float64, and bool type conversion
+
+**Custom Messages**:
+- The `Message` field in a `Rule` overrides default error messages
+- Custom messages apply to all validation rules for that field
+- If not set, each rule has its own default message
+
+### Performance Characteristics
+
+- **Memory**: Minimal allocation for most validations; JSON validation reads entire body
+- **CPU**: Linear with number of fields and rules; regex-free for better performance
+- **Concurrency**: Safe for concurrent use; no shared state between requests
+
 ## Best Practices
 
 - Validate all user input
 - Use appropriate rules for data types
 - Provide clear error messages
 - Validate early in the middleware chain
+- Use optional fields for non-required parameters
+- Combine multiple rules for comprehensive validation
+- Consider custom error handlers for consistent API responses
+
+## Testing
+
+### Test Coverage
+
+The validator middleware includes comprehensive test coverage for all validation rules and scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| **Basic Validation** |
+| Valid request | Request with all required fields meeting validation rules | Returns 200 OK |
+| Missing required field | Request missing a field marked as required | Returns 400 Bad Request |
+| Invalid email | Email field with invalid format (missing @ or .) | Returns 400 Bad Request |
+| Min length violation | Field value shorter than minimum length requirement | Returns 400 Bad Request |
+| **Optional Fields** |
+| Without optional field | Request without an optional field present | Returns 200 OK |
+| With valid optional field | Request with optional field that passes validation | Returns 200 OK |
+| With invalid optional field | Request with optional field failing validation | Returns 400 Bad Request |
+| **Validation Rules** |
+| Required pass | Non-empty value for required field | Validation passes |
+| Required fail | Empty value for required field | Validation fails |
+| Min pass | Value length >= minimum | Validation passes |
+| Min fail | Value length < minimum | Validation fails |
+| Max pass | Value length <= maximum | Validation passes |
+| Max fail | Value length > maximum | Validation fails |
+| Email pass | Valid email format with @ and . | Validation passes |
+| Email fail | Invalid email format | Validation fails |
+| Numeric pass | Valid numeric value (e.g., "123.45") | Validation passes |
+| Numeric fail | Non-numeric value | Validation fails |
+| Integer pass | Valid integer value (e.g., "123") | Validation passes |
+| Integer fail | Non-integer value (e.g., "12.3") | Validation fails |
+| Alpha pass | Letters only value | Validation passes |
+| Alpha fail | Value with non-letter characters | Validation fails |
+| Alphanum pass | Letters and numbers only | Validation passes |
+| Alphanum fail | Value with special characters | Validation fails |
+| In pass | Value matching one of allowed options | Validation passes |
+| In fail | Value not in allowed options list | Validation fails |
+| URL pass | Valid URL with http:// or https:// | Validation passes |
+| URL fail | Invalid URL format | Validation fails |
+| UUID pass | Valid UUID format (36 chars with hyphens at positions 8,13,18,23) | Validation passes |
+| UUID fail | Invalid UUID format | Validation fails |
+| **Custom Error Handler** |
+| Custom error handler | Validation failure with custom error handler | Returns custom status code (422) with custom format |
+| **JSON Validation** |
+| Valid JSON | JSON body with valid fields | Returns 200 OK |
+| Invalid JSON values | JSON body with fields failing validation | Returns 400 Bad Request |
+| Malformed JSON | Unparseable JSON body | Returns 400 Bad Request |
+| **Error Formatting** |
+| Multiple validation errors | Multiple fields failing validation | Returns formatted error string with all failures |
+| Empty validation errors | No validation errors | Returns "validation failed" message |
+| **Field Helper Functions** |
+| Field creation | Creating required field rule | Returns Rule with correct field name and rules |
+| OptionalField creation | Creating optional field rule | Returns Rule with Optional=true |
 
 ## Related Middlewares
 

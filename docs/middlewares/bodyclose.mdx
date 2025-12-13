@@ -47,12 +47,55 @@ app.Use(bodyclose.WithDrain())
 ### Functions
 
 ```go
-// New creates body close middleware
+// New creates body close middleware with default options
 func New() mizu.Middleware
 
-// WithDrain creates middleware that drains before closing
-func WithDrain() mizu.Middleware
+// WithOptions creates bodyclose middleware with custom options
+func WithOptions(opts Options) mizu.Middleware
+
+// Drain creates middleware that drains request bodies
+func Drain() mizu.Middleware
+
+// NoDrain creates middleware that closes without draining
+func NoDrain() mizu.Middleware
 ```
+
+### Options
+
+```go
+type Options struct {
+    // DrainBody drains the body before closing.
+    // Default: true.
+    DrainBody bool
+
+    // MaxDrain is the maximum bytes to drain.
+    // Default: 8KB.
+    MaxDrain int64
+}
+```
+
+## Technical Details
+
+The bodyclose middleware operates by wrapping the request handler with a deferred cleanup function that ensures proper resource management:
+
+### Implementation Strategy
+
+1. **Nil Body Check**: Immediately passes control to the next handler if the request body is nil, avoiding unnecessary overhead
+2. **Deferred Cleanup**: Uses Go's `defer` statement to guarantee body cleanup regardless of handler outcome (success, error, or panic)
+3. **Optional Draining**: When `DrainBody` is enabled, reads and discards up to `MaxDrain` bytes before closing to enable HTTP keep-alive connection reuse
+4. **Connection Reuse**: By draining the body, the middleware signals to the HTTP client that the connection can be safely reused in connection pools
+
+### Resource Management
+
+- **Default MaxDrain**: 8KB (8192 bytes) to balance connection reuse benefits with performance
+- **Drain Mechanism**: Uses `io.CopyN` to limit the amount of data drained, preventing excessive memory consumption on large bodies
+- **Error Handling**: Silently ignores drain and close errors to prevent interference with the main request flow
+
+### Performance Characteristics
+
+- **Minimal Overhead**: Only adds a single function call and defer statement per request
+- **Memory Efficient**: Draining is capped by MaxDrain to prevent memory exhaustion
+- **No Blocking**: Draining respects the MaxDrain limit and doesn't attempt to fully read unbounded bodies
 
 ## Why It Matters
 
@@ -66,6 +109,28 @@ Without proper body closing:
 - Place early in middleware chain
 - Use with connection pooling
 - Consider draining for HTTP keep-alive
+
+## Testing
+
+The bodyclose middleware includes comprehensive test coverage to ensure proper functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware creation with default options | Request body is properly handled, returns HTTP 200 OK |
+| `TestWithOptions_DrainBody` | Middleware with DrainBody enabled | Body is closed after being drained, tracking confirms closure |
+| `TestWithOptions_NoDrain` | Middleware with DrainBody disabled | Body is closed without draining, tracking confirms closure |
+| `TestNilBody` | Request with nil body (GET request) | Middleware handles nil body gracefully, returns HTTP 200 OK |
+| `TestDrain` | Using the Drain() convenience function | Body is drained before closing, request completes successfully |
+| `TestNoDrain` | Using the NoDrain() convenience function | Body is closed without draining, request completes successfully |
+| `TestWithOptions_MaxDrain` | Custom MaxDrain limit (10 bytes on 1000-byte body) | Only drains up to MaxDrain bytes, prevents excessive memory usage |
+
+### Test Coverage
+
+The test suite uses a custom `trackingBody` type that monitors:
+- Whether the body was closed (`closed` field)
+- Whether the body was fully drained (`drained` field)
+
+This ensures that the middleware behaves correctly in various scenarios including unread bodies, partial reads, and different configuration options.
 
 ## Related Middlewares
 

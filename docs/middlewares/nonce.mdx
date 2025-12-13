@@ -96,6 +96,51 @@ func New(opts ...Options) mizu.Middleware
 func Get(c *mizu.Ctx) string
 ```
 
+## Technical Details
+
+### Implementation
+
+The nonce middleware generates cryptographically secure random nonces for each HTTP request and integrates them into Content Security Policy headers. The implementation follows these key patterns:
+
+#### Nonce Generation
+
+- Uses `crypto/rand` for cryptographically secure random byte generation
+- Default nonce length: 16 bytes (produces 22 character base64 strings)
+- Base64 encoding with raw standard encoding (no padding)
+- Custom generators can be provided via the `Generator` option
+
+#### Context Storage
+
+- Nonces are stored in the request context using a private `contextKey` type
+- Retrieved via the `Get(c *mizu.Ctx)` function
+- Context key is type-safe and collision-resistant
+
+#### CSP Header Construction
+
+The middleware builds Content Security Policy headers by:
+
+1. Parsing existing base policies (if provided via `BasePolicy` option)
+2. Adding nonce values to specified directives (`script-src`, `style-src` by default)
+3. Using the format `'nonce-{base64-value}'` as per CSP specification
+4. Merging with existing directive values when a base policy is present
+5. Setting the header (default: `Content-Security-Policy`)
+
+#### Helper Functions
+
+- `ScriptTag(c *mizu.Ctx)`: Returns `nonce="..."` attribute for script tags
+- `StyleTag(c *mizu.Ctx)`: Returns `nonce="..."` attribute for style tags
+- Both return empty strings if no nonce is available in context
+
+### Preset Middleware Functions
+
+The package provides several convenience constructors:
+
+- `New()`: Default configuration with script-src and style-src
+- `ForScripts()`: Nonce only for script-src directive
+- `ForStyles()`: Nonce only for style-src directive
+- `WithBasePolicy(policy string)`: Extends an existing CSP policy
+- `ReportOnly()`: Uses `Content-Security-Policy-Report-Only` header
+
 ## Security
 
 - Nonces are cryptographically random
@@ -109,6 +154,25 @@ func Get(c *mizu.Ctx) string
 - Generate new nonce per request
 - Include in all inline scripts/styles
 - Don't reuse nonces
+
+## Testing
+
+The nonce middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware initialization | Generates nonce, stores in context, sets CSP header with nonce |
+| `TestWithOptions_CustomLength` | Custom nonce byte length (32 bytes) | Generates longer nonce (~43 base64 characters) |
+| `TestWithOptions_CustomDirectives` | Custom CSP directives (script-src only) | CSP includes only script-src, excludes style-src |
+| `TestWithOptions_BasePolicy` | Extending existing CSP policy | Preserves base policy directives and adds nonce to specified directives |
+| `TestWithOptions_CustomGenerator` | Custom nonce generator function | Uses provided generator instead of default random generation |
+| `TestScriptTag` | Script tag nonce attribute helper | Returns properly formatted `nonce="..."` attribute |
+| `TestStyleTag` | Style tag nonce attribute helper | Returns properly formatted `nonce="..."` attribute |
+| `TestForScripts` | Scripts-only preset middleware | CSP contains script-src directive with nonce |
+| `TestForStyles` | Styles-only preset middleware | CSP contains style-src directive with nonce |
+| `TestReportOnly` | Report-only mode | Sets `Content-Security-Policy-Report-Only` header instead |
+| `TestUniqueNonce` | Nonce uniqueness across requests | Each request generates a unique nonce (no duplicates in 10 requests) |
+| `TestGetWithoutMiddleware` | Get() without middleware | Returns empty string when middleware not applied |
 
 ## Related Middlewares
 

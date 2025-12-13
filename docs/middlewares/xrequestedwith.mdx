@@ -105,6 +105,34 @@ fetch('/api', {
 });
 ```
 
+## Technical Details
+
+### Implementation Overview
+
+The middleware performs header validation through the following process:
+
+1. **Method Filtering**: Checks if the request method is in the skip list (default: GET, HEAD, OPTIONS)
+2. **Path Filtering**: Checks if the request path is in the skip paths list
+3. **Header Validation**: Compares the X-Requested-With header value (case-insensitive) against the expected value
+4. **Error Handling**: Returns either a custom error handler response or a default 400 Bad Request
+
+### Internal Components
+
+- **Skip Methods Map**: Pre-built map of HTTP methods to skip (defaults to safe methods)
+- **Skip Paths Map**: Pre-built map of paths to exclude from validation
+- **Case-Insensitive Comparison**: Uses `strings.EqualFold` for header value matching
+- **Default Value**: "XMLHttpRequest" is used when no custom value is specified
+
+### Function Variants
+
+| Function | Purpose | Skip Methods |
+|----------|---------|--------------|
+| `New()` | Standard validation | GET, HEAD, OPTIONS |
+| `WithOptions()` | Custom configuration | Configurable |
+| `Require(value)` | Custom value validation | GET, HEAD, OPTIONS |
+| `AJAXOnly()` | Strict AJAX validation | None (checks all methods) |
+| `IsAJAX()` | Detection helper | N/A (utility function) |
+
 ## Security Note
 
 While X-Requested-With adds a layer of protection, it should not be the sole CSRF defense. Combine with:
@@ -118,6 +146,27 @@ While X-Requested-With adds a layer of protection, it should not be the sole CSR
 - Combine with CSRF middleware
 - Don't rely on it alone
 - Document header requirement for clients
+
+## Testing
+
+The middleware includes comprehensive test coverage for various scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| **TestNew - with header** | POST request with X-Requested-With: XMLHttpRequest | Returns 200 OK |
+| **TestNew - without header** | POST request without X-Requested-With header | Returns 400 Bad Request |
+| **TestNew_SkipsGET** | GET request without header (default skip) | Returns 200 OK (skipped validation) |
+| **TestWithOptions_CustomValue - correct value** | Request with custom header value "CustomValue" | Returns 200 OK |
+| **TestWithOptions_CustomValue - wrong value** | Request with XMLHttpRequest when CustomValue expected | Returns 400 Bad Request |
+| **TestWithOptions_SkipPaths - skipped path** | POST to /webhook (in skip list) without header | Returns 200 OK (path skipped) |
+| **TestWithOptions_SkipPaths - non-skipped path** | POST to /api (not in skip list) without header | Returns 400 Bad Request |
+| **TestWithOptions_ErrorHandler** | Request without header with custom error handler | Returns 403 Forbidden with custom JSON |
+| **TestRequire** | Request with custom required value "FetchRequest" | Returns 200 OK |
+| **TestAJAXOnly - with AJAX header** | GET request with XMLHttpRequest header | Returns 200 OK |
+| **TestAJAXOnly - without AJAX header** | GET request without header (no methods skipped) | Returns 400 Bad Request |
+| **TestIsAJAX - is AJAX** | Request with X-Requested-With: XMLHttpRequest | IsAJAX() returns true |
+| **TestIsAJAX - not AJAX** | Request without X-Requested-With header | IsAJAX() returns false |
+| **TestCaseInsensitive** | POST with lowercase "xmlhttprequest" | Returns 200 OK (case-insensitive match) |
 
 ## Related Middlewares
 

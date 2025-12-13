@@ -209,6 +209,35 @@ The middleware supports both single IPs and CIDR notation:
 "::/0"             // All IPv6
 ```
 
+## Technical Details
+
+### Implementation Overview
+
+The ipfilter middleware uses Go's `net` package to parse and match IP addresses and CIDR ranges efficiently. The implementation follows these key principles:
+
+1. **Network Parsing**: IP addresses and CIDR blocks are parsed at initialization time using `parseNetworks()`, converting them to `*net.IPNet` structures for efficient matching.
+
+2. **IP Extraction**: Client IPs are extracted using one of two methods:
+   - Direct extraction from `RemoteAddr` using `extractIP()` when not behind a proxy
+   - Using `c.ClientIP()` when `TrustProxy` is enabled (reads X-Forwarded-For header)
+
+3. **Filtering Logic**: The middleware applies a two-phase filtering process:
+   - **Phase 1 - Deny List Check**: First checks if the IP is in the deny list. If found, immediately denies access.
+   - **Phase 2 - Allow List Check**: If `DenyByDefault` is true, verifies the IP is in the allow list. Denies if not found.
+
+4. **Single IP Normalization**: Single IP addresses are automatically converted to CIDR notation:
+   - IPv4 addresses: converted to `/32` (e.g., `192.168.1.100/32`)
+   - IPv6 addresses: converted to `/128` (e.g., `::1/128`)
+
+5. **Error Handling**: Uses a custom `handleDenied()` function that either calls the user-provided `ErrorHandler` or returns a default 403 Forbidden response.
+
+### Performance Considerations
+
+- IP parsing happens once during middleware initialization, not on every request
+- Network matching uses efficient `net.IPNet.Contains()` method
+- Deny list is checked before allow list to fail fast on blocked IPs
+- No regex or string manipulation on hot path
+
 ## Security Considerations
 
 1. **Proxy Headers** - Only enable `TrustProxy` if behind a trusted proxy
@@ -222,6 +251,28 @@ The middleware supports both single IPs and CIDR notation:
 - Enable `TrustProxy` only behind trusted load balancers
 - Combine with other authentication for sensitive areas
 - Log denied attempts for security monitoring
+
+## Testing
+
+The ipfilter middleware includes comprehensive test coverage for all filtering scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestAllow/allows listed IP` | Request from IP within allowed CIDR range (192.168.1.100 in 192.168.1.0/24) | Returns 200 OK |
+| `TestAllow/allows specific IP` | Request from specific allowed IP (10.0.0.1) | Returns 200 OK |
+| `TestAllow/denies unlisted IP` | Request from IP not in allow list (203.0.113.1) | Returns 403 Forbidden |
+| `TestDeny/denies listed IP` | Request from IP in deny list CIDR range (192.168.1.100 in 192.168.1.0/24) | Returns 403 Forbidden |
+| `TestDeny/allows unlisted IP` | Request from IP not in deny list (10.0.0.1) | Returns 200 OK |
+| `TestNew_DenyTakesPrecedence` | IP present in both allow and deny lists (192.168.1.100) | Returns 403 Forbidden (deny wins) |
+| `TestNew_TrustProxy` | Request with X-Forwarded-For header when TrustProxy enabled | Uses X-Forwarded-For IP for filtering |
+| `TestNew_ErrorHandler` | Custom error handler when IP is blocked | Calls custom error handler with JSON response |
+| `TestPrivate` (192.168.1.1) | Request from private network IP (Class C) | Returns 200 OK |
+| `TestPrivate` (10.0.0.1) | Request from private network IP (Class A) | Returns 200 OK |
+| `TestPrivate` (172.16.0.1) | Request from private network IP (Class B) | Returns 200 OK |
+| `TestPrivate` (127.0.0.1) | Request from localhost | Returns 200 OK |
+| `TestPrivate` (8.8.8.8) | Request from public IP | Returns 403 Forbidden |
+| `TestLocalhost/allows localhost` | Request from 127.0.0.1 | Returns 200 OK |
+| `TestLocalhost/denies non-localhost` | Request from non-localhost IP (192.168.1.1) | Returns 403 Forbidden |
 
 ## Related Middlewares
 

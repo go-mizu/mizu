@@ -107,12 +107,70 @@ func Location(c *mizu.Ctx) *time.Location
 | `Europe/London` | UK Time |
 | `Asia/Tokyo` | Japan Time |
 
+## Technical Details
+
+### Implementation
+
+The timezone middleware uses a multi-source detection strategy to identify the user's timezone:
+
+1. **Context Storage**: Timezone information is stored in the request context using a type-safe context key
+2. **Info Structure**: Contains three key pieces of information:
+   - `Name`: IANA timezone identifier (e.g., "America/New_York")
+   - `Location`: Parsed `time.Location` object for time conversions
+   - `Offset`: UTC offset in seconds for the current time
+3. **Lookup Order**: Configurable detection precedence via the `Lookup` option (default: "header,cookie,query")
+4. **Validation**: Invalid timezone names automatically fall back to the configured default
+5. **Cookie Management**: Optional automatic cookie setting with configurable max age (default: 30 days)
+
+### Detection Flow
+
+```
+Request → Check Header → Check Cookie → Check Query → Default → Load Location → Store in Context
+```
+
+### Helper Functions
+
+The middleware provides several convenience functions:
+- `Get(c)`: Returns complete timezone info
+- `Location(c)`: Returns `time.Location` for time operations
+- `Name(c)`: Returns timezone name string
+- `Offset(c)`: Returns UTC offset in seconds
+- `Now(c)`: Returns current time in detected timezone
+
+### Convenience Constructors
+
+- `FromHeader(header)`: Only check specific header
+- `FromCookie(name)`: Only check specific cookie
+- `WithDefault(tz)`: Set custom default timezone
+
 ## Best Practices
 
 - Default to UTC for storage
 - Convert to user timezone for display
 - Use IANA timezone names
 - Detect via JavaScript for accuracy
+
+## Testing
+
+The middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Default middleware creation | Returns UTC timezone when no timezone is detected |
+| `TestWithOptions_FromHeader` | Timezone detection from header | Reads timezone from X-Timezone header (America/New_York) |
+| `TestWithOptions_FromCookie` | Timezone detection from cookie | Reads timezone from cookie named "timezone" (Europe/London) |
+| `TestWithOptions_FromQuery` | Timezone detection from query parameter | Reads timezone from "tz" query parameter (Asia/Tokyo) |
+| `TestWithOptions_SetCookie` | Cookie setting functionality | Automatically sets timezone cookie when SetCookie=true |
+| `TestWithOptions_InvalidTimezone` | Invalid timezone handling | Falls back to UTC default when invalid timezone provided |
+| `TestWithOptions_CustomDefault` | Custom default timezone | Uses America/Los_Angeles as default instead of UTC |
+| `TestLocation` | Location helper function | Returns correct time.Location object (Europe/Paris) |
+| `TestName` | Name helper function | Returns timezone name string (Australia/Sydney) |
+| `TestOffset` | Offset helper function | Returns correct UTC offset in seconds (0 for UTC) |
+| `TestNow` | Now helper function | Returns current time in detected timezone location |
+| `TestFromHeader` | FromHeader constructor | Creates middleware that only reads from custom header (X-User-Tz) |
+| `TestFromCookie` | FromCookie constructor | Creates middleware that only reads from custom cookie (user_tz) |
+| `TestWithDefault` | WithDefault constructor | Creates middleware with custom default (Asia/Singapore) |
+| `TestLookupPrecedence` | Lookup order precedence | Header takes precedence over cookie and query when all are present |
 
 ## Related Middlewares
 

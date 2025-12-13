@@ -114,12 +114,71 @@ func (m *Metrics) Set(name string, value float64)
 func (m *Metrics) Observe(name string, value float64)
 ```
 
+## Technical Details
+
+### Core Components
+
+The metrics middleware consists of the following key components:
+
+#### Metrics Structure
+- **RequestCount**: Total number of HTTP requests processed (atomic int64)
+- **ErrorCount**: Total number of errors (4xx and 5xx status codes, atomic int64)
+- **TotalDuration**: Cumulative duration of all requests in nanoseconds (atomic int64)
+- **ActiveRequests**: Number of currently in-flight requests (atomic int64)
+- **statusCodes**: Map tracking counts for each HTTP status code
+- **pathCounts**: Map tracking request counts per URL path
+
+#### Thread Safety
+All counters use atomic operations (`atomic.AddInt64`, `atomic.LoadInt64`, `atomic.StoreInt64`) to ensure thread-safe concurrent access without explicit locking for the main counters. Maps (`statusCodes` and `pathCounts`) are protected by a `sync.RWMutex` to safely handle concurrent reads and writes.
+
+#### Status Capture Mechanism
+The middleware uses a custom `statusCapture` wrapper that implements `http.ResponseWriter` to intercept the status code before writing the response. This allows tracking of status codes even when they're set by downstream handlers.
+
+#### Metrics Calculation
+- **Average Duration**: Calculated as `TotalDuration / RequestCount` and converted to milliseconds
+- **Error Detection**: Requests are counted as errors when `err != nil` or `statusCode >= 400`
+
+### Output Formats
+
+The middleware supports two output formats:
+
+1. **JSON Format** (`Handler()`): Returns statistics as JSON with fields:
+   - `request_count`, `error_count`, `active_requests`
+   - `average_duration_ms`, `status_codes`, `path_counts`
+
+2. **Prometheus Format** (`Prometheus()`): Exports metrics in Prometheus text format:
+   - `http_requests_total` (counter)
+   - `http_errors_total` (counter)
+   - `http_active_requests` (gauge)
+
+### Implementation Notes
+
+- Uses custom `itoa()` function for integer to string conversion to avoid allocations
+- Metrics can be reset using `Reset()` method which clears all counters and maps
+- The middleware does not affect the response or request flow, only observes them
+
 ## Best Practices
 
 - Use meaningful metric names
 - Add labels for dimensions
 - Set appropriate histogram buckets
 - Monitor metric cardinality
+
+## Testing
+
+The metrics middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic initialization and request counting | Creates middleware, counts single request correctly |
+| `TestMetrics_StatusCodes` | HTTP status code tracking | Tracks 200 and 500 status codes separately, counts 500 as error |
+| `TestMetrics_PathCounts` | URL path request counting | Counts requests per path (3 to /api/users, 1 to /api/posts) |
+| `TestMetrics_Handler` | JSON metrics endpoint | Returns metrics as JSON with correct Content-Type header |
+| `TestMetrics_Prometheus` | Prometheus format export | Returns Prometheus-formatted metrics with http_requests_total |
+| `TestMetrics_Reset` | Metrics reset functionality | Resets all counters to zero after processing requests |
+| `TestMetrics_Concurrent` | Thread-safe concurrent access | Correctly counts 100 concurrent requests without race conditions |
+| `TestMetrics_AverageDuration` | Duration measurement | Calculates positive average duration for requests |
+| `TestMetrics_JSON` | JSON serialization | Marshals stats to JSON with request_count field |
 
 ## Related Middlewares
 

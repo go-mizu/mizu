@@ -75,12 +75,71 @@ func WithLogger(logger *slog.Logger) mizu.Middleware
 func WithOptions(opts Options) mizu.Middleware
 ```
 
+## Technical Details
+
+The `responselog` middleware captures response data through a custom `ResponseWriter` wrapper:
+
+### Response Capture Mechanism
+
+The middleware uses a `responseCapture` struct that wraps the standard `http.ResponseWriter`:
+- Intercepts `WriteHeader()` to capture the status code
+- Intercepts `Write()` to capture response body up to `MaxBodySize`
+- Automatically restores the original writer after processing
+
+### Logging Behavior
+
+Response logs include:
+- **Method**: HTTP request method
+- **Path**: Request URL path
+- **Status**: HTTP status code
+- **Duration**: Time taken to process the request
+- **Size**: Response body size in bytes
+- **Headers**: Response headers (if `LogHeaders` is enabled)
+- **Body**: Response body content (if `LogBody` is enabled, truncated to `MaxBodySize`)
+
+### Log Levels
+
+The middleware automatically sets log levels based on status codes:
+- Status >= 400: Logged as ERROR
+- Status < 400: Logged as INFO
+
+### Filtering
+
+Two filtering mechanisms are available:
+- **SkipPaths**: Paths that should not be logged at all
+- **SkipStatuses**: Status codes that should not be logged
+
+Paths are checked before request processing, while statuses are checked after.
+
+### Default Values
+
+- `MaxBodySize`: 4KB (4096 bytes)
+- `LogBody`: false
+- `LogHeaders`: false
+- `Logger`: Default slog text handler to stdout
+
 ## Best Practices
 
 - Be careful with body logging (sensitive data)
 - Use for debugging only
 - Set reasonable body size limits
 - Combine with request logging
+
+## Testing
+
+The middleware includes comprehensive test coverage for all features:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware creation with default logger | Logs response with status code 200 |
+| `TestWithOptions_LogBody` | Enable response body logging | Response body content appears in logs |
+| `TestWithOptions_LogHeaders` | Enable response header logging | Response headers appear in logs |
+| `TestWithOptions_SkipPaths` | Skip logging for specific paths | Configured paths (e.g., /health) are not logged |
+| `TestWithOptions_SkipStatuses` | Skip logging for specific status codes | Configured status codes (e.g., 200) are not logged |
+| `TestWithOptions_MaxBodySize` | Limit logged body size | Response body is truncated to MaxBodySize bytes |
+| `TestErrorsOnly` | Log only error responses | Success responses are skipped, error responses are logged |
+| `TestDurationLogged` | Verify duration tracking | Request duration appears in logs |
+| `TestSizeLogged` | Verify size tracking | Response body size appears in logs |
 
 ## Related Middlewares
 

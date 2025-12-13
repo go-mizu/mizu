@@ -110,6 +110,59 @@ func AllowAll() mizu.Middleware
 func WithOrigins(origins ...string) mizu.Middleware
 ```
 
+## Technical Details
+
+### Implementation Overview
+
+The CORS middleware implements the W3C Cross-Origin Resource Sharing specification by:
+
+1. **Origin Validation**: Checks incoming requests against allowed origins using either:
+   - Static origin list (`AllowOrigins`)
+   - Custom validation function (`AllowOriginFunc`)
+   - Wildcard matching for development scenarios
+
+2. **Header Management**: Sets appropriate CORS headers based on configuration:
+   - `Access-Control-Allow-Origin`: The allowed origin (specific or wildcard)
+   - `Access-Control-Allow-Methods`: Permitted HTTP methods
+   - `Access-Control-Allow-Headers`: Permitted request headers
+   - `Access-Control-Expose-Headers`: Headers exposed to the client
+   - `Access-Control-Allow-Credentials`: Credential support flag
+   - `Access-Control-Max-Age`: Preflight cache duration in seconds
+   - `Vary: Origin`: Added when using specific origins to ensure proper caching
+
+3. **Preflight Handling**: Automatically responds to OPTIONS requests with:
+   - No content (204 status)
+   - All necessary CORS headers
+   - Optional Private Network Access support
+
+### Default Values
+
+When options are not specified, the middleware uses these defaults:
+
+- **AllowOrigins**: `["*"]` (all origins)
+- **AllowMethods**: `["GET", "POST", "HEAD"]`
+- **AllowHeaders**: `["Origin", "Content-Type", "Accept"]`
+- **ExposeHeaders**: `[]` (empty)
+- **AllowCredentials**: `false`
+- **MaxAge**: `0` (no caching)
+
+### Request Flow
+
+1. Extract `Origin` header from request
+2. If no origin header, skip CORS processing
+3. Validate origin against allowed list or function
+4. If origin not allowed, continue without CORS headers
+5. Set `Access-Control-Allow-Origin` header (wildcard or specific)
+6. Add `Vary: Origin` header when using specific origins
+7. Set credentials header if enabled
+8. Set expose headers if configured
+9. For OPTIONS requests (preflight):
+   - Set methods and headers
+   - Set max-age if configured
+   - Handle Private Network Access if enabled
+   - Return 204 No Content
+10. For regular requests, continue to next handler
+
 ## Security Considerations
 
 1. **Never use `AllowAll()` in production** - It exposes your API to any origin
@@ -123,6 +176,29 @@ func WithOrigins(origins ...string) mizu.Middleware
 - Cache preflight requests with `MaxAge` to reduce OPTIONS requests
 - Combine with authentication middleware for protected endpoints
 - Use `AllowPrivateNetwork` only when needed for local network access
+
+## Testing
+
+The CORS middleware includes comprehensive test coverage for all features and edge cases:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew/allows matching origin` | Request with allowed origin | Returns 200 OK with `Access-Control-Allow-Origin` header set to the matching origin |
+| `TestNew/ignores non-matching origin` | Request with non-allowed origin | Processes request normally but does not set CORS headers |
+| `TestNew/handles preflight` | OPTIONS request with origin | Returns 204 No Content with `Access-Control-Allow-Methods` and other preflight headers |
+| `TestNew/ignores requests without origin` | Request without Origin header | Processes request normally without setting any CORS headers |
+| `TestAllowAll` | AllowAll() with any origin | Sets `Access-Control-Allow-Origin: *` for any origin |
+| `TestWithOrigins/http://a.com` | WithOrigins() with allowed origin | Sets `Access-Control-Allow-Origin` to the specific allowed origin |
+| `TestWithOrigins/http://b.com` | WithOrigins() with another allowed origin | Sets `Access-Control-Allow-Origin` to the specific allowed origin |
+| `TestWithOrigins/http://c.com` | WithOrigins() with non-allowed origin | Does not set `Access-Control-Allow-Origin` header |
+| `TestNew_AllowCredentials` | Credentials enabled with specific origin | Sets `Access-Control-Allow-Credentials: true` and specific origin (not wildcard) |
+| `TestNew_ExposeHeaders` | Custom expose headers configured | Sets `Access-Control-Expose-Headers` with comma-separated header list |
+| `TestNew_MaxAge` | MaxAge set to 12 hours | Sets `Access-Control-Max-Age: 43200` on preflight requests |
+| `TestNew_AllowOriginFunc/http://example.com` | Custom origin validator (exact match) | Allows the origin when validation function returns true |
+| `TestNew_AllowOriginFunc/http://api.example.com` | Custom origin validator (subdomain) | Allows subdomain when validation function returns true |
+| `TestNew_AllowOriginFunc/http://other.com` | Custom origin validator (non-matching) | Denies origin when validation function returns false |
+| `TestNew_PrivateNetwork` | Private Network Access enabled | Sets `Access-Control-Allow-Private-Network: true` when requested |
+| `TestNew_VaryHeader` | Specific origin configured | Adds `Vary: Origin` header to ensure proper caching |
 
 ## Related Middlewares
 

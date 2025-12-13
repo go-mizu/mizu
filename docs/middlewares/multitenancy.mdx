@@ -302,6 +302,59 @@ var ErrTenantNotFound = errors.New("tenant not found")
 var ErrTenantInvalid = errors.New("tenant invalid")
 ```
 
+## Technical Details
+
+### Architecture
+
+The multitenancy middleware uses Go's context package to store and retrieve tenant information throughout the request lifecycle. It implements a resolver pattern that allows flexible tenant identification strategies.
+
+### Context Storage
+
+The middleware stores tenant information in the request context using a private `contextKey{}` type. This ensures type safety and prevents key collisions with other middleware or application code.
+
+```go
+type contextKey struct{}
+
+// Stored in context
+ctx := context.WithValue(c.Context(), contextKey{}, tenant)
+```
+
+### Resolver Chain
+
+The resolver pattern allows composing multiple tenant identification strategies:
+
+1. Each resolver implements the `Resolver` function type
+2. Resolvers return `(*Tenant, error)` allowing error propagation
+3. `ChainResolver` tries resolvers sequentially until one succeeds
+4. `LookupResolver` wraps a resolver with a database lookup function
+
+### Path Rewriting
+
+The `PathResolver` automatically rewrites the request path to remove the tenant prefix:
+
+```go
+// Original: /tenant1/api/users
+// Rewritten: /api/users
+// Tenant ID: "tenant1"
+```
+
+This allows routes to be defined without tenant prefixes while maintaining tenant isolation.
+
+### Error Handling
+
+The middleware supports both required and optional tenant resolution:
+
+- **Required mode (default)**: Returns error via `ErrorHandler` when tenant not found
+- **Optional mode**: Continues request processing with `nil` tenant
+- **Custom error handler**: Allows application-specific error responses
+
+### Performance Considerations
+
+- Context lookups are O(1) operations
+- Subdomain parsing uses efficient string operations
+- Header lookups use Go's optimized HTTP header map
+- Consider caching with `LookupResolver` for database-backed tenants
+
 ## Best Practices
 
 - Use subdomain resolution for user-friendly URLs
@@ -310,6 +363,27 @@ var ErrTenantInvalid = errors.New("tenant invalid")
 - Always validate tenant access to resources
 - Include tenant ID in all database queries
 - Cache tenant lookups for performance
+
+## Testing
+
+The middleware includes comprehensive test coverage for all resolvers and scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware creation with custom resolver | Tenant stored in context and accessible via `Get()` |
+| `TestWithOptions_Required` | Required tenant resolution fails | Returns 400 Bad Request when tenant not found |
+| `TestWithOptions_NotRequired` | Optional tenant resolution | Continues without tenant, `Get()` returns nil |
+| `TestSubdomainResolver` | Extract tenant from subdomain | Resolves "acme" from "acme.example.com" |
+| `TestHeaderResolver` | Extract tenant from HTTP header | Resolves tenant from "X-Tenant-Id" header |
+| `TestPathResolver` | Extract tenant from URL path prefix | Resolves "acme" from "/acme/api/users" and rewrites path to "/api/users" |
+| `TestQueryResolver` | Extract tenant from query parameter | Resolves tenant from "?tenant=my-tenant" |
+| `TestLookupResolver` | Database lookup enrichment | Enhances basic tenant with full data from lookup function |
+| `TestChainResolver` | Multiple resolver fallback | Tries header, then query, then subdomain in order |
+| `TestFromContext` | Alias function for Get | `FromContext()` returns same tenant as `Get()` |
+| `TestMustGet` | Get tenant or panic | Returns tenant when present |
+| `TestMustGet_Panic` | Panic on missing tenant | Panics with "tenant not found" message when tenant absent |
+| `TestErrors` | Error constants | Validates error messages for `ErrTenantNotFound` and `ErrTenantInvalid` |
+| `TestWithOptions_ErrorHandler` | Custom error handling | Uses custom error handler to return 401 Unauthorized |
 
 ## Related Middlewares
 

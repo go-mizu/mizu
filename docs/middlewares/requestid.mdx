@@ -109,12 +109,63 @@ func FromContext(c *mizu.Ctx) string
 func Get(c *mizu.Ctx) string  // Alias for FromContext
 ```
 
+## Technical Details
+
+### Implementation
+
+The requestid middleware is implemented with the following key components:
+
+- **Context Storage**: Request IDs are stored in the request context using a private `contextKey{}` struct type to prevent collisions
+- **ID Generation**: Default generator creates UUID v4-style identifiers using crypto/rand for cryptographic randomness
+- **Header Propagation**: The middleware checks for existing request IDs in incoming headers and preserves them, or generates new ones if absent
+- **Response Headers**: Request IDs are automatically added to response headers for client visibility
+
+### UUID v4 Format
+
+The default generator produces IDs in the format: `xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx`
+
+- Uses 16 random bytes from `crypto/rand`
+- Version bits (byte 6): Set to `0x40` to indicate version 4
+- Variant bits (byte 8): Set to `0x80` to indicate RFC 4122 variant 2
+- Final format: 32 hexadecimal characters in 5 groups (8-4-4-4-12)
+
+### Context Key Design
+
+The middleware uses a private struct type as the context key:
+
+```go
+type contextKey struct{}
+```
+
+This prevents accidental key collisions with other middleware or application code that might use string or integer keys.
+
+### Flow
+
+1. Extract request ID from incoming header (if present)
+2. If no header, generate new ID using configured generator
+3. Store ID in request context with private key
+4. Set ID in response header
+5. Continue to next handler
+
 ## Best Practices
 
 - Add early in middleware chain
 - Include in all logs
 - Pass to downstream services
 - Use for error correlation
+
+## Testing
+
+The middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew/generates request ID` | Tests default middleware behavior when no request ID is provided | Generates a new UUID v4-style request ID, stores it in context, and sets it in response header |
+| `TestNew/uses existing request ID` | Tests ID propagation when client provides an existing request ID | Preserves the existing request ID from request header, stores it in context, and returns it in response header |
+| `TestWithOptions_CustomHeader` | Tests custom header name configuration | Uses custom header name (e.g., "X-Correlation-ID") instead of default "X-Request-ID" |
+| `TestWithOptions_CustomGenerator` | Tests custom ID generator function | Uses provided generator function to create sequential custom IDs instead of UUID v4 format |
+| `TestGenerateID` | Tests default UUID v4 generator format and uniqueness | Generates IDs in correct UUID v4 format (8-4-4-4-12), sets version 4 bit, and ensures uniqueness across 1000 generations |
+| `TestGet` | Tests that Get() and FromContext() are equivalent | Both functions return the same request ID value from context |
 
 ## Related Middlewares
 

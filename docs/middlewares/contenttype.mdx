@@ -148,11 +148,85 @@ func SetResponse(contentType string) mizu.Middleware
 | `multipart/form-data` | File uploads |
 | `text/plain` | Plain text |
 
+## Technical Details
+
+### Implementation Overview
+
+The contenttype middleware provides Content-Type validation and enforcement through a set of middleware functions that operate on request and response headers.
+
+#### Request Validation (`Require`, `RequireJSON`, `RequireForm`)
+
+The validation middleware follows these steps:
+
+1. **Method Filtering**: Only validates requests with body content (POST, PUT, PATCH). GET, DELETE, and other methods bypass validation.
+
+2. **Header Extraction**: Retrieves the Content-Type header from the incoming request.
+
+3. **Media Type Parsing**: Extracts the base media type by:
+   - Finding the semicolon separator (if present)
+   - Stripping parameters (charset, boundary, etc.)
+   - Trimming whitespace from the result
+
+4. **Case-Insensitive Matching**: Compares the extracted media type against allowed types using case-insensitive comparison.
+
+5. **Error Response**: Returns HTTP 415 (Unsupported Media Type) if:
+   - Content-Type header is missing (for methods that require it)
+   - The media type doesn't match any allowed types
+
+#### Default Content-Type (`Default`)
+
+Sets a default Content-Type header on the request if none is present. This middleware:
+- Checks if the Content-Type header exists
+- Sets the header to the specified default value if missing
+- Preserves existing headers without modification
+
+#### Response Content-Type (`SetResponse`)
+
+Sets the Content-Type header on the response. This middleware:
+- Unconditionally sets the response Content-Type header
+- Executes before the handler processes the request
+- Can be combined with request validation middleware
+
+### Key Design Decisions
+
+- **Parameter Stripping**: Media type parameters are ignored during validation, allowing `application/json; charset=utf-8` to match `application/json`
+- **Method-Specific**: Only methods with request bodies are validated
+- **Fail-Fast**: Validation happens before the handler executes
+- **Composable**: Multiple middleware can be chained for complex scenarios
+
 ## Best Practices
 
 - Use `RequireJSON()` for REST APIs
 - Use `RequireForm()` for traditional forms
 - Set response Content-Type for consistency
+- Combine `Default()` with `Require()` to provide fallback behavior
+- Apply validation at the router group level for route-specific rules
+
+## Testing
+
+The contenttype middleware includes comprehensive test coverage for all functions and edge cases.
+
+### Test Cases
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| **Require Middleware** |
+| Allows matching content type | POST request with `application/json` header | Request proceeds (200 OK) |
+| Allows with charset | POST request with `application/json; charset=utf-8` | Request proceeds (200 OK), parameters ignored |
+| Rejects wrong content type | POST request with `application/xml` header (not in allowed list) | Returns 415 Unsupported Media Type |
+| Rejects missing content type | POST request without Content-Type header | Returns 415 Unsupported Media Type |
+| Skips GET requests | GET request without Content-Type header | Request proceeds (200 OK), validation skipped |
+| **RequireJSON Middleware** |
+| Allows JSON | POST request with `application/json` header | Request proceeds (200 OK) |
+| Rejects form | POST request with `application/x-www-form-urlencoded` header | Returns 415 Unsupported Media Type |
+| **RequireForm Middleware** |
+| Allows form-urlencoded | POST request with `application/x-www-form-urlencoded` header | Request proceeds (200 OK) |
+| Allows multipart | POST request with `multipart/form-data; boundary=----` header | Request proceeds (200 OK) |
+| **Default Middleware** |
+| Sets default when missing | POST request without Content-Type header | Request header set to `application/json` |
+| Preserves existing | POST request with `text/plain` header | Existing header preserved as `text/plain` |
+| **SetResponse Middleware** |
+| Sets response Content-Type | GET request to endpoint with SetResponse middleware | Response includes `Content-Type: application/json; charset=utf-8` header |
 
 ## Related Middlewares
 

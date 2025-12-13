@@ -299,6 +299,50 @@ func (p *MemoryProvider) Disable(name string)
 func (p *MemoryProvider) Toggle(name string)
 ```
 
+## Technical Details
+
+### Architecture
+
+The feature middleware uses a provider-based architecture that allows flexible feature flag management:
+
+- **Context Storage**: Feature flags are stored in the request context using a private `contextKey{}` type for isolation
+- **Provider Interface**: The `Provider` interface defines a single method `GetFlags(c *mizu.Ctx) (Flags, error)` enabling custom implementations
+- **Thread Safety**: The `MemoryProvider` uses `sync.RWMutex` for concurrent read/write access
+- **Immutable Returns**: Providers return copies of flag maps to prevent external modification
+
+### Implementation Details
+
+**Flag Resolution Flow**:
+1. Middleware intercepts request
+2. Provider's `GetFlags()` is called with context
+3. Flags are stored in request context
+4. Helper functions (`IsEnabled`, `Get`, etc.) retrieve flags from context
+5. On provider error, empty flag map is used (fail-safe behavior)
+
+**Static Provider**:
+- Wraps a `Flags` map in an immutable provider
+- Returns defensive copies to prevent modification
+- Zero overhead after initialization
+
+**Memory Provider**:
+- Mutable in-memory flag storage
+- Uses read-write mutex for concurrent access
+- Methods: `Enable()`, `Disable()`, `Toggle()`, `Set()`, `SetFlag()`, `Delete()`
+- Safe for runtime flag updates
+
+**Middleware Functions**:
+- `Require(name, handler)`: Guards route requiring single flag
+- `RequireAll(names, handler)`: Guards route requiring all flags enabled
+- `RequireAny(names, handler)`: Guards route requiring at least one flag enabled
+- Custom handlers provide fallback responses when flags are disabled
+
+### Performance Characteristics
+
+- **Static Provider**: O(n) copy operation per request where n is flag count
+- **Memory Provider**: O(n) copy with RLock, write operations use Lock
+- **Flag Lookup**: O(1) map lookup from context
+- **Context Storage**: Single context value, minimal memory overhead
+
 ## Best Practices
 
 - Use descriptive flag names
@@ -307,6 +351,25 @@ func (p *MemoryProvider) Toggle(name string)
 - Use percentage rollouts for risky features
 - Implement a custom provider for production
 - Include metadata for analytics
+
+## Testing
+
+The feature middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Static flags with enabled/disabled states | Correctly identifies enabled and disabled flags |
+| `TestIsDisabled` | Check if flag is disabled | Returns true for disabled flags |
+| `TestGetFlags` | Retrieve all flags from context | Returns complete flag collection |
+| `TestGet` | Retrieve specific flag with metadata | Returns flag with description and metadata intact |
+| `TestRequire` (enabled) | Route protection with enabled flag | Allows request to proceed (200 OK) |
+| `TestRequire` (disabled) | Route protection with disabled flag | Blocks request with 404 Not Found |
+| `TestRequire_CustomHandler` | Custom handler when flag disabled | Executes custom handler returning 403 Forbidden |
+| `TestRequireAll` | Require multiple flags all enabled | Allows request when all flags enabled |
+| `TestRequireAny` | Require at least one flag enabled | Allows request when any flag is enabled |
+| `TestMemoryProvider` | In-memory provider CRUD operations | Enable, Set, and SetFlag work correctly |
+| `TestMemoryProvider_Toggle` | Toggle flag state at runtime | Switches flag from enabled to disabled |
+| `TestMemoryProvider_Delete` | Delete flag from provider | Flag no longer exists after deletion |
 
 ## Related Middlewares
 

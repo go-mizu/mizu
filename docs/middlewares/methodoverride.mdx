@@ -91,6 +91,76 @@ func New() mizu.Middleware
 func WithOptions(opts Options) mizu.Middleware
 ```
 
+## Technical Details
+
+### Implementation Overview
+
+The method override middleware works by intercepting POST requests and checking for method override indicators in the following priority order:
+
+1. **Header Check**: First checks the override header (default: `X-HTTP-Method-Override`)
+2. **Query Parameter**: If no header is found, checks the query parameter with the form field name
+3. **Form Field**: For form submissions (content types `application/x-www-form-urlencoded` or `multipart/form-data`), checks the form field value
+
+### Method Validation
+
+- Override values are converted to uppercase for case-insensitive matching
+- Only methods specified in the `Methods` configuration are allowed (default: PUT, PATCH, DELETE)
+- Invalid or disallowed methods are silently ignored, leaving the original POST method intact
+- The allowed methods are stored in a map for O(1) lookup performance
+
+### Request Processing
+
+The middleware only processes POST requests. Any other HTTP method (GET, PUT, DELETE, etc.) passes through unchanged, even if override headers or parameters are present. This prevents potential security issues from unexpected method changes.
+
+### Content Type Handling
+
+Form field checking only occurs when the request has an appropriate content type:
+- `application/x-www-form-urlencoded`
+- `multipart/form-data`
+
+This ensures form parsing is only attempted for actual form submissions, avoiding unnecessary processing for JSON or other content types.
+
+## Best Practices
+
+### Use CSRF Protection
+
+Always combine method override with CSRF protection when handling form submissions:
+
+```go
+app.Use(csrf.New())
+app.Use(methodoverride.New())
+```
+
+### Restrict Allowed Methods
+
+Only enable the HTTP methods your application actually needs:
+
+```go
+app.Use(methodoverride.WithOptions(methodoverride.Options{
+    Methods: []string{"PUT", "DELETE"}, // Exclude PATCH if not needed
+}))
+```
+
+### Header Priority
+
+When using AJAX requests, prefer the header approach for cleaner code and better separation from form data.
+
+## Testing
+
+The middleware includes comprehensive test coverage for all override scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| Header Override | POST request with `X-HTTP-Method-Override: PUT` header | Method changed to PUT |
+| Query Override | POST request with `?_method=DELETE` query parameter | Method changed to DELETE |
+| Form Override | POST request with `_method=PATCH` form field | Method changed to PATCH |
+| Non-POST Ignored | GET request with override header | Method remains GET, override ignored |
+| Invalid Method | POST request with `X-HTTP-Method-Override: INVALID` | Method remains POST, invalid override ignored |
+| Custom Header | POST request with custom header name (`X-Method: PUT`) | Method changed to PUT using custom header |
+| Custom Methods - Allowed | POST request with allowed custom method (GET) | Method changed to GET |
+| Custom Methods - Blocked | POST request with non-allowed method (DELETE) when only GET/HEAD allowed | Method remains POST |
+| Case Insensitive | POST request with lowercase override value (`delete`) | Method changed to DELETE (uppercase) |
+
 ## Security Notes
 
 - Only POST requests can be overridden

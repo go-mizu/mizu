@@ -130,12 +130,64 @@ type BotInfo struct {
 - DuckDuckBot
 - Baiduspider
 
+## Technical Details
+
+### User-Agent Pattern Matching
+
+The middleware uses compiled regular expressions for efficient pattern matching:
+
+- **Default Patterns**: Includes search engines (Googlebot, Bingbot), social bots (Facebook, Twitter), SEO tools (Semrush, Ahrefs), and HTTP clients (curl, wget)
+- **Pattern Compilation**: All patterns are compiled into a single regex at initialization for O(n) matching
+- **Case Insensitive**: Matching is case-insensitive to handle various User-Agent formats
+
+### Bot Categories
+
+Detected bots are categorized:
+- `search`: Googlebot, Bingbot, Yandexbot, Baiduspider, DuckDuckBot
+- `social`: Facebook, Twitter, LinkedIn, Pinterest
+- `seo`: Semrush, Ahrefs, Majestic, MJ12bot
+- `tool`: curl, wget, Python requests, Go HTTP client
+- `crawler`: Generic crawlers, spiders, scrapers
+
+### Context Storage
+
+Bot information is stored in the request context using `context.WithValue()` for thread-safe access throughout the request lifecycle.
+
+### Allowlist/Blocklist Logic
+
+When `BlockBots` is enabled:
+1. If `AllowedBots` is set, only listed bots are allowed (allowlist mode)
+2. If `BlockedBots` is set, only listed bots are blocked (blocklist mode)
+3. If neither is set, all detected bots are blocked
+
 ## Best Practices
 
 - Allow search engine bots for SEO
 - Serve simplified content to bots
 - Log bot traffic for analysis
 - Rate limit suspicious bots
+
+## Testing
+
+The middleware includes comprehensive test coverage. Key test cases:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew/detect_googlebot` | Detects Googlebot user agent | IsBot=true, BotName="googlebot", Category="search" |
+| `TestNew/detect_curl` | Detects curl HTTP client | IsBot=true, Category="tool" |
+| `TestNew/normal_browser` | Normal browser user agent | IsBot=false |
+| `TestWithOptions_BlockBots/block_bot` | Block detected bots | Returns 403 Forbidden |
+| `TestWithOptions_BlockBots/allow_browser` | Allow normal browsers | Returns 200 OK |
+| `TestWithOptions_AllowedBots/allowed_bot` | Allowlist mode with Googlebot | Returns 200 OK for allowed bot |
+| `TestWithOptions_AllowedBots/non-allowed_bot` | Allowlist mode with curl | Returns 403 Forbidden |
+| `TestWithOptions_BlockedBots/blocked_bot` | Blocklist mode with Semrush | Returns 403 Forbidden |
+| `TestWithOptions_CustomPatterns` | Custom bot pattern detection | Detects custom bot pattern |
+| `TestWithOptions_ErrorHandler` | Custom error handler | Returns JSON response |
+| `TestIsBot` | Helper function test | Returns true for bots |
+| `TestBotName` | Bot name extraction | Returns detected bot name |
+| `TestBlock` | Block all bots helper | Returns 403 for any bot |
+| `TestAllow` | Allow specific bots helper | Allows listed bots only |
+| `TestDeny` | Deny specific bots helper | Blocks listed bots |
 
 ## Related Middlewares
 

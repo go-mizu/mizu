@@ -107,12 +107,70 @@ func Bind(c *mizu.Ctx, v any) error
 | `application/xml` | Standard XML |
 | `text/xml` | Alternative |
 
+## Technical Details
+
+### Architecture
+
+The XML middleware uses a context-based architecture to store and retrieve XML-specific data:
+
+- **Context Keys**: Uses private `contextKey` type to store body data, options, and preferred format
+- **Auto-Parsing**: Optionally reads and caches XML request bodies for reusable access
+- **Content Negotiation**: Detects client preferences via Accept header and stores format preference
+
+### Implementation Details
+
+**Middleware Options**:
+- `Indent`: Indentation string for pretty printing (default: empty)
+- `Prefix`: Prefix for each XML element (default: empty)
+- `ContentType`: Content type for responses (default: "application/xml")
+- `AutoParse`: Automatically parse XML request bodies (default: false)
+- `XMLDeclaration`: Include XML declaration in responses (default: true)
+
+**Content Type Detection**:
+The middleware accepts both `application/xml` and `text/xml` content types, as well as `*/*` and empty Accept headers.
+
+**XML Declaration**:
+By default, all responses include the standard XML declaration (`<?xml version="1.0" encoding="UTF-8"?>`). This can be disabled via options.
+
+**Marshal Options**:
+- Standard marshaling: Uses `xml.Marshal`
+- Pretty printing: Uses `xml.MarshalIndent` with configurable indent and prefix
+
+### Response Flow
+
+1. Middleware checks Accept header for XML compatibility
+2. If AutoParse enabled, reads and caches request body
+3. Stores options in context for response functions
+4. Response functions retrieve options from context
+5. Marshal data with appropriate settings
+6. Set Content-Type header with charset
+7. Write XML declaration (if enabled) and data
+
 ## Best Practices
 
 - Use proper struct tags
 - Handle encoding correctly
 - Validate XML input
 - Consider namespace handling
+- Enable AutoParse when binding XML requests frequently
+- Use Pretty() middleware during development for readable output
+
+## Testing
+
+The XML middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| TestNew | Basic middleware initialization | Middleware should initialize and pass through requests successfully |
+| TestResponse | XML response generation | Should return XML response with correct Content-Type header and proper XML structure |
+| TestBind | XML request body parsing | Should parse XML request body into Go struct with AutoParse enabled |
+| TestBody | Raw body retrieval | Should retrieve cached XML body when AutoParse is enabled |
+| TestSendError | XML error response | Should send properly formatted XML error with code and message elements |
+| TestPretty | Pretty printing | Should format XML with newlines and indentation when Pretty middleware is used |
+| TestContentNegotiation | Content negotiation based on Accept header | Should detect preferred format (XML/JSON) from Accept header, defaulting to JSON |
+| TestRespond | Format-aware response | Should respond with XML or JSON based on content negotiation preference |
+| TestXMLDeclaration | XML declaration control | Should include/exclude XML declaration based on XMLDeclaration option |
+| TestWrap | XML wrapper element | Should wrap data in named root element correctly |
 
 ## Related Middlewares
 

@@ -127,12 +127,66 @@ func Status(status int) Response
 func File(path string) Response
 ```
 
+## Technical Details
+
+### Implementation Overview
+
+The mock middleware is built on a thread-safe architecture using `sync.RWMutex` for concurrent access to mock responses. It supports both path-only and method-specific mocking patterns.
+
+**Core Components:**
+
+- **Mock struct**: Central registry holding mock responses with thread-safe access
+- **Response matching**: Two-tier matching system (method+path, then path-only)
+- **Passthrough mode**: Configurable behavior for unmatched requests
+
+**Request Flow:**
+
+1. Extract request path and method from incoming request
+2. Acquire read lock for concurrent-safe access
+3. Check method-specific mocks first (`methods[method][path]`)
+4. Fall back to path-only mocks (`mocks[path]`)
+5. Apply default response if configured
+6. Either pass through to next handler or return 404
+
+**Response Types:**
+
+The middleware provides helper functions for common response types:
+- `JSON()`: Marshal Go data structures to JSON with appropriate headers
+- `Text()`: Plain text responses
+- `HTML()`: HTML responses with proper content type
+- `File()`: Generic file responses with custom content types
+- `Redirect()`: HTTP redirects with location headers
+- `Error()`: Standardized error responses in JSON format
+
+**Thread Safety:**
+
+All mock registration and retrieval operations are protected by read/write locks, making the middleware safe for concurrent use in multi-threaded environments.
+
 ## Best Practices
 
 - Use environment variable to enable/disable
 - Keep mock data in separate files
 - Match production response structure
 - Add realistic delays for latency testing
+
+## Testing
+
+The mock middleware includes comprehensive test coverage for all major functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| TestNew | Creates middleware with predefined mocks | Returns mocked JSON response instead of real handler |
+| TestMock_Register | Registers a mock response for a path | Mock response is served for registered path |
+| TestMock_RegisterMethod | Registers method-specific mock | POST request returns mocked response with status 201 |
+| TestMock_Clear | Clears all registered mocks | After clear, real handler is called instead of mock |
+| TestWithOptions_DefaultResponse | Uses default response for unmatched paths | Returns default response (503) for any unmatched path |
+| TestJSON | Creates JSON response helper | Response has correct status and JSON content type |
+| TestText | Creates text response helper | Response contains correct text body and content type |
+| TestHTML | Creates HTML response helper | Response has text/html content type |
+| TestRedirect | Creates redirect response | Response has correct redirect status and Location header |
+| TestError | Creates error response helper | Returns JSON error response with correct status |
+| TestPrefix | Mocks all paths matching prefix | Prefixed paths return mock, non-prefixed pass through |
+| TestPassthrough | Passes unmatched requests to next handler | Real handler is called when no mock matches |
 
 ## Related Middlewares
 

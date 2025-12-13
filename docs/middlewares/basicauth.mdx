@@ -157,6 +157,50 @@ func WithOptions(opts Options) mizu.Middleware
 type Accounts map[string]string
 ```
 
+## Technical Details
+
+The basicauth middleware implements HTTP Basic Authentication according to RFC 7617. Here are the key implementation details:
+
+### Authentication Flow
+
+1. **Header Extraction**: Extracts the `Authorization` header from the incoming request
+2. **Scheme Validation**: Verifies the header starts with "Basic " prefix
+3. **Base64 Decoding**: Decodes the base64-encoded credentials using `base64.StdEncoding.DecodeString()`
+4. **Credential Parsing**: Splits the decoded string on the first colon (`:`) to separate username and password
+5. **Validation**: Calls the configured validator function to verify credentials
+6. **Response**: Either proceeds to the next handler or returns 401 Unauthorized with `WWW-Authenticate` header
+
+### Security Features
+
+**Constant-Time Comparison**: The built-in validator uses `secureCompare()` function to prevent timing attacks:
+```go
+func secureCompare(a, b string) bool {
+    // Hash both strings to ensure constant time comparison
+    // even for strings of different lengths
+    aHash := sha256.Sum256([]byte(a))
+    bHash := sha256.Sum256([]byte(b))
+    return subtle.ConstantTimeCompare(aHash[:], bHash[:]) == 1
+}
+```
+
+This approach:
+- Hashes both strings using SHA-256 to normalize lengths
+- Uses `crypto/subtle.ConstantTimeCompare()` to prevent timing side-channels
+- Protects against timing attacks that could leak password information
+
+**WWW-Authenticate Header**: On authentication failure, the middleware sets the `WWW-Authenticate` header with the configured realm, prompting the browser to display a login dialog.
+
+### Error Handling
+
+The middleware returns 401 Unauthorized in these cases:
+- Missing `Authorization` header
+- Invalid authorization scheme (not "Basic")
+- Invalid base64 encoding
+- Malformed credentials (no colon separator)
+- Validator function returns false
+
+Custom error handlers can be provided via `Options.ErrorHandler` to customize the response format (e.g., JSON instead of plain text).
+
 ## Security Considerations
 
 1. **Always use HTTPS** - Basic auth sends credentials base64-encoded (not encrypted)
@@ -171,6 +215,28 @@ type Accounts map[string]string
 - Combine with HTTPS redirect middleware
 - Add rate limiting to prevent brute force attacks
 - Use Bearer auth or session-based auth for APIs
+
+## Testing
+
+The basicauth middleware includes comprehensive test coverage. Below are all test cases:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| **TestNew/allows valid credentials** | Valid username and password provided | Returns 200 OK and allows request through |
+| **TestNew/rejects invalid password** | Valid username with incorrect password | Returns 401 Unauthorized |
+| **TestNew/rejects unknown user** | Non-existent username provided | Returns 401 Unauthorized |
+| **TestNew/rejects missing auth** | No Authorization header present | Returns 401 Unauthorized with WWW-Authenticate header |
+| **TestWithValidator** | Custom validator function with valid credentials | Returns 200 OK when validator returns true |
+| **TestWithRealm** | Custom realm configuration | Returns 401 with WWW-Authenticate header containing custom realm |
+| **TestWithOptions_ErrorHandler** | Custom error handler on auth failure | Calls custom error handler returning JSON response |
+| **TestWithOptions_InvalidAuth/not basic** | Authorization header with Bearer scheme | Returns 401 Unauthorized |
+| **TestWithOptions_InvalidAuth/invalid base64** | Malformed base64 in Authorization header | Returns 401 Unauthorized |
+| **TestWithOptions_InvalidAuth/no colon** | Base64 credentials without colon separator | Returns 401 Unauthorized |
+| **TestWithOptions_Panics** | Creating middleware without validator | Panics with error message |
+| **TestSecureCompare/password_password** | Comparing identical strings | Returns true |
+| **TestSecureCompare/password_different** | Comparing different strings | Returns false |
+| **TestSecureCompare/short_longpassword** | Comparing strings of different lengths | Returns false |
+| **TestSecureCompare/empty_empty** | Comparing empty strings | Returns true |
 
 ## Related Middlewares
 

@@ -126,12 +126,85 @@ func SetMeta(c *mizu.Ctx, meta map[string]any)
 }
 ```
 
+## Technical Details
+
+### Implementation Architecture
+
+The envelope middleware uses a custom response writer (`envelopeWriter`) to intercept and capture the original response before wrapping it in the envelope structure.
+
+#### Response Writer
+
+The middleware captures responses through a buffer-based writer:
+- Intercepts `WriteHeader()` calls to capture HTTP status codes
+- Buffers response body through `Write()` calls
+- Stores status code (defaults to 200 if not explicitly set)
+
+#### Envelope Construction
+
+The envelope is constructed after the handler completes:
+
+1. **Content-Type Check**: Only wraps responses matching configured content types (default: `application/json`)
+2. **Success Determination**: Status codes 200-399 are considered successful
+3. **Response Parsing**: Original JSON response is unmarshaled into the data field
+4. **Error Handling**: For error responses, attempts to extract error message from:
+   - `error` field in response body
+   - `message` field in response body
+   - Handler error if available
+5. **Metadata Addition**: When `IncludeMeta` is enabled, adds status code and request ID
+6. **Re-encoding**: Final envelope is marshaled to JSON and written to the original writer
+
+#### Field Customization
+
+All field names are customizable through options:
+- `SuccessField`: Controls the success indicator field name
+- `DataField`: Controls the data payload field name
+- `ErrorField`: Controls the error message field name
+
+#### Content-Type Filtering
+
+The middleware only wraps responses with matching content types:
+- Checks exact match or with charset suffix (e.g., `application/json; charset=utf-8`)
+- Non-matching responses pass through unmodified
+- Default content types: `["application/json"]`
+
+### Helper Functions
+
+The package provides convenience functions for common responses:
+
+- `Success()`: 200 OK with data
+- `Created()`: 201 Created with data
+- `NoContent()`: 204 No Content
+- `BadRequest()`: 400 Bad Request with error message
+- `Unauthorized()`: 401 Unauthorized with error message
+- `Forbidden()`: 403 Forbidden with error message
+- `NotFound()`: 404 Not Found with error message
+- `InternalError()`: 500 Internal Server Error with error message
+
 ## Best Practices
 
 - Use consistent structure across APIs
 - Include relevant metadata
 - Document envelope format
 - Handle nested errors properly
+
+## Testing
+
+The envelope middleware includes comprehensive tests covering all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Default middleware initialization | Wraps response with `success: true` and `data` field |
+| `TestWithOptions_IncludeMeta` | Metadata inclusion with request ID | Includes `meta` object with `status_code` and `request_id` |
+| `TestWithOptions_CustomFields` | Custom field names | Uses custom `ok`, `result`, and `message` fields |
+| `TestSuccess` | Success helper function | Returns 200 OK with `success: true` and data |
+| `TestError` | Error helper function | Returns error status with `success: false` and error message |
+| `TestCreated` | Created helper function | Returns 201 Created status with success response |
+| `TestBadRequest` | BadRequest helper function | Returns 400 Bad Request with error message |
+| `TestUnauthorized` | Unauthorized helper function | Returns 401 Unauthorized with error message |
+| `TestForbidden` | Forbidden helper function | Returns 403 Forbidden with error message |
+| `TestNotFound` | NotFound helper function | Returns 404 Not Found with error message |
+| `TestInternalError` | InternalError helper function | Returns 500 Internal Server Error with error message |
+| `TestNoContent` | NoContent helper function | Returns 204 No Content without body |
 
 ## Related Middlewares
 

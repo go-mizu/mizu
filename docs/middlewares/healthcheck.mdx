@@ -209,12 +209,56 @@ readinessProbe:
   periodSeconds: 5
 ```
 
+## Technical Details
+
+### Implementation Architecture
+
+The healthcheck middleware is designed with the following technical characteristics:
+
+- **Concurrent Check Execution**: All health checks run in parallel using goroutines with a `sync.WaitGroup` to coordinate execution
+- **Thread-Safe Results**: A `sync.Mutex` protects the results map during concurrent check execution
+- **Context-Based Timeouts**: Each check runs with its own `context.WithTimeout` to prevent hanging checks
+- **Default Timeout**: If no timeout is specified, checks default to 5 seconds
+- **Status Code Mapping**: Returns HTTP 200 for healthy, HTTP 503 for unhealthy states
+
+### Core Components
+
+1. **Check Struct**: Defines a health check with name, check function, and timeout
+2. **Status Struct**: JSON response structure with overall status and individual check results
+3. **Options Struct**: Configuration for endpoint paths and checks list
+4. **Liveness Handler**: Simple text response ("ok") with no dependency checks
+5. **Readiness Handler**: Executes all checks concurrently and aggregates results
+
+### Helper Functions
+
+- **DBCheck**: Creates a database health check with a 5-second default timeout
+- **HTTPCheck**: Creates an HTTP endpoint health check with a 10-second default timeout
+- **New**: Creates a combined handler that routes to liveness or readiness based on path
+- **Register**: Convenience function to register both endpoints on a router
+
 ## Best Practices
 
 - Keep liveness checks simple (no external dependencies)
 - Include all critical dependencies in readiness checks
 - Set appropriate timeouts for each check
 - Use readiness to control traffic during startup/shutdown
+
+## Testing
+
+### Test Cases
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestLiveness` | Basic liveness endpoint test | Returns HTTP 200 with "ok" text response |
+| `TestReadiness/no_checks` | Readiness with no checks configured | Returns HTTP 200 with "ok" text response |
+| `TestReadiness/all_healthy` | Readiness with all checks passing | Returns HTTP 200 with JSON status "ok" and all checks marked "ok" |
+| `TestReadiness/one_unhealthy` | Readiness with one failing check | Returns HTTP 503 with JSON status "error" and error message in checks |
+| `TestReadiness_Timeout` | Check that exceeds timeout | Returns HTTP 503 due to context deadline exceeded |
+| `TestNew/liveness` | Combined handler with custom liveness path | Routes to liveness handler and returns HTTP 200 |
+| `TestNew/readiness` | Combined handler with custom readiness path | Routes to readiness handler and returns HTTP 200 with checks |
+| `TestRegister/default_liveness` | Register with default paths (/healthz) | Liveness endpoint returns HTTP 200 |
+| `TestRegister/default_readiness` | Register with default paths (/readyz) | Readiness endpoint returns HTTP 200 with checks |
+| `TestDBCheck` | DBCheck helper function | Creates check with name "postgres", 5s timeout, and executes successfully |
 
 ## Related Middlewares
 

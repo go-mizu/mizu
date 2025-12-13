@@ -240,6 +240,103 @@ var (
 - Have fallback for CAPTCHA failures
 - Test with automation tools
 
+## Technical Details
+
+### Token Extraction
+
+The middleware supports extracting tokens from three locations:
+
+- **Form**: `form:field-name` - Extracts from POST form data
+- **Header**: `header:Header-Name` - Extracts from HTTP headers
+- **Query**: `query:param-name` - Extracts from URL query parameters
+
+The `TokenLookup` option uses the format `source:key` where source is one of `form`, `header`, or `query`.
+
+### Verification Flow
+
+1. **Request Filtering**: Skips verification for safe methods (GET, HEAD, OPTIONS) and configured skip paths
+2. **Token Extraction**: Retrieves token based on `TokenLookup` configuration
+3. **Verification**:
+   - For custom verifiers: Calls the provided `Verifier` function
+   - For provider verifiers: Makes HTTP POST to provider's API with secret, token, and client IP
+4. **Score Validation**: For v3 providers (reCAPTCHA v3, Turnstile), validates score against `MinScore` threshold
+5. **Error Handling**: Uses custom `ErrorHandler` if provided, otherwise returns default 400 response
+
+### Client IP Detection
+
+The middleware detects client IP in the following order:
+
+1. `X-Forwarded-For` header (first IP in comma-separated list)
+2. `X-Real-IP` header
+3. `RemoteAddr` from request (strips port if present)
+
+The detected IP is sent to the provider API for enhanced verification.
+
+### Provider API Integration
+
+Each provider has a specific verification endpoint:
+
+- **reCAPTCHA v2/v3**: `https://www.google.com/recaptcha/api/siteverify`
+- **hCaptcha**: `https://hcaptcha.com/siteverify`
+- **Turnstile**: `https://challenges.cloudflare.com/turnstile/v0/siteverify`
+
+The middleware sends:
+- `secret`: Your secret key
+- `response`: The CAPTCHA token
+- `remoteip`: Client IP address (optional)
+
+### Default Values
+
+| Setting | Default Value |
+|---------|--------------|
+| Provider | `ProviderRecaptchaV2` |
+| TokenLookup | `"form:g-recaptcha-response"` |
+| MinScore | `0.5` |
+| Timeout | `10s` |
+
+### Error Types
+
+The middleware defines three specific error types:
+
+- `ErrMissingToken`: Token not found in the specified lookup location
+- `ErrInvalidToken`: Token verification failed (invalid or low score)
+- `ErrVerifyFailed`: HTTP request to provider API failed
+
+## Testing
+
+### Test Coverage
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestWithOptions_MissingToken` | POST request without CAPTCHA token | Returns 400 Bad Request |
+| `TestWithOptions_CustomVerifier` (valid) | Custom verifier with valid token | Request proceeds (200 OK) |
+| `TestWithOptions_CustomVerifier` (invalid) | Custom verifier with invalid token | Returns 400 Bad Request |
+| `TestWithOptions_SkipSafeMethods` | GET request without token | Request proceeds (200 OK), CAPTCHA skipped |
+| `TestWithOptions_SkipPaths` | POST to path in SkipPaths | Request proceeds (200 OK), CAPTCHA skipped |
+| `TestWithOptions_HeaderToken` | Token provided via HTTP header | Token extracted from header, verification succeeds |
+| `TestWithOptions_QueryToken` | Token provided via query parameter | Token extracted from query, verification succeeds |
+| `TestWithOptions_CustomErrorHandler` | Invalid token with custom error handler | Custom handler returns 403 Forbidden with JSON |
+| `TestCustom` | Custom verifier function | Custom verification logic applied successfully |
+| `TestNew` | Creating middleware with New() | Middleware instance created with defaults |
+| `TestErrors` | Error message validation | All error types return correct messages |
+| `TestExtractToken_InvalidLookup` | TokenLookup without colon separator | Returns 400 Bad Request (token not found) |
+| `TestVerifyToken_WithMockServer` (valid) | Valid token verified by mock server | Returns 200 OK |
+| `TestVerifyToken_WithMockServer` (invalid) | Invalid token verified by mock server | Returns 400 Bad Request |
+| `TestVerifyToken_RecaptchaV3Score` (high) | reCAPTCHA v3 with score above threshold | Returns 200 OK |
+| `TestVerifyToken_RecaptchaV3Score` (low) | reCAPTCHA v3 with score below threshold | Returns 400 Bad Request |
+| `TestVerifyToken_ServerError` | Provider API returns 500 error | Returns 400 Bad Request |
+| `TestVerifyToken_InvalidJSON` | Provider returns malformed JSON | Returns 400 Bad Request |
+| `TestVerifyToken_UnknownProvider` | Unknown provider type | Returns 400 Bad Request |
+| `TestGetClientIP_XForwardedFor` | X-Forwarded-For header present | Extracts first IP from header, sends to provider |
+| `TestGetClientIP_XRealIP` | X-Real-IP header present | Extracts IP from header, sends to provider |
+| `TestReCaptchaV2` | ReCaptchaV2 constructor | Creates middleware with reCAPTCHA v2 config |
+| `TestReCaptchaV3` | ReCaptchaV3 constructor | Creates middleware with reCAPTCHA v3 config |
+| `TestHCaptcha` | HCaptcha constructor | Creates middleware with hCaptcha config |
+| `TestTurnstile` | Turnstile constructor | Creates middleware with Turnstile config |
+| `TestWithOptions_VerifierError` | Custom verifier returns error | Returns 400 Bad Request |
+| `TestWithOptions_HeadMethod` | HEAD request without token | Request proceeds (200 OK), CAPTCHA skipped |
+| `TestWithOptions_OptionsMethod` | OPTIONS request without token | Request proceeds (200 OK), CAPTCHA skipped |
+
 ## Security Considerations
 
 1. **Secret Key** - Never expose secret key in frontend code

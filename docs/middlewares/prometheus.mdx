@@ -116,12 +116,78 @@ scrape_configs:
     metrics_path: '/metrics'
 ```
 
+## Technical Details
+
+### Implementation Architecture
+
+The Prometheus middleware is implemented with the following key components:
+
+- **Metrics Collector**: A thread-safe `Metrics` struct that maintains multiple metric types
+- **Custom Histogram**: Lightweight histogram implementation for request duration and size tracking
+- **Response Writer Wrapper**: Custom `responseWriter` to capture HTTP status codes and response sizes
+- **Atomic Operations**: Uses `sync/atomic` for concurrent request counting and active request tracking
+
+### Core Metrics
+
+The middleware collects four primary metric types:
+
+1. **Request Counter** (`http_requests_total`): Total number of HTTP requests with labels for method, path, and status
+2. **Request Duration Histogram** (`http_request_duration_seconds`): Request latency distribution in seconds
+3. **Request Size Histogram** (`http_request_size_bytes`): HTTP request size distribution with fixed buckets [100, 1000, 10000, 100000, 1000000]
+4. **Response Size Histogram** (`http_response_size_bytes`): HTTP response size distribution with fixed buckets [100, 1000, 10000, 100000, 1000000]
+5. **Active Requests Gauge** (`http_requests_active`): Current number of in-flight requests
+
+### Label Structure
+
+Metrics include the following labels:
+- `method`: HTTP method (GET, POST, etc.)
+- `path`: Request path
+- `status`: HTTP status code (for counter and duration metrics)
+
+### Default Histogram Buckets
+
+Request duration uses the following default buckets (in seconds):
+```
+[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]
+```
+
+### Thread Safety
+
+- All metric recording operations are thread-safe using `sync.RWMutex` and atomic operations
+- Histogram observations are protected by individual mutex locks
+- Request counters use atomic increment operations for optimal performance
+
+### Metric Naming
+
+Full metric names follow the pattern:
+- With namespace and subsystem: `<namespace>_<subsystem>_<metric_name>`
+- With namespace only: `<namespace>_<metric_name>`
+- With subsystem only: `<subsystem>_<metric_name>`
+- Default: `<metric_name>`
+
 ## Best Practices
 
 - Use consistent naming
 - Avoid high cardinality labels
 - Skip health/metrics endpoints
 - Set appropriate scrape interval
+
+## Testing
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| TestNew | Basic middleware initialization | Middleware creation succeeds and processes requests |
+| TestMetricsEndpoint | Metrics endpoint functionality | Returns metrics in Prometheus format with http_requests_total and http_request_duration_seconds |
+| TestRequestCounter | Request counting accuracy | TotalRequests() returns correct count after multiple requests |
+| TestDifferentStatusCodes | Status code labeling | Metrics include separate labels for different status codes (200, 500) |
+| TestNamespace | Namespace/subsystem prefixing | Metric names include configured namespace and subsystem prefixes |
+| TestSkipPaths | Path skipping functionality | Requests to skipped paths are not recorded in metrics |
+| TestHistogramBuckets | Custom histogram buckets | Metrics include custom bucket values in histogram output |
+| TestActiveRequests | Active requests gauge | ActiveRequests() returns 0 when no requests are in flight |
+| TestRegisterEndpoint | Custom metrics path registration | RegisterEndpoint() registers handler at custom path |
+| TestExportFormat | Prometheus format compliance | Output includes HELP, TYPE comments, buckets, sum, and count |
+| TestResponseSizeTracking | Response size metrics | Metrics include http_response_size_bytes for responses |
+| TestMethodLabels | HTTP method labeling | Metrics include separate labels for different HTTP methods (GET, POST) |
 
 ## Related Middlewares
 

@@ -125,12 +125,81 @@ func WithLogger(logger *slog.Logger) mizu.Middleware
 func WithOptions(opts Options) mizu.Middleware
 ```
 
+## Technical Details
+
+### Implementation
+
+The requestlog middleware is built on Go's `log/slog` package and provides structured logging with the following key features:
+
+- **Timing**: Uses `time.Now()` and `time.Since()` to measure request duration with nanosecond precision
+- **Skip Logic**: Pre-computes skip paths and methods into maps for O(1) lookup performance
+- **Body Preservation**: Reads request body using `io.LimitReader` and restores it with `io.NopCloser(bytes.NewReader(body))` to allow downstream handlers to access it
+- **Header Redaction**: Maintains a map of sensitive header names for constant-time redaction checks
+- **Default Values**: Automatically sets default logger (text handler to stdout), max body size (4KB), and sensitive headers (Authorization, Cookie, X-API-Key)
+
+### Logged Fields
+
+The middleware logs the following fields for each request:
+
+- `method`: HTTP method (GET, POST, etc.)
+- `path`: Request URL path
+- `remote_addr`: Client remote address
+- `query`: Raw query string (only if present)
+- `headers`: Request headers (only if `LogHeaders: true`)
+- `body`: Request body up to `MaxBodySize` (only if `LogBody: true`)
+- `duration`: Request processing duration
+- `error`: Error message (only if request returns an error)
+
+### Error Handling
+
+When a request handler returns an error:
+- The error is logged at ERROR level with all request attributes
+- The error is propagated to the next middleware (not swallowed)
+- Request duration is still calculated and logged
+
+## Security Considerations
+
+### Sensitive Data Protection
+
+The middleware automatically redacts sensitive headers to prevent credential leakage:
+- Default sensitive headers: `Authorization`, `Cookie`, `X-API-Key`
+- Custom sensitive headers can be configured via `SensitiveHeaders` option
+- Redacted headers show `[REDACTED]` in logs
+
+### Body Logging Risks
+
+When `LogBody: true`:
+- Request bodies may contain passwords, tokens, or PII
+- Body size is limited by `MaxBodySize` (default 4KB) to prevent memory exhaustion
+- Consider using skip logic for authentication endpoints
+- Review compliance requirements (GDPR, HIPAA, etc.) before enabling
+
 ## Best Practices
 
 - Use structured logging for aggregation
 - Skip noisy endpoints
 - Include request IDs for correlation
 - Set appropriate log levels
+- Be cautious with `LogBody` on production systems
+- Configure `SensitiveHeaders` for your application's needs
+- Use `SkipPaths` for health checks and metrics endpoints
+- Set reasonable `MaxBodySize` limits to prevent memory issues
+
+## Testing
+
+The requestlog middleware includes comprehensive test coverage:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Tests basic middleware creation and logging | Logs method and path for standard requests |
+| `TestWithOptions_LogHeaders` | Tests header logging functionality | Includes headers in log output when `LogHeaders: true` |
+| `TestWithOptions_LogBody` | Tests body logging functionality | Includes request body in log output when `LogBody: true` |
+| `TestWithOptions_SkipPaths` | Tests path-based skip logic | Skips logging for configured paths (e.g., `/health`) |
+| `TestWithOptions_SkipMethods` | Tests method-based skip logic | Skips logging for configured HTTP methods (e.g., `OPTIONS`) |
+| `TestWithOptions_SensitiveHeaders` | Tests header redaction | Redacts sensitive headers showing `[REDACTED]` instead of actual values |
+| `TestFull` | Tests full logging mode | Logs both headers and body when both options are enabled |
+| `TestQueryParams` | Tests query parameter logging | Includes query parameters in log output when present |
+| `TestBodyPreserved` | Tests body preservation for downstream handlers | Ensures request body remains readable by handlers after logging |
 
 ## Related Middlewares
 

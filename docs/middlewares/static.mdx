@@ -149,12 +149,84 @@ func WithOptions(opts Options) mizu.Middleware
 - Sets appropriate Content-Type based on file extension
 - Supports conditional requests with If-Modified-Since
 
+## Technical Details
+
+### Implementation Overview
+
+The static middleware serves files from either a local filesystem directory or an embedded `fs.FS` interface. It implements intelligent path resolution and content serving with the following key features:
+
+#### Path Resolution
+- Strips URL prefix if configured
+- Cleans and normalizes file paths using `filepath.Clean`
+- Converts URL paths to filesystem paths safely
+- Checks file existence before serving
+
+#### File Serving Strategy
+The middleware uses two different serving approaches:
+
+1. **Direct File Serving** (default)
+   - Uses `http.ServeContent` for individual files
+   - Provides proper Content-Type detection based on file extension
+   - Supports HTTP range requests for partial content
+   - Handles conditional requests with If-Modified-Since headers
+   - Sets Last-Modified based on file modification time
+
+2. **FileServer Mode** (directory browsing enabled)
+   - Uses `http.FileServer` when `Browse: true`
+   - Generates HTML directory listings automatically
+   - Ensures directory paths end with `/` to prevent redirects
+
+#### Index File Handling
+When a directory is requested:
+1. Checks if an index file exists (default: `index.html`)
+2. Serves the index file if found
+3. If not found and browsing disabled: calls NotFoundHandler or falls through to next middleware
+4. If not found and browsing enabled: shows directory listing
+
+#### Cache Control
+- Sets `Cache-Control: public, max-age=<seconds>` when `MaxAge > 0`
+- No caching headers by default (`MaxAge: 0`)
+- Relies on HTTP standard caching mechanisms
+
+#### Filesystem Abstraction
+The middleware supports two filesystem sources:
+- **FS (fs.FS)**: Takes precedence if set, ideal for embedded filesystems
+- **Root (string)**: Uses OS filesystem with the specified root directory
+
+#### Error Handling
+- Returns 404 for non-existent files (via custom handler or next middleware)
+- Returns 500 for internal file stat errors
+- Safely handles file close operations with deferred cleanup
+
+#### Performance Optimizations
+- Custom `itoa` function to avoid allocations for Cache-Control header
+- Direct file serving without unnecessary FileServer overhead
+- Minimal path manipulation and string operations
+
 ## Best Practices
 
 - Use embedded filesystem for portable deployments
 - Set appropriate `MaxAge` for caching static assets
 - Use versioned filenames for cache busting
 - Disable directory browsing in production
+
+## Testing
+
+The static middleware includes comprehensive test coverage for all major functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew/serve file` | Serves a regular file from filesystem | Returns 200 OK with correct file content |
+| `TestNew/serve index` | Serves index.html for root directory request | Returns 200 OK with index.html content |
+| `TestNew/file not found falls through` | Handles missing files when no NotFoundHandler set | Falls through to next middleware handler |
+| `TestWithFS/serve file from FS` | Serves files from fs.FS interface | Returns 200 OK with file content from embedded FS |
+| `TestWithOptions_Prefix/with prefix` | Serves files with URL prefix stripped | Returns 200 OK for paths matching prefix |
+| `TestWithOptions_Prefix/without prefix falls through` | Handles requests not matching prefix | Falls through to next middleware |
+| `TestWithOptions_MaxAge` | Sets cache control headers | Returns Cache-Control header with max-age value |
+| `TestWithOptions_NotFoundHandler` | Uses custom 404 handler for missing files | Calls custom handler returning custom 404 response |
+| `TestWithOptions_CustomIndex` | Serves custom index file (e.g., default.htm) | Returns 200 OK with custom index file content |
+| `TestWithOptions_Browse` | Enables directory browsing | Returns 200 OK with directory listing HTML |
+| `TestWithOptions_Panics` | Validates configuration on creation | Panics when neither FS nor Root is provided |
 
 ## Related Middlewares
 

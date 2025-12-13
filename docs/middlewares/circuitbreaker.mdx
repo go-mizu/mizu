@@ -237,6 +237,39 @@ type State int
 func (s State) String() string // Returns "closed", "open", or "half-open"
 ```
 
+## Technical Details
+
+### State Machine Implementation
+
+The circuit breaker implements a thread-safe state machine with three states:
+
+- **Closed State**: Normal operation where all requests are allowed through. Failures are counted, and when the failure count reaches the `Threshold`, the circuit transitions to Open.
+- **Open State**: Protective state where all requests are immediately rejected without calling the handler. After the `Timeout` period, the circuit automatically transitions to Half-Open.
+- **Half-Open State**: Recovery testing state where a limited number of requests (controlled by `MaxRequests`) are allowed through. If all test requests succeed, the circuit closes. If any request fails, the circuit immediately reopens.
+
+### Threshold Mechanism
+
+The failure threshold works differently in each state:
+
+- **In Closed State**: Consecutive failures are counted. Once the count reaches `Threshold`, the circuit opens. Successful requests reset the failure counter to zero.
+- **In Open State**: No requests are processed, so failures are not counted. The circuit waits for the `Timeout` period before transitioning to Half-Open.
+- **In Half-Open State**: Successes are counted. The circuit requires `MaxRequests` consecutive successes to close. A single failure immediately reopens the circuit.
+
+### Thread Safety
+
+The circuit breaker uses a mutex (`sync.Mutex`) to protect concurrent access to:
+- Current state
+- Failure and success counters
+- Last failure timestamp
+
+All state transitions and counter updates are atomic operations protected by the mutex.
+
+### Failure Detection
+
+The `IsFailure` function determines what constitutes a failure:
+- Default behavior: Any non-nil error is considered a failure
+- Custom behavior: Can be configured to filter specific errors (e.g., ignore 4xx client errors, only count 5xx server errors)
+
 ## Best Practices
 
 - Set thresholds based on normal error rates
@@ -244,6 +277,20 @@ func (s State) String() string // Returns "closed", "open", or "half-open"
 - Monitor state changes for alerting
 - Consider different breakers for different dependencies
 - Implement fallback responses when possible
+
+## Testing
+
+The circuit breaker middleware includes comprehensive test coverage:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Default circuit breaker with 5 failure threshold | After 5 consecutive failures, circuit opens and blocks subsequent requests with 503 status |
+| `TestWithOptions_Threshold` | Custom threshold of 3 failures | Circuit opens after exactly 3 failures instead of default 5 |
+| `TestWithOptions_Timeout` | Custom timeout of 100ms | After timeout period, circuit transitions from Open to Half-Open and allows test requests |
+| `TestWithOptions_OnStateChange` | State transition callback | Callback is invoked with correct from/to states on each transition (e.g., closed->open, open->half-open) |
+| `TestWithOptions_ErrorHandler` | Custom error handler for open circuit | Custom error handler is invoked with proper JSON response when circuit is open |
+| `TestWithOptions_IsFailure` | Custom failure detection logic | Only errors matching custom criteria count toward threshold; other errors are ignored |
+| `TestState_String` | State string representation | Each state (Closed, Open, Half-Open, Unknown) returns correct string representation |
 
 ## Related Middlewares
 

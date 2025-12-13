@@ -105,12 +105,73 @@ func SanitizeString(s string, opts Options) string
 - JSON body fields
 - Path parameters
 
+## Technical Details
+
+The sanitizer middleware operates by intercepting HTTP requests and applying configurable sanitization rules to input data before it reaches your handlers.
+
+### Implementation Overview
+
+The middleware processes request data in the following order:
+
+1. **Query Parameters**: Sanitizes all URL query parameters
+2. **Form Data**: For POST/PUT/PATCH requests, sanitizes both `r.Form` and `r.PostForm` fields
+3. **Field Filtering**: Applies whitelist (`Fields`) or blacklist (`Exclude`) filtering
+
+### Sanitization Pipeline
+
+Each value passes through a configurable pipeline of operations:
+
+1. **Trim Spaces** (`TrimSpaces`): Removes leading and trailing whitespace using `strings.TrimSpace`
+2. **Strip Non-Printable** (`StripNonPrintable`): Removes non-printable characters while preserving newlines, carriage returns, and tabs
+3. **Strip Tags** (`StripTags`): Removes HTML tags using regex-based matching:
+   - First removes `<script>` and `<style>` tags with their contents
+   - Then removes all remaining HTML tags
+4. **HTML Escape** (`HTMLEscape`): Converts special characters to HTML entities using `html.EscapeString`
+5. **Max Length** (`MaxLength`): Truncates values exceeding the specified length
+
+### Key Functions
+
+- `shouldSanitize()`: Determines if a field should be sanitized based on Fields and Exclude lists
+- `sanitizeValue()`: Applies the sanitization pipeline to a single value
+- `stripNonPrintable()`: Uses `unicode.IsPrint()` to filter characters
+- `stripTags()`: Uses compiled regex patterns for efficient HTML tag removal
+
+### Performance Considerations
+
+- Field and exclude maps are pre-built at middleware initialization for O(1) lookups
+- Regex patterns for tag stripping are compiled once and reused
+- The middleware modifies request objects in-place to avoid allocations
+
 ## Best Practices
 
 - Use as defense in depth
 - Don't rely solely on sanitization
 - Use parameterized queries for SQL
 - Use proper output encoding
+
+## Testing
+
+### Test Coverage
+
+The sanitizer middleware includes comprehensive test cases covering all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Default middleware with XSS input | HTML entities escaped (e.g., `<script>` becomes `&lt;script&gt;`) |
+| `TestWithOptions_TrimSpaces` | TrimSpaces option with padded input | Leading and trailing spaces removed (`"  John  "` becomes `"John"`) |
+| `TestWithOptions_StripTags` | StripTags option with HTML content | All HTML tags removed including script tags (`"<p>Hello</p><script>bad</script>World"` becomes `"HelloWorld"`) |
+| `TestWithOptions_MaxLength` | MaxLength option with long input | Value truncated to specified length (`"VeryLongName"` becomes `"VeryL"` with MaxLength=5) |
+| `TestWithOptions_Fields` | Fields whitelist with multiple parameters | Only specified fields sanitized, others passed through unchanged |
+| `TestWithOptions_Exclude` | Exclude blacklist with multiple parameters | Excluded fields bypass sanitization, others are sanitized |
+| `TestXSS` | XSS prevention preset | Script tags escaped to prevent XSS attacks |
+| `TestStripHTML` | HTML stripping preset | All HTML tags removed from input |
+| `TestTrim` | Trim whitespace preset | Leading and trailing whitespace removed |
+| `TestSanitize` | Direct sanitization function with various options | Correct sanitization applied: HTML escape, trim, strip tags, max length |
+| `TestSanitizeHTML` | HTML sanitization helper | HTML escaped and trimmed |
+| `TestStripTagsString` | Tag stripping helper | HTML tags removed from string |
+| `TestTrimString` | Trim helper function | Whitespace trimmed from string |
+| `TestClean` | All-in-one cleaning function | All sanitization operations applied (HTML escape, trim, strip tags, strip non-printable) |
+| `TestWithOptions_StripNonPrintable` | Non-printable character removal | Control characters removed (`"hello\x00world\x1f"` becomes `"helloworld"`) |
 
 ## Related Middlewares
 

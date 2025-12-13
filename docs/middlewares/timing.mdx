@@ -147,6 +147,44 @@ Open DevTools → Network → Select request → Timing tab to see:
 - Individual metric breakdowns
 - Descriptions for each metric
 
+## Technical Details
+
+### Implementation Architecture
+
+The timing middleware uses a context-based storage mechanism to track performance metrics throughout the request lifecycle.
+
+#### Core Components
+
+1. **timingData Structure**
+   - Thread-safe metric storage using `sync.Mutex`
+   - Tracks request start time
+   - Maintains a slice of custom metrics
+
+2. **Context Integration**
+   - Uses typed context key for type-safe storage
+   - Stores timing data in request context
+   - Enables metric collection across handler chain
+
+3. **Metric Recording**
+   - Metrics stored as `{name, duration, description}` tuples
+   - Total duration calculated from request start time
+   - All durations converted to milliseconds (microseconds/1000)
+
+#### Header Generation
+
+The middleware builds the Server-Timing header after handler execution:
+- Total time is always included first
+- Custom metrics appended in order of addition
+- Format: `name;dur=<ms>;desc="<description>"`
+- Multiple metrics joined with `, ` separator
+
+#### Thread Safety
+
+All metric operations are protected by mutex locks:
+- `Add()` acquires lock before appending metrics
+- Header generation locks before reading metrics
+- Safe for concurrent metric recording
+
 ## Best Practices
 
 - Track database queries, cache lookups, and external API calls
@@ -154,6 +192,19 @@ Open DevTools → Network → Select request → Timing tab to see:
 - Add descriptions for clarity
 - Keep metric names short and consistent
 - Use the Start/Stop pattern for cleaner code
+
+## Testing
+
+### Test Coverage
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware functionality | Sets Server-Timing header with total duration after 10ms sleep |
+| `TestAdd` | Adding custom metrics with/without descriptions | Includes "db;dur=50" with description and "cache;dur=5" without description |
+| `TestStart` | Start/Stop pattern for timing operations | Records operation duration (~20ms) with "Long operation" description |
+| `TestTrack` | Track helper for timing function execution | Records compute duration (~15ms) without description |
+| `TestAdd_NoMiddleware` | Graceful handling when middleware not installed | Add() doesn't panic, returns successfully |
+| `TestNew_MultipleMetrics` | Multiple metrics in single request | Header contains 4 entries (total + 3 custom metrics) |
 
 ## Related Middlewares
 

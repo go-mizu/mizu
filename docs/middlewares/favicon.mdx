@@ -95,11 +95,64 @@ func Disabled() mizu.Middleware
 - Handles both GET and HEAD requests
 - Only matches exact `/favicon.ico` path
 
+## Technical Details
+
+### Implementation
+
+The favicon middleware implements efficient favicon serving with the following characteristics:
+
+1. **Memory Caching**: Favicon data is loaded once during middleware initialization and cached in memory for the lifetime of the application.
+
+2. **Content Type Detection**: Uses `http.DetectContentType()` to automatically detect the content type from the favicon data. Falls back to `image/x-icon` if detection returns `application/octet-stream` or `text/plain`.
+
+3. **File System Support**: Supports three data sources:
+   - Direct file path using `os.ReadFile`
+   - Embedded data using `[]byte`
+   - File system interface (`fs.FS`) for advanced use cases
+
+4. **Request Handling**:
+   - Only processes requests matching the configured URL path (default: `/favicon.ico`)
+   - Only handles GET and HEAD methods, passes other methods to next handler
+   - Sets appropriate headers: Content-Type, Content-Length, and Cache-Control
+   - HEAD requests return headers without body
+
+5. **Special Behaviors**:
+   - Empty configuration (no data) returns HTTP 204 No Content
+   - SVG middleware supports both `/favicon.ico` and `/favicon.svg` paths
+   - Redirect middleware returns HTTP 301 Moved Permanently
+
+### Performance Considerations
+
+- Favicon is loaded once at startup (panic on file errors)
+- No disk I/O during request handling
+- Minimal memory allocation per request
+- Early path matching prevents unnecessary processing
+
 ## Best Practices
 
 - Use embedded data for portable deployments
 - Set long cache duration for production
 - Place before other middleware to avoid unnecessary processing
+
+## Testing
+
+The favicon middleware includes comprehensive test coverage for all features:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` - serve favicon | Serves favicon from file path | Returns 200 OK with correct Content-Type (image/png) |
+| `TestNew` - other paths pass through | Non-favicon paths are not intercepted | Request passes to next handler, returns route response |
+| `TestFromData` | Serves favicon from byte data | Returns 200 OK with favicon data |
+| `TestWithOptions_CustomURL` - custom url serves | Serves favicon at custom URL path | Returns 200 OK at `/icon.png` |
+| `TestWithOptions_CustomURL` - default url does not serve | Default path not served with custom URL | Returns 404 at `/favicon.ico` |
+| `TestWithOptions_FS` | Serves favicon from fs.FS interface | Returns 200 OK with data from MapFS |
+| `TestWithOptions_MaxAge` | Custom cache control max-age | Sets `Cache-Control: public, max-age=3600` |
+| `TestWithOptions_HeadMethod` | HEAD request handling | Returns 200 OK with headers but no body |
+| `TestEmpty` | Empty middleware returns no content | Returns 204 No Content for favicon requests |
+| `TestRedirect` | Redirects favicon to external URL | Returns 301 with Location header to CDN |
+| `TestSVG` - favicon.ico serves SVG | SVG data served at .ico path | Returns 200 OK with `image/svg+xml` content type |
+| `TestSVG` - favicon.svg serves SVG | SVG data served at .svg path | Returns 200 OK at `/favicon.svg` |
+| `TestWithOptions_NoData` | No data provided in options | Returns 204 No Content |
 
 ## Related Middlewares
 

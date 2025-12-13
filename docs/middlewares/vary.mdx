@@ -76,12 +76,73 @@ func New(headers ...string) mizu.Middleware
 func Add(c *mizu.Ctx, header string)
 ```
 
+## Technical Details
+
+### Implementation Overview
+
+The vary middleware manages the `Vary` HTTP response header by:
+
+1. **Header Management**: Maintains a set of headers that affect response content
+2. **Duplicate Prevention**: Uses case-insensitive comparison to prevent duplicate headers
+3. **Header Merging**: Combines new Vary headers with existing ones from the response
+4. **Execution Order**: Processes after the handler executes to capture all Vary requirements
+
+### Key Functions
+
+#### `add(c *mizu.Ctx, headers ...string)`
+- Adds headers to the Vary response header
+- Parses existing Vary header and creates a set for deduplication
+- Uses case-insensitive comparison (`strings.ToLower`)
+- Joins headers with comma-space separator
+
+#### `autoDetect(c *mizu.Ctx)`
+- Automatically detects content negotiation headers from the request
+- Checks for: `Accept`, `Accept-Encoding`, `Accept-Language`
+- Only adds headers that are present in the request
+
+### Options Structure
+
+```go
+type Options struct {
+    Headers []string  // Explicit headers to add to Vary
+    Auto    bool      // Enable automatic detection
+}
+```
+
+### Convenience Functions
+
+The middleware provides several preset functions:
+- `AcceptEncoding()`: Adds `Accept-Encoding` to Vary
+- `Accept()`: Adds `Accept` to Vary
+- `AcceptLanguage()`: Adds `Accept-Language` to Vary
+- `Origin()`: Adds `Origin` to Vary (useful for CORS)
+- `All()`: Adds common headers: `Accept`, `Accept-Encoding`, `Accept-Language`
+- `Auto()`: Enables automatic header detection
+
 ## Best Practices
 
 - Include all headers that affect response
 - Use with compression middleware
 - Consider CDN caching implications
 - Don't over-vary (reduces cache effectiveness)
+
+## Testing
+
+The middleware includes comprehensive tests covering various scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware with multiple headers | Sets Vary header with `Accept-Encoding` and `Accept-Language` |
+| `TestNoDuplicates` | Same header specified twice | Prevents duplicates; header appears only once in Vary |
+| `TestWithOptions_Auto` | Auto-detection with request headers | Automatically adds `Accept` and `Accept-Encoding` based on request |
+| `TestAdd` | Helper function within handler | Adds custom header `X-Custom-Header` to Vary |
+| `TestAcceptEncoding` | AcceptEncoding convenience function | Sets Vary header to `Accept-Encoding` |
+| `TestAccept` | Accept convenience function | Sets Vary header to `Accept` |
+| `TestAcceptLanguage` | AcceptLanguage convenience function | Sets Vary header to `Accept-Language` |
+| `TestOrigin` | Origin convenience function | Sets Vary header to `Origin` |
+| `TestAll` | All convenience function | Sets Vary header with `Accept`, `Accept-Encoding`, and `Accept-Language` |
+| `TestAuto` | Auto convenience function with request header | Auto-detects and adds `Accept-Language` when present in request |
+| `TestCombineWithExisting` | Combining with existing Vary header | Preserves existing `X-Custom` and adds `Accept-Encoding` |
 
 ## Related Middlewares
 

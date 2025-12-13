@@ -113,12 +113,53 @@ func WithOptions(opts Options) mizu.Middleware
 }
 ```
 
+## Technical Details
+
+The recover middleware uses Go's built-in `defer` and `recover()` mechanisms to catch panics in handlers. Here's how it works internally:
+
+### Implementation Architecture
+
+1. **Panic Recovery**: A deferred function wraps the next handler, catching any panic that occurs during request processing
+2. **Stack Trace Capture**: Uses `runtime/debug.Stack()` to capture the full stack trace when a panic occurs
+3. **Stack Size Management**: Truncates stack traces to the configured `StackSize` (default 4096 bytes) to prevent memory issues
+4. **Logging Integration**: Integrates with Go's `log/slog` package for structured logging of panic information
+5. **Error Propagation**: Converts recovered panics into proper HTTP error responses
+
+### Key Implementation Details
+
+- The middleware returns a closure that wraps the next handler with a deferred recovery function
+- When `DisablePrintStack` is false, `debug.Stack()` captures the current goroutine's stack trace
+- The stack trace is truncated if it exceeds `StackSize` to prevent excessive memory usage
+- If a custom `ErrorHandler` is provided, it receives the panic value and stack trace for custom handling
+- Default behavior returns a 500 Internal Server Error with the standard HTTP status text
+- The logger defaults to `c.Logger()` if no custom logger is specified
+
+### Performance Considerations
+
+- Minimal overhead when no panic occurs (just a defer statement)
+- Stack trace capture only happens during panics
+- Configurable stack size prevents unbounded memory allocation
+- Option to disable stack printing for production environments
+
 ## Best Practices
 
 - Always add as the first middleware
 - Log panics for debugging
 - Don't expose stack traces to users in production
 - Use with request ID for correlation
+
+## Testing
+
+The recover middleware includes comprehensive test coverage for all features and edge cases:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew/recovers from panic` | Handler that panics with "test panic" | Returns 500 Internal Server Error status |
+| `TestNew/passes through normal requests` | Handler that returns normally without panic | Returns 200 OK with response body "ok" |
+| `TestWithOptions_ErrorHandler` | Custom error handler captures panic and stack | Returns 503 Service Unavailable with "custom error", captures panic value and stack trace |
+| `TestWithOptions_DisablePrintStack` | DisablePrintStack option enabled | Returns 500 status, no stack trace in log output |
+| `TestWithOptions_CustomLogger` | Custom slog.Logger provided | Panic is logged with "panic recovered" message and panic details |
+| `TestWithOptions_StackSize` | StackSize set to 100 bytes | Captured stack trace is truncated to maximum 100 bytes |
 
 ## Related Middlewares
 

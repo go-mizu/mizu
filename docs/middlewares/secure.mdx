@@ -191,6 +191,70 @@ The middleware sets these headers based on configuration:
 | `Content-Security-Policy` | CSP set | Configured policy |
 | `Referrer-Policy` | ReferrerPolicy set | Configured policy |
 
+## Technical Details
+
+### Implementation Overview
+
+The secure middleware implements a comprehensive security layer that:
+
+1. **HTTPS Detection**: Checks for secure connections via:
+   - Direct TLS connection (r.TLS != nil)
+   - Proxy headers (X-Forwarded-Proto, X-Forwarded-SSL, etc.)
+   - Case-insensitive header matching using strings.EqualFold
+
+2. **SSL Redirection**: When HTTP is detected and SSLRedirect is enabled:
+   - Constructs HTTPS URL: `https://` + host + requestURI
+   - Uses SSLHost if specified, otherwise uses request host
+   - Returns 301 (permanent) or 307 (temporary) redirect based on SSLTemporaryRedirect
+
+3. **Security Header Application**: Sets headers conditionally based on:
+   - Connection security (HTTPS vs HTTP)
+   - Configuration options
+   - Development mode (bypasses all security when IsDevelopment is true)
+
+### Header Construction
+
+**Strict-Transport-Security (HSTS)**:
+```
+max-age=<STSSeconds>[; includeSubDomains][; preload]
+```
+- Only set on HTTPS connections unless ForceSTSHeader is true
+- Requires STSSeconds > 0 to be enabled
+
+**X-Frame-Options**:
+- Priority: CustomFrameOptions > FrameDeny > none
+- FrameDeny sets "DENY", CustomFrameOptions allows "SAMEORIGIN" or other values
+
+**Default Headers** (when using New()):
+- X-Content-Type-Options: nosniff
+- X-Frame-Options: DENY
+- X-XSS-Protection: 1; mode=block
+- SSLRedirect: enabled
+
+### Proxy Support
+
+The middleware checks proxy headers in order:
+```go
+for _, header := range opts.ProxyHeaders {
+    if strings.EqualFold(r.Header.Get(header), "https") {
+        isSSL = true
+        break
+    }
+}
+```
+
+Common proxy headers:
+- X-Forwarded-Proto (default)
+- X-Forwarded-SSL
+- Front-End-Https
+
+### Performance Optimization
+
+The middleware uses a custom `itoa` function instead of strconv.Itoa for integer-to-string conversion:
+- Avoids heap allocations
+- Uses fixed-size array [20]byte for conversion
+- Handles negative numbers and zero efficiently
+
 ## Security Considerations
 
 1. **HSTS Commitment** - Once set, browsers remember for max-age duration
@@ -218,6 +282,22 @@ app.Use(secure.WithOptions(secure.Options{
 - Test thoroughly before enabling preload
 - Use `IsDevelopment` flag for local development
 - Configure `ProxyHeaders` when behind load balancers
+
+## Testing
+
+The secure middleware includes comprehensive test coverage for all features:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Default middleware with SSL redirect | Redirects HTTP to HTTPS with 301 status, Location header set to https://example.com/ |
+| `TestWithOptions_NoSSLRedirect` | Middleware with SSL redirect disabled but security headers enabled | Returns 200 OK, sets X-Content-Type-Options: nosniff, X-Frame-Options: DENY, X-XSS-Protection: 1; mode=block |
+| `TestWithOptions_HSTS` | HSTS configuration with all options enabled | Sets Strict-Transport-Security header with max-age=31536000; includeSubDomains; preload |
+| `TestWithOptions_CustomFrameOptions` | Custom frame options instead of default DENY | Sets X-Frame-Options: SAMEORIGIN |
+| `TestWithOptions_CSP` | Content Security Policy configuration | Sets Content-Security-Policy: default-src 'self' |
+| `TestWithOptions_ReferrerPolicy` | Referrer policy configuration | Sets Referrer-Policy: strict-origin-when-cross-origin |
+| `TestWithOptions_SSLHost` | SSL redirect to custom host with temporary redirect | Redirects with 307 status to https://secure.example.com/path?q=1 |
+| `TestWithOptions_ProxyHeader` | Request behind proxy with X-Forwarded-Proto: https | Does not redirect (200 OK) since connection is detected as HTTPS via proxy header |
+| `TestWithOptions_IsDevelopment` | Development mode enabled | Bypasses all security features, returns 200 OK without redirect or headers |
 
 ## Related Middlewares
 

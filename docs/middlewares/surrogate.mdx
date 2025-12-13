@@ -106,12 +106,67 @@ Surrogate-Control: max-age=3600
 ### Varnish
 Uses same headers with xkey support.
 
+## Technical Details
+
+The surrogate middleware implements CDN cache control through a context-based key management system:
+
+### Architecture
+
+- **Context Storage**: Uses Go's `context.Context` to store surrogate keys during request processing
+- **Keys Structure**: Maintains a `Keys` type that holds a slice of string keys
+- **Header Management**: Automatically sets headers after handler execution using middleware pattern
+
+### Implementation Details
+
+1. **Initialization**: The middleware creates a `Keys` instance and stores it in the request context
+2. **Default Keys**: If configured, default keys are added to every response
+3. **Handler Execution**: The next handler in the chain executes, allowing route handlers to add keys via `Add()`
+4. **Header Setting**: After handler completion, the middleware:
+   - Joins all keys with spaces and sets the configured header (default: `Surrogate-Key`)
+   - Builds and sets the `Surrogate-Control` header based on options (MaxAge, StaleWhileRevalidate, StaleIfError)
+
+### Control Header Format
+
+The `Surrogate-Control` header is built from options:
+- `max-age=N`: Set via `Options.MaxAge`
+- `stale-while-revalidate=N`: Set via `Options.StaleWhileRevalidate`
+- `stale-if-error=N`: Set via `Options.StaleIfError`
+
+All directives are combined with comma-space separation.
+
+### CDN Presets
+
+The middleware includes three CDN-specific presets:
+- **Fastly()**: Uses `Surrogate-Key` header
+- **Varnish()**: Uses `xkey` header
+- **CloudFront()**: Uses `x-amz-meta-surrogate-key` header
+
+Each preset configures the appropriate headers for the CDN while maintaining the same API.
+
 ## Best Practices
 
 - Use meaningful, granular keys
 - Group related content with shared keys
 - Set appropriate TTLs
 - Plan purge strategy
+
+## Testing
+
+The surrogate middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware initialization with key addition | Adds multiple keys (`page`, `content`) and sets `Surrogate-Key` header |
+| `TestWithOptions_DefaultKeys` | Default keys configuration | Automatically includes default keys (`site`, `global`) in all responses |
+| `TestWithOptions_CustomHeader` | Custom header name | Uses custom header name (`xkey`) instead of default `Surrogate-Key` |
+| `TestGet` | Retrieve Keys from context | Returns the `Keys` instance from context and allows manipulation |
+| `TestAdd` | Add multiple keys in handler | Adds multiple keys (`key1`, `key2`) and includes both in header |
+| `TestClear` | Clear all keys including defaults | Removes all keys, resulting in no `Surrogate-Key` header |
+| `TestWithKeys` | Convenience function for default keys | Creates middleware with default keys using `WithKeys()` helper |
+| `TestFastly` | Fastly CDN preset | Uses `Surrogate-Key` header with Fastly configuration |
+| `TestVarnish` | Varnish CDN preset | Uses `xkey` header for Varnish compatibility |
+| `TestNoKeys` | No keys added scenario | Does not set `Surrogate-Key` header when no keys are added |
+| `TestKeysCleared` | Keys.Clear() method | Properly clears keys from the Keys struct |
 
 ## Related Middlewares
 

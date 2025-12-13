@@ -122,6 +122,86 @@ func Balancer(targets []string) mizu.Middleware
 | `X-Forwarded-Host` | Original host |
 | `X-Forwarded-Proto` | http or https |
 
+## Technical Details
+
+### Request Flow
+
+1. **URL Construction**: The target URL is built by combining the upstream target with the request path. If a `Rewrite` function is provided, it transforms the path before joining.
+
+2. **Path Joining**: The `singleJoiningSlash` helper ensures proper path construction by handling slash prefixes/suffixes correctly, preventing issues like double slashes or missing slashes.
+
+3. **Request Creation**: A new HTTP request is created with the same method, context, and body as the original request.
+
+4. **Header Propagation**: All headers from the original request are copied to the proxy request using the `copyHeaders` function, which preserves multi-value headers.
+
+5. **Forwarded Headers**: The middleware automatically sets standard forwarding headers:
+   - `X-Forwarded-For`: Appends client IP to any existing value (creates a chain)
+   - `X-Forwarded-Host`: Sets the original host
+   - `X-Forwarded-Proto`: Sets `https` or `http` based on TLS presence
+
+6. **Host Header Handling**: By default, the Host header is set to the upstream target's host. When `PreserveHost` is true, the original Host header is preserved.
+
+7. **Request Modification**: If `ModifyRequest` is provided, it's called before sending the request, allowing custom header manipulation or other modifications.
+
+8. **HTTP Client Configuration**:
+   - Uses configurable transport (defaults to `http.DefaultTransport`)
+   - Applies the specified timeout (defaults to 30 seconds)
+   - Disables automatic redirect following (`CheckRedirect` returns `ErrUseLastResponse`)
+
+9. **Response Handling**: After receiving the upstream response:
+   - `ModifyResponse` callback is invoked if configured
+   - Response headers are copied to the client
+   - Status code is written
+   - Response body is streamed to the client using `io.Copy`
+
+10. **Error Handling**: Errors are passed to the custom `ErrorHandler` if configured, otherwise returns a 502 Bad Gateway response.
+
+### Load Balancer Implementation
+
+The `Balancer` function implements simple round-robin load balancing:
+- Maintains a counter for selecting the next upstream
+- Uses modulo arithmetic to cycle through targets
+- Counter is not thread-safe but provides good-enough distribution for most use cases
+- Each request creates a new proxy middleware instance with the selected target
+
+### Performance Considerations
+
+- **Streaming**: Response body is streamed using `io.Copy`, avoiding buffering large responses in memory
+- **Connection Reuse**: Uses `http.DefaultTransport` by default, which includes connection pooling
+- **Context Propagation**: Request context is preserved, enabling timeout and cancellation propagation
+- **Header Copying**: Headers are copied efficiently without additional allocations for single-value headers
+
+## Best Practices
+
+1. **Set Appropriate Timeouts**: Configure timeouts based on your upstream service characteristics to prevent hanging requests.
+
+2. **Error Handling**: Implement custom error handlers for better error reporting and monitoring.
+
+3. **Security**: Be cautious with `ModifyRequest` to avoid exposing sensitive headers to untrusted upstreams.
+
+4. **Path Rewriting**: Use the `Rewrite` function for API versioning or routing transformations.
+
+5. **Load Balancing**: For production load balancing, consider implementing health checks and weighted distributions.
+
+## Testing
+
+The proxy middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic proxy functionality | Forwards request to upstream, returns upstream response with headers |
+| `TestWithOptions_Rewrite` | Path rewriting with custom function | Transforms request path before forwarding (e.g., `/users` → `/api/v2/users`) |
+| `TestWithOptions_ModifyRequest` | Request modification callback | Custom headers are added to upstream request |
+| `TestWithOptions_ModifyResponse` | Response modification callback | Custom headers are added to client response |
+| `TestWithOptions_PreserveHost` | Host header preservation | Original Host header is preserved when `PreserveHost` is true |
+| `TestWithOptions_ErrorHandler` | Custom error handling | Custom error handler is invoked on proxy failure |
+| `TestWithOptions_QueryString` | Query parameter forwarding | Query strings are preserved and forwarded to upstream |
+| `TestWithOptions_POST` | POST request handling | POST requests with body are proxied correctly |
+| `TestNew_InvalidURL` | Invalid target URL validation | Panics with descriptive error on invalid URL |
+| `TestWithOptions_NoTarget` | Missing target validation | Panics when target is not provided |
+| `TestBalancer` | Round-robin load balancing | Distributes requests across multiple upstreams in rotation |
+| `TestBalancer_Empty` | Empty balancer targets validation | Panics when no targets are provided |
+
 ## Related Middlewares
 
 - [forwarded](/middlewares/forwarded) - Parse forwarded headers

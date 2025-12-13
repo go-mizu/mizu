@@ -272,6 +272,39 @@ Request → [██████████  ] 98 tokens
 Refill  → [████████████] 100 tokens (after interval)
 ```
 
+## Technical Details
+
+The rate limit middleware implements the **token bucket algorithm**, a sophisticated approach for managing request rates with support for burst traffic. The implementation details are as follows:
+
+### Token Bucket Implementation
+
+The algorithm maintains a bucket of tokens for each rate limit key:
+
+1. **Initialization**: Each bucket starts with `Burst` tokens (default equals `Rate`)
+2. **Token Consumption**: Each request consumes exactly one token from the bucket
+3. **Token Refill**: Tokens are added continuously based on elapsed time:
+   - Refill rate: `Rate / Interval` tokens per second
+   - Formula: `tokensToAdd = (Rate * elapsedSeconds) / intervalSeconds`
+4. **Capacity Limit**: Bucket capacity is capped at `Burst` tokens to prevent unlimited accumulation
+5. **Request Decision**: Request is allowed if bucket has at least 1 token available
+
+### In-Memory Store
+
+The default `MemoryStore` provides:
+
+- **Thread Safety**: Uses `sync.Mutex` for concurrent access protection
+- **Per-Key Tracking**: Maintains separate buckets for each key (IP, user ID, API key, etc.)
+- **Automatic Cleanup**: Background goroutine removes stale buckets after 10 minutes of inactivity
+- **Fractional Tokens**: Uses `float64` for precise token calculations during refills
+
+### Rate Limit Information
+
+For each request, the middleware calculates and returns:
+
+- **Limit**: Maximum requests allowed per interval (from `Rate` option)
+- **Remaining**: Current token count (floored to nearest integer)
+- **Reset**: Timestamp when bucket will be full again (current time + `Interval`)
+
 ## Best Practices
 
 - Set reasonable limits based on expected usage
@@ -279,6 +312,25 @@ Refill  → [████████████] 100 tokens (after interval)
 - Include rate limit headers for client awareness
 - Monitor rate limit hits for tuning
 - Consider user tiers for fair access
+
+## Testing
+
+The rate limit middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic rate limiting with IP-based keys | First N requests succeed, subsequent requests return 429; different IPs tracked separately |
+| `TestWithOptions_Headers` | Rate limit headers in response | Headers include X-RateLimit-Limit, X-RateLimit-Remaining, and X-RateLimit-Reset |
+| `TestWithOptions_ErrorHandler` | Custom error handler for rate limit exceeded | Custom error handler called instead of default when limit exceeded |
+| `TestWithOptions_KeyFunc` | Custom key extraction function | Rate limits applied per custom key (e.g., API key) instead of IP |
+| `TestWithOptions_Skip` | Skip rate limiting for certain requests | Requests matching skip condition bypass rate limiting |
+| `TestWithOptions_RetryAfter` | Retry-After header on rate limit | Retry-After header included when request is rate limited |
+| `TestPerSecond` | PerSecond convenience function | Middleware created with per-second interval |
+| `TestPerMinute` | PerMinute convenience function | Middleware created with per-minute interval |
+| `TestPerHour` | PerHour convenience function | Middleware created with per-hour interval |
+| `TestMemoryStore_Allow` | Token bucket allows/denies requests | Allows up to limit, denies when bucket empty |
+| `TestMemoryStore_TokenRefill` | Token bucket refills over time | Tokens refill after interval allowing new requests |
+| `TestMemoryStore_DifferentKeys` | Different keys have independent buckets | Exhausting one key doesn't affect other keys |
 
 ## Related Middlewares
 

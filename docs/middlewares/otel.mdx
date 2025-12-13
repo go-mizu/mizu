@@ -115,12 +115,95 @@ func StartSpan(c *mizu.Ctx, name string) (context.Context, trace.Span)
 func Inject(ctx context.Context, headers http.Header)
 ```
 
+## Technical Details
+
+### Architecture
+
+The otel middleware is a lightweight OpenTelemetry-compatible implementation that provides distributed tracing without external dependencies. It implements the OpenTelemetry specification for trace context propagation.
+
+### Components
+
+**SpanContext**: Holds the trace context with TraceID (16 bytes), SpanID (8 bytes), TraceFlags, and optional TraceState.
+
+**Span**: Represents a single operation with metadata including:
+- Name (HTTP method + path)
+- Parent/child relationships
+- Start/end timestamps
+- Status (Unset, OK, Error)
+- Attributes (key-value pairs)
+- Events (timestamped logs)
+- Links (connections to other spans)
+
+**SpanProcessor**: Interface for processing completed spans. Implementations include:
+- `InMemoryProcessor`: Stores spans in memory for testing
+- `PrintProcessor`: Prints spans to stdout
+- Custom processors can export to external systems
+
+### Propagation Formats
+
+**W3C Trace Context (default)**:
+- Header: `Traceparent: 00-{traceId}-{spanId}-{flags}`
+- Optional: `Tracestate` for vendor-specific data
+- Format: `version-traceId-spanId-flags`
+
+**B3 Propagation**:
+- Single header: `B3: {traceId}-{spanId}-{sampled}`
+- Multi-header: `X-B3-Traceid`, `X-B3-Spanid`, `X-B3-Sampled`
+- Compatible with Zipkin and other B3-based systems
+
+### ID Generation
+
+- TraceID: 128-bit (16 bytes) cryptographically random hex string
+- SpanID: 64-bit (8 bytes) cryptographically random hex string
+- Generated using `crypto/rand` for uniqueness
+
+### Request Flow
+
+1. Extract parent context from incoming request headers
+2. Create new span with inherited TraceID or generate new one
+3. Generate new SpanID for current span
+4. Add default HTTP attributes (method, URL, status, etc.)
+5. Call OnStart hook if configured
+6. Inject trace context into response headers
+7. Store span in request context
+8. Execute handler
+9. Set final status and attributes based on response
+10. Call OnEnd hook and SpanProcessor
+
+### Thread Safety
+
+- Span methods use mutex locks for concurrent access
+- InMemoryProcessor is thread-safe with mutex protection
+- Safe for use with concurrent requests
+
 ## Best Practices
 
 - Use consistent service names
 - Add meaningful span attributes
 - Propagate context to all calls
 - Sample appropriately in production
+
+## Testing
+
+The otel middleware includes comprehensive test coverage for all features:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware creation | Creates middleware with default options and processes requests successfully |
+| `TestSpanCreation` | Span generation | Creates span with correct name (HTTP method + path), generates TraceID and SpanID |
+| `TestSpanAttributes` | Attribute collection | Captures service.name, service.version, http.method, http.status_code, http.user_agent |
+| `TestW3CTracePropagation` | W3C Trace Context propagation | Inherits TraceID from parent, generates new SpanID, sets parent relationship, injects traceparent header |
+| `TestB3Propagation` | B3 single header format | Extracts trace context from B3 header, injects B3 headers in response |
+| `TestB3MultiHeaderPropagation` | B3 multi-header format | Extracts trace context from X-B3-* headers, maintains compatibility |
+| `TestSkipPaths` | Path filtering | Skips configured paths (e.g., /health), traces non-skipped paths |
+| `TestSampler` | Custom sampling | Respects sampler function, only creates spans for sampled requests |
+| `TestErrorStatus` | Error handling | Sets StatusError for HTTP 4xx/5xx responses, captures error attributes |
+| `TestOnStartOnEnd` | Lifecycle hooks | Calls OnStart when span begins, OnEnd when span completes |
+| `TestGetSpan` | Context access | Retrieves span from context, allows custom attributes and events |
+| `TestSpanDuration` | Timing measurement | Calculates span duration, sets end time correctly |
+| `TestSpanContextIsValid` | Context validation | Validates SpanContext has TraceID and SpanID |
+| `TestSpanContextIsSampled` | Sampling flag check | Correctly interprets trace flags for sampling decision |
+| `TestInMemoryProcessor` | Span processing | Stores spans, retrieves all spans, clears span storage |
 
 ## Related Middlewares
 

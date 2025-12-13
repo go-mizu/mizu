@@ -78,9 +78,74 @@ func FromContext(c *mizu.Ctx) string
 func Get(c *mizu.Ctx) string  // Alias for FromContext
 ```
 
+## Technical Details
+
+### IP Extraction Process
+
+The middleware follows a systematic approach to extract the real client IP:
+
+1. **Remote IP Extraction**: Extracts the IP from `Request.RemoteAddr` using `net.SplitHostPort`
+2. **Proxy Trust Verification**: Checks if the remote IP is in the trusted proxy list (CIDR notation supported)
+3. **Header Processing**: If trusted, iterates through configured headers in priority order
+4. **IP Parsing**: Extracts the first valid IP from comma-separated header values (for `X-Forwarded-For`)
+5. **Fallback**: Uses `RemoteAddr` if no valid IP found in headers
+
+### CIDR Network Parsing
+
+The middleware automatically converts single IP addresses to CIDR notation:
+- IPv4 addresses: `/32` suffix (e.g., `10.0.0.1` becomes `10.0.0.1/32`)
+- IPv6 addresses: `/128` suffix (e.g., `::1` becomes `::1/128`)
+
+### Context Storage
+
+The real IP is stored in the request context using a private `contextKey{}` type, preventing key collisions with other middleware or application code.
+
+### Header Priority
+
+When multiple headers are set, the middleware checks them in the configured order and uses the first valid IP found. Default priority:
+1. X-Forwarded-For (supports comma-separated lists)
+2. X-Real-IP
+3. CF-Connecting-IP (Cloudflare)
+4. True-Client-IP
+
 ## Security
 
 Only trust proxy headers when behind a trusted proxy. Without `TrustedProxies`, all requests are trusted.
+
+## Testing
+
+The middleware includes comprehensive test coverage for various scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| **Default Header Tests** | | |
+| `uses X-Forwarded-For` | Multiple IPs in X-Forwarded-For header | Extracts first IP (203.0.113.195) from comma-separated list |
+| `uses X-Real-IP` | Single IP in X-Real-IP header | Returns the IP from X-Real-IP (198.51.100.178) |
+| `uses CF-Connecting-IP` | Cloudflare connecting IP header | Returns the IP from CF-Connecting-IP (192.0.2.1) |
+| `falls back to RemoteAddr` | No proxy headers present | Uses RemoteAddr (192.168.1.100) |
+| **Trusted Proxy Tests** | | |
+| `trusts headers from trusted proxy` | Request from 10.0.0.1 with X-Forwarded-For | Returns IP from header (203.0.113.195) |
+| `ignores headers from untrusted source` | Request from 192.168.1.1 (not in trusted range) | Ignores header, returns RemoteAddr (192.168.1.1) |
+| **Single IP Trust** | | |
+| `WithTrustedProxies single IP` | Trust specific IP (10.0.0.1) | Accepts headers from exact IP match |
+| **Custom Headers** | | |
+| `WithOptions custom headers` | Configure X-Custom-IP as trusted header | Extracts IP from custom header (5.6.7.8) |
+| **API Compatibility** | | |
+| `Get() alias test` | FromContext vs Get methods | Both return identical IP values |
+| **Helper Function Tests** | | |
+| `extractFirstIP - single IP` | Parse "203.0.113.195" | Returns 203.0.113.195 |
+| `extractFirstIP - comma-separated` | Parse "203.0.113.195, 70.41.3.18, 150.172.238.178" | Returns first IP (203.0.113.195) |
+| `extractFirstIP - whitespace` | Parse "  203.0.113.195  " | Trims and returns 203.0.113.195 |
+| `extractFirstIP - invalid` | Parse "invalid" | Returns empty string |
+| `extractFirstIP - empty` | Parse "" | Returns empty string |
+| `extractFirstIP - IPv6` | Parse "2001:db8::1" | Returns IPv6 address |
+| `extractIP - with port` | Parse "192.168.1.1:8080" | Returns IP without port (192.168.1.1) |
+| `extractIP - without port` | Parse "192.168.1.1" | Returns IP as-is (192.168.1.1) |
+| `extractIP - IPv6 with port` | Parse "[::1]:8080" | Returns IPv6 without port (::1) |
+| `isTrusted - within CIDR` | Check 10.0.0.1 in 10.0.0.0/8 | Returns true |
+| `isTrusted - edge of CIDR` | Check 10.255.255.255 in 10.0.0.0/8 | Returns true |
+| `isTrusted - outside CIDR` | Check 11.0.0.1 in 10.0.0.0/8 | Returns false |
+| `isTrusted - multiple networks` | Check 192.168.1.1 in [10.0.0.0/8, 192.168.0.0/16] | Returns true (matches second network) |
 
 ## Related Middlewares
 

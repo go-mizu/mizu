@@ -108,12 +108,80 @@ func Link(rel, href string) Link
 func Embed(rel string, data any) Link
 ```
 
+## Technical Details
+
+### Architecture
+
+The hypermedia middleware uses a response recorder pattern to intercept and modify JSON responses:
+
+1. **Context Storage**: Links are stored in the request context using a private context key
+2. **Response Recording**: A custom `responseRecorder` captures the response body and status code
+3. **JSON Modification**: The middleware parses the JSON response, injects links, and re-encodes it
+4. **Content-Type Filtering**: Only processes responses with `application/json` content type
+
+### Implementation Details
+
+**Link Structure**:
+- `Href`: The URL of the linked resource
+- `Rel`: The relationship type (e.g., "self", "next", "prev")
+- `Method`: Optional HTTP method for the link
+- `Title`: Optional human-readable description
+- `Type`: Optional media type hint
+
+**Response Recorder**:
+The middleware implements a custom `responseRecorder` that wraps the original `http.ResponseWriter` to:
+- Capture response body in a buffer
+- Record status code
+- Allow modification before final write
+
+**HAL+JSON Support**:
+The `HAL` type provides full HAL+JSON specification support with:
+- Properties for resource data
+- Links map for hypermedia links
+- Embedded map for nested resources
+- Custom JSON marshaling to flatten properties into the root object
+
+### Performance Considerations
+
+- Links are stored as pointers in context to avoid copying
+- JSON parsing only occurs for `application/json` responses
+- Non-JSON responses pass through without modification
+- Response buffering adds minimal overhead
+
+### Security Considerations
+
+- Base URL validation prevents injection attacks
+- Links are added server-side, not from user input
+- TLS detection for automatic scheme selection
+- No sensitive data should be exposed in link URLs
+
 ## Best Practices
 
 - Always include self link
 - Use consistent link relations
 - Document link relations
 - Consider client library support
+
+## Testing
+
+The hypermedia middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware initialization | Creates middleware with default options and adds self link to JSON response |
+| `TestSelfLink` | Self link generation with base URL | Automatically adds self link with correct base URL and rel="self" |
+| `TestAddLink` | Adding single link to response | Successfully adds custom link to response links array |
+| `TestAddLinks` | Adding multiple links at once | Adds multiple links in a single call to the response |
+| `TestLinkProvider` | Dynamic link generation via provider | Invokes link provider function to generate context-aware links |
+| `TestNonJSONResponse` | Non-JSON response handling | Passes through non-JSON responses unchanged without adding links |
+| `TestCustomLinksKey` | Custom links key configuration | Uses custom key instead of default "_links" for link storage |
+| `TestResource` | Resource wrapper with links | Creates resource structure with data and links fields |
+| `TestCollection` | Paginated collection with links | Generates collection with pagination metadata and navigation links (first, prev, next, last) |
+| `TestCollectionFirstPage` | First page pagination | Omits "prev" link on first page of results |
+| `TestCollectionLastPage` | Last page pagination | Omits "next" link on last page of results |
+| `TestHAL` | HAL+JSON resource creation | Creates HAL resource with properties and links, marshals correctly |
+| `TestHALEmbedded` | HAL embedded resources | Embeds related resources within HAL response structure |
+| `TestGetLinks` | Retrieving current links | Returns current links from context during request handling |
 
 ## Related Middlewares
 

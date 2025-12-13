@@ -106,12 +106,71 @@ func WithOptions(opts Options) mizu.Middleware
 | Strong | `"abc123"` | Byte-for-byte identical |
 | Weak | `W/"abc123"` | Semantically equivalent |
 
+## Technical Details
+
+The ETag middleware implementation uses a buffered writer approach to intercept and process responses:
+
+### Response Buffering
+
+The middleware buffers the entire response body using a custom `bufferedWriter` that wraps the original `http.ResponseWriter`. This allows the middleware to:
+- Calculate the hash of the complete response body
+- Determine the final status code
+- Conditionally return 304 Not Modified before sending the full response
+
+### Hash Generation
+
+By default, the middleware uses CRC32 (IEEE polynomial) for hash generation, which provides:
+- Fast computation suitable for HTTP caching
+- Sufficient uniqueness for cache validation
+- Low memory overhead
+
+The hash function can be customized via `HashFunc` option to use alternative algorithms like SHA256 for enhanced security or collision resistance.
+
+### ETag Format
+
+ETags are formatted according to RFC 7232:
+- Strong ETags: `"<hash>"` - Indicates byte-for-byte identical content
+- Weak ETags: `W/"<hash>"` - Indicates semantically equivalent content
+
+### Conditional Request Handling
+
+The middleware checks the `If-None-Match` header from the client:
+- If it matches the generated ETag, returns 304 Not Modified with the ETag header
+- If it's a wildcard (`*`), always returns 304 Not Modified
+- If no match, proceeds with the full response including the ETag header
+
+### Request Method Filtering
+
+The middleware only processes GET and HEAD requests, as these are the only methods where conditional requests are applicable according to HTTP specifications.
+
+### Status Code Handling
+
+ETags are only generated for successful responses (2xx status codes) with non-empty body content. Error responses (4xx, 5xx) are not cached and do not receive ETag headers.
+
 ## Best Practices
 
 - Use strong ETags for static files
 - Use weak ETags for dynamic content that may vary slightly
 - Combine with Cache-Control for full caching strategy
 - Place after compression middleware
+
+## Testing
+
+The middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew/generates_ETag` | Basic ETag generation for GET request | Returns 200 OK with quoted ETag header |
+| `TestNew/returns_304_for_matching_If-None-Match` | Client sends matching If-None-Match header | Returns 304 Not Modified |
+| `TestNew/returns_200_for_non-matching_If-None-Match` | Client sends non-matching If-None-Match | Returns 200 OK with full response |
+| `TestNew/wildcard_If-None-Match` | Client sends If-None-Match: * | Returns 304 Not Modified |
+| `TestWeak` | Weak ETag generation | ETag header starts with `W/"` |
+| `TestWithOptions_CustomHash` | Custom hash function provided | Uses custom hash in ETag |
+| `TestNew_SkipsNonGetHead` | POST request made | No ETag header generated |
+| `TestNew_SkipsErrorResponses` | 500 error response | No ETag header generated |
+| `TestNew_ConsistentETag` | Same content returned twice | Both responses have identical ETags |
+| `TestNew_DifferentContent` | Different content returned | Different ETags generated |
+| `TestNew_HEAD` | HEAD request made | Processes request without errors |
 
 ## Related Middlewares
 
