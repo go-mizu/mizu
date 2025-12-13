@@ -3,6 +3,7 @@ package jsonrpc
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
@@ -100,7 +101,8 @@ func (s *Server) handleRequest(c *mizu.Ctx, req Request) error {
 	// Execute handler
 	result, err := handler(req.Params)
 	if err != nil {
-		if rpcErr, ok := err.(*Error); ok {
+		var rpcErr *Error
+		if errors.As(err, &rpcErr) {
 			return s.sendError(c, req.ID, rpcErr.Code, rpcErr.Message)
 		}
 		return s.sendError(c, req.ID, InternalError, err.Error())
@@ -154,7 +156,8 @@ func (s *Server) handleBatch(c *mizu.Ctx, body []byte) error {
 		result, err := handler(req.Params)
 		if err != nil {
 			rpcErr := &Error{Code: InternalError, Message: err.Error()}
-			if e, ok := err.(*Error); ok {
+			var e *Error
+			if errors.As(err, &e) {
 				rpcErr = e
 			}
 			responses = append(responses, Response{

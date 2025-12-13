@@ -4,6 +4,7 @@ package oauth2
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -211,7 +212,7 @@ func handleError(c *mizu.Ctx, opts Options, err error) error {
 	}
 
 	status := http.StatusUnauthorized
-	if err == ErrInsufficientScope {
+	if errors.Is(err, ErrInsufficientScope) {
 		status = http.StatusForbidden
 	}
 

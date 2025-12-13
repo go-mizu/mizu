@@ -371,7 +371,8 @@ func TestErrorHandlerOnErrorAndPanic(t *testing.T) {
 	if rec2.Code != 499 || bodyString(t, rec2) != "handled" {
 		t.Fatalf("/panic: status=%d body=%q", rec2.Code, bodyString(t, rec2))
 	}
-	if _, ok := gotErr.(*PanicError); !ok {
+	var panicErr *PanicError
+	if !errors.As(gotErr, &panicErr) {
 		t.Fatalf("ErrorHandler on panic should receive *PanicError, got %T", gotErr)
 	}
 }
