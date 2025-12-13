@@ -46,6 +46,8 @@ func FromData(data []byte) mizu.Middleware {
 }
 
 // WithOptions creates favicon middleware with custom options.
+//
+//nolint:cyclop // Multiple configuration options require conditionals
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.URL == "" {
 		opts.URL = "/favicon.ico"

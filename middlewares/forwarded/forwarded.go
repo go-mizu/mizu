@@ -41,6 +41,8 @@ func New() mizu.Middleware {
 }
 
 // WithOptions creates forwarded middleware with custom options.
+//
+//nolint:cyclop // Forwarded header parsing requires multiple source checks
 func WithOptions(opts Options) mizu.Middleware {
 	// Parse trusted proxies
 	for _, proxy := range opts.TrustedProxies {
@@ -175,6 +177,7 @@ func isTrusted(ip net.IP, trustedNets []*net.IPNet) bool {
 	return false
 }
 
+//nolint:cyclop // RFC 7239 Forwarded header parsing is inherently complex
 func parseForwardedHeader(header string, info *Info) {
 	// Parse RFC 7239 Forwarded header
 	// Example: for=192.0.2.60;proto=http;by=203.0.113.43

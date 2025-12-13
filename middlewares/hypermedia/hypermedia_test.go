@@ -223,6 +223,7 @@ func TestResource(t *testing.T) {
 	}
 }
 
+//nolint:cyclop // Test function with multiple link type assertions
 func TestCollection(t *testing.T) {
 	items := []string{"item1", "item2"}
 	collection := NewCollection(items, 100, 2, 10, "/items")

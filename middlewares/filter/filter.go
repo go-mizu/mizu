@@ -48,6 +48,8 @@ func New() mizu.Middleware {
 }
 
 // WithOptions creates filter middleware with custom options.
+//
+//nolint:cyclop // Request filtering requires checking multiple criteria
 func WithOptions(opts Options) mizu.Middleware {
 	allowedMethods := make(map[string]bool)
 	for _, m := range opts.AllowedMethods {

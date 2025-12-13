@@ -133,6 +133,8 @@ func New(issuerURL, clientID string) mizu.Middleware {
 }
 
 // WithOptions creates OIDC middleware with custom options.
+//
+//nolint:cyclop // OIDC authentication requires multiple configuration and validation checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.Audience == "" {
 		opts.Audience = opts.ClientID
@@ -215,6 +217,8 @@ func handleError(c *mizu.Ctx, opts Options, err error) error {
 }
 
 // Verify verifies a JWT token.
+//
+//nolint:cyclop // JWT verification requires multiple signature and claims checks
 func (v *Verifier) Verify(tokenStr string) (*Claims, error) {
 	// Split token
 	parts := strings.Split(tokenStr, ".")

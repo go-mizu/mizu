@@ -52,6 +52,8 @@ func New(secret []byte) mizu.Middleware {
 }
 
 // WithOptions creates JWT middleware with options.
+//
+//nolint:cyclop // JWT validation requires multiple option and claim checks
 func WithOptions(opts Options) mizu.Middleware {
 	if len(opts.Secret) == 0 {
 		panic("jwt: secret is required")
@@ -184,6 +186,7 @@ func validateToken(token string, secret []byte) (map[string]any, error) {
 	return claims, nil
 }
 
+//nolint:cyclop // Claims validation requires checking multiple fields and conditions
 func validateClaims(claims map[string]any, opts Options) error {
 	now := time.Now().Unix()
 

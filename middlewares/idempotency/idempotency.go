@@ -67,6 +67,8 @@ func WithStore(store Store, opts Options) mizu.Middleware {
 }
 
 // WithOptions creates idempotency middleware with custom options.
+//
+//nolint:cyclop // Idempotency handling requires multiple cache and validation checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.Store == nil {
 		opts.Store = NewMemoryStore()

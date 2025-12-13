@@ -94,6 +94,8 @@ func NewHedger(opts Options) *Hedger {
 }
 
 // Middleware returns the Mizu middleware.
+//
+//nolint:cyclop // Hedged request handling requires multiple timing and coordination checks
 func (h *Hedger) Middleware() mizu.Middleware {
 	return func(next mizu.Handler) mizu.Handler {
 		return func(c *mizu.Ctx) error {

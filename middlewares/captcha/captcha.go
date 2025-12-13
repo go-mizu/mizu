@@ -73,6 +73,8 @@ func New(secret string) mizu.Middleware {
 }
 
 // WithOptions creates captcha middleware with custom options.
+//
+//nolint:cyclop // CAPTCHA verification requires multiple provider and option checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.Provider == "" {
 		opts.Provider = ProviderRecaptchaV2
@@ -139,6 +141,7 @@ type captchaError string
 
 func (e captchaError) Error() string { return string(e) }
 
+//nolint:gosec // G101: False positive - these are error message constants, not credentials
 const (
 	ErrMissingToken captchaError = "captcha token missing"
 	ErrInvalidToken captchaError = "captcha verification failed"

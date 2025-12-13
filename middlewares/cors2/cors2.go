@@ -42,6 +42,8 @@ func New() mizu.Middleware {
 }
 
 // WithOptions creates CORS middleware with custom options.
+//
+//nolint:cyclop // CORS handling requires multiple header checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.Origin == "" {
 		opts.Origin = "*"

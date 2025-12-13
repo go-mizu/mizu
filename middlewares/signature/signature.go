@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // G505: SHA1 needed for legacy webhook compatibility (Twilio)
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/base64"
@@ -86,6 +86,8 @@ func New(secret string) mizu.Middleware {
 }
 
 // WithOptions creates signature middleware with custom options.
+//
+//nolint:cyclop // Multiple signature validation options require conditionals
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.Algorithm == "" {
 		opts.Algorithm = SHA256

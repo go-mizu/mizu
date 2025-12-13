@@ -141,7 +141,16 @@ func requestPath(r *http.Request) string {
 }
 
 func buildLogAttrs(c *Ctx, r *http.Request, status int, d time.Duration, reqID string, mode Mode, o LoggerOptions) []slog.Attr {
-	attrs := []slog.Attr{
+	attrs := buildCoreLogAttrs(c, r, status, d)
+	if mode == Dev {
+		attrs = append(attrs, slog.String("latency_human", humanDuration(d)))
+	}
+	attrs = appendOptionalLogAttrs(attrs, c, r, reqID, o)
+	return attrs
+}
+
+func buildCoreLogAttrs(c *Ctx, r *http.Request, status int, d time.Duration) []slog.Attr {
+	return []slog.Attr{
 		slog.Int("status", status),
 		slog.String("method", r.Method),
 		slog.String("path", requestPath(r)),
@@ -150,17 +159,13 @@ func buildLogAttrs(c *Ctx, r *http.Request, status int, d time.Duration, reqID s
 		slog.Int64("duration_ms", d.Milliseconds()),
 		slog.String("remote_ip", c.ClientIP()),
 	}
-	if mode == Dev {
-		attrs = append(attrs, slog.String("latency_human", humanDuration(d)))
-	}
+}
+
+func appendOptionalLogAttrs(attrs []slog.Attr, c *Ctx, r *http.Request, reqID string, o LoggerOptions) []slog.Attr {
 	if q := r.URL.RawQuery; q != "" {
 		attrs = append(attrs, slog.String("query", q))
 	}
-	if reqID == "" {
-		if v := c.Header().Get(o.RequestIDHeader); v != "" {
-			reqID = v
-		}
-	}
+	reqID = resolveRequestIDFromHeader(c, reqID, o.RequestIDHeader)
 	if reqID != "" {
 		attrs = append(attrs, slog.String("request_id", reqID))
 	}
@@ -170,14 +175,30 @@ func buildLogAttrs(c *Ctx, r *http.Request, status int, d time.Duration, reqID s
 		}
 	}
 	if o.TraceExtractor != nil {
-		if tid, sid, sampled := o.TraceExtractor(r.Context()); tid != "" {
-			attrs = append(attrs, slog.String("trace_id", tid))
-			if sid != "" {
-				attrs = append(attrs, slog.String("span_id", sid))
-			}
-			attrs = append(attrs, slog.Bool("trace_sampled", sampled))
+		attrs = appendTraceAttrs(attrs, r, o.TraceExtractor)
+	}
+	return attrs
+}
+
+func resolveRequestIDFromHeader(c *Ctx, reqID, header string) string {
+	if reqID == "" {
+		if v := c.Header().Get(header); v != "" {
+			return v
 		}
 	}
+	return reqID
+}
+
+func appendTraceAttrs(attrs []slog.Attr, r *http.Request, extractor func(ctx context.Context) (traceID, spanID string, sampled bool)) []slog.Attr {
+	tid, sid, sampled := extractor(r.Context())
+	if tid == "" {
+		return attrs
+	}
+	attrs = append(attrs, slog.String("trace_id", tid))
+	if sid != "" {
+		attrs = append(attrs, slog.String("span_id", sid))
+	}
+	attrs = append(attrs, slog.Bool("trace_sampled", sampled))
 	return attrs
 }
 
@@ -262,85 +283,118 @@ func (h *colorTextHandler) Enabled(_ context.Context, level slog.Level) bool {
 	return level >= min
 }
 
+// ANSI color constants for terminal output.
+const (
+	colorGray   = "\x1b[90m"
+	colorBold   = "\x1b[1m"
+	colorReset  = "\x1b[0m"
+	colorCyan   = "\x1b[36m"
+	colorGreen  = "\x1b[32m"
+	colorYellow = "\x1b[33m"
+	colorRed    = "\x1b[31m"
+)
+
 func (h *colorTextHandler) Handle(_ context.Context, r slog.Record) error {
+	all := h.collectAttrs(r)
+	sort.SliceStable(all, func(i, j int) bool { return all[i].Key < all[j].Key })
+
+	var b strings.Builder
+	h.writeTimestamp(&b, r.Time)
+	h.writeLevel(&b, r.Level)
+	h.writeMessage(&b, r.Message)
+	h.writeAttrs(&b, all)
+	b.WriteByte('\n')
+
+	_, err := io.WriteString(h.w, b.String())
+	return err
+}
+
+func (h *colorTextHandler) collectAttrs(r slog.Record) []slog.Attr {
 	all := make([]slog.Attr, 0, len(h.attrs)+r.NumAttrs())
 	all = append(all, h.attrs...)
 	r.Attrs(func(a slog.Attr) bool {
 		all = append(all, a)
 		return true
 	})
-	sort.SliceStable(all, func(i, j int) bool { return all[i].Key < all[j].Key })
+	return all
+}
 
-	const (
-		gray   = "\x1b[90m"
-		bold   = "\x1b[1m"
-		reset  = "\x1b[0m"
-		cyan   = "\x1b[36m"
-		green  = "\x1b[32m"
-		yellow = "\x1b[33m"
-		red    = "\x1b[31m"
-	)
-
-	levelName, levelColor := func(l slog.Level) (string, string) {
-		switch {
-		case l <= slog.LevelDebug:
-			return "DEBUG", cyan + bold
-		case l == slog.LevelInfo:
-			return "INFO", green + bold
-		case l == slog.LevelWarn:
-			return "WARN", yellow + bold
-		default:
-			return "ERROR", red + bold
-		}
-	}(r.Level)
-
-	ts := r.Time.Format(time.Kitchen)
-
-	var b strings.Builder
+func (h *colorTextHandler) writeTimestamp(b *strings.Builder, t time.Time) {
+	ts := t.Format(time.Kitchen)
 	if ts != "" {
-		b.WriteString(gray)
+		b.WriteString(colorGray)
 		b.WriteString(ts)
-		b.WriteString(reset)
+		b.WriteString(colorReset)
 		b.WriteByte(' ')
 	}
+}
+
+func (h *colorTextHandler) writeLevel(b *strings.Builder, level slog.Level) {
+	levelName, levelColor := levelNameAndColor(level)
 	b.WriteString(levelColor)
 	b.WriteString(levelName)
-	b.WriteString(reset)
-	if r.Message != "" {
-		b.WriteByte(' ')
-		b.WriteString(r.Message)
-	}
+	b.WriteString(colorReset)
+}
 
-	for _, a := range all {
+func levelNameAndColor(l slog.Level) (string, string) {
+	switch {
+	case l <= slog.LevelDebug:
+		return "DEBUG", colorCyan + colorBold
+	case l == slog.LevelInfo:
+		return "INFO", colorGreen + colorBold
+	case l == slog.LevelWarn:
+		return "WARN", colorYellow + colorBold
+	default:
+		return "ERROR", colorRed + colorBold
+	}
+}
+
+func (h *colorTextHandler) writeMessage(b *strings.Builder, msg string) {
+	if msg != "" {
+		b.WriteByte(' ')
+		b.WriteString(msg)
+	}
+}
+
+func (h *colorTextHandler) writeAttrs(b *strings.Builder, attrs []slog.Attr) {
+	for _, a := range attrs {
 		if a.Key == "" {
 			continue
 		}
 		b.WriteByte(' ')
 		if a.Key == "status" {
-			if code, ok := attrInt(a); ok {
-				switch {
-				case code < 300:
-					b.WriteString(green)
-				case code < 500:
-					b.WriteString(yellow)
-				default:
-					b.WriteString(red)
-				}
-				b.WriteString(fmt.Sprintf("%s=%d", a.Key, code))
-				b.WriteString(reset)
+			if h.writeStatusAttr(b, a) {
 				continue
 			}
 		}
-		b.WriteString(gray)
+		b.WriteString(colorGray)
 		b.WriteString(a.Key)
 		b.WriteString("=")
-		b.WriteString(reset)
-		b.WriteString(fmt.Sprint(a.Value))
+		b.WriteString(colorReset)
+		fmt.Fprint(b, a.Value)
 	}
-	b.WriteByte('\n')
+}
 
-	_, err := io.WriteString(h.w, b.String())
-	return err
+func (h *colorTextHandler) writeStatusAttr(b *strings.Builder, a slog.Attr) bool {
+	code, ok := attrInt(a)
+	if !ok {
+		return false
+	}
+	b.WriteString(statusColor(code))
+	fmt.Fprintf(b, "%s=%d", a.Key, code)
+	b.WriteString(colorReset)
+	return true
+}
+
+func statusColor(code int) string {
+	switch {
+	case code < 300:
+		return colorGreen
+	case code < 500:
+		return colorYellow
+	default:
+		return colorRed
+	}
 }
 
 func (h *colorTextHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
@@ -354,6 +408,7 @@ func (h *colorTextHandler) WithGroup(_ string) slog.Handler {
 	return &cp
 }
 
+//nolint:gosec // G115: HTTP status codes are always safe to convert to int
 func attrInt(a slog.Attr) (int, bool) {
 	switch a.Value.Kind() {
 	case slog.KindInt64:

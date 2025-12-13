@@ -38,6 +38,8 @@ func New(fsys fs.FS) mizu.Middleware {
 }
 
 // WithOptions creates embed middleware with custom options.
+//
+//nolint:cyclop // Embedded file serving requires multiple path and option checks
 func WithOptions(fsys fs.FS, opts Options) mizu.Middleware {
 	if opts.Root == "" {
 		opts.Root = "."

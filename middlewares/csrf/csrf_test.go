@@ -12,6 +12,7 @@ import (
 
 var testSecret = []byte("test-secret-key-for-csrf-testing")
 
+//nolint:cyclop // Test functions commonly have higher complexity due to multiple subtests
 func TestNew(t *testing.T) {
 	app := mizu.NewRouter()
 	app.Use(New(Options{Secret: testSecret}))

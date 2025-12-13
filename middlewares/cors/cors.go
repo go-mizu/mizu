@@ -45,6 +45,8 @@ type Options struct {
 }
 
 // New creates a CORS middleware with the specified options.
+//
+//nolint:cyclop // CORS handling requires multiple header and origin checks
 func New(opts Options) mizu.Middleware {
 	if len(opts.AllowOrigins) == 0 && opts.AllowOriginFunc == nil {
 		opts.AllowOrigins = []string{"*"}

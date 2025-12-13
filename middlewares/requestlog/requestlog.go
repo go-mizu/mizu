@@ -44,6 +44,8 @@ func New() mizu.Middleware {
 }
 
 // WithOptions creates requestlog middleware with custom options.
+//
+//nolint:cyclop // Request logging requires multiple field extraction and formatting checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.Logger == nil {
 		opts.Logger = slog.New(slog.NewTextHandler(os.Stdout, nil))

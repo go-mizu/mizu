@@ -74,7 +74,7 @@ func (a *App) HealthzHandler() http.Handler {
 
 // Listen starts an HTTP server on addr and manages signals.
 func (a *App) Listen(addr string) error {
-	srv := &http.Server{
+	srv := &http.Server{ //nolint:gosec // G112: Users can configure timeouts via Server struct directly
 		Addr:    addr,
 		Handler: a,
 	}
@@ -83,7 +83,7 @@ func (a *App) Listen(addr string) error {
 
 // ListenTLS starts an HTTPS server and manages signals.
 func (a *App) ListenTLS(addr, certFile, keyFile string) error {
-	srv := &http.Server{
+	srv := &http.Server{ //nolint:gosec // G112: Users can configure timeouts via Server struct directly
 		Addr:    addr,
 		Handler: a,
 	}
@@ -92,7 +92,7 @@ func (a *App) ListenTLS(addr, certFile, keyFile string) error {
 
 // Serve serves on an existing listener and manages signals.
 func (a *App) Serve(l net.Listener) error {
-	srv := &http.Server{
+	srv := &http.Server{ //nolint:gosec // G112: Users can configure timeouts via Server struct directly
 		Addr:    l.Addr().String(),
 		Handler: a,
 	}

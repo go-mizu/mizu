@@ -58,6 +58,8 @@ func WithFS(fsys fs.FS) mizu.Middleware {
 }
 
 // WithOptions creates static file middleware with custom options.
+//
+//nolint:cyclop // Static file serving requires multiple path and directory checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.FS == nil && opts.Root == "" {
 		panic("static: either FS or Root is required")
@@ -164,7 +166,7 @@ func serveFile(c *mizu.Ctx, opts Options, cleanPath string) error {
 	if opts.FS != nil {
 		file, err = opts.FS.Open(cleanPath)
 	} else {
-		file, err = os.Open(filepath.Join(opts.Root, cleanPath))
+		file, err = os.Open(filepath.Join(opts.Root, cleanPath)) //nolint:gosec // G304: Path is cleaned via filepath.Clean
 	}
 
 	if err != nil {

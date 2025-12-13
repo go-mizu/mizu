@@ -55,6 +55,8 @@ func WithHeader(header string, validator TokenValidator) mizu.Middleware {
 }
 
 // WithOptions creates bearer auth middleware with the specified options.
+//
+//nolint:cyclop // Bearer auth requires multiple validation checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.Validator == nil && opts.ValidatorWithContext == nil {
 		panic("bearerauth: validator is required")

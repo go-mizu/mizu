@@ -2,7 +2,7 @@
 package chaos
 
 import (
-	"math/rand"
+	"math/rand" //nolint:gosec // G404: Chaos testing uses math/rand intentionally - crypto/rand not needed
 	"net/http"
 	"time"
 
@@ -61,13 +61,13 @@ func WithOptions(opts Options) mizu.Middleware {
 			if opts.LatencyMax > 0 {
 				latency := opts.LatencyMin
 				if opts.LatencyMax > opts.LatencyMin {
-					latency += time.Duration(rand.Int63n(int64(opts.LatencyMax - opts.LatencyMin)))
+					latency += time.Duration(rand.Int63n(int64(opts.LatencyMax - opts.LatencyMin))) //nolint:gosec // G404: Chaos testing uses weak RNG intentionally
 				}
 				time.Sleep(latency)
 			}
 
 			// Inject error
-			if opts.ErrorRate > 0 && rand.Intn(100) < opts.ErrorRate {
+			if opts.ErrorRate > 0 && rand.Intn(100) < opts.ErrorRate { //nolint:gosec // G404: Chaos testing uses weak RNG intentionally
 				return c.Text(opts.ErrorCode, "chaos: injected error")
 			}
 
@@ -161,13 +161,13 @@ func (c *Controller) Middleware() mizu.Middleware {
 			if c.opts.LatencyMax > 0 {
 				latency := c.opts.LatencyMin
 				if c.opts.LatencyMax > c.opts.LatencyMin {
-					latency += time.Duration(rand.Int63n(int64(c.opts.LatencyMax - c.opts.LatencyMin)))
+					latency += time.Duration(rand.Int63n(int64(c.opts.LatencyMax - c.opts.LatencyMin))) //nolint:gosec // G404: Chaos testing uses weak RNG intentionally
 				}
 				time.Sleep(latency)
 			}
 
 			// Inject error
-			if c.opts.ErrorRate > 0 && rand.Intn(100) < c.opts.ErrorRate {
+			if c.opts.ErrorRate > 0 && rand.Intn(100) < c.opts.ErrorRate { //nolint:gosec // G404: Chaos testing uses weak RNG intentionally
 				return ctx.Text(c.opts.ErrorCode, "chaos: injected error")
 			}
 

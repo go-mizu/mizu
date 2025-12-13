@@ -84,7 +84,7 @@ func WithOptions(opts Options) mizu.Middleware {
 				// Check percentage
 				if target.Percentage < 100 {
 					counter++
-					if int(counter%100) >= target.Percentage {
+					if int(counter%100) >= target.Percentage { //nolint:gosec // G115: Intentional modulo for percentage sampling
 						continue
 					}
 				}

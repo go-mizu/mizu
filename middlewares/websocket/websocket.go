@@ -3,7 +3,7 @@ package websocket
 
 import (
 	"bufio"
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // G505: SHA1 is required by WebSocket protocol (RFC 6455)
 	"encoding/base64"
 	"errors"
 	"io"
@@ -48,6 +48,8 @@ func New(handler Handler) mizu.Middleware {
 }
 
 // WithOptions creates WebSocket middleware with custom options.
+//
+//nolint:cyclop // WebSocket upgrade handling requires multiple checks
 func WithOptions(handler Handler, opts Options) mizu.Middleware {
 	if opts.CheckOrigin == nil {
 		if len(opts.Origins) > 0 {
@@ -160,7 +162,7 @@ func IsWebSocketUpgrade(r *http.Request) bool {
 }
 
 func computeAcceptKey(key string) string {
-	h := sha1.New()
+	h := sha1.New() //nolint:gosec // G401: SHA1 required by WebSocket protocol (RFC 6455)
 	h.Write([]byte(key + websocketGUID))
 	return base64.StdEncoding.EncodeToString(h.Sum(nil))
 }
@@ -175,6 +177,8 @@ const (
 )
 
 // ReadMessage reads a message from the WebSocket connection.
+//
+//nolint:cyclop // WebSocket frame parsing requires multiple format checks
 func (c *Conn) ReadMessage() (messageType int, data []byte, err error) {
 	// Read first byte (FIN + opcode)
 	b, err := c.reader.ReadByte()

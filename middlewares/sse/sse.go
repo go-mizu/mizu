@@ -61,6 +61,8 @@ func New(handler Handler) mizu.Middleware {
 }
 
 // WithOptions creates SSE middleware with custom options.
+//
+//nolint:cyclop // SSE handling requires multiple connection and event checks
 func WithOptions(handler Handler, opts Options) mizu.Middleware {
 	if opts.BufferSize == 0 {
 		opts.BufferSize = 10

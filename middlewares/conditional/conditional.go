@@ -3,7 +3,7 @@ package conditional
 
 import (
 	"bytes"
-	"crypto/md5"
+	"crypto/md5" //nolint:gosec // G501: MD5 used for ETag generation, not cryptographic security
 	"encoding/hex"
 	"net/http"
 	"time"
@@ -54,6 +54,8 @@ func New() mizu.Middleware {
 }
 
 // WithOptions creates conditional middleware with custom options.
+//
+//nolint:cyclop // Conditional request handling requires multiple checks
 func WithOptions(opts Options) mizu.Middleware {
 	// Default ETag to true if not explicitly set
 	if !opts.ETag && !opts.LastModified && opts.ETagFunc == nil && opts.ModTimeFunc == nil {
@@ -102,7 +104,7 @@ func WithOptions(opts Options) mizu.Middleware {
 				if opts.ETagFunc != nil {
 					etag = opts.ETagFunc(body)
 				} else {
-					hash := md5.Sum(body)
+					hash := md5.Sum(body) //nolint:gosec // G401: MD5 used for ETag, not cryptographic security
 					etag = hex.EncodeToString(hash[:])
 				}
 				if opts.WeakETag {

@@ -31,6 +31,8 @@ func New() mizu.Middleware {
 }
 
 // WithOptions creates transformer middleware with custom options.
+//
+//nolint:cyclop // Request/response transformation requires multiple format checks
 func WithOptions(opts Options) mizu.Middleware {
 	return func(next mizu.Handler) mizu.Handler {
 		return func(c *mizu.Ctx) error {

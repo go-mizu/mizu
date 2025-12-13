@@ -27,6 +27,7 @@ func TestNew(t *testing.T) {
 	}
 }
 
+//nolint:cyclop // Test function with comprehensive type coverage
 func TestMarshalUnmarshal(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -288,6 +289,7 @@ func TestEncoderIntegers(t *testing.T) {
 	}
 }
 
+//nolint:cyclop // Test function with multiple subtests
 func TestEncoderFloats(t *testing.T) {
 	t.Run("float32", func(t *testing.T) {
 		data, err := Marshal(float32(3.14))

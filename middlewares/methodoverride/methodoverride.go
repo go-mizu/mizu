@@ -31,6 +31,8 @@ func New() mizu.Middleware {
 }
 
 // WithOptions creates method override middleware with options.
+//
+//nolint:cyclop // Method override detection from multiple sources
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.Header == "" {
 		opts.Header = "X-HTTP-Method-Override"

@@ -503,7 +503,7 @@ func TestSlack(t *testing.T) {
 }
 
 func TestTwilio(t *testing.T) {
-	secret := "twilio-auth-token"
+	secret := "twilio-auth-token" //nolint:gosec // G101: Test credential for webhook signature verification
 
 	app := mizu.NewRouter()
 	app.Use(Twilio(secret))

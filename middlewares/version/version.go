@@ -39,6 +39,8 @@ type Options struct {
 }
 
 // New creates versioning middleware.
+//
+//nolint:cyclop // Version routing requires multiple source and matching checks
 func New(opts Options) mizu.Middleware {
 	if opts.Header == "" {
 		opts.Header = "Accept-Version"

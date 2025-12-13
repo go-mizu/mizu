@@ -85,6 +85,8 @@ func New() mizu.Middleware {
 }
 
 // WithOptions creates bot detection middleware with custom options.
+//
+//nolint:cyclop // Bot detection requires multiple pattern and behavior checks
 func WithOptions(opts Options) mizu.Middleware {
 	// Compile patterns
 	patterns := append(defaultPatterns, opts.CustomPatterns...)

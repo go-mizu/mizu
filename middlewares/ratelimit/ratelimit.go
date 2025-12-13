@@ -63,6 +63,8 @@ func WithOptions(opts Options) mizu.Middleware {
 }
 
 // WithStore creates rate limiter with custom store.
+//
+//nolint:cyclop // Rate limiting requires multiple limit and key extraction checks
 func WithStore(store Store, opts Options) mizu.Middleware {
 	if opts.Rate <= 0 {
 		opts.Rate = 100

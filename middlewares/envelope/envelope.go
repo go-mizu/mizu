@@ -57,6 +57,8 @@ func New() mizu.Middleware {
 }
 
 // WithOptions creates envelope middleware with custom options.
+//
+//nolint:cyclop // Response envelope handling requires multiple format checks
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.RequestIDHeader == "" {
 		opts.RequestIDHeader = "X-Request-ID"

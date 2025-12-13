@@ -50,6 +50,8 @@ func New() mizu.Middleware {
 }
 
 // WithOptions creates sanitizer middleware with custom options.
+//
+//nolint:cyclop // Input sanitization requires multiple field and policy checks
 func WithOptions(opts Options) mizu.Middleware {
 	excludeMap := make(map[string]bool)
 	for _, field := range opts.Exclude {
