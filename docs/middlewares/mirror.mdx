@@ -243,6 +243,52 @@ func Percentage(url string, pct int) Target
 4. **Backup**: Sync to backup systems
 5. **Canary Deployment**: Route small percentage to canary
 
+## Technical Details
+
+### Implementation Architecture
+
+The mirror middleware is built with the following core components:
+
+1. **Request Cloning**: The middleware reads the original request body (if `CopyBody` is enabled) and stores it in memory to allow multiple sends without consuming the original request stream.
+
+2. **HTTP Client**: A dedicated `http.Client` is created with the configured timeout and redirect policy (`http.ErrUseLastResponse` to prevent following redirects).
+
+3. **Percentage-Based Sampling**: Uses a simple counter-based modulo operation to determine whether to mirror a request based on the configured percentage (e.g., 50% mirrors every other request).
+
+4. **Asynchronous Execution**: When `Async` is true (default), mirrored requests are executed in separate goroutines, ensuring zero impact on the main request latency.
+
+### Request Flow
+
+1. Original request arrives at the middleware
+2. If `CopyBody` is enabled and body exists, read body into memory and restore it to the original request
+3. For each target:
+   - Check percentage threshold using counter-based sampling
+   - If threshold met, execute mirror request (async or sync based on configuration)
+4. Continue to next middleware/handler with original request unchanged
+
+### Mirror Request Details
+
+Each mirrored request includes:
+- All original HTTP headers copied verbatim
+- `X-Mirrored-From` header set to original request host
+- Same HTTP method as original request
+- Same request URI (path + query string) appended to target base URL
+- Request body (if `CopyBody` is enabled)
+
+### Performance Characteristics
+
+- **Async mode**: Zero latency impact on original request (default)
+- **Sync mode**: Adds mirror request latency to original request processing
+- **Memory overhead**: Proportional to request body size when `CopyBody` is enabled
+- **Goroutine cost**: One goroutine per target per mirrored request in async mode
+
+### Error Handling
+
+- Mirror failures never affect the original request/response
+- Errors are silently ignored unless `OnError` callback is provided
+- HTTP client respects the configured timeout to prevent hanging requests
+- Response bodies are properly closed to prevent resource leaks
+
 ## Best Practices
 
 - Use async mode (default) to avoid latency
@@ -251,6 +297,24 @@ func Percentage(url string, pct int) Target
 - Use percentage-based mirroring for gradual rollouts
 - Log and compare responses for validation
 - Don't mirror to targets with side effects (unless intended)
+
+## Testing
+
+The mirror middleware includes comprehensive test coverage for all features:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| TestNew | Basic mirror functionality with single target | Request is successfully mirrored to target server |
+| TestWithOptions_Async | Asynchronous mirroring behavior | Original response returns immediately without waiting for mirror completion |
+| TestWithOptions_Percentage | Percentage-based traffic sampling | Approximately 50% of requests are mirrored when percentage is set to 50 |
+| TestWithOptions_MultipleTargets | Mirroring to multiple targets simultaneously | All configured targets receive mirrored requests |
+| TestWithOptions_OnError | Error callback invocation | OnError callback is called when mirror request fails |
+| TestWithOptions_OnSuccess | Success callback invocation | OnSuccess callback is called with response when mirror succeeds |
+| TestWithOptions_MirroredHeader | X-Mirrored-From header injection | Mirror request includes X-Mirrored-From header with original host |
+| TestPercentage | Percentage helper function | Returns Target with correct URL and percentage values |
+| TestWithOptions_CopyBody | Request body copying enabled | Mirror request receives the same body as original request |
+| TestWithOptions_NoCopyBody | Request body copying disabled | Mirror request is sent without body content |
+| TestNew_MultipleTargets | Multiple targets via New() helper | All targets receive mirrored requests with async execution |
 
 ## Related Middlewares
 

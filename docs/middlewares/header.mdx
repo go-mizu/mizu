@@ -131,6 +131,75 @@ func RemoveRequest(keys ...string) mizu.Middleware
 func WithOptions(opts Options) mizu.Middleware
 ```
 
+## Technical Details
+
+### Architecture
+
+The header middleware is built on the `WithOptions` function, which serves as the core implementation. All other functions (`Set`, `New`, `Remove`, etc.) are convenience wrappers that delegate to `WithOptions` with specific configurations.
+
+### Options Structure
+
+```go
+type Options struct {
+    Request        map[string]string // Request headers to set
+    Response       map[string]string // Response headers to set
+    RequestRemove  []string          // Request headers to remove
+    ResponseRemove []string          // Response headers to remove
+}
+```
+
+### Execution Flow
+
+1. **Request Phase** (before handler):
+   - Sets request headers from `Options.Request`
+   - Removes request headers from `Options.RequestRemove`
+   - Sets response headers from `Options.Response`
+
+2. **Handler Execution**: Calls the next middleware/handler
+
+3. **Response Phase** (after handler):
+   - Removes response headers from `Options.ResponseRemove`
+
+### Implementation Notes
+
+- Request headers are set before the handler executes, making them available to downstream handlers
+- Response headers are set before the handler but can be overridden by the handler
+- Response header removal happens after the handler executes to ensure headers set by the handler are properly removed
+- The middleware uses a custom `itoa` function for integer-to-string conversion to avoid unnecessary allocations in HSTS header generation
+
+### Best Practices
+
+- Use `WithOptions` for complex configurations involving multiple header operations
+- Use convenience functions (`Set`, `Remove`, etc.) for simple single-header operations
+- Set security headers at the application level rather than per-route
+- Remove sensitive headers (e.g., `Server`, `X-Powered-By`) to avoid information disclosure
+- Chain multiple header middlewares when you need different headers for different routes
+
+## Testing
+
+The header middleware includes comprehensive test coverage for all functions:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Tests setting multiple response headers | Headers `X-Custom` and `X-Another` are set in response |
+| `TestWithOptions_RequestHeaders` | Tests setting request headers | Header `X-Injected` is available in request context |
+| `TestWithOptions_RemoveHeaders` | Tests removing request and response headers | Request header `X-Remove-Me` and response header `X-Server` are removed |
+| `TestSet` | Tests setting a single response header | Header `X-Test` is set in response |
+| `TestSetRequest` | Tests setting a single request header | Header `X-Request-Custom` is available in request |
+| `TestRemove` | Tests removing multiple response headers | Headers `Server` and `X-Powered-By` are removed from response |
+| `TestRemoveRequest` | Tests removing request headers | Header `Cookie` is removed from request |
+| `TestXSSProtection` | Tests XSS protection header | Header `X-XSS-Protection` is set to `1; mode=block` |
+| `TestNoSniff` | Tests content type sniffing protection | Header `X-Content-Type-Options` is set to `nosniff` |
+| `TestFrameDeny` | Tests frame options deny | Header `X-Frame-Options` is set to `DENY` |
+| `TestFrameSameOrigin` | Tests frame options same origin | Header `X-Frame-Options` is set to `SAMEORIGIN` |
+| `TestHSTS` | Tests HTTP Strict Transport Security | Header `Strict-Transport-Security` is set with max-age, includeSubDomains, and preload |
+| `TestCSP` | Tests Content Security Policy | Header `Content-Security-Policy` is set with custom policy |
+| `TestReferrerPolicy` | Tests referrer policy | Header `Referrer-Policy` is set to `strict-origin` |
+| `TestJSON` | Tests JSON content type | Header `Content-Type` is set to `application/json; charset=utf-8` |
+| `TestHTML` | Tests HTML content type | Header `Content-Type` is set to `text/html; charset=utf-8` |
+| `TestText` | Tests text content type | Header `Content-Type` is set to `text/plain; charset=utf-8` |
+| `TestXML` | Tests XML content type | Header `Content-Type` is set to `application/xml; charset=utf-8` |
+
 ## Related Middlewares
 
 - [helmet](/middlewares/helmet) - Comprehensive security headers

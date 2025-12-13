@@ -247,6 +247,47 @@ POST /submit
   ← Server validates both match
 ```
 
+## Technical Details
+
+### Token Generation
+
+The middleware generates cryptographically secure tokens using the following process:
+
+1. **Random Bytes**: Generates random bytes of specified length (default 32) using `crypto/rand`
+2. **HMAC Signature**: Creates an HMAC-SHA256 signature of the random bytes using the secret key
+3. **Encoding**: Encodes both the token and signature using base64 URL encoding
+4. **Format**: Combines them as `token.signature` for tamper detection
+
+```go
+// Token format: base64(random_bytes).base64(hmac_sha256(random_bytes))
+token := generateToken(32, secret)
+// Example: "a1b2c3d4...xyz.9f8e7d6c..."
+```
+
+### Token Validation
+
+Validation follows a multi-step process to ensure security:
+
+1. **Constant-Time Comparison**: Uses `subtle.ConstantTimeCompare` to prevent timing attacks
+2. **Cookie-Request Match**: Verifies the cookie token exactly matches the request token
+3. **Signature Verification**: Decodes and validates the HMAC signature
+4. **HMAC Equality**: Uses `hmac.Equal` for secure signature comparison
+
+### Safe vs Unsafe Methods
+
+The middleware distinguishes between HTTP methods:
+
+- **Safe Methods** (GET, HEAD, OPTIONS, TRACE): Generate or reuse tokens, no validation required
+- **Unsafe Methods** (POST, PUT, DELETE, PATCH): Require valid token in both cookie and request
+
+### Context Storage
+
+Tokens are stored in the request context using a private `contextKey` type to prevent collisions with other middleware or application code. This allows retrieval via the `Token()` function throughout the request lifecycle.
+
+### Path Skipping
+
+The `SkipPaths` option uses a map for O(1) lookup performance, allowing specific routes (like webhooks or public APIs) to bypass CSRF validation entirely.
+
 ## Security Considerations
 
 1. **Secret Key** - Use a strong, random 32-byte secret
@@ -273,6 +314,44 @@ app.Use(csrf.New(csrf.Options{
 - Skip CSRF for API endpoints using Bearer auth
 - Regenerate token after login/logout
 - Set appropriate cookie expiration
+
+## Testing
+
+The CSRF middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| **Basic Functionality** | | |
+| Sets cookie on GET | GET request to protected endpoint | CSRF cookie is set with generated token |
+| Rejects POST without token | POST request without CSRF token | Returns 403 Forbidden |
+| Accepts POST with valid token | POST with matching cookie and header token | Request succeeds with 200 OK |
+| Rejects POST with invalid token | POST with mismatched tokens | Returns 403 Forbidden |
+| **Token Lookup Sources** | | |
+| Form token lookup | POST with token in form field | Token extracted from form and validated |
+| Query token lookup | POST with token in query parameter | Token extracted from query and validated |
+| Header token lookup | POST with token in header (default) | Token extracted from header and validated |
+| **Path Skipping** | | |
+| Skips listed path | POST to path in SkipPaths | Request bypasses CSRF validation |
+| Protects non-listed path | POST to path not in SkipPaths | CSRF validation required |
+| **Error Handling** | | |
+| Custom error handler | POST without token with ErrorHandler set | Custom error handler called with error |
+| Default error handler | POST without token, no ErrorHandler | Returns 403 with error text |
+| **Helper Functions** | | |
+| TemplateField generation | Calling TemplateField() with context | Returns HTML hidden input with token |
+| Protect middleware | Creating middleware with Protect() | Secure cookies enabled by default |
+| ProtectDev middleware | Creating middleware with ProtectDev() | Insecure cookies for development |
+| GenerateSecret uniqueness | Generating multiple secrets | Each secret is unique and 32 bytes |
+| **Validation Logic** | | |
+| Valid token validation | Validating matching tokens with correct secret | Returns true |
+| Mismatched tokens | Validating different tokens | Returns false |
+| Invalid signature | Validating token with wrong secret | Returns false |
+| Malformed token | Validating token without signature separator | Returns false |
+| **Token Generation** | | |
+| Token format | Generated token structure | Contains random bytes and HMAC signature separated by "." |
+| Token uniqueness | Generating 100 tokens | All tokens are unique |
+| **Configuration Validation** | | |
+| Panics without secret | Creating middleware with empty secret | Panics with error message |
+| Panics with invalid TokenLookup | Creating middleware with malformed TokenLookup | Panics with error message |
 
 ## Related Middlewares
 

@@ -118,12 +118,67 @@ func WithOptions(opts Options) mizu.Middleware
 |------|---------|
 | 503 | Service unavailable (bulkhead full) |
 
+## Technical Details
+
+### Implementation
+
+The bulkhead middleware uses a semaphore pattern with buffered channels to control concurrency:
+
+- **Semaphore Channel**: A buffered channel with capacity equal to `MaxConcurrent` acts as the semaphore for slot allocation
+- **Waiting Queue**: A counter tracks the number of requests waiting for a slot, capped at `MaxWait`
+- **Non-blocking Acquire**: First attempts to acquire a slot without blocking using `select` with `default`
+- **Blocking Wait**: If no slot is available, increments the waiting counter and blocks until a slot becomes available or context is cancelled
+- **Thread Safety**: Uses `sync.Mutex` to protect the waiting counter and ensure thread-safe operations
+
+### Core Components
+
+**Bulkhead Structure**:
+- `sem chan struct{}`: Buffered channel for semaphore-based slot management
+- `waiting int`: Current number of requests in the waiting queue
+- `maxWait int`: Maximum allowed requests in the waiting queue
+- `mu sync.Mutex`: Mutex for protecting shared state
+
+**Manager**:
+- Manages multiple named bulkheads for isolation between different services or paths
+- Thread-safe bulkhead creation and retrieval using `sync.RWMutex`
+- Provides aggregated statistics across all managed bulkheads
+
+**Statistics**:
+- Real-time metrics including active requests, waiting requests, and available slots
+- Useful for monitoring and debugging bulkhead behavior
+
+### Request Flow
+
+1. Request arrives at middleware
+2. Attempts non-blocking slot acquisition via `select` statement
+3. If slot acquired: processes request and releases slot via `defer`
+4. If no slot available:
+   - Checks if waiting queue is full
+   - If full: rejects immediately with error handler or 503 status
+   - If space available: increments waiting counter and blocks on semaphore channel
+5. When slot becomes available or context cancelled: decrements waiting counter
+6. On context cancellation: returns context error (e.g., timeout, cancellation)
+
 ## Best Practices
 
 - Set limits based on resource capacity
 - Use different bulkheads for different services
 - Monitor rejection rates
 - Combine with circuit breaker for full resilience
+
+## Testing
+
+### Test Coverage
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Tests basic bulkhead functionality with concurrent requests | Some requests succeed (200), others are rejected (503) when bulkhead is full |
+| `TestBulkhead_Stats` | Validates bulkhead statistics reporting | Returns correct name, max active count, and available slots |
+| `TestNewBulkhead_ErrorHandler` | Tests custom error handler for rejected requests | Rejected requests use custom error handler with 429 status instead of default 503 |
+| `TestManager` | Tests bulkhead manager's get-or-create behavior | Returns same bulkhead instance for same name, different instances for different names |
+| `TestManager_Stats` | Validates manager's aggregated statistics | Returns stats for all managed bulkheads by name |
+| `TestForPath` | Tests path-based bulkhead isolation | Creates separate bulkheads for different URL paths |
+| `TestDefaults` | Validates default configuration values | Uses default values of 10 for MaxConcurrent and MaxWait when not specified |
 
 ## Related Middlewares
 

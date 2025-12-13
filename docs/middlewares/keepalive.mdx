@@ -91,12 +91,55 @@ Connection: keep-alive
 Keep-Alive: timeout=5, max=100
 ```
 
+## Technical Details
+
+### Implementation Overview
+
+The keepalive middleware manages HTTP connection persistence by controlling the `Connection` and `Keep-Alive` headers. The middleware follows a request-response flow:
+
+1. **Configuration Initialization**: Default values are set during middleware creation (60s timeout, 100 max requests)
+2. **Request Processing**: For each incoming request, the middleware:
+   - Checks if keep-alive is disabled via `DisableKeepAlive` option
+   - Inspects the client's `Connection` header to detect if the client requested connection closure
+   - Sets appropriate response headers based on configuration and client preferences
+3. **Header Management**: The middleware sets:
+   - `Connection: keep-alive` to indicate persistent connection support
+   - `Keep-Alive: timeout={seconds}, max={requests}` to specify connection parameters
+
+### Key Components
+
+- **Options struct**: Configures timeout duration, maximum requests per connection, and enable/disable flag
+- **Default values**: 60 seconds timeout, 100 maximum requests when not specified
+- **Client negotiation**: Respects client's `Connection: close` header to gracefully close connections
+- **Helper functions**: Provides `Disable()`, `WithTimeout()`, and `WithMax()` for common configurations
+
+### Header Format
+
+The `Keep-Alive` header uses the format: `timeout={seconds}, max={requests}` where:
+- `timeout`: Duration in seconds that the connection should remain open
+- `max`: Maximum number of requests allowed on this connection
+
 ## Best Practices
 
 - Use for high-traffic APIs
 - Set reasonable timeouts
 - Monitor connection counts
 - Consider disabling for long-polling
+
+## Testing
+
+The keepalive middleware includes comprehensive test coverage:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Default middleware creation | Sets `Connection: keep-alive` and `Keep-Alive` headers with default values (60s, 100 max) |
+| `TestWithOptions_CustomTimeout` | Custom timeout configuration | Sets `Keep-Alive: timeout=120, max=100` when 120s timeout is specified |
+| `TestWithOptions_CustomMax` | Custom max requests configuration | Sets `Keep-Alive: timeout=60, max=500` when 500 max requests is specified |
+| `TestWithOptions_Disable` | Disable keep-alive option | Sets `Connection: close` header when `DisableKeepAlive` is true |
+| `TestWithOptions_ClientClose` | Client requests connection close | Honors client's `Connection: close` header and responds with `Connection: close` |
+| `TestDisable` | Disable() helper function | Sets `Connection: close` header using convenience function |
+| `TestWithTimeout` | WithTimeout() helper function | Sets `Keep-Alive: timeout=30, max=100` when using 30s timeout helper |
+| `TestWithMax` | WithMax() helper function | Sets `Keep-Alive: timeout=60, max=200` when using 200 max requests helper |
 
 ## Related Middlewares
 

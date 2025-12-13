@@ -109,12 +109,78 @@ func Error(code int, message string) error
 | -32602 | Invalid params |
 | -32603 | Internal error |
 
+## Technical Details
+
+### Architecture
+
+The JSON-RPC middleware consists of three main components:
+
+1. **Server**: The core `Server` struct manages method registration and request routing
+   - Maintains a method registry (`map[string]Handler`)
+   - Handles both single and batch requests
+   - Validates JSON-RPC 2.0 protocol compliance
+
+2. **Request/Response Types**: Structured types for protocol compliance
+   - `Request`: Represents incoming JSON-RPC 2.0 requests with JSONRPC version, method, params, and optional ID
+   - `Response`: Represents outgoing responses with result or error
+   - `Error`: Standard JSON-RPC error structure with code, message, and optional data
+
+3. **Handler Functions**: Method handlers accept params and return results or errors
+   - Type: `func(params map[string]any) (any, error)`
+   - Support custom error types via `NewError()`
+
+### Request Processing Flow
+
+1. **Request Reception**: HTTP POST body is read and parsed
+2. **Batch Detection**: Checks if request starts with `[` to identify batch requests
+3. **Validation**: Verifies JSON-RPC version is "2.0"
+4. **Method Lookup**: Finds registered handler for the requested method
+5. **Execution**: Invokes handler with parsed parameters
+6. **Response Generation**: Returns result or error in JSON-RPC format
+7. **Notification Handling**: Returns HTTP 204 No Content for requests without ID
+
+### Batch Request Processing
+
+Batch requests are processed sequentially:
+- Each request in the array is validated and executed independently
+- Errors in one request don't affect others
+- Notifications (requests without ID) are excluded from the response array
+- Empty response arrays return HTTP 204 No Content
+
+### Error Handling
+
+The middleware uses standard JSON-RPC error codes:
+- **-32700**: Parse error - Invalid JSON received
+- **-32600**: Invalid request - Request doesn't conform to JSON-RPC spec
+- **-32601**: Method not found - Requested method doesn't exist
+- **-32602**: Invalid params - Invalid method parameters
+- **-32603**: Internal error - Handler execution error
+
+Custom errors can be created using `NewError(code, message)` and will be properly serialized in responses.
+
 ## Best Practices
 
 - Use meaningful method names
 - Validate parameters
 - Return proper error codes
 - Document available methods
+
+## Testing
+
+The middleware includes comprehensive test coverage for all core functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestServer_Register` | Tests basic method registration and execution | Method handler executes successfully and returns correct result (3 for add(1,2)) |
+| `TestServer_MethodNotFound` | Tests calling an unregistered method | Returns JSON-RPC error with code -32601 (Method not found) |
+| `TestServer_InvalidJSONRPCVersion` | Tests request with wrong JSON-RPC version (1.0) | Returns JSON-RPC error with code -32600 (Invalid Request) |
+| `TestServer_Notification` | Tests notification handling (request without ID) | Handler executes but returns HTTP 204 No Content with no response body |
+| `TestServer_BatchRequest` | Tests batch request with multiple method calls | Processes all requests and returns array of responses with correct results |
+| `TestServer_ErrorInHandler` | Tests handler that returns custom error | Returns JSON-RPC error response with custom error message |
+| `TestMiddleware` (wrong method) | Tests middleware with non-POST HTTP method | Returns JSON-RPC error indicating method must be POST |
+| `TestMiddleware` (wrong content type) | Tests middleware with non-JSON content type | Returns JSON-RPC error indicating Content-Type must be application/json |
+| `TestParseError` | Tests invalid JSON in request body | Returns JSON-RPC error with code -32700 (Parse error) |
+| `TestNewError` | Tests custom error creation | Error object created with correct code and message |
 
 ## Related Middlewares
 

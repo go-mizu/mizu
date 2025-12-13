@@ -85,6 +85,83 @@ type Rule struct {
 | SEO | Hidden | Visible |
 | Use case | Internal routing | URL changes |
 
+## Technical Details
+
+### Implementation Overview
+
+The rewrite middleware operates by modifying the `Request.URL.Path` before the request reaches downstream handlers:
+
+1. **Rule Compilation**: Regex patterns are compiled once during middleware initialization to optimize performance
+2. **Path Matching**: Each incoming request's path is evaluated against rules in order
+3. **First Match Wins**: Processing stops at the first matching rule
+4. **Path Replacement**: The request URL path is modified in-place
+
+### Rule Processing
+
+**Prefix Rules**:
+- Uses `strings.HasPrefix()` for fast prefix matching
+- Strips the matched prefix and prepends the replacement
+- Example: `/old/path` with rule `Prefix("/old", "/new")` becomes `/new/path`
+
+**Regex Rules**:
+- Compiled using Go's `regexp` package during initialization
+- Supports capture groups (`$1`, `$2`, etc.) for dynamic replacements
+- Uses `ReplaceAllString()` for substitution
+- Example: `/user/123/profile` with pattern `^/user/(\d+)/profile$` and replacement `/profiles/$1` becomes `/profiles/123`
+
+### Performance Characteristics
+
+- **Initialization**: O(n) where n is the number of regex rules
+- **Per-Request**: O(r) where r is the number of rules (worst case: no match)
+- **Memory**: Compiled regex patterns are cached
+- **Early Exit**: Processing stops after first match for efficiency
+
+### Internal State
+
+The middleware maintains:
+- Compiled regex patterns in the `Rule.re` field
+- Original rule configuration in the `Options` struct
+- No request-specific state (thread-safe)
+
+## Best Practices
+
+### Rule Ordering
+
+Place more specific rules before general ones:
+
+```go
+app.Use(rewrite.New(
+    rewrite.Regex(`^/api/v2/(.*)$`, "/v2/$1"),  // Specific
+    rewrite.Prefix("/api", "/internal"),         // General
+))
+```
+
+### Performance Optimization
+
+- Minimize the number of regex rules when possible
+- Use prefix rules for simple path transformations
+- Test regex patterns for efficiency with large inputs
+
+### Security Considerations
+
+- Validate rewrite patterns to prevent unintended path access
+- Be cautious with user-controlled input in dynamic rules
+- Consider path traversal implications when rewriting paths
+
+## Testing
+
+The rewrite middleware includes comprehensive test coverage for various scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic prefix rewrite | Rewrites `/old/path` to `/new/path` using prefix rule |
+| `TestWithOptions_Regex` | Regex pattern matching | Matches regex pattern with version number and resource path |
+| `TestWithOptions_MultipleRules` | Multiple rule processing | Applies first matching rule and stops processing |
+| `TestWithOptions_NoMatch` | Path without matching rule | Leaves path unchanged when no rules match |
+| `TestPrefix` | Prefix rule creation | Creates rule with correct match, rewrite, and regex=false |
+| `TestRegex` | Regex rule creation | Creates rule with pattern, replacement, and regex=true |
+| `TestWithOptions_RegexCapture` | Regex capture groups | Replaces `/user/123/profile` with `/profiles/123` using capture group |
+
 ## Related Middlewares
 
 - [redirect](/middlewares/redirect) - URL redirects

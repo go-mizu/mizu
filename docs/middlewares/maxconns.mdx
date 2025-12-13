@@ -87,12 +87,71 @@ func NewWithOptions(opts Options) mizu.Middleware
 func NewWithMetrics(max int) *MaxConns
 ```
 
+## Technical Details
+
+### Implementation Architecture
+
+The maxconns middleware uses atomic operations and mutexes to safely manage concurrent connections:
+
+**Global Connection Tracking:**
+- Uses `atomic.LoadInt64` and `atomic.AddInt64` for lock-free global connection counting
+- Atomic operations ensure thread-safe increments/decrements without mutex overhead
+- Counter is incremented before processing and decremented via defer after completion
+
+**Per-IP Connection Limiting:**
+- Maintains a `map[string]int` for per-IP connection counts
+- Protected by `sync.RWMutex` to allow concurrent reads with exclusive writes
+- IP addresses extracted from `X-Forwarded-For`, `X-Real-IP`, or `RemoteAddr` headers
+- Map entries automatically cleaned up when IP count reaches zero
+
+**Connection Lifecycle:**
+1. Check global limit using atomic load operation
+2. If PerIP enabled, check IP-specific limit under read lock
+3. Increment both counters (atomic for global, locked for per-IP)
+4. Process request through handler chain
+5. Decrement counters via defer (guarantees cleanup even on errors)
+
+**Zero/Negative Max Handling:**
+- When `Max <= 0`, middleware immediately rejects all requests
+- Optimized fast path that bypasses counter management
+
+**Error Handling:**
+- Default response: 503 Service Unavailable with "Retry-After: 60" header
+- Custom error handlers can be configured via Options
+- Error handler receives full context for custom responses
+
+### Key Components
+
+**Counter Type:**
+- Provides observable connection metrics
+- Exposes `Current()` and `Max()` methods for monitoring
+- Can be used standalone for custom monitoring solutions
+
+**Helper Functions:**
+- `Global(max)`: Alias for `New(max)` for semantic clarity
+- `PerIP(max)`: Convenience function setting per-IP limit with high global max (1,000,000)
+- `getClientIP()`: Extracts client IP from standard proxy headers
+
 ## Best Practices
 
 - Set based on server capacity
 - Monitor connection counts
 - Use with rate limiting
 - Return appropriate error response
+
+## Testing
+
+The maxconns middleware includes comprehensive test coverage for all major scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Concurrent requests exceeding max limit | Accepts up to max connections, rejects excess with 503 |
+| `TestWithOptions_PerIP` | Multiple concurrent requests from same IP with PerIP limit | Only allows configured number per IP, rejects others |
+| `TestWithOptions_CustomErrorHandler` | Custom error handler with Max=0 | Uses custom handler returning custom status/response |
+| `TestPerIP` | Sequential requests with PerIP limit | Sequential requests succeed as connections are released |
+| `TestGlobal` | Global limit using Global() helper | Request succeeds within global limit |
+| `TestCounter` | Counter type for monitoring | Counter tracks current connections and exposes metrics |
+| `TestRetryAfterHeader` | Rejected request header validation | Sets "Retry-After: 60" header on 503 responses |
 
 ## Related Middlewares
 

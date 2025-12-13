@@ -69,6 +69,47 @@ func New() mizu.Middleware
 - Sensitive information
 - Real-time data
 
+## Technical Details
+
+The nocache middleware is implemented as a simple wrapper that sets anti-caching headers before passing control to the next handler in the chain.
+
+### Implementation
+
+The middleware:
+1. Retrieves the response header object from the context
+2. Sets four HTTP headers to prevent caching at multiple levels:
+   - `Cache-Control`: Provides comprehensive cache directives for HTTP/1.1
+   - `Pragma`: Backward compatibility with HTTP/1.0 caches
+   - `Expires`: Sets expiration to prevent caching
+   - `Surrogate-Control`: Controls CDN and proxy caching behavior
+3. Calls the next handler in the middleware chain
+
+### Performance
+
+- Zero-allocation implementation
+- Minimal overhead (4 header writes per request)
+- No configuration or state management required
+- Thread-safe for concurrent requests
+
+## Best Practices
+
+- Apply to routes serving sensitive or user-specific data
+- Use sparingly on static content to avoid performance degradation
+- Consider combining with HTTPS for maximum security
+- Test cache behavior with browser developer tools
+- Apply at the route level rather than globally when possible
+
+## Testing
+
+The middleware includes comprehensive tests to verify correct header configuration.
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| Cache-Control Header | Validates the Cache-Control header is set | Sets "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" |
+| Pragma Header | Validates the Pragma header is set | Sets "no-cache" for HTTP/1.0 compatibility |
+| Expires Header | Validates the Expires header is set | Sets "0" to indicate immediate expiration |
+| Surrogate-Control Header | Validates the Surrogate-Control header is set | Sets "no-store" to prevent CDN/proxy caching |
+
 ## Related Middlewares
 
 - [cache](/middlewares/cache) - Enable caching

@@ -111,12 +111,72 @@ func ReadFile(fs embed.FS, name string) ([]byte, error)
 //go:embed templates/*.html templates/**/*.html
 ```
 
+## Technical Details
+
+### Implementation Overview
+
+The embed middleware provides a bridge between Go's `embed.FS` and Mizu's HTTP serving capabilities. It wraps the standard library's `http.FileServer` with additional features like custom root directories, caching headers, and SPA routing.
+
+### Core Components
+
+**Filesystem Handling**
+- Uses `fs.FS` interface for maximum flexibility
+- Supports `fs.Sub` to create subdirectory filesystems
+- Falls back to original filesystem if subdirectory doesn't exist
+- Implements proper path cleaning and normalization
+
+**File Serving Strategy**
+1. Cleans and normalizes the request path
+2. Attempts to open the requested file
+3. Falls back to index file for directory requests
+4. Delegates to `NotFoundHandler` or next middleware if file not found
+5. Uses `http.FileServer` for actual serving (handles range requests, content-type, etc.)
+
+**Cache Control**
+- Optional `MaxAge` setting for Cache-Control headers
+- Custom `itoa` function to avoid allocations for header values
+- Headers set before delegating to file server
+
+**SPA Support**
+- Custom `NotFoundHandler` that serves index.html for missing routes
+- Preserves normal file serving for actual assets
+- Uses `http.ServeContent` for proper handling of conditional requests
+
+### Handler vs Middleware
+
+The package provides both middleware and handler functions:
+- **Middleware** (`New`, `WithOptions`, `Static`, etc.): Falls through to next handler if file not found
+- **Handler** (`Handler`, `HandlerWithOptions`): Directly serves files without fallthrough
+
 ## Best Practices
 
 - Use for production deployments
 - Keep embedded files small
 - Use content hashing for cache busting
 - Test embedded files in CI
+
+## Testing
+
+The embed middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware creation and serving | Serves root index.html and nested files successfully |
+| `TestWithOptions_Root` | Serving from a subdirectory | Files from subdirectory accessible at root URL path |
+| `TestWithOptions_MaxAge` | Cache control headers | Cache-Control header set to specified max-age value |
+| `TestWithOptions_NotFoundHandler` | Custom not found handling | Custom handler invoked for missing files with JSON response |
+| `TestHandler` | Direct handler (non-middleware) | Serves files without middleware chain |
+| `TestStatic` | Static helper function | Serves files from specified subdirectory |
+| `TestWithCaching` | Caching helper function | Cache-Control header set correctly |
+| `TestIndexFile` | Index file serving | Root and subdirectory index files served automatically |
+| `TestFallthrough` | Middleware fallthrough | Non-existent files fall through to next handler |
+| `TestSPA` | Single-page application mode | Existing files served normally, unknown routes serve index.html |
+| `TestSPA_DefaultIndex` | SPA with default index | Empty index parameter defaults to "index.html" |
+| `TestHandlerWithOptions` | Handler with options | Options applied correctly in handler mode |
+| `TestHandlerWithOptions_Root` | Handler with custom root | Files served from specified root directory |
+| `TestWithOptions_InvalidRoot` | Invalid root directory handling | Falls back to original filesystem when root doesn't exist |
+| `TestWithOptions_PathWithoutLeadingSlash` | Path normalization | Paths without leading slash handled correctly |
+| `TestItoa` | Integer to string conversion | Custom itoa function converts integers correctly |
 
 ## Related Middlewares
 

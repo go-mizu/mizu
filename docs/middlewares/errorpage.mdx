@@ -116,12 +116,69 @@ func JSON(data any) Handler
 func Template(tmpl *template.Template, data any) Handler
 ```
 
+## Technical Details
+
+### Implementation Overview
+
+The errorpage middleware uses a response writer wrapper (`statusWriter`) to intercept HTTP status codes before they are sent to the client. This allows the middleware to:
+
+1. **Capture Status Codes**: Wraps the response writer to track status codes without immediately sending them
+2. **Conditional Rendering**: Only renders error pages for status codes >= 400 when no response body has been written
+3. **Template Processing**: Uses Go's `html/template` package for rendering error pages with customizable templates
+4. **Default Pages**: Provides pre-configured error pages for common HTTP error codes (400, 401, 403, 404, 405, 500, 502, 503, 504)
+
+### Response Writer Wrapper
+
+The `statusWriter` type intercepts `WriteHeader()` calls to delay status code propagation until after determining whether a custom error page should be shown:
+
+```go
+type statusWriter struct {
+    http.ResponseWriter
+    status  int
+    written bool
+}
+```
+
+This wrapper ensures that:
+- Status codes are captured but not immediately sent
+- Error pages are only shown when the response body hasn't been written
+- The middleware can distinguish between different error scenarios
+
+### Error Handling Flow
+
+1. Request enters middleware
+2. Response writer is wrapped with `statusWriter`
+3. Next handler is called
+4. If status code >= 400 and no body written:
+   - Custom error handler is invoked (if configured)
+   - Custom 404 handler is invoked for 404s (if configured)
+   - Appropriate error page is rendered using templates
+5. Response is sent to client
+
 ## Best Practices
 
 - Keep error pages simple and fast
 - Include navigation back to home
 - Log errors for monitoring
 - Use different pages for client vs server errors
+
+## Testing
+
+The errorpage middleware includes comprehensive test coverage for all major functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Tests default error page rendering | Returns 404 status and displays default "Not Found" page with error code |
+| `TestWithOptions_CustomPages` | Tests custom error page configuration | Renders custom title "Oops!" and message for 404 errors |
+| `TestWithOptions_CustomTemplate` | Tests custom HTML template | Renders error using custom template format "Error 500: ..." |
+| `TestWithOptions_NotFoundHandler` | Tests custom 404 handler | Returns JSON response `{"error":"not found"}` instead of HTML |
+| `TestWithOptions_ErrorHandler` | Tests custom error handler for all errors | Returns "Custom error handler" text for any error status |
+| `TestWithOptions_SuccessDoesNotShowErrorPage` | Verifies successful responses bypass error pages | Returns "success" without error page interference |
+| `TestNotFound` | Tests NotFound() middleware function | Returns 404 status with "Not Found" text |
+| `TestCustom` | Tests Custom() middleware with specific pages | Renders "Maintenance" page for 503 status |
+| `TestPage404` | Tests Page404 helper function | Creates page with code 404 and custom title/message |
+| `TestPage500` | Tests Page500 helper function | Creates page with code 500 and custom title/message |
+| `TestDefaultPages` | Validates all default error pages exist | Confirms default pages for codes 400, 401, 403, 404, 405, 500, 502, 503, 504 |
 
 ## Related Middlewares
 

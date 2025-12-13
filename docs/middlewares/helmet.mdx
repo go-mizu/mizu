@@ -221,6 +221,36 @@ func XPermittedCrossDomainPolicies(policy string) mizu.Middleware
 | `Permissions-Policy` | Feature abuse |
 | `Cross-Origin-*-Policy` | Cross-origin attacks |
 
+## Technical Details
+
+### Architecture
+
+The helmet middleware is implemented as a higher-order function that wraps request handlers and injects security headers before passing control to the next handler in the chain. The middleware follows a configuration-based approach where all security headers are controlled through the `Options` struct.
+
+### Implementation
+
+- **Header Injection**: Headers are set conditionally based on non-empty/non-nil configuration values
+- **HSTS Formatting**: The `formatHSTS` helper function constructs the Strict-Transport-Security header value from duration and boolean flags, converting the duration to seconds and appending directives as needed
+- **DNS Prefetch Control**: Uses a pointer to `bool` to distinguish between unset (nil), enabled (true), and disabled (false) states
+- **Default Configuration**: The `Default()` function provides a preset configuration aligned with modern security best practices
+- **Individual Functions**: Convenience functions like `XFrameOptions()` and `ContentSecurityPolicy()` create middleware instances with single-header configurations
+
+### Header Setting Logic
+
+The `New()` function checks each option field and sets the corresponding header only if:
+- String fields are non-empty
+- Boolean fields are true (or pointer fields are non-nil)
+- Struct pointer fields (like `HSTSOptions`) are non-nil
+
+This approach ensures headers are only set when explicitly configured, preventing empty or unwanted headers from being sent.
+
+### Performance Considerations
+
+- Minimal overhead: Only string operations and header setting
+- No dynamic allocations during request processing
+- All configuration is computed once during middleware creation
+- Headers are set before calling the next handler, ensuring they're present even if the handler fails
+
 ## Best Practices
 
 1. **Start with Default()** - Then customize as needed
@@ -242,6 +272,36 @@ app.Use(helmet.New(helmet.Options{
     ContentSecurityPolicy: "default-src 'self'",
 }))
 ```
+
+## Testing
+
+The helmet middleware includes comprehensive test coverage for all security headers and configuration options:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestDefault` | Validates default security headers | Sets 9 recommended headers: X-Content-Type-Options (nosniff), X-Frame-Options (SAMEORIGIN), X-DNS-Prefetch-Control (off), X-Download-Options (noopen), X-Permitted-Cross-Domain-Policies (none), Referrer-Policy (strict-origin-when-cross-origin), Cross-Origin-Opener-Policy (same-origin), Cross-Origin-Resource-Policy (same-origin), Origin-Agent-Cluster (?1) |
+| `TestContentSecurityPolicy` | Tests CSP header setting | Sets Content-Security-Policy header with custom policy value |
+| `TestXFrameOptions` (DENY) | Tests frame options with DENY | Sets X-Frame-Options: DENY |
+| `TestXFrameOptions` (SAMEORIGIN) | Tests frame options with SAMEORIGIN | Sets X-Frame-Options: SAMEORIGIN |
+| `TestStrictTransportSecurity` (basic) | Tests HSTS with max-age only | Sets Strict-Transport-Security: max-age=31536000 |
+| `TestStrictTransportSecurity` (with subdomains) | Tests HSTS with subdomains | Sets Strict-Transport-Security: max-age=31536000; includeSubDomains |
+| `TestStrictTransportSecurity` (with preload) | Tests HSTS with all options | Sets Strict-Transport-Security: max-age=31536000; includeSubDomains; preload |
+| `TestReferrerPolicy` (no-referrer) | Tests no-referrer policy | Sets Referrer-Policy: no-referrer |
+| `TestReferrerPolicy` (no-referrer-when-downgrade) | Tests downgrade policy | Sets Referrer-Policy: no-referrer-when-downgrade |
+| `TestReferrerPolicy` (origin) | Tests origin policy | Sets Referrer-Policy: origin |
+| `TestReferrerPolicy` (origin-when-cross-origin) | Tests cross-origin policy | Sets Referrer-Policy: origin-when-cross-origin |
+| `TestReferrerPolicy` (same-origin) | Tests same-origin policy | Sets Referrer-Policy: same-origin |
+| `TestReferrerPolicy` (strict-origin) | Tests strict-origin policy | Sets Referrer-Policy: strict-origin |
+| `TestReferrerPolicy` (strict-origin-when-cross-origin) | Tests strict cross-origin policy | Sets Referrer-Policy: strict-origin-when-cross-origin |
+| `TestReferrerPolicy` (unsafe-url) | Tests unsafe-url policy | Sets Referrer-Policy: unsafe-url |
+| `TestPermissionsPolicy` | Tests permissions policy header | Sets Permissions-Policy: geolocation=(), microphone=() |
+| `TestCrossOriginPolicies` | Tests all cross-origin headers | Sets Cross-Origin-Opener-Policy (same-origin), Cross-Origin-Embedder-Policy (require-corp), Cross-Origin-Resource-Policy (same-site) |
+| `TestOriginAgentCluster` | Tests origin agent cluster header | Sets Origin-Agent-Cluster: ?1 |
+| `TestXDNSPrefetchControl` (on) | Tests DNS prefetch enabled | Sets X-DNS-Prefetch-Control: on |
+| `TestXDNSPrefetchControl` (off) | Tests DNS prefetch disabled | Sets X-DNS-Prefetch-Control: off |
+| `TestXDownloadOptions` | Tests download options header | Sets X-Download-Options: noopen |
+| `TestXPermittedCrossDomainPolicies` | Tests cross-domain policies header | Sets X-Permitted-Cross-Domain-Policies: master-only |
+| `TestXContentTypeOptions` | Tests content type options header | Sets X-Content-Type-Options: nosniff |
 
 ## Related Middlewares
 

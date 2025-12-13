@@ -213,6 +213,46 @@ Deprecation: true
 Sunset: See documentation for migration guide
 ```
 
+## Technical Details
+
+### Architecture
+
+The version middleware uses a context-based approach to store and retrieve version information:
+
+1. **Version Detection**: The middleware examines multiple sources in a specific priority order
+2. **Context Storage**: Detected version is stored in the request context using a private context key
+3. **Validation**: Optional validation against supported/deprecated version lists
+4. **Header Injection**: Automatic deprecation headers for deprecated versions
+
+### Implementation Details
+
+**Version Detection Priority**:
+1. HTTP Header (configurable, default: `Accept-Version`)
+2. Query Parameter (configurable, default: `version`)
+3. Path Prefix (optional, pattern: `/v{number}/...`)
+4. Default Version (fallback)
+
+**Version String Validation**:
+- Pattern: `v` or `V` followed by digits and optional dots
+- Examples: `v1`, `v2`, `V1`, `v1.0`, `v1.2.3`
+- Invalid: `api`, empty string, `v`, `va`
+
+**Context Management**:
+- Uses a private `contextKey{}` struct to prevent collisions
+- Version stored as string in request context
+- Retrieved via `GetVersion(c)` or `Get(c)` helper functions
+
+**Performance Optimizations**:
+- Supported and deprecated versions stored in maps for O(1) lookup
+- Single pass through version sources with early exit
+- No regex matching for version strings (character-by-character validation)
+
+### Response Headers
+
+For deprecated versions, the middleware automatically adds:
+- `Deprecation: true` - Indicates the version is deprecated
+- `Sunset: See documentation for migration guide` - Migration information
+
 ## Best Practices
 
 - Always set a default version
@@ -221,6 +261,34 @@ Sunset: See documentation for migration guide
 - Use semantic versioning (v1, v2, v3)
 - Maintain backward compatibility within major versions
 - Provide migration guides for deprecated versions
+
+## Testing
+
+The middleware includes comprehensive test coverage for all features:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew/from header` | Version from Accept-Version header | Extracts version "v2" from header |
+| `TestNew/from query` | Version from query parameter | Extracts version "v3" from ?version=v3 |
+| `TestNew/default version` | No version specified | Uses default version "v1" |
+| `TestNew_PathPrefix/v1` | Version from path prefix /v1 | Extracts version "v1" from URL path |
+| `TestNew_PathPrefix/v2` | Version from path prefix /v2 | Extracts version "v2" from URL path |
+| `TestNew_Supported/supported version` | Request with supported version | Returns 200 OK |
+| `TestNew_Supported/unsupported version` | Request with unsupported version | Returns 400 Bad Request |
+| `TestNew_Deprecated` | Request with deprecated version | Sets Deprecation header to "true" |
+| `TestFromHeader` | Custom header name (X-API-Version) | Extracts version "2.0" from custom header |
+| `TestFromPath` | Path with semantic version (v1.2) | Extracts version "v1.2" from path |
+| `TestFromQuery` | Custom query param (api_version) | Extracts version "3.0" from custom param |
+| `TestGet` | GetVersion vs Get function | Both functions return same value |
+| `TestIsVersionString/v1` | Valid version string "v1" | Returns true |
+| `TestIsVersionString/v2` | Valid version string "v2" | Returns true |
+| `TestIsVersionString/V1` | Valid uppercase "V1" | Returns true |
+| `TestIsVersionString/v1.0` | Valid with dot "v1.0" | Returns true |
+| `TestIsVersionString/v1.2.3` | Valid semantic "v1.2.3" | Returns true |
+| `TestIsVersionString/api` | Invalid string "api" | Returns false |
+| `TestIsVersionString/empty` | Empty string | Returns false |
+| `TestIsVersionString/v` | Just "v" character | Returns false |
+| `TestIsVersionString/va` | Invalid "va" | Returns false |
 
 ## Related Middlewares
 

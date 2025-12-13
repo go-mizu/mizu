@@ -75,12 +75,54 @@ func WithHandler(handler func(*mizu.Ctx, int64)) mizu.Middleware
 func Get(c *mizu.Ctx) int64
 ```
 
+## Technical Details
+
+### Implementation Architecture
+
+The middleware uses a wrapping pattern to intercept and track response writes:
+
+1. **Context Storage**: Response size information is stored in the request context using a custom `contextKey` type for type-safe retrieval.
+
+2. **Writer Wrapping**: The middleware wraps the original `http.ResponseWriter` with a `trackingWriter` that intercepts all `Write()` calls.
+
+3. **Atomic Tracking**: Uses `sync/atomic` operations to safely track bytes written, ensuring thread-safe counting even with concurrent writes.
+
+4. **Callback Mechanism**: After the response is fully written, an optional callback (`OnSize`) is invoked with the total byte count.
+
+### Key Components
+
+- **Info struct**: Holds the `bytesWritten` counter with an atomic accessor method `BytesWritten()`.
+- **trackingWriter**: A wrapper around `http.ResponseWriter` that increments the byte counter on each write.
+- **contextKey**: An empty struct used as a unique key for storing size info in the context.
+
+### Flow
+
+1. Create `Info` instance and store in context
+2. Wrap response writer with `trackingWriter`
+3. Execute next handler in chain
+4. Invoke `OnSize` callback with final byte count
+5. Restore original writer
+
 ## Best Practices
 
 - Track alongside request sizes
 - Set alerts for unusually large responses
 - Use for bandwidth billing
 - Monitor compression effectiveness
+
+## Testing
+
+The middleware includes comprehensive test coverage:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware creation | Middleware executes without errors and returns 200 OK |
+| `TestWithOptions_Callback` | OnSize callback functionality | Callback receives correct byte count (5 bytes for "12345") |
+| `TestBytesWritten` | BytesWritten helper function | Returns accurate byte count matching response body length |
+| `TestGet` | Info retrieval from context | Get() returns valid Info instance from context |
+| `TestWithCallback` | WithCallback convenience function | Callback is invoked with correct size (3 bytes for "abc") |
+| `TestEmptyResponse` | Empty response handling | Reports 0 bytes for 204 No Content responses |
+| `TestMultipleWrites` | Multiple Write() calls | Accumulates bytes across multiple writes ("firstsecondthird" = 16 bytes) |
 
 ## Related Middlewares
 

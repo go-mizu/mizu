@@ -119,12 +119,81 @@ func ParentID(c *mizu.Ctx) string
 func Inject(c *mizu.Ctx, headers http.Header)
 ```
 
+## Technical Details
+
+### Implementation Architecture
+
+The trace middleware implements distributed tracing through:
+
+1. **Context Propagation**: Uses Go's `context.Context` to store span information throughout the request lifecycle
+2. **Span Generation**: Creates unique trace and span IDs using cryptographic randomness (16 bytes encoded as hex)
+3. **Header-based Propagation**: Extracts and injects trace context via HTTP headers for cross-service communication
+
+### Core Components
+
+**Span Structure**
+- `TraceID`: Unique identifier for the entire trace across services
+- `SpanID`: Unique identifier for this specific operation
+- `ParentID`: Reference to the parent span for hierarchy
+- `StartTime/EndTime`: Timing information for duration calculation
+- `Status`: Enumerated status (Unset, OK, Error)
+- `Tags`: Key-value metadata for context
+- `Events`: Timestamped events within the span
+
+**ID Generation**
+Uses `crypto/rand` to generate 16-byte random values, encoded as 32-character hexadecimal strings, ensuring globally unique identifiers with negligible collision probability.
+
+**Span Lifecycle**
+1. Extract or generate trace ID from request headers
+2. Create new span with generated span ID
+3. Store span in request context
+4. Set response headers for downstream propagation
+5. Execute handler chain
+6. Calculate duration and set final status
+7. Invoke OnSpan callback if configured
+
+**Collector Pattern**
+The `Collector` provides a simple way to aggregate spans for testing or custom backends:
+- Thread-safe span collection
+- In-memory storage
+- Clear method for test isolation
+
+### Configuration Defaults
+
+| Field | Default Value | Purpose |
+|-------|---------------|---------|
+| `ServiceName` | `"mizu-service"` | Identifies the service in traces |
+| `TraceHeader` | `"X-Trace-ID"` | HTTP header for trace ID |
+| `ParentHeader` | `"X-Parent-ID"` | HTTP header for parent span ID |
+| `OnSpan` | `nil` | Optional callback for completed spans |
+| `Sampler` | `nil` | When nil, all requests are traced |
+
 ## Best Practices
 
 - Use consistent format across services
 - Include trace ID in all logs
 - Propagate to all downstream calls
 - Consider W3C standard for interoperability
+
+## Testing
+
+The trace middleware includes comprehensive test coverage for all features:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware creation | Creates span with trace ID and span ID for each request |
+| `TestWithOptions_ServiceName` | Custom service name configuration | Sets service tag to configured value |
+| `TestWithOptions_PropagateTraceID` | Existing trace ID propagation | Preserves incoming trace ID from request headers |
+| `TestWithOptions_ParentID` | Parent span ID propagation | Extracts and stores parent span ID from request headers |
+| `TestWithOptions_OnSpan` | Span completion callback | Invokes OnSpan callback with completed span including duration |
+| `TestWithOptions_Sampler` | Sampling control | Skips span creation when sampler returns false |
+| `TestAddTag` | Custom tag addition | Adds custom key-value tags to span |
+| `TestAddEvent` | Event logging | Records timestamped events with metadata in span |
+| `TestTraceID` | Trace ID retrieval | Returns current trace ID from context |
+| `TestSpanID` | Span ID retrieval | Returns current span ID from context |
+| `TestCollector` | Span collection | Collects multiple spans and supports clearing |
+| `TestResponseHeader` | Response header propagation | Sets X-Trace-ID header in response |
+| `TestHTTPHeaders` | Downstream header generation | Generates headers for propagating trace context to downstream services |
 
 ## Related Middlewares
 

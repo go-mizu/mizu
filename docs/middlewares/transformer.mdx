@@ -109,12 +109,66 @@ func Response(fn func(map[string]any) map[string]any) mizu.Middleware
 func WithFieldMap(fieldMap map[string]string) mizu.Middleware
 ```
 
+## Technical Details
+
+The transformer middleware provides a flexible architecture for modifying HTTP requests and responses:
+
+### Request Transformation
+
+Request transformers are applied sequentially before the handler executes. Each transformer receives the `*http.Request` object and can modify:
+- Headers (add, set, remove)
+- URL path and query parameters
+- Request body content
+
+The middleware supports multiple request transformers, applied in the order they are registered.
+
+### Response Transformation
+
+Response transformation uses a custom `responseRecorder` that captures:
+- HTTP status code (defaults to 200 OK if not set)
+- Response headers
+- Response body bytes
+
+The recorder intercepts all response writes, allowing transformers to modify the complete response before it's sent to the client. Response transformers are applied sequentially and can modify:
+- Status codes (mapping or conditional changes)
+- Headers (add, set, remove)
+- Body content (transformation or replacement)
+
+### Implementation Details
+
+- **Request transformers** receive `*http.Request` and return an error
+- **Response transformers** receive `(statusCode int, headers http.Header, body []byte)` and return `(int, http.Header, []byte, error)`
+- The middleware restores the original response writer after capturing to ensure proper cleanup
+- Headers from the recorder are copied to the original writer before writing the status and body
+- Empty response bodies are handled gracefully
+
 ## Best Practices
 
 - Use for API version compatibility
 - Keep transformations simple
 - Document transformation rules
 - Test edge cases thoroughly
+
+## Testing
+
+The transformer middleware includes comprehensive test coverage for all transformation functions:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware initialization | Middleware works with default empty options |
+| `TestAddHeader` | Adding a request header | New header is added to request and accessible in handler |
+| `TestSetHeader` | Setting/overriding a request header | Existing header value is replaced with new value |
+| `TestRemoveHeader` | Removing a request header | Specified header is deleted from request |
+| `TestRewritePath` | URL path rewriting | Request path is transformed from old prefix to new prefix |
+| `TestAddQueryParam` | Adding query parameters | New query parameter is added and encoded properly |
+| `TestTransformBody` | Request body transformation | Request body is transformed (e.g., uppercase conversion) |
+| `TestAddResponseHeader` | Adding a response header | New header is added to response |
+| `TestSetResponseHeader` | Setting/overriding a response header | Response header is set to new value, overriding handler's value |
+| `TestRemoveResponseHeader` | Removing a response header | Specified header is removed from response |
+| `TestTransformResponseBody` | Response body transformation | Response body content is transformed before sending |
+| `TestMapStatusCode` | Status code mapping | HTTP status code is mapped from one value to another |
+| `TestReplaceBody` | Conditional body replacement | Response body is replaced based on status code condition |
+| `TestMultipleTransformers` | Multiple request and response transformers | All transformers are applied in sequence correctly |
 
 ## Related Middlewares
 

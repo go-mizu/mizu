@@ -116,12 +116,80 @@ func New(opts Options) mizu.Middleware
 - Skips already-encoded responses
 - Skips responses smaller than `MinSize`
 
+## Technical Details
+
+### Implementation Overview
+
+The compress middleware uses a buffering strategy to determine whether compression should be applied:
+
+1. **Buffering Phase**: Responses are buffered until they reach the `MinSize` threshold
+2. **Decision Point**: Once the threshold is reached, the middleware checks:
+   - If the client supports the requested encoding (via `Accept-Encoding` header)
+   - If the content type is compressible (matches `ContentTypes` list)
+   - If the response is not already encoded (no existing `Content-Encoding` header)
+3. **Compression Phase**: If all checks pass, the appropriate compression writer is applied
+
+### Writer Pooling
+
+The middleware uses `sync.Pool` to efficiently reuse compression writers:
+
+- **Gzip Pool**: Maintains a pool of `gzip.Writer` instances
+- **Deflate Pool**: Maintains a pool of `flate.Writer` instances
+- Writers are reset and returned to the pool after each request
+- This reduces garbage collection pressure and improves performance
+
+### Custom Response Writer
+
+The `compressWriter` wraps the standard `http.ResponseWriter` and provides:
+
+- **Buffering**: Accumulates response data until compression decision is made
+- **Lazy Header Writing**: Delays header writing until compression status is determined
+- **Automatic Cleanup**: Ensures compression writers are properly closed and returned to pool
+- **Flush Support**: Implements `http.Flusher` for streaming responses
+
+### Encoding Selection
+
+When using `New()` with auto-selection:
+
+1. Checks for `gzip` in `Accept-Encoding` header first (preferred)
+2. Falls back to `deflate` if gzip is not supported
+3. Uses no compression if neither is supported
+
+When using specific functions (`Gzip()`, `Deflate()`):
+
+- Only applies compression if the client explicitly supports the selected encoding
+
+### Default Content Types
+
+The following content types are compressed by default:
+
+- `text/html`, `text/css`, `text/plain`, `text/javascript`, `text/xml`
+- `application/json`, `application/javascript`, `application/xml`
+- `application/xhtml+xml`, `application/rss+xml`, `application/atom+xml`
+- `image/svg+xml`
+
 ## Best Practices
 
 - Use level 6 for most applications (good balance)
 - Set appropriate `MinSize` to avoid compressing tiny responses
 - Only compress text-based content types
 - Place before other response-modifying middleware
+
+## Testing
+
+The compress middleware includes comprehensive test coverage for various scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestGzip/compresses response` | Tests basic gzip compression with large response | Response is compressed with gzip, Content-Encoding header set to "gzip", body can be decompressed correctly |
+| `TestGzip/skips without accept-encoding` | Tests behavior when Accept-Encoding header is missing | Response is not compressed, no Content-Encoding header set |
+| `TestGzip/sets vary header` | Tests Vary header is properly set | Vary header contains "Accept-Encoding" |
+| `TestGzipLevel` | Tests gzip compression with specific level (level 9) | Response is compressed with specified compression level, Content-Encoding set to "gzip" |
+| `TestDeflate` | Tests deflate compression algorithm | Response is compressed with deflate, Content-Encoding header set to "deflate" |
+| `TestNew_SmallResponse` | Tests MinSize threshold with response smaller than limit | Small responses (< MinSize) are not compressed |
+| `TestNew_NonCompressibleType` | Tests content type filtering | Non-text content types (e.g., application/octet-stream) are not compressed |
+| `TestNew_AlreadyEncoded` | Tests handling of pre-encoded responses | Existing Content-Encoding header is preserved, no double compression |
+| `TestNew_AutoSelectEncoding` | Tests automatic encoding selection based on Accept-Encoding | Middleware selects gzip or deflate based on client preference, prefers gzip when both available |
 
 ## Related Middlewares
 

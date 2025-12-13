@@ -134,12 +134,89 @@ fetch('/api/submit', {
 });
 ```
 
+## Technical Details
+
+### Token Generation
+
+The middleware generates cryptographically secure tokens using the following process:
+
+1. **Random Bytes**: Generates random bytes using `crypto/rand`
+2. **Timestamp**: Appends current Unix timestamp for rotation support
+3. **Signature**: Signs the token with SHA-256 using the provided secret
+4. **Encoding**: Base64 URL-safe encoding for transport
+
+### Token Validation
+
+Token validation uses constant-time comparison to prevent timing attacks:
+
+1. **Decode**: Both cookie and submitted tokens are base64-decoded
+2. **Length Check**: Validates minimum token length (8 bytes)
+3. **Constant-Time Compare**: Uses XOR-based comparison across all bytes
+4. **Result**: Returns validation result without early exit
+
+### Cookie Storage
+
+Tokens are stored in HTTP cookies with configurable security options:
+
+- **HttpOnly**: Default true to prevent JavaScript access
+- **Secure**: Configurable for HTTPS enforcement
+- **SameSite**: Default Lax mode for CSRF protection
+- **MaxAge**: Default 24 hours (86400 seconds)
+- **Path**: Default "/" for site-wide availability
+
+### Token Retrieval
+
+The middleware checks for tokens in the following order:
+
+1. **Header**: Checks configured header name (default: `X-CSRF-Token`)
+2. **Form**: Parses form data for configured field name (default: `_csrf`)
+3. **Query**: Checks URL query parameters as fallback
+
+### Origin Validation
+
+When enabled, the middleware validates request origin:
+
+1. **Origin Header**: Primary validation source
+2. **Referer Fallback**: Used if Origin header is missing
+3. **Allowed Origins**: Compares against configured whitelist
+4. **Host Match**: Falls back to request host if no whitelist specified
+
+### Advanced Features
+
+- **Token Masking**: XOR-based masking for additional security
+- **Fingerprinting**: SHA-256 hash of User-Agent and Accept headers
+- **Form Input**: HTML helper for hidden form fields
+- **Meta Tag**: HTML meta tag helper for SPAs
+
 ## Best Practices
 
 - Always use HTTPS in production
 - Use SameSite Strict for sensitive applications
 - Include token in all state-changing requests
 - Regenerate tokens on authentication changes
+
+## Testing
+
+### Test Coverage
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware initialization | Creates middleware and sets CSRF cookie on GET request |
+| `TestGetToken` | Token retrieval from context | Token is stored in context and retrievable via `GetToken()` |
+| `TestValidateTokenHeader` | Token validation via header | POST request with valid token in header succeeds (200 OK) |
+| `TestValidateTokenForm` | Token validation via form field | POST request with valid token in form field succeeds (200 OK) |
+| `TestMissingToken` | Request without CSRF token | POST request without token returns 403 Forbidden |
+| `TestInvalidToken` | Request with invalid token | POST request with invalid token returns 403 Forbidden |
+| `TestSkipPaths` | Path exclusion from validation | Configured paths skip CSRF validation |
+| `TestSkipMethods` | HTTP method exclusion | Safe methods (GET, HEAD, OPTIONS) skip validation |
+| `TestCustomErrorHandler` | Custom error handling | Custom error handler returns JSON response on failure |
+| `TestCustomCookieName` | Custom cookie configuration | CSRF cookie uses configured custom name |
+| `TestCustomHeaderName` | Custom header configuration | Token validation accepts configured custom header name |
+| `TestTokenHandler` | Token endpoint handler | Token handler returns JSON with current CSRF token |
+| `TestFormInput` | HTML form input helper | Generates hidden input field with token value |
+| `TestMetaTag` | HTML meta tag helper | Generates meta tag with csrf-token name and value |
+| `TestMaskUnmask` | Token masking/unmasking | Masked token differs from original, unmask restores original |
+| `TestFingerprint` | Request fingerprinting | Same headers produce same fingerprint, different headers differ |
 
 ## Related Middlewares
 

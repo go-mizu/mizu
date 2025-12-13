@@ -225,6 +225,55 @@ Attacker → /wp-admin → IP Blocked → 403 Forbidden
                      Log/Alert
 ```
 
+## Technical Details
+
+### Architecture
+
+The honeypot middleware uses an in-memory block list with automatic cleanup to track and block malicious IPs:
+
+```go
+type blockList struct {
+    mu       sync.RWMutex
+    ips      map[string]time.Time
+    duration time.Duration
+}
+```
+
+### Request Flow
+
+1. **IP Extraction** - Client IP is extracted with proxy support (X-Forwarded-For, X-Real-IP)
+2. **Block Check** - If IP is in block list and not expired, return 403 Forbidden
+3. **Path Matching** - Current path is checked against honeypot path map (O(1) lookup)
+4. **Trap Trigger** - If path matches:
+   - IP is added to block list with expiration time
+   - OnTrap callback is invoked (if configured)
+   - Custom/default response is returned
+5. **Pass Through** - If no match, request continues to next handler
+
+### Implementation Details
+
+- **Concurrent Access** - Block list uses sync.RWMutex for thread-safe operations
+- **Automatic Cleanup** - Background goroutine runs every 10 minutes to remove expired entries
+- **Path Lookup** - Paths stored in map[string]bool for O(1) lookup performance
+- **IP Detection Priority**:
+  1. X-Forwarded-For header
+  2. X-Real-IP header
+  3. Request.RemoteAddr
+
+### Memory Management
+
+- Block list grows with unique trapped IPs
+- Automatic cleanup prevents unbounded growth
+- Each entry: IP string + time.Time (approximately 24-32 bytes)
+- Recommended for moderate traffic; for high-traffic consider external storage
+
+### Form Honeypot Implementation
+
+Form honeypots use a simpler stateless approach:
+- Check if hidden field contains any value
+- No IP blocking or state management
+- Returns 400 Bad Request immediately if filled
+
 ## Security Considerations
 
 1. **False Positives** - Legitimate users might accidentally hit honeypot paths
@@ -239,6 +288,40 @@ Attacker → /wp-admin → IP Blocked → 403 Forbidden
 - Log all triggered traps for security analysis
 - Combine with other security measures
 - Don't use paths that might be legitimately requested
+
+## Testing
+
+The honeypot middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` - normal path | Request to non-honeypot path | Returns 200 OK, request passes through |
+| `TestNew` - honeypot path | Request to default honeypot path (/admin) | Returns 404 Not Found, IP blocked |
+| `TestWithOptions_CustomPaths` - custom trap path | Request to custom honeypot path | Returns 404 Not Found for custom paths |
+| `TestWithOptions_CustomPaths` - default path not trapped | Request to default path when custom paths set | Passes through (default paths not active) |
+| `TestWithOptions_OnTrap` | Honeypot triggered with OnTrap callback | Callback invoked with IP and path |
+| `TestWithOptions_CustomResponse` | Honeypot with custom response function | Returns custom status (418 Teapot) and JSON |
+| `TestBlockedIP` - first request | Initial request to honeypot path | Returns 404, IP added to block list |
+| `TestBlockedIP` - subsequent request | Normal request from blocked IP | Returns 403 Forbidden |
+| `TestPaths` | Custom paths using Paths() function | Custom paths trigger honeypot |
+| `TestAdminPaths` | AdminPaths() preset paths | Admin-related paths trigger honeypot |
+| `TestConfigPaths` | ConfigPaths() preset paths | Config file paths (/.env) trigger honeypot |
+| `TestDatabasePaths` | DatabasePaths() preset paths | Database paths (/phpmyadmin) trigger honeypot |
+| `TestForm` - empty honeypot field | Form submission with empty hidden field | Returns 200 OK, request passes |
+| `TestForm` - filled honeypot field | Form submission with filled hidden field | Returns 400 Bad Request, blocks bot |
+
+### Running Tests
+
+```bash
+# Run all honeypot tests
+go test -v ./middlewares/honeypot
+
+# Run with coverage
+go test -cover ./middlewares/honeypot
+
+# Run specific test
+go test -v -run TestBlockedIP ./middlewares/honeypot
+```
 
 ## Related Middlewares
 

@@ -99,12 +99,73 @@ func WithOptions(opts Options) mizu.Middleware
 - Resource-intensive operations
 - When backend can't handle extra load
 
+## Technical Details
+
+### Implementation
+
+The hedge middleware uses a sophisticated concurrent request pattern:
+
+1. **Request Buffering**: The middleware reads and buffers the request body to enable multiple identical requests
+2. **Response Recording**: Each request (original and hedges) writes to a `responseRecorder` that captures headers, status code, and body
+3. **Atomic Winner Selection**: Uses atomic operations (`CompareAndSwapInt32`) to ensure only the first completing request wins
+4. **Context Management**: Each request receives hedge metadata through context values (`HedgeInfo`)
+5. **Graceful Cancellation**: When a winner is selected, remaining requests are cancelled via context
+
+### Key Components
+
+- **Hedger**: Main struct managing options and statistics
+- **Options**: Configuration including delay, max hedges, timeout, and callbacks
+- **HedgeInfo**: Context data containing hedge number, total hedges, winner, and duration
+- **Stats**: Tracks total requests, hedged requests, hedges triggered, and win rates
+- **responseRecorder**: Custom `http.ResponseWriter` that buffers responses
+
+### Statistics Tracking
+
+The middleware tracks comprehensive statistics:
+- Total requests processed
+- Requests eligible for hedging
+- Number of hedges actually triggered
+- Wins by original vs hedged requests
+
+### Callbacks
+
+Two callback hooks are available:
+- `OnHedge`: Called when a hedge request is triggered
+- `OnComplete`: Called when the winning response is selected
+
+### Default Values
+
+| Setting | Default Value | Purpose |
+|---------|---------------|---------|
+| Delay | 100ms | Time before triggering hedge |
+| MaxHedges | 1 | Maximum concurrent hedges |
+| Timeout | 30s | Overall request timeout |
+
 ## Best Practices
 
 - Only use for idempotent operations
 - Set delay based on p50 latency
 - Monitor hedge rate
 - Ensure backend can handle increased load
+
+## Testing
+
+The hedge middleware includes comprehensive test coverage:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| TestNew | Basic middleware creation | Middleware works with default options |
+| TestFastResponse | Fast response before hedge delay | Original request completes, no hedge triggered |
+| TestHedgeTriggered | Slow response triggers hedge | Hedge request is started after delay |
+| TestShouldHedge | Conditional hedging based on path | Only specified paths are hedged |
+| TestOnComplete | OnComplete callback execution | Callback receives hedge number and duration |
+| TestStats | Statistics tracking | Tracks total requests and hedged requests |
+| TestGetHedgeInfo | Retrieve hedge metadata from context | Returns HedgeInfo with hedge number |
+| TestIsHedge | Check if request is a hedge | Original request returns false |
+| TestConditional | Conditional middleware for specific methods | Only GET requests are hedged |
+| TestForSlowRequests | Hedge slow requests with threshold | Hedges triggered after custom delay |
+| TestMaxHedges | Multiple concurrent hedges | Up to MaxHedges requests run in parallel |
+| TestTimeout | Request timeout handling | Requests timeout after configured duration |
 
 ## Related Middlewares
 

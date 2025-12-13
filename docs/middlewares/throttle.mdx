@@ -1,16 +1,17 @@
 ---
 title: "Throttle"
-description: "Request throttling middleware for controlling request flow."
+description: "Request throttling middleware for controlling concurrent request processing."
 ---
 
 ## Overview
 
-The `throttle` middleware controls the rate of request processing by introducing delays, ensuring smooth traffic flow and preventing burst overloads.
+The `throttle` middleware limits the number of concurrent requests being processed, ensuring your application doesn't get overwhelmed by too many simultaneous operations.
 
 Use it when you need:
-- Smooth out traffic spikes
-- Prevent burst overloads
-- Gradual request processing
+- Limit concurrent request processing
+- Prevent resource exhaustion
+- Control server load
+- Queue requests during high traffic
 
 ## Installation
 
@@ -23,7 +24,7 @@ import "github.com/go-mizu/mizu/middlewares/throttle"
 ```go
 app := mizu.New()
 
-// Process 100 requests per second max
+// Allow max 100 concurrent requests
 app.Use(throttle.New(100))
 ```
 
@@ -33,47 +34,59 @@ app.Use(throttle.New(100))
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `Rate` | `int` | Required | Requests per second |
-| `Burst` | `int` | Rate | Burst capacity |
-| `WaitTimeout` | `time.Duration` | `0` | Max wait time |
-| `Skip` | `func(*mizu.Ctx) bool` | `nil` | Skip throttling |
+| `Limit` | `int` | `100` | Maximum concurrent requests |
+| `Backlog` | `int` | `1000` | Max queued requests waiting for a slot |
+| `BacklogSet` | `bool` | `false` | Internal flag for explicit backlog setting |
+| `Timeout` | `time.Duration` | `30s` | Max wait time for a slot |
+| `OnThrottle` | `func(*mizu.Ctx)` | `nil` | Callback when request is throttled |
 
 ## Examples
 
 ### Simple Throttle
 
 ```go
-// 100 requests per second
+// Allow max 100 concurrent requests
 app.Use(throttle.New(100))
 ```
 
-### With Burst
+### With Backlog
 
 ```go
-// 50 rps with burst of 100
+// 50 concurrent with 200 waiting in queue
 app.Use(throttle.WithOptions(throttle.Options{
-    Rate:  50,
-    Burst: 100,
+    Limit:   50,
+    Backlog: 200,
 }))
 ```
 
 ### With Timeout
 
 ```go
-// Wait max 10 seconds
+// Wait max 10 seconds for a slot
 app.Use(throttle.WithOptions(throttle.Options{
-    Rate:        50,
-    WaitTimeout: 10 * time.Second,
+    Limit:   50,
+    Timeout: 10 * time.Second,
 }))
 ```
 
-### Skip Certain Paths
+### No Backlog (Immediate Rejection)
+
+```go
+// Reject immediately when all slots busy
+app.Use(throttle.WithOptions(throttle.Options{
+    Limit:      100,
+    Backlog:    0,
+    BacklogSet: true, // Required to use Backlog: 0
+}))
+```
+
+### With OnThrottle Callback
 
 ```go
 app.Use(throttle.WithOptions(throttle.Options{
-    Rate: 100,
-    Skip: func(c *mizu.Ctx) bool {
-        return c.Request().URL.Path == "/health"
+    Limit: 100,
+    OnThrottle: func(c *mizu.Ctx) {
+        log.Printf("Request throttled: %s", c.Request().URL.Path)
     },
 }))
 ```
@@ -83,20 +96,60 @@ app.Use(throttle.WithOptions(throttle.Options{
 ### Functions
 
 ```go
-// New creates throttle with rate limit
-func New(rate int) mizu.Middleware
+// New creates throttle with concurrent request limit
+func New(limit int) mizu.Middleware
 
 // WithOptions creates throttle with configuration
 func WithOptions(opts Options) mizu.Middleware
+
+// Concurrency is an alias for New
+func Concurrency(limit int) mizu.Middleware
 ```
+
+## Technical Details
+
+### Implementation
+
+The throttle middleware uses a semaphore-based approach to control concurrency:
+
+1. **Semaphore**: A buffered channel (`chan struct{}`) acts as a semaphore with capacity equal to the `Limit`. Each slot represents permission to process one request concurrently.
+
+2. **Request Flow**:
+   - When a request arrives, the middleware attempts to acquire a slot from the semaphore (non-blocking)
+   - If a slot is available immediately, the request proceeds
+   - If no slot is available, the request checks the backlog capacity
+
+3. **Backlog Queue**:
+   - A counter tracks the number of requests waiting for a slot
+   - If backlog capacity is reached, new requests are rejected immediately with `503 Service Unavailable`
+   - Requests in the backlog wait with a timeout for a slot to become available
+
+4. **Timeout Handling**:
+   - Waiting requests use `time.NewTimer` with the configured `Timeout`
+   - Three exit conditions: slot acquired, timeout reached, or request context cancelled
+   - On timeout or cancellation, the backlog counter is decremented
+
+5. **Thread Safety**: A `sync.Mutex` protects the backlog counter to prevent race conditions.
+
+### Default Values
+
+- `Limit`: 100 concurrent requests
+- `Backlog`: 1000 waiting requests
+- `Timeout`: 30 seconds
+
+### Error Responses
+
+- `503 Service Unavailable` with "service busy" - backlog capacity exceeded
+- `503 Service Unavailable` with "request timeout" - timeout waiting for slot
 
 ## Throttle vs Rate Limit
 
 | Feature | Throttle | Rate Limit |
 |---------|----------|------------|
-| Purpose | Smooth traffic | Limit total requests |
-| Behavior | Delays requests | Rejects excess |
-| Use case | Burst protection | Abuse prevention |
+| Purpose | Limit concurrency | Limit request rate |
+| Behavior | Queues requests | Rejects excess |
+| Metric | Concurrent requests | Requests per time window |
+| Use case | Resource protection | Abuse prevention |
 
 ## Best Practices
 
@@ -104,6 +157,18 @@ func WithOptions(opts Options) mizu.Middleware
 - Set reasonable wait timeouts
 - Monitor queue depths
 - Combine with rate limiting for full control
+- Set `BacklogSet: true` when using `Backlog: 0` to disable queueing
+- Use `OnThrottle` callback for monitoring and metrics collection
+
+## Testing
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Tests basic concurrency limiting with limit of 2 | Maximum concurrent requests never exceeds the configured limit (2) |
+| `TestWithOptions_Backlog` | Tests backlog queue with limit=1, backlog=1 | With 3 concurrent requests, at least one should be rejected with 503 Service Unavailable |
+| `TestWithOptions_Timeout` | Tests timeout functionality with 50ms timeout and slow handler (200ms) | Second request should timeout waiting for slot and return 503 Service Unavailable |
+| `TestWithOptions_OnThrottle` | Tests OnThrottle callback with zero backlog | OnThrottle callback is invoked when a request is throttled/rejected |
+| `TestConcurrency` | Tests the Concurrency alias function | Concurrency() alias works identically to New() and processes requests successfully |
 
 ## Related Middlewares
 

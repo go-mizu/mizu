@@ -143,12 +143,78 @@ func main() {
 }
 ```
 
+## Technical Details
+
+### Implementation Overview
+
+The SPA middleware provides a fallback mechanism for single-page applications by serving the index file when a requested file does not exist. This enables client-side routing to work correctly.
+
+#### Path Resolution Process
+
+1. **Ignore Path Check**: Checks if the request path matches any configured `IgnorePaths` (default: `/api`)
+2. **Prefix Handling**: If a `Prefix` is configured, strips it from the path before file resolution
+3. **File Existence Check**: Determines if the requested path corresponds to an actual file:
+   - For `fs.FS`: Uses `fs.Stat()` to check file existence
+   - For directory path: Uses `os.Stat()` with `filepath.Join()`
+4. **File Serving**: If file exists and is not a directory, serves it with appropriate cache headers
+5. **Index Fallback**: If file doesn't exist, serves the index file (default: `index.html`)
+
+#### Cache Control Strategy
+
+The middleware implements a dual cache control strategy:
+
+- **Static Assets**: Configurable via `MaxAge` option (default: 0/no cache)
+  - Sets `Cache-Control: public, max-age=<MaxAge>` header
+  - Recommended: Long cache duration (e.g., 31536000 for 1 year) for versioned assets
+
+- **Index File**: Configurable via `IndexMaxAge` option (default: 0)
+  - When `IndexMaxAge = 0`: Sets `Cache-Control: no-cache, no-store, must-revalidate`
+  - When `IndexMaxAge > 0`: Sets `Cache-Control: public, max-age=<IndexMaxAge>`
+  - No-cache default ensures users always get latest SPA routing configuration
+
+#### File Serving Details
+
+The middleware uses `http.ServeContent()` for file delivery, which provides:
+- Automatic MIME type detection based on file extension
+- HTTP range request support for partial content
+- Proper `Last-Modified` header handling
+- Efficient byte streaming with `io.ReadSeeker`
+
+#### Security Considerations
+
+- All file paths are cleaned using `filepath.Clean()` to prevent directory traversal attacks
+- The middleware only serves files from the configured root directory or filesystem
+- Directory listings are disabled (directories trigger index fallback)
+
 ## Best Practices
 
 - Define API routes before SPA middleware
 - Use embedded FS for portable deployments
 - Skip API and health check paths
 - Set proper cache headers for static assets
+- Use long cache durations for static assets with content hashing
+- Keep index.html uncached to ensure SPA updates are immediately available
+
+## Testing
+
+The SPA middleware includes comprehensive test coverage for all configuration scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| Serve static file | Request for existing static file (`/app.js`) | Returns file content with status 200 |
+| Fallback to index for route | Request for non-existent route (`/users/123`) | Returns `index.html` content with status 200 |
+| Root path | Request for root path (`/`) | Returns `index.html` content with status 200 |
+| Serve from FS | Request for file in embedded FS (`/main.js`) | Returns file content from `fs.FS` |
+| Fallback from FS | Request for non-existent file in FS (`/dashboard`) | Returns `index.html` from `fs.FS` |
+| Ignore API path | Request to ignored path (`/api/users`) | Passes through to registered route handler |
+| Ignore health path | Request to ignored path (`/health`) | Passes through to registered route handler |
+| Non-ignored path gets SPA | Request to non-ignored path (`/profile`) | Returns SPA index file |
+| With prefix | Request with configured prefix (`/app/dashboard`) | Strips prefix and serves SPA |
+| Without prefix | Request without prefix when prefix configured (`/other`) | Passes through to other handlers |
+| Static asset cache | Request for static file with MaxAge set | Returns file with `Cache-Control: public, max-age=31536000` |
+| Index no cache | Request for route with IndexMaxAge=0 | Returns index with `Cache-Control: no-cache, no-store, must-revalidate` |
+| Custom index | Request with custom index file (`app.html`) | Returns custom index instead of `index.html` |
+| Panics without FS or Root | Create middleware with empty options | Panics with error message |
 
 ## Related Middlewares
 

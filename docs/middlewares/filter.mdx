@@ -96,12 +96,84 @@ func WithOptions(opts Options) mizu.Middleware
 func Block(block func(*mizu.Ctx) bool) mizu.Middleware
 ```
 
+## Technical Details
+
+The filter middleware provides comprehensive request filtering through multiple criteria:
+
+### Pattern Matching
+
+The middleware uses glob-to-regex conversion for flexible pattern matching:
+
+- `*` - Matches any characters except path separators (e.g., `/api/*` matches `/api/users` but not `/api/users/1`)
+- `**` - Matches any characters including path separators (e.g., `/admin/**` matches `/admin/deep/nested/path`)
+- `?` - Matches exactly one character
+
+Special regex characters (`.`, `+`, `^`, `$`, `|`, etc.) are automatically escaped.
+
+### Filter Evaluation Order
+
+Filters are evaluated in the following order:
+
+1. **HTTP Methods** - Check if method is in AllowedMethods (if configured)
+2. **Blocked Hosts** - Check if host is in BlockedHosts (takes precedence over allowed)
+3. **Allowed Hosts** - Check if host is in AllowedHosts (if configured)
+4. **Blocked Paths** - Check if path matches BlockedPaths patterns (takes precedence over allowed)
+5. **Allowed Paths** - Check if path matches AllowedPaths patterns (if configured)
+6. **Blocked User Agents** - Check if UA matches BlockedUserAgents patterns (takes precedence over allowed)
+7. **Allowed User Agents** - Check if UA matches AllowedUserAgents patterns (if configured)
+8. **Custom Filter** - Execute CustomFilter function if provided
+
+If any check fails, the request is blocked and the OnBlock handler is called (or returns 403 Forbidden by default).
+
+### Host Normalization
+
+Host names are normalized by:
+- Converting to lowercase for case-insensitive matching
+- Stripping port numbers (e.g., `example.com:8080` becomes `example.com`)
+
+### Performance Optimization
+
+- HTTP methods are stored in a map for O(1) lookup
+- Hosts are stored in maps for O(1) lookup
+- Glob patterns are compiled to regex once during initialization
+- All patterns are pre-compiled to avoid runtime compilation overhead
+
 ## Best Practices
 
 - Keep filter logic simple
 - Log blocked requests
 - Use descriptive error messages
 - Combine with rate limiting
+
+## Testing
+
+The filter middleware includes comprehensive test coverage for all filtering scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| TestNew | Creates filter with default options | Allows all requests to pass through |
+| TestMethods (allowed) | Filters by HTTP method - allowed method | Returns 200 OK for GET request |
+| TestMethods (blocked) | Filters by HTTP method - blocked method | Returns 403 Forbidden for DELETE request |
+| TestBlockPaths (allowed) | Blocks specific path patterns - allowed path | Returns 200 OK for root path |
+| TestBlockPaths (admin) | Blocks admin paths with `*` wildcard | Returns 403 Forbidden for /admin/users |
+| TestBlockPaths (deep) | Blocks deep paths with `**` wildcard | Returns 403 Forbidden for /internal/deep/path |
+| TestPaths (allowed) | Allows only specific path patterns | Returns 200 OK for /api/users |
+| TestPaths (blocked) | Blocks paths not in allow list | Returns 403 Forbidden for /secret |
+| TestHosts (allowed) | Filters by hostname - allowed host | Returns 200 OK for example.com |
+| TestHosts (blocked) | Filters by hostname - blocked host | Returns 403 Forbidden for evil.com |
+| TestBlockUserAgents (allowed) | Blocks specific user agents - allowed UA | Returns 200 OK for Mozilla/5.0 |
+| TestBlockUserAgents (curl) | Blocks curl user agent pattern | Returns 403 Forbidden for curl/7.68.0 |
+| TestBlockUserAgents (bot) | Blocks bot user agent pattern | Returns 403 Forbidden for Googlebot/2.1 |
+| TestCustomFilter (passes) | Custom filter function returns true | Returns 200 OK when X-Secret header is valid |
+| TestCustomFilter (fails) | Custom filter function returns false | Returns 403 Forbidden when X-Secret header missing |
+| TestCustomOnBlock | Custom OnBlock handler | Returns 405 with JSON error message |
+| TestBlockedHosts (allowed) | Blocks specific hosts - allowed host | Returns 200 OK for example.com |
+| TestBlockedHosts (blocked) | Blocks specific hosts - blocked host | Returns 403 Forbidden for spam.com |
+| TestGlobToRegex (/api/*) | Glob pattern with single wildcard | Matches /api/users but not /api/users/1 |
+| TestGlobToRegex (/api/**) | Glob pattern with double wildcard | Matches /api/users/1 (nested paths) |
+| TestGlobToRegex (*.txt) | File extension pattern | Matches file.txt but not file.json |
+| TestGlobToRegex (/a?c) | Question mark single char match | Matches /abc |
+| TestGlobToRegex (/a.b) | Dot character escaping | Matches literal /a.b |
 
 ## Related Middlewares
 

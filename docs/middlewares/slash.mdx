@@ -69,11 +69,54 @@ app.Use(slash.RemoveCode(307))  // Preserve HTTP method
 - Query strings are preserved
 - Uses 301 (Permanent) by default
 
+## Technical Details
+
+The slash middleware implements trailing slash normalization through HTTP redirects. It provides four main functions that return middleware handlers:
+
+### Implementation
+
+- **Add()**: Wraps `AddCode()` with HTTP 301 (Moved Permanently) status
+- **AddCode(code int)**: Returns middleware that checks if path lacks trailing slash and redirects to add it
+- **Remove()**: Wraps `RemoveCode()` with HTTP 301 (Moved Permanently) status
+- **RemoveCode(code int)**: Returns middleware that checks if path has trailing slash and redirects to remove it
+
+### Internal Logic
+
+1. **Path Extraction**: Reads the request URL path from `c.Request().URL.Path`
+2. **Root Protection**: Always skips the root path `/` to prevent infinite redirects
+3. **Slash Detection**: Uses `strings.HasSuffix(path, "/")` to check for trailing slash
+4. **Target Construction**: Builds redirect URL by adding/removing trailing slash
+5. **Query Preservation**: Appends `?` + `c.Request().URL.RawQuery` if query string exists
+6. **Redirect Execution**: Calls `c.Redirect(code, target)` with specified status code
+7. **Pass-through**: Calls `next(c)` if no redirect needed
+
+### Performance Characteristics
+
+- **Zero allocations** for paths that don't need redirection
+- **Single string concatenation** for building redirect target
+- **Early exit** for root path and paths already in correct format
+- **No regular expressions** - uses simple string operations
+
 ## Best Practices
 
 - Choose one style and be consistent
 - Use 301 for permanent SEO benefit
 - Apply early in middleware chain
+
+## Testing
+
+The slash middleware includes comprehensive test coverage for all functions and edge cases:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| Add - adds trailing slash | Request to `/test` with `Add()` middleware | Redirects to `/test/` with 301 status |
+| Add - preserves query | Request to `/test?foo=bar` with `Add()` middleware | Redirects to `/test/?foo=bar` preserving query string |
+| Add - skips root | Request to `/` with `Add()` middleware | Returns 200 OK, no redirect performed |
+| AddCode - custom status | Request to `/test` with `AddCode(307)` middleware | Redirects to `/test/` with 307 status |
+| Remove - removes trailing slash | Request to `/test/` with `Remove()` middleware | Redirects to `/test` with 301 status |
+| Remove - preserves query | Request to `/test/?foo=bar` with `Remove()` middleware | Redirects to `/test?foo=bar` preserving query string |
+| Remove - skips root | Request to `/` with `Remove()` middleware | Returns 200 OK, no redirect performed |
+| RemoveCode - custom status | Request to `/test/` with `RemoveCode(302)` middleware | Redirects to `/test` with 302 status |
 
 ## Related Middlewares
 

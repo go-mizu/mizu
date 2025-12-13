@@ -243,6 +243,46 @@ ws.onclose = () => {
 };
 ```
 
+## Technical Details
+
+### WebSocket Protocol Implementation
+
+The middleware implements the WebSocket protocol (RFC 6455) with the following key components:
+
+#### Connection Upgrade Process
+
+1. **Request Validation**: Checks for `Upgrade: websocket` and `Connection: Upgrade` headers
+2. **Origin Validation**: Validates the request origin against configured allowed origins
+3. **Key Exchange**: Validates `Sec-WebSocket-Key` and computes the accept key using SHA1 hash with the WebSocket GUID
+4. **Subprotocol Negotiation**: Matches requested subprotocols with supported ones
+5. **HTTP Hijacking**: Takes over the HTTP connection using Go's `http.Hijacker` interface
+6. **101 Switching Protocols**: Sends the upgrade response with `Sec-WebSocket-Accept` header
+
+#### Frame Structure
+
+The implementation handles WebSocket frames with the following structure:
+
+- **Opcode**: Identifies the frame type (text, binary, close, ping, pong)
+- **Masking**: Client-to-server messages must be masked; server-to-client messages are unmasked
+- **Payload Length**: Supports three length encoding formats:
+  - 0-125 bytes: Single byte length
+  - 126-65535 bytes: 2-byte extended length
+  - 65536+ bytes: 8-byte extended length
+
+#### Connection Management
+
+- **Thread-Safe Writes**: Uses mutex locks to ensure concurrent write safety
+- **Buffered I/O**: Utilizes `bufio.Reader` and `bufio.Writer` for efficient data transfer
+- **Resource Cleanup**: Automatically closes underlying TCP connections when handlers return
+- **Error Handling**: Returns errors for invalid frames, connection failures, and protocol violations
+
+#### Security Features
+
+- **SHA1 for Key Exchange**: Uses SHA1 (required by RFC 6455) for computing the `Sec-WebSocket-Accept` header
+- **Origin Validation**: Supports both whitelist-based and custom validation functions
+- **Wildcard Origins**: Allows `*` for development but should be restricted in production
+- **No Server Masking**: Server messages are sent unmasked per protocol specification
+
 ## Best Practices
 
 - Always validate origins in production
@@ -250,6 +290,41 @@ ws.onclose = () => {
 - Use ping/pong for connection health
 - Clean up resources when connections close
 - Consider using a message broker for scaling
+
+## Testing
+
+The middleware includes comprehensive test coverage for all major functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestIsWebSocketUpgrade` | Valid WebSocket upgrade headers | Returns true for valid upgrade requests |
+| `TestIsWebSocketUpgrade` (case insensitive) | Headers with mixed case | Correctly identifies WebSocket upgrades regardless of case |
+| `TestIsWebSocketUpgrade` (connection with keep-alive) | Multiple connection values | Handles Connection header with multiple values |
+| `TestIsWebSocketUpgrade` (missing headers) | Missing Upgrade or Connection headers | Returns false when required headers are absent |
+| `TestComputeAcceptKey` | RFC 6455 test vector | Computes correct Sec-WebSocket-Accept value |
+| `TestNew_NonWebSocket` | Regular HTTP request | Passes through to next handler without upgrade |
+| `TestWithOptions_ForbiddenOrigin` | Origin not in allowed list | Returns 403 Forbidden |
+| `TestWithOptions_AllowedOrigin` | Origin in allowed list | Accepts the connection |
+| `TestWithOptions_WildcardOrigin` | Wildcard (*) origin | Allows any origin |
+| `TestWithOptions_MissingKey` | Missing Sec-WebSocket-Key header | Returns 400 Bad Request |
+| `TestConn_WriteText` | Writing text message | Successfully writes text frame |
+| `TestConn_WriteBinary` | Writing binary message | Successfully writes binary frame |
+| `TestConn_WriteMessageLengths` | Various payload sizes (10, 126, 200, 70000 bytes) | Correctly encodes all payload length formats |
+| `TestConn_Close` | Connection close | Sends close frame and closes underlying connection |
+| `TestConn_Ping` | Ping message | Sends ping frame with payload |
+| `TestConn_Pong` | Pong message | Sends pong frame with payload |
+| `TestConn_ReadMessage` (short unmasked text) | Reading unmasked text frame | Correctly parses and returns message |
+| `TestConn_ReadMessage` (masked text) | Reading masked text frame | Unmasks and returns correct data |
+| `TestConn_ReadMessageExtendedLength` | 200-byte message (2-byte length) | Correctly decodes 126+ byte payloads |
+| `TestConn_ReadMessageVeryLongLength` | 70000-byte message (8-byte length) | Correctly decodes 65536+ byte payloads |
+| `TestConn_ReadMessageReadErrors` | Incomplete frame data | Returns appropriate errors |
+| `TestWithOptions_Subprotocols` | Matching subprotocol | Accepts connection with negotiated subprotocol |
+| `TestWithOptions_SubprotocolNotMatching` | Non-matching subprotocol | Proceeds without subprotocol |
+| `TestWithOptions_CustomCheckOrigin` | Custom origin validation function | Calls custom validator and respects result |
+| `TestWithOptions_NoOriginsAllowsAll` | No origins configured | Allows all origins by default |
+| `TestWithOptions_OriginNotInList` | Origin not in whitelist | Returns 403 Forbidden |
+| `TestMessageConstants` | Message type constants | Verifies correct constant values per RFC 6455 |
+| `TestErrors` | Error types | Validates error messages |
 
 ## Related Middlewares
 

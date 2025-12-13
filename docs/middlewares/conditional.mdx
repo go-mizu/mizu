@@ -104,12 +104,71 @@ func Or(conditions ...func(*mizu.Ctx) bool) func(*mizu.Ctx) bool
 func Not(cond func(*mizu.Ctx) bool) func(*mizu.Ctx) bool
 ```
 
+## Technical Details
+
+### HTTP Conditional Request Processing
+
+The conditional middleware implements HTTP conditional request handling as per RFC 7232. It provides efficient caching mechanisms through ETags and Last-Modified headers.
+
+**Core Components:**
+
+1. **Response Capture**: The middleware intercepts the response using a custom `responseCapture` writer that buffers both the status code and body content before sending it to the client.
+
+2. **ETag Generation**: By default, ETags are generated using MD5 hashing of the response body. The middleware supports both strong and weak ETags:
+   - Strong ETag: `"hash-value"`
+   - Weak ETag: `W/"hash-value"`
+
+3. **Last-Modified Handling**: When a `ModTimeFunc` is provided, the middleware sets the Last-Modified header and processes If-Modified-Since conditional requests.
+
+**Request Flow:**
+
+1. Check if request method is GET or HEAD (only these methods support conditional requests)
+2. Capture the response body and status code
+3. Generate ETag from response body (if enabled)
+4. Set Last-Modified header (if configured)
+5. Check If-None-Match header against ETag
+6. Check If-Modified-Since header against modification time
+7. Return 304 Not Modified if conditions match, or send full response
+
+**Performance Considerations:**
+
+- The middleware buffers the entire response body for ETag generation
+- MD5 hashing is used for ETag (not for security, just content fingerprinting)
+- Only processes 2xx status codes to avoid caching errors
+- Skips processing for non-GET/HEAD methods
+
+## Security Considerations
+
+While MD5 is used for ETag generation, it's important to note that this is **not** a security concern. ETags are content fingerprints for caching purposes, not cryptographic signatures. The MD5 algorithm is perfectly suitable for this use case.
+
 ## Best Practices
 
 - Use clear condition names
 - Keep conditions simple
 - Document conditional behavior
 - Test edge cases
+- Consider response size when buffering for ETag generation
+- Use weak ETags for frequently changing content
+- Combine ETag and Last-Modified for optimal caching
+- Provide custom ETagFunc for better performance with large responses
+
+## Testing
+
+The conditional middleware includes comprehensive test coverage for various scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| TestNew | Basic middleware initialization with defaults | ETag header should be present in response |
+| TestIfNoneMatch_NotModified | Request with matching If-None-Match header | Returns 304 Not Modified status |
+| TestIfNoneMatch_Modified | Request with non-matching If-None-Match (content changed) | Returns 200 OK with new content |
+| TestWithOptions_WeakETag | Weak ETag generation enabled | ETag header starts with "W/" prefix |
+| TestWithOptions_LastModified | Last-Modified header with custom ModTimeFunc | Last-Modified header present in response |
+| TestIfModifiedSince | Request with If-Modified-Since matching modification time | Returns 304 Not Modified status |
+| TestSkipNonGET | POST request processing | No ETag header for non-GET/HEAD methods |
+| TestETagOnly | ETag-only mode without Last-Modified | Only ETag header present |
+| TestLastModifiedOnly | Last-Modified only mode without ETag | Only Last-Modified header present |
+| TestWithModTime | Combined ETag and Last-Modified | Both headers present in response |
+| TestCustomETagFunc | Custom ETag generation function | Uses custom ETag value instead of MD5 hash |
 
 ## Related Middlewares
 

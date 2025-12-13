@@ -113,6 +113,41 @@ Example with defaults:
 - Attempt 2: 200ms
 - Attempt 3: 400ms
 
+## Technical Details
+
+### Implementation Architecture
+
+The retry middleware uses a custom `retryResponseWriter` wrapper that intercepts response status codes to determine if a retry should occur. Key implementation details:
+
+- **Response Writer Wrapping**: Each retry attempt wraps the response writer to capture the status code without committing the response until success or max retries reached
+- **Exponential Backoff Algorithm**: Delay calculation follows the formula: `delay = min(initialDelay * (multiplier ^ attempt), maxDelay)`
+- **Retry Decision Logic**: The `RetryIf` function receives the context, error, and current attempt number to make intelligent retry decisions
+- **State Management**: The middleware tracks attempt count, last error, and current delay across retry iterations
+
+### Default Behavior
+
+When using `New()` without options, the middleware:
+- Retries up to 3 times (4 total attempts including initial)
+- Starts with 100ms delay
+- Uses 2.0x multiplier for exponential backoff
+- Caps maximum delay at 1 second
+- Retries on any error or 5xx HTTP status codes
+
+### Helper Functions
+
+The package provides several helper functions for common retry patterns:
+
+- **`RetryOn(codes ...int)`**: Creates a RetryIf function that retries only on specific HTTP status codes
+- **`RetryOnError()`**: Creates a RetryIf function that retries only when an error is returned
+- **`NoRetry()`**: Creates a RetryIf function that disables retries (useful for testing)
+
+### Performance Considerations
+
+- The middleware sleeps between retries using `time.Sleep`, blocking the goroutine
+- Response writer wrapping adds minimal overhead
+- Status code capture happens in memory without additional allocations
+- The `OnRetry` callback allows for logging and metrics without impacting retry logic
+
 ## Best Practices
 
 - Use exponential backoff to prevent thundering herd
@@ -120,6 +155,24 @@ Example with defaults:
 - Only retry idempotent operations
 - Add jitter for distributed systems
 - Log retry attempts for debugging
+
+## Testing
+
+### Test Coverage
+
+The retry middleware includes comprehensive test cases covering various scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic retry with default options | Retries up to 3 times on errors, succeeds on 3rd attempt |
+| `TestWithOptions_MaxRetries` | Custom max retries configuration | Respects MaxRetries setting (1 initial + 2 retries = 3 attempts) |
+| `TestWithOptions_OnRetry` | OnRetry callback invocation | OnRetry called before each retry attempt (not on initial attempt) |
+| `TestWithOptions_NoRetryNeeded` | Successful request on first attempt | No retries when request succeeds immediately |
+| `TestWithOptions_CustomRetryIf` | Custom retry condition logic | Custom RetryIf function controls retry behavior independently of MaxRetries |
+| `TestRetryOn` | RetryOn helper for specific status codes | Retries only on specified status codes (500, 502, 503) |
+| `TestRetryOnError` | RetryOnError helper function | Retries only when error is present, not on status codes |
+| `TestNoRetry` | NoRetry helper function | Never retries regardless of error or status code |
+| `TestWithOptions_ExponentialBackoff` | Exponential backoff timing | Delays increase exponentially between retry attempts |
 
 ## Related Middlewares
 

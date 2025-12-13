@@ -132,12 +132,58 @@ func New() mizu.Middleware
 func WithOptions(opts Options) mizu.Middleware
 ```
 
+## Technical Details
+
+### Implementation Architecture
+
+The logger middleware captures HTTP request metrics by wrapping the response writer and measuring execution time:
+
+1. **Response Writer Wrapping**: A custom `responseWriter` type wraps the standard `http.ResponseWriter` to capture:
+   - HTTP status code (defaults to 200)
+   - Response size in bytes
+
+2. **Timing Measurement**: Uses `time.Now()` before request processing and `time.Since()` after to calculate latency with nanosecond precision.
+
+3. **Client IP Detection**: Implements intelligent IP extraction with fallback chain:
+   - Checks `X-Forwarded-For` header (uses first IP if comma-separated list)
+   - Checks `X-Real-IP` header
+   - Falls back to `RemoteAddr` from the request
+
+4. **Format String Processing**: The `formatLog` function performs template tag replacement:
+   - Basic tags use `strings.ReplaceAll()` for simple substitution
+   - Dynamic tags (`${header:name}`, `${form:name}`) use index-based parsing to extract custom values
+   - Supports all standard HTTP request/response attributes
+
+5. **Skip Function**: Optional predicate function allows conditional logging based on request context, executed before timing starts to avoid overhead.
+
+### Performance Characteristics
+
+- Minimal overhead: Single writer wrap and string replacement operations
+- Zero allocations for skipped requests
+- String concatenation deferred until after request completion
+- No buffering of response body (streaming-friendly)
+
 ## Best Practices
 
 - Skip logging for health check endpoints
 - Use structured (JSON) format for log aggregation
 - Include request IDs for tracing
 - Log to stderr in containers for proper log handling
+
+## Testing
+
+The logger middleware includes comprehensive test coverage for all features and edge cases:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Default logger with standard output | Logs contain status code (200), HTTP method (GET), and request path (/test) |
+| `TestWithOptions_CustomFormat` | Custom format string with method, path, and status | Output matches exact format: `[GET] /api -> 201\n` |
+| `TestWithOptions_Skip` | Skip function filtering health check endpoint | No log output for /health endpoint, logs /api endpoint normally |
+| `TestWithOptions_Headers` | Custom header extraction using ${header:X-Request-ID} | Logs the exact value of the X-Request-ID header (test-123) |
+| `TestWithOptions_AllTags` | All available format tags (host, protocol, referer, user_agent, bytes_out, query) | Log contains all requested tag values from the HTTP request |
+| `TestWithOptions_XForwardedFor` | Client IP extraction from X-Forwarded-For header | Extracts first IP from comma-separated list (1.2.3.4) |
+| `TestWithOptions_XRealIP` | Client IP extraction from X-Real-IP header | Uses X-Real-IP value (10.0.0.1) when X-Forwarded-For not present |
+| `TestDefaultOutput` | Default output configuration (stdout) | Middleware executes without panic, returns 200 status |
 
 ## Related Middlewares
 

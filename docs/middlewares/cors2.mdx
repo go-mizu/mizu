@@ -96,12 +96,67 @@ func New(opts Options) mizu.Middleware
 - `https://*.example.com` matches `https://app.example.com`, `https://api.example.com`
 - Patterns are matched against the full origin including protocol
 
+## Technical Details
+
+### Implementation Overview
+
+The cors2 middleware implements a simplified CORS handling mechanism with the following key components:
+
+**Origin Matching:**
+- Supports wildcard (`*`) for all origins
+- Implements exact origin matching with case-insensitive comparison
+- The `matchOrigin` function handles both wildcard and exact match scenarios
+
+**Header Management:**
+- Sets `Access-Control-Allow-Origin` based on the request origin and configured options
+- Conditionally sets `Access-Control-Allow-Credentials` when credentials are enabled
+- Applies `Access-Control-Expose-Headers` for custom headers that should be exposed to the browser
+
+**Preflight Request Handling:**
+- Detects OPTIONS requests for preflight handling
+- Responds with `Access-Control-Allow-Methods` and `Access-Control-Allow-Headers`
+- Sets `Access-Control-Max-Age` to cache preflight responses (when configured)
+- Returns HTTP 204 (No Content) for preflight requests
+
+**Default Values:**
+- Origin: `*` (all origins)
+- Methods: `GET, POST, PUT, DELETE, OPTIONS`
+- Headers: `Content-Type, Authorization`
+- Credentials: `false`
+- MaxAge: `0` (no caching)
+
+### Helper Functions
+
+The middleware provides convenience functions:
+- `New()`: Creates middleware with default settings
+- `WithOptions(opts)`: Creates middleware with custom configuration
+- `AllowOrigin(origin)`: Quick setup for a specific origin
+- `AllowAll()`: Permissive setup with extended methods and headers
+- `AllowCredentials(origin)`: Enables credentials for a specific origin
+
 ## Best Practices
 
 - Use exact origins when possible for security
 - Use patterns only for known subdomain structures
 - Set appropriate MaxAge to reduce preflight requests
 - Be cautious with credentials and wildcards
+
+## Testing
+
+The cors2 middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Default middleware with wildcard origin | Sets `Access-Control-Allow-Origin: *` for any request with Origin header |
+| `TestWithOptions_SpecificOrigin` (matching) | Request with matching origin | Returns the specific origin in `Access-Control-Allow-Origin` header |
+| `TestWithOptions_SpecificOrigin` (non-matching) | Request with non-matching origin | No `Access-Control-Allow-Origin` header is set |
+| `TestPreflight` | OPTIONS request (preflight) | Returns 204 No Content with Allow-Methods and Allow-Headers set |
+| `TestWithOptions_Credentials` | Middleware with credentials enabled | Sets `Access-Control-Allow-Credentials: true` |
+| `TestWithOptions_ExposeHeaders` | Custom expose headers configuration | Sets `Access-Control-Expose-Headers` with configured values |
+| `TestWithOptions_MaxAge` | MaxAge set to 1 hour | Sets `Access-Control-Max-Age: 3600` on OPTIONS requests |
+| `TestAllowOrigin` | Helper function for specific origin | Allows only the specified origin |
+| `TestAllowAll` | Helper function for permissive CORS | Sets wildcard origin and max-age header |
+| `TestAllowCredentials` | Helper function for credentials | Enables credentials for specific origin |
 
 ## Related Middlewares
 

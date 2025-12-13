@@ -143,6 +143,42 @@ type Response struct {
 |--------|-------------|
 | `Idempotent-Replayed: true` | Response was replayed from cache |
 
+## Technical Details
+
+### Cache Key Generation
+
+By default, the middleware generates cache keys using SHA-256 hashing of:
+- The idempotency key from the header
+- The HTTP method (POST, PUT, etc.)
+- The request URL path
+
+This ensures that the same idempotency key can be safely reused across different endpoints and methods.
+
+### Response Capture
+
+The middleware uses a custom `responseCapture` wrapper that:
+1. Captures the response status code (defaults to 200 OK)
+2. Clones all response headers
+3. Buffers the response body in memory
+4. Writes everything to both the buffer and the underlying ResponseWriter
+
+### Memory Store Implementation
+
+The built-in `MemoryStore`:
+- Uses `sync.RWMutex` for thread-safe concurrent access
+- Runs a background cleanup goroutine that removes expired entries every 10 minutes
+- Stores responses with their expiration timestamps
+- Returns `nil` for expired entries automatically
+
+### Request Flow
+
+1. **Method Check**: Verifies the HTTP method is in the configured Methods list
+2. **Key Extraction**: Retrieves the idempotency key from the specified header
+3. **Cache Lookup**: Checks if a response exists for the generated cache key
+4. **Cache Hit**: If found and not expired, replays the cached response with `Idempotent-Replayed: true` header
+5. **Cache Miss**: Wraps the ResponseWriter, executes the handler, captures the response, and stores it in the cache
+6. **Expiration**: Responses are stored with a TTL and automatically cleaned up
+
 ## Best Practices
 
 - Always use idempotency keys for payment operations
@@ -150,6 +186,25 @@ type Response struct {
 - Include user context in key generation for multi-tenant apps
 - Set appropriate TTL based on your use case
 - Use distributed store (Redis) for multi-instance deployments
+
+## Testing
+
+### Test Coverage
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic idempotency with default configuration | First request executes handler, second request with same key returns cached response with `Idempotent-Replayed: true` header |
+| `TestWithOptions_NoKey` | Requests without idempotency key | All requests execute handler normally (no caching) |
+| `TestWithOptions_DifferentKeys` | Multiple requests with different keys | Each unique key executes handler independently |
+| `TestWithOptions_CustomHeader` | Custom header name configuration | Middleware uses custom header (e.g., `X-Request-Id`) for idempotency key |
+| `TestWithOptions_Methods` | Method filtering (POST only) | POST requests are cached, PUT requests are not cached |
+| `TestWithOptions_GET` | GET requests with idempotency key | GET requests bypass middleware (not cached by default) |
+| `TestWithOptions_ResponseHeaders` | Custom response headers | Cached response includes all custom headers from original response |
+| `TestWithStore` | Custom store integration | Middleware works with custom Store implementation |
+| `TestMemoryStore` | Memory store operations | Set, Get, and Delete operations work correctly |
+| `TestMemoryStore_Expiry` | Expired entries | Store returns `nil` for expired entries |
+| `TestWithOptions_CustomKeyGenerator` | User-scoped keys | Same idempotency key with different user IDs creates separate cache entries |
+| `TestWithOptions_ResponseBody` | JSON response caching | Complete response body (including JSON) is cached and replayed |
 
 ## Client Example
 

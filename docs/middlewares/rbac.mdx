@@ -156,12 +156,82 @@ func (h *Hierarchy) Add(parent string, children ...string)
 func RequireRoleWithHierarchy(getRoles func(*mizu.Ctx) []string, h *Hierarchy, role string) mizu.Middleware
 ```
 
+## Technical Details
+
+### Implementation Overview
+
+The RBAC middleware is built around a User struct that contains roles and permissions:
+
+```go
+type User struct {
+    ID          string
+    Roles       []string
+    Permissions []string
+}
+```
+
+### Context Management
+
+User information is stored in the request context using a private context key:
+
+- `Set(c *mizu.Ctx, user *User)` - Stores user in context
+- `Get(c *mizu.Ctx) *User` - Retrieves user from context
+- Returns nil if no user is found in context
+
+### Role and Permission Checking
+
+The middleware provides several helper functions for checking access:
+
+- `HasRole(c *mizu.Ctx, role string) bool` - Checks if user has a specific role
+- `HasAnyRole(c *mizu.Ctx, roles ...string) bool` - Checks if user has any of the specified roles
+- `HasAllRoles(c *mizu.Ctx, roles ...string) bool` - Checks if user has all specified roles
+- `HasPermission(c *mizu.Ctx, permission string) bool` - Checks if user has a specific permission
+
+### Middleware Functions
+
+Role-based middlewares:
+- `RequireRole(role string)` - Requires a specific role
+- `RequireAnyRole(roles ...string)` - Requires any of the specified roles (OR logic)
+- `RequireAllRoles(roles ...string)` - Requires all specified roles (AND logic)
+
+Permission-based middlewares:
+- `RequirePermission(permission string)` - Requires a specific permission
+- `RequireAnyPermission(permissions ...string)` - Requires any of the permissions
+- `RequireAllPermissions(permissions ...string)` - Requires all permissions
+
+Convenience middlewares:
+- `Admin()` - Shorthand for RequireRole("admin")
+- `Authenticated()` - Checks if any user is present in context
+
+### Error Handling
+
+- Default behavior returns HTTP 403 Forbidden with "Access denied" text
+- Returns HTTP 401 Unauthorized with "Authentication required" for unauthenticated users
+- Custom error handlers can be wrapped using `WithErrorHandler`
+
 ## Best Practices
 
 - Use JWT claims or session for role storage
 - Implement role hierarchy for complex permissions
 - Cache permission checks for performance
 - Log authorization failures for security monitoring
+
+## Testing
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| TestRequireRole | User with required role accessing protected route | Returns 200 OK, access granted |
+| TestRequireRole_Forbidden | User without required role accessing protected route | Returns 403 Forbidden, access denied |
+| TestRequireAnyRole | User with one of multiple required roles | Returns 200 OK, access granted when user has editor role |
+| TestRequireAllRoles (has all) | User with all required roles | Returns 200 OK, access granted when user has both admin and editor roles |
+| TestRequireAllRoles (missing one) | User missing one of required roles | Returns 403 Forbidden, access denied when user has admin but not editor |
+| TestRequirePermission | User with required permission accessing resource | Returns 200 OK, access granted with write:posts permission |
+| TestAdmin | User with admin role accessing admin route | Returns 200 OK, access granted |
+| TestAuthenticated (authenticated) | Authenticated user accessing protected route | Returns 200 OK, access granted |
+| TestAuthenticated (unauthenticated) | Unauthenticated user accessing protected route | Returns 401 Unauthorized, authentication required |
+| TestHasRole | Checking if user has specific roles | Returns true for user role, false for admin role |
+| TestGet | Retrieving user from context | Returns user object with correct ID |
+| TestNoUser | Checking role without user in context | Returns false, no access without user |
 
 ## Related Middlewares
 

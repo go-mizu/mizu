@@ -174,6 +174,42 @@ func New() mizu.Middleware
 func WithOptions(opts Options) mizu.Middleware
 ```
 
+## Technical Details
+
+The pprof middleware integrates Go's standard `net/http/pprof` package with Mizu's middleware system. Here's how it works:
+
+### Implementation Architecture
+
+The middleware uses a path-based routing strategy to handle different profiling endpoints:
+
+1. **Path Matching**: The middleware checks if the incoming request path matches the configured prefix (default: `/debug/pprof`)
+2. **Pass-through**: If the path doesn't match, the request is passed to the next middleware in the chain
+3. **Subpath Routing**: For matching paths, the middleware extracts the subpath and routes to the appropriate pprof handler
+
+### Handler Routing Logic
+
+- **Index Page** (`/` or empty subpath): Displays the pprof index using `pprof.Index()`
+- **Special Handlers**: Four endpoints have dedicated handlers:
+  - `/cmdline`: Command line invocation using `pprof.Cmdline()`
+  - `/profile`: CPU profiling using `pprof.Profile()`
+  - `/symbol`: Symbol lookup using `pprof.Symbol()`
+  - `/trace`: Execution tracing using `pprof.Trace()`
+- **Named Profiles**: All other subpaths are treated as named profiles (heap, goroutine, block, mutex, allocs, threadcreate) and handled by `pprof.Handler(name)`
+
+### Prefix Normalization
+
+The middleware automatically normalizes the prefix by removing trailing slashes to ensure consistent path matching regardless of how the prefix is configured.
+
+### Request Flow
+
+```
+Request -> Path Check -> Match Prefix? -> No -> Next Middleware
+                              |
+                             Yes
+                              |
+                       Extract Subpath -> Route to Handler -> Serve Profile
+```
+
 ## Security Warning
 
 Pprof endpoints can expose sensitive information about your application. In production:
@@ -201,6 +237,29 @@ if os.Getenv("ENABLE_PPROF") == "true" {
 - Enable only when debugging is needed
 - Use execution traces sparingly (high overhead)
 - CPU profiles should be short (30-60 seconds)
+
+## Testing
+
+The pprof middleware includes comprehensive test coverage to ensure all endpoints and configurations work correctly:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew/index page` | Tests the pprof index page at `/debug/pprof/` | Returns HTTP 200 and contains "pprof" in response body |
+| `TestNew/cmdline` | Tests the command line endpoint | Returns HTTP 200 with command line arguments |
+| `TestNew/symbol` | Tests the symbol lookup endpoint | Returns HTTP 200 for symbol queries |
+| `TestNew/heap profile` | Tests the heap memory profile endpoint | Returns HTTP 200 with heap profile data |
+| `TestNew/goroutine profile` | Tests the goroutine stack traces endpoint | Returns HTTP 200 with goroutine information |
+| `TestNew/non-pprof path` | Tests that non-pprof paths pass through to next handler | Returns "home" text from the application route |
+| `TestWithOptions_CustomPrefix` | Tests custom prefix configuration (`/profiling`) | Returns HTTP 200 when accessing index at custom prefix |
+| `TestWithOptions_PrefixWithTrailingSlash` | Tests prefix normalization with trailing slash | Returns HTTP 200, correctly handles trailing slash in prefix |
+
+### Test Coverage
+
+The test suite validates:
+- All major pprof endpoints (index, cmdline, symbol, heap, goroutine)
+- Middleware pass-through for non-matching paths
+- Custom prefix configuration
+- Prefix normalization (trailing slash handling)
 
 ## Related Middlewares
 

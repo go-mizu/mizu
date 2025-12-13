@@ -90,12 +90,47 @@ func WithHandler(handler func(*mizu.Ctx, int64)) mizu.Middleware
 func Get(c *mizu.Ctx) int64
 ```
 
+## Technical Details
+
+The requestsize middleware tracks request sizes by wrapping the request body with a custom `io.ReadCloser` implementation:
+
+### Architecture
+
+- **Context Storage**: Size information is stored in the request context using a private context key
+- **Body Wrapping**: The middleware wraps `http.Request.Body` with a `trackingBody` struct that counts bytes as they're read
+- **Deferred Callback**: Size callbacks are executed via `defer` to ensure they run after the request body is processed
+
+### Implementation Details
+
+1. **Info Structure**: Contains two fields:
+   - `ContentLength`: The `Content-Length` header value (may be -1 if not set)
+   - `BytesRead`: Actual bytes read from the request body during processing
+
+2. **Tracking Mechanism**: The `trackingBody` wrapper intercepts all `Read()` calls and accumulates the byte count
+
+3. **Context Integration**: Size info is attached to the request context and can be retrieved using the `Get()`, `ContentLength()`, or `BytesRead()` helper functions
+
+4. **Callback Execution**: If configured, the `OnSize` callback is invoked after request processing completes, providing access to final byte counts
+
 ## Best Practices
 
 - Use for bandwidth monitoring
 - Track alongside response sizes
 - Set alerts for unusually large requests
 - Combine with body limit for enforcement
+
+## Testing
+
+The middleware includes comprehensive test coverage for various scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware initialization and usage | Correctly captures Content-Length header (9 bytes) |
+| `TestWithOptions_Callback` | Callback function invocation with options | Callback is called with accurate BytesRead count (5 bytes) |
+| `TestContentLength` | ContentLength helper function | Returns correct Content-Length value from context (12 bytes for "test content") |
+| `TestBytesRead` | BytesRead tracking for partial reads | Accurately tracks partial body reads (3 bytes out of "hello world") |
+| `TestWithCallback` | WithCallback convenience function | Callback is invoked during request processing |
+| `TestNoBody` | Requests without body (GET requests) | Handles nil body gracefully with 0 content length |
 
 ## Related Middlewares
 

@@ -125,6 +125,82 @@ func SWR(maxAge, stale time.Duration) mizu.Middleware
 | User data | `private, no-cache` |
 | Never cache | `no-store` |
 
+## Technical Details
+
+### Implementation
+
+The cache middleware operates by constructing and setting the `Cache-Control` HTTP header based on the provided configuration options. The middleware:
+
+1. **Header Construction**: Uses the `buildCacheControl` function to build the Cache-Control header string from the Options struct
+2. **Non-Overriding Behavior**: Only sets the Cache-Control header if it hasn't been set by the handler or previous middleware
+3. **Default Fallback**: Returns `no-cache` when no options are specified
+4. **Time Conversion**: Converts Go `time.Duration` values to seconds for cache directives (max-age, s-maxage, etc.)
+
+### Cache-Control Directives
+
+The middleware supports the following HTTP Cache-Control directives:
+
+- **public**: Response may be cached by any cache (browsers, CDNs, proxies)
+- **private**: Response is intended for a single user and should only be cached by the browser
+- **no-cache**: Cache must revalidate with the origin server before using cached content
+- **no-store**: Response must not be stored in any cache
+- **no-transform**: Intermediaries must not transform the response (e.g., image compression)
+- **must-revalidate**: Cache must verify the status of stale resources and expired ones should not be used
+- **proxy-revalidate**: Same as must-revalidate but only for shared caches
+- **max-age=N**: Maximum time (in seconds) a resource is considered fresh
+- **s-maxage=N**: Overrides max-age for shared caches (CDNs, proxies)
+- **immutable**: Resource will never change during its freshness lifetime
+- **stale-while-revalidate=N**: Cache may serve stale content while revalidating in the background
+- **stale-if-error=N**: Cache may serve stale content if an error occurs during revalidation
+
+### Helper Functions
+
+The package provides several convenience functions that configure common caching strategies:
+
+- **New(maxAge)**: Basic caching with max-age
+- **Public(maxAge)**: Public caching with max-age
+- **Private(maxAge)**: Private caching with max-age
+- **Immutable(maxAge)**: Immutable public content with max-age
+- **Static(maxAge)**: Alias for Immutable, suitable for static assets
+- **SWR(maxAge, stale)**: Stale-while-revalidate pattern for improved perceived performance
+
+## Best Practices
+
+1. **Use appropriate cache strategies** for different content types
+2. **Leverage stale-while-revalidate** for improved user experience
+3. **Set immutable** for versioned static assets
+4. **Use private** for user-specific data
+5. **Combine with CDN** using s-maxage for better edge caching
+
+## Testing
+
+The cache middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| TestNew | Basic middleware creation with max-age | Sets Cache-Control header with max-age=3600 for 1 hour duration |
+| TestWithOptions - public with max-age | Public cache with max-age | Contains "public" and "max-age=3600" directives |
+| TestWithOptions - private with max-age | Private cache with max-age | Contains "private" and "max-age=300" directives |
+| TestWithOptions - no-cache | No-cache directive | Contains "no-cache" directive |
+| TestWithOptions - no-store | No-store directive | Contains "no-store" directive |
+| TestWithOptions - must-revalidate | Must-revalidate with max-age | Contains "must-revalidate" and "max-age=3600" directives |
+| TestWithOptions - immutable | Immutable content | Contains "public" and "immutable" directives |
+| TestWithOptions - s-maxage | Shared cache max-age | Contains "max-age=3600" and "s-maxage=7200" directives |
+| TestWithOptions - stale-while-revalidate | Stale-while-revalidate pattern | Contains "max-age=3600" and "stale-while-revalidate=1800" directives |
+| TestPublic | Public cache helper function | Cache-Control header contains "public" directive |
+| TestPrivate | Private cache helper function | Cache-Control header contains "private" directive |
+| TestImmutable | Immutable cache helper function | Cache-Control header contains "immutable" directive |
+| TestStatic | Static assets cache helper function | Cache-Control header contains "public" and "immutable" directives |
+| TestSWR | Stale-while-revalidate helper function | Cache-Control header contains "stale-while-revalidate=1800" directive |
+| TestWithOptions_DoesNotOverride | Existing Cache-Control header preservation | Middleware does not override pre-existing Cache-Control headers |
+| TestWithOptions_Empty | Empty options handling | Defaults to "no-cache" when no options are provided |
+
+## Security Considerations
+
+- **Sensitive data**: Always use `private` or `no-store` for sensitive information
+- **User-specific content**: Never use `public` for personalized data
+- **Authentication**: Consider using `no-cache` or `no-store` for authenticated routes
+
 ## Related Middlewares
 
 - [nocache](/middlewares/nocache) - Prevent caching

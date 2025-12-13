@@ -93,12 +93,109 @@ func Bind(c *mizu.Ctx, v any) error
 | `application/msgpack` | Standard MessagePack |
 | `application/x-msgpack` | Alternative |
 
+## Technical Details
+
+### Architecture
+
+The msgpack middleware implements a lightweight MessagePack encoder/decoder without external dependencies. It consists of three main components:
+
+#### Middleware Handler
+- Intercepts requests with MessagePack content types
+- Stores raw request body in context for later parsing
+- Supports configurable content types (default: `application/msgpack`, `application/x-msgpack`)
+
+#### Encoder
+- Implements MessagePack binary format specification
+- Uses fixed-size optimizations for common value ranges
+- Supports fixint, int8/16/32/64, uint8/16/32/64 encoding
+- Handles fixstr, str8/16/32 for strings with automatic size selection
+- Encodes binary data with bin8/16/32 formats
+- Supports fixarray, array16/32 and fixmap, map16/32 structures
+
+#### Decoder
+- Parses MessagePack binary format to Go values
+- Returns generic `any` types (string, int64, uint64, float32/64, []any, map[string]any)
+- Validates buffer boundaries to prevent out-of-bounds access
+- Handles all MessagePack type codes including fixint, negative fixint, and type-specific codes
+
+### Type Mappings
+
+| Go Type | MessagePack Format | Notes |
+|---------|-------------------|-------|
+| nil | 0xc0 | Null value |
+| bool | 0xc2, 0xc3 | false, true |
+| int, int8-64 | fixint, int8-64 | Optimized by value range |
+| uint, uint8-64 | fixint, uint8-64 | Optimized by value range |
+| float32 | float 32 (0xca) | 4-byte IEEE 754 |
+| float64 | float 64 (0xcb) | 8-byte IEEE 754 |
+| string | fixstr, str8-32 | Length-prefixed |
+| []byte | bin8-32 | Binary data |
+| []any | fixarray, array16-32 | Recursive encoding |
+| map[string]any | fixmap, map16-32 | Key-value pairs |
+
+### Error Handling
+
+The middleware defines three error types:
+
+- `ErrUnsupportedType`: Returned when attempting to encode unsupported Go types
+- `ErrInvalidFormat`: Returned when decoding encounters invalid MessagePack data
+- `ErrBufferTooSmall`: Returned when the input buffer is insufficient for the declared data
+
+### Context Storage
+
+The middleware stores the raw MessagePack request body in the request context using a private context key. This allows:
+- Multiple reads of the request body
+- Access via the `Body()` helper function
+- Preservation of the original request body for middleware chain
+
 ## Best Practices
 
 - Use for internal APIs
 - Fall back to JSON for browsers
 - Consider client library support
 - Benchmark for your use case
+
+## Testing
+
+### Test Coverage
+
+The msgpack middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| TestNew | Middleware initialization | Middleware successfully initializes and passes requests through |
+| TestMarshalUnmarshal - nil | Nil value encoding/decoding | Correctly encodes and decodes nil values |
+| TestMarshalUnmarshal - true/false | Boolean encoding/decoding | Correctly encodes and decodes true/false values |
+| TestMarshalUnmarshal - positive int | Positive integer encoding | Correctly encodes and decodes positive integers |
+| TestMarshalUnmarshal - negative int | Negative integer encoding | Correctly encodes and decodes negative integers |
+| TestMarshalUnmarshal - zero | Zero value encoding | Correctly encodes and decodes zero |
+| TestMarshalUnmarshal - large int | Large integer encoding | Correctly encodes and decodes large integers (1000000) |
+| TestMarshalUnmarshal - uint | Unsigned integer encoding | Correctly encodes and decodes unsigned integers |
+| TestMarshalUnmarshal - float64 | Float64 encoding | Correctly encodes and decodes float64 values |
+| TestMarshalUnmarshal - string | String encoding | Correctly encodes and decodes strings |
+| TestMarshalUnmarshal - empty string | Empty string encoding | Correctly encodes and decodes empty strings |
+| TestMarshalUnmarshal - long string | Long string encoding | Correctly encodes and decodes strings exceeding 31 bytes |
+| TestMarshalArray | Array encoding/decoding | Correctly encodes and decodes arrays with multiple elements |
+| TestMarshalMap | Map encoding/decoding | Correctly encodes and decodes maps with string keys |
+| TestMarshalBinary | Binary data encoding | Correctly encodes and decodes raw byte slices |
+| TestResponse | HTTP response generation | Sets correct Content-Type header and encodes response data |
+| TestBind | Request body parsing | Correctly parses MessagePack request bodies |
+| TestBody | Raw body retrieval | Retrieves raw MessagePack body from context |
+| TestEncoderIntegers - zero | Zero integer | Encodes/decodes zero correctly |
+| TestEncoderIntegers - positive fixint | Positive fixint (100) | Uses optimized fixint encoding |
+| TestEncoderIntegers - negative fixint | Negative fixint (-20) | Uses optimized negative fixint encoding |
+| TestEncoderIntegers - int8 positive | int8 range (127) | Uses int8 encoding |
+| TestEncoderIntegers - int8 negative | int8 range (-128) | Uses int8 encoding |
+| TestEncoderIntegers - int16 positive | int16 range (1000) | Uses int16 encoding |
+| TestEncoderIntegers - int16 negative | int16 range (-1000) | Uses int16 encoding |
+| TestEncoderIntegers - int32 positive | int32 range (100000) | Uses int32 encoding |
+| TestEncoderIntegers - int32 negative | int32 range (-100000) | Uses int32 encoding |
+| TestEncoderIntegers - int64 positive | int64 range (5000000000) | Uses int64 encoding |
+| TestEncoderIntegers - int64 negative | int64 range (-5000000000) | Uses int64 encoding |
+| TestEncoderFloats - float32 | float32 encoding | Encodes/decodes float32 with correct precision |
+| TestEncoderFloats - float64 | float64 encoding | Encodes/decodes float64 with correct precision |
+| TestUnsupportedType | Unsupported type error | Returns ErrUnsupportedType for custom structs |
+| TestEmptyBuffer | Empty buffer error | Returns error when unmarshaling empty buffer |
 
 ## Related Middlewares
 

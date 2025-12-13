@@ -167,6 +167,44 @@ type Store interface {
 }
 ```
 
+## Technical Details
+
+### Session Lifecycle
+
+The session middleware manages a complete lifecycle for each session:
+
+1. **Session Creation**: When a new request arrives without a session cookie, a new session ID is generated using `crypto/rand` (32 bytes, 64 hex characters) and stored in the context
+2. **Cookie Management**: Session cookies are set before the handler executes to ensure headers are properly sent
+3. **Data Persistence**: Session data is saved to the store only when changes are detected via the `changed` flag
+4. **Cleanup**: The memory store includes automatic cleanup that runs every 10 minutes to remove sessions inactive for more than 24 hours
+
+### Thread Safety
+
+The Session struct uses `sync.RWMutex` for concurrent access:
+- **Read operations** (`Get`): Use read locks to allow multiple concurrent reads
+- **Write operations** (`Set`, `Delete`, `Clear`, `Destroy`): Use write locks for exclusive access
+- The `changed` flag tracks modifications to optimize store operations
+
+### Store Implementation
+
+The package includes a `MemoryStore` implementation with:
+- **Deep copying**: `Get` returns a deep copy of session data to prevent external mutations
+- **Background cleanup**: Automatic goroutine removes expired sessions every 10 minutes
+- **Concurrent safety**: All operations are protected by `sync.RWMutex`
+
+### Session ID Generation
+
+Session IDs are generated using:
+```go
+crypto/rand.Read(32 bytes) -> hex.EncodeToString() = 64 character ID
+```
+
+This provides cryptographically secure random IDs suitable for production use.
+
+### Context Integration
+
+Sessions are stored in the request context using a private `contextKey{}` struct, preventing collisions with other middleware or application code.
+
 ## Security Considerations
 
 1. **Use HTTPS** - Always set `CookieSecure: true` in production
@@ -181,6 +219,20 @@ type Store interface {
 - Store minimal data in sessions
 - Implement session store cleanup for expired sessions
 - Consider Redis or database store for distributed systems
+
+## Testing
+
+The session middleware includes comprehensive test coverage for all operations:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Set and get session value | Session values persist across requests with the same session cookie |
+| `TestSession_Clear` | Clear all session values | All session values are removed after calling `Clear()` |
+| `TestSession_Delete` | Delete specific session value | Individual session value is removed after calling `Delete(key)` |
+| `TestWithStore` | Custom store integration | Session middleware works with custom Store implementations |
+| `TestSession_CustomCookie` | Custom cookie configuration | Cookie settings (name, path, secure, SameSite) are applied correctly |
+| `TestFromContext` | Context retrieval alias | `Get()` and `FromContext()` return the same session instance |
+| `TestGenerateSessionID` | Session ID generation | Generates unique 64-character hex IDs without duplicates |
 
 ## Related Middlewares
 

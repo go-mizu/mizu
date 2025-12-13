@@ -99,10 +99,68 @@ type Info struct {
 func New() mizu.Middleware
 func WithOptions(opts Options) mizu.Middleware
 func Get(c *mizu.Ctx) *Info
+func FromContext(c *mizu.Ctx) *Info
 func ClientIP(c *mizu.Ctx) net.IP
 func Proto(c *mizu.Ctx) string
 func Host(c *mizu.Ctx) string
 ```
+
+## Technical Details
+
+### Header Processing Priority
+
+The middleware processes headers in the following order:
+
+1. **X-Forwarded-For**: Extracts the client IP from the first entry in the comma-separated list
+2. **X-Forwarded-Host**: Sets the original host requested by the client
+3. **X-Forwarded-Proto**: Determines if the original request was HTTP or HTTPS
+4. **X-Forwarded-Port**: Captures the original port number
+5. **X-Forwarded-Prefix**: Records any path prefix added by reverse proxies
+6. **Forwarded** (RFC 7239): Parses the standardized Forwarded header, which can override previous values
+
+### Trusted Proxy Validation
+
+When `TrustedProxies` is configured:
+- IP addresses are automatically converted to CIDR notation (single IPs get `/32`)
+- The middleware checks if the remote address matches any trusted CIDR ranges
+- If no match is found, all X-Forwarded-* headers are ignored and the remote address is used
+
+### IP Parsing
+
+The middleware handles various IP address formats:
+- Standard IPv4 addresses (e.g., `192.168.1.1`)
+- IPv6 addresses in RFC 7239 format with brackets (e.g., `[2001:db8::1]`)
+- Addresses with port numbers (automatically stripped)
+
+### Context Storage
+
+Forwarded information is stored in the request context using a private context key, making it accessible throughout the request lifecycle via helper functions.
+
+## Best Practices
+
+1. **Always specify trusted proxies** in production environments to prevent header spoofing
+2. **Use CIDR notation** for trusted proxy ranges to cover entire subnets
+3. **Validate client IPs** after extraction if using them for security decisions
+4. **Prefer RFC 7239 Forwarded header** when possible for better standardization
+5. **Disable TrustProxy** when not behind a reverse proxy to avoid security issues
+
+## Testing
+
+The middleware includes comprehensive test coverage for various scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware functionality with X-Forwarded headers | Correctly parses X-Forwarded-For, X-Forwarded-Proto, and X-Forwarded-Host |
+| `TestWithOptions_TrustedProxies` (trusted proxy) | Request from a trusted proxy IP | Honors X-Forwarded-For header and extracts client IP |
+| `TestWithOptions_TrustedProxies` (untrusted proxy) | Request from an untrusted proxy IP | Ignores X-Forwarded-For and uses RemoteAddr instead |
+| `TestWithOptions_XForwardedForMultiple` | Multiple IPs in X-Forwarded-For chain | Extracts the first (original client) IP from the chain |
+| `TestWithOptions_ForwardedHeader` | RFC 7239 Forwarded header parsing | Correctly parses for, proto, and host from Forwarded header |
+| `TestFromContext` | Alias function for Get() | FromContext returns same result as Get() |
+| `TestClientIP` | ClientIP helper function | Returns parsed client IP as net.IP |
+| `TestProto` (with header) | Protocol extraction with X-Forwarded-Proto | Returns "https" when header is present |
+| `TestProto` (without header) | Protocol extraction without header | Returns default "http" when no header present |
+| `TestHost` | Host extraction from X-Forwarded-Host | Returns forwarded host value |
+| `TestWithOptions_DisableTrustProxy` | TrustProxy disabled | Ignores all X-Forwarded headers and uses RemoteAddr |
 
 ## Security Note
 

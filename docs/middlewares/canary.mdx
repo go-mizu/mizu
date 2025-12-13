@@ -113,12 +113,70 @@ app.Post("/admin/canary", func(c *mizu.Ctx) error {
 func New(opts Options) mizu.Middleware
 ```
 
+## Technical Details
+
+### Implementation Overview
+
+The canary middleware uses a deterministic counter-based approach for traffic distribution:
+
+- **Counter-Based Distribution**: Uses an atomic counter (`atomic.AddUint64`) that increments on each request. The modulo operation (`counter % 100 < percentage`) ensures predictable distribution over time.
+- **Context Storage**: Stores the canary decision in the request context using a private context key, accessible via `IsCanary(c)`.
+- **Override Precedence**: Decision order is: Header override > Cookie override > Custom Selector > Percentage-based selection.
+
+### Key Components
+
+**Core Functions:**
+- `New(percentage int)`: Creates middleware with simple percentage-based routing
+- `WithOptions(opts Options)`: Creates middleware with full configuration options
+- `IsCanary(c *mizu.Ctx)`: Checks if current request is using canary version
+- `Route(canary, stable Handler)`: Routes to different handlers based on canary status
+- `Middleware(canaryMw, stableMw)`: Applies different middleware chains based on canary status
+
+**ReleaseManager:**
+- Manages multiple named canary releases
+- Each release has independent counter and percentage
+- Useful for managing multiple feature rollouts simultaneously
+
+**Selectors:**
+- `RandomSelector(percentage)`: Uses `math/rand` for random selection (non-cryptographic)
+- `HeaderSelector(header, value)`: Selects based on header value
+- `CookieSelector(name, value)`: Selects based on cookie value
+- Custom selectors via `Options.Selector` function
+
+### Security Notes
+
+The implementation intentionally uses `math/rand` (not `crypto/rand`) for performance:
+- Canary selection is non-security-critical
+- `gosec G404` warnings are suppressed with explanation
+- The counter-based default approach is fully deterministic
+
 ## Best Practices
 
 - Start with low percentages (1-5%)
 - Monitor error rates for canary traffic
 - Use sticky sessions for stateful applications
 - Provide override mechanism for testing
+
+## Testing
+
+### Test Coverage
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| TestNew | Basic percentage-based canary routing with 50% split | Approximately 50% of 100 requests are marked as canary (40-60% range) |
+| TestWithOptions_Header (with header) | Header override with X-Canary: true | Request is marked as canary when header is present |
+| TestWithOptions_Header (without header) | No header with 0% percentage | Request is not marked as canary |
+| TestWithOptions_Cookie | Cookie-based canary selection | Request is marked as canary when cookie matches |
+| TestWithOptions_Selector | Custom selector based on User-Agent | Request is marked as canary when User-Agent equals "Canary" |
+| TestRoute | Route function with stable traffic | Returns "stable" response for non-canary requests |
+| TestRoute_Canary | Route function with canary header | Returns "canary" response when X-Canary header is set |
+| TestMiddleware (stable) | Middleware selection for stable traffic | Applies stable middleware, sets X-Version: stable header |
+| TestMiddleware (canary) | Middleware selection for canary traffic | Applies canary middleware, sets X-Version: canary header |
+| TestReleaseManager | ReleaseManager set/get operations | Can set and retrieve release configurations by name |
+| TestReleaseManager_ShouldUseCanary | ReleaseManager percentage distribution | Approximately 50% canary selection over 100 calls (40-60% range) |
+| TestHeaderSelector (matching) | HeaderSelector with matching value | Selector returns true for matching header value |
+| TestHeaderSelector (non-matching) | HeaderSelector with non-matching value | Selector returns false for non-matching header value |
+| TestCookieSelector | CookieSelector with matching cookie | Selector returns true for matching cookie name and value |
 
 ## Related Middlewares
 

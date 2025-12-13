@@ -81,12 +81,50 @@ func New(limit int) mizu.Middleware
 func WithOptions(opts Options) mizu.Middleware
 ```
 
+## Technical Details
+
+The concurrency middleware uses Go's buffered channels as semaphores to control concurrent request processing:
+
+### Implementation Mechanisms
+
+1. **Semaphore Pattern**: Uses a buffered channel with capacity equal to the maximum concurrent requests limit
+2. **Non-blocking Acquisition**: The default `New()` and `WithOptions()` use `select` with `default` to immediately reject requests when at capacity
+3. **Blocking Acquisition**: The `Blocking()` variant blocks requests until a slot becomes available
+4. **Context-aware**: The `WithContext()` variant respects context cancellation while waiting for a slot
+
+### Core Components
+
+- **Options struct**: Configures maximum concurrent requests and custom error handling
+- **Semaphore channel**: Controls access to the handler based on the configured limit
+- **Deferred release**: Ensures semaphore slots are released even if the handler panics
+- **Retry-After header**: Automatically set to "1" second when requests are rejected
+
+### Behavior Patterns
+
+- **Zero or negative limit**: Immediately rejects all requests with 503 Service Unavailable
+- **Default error response**: Returns 503 with "Server at capacity" message
+- **Custom error handler**: Allows full control over rejection response format and status code
+
 ## Best Practices
 
 - Set limits based on resource capacity
 - Monitor concurrent request counts
 - Use different limits for different workloads
 - Combine with timeout for hung requests
+
+## Testing
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Creates middleware with limit of 2 and sends 5 concurrent requests | Max concurrent requests never exceeds the configured limit of 2 |
+| `TestNew_RejectsOverCapacity` | Sends 3 concurrent requests with limit of 1 | Some requests are rejected with 503 Service Unavailable status |
+| `TestWithOptions_ErrorHandler` | Uses custom error handler with Max: 0 | Custom error handler is invoked, returns 429 with JSON error message |
+| `TestBlocking` | Uses Blocking variant with limit of 2 and 5 concurrent requests | All requests eventually succeed (200 OK), max concurrent never exceeds 2 |
+| `TestRetryAfterHeader` | Sends request with Max: 0 (immediate rejection) | Response includes "Retry-After: 1" header |
+| `TestWithContext` | Uses WithContext variant with limit of 2 and 5 concurrent requests | Max concurrent requests never exceeds limit of 2 |
+| `TestWithContext_ContextCancellation` | Tests context cancellation with WithContext variant | First request blocks, completes when channel is closed |
+| `TestWithOptions_NegativeMax` | Configures middleware with Max: -1 | All requests rejected with 503 Service Unavailable |
+| `TestWithOptions_ErrorHandlerAtCapacity` | Custom error handler with Max: 1, sends 2 concurrent requests | Second request triggers custom error handler, returns 429 status |
 
 ## Related Middlewares
 

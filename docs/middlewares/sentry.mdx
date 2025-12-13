@@ -122,12 +122,93 @@ func SetUser(c *mizu.Ctx, user User)
 func SetTag(c *mizu.Ctx, key, value string)
 ```
 
+## Technical Details
+
+### Architecture
+
+The Sentry middleware is built around a lightweight error tracking system with the following components:
+
+**Hub**: Central management structure that handles event capture, storage, and transport. Each middleware instance creates a Hub that is stored in the request context.
+
+**Event**: Represents an error event with metadata including:
+- Event ID, timestamp, and severity level
+- Exception details with stack traces
+- HTTP request information (URL, method, headers, query strings)
+- User context, tags, and extra data
+- Runtime context (Go version, platform)
+
+**Transport**: Interface for sending events to Sentry. Supports custom implementations via the `Transport` interface:
+- `MockTransport`: For testing, stores events in memory
+- `HTTPTransport`: Sends events to Sentry via HTTP
+- Custom transports can be implemented by satisfying the `Transport` interface
+
+### Event Capture Flow
+
+1. Middleware wraps the handler with panic recovery
+2. Hub is stored in request context for the lifetime of the request
+3. Errors returned from handlers are automatically captured
+4. Panics are caught, converted to events, and re-thrown
+5. Events are processed through hooks (BeforeSend) before sending
+6. Events are sent asynchronously via the configured transport
+
+### Stack Trace Capture
+
+Stack traces are captured using Go's `runtime.Callers` and `runtime.CallersFrames`:
+- Frames include filename, function name, line number, and absolute path
+- Configurable skip depth to exclude middleware internals
+- Frames are reversed to show most recent call first
+
+### Header Filtering
+
+Sensitive headers are automatically filtered from request data:
+- `Authorization`
+- `Cookie`
+- `X-Api-Key`
+
+### Sampling
+
+Events can be sampled based on `SampleRate` (0.0 to 1.0):
+- 1.0 captures all events (default)
+- 0.5 captures 50% of events
+- Sampling uses nanosecond precision for distribution
+
+### Context Management
+
+The middleware uses Go's context to store:
+- Hub instance (via `hubKey`)
+- User information (via `userContextKey`)
+- Tags (via `tagsContextKey`)
+- Extra data (via `extraContextKey`)
+
 ## Best Practices
 
 - Use environment for staging/production
 - Set release for version tracking
 - Add user context for debugging
 - Sample transactions in production
+
+## Testing
+
+The Sentry middleware includes comprehensive test coverage for all major features:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware initialization | Middleware processes requests successfully |
+| `TestCaptureError` | Error capture from handler | Error event captured with correct message and level "error" |
+| `TestCaptureMessage` | Manual message capture | Message event captured with level "info" |
+| `TestCapturePanic` | Panic recovery | Panic captured as "fatal" level event and re-thrown |
+| `TestEnvironmentAndRelease` | Environment and release configuration | Events include configured environment and release values |
+| `TestTags` | Default tags configuration | Default tags applied to all events |
+| `TestBeforeSend` | BeforeSend hook modification | Hook can modify events before sending |
+| `TestBeforeSendDrop` | BeforeSend hook event dropping | Returning nil from hook prevents event capture |
+| `TestRequestInfo` | HTTP request metadata capture | Event includes method, URL, query string, and headers |
+| `TestSensitiveHeadersFiltered` | Sensitive header filtering | Authorization, Cookie, and X-Api-Key headers excluded |
+| `TestStacktrace` | Stack trace generation | Events include stack trace with frames |
+| `TestMockTransport` | Mock transport for testing | Events sent to custom transport |
+| `TestHubEvents` | Hub event storage and clearing | Events can be retrieved and cleared from hub |
+| `TestGetHub` | Hub retrieval from context | Hub accessible within request handlers |
+| `TestSetUser` | User context setting | User information can be set on context |
+| `TestSetTagAndExtra` | Dynamic tags and extra data | Tags and extra data can be set per request |
 
 ## Related Middlewares
 

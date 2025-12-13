@@ -107,12 +107,59 @@ func Get(c *mizu.Ctx) string
 func Set(c *mizu.Ctx, lang string)
 ```
 
+## Technical Details
+
+### Implementation Architecture
+
+The language middleware uses a multi-source detection strategy with priority-based resolution:
+
+1. **Context Storage**: Detected language is stored in the request context using a private `contextKey` type
+2. **Case-Insensitive Matching**: All language comparisons are performed case-insensitively using lowercase normalization
+3. **Regional Support**: Handles both base language codes (e.g., "en") and regional variants (e.g., "en-US", "en-GB")
+4. **Quality-Based Parsing**: Accept-Language header parsing respects quality values (q-values) for prioritization
+
+### Key Components
+
+- **isSupported()**: Validates if a language code exists in the supported languages map
+- **normalize()**: Converts detected language codes to the exact format defined in supported languages
+- **parseAcceptLanguage()**: Parses Accept-Language header with quality values, sorts by quality descending
+- **Path Prefix Handling**: When enabled, strips the language prefix from the URL path (e.g., `/fr/page` becomes `/page`)
+
+### Configuration Defaults
+
+```go
+// Default values when not specified
+QueryParam:  "lang"          // Query parameter name
+CookieName:  "lang"          // Cookie name
+Header:      "Accept-Language" // HTTP header
+PathPrefix:  false           // Path prefix detection disabled
+Default:     supported[0]    // First supported language
+```
+
 ## Best Practices
 
 - Support common language codes
 - Provide language switcher UI
 - Persist user preference
 - Use ISO 639-1 codes (en, es, fr)
+
+## Testing
+
+The middleware includes comprehensive test coverage for all detection mechanisms and edge cases:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| TestNew | Basic middleware creation with Accept-Language header | Detects language from Accept-Language header ("es") |
+| TestWithOptions_QueryParam | Custom query parameter detection | Detects language from query parameter "language=de" |
+| TestWithOptions_Cookie | Custom cookie name detection | Detects language from cookie "user_lang=ja" |
+| TestWithOptions_PathPrefix | Path prefix language detection | Detects "fr" from "/fr/page" and strips prefix to "/page" |
+| TestWithOptions_AcceptLanguageQuality | Quality value parsing in Accept-Language | Selects "fr" with q=0.9 over "en" with q=0.5 |
+| TestWithOptions_AcceptLanguageRegion | Regional language variant detection | Detects exact match "en-GB" from regional variants |
+| TestWithOptions_Fallback | Default language fallback | Falls back to "en" when unsupported language "zh" requested |
+| TestWithOptions_Priority | Detection priority order | Query parameter ("es") takes priority over Accept-Language ("fr") |
+| TestFromContext | Context retrieval alias function | Get() and FromContext() return identical values |
+| TestWithOptions_NoHeader | No language hints provided | Falls back to default language "en" |
+| TestWithOptions_CaseInsensitive | Case-insensitive language matching | Matches "es" query to "ES" in supported languages |
 
 ## Related Middlewares
 

@@ -132,6 +132,40 @@ func GB(n int64) int64
 2. **Body Wrapping**: Wraps request body with `http.MaxBytesReader`
 3. **Read Enforcement**: If body read exceeds limit, returns error
 
+## Technical Details
+
+### Implementation
+
+The bodylimit middleware uses a two-stage approach to enforce body size limits:
+
+1. **Pre-flight Validation**: Before processing the request, it checks the `Content-Length` header against the configured limit. If the header indicates the body will exceed the limit, the middleware immediately returns a 413 status code without reading the body.
+
+2. **Runtime Enforcement**: The middleware wraps the request body with `http.MaxBytesReader`, which enforces the limit during body reading operations. This catches cases where:
+   - The `Content-Length` header is missing or set to -1 (unknown length)
+   - The actual body size differs from the declared `Content-Length`
+   - Chunked transfer encoding is used
+
+### Default Behavior
+
+- **Default Limit**: 1MB (1 << 20 bytes) when `Limit` is set to 0 or negative value
+- **Default Error Response**: Returns HTTP 413 (Request Entity Too Large) with plain text message
+- **Body Wrapping**: Uses `http.MaxBytesReader` to wrap the request body, which provides graceful error handling during reads
+
+### Error Handling
+
+The middleware supports custom error handlers through the `ErrorHandler` option. When the limit is exceeded:
+
+1. If a custom `ErrorHandler` is configured, it is invoked with the request context
+2. Otherwise, returns default 413 response with status text
+
+### Helper Functions
+
+The middleware provides convenient helper functions for common size units:
+
+- `KB(n)`: Converts kilobytes to bytes (n × 1024)
+- `MB(n)`: Converts megabytes to bytes (n × 1024 × 1024)
+- `GB(n)`: Converts gigabytes to bytes (n × 1024 × 1024 × 1024)
+
 ## Best Practices
 
 - Set appropriate limits based on expected data
@@ -139,6 +173,23 @@ func GB(n int64) int64
 - Use larger limits for file uploads
 - Consider user experience in error messages
 - Monitor rejected requests
+
+## Testing
+
+The bodylimit middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew/allows small body` | Tests that bodies under the limit are accepted | Returns 200 OK and the full body content |
+| `TestNew/rejects large body by content-length` | Tests Content-Length header validation | Returns 413 Request Entity Too Large when Content-Length exceeds limit |
+| `TestNew/rejects large body during read` | Tests enforcement during body reading when Content-Length is unknown (-1) | Returns error during body read operation |
+| `TestWithHandler` | Tests custom error handler functionality | Calls custom error handler and returns JSON error response with 413 status |
+| `TestWithOptions_Default` | Tests default 1MB limit when no limit is specified | Accepts 512KB body with default configuration |
+| `TestHelpers/KB` | Tests KB helper function with various inputs | Correctly converts KB to bytes (1KB = 1024, 10KB = 10240) |
+| `TestHelpers/MB` | Tests MB helper function with various inputs | Correctly converts MB to bytes (1MB = 1048576, 5MB = 5242880) |
+| `TestHelpers/GB` | Tests GB helper function with various inputs | Correctly converts GB to bytes (1GB = 1073741824, 2GB = 2147483648) |
+| `TestNew_WithHelpers/allows under limit` | Tests helper functions integrated with New() for bodies under limit | Accepts 5KB body with 10KB limit |
+| `TestNew_WithHelpers/rejects over limit` | Tests helper functions integrated with New() for bodies over limit | Rejects 15KB body with 10KB limit, returns 413 |
 
 ## Related Middlewares
 

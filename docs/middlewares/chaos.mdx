@@ -243,6 +243,51 @@ admin.Use(basicauth.New(basicauth.Options{
 admin.Post("/chaos/enable", enableChaosHandler)
 ```
 
+## Technical Details
+
+### Architecture
+
+The chaos middleware implements failure injection through a middleware chain pattern, supporting both static and dynamic configuration:
+
+- **Static Configuration**: `WithOptions()`, `Error()`, and `Latency()` create middleware with fixed settings
+- **Dynamic Configuration**: `Controller` provides thread-safe runtime configuration changes
+
+### Implementation Details
+
+**Random Number Generation**:
+- Uses `math/rand` instead of `crypto/rand` for performance (intentionally weak RNG)
+- Error injection: Generates random number 0-99 and compares against error rate percentage
+- Latency injection: Calculates random duration between min and max using `rand.Int63n()`
+
+**Latency Calculation**:
+```
+latency = LatencyMin + rand.Int63n(LatencyMax - LatencyMin)
+```
+
+**Request Flow**:
+1. Check if chaos is enabled
+2. Apply selector filter (if configured)
+3. Inject latency (if configured)
+4. Inject error based on probability (if configured)
+5. Pass to next handler (if no error injected)
+
+**Selector Functions**:
+- `PathSelector`: Creates a map of paths for O(1) lookup
+- `MethodSelector`: Creates a map of HTTP methods for O(1) lookup
+- `HeaderSelector`: Checks header presence using standard library
+
+**Controller Thread Safety**:
+- Options are read atomically during request processing
+- Enable/Disable uses boolean flag
+- Configuration methods update fields directly (suitable for controlled admin access)
+
+### Performance Considerations
+
+- Selector maps provide constant-time path/method matching
+- No mutex locking on hot path for static configuration
+- `time.Sleep()` blocks the handler goroutine (intentional for testing)
+- Random number generation is non-cryptographic for speed
+
 ## Best Practices
 
 - Never enable in production without safeguards
@@ -251,6 +296,24 @@ admin.Post("/chaos/enable", enableChaosHandler)
 - Monitor during chaos testing
 - Use header-triggered chaos for CI/CD tests
 - Implement circuit breakers in your clients
+
+## Testing
+
+The chaos middleware includes comprehensive test coverage for all features:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Default middleware creation | Returns 200 OK (chaos disabled by default) |
+| `TestError` | Error injection with 100% rate | Returns 503 Service Unavailable |
+| `TestLatency` | Latency injection (50-100ms) | Request takes >= 50ms to complete |
+| `TestWithOptions_Disabled` | Disabled chaos with 100% error rate | Returns 200 OK (no error injection) |
+| `TestWithOptions_Selector` | Custom selector for specific path | Injects error on `/chaos`, allows `/normal` |
+| `TestController` | Controller enable/disable | Correctly toggles enabled state |
+| `TestController_Middleware` | Controller middleware integration | Injects errors only when enabled |
+| `TestController_SetErrorCode` | Custom error code via controller | Returns 502 Bad Gateway |
+| `TestPathSelector` | Path-based selector | Matches `/api/chaos`, ignores `/api/normal` |
+| `TestHeaderSelector` | Header presence selector | Selects requests with `X-Chaos` header |
+| `TestMethodSelector` | HTTP method selector | Matches POST, ignores GET |
 
 ## Related Middlewares
 

@@ -1,16 +1,18 @@
 ---
 title: "GraphQL"
-description: "GraphQL request handling middleware for GraphQL APIs."
+description: "GraphQL query validation middleware for securing GraphQL APIs."
 ---
 
 ## Overview
 
-The `graphql` middleware provides GraphQL request handling, context integration, and query execution helpers.
+The `graphql` middleware provides GraphQL query validation and security features including depth limiting, complexity analysis, introspection control, and field blocking.
 
 Use it when you need:
-- GraphQL API endpoints
-- Query execution helpers
-- GraphQL context management
+- Query depth and complexity validation
+- Introspection query control
+- Field-level access control
+- Operation allowlisting
+- Protection against malicious queries
 
 ## Installation
 
@@ -23,10 +25,10 @@ import "github.com/go-mizu/mizu/middlewares/graphql"
 ```go
 app := mizu.New()
 
-schema := graphql.MustParseSchema(schemaString, resolver)
+// Use default validation (max depth: 10, max complexity: 100)
+app.Use(graphql.New())
 
-app.Post("/graphql", graphql.Handler(schema))
-app.Get("/graphql", graphql.PlaygroundHandler())
+app.Post("/graphql", yourGraphQLHandler)
 ```
 
 ## Configuration
@@ -35,57 +37,74 @@ app.Get("/graphql", graphql.PlaygroundHandler())
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `Schema` | `*graphql.Schema` | Required | GraphQL schema |
-| `Playground` | `bool` | `false` | Enable playground |
-| `Introspection` | `bool` | `true` | Allow introspection |
+| `MaxDepth` | `int` | `10` | Maximum query depth allowed |
+| `MaxComplexity` | `int` | `100` | Maximum query complexity allowed |
+| `DisableIntrospection` | `bool` | `false` | Disable introspection queries |
+| `AllowedOperations` | `[]string` | `nil` | Whitelist of allowed operation names |
+| `BlockedFields` | `[]string` | `nil` | List of fields to block |
+| `ErrorHandler` | `func(*mizu.Ctx, error) error` | `nil` | Custom error handler |
 
 ## Examples
 
 ### Basic Setup
 
 ```go
-schemaString := `
-    type Query {
-        user(id: ID!): User
-    }
-    type User {
-        id: ID!
-        name: String!
-    }
-`
+// Use with default settings
+app.Use(graphql.New())
 
-type resolver struct{}
-
-func (r *resolver) User(args struct{ ID string }) *userResolver {
-    return &userResolver{id: args.ID}
-}
-
-schema := graphql.MustParseSchema(schemaString, &resolver{})
-app.Post("/graphql", graphql.Handler(schema))
+app.Post("/graphql", yourGraphQLHandler)
 ```
 
-### With Playground
+### Custom Depth and Complexity Limits
 
 ```go
-app.Post("/graphql", graphql.Handler(schema))
-app.Get("/graphql", graphql.PlaygroundHandler())
-```
-
-### Context Integration
-
-```go
-app.Post("/graphql", graphql.HandlerWithContext(schema, func(c *mizu.Ctx) context.Context {
-    ctx := c.Context()
-    ctx = context.WithValue(ctx, "user", getUser(c))
-    return ctx
+app.Use(graphql.WithOptions(graphql.Options{
+    MaxDepth:      5,
+    MaxComplexity: 50,
 }))
+```
+
+### Production Configuration
+
+```go
+// Production-ready settings with introspection disabled
+app.Use(graphql.Production())
 ```
 
 ### Disable Introspection
 
 ```go
-app.Post("/graphql", graphql.Handler(schema, graphql.Options{
-    Introspection: false, // Production security
+// Block __schema and __type queries
+app.Use(graphql.NoIntrospection())
+```
+
+### Block Sensitive Fields
+
+```go
+// Prevent access to specific fields
+app.Use(graphql.BlockFields("password", "secret", "apiKey"))
+```
+
+### Allowlist Operations
+
+```go
+app.Use(graphql.WithOptions(graphql.Options{
+    AllowedOperations: []string{"GetUser", "ListPosts", "CreateComment"},
+}))
+```
+
+### Custom Error Handler
+
+```go
+app.Use(graphql.WithOptions(graphql.Options{
+    MaxDepth: 10,
+    ErrorHandler: func(c *mizu.Ctx, err error) error {
+        return c.JSON(http.StatusForbidden, map[string]any{
+            "errors": []map[string]string{
+                {"message": "Query validation failed", "detail": err.Error()},
+            },
+        })
+    },
 }))
 ```
 
@@ -94,25 +113,161 @@ app.Post("/graphql", graphql.Handler(schema, graphql.Options{
 ### Functions
 
 ```go
-// Handler creates GraphQL handler
-func Handler(schema *graphql.Schema, opts ...Options) mizu.Handler
+// New creates GraphQL validation middleware with default options
+func New() mizu.Middleware
 
-// HandlerWithContext creates handler with context
-func HandlerWithContext(schema *graphql.Schema, ctxFn func(*mizu.Ctx) context.Context) mizu.Handler
+// WithOptions creates GraphQL validation middleware with custom options
+func WithOptions(opts Options) mizu.Middleware
 
-// PlaygroundHandler returns GraphQL Playground
-func PlaygroundHandler() mizu.Handler
+// MaxDepth creates middleware with a specific max depth
+func MaxDepth(depth int) mizu.Middleware
 
-// MustParseSchema parses schema or panics
-func MustParseSchema(schema string, resolver any) *graphql.Schema
+// MaxComplexity creates middleware with a specific max complexity
+func MaxComplexity(complexity int) mizu.Middleware
+
+// NoIntrospection creates middleware that disables introspection
+func NoIntrospection() mizu.Middleware
+
+// Production creates middleware with production-ready settings
+func Production() mizu.Middleware
+
+// BlockFields creates middleware that blocks specific fields
+func BlockFields(fields ...string) mizu.Middleware
 ```
+
+### Error Types
+
+```go
+const (
+    ErrQueryTooDeep          = "query exceeds maximum depth"
+    ErrQueryTooComplex       = "query exceeds maximum complexity"
+    ErrIntrospectionDisabled = "introspection queries are disabled"
+    ErrOperationNotAllowed   = "operation not allowed"
+    ErrBlockedField          = "query contains blocked field"
+)
+```
+
+## Technical Details
+
+### Query Validation Process
+
+The middleware validates GraphQL queries through the following process:
+
+1. **Request Filtering**: Only processes POST requests with `application/json` content type
+2. **Query Parsing**: Parses the request body into a `Query` structure containing:
+   - `query`: The GraphQL query string
+   - `operationName`: Named operation identifier
+   - `variables`: Query variables map
+3. **Validation Chain**: Applies validations in order:
+   - Introspection check (if enabled)
+   - Operation allowlist check (if configured)
+   - Depth calculation and validation
+   - Complexity calculation and validation
+   - Blocked fields check (if configured)
+4. **Body Restoration**: Restores the request body for downstream handlers
+
+### Depth Calculation
+
+Query depth is calculated by counting the maximum nesting level of braces `{}`:
+- Tracks current depth using a counter
+- Increments on `{`, decrements on `}`
+- Records the maximum depth reached
+
+Example:
+```graphql
+{ users { posts { id } } }  // Depth: 3
+```
+
+### Complexity Calculation
+
+Query complexity is estimated using:
+- Count of field selections with braces: `\w+\s*(?:\([^)]*\))?\s*{`
+- Plus total count of opening braces `{`
+
+This provides a simple heuristic for query cost.
+
+### Introspection Detection
+
+Introspection queries are detected using regex pattern matching for:
+- `__schema` - Schema introspection
+- `__type` - Type introspection
+
+### Implementation Notes
+
+- The middleware preserves the request body after validation for downstream handlers
+- Non-POST requests and non-JSON requests bypass validation
+- Failed JSON parsing allows the request to pass through (handled by GraphQL server)
+- Default limits provide reasonable protection for most applications
 
 ## Best Practices
 
 - Disable introspection in production
-- Use DataLoader for batching
-- Implement proper authorization
-- Rate limit complex queries
+- Set appropriate depth limits based on your schema
+- Use complexity limits to prevent resource exhaustion
+- Block sensitive fields at the middleware level
+- Implement custom error handlers for better user experience
+- Combine with rate limiting for additional protection
+
+## Testing
+
+### Test Coverage
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Default middleware creation | Accepts valid queries with default limits |
+| `TestWithOptions_MaxDepth` | Query depth validation | Rejects queries exceeding max depth (4 > 2) |
+| `TestWithOptions_MaxComplexity` | Query complexity validation | Rejects queries exceeding max complexity |
+| `TestWithOptions_DisableIntrospection` | Introspection blocking | Blocks `__schema` and `__type` queries |
+| `TestWithOptions_BlockedFields` | Field blocking | Rejects queries containing blocked fields (password, secret) |
+| `TestSkipNonPOST` | GET request handling | Allows non-POST requests to pass through |
+| `TestMaxDepth` | MaxDepth helper function | Accepts queries within depth limit (2 ≤ 3) |
+| `TestMaxComplexity` | MaxComplexity helper function | Accepts queries within complexity limit |
+| `TestNoIntrospection` | NoIntrospection helper | Blocks `__type` introspection queries |
+| `TestProduction` | Production configuration | Applies production settings (depth:10, complexity:100, no introspection) |
+| `TestBlockFields` | BlockFields helper | Blocks specified mutation fields (deleteMutation, adminAccess) |
+| `TestCustomErrorHandler` | Custom error handling | Uses custom error handler with HTTP 403 status |
+
+## Security Considerations
+
+### Query Depth Attacks
+
+Deep nested queries can cause exponential computation:
+
+```graphql
+{ users { friends { friends { friends { ... } } } } }
+```
+
+Mitigation: Set `MaxDepth` based on your schema's maximum legitimate nesting.
+
+### Query Complexity Attacks
+
+Complex queries can exhaust server resources:
+
+```graphql
+{ users { posts { comments { author { posts { comments { ... } } } } } } }
+```
+
+Mitigation: Use `MaxComplexity` to limit total query cost.
+
+### Introspection Leaks
+
+Introspection exposes your entire schema structure:
+
+```graphql
+{ __schema { types { name fields { name } } } }
+```
+
+Mitigation: Disable introspection in production with `NoIntrospection()` or `Production()`.
+
+### Sensitive Field Access
+
+Prevent access to sensitive fields:
+
+```graphql
+{ users { password ssn apiKey } }
+```
+
+Mitigation: Use `BlockFields()` to prevent access to sensitive data.
 
 ## Related Middlewares
 

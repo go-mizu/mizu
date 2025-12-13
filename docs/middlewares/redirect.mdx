@@ -125,6 +125,74 @@ type Rule struct {
 | 307 | Temporary | Preserve method |
 | 308 | Permanent | Preserve method |
 
+## Technical Details
+
+### Implementation Overview
+
+The redirect middleware provides several specialized redirect handlers, each implemented as a middleware function that returns a handler chain:
+
+#### HTTPS Redirect
+- Checks if the request is non-HTTPS by examining `c.Request().TLS` and the `X-Forwarded-Proto` header
+- Constructs the HTTPS URL using the request's host and request URI
+- Returns redirect response with the specified status code (default: 301)
+
+#### WWW Domain Redirect
+- **WWWRedirect**: Checks if the host lacks the "www." prefix and adds it
+- **NonWWWRedirect**: Checks if the host has the "www." prefix and removes it
+- Preserves the original protocol (HTTP/HTTPS) by checking TLS and `X-Forwarded-Proto`
+- Constructs the redirect URL with the modified host
+
+#### Trailing Slash Redirect
+- Examines the request path to see if it lacks a trailing slash
+- Skips the root path ("/") to avoid unnecessary redirects
+- Preserves query strings when redirecting
+- Adds "/" suffix to the path before redirecting
+
+#### Custom Rule-Based Redirect
+The `New()` function processes redirect rules with the following behavior:
+- Compiles regex patterns at initialization time for performance
+- Sets default status code (301) if not specified
+- For each request, iterates through rules in order:
+  - **Regex rules**: Uses `FindStringSubmatch` to capture groups, replaces `$0`, `$1`, `$2`, etc. in the target URL
+  - **Exact match rules**: Performs simple string comparison on the path
+- Preserves query strings by appending `RawQuery` to the target URL
+- Returns the first matching rule's redirect
+
+### Performance Considerations
+
+- Regex patterns are compiled once during middleware initialization, not on each request
+- Rules are evaluated in order; place more frequently matched rules first
+- HTTPS and WWW redirects perform minimal string operations
+- Query string preservation adds negligible overhead
+
+## Best Practices
+
+1. **Order Matters**: Apply HTTPS redirect before WWW/non-WWW redirects
+2. **Status Codes**: Use 301 for permanent SEO-friendly redirects, 307/308 to preserve HTTP methods
+3. **Regex Efficiency**: Keep regex patterns simple; complex patterns impact performance
+4. **Rule Organization**: Place frequently matched rules at the beginning of the rules array
+5. **Testing**: Always test redirects with query strings and various HTTP methods
+
+## Testing
+
+The redirect middleware includes comprehensive test coverage for all redirect scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestHTTPSRedirect - redirects HTTP to HTTPS` | HTTP request to example.com/test | Redirects to https://example.com/test with 301 status |
+| `TestHTTPSRedirect - allows HTTPS` | HTTPS request with X-Forwarded-Proto header | Passes through with 200 status (no redirect) |
+| `TestHTTPSRedirectCode` | HTTP request with custom redirect code (307) | Redirects with 307 Temporary Redirect status |
+| `TestWWWRedirect - redirects to www` | Request to example.com/test | Redirects to www.example.com/test with 301 status |
+| `TestWWWRedirect - allows www` | Request to www.example.com/test | Passes through with 200 status (no redirect) |
+| `TestNonWWWRedirect - redirects from www` | Request to www.example.com/test | Redirects to example.com/test with 301 status |
+| `TestNonWWWRedirect - allows non-www` | Request to example.com/test | Passes through with 200 status (no redirect) |
+| `TestNew - redirects matching rule` | Request to /old with rule {From: "/old", To: "/new"} | Redirects to /new with 301 status |
+| `TestNew - preserves query string` | Request to /old?foo=bar | Redirects to /new?foo=bar with query preserved |
+| `TestNew_Regex - regex redirect with capture` | Request to /users/123 with pattern /users/(\d+) | Redirects to /profile/123 with captured group |
+| `TestTrailingSlashRedirect - adds trailing slash` | Request to /test without trailing slash | Redirects to /test/ with 301 status |
+| `TestTrailingSlashRedirect - preserves query on redirect` | Request to /test?a=1 | Redirects to /test/?a=1 with query preserved |
+| `TestTrailingSlashRedirect - skips root path` | Request to / (root path) | Passes through with 200 status (no redirect) |
+
 ## Related Middlewares
 
 - [slash](/middlewares/slash) - Trailing slash handling

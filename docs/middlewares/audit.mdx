@@ -169,6 +169,43 @@ func (h *BufferedHandler) Flush()
 func (h *BufferedHandler) Close()
 ```
 
+## Technical Details
+
+### Implementation Architecture
+
+The audit middleware is built around a flexible handler pattern that processes audit entries containing comprehensive request/response metadata.
+
+#### Core Components
+
+**Entry Structure**: The `Entry` type captures all relevant information about an HTTP request/response cycle:
+- Request metadata (timestamp, method, path, query, remote address, user agent)
+- Request identification (request ID from configurable header)
+- Optional request body capture with size limits
+- Response status and latency measurement
+- Error information if handler returns an error
+- Custom metadata extension point
+
+**Response Writer Wrapping**: The middleware uses a custom `auditResponseWriter` that wraps the standard `http.ResponseWriter` to capture the response status code. This wrapper intercepts `WriteHeader` and `Write` calls to record the status, defaulting to 200 OK if not explicitly set.
+
+**Request Body Capture**: When enabled, the middleware reads the request body up to `MaxBodySize` using `io.LimitReader`, then restores it using `io.MultiReader` so downstream handlers can still access it. This ensures body capture doesn't interfere with normal request processing.
+
+**Timing Measurement**: Latency is calculated by recording the start time before calling the next handler and computing the elapsed duration after it returns. This provides accurate end-to-end request processing time.
+
+#### Handler Patterns
+
+**Synchronous Handler**: The basic handler function receives each entry immediately and processes it in the request path. Suitable for logging to stdout or fast operations.
+
+**Channel Handler**: Sends entries to a buffered channel for asynchronous processing. Uses a non-blocking select with default case to drop entries if the channel is full, preventing request blocking.
+
+**Buffered Handler**: Collects entries in memory and flushes them in batches either when reaching `maxSize` or on a timer interval. Includes proper mutex protection for concurrent access and a background goroutine for periodic flushing.
+
+### Configuration Defaults
+
+- `RequestIDHeader`: "X-Request-ID"
+- `MaxBodySize`: 1024 bytes
+- `Handler`: Defaults to encoding JSON to `io.Discard` if not specified
+- `IncludeRequestBody`: false (opt-in for performance and privacy)
+
 ## Best Practices
 
 - Use async handlers for high-traffic applications
@@ -176,6 +213,22 @@ func (h *BufferedHandler) Close()
 - Skip logging for health checks and metrics endpoints
 - Include request IDs for correlation with other logs
 - Buffer writes for database storage
+
+## Testing
+
+The audit middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware creation with handler | Captures all entry fields (method, path, query, user agent, request ID, status, latency) correctly |
+| `TestWithOptions_RequestBody` | Request body capture with size limit | Reads and stores request body up to MaxBodySize, body remains readable by handler |
+| `TestWithOptions_Skip` | Conditional logging with skip function | Skips audit logging for matched requests (/health), logs others normally |
+| `TestWithOptions_Metadata` | Custom metadata injection | Adds custom key-value pairs to entry metadata via callback function |
+| `TestWithOptions_Error` | Error handling and status capture | Records error status codes (500) correctly when handler returns error |
+| `TestChannelHandler` | Async channel-based handler | Sends entries to channel without blocking request processing |
+| `TestBufferedHandler` | Batch processing with size trigger | Buffers entries and flushes when batch size (3) is reached |
+| `TestBufferedHandler_Flush` | Manual flush operation | Immediately flushes buffered entries when Flush() is called |
+| `TestBufferedHandler_Handler` | Handler function retrieval | Returns valid handler function for middleware integration |
 
 ## Related Middlewares
 

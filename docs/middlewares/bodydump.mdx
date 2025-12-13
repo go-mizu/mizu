@@ -35,9 +35,12 @@ app.Use(bodydump.New(func(c *mizu.Ctx, reqBody, resBody []byte) {
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
+| `Request` | `bool` | `true` | Dump request body |
+| `Response` | `bool` | `true` | Dump response body |
+| `MaxSize` | `int64` | `64KB` | Max body size to capture |
 | `Handler` | `func(*mizu.Ctx, []byte, []byte)` | Required | Dump callback |
-| `MaxSize` | `int` | `10KB` | Max body size to capture |
-| `Skip` | `func(*mizu.Ctx) bool` | `nil` | Skip dumping |
+| `SkipPaths` | `[]string` | `nil` | Paths to skip |
+| `SkipContentTypes` | `[]string` | `nil` | Content types to skip |
 
 ## Examples
 
@@ -61,14 +64,37 @@ app.Use(bodydump.WithOptions(bodydump.Options{
 }))
 ```
 
-### Skip Health Checks
+### Skip Specific Paths
 
 ```go
 app.Use(bodydump.WithOptions(bodydump.Options{
-    Handler: dumpHandler,
-    Skip: func(c *mizu.Ctx) bool {
-        return c.Request().URL.Path == "/health"
-    },
+    Handler:   dumpHandler,
+    SkipPaths: []string{"/health", "/metrics"},
+}))
+```
+
+### Skip Content Types
+
+```go
+app.Use(bodydump.WithOptions(bodydump.Options{
+    Handler:          dumpHandler,
+    SkipContentTypes: []string{"image/jpeg", "image/png"},
+}))
+```
+
+### Request Only
+
+```go
+app.Use(bodydump.RequestOnly(func(c *mizu.Ctx, body []byte) {
+    log.Printf("Request: %s", body)
+}))
+```
+
+### Response Only
+
+```go
+app.Use(bodydump.ResponseOnly(func(c *mizu.Ctx, body []byte) {
+    log.Printf("Response: %s", body)
 }))
 ```
 
@@ -96,7 +122,41 @@ func New(handler func(*mizu.Ctx, []byte, []byte)) mizu.Middleware
 
 // WithOptions creates with configuration
 func WithOptions(opts Options) mizu.Middleware
+
+// RequestOnly dumps only request bodies
+func RequestOnly(handler func(*mizu.Ctx, []byte)) mizu.Middleware
+
+// ResponseOnly dumps only response bodies
+func ResponseOnly(handler func(*mizu.Ctx, []byte)) mizu.Middleware
 ```
+
+## Technical Details
+
+### Implementation Overview
+
+The bodydump middleware uses a capture mechanism to intercept and store request/response bodies:
+
+1. **Request Body Capture**: Reads the request body using `io.LimitReader` to respect the `MaxSize` limit, then restores it using `io.NopCloser` with a bytes reader so downstream handlers can still access it.
+
+2. **Response Body Capture**: Implements a custom `responseCapture` wrapper that implements `http.ResponseWriter`. It intercepts `Write()` calls to capture the response body up to the configured `MaxSize` while still writing to the original response writer.
+
+3. **Filtering Mechanisms**:
+   - **Path Filtering**: Uses a map lookup for O(1) skip path checks
+   - **Content-Type Filtering**: Skips configured content types to avoid dumping binary data
+   - **Size Limiting**: Enforces maximum capture size on both request (via `io.LimitReader`) and response (via byte counting)
+
+### Default Values
+
+- `MaxSize`: 64KB (65,536 bytes)
+- `Request`: true (enabled)
+- `Response`: true (enabled)
+
+### Performance Considerations
+
+- Path and content-type skipping uses hash maps for efficient lookups
+- Body capture is limited by `MaxSize` to prevent memory issues
+- Request body is read once and restored for handler use
+- Response capture adds minimal overhead as it writes through to the original writer
 
 ## Security Warning
 
@@ -108,6 +168,21 @@ Body dump may capture sensitive data. Never use in production without proper fil
 - Filter sensitive data
 - Set reasonable size limits
 - Skip high-volume endpoints
+
+## Testing
+
+The bodydump middleware includes comprehensive test coverage for all major functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware creation with default options | Captures both request and response bodies correctly |
+| `TestWithOptions_RequestOnly` | Request-only dumping configuration | Dumps only request body, response body is empty |
+| `TestWithOptions_ResponseOnly` | Response-only dumping configuration | Dumps only response body, request body is empty |
+| `TestWithOptions_MaxSize` | Maximum size limit enforcement | Request body is truncated to MaxSize bytes (5 bytes in test) |
+| `TestWithOptions_SkipPaths` | Path skipping functionality | Handler is not called for paths in SkipPaths array |
+| `TestRequestOnly` | RequestOnly helper function | Captures only request body using simplified API |
+| `TestResponseOnly` | ResponseOnly helper function | Captures only response body using simplified API |
+| `TestBodyPreserved` | Request body preservation | Request body remains readable by downstream handlers after dumping |
 
 ## Related Middlewares
 

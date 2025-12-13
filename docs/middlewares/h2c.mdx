@@ -69,6 +69,56 @@ func Server(handler http.Handler) *http.Server
 func Handler(handler http.Handler) http.Handler
 ```
 
+## Technical Details
+
+### Implementation Overview
+
+The h2c middleware provides HTTP/2 cleartext support through two main mechanisms:
+
+1. **HTTP/2 Prior Knowledge**: Direct HTTP/2 connections where the client knows in advance that the server supports HTTP/2. Detected by checking `ProtoMajor == 2`.
+
+2. **HTTP/2 Upgrade**: HTTP/1.1 upgrade mechanism using the h2c upgrade protocol (RFC 7540, Section 3.2).
+
+### Core Components
+
+#### Options Configuration
+
+- `AllowUpgrade` (default: true): Enables HTTP/1.1 to HTTP/2 upgrade requests
+- `AllowDirect` (default: true): Enables direct HTTP/2 connections with prior knowledge
+- `OnUpgrade`: Optional callback function triggered when an upgrade occurs
+
+#### Context Information
+
+The middleware stores connection information in the request context:
+
+```go
+type Info struct {
+    IsHTTP2  bool  // True if request uses HTTP/2
+    Upgraded bool  // True if upgraded from HTTP/1.1
+    Direct   bool  // True if direct HTTP/2 connection
+}
+```
+
+#### Upgrade Detection
+
+The middleware validates h2c upgrade requests by checking:
+- `Connection` header contains "Upgrade" token
+- `Upgrade` header equals "h2c" (case-insensitive)
+- `HTTP2-Settings` header is present
+
+#### Connection Handling
+
+- Uses `http.Hijacker` interface to take over the TCP connection
+- Sends `101 Switching Protocols` response
+- Manages connection lifecycle with buffered reading via `BufferedConn`
+
+#### Helper Functions
+
+- `GetInfo(c *mizu.Ctx)`: Retrieves h2c information from context
+- `IsHTTP2(c *mizu.Ctx)`: Quick check if request is HTTP/2
+- `ParseSettings(r *http.Request)`: Decodes base64-encoded HTTP2-Settings header
+- `IsHTTP2Preface(data []byte)`: Validates HTTP/2 connection preface bytes
+
 ## Security Warning
 
 H2C transmits data unencrypted. Only use for:
@@ -81,6 +131,46 @@ H2C transmits data unencrypted. Only use for:
 - Never use h2c in production over public networks
 - Use behind TLS-terminating load balancer
 - Test with `curl --http2-prior-knowledge`
+
+## Testing
+
+The h2c middleware includes comprehensive test coverage for all functionality:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| TestNew | Basic middleware creation | Middleware initializes with default options and processes HTTP/1.1 requests |
+| TestDetectHTTP1 | HTTP/1.1 detection | Correctly identifies HTTP/1.x requests, sets IsHTTP2 to false |
+| TestIsH2CUpgrade | Upgrade request validation | Validates h2c upgrade headers (Connection, Upgrade, HTTP2-Settings) |
+| TestContainsToken | Header token parsing | Correctly parses comma-separated header values |
+| TestGetInfo | Context info retrieval | Retrieves h2c info from request context |
+| TestIsHTTP2 | HTTP/2 detection helper | Returns correct boolean for HTTP/2 detection |
+| TestParseSettings | HTTP2-Settings parsing | Decodes base64-encoded settings header |
+| TestParseSettingsEmpty | Empty settings handling | Returns nil for missing HTTP2-Settings header |
+| TestParseSettingsInvalid | Invalid settings handling | Returns error for malformed base64 |
+| TestOnUpgrade | Upgrade callback | Executes OnUpgrade callback when upgrade occurs |
+| TestServerHandler | ServerHandler creation | Creates handler with h2c support |
+| TestWrap | Handler wrapping | Wraps standard http.Handler with h2c support |
+| TestIsHTTP2Preface | Preface detection | Validates HTTP/2 connection preface bytes |
+| TestDetect | Detection-only mode | Detects h2c without handling upgrade |
+| TestWithOptionsDisabled | Disabled options | Respects AllowUpgrade and AllowDirect settings |
+| TestBufferedConn | Buffered connection | Handles buffered reading with Peek and Read |
+| TestGetInfo_NoContext | Missing context info | Returns empty Info when middleware not used |
+| TestDetect_WithH2CUpgrade | Upgrade detection | Correctly detects and marks upgrade requests |
+| TestServerHandler_WithH2CUpgrade | Handler upgrade flow | Processes h2c upgrade in ServerHandler |
+| TestServerHandler_UpgradeDisabled | Disabled upgrade handling | Falls back to handler when upgrade disabled |
+| TestInfo_Fields | Info struct fields | Validates Info struct field values |
+| TestConnectionPreface | Preface constant | Verifies correct HTTP/2 preface constant |
+| TestWithOptions_HTTP2PriorKnowledge | Prior knowledge handling | Detects direct HTTP/2 connections |
+| TestWithOptions_H2CUpgradeWithCallback | Upgrade with callback | Executes callback during upgrade |
+| TestHandleUpgrade_NonHijackable | Non-hijackable fallback | Falls back to HTTP/1.1 when hijack unsupported |
+| TestServerHandler_HTTP2PriorKnowledge | Prior knowledge in handler | Handles HTTP/2 prior knowledge in ServerHandler |
+| TestServerHandler_H2CUpgrade_WithHijack | Successful hijack | Successfully hijacks connection for upgrade |
+| TestServerHandler_H2CUpgrade_HijackError | Hijack error handling | Falls back to handler on hijack error |
+| TestServerHandler_NonHijackable | Handler fallback | Falls back when ResponseWriter not hijackable |
+| TestDetect_HTTP2PriorKnowledge | Prior knowledge detection | Detects HTTP/2 prior knowledge in Detect mode |
+| TestBufferedConn_Underlying | Underlying connection ops | Validates Write, Close operations on BufferedConn |
+| TestWithOptions_H2CUpgrade_HijackError | Middleware hijack error | Handles hijack errors in middleware |
+| TestBufferedConn_NetConnInterface | net.Conn interface | Validates complete net.Conn interface implementation |
 
 ## Related Middlewares
 

@@ -98,12 +98,77 @@ func New(opts Options) mizu.Middleware
 func GetCurrentRate(c *mizu.Ctx) int
 ```
 
+## Technical Details
+
+### Architecture
+
+The adaptive middleware uses a token bucket algorithm with dynamic rate adjustment:
+
+- **Token Bucket**: Implements a refillable token bucket where tokens are added at the current rate per second
+- **Atomic Operations**: Uses `sync/atomic` for lock-free access to metrics (request count, error count, latency)
+- **Background Adjustment**: Runs a goroutine that periodically adjusts the rate based on collected metrics
+
+### Rate Adjustment Algorithm
+
+The middleware adjusts rates based on three conditions:
+
+1. **High Error Rate**: If error rate > threshold, reduce rate by 20%
+2. **High Latency**: If average latency > target, reduce rate by 10%
+3. **Good Performance**: If latency < target/2 AND error rate < threshold/2, increase rate by 10%
+
+All adjustments are clamped to the configured `MinRate` and `MaxRate` bounds.
+
+### Metrics Collection
+
+The middleware tracks:
+- **Request Count**: Total requests in current adjustment interval
+- **Error Count**: Requests that returned errors
+- **Total Latency**: Cumulative response time in nanoseconds
+- **Current Rate**: Dynamically adjusted rate limit
+
+Metrics are atomically swapped and reset on each adjustment interval to prevent data races.
+
+### Token Refill Mechanism
+
+Tokens are refilled based on elapsed time:
+```
+refill = (elapsed_nanoseconds * current_rate) / 1_second_in_nanoseconds
+```
+
+Tokens are capped at the current rate to prevent unbounded accumulation.
+
 ## Best Practices
 
 - Start with conservative limits
 - Set reasonable target latency
 - Monitor rate adjustments
 - Use with circuit breaker for full protection
+
+## Testing
+
+The adaptive middleware includes comprehensive test coverage for all features and edge cases:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew` | Basic middleware creation | Middleware processes request successfully |
+| `TestLimiter_RateLimited` | Rate limiting enforcement | First request succeeds, immediate second request is blocked with 429 |
+| `TestLimiter_CurrentRate` | Current rate retrieval | Returns the configured initial rate |
+| `TestLimiter_Stats` | Statistics retrieval | Returns current rate, min/max bounds, and request/error counts |
+| `TestSimple` | Simple preset configuration | Middleware works with default simple settings |
+| `TestHighThroughput` | High throughput preset | Handles 100 concurrent requests with some successes |
+| `TestConservative` | Conservative preset | Middleware works with conservative settings |
+| `TestRetryAfterHeader` | Retry-After header on rate limit | Returns "Retry-After: 1" header when rate limited |
+| `TestCustomErrorHandler` | Custom error handler | Uses custom JSON error response instead of default |
+| `TestNewLimiter_Defaults` | Default value handling | Negative values are replaced with sensible defaults |
+| `TestLimiter_Adjust` | Adjustment with no requests | Rate remains unchanged when no requests are made |
+| `TestLimiter_AdjustHighErrorRate` | High error rate adjustment | Rate decreases when error rate exceeds threshold |
+| `TestLimiter_AdjustHighLatency` | High latency adjustment | Rate decreases when latency exceeds target |
+| `TestLimiter_AdjustLowLatencyAndErrors` | Good performance adjustment | Rate increases when latency is low and errors are minimal |
+| `TestLimiter_AdjustClampToMin` | Minimum rate clamping | Rate cannot decrease below configured minimum |
+| `TestLimiter_AdjustClampToMax` | Maximum rate clamping | Rate cannot increase above configured maximum |
+| `TestLimiter_AllowTokenRefill` | Token refill mechanism | Tokens are refilled over time after exhaustion |
+| `TestLimiter_AllowTokenCap` | Token accumulation limit | Tokens are capped at current rate, not unlimited |
+| `TestLimiter_ErrorCounting` | Error metric tracking | Requests are counted correctly in statistics |
 
 ## Related Middlewares
 

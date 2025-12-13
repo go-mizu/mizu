@@ -95,12 +95,52 @@ func WithOptions(opts Options) mizu.Middleware
    - Handler completion
    - Timeout expiration (returns 503)
 
+## Technical Details
+
+### Implementation
+
+The timeout middleware uses Go's `context.WithTimeout` to enforce request deadlines:
+
+1. **Context Creation**: Creates a context with deadline using `context.WithTimeout(c.Context(), opts.Timeout)`
+2. **Request Update**: Replaces the request's context with the timeout context
+3. **Goroutine Execution**: Runs the next handler in a separate goroutine to enable timeout detection
+4. **Channel Communication**: Uses a buffered channel to receive the handler's result
+5. **Select Statement**: Races between handler completion and context cancellation
+   - If handler completes first, returns the result
+   - If timeout occurs first, calls error handler or returns 503 Service Unavailable
+
+### Default Values
+
+- **Timeout Duration**: 30 seconds (when `Timeout <= 0`)
+- **Error Message**: "Service Unavailable"
+- **HTTP Status**: 503 Service Unavailable (when no custom error handler is provided)
+
+### Concurrency Safety
+
+The middleware safely handles concurrent requests by:
+- Using a buffered channel (size 1) to prevent goroutine leaks
+- Properly deferring the context cancel function to release resources
+- Isolating each request's timeout context
+
 ## Best Practices
 
 - Set reasonable timeouts based on expected duration
 - Use longer timeouts for file uploads/downloads
 - Check context in long-running operations
 - Return 503 (Service Unavailable) on timeout
+
+## Testing
+
+### Test Cases
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew/times out slow request` | Handler takes longer than timeout (200ms vs 50ms) | Returns 503 Service Unavailable status |
+| `TestNew/allows fast request` | Handler completes before timeout | Returns 200 OK with correct response body |
+| `TestWithOptions_ErrorHandler` | Custom error handler is provided | Calls custom error handler, returns 504 Gateway Timeout with JSON error |
+| `TestWithOptions_CustomMessage` | Custom error message is set | Returns custom message "Request took too long" in response body |
+| `TestWithOptions_DefaultTimeout` | No timeout specified in options | Creates middleware with 30 second default timeout |
+| `TestTimeout_ContextCancellation` | Handler checks context cancellation | Context is cancelled when timeout occurs, handler can detect via `c.Context().Done()` |
 
 ## Related Middlewares
 

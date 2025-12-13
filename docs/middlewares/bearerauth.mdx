@@ -207,6 +207,42 @@ var (
 )
 ```
 
+## Technical Details
+
+### Implementation Overview
+
+The bearerauth middleware implements Bearer token authentication following RFC 6750 standards. It extracts and validates tokens from HTTP headers, storing the token or associated claims in the request context for downstream handlers.
+
+### Core Components
+
+1. **Token Extraction**: The middleware reads the configured header (default: "Authorization") and extracts the token after the auth scheme prefix (default: "Bearer ").
+
+2. **Validation Flow**:
+   - Checks if the authorization header exists
+   - Verifies the auth scheme matches the configured scheme
+   - Extracts the token after removing the scheme prefix
+   - Invokes either `Validator` or `ValidatorWithContext` to validate the token
+   - Stores the token or claims in the request context using a private context key
+
+3. **Context Storage**: The middleware uses a private `contextKey` struct to store authentication data in the request context. This prevents key collisions with other middleware or application code.
+
+4. **Error Handling**: Three error types are defined:
+   - `ErrTokenMissing`: Returned when no token is found (401 Unauthorized)
+   - `ErrInvalidScheme`: Returned when auth scheme doesn't match (403 Forbidden)
+   - `ErrTokenInvalid`: Returned when validation fails (403 Forbidden)
+
+### Validator Types
+
+- **TokenValidator**: Simple boolean validation for basic token checking
+- **TokenValidatorWithContext**: Returns claims along with validation result, enabling stateful authentication with user data
+
+### Data Retrieval
+
+Three helper functions extract authentication data from context:
+- `FromContext(c)`: Returns raw token or claims (type `any`)
+- `Token(c)`: Returns token string (only when using `Validator`)
+- `Claims[T](c)`: Type-safe claims extraction (when using `ValidatorWithContext`)
+
 ## Security Considerations
 
 1. **Token Security** - Use cryptographically secure tokens
@@ -221,6 +257,26 @@ var (
 - Validate token claims (expiration, issuer, audience)
 - Log authentication failures for security monitoring
 - Consider rate limiting failed attempts
+
+## Testing
+
+The bearerauth middleware includes comprehensive test coverage for all authentication scenarios:
+
+| Test Case | Description | Expected Behavior |
+|-----------|-------------|-------------------|
+| `TestNew/allows_valid_token` | Valid Bearer token in Authorization header | Returns 200 OK and allows access to protected resource |
+| `TestNew/rejects_invalid_token` | Invalid Bearer token provided | Returns 403 Forbidden |
+| `TestNew/rejects_missing_token` | No Authorization header present | Returns 401 Unauthorized |
+| `TestNew/rejects_wrong_scheme` | Authorization header with wrong scheme (e.g., Basic) | Returns 403 Forbidden |
+| `TestWithHeader` | Custom header name (X-Api-Token) with valid token | Returns 200 OK when token is valid |
+| `TestWithOptions_ValidatorWithContext` | ValidatorWithContext returns user claims | Claims are stored in context and accessible via FromContext |
+| `TestWithOptions_ErrorHandler` | Custom error handler for authentication failures | Custom error handler is invoked with proper error |
+| `TestWithOptions_CustomScheme/accepts_custom_scheme` | Custom auth scheme "Token" instead of "Bearer" | Returns 200 OK for matching scheme |
+| `TestWithOptions_CustomScheme/rejects_bearer_scheme` | Bearer scheme when Token scheme is configured | Returns 403 Forbidden for mismatched scheme |
+| `TestToken` | Token extraction using Token() helper | Token string is correctly extracted from context |
+| `TestWithOptions_Panics` | Creating middleware without validator | Panics with appropriate message |
+| `TestClaims` | Type-safe claims extraction using Claims[T]() | Claims are properly typed and accessible |
+| `TestErrors` | Error message formatting | Error constants return correct messages |
 
 ## Related Middlewares
 
