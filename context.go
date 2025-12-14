@@ -100,6 +100,11 @@ func (c *Ctx) MultipartForm(maxMemory int64) (*multipart.Form, func(), error) {
 // Cookie returns a named cookie or http.ErrNoCookie.
 func (c *Ctx) Cookie(name string) (*http.Cookie, error) { return c.request.Cookie(name) }
 
+// Path returns the request path.
+func (c *Ctx) Path() string {
+	return c.request.URL.Path
+}
+
 // --- Request body binding ---
 
 // Bind reads JSON into v with a max size limit.

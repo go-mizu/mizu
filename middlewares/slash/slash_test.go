@@ -10,7 +10,7 @@ import (
 
 func TestAdd(t *testing.T) {
 	app := mizu.NewRouter()
-	app.Use(Add())
+	app.UseGlobal(Add())
 
 	app.Get("/test/", func(c *mizu.Ctx) error {
 		return c.Text(http.StatusOK, "ok")
@@ -41,7 +41,7 @@ func TestAdd(t *testing.T) {
 
 	t.Run("skips root", func(t *testing.T) {
 		app2 := mizu.NewRouter()
-		app2.Use(Add())
+		app2.UseGlobal(Add())
 		app2.Get("/", func(c *mizu.Ctx) error {
 			return c.Text(http.StatusOK, "root")
 		})
@@ -58,7 +58,7 @@ func TestAdd(t *testing.T) {
 
 func TestAddCode(t *testing.T) {
 	app := mizu.NewRouter()
-	app.Use(AddCode(http.StatusTemporaryRedirect))
+	app.UseGlobal(AddCode(http.StatusTemporaryRedirect))
 
 	app.Get("/test/", func(c *mizu.Ctx) error {
 		return c.Text(http.StatusOK, "ok")
@@ -75,7 +75,7 @@ func TestAddCode(t *testing.T) {
 
 func TestRemove(t *testing.T) {
 	app := mizu.NewRouter()
-	app.Use(Remove())
+	app.UseGlobal(Remove())
 
 	app.Get("/test", func(c *mizu.Ctx) error {
 		return c.Text(http.StatusOK, "ok")
@@ -106,7 +106,7 @@ func TestRemove(t *testing.T) {
 
 	t.Run("skips root", func(t *testing.T) {
 		app2 := mizu.NewRouter()
-		app2.Use(Remove())
+		app2.UseGlobal(Remove())
 		app2.Get("/", func(c *mizu.Ctx) error {
 			return c.Text(http.StatusOK, "root")
 		})
@@ -123,7 +123,7 @@ func TestRemove(t *testing.T) {
 
 func TestRemoveCode(t *testing.T) {
 	app := mizu.NewRouter()
-	app.Use(RemoveCode(http.StatusFound))
+	app.UseGlobal(RemoveCode(http.StatusFound))
 
 	app.Get("/test", func(c *mizu.Ctx) error {
 		return c.Text(http.StatusOK, "ok")

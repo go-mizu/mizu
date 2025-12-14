@@ -110,7 +110,7 @@ func FromContext(c *mizu.Ctx) string {
 	if ip, ok := c.Context().Value(contextKey{}).(string); ok {
 		return ip
 	}
-	return c.ClientIP()
+	return getClientIP(c)
 }
 
 // Get is an alias for FromContext.
@@ -149,4 +149,20 @@ func isTrusted(ip string, networks []*net.IPNet) bool {
 		}
 	}
 	return false
+}
+
+func getClientIP(c *mizu.Ctx) string {
+	// Check X-Forwarded-For header
+	if xff := c.Request().Header.Get("X-Forwarded-For"); xff != "" {
+		ip := strings.TrimSpace(strings.Split(xff, ",")[0])
+		if net.ParseIP(ip) != nil {
+			return ip
+		}
+	}
+	// Check X-Real-IP header
+	if xr := c.Request().Header.Get("X-Real-IP"); xr != "" && net.ParseIP(xr) != nil {
+		return xr
+	}
+	// Fallback to RemoteAddr
+	return extractIP(c.Request().RemoteAddr)
 }

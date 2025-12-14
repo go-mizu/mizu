@@ -4,6 +4,7 @@ package ipfilter
 import (
 	"net"
 	"net/http"
+	"strings"
 
 	"github.com/go-mizu/mizu"
 )
@@ -52,7 +53,7 @@ func New(opts Options) mizu.Middleware {
 		return func(c *mizu.Ctx) error {
 			var ip string
 			if opts.TrustProxy {
-				ip = c.ClientIP()
+				ip = getClientIP(c)
 			} else {
 				ip = extractIP(c.Request().RemoteAddr)
 			}
@@ -120,6 +121,22 @@ func extractIP(addr string) string {
 		return addr
 	}
 	return host
+}
+
+func getClientIP(c *mizu.Ctx) string {
+	// Check X-Forwarded-For header
+	if xff := c.Request().Header.Get("X-Forwarded-For"); xff != "" {
+		ip := strings.TrimSpace(strings.Split(xff, ",")[0])
+		if net.ParseIP(ip) != nil {
+			return ip
+		}
+	}
+	// Check X-Real-IP header
+	if xr := c.Request().Header.Get("X-Real-IP"); xr != "" && net.ParseIP(xr) != nil {
+		return xr
+	}
+	// Fallback to RemoteAddr
+	return extractIP(c.Request().RemoteAddr)
 }
 
 // Private creates middleware allowing only private network IPs.
