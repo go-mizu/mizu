@@ -1,7 +1,6 @@
 package mizu
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -15,7 +14,7 @@ import (
 // Middleware wraps a Handler to add cross-cutting behavior like logging or auth.
 type Middleware func(Handler) Handler
 
-// PanicError describes a recovered panic with its value and stack for error handling.
+// PanicError describes a recovered panic with its value and stack.
 type PanicError struct {
 	Value any
 	Stack []byte
@@ -23,22 +22,20 @@ type PanicError struct {
 
 func (e *PanicError) Error() string { return fmt.Sprintf("panic: %v", e.Value) }
 
-// Router is a small wrapper over Go 1.22 ServeMux with method patterns and middleware.
+// Router is a thin wrapper over Go 1.22 ServeMux with scoped middleware.
 type Router struct {
-	mux         *http.ServeMux
-	base        string
-	chain       []Middleware
-	globalChain []Middleware // runs for ALL requests, before route matching
-	errh        func(*Ctx, error)
-	log         *slog.Logger
+	mux   *http.ServeMux
+	base  string
+	chain []Middleware
 
-	// Compat exposes a net/http-first facade for interop.
+	log *slog.Logger
+
+	// Compat exposes a net/http-first facade.
 	Compat *httpRouter
 }
 
-// NewRouter creates a router with colored slog logging and default middleware.
+// NewRouter creates a router with slog logging and default middleware.
 func NewRouter() *Router {
-	// Choose handler: color if environment or TTY supports it, else plain text.
 	var h slog.Handler
 	if forceColorOn() || supportsColorEnv() {
 		h = newColorTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})
@@ -47,16 +44,14 @@ func NewRouter() *Router {
 	}
 
 	logger := slog.New(h)
-	slog.SetDefault(logger)
 
 	r := &Router{
 		mux: http.NewServeMux(),
 		log: logger,
 	}
-
 	r.Compat = &httpRouter{r: r}
 
-	// Always include request logger middleware so requests are logged by default.
+	// Default logger middleware.
 	r.Use(Logger(LoggerOptions{
 		Logger: r.Logger(),
 	}))
@@ -64,259 +59,151 @@ func NewRouter() *Router {
 	return r
 }
 
-// canonicalPath normalizes a request path so that "/s3" and "/s3/"
-// are treated the same, and dot segments are cleaned.
-// Root "/" is preserved as "/".
-func canonicalPath(p string) string {
-	if p == "" || p == "/" {
-		return "/"
-	}
-	// Ensure leading slash for path.Clean to behave as expected.
-	if !strings.HasPrefix(p, "/") {
-		p = "/" + p
-	}
-	// path.Clean removes duplicate slashes and trailing slash (except for root).
-	p = path.Clean(p)
-	if p == "/" {
-		return "/"
-	}
-	// Strip trailing slash if any, to unify "/s3" and "/s3/".
-	p = strings.TrimRight(p, "/")
-	if p == "" {
-		return "/"
-	}
-	if !strings.HasPrefix(p, "/") {
-		p = "/" + p
-	}
-	return p
-}
-
-// ServeHTTP implements http.Handler and delegates to the internal ServeMux.
-//
-//nolint:cyclop // HTTP routing requires multiple path matching and middleware execution checks
+// ServeHTTP implements http.Handler.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	// Run global middleware chain first with original path
-	// (middleware like slash needs to see original trailing slashes)
-	if len(r.globalChain) > 0 {
-		c := newCtx(w, req, r.log)
-
-		// Build handler that delegates to the mux
-		var handler Handler = func(c *Ctx) error {
-			req := c.Request()
-			// Canonicalize path for mux routing
-			if req.URL != nil {
-				cp := canonicalPath(req.URL.Path)
-				if cp != req.URL.Path {
-					clone := req.Clone(req.Context())
-					clone.URL.Path = cp
-					req = clone
-				}
-			}
-			r.mux.ServeHTTP(c.Writer(), req)
-
-			// Check if route handler stored an error in context
-			if err, ok := req.Context().Value(routeErrorKey{}).(error); ok {
-				return err
-			}
-			return nil
-		}
-
-		// Wrap with global middleware (right to left)
-		for i := len(r.globalChain) - 1; i >= 0; i-- {
-			handler = r.globalChain[i](handler)
-		}
-
-		// Execute with panic recovery and error handling
-		defer func() {
-			if rec := recover(); rec != nil {
-				perr := &PanicError{Value: rec, Stack: debug.Stack()}
-				if r.errh != nil {
-					r.errh(c, perr)
-					return
-				}
-				if r.log != nil {
-					r.log.Error("panic recovered",
-						slog.Any("value", rec),
-						slog.String("method", req.Method),
-						slog.String("path", req.URL.Path),
-					)
-				}
-				if !c.wroteHeader {
-					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-				}
-			}
-		}()
-
-		if err := handler(c); err != nil {
-			if r.errh != nil {
-				r.errh(c, err)
-				return
-			}
-			if r.log != nil {
-				r.log.Error("handler error",
-					slog.String("method", req.Method),
-					slog.String("path", req.URL.Path),
-					slog.Any("error", err),
-				)
-			}
-			if !c.wroteHeader {
-				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			}
-		}
-		return
-	}
-
-	// Canonicalize path for mux routing (no global middleware case)
-	if req.URL != nil {
-		cp := canonicalPath(req.URL.Path)
-		if cp != req.URL.Path {
-			clone := req.Clone(req.Context())
-			clone.URL.Path = cp
-			req = clone
-		}
-	}
 	r.mux.ServeHTTP(w, req)
 }
 
-// Logger returns the logger used by this router.
-func (r *Router) Logger() *slog.Logger {
-	return r.log
+func (r *Router) handleErr(c *Ctx, err error) {
+	if r.log != nil {
+		req := c.Request()
+		if perr, ok := err.(*PanicError); ok {
+			r.log.Error("panic recovered",
+				slog.String("method", req.Method),
+				slog.String("path", req.URL.Path),
+				slog.Any("error", perr),
+				slog.String("stack", string(perr.Stack)),
+			)
+		} else {
+			r.log.Error("handler error",
+				slog.String("method", req.Method),
+				slog.String("path", req.URL.Path),
+				slog.Any("error", err),
+			)
+		}
+	}
+
+	if !c.wroteHeader {
+		http.Error(
+			c.Writer(),
+			http.StatusText(http.StatusInternalServerError),
+			http.StatusInternalServerError,
+		)
+	}
 }
 
-// SetLogger sets the logger for this router and new Ctx values.
+// Logger returns the router logger.
+func (r *Router) Logger() *slog.Logger { return r.log }
+
+// SetLogger sets the router logger. It may be nil.
 func (r *Router) SetLogger(l *slog.Logger) *Router {
-	if l != nil {
-		r.log = l
-	}
+	r.log = l
 	return r
 }
 
-// ErrorHandler sets a central error handler for returned errors or recovered panics.
-func (r *Router) ErrorHandler(h func(*Ctx, error)) { r.errh = h }
+// Use appends scoped middleware.
+func (r *Router) Use(mw ...Middleware) { r.chain = append(r.chain, mw...) }
 
-// NotFound installs a simple fallback handler at "/".
-// No 405 logic, no auto HEAD, just what you register.
-func (r *Router) NotFound(h http.Handler) {
-	if h == nil {
-		return
-	}
-	r.mux.Handle("/", h)
-}
-
-// Use appends global middleware that runs for ALL requests before routing.
-// Later middleware runs closer to the handler.
-func (r *Router) Use(mw ...Middleware) {
-	r.globalChain = append(r.globalChain, mw...)
-}
-
-// UseFirst prepends global middleware so they run outside the rest of the chain.
-func (r *Router) UseFirst(mw ...Middleware) {
-	if len(mw) == 0 {
-		return
-	}
-	r.globalChain = append(append([]Middleware{}, mw...), r.globalChain...)
-}
-
-// Group creates a child router with a path prefix and runs the given function.
+// Group creates a prefixed router and executes fn.
 func (r *Router) Group(prefix string, fn func(g *Router)) {
-	g := r.Prefix(prefix)
-	fn(g)
+	if fn != nil {
+		fn(r.Prefix(prefix))
+	}
 }
 
-// Prefix returns a child router that shares state and adds a URL prefix.
+// Prefix returns a child router with inherited middleware.
 func (r *Router) Prefix(prefix string) *Router {
 	child := &Router{
-		mux:         r.mux,
-		base:        joinPath(r.base, prefix),
-		chain:       slices.Clone(r.chain),
-		globalChain: r.globalChain,
-		errh:        r.errh,
-		log:         r.log,
+		mux:   r.mux,
+		base:  joinPath(r.base, prefix),
+		chain: slices.Clone(r.chain),
+		log:   r.log,
 	}
 	child.Compat = &httpRouter{r: child}
 	return child
 }
 
-// Get registers a handler for HTTP GET.
-func (r *Router) Get(p string, h Handler) { r.handle(http.MethodGet, p, h) }
-
-// Head registers a handler for HTTP HEAD.
-func (r *Router) Head(p string, h Handler) { r.handle(http.MethodHead, p, h) }
-
-// Post registers a handler for HTTP POST.
-func (r *Router) Post(p string, h Handler) { r.handle(http.MethodPost, p, h) }
-
-// Put registers a handler for HTTP PUT.
-func (r *Router) Put(p string, h Handler) { r.handle(http.MethodPut, p, h) }
-
-// Patch registers a handler for HTTP PATCH.
-func (r *Router) Patch(p string, h Handler) { r.handle(http.MethodPatch, p, h) }
-
-// Delete registers a handler for HTTP DELETE.
-func (r *Router) Delete(p string, h Handler) { r.handle(http.MethodDelete, p, h) }
-
-// Connect registers a handler for HTTP CONNECT.
-func (r *Router) Connect(p string, h Handler) { r.handle(http.MethodConnect, p, h) }
-
-// Trace registers a handler for HTTP TRACE.
-func (r *Router) Trace(p string, h Handler) { r.handle(http.MethodTrace, p, h) }
-
-// Handle registers a handler for the given HTTP method and path.
-func (r *Router) Handle(method, p string, h Handler) {
-	r.handle(strings.ToUpper(method), p, h)
+// With returns a child router with extra middleware.
+func (r *Router) With(mw ...Middleware) *Router {
+	child := &Router{
+		mux:   r.mux,
+		base:  r.base,
+		chain: append(slices.Clone(r.chain), mw...),
+		log:   r.log,
+	}
+	child.Compat = &httpRouter{r: child}
+	return child
 }
 
-// Static serves files from a provided http.FileSystem at the given URL prefix.
-// It goes through the middleware chain so logger and other middleware still run.
+// HTTP method helpers.
+
+func (r *Router) Get(p string, h Handler)     { r.handle(http.MethodGet, p, h) }
+func (r *Router) Head(p string, h Handler)    { r.handle(http.MethodHead, p, h) }
+func (r *Router) Post(p string, h Handler)    { r.handle(http.MethodPost, p, h) }
+func (r *Router) Put(p string, h Handler)     { r.handle(http.MethodPut, p, h) }
+func (r *Router) Patch(p string, h Handler)   { r.handle(http.MethodPatch, p, h) }
+func (r *Router) Delete(p string, h Handler)  { r.handle(http.MethodDelete, p, h) }
+func (r *Router) Connect(p string, h Handler) { r.handle(http.MethodConnect, p, h) }
+func (r *Router) Trace(p string, h Handler)   { r.handle(http.MethodTrace, p, h) }
+
+func (r *Router) Handle(method, p string, h Handler) {
+	m := strings.TrimSpace(method)
+	if m == "" {
+		m = http.MethodGet
+	}
+	r.handle(strings.ToUpper(m), p, h)
+}
+
+// Static serves files from an http.FileSystem with the boring net/http pattern.
+//
+// Equivalent to:
+//
+//	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(fsys)))
+//
+// Notes:
+//   - We always mount a subtree pattern ending with "/".
+//   - net/http ServeMux will redirect "/assets" -> "/assets/" for GET/HEAD.
 func (r *Router) Static(prefix string, fsys http.FileSystem) {
+	if fsys == nil {
+		return
+	}
 	if prefix == "" {
 		prefix = "/"
 	}
 	if !strings.HasPrefix(prefix, "/") {
 		prefix = "/" + prefix
 	}
+	if !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
 
-	// Canonical base path for the static subtree.
+	// fullPath uses path.Join which drops trailing slashes, so restore it.
 	base := r.fullPath(prefix)
-	subtree := base
-	if !strings.HasSuffix(subtree, "/") {
-		subtree += "/"
+	if base != "/" && !strings.HasSuffix(base, "/") {
+		base += "/"
 	}
 
 	fs := http.FileServer(fsys)
 
-	handler := func(c *Ctx) error {
-		// Example:
-		//   request path:  /assets/img/logo.png
-		//   subtree:       /assets/
-		//   StripPrefix -> /img/logo.png
-		http.StripPrefix(subtree, fs).ServeHTTP(c.Writer(), c.Request())
+	h := func(c *Ctx) error {
+		http.StripPrefix(base, fs).ServeHTTP(c.Writer(), c.Request())
 		return nil
 	}
 
-	// Register as a GET subtree handler, with middleware and adapt().
-	composed := r.compose(handler)
-	adapted := r.adapt(composed)
-
-	// Go 1.22 ServeMux treats patterns ending with "/" as subtree matches.
-	// For root, subtree is "/", which is also a subtree.
-	pattern := http.MethodGet + " " + subtree
-	r.mux.Handle(pattern, adapted)
+	adapted := r.adapt(r.compose(h))
+	r.mux.Handle(http.MethodGet+" "+base, adapted)
+	r.mux.Handle(http.MethodHead+" "+base, adapted)
 }
 
-// Mount mounts any http.Handler at a path.
+// Mount mounts a net/http handler through scoped middleware.
 func (r *Router) Mount(p string, h http.Handler) { r.Compat.Handle(p, h) }
 
 func (r *Router) handle(method, p string, h Handler) {
 	full := r.fullPath(p)
-	composed := r.compose(h)
-	adapted := r.adapt(composed)
-	pattern := fmt.Sprintf("%s %s", strings.ToUpper(method), full)
-
-	r.mux.Handle(pattern, adapted)
+	r.mux.Handle(fmt.Sprintf("%s %s", method, full), r.adapt(r.compose(h)))
 }
 
-// compose wraps the handler with middleware from right to left.
+// compose applies scoped middleware (right-to-left).
 func (r *Router) compose(h Handler) Handler {
 	for i := len(r.chain) - 1; i >= 0; i-- {
 		h = r.chain[i](h)
@@ -324,53 +211,26 @@ func (r *Router) compose(h Handler) Handler {
 	return h
 }
 
-// routeErrorKey is used to store route handler errors in context.
-type routeErrorKey struct{}
-
-// adapt converts a Mizu Handler into http.Handler.
-// Note: panic recovery and error handling are done by ServeHTTP, allowing global middleware
-// (like recover/sentry middleware) to intercept panics and errors first.
+// adapt converts a Mizu handler to http.Handler.
+// It owns panic recovery and centralized error handling for this route.
 func (r *Router) adapt(h Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		c := newCtx(w, req, r.log)
 
+		defer func() {
+			if rec := recover(); rec != nil {
+				r.handleErr(c, &PanicError{Value: rec, Stack: debug.Stack()})
+			}
+		}()
+
 		if err := h(c); err != nil {
-			// Store error in context so global middleware can access it
-			ctx := context.WithValue(req.Context(), routeErrorKey{}, err)
-			*req = *req.WithContext(ctx)
+			r.handleErr(c, err)
 		}
 	})
 }
 
-// adaptStdMiddleware converts a standard net/http middleware into a Mizu Middleware.
-func (r *Router) adaptStdMiddleware(sm func(http.Handler) http.Handler) Middleware {
-	return func(next Handler) Handler {
-		base := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			c := newCtx(w, req, r.log)
-			if err := next(c); err != nil {
-				if r.errh != nil {
-					r.errh(c, err)
-				} else {
-					if r.log != nil {
-						r.log.Error("handler error",
-							slog.String("method", req.Method),
-							slog.String("path", req.URL.Path),
-							slog.Any("error", err),
-						)
-					}
-					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-				}
-			}
-		})
-		wrapped := sm(base)
-		return func(c *Ctx) error {
-			wrapped.ServeHTTP(c.Writer(), c.Request())
-			return nil
-		}
-	}
-}
+// Path helpers.
 
-// fullPath joins base and p without extra trailing-slash magic, then canonicalizes.
 func (r *Router) fullPath(p string) string {
 	if p == "" {
 		p = "/"
@@ -378,10 +238,9 @@ func (r *Router) fullPath(p string) string {
 	if !strings.HasPrefix(p, "/") {
 		p = "/" + p
 	}
-	return canonicalPath(joinPath(r.base, p))
+	return joinPath(r.base, p)
 }
 
-// joinPath joins URL path segments, cleans dot segments, and keeps a single leading slash.
 func joinPath(base, add string) string {
 	switch {
 	case base == "" || base == "/":
@@ -403,54 +262,83 @@ func cleanLeading(p string) string {
 	return p
 }
 
+/* ---------------- net/http compatibility ---------------- */
+
 type httpRouter struct{ r *Router }
 
-// Use appends standard net/http middlewares to the global Mizu chain.
-func (h *httpRouter) Use(mw ...func(http.Handler) http.Handler) *httpRouter {
-	for _, sm := range mw {
-		h.r.globalChain = append(h.r.globalChain, h.r.adaptStdMiddleware(sm))
-	}
-	return h
-}
-
-// Handle registers an http.Handler at a path on the shared ServeMux.
+// Handle mounts an http.Handler through scoped middleware.
+//
+// It registers a plain path pattern ("/x") to avoid conflicts with existing
+// method-pattern routes like "GET /x". When both exist, ServeMux prefers method
+// patterns for requests that match them.
 func (h *httpRouter) Handle(p string, hh http.Handler) *httpRouter {
 	full := h.r.fullPath(p)
-	h.r.mux.Handle(full, hh)
+	h.r.mux.Handle(full, h.r.wrapHTTPHandler(hh))
 	return h
 }
 
-// HandleMethod registers an http.Handler for a specific method and path.
+// HandleMethod mounts an http.Handler for a specific method through scoped middleware.
 func (h *httpRouter) HandleMethod(method, p string, hh http.Handler) *httpRouter {
+	m := strings.TrimSpace(method)
+	if m == "" {
+		m = http.MethodGet
+	}
 	full := h.r.fullPath(p)
-	pattern := fmt.Sprintf("%s %s", strings.ToUpper(method), full)
-
-	h.r.mux.Handle(pattern, hh)
+	h.r.mux.Handle(fmt.Sprintf("%s %s", strings.ToUpper(m), full), h.r.wrapHTTPHandler(hh))
 	return h
 }
 
-// Prefix returns a child httpRouter rooted at the given prefix.
-func (h *httpRouter) Prefix(prefix string) *httpRouter { return &httpRouter{r: h.r.Prefix(prefix)} }
-
-// Group creates a child httpRouter at prefix and runs the given function.
-func (h *httpRouter) Group(prefix string, fn func(g *httpRouter)) {
-	fn(h.Prefix(prefix))
+// Use adapts net/http middleware into scoped Mizu middleware.
+func (h *httpRouter) Use(mw ...func(http.Handler) http.Handler) *httpRouter {
+	for _, sm := range mw {
+		h.r.Use(h.r.adaptStdMiddleware(sm))
+	}
+	return h
 }
 
-// Mount mounts an http.Handler at a path using the compatibility facade.
-func (h *httpRouter) Mount(p string, hh http.Handler) *httpRouter { return h.Handle(p, hh) }
+// Prefix returns a child httpRouter.
+func (h *httpRouter) Prefix(prefix string) *httpRouter {
+	return &httpRouter{r: h.r.Prefix(prefix)}
+}
 
-// With returns a child router that shares state but has extra middleware
-// appended to the chain. It is useful for route-specific middleware.
-func (r *Router) With(mw ...Middleware) *Router {
-	child := &Router{
-		mux:         r.mux,
-		base:        r.base,
-		chain:       append(slices.Clone(r.chain), mw...),
-		globalChain: r.globalChain,
-		errh:        r.errh,
-		log:         r.log,
+// Group executes fn with a prefixed router.
+func (h *httpRouter) Group(prefix string, fn func(g *httpRouter)) {
+	if fn != nil {
+		fn(h.Prefix(prefix))
 	}
-	child.Compat = &httpRouter{r: child}
-	return child
+}
+
+func (r *Router) wrapHTTPHandler(hh http.Handler) http.Handler {
+	asMizu := func(c *Ctx) error {
+		if hh == nil {
+			http.NotFound(c.Writer(), c.Request())
+			return nil
+		}
+		hh.ServeHTTP(c.Writer(), c.Request())
+		return nil
+	}
+	return r.adapt(r.compose(asMizu))
+}
+
+// adaptStdMiddleware adapts a net/http middleware into Mizu middleware.
+//
+// Many net/http middleware replace the request (e.g. req.WithContext()) before
+// calling next. Since Mizu reads the request from *Ctx, update c.request to the
+// request passed to next so downstream handlers observe it.
+func (r *Router) adaptStdMiddleware(sm func(http.Handler) http.Handler) Middleware {
+	return func(next Handler) Handler {
+		return func(c *Ctx) error {
+			var nextErr error
+
+			base := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				if req != nil {
+					c.request = req
+				}
+				nextErr = next(c)
+			})
+
+			sm(base).ServeHTTP(c.Writer(), c.Request())
+			return nextErr
+		}
+	}
 }

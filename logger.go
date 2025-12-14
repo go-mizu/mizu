@@ -157,7 +157,6 @@ func buildCoreLogAttrs(c *Ctx, r *http.Request, status int, d time.Duration) []s
 		slog.String("proto", r.Proto),
 		slog.String("host", r.Host),
 		slog.Int64("duration_ms", d.Milliseconds()),
-		slog.String("remote_ip", c.ClientIP()),
 	}
 }
 
