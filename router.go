@@ -61,7 +61,20 @@ func NewRouter() *Router {
 }
 
 // ServeHTTP implements http.Handler.
+//
+// It performs minimal request normalization before delegating to http.ServeMux.
+// In particular, it ensures the request path always starts with "/" to prevent
+// ServeMux from issuing implicit 301 redirects for non-canonical paths.
+//
+// No other path rewriting is performed. Trailing slashes, dot segments, and
+// redirects are left untouched and can be handled explicitly by middleware.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if req.URL.Path == "" {
+		req.URL.Path = "/"
+	} else if !strings.HasPrefix(req.URL.Path, "/") {
+		req.URL.Path = "/" + req.URL.Path
+	}
+
 	r.mux.ServeHTTP(w, req)
 }
 
