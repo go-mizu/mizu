@@ -1,4 +1,3 @@
-// Package cors2 provides a simplified CORS middleware for Mizu.
 package cors2
 
 import (
@@ -10,40 +9,18 @@ import (
 	"github.com/go-mizu/mizu"
 )
 
-// Options configures the simple CORS middleware.
 type Options struct {
-	// Origin is the allowed origin.
-	// Default: "*".
-	Origin string
-
-	// Methods are the allowed methods.
-	// Default: "GET, POST, PUT, DELETE, OPTIONS".
-	Methods string
-
-	// Headers are the allowed headers.
-	// Default: "Content-Type, Authorization".
-	Headers string
-
-	// ExposeHeaders are headers exposed to the browser.
+	Origin        string
+	Methods       string
+	Headers       string
 	ExposeHeaders string
-
-	// Credentials allows credentials.
-	// Default: false.
-	Credentials bool
-
-	// MaxAge is the preflight cache duration.
-	// Default: 0 (no caching).
-	MaxAge time.Duration
+	Credentials   bool
+	MaxAge        time.Duration
 }
 
-// New creates simple CORS middleware allowing all origins.
-func New() mizu.Middleware {
-	return WithOptions(Options{})
-}
+func New() mizu.Middleware { return WithOptions(Options{}) }
 
-// WithOptions creates CORS middleware with custom options.
-//
-//nolint:cyclop // CORS handling requires multiple header checks
+//nolint:cyclop
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.Origin == "" {
 		opts.Origin = "*"
@@ -57,34 +34,50 @@ func WithOptions(opts Options) mizu.Middleware {
 
 	return func(next mizu.Handler) mizu.Handler {
 		return func(c *mizu.Ctx) error {
-			origin := c.Request().Header.Get("Origin")
+			req := c.Request()
+			h := c.Header()
+			origin := req.Header.Get("Origin")
 
-			// Set CORS headers
-			if opts.Origin == "*" {
-				c.Header().Set("Access-Control-Allow-Origin", "*")
-			} else if origin != "" && matchOrigin(origin, opts.Origin) {
-				c.Header().Set("Access-Control-Allow-Origin", origin)
+			// Origin handling
+			switch {
+			case opts.Origin == "*":
+				// If credentials are allowed, we must echo the request origin (cannot be "*").
+				if opts.Credentials && origin != "" {
+					h.Set("Access-Control-Allow-Origin", origin)
+					addVary(h, "Origin")
+				} else {
+					h.Set("Access-Control-Allow-Origin", "*")
+				}
+
+			case origin != "" && matchOrigin(origin, opts.Origin):
+				h.Set("Access-Control-Allow-Origin", origin)
+				addVary(h, "Origin")
 			}
 
 			if opts.Credentials {
-				c.Header().Set("Access-Control-Allow-Credentials", "true")
+				h.Set("Access-Control-Allow-Credentials", "true")
 			}
 
 			if opts.ExposeHeaders != "" {
-				c.Header().Set("Access-Control-Expose-Headers", opts.ExposeHeaders)
+				h.Set("Access-Control-Expose-Headers", opts.ExposeHeaders)
 			}
 
-			// Handle preflight
-			if c.Request().Method == http.MethodOptions {
-				c.Header().Set("Access-Control-Allow-Methods", opts.Methods)
-				c.Header().Set("Access-Control-Allow-Headers", opts.Headers)
+			// Preflight: OPTIONS + Access-Control-Request-Method
+			if req.Method == http.MethodOptions &&
+				req.Header.Get("Access-Control-Request-Method") != "" {
+
+				// Required for cache correctness
+				addVary(h, "Access-Control-Request-Method")
+				addVary(h, "Access-Control-Request-Headers")
+
+				h.Set("Access-Control-Allow-Methods", opts.Methods)
+				h.Set("Access-Control-Allow-Headers", opts.Headers)
 
 				if opts.MaxAge > 0 {
-					c.Header().Set("Access-Control-Max-Age", strconv.Itoa(int(opts.MaxAge.Seconds())))
+					h.Set("Access-Control-Max-Age", strconv.Itoa(int(opts.MaxAge.Seconds())))
 				}
 
-				c.Writer().WriteHeader(http.StatusNoContent)
-				return nil
+				return c.NoContent()
 			}
 
 			return next(c)
@@ -93,19 +86,16 @@ func WithOptions(opts Options) mizu.Middleware {
 }
 
 func matchOrigin(origin, pattern string) bool {
-	// Simple matching - exact match or wildcard
 	if pattern == "*" {
 		return true
 	}
 	return strings.EqualFold(origin, pattern)
 }
 
-// AllowOrigin creates middleware allowing a specific origin.
 func AllowOrigin(origin string) mizu.Middleware {
 	return WithOptions(Options{Origin: origin})
 }
 
-// AllowAll creates middleware allowing all origins with credentials.
 func AllowAll() mizu.Middleware {
 	return WithOptions(Options{
 		Origin:      "*",
@@ -116,10 +106,23 @@ func AllowAll() mizu.Middleware {
 	})
 }
 
-// AllowCredentials creates middleware allowing credentials from a specific origin.
 func AllowCredentials(origin string) mizu.Middleware {
 	return WithOptions(Options{
 		Origin:      origin,
 		Credentials: true,
 	})
+}
+
+func addVary(h http.Header, value string) {
+	if value == "" {
+		return
+	}
+	for _, v := range h.Values("Vary") {
+		for _, part := range strings.Split(v, ",") {
+			if strings.EqualFold(strings.TrimSpace(part), value) {
+				return
+			}
+		}
+	}
+	h.Add("Vary", value)
 }
