@@ -50,10 +50,11 @@ func WithOptions(fsys fs.FS, opts Options) mizu.Middleware {
 
 	var root fs.FS
 	if opts.Root != "." {
-		var err error
-		root, err = fs.Sub(fsys, opts.Root)
+		sub, err := fs.Sub(fsys, opts.Root)
 		if err != nil {
 			root = fsys
+		} else {
+			root = sub
 		}
 	} else {
 		root = fsys
@@ -63,24 +64,33 @@ func WithOptions(fsys fs.FS, opts Options) mizu.Middleware {
 
 	return func(next mizu.Handler) mizu.Handler {
 		return func(c *mizu.Ctx) error {
-			// Clean path
-			urlPath := c.Request().URL.Path
+			req := c.Request()
+
+			// Normalize and canonicalize path to avoid FileServer redirects
+			urlPath := req.URL.Path
+			if urlPath == "" {
+				urlPath = "/"
+			}
 			if !strings.HasPrefix(urlPath, "/") {
 				urlPath = "/" + urlPath
 			}
 			urlPath = path.Clean(urlPath)
 
-			// Try to open file
+			if req.URL.Path != urlPath {
+				req.URL.Path = urlPath
+			}
+
+			// Resolve file path
 			filePath := strings.TrimPrefix(urlPath, "/")
 			if filePath == "" {
 				filePath = opts.Index
 			}
 
-			file, err := root.Open(filePath)
+			// Check file existence or directory index
+			f, err := root.Open(filePath)
 			if err != nil {
-				// Try index file for directories
 				indexPath := path.Join(filePath, opts.Index)
-				file, err = root.Open(indexPath)
+				f, err = root.Open(indexPath)
 				if err != nil {
 					if opts.NotFoundHandler != nil {
 						return opts.NotFoundHandler(c)
@@ -88,30 +98,16 @@ func WithOptions(fsys fs.FS, opts Options) mizu.Middleware {
 					return next(c)
 				}
 			}
-			_ = file.Close()
+			_ = f.Close()
 
-			// Set cache headers
 			if opts.MaxAge > 0 {
 				c.Header().Set("Cache-Control", "max-age="+itoa(opts.MaxAge))
 			}
 
-			// Serve file
-			fileServer.ServeHTTP(c.Writer(), c.Request())
+			fileServer.ServeHTTP(c.Writer(), req)
 			return nil
 		}
 	}
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var digits []byte
-	for n > 0 {
-		digits = append([]byte{byte('0' + n%10)}, digits...)
-		n /= 10
-	}
-	return string(digits)
 }
 
 // Handler creates a handler for embedded files (not middleware).
@@ -130,10 +126,11 @@ func HandlerWithOptions(fsys fs.FS, opts Options) mizu.Handler {
 
 	var root fs.FS
 	if opts.Root != "." {
-		var err error
-		root, err = fs.Sub(fsys, opts.Root)
+		sub, err := fs.Sub(fsys, opts.Root)
 		if err != nil {
 			root = fsys
+		} else {
+			root = sub
 		}
 	} else {
 		root = fsys
@@ -142,12 +139,21 @@ func HandlerWithOptions(fsys fs.FS, opts Options) mizu.Handler {
 	fileServer := http.FileServer(http.FS(root))
 
 	return func(c *mizu.Ctx) error {
-		// Set cache headers
+		req := c.Request()
+
+		if req.URL.Path == "" {
+			req.URL.Path = "/"
+		}
+		if !strings.HasPrefix(req.URL.Path, "/") {
+			req.URL.Path = "/" + req.URL.Path
+		}
+		req.URL.Path = path.Clean(req.URL.Path)
+
 		if opts.MaxAge > 0 {
 			c.Header().Set("Cache-Control", "max-age="+itoa(opts.MaxAge))
 		}
 
-		fileServer.ServeHTTP(c.Writer(), c.Request())
+		fileServer.ServeHTTP(c.Writer(), req)
 		return nil
 	}
 }
@@ -171,22 +177,23 @@ func SPA(fsys fs.FS, index string) mizu.Middleware {
 	return WithOptions(fsys, Options{
 		Index: index,
 		NotFoundHandler: func(c *mizu.Ctx) error {
-			// Serve index.html for SPA routing
-			file, err := fsys.Open(index)
+			f, err := fsys.Open(index)
 			if err != nil {
 				return c.Text(http.StatusNotFound, "Not Found")
 			}
-			defer func() { _ = file.Close() }()
+			defer func() { _ = f.Close() }()
 
-			stat, err := file.Stat()
+			stat, err := f.Stat()
 			if err != nil {
 				return c.Text(http.StatusInternalServerError, "Error")
 			}
 
-			if seeker, ok := file.(ReadSeekFile); ok {
+			if seeker, ok := f.(ReadSeekFile); ok {
 				http.ServeContent(c.Writer(), c.Request(), index, stat.ModTime(), seeker)
+				return nil
 			}
-			return nil
+
+			return c.Text(http.StatusInternalServerError, "Error")
 		},
 	})
 }
@@ -195,4 +202,16 @@ func SPA(fsys fs.FS, index string) mizu.Middleware {
 type ReadSeekFile interface {
 	fs.File
 	Seek(offset int64, whence int) (int64, error)
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var digits []byte
+	for n > 0 {
+		digits = append([]byte{byte('0' + n%10)}, digits...)
+		n /= 10
+	}
+	return string(digits)
 }
