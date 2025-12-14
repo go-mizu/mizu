@@ -19,6 +19,11 @@ func TestNew(t *testing.T) {
 	app := mizu.NewRouter()
 	app.Use(New(tmpDir))
 
+	// Register catch-all route for SPA
+	app.Get("/{path...}", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusNotFound, "Not Found")
+	})
+
 	t.Run("serve static file", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/app.js", nil)
 		rec := httptest.NewRecorder()
@@ -68,6 +73,11 @@ func TestWithFS(t *testing.T) {
 	app := mizu.NewRouter()
 	app.Use(WithFS(fsys))
 
+	// Register catch-all route for SPA
+	app.Get("/{path...}", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusNotFound, "Not Found")
+	})
+
 	t.Run("serve from FS", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/main.js", nil)
 		rec := httptest.NewRecorder()
@@ -106,6 +116,11 @@ func TestWithOptions_IgnorePaths(t *testing.T) {
 
 	app.Get("/health", func(c *mizu.Ctx) error {
 		return c.Text(http.StatusOK, "ok")
+	})
+
+	// Register catch-all route for SPA
+	app.Get("/{path...}", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusNotFound, "Not Found")
 	})
 
 	t.Run("ignore api path", func(t *testing.T) {
@@ -158,6 +173,11 @@ func TestWithOptions_Prefix(t *testing.T) {
 		return c.Text(http.StatusOK, "other")
 	})
 
+	// Register catch-all route for SPA
+	app.Get("/{path...}", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusNotFound, "Not Found")
+	})
+
 	t.Run("with prefix", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/app/dashboard", nil)
 		rec := httptest.NewRecorder()
@@ -192,6 +212,11 @@ func TestWithOptions_CacheControl(t *testing.T) {
 		IndexMaxAge: 0,
 	}))
 
+	// Register catch-all route for SPA
+	app.Get("/{path...}", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusNotFound, "Not Found")
+	})
+
 	t.Run("static asset cache", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/static.js", nil)
 		rec := httptest.NewRecorder()
@@ -224,6 +249,11 @@ func TestWithOptions_CustomIndex(t *testing.T) {
 		FS:    fsys,
 		Index: "app.html",
 	}))
+
+	// Register catch-all route for SPA
+	app.Get("/{path...}", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusNotFound, "Not Found")
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/any/route", nil)
 	rec := httptest.NewRecorder()

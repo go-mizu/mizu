@@ -25,6 +25,11 @@ func TestNew(t *testing.T) {
 		return c.Text(http.StatusOK, "api")
 	})
 
+	// Register catch-all route for static files
+	app.Get("/{path...}", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusNotFound, "Not Found")
+	})
+
 	t.Run("serve file", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/test.txt", nil)
 		rec := httptest.NewRecorder()
@@ -71,6 +76,11 @@ func TestWithFS(t *testing.T) {
 	app := mizu.NewRouter()
 	app.Use(WithFS(fsys))
 
+	// Register catch-all route for static files
+	app.Get("/{path...}", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusNotFound, "Not Found")
+	})
+
 	t.Run("serve file from FS", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/css/app.css", nil)
 		rec := httptest.NewRecorder()
@@ -98,6 +108,11 @@ func TestWithOptions_Prefix(t *testing.T) {
 
 	app.Get("/api", func(c *mizu.Ctx) error {
 		return c.Text(http.StatusOK, "api")
+	})
+
+	// Register catch-all route for static files
+	app.Get("/{path...}", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusNotFound, "Not Found")
 	})
 
 	t.Run("with prefix", func(t *testing.T) {
@@ -132,6 +147,11 @@ func TestWithOptions_MaxAge(t *testing.T) {
 		MaxAge: 3600,
 	}))
 
+	// Register catch-all route for static files
+	app.Get("/{path...}", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusNotFound, "Not Found")
+	})
+
 	req := httptest.NewRequest(http.MethodGet, "/style.css", nil)
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
@@ -151,6 +171,11 @@ func TestWithOptions_NotFoundHandler(t *testing.T) {
 			return c.Text(http.StatusNotFound, "custom 404")
 		},
 	}))
+
+	// Register catch-all route for static files
+	app.Get("/{path...}", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusNotFound, "Not Found")
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/missing.txt", nil)
 	rec := httptest.NewRecorder()
@@ -175,6 +200,11 @@ func TestWithOptions_CustomIndex(t *testing.T) {
 		Index: "default.htm",
 	}))
 
+	// Register catch-all route for static files
+	app.Get("/{path...}", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusNotFound, "Not Found")
+	})
+
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
@@ -198,6 +228,11 @@ func TestWithOptions_Browse(t *testing.T) {
 		Root:   tmpDir,
 		Browse: true,
 	}))
+
+	// Register catch-all route for static files
+	app.Get("/{path...}", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusNotFound, "Not Found")
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/subdir/", nil)
 	rec := httptest.NewRecorder()

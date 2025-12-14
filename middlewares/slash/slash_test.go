@@ -12,20 +12,40 @@ func TestAdd(t *testing.T) {
 	app := mizu.NewRouter()
 	app.Use(Add())
 
+	// Canonical GET lives at /test/
 	app.Get("/test/", func(c *mizu.Ctx) error {
 		return c.Text(http.StatusOK, "ok")
 	})
 
-	t.Run("adds trailing slash", func(t *testing.T) {
+	// Non-idempotent method should NOT be redirected, even if it lacks a slash.
+	// Provide a POST handler at /test so we can assert pass-through.
+	app.Post("/test", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusOK, "post-ok")
+	})
+
+	t.Run("adds trailing slash for GET", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusMovedPermanently {
-			t.Errorf("expected %d, got %d", http.StatusMovedPermanently, rec.Code)
+			t.Fatalf("expected %d, got %d", http.StatusMovedPermanently, rec.Code)
 		}
-		if rec.Header().Get("Location") != "/test/" {
-			t.Errorf("expected /test/, got %q", rec.Header().Get("Location"))
+		if got := rec.Header().Get("Location"); got != "/test/" {
+			t.Fatalf("expected Location %q, got %q", "/test/", got)
+		}
+	})
+
+	t.Run("adds trailing slash for HEAD", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodHead, "/test", nil)
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusMovedPermanently {
+			t.Fatalf("expected %d, got %d", http.StatusMovedPermanently, rec.Code)
+		}
+		if got := rec.Header().Get("Location"); got != "/test/" {
+			t.Fatalf("expected Location %q, got %q", "/test/", got)
 		}
 	})
 
@@ -34,8 +54,11 @@ func TestAdd(t *testing.T) {
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 
-		if rec.Header().Get("Location") != "/test/?foo=bar" {
-			t.Errorf("expected /test/?foo=bar, got %q", rec.Header().Get("Location"))
+		if rec.Code != http.StatusMovedPermanently {
+			t.Fatalf("expected %d, got %d", http.StatusMovedPermanently, rec.Code)
+		}
+		if got := rec.Header().Get("Location"); got != "/test/?foo=bar" {
+			t.Fatalf("expected Location %q, got %q", "/test/?foo=bar", got)
 		}
 	})
 
@@ -51,7 +74,23 @@ func TestAdd(t *testing.T) {
 		app2.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusOK {
-			t.Errorf("root should not redirect")
+			t.Fatalf("expected %d, got %d", http.StatusOK, rec.Code)
+		}
+		if got := rec.Header().Get("Location"); got != "" {
+			t.Fatalf("expected no Location header, got %q", got)
+		}
+	})
+
+	t.Run("does not redirect POST", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/test", nil)
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rec.Code)
+		}
+		if got := rec.Header().Get("Location"); got != "" {
+			t.Fatalf("expected no Location header, got %q", got)
 		}
 	})
 }
@@ -69,7 +108,10 @@ func TestAddCode(t *testing.T) {
 	app.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusTemporaryRedirect {
-		t.Errorf("expected %d, got %d", http.StatusTemporaryRedirect, rec.Code)
+		t.Fatalf("expected %d, got %d", http.StatusTemporaryRedirect, rec.Code)
+	}
+	if got := rec.Header().Get("Location"); got != "/test/" {
+		t.Fatalf("expected Location %q, got %q", "/test/", got)
 	}
 }
 
@@ -77,20 +119,39 @@ func TestRemove(t *testing.T) {
 	app := mizu.NewRouter()
 	app.Use(Remove())
 
+	// Canonical GET lives at /test
 	app.Get("/test", func(c *mizu.Ctx) error {
 		return c.Text(http.StatusOK, "ok")
 	})
 
-	t.Run("removes trailing slash", func(t *testing.T) {
+	// Non-idempotent method should NOT be redirected, even if it has a slash.
+	app.Post("/test/", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusOK, "post-ok")
+	})
+
+	t.Run("removes trailing slash for GET", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/test/", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusMovedPermanently {
-			t.Errorf("expected %d, got %d", http.StatusMovedPermanently, rec.Code)
+			t.Fatalf("expected %d, got %d", http.StatusMovedPermanently, rec.Code)
 		}
-		if rec.Header().Get("Location") != "/test" {
-			t.Errorf("expected /test, got %q", rec.Header().Get("Location"))
+		if got := rec.Header().Get("Location"); got != "/test" {
+			t.Fatalf("expected Location %q, got %q", "/test", got)
+		}
+	})
+
+	t.Run("removes trailing slash for HEAD", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodHead, "/test/", nil)
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusMovedPermanently {
+			t.Fatalf("expected %d, got %d", http.StatusMovedPermanently, rec.Code)
+		}
+		if got := rec.Header().Get("Location"); got != "/test" {
+			t.Fatalf("expected Location %q, got %q", "/test", got)
 		}
 	})
 
@@ -99,8 +160,11 @@ func TestRemove(t *testing.T) {
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 
-		if rec.Header().Get("Location") != "/test?foo=bar" {
-			t.Errorf("expected /test?foo=bar, got %q", rec.Header().Get("Location"))
+		if rec.Code != http.StatusMovedPermanently {
+			t.Fatalf("expected %d, got %d", http.StatusMovedPermanently, rec.Code)
+		}
+		if got := rec.Header().Get("Location"); got != "/test?foo=bar" {
+			t.Fatalf("expected Location %q, got %q", "/test?foo=bar", got)
 		}
 	})
 
@@ -116,7 +180,23 @@ func TestRemove(t *testing.T) {
 		app2.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusOK {
-			t.Errorf("root should not redirect")
+			t.Fatalf("expected %d, got %d", http.StatusOK, rec.Code)
+		}
+		if got := rec.Header().Get("Location"); got != "" {
+			t.Fatalf("expected no Location header, got %q", got)
+		}
+	})
+
+	t.Run("does not redirect POST", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/test/", nil)
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rec.Code)
+		}
+		if got := rec.Header().Get("Location"); got != "" {
+			t.Fatalf("expected no Location header, got %q", got)
 		}
 	})
 }
@@ -134,6 +214,9 @@ func TestRemoveCode(t *testing.T) {
 	app.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusFound {
-		t.Errorf("expected %d, got %d", http.StatusFound, rec.Code)
+		t.Fatalf("expected %d, got %d", http.StatusFound, rec.Code)
+	}
+	if got := rec.Header().Get("Location"); got != "/test" {
+		t.Fatalf("expected Location %q, got %q", "/test", got)
 	}
 }

@@ -23,16 +23,25 @@ type PanicError struct {
 
 func (e *PanicError) Error() string { return fmt.Sprintf("panic: %v", e.Value) }
 
-// Router is a thin wrapper over Go 1.22 ServeMux with scoped middleware.
+// Router is a thin wrapper over Go 1.22 ServeMux with global and scoped middleware.
+//
+// Global middleware (Use) runs for every request, including 404s.
+// Scoped middleware is applied via Prefix/With and only affects routes registered
+// on that scoped router.
 type Router struct {
 	mux   *http.ServeMux
 	base  string
-	chain []Middleware
+	chain []Middleware // scoped middleware (Prefix/With)
+
+	global []Middleware // global middleware (Use)
 
 	log *slog.Logger
 
 	// Compat exposes a net/http-first facade.
 	Compat *httpRouter
+
+	// root is the compiled global middleware chain (cached).
+	root http.Handler
 }
 
 // NewRouter creates a router with slog logging and default middleware.
@@ -52,7 +61,7 @@ func NewRouter() *Router {
 	}
 	r.Compat = &httpRouter{r: r}
 
-	// Default logger middleware.
+	// Default logger middleware is global (runs even for 404s).
 	r.Use(Logger(LoggerOptions{
 		Logger: r.Logger(),
 	}))
@@ -62,7 +71,7 @@ func NewRouter() *Router {
 
 // ServeHTTP implements http.Handler.
 //
-// It performs minimal request normalization before delegating to http.ServeMux.
+// It performs minimal request normalization before routing.
 // In particular, it ensures the request path always starts with "/" to prevent
 // ServeMux from issuing implicit 301 redirects for non-canonical paths.
 //
@@ -75,7 +84,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		req.URL.Path = "/" + req.URL.Path
 	}
 
-	r.mux.ServeHTTP(w, req)
+	r.compiledRoot().ServeHTTP(w, req)
 }
 
 func (r *Router) handleErr(c *Ctx, err error) {
@@ -128,8 +137,16 @@ func (r *Router) SetLogger(l *slog.Logger) *Router {
 	return r
 }
 
-// Use appends scoped middleware.
-func (r *Router) Use(mw ...Middleware) { r.chain = append(r.chain, mw...) }
+// Use appends global middleware.
+//
+// Global middleware runs for every request, including 404s.
+func (r *Router) Use(mw ...Middleware) {
+	if len(mw) == 0 {
+		return
+	}
+	r.global = append(r.global, mw...)
+	r.root = nil // invalidate cached chain
+}
 
 // Group creates a prefixed router and executes fn.
 func (r *Router) Group(prefix string, fn func(g *Router)) {
@@ -138,25 +155,29 @@ func (r *Router) Group(prefix string, fn func(g *Router)) {
 	}
 }
 
-// Prefix returns a child router with inherited middleware.
+// Prefix returns a child router with inherited global + scoped middleware.
 func (r *Router) Prefix(prefix string) *Router {
 	child := &Router{
-		mux:   r.mux,
-		base:  joinPath(r.base, prefix),
-		chain: slices.Clone(r.chain),
-		log:   r.log,
+		mux:    r.mux,
+		base:   joinPath(r.base, prefix),
+		chain:  slices.Clone(r.chain),
+		global: slices.Clone(r.global),
+		log:    r.log,
+		root:   nil, // child compiles its own cached chain if used as a handler
 	}
 	child.Compat = &httpRouter{r: child}
 	return child
 }
 
-// With returns a child router with extra middleware.
+// With returns a child router with extra scoped middleware.
 func (r *Router) With(mw ...Middleware) *Router {
 	child := &Router{
-		mux:   r.mux,
-		base:  r.base,
-		chain: append(slices.Clone(r.chain), mw...),
-		log:   r.log,
+		mux:    r.mux,
+		base:   r.base,
+		chain:  append(slices.Clone(r.chain), mw...),
+		global: slices.Clone(r.global),
+		log:    r.log,
+		root:   nil,
 	}
 	child.Compat = &httpRouter{r: child}
 	return child
@@ -233,6 +254,28 @@ func (r *Router) compose(h Handler) Handler {
 		h = r.chain[i](h)
 	}
 	return h
+}
+
+// compiledRoot returns the cached global middleware chain adapted to http.Handler.
+func (r *Router) compiledRoot() http.Handler {
+	if r.root != nil {
+		return r.root
+	}
+
+	// Base handler runs the mux through a single Mizu handler.
+	h := func(c *Ctx) error {
+		r.mux.ServeHTTP(c.Writer(), c.Request())
+		return nil
+	}
+
+	// Apply global middleware (right-to-left).
+	for i := len(r.global) - 1; i >= 0; i-- {
+		h = r.global[i](h)
+	}
+
+	// Adapt once (panic recovery + error handling).
+	r.root = r.adapt(h)
+	return r.root
 }
 
 // adapt converts a Mizu handler to http.Handler.
@@ -333,7 +376,7 @@ func (h *httpRouter) HandleMethod(method, p string, hh http.Handler) *httpRouter
 	return h
 }
 
-// Use adapts net/http middleware into scoped Mizu middleware.
+// Use adapts net/http middleware into Mizu middleware.
 func (h *httpRouter) Use(mw ...func(http.Handler) http.Handler) *httpRouter {
 	for _, sm := range mw {
 		if sm != nil {

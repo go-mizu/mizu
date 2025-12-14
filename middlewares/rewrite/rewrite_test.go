@@ -20,6 +20,11 @@ func TestNew(t *testing.T) {
 		return c.Text(http.StatusOK, "ok")
 	})
 
+	// Register catch-all route for rewritten paths
+	app.Get("/{path...}", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusNotFound, "Not Found")
+	})
+
 	req := httptest.NewRequest(http.MethodGet, "/old/path", nil)
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
@@ -63,6 +68,11 @@ func TestWithOptions_MultipleRules(t *testing.T) {
 	app.Get("/articles/hello", func(c *mizu.Ctx) error {
 		capturedPath = c.Request().URL.Path
 		return c.Text(http.StatusOK, "ok")
+	})
+
+	// Register catch-all route for rewritten paths
+	app.Get("/{path...}", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusNotFound, "Not Found")
 	})
 
 	// First rule should match and stop
@@ -132,6 +142,11 @@ func TestWithOptions_RegexCapture(t *testing.T) {
 	app.Get("/profiles/123", func(c *mizu.Ctx) error {
 		capturedPath = c.Request().URL.Path
 		return c.Text(http.StatusOK, "ok")
+	})
+
+	// Register catch-all route for rewritten paths
+	app.Get("/{path...}", func(c *mizu.Ctx) error {
+		return c.Text(http.StatusNotFound, "Not Found")
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/user/123/profile", nil)

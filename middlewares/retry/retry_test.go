@@ -143,11 +143,15 @@ func TestRetryOn(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rw := &retryResponseWriter{status: tt.status}
 			app := mizu.NewRouter()
 			var c *mizu.Ctx
+			var rw *retryResponseWriter
 			app.Get("/", func(ctx *mizu.Ctx) error {
 				c = ctx
+				rw = &retryResponseWriter{
+					ResponseWriter: ctx.Writer(),
+					status:         tt.status,
+				}
 				ctx.SetWriter(rw)
 				return nil
 			})

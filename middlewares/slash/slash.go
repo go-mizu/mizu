@@ -8,20 +8,26 @@ import (
 	"github.com/go-mizu/mizu"
 )
 
-// Add redirects to URL with trailing slash.
-func Add() mizu.Middleware {
-	return AddCode(http.StatusMovedPermanently)
-}
+func Add() mizu.Middleware { return AddCode(http.StatusMovedPermanently) }
 
-// AddCode redirects with specific status code.
 func AddCode(code int) mizu.Middleware {
 	return func(next mizu.Handler) mizu.Handler {
 		return func(c *mizu.Ctx) error {
-			path := c.Request().URL.Path
-			if path != "/" && !strings.HasSuffix(path, "/") {
-				target := path + "/"
-				if c.Request().URL.RawQuery != "" {
-					target += "?" + c.Request().URL.RawQuery
+			req := c.Request()
+
+			// Avoid redirecting non-idempotent requests.
+			if req.Method != http.MethodGet && req.Method != http.MethodHead {
+				return next(c)
+			}
+
+			p := req.URL.Path
+			if p == "" {
+				p = "/"
+			}
+			if p != "/" && !strings.HasSuffix(p, "/") {
+				target := p + "/"
+				if q := req.URL.RawQuery; q != "" {
+					target += "?" + q
 				}
 				return c.Redirect(code, target)
 			}
@@ -30,20 +36,26 @@ func AddCode(code int) mizu.Middleware {
 	}
 }
 
-// Remove redirects to URL without trailing slash.
-func Remove() mizu.Middleware {
-	return RemoveCode(http.StatusMovedPermanently)
-}
+func Remove() mizu.Middleware { return RemoveCode(http.StatusMovedPermanently) }
 
-// RemoveCode redirects with specific status code.
 func RemoveCode(code int) mizu.Middleware {
 	return func(next mizu.Handler) mizu.Handler {
 		return func(c *mizu.Ctx) error {
-			path := c.Request().URL.Path
-			if path != "/" && strings.HasSuffix(path, "/") {
-				target := strings.TrimSuffix(path, "/")
-				if c.Request().URL.RawQuery != "" {
-					target += "?" + c.Request().URL.RawQuery
+			req := c.Request()
+
+			// Avoid redirecting non-idempotent requests.
+			if req.Method != http.MethodGet && req.Method != http.MethodHead {
+				return next(c)
+			}
+
+			p := req.URL.Path
+			if p == "" {
+				p = "/"
+			}
+			if p != "/" && strings.HasSuffix(p, "/") {
+				target := strings.TrimSuffix(p, "/")
+				if q := req.URL.RawQuery; q != "" {
+					target += "?" + q
 				}
 				return c.Redirect(code, target)
 			}
