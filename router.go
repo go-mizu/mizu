@@ -1,6 +1,7 @@
 package mizu
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -65,9 +66,16 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Router) handleErr(c *Ctx, err error) {
+	if err == nil {
+		return
+	}
+
+	req := c.Request()
+
+	// Log all errors. Include stack only for recovered panics.
 	if r.log != nil {
-		req := c.Request()
-		if perr, ok := err.(*PanicError); ok {
+		var perr *PanicError
+		if errors.As(err, &perr) {
 			r.log.Error("panic recovered",
 				slog.String("method", req.Method),
 				slog.String("path", req.URL.Path),
@@ -83,6 +91,7 @@ func (r *Router) handleErr(c *Ctx, err error) {
 		}
 	}
 
+	// Fallback response if handler did not write anything.
 	if !c.wroteHeader {
 		http.Error(
 			c.Writer(),
@@ -93,9 +102,14 @@ func (r *Router) handleErr(c *Ctx, err error) {
 }
 
 // Logger returns the router logger.
-func (r *Router) Logger() *slog.Logger { return r.log }
+func (r *Router) Logger() *slog.Logger {
+	if r.log == nil {
+		return slog.Default()
+	}
+	return r.log
+}
 
-// SetLogger sets the router logger. It may be nil.
+// SetLogger sets the router logger. If nil, slog.Default() is used at runtime.
 func (r *Router) SetLogger(l *slog.Logger) *Router {
 	r.log = l
 	return r
@@ -139,6 +153,7 @@ func (r *Router) With(mw ...Middleware) *Router {
 
 func (r *Router) Get(p string, h Handler)     { r.handle(http.MethodGet, p, h) }
 func (r *Router) Head(p string, h Handler)    { r.handle(http.MethodHead, p, h) }
+func (r *Router) Options(p string, h Handler) { r.handle(http.MethodOptions, p, h) }
 func (r *Router) Post(p string, h Handler)    { r.handle(http.MethodPost, p, h) }
 func (r *Router) Put(p string, h Handler)     { r.handle(http.MethodPut, p, h) }
 func (r *Router) Patch(p string, h Handler)   { r.handle(http.MethodPatch, p, h) }
@@ -155,18 +170,11 @@ func (r *Router) Handle(method, p string, h Handler) {
 }
 
 // Static serves files from an http.FileSystem with the boring net/http pattern.
-//
-// Equivalent to:
-//
-//	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(fsys)))
-//
-// Notes:
-//   - We always mount a subtree pattern ending with "/".
-//   - net/http ServeMux will redirect "/assets" -> "/assets/" for GET/HEAD.
 func (r *Router) Static(prefix string, fsys http.FileSystem) {
 	if fsys == nil {
 		return
 	}
+	prefix = strings.TrimSpace(prefix)
 	if prefix == "" {
 		prefix = "/"
 	}
@@ -177,7 +185,6 @@ func (r *Router) Static(prefix string, fsys http.FileSystem) {
 		prefix += "/"
 	}
 
-	// fullPath uses path.Join which drops trailing slashes, so restore it.
 	base := r.fullPath(prefix)
 	if base != "/" && !strings.HasSuffix(base, "/") {
 		base += "/"
@@ -186,6 +193,10 @@ func (r *Router) Static(prefix string, fsys http.FileSystem) {
 	fs := http.FileServer(fsys)
 
 	h := func(c *Ctx) error {
+		if base == "/" {
+			fs.ServeHTTP(c.Writer(), c.Request())
+			return nil
+		}
 		http.StripPrefix(base, fs).ServeHTTP(c.Writer(), c.Request())
 		return nil
 	}
@@ -200,7 +211,7 @@ func (r *Router) Mount(p string, h http.Handler) { r.Compat.Handle(p, h) }
 
 func (r *Router) handle(method, p string, h Handler) {
 	full := r.fullPath(p)
-	r.mux.Handle(fmt.Sprintf("%s %s", method, full), r.adapt(r.compose(h)))
+	r.mux.Handle(method+" "+full, r.adapt(r.compose(h)))
 }
 
 // compose applies scoped middleware (right-to-left).
@@ -215,7 +226,7 @@ func (r *Router) compose(h Handler) Handler {
 // It owns panic recovery and centralized error handling for this route.
 func (r *Router) adapt(h Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		c := newCtx(w, req, r.log)
+		c := newCtx(w, req, r.Logger())
 
 		defer func() {
 			if rec := recover(); rec != nil {
@@ -232,6 +243,7 @@ func (r *Router) adapt(h Handler) http.Handler {
 // Path helpers.
 
 func (r *Router) fullPath(p string) string {
+	p = strings.TrimSpace(p)
 	if p == "" {
 		p = "/"
 	}
@@ -241,14 +253,34 @@ func (r *Router) fullPath(p string) string {
 	return joinPath(r.base, p)
 }
 
+// joinPath joins base and add without allowing an absolute "add" to drop base.
+// It always returns an absolute path (leading "/").
+// It does not force or remove trailing slashes.
 func joinPath(base, add string) string {
+	base = strings.TrimSpace(base)
+	add = strings.TrimSpace(add)
+
+	if base == "" {
+		base = "/"
+	}
+	if add == "" {
+		add = "/"
+	}
+
+	// Make both segments relative (except we restore leading "/" at the end).
+	b := strings.TrimPrefix(base, "/")
+	a := strings.TrimPrefix(add, "/")
+
+	// Keep "/" semantics stable.
 	switch {
-	case base == "" || base == "/":
-		return cleanLeading(path.Join("/", add))
-	case add == "" || add == "/":
-		return cleanLeading(path.Join("/", base))
+	case b == "" && a == "":
+		return "/"
+	case b == "":
+		return cleanLeading("/" + a)
+	case a == "":
+		return cleanLeading("/" + b)
 	default:
-		return cleanLeading(path.Join("/", base, add))
+		return cleanLeading("/" + path.Join(b, a))
 	}
 }
 
@@ -284,14 +316,16 @@ func (h *httpRouter) HandleMethod(method, p string, hh http.Handler) *httpRouter
 		m = http.MethodGet
 	}
 	full := h.r.fullPath(p)
-	h.r.mux.Handle(fmt.Sprintf("%s %s", strings.ToUpper(m), full), h.r.wrapHTTPHandler(hh))
+	h.r.mux.Handle(strings.ToUpper(m)+" "+full, h.r.wrapHTTPHandler(hh))
 	return h
 }
 
 // Use adapts net/http middleware into scoped Mizu middleware.
 func (h *httpRouter) Use(mw ...func(http.Handler) http.Handler) *httpRouter {
 	for _, sm := range mw {
-		h.r.Use(h.r.adaptStdMiddleware(sm))
+		if sm != nil {
+			h.r.Use(h.r.adaptStdMiddleware(sm))
+		}
 	}
 	return h
 }

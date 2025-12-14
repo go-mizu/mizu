@@ -23,7 +23,7 @@ func TestNew(t *testing.T) {
 		app.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusOK {
-			t.Errorf("expected %d, got %d", http.StatusOK, rec.Code)
+			t.Fatalf("expected %d, got %d", http.StatusOK, rec.Code)
 		}
 	})
 
@@ -33,7 +33,7 @@ func TestNew(t *testing.T) {
 		app.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusBadRequest {
-			t.Errorf("expected %d, got %d", http.StatusBadRequest, rec.Code)
+			t.Fatalf("expected %d, got %d", http.StatusBadRequest, rec.Code)
 		}
 	})
 }
@@ -50,9 +50,8 @@ func TestNew_SkipsGET(t *testing.T) {
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 
-	// GET should be skipped by default
 	if rec.Code != http.StatusOK {
-		t.Errorf("expected GET to be skipped, got %d", rec.Code)
+		t.Fatalf("expected GET to be skipped, got %d", rec.Code)
 	}
 }
 
@@ -60,32 +59,32 @@ func TestWithOptions_CustomValue(t *testing.T) {
 	app := mizu.NewRouter()
 	app.Use(WithOptions(Options{
 		Value:       "CustomValue",
-		SkipMethods: []string{},
+		SkipMethods: []string{}, // check all methods
 	}))
 
-	app.Get("/", func(c *mizu.Ctx) error {
+	app.Post("/", func(c *mizu.Ctx) error {
 		return c.Text(http.StatusOK, "ok")
 	})
 
 	t.Run("correct value", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req := httptest.NewRequest(http.MethodPost, "/", nil)
 		req.Header.Set("X-Requested-With", "CustomValue")
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusOK {
-			t.Errorf("expected %d, got %d", http.StatusOK, rec.Code)
+			t.Fatalf("expected %d, got %d", http.StatusOK, rec.Code)
 		}
 	})
 
 	t.Run("wrong value", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req := httptest.NewRequest(http.MethodPost, "/", nil)
 		req.Header.Set("X-Requested-With", "XMLHttpRequest")
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusBadRequest {
-			t.Errorf("expected %d for wrong value, got %d", http.StatusBadRequest, rec.Code)
+			t.Fatalf("expected %d for wrong value, got %d", http.StatusBadRequest, rec.Code)
 		}
 	})
 }
@@ -94,7 +93,7 @@ func TestWithOptions_SkipPaths(t *testing.T) {
 	app := mizu.NewRouter()
 	app.Use(WithOptions(Options{
 		SkipPaths:   []string{"/webhook"},
-		SkipMethods: []string{},
+		SkipMethods: []string{}, // check all methods
 	}))
 
 	app.Post("/webhook", func(c *mizu.Ctx) error {
@@ -110,7 +109,7 @@ func TestWithOptions_SkipPaths(t *testing.T) {
 		app.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusOK {
-			t.Errorf("expected skip path to work, got %d", rec.Code)
+			t.Fatalf("expected skip path to work, got %d", rec.Code)
 		}
 	})
 
@@ -120,7 +119,7 @@ func TestWithOptions_SkipPaths(t *testing.T) {
 		app.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusBadRequest {
-			t.Errorf("expected %d, got %d", http.StatusBadRequest, rec.Code)
+			t.Fatalf("expected %d, got %d", http.StatusBadRequest, rec.Code)
 		}
 	})
 }
@@ -128,7 +127,7 @@ func TestWithOptions_SkipPaths(t *testing.T) {
 func TestWithOptions_ErrorHandler(t *testing.T) {
 	app := mizu.NewRouter()
 	app.Use(WithOptions(Options{
-		SkipMethods: []string{},
+		SkipMethods: []string{}, // check all methods
 		ErrorHandler: func(c *mizu.Ctx) error {
 			return c.JSON(http.StatusForbidden, map[string]string{
 				"error": "AJAX required",
@@ -136,16 +135,19 @@ func TestWithOptions_ErrorHandler(t *testing.T) {
 		},
 	}))
 
-	app.Get("/", func(c *mizu.Ctx) error {
+	app.Post("/", func(c *mizu.Ctx) error {
 		return c.Text(http.StatusOK, "ok")
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusForbidden {
-		t.Errorf("expected custom error code, got %d", rec.Code)
+		t.Fatalf("expected %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct == "" {
+		t.Fatalf("expected Content-Type to be set")
 	}
 }
 
@@ -163,7 +165,7 @@ func TestRequire(t *testing.T) {
 	app.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Errorf("expected %d, got %d", http.StatusOK, rec.Code)
+		t.Fatalf("expected %d, got %d", http.StatusOK, rec.Code)
 	}
 }
 
@@ -171,28 +173,28 @@ func TestAJAXOnly(t *testing.T) {
 	app := mizu.NewRouter()
 	app.Use(AJAXOnly())
 
-	app.Get("/", func(c *mizu.Ctx) error {
+	app.Post("/", func(c *mizu.Ctx) error {
 		return c.Text(http.StatusOK, "ok")
 	})
 
 	t.Run("with AJAX header", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req := httptest.NewRequest(http.MethodPost, "/", nil)
 		req.Header.Set("X-Requested-With", "XMLHttpRequest")
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusOK {
-			t.Errorf("expected %d, got %d", http.StatusOK, rec.Code)
+			t.Fatalf("expected %d, got %d", http.StatusOK, rec.Code)
 		}
 	})
 
 	t.Run("without AJAX header", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req := httptest.NewRequest(http.MethodPost, "/", nil)
 		rec := httptest.NewRecorder()
 		app.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusBadRequest {
-			t.Errorf("expected %d, got %d", http.StatusBadRequest, rec.Code)
+			t.Fatalf("expected %d, got %d", http.StatusBadRequest, rec.Code)
 		}
 	})
 }
@@ -200,30 +202,44 @@ func TestAJAXOnly(t *testing.T) {
 func TestIsAJAX(t *testing.T) {
 	app := mizu.NewRouter()
 
-	var isAjax bool
-	app.Get("/", func(c *mizu.Ctx) error {
-		isAjax = IsAJAX(c)
-		return c.Text(http.StatusOK, "ok")
-	})
-
 	t.Run("is AJAX", func(t *testing.T) {
+		var isAjax bool
+		app2 := app.Prefix("") // isolate per subtest without rebuilding mux
+		app2.Get("/", func(c *mizu.Ctx) error {
+			isAjax = IsAJAX(c)
+			return c.Text(http.StatusOK, "ok")
+		})
+
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set("X-Requested-With", "XMLHttpRequest")
 		rec := httptest.NewRecorder()
-		app.ServeHTTP(rec, req)
+		app2.ServeHTTP(rec, req)
 
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rec.Code)
+		}
 		if !isAjax {
-			t.Error("expected IsAJAX to return true")
+			t.Fatalf("expected IsAJAX to return true")
 		}
 	})
 
 	t.Run("not AJAX", func(t *testing.T) {
+		var isAjax bool
+		app2 := mizu.NewRouter()
+		app2.Get("/", func(c *mizu.Ctx) error {
+			isAjax = IsAJAX(c)
+			return c.Text(http.StatusOK, "ok")
+		})
+
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		rec := httptest.NewRecorder()
-		app.ServeHTTP(rec, req)
+		app2.ServeHTTP(rec, req)
 
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rec.Code)
+		}
 		if isAjax {
-			t.Error("expected IsAJAX to return false")
+			t.Fatalf("expected IsAJAX to return false")
 		}
 	})
 }
@@ -237,11 +253,11 @@ func TestCaseInsensitive(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/", nil)
-	req.Header.Set("X-Requested-With", "xmlhttprequest") // lowercase
+	req.Header.Set("X-Requested-With", "xmlhttprequest")
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Errorf("expected case-insensitive match, got %d", rec.Code)
+		t.Fatalf("expected case-insensitive match, got %d", rec.Code)
 	}
 }

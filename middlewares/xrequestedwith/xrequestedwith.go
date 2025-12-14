@@ -1,4 +1,3 @@
-// Package xrequestedwith provides X-Requested-With header validation middleware for Mizu.
 package xrequestedwith
 
 import (
@@ -8,62 +7,61 @@ import (
 	"github.com/go-mizu/mizu"
 )
 
-// Options configures the X-Requested-With middleware.
 type Options struct {
-	// Value is the required header value.
-	// Default: "XMLHttpRequest".
-	Value string
-
-	// SkipMethods are HTTP methods to skip.
-	// Default: GET, HEAD, OPTIONS.
-	SkipMethods []string
-
-	// SkipPaths are paths to skip.
-	SkipPaths []string
-
-	// ErrorHandler handles missing/invalid header.
+	Value        string
+	SkipMethods  []string
+	SkipPaths    []string
 	ErrorHandler func(c *mizu.Ctx) error
 }
 
-// New creates middleware requiring XMLHttpRequest header.
-func New() mizu.Middleware {
-	return WithOptions(Options{})
-}
+func New() mizu.Middleware { return WithOptions(Options{}) }
 
-// WithOptions creates middleware with custom options.
 func WithOptions(opts Options) mizu.Middleware {
 	if opts.Value == "" {
 		opts.Value = "XMLHttpRequest"
 	}
 	if opts.SkipMethods == nil {
-		opts.SkipMethods = []string{"GET", "HEAD", "OPTIONS"}
+		opts.SkipMethods = []string{http.MethodGet, http.MethodHead, http.MethodOptions}
 	}
 
-	skipMethods := make(map[string]bool)
+	skipMethods := make(map[string]bool, len(opts.SkipMethods))
 	for _, m := range opts.SkipMethods {
+		m = strings.TrimSpace(m)
+		if m == "" {
+			continue
+		}
 		skipMethods[strings.ToUpper(m)] = true
 	}
 
-	skipPaths := make(map[string]bool)
+	skipPaths := make(map[string]bool, len(opts.SkipPaths))
 	for _, p := range opts.SkipPaths {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
 		skipPaths[p] = true
 	}
 
+	want := opts.Value
+
 	return func(next mizu.Handler) mizu.Handler {
 		return func(c *mizu.Ctx) error {
-			// Skip configured methods
-			if skipMethods[c.Request().Method] {
+			req := c.Request()
+
+			if skipMethods[strings.ToUpper(req.Method)] {
 				return next(c)
 			}
 
-			// Skip configured paths
-			if skipPaths[c.Request().URL.Path] {
+			path := ""
+			if req.URL != nil {
+				path = req.URL.Path
+			}
+			if skipPaths[path] {
 				return next(c)
 			}
 
-			// Check header
-			header := c.Request().Header.Get("X-Requested-With")
-			if !strings.EqualFold(header, opts.Value) {
+			got := req.Header.Get("X-Requested-With")
+			if !strings.EqualFold(got, want) {
 				if opts.ErrorHandler != nil {
 					return opts.ErrorHandler(c)
 				}
@@ -75,20 +73,12 @@ func WithOptions(opts Options) mizu.Middleware {
 	}
 }
 
-// Require creates middleware requiring a specific header value.
-func Require(value string) mizu.Middleware {
-	return WithOptions(Options{Value: value})
-}
+func Require(value string) mizu.Middleware { return WithOptions(Options{Value: value}) }
 
-// AJAXOnly creates middleware that only allows AJAX requests.
 func AJAXOnly() mizu.Middleware {
-	return WithOptions(Options{
-		Value:       "XMLHttpRequest",
-		SkipMethods: []string{}, // Check all methods
-	})
+	return WithOptions(Options{Value: "XMLHttpRequest", SkipMethods: []string{}})
 }
 
-// IsAJAX checks if a request has the X-Requested-With header.
 func IsAJAX(c *mizu.Ctx) bool {
 	return strings.EqualFold(c.Request().Header.Get("X-Requested-With"), "XMLHttpRequest")
 }
