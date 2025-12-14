@@ -126,14 +126,20 @@ func extractIP(addr string) string {
 func getClientIP(c *mizu.Ctx) string {
 	// Check X-Forwarded-For header
 	if xff := c.Request().Header.Get("X-Forwarded-For"); xff != "" {
-		ip := strings.TrimSpace(strings.Split(xff, ",")[0])
-		if net.ParseIP(ip) != nil {
-			return ip
+		parts := strings.Split(xff, ",")
+		if len(parts) > 0 {
+			ip := strings.TrimSpace(parts[0])
+			if net.ParseIP(ip) != nil {
+				return ip
+			}
 		}
 	}
 	// Check X-Real-IP header
-	if xr := c.Request().Header.Get("X-Real-IP"); xr != "" && net.ParseIP(xr) != nil {
-		return xr
+	if xr := c.Request().Header.Get("X-Real-IP"); xr != "" {
+		ip := strings.TrimSpace(xr)
+		if net.ParseIP(ip) != nil {
+			return ip
+		}
 	}
 	// Fallback to RemoteAddr
 	return extractIP(c.Request().RemoteAddr)

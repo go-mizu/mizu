@@ -218,19 +218,25 @@ func PerHour(n int) mizu.Middleware {
 func getClientIP(c *mizu.Ctx) string {
 	// Check X-Forwarded-For header
 	if xff := c.Request().Header.Get("X-Forwarded-For"); xff != "" {
-		ip := strings.TrimSpace(strings.Split(xff, ",")[0])
+		parts := strings.Split(xff, ",")
+		if len(parts) > 0 {
+			ip := strings.TrimSpace(parts[0])
+			if net.ParseIP(ip) != nil {
+				return ip
+			}
+		}
+	}
+	// Check X-Real-IP header
+	if xr := c.Request().Header.Get("X-Real-IP"); xr != "" {
+		ip := strings.TrimSpace(xr)
 		if net.ParseIP(ip) != nil {
 			return ip
 		}
 	}
-	// Check X-Real-IP header
-	if xr := c.Request().Header.Get("X-Real-IP"); xr != "" && net.ParseIP(xr) != nil {
-		return xr
-	}
 	// Fallback to RemoteAddr
 	host, _, err := net.SplitHostPort(c.Request().RemoteAddr)
-	if err == nil && net.ParseIP(host) != nil {
-		return host
+	if err != nil {
+		return c.Request().RemoteAddr
 	}
-	return c.Request().RemoteAddr
+	return host
 }
