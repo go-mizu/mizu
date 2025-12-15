@@ -19,17 +19,7 @@ import (
 
 func mustReq(t *testing.T, method, target string, body io.Reader) *http.Request {
 	t.Helper()
-	req := httptest.NewRequest(method, target, body)
-	return req
-}
-
-func mustReadAll(t *testing.T, r io.Reader) string {
-	t.Helper()
-	b, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	return string(b)
+	return httptest.NewRequest(method, target, body)
 }
 
 func ok(t *testing.T, got, want any) {
@@ -102,8 +92,7 @@ func TestFullPath(t *testing.T) {
 
 func TestServeHTTP_RunsGlobalChainAndRoutes(t *testing.T) {
 	r := NewRouter()
-	// Replace default Logger middleware effect if you want predictable order:
-	// Keep it, but ensure our taps run too.
+
 	var order []string
 	r.Use(mwTap("g1", &order), mwTap("g2", &order))
 
@@ -120,8 +109,6 @@ func TestServeHTTP_RunsGlobalChainAndRoutes(t *testing.T) {
 	ok(t, rr.Code, http.StatusOK)
 	ok(t, rr.Body.String(), "hi")
 
-	// We only assert relative order of our taps vs handler.
-	// Default Logger may insert before/after, so just ensure these are present and ordered.
 	joined := strings.Join(order, ",")
 	has(t, joined, "g1")
 	has(t, joined, "g2")
@@ -130,7 +117,8 @@ func TestServeHTTP_RunsGlobalChainAndRoutes(t *testing.T) {
 	i1 := strings.Index(joined, "g1")
 	i2 := strings.Index(joined, "g2")
 	ih := strings.Index(joined, "handler")
-	if !(i1 >= 0 && i2 >= 0 && ih >= 0 && i1 < ih && i2 < ih) {
+
+	if i1 < 0 || i2 < 0 || ih < 0 || i1 >= ih || i2 >= ih {
 		t.Fatalf("expected g1/g2 before handler, got %v", order)
 	}
 }
@@ -168,8 +156,8 @@ func TestPrefix_Group_With_ScopedMiddleware(t *testing.T) {
 	r.Use(mwTap("global", &got))
 
 	api := r.Prefix("/api")
-	api.Use(mwTap("global2", &got)) // This affects only serving api directly, not root r.
-	// Most users serve root, so scope middleware should be via With.
+	api.Use(mwTap("global2", &got)) // affects only serving api directly, not root r
+
 	apiV1 := api.With(mwTap("scoped", &got))
 	apiV1.Get("/ping", func(c *Ctx) error {
 		got = append(got, "handler")
@@ -190,7 +178,8 @@ func TestPrefix_Group_With_ScopedMiddleware(t *testing.T) {
 	ig := strings.Index(joined, "global")
 	is := strings.Index(joined, "scoped")
 	ih := strings.Index(joined, "handler")
-	if !(ig >= 0 && is >= 0 && ih >= 0 && ig < ih && is < ih) {
+
+	if ig < 0 || is < 0 || ih < 0 || ig >= ih || is >= ih {
 		t.Fatalf("unexpected order: %v", got)
 	}
 }
@@ -205,8 +194,7 @@ func TestErrorHandling_Default500(t *testing.T) {
 	r.ServeHTTP(rr, mustReq(t, http.MethodGet, "http://example/err", nil))
 
 	ok(t, rr.Code, http.StatusInternalServerError)
-	body := rr.Body.String()
-	has(t, body, http.StatusText(http.StatusInternalServerError))
+	has(t, rr.Body.String(), http.StatusText(http.StatusInternalServerError))
 }
 
 func TestErrorHandling_CustomErrorHandler(t *testing.T) {
@@ -249,7 +237,7 @@ func TestPanicRecovery_CustomErrorHandlerReceivesPanicError(t *testing.T) {
 	var saw atomic.Bool
 	r.ErrorHandler(func(c *Ctx, err error) {
 		var pe *PanicError
-		if errors.As(err, &pe) && pe != nil && pe.Stack != nil && len(pe.Stack) > 0 {
+		if errors.As(err, &pe) && pe != nil && len(pe.Stack) > 0 {
 			saw.Store(true)
 		}
 		c.Writer().WriteHeader(599)
@@ -270,31 +258,25 @@ func TestPanicRecovery_CustomErrorHandlerReceivesPanicError(t *testing.T) {
 
 func TestStatic_ServesFiles_AndRedirects(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hello"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hello"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
 	r := NewRouter()
 	r.Static("/assets", http.FS(os.DirFS(dir)))
 
-	// "/assets" should redirect to "/assets/"
 	{
 		rr := httptest.NewRecorder()
 		r.ServeHTTP(rr, mustReq(t, http.MethodGet, "http://example/assets", nil))
 		ok(t, rr.Code, http.StatusMovedPermanently)
-		loc := rr.Header().Get("Location")
-		ok(t, loc, "/assets/")
+		ok(t, rr.Header().Get("Location"), "/assets/")
 	}
-
-	// GET should serve
 	{
 		rr := httptest.NewRecorder()
 		r.ServeHTTP(rr, mustReq(t, http.MethodGet, "http://example/assets/hello.txt", nil))
 		ok(t, rr.Code, http.StatusOK)
 		ok(t, rr.Body.String(), "hello")
 	}
-
-	// HEAD should serve without body (Recorder will show empty body)
 	{
 		rr := httptest.NewRecorder()
 		r.ServeHTTP(rr, mustReq(t, http.MethodHead, "http://example/assets/hello.txt", nil))
@@ -306,7 +288,6 @@ func TestStatic_ServesFiles_AndRedirects(t *testing.T) {
 func TestCompat_Handle_Mount_AndHandleMethod(t *testing.T) {
 	r := NewRouter()
 
-	// Compat.Handle registers a plain pattern (no method), should match any method.
 	r.Compat.Handle("/plain", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("X-Plain", "1")
 		w.WriteHeader(204)
@@ -325,7 +306,6 @@ func TestCompat_Handle_Mount_AndHandleMethod(t *testing.T) {
 		ok(t, rr.Header().Get("X-Plain"), "1")
 	}
 
-	// HandleMethod with method pattern.
 	r.Compat.HandleMethod(http.MethodPost, "/m", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(201)
 	}))
@@ -338,13 +318,9 @@ func TestCompat_Handle_Mount_AndHandleMethod(t *testing.T) {
 	{
 		rr := httptest.NewRecorder()
 		r.ServeHTTP(rr, mustReq(t, http.MethodGet, "http://example/m", nil))
-
-		// Go 1.22+ ServeMux method patterns return 405 (Method Not Allowed)
-		// when the path matches but the method does not.
 		ok(t, rr.Code, http.StatusMethodNotAllowed)
 	}
 
-	// Mount aliases Handle.
 	r.Compat.Mount("/mount", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(202)
 	}))
@@ -358,7 +334,6 @@ func TestCompat_Handle_Mount_AndHandleMethod(t *testing.T) {
 func TestCompat_Use_StdMiddleware_Bridge(t *testing.T) {
 	r := NewRouter()
 
-	// Standard net/http middleware that sets a header and enforces a timeout-ish behavior.
 	stdMW := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			w.Header().Set("X-Std", "1")
@@ -386,7 +361,6 @@ func TestUseAndSetLogger_NonNil(t *testing.T) {
 		t.Fatalf("expected logger")
 	}
 
-	// SetLogger nil should be ignored.
 	old := r.Logger()
 	r.SetLogger(nil)
 	if r.Logger() != old {
@@ -396,7 +370,7 @@ func TestUseAndSetLogger_NonNil(t *testing.T) {
 
 func TestStatic_RootPrefix(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("root"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("root"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -406,14 +380,13 @@ func TestStatic_RootPrefix(t *testing.T) {
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, mustReq(t, http.MethodGet, "http://example/", nil))
 
-	// For "/" most file servers will serve index.html directly.
 	ok(t, rr.Code, http.StatusOK)
 	ok(t, rr.Body.String(), "root")
 }
 
 func TestScopedMiddleware_OnStatic(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -443,8 +416,6 @@ func TestGroup_HTTPRouter(t *testing.T) {
 }
 
 func TestGlobalMiddleware_SeesOriginalPath(t *testing.T) {
-	// This test asserts we do not canonicalize paths in the router core.
-	// A middleware that cares about trailing slash should see it as-is.
 	r := NewRouter()
 
 	var seen string
@@ -455,25 +426,20 @@ func TestGlobalMiddleware_SeesOriginalPath(t *testing.T) {
 		}
 	})
 
-	// Register subtree so ServeMux may redirect or normalize in some cases.
-	// We want to ensure middleware sees the raw path of the incoming request.
 	r.Get("/x/", handlerText("ok"))
 
 	rr := httptest.NewRecorder()
-	req := mustReq(t, http.MethodGet, "http://example/x/", nil)
-	r.ServeHTTP(rr, req)
+	r.ServeHTTP(rr, mustReq(t, http.MethodGet, "http://example/x/", nil))
 
 	ok(t, seen, "/x/")
 }
 
 func TestNoGlobalMiddleware_StillWorks(t *testing.T) {
-	// Construct a router without calling NewRouter to avoid default logger middleware.
 	r := &Router{
 		mux: http.NewServeMux(),
 	}
 	r.Compat = &httpRouter{r: r}
 
-	// Register route using internal handle path builder.
 	r.Get("/ok", func(c *Ctx) error {
 		_, _ = c.Writer().Write([]byte("ok"))
 		return nil
@@ -489,10 +455,8 @@ func TestNoGlobalMiddleware_StillWorks(t *testing.T) {
 func TestTimeoutStyleStdMiddleware_DoesNotBreak(t *testing.T) {
 	r := NewRouter()
 
-	// Middleware that wraps the handler and delays before continuing.
 	stdMW := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			// Keep tiny to avoid flakiness.
 			time.Sleep(1 * time.Millisecond)
 			next.ServeHTTP(w, req)
 		})
