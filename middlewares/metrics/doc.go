@@ -1,6 +1,6 @@
 // Package metrics provides simple metrics collection middleware for the Mizu web framework.
 //
-// Overview
+// # Overview
 //
 // The metrics middleware tracks HTTP request metrics including request counts, error rates,
 // latencies, status codes, and per-path statistics. It provides thread-safe metrics collection
@@ -15,7 +15,7 @@
 //   - JSON and Prometheus format export
 //   - Thread-safe concurrent access
 //
-// Basic Usage
+// # Basic Usage
 //
 // Create a metrics instance and register the middleware:
 //
@@ -35,7 +35,7 @@
 //	// Prometheus format
 //	app.Get("/metrics", m.Prometheus())
 //
-// Accessing Statistics
+// # Accessing Statistics
 //
 // Retrieve current metrics programmatically:
 //
@@ -45,19 +45,19 @@
 //	fmt.Printf("Average duration: %.2fms\n", stats.AverageDurationMs)
 //	fmt.Printf("Active requests: %d\n", stats.ActiveRequests)
 //
-// Reset Metrics
+// # Reset Metrics
 //
 // Clear all metrics back to zero:
 //
 //	m.Reset()
 //
-// Thread Safety
+// # Thread Safety
 //
 // All operations are thread-safe. The middleware uses atomic operations for counters
 // and a read-write mutex for maps to ensure correct concurrent behavior without
 // sacrificing performance.
 //
-// Metrics Collected
+// # Metrics Collected
 //
 // The middleware automatically collects:
 //   - RequestCount: Total number of HTTP requests processed
@@ -67,7 +67,7 @@
 //   - StatusCodes: Map of HTTP status codes to their counts
 //   - PathCounts: Map of URL paths to their request counts
 //
-// Output Formats
+// # Output Formats
 //
 // JSON format (via Handler()):
 //
@@ -99,7 +99,7 @@
 //	# TYPE http_active_requests gauge
 //	http_active_requests 5
 //
-// Implementation Details
+// # Implementation Details
 //
 // The middleware uses a custom statusCapture wrapper that implements http.ResponseWriter
 // to intercept status codes. This allows accurate tracking even when status codes are
@@ -112,7 +112,7 @@
 //   - Custom itoa() to avoid fmt package overhead
 //   - Non-intrusive monitoring (doesn't modify requests/responses)
 //
-// Example
+// # Example
 //
 // Complete example with metrics collection and exposure:
 //

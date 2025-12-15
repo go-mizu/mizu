@@ -96,8 +96,8 @@ func Latency(min, max time.Duration) mizu.Middleware {
 
 // Controller manages chaos configuration dynamically.
 type Controller struct {
-	opts     Options
-	enabled  bool
+	opts    Options
+	enabled bool
 }
 
 // NewController creates a new chaos controller.

@@ -106,4 +106,3 @@ func TestJSON(t *testing.T) {
 		t.Error("expected valid JSON object")
 	}
 }
-

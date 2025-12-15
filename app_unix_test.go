@@ -3,18 +3,19 @@
 package mizu
 
 import (
+	"context"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
 )
 
-func TestApp_ServeWithSignals_SIGTERM_ShutsDown(t *testing.T) {
+func TestApp_serveWithSignals_SIGTERM_TriggersGracefulShutdown(t *testing.T) {
 	a := New()
-	a.PreShutdownDelay = 0
-	a.ShutdownTimeout = 250 * time.Millisecond
 
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -23,9 +24,8 @@ func TestApp_ServeWithSignals_SIGTERM_ShutsDown(t *testing.T) {
 	t.Cleanup(func() { _ = l.Close() })
 
 	srv := a.newServer(l.Addr().String())
-	srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
 	})
 
 	done := make(chan error, 1)
@@ -33,24 +33,11 @@ func TestApp_ServeWithSignals_SIGTERM_ShutsDown(t *testing.T) {
 		done <- a.serveWithSignals(srv, func() error { return srv.Serve(l) })
 	}()
 
-	// Wait until the server responds (means serve loop is running),
-	// then send SIGTERM to trigger NotifyContext cancellation.
-	client := &http.Client{Timeout: 1 * time.Second}
+	waitForTCP(t, l.Addr().String())
 
-	deadline := time.Now().Add(1 * time.Second)
-	for {
-		resp, e := client.Get("http://" + l.Addr().String() + "/")
-		if e == nil {
-			_ = resp.Body.Close()
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("server did not become ready: %v", e)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	// Trigger shutdown via signal.
+	// Send SIGTERM to our own process. serveWithSignals uses signal.NotifyContext,
+	// so the signal should cancel the context and start graceful shutdown
+	// instead of terminating the test process.
 	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
 		t.Fatalf("kill(SIGTERM): %v", err)
 	}
@@ -60,11 +47,28 @@ func TestApp_ServeWithSignals_SIGTERM_ShutsDown(t *testing.T) {
 		if err != nil {
 			t.Fatalf("serveWithSignals returned error: %v", err)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("serveWithSignals did not return in time")
+	case <-time.After(3 * time.Second):
+		t.Fatalf("timeout waiting for serveWithSignals to return")
 	}
 
-	if !a.shuttingDown.Load() {
-		t.Fatalf("shuttingDown = false, want true after signal shutdown")
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	a.ReadyzHandler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("readyz status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
+	}
+	if !strings.Contains(rr.Body.String(), "shutting down") {
+		t.Fatalf("readyz body = %q, want contains %q", rr.Body.String(), "shutting down")
+	}
+}
+
+func TestApp_serveWithSignals_PropagatesServeError(t *testing.T) {
+	a := New()
+
+	want := context.Canceled // any non-ErrServerClosed error is fine
+	err := a.serveWithSignals(a.newServer(":0"), func() error { return want })
+	if err != want {
+		t.Fatalf("err = %v, want %v", err, want)
 	}
 }

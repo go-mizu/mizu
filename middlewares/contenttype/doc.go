@@ -1,6 +1,6 @@
 // Package contenttype provides middleware for Content-Type validation and enforcement in Mizu applications.
 //
-// Overview
+// # Overview
 //
 // The contenttype package offers a set of middleware functions that validate incoming request
 // Content-Type headers and set response Content-Type headers. It ensures that your API endpoints
@@ -14,7 +14,7 @@
 //   - Default Content-Type injection for requests without headers
 //   - Response Content-Type setting for consistent API responses
 //
-// Usage
+// # Usage
 //
 // Basic JSON-only endpoint:
 //
@@ -53,7 +53,7 @@
 //	forms := app.Group("/forms")
 //	forms.Use(contenttype.RequireForm())
 //
-// Validation Behavior
+// # Validation Behavior
 //
 // The middleware only validates requests with body content (POST, PUT, PATCH methods).
 // GET, DELETE, and other methods bypass validation entirely.
@@ -65,7 +65,7 @@
 //   - Performs case-insensitive comparison against allowed types
 //   - Returns HTTP 415 (Unsupported Media Type) if validation fails
 //
-// Error Responses
+// # Error Responses
 //
 // When validation fails, the middleware returns:
 //
@@ -88,7 +88,7 @@
 //   - Apply SetResponse() for consistent API response content types
 //   - Configure middleware at the router group level for route-specific rules
 //
-// Design Decisions
+// # Design Decisions
 //
 // Parameter Stripping: The middleware ignores media type parameters during validation,
 // allowing flexible matching. For example, "application/json; charset=utf-8" will match

@@ -547,10 +547,10 @@ func TestConnectionPreface(t *testing.T) {
 // hijackableRecorder implements http.ResponseWriter and http.Hijacker
 type hijackableRecorder struct {
 	*httptest.ResponseRecorder
-	conn       *mockNetConn
-	hijackErr  error
-	hijacked   bool
-	brw        *bufio.ReadWriter
+	conn      *mockNetConn
+	hijackErr error
+	hijacked  bool
+	brw       *bufio.ReadWriter
 }
 
 func newHijackableRecorder() *hijackableRecorder {

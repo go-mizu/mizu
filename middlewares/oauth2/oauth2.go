@@ -167,12 +167,12 @@ func introspectToken(opts Options, token string) (*Token, error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
-		Active    bool     `json:"active"`
-		Scope     string   `json:"scope"`
-		Subject   string   `json:"sub"`
-		Issuer    string   `json:"iss"`
-		ExpiresAt int64    `json:"exp"`
-		ClientID  string   `json:"client_id"`
+		Active    bool   `json:"active"`
+		Scope     string `json:"scope"`
+		Subject   string `json:"sub"`
+		Issuer    string `json:"iss"`
+		ExpiresAt int64  `json:"exp"`
+		ClientID  string `json:"client_id"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

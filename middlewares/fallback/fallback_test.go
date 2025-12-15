@@ -1,10 +1,10 @@
 package fallback
 
 import (
-	"strings"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-mizu/mizu"

@@ -3,142 +3,146 @@ package mizu
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
 
-func TestApp_NewDefaults(t *testing.T) {
+func TestNew_Defaults(t *testing.T) {
 	a := New()
-	if a == nil {
-		t.Fatal("New() returned nil")
-	}
+
 	if a.Router == nil {
-		t.Fatal("New() Router is nil")
+		t.Fatalf("Router is nil")
 	}
-	if got, want := a.PreShutdownDelay, defaultPreShutdownDelay; got != want {
-		t.Fatalf("PreShutdownDelay = %v, want %v", got, want)
-	}
-	if got, want := a.ShutdownTimeout, defaultShutdownTimeout; got != want {
-		t.Fatalf("ShutdownTimeout = %v, want %v", got, want)
+	if a.ShutdownTimeout != defaultShutdownTimeout {
+		t.Fatalf("ShutdownTimeout = %v, want %v", a.ShutdownTimeout, defaultShutdownTimeout)
 	}
 	if a.Server() != nil {
 		t.Fatalf("Server() = %v, want nil before starting", a.Server())
 	}
+	if a.Logger() == nil {
+		t.Fatalf("Logger() is nil")
+	}
 }
 
-func TestApp_NewServer_StoresAndSetsTimeouts(t *testing.T) {
+func TestLivezHandler_AlwaysOK(t *testing.T) {
 	a := New()
-	srv := a.newServer("127.0.0.1:12345")
 
-	if srv == nil {
-		t.Fatal("newServer returned nil")
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/livez", nil)
+
+	a.LivezHandler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
 	}
-	if got := a.Server(); got != srv {
-		t.Fatalf("Server() did not return stored server pointer")
+	if ct := rr.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+		t.Fatalf("Content-Type = %q, want text/plain", ct)
 	}
-	if got, want := srv.Addr, "127.0.0.1:12345"; got != want {
-		t.Fatalf("srv.Addr = %q, want %q", got, want)
+	if rr.Body.String() != healthOKBody {
+		t.Fatalf("body = %q, want %q", rr.Body.String(), healthOKBody)
 	}
-	if got, want := srv.ReadHeaderTimeout, defaultReadHeaderTimeout; got != want {
-		t.Fatalf("ReadHeaderTimeout = %v, want %v", got, want)
+}
+
+func TestReadyzHandler_OK_WhenNotShuttingDown(t *testing.T) {
+	a := New()
+	a.shuttingDown.Store(false)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+
+	a.ReadyzHandler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
 	}
-	if got, want := srv.IdleTimeout, defaultIdleTimeout; got != want {
-		t.Fatalf("IdleTimeout = %v, want %v", got, want)
+	if rr.Body.String() != healthOKBody {
+		t.Fatalf("body = %q, want %q", rr.Body.String(), healthOKBody)
+	}
+}
+
+func TestReadyzHandler_503_WhenShuttingDown(t *testing.T) {
+	a := New()
+	a.shuttingDown.Store(true)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+
+	a.ReadyzHandler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
+	}
+	if !strings.Contains(rr.Body.String(), "shutting down") {
+		t.Fatalf("body = %q, want contains %q", rr.Body.String(), "shutting down")
+	}
+}
+
+func TestNewServer_SetsServerAndTimeouts(t *testing.T) {
+	a := New()
+	srv := a.newServer(":0")
+
+	if a.Server() != srv {
+		t.Fatalf("Server() != newly created server")
+	}
+	if srv.ReadHeaderTimeout != defaultReadHeaderTimeout {
+		t.Fatalf("ReadHeaderTimeout = %v, want %v", srv.ReadHeaderTimeout, defaultReadHeaderTimeout)
+	}
+	if srv.IdleTimeout != defaultIdleTimeout {
+		t.Fatalf("IdleTimeout = %v, want %v", srv.IdleTimeout, defaultIdleTimeout)
 	}
 	if srv.Handler == nil {
-		t.Fatalf("srv.Handler is nil")
+		t.Fatalf("Handler is nil")
+	}
+	if srv.BaseContext == nil {
+		t.Fatalf("BaseContext is nil")
 	}
 }
 
-func TestApp_HealthzHandler_OKAndShuttingDown(t *testing.T) {
+func TestRunServer_ReturnsError(t *testing.T) {
 	a := New()
-	h := a.HealthzHandler()
+	errCh := make(chan error, 1)
 
-	// OK path.
-	{
-		rr := httptestRecorder()
-		req, _ := http.NewRequest(http.MethodGet, "http://example/healthz", nil)
-		h.ServeHTTP(rr, req)
+	want := errors.New("boom")
+	a.runServer(errCh, func() error { return want })
 
-		if rr.code != http.StatusOK {
-			t.Fatalf("status = %d, want %d", rr.code, http.StatusOK)
-		}
-		if ct := rr.header.Get("Content-Type"); ct != "text/plain; charset=utf-8" {
-			t.Fatalf("Content-Type = %q, want %q", ct, "text/plain; charset=utf-8")
-		}
-		if rr.body != healthOKBody {
-			t.Fatalf("body = %q, want %q", rr.body, healthOKBody)
-		}
-	}
-
-	// Shutting down path.
-	{
-		a.shuttingDown.Store(true)
-
-		rr := httptestRecorder()
-		req, _ := http.NewRequest(http.MethodGet, "http://example/healthz", nil)
-		h.ServeHTTP(rr, req)
-
-		if rr.code != http.StatusServiceUnavailable {
-			t.Fatalf("status = %d, want %d", rr.code, http.StatusServiceUnavailable)
-		}
-		if ct := rr.header.Get("Content-Type"); ct != "text/plain; charset=utf-8" {
-			t.Fatalf("Content-Type = %q, want %q", ct, "text/plain; charset=utf-8")
-		}
-		if rr.body == "" {
-			t.Fatalf("expected error body, got empty")
-		}
+	got := <-errCh
+	if !errors.Is(got, want) {
+		t.Fatalf("err = %v, want %v", got, want)
 	}
 }
 
-func TestApp_WaitPreShutdownDelay_NoDelayAndCanceled(t *testing.T) {
+func TestRunServer_IgnoresErrServerClosed(t *testing.T) {
 	a := New()
+	errCh := make(chan error, 1)
 
-	// No delay should return immediately.
-	a.PreShutdownDelay = 0
-	start := time.Now()
-	a.waitPreShutdownDelay(context.Background())
-	if time.Since(start) > 50*time.Millisecond {
-		t.Fatalf("waitPreShutdownDelay took too long with no delay")
-	}
+	a.runServer(errCh, func() error { return http.ErrServerClosed })
 
-	// Canceled ctx should return immediately even with delay configured.
-	a.PreShutdownDelay = 5 * time.Second
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	start = time.Now()
-	a.waitPreShutdownDelay(ctx)
-	if time.Since(start) > 50*time.Millisecond {
-		t.Fatalf("waitPreShutdownDelay took too long with canceled ctx")
+	got := <-errCh
+	if got != nil {
+		t.Fatalf("err = %v, want nil", got)
 	}
 }
 
-func TestApp_RunServer_ErrorsAndErrServerClosed(t *testing.T) {
+func TestRunServer_Nil(t *testing.T) {
 	a := New()
+	errCh := make(chan error, 1)
 
-	t.Run("returns_error", func(t *testing.T) {
-		errCh := make(chan error, 1)
-		a.runServer(errCh, func() error { return errors.New("boom") }, func() {})
-		if err := <-errCh; err == nil || err.Error() != "boom" {
-			t.Fatalf("err = %v, want boom", err)
-		}
-	})
+	a.runServer(errCh, func() error { return nil })
 
-	t.Run("treats_ErrServerClosed_as_nil", func(t *testing.T) {
-		errCh := make(chan error, 1)
-		a.runServer(errCh, func() error { return http.ErrServerClosed }, func() {})
-		if err := <-errCh; err != nil {
-			t.Fatalf("err = %v, want nil", err)
-		}
-	})
+	got := <-errCh
+	if got != nil {
+		t.Fatalf("err = %v, want nil", got)
+	}
 }
 
-func TestApp_ServeContext_ServerStartFailure(t *testing.T) {
+func TestServeContext_ReturnsStartError(t *testing.T) {
 	a := New()
-	srv := a.newServer("127.0.0.1:0")
+	srv := a.newServer(":0")
 
 	want := errors.New("start failed")
 	err := a.serveContext(context.Background(), srv, func() error { return want })
@@ -147,10 +151,8 @@ func TestApp_ServeContext_ServerStartFailure(t *testing.T) {
 	}
 }
 
-func TestApp_ServeContext_ShutdownGraceful(t *testing.T) {
+func TestServeContext_ShutdownOnContextCancel(t *testing.T) {
 	a := New()
-	a.PreShutdownDelay = 0
-	a.ShutdownTimeout = 250 * time.Millisecond
 
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -159,40 +161,41 @@ func TestApp_ServeContext_ShutdownGraceful(t *testing.T) {
 	t.Cleanup(func() { _ = l.Close() })
 
 	srv := a.newServer(l.Addr().String())
-	srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
+
+	// Use a simple handler so the server can accept a request.
+	srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "ok")
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- a.serveContext(ctx, srv, func() error { return srv.Serve(l) }) }()
+	defer cancel()
 
-	// Wait until it responds.
-	client := &http.Client{Timeout: 1 * time.Second}
-	resp, err := client.Get("http://" + l.Addr().String() + "/")
-	if err != nil {
-		cancel()
-		t.Fatalf("GET: %v", err)
-	}
-	_ = resp.Body.Close()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- a.serveContext(ctx, srv, func() error { return srv.Serve(l) })
+	}()
 
+	waitForHTTP(t, "http://"+l.Addr().String()+"/")
+
+	// Trigger shutdown path.
 	cancel()
 
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("serveContext returned error: %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("serveContext did not return in time")
+	if err := <-errCh; err != nil {
+		t.Fatalf("serveContext err = %v, want nil", err)
+	}
+
+	// After shutdown started, readiness should be 503 (serveContext flips it).
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	a.ReadyzHandler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("readyz status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
 	}
 }
 
-func TestApp_ServeContext_ShutdownTimeoutTriggersClose(t *testing.T) {
+func TestShutdownServer_GracefulTimeout_Closes(t *testing.T) {
 	a := New()
-	a.PreShutdownDelay = 0
-	a.ShutdownTimeout = 25 * time.Millisecond
+	a.ShutdownTimeout = 1 * time.Millisecond
 
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -200,98 +203,122 @@ func TestApp_ServeContext_ShutdownTimeoutTriggersClose(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = l.Close() })
 
-	block := make(chan struct{})
 	srv := a.newServer(l.Addr().String())
-	srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		// Hold the request open so Shutdown times out.
+
+	block := make(chan struct{})
+	srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-block
-		w.WriteHeader(http.StatusOK)
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- a.serveContext(ctx, srv, func() error { return srv.Serve(l) }) }()
+	errCh := make(chan error, 1)
+	go a.runServer(errCh, func() error { return srv.Serve(l) })
 
-	// Fire a request that will hang in the handler.
-	client := &http.Client{Timeout: 2 * time.Second}
-	req, _ := http.NewRequest(http.MethodGet, "http://"+l.Addr().String()+"/", nil)
+	// Ensure an in-flight request exists so Shutdown has something to wait on.
+	clientErr := make(chan error, 1)
 	go func() {
-		_, _ = client.Do(req)
+		_, err := http.Get("http://" + l.Addr().String() + "/")
+		clientErr <- err
 	}()
 
-	// Give the request a moment to reach the handler, then cancel to initiate shutdown.
-	time.Sleep(25 * time.Millisecond)
+	waitForTCP(t, l.Addr().String())
+
+	// ctx is already done, matching how serveContext calls shutdownServer.
+	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	select {
-	case err := <-done:
-		// shutdownServer should swallow the shutdown timeout and still return nil here.
-		// It logs a warning and calls Close as a fallback.
-		if err != nil {
-			t.Fatalf("serveContext returned error: %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		close(block)
-		t.Fatal("serveContext did not return in time")
+	// This should hit the "graceful shutdown incomplete" branch due to timeout,
+	// then Close, and finally return when Serve exits.
+	if err := a.shutdownServer(ctx, srv, errCh, a.Logger()); err != nil {
+		t.Fatalf("shutdownServer err = %v, want nil", err)
 	}
 
 	close(block)
+
+	// Request should fail due to Close/Shutdown. We only assert it returns.
+	<-clientErr
 }
 
-func TestApp_ShutdownTimeoutDefaultWhenNonPositive(t *testing.T) {
+func TestShutdownServer_DefaultTimeoutWhenNonPositive(t *testing.T) {
 	a := New()
-	a.PreShutdownDelay = 0
-	a.ShutdownTimeout = 0 // should fall back to defaultShutdownTimeout
+	a.ShutdownTimeout = 0
 
-	srv := a.newServer("127.0.0.1:0")
-
-	// Provide an errCh that returns promptly so we do not wait for the default timeout.
+	srv := &http.Server{}
 	errCh := make(chan error, 1)
 	errCh <- nil
 
-	err := a.shutdownServer(context.Background(), srv, errCh, func() {}, a.Logger())
-	if err != nil {
-		t.Fatalf("shutdownServer returned error: %v", err)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := a.shutdownServer(ctx, srv, errCh, a.Logger()); err != nil {
+		t.Fatalf("shutdownServer err = %v, want nil", err)
 	}
 }
 
-func TestApp_ShutdownServer_ReturnsExitError(t *testing.T) {
+func TestShutdownServer_ReturnsServeExitError(t *testing.T) {
 	a := New()
-	a.PreShutdownDelay = 0
-	a.ShutdownTimeout = 50 * time.Millisecond
+	a.ShutdownTimeout = 1 * time.Millisecond
 
-	srv := a.newServer("127.0.0.1:0")
-
-	boom := errors.New("exit boom")
+	srv := &http.Server{}
 	errCh := make(chan error, 1)
-	errCh <- boom
+	want := errors.New("serve exit error")
+	errCh <- want
 
-	err := a.shutdownServer(context.Background(), srv, errCh, func() {}, a.Logger())
-	if !errors.Is(err, boom) {
-		t.Fatalf("err = %v, want %v", err, boom)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := a.shutdownServer(ctx, srv, errCh, a.Logger())
+	if !errors.Is(err, want) {
+		t.Fatalf("err = %v, want %v", err, want)
 	}
 }
 
-// --- Minimal recorder (portable, no httptest.ResponseRecorder dependency) ---
+func TestShutdownServer_DoesNotHangIfServeNeverReturns(t *testing.T) {
+	a := New()
+	a.ShutdownTimeout = 1 * time.Millisecond
 
-type miniRecorder struct {
-	header http.Header
-	code   int
-	body   string
-}
+	// Not started server: Shutdown returns quickly (ErrServerClosed),
+	// then we hit the "did not exit after shutdown timeout" select branch.
+	srv := &http.Server{}
+	errCh := make(chan error) // never receives
 
-func httptestRecorder() *miniRecorder {
-	return &miniRecorder{header: make(http.Header)}
-}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 
-func (r *miniRecorder) Header() http.Header { return r.header }
-
-func (r *miniRecorder) WriteHeader(statusCode int) { r.code = statusCode }
-
-func (r *miniRecorder) Write(p []byte) (int, error) {
-	if r.code == 0 {
-		r.code = http.StatusOK
+	start := time.Now()
+	if err := a.shutdownServer(ctx, srv, errCh, a.Logger()); err != nil {
+		t.Fatalf("shutdownServer err = %v, want nil", err)
 	}
-	r.body += string(p)
-	return len(p), nil
+	if time.Since(start) < serverExitGrace {
+		t.Fatalf("shutdownServer returned too fast, want it to wait ~serverExitGrace")
+	}
+}
+
+func waitForTCP(t *testing.T, addr string) {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		c, err := net.DialTimeout("tcp", addr, 50*time.Millisecond)
+		if err == nil {
+			_ = c.Close()
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("server not reachable on %s", addr)
+}
+
+func waitForHTTP(t *testing.T, url string) {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(url)
+		if err == nil {
+			_ = resp.Body.Close()
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("server not reachable at %s", url)
 }
