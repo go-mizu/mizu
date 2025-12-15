@@ -5,12 +5,13 @@ package mizu
 import (
 	"context"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 )
 
 func (a *App) serveWithSignals(srv *http.Server, serveFn func() error) error {
-	parent, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return a.ServeContext(parent, srv, serveFn)
+	return a.serveContext(ctx, srv, serveFn)
 }
