@@ -329,85 +329,195 @@ func TestCtx_StatusHeadersAndWrites(t *testing.T) {
 	}
 }
 
-func TestCtx_JSON_HTML_Text_Bytes(t *testing.T) {
-	t.Run("json_sets_content_type", func(t *testing.T) {
-		w := newFlusherRecorder()
-		c := newTestCtx(w, newReq(http.MethodGet, "http://example.com/", nil))
+func TestCtx_JSON_SetsContentType(t *testing.T) {
+	w := newFlusherRecorder()
+	c := newTestCtx(w, newReq(http.MethodGet, "http://example.com/", nil))
 
-		if err := c.JSON(0, map[string]any{"ok": true}); err != nil {
-			t.Fatal(err)
-		}
-		if !strings.HasPrefix(w.Header().Get("Content-Type"), "application/json") {
-			t.Fatalf("expected json content-type, got %q", w.Header().Get("Content-Type"))
-		}
-	})
+	if err := c.JSON(0, map[string]any{"ok": true}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(w.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("expected json content-type, got %q", w.Header().Get("Content-Type"))
+	}
+}
 
-	t.Run("html_sets_content_type", func(t *testing.T) {
-		w := newFlusherRecorder()
-		c := newTestCtx(w, newReq(http.MethodGet, "http://example.com/", nil))
+func TestCtx_HTML_SetsContentTypeAndStatus(t *testing.T) {
+	w := newFlusherRecorder()
+	c := newTestCtx(w, newReq(http.MethodGet, "http://example.com/", nil))
 
-		if err := c.HTML(202, "<p>x</p>"); err != nil {
-			t.Fatal(err)
-		}
-		if w.code != 202 {
-			t.Fatalf("expected 202, got %d", w.code)
-		}
-		if !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
-			t.Fatalf("expected html content-type, got %q", w.Header().Get("Content-Type"))
-		}
-	})
+	if err := c.HTML(202, "<p>x</p>"); err != nil {
+		t.Fatal(err)
+	}
+	if w.code != 202 {
+		t.Fatalf("expected 202, got %d", w.code)
+	}
+	if !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("expected html content-type, got %q", w.Header().Get("Content-Type"))
+	}
+}
 
-	t.Run("text_utf8_and_invalid_utf8", func(t *testing.T) {
-		{
-			w := newFlusherRecorder()
-			c := newTestCtx(w, newReq(http.MethodGet, "http://example.com/", nil))
-			if err := c.Text(0, "hello"); err != nil {
-				t.Fatal(err)
-			}
-			if !strings.HasPrefix(w.Header().Get("Content-Type"), "text/plain") {
-				t.Fatalf("expected text/plain, got %q", w.Header().Get("Content-Type"))
-			}
-		}
-		{
-			// Create an invalid UTF-8 string.
-			b := []byte{0xff, 0xfe, 0xfd}
-			if utf8.Valid(b) {
-				t.Fatalf("expected invalid utf8 bytes")
-			}
-			w := newFlusherRecorder()
-			c := newTestCtx(w, newReq(http.MethodGet, "http://example.com/", nil))
-			if err := c.Text(0, string(b)); err != nil {
-				t.Fatal(err)
-			}
-			if w.Header().Get("Content-Type") != "application/octet-stream" {
-				t.Fatalf("expected octet-stream, got %q", w.Header().Get("Content-Type"))
-			}
-		}
-	})
+func TestCtx_Text_UTF8_SetsTextPlain(t *testing.T) {
+	w := newFlusherRecorder()
+	c := newTestCtx(w, newReq(http.MethodGet, "http://example.com/", nil))
 
-	t.Run("bytes_default_content_type", func(t *testing.T) {
-		w := newFlusherRecorder()
-		c := newTestCtx(w, newReq(http.MethodGet, "http://example.com/", nil))
+	if err := c.Text(0, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(w.Header().Get("Content-Type"), "text/plain") {
+		t.Fatalf("expected text/plain, got %q", w.Header().Get("Content-Type"))
+	}
+}
 
-		if err := c.Bytes(0, []byte{1, 2, 3}, ""); err != nil {
-			t.Fatal(err)
-		}
-		if w.Header().Get("Content-Type") != "application/octet-stream" {
-			t.Fatalf("expected octet-stream, got %q", w.Header().Get("Content-Type"))
-		}
-	})
+func TestCtx_Text_InvalidUTF8_FallsBackToOctetStream(t *testing.T) {
+	b := []byte{0xff, 0xfe, 0xfd}
+	if utf8.Valid(b) {
+		t.Fatalf("expected invalid utf8 bytes")
+	}
 
-	t.Run("bytes_respects_explicit_content_type", func(t *testing.T) {
-		w := newFlusherRecorder()
-		c := newTestCtx(w, newReq(http.MethodGet, "http://example.com/", nil))
+	w := newFlusherRecorder()
+	c := newTestCtx(w, newReq(http.MethodGet, "http://example.com/", nil))
 
-		if err := c.Bytes(0, []byte("x"), "text/x-test"); err != nil {
-			t.Fatal(err)
-		}
-		if w.Header().Get("Content-Type") != "text/x-test" {
-			t.Fatalf("expected text/x-test, got %q", w.Header().Get("Content-Type"))
-		}
-	})
+	if err := c.Text(0, string(b)); err != nil {
+		t.Fatal(err)
+	}
+	if w.Header().Get("Content-Type") != "application/octet-stream" {
+		t.Fatalf("expected octet-stream, got %q", w.Header().Get("Content-Type"))
+	}
+}
+
+func TestCtx_Bytes_DefaultContentType(t *testing.T) {
+	w := newFlusherRecorder()
+	c := newTestCtx(w, newReq(http.MethodGet, "http://example.com/", nil))
+
+	if err := c.Bytes(0, []byte{1, 2, 3}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if w.Header().Get("Content-Type") != "application/octet-stream" {
+		t.Fatalf("expected octet-stream, got %q", w.Header().Get("Content-Type"))
+	}
+}
+
+func TestCtx_Bytes_ExplicitContentType(t *testing.T) {
+	w := newFlusherRecorder()
+	c := newTestCtx(w, newReq(http.MethodGet, "http://example.com/", nil))
+
+	if err := c.Bytes(0, []byte("x"), "text/x-test"); err != nil {
+		t.Fatal(err)
+	}
+	if w.Header().Get("Content-Type") != "text/x-test" {
+		t.Fatalf("expected text/x-test, got %q", w.Header().Get("Content-Type"))
+	}
+}
+
+func TestCtx_File_OpenError(t *testing.T) {
+	dir := t.TempDir()
+
+	c := newTestCtx(newFlusherRecorder(), newReq(http.MethodGet, "http://example.com/", nil))
+	err := c.File(0, filepath.Join(dir, "missing.txt"))
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestCtx_File_IsDirectory(t *testing.T) {
+	dir := t.TempDir()
+	subdir := filepath.Join(dir, "d")
+	if err := os.MkdirAll(subdir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	c := newTestCtx(newFlusherRecorder(), newReq(http.MethodGet, "http://example.com/", nil))
+	err := c.File(0, subdir)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestCtx_File_200_UsesServeContent(t *testing.T) {
+	dir := t.TempDir()
+	fp := filepath.Join(dir, "hello.txt")
+	if err := os.WriteFile(fp, []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	w := newFlusherRecorder()
+	r := newReq(http.MethodGet, "http://example.com/hello.txt", nil)
+	c := newTestCtx(w, r)
+
+	if err := c.File(0, fp); err != nil {
+		t.Fatal(err)
+	}
+	if !c.wroteHeader {
+		t.Fatalf("expected wroteHeader true")
+	}
+	if w.buf.String() != "hello" {
+		t.Fatalf("expected body hello, got %q", w.buf.String())
+	}
+}
+
+func TestCtx_File_Non200_DeterministicCopy(t *testing.T) {
+	dir := t.TempDir()
+	fp := filepath.Join(dir, "hello.txt")
+	if err := os.WriteFile(fp, []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	w := newFlusherRecorder()
+	r := newReq(http.MethodGet, "http://example.com/hello.txt", nil)
+	c := newTestCtx(w, r)
+
+	if err := c.File(206, fp); err != nil {
+		t.Fatal(err)
+	}
+	if w.code != 206 {
+		t.Fatalf("expected 206, got %d", w.code)
+	}
+	if w.buf.String() != "hello" {
+		t.Fatalf("expected body hello, got %q", w.buf.String())
+	}
+}
+
+func TestCtx_Download_SetsDispositionAndContentTypeFromNameExt(t *testing.T) {
+	dir := t.TempDir()
+	fp := filepath.Join(dir, "hello.txt")
+	if err := os.WriteFile(fp, []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	w := newFlusherRecorder()
+	r := newReq(http.MethodGet, "http://example.com/dl", nil)
+	c := newTestCtx(w, r)
+
+	if err := c.Download(0, fp, "x.json"); err != nil {
+		t.Fatal(err)
+	}
+
+	if disp := w.Header().Get("Content-Disposition"); !strings.Contains(disp, "attachment") {
+		t.Fatalf("expected attachment, got %q", disp)
+	}
+	if ct := w.Header().Get("Content-Type"); ct == "" {
+		t.Fatalf("expected content-type set")
+	}
+}
+
+func TestCtx_Download_RespectsExistingContentType(t *testing.T) {
+	dir := t.TempDir()
+	fp := filepath.Join(dir, "hello.txt")
+	if err := os.WriteFile(fp, []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	w := newFlusherRecorder()
+	r := newReq(http.MethodGet, "http://example.com/dl", nil)
+	c := newTestCtx(w, r)
+
+	c.Header().Set("Content-Type", "text/x-custom")
+	if err := c.Download(0, fp, "x.bin"); err != nil {
+		t.Fatal(err)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "text/x-custom" {
+		t.Fatalf("expected preserved ct, got %q", ct)
+	}
 }
 
 func TestCtx_NoContent_Redirect(t *testing.T) {
@@ -593,99 +703,6 @@ func TestCtx_Hijack(t *testing.T) {
 		}
 		if !hw.hijacked {
 			t.Fatalf("expected hijacked flag")
-		}
-	})
-}
-
-func TestCtx_FileAndDownload_AllPaths(t *testing.T) {
-	dir := t.TempDir()
-	fp := filepath.Join(dir, "hello.txt")
-	if err := os.WriteFile(fp, []byte("hello"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	subdir := filepath.Join(dir, "d")
-	if err := os.MkdirAll(subdir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	t.Run("file_open_error", func(t *testing.T) {
-		c := newTestCtx(newFlusherRecorder(), newReq(http.MethodGet, "http://example.com/", nil))
-		err := c.File(0, filepath.Join(dir, "missing.txt"))
-		if err == nil {
-			t.Fatalf("expected error")
-		}
-	})
-
-	t.Run("file_is_directory", func(t *testing.T) {
-		c := newTestCtx(newFlusherRecorder(), newReq(http.MethodGet, "http://example.com/", nil))
-		err := c.File(0, subdir)
-		if err == nil {
-			t.Fatalf("expected error")
-		}
-	})
-
-	t.Run("file_200_uses_servecontent_and_sets_wroteheader", func(t *testing.T) {
-		w := newFlusherRecorder()
-		r := newReq(http.MethodGet, "http://example.com/hello.txt", nil)
-		c := newTestCtx(w, r)
-
-		if err := c.File(0, fp); err != nil {
-			t.Fatal(err)
-		}
-		if !c.wroteHeader {
-			t.Fatalf("expected wroteHeader true")
-		}
-		if w.buf.String() != "hello" {
-			t.Fatalf("expected body hello, got %q", w.buf.String())
-		}
-	})
-
-	t.Run("file_non_200_deterministic_copy", func(t *testing.T) {
-		w := newFlusherRecorder()
-		r := newReq(http.MethodGet, "http://example.com/hello.txt", nil)
-		c := newTestCtx(w, r)
-
-		if err := c.File(206, fp); err != nil {
-			t.Fatal(err)
-		}
-		if w.code != 206 {
-			t.Fatalf("expected 206, got %d", w.code)
-		}
-		if w.buf.String() != "hello" {
-			t.Fatalf("expected body hello, got %q", w.buf.String())
-		}
-	})
-
-	t.Run("download_sets_disposition_and_content_type_from_name_ext", func(t *testing.T) {
-		w := newFlusherRecorder()
-		r := newReq(http.MethodGet, "http://example.com/dl", nil)
-		c := newTestCtx(w, r)
-
-		// name ext used for type; also triggers Content-Disposition.
-		if err := c.Download(0, fp, "x.json"); err != nil {
-			t.Fatal(err)
-		}
-
-		if disp := w.Header().Get("Content-Disposition"); !strings.Contains(disp, "attachment") {
-			t.Fatalf("expected attachment, got %q", disp)
-		}
-		if ct := w.Header().Get("Content-Type"); ct == "" {
-			t.Fatalf("expected content-type set")
-		}
-	})
-
-	t.Run("download_respects_existing_content_type_header", func(t *testing.T) {
-		w := newFlusherRecorder()
-		r := newReq(http.MethodGet, "http://example.com/dl", nil)
-		c := newTestCtx(w, r)
-
-		c.Header().Set("Content-Type", "text/x-custom")
-		if err := c.Download(0, fp, "x.bin"); err != nil {
-			t.Fatal(err)
-		}
-		if ct := w.Header().Get("Content-Type"); ct != "text/x-custom" {
-			t.Fatalf("expected preserved ct, got %q", ct)
 		}
 	})
 }
