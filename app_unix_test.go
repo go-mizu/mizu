@@ -3,83 +3,68 @@
 package mizu
 
 import (
-	"context"
-	"io"
+	"net"
 	"net/http"
-	"sync/atomic"
+	"os"
+	"syscall"
 	"testing"
 	"time"
 )
 
-func TestApp_serveContext_ShutdownTimeoutForcesClose(t *testing.T) {
+func TestApp_ServeWithSignals_SIGTERM_ShutsDown(t *testing.T) {
 	a := New()
 	a.PreShutdownDelay = 0
-	a.ShutdownTimeout = 30 * time.Millisecond
+	a.ShutdownTimeout = 250 * time.Millisecond
 
-	l := mustListen(t)
-	defer func() { _ = l.Close() }()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = l.Close() })
 
 	srv := a.newServer(l.Addr().String())
-
-	var entered atomic.Bool
-	block := make(chan struct{})
-
-	srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		entered.Store(true)
+	srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
-		}
-
-		<-block
-		_, _ = io.WriteString(w, "done\n")
+		_, _ = w.Write([]byte("ok"))
 	})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	done := make(chan error, 1)
 	go func() {
-		done <- a.serveContext(ctx, srv, func() error { return srv.Serve(l) })
+		done <- a.serveWithSignals(srv, func() error { return srv.Serve(l) })
 	}()
 
-	client := &http.Client{Timeout: 2 * time.Second}
-	respCh := make(chan error, 1)
-	go func() {
-		//nolint:gosec // G107: test hits a local ephemeral listener URL
-		resp, err := client.Get("http://" + l.Addr().String() + "/block")
-		if err != nil {
-			respCh <- err
-			return
+	// Wait until the server responds (means serve loop is running),
+	// then send SIGTERM to trigger NotifyContext cancellation.
+	client := &http.Client{Timeout: 1 * time.Second}
+
+	deadline := time.Now().Add(1 * time.Second)
+	for {
+		resp, e := client.Get("http://" + l.Addr().String() + "/")
+		if e == nil {
+			_ = resp.Body.Close()
+			break
 		}
-		_, _ = io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		respCh <- nil
-	}()
+		if time.Now().After(deadline) {
+			t.Fatalf("server did not become ready: %v", e)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 
-	waitBool(t, 2*time.Second, entered.Load)
-
-	cancel()
+	// Trigger shutdown via signal.
+	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
+		t.Fatalf("kill(SIGTERM): %v", err)
+	}
 
 	select {
 	case err := <-done:
 		if err != nil {
-			t.Fatalf("serveContext err = %v, want nil", err)
+			t.Fatalf("serveWithSignals returned error: %v", err)
 		}
 	case <-time.After(2 * time.Second):
-		close(block)
-		t.Fatalf("timeout waiting for shutdown")
-	}
-
-	close(block)
-
-	select {
-	case <-respCh:
-	case <-time.After(2 * time.Second):
-		t.Fatalf("timeout waiting for client")
+		t.Fatal("serveWithSignals did not return in time")
 	}
 
 	if !a.shuttingDown.Load() {
-		t.Fatalf("shuttingDown = false, want true")
+		t.Fatalf("shuttingDown = false, want true after signal shutdown")
 	}
 }
