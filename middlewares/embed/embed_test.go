@@ -1,10 +1,10 @@
 package embed
 
 import (
-	"strings"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"testing/fstest"
 

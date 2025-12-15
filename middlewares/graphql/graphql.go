@@ -118,11 +118,11 @@ type graphqlError string
 func (e graphqlError) Error() string { return string(e) }
 
 const (
-	ErrQueryTooDeep           graphqlError = "query exceeds maximum depth"
-	ErrQueryTooComplex        graphqlError = "query exceeds maximum complexity"
-	ErrIntrospectionDisabled  graphqlError = "introspection queries are disabled"
-	ErrOperationNotAllowed    graphqlError = "operation not allowed"
-	ErrBlockedField           graphqlError = "query contains blocked field"
+	ErrQueryTooDeep          graphqlError = "query exceeds maximum depth"
+	ErrQueryTooComplex       graphqlError = "query exceeds maximum complexity"
+	ErrIntrospectionDisabled graphqlError = "introspection queries are disabled"
+	ErrOperationNotAllowed   graphqlError = "operation not allowed"
+	ErrBlockedField          graphqlError = "query contains blocked field"
 )
 
 func validate(query Query, opts Options, allowedOps, blockedFields map[string]bool) error {

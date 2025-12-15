@@ -104,12 +104,12 @@ func (b *Bulkhead) Stats() Stats {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return Stats{
-		Name:        b.name,
-		Active:      len(b.sem),
-		MaxActive:   cap(b.sem),
-		Waiting:     b.waiting,
-		MaxWaiting:  b.maxWait,
-		Available:   cap(b.sem) - len(b.sem),
+		Name:       b.name,
+		Active:     len(b.sem),
+		MaxActive:  cap(b.sem),
+		Waiting:    b.waiting,
+		MaxWaiting: b.maxWait,
+		Available:  cap(b.sem) - len(b.sem),
 	}
 }
 

@@ -1,9 +1,9 @@
 package mock
 
 import (
-	"strings"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-mizu/mizu"

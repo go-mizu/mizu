@@ -40,9 +40,9 @@ func WithOptions(opts Options) mizu.Middleware {
 	}
 
 	var (
-		current  int64
-		perIP    = make(map[string]int)
-		perIPMu  sync.RWMutex
+		current int64
+		perIP   = make(map[string]int)
+		perIPMu sync.RWMutex
 	)
 
 	return func(next mizu.Handler) mizu.Handler {

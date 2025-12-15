@@ -1,6 +1,6 @@
 // Package h2c provides HTTP/2 Cleartext (h2c) middleware for the Mizu web framework.
 //
-// Overview
+// # Overview
 //
 // The h2c middleware enables HTTP/2 connections over unencrypted TCP connections,
 // allowing HTTP/2 protocol benefits without TLS. This is useful for development
@@ -14,7 +14,7 @@
 //  2. HTTP/2 Upgrade - HTTP/1.1 upgrade mechanism using the h2c upgrade protocol
 //     (RFC 7540, Section 3.2)
 //
-// Security Warning
+// # Security Warning
 //
 // H2C transmits data without encryption. Only use it in:
 //   - Development and testing environments
@@ -23,7 +23,7 @@
 //
 // Never expose h2c endpoints directly to the public internet.
 //
-// Basic Usage
+// # Basic Usage
 //
 // Create a Mizu application with h2c middleware:
 //
@@ -37,7 +37,7 @@
 //	    return c.Text(200, "HTTP/1.1 connection")
 //	})
 //
-// Advanced Usage
+// # Advanced Usage
 //
 // Customize h2c behavior with options:
 //
@@ -49,7 +49,7 @@
 //	    },
 //	}))
 //
-// Detection Only
+// # Detection Only
 //
 // Use Detect() to identify h2c connections without handling the upgrade:
 //
@@ -62,7 +62,7 @@
 //	    return c.Text(200, "OK")
 //	})
 //
-// Wrapping Standard Handlers
+// # Wrapping Standard Handlers
 //
 // Wrap standard http.Handler with h2c support:
 //
@@ -72,7 +72,7 @@
 //	h2cHandler := h2c.Wrap(handler)
 //	http.ListenAndServe(":8080", h2cHandler)
 //
-// Connection Information
+// # Connection Information
 //
 // Access HTTP/2 connection details through the Info struct:
 //
@@ -85,7 +85,7 @@
 //	    }
 //	}
 //
-// HTTP2-Settings Header
+// # HTTP2-Settings Header
 //
 // Parse HTTP/2 settings from the upgrade request:
 //
@@ -95,7 +95,7 @@
 //	}
 //	// Process settings bytes
 //
-// Connection Preface Detection
+// # Connection Preface Detection
 //
 // Detect HTTP/2 connection preface in raw data:
 //
@@ -104,7 +104,7 @@
 //	    // Handle HTTP/2 connection
 //	}
 //
-// Testing
+// # Testing
 //
 // Test h2c endpoints with curl:
 //
@@ -114,7 +114,7 @@
 //	# HTTP/1.1 upgrade to h2c
 //	curl --http2 http://localhost:8080/
 //
-// Implementation Details
+// # Implementation Details
 //
 // The middleware operates by:
 //
@@ -148,5 +148,4 @@
 //
 //   - RFC 7540: Hypertext Transfer Protocol Version 2 (HTTP/2)
 //   - RFC 7541: HPACK: Header Compression for HTTP/2
-//
 package h2c

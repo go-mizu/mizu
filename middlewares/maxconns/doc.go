@@ -1,6 +1,6 @@
 // Package maxconns provides middleware for limiting concurrent connections in Mizu applications.
 //
-// Overview
+// # Overview
 //
 // The maxconns middleware protects server resources by enforcing limits on the maximum
 // number of concurrent connections. It supports both global connection limits and

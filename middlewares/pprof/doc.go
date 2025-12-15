@@ -86,10 +86,10 @@
 //   - Direct delegation to net/http/pprof handlers
 //
 // The routing logic:
-//   1. Checks if request path matches the configured prefix
-//   2. Extracts the subpath after the prefix
-//   3. Routes to appropriate handler (Index, Cmdline, Profile, Symbol, Trace, or named profiles)
-//   4. Passes non-matching requests to the next middleware
+//  1. Checks if request path matches the configured prefix
+//  2. Extracts the subpath after the prefix
+//  3. Routes to appropriate handler (Index, Cmdline, Profile, Symbol, Trace, or named profiles)
+//  4. Passes non-matching requests to the next middleware
 //
 // # Best Practices
 //

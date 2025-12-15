@@ -385,17 +385,17 @@ func TestConn_Pong(t *testing.T) {
 
 func TestConn_ReadMessage(t *testing.T) {
 	tests := []struct {
-		name        string
-		frame       []byte
-		wantType    int
-		wantData    []byte
-		wantErr     bool
+		name     string
+		frame    []byte
+		wantType int
+		wantData []byte
+		wantErr  bool
 	}{
 		{
 			name: "short unmasked text",
 			frame: []byte{
-				0x81,       // FIN + text opcode
-				0x05,       // length 5
+				0x81, // FIN + text opcode
+				0x05, // length 5
 				'h', 'e', 'l', 'l', 'o',
 			},
 			wantType: TextMessage,
@@ -450,9 +450,9 @@ func TestConn_ReadMessageExtendedLength(t *testing.T) {
 		data[i] = 'a'
 	}
 	frame := []byte{
-		0x82,                           // FIN + binary opcode
-		0x7e,                           // length 126 indicator
-		0x00, 0xc8,                     // 200 in big endian
+		0x82,       // FIN + binary opcode
+		0x7e,       // length 126 indicator
+		0x00, 0xc8, // 200 in big endian
 	}
 	frame = append(frame, data...)
 	mock.readBuf.Write(frame)

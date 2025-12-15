@@ -14,8 +14,7 @@ import (
 )
 
 const (
-	defaultPreShutdownDelay = 1 * time.Second
-	defaultShutdownTimeout  = 15 * time.Second
+	defaultShutdownTimeout = 15 * time.Second
 
 	defaultReadHeaderTimeout = 5 * time.Second
 	defaultIdleTimeout       = 60 * time.Second
@@ -30,10 +29,6 @@ const (
 type App struct {
 	*Router
 
-	// PreShutdownDelay is a small delay between flipping unready and starting shutdown.
-	// Default: 1s.
-	PreShutdownDelay time.Duration
-
 	// ShutdownTimeout is the maximum graceful drain window.
 	// Default: 15s.
 	ShutdownTimeout time.Duration
@@ -45,9 +40,8 @@ type App struct {
 // New creates an App with sane defaults.
 func New() *App {
 	return &App{
-		Router:           NewRouter(),
-		PreShutdownDelay: defaultPreShutdownDelay,
-		ShutdownTimeout:  defaultShutdownTimeout,
+		Router:          NewRouter(),
+		ShutdownTimeout: defaultShutdownTimeout,
 	}
 }
 
@@ -58,9 +52,19 @@ func (a *App) Logger() *slog.Logger { return a.Router.Logger() }
 // Configure it before starting the server (TLSConfig, ConnState, ErrorLog, etc).
 func (a *App) Server() *http.Server { return a.server }
 
-// HealthzHandler reports health and readiness.
+// LivezHandler reports process liveness.
+// It stays 200 during shutdown, unless you want restarts.
+func (a *App) LivezHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, healthOKBody)
+	})
+}
+
+// ReadyzHandler reports readiness.
 // It returns 503 once shutdown has started.
-func (a *App) HealthzHandler() http.Handler {
+func (a *App) ReadyzHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 
@@ -97,9 +101,6 @@ func (a *App) serveContext(ctx context.Context, srv *http.Server, serveFn func()
 	// Reset readiness for reuse in tests.
 	a.shuttingDown.Store(false)
 
-	baseCtx, cancelBase := context.WithCancel(ctx)
-	srv.BaseContext = func(net.Listener) context.Context { return baseCtx }
-
 	log := a.Logger().With(
 		slog.String("addr", srv.Addr),
 		slog.Int("pid", os.Getpid()),
@@ -108,7 +109,7 @@ func (a *App) serveContext(ctx context.Context, srv *http.Server, serveFn func()
 	log.Info("server starting")
 
 	errCh := make(chan error, 1)
-	go a.runServer(errCh, serveFn, cancelBase)
+	go a.runServer(errCh, serveFn)
 
 	select {
 	case err := <-errCh:
@@ -117,14 +118,11 @@ func (a *App) serveContext(ctx context.Context, srv *http.Server, serveFn func()
 		}
 		return err
 	case <-ctx.Done():
-		return a.shutdownServer(ctx, srv, errCh, cancelBase, log)
+		return a.shutdownServer(ctx, srv, errCh, log)
 	}
 }
 
-func (a *App) runServer(errCh chan<- error, serveFn func() error, cancelBase context.CancelFunc) {
-	// Ensure BaseContext is cancelled when the serve loop exits for any reason.
-	defer cancelBase()
-
+func (a *App) runServer(errCh chan<- error, serveFn func() error) {
 	if err := serveFn(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		errCh <- err
 		return
@@ -136,20 +134,19 @@ func (a *App) shutdownServer(
 	ctx context.Context,
 	srv *http.Server,
 	errCh <-chan error,
-	cancelBase context.CancelFunc,
 	log *slog.Logger,
 ) error {
 	start := time.Now()
 	a.shuttingDown.Store(true)
 	log.Info("shutdown initiated")
 
-	a.waitPreShutdownDelay(ctx)
-
 	timeout := a.ShutdownTimeout
 	if timeout <= 0 {
 		timeout = defaultShutdownTimeout
 	}
 
+	// Use Background so we still attempt a graceful drain even though ctx is
+	// already cancelled by the signal. The timeout bounds the drain window.
 	drainCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -157,9 +154,6 @@ func (a *App) shutdownServer(
 		log.Warn("graceful shutdown incomplete", slog.Any("error", err))
 		_ = srv.Close()
 	}
-
-	// Cancel BaseContext even if Shutdown returned quickly or ctx is already cancelled.
-	cancelBase()
 
 	// Never block forever waiting for serveFn to return.
 	select {
@@ -176,29 +170,18 @@ func (a *App) shutdownServer(
 	return nil
 }
 
-func (a *App) waitPreShutdownDelay(ctx context.Context) {
-	d := a.PreShutdownDelay
-	if d <= 0 {
-		return
-	}
-
-	t := time.NewTimer(d)
-	defer t.Stop()
-
-	select {
-	case <-t.C:
-	case <-ctx.Done():
-	}
-}
-
 func (a *App) newServer(addr string) *http.Server {
-	// Set timeouts in the literal to satisfy gosec (G112).
-	// Keep Read/WriteTimeout unset to avoid breaking streaming.
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           a,
 		ReadHeaderTimeout: defaultReadHeaderTimeout,
 		IdleTimeout:       defaultIdleTimeout,
+	}
+
+	// Preserve user overrides: only set BaseContext if still nil.
+	if srv.BaseContext == nil {
+		baseCtx := context.Background()
+		srv.BaseContext = func(net.Listener) context.Context { return baseCtx }
 	}
 
 	a.server = srv
