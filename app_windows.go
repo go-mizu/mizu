@@ -9,5 +9,5 @@ import (
 
 func (a *App) serveWithSignals(srv *http.Server, serveFn func() error) error {
 	// Signals not reliably injectable. Run under plain context.
-	return a.ServeContext(context.Background(), srv, serveFn)
+	return a.serveContext(context.Background(), srv, serveFn)
 }
