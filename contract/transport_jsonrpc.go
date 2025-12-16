@@ -260,13 +260,16 @@ func jsonrpcInternalError(err error) *jsonrpcError {
 
 // Aliases to shared helpers for local use
 func trimSpaceRaw(b []byte) []byte {
-	return jsonTrimSpace(b)
+	return TrimJSONSpace(b)
 }
 
 func isJSONNull(b []byte) bool {
-	return jsonIsNull(b)
+	return IsJSONNull(b)
 }
 
 func safeErr(err error) any {
-	return jsonSafeErr(err)
+	if err == nil {
+		return nil
+	}
+	return SafeErrorString(err)
 }

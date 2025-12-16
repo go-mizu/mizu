@@ -1,0 +1,460 @@
+---
+title: "Client Generation"
+description: "Generate typed clients from Contract services"
+---
+
+# Client Generation
+
+Contract services provide introspection capabilities that enable generating typed clients for various languages. Use the OpenAPI spec or transport-specific metadata endpoints.
+
+## OpenAPI Client Generation
+
+The recommended approach for most languages:
+
+### Get the OpenAPI Spec
+
+```bash
+curl http://localhost:8080/openapi.json > openapi.json
+```
+
+### Generate Clients
+
+Use any OpenAPI code generator:
+
+**TypeScript (openapi-typescript)**
+```bash
+npx openapi-typescript openapi.json -o ./types.ts
+```
+
+**Go (oapi-codegen)**
+```bash
+go install github.com/deepmap/oapi-codegen/v2/cmd/oapi-codegen@latest
+oapi-codegen -package client openapi.json > client.go
+```
+
+**Python (openapi-python-client)**
+```bash
+pip install openapi-python-client
+openapi-python-client generate --path openapi.json
+```
+
+**Rust (openapi-generator)**
+```bash
+openapi-generator generate -i openapi.json -g rust -o ./client
+```
+
+## tRPC Metadata
+
+For TypeScript clients, use the tRPC `.meta` endpoint:
+
+```bash
+curl http://localhost:8080/trpc.meta
+```
+
+Response:
+
+```json
+{
+  "service": "todo",
+  "methods": [
+    {
+      "name": "Create",
+      "fullName": "todo.Create",
+      "proc": "todo.Create",
+      "input": {"id": "todo.CreateInput", "name": "CreateInput"},
+      "output": {"id": "todo.Todo", "name": "Todo"}
+    }
+  ],
+  "schemas": [
+    {
+      "id": "todo.CreateInput",
+      "json": {
+        "type": "object",
+        "properties": {"title": {"type": "string"}},
+        "required": ["title"]
+      }
+    }
+  ]
+}
+```
+
+### TypeScript Client Example
+
+Generate a typed client from the metadata:
+
+```typescript
+// Generated types from schemas
+interface CreateInput {
+  title: string;
+}
+
+interface Todo {
+  id: string;
+  title: string;
+  done: boolean;
+}
+
+// Client class
+class TodoClient {
+  constructor(private baseUrl: string) {}
+
+  async create(input: CreateInput): Promise<Todo> {
+    const response = await fetch(`${this.baseUrl}/trpc/Create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+
+    const envelope = await response.json();
+    if (envelope.error) {
+      throw new Error(envelope.error.message);
+    }
+    return envelope.result.data;
+  }
+
+  async list(): Promise<{ items: Todo[] }> {
+    const response = await fetch(`${this.baseUrl}/trpc/List`, {
+      method: 'POST',
+    });
+
+    const envelope = await response.json();
+    if (envelope.error) {
+      throw new Error(envelope.error.message);
+    }
+    return envelope.result.data;
+  }
+}
+
+// Usage
+const client = new TodoClient('http://localhost:8080');
+const todo = await client.create({ title: 'Buy milk' });
+```
+
+### Client Generator Script
+
+```typescript
+// scripts/generate-client.ts
+import { writeFileSync } from 'fs';
+
+interface Meta {
+  service: string;
+  methods: Array<{
+    name: string;
+    fullName: string;
+    input?: { id: string; name: string };
+    output?: { id: string; name: string };
+  }>;
+  schemas: Array<{
+    id: string;
+    json: object;
+  }>;
+}
+
+async function generateClient(baseUrl: string) {
+  const response = await fetch(`${baseUrl}/trpc.meta`);
+  const meta: Meta = await response.json();
+
+  let code = '// Auto-generated client\n\n';
+
+  // Generate interfaces from schemas
+  for (const schema of meta.schemas) {
+    code += generateInterface(schema);
+  }
+
+  // Generate client class
+  code += generateClientClass(meta);
+
+  writeFileSync('client.ts', code);
+}
+
+function generateInterface(schema: { id: string; json: any }): string {
+  const name = schema.id.split('.').pop();
+  // Convert JSON schema to TypeScript interface
+  // ...
+  return `interface ${name} {\n  // ...\n}\n\n`;
+}
+
+function generateClientClass(meta: Meta): string {
+  let code = `class ${capitalize(meta.service)}Client {\n`;
+  code += '  constructor(private baseUrl: string) {}\n\n';
+
+  for (const method of meta.methods) {
+    code += generateMethod(method);
+  }
+
+  code += '}\n';
+  return code;
+}
+```
+
+## MCP for AI Clients
+
+MCP provides tool discovery for AI assistants:
+
+```bash
+# List available tools
+curl -X POST http://localhost:8080/mcp \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+Response includes tool schemas:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "tools": [
+      {
+        "name": "todo.Create",
+        "description": "Create a new todo",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "title": {"type": "string"}
+          },
+          "required": ["title"]
+        }
+      }
+    ]
+  }
+}
+```
+
+## Go Client
+
+Generate a Go client from the service:
+
+```go
+// client/todo/client.go
+package todo
+
+import (
+    "bytes"
+    "context"
+    "encoding/json"
+    "net/http"
+)
+
+type Client struct {
+    baseURL    string
+    httpClient *http.Client
+}
+
+func NewClient(baseURL string) *Client {
+    return &Client{
+        baseURL:    baseURL,
+        httpClient: http.DefaultClient,
+    }
+}
+
+type CreateInput struct {
+    Title string `json:"title"`
+}
+
+type Todo struct {
+    ID    string `json:"id"`
+    Title string `json:"title"`
+    Done  bool   `json:"done"`
+}
+
+func (c *Client) Create(ctx context.Context, input *CreateInput) (*Todo, error) {
+    body, _ := json.Marshal(input)
+
+    req, _ := http.NewRequestWithContext(ctx, "POST",
+        c.baseURL+"/todos", bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+
+    resp, err := c.httpClient.Do(req)
+    if err != nil {
+        return nil, err
+    }
+    defer resp.Body.Close()
+
+    var result Todo
+    json.NewDecoder(resp.Body).Decode(&result)
+    return &result, nil
+}
+
+func (c *Client) List(ctx context.Context) ([]*Todo, error) {
+    req, _ := http.NewRequestWithContext(ctx, "GET",
+        c.baseURL+"/todos", nil)
+
+    resp, err := c.httpClient.Do(req)
+    if err != nil {
+        return nil, err
+    }
+    defer resp.Body.Close()
+
+    var result []*Todo
+    json.NewDecoder(resp.Body).Decode(&result)
+    return result, nil
+}
+```
+
+## JSON-RPC Client
+
+For JSON-RPC transport:
+
+```go
+type JSONRPCClient struct {
+    baseURL    string
+    httpClient *http.Client
+    nextID     int64
+}
+
+type rpcRequest struct {
+    JSONRPC string `json:"jsonrpc"`
+    ID      int64  `json:"id"`
+    Method  string `json:"method"`
+    Params  any    `json:"params,omitempty"`
+}
+
+type rpcResponse struct {
+    JSONRPC string          `json:"jsonrpc"`
+    ID      int64           `json:"id"`
+    Result  json.RawMessage `json:"result,omitempty"`
+    Error   *rpcError       `json:"error,omitempty"`
+}
+
+type rpcError struct {
+    Code    int    `json:"code"`
+    Message string `json:"message"`
+}
+
+func (c *JSONRPCClient) Call(ctx context.Context, method string, params, result any) error {
+    id := atomic.AddInt64(&c.nextID, 1)
+
+    reqBody, _ := json.Marshal(rpcRequest{
+        JSONRPC: "2.0",
+        ID:      id,
+        Method:  method,
+        Params:  params,
+    })
+
+    req, _ := http.NewRequestWithContext(ctx, "POST",
+        c.baseURL+"/rpc", bytes.NewReader(reqBody))
+    req.Header.Set("Content-Type", "application/json")
+
+    resp, err := c.httpClient.Do(req)
+    if err != nil {
+        return err
+    }
+    defer resp.Body.Close()
+
+    var rpcResp rpcResponse
+    json.NewDecoder(resp.Body).Decode(&rpcResp)
+
+    if rpcResp.Error != nil {
+        return fmt.Errorf("rpc error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
+    }
+
+    return json.Unmarshal(rpcResp.Result, result)
+}
+
+// Usage
+func (c *JSONRPCClient) CreateTodo(ctx context.Context, title string) (*Todo, error) {
+    var result Todo
+    err := c.Call(ctx, "Create", map[string]string{"title": title}, &result)
+    return &result, err
+}
+```
+
+## Python Client
+
+```python
+import requests
+from dataclasses import dataclass
+from typing import List, Optional
+
+@dataclass
+class Todo:
+    id: str
+    title: str
+    done: bool
+
+class TodoClient:
+    def __init__(self, base_url: str):
+        self.base_url = base_url
+
+    def create(self, title: str) -> Todo:
+        response = requests.post(
+            f"{self.base_url}/todos",
+            json={"title": title}
+        )
+        response.raise_for_status()
+        data = response.json()
+        return Todo(**data)
+
+    def list(self) -> List[Todo]:
+        response = requests.get(f"{self.base_url}/todos")
+        response.raise_for_status()
+        return [Todo(**item) for item in response.json()]
+
+    def get(self, id: str) -> Optional[Todo]:
+        response = requests.get(f"{self.base_url}/todos/{id}")
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return Todo(**response.json())
+
+    def delete(self, id: str) -> None:
+        response = requests.delete(f"{self.base_url}/todos/{id}")
+        response.raise_for_status()
+
+# Usage
+client = TodoClient("http://localhost:8080")
+todo = client.create("Buy milk")
+print(f"Created: {todo}")
+```
+
+## Best Practices
+
+### Use OpenAPI for Production
+
+OpenAPI provides the most mature tooling:
+
+```bash
+# Generate with validation
+oapi-codegen -generate types,client -package api openapi.json > api/client.go
+```
+
+### Version Your APIs
+
+Include version info in the spec:
+
+```go
+svc, _ := contract.Register("todo", &Service{},
+    contract.WithVersion("1.0.0"),
+)
+```
+
+### Handle Errors Consistently
+
+Map error codes across transports:
+
+```typescript
+class ClientError extends Error {
+  constructor(
+    message: string,
+    public code: string,
+    public details?: Record<string, any>
+  ) {
+    super(message);
+  }
+}
+
+async function handleResponse(response: Response) {
+  if (!response.ok) {
+    const error = await response.json();
+    throw new ClientError(error.message, error.code, error.details);
+  }
+  return response.json();
+}
+```
+
+## See Also
+
+- [OpenAPI](/contract/openapi) - OpenAPI specification generation
+- [tRPC Transport](/contract/trpc) - tRPC metadata endpoint
+- [MCP Transport](/contract/mcp) - AI tool discovery

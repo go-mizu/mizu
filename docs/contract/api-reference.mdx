@@ -1,0 +1,520 @@
+---
+title: "API Reference"
+description: "Complete API reference for the Contract package"
+---
+
+# API Reference
+
+Complete reference for the `github.com/go-mizu/mizu/contract` package and its sub-packages.
+
+## contract
+
+Core package for service registration and transport mounting.
+
+### Functions
+
+#### Register
+
+```go
+func Register(name string, service any, opts ...Option) (*Service, error)
+```
+
+Registers a Go struct as a Contract service. Reflects on the struct to discover methods and generate JSON schemas.
+
+**Parameters:**
+- `name` - Service name (used in URLs and method prefixes)
+- `service` - Pointer to a Go struct with methods
+- `opts` - Optional configuration options
+
+**Returns:**
+- `*Service` - Registered service with compiled invokers
+- `error` - Registration error if any
+
+**Example:**
+```go
+svc, err := contract.Register("todo", &TodoService{})
+```
+
+#### MountREST
+
+```go
+func MountREST(mux *http.ServeMux, svc *Service, opts ...RESTOption)
+```
+
+Mounts REST endpoints for a service.
+
+**Endpoint pattern:** `/{service-plural}/{id}`
+
+**Example:**
+```go
+contract.MountREST(mux, svc)
+// Creates: GET/POST /todos, GET/DELETE /todos/{id}
+```
+
+#### MountJSONRPC
+
+```go
+func MountJSONRPC(mux *http.ServeMux, path string, svc *Service, opts ...JSONRPCOption)
+```
+
+Mounts a JSON-RPC 2.0 endpoint.
+
+**Example:**
+```go
+contract.MountJSONRPC(mux, "/rpc", svc)
+```
+
+#### ServeOpenAPI
+
+```go
+func ServeOpenAPI(mux *http.ServeMux, path string, svc *Service)
+```
+
+Serves an OpenAPI 3.1 specification.
+
+**Example:**
+```go
+contract.ServeOpenAPI(mux, "/openapi.json", svc)
+```
+
+#### DefaultInvoker
+
+```go
+func DefaultInvoker(svc *Service) TransportInvoker
+```
+
+Returns the default invoker for a service. Use when wrapping with custom middleware.
+
+**Example:**
+```go
+invoker := contract.DefaultInvoker(svc)
+```
+
+### Types
+
+#### Service
+
+```go
+type Service struct {
+    Name        string
+    Description string
+    Version     string
+    Methods     []*Method
+    Types       *TypeRegistry
+}
+```
+
+Registered service with methods and type information.
+
+**Methods:**
+- `Resolve(name string) *Method` - Find method by name
+
+#### Method
+
+```go
+type Method struct {
+    Name         string
+    Description  string
+    InputType    reflect.Type
+    OutputType   reflect.Type
+    Invoker      MethodInvoker
+}
+```
+
+Method metadata with compiled invoker.
+
+**Methods:**
+- `HasInput() bool` - Whether method accepts input
+- `HasOutput() bool` - Whether method returns output (besides error)
+
+#### TypeRegistry
+
+```go
+type TypeRegistry struct {
+    // ...
+}
+```
+
+Manages Go types and their JSON schemas.
+
+**Methods:**
+- `Schema(id string) *Schema` - Get schema by ID
+- `Schemas() []*Schema` - Get all schemas
+
+#### Option
+
+```go
+type Option func(*registerOptions)
+```
+
+Configuration option for Register.
+
+**Available options:**
+- `WithDescription(desc string)` - Set service description
+- `WithVersion(ver string)` - Set service version
+
+### Interfaces
+
+#### TransportInvoker
+
+```go
+type TransportInvoker interface {
+    Invoke(ctx context.Context, method *Method, input []byte) (any, error)
+}
+```
+
+Interface for invoking methods from transports.
+
+#### Resolver
+
+```go
+type Resolver interface {
+    Resolve(name string) *Method
+}
+```
+
+Interface for finding methods by name.
+
+---
+
+## contract/transport/mcp
+
+MCP (Model Context Protocol) transport package.
+
+### Functions
+
+#### Mount
+
+```go
+func Mount(mux *http.ServeMux, path string, svc *contract.Service, opts ...Option)
+```
+
+Mounts an MCP endpoint.
+
+**Example:**
+```go
+import "github.com/go-mizu/mizu/contract/transport/mcp"
+
+mcp.Mount(mux, "/mcp", svc)
+```
+
+#### NewHandler
+
+```go
+func NewHandler(svc *contract.Service, opts ...Option) http.Handler
+```
+
+Creates an MCP HTTP handler.
+
+### Options
+
+```go
+func WithResolver(r contract.Resolver) Option
+func WithInvoker(i contract.TransportInvoker) Option
+func WithServerInfo(info ServerInfo) Option
+```
+
+### Types
+
+#### ServerInfo
+
+```go
+type ServerInfo struct {
+    Name    string `json:"name"`
+    Version string `json:"version"`
+}
+```
+
+#### Tool
+
+```go
+type Tool struct {
+    Name         string         `json:"name"`
+    Title        string         `json:"title,omitempty"`
+    Description  string         `json:"description,omitempty"`
+    InputSchema  map[string]any `json:"inputSchema"`
+    OutputSchema map[string]any `json:"outputSchema,omitempty"`
+}
+```
+
+### Constants
+
+```go
+const (
+    ProtocolLatest = "2025-06-18"
+    Protocol2024   = "2024-11-05"
+)
+```
+
+---
+
+## contract/transport/trpc
+
+tRPC-like transport package.
+
+### Functions
+
+#### Mount
+
+```go
+func Mount(mux *http.ServeMux, path string, svc *contract.Service, opts ...Option)
+```
+
+Mounts tRPC endpoints.
+
+**Example:**
+```go
+import "github.com/go-mizu/mizu/contract/transport/trpc"
+
+trpc.Mount(mux, "/trpc", svc)
+// Creates: POST /trpc/{method}, GET /trpc.meta
+```
+
+#### NewHandler
+
+```go
+func NewHandler(svc *contract.Service, opts ...Option) http.Handler
+```
+
+Creates a tRPC HTTP handler.
+
+#### NewMetaHandler
+
+```go
+func NewMetaHandler(svc *contract.Service) http.Handler
+```
+
+Creates a handler for the `.meta` endpoint.
+
+### Options
+
+```go
+func WithResolver(r contract.Resolver) Option
+func WithInvoker(i contract.TransportInvoker) Option
+```
+
+### Types
+
+#### Envelope
+
+```go
+type Envelope struct {
+    Result *Result `json:"result,omitempty"`
+    Error  *Error  `json:"error,omitempty"`
+}
+```
+
+Response envelope for all tRPC responses.
+
+#### Result
+
+```go
+type Result struct {
+    Data any `json:"data"`
+}
+```
+
+#### Error
+
+```go
+type Error struct {
+    Code    ErrorCode `json:"code"`
+    Message string    `json:"message"`
+}
+```
+
+#### ErrorCode
+
+```go
+type ErrorCode string
+
+const (
+    CodeBadRequest     ErrorCode = "BAD_REQUEST"
+    CodeInternalError  ErrorCode = "INTERNAL_ERROR"
+    CodeNotFound       ErrorCode = "NOT_FOUND"
+    CodeUnauthorized   ErrorCode = "UNAUTHORIZED"
+    CodeForbidden      ErrorCode = "FORBIDDEN"
+)
+```
+
+#### ServiceMeta
+
+```go
+type ServiceMeta struct {
+    Service string          `json:"service"`
+    Methods []ProcedureMeta `json:"methods"`
+    Schemas []SchemaMeta    `json:"schemas"`
+}
+```
+
+Response from `.meta` endpoint.
+
+---
+
+## contract/transport/jsonrpc
+
+JSON-RPC 2.0 transport package.
+
+### Functions
+
+#### Mount
+
+```go
+func Mount(mux *http.ServeMux, path string, svc *contract.Service, opts ...Option)
+```
+
+#### NewHandler
+
+```go
+func NewHandler(svc *contract.Service, opts ...Option) http.Handler
+```
+
+### Types
+
+#### Request
+
+```go
+type Request struct {
+    JSONRPC string          `json:"jsonrpc"`
+    ID      any             `json:"id,omitempty"`
+    Method  string          `json:"method"`
+    Params  json.RawMessage `json:"params,omitempty"`
+}
+```
+
+#### Response
+
+```go
+type Response struct {
+    JSONRPC string          `json:"jsonrpc"`
+    ID      any             `json:"id,omitempty"`
+    Result  any             `json:"result,omitempty"`
+    Error   *Error          `json:"error,omitempty"`
+}
+```
+
+#### Error
+
+```go
+type Error struct {
+    Code    int    `json:"code"`
+    Message string `json:"message"`
+    Data    any    `json:"data,omitempty"`
+}
+```
+
+---
+
+## contract/transport/openapi
+
+OpenAPI 3.1 specification generator.
+
+### Functions
+
+#### Mount
+
+```go
+func Mount(mux *http.ServeMux, path string, svc *contract.Service)
+```
+
+#### Generate
+
+```go
+func Generate(svc *contract.Service) *Document
+```
+
+Generates an OpenAPI document from a service.
+
+### Types
+
+#### Document
+
+```go
+type Document struct {
+    OpenAPI    string              `json:"openapi"`
+    Info       Info                `json:"info"`
+    Paths      map[string]PathItem `json:"paths"`
+    Components Components          `json:"components"`
+}
+```
+
+---
+
+## Error Types
+
+### Error
+
+```go
+type Error struct {
+    Code    ErrorCode      `json:"code"`
+    Message string         `json:"message"`
+    Details map[string]any `json:"details,omitempty"`
+}
+```
+
+**Methods:**
+- `Error() string` - Implements error interface
+- `HTTPStatus() int` - Returns HTTP status code
+- `JSONRPCCode() int` - Returns JSON-RPC error code
+- `GRPCCode() codes.Code` - Returns gRPC status code
+- `Unwrap() error` - Returns wrapped cause
+- `WithDetails(details map[string]any) *Error` - Add details
+- `WithDetail(key string, value any) *Error` - Add single detail
+- `WithCause(cause error) *Error` - Wrap underlying error
+
+### Error Constructors
+
+```go
+func NewError(code ErrorCode, message string) *Error
+func Errorf(code ErrorCode, format string, args ...any) *Error
+
+// Convenience constructors
+func ErrNotFound(message string) *Error
+func ErrInvalidArgument(message string) *Error
+func ErrPermissionDenied(message string) *Error
+func ErrUnauthenticated(message string) *Error
+func ErrInternal(message string) *Error
+func ErrAlreadyExists(message string) *Error
+func ErrResourceExhausted(message string) *Error
+func ErrUnimplemented(message string) *Error
+func ErrUnavailable(message string) *Error
+```
+
+### ErrorCode
+
+```go
+type ErrorCode string
+
+const (
+    ErrCodeOK                 ErrorCode = "OK"
+    ErrCodeCanceled           ErrorCode = "CANCELED"
+    ErrCodeUnknown            ErrorCode = "UNKNOWN"
+    ErrCodeInvalidArgument    ErrorCode = "INVALID_ARGUMENT"
+    ErrCodeDeadlineExceeded   ErrorCode = "DEADLINE_EXCEEDED"
+    ErrCodeNotFound           ErrorCode = "NOT_FOUND"
+    ErrCodeAlreadyExists      ErrorCode = "ALREADY_EXISTS"
+    ErrCodePermissionDenied   ErrorCode = "PERMISSION_DENIED"
+    ErrCodeResourceExhausted  ErrorCode = "RESOURCE_EXHAUSTED"
+    ErrCodeFailedPrecondition ErrorCode = "FAILED_PRECONDITION"
+    ErrCodeAborted            ErrorCode = "ABORTED"
+    ErrCodeOutOfRange         ErrorCode = "OUT_OF_RANGE"
+    ErrCodeUnimplemented      ErrorCode = "UNIMPLEMENTED"
+    ErrCodeInternal           ErrorCode = "INTERNAL"
+    ErrCodeUnavailable        ErrorCode = "UNAVAILABLE"
+    ErrCodeDataLoss           ErrorCode = "DATA_LOSS"
+    ErrCodeUnauthenticated    ErrorCode = "UNAUTHENTICATED"
+)
+```
+
+### Helper Functions
+
+```go
+func AsError(err error) *Error
+func HTTPStatusToErrorCode(status int) ErrorCode
+```
+
+## See Also
+
+- [Quick Start](/contract/quick-start) - Get started quickly
+- [Service Definition](/contract/service) - Method signatures
+- [Error Handling](/contract/errors) - Error patterns

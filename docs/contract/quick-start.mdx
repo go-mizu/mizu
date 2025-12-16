@@ -1,0 +1,187 @@
+---
+title: "Quick Start"
+description: "Get started with Contract in under 5 minutes"
+---
+
+# Quick Start
+
+Get a multi-protocol API running in under 5 minutes.
+
+## 1. Install Mizu CLI
+
+```bash
+go install github.com/go-mizu/mizu/cmd/mizu@latest
+```
+
+## 2. Create a New Project
+
+```bash
+mizu new myapi --template contract
+cd myapi
+go mod tidy
+```
+
+## 3. Run the Server
+
+```bash
+go run ./cmd/api
+```
+
+## 4. Test Your API
+
+Your service is now available via multiple protocols:
+
+### REST
+
+```bash
+# Create
+curl -X POST http://localhost:8080/todos \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Buy groceries"}'
+
+# List
+curl http://localhost:8080/todos
+```
+
+### JSON-RPC
+
+```bash
+curl -X POST http://localhost:8080/rpc \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "Create",
+    "params": {"title": "Buy groceries"}
+  }'
+```
+
+### tRPC
+
+```bash
+curl -X POST http://localhost:8080/trpc/Create \
+  -d '{"title": "Buy groceries"}'
+```
+
+### MCP
+
+```bash
+# Initialize
+curl -X POST http://localhost:8080/mcp \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}'
+
+# List tools
+curl -X POST http://localhost:8080/mcp \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+```
+
+## 5. View OpenAPI Spec
+
+Open http://localhost:8080/openapi.json in your browser to see the auto-generated API documentation.
+
+## Project Structure
+
+The generated project looks like:
+
+```
+myapi/
+├── cmd/
+│   └── api/
+│       └── main.go       # Server entry point
+├── service/
+│   └── todo/
+│       └── todo.go       # Your service (no framework deps!)
+├── go.mod
+└── go.sum
+```
+
+## The Service
+
+Here's the generated service - notice there are no HTTP or framework dependencies:
+
+```go
+// service/todo/todo.go
+package todo
+
+import "context"
+
+type Service struct{}
+
+type CreateInput struct {
+    Title string `json:"title"`
+}
+
+type Todo struct {
+    ID    string `json:"id"`
+    Title string `json:"title"`
+    Done  bool   `json:"done"`
+}
+
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    return &Todo{
+        ID:    "1",
+        Title: in.Title,
+    }, nil
+}
+
+func (s *Service) List(ctx context.Context) ([]*Todo, error) {
+    return []*Todo{}, nil
+}
+```
+
+## The Server
+
+The main.go wires everything together:
+
+```go
+// cmd/api/main.go
+package main
+
+import (
+    "net/http"
+    "github.com/go-mizu/mizu/contract"
+    "github.com/go-mizu/mizu/contract/transport/mcp"
+    "github.com/go-mizu/mizu/contract/transport/trpc"
+    "myapi/service/todo"
+)
+
+func main() {
+    svc, _ := contract.Register("todo", &todo.Service{})
+
+    mux := http.NewServeMux()
+
+    // REST: /todos/*
+    contract.MountREST(mux, svc)
+
+    // JSON-RPC: /rpc
+    contract.MountJSONRPC(mux, "/rpc", svc)
+
+    // tRPC: /trpc/*
+    trpc.Mount(mux, "/trpc", svc)
+
+    // MCP: /mcp
+    mcp.Mount(mux, "/mcp", svc)
+
+    // OpenAPI: /openapi.json
+    contract.ServeOpenAPI(mux, "/openapi.json", svc)
+
+    http.ListenAndServe(":8080", mux)
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Define Services" href="/contract/service">
+    Learn about method signatures and metadata
+  </Card>
+  <Card title="Choose a Transport" href="/contract/transports-overview">
+    Compare REST, JSON-RPC, MCP, and tRPC
+  </Card>
+  <Card title="Add Types" href="/contract/types">
+    Understand type validation and schemas
+  </Card>
+  <Card title="Handle Errors" href="/contract/errors">
+    Portable error handling across transports
+  </Card>
+</CardGroup>

@@ -1,0 +1,361 @@
+---
+title: "Middleware"
+description: "Add cross-cutting concerns to your Contract services"
+---
+
+# Middleware
+
+Contract services support middleware for cross-cutting concerns like logging, authentication, rate limiting, and more. Middleware wraps method invocations without modifying your service code.
+
+## Overview
+
+Middleware operates at the transport level, wrapping the invoker that calls your methods:
+
+```
+Request → Transport → Middleware Chain → Invoker → Your Method
+```
+
+## Custom Invoker
+
+The most common way to add middleware is with a custom `TransportInvoker`:
+
+```go
+import "github.com/go-mizu/mizu/contract"
+
+// LoggingInvoker wraps the default invoker with logging
+type LoggingInvoker struct {
+    inner contract.TransportInvoker
+}
+
+func (l *LoggingInvoker) Invoke(ctx context.Context, method *contract.Method, input []byte) (any, error) {
+    start := time.Now()
+
+    result, err := l.inner.Invoke(ctx, method, input)
+
+    log.Printf("method=%s duration=%v err=%v", method.Name, time.Since(start), err)
+    return result, err
+}
+```
+
+## Using Custom Invokers
+
+Pass your custom invoker when mounting transports:
+
+### With MCP
+
+```go
+import "github.com/go-mizu/mizu/contract/transport/mcp"
+
+loggingInvoker := &LoggingInvoker{inner: contract.DefaultInvoker(svc)}
+
+mcp.Mount(mux, "/mcp", svc,
+    mcp.WithInvoker(loggingInvoker),
+)
+```
+
+### With tRPC
+
+```go
+import "github.com/go-mizu/mizu/contract/transport/trpc"
+
+trpc.Mount(mux, "/trpc", svc,
+    trpc.WithInvoker(loggingInvoker),
+)
+```
+
+### With JSON-RPC
+
+```go
+import "github.com/go-mizu/mizu/contract/transport/jsonrpc"
+
+jsonrpc.Mount(mux, "/rpc", svc,
+    jsonrpc.WithInvoker(loggingInvoker),
+)
+```
+
+## Common Middleware Patterns
+
+### Logging
+
+```go
+type LoggingInvoker struct {
+    inner  contract.TransportInvoker
+    logger *slog.Logger
+}
+
+func (l *LoggingInvoker) Invoke(ctx context.Context, method *contract.Method, input []byte) (any, error) {
+    start := time.Now()
+
+    result, err := l.inner.Invoke(ctx, method, input)
+
+    l.logger.Info("method called",
+        "method", method.Name,
+        "duration", time.Since(start),
+        "error", err != nil,
+    )
+
+    return result, err
+}
+```
+
+### Authentication
+
+```go
+type AuthInvoker struct {
+    inner contract.TransportInvoker
+    auth  AuthService
+}
+
+func (a *AuthInvoker) Invoke(ctx context.Context, method *contract.Method, input []byte) (any, error) {
+    // Check if method requires auth
+    if method.RequiresAuth() {
+        user := UserFromContext(ctx)
+        if user == nil {
+            return nil, contract.ErrUnauthenticated("authentication required")
+        }
+    }
+
+    return a.inner.Invoke(ctx, method, input)
+}
+```
+
+### Rate Limiting
+
+```go
+type RateLimitInvoker struct {
+    inner   contract.TransportInvoker
+    limiter *rate.Limiter
+}
+
+func (r *RateLimitInvoker) Invoke(ctx context.Context, method *contract.Method, input []byte) (any, error) {
+    if !r.limiter.Allow() {
+        return nil, contract.ErrResourceExhausted("rate limit exceeded")
+    }
+
+    return r.inner.Invoke(ctx, method, input)
+}
+```
+
+### Metrics
+
+```go
+type MetricsInvoker struct {
+    inner    contract.TransportInvoker
+    requests *prometheus.CounterVec
+    duration *prometheus.HistogramVec
+}
+
+func (m *MetricsInvoker) Invoke(ctx context.Context, method *contract.Method, input []byte) (any, error) {
+    start := time.Now()
+
+    result, err := m.inner.Invoke(ctx, method, input)
+
+    status := "success"
+    if err != nil {
+        status = "error"
+    }
+
+    m.requests.WithLabelValues(method.Name, status).Inc()
+    m.duration.WithLabelValues(method.Name).Observe(time.Since(start).Seconds())
+
+    return result, err
+}
+```
+
+### Tracing
+
+```go
+type TracingInvoker struct {
+    inner  contract.TransportInvoker
+    tracer trace.Tracer
+}
+
+func (t *TracingInvoker) Invoke(ctx context.Context, method *contract.Method, input []byte) (any, error) {
+    ctx, span := t.tracer.Start(ctx, method.Name)
+    defer span.End()
+
+    result, err := t.inner.Invoke(ctx, method, input)
+
+    if err != nil {
+        span.RecordError(err)
+        span.SetStatus(codes.Error, err.Error())
+    }
+
+    return result, err
+}
+```
+
+## Chaining Middleware
+
+Compose multiple middleware layers:
+
+```go
+func ChainInvokers(base contract.TransportInvoker, middlewares ...func(contract.TransportInvoker) contract.TransportInvoker) contract.TransportInvoker {
+    for i := len(middlewares) - 1; i >= 0; i-- {
+        base = middlewares[i](base)
+    }
+    return base
+}
+
+// Usage
+invoker := ChainInvokers(
+    contract.DefaultInvoker(svc),
+    withLogging,
+    withMetrics,
+    withTracing,
+    withAuth,
+)
+
+mcp.Mount(mux, "/mcp", svc, mcp.WithInvoker(invoker))
+```
+
+## HTTP Middleware
+
+For HTTP-level concerns, wrap the handler:
+
+```go
+// Standard http.Handler middleware
+func withCORS(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Access-Control-Allow-Origin", "*")
+        w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+        if r.Method == "OPTIONS" {
+            w.WriteHeader(http.StatusOK)
+            return
+        }
+
+        next.ServeHTTP(w, r)
+    })
+}
+
+// Apply to transport handler
+handler := mcp.NewHandler(svc)
+mux.Handle("/mcp", withCORS(handler))
+```
+
+### Request ID
+
+```go
+func withRequestID(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        requestID := r.Header.Get("X-Request-ID")
+        if requestID == "" {
+            requestID = uuid.New().String()
+        }
+
+        ctx := context.WithValue(r.Context(), requestIDKey, requestID)
+        w.Header().Set("X-Request-ID", requestID)
+
+        next.ServeHTTP(w, r.WithContext(ctx))
+    })
+}
+```
+
+### Recovery
+
+```go
+func withRecovery(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        defer func() {
+            if err := recover(); err != nil {
+                log.Printf("panic recovered: %v", err)
+                http.Error(w, "internal server error", http.StatusInternalServerError)
+            }
+        }()
+
+        next.ServeHTTP(w, r)
+    })
+}
+```
+
+## Context Values
+
+Pass data through context for middleware to access:
+
+```go
+// Set in HTTP middleware
+func withUser(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        token := r.Header.Get("Authorization")
+        if user, err := validateToken(token); err == nil {
+            ctx := context.WithValue(r.Context(), userKey, user)
+            r = r.WithContext(ctx)
+        }
+        next.ServeHTTP(w, r)
+    })
+}
+
+// Access in TransportInvoker
+func (a *AuthInvoker) Invoke(ctx context.Context, method *contract.Method, input []byte) (any, error) {
+    user := ctx.Value(userKey).(*User)
+    // ...
+}
+
+// Access in service method
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    user := ctx.Value(userKey).(*User)
+    // Use user info
+}
+```
+
+## Best Practices
+
+### Order Matters
+
+Apply middleware in the correct order:
+
+```go
+// Good: Recovery first (outermost), then logging, then auth
+invoker := ChainInvokers(base,
+    withRecovery,  // Catches panics from all inner middleware
+    withLogging,   // Logs all requests including auth failures
+    withAuth,      // Auth check before business logic
+)
+
+// Bad: Auth before recovery means panics in auth aren't caught
+invoker := ChainInvokers(base,
+    withAuth,
+    withRecovery,
+    withLogging,
+)
+```
+
+### Keep Middleware Focused
+
+Each middleware should do one thing:
+
+```go
+// Good: Separate concerns
+withLogging(withAuth(withMetrics(base)))
+
+// Bad: Combined concerns
+type EverythingMiddleware struct{} // Does logging, auth, metrics, etc.
+```
+
+### Avoid Heavy Processing
+
+Keep middleware lightweight:
+
+```go
+// Good: Quick check
+func (a *AuthInvoker) Invoke(ctx context.Context, method *contract.Method, input []byte) (any, error) {
+    if !a.cache.IsValid(ctx) {
+        return nil, contract.ErrUnauthenticated("invalid token")
+    }
+    return a.inner.Invoke(ctx, method, input)
+}
+
+// Bad: Database call on every request
+func (a *AuthInvoker) Invoke(ctx context.Context, method *contract.Method, input []byte) (any, error) {
+    user, err := a.db.FindUser(ctx, tokenFromCtx(ctx))
+    // ...
+}
+```
+
+## See Also
+
+- [Service Definition](/contract/service) - Writing services
+- [Error Handling](/contract/errors) - Return errors from middleware
+- [Architecture](/contract/architecture) - How transports work
