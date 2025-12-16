@@ -1,242 +1,415 @@
 ---
 title: "Architecture"
-description: "Understanding the Contract architecture and design"
+description: "Understand how Contract works under the hood - a beginner-friendly deep dive"
 ---
 
 # Architecture
 
-The Contract package provides a transport-neutral service layer. Your business logic remains free of HTTP dependencies while being accessible via multiple protocols.
+This page explains how Contract works internally. Understanding the architecture helps you make better decisions when building your APIs and troubleshoot issues when they arise.
 
-## High-Level Overview
+## The Big Picture
+
+At its core, Contract does one simple thing: it takes your plain Go code and makes it accessible via different network protocols. Here's how the pieces fit together:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Plain Go Service                             │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  service/todo/todo.go                                    │   │
-│  │  - No framework dependencies                             │   │
-│  │  - Pure business logic                                   │   │
-│  │  - Easy to test                                          │   │
-│  └─────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼ contract.Register()
-┌─────────────────────────────────────────────────────────────────┐
-│                    contract.Service                             │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  - Methods with compiled invokers                        │   │
-│  │  - TypeRegistry with JSON schemas                        │   │
-│  │  - Transport-neutral contract                            │   │
-│  └─────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-          ┌───────────────────┼───────────────────┐
-          │                   │                   │
-          ▼                   ▼                   ▼
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│     REST     │     │   JSON-RPC   │     │     MCP      │
-│  MountREST() │     │MountJSONRPC()│     │   Mount()    │
-└──────────────┘     └──────────────┘     └──────────────┘
-          │                   │                   │
-          └───────────────────┼───────────────────┘
-                              ▼
-                      HTTP Requests
+┌─────────────────────────────────────────────────────────────────────┐
+│                     YOUR CODE (Plain Go)                            │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │  type TodoService struct { ... }                               │  │
+│  │  func (s *TodoService) Create(...) (*Todo, error)              │  │
+│  │  func (s *TodoService) List(...) ([]*Todo, error)              │  │
+│  │                                                                │  │
+│  │  No HTTP. No JSON. No framework. Just business logic.          │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   │ contract.Register("todo", &TodoService{})
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                     CONTRACT (The Bridge)                           │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │  Service {                                                     │  │
+│  │    Name: "todo"                                                │  │
+│  │    Methods: [Create, List, Get, Delete]                        │  │
+│  │    Types: {Todo, CreateInput, ListOutput, ...}                 │  │
+│  │  }                                                             │  │
+│  │                                                                │  │
+│  │  Each method has an "Invoker" - a fast way to call it.         │  │
+│  │  Each type has a "Schema" - a description for documentation.   │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────┘
+                                   │
+         ┌─────────────────────────┼─────────────────────────┐
+         │                         │                         │
+         ▼                         ▼                         ▼
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   REST Handler  │     │ JSON-RPC Handler│     │   MCP Handler   │
+│                 │     │                 │     │                 │
+│ POST /todos     │     │ method: "Create"│     │ tool: "Create"  │
+│ GET /todos      │     │ method: "List"  │     │ tool: "List"    │
+│ GET /todos/{id} │     │ method: "Get"   │     │ tool: "Get"     │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+         │                         │                         │
+         └─────────────────────────┼─────────────────────────┘
+                                   │
+                                   ▼
+                        ┌─────────────────┐
+                        │  HTTP Requests  │
+                        │  from Clients   │
+                        └─────────────────┘
 ```
 
-## Core Components
+## Three Layers Explained
 
-### Service
+### Layer 1: Your Code (The Service)
 
-A plain Go struct with methods. No interfaces to implement, no framework dependencies:
+This is the Go code you write. It contains your business logic with no knowledge of HTTP, JSON, or any protocol:
 
 ```go
-type TodoService struct{}
+type TodoService struct {
+    db *sql.DB  // Your dependencies go here
+}
 
 func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
-    // Pure business logic
-    return &Todo{ID: "1", Title: in.Title}, nil
+    // This is pure business logic
+    // No http.Request, no JSON marshaling, no protocol concerns
+
+    todo := &Todo{
+        ID:    generateID(),
+        Title: in.Title,
+    }
+
+    // Save to database
+    _, err := s.db.ExecContext(ctx, "INSERT INTO todos...")
+    if err != nil {
+        return nil, err
+    }
+
+    return todo, nil
 }
 ```
 
-### contract.Service
+**Why this matters**: Your code is easy to test (no HTTP mocking needed), easy to understand (just Go functions), and can be reused in different contexts (CLI tools, background jobs, etc.).
 
-The result of `contract.Register()`. Contains:
+### Layer 2: The Contract (The Bridge)
 
-- **Methods**: Metadata and invokers for each method
-- **Types**: TypeRegistry with JSON schemas
-- **Metadata**: Name, description, version
+When you call `contract.Register()`, Contract inspects your service and creates a data structure that describes it:
 
 ```go
 svc, err := contract.Register("todo", &TodoService{})
-// svc.Name == "todo"
-// svc.Methods == [Create, List, Get, ...]
-// svc.Types.Schemas() == [{ID: "CreateInput", JSON: {...}}, ...]
 ```
 
-### Invoker
+This registration process:
 
-Compiled method callers created at registration time. No runtime reflection:
+1. **Discovers methods** using Go's reflection
+2. **Parses signatures** to understand inputs and outputs
+3. **Generates JSON schemas** from your Go types
+4. **Creates invokers** for fast method calling
+
+The result is a `Service` struct that knows everything about your API:
 
 ```go
-// At registration: method signatures are parsed once
-// At runtime: compiled invoker is called directly
-result, err := method.Invoker.Call(ctx, input)
+svc.Name        // "todo"
+svc.Methods     // [Create, List, Get, Delete]
+svc.Types       // TypeRegistry with JSON schemas
 ```
+
+### Layer 3: Transports (The Protocols)
+
+Transports are HTTP handlers that speak different protocols. They:
+
+1. **Receive HTTP requests** in their specific format
+2. **Find the right method** in the contract
+3. **Call the method** using the invoker
+4. **Return the response** in their specific format
+
+Each transport does this differently:
+
+| Transport | Request Format | Response Format |
+|-----------|----------------|-----------------|
+| REST | HTTP verbs + paths | JSON body |
+| JSON-RPC | JSON with method name | JSON-RPC envelope |
+| MCP | JSON-RPC with tool calls | MCP content blocks |
+| tRPC | Path-based + JSON body | tRPC envelope |
+
+## How a Request Flows Through the System
+
+Let's trace a REST request from start to finish:
+
+### Step 1: Client Sends Request
+
+```bash
+curl -X POST http://localhost:8080/todos \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Buy milk"}'
+```
+
+### Step 2: REST Handler Receives It
+
+The REST handler (mounted by `contract.MountREST()`) receives the HTTP request:
+
+```
+Method: POST
+Path:   /todos
+Body:   {"title": "Buy milk"}
+```
+
+### Step 3: Handler Determines the Method
+
+Based on the HTTP method (POST) and path (/todos), the handler knows to call `Create`:
+
+```go
+// Inside the REST handler:
+// POST /todos -> Create method
+// GET /todos -> List method
+// GET /todos/{id} -> Get method
+// DELETE /todos/{id} -> Delete method
+
+methodName := "Create"  // Derived from HTTP method + path
+method := svc.Resolve(methodName)  // Find the Method struct
+```
+
+### Step 4: Invoker Calls Your Method
+
+The invoker unmarshals the JSON input and calls your method:
+
+```go
+// What the invoker does (simplified):
+input := &CreateInput{}
+json.Unmarshal(requestBody, input)  // {"title": "Buy milk"} -> CreateInput
+
+result, err := yourService.Create(ctx, input)  // Actually calls your code!
+```
+
+### Step 5: Handler Sends Response
+
+The handler marshals your response back to JSON:
+
+```go
+// Your method returned: &Todo{ID: "todo_1", Title: "Buy milk"}
+// Handler converts it to JSON and sends:
+
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{"id":"todo_1","title":"Buy milk","completed":false}
+```
+
+## The Complete Request Flow
+
+Here's the detailed flow for any transport:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        HTTP Request                              │
+│  POST /todos                                                     │
+│  Body: {"title": "Buy milk"}                                     │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Transport Handler                             │
+│                                                                  │
+│  1. Parse protocol-specific request                              │
+│     REST: Parse HTTP method + path + body                        │
+│     JSON-RPC: Parse JSON-RPC envelope                            │
+│     MCP: Parse tool call                                         │
+│                                                                  │
+│  2. Resolve method name                                          │
+│     resolver.Resolve("Create") → *Method                         │
+│                                                                  │
+│  3. Get invoker and call method                                  │
+│     invoker.Invoke(ctx, method, inputBytes)                      │
+│       │                                                          │
+│       ├─ json.Unmarshal(inputBytes, &CreateInput{})              │
+│       ├─ method.Invoker.Call(ctx, input)                         │
+│       └─ return result or error                                  │
+│                                                                  │
+│  4. Format protocol-specific response                            │
+│     REST: JSON body with HTTP status                             │
+│     JSON-RPC: JSON-RPC envelope with result/error                │
+│     MCP: Content block with isError flag                         │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        HTTP Response                             │
+│  200 OK                                                          │
+│  {"id":"todo_1","title":"Buy milk","completed":false}            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Core Components Explained
+
+### Service
+
+The `Service` struct is the central data structure that holds everything about your API:
+
+```go
+type Service struct {
+    Name        string      // "todo"
+    Description string      // Optional description
+    Version     string      // API version
+    Methods     []*Method   // All discovered methods
+    Types       *TypeRegistry  // All types and their schemas
+}
+```
+
+### Method
+
+Each method on your service becomes a `Method` struct:
+
+```go
+type Method struct {
+    Name        string        // "Create"
+    Description string        // From doc comments (if any)
+    InputType   reflect.Type  // *CreateInput
+    OutputType  reflect.Type  // *Todo
+    Invoker     MethodInvoker // Fast caller
+}
+```
+
+The `Invoker` is the key to performance - it's created once at registration and used for every request.
 
 ### TypeRegistry
 
-Manages types and their JSON schemas:
+The TypeRegistry holds all your types and their JSON schemas:
 
 ```go
-// Schemas generated from Go types
-svc.Types.Schema("CreateInput")
-// Returns: {"type": "object", "properties": {"title": {"type": "string"}}, ...}
+// Your Go type:
+type CreateInput struct {
+    Title string `json:"title"`
+}
+
+// Becomes this JSON Schema:
+{
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"}
+    },
+    "required": ["title"]
+}
 ```
 
-### Transports
+Schemas are used for:
+- OpenAPI documentation
+- MCP tool definitions
+- Input validation (future)
+- Client code generation
 
-Protocol handlers that serve the contract:
+### Invoker
 
-| Transport | Protocol | Package |
-|-----------|----------|---------|
-| REST | HTTP REST | `contract` |
-| JSON-RPC | JSON-RPC 2.0 | `contract`, `transport/jsonrpc` |
-| MCP | Model Context Protocol | `transport/mcp` |
-| tRPC | tRPC-like | `transport/trpc` |
-| OpenAPI | OpenAPI 3.1 | `contract`, `transport/openapi` |
-
-## Request Flow
-
-### 1. Registration (Once at Startup)
+An invoker is a pre-compiled way to call a method. Without Contract, calling a method via reflection on every request would be slow:
 
 ```go
-svc, _ := contract.Register("todo", &TodoService{})
+// Slow: reflection on every call
+method := reflect.ValueOf(service).MethodByName("Create")
+result := method.Call([]reflect.Value{ctxValue, inputValue})
 ```
 
-1. Reflect on service struct
-2. Parse each method signature
-3. Generate JSON schemas for input/output types
-4. Create compiled invokers
+With Contract, the reflection happens once at registration, and subsequent calls are fast:
 
-### 2. Request Handling (Per Request)
-
-```
-HTTP Request
-    │
-    ▼
-Transport Handler (e.g., JSON-RPC)
-    │
-    ├─ 1. Decode request (protocol-specific)
-    │
-    ├─ 2. Resolve method by name
-    │      resolver.Resolve("Create") → *Method
-    │
-    ├─ 3. Invoke method
-    │      invoker.Invoke(ctx, method, rawInput)
-    │      │
-    │      ├─ Unmarshal input
-    │      ├─ Call method.Invoker.Call(ctx, input)
-    │      └─ Return result or error
-    │
-    └─ 4. Encode response (protocol-specific)
-           │
-           ▼
-      HTTP Response
+```go
+// Fast: compiled invoker
+result, err := method.Invoker.Call(ctx, input)
 ```
 
-## Package Structure
+## Package Organization
+
+The contract package is organized into:
 
 ```
 contract/
-├── contract.go           # Core: Service, Method, Register
-├── schema.go             # TypeRegistry, JSON schema generation
-├── errors.go             # Error types and codes
-├── transport.go          # Transport interfaces (Resolver, Invoker)
-├── transport_rest.go     # REST transport
-├── transport_jsonrpc.go  # JSON-RPC transport (deprecated, use pkg)
-├── transport_mcp.go      # MCP transport (deprecated, use pkg)
-├── transport_trpc.go     # tRPC transport (deprecated, use pkg)
-└── transport/
-    ├── jsonrpc/          # JSON-RPC 2.0 package
-    │   ├── jsonrpc.go    # Types and codec
-    │   └── handler.go    # HTTP handler
-    ├── openapi/          # OpenAPI 3.1 package
-    │   ├── spec.go       # Document generation
-    │   └── handler.go    # HTTP handler
-    ├── mcp/              # MCP package
-    │   ├── mcp.go        # Types
-    │   └── handler.go    # HTTP handler
-    └── trpc/             # tRPC package
-        ├── trpc.go       # Types and envelope
-        └── handler.go    # HTTP handler
+├── contract.go          # Core: Service, Method, Register
+├── types.go             # TypeRegistry, JSON schema generation
+├── errors.go            # Error types and codes
+├── client.go            # Client-side utilities
+│
+├── transport_rest.go    # REST transport (MountREST)
+│
+└── transport/           # Additional transports
+    ├── jsonrpc/         # JSON-RPC 2.0
+    │   ├── jsonrpc.go   # Request/Response types
+    │   └── handler.go   # HTTP handler
+    │
+    ├── mcp/             # Model Context Protocol
+    │   ├── mcp.go       # MCP types
+    │   └── handler.go   # HTTP handler
+    │
+    ├── trpc/            # tRPC-like
+    │   ├── trpc.go      # Envelope types
+    │   └── handler.go   # HTTP handler
+    │
+    └── rest/            # REST utilities
+        └── spec.go      # OpenAPI generation
 ```
 
-## Key Interfaces
+## Design Principles
 
-### Resolver
+### 1. Reflection Only at Startup
 
-Finds methods by name:
+Contract uses reflection (Go's way of inspecting types at runtime) only once when you call `Register()`. After that, all method calls use pre-compiled invokers. This means:
+
+- **Startup**: Slightly slower (milliseconds) due to reflection
+- **Runtime**: Fast method calls with no reflection overhead
+
+### 2. Protocol Agnostic Errors
+
+Errors use codes (like `NOT_FOUND`, `INVALID_ARGUMENT`) that map to appropriate representations in each protocol:
 
 ```go
-type Resolver interface {
-    Resolve(name string) *Method
-}
+return nil, contract.ErrNotFound("user not found")
 ```
 
-### TransportInvoker
-
-Invokes methods with raw input:
-
-```go
-type TransportInvoker interface {
-    Invoke(ctx context.Context, method *Method, input []byte) (any, error)
-}
-```
-
-### Transport
-
-Base interface for all transports:
-
-```go
-type Transport interface {
-    Name() string
-}
-```
-
-## Design Decisions
-
-### Why Reflection at Registration?
-
-- **Once at startup**: Parse signatures and generate schemas
-- **Never at runtime**: Use compiled invokers for performance
-- **Type safety**: Catch signature errors early
-
-### Why Multiple Transports?
-
-Different use cases need different protocols:
-
-| Use Case | Best Transport |
+| Protocol | Representation |
 |----------|----------------|
-| Web clients | REST |
-| RPC clients | JSON-RPC |
-| AI integration | MCP |
-| TypeScript clients | tRPC |
-| Documentation | OpenAPI |
+| REST | HTTP 404 + message body |
+| JSON-RPC | Error code -32601 |
+| tRPC | `{"error": {"code": "NOT_FOUND"}}` |
+| MCP | `{"isError": true, "content": [...]}` |
 
-### Why Transport-Neutral Errors?
+### 3. No Magic, Just Functions
 
-Errors map consistently across protocols:
+Contract doesn't use:
+- Code generation
+- Build-time processing
+- Special comments
+- Interface implementations
 
-```go
-contract.ErrNotFound("user not found")
-// → REST: 404 Not Found
-// → JSON-RPC: -32601
-// → MCP: error in content
-// → tRPC: {"error": {"code": "NOT_FOUND"}}
-```
+Everything is standard Go: structs, methods, and function calls. If your code compiles, it works with Contract.
+
+## Common Questions
+
+### Why not use code generation instead of reflection?
+
+Code generation (like protobuf) requires extra build steps and generated files to maintain. Contract's reflection-based approach:
+- Works with any Go struct immediately
+- No extra build steps
+- No generated files to keep in sync
+- Faster iteration during development
+
+### How does Contract know which HTTP verb to use?
+
+For REST, Contract uses naming conventions:
+- `Create*` → POST
+- `Get*` → GET
+- `List*` → GET
+- `Update*` → PUT
+- `Delete*` → DELETE
+- Other names → POST
+
+### Can I use Contract with gRPC?
+
+Not directly yet, but the error codes are aligned with gRPC status codes for future compatibility. JSON-RPC provides similar RPC semantics over HTTP.
+
+### What happens if I change my method signature?
+
+Re-register your service (which happens automatically on server restart). Contract will discover the new signature and update the schemas.
 
 ## See Also
 
-- [Service Definition](/contract/service) - Writing services
-- [Registration](/contract/register) - The registration process
-- [Transports Overview](/contract/transports-overview) - Compare transports
+- [Service Definition](/contract/service) - How to write services
+- [Registration](/contract/register) - The registration process in detail
+- [Transports Overview](/contract/transports-overview) - Compare all transports
+- [Middleware](/contract/middleware) - Add cross-cutting concerns

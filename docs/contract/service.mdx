@@ -1,120 +1,360 @@
 ---
 title: "Defining Services"
-description: "How to write plain Go services with canonical method signatures"
+description: "Learn how to write services for Contract - the foundation of your API"
 ---
 
 # Defining Services
 
-A contract service is a plain Go struct with methods. No framework imports, no HTTP dependencies - just pure business logic that's easy to write and test.
+A service is the heart of your API. It's where your business logic lives - the actual code that does things like creating users, processing orders, or managing todos.
+
+## What Is a Service?
+
+In Contract, a service is simply a Go struct with methods. That's it! No special interfaces to implement, no frameworks to learn, no magic annotations. Just plain Go code.
+
+```go
+// This is a complete, valid service
+type GreetingService struct{}
+
+func (s *GreetingService) SayHello(ctx context.Context, in *HelloInput) (*HelloOutput, error) {
+    return &HelloOutput{Message: "Hello, " + in.Name + "!"}, nil
+}
+```
+
+When you register this service with Contract, the `SayHello` method becomes callable via REST, JSON-RPC, and other protocols automatically.
 
 ## Service Requirements
 
-1. **Must be a struct** (or pointer to struct)
-2. **Must have exported methods** (unexported methods are ignored)
-3. **Methods must follow canonical signatures** (see below)
+For Contract to work with your service, it needs to follow a few simple rules:
 
-## Canonical Method Signatures
+### 1. Must Be a Struct
 
-The contract package supports these method signatures:
-
-### Full Signature (Input + Output)
+Your service must be a struct (or pointer to a struct). This is where you put your dependencies like database connections:
 
 ```go
-func (s *S) Method(ctx context.Context, in *Input) (*Output, error)
+// Good: service with dependencies
+type TodoService struct {
+    db    *sql.DB      // Database connection
+    cache *redis.Client // Cache connection
+}
+
+// Good: simple service with no dependencies
+type CalculatorService struct{}
+
+// Bad: not a struct
+type BadService string
 ```
 
-Use for methods that receive data and return results:
+### 2. Methods Must Be Exported
+
+Only methods starting with an uppercase letter are discovered by Contract:
 
 ```go
-func (s *Service) Create(ctx context.Context, in *CreateIn) (*Todo, error) {
+type Service struct{}
+
+// Good: exported method (starts with uppercase)
+func (s *Service) Create(...) { }
+
+// Ignored: unexported method (starts with lowercase)
+func (s *Service) helper(...) { }
+```
+
+### 3. Methods Must Follow a Signature Pattern
+
+Contract recognizes specific method patterns. If your method doesn't match any pattern, it's ignored.
+
+## Method Signatures
+
+Contract supports four method patterns. Each pattern determines how the method is called and what it returns.
+
+### Pattern 1: Input and Output
+
+The most common pattern - your method receives data and returns data:
+
+```go
+func (s *Service) MethodName(ctx context.Context, in *InputType) (*OutputType, error)
+```
+
+**Example - Creating a todo:**
+
+```go
+// Input: what the client sends
+type CreateInput struct {
+    Title       string `json:"title"`
+    Description string `json:"description"`
+}
+
+// Output: what you send back
+type Todo struct {
+    ID          string `json:"id"`
+    Title       string `json:"title"`
+    Description string `json:"description"`
+    CreatedAt   time.Time `json:"createdAt"`
+}
+
+func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    // Create the todo
     todo := &Todo{
-        ID:    generateID(),
-        Title: in.Title,
+        ID:          generateID(),
+        Title:       in.Title,
+        Description: in.Description,
+        CreatedAt:   time.Now(),
     }
+
+    // Save it (your business logic)
+    if err := s.db.Save(todo); err != nil {
+        return nil, err
+    }
+
+    // Return the created todo
     return todo, nil
 }
 ```
 
-### Output Only (No Input)
+**When to use**: Most CRUD operations (Create, Update), search operations, any method that receives and returns data.
+
+### Pattern 2: Output Only (No Input)
+
+When your method returns data but doesn't need any input:
 
 ```go
-func (s *S) Method(ctx context.Context) (*Output, error)
+func (s *Service) MethodName(ctx context.Context) (*OutputType, error)
 ```
 
-Use for methods that return data without input:
+**Example - Listing all todos:**
 
 ```go
-func (s *Service) List(ctx context.Context) (*TodoList, error) {
-    return &TodoList{Items: s.todos}, nil
+type ListOutput struct {
+    Items []*Todo `json:"items"`
+    Count int     `json:"count"`
+}
+
+func (s *TodoService) List(ctx context.Context) (*ListOutput, error) {
+    // Get all todos from database
+    todos, err := s.db.GetAllTodos()
+    if err != nil {
+        return nil, err
+    }
+
+    return &ListOutput{
+        Items: todos,
+        Count: len(todos),
+    }, nil
 }
 ```
 
-### Input Only (No Output)
+**When to use**: List operations, getting current status, dashboard data.
+
+### Pattern 3: Input Only (No Output)
+
+When your method receives data but doesn't return anything (except success/failure):
 
 ```go
-func (s *S) Method(ctx context.Context, in *Input) error
+func (s *Service) MethodName(ctx context.Context, in *InputType) error
 ```
 
-Use for methods that receive data but return nothing:
+**Example - Deleting a todo:**
 
 ```go
-func (s *Service) Delete(ctx context.Context, in *DeleteIn) error {
-    delete(s.todos, in.ID)
-    return nil
+type DeleteInput struct {
+    ID string `json:"id"`
+}
+
+func (s *TodoService) Delete(ctx context.Context, in *DeleteInput) error {
+    // Check if it exists
+    exists, err := s.db.Exists(in.ID)
+    if err != nil {
+        return err
+    }
+    if !exists {
+        return errors.New("todo not found")
+    }
+
+    // Delete it
+    return s.db.Delete(in.ID)
 }
 ```
 
-### Error Only (No Input or Output)
+**When to use**: Delete operations, fire-and-forget updates, operations where you only care about success/failure.
+
+### Pattern 4: No Input or Output
+
+When your method just does something without receiving or returning data:
 
 ```go
-func (s *S) Method(ctx context.Context) error
+func (s *Service) MethodName(ctx context.Context) error
 ```
 
-Use for health checks or side-effect operations:
+**Example - Health check:**
 
 ```go
-func (s *Service) Health(ctx context.Context) error {
-    if s.db.Ping() != nil {
+func (s *TodoService) Health(ctx context.Context) error {
+    // Check database connection
+    if err := s.db.Ping(); err != nil {
         return errors.New("database unavailable")
     }
+
+    // Check cache connection
+    if err := s.cache.Ping(); err != nil {
+        return errors.New("cache unavailable")
+    }
+
+    // All good!
     return nil
 }
 ```
 
-## Input/Output Types
+**When to use**: Health checks, ping endpoints, administrative operations.
 
-### Input Types
+## Input and Output Types
 
-Input types must be:
-- Pointer to a struct (`*MyInput`)
-- Have exported fields
-- Use `json` tags for field names
+### Defining Input Types
+
+Input types are structs that represent what clients send to your method. They should:
+
+1. **Be pointers** - Use `*MyInput` in your method signature
+2. **Have exported fields** - Fields must start with uppercase
+3. **Use json tags** - Tell Go how to name fields in JSON
 
 ```go
-type CreateIn struct {
-    Title       string `json:"title"`
+type CreateTodoInput struct {
+    // Required field
+    Title string `json:"title"`
+
+    // Optional field (will be zero value if not sent)
     Description string `json:"description"`
-    Priority    int    `json:"priority"`
+
+    // Field with different JSON name
+    DueDate time.Time `json:"due_date"`
+
+    // Field that won't appear in JSON
+    internalNote string  // lowercase = ignored
 }
 ```
 
-### Output Types
+### Defining Output Types
 
-Output types should be:
-- Pointer to a struct (`*MyOutput`)
-- Have exported fields
-- Use `json` tags for serialization
+Output types are what your method returns. Same rules apply:
 
 ```go
 type Todo struct {
     ID          string    `json:"id"`
     Title       string    `json:"title"`
     Description string    `json:"description"`
+    Completed   bool      `json:"completed"`
     CreatedAt   time.Time `json:"createdAt"`
+    UpdatedAt   time.Time `json:"updatedAt"`
 }
 ```
 
-## Complete Service Example
+### Nested Types
+
+You can nest types for complex data:
+
+```go
+type User struct {
+    ID      string   `json:"id"`
+    Name    string   `json:"name"`
+    Address *Address `json:"address"`
+}
+
+type Address struct {
+    Street  string `json:"street"`
+    City    string `json:"city"`
+    Country string `json:"country"`
+}
+```
+
+### Arrays/Slices
+
+Use slices for collections:
+
+```go
+type ListUsersOutput struct {
+    Users []*User `json:"users"`
+    Total int     `json:"total"`
+}
+```
+
+## What Is Context?
+
+You'll notice every method takes `context.Context` as its first parameter. Context is Go's way of passing request-scoped data and handling cancellation.
+
+### Why Context Matters
+
+1. **Cancellation**: If a client disconnects, context signals your method to stop
+
+```go
+func (s *Service) SlowOperation(ctx context.Context, in *Input) (*Output, error) {
+    for i := 0; i < 100; i++ {
+        // Check if client cancelled
+        if ctx.Err() != nil {
+            return nil, ctx.Err()
+        }
+        // Do work...
+    }
+    return &Output{}, nil
+}
+```
+
+2. **Timeouts**: Context can have deadlines
+
+```go
+func (s *Service) Query(ctx context.Context, in *Input) (*Output, error) {
+    // This will fail if context deadline is exceeded
+    result, err := s.db.QueryContext(ctx, "SELECT ...")
+    if err != nil {
+        return nil, err
+    }
+    // ...
+}
+```
+
+3. **Request-scoped values**: Pass things like user ID or request ID
+
+```go
+func (s *Service) Create(ctx context.Context, in *Input) (*Output, error) {
+    // Get the authenticated user from context (set by middleware)
+    userID := ctx.Value("userID").(string)
+
+    // Use it in your logic
+    todo := &Todo{
+        OwnerID: userID,
+        // ...
+    }
+    // ...
+}
+```
+
+## Method Naming Conventions
+
+Method names affect how they're exposed via REST:
+
+| Method Name | REST Endpoint | HTTP Method |
+|-------------|--------------|-------------|
+| `Create` or `CreateX` | `/resources` | POST |
+| `Get` or `GetX` | `/resources/{id}` | GET |
+| `List` or `ListX` | `/resources` | GET |
+| `Update` or `UpdateX` | `/resources/{id}` | PUT |
+| `Delete` or `DeleteX` | `/resources/{id}` | DELETE |
+| Other names | `/resources` | POST |
+
+**Examples:**
+
+```go
+func (s *Service) Create(...)      // POST /todos
+func (s *Service) CreateTodo(...)  // POST /todos
+func (s *Service) Get(...)         // GET /todos/{id}
+func (s *Service) GetByID(...)     // GET /todos/{id}
+func (s *Service) List(...)        // GET /todos
+func (s *Service) ListAll(...)     // GET /todos
+func (s *Service) Update(...)      // PUT /todos/{id}
+func (s *Service) Delete(...)      // DELETE /todos/{id}
+func (s *Service) Archive(...)     // POST /todos (other names default to POST)
+```
+
+## Complete Example
+
+Here's a full service with all the patterns:
 
 ```go
 package todo
@@ -122,57 +362,76 @@ package todo
 import (
     "context"
     "errors"
+    "fmt"
     "sync"
     "time"
 )
 
-// Service is the todo business logic.
+// Service handles todo operations
 type Service struct {
     mu    sync.RWMutex
     todos map[string]*Todo
     seq   int
 }
 
-// Domain types
+// NewService creates a new todo service
+func NewService() *Service {
+    return &Service{
+        todos: make(map[string]*Todo),
+    }
+}
+
+// === Domain Types ===
+
 type Todo struct {
     ID          string    `json:"id"`
     Title       string    `json:"title"`
+    Description string    `json:"description,omitempty"`
     Completed   bool      `json:"completed"`
     CreatedAt   time.Time `json:"createdAt"`
 }
 
-type TodoList struct {
+// === Input Types ===
+
+type CreateInput struct {
+    Title       string `json:"title"`
+    Description string `json:"description"`
+}
+
+type GetInput struct {
+    ID string `json:"id"`
+}
+
+type UpdateInput struct {
+    ID          string `json:"id"`
+    Title       string `json:"title"`
+    Description string `json:"description"`
+    Completed   bool   `json:"completed"`
+}
+
+type DeleteInput struct {
+    ID string `json:"id"`
+}
+
+// === Output Types ===
+
+type ListOutput struct {
     Items []*Todo `json:"items"`
-    Total int     `json:"total"`
+    Count int     `json:"count"`
 }
 
-// Input types
-type CreateIn struct {
-    Title string `json:"title"`
-}
+// === Errors ===
 
-type GetIn struct {
-    ID string `json:"id"`
-}
-
-type UpdateIn struct {
-    ID        string `json:"id"`
-    Title     string `json:"title"`
-    Completed bool   `json:"completed"`
-}
-
-type DeleteIn struct {
-    ID string `json:"id"`
-}
-
-// Errors
 var (
     ErrNotFound   = errors.New("todo not found")
-    ErrTitleEmpty = errors.New("title cannot be empty")
+    ErrTitleEmpty = errors.New("title is required")
 )
 
-// Create adds a new todo.
-func (s *Service) Create(ctx context.Context, in *CreateIn) (*Todo, error) {
+// === Methods ===
+
+// Create adds a new todo (Pattern 1: Input + Output)
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    // Validate
     if in.Title == "" {
         return nil, ErrTitleEmpty
     }
@@ -180,23 +439,24 @@ func (s *Service) Create(ctx context.Context, in *CreateIn) (*Todo, error) {
     s.mu.Lock()
     defer s.mu.Unlock()
 
-    if s.todos == nil {
-        s.todos = make(map[string]*Todo)
-    }
-
+    // Generate ID
     s.seq++
-    todo := &Todo{
-        ID:        fmt.Sprintf("todo_%d", s.seq),
-        Title:     in.Title,
-        CreatedAt: time.Now(),
-    }
-    s.todos[todo.ID] = todo
+    id := fmt.Sprintf("todo_%d", s.seq)
 
+    // Create todo
+    todo := &Todo{
+        ID:          id,
+        Title:       in.Title,
+        Description: in.Description,
+        CreatedAt:   time.Now(),
+    }
+
+    s.todos[id] = todo
     return todo, nil
 }
 
-// Get retrieves a todo by ID.
-func (s *Service) Get(ctx context.Context, in *GetIn) (*Todo, error) {
+// Get retrieves a todo by ID (Pattern 1: Input + Output)
+func (s *Service) Get(ctx context.Context, in *GetInput) (*Todo, error) {
     s.mu.RLock()
     defer s.mu.RUnlock()
 
@@ -207,8 +467,8 @@ func (s *Service) Get(ctx context.Context, in *GetIn) (*Todo, error) {
     return todo, nil
 }
 
-// List returns all todos.
-func (s *Service) List(ctx context.Context) (*TodoList, error) {
+// List returns all todos (Pattern 2: Output Only)
+func (s *Service) List(ctx context.Context) (*ListOutput, error) {
     s.mu.RLock()
     defer s.mu.RUnlock()
 
@@ -217,14 +477,14 @@ func (s *Service) List(ctx context.Context) (*TodoList, error) {
         items = append(items, t)
     }
 
-    return &TodoList{
+    return &ListOutput{
         Items: items,
-        Total: len(items),
+        Count: len(items),
     }, nil
 }
 
-// Update modifies an existing todo.
-func (s *Service) Update(ctx context.Context, in *UpdateIn) (*Todo, error) {
+// Update modifies a todo (Pattern 1: Input + Output)
+func (s *Service) Update(ctx context.Context, in *UpdateInput) (*Todo, error) {
     s.mu.Lock()
     defer s.mu.Unlock()
 
@@ -233,16 +493,20 @@ func (s *Service) Update(ctx context.Context, in *UpdateIn) (*Todo, error) {
         return nil, ErrNotFound
     }
 
+    // Update fields
     if in.Title != "" {
         todo.Title = in.Title
+    }
+    if in.Description != "" {
+        todo.Description = in.Description
     }
     todo.Completed = in.Completed
 
     return todo, nil
 }
 
-// Delete removes a todo.
-func (s *Service) Delete(ctx context.Context, in *DeleteIn) error {
+// Delete removes a todo (Pattern 3: Input Only)
+func (s *Service) Delete(ctx context.Context, in *DeleteInput) error {
     s.mu.Lock()
     defer s.mu.Unlock()
 
@@ -254,15 +518,16 @@ func (s *Service) Delete(ctx context.Context, in *DeleteIn) error {
     return nil
 }
 
-// Health checks service health.
+// Health checks service status (Pattern 4: No Input/Output)
 func (s *Service) Health(ctx context.Context) error {
+    // In a real service, check database/cache connections here
     return nil
 }
 ```
 
-## Testing Services
+## Testing Your Service
 
-Because services have no HTTP dependencies, testing is straightforward:
+One of the best things about Contract services is how easy they are to test. No HTTP mocking needed!
 
 ```go
 package todo_test
@@ -270,30 +535,51 @@ package todo_test
 import (
     "context"
     "testing"
-    "yourmodule/service/todo"
+
+    "yourproject/service/todo"
 )
 
 func TestCreate(t *testing.T) {
-    svc := &todo.Service{}
+    // Create service
+    svc := todo.NewService()
     ctx := context.Background()
 
-    result, err := svc.Create(ctx, &todo.CreateIn{Title: "Test"})
-    if err != nil {
-        t.Fatal(err)
-    }
+    // Call the method directly
+    result, err := svc.Create(ctx, &todo.CreateInput{
+        Title: "Buy groceries",
+    })
 
-    if result.Title != "Test" {
-        t.Errorf("expected title 'Test', got %q", result.Title)
+    // Check results
+    if err != nil {
+        t.Fatalf("unexpected error: %v", err)
+    }
+    if result.Title != "Buy groceries" {
+        t.Errorf("expected title 'Buy groceries', got %q", result.Title)
+    }
+    if result.ID == "" {
+        t.Error("expected ID to be set")
     }
 }
 
 func TestCreate_EmptyTitle(t *testing.T) {
-    svc := &todo.Service{}
+    svc := todo.NewService()
     ctx := context.Background()
 
-    _, err := svc.Create(ctx, &todo.CreateIn{Title: ""})
+    _, err := svc.Create(ctx, &todo.CreateInput{Title: ""})
+
     if err != todo.ErrTitleEmpty {
         t.Errorf("expected ErrTitleEmpty, got %v", err)
+    }
+}
+
+func TestGet_NotFound(t *testing.T) {
+    svc := todo.NewService()
+    ctx := context.Background()
+
+    _, err := svc.Get(ctx, &todo.GetInput{ID: "nonexistent"})
+
+    if err != todo.ErrNotFound {
+        t.Errorf("expected ErrNotFound, got %v", err)
     }
 }
 ```
@@ -302,32 +588,52 @@ func TestCreate_EmptyTitle(t *testing.T) {
 
 ### Keep Services Pure
 
-- No HTTP imports in service packages
-- No framework dependencies
-- Only standard library + your domain
+Your service should have no HTTP dependencies:
 
-### Use Context
+```go
+// Good: no HTTP imports
+package todo
 
-- Always accept `context.Context` as first argument
-- Honor context cancellation in long operations
-- Use context for request-scoped values
+import (
+    "context"
+    "time"
+)
 
-### Define Clear Boundaries
+// Bad: HTTP dependency in service
+package todo
 
-```
-service/
-├── todo/
-│   ├── todo.go      # Service and methods
-│   ├── types.go     # Input/output types (optional)
-│   └── errors.go    # Service errors (optional)
-└── user/
-    ├── user.go
-    └── types.go
+import (
+    "context"
+    "net/http"  // Don't do this!
+)
 ```
 
-### Handle Errors Gracefully
+### Inject Dependencies
 
-Return typed errors for expected conditions:
+Pass dependencies through the struct, not globally:
+
+```go
+// Good: dependency injection
+type Service struct {
+    db    Database
+    cache Cache
+}
+
+func NewService(db Database, cache Cache) *Service {
+    return &Service{db: db, cache: cache}
+}
+
+// Bad: global dependencies
+var globalDB *sql.DB
+
+func (s *Service) Create(...) {
+    globalDB.Query(...)  // Don't do this!
+}
+```
+
+### Use Custom Errors
+
+Define errors for expected conditions:
 
 ```go
 var (
@@ -335,10 +641,55 @@ var (
     ErrUnauthorized = errors.New("unauthorized")
     ErrInvalidInput = errors.New("invalid input")
 )
+
+func (s *Service) Get(ctx context.Context, in *GetInput) (*Todo, error) {
+    todo, ok := s.todos[in.ID]
+    if !ok {
+        return nil, ErrNotFound  // Clear, testable error
+    }
+    return todo, nil
+}
 ```
 
-## See Also
+## Common Questions
 
-- [Registration](/contract/register) - Register services to create contracts
-- [Type System](/contract/types) - How types are converted to schemas
-- [Contract Template](/cli/template-contract) - Complete project example
+### Can I have multiple return values?
+
+No, methods can only return `(*Output, error)` or `error`. If you need multiple values, wrap them in a struct:
+
+```go
+// Instead of: func Get() (*User, *Profile, error)
+// Use:
+type GetUserResult struct {
+    User    *User    `json:"user"`
+    Profile *Profile `json:"profile"`
+}
+
+func (s *Service) GetUser(ctx context.Context, in *GetInput) (*GetUserResult, error) {
+    // ...
+}
+```
+
+### Can I use non-pointer outputs?
+
+Currently, output types must be pointers to structs. This may change in the future.
+
+### How do I handle optional input fields?
+
+Use zero values - fields not sent in the request will have their zero value:
+
+```go
+type UpdateInput struct {
+    ID    string `json:"id"`          // Required
+    Title string `json:"title"`       // Optional: empty string if not sent
+    Count int    `json:"count"`       // Optional: 0 if not sent
+}
+```
+
+## What's Next?
+
+Now that you know how to write services:
+
+- **[Registration](/contract/register)** - How to register your service with Contract
+- **[Error Handling](/contract/errors)** - Handle errors consistently across protocols
+- **[Testing](/contract/testing)** - Deep dive into testing strategies

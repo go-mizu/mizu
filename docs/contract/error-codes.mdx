@@ -1,303 +1,455 @@
 ---
 title: "Error Codes Reference"
-description: "Complete reference for Contract error codes and their mappings"
+description: "Complete guide to all Contract error codes and how they map to different protocols"
 ---
 
 # Error Codes Reference
 
-Complete reference for all Contract error codes and their mappings to HTTP, JSON-RPC, gRPC, and tRPC protocols.
+Contract uses a standard set of error codes that work across all protocols. This page explains each code, when to use it, and how it maps to HTTP, JSON-RPC, and other protocols.
 
-## Error Code Table
+## Why Standard Error Codes?
 
-| Code | Description | HTTP | JSON-RPC | gRPC | tRPC |
-|------|-------------|------|----------|------|------|
-| `OK` | Success | 200 | - | 0 | - |
-| `CANCELED` | Operation canceled | 499 | -32001 | 1 | `INTERNAL_ERROR` |
-| `UNKNOWN` | Unknown error | 500 | -32000 | 2 | `INTERNAL_ERROR` |
-| `INVALID_ARGUMENT` | Invalid input | 400 | -32602 | 3 | `BAD_REQUEST` |
-| `DEADLINE_EXCEEDED` | Timeout | 504 | -32002 | 4 | `INTERNAL_ERROR` |
-| `NOT_FOUND` | Resource not found | 404 | -32601 | 5 | `NOT_FOUND` |
-| `ALREADY_EXISTS` | Resource exists | 409 | -32003 | 6 | `INTERNAL_ERROR` |
-| `PERMISSION_DENIED` | Forbidden | 403 | -32004 | 7 | `FORBIDDEN` |
-| `RESOURCE_EXHAUSTED` | Rate limited | 429 | -32005 | 8 | `INTERNAL_ERROR` |
-| `FAILED_PRECONDITION` | Precondition failed | 412 | -32006 | 9 | `BAD_REQUEST` |
-| `ABORTED` | Operation aborted | 409 | -32007 | 10 | `INTERNAL_ERROR` |
-| `OUT_OF_RANGE` | Value out of range | 400 | -32008 | 11 | `BAD_REQUEST` |
-| `UNIMPLEMENTED` | Not implemented | 501 | -32601 | 12 | `INTERNAL_ERROR` |
-| `INTERNAL` | Internal error | 500 | -32603 | 13 | `INTERNAL_ERROR` |
-| `UNAVAILABLE` | Service unavailable | 503 | -32009 | 14 | `INTERNAL_ERROR` |
-| `DATA_LOSS` | Data loss | 500 | -32010 | 15 | `INTERNAL_ERROR` |
-| `UNAUTHENTICATED` | Not authenticated | 401 | -32011 | 16 | `UNAUTHORIZED` |
+Different protocols handle errors differently:
+- **HTTP** uses status codes (404, 500, etc.)
+- **JSON-RPC** uses negative error codes (-32600, -32601, etc.)
+- **gRPC** uses its own codes (NOT_FOUND, INTERNAL, etc.)
 
-## Code Descriptions
-
-### OK
-
-Success. Not typically used in error responses.
+Contract uses protocol-agnostic codes that automatically translate to the right format:
 
 ```go
-// Used internally to indicate success
-code := contract.ErrCodeOK
+// You write this once:
+return nil, contract.ErrNotFound("user not found")
+
+// And it becomes:
+// - HTTP: 404 Not Found
+// - JSON-RPC: {"error": {"code": -32601, "message": "user not found"}}
+// - tRPC: {"error": {"code": "NOT_FOUND", "message": "user not found"}}
 ```
 
-### CANCELED
+## Quick Reference Table
 
-The operation was canceled, typically by the caller.
+| Error Code | HTTP | JSON-RPC | tRPC | Use When |
+|------------|------|----------|------|----------|
+| `INVALID_ARGUMENT` | 400 | -32602 | `BAD_REQUEST` | Bad input from user |
+| `NOT_FOUND` | 404 | -32601 | `NOT_FOUND` | Resource doesn't exist |
+| `ALREADY_EXISTS` | 409 | -32003 | `INTERNAL_ERROR` | Trying to create duplicate |
+| `PERMISSION_DENIED` | 403 | -32004 | `FORBIDDEN` | User can't do this |
+| `UNAUTHENTICATED` | 401 | -32011 | `UNAUTHORIZED` | User not logged in |
+| `RESOURCE_EXHAUSTED` | 429 | -32005 | `INTERNAL_ERROR` | Rate limited |
+| `FAILED_PRECONDITION` | 412 | -32006 | `BAD_REQUEST` | System not ready |
+| `INTERNAL` | 500 | -32603 | `INTERNAL_ERROR` | Server bug |
+| `UNAVAILABLE` | 503 | -32009 | `INTERNAL_ERROR` | Service down |
+| `UNIMPLEMENTED` | 501 | -32601 | `INTERNAL_ERROR` | Feature not built |
 
-```go
-contract.NewError(contract.ErrCodeCanceled, "request canceled by client")
-```
-
-**Use when:**
-- Client cancels the request
-- Context is canceled
-- User aborts an operation
-
-### UNKNOWN
-
-Unknown error. Use when the error doesn't fit other categories.
-
-```go
-contract.NewError(contract.ErrCodeUnknown, "an unexpected error occurred")
-```
-
-**Use when:**
-- Catching unexpected panics
-- Error from external system with no clear mapping
+## Detailed Error Code Guide
 
 ### INVALID_ARGUMENT
 
-Client specified an invalid argument.
+**Use when:** The user sent bad input.
 
 ```go
-contract.ErrInvalidArgument("title must not be empty")
-contract.ErrInvalidArgument("email is not a valid email address")
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    if in.Title == "" {
+        return nil, contract.ErrInvalidArgument("title is required")
+    }
+    if len(in.Title) > 500 {
+        return nil, contract.ErrInvalidArgument("title must be 500 characters or less")
+    }
+    if !isValidEmail(in.Email) {
+        return nil, contract.ErrInvalidArgument("email format is invalid")
+    }
+    // ...
+}
 ```
 
-**Use when:**
+**Common scenarios:**
 - Missing required field
-- Invalid format (email, URL, etc.)
-- Value constraint violated
-- Type mismatch
+- Value too long or too short
+- Invalid format (email, URL, phone)
+- Number out of allowed range
+- Wrong data type
 
-### DEADLINE_EXCEEDED
+**HTTP Status:** 400 Bad Request
 
-Deadline expired before operation could complete.
-
-```go
-contract.NewError(contract.ErrCodeDeadlineExceeded, "operation timed out")
-```
-
-**Use when:**
-- Context deadline exceeded
-- External service timeout
-- Long-running operation timeout
+---
 
 ### NOT_FOUND
 
-Requested resource not found.
+**Use when:** The requested item doesn't exist.
 
 ```go
-contract.ErrNotFound("user not found")
-contract.ErrNotFound("todo not found").WithDetail("id", todoID)
+func (s *Service) Get(ctx context.Context, in *GetInput) (*Todo, error) {
+    todo, ok := s.todos[in.ID]
+    if !ok {
+        return nil, contract.ErrNotFound("todo not found")
+    }
+    return todo, nil
+}
 ```
 
-**Use when:**
-- Resource doesn't exist
-- Resource was deleted
-- Invalid resource identifier
+**Common scenarios:**
+- Getting item by ID that doesn't exist
+- Referencing deleted resource
+- Looking up user by email that's not registered
+
+**With extra details:**
+```go
+return nil, contract.ErrNotFound("todo not found").WithDetail("id", in.ID)
+```
+
+**HTTP Status:** 404 Not Found
+
+---
 
 ### ALREADY_EXISTS
 
-Resource already exists.
+**Use when:** Trying to create something that already exists.
 
 ```go
-contract.NewError(contract.ErrCodeAlreadyExists, "user already exists")
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*User, error) {
+    if s.emailExists(in.Email) {
+        return nil, contract.ErrAlreadyExists("email already registered")
+    }
+    // ...
+}
 ```
 
-**Use when:**
-- Creating a resource that already exists
-- Unique constraint violation
-- Duplicate key error
+**Common scenarios:**
+- Creating user with existing email
+- Creating resource with duplicate unique ID
+- Adding item that's already in a list
+
+**HTTP Status:** 409 Conflict
+
+---
 
 ### PERMISSION_DENIED
 
-Caller doesn't have permission. Use `UNAUTHENTICATED` if identity is unknown.
+**Use when:** User is logged in but not allowed to do this.
 
 ```go
-contract.ErrPermissionDenied("admin access required")
-contract.ErrPermissionDenied("cannot modify this resource")
+func (s *Service) Delete(ctx context.Context, in *DeleteInput) error {
+    user := UserFromContext(ctx)
+    todo := s.todos[in.ID]
+
+    // Only owner or admin can delete
+    if todo.OwnerID != user.ID && user.Role != "admin" {
+        return contract.ErrPermissionDenied("you can only delete your own todos")
+    }
+    // ...
+}
 ```
 
-**Use when:**
-- User lacks required role
-- Resource ownership check fails
-- Action not allowed for current user
+**Common scenarios:**
+- User trying to access another user's data
+- User without admin role trying admin action
+- User trying to modify read-only resource
 
-### RESOURCE_EXHAUSTED
+**HTTP Status:** 403 Forbidden
 
-Resource has been exhausted (quotas, rate limits).
+**Note:** Use `UNAUTHENTICATED` if user isn't logged in at all.
 
-```go
-contract.NewError(contract.ErrCodeResourceExhausted, "rate limit exceeded")
-```
-
-**Use when:**
-- Rate limit hit
-- Quota exceeded
-- Storage full
-- Too many concurrent requests
-
-### FAILED_PRECONDITION
-
-Operation rejected because system is not in required state.
-
-```go
-contract.NewError(contract.ErrCodeFailedPrecondition, "account must be verified first")
-```
-
-**Use when:**
-- Resource in wrong state
-- Required setup not complete
-- Dependency not satisfied
-
-### ABORTED
-
-Operation was aborted, typically due to concurrency issue.
-
-```go
-contract.NewError(contract.ErrCodeAborted, "concurrent modification detected")
-```
-
-**Use when:**
-- Optimistic locking failure
-- Transaction conflict
-- Concurrent modification
-
-### OUT_OF_RANGE
-
-Value is out of valid range.
-
-```go
-contract.NewError(contract.ErrCodeOutOfRange, "page must be between 1 and 100")
-```
-
-**Use when:**
-- Pagination beyond data
-- Numeric value outside bounds
-- Index out of range
-
-### UNIMPLEMENTED
-
-Operation is not implemented.
-
-```go
-contract.NewError(contract.ErrCodeUnimplemented, "feature not yet implemented")
-```
-
-**Use when:**
-- Feature not built yet
-- Method not supported
-- Version incompatibility
-
-### INTERNAL
-
-Internal error. Don't expose details to clients.
-
-```go
-contract.ErrInternal("service temporarily unavailable")
-
-// With cause for logging (cause not exposed to client)
-contract.ErrInternal("failed to process request").WithCause(dbErr)
-```
-
-**Use when:**
-- Database error
-- Unexpected server error
-- Bug in server code
-
-### UNAVAILABLE
-
-Service is currently unavailable.
-
-```go
-contract.NewError(contract.ErrCodeUnavailable, "service is under maintenance")
-```
-
-**Use when:**
-- Server overloaded
-- Maintenance mode
-- Dependent service down
-
-### DATA_LOSS
-
-Unrecoverable data loss or corruption.
-
-```go
-contract.NewError(contract.ErrCodeDataLoss, "data corruption detected")
-```
-
-**Use when:**
-- Data corruption detected
-- Backup not available
-- Unrecoverable state
+---
 
 ### UNAUTHENTICATED
 
-Request doesn't have valid authentication credentials.
+**Use when:** User needs to log in first.
 
 ```go
-contract.ErrUnauthenticated("invalid or expired token")
-contract.ErrUnauthenticated("authentication required")
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    user := UserFromContext(ctx)
+    if user == nil {
+        return nil, contract.ErrUnauthenticated("please log in first")
+    }
+    // ...
+}
 ```
 
-**Use when:**
-- No authentication provided
-- Token expired
-- Invalid credentials
+**Common scenarios:**
+- No authentication token provided
+- Token has expired
+- Token is invalid or malformed
 
-## JSON-RPC Error Codes
+**HTTP Status:** 401 Unauthorized
 
-Standard JSON-RPC error codes:
+**vs PERMISSION_DENIED:**
+- `UNAUTHENTICATED`: "Who are you?" (not logged in)
+- `PERMISSION_DENIED`: "I know who you are, but you can't do this" (logged in but not allowed)
 
-| Code | Message |
-|------|---------|
-| -32700 | Parse error |
-| -32600 | Invalid Request |
-| -32601 | Method not found |
-| -32602 | Invalid params |
-| -32603 | Internal error |
-| -32000 to -32099 | Server error (reserved) |
+---
 
-Contract uses -32000 range for custom errors.
+### RESOURCE_EXHAUSTED
 
-## HTTP Status Code Mapping
+**Use when:** Some limit has been reached.
 
 ```go
-// Get HTTP status for an error
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    if s.rateLimiter.IsExceeded(ctx) {
+        return nil, contract.ErrResourceExhausted("too many requests, try again later")
+    }
+    if s.storage.IsFull() {
+        return nil, contract.ErrResourceExhausted("storage quota exceeded")
+    }
+    // ...
+}
+```
+
+**Common scenarios:**
+- Rate limit exceeded
+- Storage quota full
+- Too many items created
+- Concurrent request limit
+
+**HTTP Status:** 429 Too Many Requests
+
+---
+
+### FAILED_PRECONDITION
+
+**Use when:** System isn't in the right state for this operation.
+
+```go
+func (s *Service) Publish(ctx context.Context, in *PublishInput) error {
+    article := s.articles[in.ID]
+
+    if article.Status != "draft" {
+        return contract.ErrFailedPrecondition("can only publish draft articles")
+    }
+    if !article.HasContent {
+        return contract.ErrFailedPrecondition("article has no content")
+    }
+    // ...
+}
+```
+
+**Common scenarios:**
+- Resource in wrong state for operation
+- Required setup not complete
+- Dependency not satisfied
+- Order of operations violated
+
+**HTTP Status:** 412 Precondition Failed
+
+---
+
+### INTERNAL
+
+**Use when:** Something unexpected went wrong on the server.
+
+```go
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    err := s.db.Save(todo)
+    if err != nil {
+        // Log the real error for debugging
+        log.Printf("database error: %v", err)
+
+        // Return generic message to user (don't leak internals!)
+        return nil, contract.ErrInternal("failed to save todo")
+    }
+    // ...
+}
+```
+
+**With cause for logging:**
+```go
+return nil, contract.ErrInternal("failed to save").WithCause(dbErr)
+// The cause is logged but NOT exposed to the client
+```
+
+**Common scenarios:**
+- Database errors
+- Unexpected nil values
+- Bug in your code
+- External service returned unexpected response
+
+**HTTP Status:** 500 Internal Server Error
+
+**Important:** Never expose internal details to clients:
+```go
+// Bad: Leaks internal info
+contract.ErrInternal("postgres: connection refused to 10.0.0.1:5432")
+
+// Good: Safe message
+contract.ErrInternal("database temporarily unavailable")
+```
+
+---
+
+### UNAVAILABLE
+
+**Use when:** Service is temporarily unavailable.
+
+```go
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    if s.isInMaintenanceMode() {
+        return nil, contract.ErrUnavailable("service is under maintenance")
+    }
+    if !s.db.IsConnected() {
+        return nil, contract.ErrUnavailable("service temporarily unavailable")
+    }
+    // ...
+}
+```
+
+**Common scenarios:**
+- Planned maintenance
+- Database connection lost
+- Dependent service is down
+- Server overloaded
+
+**HTTP Status:** 503 Service Unavailable
+
+**vs INTERNAL:**
+- `UNAVAILABLE`: Temporary problem, try again later
+- `INTERNAL`: Something is broken, might need fixing
+
+---
+
+### UNIMPLEMENTED
+
+**Use when:** Feature doesn't exist yet.
+
+```go
+func (s *Service) Export(ctx context.Context, in *ExportInput) (*File, error) {
+    if in.Format == "pdf" {
+        return nil, contract.ErrUnimplemented("PDF export coming soon")
+    }
+    // ...
+}
+```
+
+**Common scenarios:**
+- Feature not built yet
+- Method stub that's not implemented
+- Format or option not supported
+
+**HTTP Status:** 501 Not Implemented
+
+---
+
+### Other Error Codes
+
+These are less commonly used but available:
+
+| Code | HTTP | Use When |
+|------|------|----------|
+| `CANCELED` | 499 | Request was canceled by client |
+| `UNKNOWN` | 500 | Error doesn't fit other categories |
+| `DEADLINE_EXCEEDED` | 504 | Operation timed out |
+| `ABORTED` | 409 | Concurrent modification conflict |
+| `OUT_OF_RANGE` | 400 | Pagination or index out of bounds |
+| `DATA_LOSS` | 500 | Unrecoverable data corruption |
+
+## Creating Errors
+
+### Convenience Functions
+
+The most common errors have shortcut functions:
+
+```go
+contract.ErrNotFound("user not found")
+contract.ErrInvalidArgument("title required")
+contract.ErrPermissionDenied("admin only")
+contract.ErrUnauthenticated("please log in")
+contract.ErrInternal("something went wrong")
+contract.ErrAlreadyExists("email taken")
+contract.ErrResourceExhausted("rate limit exceeded")
+contract.ErrUnimplemented("coming soon")
+contract.ErrUnavailable("maintenance mode")
+```
+
+### General Constructor
+
+For other codes, use `NewError`:
+
+```go
+contract.NewError(contract.ErrCodeCanceled, "request was canceled")
+contract.NewError(contract.ErrCodeDeadlineExceeded, "operation timed out")
+contract.NewError(contract.ErrCodeAborted, "concurrent modification")
+```
+
+### With Format String
+
+```go
+contract.Errorf(contract.ErrCodeNotFound, "user %s not found", userID)
+```
+
+## Adding Context to Errors
+
+### Add Details
+
+Include structured data for debugging:
+
+```go
+err := contract.ErrNotFound("todo not found").
+    WithDetail("id", todoID).
+    WithDetail("searched_at", time.Now())
+```
+
+### Add Multiple Details
+
+```go
+err := contract.ErrInvalidArgument("validation failed").
+    WithDetails(map[string]any{
+        "field": "email",
+        "value": email,
+        "reason": "invalid format",
+    })
+```
+
+### Add Cause
+
+Wrap the underlying error (useful for logging):
+
+```go
+result, err := s.db.Query(...)
+if err != nil {
+    return nil, contract.ErrInternal("database query failed").WithCause(err)
+    // The cause is available for logging but NOT sent to the client
+}
+```
+
+## Checking Error Types
+
+### In Your Code
+
+```go
+import "errors"
+
+_, err := svc.Get(ctx, &GetInput{ID: "123"})
+if err != nil {
+    var contractErr *contract.Error
+    if errors.As(err, &contractErr) {
+        switch contractErr.Code {
+        case contract.ErrCodeNotFound:
+            // Handle not found
+        case contract.ErrCodePermissionDenied:
+            // Handle forbidden
+        default:
+            // Handle other errors
+        }
+    }
+}
+```
+
+### Get HTTP Status
+
+```go
 err := contract.ErrNotFound("not found")
-status := err.HTTPStatus() // 404
-
-// Convert HTTP status to error code
-code := contract.HTTPStatusToErrorCode(404) // ErrCodeNotFound
+status := err.HTTPStatus()  // Returns 404
 ```
 
-## gRPC Compatibility
-
-Error codes are aligned with gRPC status codes:
+### Convert HTTP Status to Error Code
 
 ```go
-import "google.golang.org/grpc/codes"
-
-err := contract.ErrNotFound("not found")
-grpcCode := err.GRPCCode() // codes.NotFound (5)
+code := contract.HTTPStatusToErrorCode(404)  // Returns ErrCodeNotFound
 ```
 
-## Transport-Specific Formats
+## How Errors Look in Different Protocols
 
 ### REST
 
-```http
+```
 HTTP/1.1 404 Not Found
 Content-Type: text/plain
 
@@ -336,52 +488,95 @@ user not found
   "id": 1,
   "result": {
     "content": [
-      {
-        "type": "text",
-        "text": "user not found"
-      }
+      {"type": "text", "text": "user not found"}
     ],
     "isError": true
   }
 }
 ```
 
-## Best Practices
+## Decision Guide
 
-### Choose the Right Code
+Use this flowchart to pick the right error code:
 
-| Situation | Use |
-|-----------|-----|
-| Bad user input | `INVALID_ARGUMENT` |
-| Resource missing | `NOT_FOUND` |
-| Not logged in | `UNAUTHENTICATED` |
-| Logged in but not allowed | `PERMISSION_DENIED` |
-| Server bug | `INTERNAL` |
-| Rate limited | `RESOURCE_EXHAUSTED` |
-| Service down | `UNAVAILABLE` |
-
-### Provide Context
-
-```go
-// Good: specific message with context
-contract.ErrNotFound("user not found").WithDetail("userId", id)
-
-// Bad: generic message
-contract.ErrNotFound("not found")
+```
+Is the user logged in?
+├─ No → UNAUTHENTICATED
+└─ Yes (or not required)
+   │
+   Is the input valid?
+   ├─ No → INVALID_ARGUMENT
+   └─ Yes
+      │
+      Does the resource exist?
+      ├─ No → NOT_FOUND
+      └─ Yes
+         │
+         Can this user access it?
+         ├─ No → PERMISSION_DENIED
+         └─ Yes
+            │
+            Is the system ready?
+            ├─ No, maintenance → UNAVAILABLE
+            ├─ No, rate limit → RESOURCE_EXHAUSTED
+            ├─ No, wrong state → FAILED_PRECONDITION
+            └─ Yes
+               │
+               Did something break?
+               ├─ Yes → INTERNAL
+               └─ No → (success!)
 ```
 
-### Don't Leak Internals
+## Best Practices
+
+### 1. Be Specific But Safe
 
 ```go
-// Good: safe message
-contract.ErrInternal("database error")
+// Good: Specific but safe
+contract.ErrNotFound("user not found")
 
-// Bad: exposes internals
-contract.ErrInternal("postgres: connection refused to 10.0.0.1:5432")
+// Bad: Leaks information
+contract.ErrNotFound("user with email admin@company.com not found")
+```
+
+### 2. Use the Right Code
+
+```go
+// Good: UNAUTHENTICATED for "not logged in"
+if user == nil {
+    return nil, contract.ErrUnauthenticated("please log in")
+}
+
+// Bad: Using INTERNAL for auth failures
+if user == nil {
+    return nil, contract.ErrInternal("no user")  // Wrong code!
+}
+```
+
+### 3. Log Internal Errors
+
+```go
+if err := s.db.Save(item); err != nil {
+    // Log the real error
+    log.Printf("database error: %v", err)
+
+    // Return safe error to user
+    return nil, contract.ErrInternal("failed to save")
+}
+```
+
+### 4. Add Context When Helpful
+
+```go
+// Helpful for debugging
+contract.ErrNotFound("todo not found").WithDetail("id", todoID)
+
+// Not helpful (obvious from context)
+contract.ErrNotFound("not found").WithDetail("type", "todo")
 ```
 
 ## See Also
 
-- [Error Handling](/contract/errors) - Error handling patterns
-- [Transports Overview](/contract/transports-overview) - How errors map
-- [API Reference](/contract/api-reference) - Complete API reference
+- [Error Handling](/contract/errors) - Error patterns and examples
+- [Transports Overview](/contract/transports-overview) - How errors travel
+- [API Reference](/contract/api-reference) - Complete error API

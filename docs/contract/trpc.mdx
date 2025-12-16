@@ -1,26 +1,51 @@
 ---
 title: "tRPC Transport"
-description: "tRPC-like HTTP transport with typed response envelopes"
+description: "Simple HTTP-based RPC with typed responses - great for TypeScript frontends"
 ---
 
 # tRPC Transport
 
-The tRPC transport provides a simple HTTP-based RPC protocol inspired by [tRPC](https://trpc.io/). It uses typed response envelopes and provides introspection for client generation.
+The tRPC transport provides a simple way to call your service methods over HTTP. Each method becomes its own endpoint, and responses come in a predictable format. It's inspired by [tRPC](https://trpc.io/) and works great with TypeScript frontends.
+
+## What Is tRPC?
+
+tRPC is a pattern where:
+- Each method has its own URL: `/trpc/Create`, `/trpc/List`, `/trpc/Get`
+- All requests are POST (simple and consistent)
+- Responses always have the same structure (called an "envelope")
+
+The name "RPC" stands for "Remote Procedure Call" - you're calling procedures (methods) on a remote server.
+
+## Why Use tRPC?
+
+| Feature | Benefit |
+|---------|---------|
+| Simple URLs | One endpoint per method, easy to understand |
+| Consistent responses | Always know where to find data or errors |
+| Introspection | Built-in endpoint to discover all methods |
+| TypeScript-friendly | Response format maps cleanly to TypeScript types |
 
 ## Quick Start
+
+Add tRPC support in a few lines:
 
 ```go
 import "github.com/go-mizu/mizu/contract/transport/trpc"
 
-svc, _ := contract.Register("todo", &todo.Service{})
+// Register your service
+svc, _ := contract.Register("todo", &TodoService{})
 
+// Create HTTP server
 mux := http.NewServeMux()
+
+// Mount tRPC endpoints
 trpc.Mount(mux, "/trpc", svc)
 
+// Start server
 http.ListenAndServe(":8080", mux)
 ```
 
-Call procedures:
+Now call your methods:
 
 ```bash
 curl -X POST http://localhost:8080/trpc/Create \
@@ -28,33 +53,52 @@ curl -X POST http://localhost:8080/trpc/Create \
   -d '{"title": "Buy milk"}'
 ```
 
-## Endpoint Layout
+## How URLs Are Structured
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/trpc/<procedure>` | POST | Call a procedure |
-| `/trpc.meta` | GET | Introspection (methods + schemas) |
+tRPC creates these endpoints:
 
-## Procedure Names
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/trpc/{procedure}` | POST | Call any method |
+| `/trpc.meta` | GET | Get list of all methods and their schemas |
 
-Procedures can be called with or without the service prefix:
+### Calling Methods
+
+Every method in your service becomes a procedure you can call:
 
 ```bash
-# Both work
-curl -X POST http://localhost:8080/trpc/Create -d '...'
-curl -X POST http://localhost:8080/trpc/todo.Create -d '...'
+# Call the Create method
+curl -X POST http://localhost:8080/trpc/Create -d '{"title": "Test"}'
+
+# Call the List method
+curl -X POST http://localhost:8080/trpc/List
+
+# Call the Get method
+curl -X POST http://localhost:8080/trpc/Get -d '{"id": "1"}'
+
+# Call the Delete method
+curl -X POST http://localhost:8080/trpc/Delete -d '{"id": "1"}'
 ```
 
-| URL | Resolves To |
-|-----|-------------|
-| `/trpc/Create` | `Service.Create` |
-| `/trpc/todo.Create` | `Service.Create` (if service name is "todo") |
+### With or Without Service Prefix
 
-## Response Envelope
+You can optionally include the service name:
 
-All responses use a typed envelope:
+```bash
+# Both work the same
+curl -X POST http://localhost:8080/trpc/Create -d '{"title": "Test"}'
+curl -X POST http://localhost:8080/trpc/todo.Create -d '{"title": "Test"}'
+```
 
-### Success
+The prefix helps when you have multiple services on the same server.
+
+## Response Format
+
+tRPC wraps all responses in an "envelope" - a consistent structure that always looks the same.
+
+### Successful Response
+
+When your method succeeds, the response looks like this:
 
 ```json
 {
@@ -68,42 +112,74 @@ All responses use a typed envelope:
 }
 ```
 
-### Error
+The actual data from your method is inside `result.data`.
+
+### Error Response
+
+When your method returns an error, the response looks like this:
 
 ```json
 {
   "error": {
-    "code": "INTERNAL_ERROR",
+    "code": "NOT_FOUND",
     "message": "todo not found"
   }
 }
 ```
 
+The error details are inside `error`.
+
+### Why Envelopes?
+
+Envelopes make client code simple:
+
+```typescript
+const response = await fetch('/trpc/Create', {
+  method: 'POST',
+  body: JSON.stringify({ title: 'Test' })
+});
+const envelope = await response.json();
+
+if (envelope.error) {
+  // Handle error
+  console.error(envelope.error.message);
+} else {
+  // Use result
+  console.log(envelope.result.data);
+}
+```
+
+You always check the same place for errors, and data is always in the same place.
+
 ## Error Codes
 
-| Code | Description |
-|------|-------------|
-| `BAD_REQUEST` | Invalid request (transport error) |
-| `INTERNAL_ERROR` | Application error |
-| `NOT_FOUND` | Resource not found |
-| `UNAUTHORIZED` | Authentication required |
-| `FORBIDDEN` | Permission denied |
+tRPC uses these error codes:
 
-## HTTP Status Codes
+| Code | Meaning | When It's Used |
+|------|---------|----------------|
+| `BAD_REQUEST` | Invalid request | Malformed JSON, unknown method |
+| `INTERNAL_ERROR` | Server error | Your method threw an error |
+| `NOT_FOUND` | Resource not found | Item doesn't exist |
+| `UNAUTHORIZED` | Not logged in | Missing authentication |
+| `FORBIDDEN` | Not allowed | User lacks permission |
 
-| Scenario | Status |
-|----------|--------|
-| Success | 200 |
-| Application error | 200 (error in envelope) |
-| Invalid JSON | 400 |
-| Unknown procedure | 400 |
-| Method not allowed | 405 |
+### HTTP Status Codes
 
-This follows tRPC's convention where application errors return HTTP 200 with the error in the response envelope.
+Most responses return HTTP 200, even for errors! The error is in the response body:
 
-## Introspection
+| Scenario | HTTP Status | Body Contains |
+|----------|-------------|---------------|
+| Success | 200 | `{"result": {...}}` |
+| Your method returns error | 200 | `{"error": {...}}` |
+| Invalid JSON sent | 400 | `{"error": {...}}` |
+| Unknown method | 400 | `{"error": {...}}` |
+| Wrong HTTP method (GET instead of POST) | 405 | Error message |
 
-Get service metadata at `.meta`:
+This follows tRPC convention - it makes client code simpler because you don't need to check HTTP status codes.
+
+## Discovering Available Methods
+
+The `.meta` endpoint tells you what methods exist:
 
 ```bash
 curl http://localhost:8080/trpc.meta
@@ -127,6 +203,13 @@ Response:
       "fullName": "todo.List",
       "proc": "todo.List",
       "output": {"id": "todo.ListOutput", "name": "ListOutput"}
+    },
+    {
+      "name": "Get",
+      "fullName": "todo.Get",
+      "proc": "todo.Get",
+      "input": {"id": "todo.GetInput", "name": "GetInput"},
+      "output": {"id": "todo.Todo", "name": "Todo"}
     }
   ],
   "schemas": [
@@ -137,23 +220,218 @@ Response:
         "properties": {"title": {"type": "string"}},
         "required": ["title"]
       }
+    },
+    {
+      "id": "todo.Todo",
+      "json": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "title": {"type": "string"},
+          "done": {"type": "boolean"}
+        }
+      }
     }
   ]
 }
 ```
 
-Use this for:
-- Client code generation
-- API documentation
-- Schema validation
+This metadata is useful for:
+- **Generating TypeScript types** - Automatically create interfaces
+- **Building documentation** - Show available methods
+- **Client code generation** - Create typed API clients
+
+## Complete Example
+
+### Step 1: Define Your Service
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "net/http"
+    "sync"
+
+    "github.com/go-mizu/mizu/contract"
+    "github.com/go-mizu/mizu/contract/transport/trpc"
+)
+
+// TodoService is our business logic
+type TodoService struct {
+    mu     sync.RWMutex
+    todos  map[string]*Todo
+    nextID int
+}
+
+// Types
+type Todo struct {
+    ID    string `json:"id"`
+    Title string `json:"title"`
+    Done  bool   `json:"done"`
+}
+
+type CreateInput struct {
+    Title string `json:"title"`
+}
+
+type GetInput struct {
+    ID string `json:"id"`
+}
+
+type ListOutput struct {
+    Items []*Todo `json:"items"`
+}
+
+// Methods
+
+func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    s.nextID++
+    todo := &Todo{
+        ID:    fmt.Sprintf("%d", s.nextID),
+        Title: in.Title,
+    }
+    s.todos[todo.ID] = todo
+    return todo, nil
+}
+
+func (s *TodoService) List(ctx context.Context) (*ListOutput, error) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
+    items := make([]*Todo, 0, len(s.todos))
+    for _, t := range s.todos {
+        items = append(items, t)
+    }
+    return &ListOutput{Items: items}, nil
+}
+
+func (s *TodoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
+    todo, ok := s.todos[in.ID]
+    if !ok {
+        return nil, contract.ErrNotFound("todo not found")
+    }
+    return todo, nil
+}
+
+func (s *TodoService) Health(ctx context.Context) error {
+    return nil
+}
+```
+
+### Step 2: Start the Server
+
+```go
+func main() {
+    todoService := &TodoService{
+        todos: make(map[string]*Todo),
+    }
+
+    svc, _ := contract.Register("todo", todoService)
+
+    mux := http.NewServeMux()
+    trpc.Mount(mux, "/trpc", svc)
+
+    fmt.Println("Server running at http://localhost:8080")
+    fmt.Println("tRPC endpoint: /trpc/{method}")
+    fmt.Println("Metadata: /trpc.meta")
+    http.ListenAndServe(":8080", mux)
+}
+```
+
+### Step 3: Test It
+
+```bash
+# Create a todo
+curl -X POST http://localhost:8080/trpc/Create \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Buy groceries"}'
+# {"result":{"data":{"id":"1","title":"Buy groceries","done":false}}}
+
+# List all todos
+curl -X POST http://localhost:8080/trpc/List
+# {"result":{"data":{"items":[{"id":"1","title":"Buy groceries","done":false}]}}}
+
+# Get a specific todo
+curl -X POST http://localhost:8080/trpc/Get \
+  -H "Content-Type: application/json" \
+  -d '{"id": "1"}'
+# {"result":{"data":{"id":"1","title":"Buy groceries","done":false}}}
+
+# Health check (no input, no output)
+curl -X POST http://localhost:8080/trpc/Health
+# {"result":{"data":null}}
+
+# Try to get non-existent todo
+curl -X POST http://localhost:8080/trpc/Get \
+  -H "Content-Type: application/json" \
+  -d '{"id": "999"}'
+# {"error":{"code":"NOT_FOUND","message":"todo not found"}}
+
+# Try to call unknown method
+curl -X POST http://localhost:8080/trpc/Unknown
+# HTTP 400
+# {"error":{"code":"BAD_REQUEST","message":"unknown procedure"}}
+```
+
+## Input Handling
+
+### Methods That Need Input
+
+Send a JSON object:
+
+```bash
+curl -X POST http://localhost:8080/trpc/Create \
+  -d '{"title": "Test"}'
+```
+
+### Methods Without Input
+
+Send nothing, an empty body, or `null`:
+
+```bash
+# All three work the same
+curl -X POST http://localhost:8080/trpc/List
+curl -X POST http://localhost:8080/trpc/List -d ''
+curl -X POST http://localhost:8080/trpc/List -d 'null'
+```
+
+### Invalid Input
+
+Sending the wrong type returns an error:
+
+```bash
+curl -X POST http://localhost:8080/trpc/Create -d '[1,2,3]'
+# {"error":{"code":"BAD_REQUEST","message":"input must be a JSON object"}}
+```
+
+## Multiple Services
+
+Mount different services at different paths:
+
+```go
+todoSvc, _ := contract.Register("todo", &TodoService{})
+userSvc, _ := contract.Register("user", &UserService{})
+
+mux := http.NewServeMux()
+trpc.Mount(mux, "/trpc/todo", todoSvc)
+trpc.Mount(mux, "/trpc/user", userSvc)
+
+// Call: /trpc/todo/Create, /trpc/user/Create
+```
 
 ## Configuration Options
 
-The new `trpc` package provides additional configuration:
+Customize the tRPC handler:
 
 ```go
-import "github.com/go-mizu/mizu/contract/transport/trpc"
-
 trpc.Mount(mux, "/trpc", svc,
     // Custom method resolver
     trpc.WithResolver(customResolver),
@@ -163,218 +441,155 @@ trpc.Mount(mux, "/trpc", svc,
 )
 ```
 
-### Options
-
 | Option | Description |
 |--------|-------------|
-| `WithResolver` | Custom method name resolution |
-| `WithInvoker` | Custom method invocation |
+| `WithResolver` | Custom logic for finding methods by name |
+| `WithInvoker` | Add middleware (logging, auth, etc.) |
 
-## Complete Example
+## Using with Other Transports
 
-### Service
-
-```go
-package todo
-
-import "context"
-
-type Service struct{}
-
-type CreateInput struct {
-    Title string `json:"title"`
-}
-
-type Todo struct {
-    ID    string `json:"id"`
-    Title string `json:"title"`
-    Done  bool   `json:"done"`
-}
-
-type ListOutput struct {
-    Items []*Todo `json:"items"`
-}
-
-type GetInput struct {
-    ID string `json:"id"`
-}
-
-func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
-    return &Todo{ID: "1", Title: in.Title}, nil
-}
-
-func (s *Service) List(ctx context.Context) (*ListOutput, error) {
-    return &ListOutput{Items: []*Todo{}}, nil
-}
-
-func (s *Service) Get(ctx context.Context, in *GetInput) (*Todo, error) {
-    return &Todo{ID: in.ID, Title: "Sample"}, nil
-}
-
-func (s *Service) Health(ctx context.Context) error {
-    return nil
-}
-```
-
-### Server
+Mount all transports together:
 
 ```go
-package main
-
 import (
-    "net/http"
-
     "github.com/go-mizu/mizu/contract"
     "github.com/go-mizu/mizu/contract/transport/trpc"
-    "yourmodule/todo"
+    "github.com/go-mizu/mizu/contract/transport/mcp"
 )
 
-func main() {
-    svc, _ := contract.Register("todo", &todo.Service{})
-
-    mux := http.NewServeMux()
-    trpc.Mount(mux, "/trpc", svc)
-
-    http.ListenAndServe(":8080", mux)
-}
-```
-
-### Client Examples
-
-**Create:**
-```bash
-curl -X POST http://localhost:8080/trpc/Create \
-  -H "Content-Type: application/json" \
-  -d '{"title": "Buy groceries"}'
-# {"result":{"data":{"id":"1","title":"Buy groceries","done":false}}}
-```
-
-**List:**
-```bash
-curl -X POST http://localhost:8080/trpc/List
-# {"result":{"data":{"items":[]}}}
-```
-
-**Get (with input):**
-```bash
-curl -X POST http://localhost:8080/trpc/Get \
-  -H "Content-Type: application/json" \
-  -d '{"id": "123"}'
-# {"result":{"data":{"id":"123","title":"Sample","done":false}}}
-```
-
-**Health (void method):**
-```bash
-curl -X POST http://localhost:8080/trpc/Health
-# {"result":{"data":null}}
-```
-
-**Error:**
-```bash
-curl -X POST http://localhost:8080/trpc/Unknown
-# HTTP 400
-# {"error":{"code":"BAD_REQUEST","message":"unknown procedure"}}
-```
-
-## Input Handling
-
-### With Input
-
-Methods with input accept JSON objects:
-
-```bash
-curl -X POST http://localhost:8080/trpc/Create \
-  -d '{"title": "Test"}'
-```
-
-### Without Input
-
-Methods without input accept:
-- Empty body
-- `null`
-
-```bash
-# All valid
-curl -X POST http://localhost:8080/trpc/List
-curl -X POST http://localhost:8080/trpc/List -d ''
-curl -X POST http://localhost:8080/trpc/List -d 'null'
-```
-
-### Invalid Input
-
-Non-object input for methods expecting input returns an error:
-
-```bash
-curl -X POST http://localhost:8080/trpc/Create -d '[1,2,3]'
-# HTTP 400
-# {"error":{"code":"BAD_REQUEST","message":"input must be a JSON object"}}
-```
-
-## Multiple Services
-
-Mount multiple services at different paths:
-
-```go
-todoSvc, _ := contract.Register("todo", &todo.Service{})
-userSvc, _ := contract.Register("user", &user.Service{})
-
-mux := http.NewServeMux()
-trpc.Mount(mux, "/trpc/todo", todoSvc)
-trpc.Mount(mux, "/trpc/user", userSvc)
-
-// Call: /trpc/todo/Create, /trpc/user/Create
-```
-
-## With Other Transports
-
-Combine with REST, JSON-RPC, and MCP:
-
-```go
 mux := http.NewServeMux()
 
-// tRPC at /trpc/*
+// tRPC for frontend apps
 trpc.Mount(mux, "/trpc", svc)
 
-// REST at /todos/*
+// REST for traditional clients
 contract.MountREST(mux, svc)
 
-// JSON-RPC at /rpc
+// JSON-RPC for batching
 contract.MountJSONRPC(mux, "/rpc", svc)
 
-// MCP at /mcp
+// MCP for AI assistants
 mcp.Mount(mux, "/mcp", svc)
 
-// OpenAPI spec
-openapi.Mount(mux, "/openapi.json", svc)
+// OpenAPI documentation
+contract.ServeOpenAPI(mux, "/openapi.json", svc)
 ```
 
-## Client Generation
+## Building a TypeScript Client
 
-Use the `.meta` endpoint to generate typed clients:
+The `.meta` endpoint makes it easy to create typed clients:
 
 ```typescript
-// Example TypeScript client structure
-interface TodoClient {
-  create(input: { title: string }): Promise<{ id: string; title: string; done: boolean }>;
-  list(): Promise<{ items: Todo[] }>;
-  get(input: { id: string }): Promise<Todo>;
-  health(): Promise<void>;
+// Types generated from .meta schemas
+interface CreateInput {
+  title: string;
 }
+
+interface Todo {
+  id: string;
+  title: string;
+  done: boolean;
+}
+
+interface ListOutput {
+  items: Todo[];
+}
+
+// Response envelope type
+interface Envelope<T> {
+  result?: { data: T };
+  error?: { code: string; message: string };
+}
+
+// Client class
+class TodoClient {
+  constructor(private baseUrl: string) {}
+
+  private async call<T>(method: string, input?: any): Promise<T> {
+    const response = await fetch(`${this.baseUrl}/trpc/${method}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: input ? JSON.stringify(input) : undefined,
+    });
+
+    const envelope: Envelope<T> = await response.json();
+
+    if (envelope.error) {
+      throw new Error(`${envelope.error.code}: ${envelope.error.message}`);
+    }
+
+    return envelope.result!.data;
+  }
+
+  create(input: CreateInput): Promise<Todo> {
+    return this.call('Create', input);
+  }
+
+  list(): Promise<ListOutput> {
+    return this.call('List');
+  }
+
+  get(input: { id: string }): Promise<Todo> {
+    return this.call('Get', input);
+  }
+}
+
+// Usage
+const client = new TodoClient('http://localhost:8080');
+const todo = await client.create({ title: 'Buy milk' });
+console.log(todo.id); // TypeScript knows this is a string!
 ```
 
-## Comparison with Original tRPC
+## tRPC vs Other Transports
 
-| Feature | This Implementation | Original tRPC |
-|---------|---------------------|---------------|
-| Language | Go | TypeScript |
-| Type Safety | JSON schemas | TypeScript inference |
-| Batching | No | Yes |
-| Subscriptions | No | Yes |
-| Response Envelope | Yes | Yes |
-| Introspection | `.meta` endpoint | Compile-time |
+| Feature | tRPC | REST | JSON-RPC |
+|---------|------|------|----------|
+| URL style | `/trpc/MethodName` | `/resources/{id}` | Single `/rpc` endpoint |
+| HTTP methods | All POST | GET, POST, PUT, DELETE | All POST |
+| Batching | No | No | Yes |
+| Response format | Typed envelope | Varies | JSON-RPC envelope |
+| Best for | TypeScript frontends | Public APIs | Batch operations |
+
+## Common Questions
+
+### Why is everything POST?
+
+POST makes things simple:
+- No routing complexity (all methods work the same way)
+- Request body always contains the input
+- Caching isn't typically wanted for RPC calls
+
+### Why do errors return HTTP 200?
+
+Following tRPC convention:
+- HTTP status indicates transport success, not application success
+- Application errors are in the response body
+- Client code is simpler (no HTTP status checking)
+
+### How do I add authentication?
+
+Use HTTP middleware or a custom invoker:
+
+```go
+// HTTP middleware
+func authMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        token := r.Header.Get("Authorization")
+        if !isValid(token) {
+            http.Error(w, "unauthorized", http.StatusUnauthorized)
+            return
+        }
+        next.ServeHTTP(w, r)
+    })
+}
+
+handler := trpc.NewHandler(svc)
+mux.Handle("/trpc/", authMiddleware(handler))
+```
 
 ## See Also
 
 - [REST Transport](/contract/rest) - Traditional REST endpoints
-- [JSON-RPC Transport](/contract/jsonrpc) - Full JSON-RPC 2.0
-- [Transports Overview](/contract/transports-overview) - Compare all transports
+- [JSON-RPC Transport](/contract/jsonrpc) - JSON-RPC with batching
+- [Client Generation](/contract/client-generation) - Generate typed clients
+- [Middleware](/contract/middleware) - Add logging, auth, and more

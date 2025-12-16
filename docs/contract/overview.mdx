@@ -1,183 +1,308 @@
 ---
 title: "Contract Overview"
-description: "Transport-neutral service contracts for building multi-protocol APIs"
+description: "Learn what the Contract package is and how it helps you build APIs in Go"
 ---
 
-# Contract
+# Contract Overview
 
-The `contract` package provides a transport-neutral way to define service contracts in Go. Write your business logic once as plain Go structs with methods, then expose it via multiple transports (REST, JSON-RPC) without modifying your service code.
+Contract is a Go package that lets you write your business logic once and automatically expose it through multiple API protocols (REST, JSON-RPC, MCP, tRPC) without duplicating code.
 
-## Why Use Contracts?
+## What Problem Does Contract Solve?
 
-Traditional web frameworks couple your business logic to HTTP. With contracts, you get:
+Imagine you're building a todo list application. You want to:
+- Let web browsers call your API via REST
+- Let other services call via JSON-RPC for batching
+- Let AI assistants (like Claude) use your API via MCP
+- Generate TypeScript types for your frontend
 
-- **Transport Independence**: Your service code has zero HTTP dependencies
-- **Multi-Protocol Support**: Expose the same service via REST, JSON-RPC, or custom protocols
-- **Easy Testing**: Test business logic without HTTP mocking
-- **Auto-Generated APIs**: REST routes and OpenAPI specs derived from method signatures
-- **Type Safety**: JSON schemas generated from Go types at registration time
+Without Contract, you'd write code like this for **each protocol**:
 
-## Architecture
+```go
+// REST handler - one version
+func handleRESTCreateTodo(w http.ResponseWriter, r *http.Request) {
+    var input CreateInput
+    json.NewDecoder(r.Body).Decode(&input)
+    todo, err := createTodo(input)
+    if err != nil {
+        http.Error(w, err.Error(), 500)
+        return
+    }
+    json.NewEncoder(w).Encode(todo)
+}
+
+// JSON-RPC handler - another version
+func handleJSONRPCCreateTodo(req JSONRPCRequest) JSONRPCResponse {
+    var input CreateInput
+    json.Unmarshal(req.Params, &input)
+    todo, err := createTodo(input)
+    if err != nil {
+        return JSONRPCResponse{Error: ...}
+    }
+    return JSONRPCResponse{Result: todo}
+}
+
+// MCP handler - yet another version...
+```
+
+That's a lot of repetitive code! And if you add a new field to `CreateInput`, you need to update every handler.
+
+With Contract, you write your business logic **once**:
+
+```go
+// Your business logic - plain Go, no HTTP dependencies
+func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    return &Todo{ID: generateID(), Title: in.Title}, nil
+}
+```
+
+Then Contract automatically makes it available via all protocols:
+
+```go
+svc, _ := contract.Register("todo", &TodoService{})
+
+mux := http.NewServeMux()
+contract.MountREST(mux, svc)           // REST: POST /todos
+contract.MountJSONRPC(mux, "/rpc", svc) // JSON-RPC: method "Create"
+mcp.Mount(mux, "/mcp", svc)             // MCP: tool "todo.Create"
+trpc.Mount(mux, "/trpc", svc)           // tRPC: POST /trpc/Create
+```
+
+## What Is a "Contract"?
+
+Think of a contract like a restaurant menu. The menu tells you:
+- What dishes are available (methods)
+- What each dish contains (input/output types)
+- What you'll get when you order (response format)
+
+In programming terms, a **contract** is a formal definition of:
+- **What operations your service offers** (methods like Create, List, Get, Delete)
+- **What data each operation expects** (input types)
+- **What data each operation returns** (output types)
+- **What errors can occur** (error types)
+
+When you register a Go struct with Contract, it inspects your methods and creates this formal definition automatically. This definition is then used to:
+1. Generate API endpoints for different protocols
+2. Create JSON schemas for validation
+3. Generate client code for different languages
+4. Provide API documentation
+
+## How Contract Works (The Big Picture)
+
+Here's what happens when you use Contract:
+
+```mermaid
+flowchart TB
+    %% Top
+    A["Your Go Service"]:::title
+    B["contract.Register(&quot;todo&quot;, &amp;TodoService{})"]:::code
+
+    A --> B
+
+    %% Service box
+    S["Service<br/>- Methods<br/>- Types<br/>- Schemas"]:::box
+    B --> S
+
+    %% Three handlers (aligned left-to-right)
+    S --> R["REST<br/>Handler"]:::handler
+    S --> J["JSON-RPC<br/>Handler"]:::handler
+    S --> M["MCP<br/>Handler"]:::handler
+
+    R --> W["Web Browsers"]:::leaf
+    J --> O["Other Services"]:::leaf
+    M --> AI["AI Assistants"]:::leaf
+
+    %% Styles (green ASCII-like)
+    classDef title fill:transparent,stroke:transparent,color:#0a0,font-family:monospace,font-size:22px;
+    classDef code  fill:transparent,stroke:transparent,color:#0a0,font-family:monospace,font-size:18px;
+    classDef note  fill:transparent,stroke:transparent,color:#0a0,font-family:monospace,font-size:16px;
+    classDef box   fill:transparent,stroke:#0a0,stroke-width:2px,color:#0a0,font-family:monospace;
+    classDef handler fill:transparent,stroke:#0a0,stroke-width:2px,color:#0a0,font-family:monospace;
+    classDef leaf  fill:transparent,stroke:transparent,color:#0a0,font-family:monospace,font-size:18px;
+
+    linkStyle default stroke:#0a0,stroke-width:2px
+```
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Plain Go Service                             │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  service/todo/todo.go                                    │   │
-│  │  - No framework dependencies                             │   │
-│  │  - Pure business logic                                   │   │
-│  │  - Easy to test                                          │   │
-│  └─────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼ contract.Register()
-┌─────────────────────────────────────────────────────────────────┐
-│                    contract.Service                             │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  - Methods with compiled invokers                        │   │
-│  │  - TypeRegistry with JSON schemas                        │   │
-│  │  - Transport-neutral contract                            │   │
-│  └─────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-          ┌───────────────────┼───────────────────┐
-          ▼                   ▼                   ▼
-    ┌──────────┐        ┌──────────┐        ┌──────────┐
-    │   REST   │        │ JSON-RPC │        │  OpenAPI │
-    │ MountREST│        │MountJSONRPC      │ServeOpenAPI
-    └──────────┘        └──────────┘        └──────────┘
+                    Your Go Service
+                          │
+                          ▼
+              contract.Register("todo", &TodoService{})
+                          │
+                          │  Inspects methods, generates schemas
+                          ▼
+                   ┌─────────────┐
+                   │   Service   │
+                   │  - Methods  │
+                   │  - Types    │
+                   │  - Schemas  │
+                   └─────────────┘
+                          │
+         ┌────────────────┼────────────────┐
+         ▼                ▼                ▼
+    ┌─────────┐     ┌──────────┐     ┌─────────┐
+    │  REST   │     │ JSON-RPC │     │   MCP   │
+    │ Handler │     │ Handler  │     │ Handler │
+    └─────────┘     └──────────┘     └─────────┘
+         │                │                │
+         ▼                ▼                ▼
+    Web Browsers    Other Services    AI Assistants
 ```
+
+1. **You write** a plain Go struct with methods
+2. **Contract inspects** your struct at startup (using reflection)
+3. **Contract creates** type-safe "invokers" and JSON schemas
+4. **Transport handlers** convert protocol-specific requests into method calls
+5. **Your method runs** and returns results or errors
+6. **Transport handlers** convert the response back to the protocol format
+
+## Key Concepts
+
+### Service
+
+A **service** is a Go struct with methods that implement your business logic. Your methods should:
+- Accept a `context.Context` as the first parameter
+- Optionally accept an input struct pointer
+- Return an output struct pointer and/or an error
+
+```go
+type TodoService struct {
+    db Database  // Your dependencies
+}
+
+func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    // Your business logic here
+}
+```
+
+### Method
+
+A **method** is one operation your service can perform. Contract discovers methods automatically by inspecting your struct. Each method becomes:
+- A REST endpoint (POST/GET/PUT/DELETE based on name)
+- A JSON-RPC method
+- An MCP tool
+- A tRPC procedure
+
+### Transport
+
+A **transport** is a protocol handler that converts HTTP requests into method calls. Contract provides:
+
+| Transport | Protocol | Best For |
+|-----------|----------|----------|
+| REST | HTTP REST | Web browsers, curl, general HTTP |
+| JSON-RPC | JSON-RPC 2.0 | Batch operations, RPC clients |
+| MCP | Model Context Protocol | AI assistants (Claude, etc.) |
+| tRPC | tRPC-like | TypeScript frontends |
+| OpenAPI | OpenAPI 3.1 | API documentation |
+
+### Type Registry
+
+Contract automatically creates JSON schemas from your Go types. These schemas are used for:
+- Input validation
+- API documentation (OpenAPI)
+- Client code generation
+- AI tool definitions (MCP)
+
+## What You'll Learn
+
+This documentation will teach you:
+
+1. **[Quick Start](/contract/quick-start)** - Build your first API in 5 minutes
+2. **[Defining Services](/contract/service)** - How to write service structs and methods
+3. **[Registration](/contract/register)** - How Contract processes your service
+4. **[Type System](/contract/types)** - Understanding types and JSON schemas
+5. **[Error Handling](/contract/errors)** - How to return errors that work across protocols
+6. **[Transports](/contract/transports-overview)** - Choosing and using different protocols
+7. **[Testing](/contract/testing)** - How to test your services
+8. **[Architecture](/contract/architecture)** - Deep dive into how it all works
 
 ## Quick Example
 
-### 1. Define a Plain Go Service
-
-```go
-package todo
-
-import "context"
-
-type Service struct{}
-
-type CreateIn struct {
-    Title string `json:"title"`
-}
-
-type Todo struct {
-    ID    string `json:"id"`
-    Title string `json:"title"`
-}
-
-func (s *Service) Create(ctx context.Context, in *CreateIn) (*Todo, error) {
-    return &Todo{ID: "t_1", Title: in.Title}, nil
-}
-
-func (s *Service) Health(ctx context.Context) error {
-    return nil
-}
-```
-
-### 2. Register and Mount Transports
+Here's a complete, working example you can run:
 
 ```go
 package main
 
 import (
+    "context"
+    "fmt"
     "net/http"
+
     "github.com/go-mizu/mizu/contract"
-    "yourmodule/service/todo"
 )
 
+// Step 1: Define your service struct
+type GreetingService struct{}
+
+// Step 2: Define input/output types
+type GreetInput struct {
+    Name string `json:"name"`
+}
+
+type GreetOutput struct {
+    Message string `json:"message"`
+}
+
+// Step 3: Implement your business logic
+func (s *GreetingService) Greet(ctx context.Context, in *GreetInput) (*GreetOutput, error) {
+    return &GreetOutput{
+        Message: fmt.Sprintf("Hello, %s!", in.Name),
+    }, nil
+}
+
 func main() {
-    // Register the service to get a contract
-    svc, err := contract.Register("todo", &todo.Service{})
+    // Step 4: Register your service
+    svc, err := contract.Register("greeting", &GreetingService{})
     if err != nil {
         panic(err)
     }
 
+    // Step 5: Mount transports
     mux := http.NewServeMux()
-
-    // Mount REST endpoints: POST /todos, GET /todos, etc.
     contract.MountREST(mux, svc)
-
-    // Mount JSON-RPC 2.0 at /rpc
     contract.MountJSONRPC(mux, "/rpc", svc)
 
-    // Serve OpenAPI 3.1 spec at /openapi.json
-    contract.ServeOpenAPI(mux, "/openapi.json", svc)
-
+    // Step 6: Start the server
+    fmt.Println("Server running on http://localhost:8080")
     http.ListenAndServe(":8080", mux)
 }
 ```
 
-### 3. Call Your API
+Test it:
 
-**REST:**
 ```bash
-curl -X POST http://localhost:8080/todos \
+# REST
+curl -X POST http://localhost:8080/greetings \
   -H "Content-Type: application/json" \
-  -d '{"title": "Buy milk"}'
-# {"id":"t_1","title":"Buy milk"}
-```
+  -d '{"name": "World"}'
+# Output: {"message":"Hello, World!"}
 
-**JSON-RPC:**
-```bash
+# JSON-RPC
 curl -X POST http://localhost:8080/rpc \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"Create","params":{"title":"Buy milk"}}'
-# {"jsonrpc":"2.0","id":1,"result":{"id":"t_1","title":"Buy milk"}}
+  -d '{"jsonrpc":"2.0","id":1,"method":"Greet","params":{"name":"World"}}'
+# Output: {"jsonrpc":"2.0","id":1,"result":{"message":"Hello, World!"}}
 ```
 
-## Key Concepts
+## Common Questions
 
-| Concept | Description |
-|---------|-------------|
-| [Service](/contract/service) | Plain Go struct with methods following canonical signatures |
-| [Register](/contract/register) | Convert a Go service into a contract with introspection |
-| [Types](/contract/types) | Automatic JSON schema generation from Go types |
-| [Invoker](/contract/invoker) | Compiled method callers for runtime invocation |
-| [REST](/contract/rest) | RESTful HTTP transport with verb conventions |
-| [JSON-RPC](/contract/jsonrpc) | JSON-RPC 2.0 transport with batch support |
-| [OpenAPI](/contract/openapi) | Automatic OpenAPI 3.1 spec generation |
+### Do I need to learn all the transports?
 
-## When to Use Contracts
+No! Start with REST - it's the most familiar. You can add other transports later as needed. Your business logic stays exactly the same.
 
-<Check>
-**Use contracts when:**
-- You need multiple API protocols (REST + RPC)
-- You want transport-independent business logic
-- You need auto-generated OpenAPI specs
-- You're building microservices with clean architecture
-- You want easy-to-test service layers
-</Check>
+### Is Contract only for new projects?
 
-<Warning>
-**Consider alternatives when:**
-- You only need simple REST endpoints (use Mizu handlers directly)
-- You need fine-grained control over HTTP responses
-- You're building a traditional web application with HTML templates
-</Warning>
+Contract works great for new projects, but you can also gradually adopt it in existing codebases. Start by converting one service and see how it fits.
 
-## Getting Started
+### How does Contract handle authentication?
 
-The fastest way to start is with the CLI template:
+Contract doesn't dictate how you handle auth. You can use standard Go HTTP middleware to authenticate requests before they reach your methods. Context values let you pass user information to your service methods.
 
-```bash
-mizu new myservice --template contract
-cd myservice
-go mod tidy
-go run ./cmd/api
-```
+### Does Contract support gRPC?
 
-This creates a complete project with:
-- Todo service example
-- REST, JSON-RPC, and OpenAPI transports
-- Graceful shutdown handling
-- Clean project structure
+Not yet, but the error codes are aligned with gRPC for future compatibility. The JSON-RPC transport works well for service-to-service communication.
 
 ## Next Steps
 
-- [Defining Services](/contract/service) - Learn the canonical method signatures
-- [Registration](/contract/register) - Understand the registration process
-- [REST Transport](/contract/rest) - Configure REST endpoints
-- [Contract Template](/cli/template-contract) - Project template reference
+Ready to build your first API? Start with the **[Quick Start Guide](/contract/quick-start)** - you'll have a working API in 5 minutes.
+
+If you prefer understanding the concepts first, read about **[Defining Services](/contract/service)** to learn how to structure your business logic.
