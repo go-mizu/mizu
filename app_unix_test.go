@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/signal"
 	"strings"
 	"syscall"
 	"testing"
@@ -27,6 +28,13 @@ func TestApp_serveWithSignals_SIGTERM_TriggersGracefulShutdown(t *testing.T) {
 	srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
+
+	// Pre-register for SIGTERM to prevent the test process from being terminated
+	// before serveWithSignals sets up its own handler. This fixes a race condition
+	// where SIGTERM could arrive before signal.NotifyContext is called in the goroutine.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
 
 	done := make(chan error, 1)
 	go func() {
