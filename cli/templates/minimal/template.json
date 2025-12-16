@@ -1,0 +1,5 @@
+{
+  "name": "minimal",
+  "description": "Smallest runnable project layout",
+  "tags": ["go", "starter"]
+}

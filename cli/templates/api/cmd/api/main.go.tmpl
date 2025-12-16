@@ -1,0 +1,28 @@
+package main
+
+import (
+	"context"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"{{.Module}}/app/api"
+)
+
+func main() {
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	cfg := api.LoadConfig()
+
+	app, err := api.New(cfg)
+	if err != nil {
+		log.Fatalf("failed to create app: %v", err)
+	}
+
+	if err := app.Run(ctx); err != nil {
+		log.Printf("server error: %v", err)
+		os.Exit(1)
+	}
+}
