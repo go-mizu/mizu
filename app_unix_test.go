@@ -41,7 +41,11 @@ func TestApp_serveWithSignals_SIGTERM_TriggersGracefulShutdown(t *testing.T) {
 		done <- a.serveWithSignals(srv, func() error { return srv.Serve(l) })
 	}()
 
-	waitForTCP(t, l.Addr().String())
+	// Use HTTP request instead of TCP check. Since the listener was pre-created,
+	// TCP would succeed immediately before the goroutine runs. An HTTP request
+	// ensures the server loop is running, which means signal.NotifyContext has
+	// already been called (it's called before the server starts in serveWithSignals).
+	waitForHTTP(t, "http://"+l.Addr().String()+"/")
 
 	// Send SIGTERM to our own process. serveWithSignals uses signal.NotifyContext,
 	// so the signal should cancel the context and start graceful shutdown
