@@ -101,15 +101,15 @@ release-check: ## Validate goreleaser config
 .PHONY: docker-build
 docker-build: ## Build Docker image locally
 	@set -e; \
-	if echo "$(VERSION)" | grep -q dirty; then \
-		echo "Error: refusing to build Docker image from dirty tree"; \
-		exit 1; \
-	fi; \
-	docker build -t ghcr.io/go-mizu/mizu:$(VERSION) \
-		--build-arg VERSION=$(VERSION) \
-		--build-arg COMMIT=$(COMMIT) \
-		--build-arg BUILD_TIME=$(BUILD_TIME) \
-		.
+    	if echo "$(VERSION)" | grep -q dirty; then \
+    		echo "Error: refusing to build Docker image from dirty tree"; \
+    		exit 1; \
+    	fi; \
+    	docker build -t ghcr.io/go-mizu/mizu:$(VERSION) \
+    		--build-arg VERSION=$(VERSION) \
+    		--build-arg COMMIT=$(COMMIT) \
+    		--build-arg BUILD_TIME=dev \
+    		.
 
 .PHONY: docker-run
 docker-run: ## Run Docker container
