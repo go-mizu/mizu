@@ -35,9 +35,9 @@ type ServiceMeta interface {
 
 // ServiceOptions provides metadata about a service.
 type ServiceOptions struct {
-	Description string
-	Version     string
-	Tags        []string
+	Description string   `json:"description,omitempty"`
+	Version     string   `json:"version,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
 }
 
 // MethodMeta is an optional interface services can implement
@@ -48,12 +48,12 @@ type MethodMeta interface {
 
 // MethodOptions provides metadata about a method.
 type MethodOptions struct {
-	Description string
-	Summary     string
-	Tags        []string
-	Deprecated  bool
-	HTTPMethod  string // REST verb override
-	HTTPPath    string // REST path override
+	Description string   `json:"description,omitempty"`
+	Summary     string   `json:"summary,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	Deprecated  bool     `json:"deprecated,omitempty"`
+	HTTPMethod  string   `json:"httpMethod,omitempty"`
+	HTTPPath    string   `json:"httpPath,omitempty"`
 }
 
 // Register creates a Service from a Go struct.
@@ -160,12 +160,12 @@ func Register(name string, svc any) (*Service, error) {
 
 // Service represents a registered service contract.
 type Service struct {
-	Name        string
-	Description string
-	Version     string
-	Tags        []string
-	Methods     []*Method
-	Types       *Types
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	Version     string    `json:"version,omitempty"`
+	Tags        []string  `json:"tags,omitempty"`
+	Methods     []*Method `json:"methods"`
+	Types       *Types    `json:"-"`
 
 	methodByName map[string]*Method
 }
@@ -186,20 +186,20 @@ func (s *Service) MethodNames() []string {
 
 // Method represents a callable service method.
 type Method struct {
-	Service  *Service
-	Name     string
-	FullName string
+	Service  *Service `json:"-"`
+	Name     string   `json:"name"`
+	FullName string   `json:"fullName"`
 
-	Description string
-	Summary     string
-	Tags        []string
-	Deprecated  bool
+	Description string   `json:"description,omitempty"`
+	Summary     string   `json:"summary,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	Deprecated  bool     `json:"deprecated,omitempty"`
 
-	HTTPMethod string
-	HTTPPath   string
+	HTTPMethod string `json:"httpMethod,omitempty"`
+	HTTPPath   string `json:"httpPath,omitempty"`
 
-	Input  *Type
-	Output *Type
+	Input  *Type `json:"input,omitempty"`
+	Output *Type `json:"output,omitempty"`
 
 	inType  reflect.Type
 	outType reflect.Type

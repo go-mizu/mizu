@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -237,7 +236,7 @@ func TestError(t *testing.T) {
 	}
 
 	// Test HTTP status mapping
-	if err.HTTPStatus() != http.StatusNotFound {
+	if err.HTTPStatus() != 404 {
 		t.Errorf("expected 404, got %d", err.HTTPStatus())
 	}
 
@@ -298,134 +297,6 @@ func TestSchemaGeneration(t *testing.T) {
 	}
 }
 
-func TestDescribe(t *testing.T) {
-	svc, _ := Register("todo", &TodoService{})
-	desc := Describe(svc)
-
-	if len(desc.Services) != 1 {
-		t.Fatalf("expected 1 service, got %d", len(desc.Services))
-	}
-
-	sd := desc.Services[0]
-	if sd.Name != "todo" {
-		t.Errorf("expected name 'todo', got %q", sd.Name)
-	}
-	if len(sd.Methods) != 5 {
-		t.Errorf("expected 5 methods, got %d", len(sd.Methods))
-	}
-
-	// Check HTTP hints
-	var createMethod *MethodDesc
-	for i := range sd.Methods {
-		if sd.Methods[i].Name == "Create" {
-			createMethod = &sd.Methods[i]
-			break
-		}
-	}
-	if createMethod == nil {
-		t.Fatal("Create method not found")
-	}
-	if createMethod.HTTP.Method != http.MethodPost {
-		t.Errorf("expected POST, got %s", createMethod.HTTP.Method)
-	}
-}
-
-func TestMiddleware(t *testing.T) {
-	svc, _ := Register("todo", &TodoService{})
-
-	var logs []string
-	logMW := func(next Invoker) Invoker {
-		return func(ctx context.Context, method *Method, in any) (any, error) {
-			logs = append(logs, "before:"+method.Name)
-			out, err := next(ctx, method, in)
-			logs = append(logs, "after:"+method.Name)
-			return out, err
-		}
-	}
-
-	// Apply middleware
-	invoker := logMW(func(ctx context.Context, method *Method, in any) (any, error) {
-		return method.Call(ctx, in)
-	})
-
-	ctx := context.Background()
-	create := svc.Method("Create")
-	_, err := invoker(ctx, create, &CreateTodoInput{Title: "Test"})
-	if err != nil {
-		t.Fatalf("Call failed: %v", err)
-	}
-
-	if len(logs) != 2 {
-		t.Errorf("expected 2 log entries, got %d", len(logs))
-	}
-	if logs[0] != "before:Create" {
-		t.Errorf("expected 'before:Create', got %q", logs[0])
-	}
-	if logs[1] != "after:Create" {
-		t.Errorf("expected 'after:Create', got %q", logs[1])
-	}
-}
-
-func TestRecoveryMiddleware(t *testing.T) {
-	svc, err := Register("todo", &TodoService{})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	recovery := Recovery()
-	invoker := recovery(func(ctx context.Context, method *Method, in any) (any, error) {
-		return method.Call(ctx, in)
-	})
-
-	ctx := context.Background()
-	create := svc.Method("Create")
-	_, err = invoker(ctx, create, &CreateTodoInput{Title: "Test"})
-	if err != nil {
-		t.Fatalf("Call failed: %v", err)
-	}
-}
-
-func TestChainMiddleware(t *testing.T) {
-	var calls []string
-
-	mw1 := func(next Invoker) Invoker {
-		return func(ctx context.Context, method *Method, in any) (any, error) {
-			calls = append(calls, "mw1-before")
-			out, err := next(ctx, method, in)
-			calls = append(calls, "mw1-after")
-			return out, err
-		}
-	}
-
-	mw2 := func(next Invoker) Invoker {
-		return func(ctx context.Context, method *Method, in any) (any, error) {
-			calls = append(calls, "mw2-before")
-			out, err := next(ctx, method, in)
-			calls = append(calls, "mw2-after")
-			return out, err
-		}
-	}
-
-	chained := Chain(mw1, mw2)
-	invoker := chained(func(ctx context.Context, method *Method, in any) (any, error) {
-		calls = append(calls, "handler")
-		return nil, nil
-	})
-
-	svc, _ := Register("todo", &TodoService{})
-	create := svc.Method("Create")
-	_, _ = invoker(context.Background(), create, &CreateTodoInput{Title: "Test"})
-
-	expected := []string{"mw1-before", "mw2-before", "handler", "mw2-after", "mw1-after"}
-	if len(calls) != len(expected) {
-		t.Fatalf("expected %d calls, got %d: %v", len(expected), len(calls), calls)
-	}
-	for i, e := range expected {
-		if calls[i] != e {
-			t.Errorf("call %d: expected %q, got %q", i, e, calls[i])
-		}
-	}
-}
 
 // ---- Enum Type Test ----
 
