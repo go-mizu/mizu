@@ -1,0 +1,5 @@
+{
+  "name": "api",
+  "description": "JSON API service with routing, middleware, config stub",
+  "tags": ["http", "json", "api"]
+}
