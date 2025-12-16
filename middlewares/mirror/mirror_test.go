@@ -77,8 +77,8 @@ func TestWithOptions_Async(t *testing.T) {
 	// Wait for mirror to complete
 	time.Sleep(100 * time.Millisecond)
 
-	if mirrorReceived != 1 {
-		t.Errorf("expected mirror to receive 1 request, got %d", mirrorReceived)
+	if atomic.LoadInt32(&mirrorReceived) != 1 {
+		t.Errorf("expected mirror to receive 1 request, got %d", atomic.LoadInt32(&mirrorReceived))
 	}
 }
 
