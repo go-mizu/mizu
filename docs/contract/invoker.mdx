@@ -1,0 +1,304 @@
+---
+title: "Invokers"
+description: "Compiled method invocation for runtime calls"
+---
+
+# Invokers
+
+Invokers are compiled method callers that enable runtime invocation of service methods. Reflection is performed once during registration, making runtime calls efficient.
+
+## How Invokers Work
+
+1. **Registration time**: Method signatures are analyzed and invokers are compiled
+2. **Runtime**: Invokers call methods directly without per-call reflection overhead
+
+```go
+svc, _ := contract.Register("todo", &todo.Service{})
+
+// Get the method
+m := svc.Method("Create")
+
+// Create input
+in := m.NewInput().(*todo.CreateIn)
+in.Title = "Buy milk"
+
+// Invoke the method
+out, err := m.Invoker.Call(ctx, in)
+if err != nil {
+    log.Fatal(err)
+}
+
+todo := out.(*todo.Todo)
+fmt.Println(todo.ID, todo.Title)
+```
+
+## The Invoker Interface
+
+```go
+type Invoker interface {
+    Call(ctx context.Context, in any) (any, error)
+}
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `ctx` | `context.Context` | Request context |
+| `in` | `any` | Input value (nil for no-input methods) |
+
+### Return Values
+
+| Value | Type | Description |
+|-------|------|-------------|
+| result | `any` | Output value (nil for no-output methods) |
+| err | `error` | Error from the method |
+
+## Calling Methods
+
+### With Input and Output
+
+```go
+m := svc.Method("Create")
+
+// Create and populate input
+in := m.NewInput().(*todo.CreateIn)
+in.Title = "Buy milk"
+
+// Call
+out, err := m.Invoker.Call(ctx, in)
+if err != nil {
+    return err
+}
+
+// Type assert output
+todo := out.(*todo.Todo)
+```
+
+### Without Input
+
+```go
+m := svc.Method("List")
+
+// No input needed
+out, err := m.Invoker.Call(ctx, nil)
+if err != nil {
+    return err
+}
+
+list := out.(*todo.TodoList)
+```
+
+### Without Output
+
+```go
+m := svc.Method("Delete")
+
+in := m.NewInput().(*todo.DeleteIn)
+in.ID = "todo_1"
+
+// Output is nil
+_, err := m.Invoker.Call(ctx, in)
+if err != nil {
+    return err
+}
+```
+
+### Error-Only Methods
+
+```go
+m := svc.Method("Health")
+
+// No input, no output
+_, err := m.Invoker.Call(ctx, nil)
+if err != nil {
+    return fmt.Errorf("health check failed: %w", err)
+}
+```
+
+## NewInput Helper
+
+The `NewInput()` method creates a zero-valued input instance:
+
+```go
+m := svc.Method("Create")
+
+// Returns nil if method has no input
+if m.Input == nil {
+    fmt.Println("Method has no input")
+    return
+}
+
+// Creates a new *CreateIn with zero values
+in := m.NewInput().(*todo.CreateIn)
+```
+
+## Type Assertions
+
+Always type-assert the result to the expected type:
+
+```go
+out, err := m.Invoker.Call(ctx, in)
+if err != nil {
+    return err
+}
+
+// Safe type assertion
+todo, ok := out.(*todo.Todo)
+if !ok {
+    return fmt.Errorf("unexpected output type: %T", out)
+}
+```
+
+Or use the type reference for dynamic handling:
+
+```go
+if m.Output != nil {
+    fmt.Printf("Output type: %s\n", m.Output.Name)
+}
+```
+
+## Error Handling
+
+Errors from the service method are returned directly:
+
+```go
+// Service method
+func (s *Service) Get(ctx context.Context, in *GetIn) (*Todo, error) {
+    if in.ID == "" {
+        return nil, ErrInvalidID
+    }
+
+    todo, ok := s.todos[in.ID]
+    if !ok {
+        return nil, ErrNotFound
+    }
+
+    return todo, nil
+}
+
+// Calling code
+out, err := m.Invoker.Call(ctx, in)
+if err != nil {
+    if errors.Is(err, todo.ErrNotFound) {
+        // Handle not found
+    }
+    if errors.Is(err, todo.ErrInvalidID) {
+        // Handle invalid input
+    }
+    return err
+}
+```
+
+## Context Handling
+
+The context is passed directly to the service method:
+
+```go
+// With timeout
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+
+out, err := m.Invoker.Call(ctx, in)
+if err != nil {
+    if errors.Is(err, context.DeadlineExceeded) {
+        // Handle timeout
+    }
+}
+```
+
+```go
+// With cancellation
+ctx, cancel := context.WithCancel(context.Background())
+
+go func() {
+    out, err := m.Invoker.Call(ctx, in)
+    // ...
+}()
+
+// Cancel if needed
+cancel()
+```
+
+## What Transports Do
+
+Transports (REST, JSON-RPC) use invokers internally:
+
+```go
+// Simplified REST handler
+func restHandler(m *Method) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        ctx := r.Context()
+
+        // 1. Create input
+        var in any
+        if m.Input != nil {
+            in = m.NewInput()
+            json.NewDecoder(r.Body).Decode(in)
+        }
+
+        // 2. Invoke method
+        out, err := m.Invoker.Call(ctx, in)
+        if err != nil {
+            http.Error(w, err.Error(), 500)
+            return
+        }
+
+        // 3. Encode output
+        if out != nil {
+            json.NewEncoder(w).Encode(out)
+        }
+    }
+}
+```
+
+## Building Custom Transports
+
+You can build custom transports using invokers:
+
+```go
+// gRPC-style transport
+func handleGRPC(svc *contract.Service, method string, data []byte) ([]byte, error) {
+    m := svc.Method(method)
+    if m == nil {
+        return nil, fmt.Errorf("method not found: %s", method)
+    }
+
+    // Decode input
+    var in any
+    if m.Input != nil {
+        in = m.NewInput()
+        if err := proto.Unmarshal(data, in.(proto.Message)); err != nil {
+            return nil, err
+        }
+    }
+
+    // Invoke
+    out, err := m.Invoker.Call(context.Background(), in)
+    if err != nil {
+        return nil, err
+    }
+
+    // Encode output
+    if out != nil {
+        return proto.Marshal(out.(proto.Message))
+    }
+    return nil, nil
+}
+```
+
+## Performance
+
+Invokers use reflection once at registration:
+
+- **Registration**: O(n) reflection calls for n methods
+- **Runtime**: Near-direct method call performance
+- **Memory**: One invoker instance per method
+
+For high-performance scenarios, the reflection overhead at runtime is minimal - invokers store pre-computed reflection values.
+
+## See Also
+
+- [Registration](/contract/register) - How invokers are created
+- [REST Transport](/contract/rest) - REST transport using invokers
+- [JSON-RPC Transport](/contract/jsonrpc) - JSON-RPC transport using invokers

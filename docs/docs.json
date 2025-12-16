@@ -70,6 +70,19 @@
               "concepts/error",
               "concepts/middleware"
             ]
+          },
+          {
+            "group": "Contract",
+            "pages": [
+              "contract/overview",
+              "contract/service",
+              "contract/register",
+              "contract/types",
+              "contract/invoker",
+              "contract/rest",
+              "contract/jsonrpc",
+              "contract/openapi"
+            ]
           }
         ]
       },
@@ -292,7 +305,8 @@
             "pages": [
               "cli/templates",
               "cli/template-minimal",
-              "cli/template-api"
+              "cli/template-api",
+              "cli/template-contract"
             ]
           },
           {
