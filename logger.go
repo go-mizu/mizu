@@ -187,8 +187,45 @@ func buildCoreLogAttrs(c *Ctx, r *http.Request, status int, d time.Duration) []s
 		slog.String("proto", r.Proto),
 		slog.String("host", r.Host),
 		slog.Int64("duration_ms", d.Milliseconds()),
-		slog.String("remote_ip", c.ClientIP()),
+		slog.String("remote_ip", getClientIP(r)),
 	}
+}
+
+func getClientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if idx := strings.Index(xff, ","); idx > 0 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
+	}
+	if xr := r.Header.Get("X-Real-IP"); xr != "" {
+		return xr
+	}
+	host, _, err := splitHostPort(r.RemoteAddr)
+	if err == nil {
+		return host
+	}
+	return r.RemoteAddr
+}
+
+func splitHostPort(addr string) (string, string, error) {
+	// Fast path for IPv4:port
+	last := strings.LastIndexByte(addr, ':')
+	if last < 0 {
+		return addr, "", fmt.Errorf("missing port")
+	}
+	// IPv6 check: [::1]:port
+	if addr[0] == '[' {
+		end := strings.IndexByte(addr, ']')
+		if end < 0 {
+			return addr, "", fmt.Errorf("invalid address")
+		}
+		if end+1 < len(addr) && addr[end+1] == ':' {
+			return addr[1:end], addr[end+2:], nil
+		}
+		return addr[1:end], "", nil
+	}
+	return addr[:last], addr[last+1:], nil
 }
 
 func appendOptionalLogAttrs(attrs []slog.Attr, c *Ctx, r *http.Request, reqID string, o LoggerOptions) []slog.Attr {

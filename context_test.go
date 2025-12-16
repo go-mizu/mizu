@@ -194,49 +194,6 @@ func TestCtx_MultipartForm_ParseError(t *testing.T) {
 	cleanup()
 }
 
-func TestCtx_ClientIP(t *testing.T) {
-	base := newReq(http.MethodGet, "http://example.com/", nil)
-
-	{
-		r := base.Clone(context.Background())
-		r.Header.Set("X-Forwarded-For", "203.0.113.9, 10.0.0.1")
-		r.RemoteAddr = "192.0.2.1:1234"
-		c := newTestCtx(newFlusherRecorder(), r)
-		if got := c.ClientIP(); got != "203.0.113.9" {
-			t.Fatalf("XFF expected 203.0.113.9, got %q", got)
-		}
-	}
-
-	{
-		r := base.Clone(context.Background())
-		r.Header.Set("X-Forwarded-For", "not-an-ip")
-		r.Header.Set("X-Real-IP", "198.51.100.7")
-		r.RemoteAddr = "192.0.2.1:1234"
-		c := newTestCtx(newFlusherRecorder(), r)
-		if got := c.ClientIP(); got != "198.51.100.7" {
-			t.Fatalf("X-Real-IP expected 198.51.100.7, got %q", got)
-		}
-	}
-
-	{
-		r := base.Clone(context.Background())
-		r.RemoteAddr = "198.51.100.99:8080"
-		c := newTestCtx(newFlusherRecorder(), r)
-		if got := c.ClientIP(); got != "198.51.100.99" {
-			t.Fatalf("RemoteAddr host expected 198.51.100.99, got %q", got)
-		}
-	}
-
-	{
-		r := base.Clone(context.Background())
-		r.RemoteAddr = "weird"
-		c := newTestCtx(newFlusherRecorder(), r)
-		if got := c.ClientIP(); got != "weird" {
-			t.Fatalf("fallback expected 'weird', got %q", got)
-		}
-	}
-}
-
 func TestCtx_BindJSON_AllCases(t *testing.T) {
 	type payload struct {
 		A string `json:"a"`

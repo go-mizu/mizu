@@ -96,24 +96,6 @@ func (c *Ctx) MultipartForm(maxMemory int64) (*multipart.Form, func(), error) {
 	}, nil
 }
 
-// ClientIP returns the client IP (best-effort).
-func (c *Ctx) ClientIP() string {
-	if xff := c.request.Header.Get("X-Forwarded-For"); xff != "" {
-		ip := strings.TrimSpace(strings.Split(xff, ",")[0])
-		if net.ParseIP(ip) != nil {
-			return ip
-		}
-	}
-	if xr := c.request.Header.Get("X-Real-IP"); xr != "" && net.ParseIP(xr) != nil {
-		return xr
-	}
-	host, _, err := net.SplitHostPort(c.request.RemoteAddr)
-	if err == nil && net.ParseIP(host) != nil {
-		return host
-	}
-	return c.request.RemoteAddr
-}
-
 // --- Request body binding ---
 
 // BindJSON reads JSON into v with a max size limit.

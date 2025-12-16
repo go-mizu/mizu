@@ -52,7 +52,7 @@ func New(opts Options) mizu.Middleware {
 		return func(c *mizu.Ctx) error {
 			var ip string
 			if opts.TrustProxy {
-				ip = c.ClientIP()
+				ip = getClientIP(c)
 			} else {
 				ip = extractIP(c.Request().RemoteAddr)
 			}
@@ -120,6 +120,34 @@ func extractIP(addr string) string {
 		return addr
 	}
 	return host
+}
+
+func getClientIP(c *mizu.Ctx) string {
+	if xff := c.Request().Header.Get("X-Forwarded-For"); xff != "" {
+		ip := extractFirstXFF(xff)
+		if ip != "" && net.ParseIP(ip) != nil {
+			return ip
+		}
+	}
+	if xr := c.Request().Header.Get("X-Real-IP"); xr != "" && net.ParseIP(xr) != nil {
+		return xr
+	}
+	return extractIP(c.Request().RemoteAddr)
+}
+
+func extractFirstXFF(xff string) string {
+	end := len(xff)
+	for i := 0; i < len(xff); i++ {
+		if xff[i] == ',' {
+			end = i
+			break
+		}
+	}
+	ip := xff[:end]
+	for len(ip) > 0 && ip[0] == ' ' {
+		ip = ip[1:]
+	}
+	return ip
 }
 
 // Private creates middleware allowing only private network IPs.

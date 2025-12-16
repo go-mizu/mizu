@@ -110,7 +110,7 @@ func FromContext(c *mizu.Ctx) string {
 	if ip, ok := c.Context().Value(contextKey{}).(string); ok {
 		return ip
 	}
-	return c.ClientIP()
+	return extractIP(c.Request().RemoteAddr)
 }
 
 // Get is an alias for FromContext.
