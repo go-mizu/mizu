@@ -1,0 +1,213 @@
+---
+title: "Global Flags"
+description: "Flags available on all Mizu CLI commands"
+---
+
+# Global Flags
+
+Global flags can be used with any Mizu CLI command. They can be placed either before or after the subcommand.
+
+## Available Flags
+
+| Flag | Short | Type | Description |
+|------|-------|------|-------------|
+| `--help` | `-h` | bool | Show help for command |
+| `--quiet` | `-q` | bool | Reduce output (errors only) |
+| `--verbose` | `-v` | bool | Increase verbosity (repeatable) |
+| `--json` | | bool | Emit machine-readable JSON output |
+| `--no-color` | | bool | Disable color output |
+
+## Flag Placement
+
+Global flags can appear before or after the command:
+
+```bash
+# Before command
+mizu --verbose dev
+
+# After command
+mizu dev --verbose
+
+# Mixed (both work)
+mizu --verbose dev --cmd ./cmd/api
+```
+
+## Detailed Reference
+
+### `--help`, `-h`
+
+Shows help information for the CLI or a specific command.
+
+```bash
+# Show general help
+mizu --help
+
+# Show command-specific help
+mizu new --help
+mizu dev --help
+```
+
+### `--quiet`, `-q`
+
+Suppresses normal output, showing only errors. Useful for scripts where you only care about failures.
+
+```bash
+# Quiet mode - only errors shown
+mizu new myapp --template minimal --quiet
+
+# Normal mode
+mizu new myapp --template minimal
+# Created myapp from template minimal
+#   0 directories, 4 files
+```
+
+<Note>
+`--quiet` is ignored when `--json` is used, since JSON output mode has its own output format.
+</Note>
+
+### `--verbose`, `-v`
+
+Increases output verbosity. Can be repeated for more detail.
+
+```bash
+# Standard verbosity
+mizu dev
+
+# Level 1 verbose
+mizu dev -v
+# discovered main package: ./cmd/api
+# Starting ./cmd/api...
+
+# Level 2 verbose (if available)
+mizu dev -vv
+```
+
+Verbose output is written to stderr, keeping stdout clean for normal output or piping.
+
+### `--json`
+
+Enables machine-readable JSON output. All commands support this flag.
+
+```bash
+# JSON output
+mizu version --json
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "version": "0.1.0",
+    "go_version": "go1.24",
+    "commit": "abc1234",
+    "built_at": "2024-01-15T10:30:00Z"
+  }
+}
+```
+
+See [JSON Output](/cli/json-output) for detailed format documentation.
+
+### `--no-color`
+
+Disables colored output. Useful when:
+- Piping output to files
+- Running in environments without color support
+- Personal preference
+
+```bash
+# Disable colors
+mizu new --list --no-color
+
+# Colors are auto-disabled when not in a terminal
+mizu new --list > templates.txt  # No colors
+```
+
+<Note>
+Colors are automatically disabled when stdout is not a terminal (e.g., when piping or redirecting).
+</Note>
+
+## Flag Combinations
+
+### Common Patterns
+
+```bash
+# Silent execution with JSON errors
+mizu new myapp --template api --quiet --json
+
+# Debug mode with verbose output
+mizu dev --verbose
+
+# CI/CD friendly
+mizu new myapp --template api --json --no-color
+
+# Script-friendly version check
+VERSION=$(mizu version --json | jq -r '.data.version')
+```
+
+### Conflicting Flags
+
+Some flags override others:
+
+| Combination | Behavior |
+|-------------|----------|
+| `--quiet --verbose` | `--quiet` takes precedence |
+| `--quiet --json` | JSON output is not suppressed |
+| `--json --no-color` | JSON output (no colors anyway) |
+
+## Environment Variables
+
+The CLI also respects these environment variables:
+
+| Variable | Description | Equivalent Flag |
+|----------|-------------|-----------------|
+| `NO_COLOR` | Disable colors when set | `--no-color` |
+| `TERM=dumb` | Disable colors | `--no-color` |
+
+```bash
+# Disable colors via environment
+NO_COLOR=1 mizu new --list
+```
+
+## Examples
+
+### Scripting
+
+```bash
+#!/bin/bash
+set -e
+
+# Create project quietly, fail on error
+mizu new myapp --template api --quiet
+
+# Get version for logging
+VERSION=$(mizu version --json | jq -r '.data.version')
+echo "Created with mizu $VERSION"
+```
+
+### CI/CD Pipeline
+
+```yaml
+# GitHub Actions example
+steps:
+  - name: Create project
+    run: |
+      mizu new myapp --template api --json --no-color > result.json
+      cat result.json | jq '.success'
+```
+
+### Debugging
+
+```bash
+# Maximum verbosity for troubleshooting
+mizu dev -vvv
+
+# Check what would happen
+mizu new myapp --template api --dry-run -v
+```
+
+## See Also
+
+- [Exit Codes](/cli/exit-codes) - Return codes for scripting
+- [JSON Output](/cli/json-output) - Machine-readable output format
+- [mizu new](/cli/new) - Create new projects
+- [mizu dev](/cli/dev) - Run in development mode

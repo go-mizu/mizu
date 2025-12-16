@@ -270,6 +270,42 @@
         ]
       },
       {
+        "tab": "CLI",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "cli/overview",
+              "cli/installation"
+            ]
+          },
+          {
+            "group": "Commands",
+            "pages": [
+              "cli/new",
+              "cli/dev",
+              "cli/version"
+            ]
+          },
+          {
+            "group": "Templates",
+            "pages": [
+              "cli/templates",
+              "cli/template-minimal",
+              "cli/template-api"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "cli/global-flags",
+              "cli/exit-codes",
+              "cli/json-output"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "Examples",
         "groups": [
           {

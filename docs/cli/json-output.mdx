@@ -1,0 +1,356 @@
+---
+title: "JSON Output"
+description: "Machine-readable JSON output format for automation"
+---
+
+# JSON Output
+
+All Mizu CLI commands support JSON output via the `--json` flag. This enables integration with scripts, CI/CD pipelines, and other automation tools.
+
+## Enabling JSON Output
+
+Add `--json` to any command:
+
+```bash
+mizu version --json
+mizu new myapp --template api --json
+mizu dev --json
+```
+
+## Output Format
+
+### Success Response
+
+```json
+{
+  "success": true,
+  "data": {
+    // Command-specific data
+  }
+}
+```
+
+### Error Response
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "error_code",
+    "message": "Human-readable error message"
+  }
+}
+```
+
+## Command-Specific Output
+
+### `mizu version --json`
+
+```json
+{
+  "success": true,
+  "data": {
+    "version": "0.1.0",
+    "go_version": "go1.24",
+    "commit": "abc1234",
+    "built_at": "2024-01-15T10:30:00Z"
+  }
+}
+```
+
+### `mizu new --list --json`
+
+```json
+{
+  "success": true,
+  "data": {
+    "templates": [
+      {
+        "name": "api",
+        "description": "JSON API service with a recommended layout",
+        "tags": ["go", "mizu", "api", "service"]
+      },
+      {
+        "name": "minimal",
+        "description": "Smallest runnable Mizu project",
+        "tags": ["go", "mizu", "minimal", "starter"]
+      }
+    ]
+  }
+}
+```
+
+### `mizu new --json`
+
+Success:
+
+```json
+{
+  "success": true,
+  "data": {
+    "template": "api",
+    "root": "/path/to/myapp",
+    "ops": [
+      {"op": "mkdir", "path": "app"},
+      {"op": "mkdir", "path": "app/api"},
+      {"op": "mkdir", "path": "cmd"},
+      {"op": "mkdir", "path": "cmd/api"},
+      {"op": "write", "path": ".gitignore", "bytes": 156, "mode": "0644"},
+      {"op": "write", "path": "README.md", "bytes": 423, "mode": "0644"},
+      {"op": "write", "path": "go.mod", "bytes": 78, "mode": "0644"},
+      {"op": "write", "path": "cmd/api/main.go", "bytes": 512, "mode": "0644"}
+    ],
+    "summary": {
+      "mkdir": 4,
+      "write": 4,
+      "overwrite": 0,
+      "skip": 0
+    }
+  }
+}
+```
+
+Error:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "missing_template",
+    "message": "template is required (use --template or --list)"
+  }
+}
+```
+
+### `mizu new --dry-run --json`
+
+Same format as `mizu new --json`, but files are not written:
+
+```json
+{
+  "success": true,
+  "data": {
+    "template": "minimal",
+    "root": "/path/to/myapp",
+    "ops": [
+      {"op": "write", "path": ".gitignore", "bytes": 156, "mode": "0644"},
+      {"op": "write", "path": "README.md", "bytes": 234, "mode": "0644"},
+      {"op": "write", "path": "go.mod", "bytes": 78, "mode": "0644"},
+      {"op": "write", "path": "main.go", "bytes": 245, "mode": "0644"}
+    ],
+    "summary": {
+      "mkdir": 0,
+      "write": 4,
+      "overwrite": 0,
+      "skip": 0
+    }
+  }
+}
+```
+
+### `mizu dev --json`
+
+The dev command emits NDJSON (newline-delimited JSON) with lifecycle events:
+
+```json
+{"event":"starting","timestamp":"2024-01-15T10:30:00Z","message":"running ./cmd/api"}
+{"event":"started","timestamp":"2024-01-15T10:30:01Z","message":"pid 12345"}
+{"event":"signal","timestamp":"2024-01-15T10:35:00Z","message":"interrupt"}
+{"event":"stopped","timestamp":"2024-01-15T10:35:02Z","message":"clean exit"}
+```
+
+#### Event Types
+
+| Event | Description | Fields |
+|-------|-------------|--------|
+| `starting` | About to start process | `message` |
+| `started` | Process started | `message` (includes PID) |
+| `signal` | Received shutdown signal | `message` (signal name) |
+| `timeout` | Graceful shutdown timed out | `message` |
+| `stopped` | Process exited | `message`, `exit_code` |
+| `error` | Error occurred | `message`, `exit_code` |
+
+#### Event Schema
+
+```typescript
+interface DevEvent {
+  event: "starting" | "started" | "signal" | "timeout" | "stopped" | "error";
+  timestamp: string;       // ISO 8601 UTC
+  message?: string;        // Human-readable description
+  exit_code?: number;      // Present for stopped/error events
+}
+```
+
+## Error Codes
+
+| Code | Description |
+|------|-------------|
+| `missing_template` | Template flag required but not provided |
+| `unknown_template` | Specified template doesn't exist |
+| `path_error` | Invalid path (traversal, absolute, etc.) |
+| `conflicts` | Files would be overwritten (use --force) |
+| `plan_error` | Error building execution plan |
+| `apply_error` | Error writing files |
+| `list_error` | Error listing templates |
+
+## Parsing JSON Output
+
+### jq Examples
+
+```bash
+# Get version number
+mizu version --json | jq -r '.data.version'
+
+# Check if operation succeeded
+mizu new myapp --template api --json | jq '.success'
+
+# List template names
+mizu new --list --json | jq -r '.data.templates[].name'
+
+# Count files created
+mizu new myapp --template api --json | jq '.data.summary.write'
+
+# Get error message
+mizu new myapp --json 2>&1 | jq -r '.error.message // empty'
+```
+
+### Bash Script
+
+```bash
+#!/bin/bash
+
+# Create project and parse result
+result=$(mizu new myapp --template api --json 2>&1)
+
+if echo "$result" | jq -e '.success' > /dev/null; then
+    files=$(echo "$result" | jq '.data.summary.write')
+    echo "Created project with $files files"
+else
+    error=$(echo "$result" | jq -r '.error.message')
+    echo "Error: $error"
+    exit 1
+fi
+```
+
+### Python
+
+```python
+import subprocess
+import json
+
+result = subprocess.run(
+    ["mizu", "version", "--json"],
+    capture_output=True,
+    text=True
+)
+
+data = json.loads(result.stdout)
+if data["success"]:
+    print(f"Version: {data['data']['version']}")
+else:
+    print(f"Error: {data['error']['message']}")
+```
+
+### Go
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "os/exec"
+)
+
+type VersionResult struct {
+    Success bool `json:"success"`
+    Data    struct {
+        Version   string `json:"version"`
+        GoVersion string `json:"go_version"`
+    } `json:"data"`
+}
+
+func main() {
+    out, _ := exec.Command("mizu", "version", "--json").Output()
+
+    var result VersionResult
+    json.Unmarshal(out, &result)
+
+    if result.Success {
+        println("Version:", result.Data.Version)
+    }
+}
+```
+
+## Streaming Events (mizu dev)
+
+For `mizu dev --json`, parse events line by line:
+
+### Bash
+
+```bash
+mizu dev --json 2>&1 | while IFS= read -r line; do
+    event=$(echo "$line" | jq -r '.event')
+    case "$event" in
+        started)
+            pid=$(echo "$line" | jq -r '.message' | grep -oP 'pid \K\d+')
+            echo "Process started with PID: $pid"
+            ;;
+        stopped)
+            code=$(echo "$line" | jq -r '.exit_code // 0')
+            echo "Process exited with code: $code"
+            ;;
+    esac
+done
+```
+
+### Node.js
+
+```javascript
+const { spawn } = require('child_process');
+const readline = require('readline');
+
+const proc = spawn('mizu', ['dev', '--json']);
+
+const rl = readline.createInterface({
+    input: proc.stdout,
+    crlfDelay: Infinity
+});
+
+rl.on('line', (line) => {
+    const event = JSON.parse(line);
+    console.log(`Event: ${event.event} - ${event.message}`);
+});
+```
+
+## Best Practices
+
+### Always Handle Both Success and Error
+
+```bash
+result=$(mizu new myapp --template api --json 2>&1)
+if echo "$result" | jq -e '.success' > /dev/null 2>&1; then
+    # Handle success
+else
+    # Handle error
+fi
+```
+
+### Capture stderr for Errors
+
+```bash
+# Errors go to stderr
+mizu new myapp --json 2>&1 | jq '.'
+```
+
+### Use jq for Safe Parsing
+
+```bash
+# Safe extraction with defaults
+mizu version --json | jq -r '.data.version // "unknown"'
+```
+
+## See Also
+
+- [Global Flags](/cli/global-flags) - All CLI flags including `--json`
+- [Exit Codes](/cli/exit-codes) - Return codes for automation
+- [mizu dev](/cli/dev) - Development server with streaming events

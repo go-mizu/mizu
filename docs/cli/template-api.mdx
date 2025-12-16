@@ -1,0 +1,454 @@
+---
+title: "API Template"
+description: "Production-ready JSON API service template with recommended layout"
+---
+
+# API Template
+
+The `api` template creates a production-ready JSON API service with a clean architecture, feature-based organization, and graceful shutdown support.
+
+## Create Project
+
+```bash
+mizu new myapi --template api
+cd myapi
+go mod tidy
+mizu dev
+```
+
+## Generated Structure
+
+```
+myapi/
+├── .gitignore
+├── README.md
+├── go.mod
+├── cmd/
+│   └── api/
+│       └── main.go           # Application entry point
+├── app/
+│   └── api/
+│       ├── app.go            # Application setup
+│       ├── config.go         # Configuration management
+│       └── routes.go         # Route definitions
+└── feature/
+    ├── echo/
+    │   └── http.go           # Echo endpoint
+    ├── health/
+    │   └── http.go           # Health check endpoint
+    ├── hello/
+    │   └── http.go           # Hello endpoint
+    └── users/
+        └── http.go           # Users CRUD endpoints
+```
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        cmd/api/main.go                       │
+│                    (Entry point, signals)                    │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                        app/api/                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+│  │   app.go     │  │  config.go   │  │  routes.go   │       │
+│  │  (Setup)     │  │  (Config)    │  │  (Routing)   │       │
+│  └──────────────┘  └──────────────┘  └──────────────┘       │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                        feature/                              │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐     │
+│  │  health  │  │  hello   │  │   echo   │  │  users   │     │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Generated Files
+
+### Entry Point: `cmd/api/main.go`
+
+Handles application lifecycle with graceful shutdown:
+
+```go
+package main
+
+import (
+    "log"
+    "os"
+    "os/signal"
+    "syscall"
+
+    "example.com/myapi/app/api"
+)
+
+func main() {
+    cfg := api.LoadConfig()
+    app := api.New(cfg)
+
+    log.Printf("listening on %s", cfg.Addr)
+
+    stop := make(chan os.Signal, 1)
+    signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+
+    errc := make(chan error, 1)
+    go func() { errc <- app.Listen(cfg.Addr) }()
+
+    select {
+    case sig := <-stop:
+        log.Printf("shutdown: %s", sig.String())
+        _ = app.Shutdown()
+    case err := <-errc:
+        if err != nil {
+            log.Fatal(err)
+        }
+    }
+}
+```
+
+### Application Setup: `app/api/app.go`
+
+Clean application wrapper:
+
+```go
+package api
+
+import "github.com/go-mizu/mizu"
+
+type App struct {
+    cfg Config
+    app *mizu.App
+}
+
+func New(cfg Config) *App {
+    a := &App{
+        cfg: cfg,
+        app: mizu.New(),
+    }
+    a.routes()
+    return a
+}
+
+func (a *App) Listen(addr string) error { return a.app.Listen(addr) }
+func (a *App) Shutdown() error          { return a.app.Shutdown() }
+```
+
+### Configuration: `app/api/config.go`
+
+Environment-based configuration:
+
+```go
+package api
+
+import "os"
+
+type Config struct {
+    Addr string
+    Env  string
+}
+
+func LoadConfig() Config {
+    return Config{
+        Addr: getenv("ADDR", ":8080"),
+        Env:  getenv("ENV", "dev"),
+    }
+}
+
+func getenv(key, fallback string) string {
+    if v := os.Getenv(key); v != "" {
+        return v
+    }
+    return fallback
+}
+```
+
+### Routes: `app/api/routes.go`
+
+Centralized route definitions:
+
+```go
+package api
+
+import (
+    "example.com/myapi/feature/echo"
+    "example.com/myapi/feature/health"
+    "example.com/myapi/feature/hello"
+    "example.com/myapi/feature/users"
+)
+
+func (a *App) routes() {
+    a.app.Get("/health", health.Get)
+    a.app.Get("/hello", hello.Get)
+    a.app.Post("/echo", echo.Post)
+    a.app.Get("/users", users.List)
+    a.app.Get("/users/:id", users.Get)
+}
+```
+
+### Feature Handlers
+
+#### Health Check: `feature/health/http.go`
+
+```go
+package health
+
+import "github.com/go-mizu/mizu"
+
+func Get(c *mizu.Ctx) error {
+    return c.Text(200, "ok\n")
+}
+```
+
+#### Users CRUD: `feature/users/http.go`
+
+```go
+package users
+
+import (
+    "strconv"
+    "github.com/go-mizu/mizu"
+)
+
+func List(c *mizu.Ctx) error {
+    return c.JSON(200, []map[string]any{
+        {"id": 1, "name": "Ada"},
+        {"id": 2, "name": "Linus"},
+    })
+}
+
+func Get(c *mizu.Ctx) error {
+    idStr := c.Param("id")
+    id, err := strconv.Atoi(idStr)
+    if err != nil || id <= 0 {
+        return c.JSON(400, map[string]any{
+            "error": "invalid_id",
+        })
+    }
+
+    return c.JSON(200, map[string]any{
+        "id":   id,
+        "name": "User " + idStr,
+    })
+}
+```
+
+## API Endpoints
+
+The template includes these endpoints:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Health check (returns `ok`) |
+| GET | `/hello` | Simple greeting |
+| POST | `/echo` | Echo request body |
+| GET | `/users` | List users (mock data) |
+| GET | `/users/:id` | Get user by ID |
+
+## Quick Start
+
+```bash
+# Create the project
+mizu new myapi --template api --module github.com/myorg/myapi
+
+# Enter directory
+cd myapi
+
+# Install dependencies
+go mod tidy
+
+# Run in development mode
+mizu dev
+```
+
+Test your API:
+
+```bash
+# Health check
+curl http://localhost:8080/health
+# ok
+
+# List users
+curl http://localhost:8080/users
+# [{"id":1,"name":"Ada"},{"id":2,"name":"Linus"}]
+
+# Get user
+curl http://localhost:8080/users/1
+# {"id":1,"name":"User 1"}
+
+# Echo
+curl -X POST http://localhost:8080/echo -d "Hello"
+# Hello
+```
+
+## Configuration
+
+Configure via environment variables:
+
+```bash
+# Change port
+ADDR=:3000 mizu dev
+
+# Set environment
+ENV=production mizu dev
+```
+
+## Adding Features
+
+### Add a New Feature
+
+1. Create the feature directory:
+
+```bash
+mkdir -p feature/products
+```
+
+2. Add the handler (`feature/products/http.go`):
+
+```go
+package products
+
+import "github.com/go-mizu/mizu"
+
+func List(c *mizu.Ctx) error {
+    return c.JSON(200, []map[string]any{
+        {"id": 1, "name": "Widget", "price": 9.99},
+        {"id": 2, "name": "Gadget", "price": 19.99},
+    })
+}
+
+func Get(c *mizu.Ctx) error {
+    id := c.Param("id")
+    return c.JSON(200, map[string]any{
+        "id":    id,
+        "name":  "Product " + id,
+        "price": 9.99,
+    })
+}
+
+func Create(c *mizu.Ctx) error {
+    var input struct {
+        Name  string  `json:"name"`
+        Price float64 `json:"price"`
+    }
+    if err := c.BodyJSON(&input); err != nil {
+        return c.JSON(400, map[string]any{"error": "invalid_json"})
+    }
+    return c.JSON(201, map[string]any{
+        "id":    3,
+        "name":  input.Name,
+        "price": input.Price,
+    })
+}
+```
+
+3. Register routes in `app/api/routes.go`:
+
+```go
+import (
+    // ...existing imports...
+    "example.com/myapi/feature/products"
+)
+
+func (a *App) routes() {
+    // ...existing routes...
+
+    a.app.Get("/products", products.List)
+    a.app.Get("/products/:id", products.Get)
+    a.app.Post("/products", products.Create)
+}
+```
+
+### Add Middleware
+
+Modify `app/api/app.go`:
+
+```go
+func New(cfg Config) *App {
+    a := &App{
+        cfg: cfg,
+        app: mizu.New(),
+    }
+
+    // Add global middleware
+    a.app.Use(requestLogger)
+    a.app.Use(recoverer)
+
+    a.routes()
+    return a
+}
+
+func requestLogger(c *mizu.Ctx) error {
+    log.Printf("%s %s", c.Method(), c.Path())
+    return c.Next()
+}
+
+func recoverer(c *mizu.Ctx) error {
+    defer func() {
+        if r := recover(); r != nil {
+            log.Printf("panic: %v", r)
+            _ = c.JSON(500, map[string]any{"error": "internal_error"})
+        }
+    }()
+    return c.Next()
+}
+```
+
+## Best Practices
+
+### Feature Organization
+
+Each feature should be self-contained:
+
+```
+feature/
+└── users/
+    ├── http.go      # HTTP handlers
+    ├── service.go   # Business logic (optional)
+    ├── repo.go      # Data access (optional)
+    └── model.go     # Domain types (optional)
+```
+
+### Configuration Expansion
+
+Extend `config.go` as needed:
+
+```go
+type Config struct {
+    Addr        string
+    Env         string
+    DatabaseURL string
+    JWTSecret   string
+    Debug       bool
+}
+
+func LoadConfig() Config {
+    return Config{
+        Addr:        getenv("ADDR", ":8080"),
+        Env:         getenv("ENV", "dev"),
+        DatabaseURL: getenv("DATABASE_URL", ""),
+        JWTSecret:   getenv("JWT_SECRET", ""),
+        Debug:       getenv("DEBUG", "false") == "true",
+    }
+}
+```
+
+## When to Use
+
+<Check>
+**Use the API template when:**
+- Building a production REST API
+- Working with a team
+- Need graceful shutdown handling
+- Want feature-based code organization
+- Building microservices
+</Check>
+
+## See Also
+
+- [Minimal Template](/cli/template-minimal) - Simpler starting point
+- [Templates Overview](/cli/templates) - All available templates
+- [mizu new](/cli/new) - Create projects from templates
