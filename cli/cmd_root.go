@@ -33,6 +33,7 @@ type command struct {
 var commands = []*command{
 	{name: "new", short: "Create a new project from a template", run: runNew, usage: usageNew},
 	{name: "dev", short: "Run the current project in development mode", run: runDev, usage: usageDev},
+	{name: "contract", short: "Work with service contracts", run: runContract, usage: usageContract},
 	{name: "version", short: "Print version information", run: runVersion, usage: usageVersion},
 }
 

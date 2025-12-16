@@ -22,8 +22,8 @@ type Types struct {
 
 // Type represents a registered type.
 type Type struct {
-	ID   string
-	Name string
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 func newTypes() *Types {
