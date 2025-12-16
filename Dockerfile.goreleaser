@@ -1,19 +1,26 @@
 # Minimal Dockerfile for goreleaser
 # Uses pre-built binary from goreleaser
+# Runtime is scratch with CA certs and tzdata included
 
-FROM alpine:3.21
+# Stage to collect runtime files
+FROM alpine:3.23 AS runtime-files
 
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata git
+RUN apk add --no-cache ca-certificates tzdata
 
-# Create non-root user
-RUN adduser -D -u 1000 mizu
-USER mizu
+# Final minimal runtime
+FROM scratch
+
+# Copy CA certs for TLS
+COPY --from=runtime-files /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+
+# Copy tzdata for time zone support
+COPY --from=runtime-files /usr/share/zoneinfo /usr/share/zoneinfo
 
 # Copy pre-built binary from goreleaser
 COPY mizu /usr/local/bin/mizu
 
-# Set working directory
+# Run as non-root (uid:gid 1000:1000)
+USER 1000:1000
 WORKDIR /workspace
 
 ENTRYPOINT ["/usr/local/bin/mizu"]

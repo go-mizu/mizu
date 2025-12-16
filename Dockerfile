@@ -1,10 +1,10 @@
 # Multi-stage Dockerfile for mizu CLI
-# For local development builds
+# Local development builds
 
 # Build stage
 FROM golang:1.25-alpine AS builder
 
-# Install build dependencies
+# Build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
 
 WORKDIR /src
@@ -23,26 +23,25 @@ ARG BUILD_TIME=unknown
 
 # Build binary
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
-    -ldflags="-s -w \
-        -X 'github.com/go-mizu/mizu/cli.Version=${VERSION}' \
-        -X 'github.com/go-mizu/mizu/cli.Commit=${COMMIT}' \
-        -X 'github.com/go-mizu/mizu/cli.BuildTime=${BUILD_TIME}'" \
-    -o /mizu ./cmd/mizu
+  -ldflags="-s -w \
+    -X github.com/go-mizu/mizu/cli.Version=${VERSION} \
+    -X github.com/go-mizu/mizu/cli.Commit=${COMMIT} \
+    -X github.com/go-mizu/mizu/cli.BuildTime=${BUILD_TIME}" \
+  -o /out/mizu ./cmd/mizu
 
 # Runtime stage
-FROM alpine:3.21
+FROM alpine:3.23
 
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata git
+# Runtime dependencies (keep minimal)
+RUN apk add --no-cache ca-certificates tzdata
 
 # Create non-root user
 RUN adduser -D -u 1000 mizu
+
+# Copy binary
+COPY --from=builder /out/mizu /usr/local/bin/mizu
+
 USER mizu
-
-# Copy binary from builder
-COPY --from=builder /mizu /usr/local/bin/mizu
-
-# Set working directory
 WORKDIR /workspace
 
 ENTRYPOINT ["/usr/local/bin/mizu"]
