@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -296,59 +295,8 @@ func TestSchemaGeneration(t *testing.T) {
 	}
 }
 
-func TestRESTTransport(t *testing.T) {
-	svc, _ := Register("todo", &TodoService{})
-	mux := http.NewServeMux()
-	MountREST(mux, svc)
-
-	// Test POST /todos (Create)
-	req := httptest.NewRequest(http.MethodPost, "/todos", strings.NewReader(`{"title":"Test"}`))
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	var todo Todo
-	if err := json.NewDecoder(rec.Body).Decode(&todo); err != nil {
-		t.Fatalf("decode failed: %v", err)
-	}
-	if todo.Title != "Test" {
-		t.Errorf("expected title 'Test', got %q", todo.Title)
-	}
-}
-
-func TestJSONRPCTransport(t *testing.T) {
-	svc, _ := Register("todo", &TodoService{})
-	mux := http.NewServeMux()
-	MountJSONRPC(mux, "/rpc", svc)
-
-	// Test JSON-RPC call
-	body := `{"jsonrpc":"2.0","id":1,"method":"Create","params":{"title":"RPC Test"}}`
-	req := httptest.NewRequest(http.MethodPost, "/rpc", strings.NewReader(body))
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	var resp struct {
-		JSONRPC string `json:"jsonrpc"`
-		ID      int    `json:"id"`
-		Result  *Todo  `json:"result"`
-	}
-	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode failed: %v", err)
-	}
-	if resp.Result == nil {
-		t.Fatal("expected result")
-	}
-	if resp.Result.Title != "RPC Test" {
-		t.Errorf("expected title 'RPC Test', got %q", resp.Result.Title)
-	}
-}
+// Transport tests moved to transport/rest and transport/jsonrpc packages
+// to avoid circular imports.
 
 func TestIntrospection(t *testing.T) {
 	svc, _ := Register("todo", &TodoService{})

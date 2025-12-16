@@ -1,4 +1,4 @@
-package openapi
+package rest
 
 import (
 	"context"
@@ -253,16 +253,16 @@ func TestPathItem_SetOperation(t *testing.T) {
 	}
 }
 
-func TestNewHandler(t *testing.T) {
+func TestNewSpecHandler(t *testing.T) {
 	svc, _ := contract.Register("todo", &todoService{})
 
-	h, err := NewHandler(svc)
+	h, err := NewSpecHandler(svc)
 	if err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
 
-	if h.Name() != "openapi" {
-		t.Errorf("name = %q, want %q", h.Name(), "openapi")
+	if h.Name() != "rest" {
+		t.Errorf("name = %q, want %q", h.Name(), "rest")
 	}
 
 	if h.Document() == nil {
@@ -274,9 +274,9 @@ func TestNewHandler(t *testing.T) {
 	}
 }
 
-func TestHandler_ServeHTTP(t *testing.T) {
+func TestSpecHandler_ServeHTTP(t *testing.T) {
 	svc, _ := contract.Register("todo", &todoService{})
-	h, _ := NewHandler(svc)
+	h, _ := NewSpecHandler(svc)
 
 	tests := []struct {
 		name       string
@@ -326,11 +326,11 @@ func TestHandler_ServeHTTP(t *testing.T) {
 	}
 }
 
-func TestMount(t *testing.T) {
+func TestMountSpec(t *testing.T) {
 	svc, _ := contract.Register("todo", &todoService{})
 	mux := http.NewServeMux()
 
-	err := Mount(mux, "/openapi.json", svc)
+	err := MountSpec(mux, "/openapi.json", svc)
 	if err != nil {
 		t.Fatalf("mount error: %v", err)
 	}
@@ -345,11 +345,11 @@ func TestMount(t *testing.T) {
 	}
 }
 
-func TestMount_DefaultPath(t *testing.T) {
+func TestMountSpec_DefaultPath(t *testing.T) {
 	svc, _ := contract.Register("todo", &todoService{})
 	mux := http.NewServeMux()
 
-	err := Mount(mux, "", svc)
+	err := MountSpec(mux, "", svc)
 	if err != nil {
 		t.Fatalf("mount error: %v", err)
 	}
@@ -364,11 +364,11 @@ func TestMount_DefaultPath(t *testing.T) {
 	}
 }
 
-func TestMountWithDocs(t *testing.T) {
+func TestMountSpecWithDocs(t *testing.T) {
 	svc, _ := contract.Register("todo", &todoService{})
 	mux := http.NewServeMux()
 
-	err := MountWithDocs(mux, "/openapi.json", "/docs", svc)
+	err := MountSpecWithDocs(mux, "/openapi.json", "/docs", svc)
 	if err != nil {
 		t.Fatalf("mount error: %v", err)
 	}
@@ -468,5 +468,254 @@ func TestConvertSchema(t *testing.T) {
 	}
 	if tagsProp.Items == nil {
 		t.Error("expected items on array property")
+	}
+}
+
+// REST Handler Tests
+
+func TestNewHandler(t *testing.T) {
+	svc, _ := contract.Register("todo", &todoService{})
+	h := NewHandler(svc)
+
+	if h.Name() != "rest" {
+		t.Errorf("name = %q, want %q", h.Name(), "rest")
+	}
+
+	if h.basePath != "/todos" {
+		t.Errorf("basePath = %q, want %q", h.basePath, "/todos")
+	}
+}
+
+func TestHandler_Create(t *testing.T) {
+	svc, _ := contract.Register("todo", &todoService{})
+	h := NewHandler(svc)
+
+	body := strings.NewReader(`{"title": "Test Todo"}`)
+	req := httptest.NewRequest(http.MethodPost, "/todos", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var result Todo
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	if result.Title != "Test Todo" {
+		t.Errorf("title = %q, want %q", result.Title, "Test Todo")
+	}
+}
+
+func TestHandler_Get(t *testing.T) {
+	svc, _ := contract.Register("todo", &todoService{})
+	h := NewHandler(svc)
+
+	req := httptest.NewRequest(http.MethodGet, "/todos/123", nil)
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var result Todo
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	if result.ID != "123" {
+		t.Errorf("id = %q, want %q", result.ID, "123")
+	}
+}
+
+func TestHandler_List(t *testing.T) {
+	svc, _ := contract.Register("todo", &todoService{})
+	h := NewHandler(svc)
+
+	req := httptest.NewRequest(http.MethodGet, "/todos?limit=10", nil)
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var result ListTodosOutput
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	if len(result.Todos) != 1 {
+		t.Errorf("todos count = %d, want 1", len(result.Todos))
+	}
+}
+
+func TestHandler_Delete(t *testing.T) {
+	svc, _ := contract.Register("todo", &todoService{})
+	h := NewHandler(svc)
+
+	req := httptest.NewRequest(http.MethodDelete, "/todos/123", nil)
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNoContent)
+	}
+}
+
+func TestHandler_NotFound(t *testing.T) {
+	svc, _ := contract.Register("todo", &todoService{})
+	h := NewHandler(svc)
+
+	req := httptest.NewRequest(http.MethodGet, "/unknown", nil)
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandler_MethodNotAllowed(t *testing.T) {
+	svc, _ := contract.Register("todo", &todoService{})
+	h := NewHandler(svc)
+
+	req := httptest.NewRequest(http.MethodPatch, "/todos", nil)
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestMount_REST(t *testing.T) {
+	svc, _ := contract.Register("todo", &todoService{})
+	mux := http.NewServeMux()
+
+	Mount(mux, svc)
+
+	// Test create
+	body := strings.NewReader(`{"title": "Test"}`)
+	req := httptest.NewRequest(http.MethodPost, "/todos", body)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("create status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestMountWithSpec_REST(t *testing.T) {
+	svc, _ := contract.Register("todo", &todoService{})
+	mux := http.NewServeMux()
+
+	err := MountWithSpec(mux, "/openapi.json", svc)
+	if err != nil {
+		t.Fatalf("mount error: %v", err)
+	}
+
+	// Test spec endpoint
+	req := httptest.NewRequest(http.MethodGet, "/openapi.json", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("spec status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	// Test REST endpoint
+	body := strings.NewReader(`{"title": "Test"}`)
+	req = httptest.NewRequest(http.MethodPost, "/todos", body)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("rest status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestInferHTTPMethod(t *testing.T) {
+	tests := []struct {
+		name   string
+		method string
+		want   string
+	}{
+		{"CreateTodo", "CreateTodo", http.MethodPost},
+		{"GetTodo", "GetTodo", http.MethodGet},
+		{"ListTodos", "ListTodos", http.MethodGet},
+		{"UpdateTodo", "UpdateTodo", http.MethodPut},
+		{"DeleteTodo", "DeleteTodo", http.MethodDelete},
+		{"PatchTodo", "PatchTodo", http.MethodPatch},
+		{"DoSomething", "DoSomething", http.MethodPost},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := inferHTTPMethod(tt.method)
+			if got != tt.want {
+				t.Errorf("inferHTTPMethod(%q) = %q, want %q", tt.method, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractPathVars(t *testing.T) {
+	tests := []struct {
+		path string
+		want []string
+	}{
+		{"/todos", nil},
+		{"/todos/{id}", []string{"id"}},
+		{"/users/{userId}/todos/{todoId}", []string{"userId", "todoId"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			got := extractPathVars(tt.path)
+			if len(got) != len(tt.want) {
+				t.Errorf("extractPathVars(%q) = %v, want %v", tt.path, got, tt.want)
+				return
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("extractPathVars(%q)[%d] = %q, want %q", tt.path, i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestPathToRegexp(t *testing.T) {
+	tests := []struct {
+		path    string
+		testURL string
+		match   bool
+	}{
+		{"/todos", "/todos", true},
+		{"/todos", "/todos/", false},
+		{"/todos/{id}", "/todos/123", true},
+		{"/todos/{id}", "/todos", false},
+		{"/users/{userId}/todos/{todoId}", "/users/1/todos/2", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path+"_"+tt.testURL, func(t *testing.T) {
+			re := pathToRegexp(tt.path)
+			got := re.MatchString(tt.testURL)
+			if got != tt.match {
+				t.Errorf("pathToRegexp(%q).MatchString(%q) = %v, want %v", tt.path, tt.testURL, got, tt.match)
+			}
+		})
 	}
 }
