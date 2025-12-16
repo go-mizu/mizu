@@ -1,0 +1,325 @@
+---
+title: "REST Transport"
+description: "RESTful HTTP transport with automatic verb conventions"
+---
+
+# REST Transport
+
+The REST transport automatically maps service methods to RESTful HTTP endpoints using naming conventions. No route definitions needed - just name your methods correctly.
+
+## Quick Start
+
+```go
+import "github.com/go-mizu/mizu/contract"
+
+svc, _ := contract.Register("todo", &todo.Service{})
+
+mux := http.NewServeMux()
+contract.MountREST(mux, svc)
+
+http.ListenAndServe(":8080", mux)
+```
+
+This creates:
+- `POST /todos` - Create method
+- `GET /todos` - List method
+- `GET /todos/{id}` - Get method
+- `PUT /todos/{id}` - Update method
+- `DELETE /todos/{id}` - Delete method
+
+## MountREST Function
+
+```go
+func MountREST(mux *http.ServeMux, svc *Service)
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `mux` | `*http.ServeMux` | HTTP request multiplexer |
+| `svc` | `*Service` | Registered service contract |
+
+## Verb Conventions
+
+Method names determine HTTP verbs:
+
+| Method Prefix | HTTP Verb | Path |
+|---------------|-----------|------|
+| `Create*` | POST | `/resources` |
+| `Get*` | GET | `/resources/{id}` |
+| `List*` | GET | `/resources` |
+| `Update*` | PUT | `/resources/{id}` |
+| `Delete*` | DELETE | `/resources/{id}` |
+| (other) | POST | `/resources` |
+
+### Examples
+
+| Method Name | HTTP Endpoint |
+|-------------|---------------|
+| `Create` | `POST /todos` |
+| `CreateTodo` | `POST /todos` |
+| `Get` | `GET /todos/{id}` |
+| `GetByID` | `GET /todos/{id}` |
+| `List` | `GET /todos` |
+| `ListAll` | `GET /todos` |
+| `Update` | `PUT /todos/{id}` |
+| `UpdateStatus` | `PUT /todos/{id}` |
+| `Delete` | `DELETE /todos/{id}` |
+| `Health` | `POST /todos` |
+
+## Path Derivation
+
+### Service Name Pluralization
+
+The service name is naively pluralized for the path:
+
+| Service Name | Path |
+|--------------|------|
+| `todo` | `/todos` |
+| `user` | `/users` |
+| `product` | `/products` |
+| `status` | `/statuss` |
+
+### ID Path Parameter
+
+Methods get `/{id}` if their input type name contains "ID":
+
+```go
+// Has /{id} because input name contains "ID"
+type GetIn struct {
+    ID string `json:"id"`
+}
+
+// Has /{id} because input name is "GetByIDIn"
+type GetByIDIn struct {
+    UserID string `json:"userId"`
+}
+```
+
+## Request/Response Format
+
+### Request Body
+
+For methods with input, the request body is parsed as JSON:
+
+```bash
+curl -X POST http://localhost:8080/todos \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Buy milk"}'
+```
+
+### Response Body
+
+Outputs are serialized as JSON:
+
+```json
+{
+  "id": "todo_1",
+  "title": "Buy milk",
+  "completed": false
+}
+```
+
+### No Content
+
+Methods returning no output return 204 No Content:
+
+```go
+func (s *Service) Delete(ctx context.Context, in *DeleteIn) error {
+    // ...
+    return nil
+}
+```
+
+```bash
+curl -X DELETE http://localhost:8080/todos/1
+# HTTP 204 No Content
+```
+
+### Errors
+
+Errors return 500 Internal Server Error with the error message:
+
+```bash
+curl http://localhost:8080/todos/999
+# HTTP 500 Internal Server Error
+# Body: "todo not found"
+```
+
+## Complete Example
+
+### Service Definition
+
+```go
+package todo
+
+import (
+    "context"
+    "errors"
+)
+
+type Service struct {
+    todos map[string]*Todo
+}
+
+type Todo struct {
+    ID        string `json:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
+}
+
+type CreateIn struct {
+    Title string `json:"title"`
+}
+
+type GetIn struct {
+    ID string `json:"id"`
+}
+
+type ListOut struct {
+    Items []*Todo `json:"items"`
+}
+
+type UpdateIn struct {
+    ID        string `json:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
+}
+
+type DeleteIn struct {
+    ID string `json:"id"`
+}
+
+func (s *Service) Create(ctx context.Context, in *CreateIn) (*Todo, error) {
+    todo := &Todo{ID: generateID(), Title: in.Title}
+    s.todos[todo.ID] = todo
+    return todo, nil
+}
+
+func (s *Service) Get(ctx context.Context, in *GetIn) (*Todo, error) {
+    todo, ok := s.todos[in.ID]
+    if !ok {
+        return nil, errors.New("not found")
+    }
+    return todo, nil
+}
+
+func (s *Service) List(ctx context.Context) (*ListOut, error) {
+    items := make([]*Todo, 0, len(s.todos))
+    for _, t := range s.todos {
+        items = append(items, t)
+    }
+    return &ListOut{Items: items}, nil
+}
+
+func (s *Service) Update(ctx context.Context, in *UpdateIn) (*Todo, error) {
+    todo, ok := s.todos[in.ID]
+    if !ok {
+        return nil, errors.New("not found")
+    }
+    todo.Title = in.Title
+    todo.Completed = in.Completed
+    return todo, nil
+}
+
+func (s *Service) Delete(ctx context.Context, in *DeleteIn) error {
+    delete(s.todos, in.ID)
+    return nil
+}
+```
+
+### Mounting
+
+```go
+package main
+
+import (
+    "net/http"
+    "github.com/go-mizu/mizu/contract"
+    "yourmodule/todo"
+)
+
+func main() {
+    svc, _ := contract.Register("todo", &todo.Service{
+        todos: make(map[string]*todo.Todo),
+    })
+
+    mux := http.NewServeMux()
+    contract.MountREST(mux, svc)
+
+    http.ListenAndServe(":8080", mux)
+}
+```
+
+### Testing
+
+```bash
+# Create
+curl -X POST http://localhost:8080/todos \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Buy milk"}'
+# {"id":"todo_1","title":"Buy milk","completed":false}
+
+# List
+curl http://localhost:8080/todos
+# {"items":[{"id":"todo_1","title":"Buy milk","completed":false}]}
+
+# Get
+curl http://localhost:8080/todos/todo_1
+# {"id":"todo_1","title":"Buy milk","completed":false}
+
+# Update
+curl -X PUT http://localhost:8080/todos/todo_1 \
+  -H "Content-Type: application/json" \
+  -d '{"id":"todo_1","title":"Buy milk","completed":true}'
+# {"id":"todo_1","title":"Buy milk","completed":true}
+
+# Delete
+curl -X DELETE http://localhost:8080/todos/todo_1
+# 204 No Content
+```
+
+## Multiple Services
+
+Mount multiple services on the same mux:
+
+```go
+todoSvc, _ := contract.Register("todo", &todo.Service{})
+userSvc, _ := contract.Register("user", &user.Service{})
+
+mux := http.NewServeMux()
+contract.MountREST(mux, todoSvc)  // /todos/*
+contract.MountREST(mux, userSvc)  // /users/*
+```
+
+## With OpenAPI
+
+Serve OpenAPI documentation alongside REST:
+
+```go
+mux := http.NewServeMux()
+contract.MountREST(mux, svc)
+contract.ServeOpenAPI(mux, "/openapi.json", svc)
+```
+
+## Limitations
+
+The current REST transport is intentionally minimal:
+
+- **No query parameters**: Input is always from request body
+- **No path parameter extraction**: ID is inferred from URL but not parsed into input
+- **Simple error handling**: All errors return 500
+- **No middleware support**: Use standard http.Handler wrapping
+
+Future versions may add:
+- Query parameter binding for GET methods
+- Custom error status codes
+- Path parameter extraction
+- Middleware hooks
+
+## See Also
+
+- [JSON-RPC Transport](/contract/jsonrpc) - Alternative transport
+- [OpenAPI](/contract/openapi) - API documentation
+- [Defining Services](/contract/service) - Service method conventions

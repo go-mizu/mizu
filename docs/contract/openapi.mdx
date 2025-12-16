@@ -1,0 +1,478 @@
+---
+title: "OpenAPI"
+description: "Automatic OpenAPI 3.1 specification generation"
+---
+
+# OpenAPI
+
+The contract package automatically generates OpenAPI 3.1 specifications from your registered services. Serve API documentation without writing YAML or JSON by hand.
+
+## Quick Start
+
+```go
+import "github.com/go-mizu/mizu/contract"
+
+svc, _ := contract.Register("todo", &todo.Service{})
+
+mux := http.NewServeMux()
+contract.MountREST(mux, svc)
+contract.ServeOpenAPI(mux, "/openapi.json", svc)
+
+http.ListenAndServe(":8080", mux)
+```
+
+Access the spec at `http://localhost:8080/openapi.json`.
+
+## ServeOpenAPI Function
+
+```go
+func ServeOpenAPI(mux *http.ServeMux, path string, svc *Service)
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `mux` | `*http.ServeMux` | HTTP request multiplexer |
+| `path` | `string` | Endpoint path (e.g., `/openapi.json`) |
+| `svc` | `*Service` | Registered service contract |
+
+## Generated Specification
+
+The generated spec includes:
+
+### Info Section
+
+```json
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "todo",
+    "version": "0.1.0"
+  }
+}
+```
+
+### Paths
+
+Paths mirror the REST transport conventions:
+
+```json
+{
+  "paths": {
+    "/todos": {
+      "post": {
+        "operationId": "todo.Create",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {"$ref": "#/components/schemas/todo.CreateIn"}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/todo.Todo"}
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "todo.List",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/todo.TodoList"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/todos/{id}": {
+      "get": {
+        "operationId": "todo.Get",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {"$ref": "#/components/schemas/todo.GetIn"}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/todo.Todo"}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+### Component Schemas
+
+All input/output types appear in components:
+
+```json
+{
+  "components": {
+    "schemas": {
+      "todo.CreateIn": {
+        "type": "object",
+        "properties": {
+          "title": {"type": "string"}
+        },
+        "required": ["title"]
+      },
+      "todo.Todo": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "title": {"type": "string"},
+          "completed": {"type": "boolean"}
+        },
+        "required": ["id", "title", "completed"]
+      },
+      "todo.TodoList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/todo.Todo"}
+          }
+        },
+        "required": ["items"]
+      }
+    }
+  }
+}
+```
+
+## Complete Example
+
+### Service Definition
+
+```go
+package todo
+
+import (
+    "context"
+    "time"
+)
+
+type Service struct{}
+
+type CreateIn struct {
+    Title       string `json:"title"`
+    Description string `json:"description"`
+}
+
+type Todo struct {
+    ID          string    `json:"id"`
+    Title       string    `json:"title"`
+    Description string    `json:"description"`
+    Completed   bool      `json:"completed"`
+    CreatedAt   time.Time `json:"createdAt"`
+}
+
+type GetIn struct {
+    ID string `json:"id"`
+}
+
+type TodoList struct {
+    Items []*Todo `json:"items"`
+    Total int     `json:"total"`
+}
+
+func (s *Service) Create(ctx context.Context, in *CreateIn) (*Todo, error) {
+    return nil, nil
+}
+
+func (s *Service) Get(ctx context.Context, in *GetIn) (*Todo, error) {
+    return nil, nil
+}
+
+func (s *Service) List(ctx context.Context) (*TodoList, error) {
+    return nil, nil
+}
+
+func (s *Service) Health(ctx context.Context) error {
+    return nil
+}
+```
+
+### Server Setup
+
+```go
+package main
+
+import (
+    "net/http"
+    "github.com/go-mizu/mizu/contract"
+    "yourmodule/todo"
+)
+
+func main() {
+    svc, _ := contract.Register("todo", &todo.Service{})
+
+    mux := http.NewServeMux()
+
+    // Mount REST API
+    contract.MountREST(mux, svc)
+
+    // Serve OpenAPI spec
+    contract.ServeOpenAPI(mux, "/openapi.json", svc)
+
+    http.ListenAndServe(":8080", mux)
+}
+```
+
+### Generated Spec
+
+```bash
+curl http://localhost:8080/openapi.json | jq
+```
+
+```json
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "todo",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/todos": {
+      "get": {
+        "operationId": "todo.List",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/todo.TodoList"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "todo.Create",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/todo.CreateIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/todo.Todo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/todos/{id}": {
+      "get": {
+        "operationId": "todo.Get",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/todo.GetIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/todo.Todo"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "todo.CreateIn": {
+        "type": "object",
+        "properties": {
+          "title": {"type": "string"},
+          "description": {"type": "string"}
+        },
+        "required": ["title", "description"]
+      },
+      "todo.GetIn": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"}
+        },
+        "required": ["id"]
+      },
+      "todo.Todo": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "title": {"type": "string"},
+          "description": {"type": "string"},
+          "completed": {"type": "boolean"},
+          "createdAt": {"type": "string", "format": "date-time"}
+        },
+        "required": ["id", "title", "description", "completed", "createdAt"]
+      },
+      "todo.TodoList": {
+        "type": "object",
+        "properties": {
+          "items": {"type": "array"},
+          "total": {"type": "integer"}
+        },
+        "required": ["items", "total"]
+      }
+    }
+  }
+}
+```
+
+## Using with Swagger UI
+
+Serve Swagger UI pointing to your OpenAPI spec:
+
+```go
+mux := http.NewServeMux()
+contract.MountREST(mux, svc)
+contract.ServeOpenAPI(mux, "/openapi.json", svc)
+
+// Swagger UI (external CDN)
+mux.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "text/html")
+    w.Write([]byte(`<!DOCTYPE html>
+<html>
+<head>
+  <title>API Docs</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    SwaggerUIBundle({
+      url: "/openapi.json",
+      dom_id: "#swagger-ui"
+    });
+  </script>
+</body>
+</html>`))
+})
+```
+
+## Using with Redoc
+
+```go
+mux.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "text/html")
+    w.Write([]byte(`<!DOCTYPE html>
+<html>
+<head>
+  <title>API Docs</title>
+</head>
+<body>
+  <redoc spec-url="/openapi.json"></redoc>
+  <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
+</body>
+</html>`))
+})
+```
+
+## Programmatic Access
+
+Access schemas programmatically:
+
+```go
+svc, _ := contract.Register("todo", &todo.Service{})
+
+// Get all schemas
+schemas := svc.Types.Schemas()
+
+for _, s := range schemas {
+    fmt.Printf("Schema: %s\n", s.ID)
+
+    // Access JSON schema
+    b, _ := json.MarshalIndent(s.JSON, "", "  ")
+    fmt.Println(string(b))
+}
+```
+
+## Multiple Services
+
+Generate specs for multiple services:
+
+```go
+todoSvc, _ := contract.Register("todo", &todo.Service{})
+userSvc, _ := contract.Register("user", &user.Service{})
+
+mux := http.NewServeMux()
+
+// Mount REST for each
+contract.MountREST(mux, todoSvc)
+contract.MountREST(mux, userSvc)
+
+// Serve separate specs
+contract.ServeOpenAPI(mux, "/openapi/todo.json", todoSvc)
+contract.ServeOpenAPI(mux, "/openapi/user.json", userSvc)
+```
+
+## Limitations
+
+The current OpenAPI generator is minimal:
+
+- Fixed version "0.1.0"
+- No description fields
+- No security definitions
+- No example values
+- No parameter definitions for path params
+
+Future versions may add:
+- Customizable info section
+- Description extraction from doc comments
+- Security scheme definitions
+- Example generation
+- Proper path parameter definitions
+
+## See Also
+
+- [Type System](/contract/types) - How schemas are generated
+- [REST Transport](/contract/rest) - REST endpoint conventions
+- [Defining Services](/contract/service) - Service method signatures

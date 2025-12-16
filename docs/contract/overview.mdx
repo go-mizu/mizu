@@ -1,0 +1,183 @@
+---
+title: "Contract Overview"
+description: "Transport-neutral service contracts for building multi-protocol APIs"
+---
+
+# Contract
+
+The `contract` package provides a transport-neutral way to define service contracts in Go. Write your business logic once as plain Go structs with methods, then expose it via multiple transports (REST, JSON-RPC) without modifying your service code.
+
+## Why Use Contracts?
+
+Traditional web frameworks couple your business logic to HTTP. With contracts, you get:
+
+- **Transport Independence**: Your service code has zero HTTP dependencies
+- **Multi-Protocol Support**: Expose the same service via REST, JSON-RPC, or custom protocols
+- **Easy Testing**: Test business logic without HTTP mocking
+- **Auto-Generated APIs**: REST routes and OpenAPI specs derived from method signatures
+- **Type Safety**: JSON schemas generated from Go types at registration time
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Plain Go Service                             │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  service/todo/todo.go                                    │   │
+│  │  - No framework dependencies                             │   │
+│  │  - Pure business logic                                   │   │
+│  │  - Easy to test                                          │   │
+│  └─────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ contract.Register()
+┌─────────────────────────────────────────────────────────────────┐
+│                    contract.Service                             │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  - Methods with compiled invokers                        │   │
+│  │  - TypeRegistry with JSON schemas                        │   │
+│  │  - Transport-neutral contract                            │   │
+│  └─────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+          ┌───────────────────┼───────────────────┐
+          ▼                   ▼                   ▼
+    ┌──────────┐        ┌──────────┐        ┌──────────┐
+    │   REST   │        │ JSON-RPC │        │  OpenAPI │
+    │ MountREST│        │MountJSONRPC      │ServeOpenAPI
+    └──────────┘        └──────────┘        └──────────┘
+```
+
+## Quick Example
+
+### 1. Define a Plain Go Service
+
+```go
+package todo
+
+import "context"
+
+type Service struct{}
+
+type CreateIn struct {
+    Title string `json:"title"`
+}
+
+type Todo struct {
+    ID    string `json:"id"`
+    Title string `json:"title"`
+}
+
+func (s *Service) Create(ctx context.Context, in *CreateIn) (*Todo, error) {
+    return &Todo{ID: "t_1", Title: in.Title}, nil
+}
+
+func (s *Service) Health(ctx context.Context) error {
+    return nil
+}
+```
+
+### 2. Register and Mount Transports
+
+```go
+package main
+
+import (
+    "net/http"
+    "github.com/go-mizu/mizu/contract"
+    "yourmodule/service/todo"
+)
+
+func main() {
+    // Register the service to get a contract
+    svc, err := contract.Register("todo", &todo.Service{})
+    if err != nil {
+        panic(err)
+    }
+
+    mux := http.NewServeMux()
+
+    // Mount REST endpoints: POST /todos, GET /todos, etc.
+    contract.MountREST(mux, svc)
+
+    // Mount JSON-RPC 2.0 at /rpc
+    contract.MountJSONRPC(mux, "/rpc", svc)
+
+    // Serve OpenAPI 3.1 spec at /openapi.json
+    contract.ServeOpenAPI(mux, "/openapi.json", svc)
+
+    http.ListenAndServe(":8080", mux)
+}
+```
+
+### 3. Call Your API
+
+**REST:**
+```bash
+curl -X POST http://localhost:8080/todos \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Buy milk"}'
+# {"id":"t_1","title":"Buy milk"}
+```
+
+**JSON-RPC:**
+```bash
+curl -X POST http://localhost:8080/rpc \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"Create","params":{"title":"Buy milk"}}'
+# {"jsonrpc":"2.0","id":1,"result":{"id":"t_1","title":"Buy milk"}}
+```
+
+## Key Concepts
+
+| Concept | Description |
+|---------|-------------|
+| [Service](/contract/service) | Plain Go struct with methods following canonical signatures |
+| [Register](/contract/register) | Convert a Go service into a contract with introspection |
+| [Types](/contract/types) | Automatic JSON schema generation from Go types |
+| [Invoker](/contract/invoker) | Compiled method callers for runtime invocation |
+| [REST](/contract/rest) | RESTful HTTP transport with verb conventions |
+| [JSON-RPC](/contract/jsonrpc) | JSON-RPC 2.0 transport with batch support |
+| [OpenAPI](/contract/openapi) | Automatic OpenAPI 3.1 spec generation |
+
+## When to Use Contracts
+
+<Check>
+**Use contracts when:**
+- You need multiple API protocols (REST + RPC)
+- You want transport-independent business logic
+- You need auto-generated OpenAPI specs
+- You're building microservices with clean architecture
+- You want easy-to-test service layers
+</Check>
+
+<Warning>
+**Consider alternatives when:**
+- You only need simple REST endpoints (use Mizu handlers directly)
+- You need fine-grained control over HTTP responses
+- You're building a traditional web application with HTML templates
+</Warning>
+
+## Getting Started
+
+The fastest way to start is with the CLI template:
+
+```bash
+mizu new myservice --template contract
+cd myservice
+go mod tidy
+go run ./cmd/api
+```
+
+This creates a complete project with:
+- Todo service example
+- REST, JSON-RPC, and OpenAPI transports
+- Graceful shutdown handling
+- Clean project structure
+
+## Next Steps
+
+- [Defining Services](/contract/service) - Learn the canonical method signatures
+- [Registration](/contract/register) - Understand the registration process
+- [REST Transport](/contract/rest) - Configure REST endpoints
+- [Contract Template](/cli/template-contract) - Project template reference

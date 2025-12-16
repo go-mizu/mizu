@@ -1,0 +1,344 @@
+---
+title: "JSON-RPC Transport"
+description: "JSON-RPC 2.0 transport with batch request support"
+---
+
+# JSON-RPC Transport
+
+The JSON-RPC transport exposes service methods via the JSON-RPC 2.0 protocol. It supports single requests, batch requests, and notifications.
+
+## Quick Start
+
+```go
+import "github.com/go-mizu/mizu/contract"
+
+svc, _ := contract.Register("todo", &todo.Service{})
+
+mux := http.NewServeMux()
+contract.MountJSONRPC(mux, "/rpc", svc)
+
+http.ListenAndServe(":8080", mux)
+```
+
+Call methods:
+
+```bash
+curl -X POST http://localhost:8080/rpc \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"Create","params":{"title":"Buy milk"}}'
+```
+
+## MountJSONRPC Function
+
+```go
+func MountJSONRPC(mux *http.ServeMux, path string, svc *Service)
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `mux` | `*http.ServeMux` | HTTP request multiplexer |
+| `path` | `string` | Endpoint path (e.g., `/rpc`, `/jsonrpc`) |
+| `svc` | `*Service` | Registered service contract |
+
+### Path Defaults
+
+If path is empty, defaults to `/jsonrpc`:
+
+```go
+contract.MountJSONRPC(mux, "", svc)    // /jsonrpc
+contract.MountJSONRPC(mux, "/rpc", svc) // /rpc
+```
+
+## Request Format
+
+### Single Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "Create",
+  "params": {"title": "Buy milk"}
+}
+```
+
+### Request Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `jsonrpc` | string | Yes | Must be "2.0" |
+| `id` | any | No* | Request identifier |
+| `method` | string | Yes | Method name |
+| `params` | object | No | Method parameters |
+
+*If `id` is omitted, the request is a notification (no response).
+
+## Response Format
+
+### Success Response
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "id": "todo_1",
+    "title": "Buy milk",
+    "completed": false
+  }
+}
+```
+
+### Error Response
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "error": {
+    "code": -32603,
+    "message": "Internal error",
+    "data": "todo not found"
+  }
+}
+```
+
+## Method Resolution
+
+Methods can be called with or without the service name prefix:
+
+| Request Method | Resolves To |
+|----------------|-------------|
+| `Create` | `Service.Create` |
+| `todo.Create` | `Service.Create` (if service name is "todo") |
+
+```bash
+# Both work the same
+curl -X POST http://localhost:8080/rpc \
+  -d '{"jsonrpc":"2.0","id":1,"method":"Create","params":{"title":"Test"}}'
+
+curl -X POST http://localhost:8080/rpc \
+  -d '{"jsonrpc":"2.0","id":1,"method":"todo.Create","params":{"title":"Test"}}'
+```
+
+## Batch Requests
+
+Send multiple requests in an array:
+
+```bash
+curl -X POST http://localhost:8080/rpc \
+  -H "Content-Type: application/json" \
+  -d '[
+    {"jsonrpc":"2.0","id":1,"method":"Create","params":{"title":"First"}},
+    {"jsonrpc":"2.0","id":2,"method":"Create","params":{"title":"Second"}},
+    {"jsonrpc":"2.0","id":3,"method":"List"}
+  ]'
+```
+
+Response:
+
+```json
+[
+  {"jsonrpc":"2.0","id":1,"result":{"id":"todo_1","title":"First","completed":false}},
+  {"jsonrpc":"2.0","id":2,"result":{"id":"todo_2","title":"Second","completed":false}},
+  {"jsonrpc":"2.0","id":3,"result":{"items":[...]}}
+]
+```
+
+## Notifications
+
+Requests without `id` are notifications - they return no response:
+
+```bash
+# Notification (no response body)
+curl -X POST http://localhost:8080/rpc \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"Create","params":{"title":"Fire and forget"}}'
+# HTTP 204 No Content
+```
+
+Batch of notifications only:
+
+```bash
+curl -X POST http://localhost:8080/rpc \
+  -H "Content-Type: application/json" \
+  -d '[
+    {"jsonrpc":"2.0","method":"Create","params":{"title":"First"}},
+    {"jsonrpc":"2.0","method":"Create","params":{"title":"Second"}}
+  ]'
+# HTTP 204 No Content
+```
+
+## Error Codes
+
+Standard JSON-RPC 2.0 error codes:
+
+| Code | Message | Description |
+|------|---------|-------------|
+| -32700 | Parse error | Invalid JSON |
+| -32600 | Invalid Request | Missing jsonrpc or method |
+| -32601 | Method not found | Unknown method name |
+| -32602 | Invalid params | Params not an object, or method rejects params |
+| -32603 | Internal error | Service method returned error |
+
+### Examples
+
+**Parse error:**
+```bash
+curl -X POST http://localhost:8080/rpc -d 'invalid json'
+```
+```json
+{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}
+```
+
+**Method not found:**
+```bash
+curl -X POST http://localhost:8080/rpc \
+  -d '{"jsonrpc":"2.0","id":1,"method":"Unknown"}'
+```
+```json
+{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found","data":{"method":"Unknown"}}}
+```
+
+**Invalid params:**
+```bash
+curl -X POST http://localhost:8080/rpc \
+  -d '{"jsonrpc":"2.0","id":1,"method":"Create","params":[1,2,3]}'
+```
+```json
+{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"Invalid params","data":"params must be an object"}}
+```
+
+## Complete Example
+
+### Service
+
+```go
+package todo
+
+import "context"
+
+type Service struct{}
+
+type CreateIn struct {
+    Title string `json:"title"`
+}
+
+type Todo struct {
+    ID    string `json:"id"`
+    Title string `json:"title"`
+}
+
+type ListOut struct {
+    Items []*Todo `json:"items"`
+}
+
+func (s *Service) Create(ctx context.Context, in *CreateIn) (*Todo, error) {
+    return &Todo{ID: "todo_1", Title: in.Title}, nil
+}
+
+func (s *Service) List(ctx context.Context) (*ListOut, error) {
+    return &ListOut{Items: []*Todo{}}, nil
+}
+
+func (s *Service) Health(ctx context.Context) error {
+    return nil
+}
+```
+
+### Server
+
+```go
+package main
+
+import (
+    "net/http"
+    "github.com/go-mizu/mizu/contract"
+    "yourmodule/todo"
+)
+
+func main() {
+    svc, _ := contract.Register("todo", &todo.Service{})
+
+    mux := http.NewServeMux()
+    contract.MountJSONRPC(mux, "/rpc", svc)
+
+    http.ListenAndServe(":8080", mux)
+}
+```
+
+### Client Examples
+
+**Create:**
+```bash
+curl -X POST http://localhost:8080/rpc \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"Create","params":{"title":"Test"}}'
+# {"jsonrpc":"2.0","id":1,"result":{"id":"todo_1","title":"Test"}}
+```
+
+**List:**
+```bash
+curl -X POST http://localhost:8080/rpc \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"List"}'
+# {"jsonrpc":"2.0","id":2,"result":{"items":[]}}
+```
+
+**Health (no params, no result):**
+```bash
+curl -X POST http://localhost:8080/rpc \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":3,"method":"Health"}'
+# {"jsonrpc":"2.0","id":3,"result":null}
+```
+
+## Multiple Services
+
+Mount services at different paths:
+
+```go
+todoSvc, _ := contract.Register("todo", &todo.Service{})
+userSvc, _ := contract.Register("user", &user.Service{})
+
+mux := http.NewServeMux()
+contract.MountJSONRPC(mux, "/rpc/todo", todoSvc)
+contract.MountJSONRPC(mux, "/rpc/user", userSvc)
+```
+
+Or use service name prefix to distinguish:
+
+```go
+// Both mounted at /rpc
+contract.MountJSONRPC(mux, "/rpc", todoSvc)
+contract.MountJSONRPC(mux, "/rpc", userSvc)
+
+// Call with prefix
+// {"method":"todo.Create",...}
+// {"method":"user.Create",...}
+```
+
+## With REST and OpenAPI
+
+Combine all transports:
+
+```go
+mux := http.NewServeMux()
+
+// REST at /todos/*
+contract.MountREST(mux, svc)
+
+// JSON-RPC at /rpc
+contract.MountJSONRPC(mux, "/rpc", svc)
+
+// OpenAPI at /openapi.json
+contract.ServeOpenAPI(mux, "/openapi.json", svc)
+```
+
+## See Also
+
+- [REST Transport](/contract/rest) - RESTful HTTP transport
+- [OpenAPI](/contract/openapi) - API documentation
+- [Defining Services](/contract/service) - Service method signatures

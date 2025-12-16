@@ -1,0 +1,9 @@
+{
+  "name": "contract",
+  "description": "Transport-neutral service contract with REST, JSON-RPC, and OpenAPI",
+  "tags": ["go", "mizu", "contract", "rest", "jsonrpc", "openapi"],
+  "variables": {
+    "name": { "description": "Project name", "default": "" },
+    "module": { "description": "Go module path", "default": "" }
+  }
+}

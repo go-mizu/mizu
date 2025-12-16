@@ -13,6 +13,7 @@ The Mizu CLI includes built-in templates for scaffolding new projects. Each temp
 |----------|-------------|----------|
 | [`minimal`](/cli/template-minimal) | Smallest runnable Mizu project | Quick prototypes, learning |
 | [`api`](/cli/template-api) | JSON API service with recommended layout | Production APIs, microservices |
+| [`contract`](/cli/template-contract) | Transport-neutral service with REST, JSON-RPC, OpenAPI | Multi-protocol services, clean architecture |
 
 ## List Templates
 
@@ -22,9 +23,10 @@ mizu new --list
 
 Output:
 ```
-Template  Purpose
-api       JSON API service with a recommended layout
-minimal   Smallest runnable Mizu project
+Template   Purpose
+api        JSON API service with a recommended layout
+contract   Transport-neutral service with REST, JSON-RPC, and OpenAPI
+minimal    Smallest runnable Mizu project
 ```
 
 ## Using Templates
@@ -147,12 +149,15 @@ Files with `.tmpl` extension are processed as templates, and the extension is re
 
 ## Choosing a Template
 
-<CardGroup cols={2}>
+<CardGroup cols={3}>
   <Card title="Minimal Template" icon="feather" href="/cli/template-minimal">
     Best for learning Mizu basics, quick experiments, or when you want full control over structure.
   </Card>
   <Card title="API Template" icon="server" href="/cli/template-api">
     Best for production APIs with clean architecture, feature-based organization, and graceful shutdown.
+  </Card>
+  <Card title="Contract Template" icon="file-contract" href="/cli/template-contract">
+    Best for multi-protocol services, transport-neutral business logic, and auto-generated OpenAPI specs.
   </Card>
 </CardGroup>
 
@@ -162,13 +167,18 @@ Files with `.tmpl` extension are processed as templates, and the extension is re
 |----------|---------------------|
 | Learning Mizu | `minimal` |
 | Quick prototype | `minimal` |
-| Production API | `api` |
+| Production REST API | `api` |
 | Microservice | `api` |
 | Custom structure | `minimal` |
 | Team project | `api` |
+| Multi-protocol API (REST + RPC) | `contract` |
+| Transport-neutral services | `contract` |
+| Auto-generated OpenAPI | `contract` |
+| Clean architecture | `contract` |
 
 ## See Also
 
 - [Minimal Template](/cli/template-minimal) - Single-file starter
 - [API Template](/cli/template-api) - Full-featured API service
+- [Contract Template](/cli/template-contract) - Multi-protocol service with contracts
 - [mizu new](/cli/new) - Create projects from templates
