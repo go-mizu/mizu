@@ -139,32 +139,3 @@ func (r *timeoutRecorder) WriteHeader(code int) {
 	defer r.mu.Unlock()
 	r.statusCode = code
 }
-
-// freshResponseCtx wraps a ResponseWriter with fresh wroteHeader state.
-// This allows the ErrorHandler to properly write headers even though
-// the handler goroutine may have already written to a different writer.
-type freshResponseCtx struct {
-	w           http.ResponseWriter
-	status      int
-	wroteHeader bool
-}
-
-func (f *freshResponseCtx) Header() http.Header {
-	return f.w.Header()
-}
-
-func (f *freshResponseCtx) Write(b []byte) (int, error) {
-	if !f.wroteHeader {
-		f.w.WriteHeader(f.status)
-		f.wroteHeader = true
-	}
-	return f.w.Write(b)
-}
-
-func (f *freshResponseCtx) WriteHeader(code int) {
-	if !f.wroteHeader {
-		f.status = code
-		f.w.WriteHeader(code)
-		f.wroteHeader = true
-	}
-}
