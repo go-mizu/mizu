@@ -242,7 +242,7 @@ func TestShutdownServer_DefaultTimeoutWhenNonPositive(t *testing.T) {
 	a := New()
 	a.ShutdownTimeout = 0
 
-	srv := &http.Server{}
+	srv := &http.Server{ReadHeaderTimeout: time.Second}
 	errCh := make(chan error, 1)
 	errCh <- nil
 
@@ -258,7 +258,7 @@ func TestShutdownServer_ReturnsServeExitError(t *testing.T) {
 	a := New()
 	a.ShutdownTimeout = 1 * time.Millisecond
 
-	srv := &http.Server{}
+	srv := &http.Server{ReadHeaderTimeout: time.Second}
 	errCh := make(chan error, 1)
 	want := errors.New("serve exit error")
 	errCh <- want
@@ -278,7 +278,7 @@ func TestShutdownServer_DoesNotHangIfServeNeverReturns(t *testing.T) {
 
 	// Not started server: Shutdown returns quickly (ErrServerClosed),
 	// then we hit the "did not exit after shutdown timeout" select branch.
-	srv := &http.Server{}
+	srv := &http.Server{ReadHeaderTimeout: time.Second}
 	errCh := make(chan error) // never receives
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -313,7 +313,7 @@ func waitForHTTP(t *testing.T, url string) {
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		resp, err := http.Get(url)
+		resp, err := http.Get(url) //nolint:gosec // URL is constructed in tests
 		if err == nil {
 			_ = resp.Body.Close()
 			return
