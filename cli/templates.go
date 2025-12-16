@@ -96,7 +96,7 @@ func loadTemplateFiles(name string) ([]templateFile, error) {
 	var files []templateFile
 
 	// Load common files first
-	commonFiles, err := loadFilesFromDir("templates/common")
+	commonFiles, err := loadFilesFromDir("templates/_common")
 	if err == nil {
 		files = append(files, commonFiles...)
 	}

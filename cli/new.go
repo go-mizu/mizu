@@ -184,7 +184,7 @@ func runNew(args []string, gf *globalFlags) int {
 		out.print("\nNext steps:\n")
 		out.print("  cd %s\n", targetPath)
 		out.print("  go mod tidy\n")
-		out.print("  mizu serve\n")
+		out.print("  mizu dev\n")
 	}
 
 	return exitOK

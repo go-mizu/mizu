@@ -1,5 +1,9 @@
 {
   "name": "api",
-  "description": "JSON API service with routing, middleware, config stub",
-  "tags": ["http", "json", "api"]
+  "description": "JSON API service with a recommended layout",
+  "tags": ["go", "mizu", "api", "service"],
+  "variables": {
+    "name": { "description": "Project name", "default": "" },
+    "module": { "description": "Go module path", "default": "" }
+  }
 }

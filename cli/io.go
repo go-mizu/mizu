@@ -10,10 +10,8 @@ import (
 // ANSI color codes.
 const (
 	colorReset  = "\033[0m"
-	colorRed    = "\033[31m"
 	colorGreen  = "\033[32m"
 	colorYellow = "\033[33m"
-	colorBlue   = "\033[34m"
 	colorCyan   = "\033[36m"
 	colorGray   = "\033[90m"
 	colorBold   = "\033[1m"
@@ -65,28 +63,10 @@ func (o *output) color(c, text string) string {
 }
 
 func (o *output) green(text string) string  { return o.color(colorGreen, text) }
-func (o *output) red(text string) string    { return o.color(colorRed, text) }
 func (o *output) yellow(text string) string { return o.color(colorYellow, text) }
-func (o *output) blue(text string) string   { return o.color(colorBlue, text) }
 func (o *output) cyan(text string) string   { return o.color(colorCyan, text) }
 func (o *output) gray(text string) string   { return o.color(colorGray, text) }
 func (o *output) bold(text string) string   { return o.color(colorBold, text) }
-
-func (o *output) ok(msg string) {
-	o.print("  %s %s\n", o.green("[ok]"), msg)
-}
-
-func (o *output) warn(msg string) {
-	o.print("  %s %s\n", o.yellow("[warn]"), msg)
-}
-
-func (o *output) fail(msg string) {
-	o.print("  %s %s\n", o.red("[error]"), msg)
-}
-
-func (o *output) info(msg string) {
-	o.print("  %s %s\n", o.blue("[info]"), msg)
-}
 
 // isTerminal checks if w is a terminal (simplified check).
 func isTerminal(w io.Writer) bool {

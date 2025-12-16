@@ -1,0 +1,19 @@
+package api
+
+import (
+	"{{.Module}}/feature/echo"
+	"{{.Module}}/feature/health"
+	"{{.Module}}/feature/hello"
+	"{{.Module}}/feature/users"
+)
+
+func (a *App) routes() {
+	a.app.Get("/health", health.Get)
+
+	a.app.Get("/hello", hello.Get)
+
+	a.app.Post("/echo", echo.Post)
+
+	a.app.Get("/users", users.List)
+	a.app.Get("/users/:id", users.Get)
+}

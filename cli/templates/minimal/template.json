@@ -1,5 +1,15 @@
 {
   "name": "minimal",
-  "description": "Smallest runnable project layout",
-  "tags": ["go", "starter"]
+  "description": "Smallest runnable Mizu project",
+  "tags": ["go", "mizu", "minimal", "starter"],
+  "variables": {
+    "name": {
+      "description": "Project name",
+      "default": ""
+    },
+    "module": {
+      "description": "Go module path",
+      "default": ""
+    }
+  }
 }
