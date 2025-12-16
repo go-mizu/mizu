@@ -18,27 +18,27 @@ env:
 
 jobs:
   lint:
-    # if: false # Uncomment to enable.
     name: Lint
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read # needed for only-new-issues
+      pull-requests: read
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-          check-latest: true
           cache: true
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
-          args: --timeout=5m --out-format=github-actions
+          version: v2.7.0
+          args: --timeout=5m
           only-new-issues: true
 
       - name: go vet
@@ -64,7 +64,6 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go }}
-          check-latest: true
           cache: true
 
       - name: Verify build
@@ -91,7 +90,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && (github.event_name == 'push' || github.event.pull_request.head.repo.fork == false)
         uses: codecov/codecov-action@v5
         with:
-          token: ${{ secrets.CODECOV_TOKEN }} # omit for public repos with tokenless upload
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.out
           slug: go-mizu/mizu
           fail_ci_if_error: true
