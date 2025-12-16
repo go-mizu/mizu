@@ -5,12 +5,13 @@
 //
 // Supported canonical method signature:
 //
-//   func (s *S) Method(ctx context.Context, in *In) (*Out, error)
+//	func (s *S) Method(ctx context.Context, in *In) (*Out, error)
 //
 // Variants supported:
-//   func (s *S) Method(ctx context.Context) (*Out, error)
-//   func (s *S) Method(ctx context.Context, in *In) error
-//   func (s *S) Method(ctx context.Context) error
+//
+//	func (s *S) Method(ctx context.Context) (*Out, error)
+//	func (s *S) Method(ctx context.Context, in *In) error
+//	func (s *S) Method(ctx context.Context) error
 //
 // Reflection is performed once at registration time.
 // Runtime calls use compiled invokers.
@@ -18,14 +19,10 @@ package contract
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
 	"sort"
-	"strings"
-	"sync"
-	"time"
 )
 
 var (
@@ -36,10 +33,43 @@ var (
 	ErrNilInput         = errors.New("contract: nil input")
 )
 
+// ServiceMeta is an optional interface services can implement
+// to provide metadata about themselves.
+type ServiceMeta interface {
+	ContractServiceMeta() ServiceOptions
+}
+
+// ServiceOptions provides metadata about a service.
+type ServiceOptions struct {
+	Description string
+	Version     string
+	Tags        []string
+}
+
+// MethodMeta is an optional interface services can implement
+// to provide metadata about their methods.
+type MethodMeta interface {
+	ContractMeta() map[string]MethodOptions
+}
+
+// MethodOptions provides metadata about a method.
+type MethodOptions struct {
+	Description string
+	Summary     string
+	Tags        []string
+	Deprecated  bool
+	// REST-specific overrides (optional)
+	HTTPMethod string // Override verb (GET, POST, etc.)
+	HTTPPath   string // Override path
+}
+
 // Register inspects a service and returns its contract.
 //
 // The service must be a struct or pointer to struct.
 // All exported methods are considered part of the contract.
+//
+// If the service implements ServiceMeta, metadata is extracted.
+// If the service implements MethodMeta, method metadata is extracted.
 func Register(name string, svc any) (*Service, error) {
 	if name == "" {
 		return nil, fmt.Errorf("%w: empty name", ErrInvalidService)
@@ -66,10 +96,29 @@ func Register(name string, svc any) (*Service, error) {
 		methodByName: make(map[string]*Method),
 	}
 
+	// Extract service metadata if available
+	if sm, ok := svc.(ServiceMeta); ok {
+		opts := sm.ContractServiceMeta()
+		out.Description = opts.Description
+		out.Version = opts.Version
+		out.Tags = opts.Tags
+	}
+
+	// Extract method metadata if available
+	var methodMeta map[string]MethodOptions
+	if mm, ok := svc.(MethodMeta); ok {
+		methodMeta = mm.ContractMeta()
+	}
+
 	rt := reflect.TypeOf(svc)
 
 	for i := 0; i < rt.NumMethod(); i++ {
 		rm := rt.Method(i)
+
+		// Skip metadata interface methods
+		if isMetadataMethod(rm.Name) {
+			continue
+		}
 
 		sig, inT, outT, err := parseSignature(rm.Type)
 		if err != nil {
@@ -83,7 +132,18 @@ func Register(name string, svc any) (*Service, error) {
 			sig:      sig,
 			inType:   inT,
 			outType:  outT,
-			Errors:   &ErrorContract{},
+		}
+
+		// Apply method metadata if available
+		if methodMeta != nil {
+			if opts, ok := methodMeta[rm.Name]; ok {
+				m.Description = opts.Description
+				m.Summary = opts.Summary
+				m.Tags = opts.Tags
+				m.Deprecated = opts.Deprecated
+				m.HTTPMethod = opts.HTTPMethod
+				m.HTTPPath = opts.HTTPPath
+			}
 		}
 
 		if inT != nil {
@@ -121,15 +181,28 @@ func Register(name string, svc any) (*Service, error) {
 
 // Service represents a transport-neutral service contract.
 type Service struct {
-	Name    string
-	Methods []*Method
-	Types   *TypeRegistry
+	Name        string
+	Description string
+	Version     string
+	Tags        []string
+	Methods     []*Method
+	Types       *TypeRegistry
 
 	methodByName map[string]*Method
 }
 
+// Method returns a method by name, or nil if not found.
 func (s *Service) Method(name string) *Method {
 	return s.methodByName[name]
+}
+
+// MethodNames returns all method names in sorted order.
+func (s *Service) MethodNames() []string {
+	names := make([]string, len(s.Methods))
+	for i, m := range s.Methods {
+		names[i] = m.Name
+	}
+	return names
 }
 
 // Method represents a callable service method.
@@ -138,9 +211,17 @@ type Method struct {
 	Name     string
 	FullName string
 
+	Description string
+	Summary     string
+	Tags        []string
+	Deprecated  bool
+
+	// REST-specific overrides
+	HTTPMethod string
+	HTTPPath   string
+
 	Input  *TypeRef
 	Output *TypeRef
-	Errors *ErrorContract
 
 	Invoker Invoker
 
@@ -149,11 +230,32 @@ type Method struct {
 	sig     sigKind
 }
 
+// NewInput creates a new instance of the input type.
 func (m *Method) NewInput() any {
 	if m.inType == nil {
 		return nil
 	}
 	return reflect.New(m.inType.Elem()).Interface()
+}
+
+// HasInput returns true if the method accepts input.
+func (m *Method) HasInput() bool {
+	return m.inType != nil
+}
+
+// HasOutput returns true if the method returns output.
+func (m *Method) HasOutput() bool {
+	return m.outType != nil
+}
+
+// InputType returns the reflect.Type of the input, or nil.
+func (m *Method) InputType() reflect.Type {
+	return m.inType
+}
+
+// OutputType returns the reflect.Type of the output, or nil.
+func (m *Method) OutputType() reflect.Type {
+	return m.outType
 }
 
 // Invoker calls a compiled method.
@@ -175,8 +277,17 @@ const (
 var (
 	typeContext = reflect.TypeOf((*context.Context)(nil)).Elem()
 	typeError   = reflect.TypeOf((*error)(nil)).Elem()
-	typeTime    = reflect.TypeOf(time.Time{})
 )
+
+// isMetadataMethod returns true if the method name is a metadata interface method.
+func isMetadataMethod(name string) bool {
+	switch name {
+	case "ContractServiceMeta", "ContractMeta", "ContractEnum":
+		return true
+	default:
+		return false
+	}
+}
 
 func parseSignature(t reflect.Type) (sig sigKind, in, out reflect.Type, err error) {
 	if t.NumIn() < 2 || t.In(1) != typeContext {
@@ -265,127 +376,4 @@ func (x *reflectInvoker) Call(ctx context.Context, in any) (any, error) {
 		return out[0].Interface(), err
 	}
 	return nil, ErrInvalidMethod
-}
-
-// ---- types & schema ----
-
-type TypeRegistry struct {
-	mu      sync.RWMutex
-	types   map[string]*TypeRef
-	schemas map[string]Schema
-}
-
-type TypeRef struct {
-	ID   string
-	Name string
-}
-
-type Schema struct {
-	ID   string         `json:"id"`
-	JSON map[string]any `json:"json"`
-}
-
-func newTypeRegistry() *TypeRegistry {
-	return &TypeRegistry{
-		types:   make(map[string]*TypeRef),
-		schemas: make(map[string]Schema),
-	}
-}
-
-func (r *TypeRegistry) Add(t reflect.Type) (*TypeRef, error) {
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-	if t.Name() == "" {
-		return nil, ErrUnsupportedType
-	}
-
-	id := typeID(t)
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if tr, ok := r.types[id]; ok {
-		return tr, nil
-	}
-
-	tr := &TypeRef{ID: id, Name: t.Name()}
-	r.types[id] = tr
-
-	s, err := schemaForType(t)
-	if err != nil {
-		return nil, err
-	}
-	r.schemas[id] = Schema{ID: id, JSON: s}
-
-	return tr, nil
-}
-
-func (r *TypeRegistry) Schemas() []Schema {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	out := make([]Schema, 0, len(r.schemas))
-	for _, s := range r.schemas {
-		out = append(out, s)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
-}
-
-func typeID(t reflect.Type) string {
-	if t.PkgPath() == "" {
-		return t.Name()
-	}
-	parts := strings.Split(t.PkgPath(), "/")
-	return parts[len(parts)-1] + "." + t.Name()
-}
-
-func schemaForType(t reflect.Type) (map[string]any, error) {
-	if t == typeTime {
-		return map[string]any{"type": "string", "format": "date-time"}, nil
-	}
-
-	switch t.Kind() {
-	case reflect.String:
-		return map[string]any{"type": "string"}, nil
-	case reflect.Bool:
-		return map[string]any{"type": "boolean"}, nil
-	case reflect.Int, reflect.Int64:
-		return map[string]any{"type": "integer"}, nil
-	case reflect.Struct:
-		props := map[string]any{}
-		var req []string
-
-		for i := 0; i < t.NumField(); i++ {
-			f := t.Field(i)
-			if f.PkgPath != "" {
-				continue
-			}
-			name := strings.ToLower(f.Name[:1]) + f.Name[1:]
-			props[name], _ = schemaForType(deref(f.Type))
-			req = append(req, name)
-		}
-
-		return map[string]any{
-			"type":       "object",
-			"properties": props,
-			"required":   req,
-		}, nil
-	}
-
-	return nil, ErrUnsupportedType
-}
-
-func deref(t reflect.Type) reflect.Type {
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-	return t
-}
-
-// ---- errors ----
-
-type ErrorContract struct {
-	Code string `json:"code,omitempty"`
 }
