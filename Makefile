@@ -122,6 +122,10 @@ clean: ## Remove build artifacts
 	@rm -rf dist
 	@echo "Cleaned build artifacts"
 
+.PHONY: print-version
+print-version:
+	@echo "$(VERSION)"
+
 # Help
 .PHONY: help
 help: ## Show targets
