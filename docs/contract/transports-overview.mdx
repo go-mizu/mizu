@@ -1,260 +1,397 @@
 ---
 title: "Transports Overview"
-description: "Compare and choose the right transport for your use case"
+description: "Understand the different protocols Contract supports and choose the right one for your project"
 ---
 
 # Transports Overview
 
-Contract services can be exposed via multiple transports. Choose based on your clients and use case.
+When you build an API with Contract, you write your business logic once. But different clients need to talk to your API in different ways. That's what transports are for - they let the same code speak multiple languages.
+
+## What Is a Transport?
+
+Think of a transport like a translator at the United Nations. The speaker (your service) gives the same message, but each translator converts it into a language their audience understands.
+
+In Contract terms:
+- **Your service** is the speaker - it has the business logic
+- **Transports** are the translators - they convert requests/responses
+- **Clients** are the audience - browsers, apps, AI assistants, etc.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                        Your Service                               │
+│                   (Written once, in Go)                           │
+└──────────────────────────────────────────────────────────────────┘
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        ▼                     ▼                     ▼
+┌──────────────┐      ┌──────────────┐      ┌──────────────┐
+│     REST     │      │   JSON-RPC   │      │     MCP      │
+│  (Familiar)  │      │  (Powerful)  │      │ (AI-Ready)   │
+└──────────────┘      └──────────────┘      └──────────────┘
+        │                     │                     │
+        ▼                     ▼                     ▼
+   Web Browsers          Backend Services        AI Assistants
+   Mobile Apps           Microservices           Claude Desktop
+```
 
 ## Available Transports
 
-| Transport | Protocol | Best For |
-|-----------|----------|----------|
-| [REST](/contract/rest) | HTTP REST | Web apps, browsers, curl |
-| [JSON-RPC](/contract/jsonrpc) | JSON-RPC 2.0 | RPC clients, batch operations |
-| [MCP](/contract/mcp) | Model Context Protocol | AI assistants, Claude |
-| [tRPC](/contract/trpc) | tRPC-like | TypeScript clients |
-| [OpenAPI](/contract/openapi) | OpenAPI 3.1 | Documentation, code generation |
+Contract supports five transports. Here's a quick overview:
 
-## Quick Comparison
+| Transport | What It Is | Best For |
+|-----------|------------|----------|
+| **REST** | Traditional HTTP API | Web apps, mobile apps, curl |
+| **JSON-RPC** | Remote procedure calls over HTTP | Batch operations, microservices |
+| **MCP** | Model Context Protocol | AI assistants like Claude |
+| **tRPC** | TypeScript-friendly RPC | TypeScript frontends |
+| **OpenAPI** | API documentation standard | Docs, code generation |
+
+## Decision Guide: Which Transport Should I Use?
+
+Use this flowchart to pick the right transport for your use case:
+
+```
+Start Here
+    │
+    ▼
+Who is calling your API?
+    │
+    ├─► Web browsers, mobile apps, or curl
+    │   → Use REST (most familiar)
+    │
+    ├─► Other backend services
+    │   → Use JSON-RPC (supports batching)
+    │
+    ├─► TypeScript frontend with type safety
+    │   → Use tRPC (generates types)
+    │
+    ├─► AI assistants (Claude, etc.)
+    │   → Use MCP (designed for AI)
+    │
+    └─► Need API documentation
+        → Add OpenAPI (generates docs)
+```
+
+**Pro tip**: You can (and should!) use multiple transports at once. They don't conflict.
+
+## Detailed Comparison
+
+### Feature Comparison
 
 | Feature | REST | JSON-RPC | MCP | tRPC |
 |---------|------|----------|-----|------|
-| HTTP Methods | GET/POST/PUT/DELETE | POST only | POST/GET | POST only |
-| Batching | No | Yes | No | No |
-| Notifications | No | Yes | Yes | No |
-| Introspection | OpenAPI | No | tools/list | .meta |
-| Error Format | HTTP status | JSON-RPC error | isError flag | Envelope |
-| Ideal Client | Browser/curl | RPC library | AI model | TypeScript |
+| **HTTP Methods** | GET/POST/PUT/DELETE | POST only | POST only | POST only |
+| **Batch Requests** | No | Yes | No | No |
+| **Cacheable** | Yes (GET requests) | No | No | No |
+| **Self-Documenting** | Via OpenAPI | No | Via tools/list | Via .meta |
+| **Error Format** | HTTP status codes | JSON-RPC errors | isError flag | tRPC envelope |
 
-## Using Multiple Transports
+### REST - The Classic Choice
 
-Mount all transports on the same service:
-
-```go
-svc, _ := contract.Register("todo", &TodoService{})
-
-mux := http.NewServeMux()
-
-// REST: /todos/*
-contract.MountREST(mux, svc)
-
-// JSON-RPC: /rpc
-contract.MountJSONRPC(mux, "/rpc", svc)
-
-// tRPC: /trpc/*
-trpc.Mount(mux, "/trpc", svc)
-
-// MCP: /mcp
-mcp.Mount(mux, "/mcp", svc)
-
-// OpenAPI: /openapi.json
-contract.ServeOpenAPI(mux, "/openapi.json", svc)
-
-http.ListenAndServe(":8080", mux)
-```
-
-## REST
-
-**Best for**: Web applications, browser clients, simple HTTP integrations
+REST is the most widely known API style. It uses HTTP methods to represent actions:
 
 ```bash
-# Create
-curl -X POST http://localhost:8080/todos -d '{"title":"Buy milk"}'
+# Create a todo (POST = create new resource)
+curl -X POST http://localhost:8080/todos \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Buy milk"}'
 
-# List
+# List all todos (GET = retrieve data)
 curl http://localhost:8080/todos
 
-# Get
+# Get one todo (GET with ID)
 curl http://localhost:8080/todos/123
 
-# Delete
+# Update a todo (PUT = replace resource)
+curl -X PUT http://localhost:8080/todos/123 \
+  -d '{"title": "Buy milk", "completed": true}'
+
+# Delete a todo (DELETE = remove resource)
 curl -X DELETE http://localhost:8080/todos/123
 ```
 
-**Pros**:
-- Familiar to web developers
-- Works with any HTTP client
-- Cacheable responses
+**When to use REST**:
+- Your clients are web browsers or mobile apps
+- You want caching (browsers cache GET requests)
+- Your team is familiar with REST APIs
+- You're building a public API
 
-**Cons**:
-- No batching
-- Multiple round trips for related data
-- Verb conventions can be limiting
+**Pros**: Familiar, cacheable, works everywhere
+**Cons**: No batching, multiple round trips for complex operations
 
-[Learn more about REST](/contract/rest)
+### JSON-RPC - The Power User's Choice
 
-## JSON-RPC
-
-**Best for**: RPC-style APIs, batch operations, language-agnostic clients
+JSON-RPC is a simple protocol where you explicitly name the method to call. All requests use POST.
 
 ```bash
-# Single request
+# Call a method
 curl -X POST http://localhost:8080/rpc \
-  -d '{"jsonrpc":"2.0","id":1,"method":"Create","params":{"title":"Buy milk"}}'
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "Create",
+    "params": {"title": "Buy milk"}
+  }'
 
-# Batch request
+# Response
+{"jsonrpc": "2.0", "id": 1, "result": {"id": "1", "title": "Buy milk"}}
+```
+
+The killer feature is **batching** - send multiple operations in one request:
+
+```bash
 curl -X POST http://localhost:8080/rpc \
+  -H "Content-Type: application/json" \
   -d '[
-    {"jsonrpc":"2.0","id":1,"method":"Create","params":{"title":"First"}},
-    {"jsonrpc":"2.0","id":2,"method":"Create","params":{"title":"Second"}}
+    {"jsonrpc": "2.0", "id": 1, "method": "Create", "params": {"title": "First"}},
+    {"jsonrpc": "2.0", "id": 2, "method": "Create", "params": {"title": "Second"}},
+    {"jsonrpc": "2.0", "id": 3, "method": "List"}
   ]'
+
+# All three operations execute, returns array of results
 ```
 
-**Pros**:
-- Batch multiple operations
-- Notifications (no response)
-- Standard protocol
+**When to use JSON-RPC**:
+- Service-to-service communication
+- You need to batch multiple operations
+- Network latency is a concern
+- Your operations don't map cleanly to REST verbs
 
-**Cons**:
-- POST only
-- Less familiar to web developers
-- No built-in caching
+**Pros**: Batching, explicit method names, standard protocol
+**Cons**: POST only, less familiar to web developers
 
-[Learn more about JSON-RPC](/contract/jsonrpc)
+### MCP - The AI-Native Choice
 
-## MCP
-
-**Best for**: AI model integration, Claude Desktop, AI assistants
+MCP (Model Context Protocol) is designed for AI assistants. It lets AI models discover and use your API as "tools".
 
 ```bash
-# Initialize
+# Step 1: Initialize the connection
 curl -X POST http://localhost:8080/mcp \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}'
+  -d '{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}}'
 
-# List tools
+# Step 2: Discover available tools
 curl -X POST http://localhost:8080/mcp \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+  -d '{"jsonrpc": "2.0", "id": 2, "method": "tools/list"}'
 
-# Call tool
+# Response shows what the AI can do:
+{
+  "result": {
+    "tools": [
+      {
+        "name": "todo.Create",
+        "description": "Create a new todo",
+        "inputSchema": {...}
+      }
+    ]
+  }
+}
+
+# Step 3: Call a tool
 curl -X POST http://localhost:8080/mcp \
-  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"todo.Create","arguments":{"title":"Buy milk"}}}'
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 3,
+    "method": "tools/call",
+    "params": {
+      "name": "todo.Create",
+      "arguments": {"title": "Buy milk"}
+    }
+  }'
 ```
 
-**Pros**:
-- AI-native protocol
-- Auto-discovery of capabilities
-- Structured tool definitions
+**When to use MCP**:
+- You want Claude or other AI assistants to use your API
+- You're building AI-powered applications
+- You want automatic tool discovery
 
-**Cons**:
-- Tools only (no resources/prompts yet)
-- JSON-RPC based complexity
-- Specialized use case
+**Pros**: AI assistants understand it natively, self-documenting
+**Cons**: Specialized use case, more complex protocol
 
-[Learn more about MCP](/contract/mcp)
+### tRPC - The TypeScript Developer's Choice
 
-## tRPC
-
-**Best for**: TypeScript clients, type-safe frontends
+tRPC uses simple URL paths with JSON bodies. It includes a metadata endpoint for generating TypeScript types.
 
 ```bash
-# Call procedure
+# Call a procedure
 curl -X POST http://localhost:8080/trpc/Create \
-  -d '{"title":"Buy milk"}'
+  -H "Content-Type: application/json" \
+  -d '{"title": "Buy milk"}'
 
-# Get metadata for client generation
+# Response with typed envelope
+{
+  "result": {
+    "data": {"id": "1", "title": "Buy milk"}
+  }
+}
+
+# Get metadata for type generation
 curl http://localhost:8080/trpc.meta
 ```
 
-**Pros**:
-- Simple URL structure
-- Introspection for code generation
-- Typed response envelope
+**When to use tRPC**:
+- Your frontend is TypeScript
+- You want end-to-end type safety
+- You're generating client code
 
-**Cons**:
-- POST only
-- No batching
-- Less mature than original tRPC
+**Pros**: Clean URLs, type generation, familiar to tRPC users
+**Cons**: POST only, no batching
 
-[Learn more about tRPC](/contract/trpc)
+### OpenAPI - The Documentation Choice
 
-## OpenAPI
-
-**Best for**: API documentation, client code generation
+OpenAPI isn't really a transport - it generates documentation from your service. Use it alongside other transports.
 
 ```bash
-# Get OpenAPI spec
+# Get the OpenAPI specification
 curl http://localhost:8080/openapi.json
 ```
 
-**Pros**:
-- Industry standard
-- Wide tooling support
-- Auto-generated from types
+The spec can be used with:
+- **Swagger UI**: Interactive API documentation
+- **Code generators**: Generate client SDKs in any language
+- **API testing tools**: Import into Postman, Insomnia, etc.
 
-**Cons**:
-- Read-only (documentation)
-- Not a transport per se
+## Using All Transports Together
 
-[Learn more about OpenAPI](/contract/openapi)
+Here's how to serve your API via all protocols at once:
 
-## Choosing a Transport
+```go
+package main
 
-### Web Application
+import (
+    "net/http"
 
-Use **REST** for browser clients:
+    "github.com/go-mizu/mizu/contract"
+    "github.com/go-mizu/mizu/contract/transport/mcp"
+    "github.com/go-mizu/mizu/contract/transport/trpc"
+)
 
+func main() {
+    // Create and register your service
+    svc, _ := contract.Register("todo", &TodoService{})
+
+    mux := http.NewServeMux()
+
+    // REST: Traditional HTTP API
+    // Endpoints: POST/GET /todos, GET/DELETE /todos/{id}
+    contract.MountREST(mux, svc)
+
+    // JSON-RPC: RPC-style with batching
+    // Endpoint: POST /rpc
+    contract.MountJSONRPC(mux, "/rpc", svc)
+
+    // tRPC: TypeScript-friendly
+    // Endpoints: POST /trpc/{method}, GET /trpc.meta
+    trpc.Mount(mux, "/trpc", svc)
+
+    // MCP: AI assistant integration
+    // Endpoint: POST /mcp
+    mcp.Mount(mux, "/mcp", svc)
+
+    // OpenAPI: API documentation
+    // Endpoint: GET /openapi.json
+    contract.ServeOpenAPI(mux, "/openapi.json", svc)
+
+    http.ListenAndServe(":8080", mux)
+}
+```
+
+Now the same service is accessible via:
+- `http://localhost:8080/todos` (REST)
+- `http://localhost:8080/rpc` (JSON-RPC)
+- `http://localhost:8080/trpc/Create` (tRPC)
+- `http://localhost:8080/mcp` (MCP)
+- `http://localhost:8080/openapi.json` (OpenAPI spec)
+
+## How Errors Work Across Transports
+
+One of Contract's best features is consistent error handling. When you return an error:
+
+```go
+return nil, contract.ErrNotFound("todo not found")
+```
+
+Each transport formats it appropriately:
+
+| Transport | Error Response |
+|-----------|----------------|
+| REST | HTTP 404 status, body: `"todo not found"` |
+| JSON-RPC | `{"error": {"code": -32601, "message": "todo not found"}}` |
+| tRPC | `{"error": {"code": "NOT_FOUND", "message": "todo not found"}}` |
+| MCP | `{"isError": true, "content": [{"text": "todo not found"}]}` |
+
+You don't need to handle each protocol separately.
+
+## Practical Recommendations
+
+### Starting a New Project
+
+Start with REST + OpenAPI:
 ```go
 contract.MountREST(mux, svc)
 contract.ServeOpenAPI(mux, "/openapi.json", svc)
 ```
 
-### Microservices
+Add more transports as needed.
 
-Use **JSON-RPC** for service-to-service:
+### Building a Web Application
 
+REST for browsers, optionally add tRPC for TypeScript:
+```go
+contract.MountREST(mux, svc)
+trpc.Mount(mux, "/trpc", svc)  // If using TypeScript
+```
+
+### Building Microservices
+
+JSON-RPC for service-to-service (batching is valuable):
 ```go
 contract.MountJSONRPC(mux, "/rpc", svc)
 ```
 
-### AI Integration
+### Building AI-Powered Apps
 
-Use **MCP** for AI assistants:
-
+MCP for AI assistants, plus REST for human debugging:
 ```go
 mcp.Mount(mux, "/mcp", svc)
+contract.MountREST(mux, svc)  // For testing with curl
 ```
 
-### TypeScript Frontend
+### Building for Everything
 
-Use **tRPC** + type generation:
-
-```go
-trpc.Mount(mux, "/trpc", svc)
-```
-
-### Multiple Clients
-
-Use **all of them**:
-
+Use all of them! There's no conflict:
 ```go
 contract.MountREST(mux, svc)
 contract.MountJSONRPC(mux, "/rpc", svc)
-mcp.Mount(mux, "/mcp", svc)
 trpc.Mount(mux, "/trpc", svc)
+mcp.Mount(mux, "/mcp", svc)
 contract.ServeOpenAPI(mux, "/openapi.json", svc)
 ```
 
-## Error Handling Across Transports
+## Common Questions
 
-Errors map consistently:
+### Can I use multiple transports at once?
 
-```go
-contract.ErrNotFound("user not found")
-```
+Yes! Each transport uses different paths, so they don't conflict. This is actually recommended.
 
-| Transport | Result |
-|-----------|--------|
-| REST | HTTP 404, body: "user not found" |
-| JSON-RPC | `{"error":{"code":-32601,"message":"user not found"}}` |
-| tRPC | `{"error":{"code":"NOT_FOUND","message":"user not found"}}` |
-| MCP | `{"content":[{"text":"user not found"}],"isError":true}` |
+### Which transport is fastest?
 
-## See Also
+They're all similar in performance. The overhead is minimal compared to your actual business logic.
 
-- [REST Transport](/contract/rest)
-- [JSON-RPC Transport](/contract/jsonrpc)
-- [MCP Transport](/contract/mcp)
-- [tRPC Transport](/contract/trpc)
-- [OpenAPI](/contract/openapi)
+### Do I need to write different code for each transport?
+
+No! That's the whole point of Contract. Write your service once, expose it via any transport.
+
+### Can I customize how a transport works?
+
+Yes, each transport has options for customization. See the individual transport pages for details.
+
+## Learn More
+
+Each transport has its own detailed documentation:
+
+- **[REST Transport](/contract/rest)** - HTTP verbs, path patterns, customization
+- **[JSON-RPC Transport](/contract/jsonrpc)** - Batching, notifications, error codes
+- **[MCP Transport](/contract/mcp)** - AI integration, Claude Desktop setup
+- **[tRPC Transport](/contract/trpc)** - TypeScript types, metadata endpoint
+- **[OpenAPI](/contract/openapi)** - Documentation, Swagger UI, code generation

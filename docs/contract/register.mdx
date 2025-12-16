@@ -1,160 +1,218 @@
 ---
 title: "Registration"
-description: "Register Go services to create transport-neutral contracts"
+description: "Learn how Contract discovers your methods and creates your API contract"
 ---
 
 # Registration
 
-Registration is the process of converting a plain Go service into a `*contract.Service`. During registration, the contract package:
+Registration is where the magic happens. When you call `contract.Register()`, Contract inspects your Go struct, discovers all its methods, and creates everything needed to expose your service via different protocols.
 
-1. Validates method signatures
-2. Generates JSON schemas for input/output types
-3. Creates compiled invokers for runtime method calls
-4. Builds a type registry for introspection
+## What Happens During Registration?
+
+When you register a service, Contract performs several steps in the background:
+
+```go
+svc, err := contract.Register("todo", &TodoService{})
+```
+
+1. **Validates your service** - Checks it's a valid struct with methods
+2. **Discovers methods** - Finds all exported methods on your struct
+3. **Parses signatures** - Understands each method's inputs and outputs
+4. **Generates schemas** - Creates JSON schemas from your Go types
+5. **Creates invokers** - Builds fast method callers for runtime
+
+After registration, you have a `*contract.Service` that knows everything about your API.
 
 ## Basic Registration
 
-```go
-import "github.com/go-mizu/mizu/contract"
+The simplest registration looks like this:
 
-svc, err := contract.Register("todo", &todo.Service{})
-if err != nil {
-    log.Fatal(err)
+```go
+package main
+
+import (
+    "log"
+    "github.com/go-mizu/mizu/contract"
+)
+
+func main() {
+    // Create your service instance
+    todoService := &TodoService{}
+
+    // Register it with Contract
+    // "todo" is the service name - it determines URL paths and method prefixes
+    svc, err := contract.Register("todo", todoService)
+    if err != nil {
+        log.Fatalf("Failed to register service: %v", err)
+    }
+
+    // Now use svc to mount transports
+    // ...
 }
 ```
 
-### Parameters
+### The Service Name
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `name` | `string` | Service name (used in method paths, OpenAPI, JSON-RPC) |
-| `svc` | `any` | Pointer to service struct |
+The first parameter is your service name. This name is important because it appears in:
 
-### Return Values
+| Where | Example |
+|-------|---------|
+| REST paths | `/todos` (pluralized) |
+| JSON-RPC method names | `todo.Create` |
+| MCP tool names | `todo.Create` |
+| OpenAPI spec | `"title": "todo"` |
 
-| Value | Type | Description |
-|-------|------|-------------|
-| `svc` | `*contract.Service` | Registered service contract |
-| `err` | `error` | Registration error (invalid signatures, etc.) |
-
-## The Service Type
-
-After registration, you have a `*contract.Service`:
+**Choosing a good name:**
 
 ```go
-type Service struct {
-    Name    string           // Service name ("todo")
-    Methods []*Method        // All registered methods
-    Types   *TypeRegistry    // Schema registry
-}
+// Good: short, lowercase, describes the resource
+contract.Register("todo", &TodoService{})     // /todos, todo.Create
+contract.Register("user", &UserService{})     // /users, user.Create
+contract.Register("order", &OrderService{})   // /orders, order.Create
+
+// Bad: awkward pluralization or meaningless names
+contract.Register("TodoService", &TodoService{}) // /todoservices (awkward)
+contract.Register("svc1", &Service{})            // /svc1s (meaningless)
+contract.Register("API", &Service{})             // /apis (confusing)
 ```
 
-### Inspecting Methods
+## What You Get Back: The Service Struct
+
+After registration, you have a `*contract.Service` containing:
 
 ```go
-svc, _ := contract.Register("todo", &todo.Service{})
+svc, _ := contract.Register("todo", &TodoService{})
 
-fmt.Println("Service:", svc.Name)
+// Service metadata
+fmt.Println(svc.Name)    // "todo"
 
+// All discovered methods
 for _, m := range svc.Methods {
-    fmt.Printf("Method: %s\n", m.FullName)
-    fmt.Printf("  Input:  %v\n", m.Input)
-    fmt.Printf("  Output: %v\n", m.Output)
+    fmt.Println(m.Name)  // "Create", "List", "Get", etc.
 }
-```
 
-Output:
-```
-Service: todo
-Method: todo.Create
-  Input:  &{todo.CreateIn CreateIn}
-  Output: &{todo.Todo Todo}
-Method: todo.Delete
-  Input:  &{todo.DeleteIn DeleteIn}
-  Output: <nil>
-Method: todo.Get
-  Input:  &{todo.GetIn GetIn}
-  Output: &{todo.Todo Todo}
-Method: todo.Health
-  Input:  <nil>
-  Output: <nil>
-Method: todo.List
-  Input:  <nil>
-  Output: &{todo.TodoList TodoList}
+// Type registry with JSON schemas
+schemas := svc.Types.Schemas()
+for _, s := range schemas {
+    fmt.Println(s.ID)    // "todo.CreateInput", "todo.Todo", etc.
+}
 ```
 
 ### Looking Up Methods
 
+You can find specific methods by name:
+
 ```go
-// Get a specific method by name
-m := svc.Method("Create")
-if m != nil {
-    fmt.Println("Found:", m.FullName)
+// Find a method
+createMethod := svc.Resolve("Create")
+if createMethod != nil {
+    fmt.Println("Found:", createMethod.Name)
+}
+
+// Methods are also in the slice
+for _, m := range svc.Methods {
+    if m.Name == "Create" {
+        // Found it
+    }
 }
 ```
 
-## The Method Type
+## Understanding Method Discovery
 
-Each method contains:
+Contract discovers methods by inspecting your struct using Go's reflection. Here's what it looks for:
+
+### What Gets Discovered
 
 ```go
-type Method struct {
-    Service  *Service       // Parent service
-    Name     string         // Method name ("Create")
-    FullName string         // Full name ("todo.Create")
-    Input    *TypeRef       // Input type reference (nil if none)
-    Output   *TypeRef       // Output type reference (nil if none)
-    Errors   *ErrorContract // Error definitions
-    Invoker  Invoker        // Compiled invoker
+type TodoService struct{}
+
+// DISCOVERED: Exported method with valid signature
+func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    return nil, nil
+}
+
+// DISCOVERED: Exported method with valid signature
+func (s *TodoService) List(ctx context.Context) (*ListOutput, error) {
+    return nil, nil
+}
+
+// DISCOVERED: Exported method with valid signature
+func (s *TodoService) Delete(ctx context.Context, in *DeleteInput) error {
+    return nil
+}
+
+// DISCOVERED: Exported method with valid signature
+func (s *TodoService) Health(ctx context.Context) error {
+    return nil
 }
 ```
 
-### Creating Input Instances
+### What Gets Ignored
 
 ```go
-m := svc.Method("Create")
+type TodoService struct{}
 
-// Create a new input instance
-in := m.NewInput().(*todo.CreateIn)
-in.Title = "Buy milk"
+// IGNORED: Unexported method (starts with lowercase)
+func (s *TodoService) helper() {
+}
 
-// Call the method
-out, err := m.Invoker.Call(ctx, in)
+// IGNORED: Invalid signature (no context.Context)
+func (s *TodoService) BadMethod(in *Input) error {
+    return nil
+}
+
+// IGNORED: Invalid signature (wrong return type)
+func (s *TodoService) AlsoBad(ctx context.Context) string {
+    return ""
+}
 ```
 
 ## Registration Errors
 
-Registration fails if:
+Registration can fail for several reasons. Always check the error!
 
-### Invalid Service
+### Empty Service Name
 
 ```go
-// Empty name
-_, err := contract.Register("", &todo.Service{})
-// Error: contract: invalid service: empty name
-
-// Nil service
-_, err := contract.Register("todo", nil)
-// Error: contract: invalid service: nil service
-
-// Not a struct
-_, err := contract.Register("todo", "string")
-// Error: contract: invalid service: expected struct, got string
+_, err := contract.Register("", &TodoService{})
+// Error: empty service name
 ```
+
+**Fix**: Provide a valid service name.
+
+### Nil Service
+
+```go
+_, err := contract.Register("todo", nil)
+// Error: nil service
+```
+
+**Fix**: Pass an actual service instance.
+
+### Not a Struct
+
+```go
+_, err := contract.Register("todo", "hello")
+// Error: expected struct, got string
+```
+
+**Fix**: Pass a pointer to a struct.
 
 ### Invalid Method Signature
 
 ```go
 type BadService struct{}
 
-// Missing context
-func (s *BadService) BadMethod(in *Input) error {
+// Missing context.Context
+func (s *BadService) Create(in *Input) error {
     return nil
 }
 
 _, err := contract.Register("bad", &BadService{})
-// Error: contract: invalid method signature: bad.BadMethod: first argument must be context.Context
+// Error: invalid method signature: Create: first argument must be context.Context
 ```
+
+**Fix**: All methods must have `context.Context` as the first parameter.
 
 ### No Exported Methods
 
@@ -162,133 +220,196 @@ _, err := contract.Register("bad", &BadService{})
 type EmptyService struct{}
 
 _, err := contract.Register("empty", &EmptyService{})
-// Error: contract: invalid service: no exported methods
+// Error: no exported methods found
 ```
 
-## Type Registry
+**Fix**: Add at least one exported method with a valid signature.
 
-The type registry holds JSON schemas for all input/output types:
+## Inspecting Your Registration
+
+After registration, you can inspect what Contract discovered:
 
 ```go
-svc, _ := contract.Register("todo", &todo.Service{})
+svc, _ := contract.Register("todo", &TodoService{})
 
-// Get all schemas
-schemas := svc.Types.Schemas()
+fmt.Println("=== Service ===")
+fmt.Println("Name:", svc.Name)
+fmt.Println()
 
-for _, s := range schemas {
-    fmt.Printf("Schema: %s\n", s.ID)
-    b, _ := json.MarshalIndent(s.JSON, "  ", "  ")
-    fmt.Println(string(b))
+fmt.Println("=== Methods ===")
+for _, m := range svc.Methods {
+    fmt.Printf("%s:\n", m.Name)
+
+    if m.Input != nil {
+        fmt.Printf("  Input:  %s\n", m.Input.Name)
+    } else {
+        fmt.Println("  Input:  (none)")
+    }
+
+    if m.Output != nil {
+        fmt.Printf("  Output: %s\n", m.Output.Name)
+    } else {
+        fmt.Println("  Output: (none)")
+    }
+    fmt.Println()
+}
+
+fmt.Println("=== Types ===")
+for _, s := range svc.Types.Schemas() {
+    fmt.Printf("%s\n", s.ID)
 }
 ```
 
 Output:
 ```
-Schema: todo.CreateIn
-  {
-    "properties": {
-      "title": {
-        "type": "string"
-      }
-    },
-    "required": [
-      "title"
-    ],
-    "type": "object"
-  }
-Schema: todo.Todo
-  {
-    "properties": {
-      "completed": {
-        "type": "boolean"
-      },
-      "id": {
-        "type": "string"
-      },
-      "title": {
-        "type": "string"
-      }
-    },
-    "required": [
-      "completed",
-      "id",
-      "title"
-    ],
-    "type": "object"
-  }
+=== Service ===
+Name: todo
+
+=== Methods ===
+Create:
+  Input:  CreateInput
+  Output: Todo
+
+List:
+  Input:  (none)
+  Output: ListOutput
+
+Get:
+  Input:  GetInput
+  Output: Todo
+
+Delete:
+  Input:  DeleteInput
+  Output: (none)
+
+Health:
+  Input:  (none)
+  Output: (none)
+
+=== Types ===
+todo.CreateInput
+todo.Todo
+todo.ListOutput
+todo.GetInput
+todo.DeleteInput
 ```
 
-## Multi-Service Registration
+## Registering Multiple Services
 
-Register multiple services and mount them together:
+You can register multiple services and mount them all:
 
 ```go
-todoSvc, _ := contract.Register("todo", &todo.Service{})
-userSvc, _ := contract.Register("user", &user.Service{})
+func main() {
+    // Register each service
+    todoSvc, _ := contract.Register("todo", &todo.Service{})
+    userSvc, _ := contract.Register("user", &user.Service{})
+    orderSvc, _ := contract.Register("order", &order.Service{})
 
-mux := http.NewServeMux()
+    mux := http.NewServeMux()
 
-// Mount REST endpoints
-contract.MountREST(mux, todoSvc)  // /todos
-contract.MountREST(mux, userSvc)  // /users
+    // Mount REST endpoints for each
+    contract.MountREST(mux, todoSvc)   // /todos
+    contract.MountREST(mux, userSvc)   // /users
+    contract.MountREST(mux, orderSvc)  // /orders
 
-// Mount JSON-RPC (each at different paths)
-contract.MountJSONRPC(mux, "/rpc/todo", todoSvc)
-contract.MountJSONRPC(mux, "/rpc/user", userSvc)
+    // Mount JSON-RPC at different paths
+    contract.MountJSONRPC(mux, "/rpc/todos", todoSvc)
+    contract.MountJSONRPC(mux, "/rpc/users", userSvc)
+    contract.MountJSONRPC(mux, "/rpc/orders", orderSvc)
+
+    http.ListenAndServe(":8080", mux)
+}
 ```
 
 ## Best Practices
 
-### Register Once at Startup
+### 1. Register at Startup
+
+Registration should happen once when your application starts:
 
 ```go
 func main() {
     // Register all services at startup
-    todoSvc, err := contract.Register("todo", &todo.Service{})
+    svc, err := contract.Register("todo", &TodoService{})
+    if err != nil {
+        log.Fatalf("Registration failed: %v", err)
+    }
+
+    // Registration is done once - now use svc for the lifetime of the app
+    mux := http.NewServeMux()
+    contract.MountREST(mux, svc)
+    http.ListenAndServe(":8080", mux)
+}
+```
+
+### 2. Fail Fast on Errors
+
+Don't ignore registration errors. If registration fails, your API won't work correctly:
+
+```go
+svc, err := contract.Register("todo", &TodoService{})
+if err != nil {
+    // GOOD: Fail immediately with a clear message
+    log.Fatalf("Failed to register todo service: %v", err)
+}
+
+// BAD: Don't ignore the error
+svc, _ := contract.Register("todo", &TodoService{}) // Don't do this!
+```
+
+### 3. Use Dependency Injection
+
+Pass dependencies to your service before registering:
+
+```go
+func main() {
+    // Create dependencies
+    db := setupDatabase()
+    cache := setupCache()
+
+    // Create service with dependencies
+    todoService := &TodoService{
+        db:    db,
+        cache: cache,
+    }
+
+    // Register the configured service
+    svc, err := contract.Register("todo", todoService)
     if err != nil {
         log.Fatal(err)
     }
 
-    // Use the contract throughout the app
-    mux := http.NewServeMux()
-    contract.MountREST(mux, todoSvc)
+    // Now your methods have access to db and cache
     // ...
 }
 ```
 
-### Validate Early
+## Common Questions
 
-Registration performs all validation. If registration succeeds, the service is guaranteed to work correctly at runtime:
+### Can I register the same service twice?
 
-```go
-svc, err := contract.Register("todo", &todo.Service{})
-if err != nil {
-    // Fail fast during startup
-    log.Fatalf("failed to register todo service: %v", err)
-}
-```
-
-### Use Meaningful Names
-
-The service name appears in:
-- REST paths (`/todos`)
-- JSON-RPC method names (`todo.Create`)
-- OpenAPI spec titles
-
-Choose names that make sense in these contexts:
+Yes, but with different names:
 
 ```go
-// Good
-contract.Register("todo", svc)    // /todos, todo.Create
-contract.Register("user", svc)    // /users, user.Create
+// Two instances of the same service type
+v1Svc, _ := contract.Register("todo", &TodoService{})
+v2Svc, _ := contract.Register("todo_v2", &TodoServiceV2{})
 
-// Avoid
-contract.Register("TodoService", svc)  // /todoservices (awkward)
-contract.Register("svc1", svc)         // /svc1s (meaningless)
+// Mount at different paths
+contract.MountREST(mux, v1Svc)                    // /todos
+contract.MountJSONRPC(mux, "/rpc/v2", v2Svc)     // /rpc/v2
 ```
+
+### When does reflection happen?
+
+Reflection only happens during `Register()` - once at startup. After that, method calls use pre-compiled invokers with no reflection overhead.
+
+### Can I add methods after registration?
+
+No, registration is a one-time operation. If you add methods to your struct, you need to restart your application for them to be discovered.
 
 ## See Also
 
-- [Defining Services](/contract/service) - How to write services
-- [Type System](/contract/types) - Schema generation details
-- [Invokers](/contract/invoker) - Calling methods at runtime
+- [Defining Services](/contract/service) - How to write service methods
+- [Type System](/contract/types) - Understanding JSON schema generation
+- [Architecture](/contract/architecture) - How registration fits into the bigger picture

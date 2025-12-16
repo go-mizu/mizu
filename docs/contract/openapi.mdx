@@ -1,182 +1,54 @@
 ---
 title: "OpenAPI"
-description: "Automatic OpenAPI 3.1 specification generation"
+description: "Generate API documentation automatically from your Contract services"
 ---
 
 # OpenAPI
 
-The contract package automatically generates OpenAPI 3.1 specifications from your registered services. Serve API documentation without writing YAML or JSON by hand.
+OpenAPI (formerly known as Swagger) is a standard way to describe REST APIs. Contract automatically generates an OpenAPI specification from your service - no manual YAML writing needed!
+
+## What Is OpenAPI?
+
+OpenAPI is a specification format that describes your API:
+- What endpoints exist
+- What parameters they accept
+- What responses they return
+- What your data types look like
+
+This specification can be used to:
+- **Generate documentation**: Beautiful, interactive API docs with Swagger UI or Redoc
+- **Generate client code**: Create typed clients in TypeScript, Python, Go, and more
+- **Test your API**: Import into Postman, Insomnia, or other API tools
+- **Validate requests**: Ensure requests match the expected format
 
 ## Quick Start
+
+Add OpenAPI documentation in one line:
 
 ```go
 import "github.com/go-mizu/mizu/contract"
 
-svc, _ := contract.Register("todo", &todo.Service{})
+svc, _ := contract.Register("todo", &TodoService{})
 
 mux := http.NewServeMux()
 contract.MountREST(mux, svc)
-contract.ServeOpenAPI(mux, "/openapi.json", svc)
+contract.ServeOpenAPI(mux, "/openapi.json", svc)  // Add this line!
 
 http.ListenAndServe(":8080", mux)
 ```
 
-Access the spec at `http://localhost:8080/openapi.json`.
+Now visit `http://localhost:8080/openapi.json` to see your API specification.
 
-## ServeOpenAPI Function
+## What Gets Generated
 
-```go
-func ServeOpenAPI(mux *http.ServeMux, path string, svc *Service)
-```
+Contract analyzes your service and generates a complete OpenAPI 3.1 specification.
 
-### Parameters
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `mux` | `*http.ServeMux` | HTTP request multiplexer |
-| `path` | `string` | Endpoint path (e.g., `/openapi.json`) |
-| `svc` | `*Service` | Registered service contract |
-
-## Generated Specification
-
-The generated spec includes:
-
-### Info Section
-
-```json
-{
-  "openapi": "3.1.0",
-  "info": {
-    "title": "todo",
-    "version": "0.1.0"
-  }
-}
-```
-
-### Paths
-
-Paths mirror the REST transport conventions:
-
-```json
-{
-  "paths": {
-    "/todos": {
-      "post": {
-        "operationId": "todo.Create",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {"$ref": "#/components/schemas/todo.CreateIn"}
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {"$ref": "#/components/schemas/todo.Todo"}
-              }
-            }
-          }
-        }
-      },
-      "get": {
-        "operationId": "todo.List",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {"$ref": "#/components/schemas/todo.TodoList"}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/todos/{id}": {
-      "get": {
-        "operationId": "todo.Get",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {"$ref": "#/components/schemas/todo.GetIn"}
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {"$ref": "#/components/schemas/todo.Todo"}
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-```
-
-### Component Schemas
-
-All input/output types appear in components:
-
-```json
-{
-  "components": {
-    "schemas": {
-      "todo.CreateIn": {
-        "type": "object",
-        "properties": {
-          "title": {"type": "string"}
-        },
-        "required": ["title"]
-      },
-      "todo.Todo": {
-        "type": "object",
-        "properties": {
-          "id": {"type": "string"},
-          "title": {"type": "string"},
-          "completed": {"type": "boolean"}
-        },
-        "required": ["id", "title", "completed"]
-      },
-      "todo.TodoList": {
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {"$ref": "#/components/schemas/todo.Todo"}
-          }
-        },
-        "required": ["items"]
-      }
-    }
-  }
-}
-```
-
-## Complete Example
-
-### Service Definition
+### From Your Service
 
 ```go
-package todo
+type TodoService struct{}
 
-import (
-    "context"
-    "time"
-)
-
-type Service struct{}
-
-type CreateIn struct {
+type CreateInput struct {
     Title       string `json:"title"`
     Description string `json:"description"`
 }
@@ -189,63 +61,12 @@ type Todo struct {
     CreatedAt   time.Time `json:"createdAt"`
 }
 
-type GetIn struct {
-    ID string `json:"id"`
-}
-
-type TodoList struct {
-    Items []*Todo `json:"items"`
-    Total int     `json:"total"`
-}
-
-func (s *Service) Create(ctx context.Context, in *CreateIn) (*Todo, error) {
-    return nil, nil
-}
-
-func (s *Service) Get(ctx context.Context, in *GetIn) (*Todo, error) {
-    return nil, nil
-}
-
-func (s *Service) List(ctx context.Context) (*TodoList, error) {
-    return nil, nil
-}
-
-func (s *Service) Health(ctx context.Context) error {
-    return nil
-}
+func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error)
+func (s *TodoService) List(ctx context.Context) (*ListOutput, error)
+func (s *TodoService) Get(ctx context.Context, in *GetInput) (*Todo, error)
 ```
 
-### Server Setup
-
-```go
-package main
-
-import (
-    "net/http"
-    "github.com/go-mizu/mizu/contract"
-    "yourmodule/todo"
-)
-
-func main() {
-    svc, _ := contract.Register("todo", &todo.Service{})
-
-    mux := http.NewServeMux()
-
-    // Mount REST API
-    contract.MountREST(mux, svc)
-
-    // Serve OpenAPI spec
-    contract.ServeOpenAPI(mux, "/openapi.json", svc)
-
-    http.ListenAndServe(":8080", mux)
-}
-```
-
-### Generated Spec
-
-```bash
-curl http://localhost:8080/openapi.json | jq
-```
+### To OpenAPI Specification
 
 ```json
 {
@@ -256,30 +77,13 @@ curl http://localhost:8080/openapi.json | jq
   },
   "paths": {
     "/todos": {
-      "get": {
-        "operationId": "todo.List",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/todo.TodoList"
-                }
-              }
-            }
-          }
-        }
-      },
       "post": {
         "operationId": "todo.Create",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/todo.CreateIn"
-              }
+              "schema": { "$ref": "#/components/schemas/todo.CreateInput" }
             }
           }
         },
@@ -288,117 +92,91 @@ curl http://localhost:8080/openapi.json | jq
             "description": "OK",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/todo.Todo"
-                }
+                "schema": { "$ref": "#/components/schemas/todo.Todo" }
               }
             }
           }
         }
+      },
+      "get": {
+        "operationId": "todo.List",
+        "responses": { "..." }
       }
     },
     "/todos/{id}": {
       "get": {
         "operationId": "todo.Get",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/todo.GetIn"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/todo.Todo"
-                }
-              }
-            }
-          }
-        }
+        "responses": { "..." }
       }
     }
   },
   "components": {
     "schemas": {
-      "todo.CreateIn": {
+      "todo.CreateInput": {
         "type": "object",
         "properties": {
-          "title": {"type": "string"},
-          "description": {"type": "string"}
+          "title": { "type": "string" },
+          "description": { "type": "string" }
         },
         "required": ["title", "description"]
-      },
-      "todo.GetIn": {
-        "type": "object",
-        "properties": {
-          "id": {"type": "string"}
-        },
-        "required": ["id"]
       },
       "todo.Todo": {
         "type": "object",
         "properties": {
-          "id": {"type": "string"},
-          "title": {"type": "string"},
-          "description": {"type": "string"},
-          "completed": {"type": "boolean"},
-          "createdAt": {"type": "string", "format": "date-time"}
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "completed": { "type": "boolean" },
+          "createdAt": { "type": "string", "format": "date-time" }
         },
         "required": ["id", "title", "description", "completed", "createdAt"]
-      },
-      "todo.TodoList": {
-        "type": "object",
-        "properties": {
-          "items": {"type": "array"},
-          "total": {"type": "integer"}
-        },
-        "required": ["items", "total"]
       }
     }
   }
 }
 ```
 
-## Using with Swagger UI
+## Adding Interactive Documentation
 
-Serve Swagger UI pointing to your OpenAPI spec:
+The JSON spec is machine-readable. For human-readable docs, add Swagger UI or Redoc.
+
+### Option 1: Swagger UI
+
+Swagger UI provides an interactive interface where users can try your API:
 
 ```go
 mux := http.NewServeMux()
 contract.MountREST(mux, svc)
 contract.ServeOpenAPI(mux, "/openapi.json", svc)
 
-// Swagger UI (external CDN)
+// Serve Swagger UI at /docs
 mux.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "text/html")
     w.Write([]byte(`<!DOCTYPE html>
 <html>
 <head>
-  <title>API Docs</title>
-  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+    <title>API Documentation</title>
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
 </head>
 <body>
-  <div id="swagger-ui"></div>
-  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-  <script>
-    SwaggerUIBundle({
-      url: "/openapi.json",
-      dom_id: "#swagger-ui"
-    });
-  </script>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script>
+        SwaggerUIBundle({
+            url: "/openapi.json",
+            dom_id: "#swagger-ui"
+        });
+    </script>
 </body>
 </html>`))
 })
 ```
 
-## Using with Redoc
+Now visit `http://localhost:8080/docs` to see interactive documentation!
+
+### Option 2: Redoc
+
+Redoc provides clean, three-panel documentation:
 
 ```go
 mux.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
@@ -406,33 +184,166 @@ mux.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
     w.Write([]byte(`<!DOCTYPE html>
 <html>
 <head>
-  <title>API Docs</title>
+    <title>API Documentation</title>
 </head>
 <body>
-  <redoc spec-url="/openapi.json"></redoc>
-  <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
+    <redoc spec-url="/openapi.json"></redoc>
+    <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
 </body>
 </html>`))
 })
 ```
 
-## Programmatic Access
-
-Access schemas programmatically:
+## Complete Example
 
 ```go
-svc, _ := contract.Register("todo", &todo.Service{})
+package main
 
-// Get all schemas
-schemas := svc.Types.Schemas()
+import (
+    "context"
+    "fmt"
+    "net/http"
+    "sync"
+    "time"
 
-for _, s := range schemas {
-    fmt.Printf("Schema: %s\n", s.ID)
+    "github.com/go-mizu/mizu/contract"
+)
 
-    // Access JSON schema
-    b, _ := json.MarshalIndent(s.JSON, "", "  ")
-    fmt.Println(string(b))
+// Service
+type TodoService struct {
+    mu     sync.RWMutex
+    todos  map[string]*Todo
+    nextID int
 }
+
+// Types
+type Todo struct {
+    ID          string    `json:"id"`
+    Title       string    `json:"title"`
+    Description string    `json:"description"`
+    Completed   bool      `json:"completed"`
+    CreatedAt   time.Time `json:"createdAt"`
+}
+
+type CreateInput struct {
+    Title       string `json:"title"`
+    Description string `json:"description"`
+}
+
+type GetInput struct {
+    ID string `json:"id"`
+}
+
+type ListOutput struct {
+    Items []*Todo `json:"items"`
+    Total int     `json:"total"`
+}
+
+// Methods
+func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    s.nextID++
+    todo := &Todo{
+        ID:          fmt.Sprintf("%d", s.nextID),
+        Title:       in.Title,
+        Description: in.Description,
+        CreatedAt:   time.Now(),
+    }
+    s.todos[todo.ID] = todo
+    return todo, nil
+}
+
+func (s *TodoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+    todo, ok := s.todos[in.ID]
+    if !ok {
+        return nil, contract.ErrNotFound("todo not found")
+    }
+    return todo, nil
+}
+
+func (s *TodoService) List(ctx context.Context) (*ListOutput, error) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+    items := make([]*Todo, 0, len(s.todos))
+    for _, t := range s.todos {
+        items = append(items, t)
+    }
+    return &ListOutput{Items: items, Total: len(items)}, nil
+}
+
+func main() {
+    todoService := &TodoService{todos: make(map[string]*Todo)}
+    svc, _ := contract.Register("todo", todoService)
+
+    mux := http.NewServeMux()
+
+    // Mount REST API
+    contract.MountREST(mux, svc)
+
+    // Serve OpenAPI specification
+    contract.ServeOpenAPI(mux, "/openapi.json", svc)
+
+    // Serve Swagger UI
+    mux.HandleFunc("/docs", swaggerUIHandler)
+
+    fmt.Println("Server: http://localhost:8080")
+    fmt.Println("API:    http://localhost:8080/todos")
+    fmt.Println("Spec:   http://localhost:8080/openapi.json")
+    fmt.Println("Docs:   http://localhost:8080/docs")
+    http.ListenAndServe(":8080", mux)
+}
+
+func swaggerUIHandler(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "text/html")
+    w.Write([]byte(`<!DOCTYPE html>
+<html><head>
+    <title>Todo API Docs</title>
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+</head><body>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script>SwaggerUIBundle({url: "/openapi.json", dom_id: "#swagger-ui"});</script>
+</body></html>`))
+}
+```
+
+## Using the OpenAPI Spec
+
+### Generate Client Code
+
+Use tools like `openapi-generator` to create typed clients:
+
+```bash
+# Install openapi-generator
+npm install -g @openapitools/openapi-generator-cli
+
+# Generate TypeScript client
+openapi-generator-cli generate -i http://localhost:8080/openapi.json -g typescript-fetch -o ./client
+
+# Generate Python client
+openapi-generator-cli generate -i http://localhost:8080/openapi.json -g python -o ./python-client
+
+# Generate Go client
+openapi-generator-cli generate -i http://localhost:8080/openapi.json -g go -o ./go-client
+```
+
+### Import into Postman
+
+1. Open Postman
+2. Click Import
+3. Enter URL: `http://localhost:8080/openapi.json`
+4. Your API is now ready to test!
+
+### Validate with oasdiff
+
+Check for breaking changes:
+
+```bash
+# Compare two versions of your spec
+oasdiff diff old-api.json http://localhost:8080/openapi.json
 ```
 
 ## Multiple Services
@@ -440,39 +351,62 @@ for _, s := range schemas {
 Generate specs for multiple services:
 
 ```go
-todoSvc, _ := contract.Register("todo", &todo.Service{})
-userSvc, _ := contract.Register("user", &user.Service{})
+todoSvc, _ := contract.Register("todo", &TodoService{})
+userSvc, _ := contract.Register("user", &UserService{})
 
 mux := http.NewServeMux()
 
-// Mount REST for each
-contract.MountREST(mux, todoSvc)
-contract.MountREST(mux, userSvc)
+// Mount REST endpoints
+contract.MountREST(mux, todoSvc)  // /todos
+contract.MountREST(mux, userSvc)  // /users
 
-// Serve separate specs
-contract.ServeOpenAPI(mux, "/openapi/todo.json", todoSvc)
-contract.ServeOpenAPI(mux, "/openapi/user.json", userSvc)
+// Serve separate OpenAPI specs
+contract.ServeOpenAPI(mux, "/api/todo/openapi.json", todoSvc)
+contract.ServeOpenAPI(mux, "/api/user/openapi.json", userSvc)
 ```
 
-## Limitations
+## Accessing Schemas Programmatically
 
-The current OpenAPI generator is minimal:
+You can access the schemas in your code:
 
-- Fixed version "0.1.0"
-- No description fields
-- No security definitions
-- No example values
-- No parameter definitions for path params
+```go
+svc, _ := contract.Register("todo", &TodoService{})
 
-Future versions may add:
-- Customizable info section
-- Description extraction from doc comments
-- Security scheme definitions
-- Example generation
-- Proper path parameter definitions
+// Get all schemas
+schemas := svc.Types.Schemas()
+
+for _, schema := range schemas {
+    fmt.Printf("Schema: %s\n", schema.ID)
+
+    // schema.JSON is the JSON Schema object
+    jsonBytes, _ := json.MarshalIndent(schema.JSON, "", "  ")
+    fmt.Println(string(jsonBytes))
+}
+```
+
+## Common Questions
+
+### How do I add descriptions to endpoints?
+
+Currently, descriptions come from the method names. Custom descriptions from doc comments may be added in future versions.
+
+### Can I customize the OpenAPI output?
+
+The current generator is minimal. For extensive customization, you can:
+1. Fetch the generated spec
+2. Modify it programmatically
+3. Serve the modified version
+
+### Does it support authentication schemes?
+
+Not yet. Security definitions will be added in future versions. For now, document authentication separately.
+
+### What OpenAPI version is generated?
+
+OpenAPI 3.1.0, the latest version.
 
 ## See Also
 
-- [Type System](/contract/types) - How schemas are generated
-- [REST Transport](/contract/rest) - REST endpoint conventions
-- [Defining Services](/contract/service) - Service method signatures
+- [REST Transport](/contract/rest) - The endpoints documented by OpenAPI
+- [Type System](/contract/types) - How Go types become JSON schemas
+- [Client Generation](/contract/client-generation) - Using the spec for clients

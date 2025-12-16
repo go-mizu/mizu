@@ -1,161 +1,242 @@
 ---
 title: "API Reference"
-description: "Complete API reference for the Contract package"
+description: "Complete reference for all Contract functions, types, and options"
 ---
 
 # API Reference
 
-Complete reference for the `github.com/go-mizu/mizu/contract` package and its sub-packages.
+This page documents all public functions, types, and options in the Contract package.
 
-## contract
+## Main Package
 
-Core package for service registration and transport mounting.
+Import: `github.com/go-mizu/mizu/contract`
 
 ### Functions
 
 #### Register
 
+Registers a Go struct as a Contract service.
+
 ```go
 func Register(name string, service any, opts ...Option) (*Service, error)
 ```
 
-Registers a Go struct as a Contract service. Reflects on the struct to discover methods and generate JSON schemas.
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Service name (used in URLs and method prefixes) |
+| `service` | `any` | Pointer to your service struct |
+| `opts` | `...Option` | Optional configuration |
 
-**Parameters:**
-- `name` - Service name (used in URLs and method prefixes)
-- `service` - Pointer to a Go struct with methods
-- `opts` - Optional configuration options
-
-**Returns:**
-- `*Service` - Registered service with compiled invokers
-- `error` - Registration error if any
+**Returns:** `*Service` and an error if registration fails.
 
 **Example:**
 ```go
 svc, err := contract.Register("todo", &TodoService{})
+if err != nil {
+    log.Fatal(err)
+}
 ```
 
+---
+
 #### MountREST
+
+Mounts REST endpoints on an HTTP mux.
 
 ```go
 func MountREST(mux *http.ServeMux, svc *Service, opts ...RESTOption)
 ```
 
-Mounts REST endpoints for a service.
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `mux` | `*http.ServeMux` | HTTP router |
+| `svc` | `*Service` | Registered service |
+| `opts` | `...RESTOption` | Optional configuration |
 
-**Endpoint pattern:** `/{service-plural}/{id}`
+**Endpoints created:** `/{plural-name}` and `/{plural-name}/{id}`
 
 **Example:**
 ```go
 contract.MountREST(mux, svc)
-// Creates: GET/POST /todos, GET/DELETE /todos/{id}
+// Creates: POST /todos, GET /todos, GET /todos/{id}, PUT /todos/{id}, DELETE /todos/{id}
 ```
 
+---
+
 #### MountJSONRPC
+
+Mounts a JSON-RPC 2.0 endpoint.
 
 ```go
 func MountJSONRPC(mux *http.ServeMux, path string, svc *Service, opts ...JSONRPCOption)
 ```
 
-Mounts a JSON-RPC 2.0 endpoint.
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `mux` | `*http.ServeMux` | HTTP router |
+| `path` | `string` | URL path for the endpoint |
+| `svc` | `*Service` | Registered service |
+| `opts` | `...JSONRPCOption` | Optional configuration |
 
 **Example:**
 ```go
 contract.MountJSONRPC(mux, "/rpc", svc)
 ```
 
+---
+
 #### ServeOpenAPI
+
+Serves an OpenAPI 3.1 specification.
 
 ```go
 func ServeOpenAPI(mux *http.ServeMux, path string, svc *Service)
 ```
 
-Serves an OpenAPI 3.1 specification.
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `mux` | `*http.ServeMux` | HTTP router |
+| `path` | `string` | URL path for the spec |
+| `svc` | `*Service` | Registered service |
 
 **Example:**
 ```go
 contract.ServeOpenAPI(mux, "/openapi.json", svc)
 ```
 
+---
+
 #### DefaultInvoker
+
+Returns the default transport invoker for a service.
 
 ```go
 func DefaultInvoker(svc *Service) TransportInvoker
 ```
 
-Returns the default invoker for a service. Use when wrapping with custom middleware.
+Use this when you need to wrap the invoker with middleware.
 
 **Example:**
 ```go
 invoker := contract.DefaultInvoker(svc)
+customInvoker := &LoggingInvoker{inner: invoker}
 ```
+
+---
 
 ### Types
 
 #### Service
 
+A registered service with metadata and compiled invokers.
+
 ```go
 type Service struct {
-    Name        string
-    Description string
-    Version     string
-    Methods     []*Method
-    Types       *TypeRegistry
+    Name        string        // Service name
+    Description string        // Optional description
+    Version     string        // Optional version
+    Methods     []*Method     // All discovered methods
+    Types       *TypeRegistry // Type information and schemas
 }
 ```
 
-Registered service with methods and type information.
-
 **Methods:**
-- `Resolve(name string) *Method` - Find method by name
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `Resolve(name string)` | `*Method` | Find method by name |
+
+---
 
 #### Method
 
+Metadata for a single method.
+
 ```go
 type Method struct {
-    Name         string
-    Description  string
-    InputType    reflect.Type
-    OutputType   reflect.Type
-    Invoker      MethodInvoker
+    Name        string      // Method name (e.g., "Create")
+    FullName    string      // Service.Method (e.g., "todo.Create")
+    Description string      // Optional description
+    Input       *TypeRef    // Input type reference (nil if no input)
+    Output      *TypeRef    // Output type reference (nil if no output)
+    Invoker     Invoker     // Pre-compiled method caller
 }
 ```
 
-Method metadata with compiled invoker.
-
 **Methods:**
-- `HasInput() bool` - Whether method accepts input
-- `HasOutput() bool` - Whether method returns output (besides error)
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `HasInput()` | `bool` | Whether method accepts input |
+| `HasOutput()` | `bool` | Whether method returns output |
+| `NewInput()` | `any` | Create new input instance |
+
+---
+
+#### TypeRef
+
+Reference to a type with its schema.
+
+```go
+type TypeRef struct {
+    ID     string       // Unique identifier (e.g., "todo.CreateInput")
+    Name   string       // Type name (e.g., "CreateInput")
+    Type   reflect.Type // Go reflect type
+    Schema *Schema      // JSON Schema
+}
+```
+
+---
 
 #### TypeRegistry
 
+Manages Go types and their JSON schemas.
+
 ```go
 type TypeRegistry struct {
-    // ...
+    // ... internal fields
 }
 ```
 
-Manages Go types and their JSON schemas.
-
 **Methods:**
-- `Schema(id string) *Schema` - Get schema by ID
-- `Schemas() []*Schema` - Get all schemas
 
-#### Option
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `Schema(id string)` | `*Schema` | Get schema by ID |
+| `Schemas()` | `[]*Schema` | Get all schemas |
+
+---
+
+#### Schema
+
+JSON Schema for a type.
 
 ```go
-type Option func(*registerOptions)
+type Schema struct {
+    ID   string         // Schema identifier
+    JSON map[string]any // JSON Schema object
+}
 ```
 
-Configuration option for Register.
-
-**Available options:**
-- `WithDescription(desc string)` - Set service description
-- `WithVersion(ver string)` - Set service version
+---
 
 ### Interfaces
 
+#### Invoker
+
+Low-level interface for calling methods.
+
+```go
+type Invoker interface {
+    Call(ctx context.Context, in any) (any, error)
+}
+```
+
+---
+
 #### TransportInvoker
+
+Higher-level interface for transports (accepts raw bytes).
 
 ```go
 type TransportInvoker interface {
@@ -163,9 +244,11 @@ type TransportInvoker interface {
 }
 ```
 
-Interface for invoking methods from transports.
+---
 
 #### Resolver
+
+Interface for finding methods by name.
 
 ```go
 type Resolver interface {
@@ -173,46 +256,84 @@ type Resolver interface {
 }
 ```
 
-Interface for finding methods by name.
+---
+
+### Options
+
+#### Registration Options
+
+```go
+// Set service description
+contract.WithDescription("Todo management service")
+
+// Set service version
+contract.WithVersion("1.0.0")
+```
+
+**Usage:**
+```go
+svc, err := contract.Register("todo", &TodoService{},
+    contract.WithDescription("Manages todo items"),
+    contract.WithVersion("2.0.0"),
+)
+```
 
 ---
 
-## contract/transport/mcp
+## MCP Package
 
-MCP (Model Context Protocol) transport package.
+Import: `github.com/go-mizu/mizu/contract/transport/mcp`
 
 ### Functions
 
 #### Mount
 
+Mounts MCP endpoint.
+
 ```go
 func Mount(mux *http.ServeMux, path string, svc *contract.Service, opts ...Option)
 ```
 
-Mounts an MCP endpoint.
-
 **Example:**
 ```go
-import "github.com/go-mizu/mizu/contract/transport/mcp"
-
 mcp.Mount(mux, "/mcp", svc)
 ```
 
+---
+
 #### NewHandler
+
+Creates an MCP HTTP handler.
 
 ```go
 func NewHandler(svc *contract.Service, opts ...Option) http.Handler
 ```
 
-Creates an MCP HTTP handler.
+---
 
 ### Options
 
 ```go
-func WithResolver(r contract.Resolver) Option
-func WithInvoker(i contract.TransportInvoker) Option
-func WithServerInfo(info ServerInfo) Option
+// Custom method resolver
+mcp.WithResolver(resolver)
+
+// Custom invoker (for middleware)
+mcp.WithInvoker(invoker)
+
+// Server information
+mcp.WithServerInfo(mcp.ServerInfo{
+    Name:    "my-api",
+    Version: "1.0.0",
+})
+
+// Instructions for AI
+mcp.WithInstructions("Use these tools to manage todos.")
+
+// Allowed CORS origins
+mcp.WithAllowedOrigins("https://claude.ai")
 ```
+
+---
 
 ### Types
 
@@ -225,98 +346,80 @@ type ServerInfo struct {
 }
 ```
 
-#### Tool
-
-```go
-type Tool struct {
-    Name         string         `json:"name"`
-    Title        string         `json:"title,omitempty"`
-    Description  string         `json:"description,omitempty"`
-    InputSchema  map[string]any `json:"inputSchema"`
-    OutputSchema map[string]any `json:"outputSchema,omitempty"`
-}
-```
-
-### Constants
-
-```go
-const (
-    ProtocolLatest = "2025-06-18"
-    Protocol2024   = "2024-11-05"
-)
-```
-
 ---
 
-## contract/transport/trpc
+## tRPC Package
 
-tRPC-like transport package.
+Import: `github.com/go-mizu/mizu/contract/transport/trpc`
 
 ### Functions
 
 #### Mount
 
+Mounts tRPC endpoints.
+
 ```go
 func Mount(mux *http.ServeMux, path string, svc *contract.Service, opts ...Option)
 ```
 
-Mounts tRPC endpoints.
+**Creates:** `POST {path}/{method}` and `GET {path}.meta`
 
 **Example:**
 ```go
-import "github.com/go-mizu/mizu/contract/transport/trpc"
-
 trpc.Mount(mux, "/trpc", svc)
-// Creates: POST /trpc/{method}, GET /trpc.meta
+// POST /trpc/Create, POST /trpc/List, GET /trpc.meta
 ```
 
+---
+
 #### NewHandler
+
+Creates a tRPC HTTP handler.
 
 ```go
 func NewHandler(svc *contract.Service, opts ...Option) http.Handler
 ```
 
-Creates a tRPC HTTP handler.
+---
 
 #### NewMetaHandler
+
+Creates handler for the `.meta` endpoint.
 
 ```go
 func NewMetaHandler(svc *contract.Service) http.Handler
 ```
 
-Creates a handler for the `.meta` endpoint.
+---
 
 ### Options
 
 ```go
-func WithResolver(r contract.Resolver) Option
-func WithInvoker(i contract.TransportInvoker) Option
+// Custom method resolver
+trpc.WithResolver(resolver)
+
+// Custom invoker (for middleware)
+trpc.WithInvoker(invoker)
 ```
+
+---
 
 ### Types
 
 #### Envelope
+
+Response envelope for all tRPC responses.
 
 ```go
 type Envelope struct {
     Result *Result `json:"result,omitempty"`
     Error  *Error  `json:"error,omitempty"`
 }
-```
 
-Response envelope for all tRPC responses.
-
-#### Result
-
-```go
 type Result struct {
     Data any `json:"data"`
 }
-```
 
-#### Error
-
-```go
 type Error struct {
     Code    ErrorCode `json:"code"`
     Message string    `json:"message"`
@@ -329,45 +432,50 @@ type Error struct {
 type ErrorCode string
 
 const (
-    CodeBadRequest     ErrorCode = "BAD_REQUEST"
-    CodeInternalError  ErrorCode = "INTERNAL_ERROR"
-    CodeNotFound       ErrorCode = "NOT_FOUND"
-    CodeUnauthorized   ErrorCode = "UNAUTHORIZED"
-    CodeForbidden      ErrorCode = "FORBIDDEN"
+    CodeBadRequest    ErrorCode = "BAD_REQUEST"
+    CodeInternalError ErrorCode = "INTERNAL_ERROR"
+    CodeNotFound      ErrorCode = "NOT_FOUND"
+    CodeUnauthorized  ErrorCode = "UNAUTHORIZED"
+    CodeForbidden     ErrorCode = "FORBIDDEN"
 )
 ```
 
-#### ServiceMeta
-
-```go
-type ServiceMeta struct {
-    Service string          `json:"service"`
-    Methods []ProcedureMeta `json:"methods"`
-    Schemas []SchemaMeta    `json:"schemas"`
-}
-```
-
-Response from `.meta` endpoint.
-
 ---
 
-## contract/transport/jsonrpc
+## JSON-RPC Package
 
-JSON-RPC 2.0 transport package.
+Import: `github.com/go-mizu/mizu/contract/transport/jsonrpc`
 
 ### Functions
 
 #### Mount
 
+Mounts JSON-RPC endpoint.
+
 ```go
 func Mount(mux *http.ServeMux, path string, svc *contract.Service, opts ...Option)
 ```
 
+---
+
 #### NewHandler
+
+Creates JSON-RPC HTTP handler.
 
 ```go
 func NewHandler(svc *contract.Service, opts ...Option) http.Handler
 ```
+
+---
+
+### Options
+
+```go
+jsonrpc.WithResolver(resolver)
+jsonrpc.WithInvoker(invoker)
+```
+
+---
 
 ### Types
 
@@ -386,10 +494,10 @@ type Request struct {
 
 ```go
 type Response struct {
-    JSONRPC string          `json:"jsonrpc"`
-    ID      any             `json:"id,omitempty"`
-    Result  any             `json:"result,omitempty"`
-    Error   *Error          `json:"error,omitempty"`
+    JSONRPC string `json:"jsonrpc"`
+    ID      any    `json:"id,omitempty"`
+    Result  any    `json:"result,omitempty"`
+    Error   *Error `json:"error,omitempty"`
 }
 ```
 
@@ -405,37 +513,28 @@ type Error struct {
 
 ---
 
-## contract/transport/openapi
+## OpenAPI Package
 
-OpenAPI 3.1 specification generator.
+Import: `github.com/go-mizu/mizu/contract/transport/openapi`
 
 ### Functions
 
 #### Mount
 
+Mounts OpenAPI spec endpoint.
+
 ```go
 func Mount(mux *http.ServeMux, path string, svc *contract.Service)
 ```
 
+---
+
 #### Generate
+
+Generates OpenAPI document from service.
 
 ```go
 func Generate(svc *contract.Service) *Document
-```
-
-Generates an OpenAPI document from a service.
-
-### Types
-
-#### Document
-
-```go
-type Document struct {
-    OpenAPI    string              `json:"openapi"`
-    Info       Info                `json:"info"`
-    Paths      map[string]PathItem `json:"paths"`
-    Components Components          `json:"components"`
-}
 ```
 
 ---
@@ -443,6 +542,8 @@ type Document struct {
 ## Error Types
 
 ### Error
+
+Contract error with code and message.
 
 ```go
 type Error struct {
@@ -453,34 +554,47 @@ type Error struct {
 ```
 
 **Methods:**
-- `Error() string` - Implements error interface
-- `HTTPStatus() int` - Returns HTTP status code
-- `JSONRPCCode() int` - Returns JSON-RPC error code
-- `GRPCCode() codes.Code` - Returns gRPC status code
-- `Unwrap() error` - Returns wrapped cause
-- `WithDetails(details map[string]any) *Error` - Add details
-- `WithDetail(key string, value any) *Error` - Add single detail
-- `WithCause(cause error) *Error` - Wrap underlying error
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `Error()` | `string` | Error message (implements `error`) |
+| `HTTPStatus()` | `int` | HTTP status code |
+| `JSONRPCCode()` | `int` | JSON-RPC error code |
+| `Unwrap()` | `error` | Wrapped cause |
+| `WithDetail(key, value)` | `*Error` | Add detail |
+| `WithDetails(map)` | `*Error` | Add multiple details |
+| `WithCause(err)` | `*Error` | Wrap underlying error |
+
+---
 
 ### Error Constructors
 
-```go
-func NewError(code ErrorCode, message string) *Error
-func Errorf(code ErrorCode, format string, args ...any) *Error
+Convenience functions for common errors:
 
-// Convenience constructors
-func ErrNotFound(message string) *Error
-func ErrInvalidArgument(message string) *Error
-func ErrPermissionDenied(message string) *Error
-func ErrUnauthenticated(message string) *Error
-func ErrInternal(message string) *Error
-func ErrAlreadyExists(message string) *Error
-func ErrResourceExhausted(message string) *Error
-func ErrUnimplemented(message string) *Error
-func ErrUnavailable(message string) *Error
+```go
+contract.ErrNotFound(message string) *Error           // 404
+contract.ErrInvalidArgument(message string) *Error    // 400
+contract.ErrPermissionDenied(message string) *Error   // 403
+contract.ErrUnauthenticated(message string) *Error    // 401
+contract.ErrInternal(message string) *Error           // 500
+contract.ErrAlreadyExists(message string) *Error      // 409
+contract.ErrResourceExhausted(message string) *Error  // 429
+contract.ErrUnimplemented(message string) *Error      // 501
+contract.ErrUnavailable(message string) *Error        // 503
 ```
 
+General constructors:
+
+```go
+contract.NewError(code ErrorCode, message string) *Error
+contract.Errorf(code ErrorCode, format string, args ...any) *Error
+```
+
+---
+
 ### ErrorCode
+
+All available error codes:
 
 ```go
 type ErrorCode string
@@ -506,15 +620,117 @@ const (
 )
 ```
 
+---
+
 ### Helper Functions
 
 ```go
-func AsError(err error) *Error
-func HTTPStatusToErrorCode(status int) ErrorCode
+// Convert error to Contract error
+contract.AsError(err error) *Error
+
+// Convert HTTP status to error code
+contract.HTTPStatusToErrorCode(status int) ErrorCode
+```
+
+---
+
+## Method Signatures
+
+Contract recognizes these method patterns:
+
+### Pattern 1: Input and Output
+
+```go
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error)
+```
+
+### Pattern 2: Output Only
+
+```go
+func (s *Service) List(ctx context.Context) (*ListOutput, error)
+```
+
+### Pattern 3: Input Only
+
+```go
+func (s *Service) Delete(ctx context.Context, in *DeleteInput) error
+```
+
+### Pattern 4: Neither
+
+```go
+func (s *Service) Health(ctx context.Context) error
+```
+
+**Rules:**
+- First parameter must be `context.Context`
+- Input (if any) must be a pointer to a struct
+- Last return value must be `error`
+- Output (if any) must be a pointer to a struct
+
+---
+
+## Complete Example
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "net/http"
+
+    "github.com/go-mizu/mizu/contract"
+    "github.com/go-mizu/mizu/contract/transport/mcp"
+    "github.com/go-mizu/mizu/contract/transport/trpc"
+)
+
+// Service
+type TodoService struct{}
+
+// Types
+type CreateInput struct {
+    Title string `json:"title"`
+}
+
+type Todo struct {
+    ID    string `json:"id"`
+    Title string `json:"title"`
+}
+
+// Methods
+func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    if in.Title == "" {
+        return nil, contract.ErrInvalidArgument("title is required")
+    }
+    return &Todo{ID: "1", Title: in.Title}, nil
+}
+
+func main() {
+    // Register
+    svc, err := contract.Register("todo", &TodoService{},
+        contract.WithVersion("1.0.0"),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Mount transports
+    mux := http.NewServeMux()
+    contract.MountREST(mux, svc)
+    contract.MountJSONRPC(mux, "/rpc", svc)
+    contract.ServeOpenAPI(mux, "/openapi.json", svc)
+    trpc.Mount(mux, "/trpc", svc)
+    mcp.Mount(mux, "/mcp", svc)
+
+    log.Println("Server running on :8080")
+    http.ListenAndServe(":8080", mux)
+}
 ```
 
 ## See Also
 
 - [Quick Start](/contract/quick-start) - Get started quickly
-- [Service Definition](/contract/service) - Method signatures
+- [Service Definition](/contract/service) - Method signatures in detail
 - [Error Handling](/contract/errors) - Error patterns
+- [Transports Overview](/contract/transports-overview) - All transports

@@ -1,133 +1,273 @@
 ---
 title: "Type System"
-description: "Automatic JSON schema generation from Go types"
+description: "Understand how Contract converts your Go types into JSON schemas"
 ---
 
 # Type System
 
-The contract package automatically generates JSON schemas from your Go types. These schemas are used for OpenAPI documentation and can be used for validation or code generation.
+When you register a service, Contract automatically creates JSON schemas from your Go types. These schemas describe the shape of your data and are used for API documentation, validation, and client code generation.
 
-## How It Works
+## What Are JSON Schemas?
 
-When you register a service, the contract package:
+A JSON schema is a standard way to describe the structure of JSON data. It's like a blueprint that says:
+- What fields exist
+- What type each field is (string, number, boolean, etc.)
+- Which fields are required
 
-1. Inspects all method signatures
-2. Extracts input and output types
-3. Generates JSON schemas for each type
-4. Stores schemas in a `TypeRegistry`
-
-## TypeRegistry
-
-The `TypeRegistry` holds all schemas for a service:
+Here's an example:
 
 ```go
-svc, _ := contract.Register("todo", &todo.Service{})
-
-// Access the registry
-registry := svc.Types
-
-// Get all schemas
-schemas := registry.Schemas()
-```
-
-## TypeRef
-
-Each method's input/output is represented as a `TypeRef`:
-
-```go
-type TypeRef struct {
-    ID   string  // Unique identifier (e.g., "todo.CreateIn")
-    Name string  // Short name (e.g., "CreateIn")
+// Your Go type
+type Todo struct {
+    ID        string `json:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
 }
 ```
 
-Access via methods:
-
-```go
-m := svc.Method("Create")
-
-if m.Input != nil {
-    fmt.Println("Input ID:", m.Input.ID)    // "todo.CreateIn"
-    fmt.Println("Input Name:", m.Input.Name) // "CreateIn"
-}
-
-if m.Output != nil {
-    fmt.Println("Output ID:", m.Output.ID)  // "todo.Todo"
-}
-```
-
-## Schema Structure
-
-Schemas follow JSON Schema draft-07 format:
-
-```go
-type Schema struct {
-    ID   string         `json:"id"`   // Type identifier
-    JSON map[string]any `json:"json"` // JSON schema object
-}
-```
-
-### Viewing Schemas
-
-```go
-schemas := svc.Types.Schemas()
-
-for _, s := range schemas {
-    b, _ := json.MarshalIndent(s.JSON, "", "  ")
-    fmt.Printf("--- %s ---\n%s\n", s.ID, string(b))
-}
-```
-
-## Type Mapping
-
-Go types are mapped to JSON Schema types:
-
-### Primitive Types
-
-| Go Type | JSON Schema |
-|---------|-------------|
-| `string` | `{"type": "string"}` |
-| `bool` | `{"type": "boolean"}` |
-| `int`, `int64` | `{"type": "integer"}` |
-| `time.Time` | `{"type": "string", "format": "date-time"}` |
-
-### Struct Types
-
-Structs become objects with properties:
-
-```go
-type CreateIn struct {
-    Title       string `json:"title"`
-    Description string `json:"description"`
-    Priority    int    `json:"priority"`
-}
-```
-
-Generates:
+Contract automatically generates this JSON Schema:
 
 ```json
 {
-  "type": "object",
-  "properties": {
-    "title": {"type": "string"},
-    "description": {"type": "string"},
-    "priority": {"type": "integer"}
-  },
-  "required": ["title", "description", "priority"]
+    "type": "object",
+    "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "completed": { "type": "boolean" }
+    },
+    "required": ["id", "title", "completed"]
 }
 ```
 
-### Field Requirements
+## Why Schemas Matter
 
-By default, all exported fields are marked as required:
+Schemas are used throughout Contract:
+
+| Use Case | How Schemas Help |
+|----------|-----------------|
+| **OpenAPI docs** | Generate accurate API documentation |
+| **MCP tools** | AI assistants know what parameters to use |
+| **Client generation** | Generate typed clients in any language |
+| **Validation** | Verify requests match expected format |
+
+## How Type Conversion Works
+
+Contract converts Go types to JSON Schema types:
+
+### Basic Types
+
+| Go Type | JSON Schema | Example |
+|---------|-------------|---------|
+| `string` | `"type": "string"` | `"hello"` |
+| `int`, `int64`, `int32` | `"type": "integer"` | `42` |
+| `float64`, `float32` | `"type": "number"` | `3.14` |
+| `bool` | `"type": "boolean"` | `true` |
+| `time.Time` | `"type": "string", "format": "date-time"` | `"2024-01-15T10:30:00Z"` |
+
+### Structs
+
+Structs become JSON objects with properties:
+
+```go
+type User struct {
+    Name  string `json:"name"`
+    Email string `json:"email"`
+    Age   int    `json:"age"`
+}
+```
+
+Becomes:
+
+```json
+{
+    "type": "object",
+    "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "age": { "type": "integer" }
+    },
+    "required": ["name", "email", "age"]
+}
+```
+
+### Slices/Arrays
+
+Slices become JSON arrays:
+
+```go
+type TodoList struct {
+    Items []*Todo `json:"items"`
+    Count int     `json:"count"`
+}
+```
+
+Becomes:
+
+```json
+{
+    "type": "object",
+    "properties": {
+        "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Todo" }
+        },
+        "count": { "type": "integer" }
+    },
+    "required": ["items", "count"]
+}
+```
+
+### Nested Structs
+
+Nested structs are referenced by their schema ID:
+
+```go
+type Order struct {
+    ID       string `json:"id"`
+    Customer *User  `json:"customer"`
+}
+```
+
+Becomes:
+
+```json
+{
+    "type": "object",
+    "properties": {
+        "id": { "type": "string" },
+        "customer": { "$ref": "#/components/schemas/User" }
+    },
+    "required": ["id", "customer"]
+}
+```
+
+## The TypeRegistry
+
+After registration, all schemas are stored in a `TypeRegistry`:
+
+```go
+svc, _ := contract.Register("todo", &TodoService{})
+
+// Get all schemas
+schemas := svc.Types.Schemas()
+
+for _, schema := range schemas {
+    fmt.Println("Schema ID:", schema.ID)
+    fmt.Println("Schema:", schema.JSON)
+    fmt.Println()
+}
+```
+
+Output:
+```
+Schema ID: todo.CreateInput
+Schema: {"type":"object","properties":{"title":{"type":"string"}},"required":["title"]}
+
+Schema ID: todo.Todo
+Schema: {"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"},"completed":{"type":"boolean"}},"required":["id","title","completed"]}
+```
+
+## Type References (TypeRef)
+
+Each method's input and output types are represented by a `TypeRef`:
+
+```go
+type TypeRef struct {
+    ID   string  // Full identifier: "todo.CreateInput"
+    Name string  // Short name: "CreateInput"
+}
+```
+
+Access them via methods:
+
+```go
+svc, _ := contract.Register("todo", &TodoService{})
+
+// Get the Create method
+createMethod := svc.Resolve("Create")
+
+// Check input type
+if createMethod.Input != nil {
+    fmt.Println("Input ID:", createMethod.Input.ID)     // "todo.CreateInput"
+    fmt.Println("Input Name:", createMethod.Input.Name) // "CreateInput"
+}
+
+// Check output type
+if createMethod.Output != nil {
+    fmt.Println("Output ID:", createMethod.Output.ID)   // "todo.Todo"
+    fmt.Println("Output Name:", createMethod.Output.Name) // "Todo"
+}
+```
+
+## Type ID Format
+
+Type IDs follow the format `packagename.TypeName`:
+
+```go
+// In package "todo"
+type CreateInput struct { ... }  // ID: "todo.CreateInput"
+type Todo struct { ... }         // ID: "todo.Todo"
+
+// In package "user"
+type User struct { ... }         // ID: "user.User"
+type LoginInput struct { ... }   // ID: "user.LoginInput"
+```
+
+This ensures uniqueness across services.
+
+## Using JSON Tags
+
+Contract uses JSON tags to determine field names:
 
 ```go
 type Todo struct {
-    ID        string    `json:"id"`        // required
-    Title     string    `json:"title"`     // required
-    Completed bool      `json:"completed"` // required
-    CreatedAt time.Time `json:"createdAt"` // required
+    ID        string    `json:"id"`           // Field name: "id"
+    Title     string    `json:"title"`        // Field name: "title"
+    CreatedAt time.Time `json:"created_at"`   // Field name: "created_at"
+    UpdatedAt time.Time `json:"updatedAt"`    // Field name: "updatedAt"
 }
+```
+
+Without JSON tags, Go field names are used as-is:
+
+```go
+type Todo struct {
+    ID    string  // Field name: "ID" (uppercase)
+    Title string  // Field name: "Title" (uppercase)
+}
+```
+
+**Best practice**: Always use JSON tags for consistent, lowercase field names.
+
+## Viewing Schemas
+
+### Via Code
+
+```go
+svc, _ := contract.Register("todo", &TodoService{})
+
+// Pretty print all schemas
+for _, schema := range svc.Types.Schemas() {
+    fmt.Printf("=== %s ===\n", schema.ID)
+
+    jsonBytes, _ := json.MarshalIndent(schema.JSON, "", "  ")
+    fmt.Println(string(jsonBytes))
+    fmt.Println()
+}
+```
+
+### Via OpenAPI
+
+Schemas are included in the OpenAPI spec:
+
+```bash
+curl http://localhost:8080/openapi.json | jq '.components.schemas'
+```
+
+### Via tRPC Meta
+
+```bash
+curl http://localhost:8080/trpc.meta | jq '.schemas'
 ```
 
 ## Complete Example
@@ -144,160 +284,159 @@ import (
 
 type Service struct{}
 
-type CreateIn struct {
-    Title string `json:"title"`
+// Input type
+type CreateInput struct {
+    Title       string `json:"title"`
+    Description string `json:"description"`
+    Priority    int    `json:"priority"`
 }
 
+// Output type
 type Todo struct {
-    ID        string    `json:"id"`
-    Title     string    `json:"title"`
-    Completed bool      `json:"completed"`
-    CreatedAt time.Time `json:"createdAt"`
+    ID          string    `json:"id"`
+    Title       string    `json:"title"`
+    Description string    `json:"description"`
+    Priority    int       `json:"priority"`
+    Completed   bool      `json:"completed"`
+    CreatedAt   time.Time `json:"createdAt"`
 }
 
-func (s *Service) Create(ctx context.Context, in *CreateIn) (*Todo, error) {
+// List output type
+type ListOutput struct {
+    Items []*Todo `json:"items"`
+    Total int     `json:"total"`
+}
+
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    return nil, nil
+}
+
+func (s *Service) List(ctx context.Context) (*ListOutput, error) {
     return nil, nil
 }
 ```
 
 Registration produces these schemas:
 
-```go
-svc, _ := contract.Register("todo", &Service{})
-schemas := svc.Types.Schemas()
-```
-
-**todo.CreateIn:**
+**todo.CreateInput:**
 ```json
 {
-  "type": "object",
-  "properties": {
-    "title": {"type": "string"}
-  },
-  "required": ["title"]
+    "type": "object",
+    "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "priority": { "type": "integer" }
+    },
+    "required": ["title", "description", "priority"]
 }
 ```
 
 **todo.Todo:**
 ```json
 {
-  "type": "object",
-  "properties": {
-    "id": {"type": "string"},
-    "title": {"type": "string"},
-    "completed": {"type": "boolean"},
-    "createdAt": {"type": "string", "format": "date-time"}
-  },
-  "required": ["id", "title", "completed", "createdAt"]
+    "type": "object",
+    "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "priority": { "type": "integer" },
+        "completed": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+    },
+    "required": ["id", "title", "description", "priority", "completed", "createdAt"]
 }
 ```
 
-## Type ID Format
-
-Type IDs are formatted as `package.TypeName`:
-
-```go
-// In package "todo"
-type CreateIn struct{...}  // ID: "todo.CreateIn"
-type Todo struct{...}      // ID: "todo.Todo"
-
-// In package "user"
-type User struct{...}      // ID: "user.User"
-```
-
-## Using Schemas
-
-### For OpenAPI
-
-Schemas are automatically included in OpenAPI specs:
-
-```go
-contract.ServeOpenAPI(mux, "/openapi.json", svc)
-```
-
-The generated OpenAPI includes:
+**todo.ListOutput:**
 ```json
 {
-  "components": {
-    "schemas": {
-      "todo.CreateIn": {...},
-      "todo.Todo": {...}
-    }
-  }
+    "type": "object",
+    "properties": {
+        "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/todo.Todo" }
+        },
+        "total": { "type": "integer" }
+    },
+    "required": ["items", "total"]
 }
 ```
 
-### For Introspection
+## Tips for Good Types
 
-Build tooling that inspects your API:
+### Use Clear Names
 
 ```go
-func printAPI(svc *contract.Service) {
-    fmt.Printf("Service: %s\n", svc.Name)
+// Good: clear, descriptive names
+type CreateTodoInput struct { ... }
+type UpdateUserInput struct { ... }
+type OrderSummary struct { ... }
 
-    for _, m := range svc.Methods {
-        fmt.Printf("\n%s:\n", m.FullName)
-
-        if m.Input != nil {
-            schema := findSchema(svc.Types.Schemas(), m.Input.ID)
-            fmt.Printf("  Input: %s\n", m.Input.Name)
-            printProperties(schema)
-        }
-
-        if m.Output != nil {
-            schema := findSchema(svc.Types.Schemas(), m.Output.ID)
-            fmt.Printf("  Output: %s\n", m.Output.Name)
-            printProperties(schema)
-        }
-    }
-}
+// Bad: vague or confusing names
+type Input struct { ... }
+type Data struct { ... }
+type Resp struct { ... }
 ```
 
-### For Validation
-
-Use schemas with a JSON Schema validator:
+### Use Appropriate Go Types
 
 ```go
-import "github.com/santhosh-tekuri/jsonschema/v5"
-
-func validateInput(svc *contract.Service, methodName string, data []byte) error {
-    m := svc.Method(methodName)
-    if m.Input == nil {
-        return nil
-    }
-
-    // Find schema
-    var schema Schema
-    for _, s := range svc.Types.Schemas() {
-        if s.ID == m.Input.ID {
-            schema = s
-            break
-        }
-    }
-
-    // Compile and validate
-    sch, _ := jsonschema.CompileString("", toJSON(schema.JSON))
-    return sch.Validate(data)
+type Todo struct {
+    // Good: appropriate types
+    ID        string    `json:"id"`         // IDs are strings
+    Title     string    `json:"title"`      // Text is string
+    Count     int       `json:"count"`      // Counts are integers
+    Price     float64   `json:"price"`      // Prices are floats
+    Active    bool      `json:"active"`     // Flags are booleans
+    CreatedAt time.Time `json:"createdAt"`  // Timestamps are time.Time
 }
 ```
 
-## Limitations
+### Organize Related Types
 
-The current schema generator is minimal:
+```go
+// Group related types together
 
-- All struct fields become `required`
-- Only basic types supported (no slices/maps yet)
-- No `$ref` for recursive types
-- JSON tags parsed for names only (not `omitempty`)
+// === Input Types ===
+type CreateInput struct { ... }
+type UpdateInput struct { ... }
+type DeleteInput struct { ... }
 
-Future versions will add:
-- Pointer fields as optional
-- Slice and map support
-- `omitempty` handling
-- Recursive type references
+// === Output Types ===
+type Todo struct { ... }
+type ListOutput struct { ... }
+
+// === Shared Types ===
+type Pagination struct { ... }
+type Sorting struct { ... }
+```
+
+## Common Questions
+
+### Are all fields required?
+
+Currently, yes. All exported struct fields are marked as required in the schema. Pointer fields may become optional in future versions.
+
+### Can I customize the schema?
+
+Not directly. Schemas are generated automatically from Go types. If you need specific schema features, consider structuring your Go types accordingly.
+
+### What about maps?
+
+Maps are supported and become JSON objects with additional properties:
+
+```go
+type Config struct {
+    Settings map[string]string `json:"settings"`
+}
+```
+
+### What about interfaces?
+
+Interfaces aren't supported as types since their concrete type isn't known at registration time. Use concrete struct types instead.
 
 ## See Also
 
-- [Registration](/contract/register) - How registration works
-- [OpenAPI](/contract/openapi) - Using schemas in OpenAPI specs
-- [Invokers](/contract/invoker) - Runtime method invocation
+- [Registration](/contract/register) - How types are discovered
+- [OpenAPI](/contract/openapi) - Using schemas in API documentation
+- [Client Generation](/contract/client-generation) - Generating typed clients

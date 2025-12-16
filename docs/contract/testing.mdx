@@ -1,15 +1,57 @@
 ---
 title: "Testing"
-description: "Test your Contract services effectively"
+description: "Learn how to test your Contract services - from unit tests to integration tests"
 ---
 
 # Testing
 
-Contract services are easy to test because they're plain Go structs with no framework dependencies. Test at multiple levels: unit tests for business logic, integration tests for transports.
+One of Contract's biggest advantages is testability. Since your services are just plain Go structs with methods, you can test them directly without HTTP mocking, framework setup, or complex test fixtures.
 
-## Unit Testing Services
+## Why Contract Services Are Easy to Test
 
-Test your service methods directly without any transport:
+Traditional API testing looks like this:
+```go
+// Testing a typical HTTP handler - lots of ceremony
+func TestCreateTodo(t *testing.T) {
+    // Setup HTTP server
+    server := httptest.NewServer(myHandler)
+    defer server.Close()
+
+    // Create HTTP request
+    body := strings.NewReader(`{"title":"Test"}`)
+    req, _ := http.NewRequest("POST", server.URL+"/todos", body)
+    req.Header.Set("Content-Type", "application/json")
+
+    // Make HTTP call
+    resp, err := http.DefaultClient.Do(req)
+    // Parse response...
+    // Check status code...
+    // Unmarshal JSON...
+}
+```
+
+With Contract:
+```go
+// Testing a Contract service - just call the method!
+func TestCreate(t *testing.T) {
+    svc := &TodoService{}
+
+    result, err := svc.Create(context.Background(), &CreateInput{Title: "Test"})
+
+    if err != nil {
+        t.Fatalf("unexpected error: %v", err)
+    }
+    if result.Title != "Test" {
+        t.Errorf("expected 'Test', got '%s'", result.Title)
+    }
+}
+```
+
+## Unit Testing Your Service
+
+Unit tests test your business logic directly, without any transport layer.
+
+### Basic Test
 
 ```go
 package todo_test
@@ -22,23 +64,30 @@ import (
 )
 
 func TestCreate(t *testing.T) {
-    svc := &todo.Service{}
+    // Create service instance
+    svc := todo.NewService()
 
+    // Call the method directly
     result, err := svc.Create(context.Background(), &todo.CreateInput{
         Title: "Buy groceries",
     })
 
+    // Check the results
     if err != nil {
         t.Fatalf("unexpected error: %v", err)
     }
-
     if result.Title != "Buy groceries" {
-        t.Errorf("expected title 'Buy groceries', got '%s'", result.Title)
+        t.Errorf("expected 'Buy groceries', got '%s'", result.Title)
+    }
+    if result.ID == "" {
+        t.Error("expected ID to be set")
     }
 }
 ```
 
 ### Table-Driven Tests
+
+For testing multiple scenarios, use table-driven tests:
 
 ```go
 func TestCreate_Validation(t *testing.T) {
@@ -46,136 +95,177 @@ func TestCreate_Validation(t *testing.T) {
         name    string
         input   *todo.CreateInput
         wantErr bool
+        errMsg  string
     }{
         {
-            name:    "valid input",
-            input:   &todo.CreateInput{Title: "Test"},
+            name:    "valid title",
+            input:   &todo.CreateInput{Title: "Buy milk"},
             wantErr: false,
         },
         {
             name:    "empty title",
             input:   &todo.CreateInput{Title: ""},
             wantErr: true,
+            errMsg:  "title is required",
         },
         {
-            name:    "nil input",
-            input:   nil,
+            name:    "title too long",
+            input:   &todo.CreateInput{Title: strings.Repeat("x", 1001)},
             wantErr: true,
+            errMsg:  "title too long",
         },
     }
 
-    svc := &todo.Service{}
+    svc := todo.NewService()
 
     for _, tt := range tests {
         t.Run(tt.name, func(t *testing.T) {
             _, err := svc.Create(context.Background(), tt.input)
-            if (err != nil) != tt.wantErr {
-                t.Errorf("Create() error = %v, wantErr %v", err, tt.wantErr)
+
+            if tt.wantErr {
+                if err == nil {
+                    t.Error("expected error, got nil")
+                } else if !strings.Contains(err.Error(), tt.errMsg) {
+                    t.Errorf("expected error containing '%s', got '%s'", tt.errMsg, err.Error())
+                }
+            } else {
+                if err != nil {
+                    t.Errorf("unexpected error: %v", err)
+                }
             }
         })
     }
 }
 ```
 
-### Testing Error Codes
+### Testing Error Types
+
+When using Contract's error types, verify the error code:
 
 ```go
-import "github.com/go-mizu/mizu/contract"
+import (
+    "errors"
+    "github.com/go-mizu/mizu/contract"
+)
 
 func TestGet_NotFound(t *testing.T) {
-    svc := &todo.Service{}
+    svc := todo.NewService()
 
     _, err := svc.Get(context.Background(), &todo.GetInput{ID: "nonexistent"})
 
+    // Check that we got an error
     if err == nil {
         t.Fatal("expected error, got nil")
     }
 
+    // Check that it's a Contract error
     var contractErr *contract.Error
     if !errors.As(err, &contractErr) {
-        t.Fatalf("expected contract.Error, got %T", err)
+        t.Fatalf("expected contract.Error, got %T: %v", err, err)
     }
 
+    // Check the error code
     if contractErr.Code != contract.ErrCodeNotFound {
         t.Errorf("expected NOT_FOUND, got %s", contractErr.Code)
+    }
+
+    // Check the HTTP status would be correct
+    if contractErr.HTTPStatus() != 404 {
+        t.Errorf("expected HTTP 404, got %d", contractErr.HTTPStatus())
     }
 }
 ```
 
-## Testing with Dependencies
+## Testing Services with Dependencies
 
-### Dependency Injection
+Real services have dependencies like databases and caches. Use dependency injection and interfaces for testability.
+
+### Define Interfaces
 
 ```go
-// Service with dependencies
+// In your service package
 type Service struct {
     db    Database
     cache Cache
 }
 
-// Interface for mocking
+// Database interface for mocking
 type Database interface {
     FindTodo(ctx context.Context, id string) (*Todo, error)
     SaveTodo(ctx context.Context, todo *Todo) error
+    DeleteTodo(ctx context.Context, id string) error
 }
 
-// Test with mock
-func TestGet_WithMock(t *testing.T) {
-    mockDB := &MockDatabase{
-        todos: map[string]*Todo{
-            "1": {ID: "1", Title: "Test"},
-        },
-    }
-
-    svc := &Service{db: mockDB}
-
-    result, err := svc.Get(context.Background(), &GetInput{ID: "1"})
-    if err != nil {
-        t.Fatalf("unexpected error: %v", err)
-    }
-
-    if result.Title != "Test" {
-        t.Errorf("expected 'Test', got '%s'", result.Title)
-    }
+// Cache interface for mocking
+type Cache interface {
+    Get(ctx context.Context, key string) ([]byte, error)
+    Set(ctx context.Context, key string, value []byte) error
 }
 ```
 
-### Using testify/mock
+### Create Mock Implementations
 
 ```go
-import "github.com/stretchr/testify/mock"
-
+// Simple mock for testing
 type MockDatabase struct {
-    mock.Mock
+    todos map[string]*Todo
+}
+
+func NewMockDatabase() *MockDatabase {
+    return &MockDatabase{todos: make(map[string]*Todo)}
 }
 
 func (m *MockDatabase) FindTodo(ctx context.Context, id string) (*Todo, error) {
-    args := m.Called(ctx, id)
-    if args.Get(0) == nil {
-        return nil, args.Error(1)
+    todo, ok := m.todos[id]
+    if !ok {
+        return nil, sql.ErrNoRows
     }
-    return args.Get(0).(*Todo), args.Error(1)
+    return todo, nil
 }
 
-func TestGet_WithTestify(t *testing.T) {
-    mockDB := new(MockDatabase)
-    mockDB.On("FindTodo", mock.Anything, "1").Return(&Todo{ID: "1", Title: "Test"}, nil)
+func (m *MockDatabase) SaveTodo(ctx context.Context, todo *Todo) error {
+    m.todos[todo.ID] = todo
+    return nil
+}
 
+func (m *MockDatabase) DeleteTodo(ctx context.Context, id string) error {
+    delete(m.todos, id)
+    return nil
+}
+```
+
+### Test with Mocks
+
+```go
+func TestGet_WithMock(t *testing.T) {
+    // Setup mock with test data
+    mockDB := NewMockDatabase()
+    mockDB.todos["1"] = &Todo{ID: "1", Title: "Test Todo"}
+
+    // Create service with mock
     svc := &Service{db: mockDB}
 
-    result, _ := svc.Get(context.Background(), &GetInput{ID: "1"})
+    // Test the method
+    result, err := svc.Get(context.Background(), &GetInput{ID: "1"})
 
-    assert.Equal(t, "Test", result.Title)
-    mockDB.AssertExpectations(t)
+    if err != nil {
+        t.Fatalf("unexpected error: %v", err)
+    }
+    if result.Title != "Test Todo" {
+        t.Errorf("expected 'Test Todo', got '%s'", result.Title)
+    }
 }
 ```
 
 ## Integration Testing Transports
 
-### Testing REST
+Sometimes you need to test the full HTTP flow. Contract makes this easy too.
+
+### Testing REST Endpoints
 
 ```go
 import (
+    "encoding/json"
     "net/http"
     "net/http/httptest"
     "strings"
@@ -185,28 +275,47 @@ import (
 )
 
 func TestREST_Create(t *testing.T) {
-    svc, _ := contract.Register("todo", &todo.Service{})
-
+    // Setup
+    svc, _ := contract.Register("todo", todo.NewService())
     mux := http.NewServeMux()
     contract.MountREST(mux, svc)
 
-    body := strings.NewReader(`{"title":"Test"}`)
+    // Create request
+    body := strings.NewReader(`{"title": "Test"}`)
     req := httptest.NewRequest("POST", "/todos", body)
     req.Header.Set("Content-Type", "application/json")
 
+    // Execute
     rec := httptest.NewRecorder()
     mux.ServeHTTP(rec, req)
 
+    // Verify status code
     if rec.Code != http.StatusOK {
-        t.Errorf("expected 200, got %d", rec.Code)
+        t.Errorf("expected 200, got %d: %s", rec.Code, rec.Body.String())
     }
 
-    // Parse response
+    // Verify response body
     var result todo.Todo
-    json.NewDecoder(rec.Body).Decode(&result)
-
+    if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+        t.Fatalf("failed to decode response: %v", err)
+    }
     if result.Title != "Test" {
         t.Errorf("expected 'Test', got '%s'", result.Title)
+    }
+}
+
+func TestREST_Get_NotFound(t *testing.T) {
+    svc, _ := contract.Register("todo", todo.NewService())
+    mux := http.NewServeMux()
+    contract.MountREST(mux, svc)
+
+    req := httptest.NewRequest("GET", "/todos/nonexistent", nil)
+    rec := httptest.NewRecorder()
+    mux.ServeHTTP(rec, req)
+
+    // Should return 404 for not found
+    if rec.Code != http.StatusNotFound {
+        t.Errorf("expected 404, got %d", rec.Code)
     }
 }
 ```
@@ -215,8 +324,7 @@ func TestREST_Create(t *testing.T) {
 
 ```go
 func TestJSONRPC_Create(t *testing.T) {
-    svc, _ := contract.Register("todo", &todo.Service{})
-
+    svc, _ := contract.Register("todo", todo.NewService())
     mux := http.NewServeMux()
     contract.MountJSONRPC(mux, "/rpc", svc)
 
@@ -232,9 +340,12 @@ func TestJSONRPC_Create(t *testing.T) {
     rec := httptest.NewRecorder()
     mux.ServeHTTP(rec, req)
 
+    // Parse JSON-RPC response
     var resp struct {
-        Result json.RawMessage `json:"result"`
-        Error  *struct {
+        JSONRPC string          `json:"jsonrpc"`
+        ID      int             `json:"id"`
+        Result  json.RawMessage `json:"result"`
+        Error   *struct {
             Code    int    `json:"code"`
             Message string `json:"message"`
         } `json:"error"`
@@ -243,6 +354,30 @@ func TestJSONRPC_Create(t *testing.T) {
 
     if resp.Error != nil {
         t.Fatalf("unexpected error: %s", resp.Error.Message)
+    }
+    if resp.Result == nil {
+        t.Fatal("expected result, got nil")
+    }
+}
+
+func TestJSONRPC_Batch(t *testing.T) {
+    svc, _ := contract.Register("todo", todo.NewService())
+    mux := http.NewServeMux()
+    contract.MountJSONRPC(mux, "/rpc", svc)
+
+    body := strings.NewReader(`[
+        {"jsonrpc": "2.0", "id": 1, "method": "Create", "params": {"title": "First"}},
+        {"jsonrpc": "2.0", "id": 2, "method": "Create", "params": {"title": "Second"}}
+    ]`)
+    req := httptest.NewRequest("POST", "/rpc", body)
+    rec := httptest.NewRecorder()
+    mux.ServeHTTP(rec, req)
+
+    var responses []map[string]any
+    json.NewDecoder(rec.Body).Decode(&responses)
+
+    if len(responses) != 2 {
+        t.Errorf("expected 2 responses, got %d", len(responses))
     }
 }
 ```
@@ -253,253 +388,179 @@ func TestJSONRPC_Create(t *testing.T) {
 import "github.com/go-mizu/mizu/contract/transport/mcp"
 
 func TestMCP_ToolsCall(t *testing.T) {
-    svc, _ := contract.Register("todo", &todo.Service{})
-
+    svc, _ := contract.Register("todo", todo.NewService())
     mux := http.NewServeMux()
     mcp.Mount(mux, "/mcp", svc)
 
-    // First initialize
-    initBody := strings.NewReader(`{
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {"protocolVersion": "2025-06-18"}
-    }`)
-    initReq := httptest.NewRequest("POST", "/mcp", initBody)
-    rec := httptest.NewRecorder()
-    mux.ServeHTTP(rec, initReq)
-
-    // Then call tool
-    callBody := strings.NewReader(`{
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "tools/call",
-        "params": {
-            "name": "todo.Create",
-            "arguments": {"title": "Test"}
-        }
-    }`)
-    callReq := httptest.NewRequest("POST", "/mcp", callBody)
-    rec = httptest.NewRecorder()
-    mux.ServeHTTP(rec, callReq)
-
-    // Verify response
-    if rec.Code != http.StatusOK {
-        t.Errorf("expected 200, got %d", rec.Code)
-    }
-}
-```
-
-### Testing tRPC
-
-```go
-import "github.com/go-mizu/mizu/contract/transport/trpc"
-
-func TestTRPC_Create(t *testing.T) {
-    svc, _ := contract.Register("todo", &todo.Service{})
-
-    mux := http.NewServeMux()
-    trpc.Mount(mux, "/trpc", svc)
-
-    body := strings.NewReader(`{"title": "Test"}`)
-    req := httptest.NewRequest("POST", "/trpc/Create", body)
-    req.Header.Set("Content-Type", "application/json")
-
+    // First, initialize
+    initBody := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`
+    req := httptest.NewRequest("POST", "/mcp", strings.NewReader(initBody))
     rec := httptest.NewRecorder()
     mux.ServeHTTP(rec, req)
 
-    var resp trpc.Envelope
-    json.NewDecoder(rec.Body).Decode(&resp)
+    // Then, call a tool
+    callBody := `{
+        "jsonrpc":"2.0",
+        "id":2,
+        "method":"tools/call",
+        "params":{"name":"todo.Create","arguments":{"title":"Test"}}
+    }`
+    req = httptest.NewRequest("POST", "/mcp", strings.NewReader(callBody))
+    rec = httptest.NewRecorder()
+    mux.ServeHTTP(rec, req)
 
-    if resp.Error != nil {
-        t.Fatalf("unexpected error: %s", resp.Error.Message)
+    if rec.Code != http.StatusOK {
+        t.Errorf("expected 200, got %d: %s", rec.Code, rec.Body.String())
     }
 
-    if resp.Result == nil {
-        t.Fatal("expected result, got nil")
+    var resp struct {
+        Result struct {
+            Content []struct {
+                Type string `json:"type"`
+                Text string `json:"text"`
+            } `json:"content"`
+            IsError bool `json:"isError"`
+        } `json:"result"`
+    }
+    json.NewDecoder(rec.Body).Decode(&resp)
+
+    if resp.Result.IsError {
+        t.Error("expected success, got error")
     }
 }
 ```
 
-## Testing Helpers
+## Test Helpers
 
-### Test Server Setup
+Create helper functions to reduce boilerplate:
 
 ```go
+// Setup helper
 func setupTestServer(t *testing.T) (*httptest.Server, func()) {
     t.Helper()
 
-    svc, err := contract.Register("todo", &todo.Service{})
+    svc, err := contract.Register("todo", todo.NewService())
     if err != nil {
-        t.Fatalf("failed to register service: %v", err)
+        t.Fatalf("failed to register: %v", err)
     }
 
     mux := http.NewServeMux()
     contract.MountREST(mux, svc)
     contract.MountJSONRPC(mux, "/rpc", svc)
-    mcp.Mount(mux, "/mcp", svc)
-    trpc.Mount(mux, "/trpc", svc)
 
     server := httptest.NewServer(mux)
 
-    cleanup := func() {
-        server.Close()
-    }
-
+    cleanup := func() { server.Close() }
     return server, cleanup
 }
 
+// Usage
 func TestIntegration(t *testing.T) {
     server, cleanup := setupTestServer(t)
     defer cleanup()
 
     // Use server.URL for requests
-    resp, err := http.Post(server.URL+"/todos", "application/json",
+    resp, _ := http.Post(server.URL+"/todos", "application/json",
         strings.NewReader(`{"title":"Test"}`))
     // ...
 }
 ```
 
-### JSON Helpers
-
-```go
-func mustMarshal(t *testing.T, v any) []byte {
-    t.Helper()
-    data, err := json.Marshal(v)
-    if err != nil {
-        t.Fatalf("failed to marshal: %v", err)
-    }
-    return data
-}
-
-func mustUnmarshal[T any](t *testing.T, data []byte) T {
-    t.Helper()
-    var v T
-    if err := json.Unmarshal(data, &v); err != nil {
-        t.Fatalf("failed to unmarshal: %v", err)
-    }
-    return v
-}
-```
-
-## Benchmarking
-
-```go
-func BenchmarkCreate(b *testing.B) {
-    svc := &todo.Service{}
-    ctx := context.Background()
-    input := &todo.CreateInput{Title: "Benchmark"}
-
-    b.ResetTimer()
-    for i := 0; i < b.N; i++ {
-        svc.Create(ctx, input)
-    }
-}
-
-func BenchmarkREST_Create(b *testing.B) {
-    svc, _ := contract.Register("todo", &todo.Service{})
-    mux := http.NewServeMux()
-    contract.MountREST(mux, svc)
-
-    body := []byte(`{"title":"Benchmark"}`)
-
-    b.ResetTimer()
-    for i := 0; i < b.N; i++ {
-        req := httptest.NewRequest("POST", "/todos", bytes.NewReader(body))
-        req.Header.Set("Content-Type", "application/json")
-        rec := httptest.NewRecorder()
-        mux.ServeHTTP(rec, req)
-    }
-}
-```
-
-## Testing OpenAPI
-
-```go
-func TestOpenAPI_Schema(t *testing.T) {
-    svc, _ := contract.Register("todo", &todo.Service{})
-
-    mux := http.NewServeMux()
-    contract.ServeOpenAPI(mux, "/openapi.json", svc)
-
-    req := httptest.NewRequest("GET", "/openapi.json", nil)
-    rec := httptest.NewRecorder()
-    mux.ServeHTTP(rec, req)
-
-    if rec.Code != http.StatusOK {
-        t.Errorf("expected 200, got %d", rec.Code)
-    }
-
-    var spec map[string]any
-    json.NewDecoder(rec.Body).Decode(&spec)
-
-    // Verify OpenAPI structure
-    if spec["openapi"] != "3.1.0" {
-        t.Errorf("expected OpenAPI 3.1.0")
-    }
-
-    paths, ok := spec["paths"].(map[string]any)
-    if !ok || len(paths) == 0 {
-        t.Error("expected paths in spec")
-    }
-}
-```
-
 ## Best Practices
 
-### Test Business Logic Separately
+### 1. Test Business Logic Separately from Transports
 
 ```go
-// Good: Test service directly
+// Good: separate tests for each layer
+
+// Unit test - business logic
 func TestService_Create(t *testing.T) {
-    svc := &Service{}
+    svc := NewService()
     result, err := svc.Create(ctx, input)
-    // Assert on result and err
+    // Assert...
 }
 
-// Also test transports for integration
+// Integration test - HTTP transport
 func TestREST_Create(t *testing.T) {
-    // HTTP integration test
+    // HTTP request/response test
 }
 ```
 
-### Use Subtests
+### 2. Use Subtests for Organization
 
 ```go
-func TestTodo(t *testing.T) {
-    svc := &todo.Service{}
+func TestTodoService(t *testing.T) {
+    svc := todo.NewService()
 
     t.Run("Create", func(t *testing.T) {
+        result, err := svc.Create(ctx, &todo.CreateInput{Title: "Test"})
         // ...
     })
 
     t.Run("Get", func(t *testing.T) {
+        result, err := svc.Get(ctx, &todo.GetInput{ID: "1"})
         // ...
     })
 
-    t.Run("List", func(t *testing.T) {
+    t.Run("Delete", func(t *testing.T) {
+        err := svc.Delete(ctx, &todo.DeleteInput{ID: "1"})
         // ...
     })
 }
 ```
 
-### Parallel Tests
+### 3. Test Error Conditions
+
+Don't just test the happy path:
+
+```go
+func TestGet_Errors(t *testing.T) {
+    svc := todo.NewService()
+
+    t.Run("not found", func(t *testing.T) {
+        _, err := svc.Get(ctx, &todo.GetInput{ID: "nonexistent"})
+        assertErrorCode(t, err, contract.ErrCodeNotFound)
+    })
+
+    t.Run("empty id", func(t *testing.T) {
+        _, err := svc.Get(ctx, &todo.GetInput{ID: ""})
+        assertErrorCode(t, err, contract.ErrCodeInvalidArgument)
+    })
+}
+
+// Helper function
+func assertErrorCode(t *testing.T, err error, want contract.ErrCode) {
+    t.Helper()
+    var contractErr *contract.Error
+    if !errors.As(err, &contractErr) {
+        t.Fatalf("expected contract.Error, got %T", err)
+    }
+    if contractErr.Code != want {
+        t.Errorf("expected %s, got %s", want, contractErr.Code)
+    }
+}
+```
+
+### 4. Use Parallel Tests When Safe
 
 ```go
 func TestService(t *testing.T) {
-    t.Parallel()
+    t.Parallel()  // This test can run in parallel with others
 
-    tests := []struct{
-        name string
-        // ...
+    tests := []struct {
+        name  string
+        input *CreateInput
     }{
-        // ...
+        {"test 1", &CreateInput{Title: "One"}},
+        {"test 2", &CreateInput{Title: "Two"}},
     }
 
     for _, tt := range tests {
         t.Run(tt.name, func(t *testing.T) {
-            t.Parallel()
-            // Test code
+            t.Parallel()  // Subtests can run in parallel
+            svc := NewService()  // Each subtest gets its own service
+            svc.Create(ctx, tt.input)
+            // ...
         })
     }
 }
@@ -507,6 +568,6 @@ func TestService(t *testing.T) {
 
 ## See Also
 
-- [Service Definition](/contract/service) - Writing testable services
+- [Defining Services](/contract/service) - Writing testable services
 - [Error Handling](/contract/errors) - Testing error conditions
-- [Architecture](/contract/architecture) - Understanding the layers
+- [Architecture](/contract/architecture) - Understanding what to test at each layer
