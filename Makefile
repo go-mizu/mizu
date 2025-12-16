@@ -8,53 +8,49 @@ SHELL := /usr/bin/env bash
 GO        ?= go
 PKG       ?= ./...
 GOFLAGS   ?= -trimpath -mod=readonly
-BINARY    ?= mizu
+BINARY    ?= $(HOME)/bin/mizu
 CMD_PATH  ?= ./cmd/mizu
 
-# Version information (can be overridden)
-VERSION   ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-COMMIT    ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+# Git metadata
+VERSION_DESCRIBE := $(shell git describe --tags --dirty --match "v*" 2>/dev/null || echo "dev")
+VERSION_TAG      := $(shell git describe --tags --exact-match --match "v*" 2>/dev/null)
+VERSION          ?= $(if $(VERSION_TAG),$(VERSION_TAG),$(VERSION_DESCRIBE))
+
+COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 
-# Linker flags for version injection
-LDFLAGS   := -s -w \
-	-X 'github.com/go-mizu/mizu/cli.Version=$(VERSION)' \
-	-X 'github.com/go-mizu/mizu/cli.Commit=$(COMMIT)' \
-	-X 'github.com/go-mizu/mizu/cli.BuildTime=$(BUILD_TIME)'
+# Linker flags
+LDFLAGS := -s -w \
+	-X github.com/go-mizu/mizu/cli.Version=$(VERSION) \
+	-X github.com/go-mizu/mizu/cli.Commit=$(COMMIT) \
+	-X github.com/go-mizu/mizu/cli.BuildTime=$(BUILD_TIME)
 
 # Test configuration
-COVERMODE ?= atomic
-COVERFILE ?= coverage.out
-COVERHTML ?= coverage.html
-RUN       ?=
-COUNT     ?= 1
-GOTESTFLAGS ?=
+COVERMODE    ?= atomic
+COVERFILE    ?= coverage.out
+COVERHTML    ?= coverage.html
+RUN          ?=
+COUNT        ?= 1
+GOTESTFLAGS  ?=
 
-# Release configuration
-DIST_DIR  ?= dist
-
-# =============================================================================
-# Development
-# =============================================================================
-
+# Development targets
 .PHONY: build
 build: ## Build the binary for current platform
+	@mkdir -p $(dir $(BINARY))
 	@$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY) $(CMD_PATH)
-	@echo "Built: $(BINARY)"
+	@echo "Built: $(BINARY) ($(VERSION))"
 
 .PHONY: install
-install: ## Install the binary to GOPATH/bin
-	@$(GO) install $(GOFLAGS) -ldflags "$(LDFLAGS)" $(CMD_PATH)
-	@echo "Installed: $(shell go env GOPATH)/bin/$(BINARY)"
+install: ## Install the binary to $$HOME/bin
+	@mkdir -p $(dir $(BINARY))
+	@$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY) $(CMD_PATH)
+	@echo "Installed: $(BINARY)"
 
 .PHONY: run
-run: ## Run the CLI (use ARGS="..." for arguments)
+run: ## Run the CLI (use ARGS="...")
 	@$(GO) run $(GOFLAGS) -ldflags "$(LDFLAGS)" $(CMD_PATH) $(ARGS)
 
-# =============================================================================
-# Testing
-# =============================================================================
-
+# Testing targets
 .PHONY: test
 test: ## Run tests with race + coverage
 	@$(GO) test $(GOFLAGS) -v -race -shuffle=on \
@@ -80,43 +76,35 @@ lint: ## golangci-lint (fallback to go vet)
 		$(GO) vet $(PKG); \
 	fi
 
-# =============================================================================
-# Release (local)
-# =============================================================================
-
+# Release targets (local)
 .PHONY: snapshot
 snapshot: ## Build snapshot release (no publish)
-	@if ! command -v goreleaser >/dev/null 2>&1; then \
-		echo "Error: goreleaser is not installed."; \
-		echo "Install: go install github.com/goreleaser/goreleaser/v2@latest"; \
-		exit 1; \
-	fi
+	@set -e; \
+	git fetch --tags --quiet; \
 	goreleaser release --snapshot --clean
 
 .PHONY: release-dry-run
-release-dry-run: ## Dry run of release (validates config)
-	@if ! command -v goreleaser >/dev/null 2>&1; then \
-		echo "Error: goreleaser is not installed."; \
-		echo "Install: go install github.com/goreleaser/goreleaser/v2@latest"; \
+release-dry-run: ## Dry run of release
+	@set -e; \
+	if ! git diff --quiet || ! git diff --cached --quiet; then \
+		echo "Error: working tree is dirty"; \
 		exit 1; \
-	fi
+	fi; \
+	git fetch --tags --quiet; \
 	goreleaser release --skip=publish --clean
 
 .PHONY: release-check
 release-check: ## Validate goreleaser config
-	@if ! command -v goreleaser >/dev/null 2>&1; then \
-		echo "Error: goreleaser is not installed."; \
-		echo "Install: go install github.com/goreleaser/goreleaser/v2@latest"; \
-		exit 1; \
-	fi
-	goreleaser check
+	@goreleaser check
 
-# =============================================================================
-# Docker (local)
-# =============================================================================
-
+# Docker targets
 .PHONY: docker-build
 docker-build: ## Build Docker image locally
+	@set -e; \
+	if echo "$(VERSION)" | grep -q dirty; then \
+		echo "Error: refusing to build Docker image from dirty tree"; \
+		exit 1; \
+	fi; \
 	docker build -t ghcr.io/go-mizu/mizu:$(VERSION) \
 		--build-arg VERSION=$(VERSION) \
 		--build-arg COMMIT=$(COMMIT) \
@@ -127,20 +115,14 @@ docker-build: ## Build Docker image locally
 docker-run: ## Run Docker container
 	docker run --rm -it ghcr.io/go-mizu/mizu:$(VERSION) $(ARGS)
 
-# =============================================================================
 # Cleanup
-# =============================================================================
-
 .PHONY: clean
 clean: ## Remove build artifacts
 	@rm -f "$(COVERFILE)" "$(COVERHTML)" "$(BINARY)"
-	@rm -rf "$(DIST_DIR)"
+	@rm -rf dist
 	@echo "Cleaned build artifacts"
 
-# =============================================================================
 # Help
-# =============================================================================
-
 .PHONY: help
 help: ## Show targets
 	@echo "Usage: make [target]"
