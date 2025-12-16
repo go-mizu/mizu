@@ -258,47 +258,15 @@ func jsonrpcInternalError(err error) *jsonrpcError {
 	}
 }
 
-func safeErr(err error) any {
-	if err == nil {
-		return nil
-	}
-	// Keep it simple and stable. Transports can override this later if needed.
-	return err.Error()
+// Aliases to shared helpers for local use
+func trimSpaceRaw(b []byte) []byte {
+	return jsonTrimSpace(b)
 }
 
 func isJSONNull(b []byte) bool {
-	b = bytesTrimSpace(b)
-	return len(b) == 4 && (b[0] == 'n' || b[0] == 'N') &&
-		(b[1] == 'u' || b[1] == 'U') &&
-		(b[2] == 'l' || b[2] == 'L') &&
-		(b[3] == 'l' || b[3] == 'L')
+	return jsonIsNull(b)
 }
 
-func trimSpaceRaw(b []byte) []byte {
-	return bytesTrimSpace(b)
-}
-
-// bytesTrimSpace is a small, allocation-free trim for JSON whitespace.
-func bytesTrimSpace(b []byte) []byte {
-	i := 0
-	j := len(b)
-
-	for i < j {
-		switch b[i] {
-		case ' ', '\n', '\r', '\t':
-			i++
-		default:
-			goto right
-		}
-	}
-right:
-	for j > i {
-		switch b[j-1] {
-		case ' ', '\n', '\r', '\t':
-			j--
-		default:
-			break
-		}
-	}
-	return b[i:j]
+func safeErr(err error) any {
+	return jsonSafeErr(err)
 }

@@ -25,6 +25,9 @@ import (
 func MountREST(mux *http.ServeMux, svc *Service) {
 	base := "/" + pluralize(svc.Name)
 
+	// Group methods by path
+	pathHandlers := make(map[string]map[string]*Method)
+
 	for _, m := range svc.Methods {
 		verb := restVerb(m.Name)
 		path := base
@@ -33,8 +36,23 @@ func MountREST(mux *http.ServeMux, svc *Service) {
 			path = base + "/{id}"
 		}
 
-		handler := restHandler(m)
-		mux.HandleFunc(path, methodHandler(verb, handler))
+		if pathHandlers[path] == nil {
+			pathHandlers[path] = make(map[string]*Method)
+		}
+		pathHandlers[path][verb] = m
+	}
+
+	// Register one handler per path that dispatches by HTTP method
+	for path, methods := range pathHandlers {
+		methodsCopy := methods // capture for closure
+		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+			m, ok := methodsCopy[r.Method]
+			if !ok {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			restHandler(m)(w, r)
+		})
 	}
 }
 
