@@ -1,4 +1,4 @@
-package openapi
+package rest
 
 import (
 	"net/http"
@@ -7,32 +7,32 @@ import (
 	"github.com/go-mizu/mizu/contract"
 )
 
-// Handler serves OpenAPI documents over HTTP.
-type Handler struct {
+// SpecHandler serves OpenAPI documents over HTTP.
+type SpecHandler struct {
 	document *Document
 	json     []byte
 }
 
-// NewHandler creates an OpenAPI handler for the given services.
-func NewHandler(services ...*contract.Service) (*Handler, error) {
+// NewSpecHandler creates an OpenAPI spec handler for the given services.
+func NewSpecHandler(services ...*contract.Service) (*SpecHandler, error) {
 	doc := Generate(services...)
 	data, err := doc.MarshalIndent()
 	if err != nil {
 		return nil, err
 	}
-	return &Handler{
+	return &SpecHandler{
 		document: doc,
 		json:     data,
 	}, nil
 }
 
 // Name returns the transport name.
-func (h *Handler) Name() string {
-	return "openapi"
+func (h *SpecHandler) Name() string {
+	return "rest"
 }
 
 // ServeHTTP serves the OpenAPI document.
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *SpecHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -44,17 +44,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // Document returns the underlying OpenAPI document.
-func (h *Handler) Document() *Document {
+func (h *SpecHandler) Document() *Document {
 	return h.document
 }
 
 // JSON returns the cached JSON bytes.
-func (h *Handler) JSON() []byte {
+func (h *SpecHandler) JSON() []byte {
 	return h.json
 }
 
-// Mount registers an OpenAPI handler at the given path.
-func Mount(mux *http.ServeMux, path string, services ...*contract.Service) error {
+// MountSpec registers an OpenAPI spec handler at the given path.
+func MountSpec(mux *http.ServeMux, path string, services ...*contract.Service) error {
 	if mux == nil {
 		return nil
 	}
@@ -65,7 +65,7 @@ func Mount(mux *http.ServeMux, path string, services ...*contract.Service) error
 		path = "/" + path
 	}
 
-	h, err := NewHandler(services...)
+	h, err := NewSpecHandler(services...)
 	if err != nil {
 		return err
 	}
@@ -74,9 +74,9 @@ func Mount(mux *http.ServeMux, path string, services ...*contract.Service) error
 	return nil
 }
 
-// MountWithDocs registers both OpenAPI spec and documentation UI handlers.
+// MountSpecWithDocs registers both OpenAPI spec and documentation UI handlers.
 // The spec is served at specPath and docs at docsPath.
-func MountWithDocs(mux *http.ServeMux, specPath, docsPath string, services ...*contract.Service) error {
+func MountSpecWithDocs(mux *http.ServeMux, specPath, docsPath string, services ...*contract.Service) error {
 	if mux == nil {
 		return nil
 	}
@@ -87,7 +87,7 @@ func MountWithDocs(mux *http.ServeMux, specPath, docsPath string, services ...*c
 		docsPath = "/docs"
 	}
 
-	h, err := NewHandler(services...)
+	h, err := NewSpecHandler(services...)
 	if err != nil {
 		return err
 	}

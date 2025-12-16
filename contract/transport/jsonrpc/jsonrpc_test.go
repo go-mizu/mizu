@@ -405,3 +405,223 @@ func TestMapError(t *testing.T) {
 		})
 	}
 }
+
+// OpenRPC Tests
+
+func TestGenerateOpenRPC(t *testing.T) {
+	svc, err := contract.Register("test", &testService{})
+	if err != nil {
+		t.Fatalf("register error: %v", err)
+	}
+
+	doc := GenerateOpenRPC(svc)
+
+	if doc.OpenRPC != OpenRPCVersion {
+		t.Errorf("openrpc = %q, want %q", doc.OpenRPC, OpenRPCVersion)
+	}
+
+	if doc.Info.Title != "test API" {
+		t.Errorf("title = %q, want %q", doc.Info.Title, "test API")
+	}
+
+	if len(doc.Methods) == 0 {
+		t.Error("expected methods")
+	}
+
+	// Find Echo method
+	var echoMethod *OpenRPCMethod
+	for _, m := range doc.Methods {
+		if m.Name == "test.Echo" {
+			echoMethod = m
+			break
+		}
+	}
+
+	if echoMethod == nil {
+		t.Fatal("expected test.Echo method")
+	}
+
+	if len(echoMethod.Params) != 1 {
+		t.Errorf("params count = %d, want 1", len(echoMethod.Params))
+	}
+
+	if echoMethod.Result == nil {
+		t.Error("expected result for Echo method")
+	}
+
+	// Check standard errors are present
+	if len(echoMethod.Errors) == 0 {
+		t.Error("expected standard errors")
+	}
+}
+
+func TestNewOpenRPCHandler(t *testing.T) {
+	svc, _ := contract.Register("test", &testService{})
+
+	h, err := NewOpenRPCHandler(svc)
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+
+	if h.Name() != "openrpc" {
+		t.Errorf("name = %q, want %q", h.Name(), "openrpc")
+	}
+
+	if h.Document() == nil {
+		t.Error("expected document")
+	}
+
+	if len(h.JSON()) == 0 {
+		t.Error("expected cached JSON")
+	}
+}
+
+func TestOpenRPCHandler_ServeHTTP(t *testing.T) {
+	svc, _ := contract.Register("test", &testService{})
+	h, _ := NewOpenRPCHandler(svc)
+
+	tests := []struct {
+		name       string
+		method     string
+		wantStatus int
+		wantType   string
+	}{
+		{
+			name:       "GET request",
+			method:     http.MethodGet,
+			wantStatus: http.StatusOK,
+			wantType:   "application/json",
+		},
+		{
+			name:       "POST not allowed",
+			method:     http.MethodPost,
+			wantStatus: http.StatusMethodNotAllowed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, "/openrpc.json", nil)
+			rec := httptest.NewRecorder()
+
+			h.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+
+			if tt.wantType != "" {
+				ct := rec.Header().Get("Content-Type")
+				if ct != tt.wantType {
+					t.Errorf("content-type = %q, want %q", ct, tt.wantType)
+				}
+			}
+
+			if tt.wantStatus == http.StatusOK {
+				var doc map[string]any
+				if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+					t.Errorf("invalid JSON: %v", err)
+				}
+				if doc["openrpc"] != OpenRPCVersion {
+					t.Errorf("openrpc = %v, want %s", doc["openrpc"], OpenRPCVersion)
+				}
+			}
+		})
+	}
+}
+
+func TestMountOpenRPC(t *testing.T) {
+	svc, _ := contract.Register("test", &testService{})
+	mux := http.NewServeMux()
+
+	err := MountOpenRPC(mux, "/openrpc.json", svc)
+	if err != nil {
+		t.Fatalf("mount error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/openrpc.json", nil)
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestMountOpenRPC_DefaultPath(t *testing.T) {
+	svc, _ := contract.Register("test", &testService{})
+	mux := http.NewServeMux()
+
+	err := MountOpenRPC(mux, "", svc)
+	if err != nil {
+		t.Fatalf("mount error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/openrpc.json", nil)
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestMountWithOpenRPC(t *testing.T) {
+	svc, _ := contract.Register("test", &testService{})
+	mux := http.NewServeMux()
+
+	err := MountWithOpenRPC(mux, "/rpc", "/openrpc.json", svc)
+	if err != nil {
+		t.Fatalf("mount error: %v", err)
+	}
+
+	// Test RPC endpoint
+	body := `{"jsonrpc":"2.0","id":1,"method":"Ping"}`
+	req := httptest.NewRequest(http.MethodPost, "/rpc", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("rpc status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	// Test OpenRPC endpoint
+	req = httptest.NewRequest(http.MethodGet, "/openrpc.json", nil)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("openrpc status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestOpenRPCSchemaRef_MarshalJSON(t *testing.T) {
+	tests := []struct {
+		name string
+		ref  SchemaRef
+		want string
+	}{
+		{
+			name: "with ref",
+			ref:  SchemaRef{Ref: "#/components/schemas/Test"},
+			want: `{"$ref":"#/components/schemas/Test"}`,
+		},
+		{
+			name: "with schema",
+			ref:  SchemaRef{Schema: &Schema{Type: "string"}},
+			want: `{"type":"string"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := json.Marshal(&tt.ref)
+			if err != nil {
+				t.Fatalf("marshal error: %v", err)
+			}
+			if string(data) != tt.want {
+				t.Errorf("got %s, want %s", data, tt.want)
+			}
+		})
+	}
+}

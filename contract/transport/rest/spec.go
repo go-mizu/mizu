@@ -1,14 +1,13 @@
-// Package openapi provides OpenAPI 3.1 specification generation from contract services.
+// Package rest provides REST transport and OpenAPI 3.1 specification generation.
 //
-// This package generates valid OpenAPI 3.1 documents from registered contract
-// services, including schemas, paths, operations, and parameters.
+// This package handles HTTP requests following RESTful conventions and generates
+// valid OpenAPI 3.1 documents from registered contract services.
 //
 // Usage:
 //
 //	svc, _ := contract.Register("todo", &TodoService{})
-//	doc := openapi.Generate(svc)
-//	openapi.Mount(mux, "/openapi.json", svc)
-package openapi
+//	rest.MountWithSpec(mux, "/openapi.json", svc)
+package rest
 
 import (
 	"encoding/json"
