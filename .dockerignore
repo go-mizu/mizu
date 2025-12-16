@@ -1,0 +1,45 @@
+# VCS
+.git
+.gitignore
+
+# Build outputs
+dist
+bin
+coverage.out
+coverage.html
+*.out
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go build cache (should never be sent as context)
+**/pkg
+**/obj
+
+# Editor / OS files
+.DS_Store
+.idea
+.vscode
+*.swp
+*.swo
+
+# Test artifacts
+coverage.txt
+*.test
+
+# Node / frontend (if any)
+node_modules
+npm-debug.log
+yarn-error.log
+pnpm-debug.log
+
+# Logs
+*.log
+
+# Temporary files
+tmp
+temp
+*.tmp
+
+# Docker-relat
