@@ -2,8 +2,10 @@
 package ratelimit
 
 import (
+	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -77,7 +79,7 @@ func WithStore(store Store, opts Options) mizu.Middleware {
 	}
 	if opts.KeyFunc == nil {
 		opts.KeyFunc = func(c *mizu.Ctx) string {
-			return c.ClientIP()
+			return getClientIP(c)
 		}
 	}
 	if !opts.Headers {
@@ -211,4 +213,21 @@ func PerMinute(n int) mizu.Middleware {
 // PerHour creates rate limiter allowing n requests per hour.
 func PerHour(n int) mizu.Middleware {
 	return New(n, time.Hour)
+}
+
+func getClientIP(c *mizu.Ctx) string {
+	if xff := c.Request().Header.Get("X-Forwarded-For"); xff != "" {
+		ip := strings.TrimSpace(strings.SplitN(xff, ",", 2)[0])
+		if net.ParseIP(ip) != nil {
+			return ip
+		}
+	}
+	if xr := c.Request().Header.Get("X-Real-IP"); xr != "" && net.ParseIP(xr) != nil {
+		return xr
+	}
+	host, _, err := net.SplitHostPort(c.Request().RemoteAddr)
+	if err == nil && net.ParseIP(host) != nil {
+		return host
+	}
+	return c.Request().RemoteAddr
 }
