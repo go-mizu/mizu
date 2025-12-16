@@ -1,0 +1,20 @@
+# Minimal Dockerfile for goreleaser
+# Uses pre-built binary from goreleaser
+
+FROM alpine:3.21
+
+# Install runtime dependencies
+RUN apk add --no-cache ca-certificates tzdata git
+
+# Create non-root user
+RUN adduser -D -u 1000 mizu
+USER mizu
+
+# Copy pre-built binary from goreleaser
+COPY mizu /usr/local/bin/mizu
+
+# Set working directory
+WORKDIR /workspace
+
+ENTRYPOINT ["/usr/local/bin/mizu"]
+CMD ["--help"]
