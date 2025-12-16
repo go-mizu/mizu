@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>API Reference (ReDoc)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+
+  <!-- Latest Redoc standalone bundle -->
+  <script src="https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js"></script>
+</head>
+<body>
+
+<div id="redoc-container"></div>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    Redoc.init("{{ .SpecURL }}", {}, document.getElementById("redoc-container"));
+  });
+</script>
+
+</body>
+</html>
