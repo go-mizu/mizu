@@ -3,6 +3,7 @@ package timeout
 import (
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -54,10 +55,10 @@ func TestWithOptions_ErrorHandler(t *testing.T) {
 	app := mizu.NewRouter()
 	app.Use(WithOptions(Options{
 		Timeout: 50 * time.Millisecond,
-		ErrorHandler: func(c *mizu.Ctx) error {
-			return c.JSON(http.StatusGatewayTimeout, map[string]string{
-				"error": "timeout",
-			})
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusGatewayTimeout)
+			_, _ = w.Write([]byte(`{"error":"timeout"}`))
 		},
 	}))
 
@@ -107,13 +108,13 @@ func TestTimeout_ContextCancellation(t *testing.T) {
 	app := mizu.NewRouter()
 	app.Use(New(50 * time.Millisecond))
 
-	var contextCancelled bool
+	var contextCancelled int32
 	app.Get("/check", func(c *mizu.Ctx) error {
 		select {
 		case <-time.After(200 * time.Millisecond):
 			return c.Text(http.StatusOK, "not cancelled")
 		case <-c.Context().Done():
-			contextCancelled = true
+			atomic.StoreInt32(&contextCancelled, 1)
 			return c.Context().Err()
 		}
 	})
@@ -125,7 +126,7 @@ func TestTimeout_ContextCancellation(t *testing.T) {
 	// Give some time for goroutine to notice cancellation
 	time.Sleep(100 * time.Millisecond)
 
-	if !contextCancelled {
+	if atomic.LoadInt32(&contextCancelled) != 1 {
 		t.Error("expected context to be cancelled")
 	}
 }

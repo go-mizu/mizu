@@ -129,12 +129,23 @@ func (h *Hedger) Middleware() mizu.Middleware {
 				_ = c.Request().Body.Close()
 			}
 
+			// Save original writer and a VALUE copy of the request before any goroutines start
+			origWriter := c.Writer()
+			origReqCopy := *c.Request() // Value copy, not pointer
+
 			// Create work group
 			var wg sync.WaitGroup
 			var winnerSet int32
 
-			// Runner function
-			runRequest := func(hedgeNum int) {
+			// Mutex to serialize access to Ctx
+			var ctxMu sync.Mutex
+
+			// Completion channel to track when all requests are done
+			done := make(chan struct{})
+
+			// Runner function - runs the request with its own recorder
+			// Uses mutex to serialize access to *Ctx
+			runRequest := func(hedgeNum int, reqCtx context.Context) {
 				defer wg.Done()
 
 				// Check if we already have a winner
@@ -142,9 +153,9 @@ func (h *Hedger) Middleware() mizu.Middleware {
 					return
 				}
 
-				// Create recorder
+				// Create recorder for this request
 				rec := &responseRecorder{
-					ResponseWriter: c.Writer(),
+					ResponseWriter: origWriter,
 					body:           &bytes.Buffer{},
 					statusCode:     http.StatusOK,
 					headers:        make(http.Header),
@@ -155,21 +166,29 @@ func (h *Hedger) Middleware() mizu.Middleware {
 					HedgeNumber: hedgeNum,
 					TotalHedges: h.opts.MaxHedges + 1,
 				}
-				ctx := context.WithValue(c.Context(), hedgeKey, hedgeInfo)
-				req := c.Request().WithContext(ctx)
+				hedgeCtx := context.WithValue(reqCtx, hedgeKey, hedgeInfo)
+
+				// Lock Ctx for exclusive access during handler execution
+				// Clone inside mutex to prevent races with request modifications
+				ctxMu.Lock()
+
+				// Create a new request with the hedge context and body
+				req := (&origReqCopy).Clone(hedgeCtx)
 				if bodyBuf != nil {
 					req.Body = io.NopCloser(bytes.NewReader(bodyBuf))
 				}
-				*c.Request() = *req
 
-				// Set the recorder as the writer
-				origWriter := c.Writer()
+				// Set recorder as writer and update request
 				c.SetWriter(rec)
+				*c.Request() = *req
 
 				err := next(c)
 
-				// Restore writer
+				// Restore original state from the saved copy
+				*c.Request() = origReqCopy
 				c.SetWriter(origWriter)
+
+				ctxMu.Unlock()
 
 				// Try to be the winner
 				if atomic.CompareAndSwapInt32(&winnerSet, 0, 1) {
@@ -183,7 +202,7 @@ func (h *Hedger) Middleware() mizu.Middleware {
 
 			// Start original request
 			wg.Add(1)
-			go runRequest(0)
+			go runRequest(0, ctx)
 
 			// Start hedged requests after delay
 			for i := 1; i <= h.opts.MaxHedges; i++ {
@@ -199,11 +218,17 @@ func (h *Hedger) Middleware() mizu.Middleware {
 								h.opts.OnHedge(hedgeNum)
 							}
 							wg.Add(1)
-							go runRequest(hedgeNum)
+							go runRequest(hedgeNum, ctx)
 						}
 					}
 				}()
 			}
+
+			// Wait for all requests to complete in the background
+			go func() {
+				wg.Wait()
+				close(done)
+			}()
 
 			// Wait for first result
 			select {
@@ -221,18 +246,23 @@ func (h *Hedger) Middleware() mizu.Middleware {
 					h.opts.OnComplete(res.hedgeNum, duration)
 				}
 
+				// Wait for all goroutines to complete to prevent races
+				<-done
+
 				// Write response
 				for k, v := range res.recorder.headers {
 					for _, vv := range v {
-						c.Header().Add(k, vv)
+						origWriter.Header().Add(k, vv)
 					}
 				}
-				c.Writer().WriteHeader(res.recorder.statusCode)
-				_, _ = c.Writer().Write(res.recorder.body.Bytes())
+				origWriter.WriteHeader(res.recorder.statusCode)
+				_, _ = origWriter.Write(res.recorder.body.Bytes())
 
 				return res.err
 
 			case <-ctx.Done():
+				// Wait for all goroutines to complete
+				<-done
 				return ctx.Err()
 			}
 		}
