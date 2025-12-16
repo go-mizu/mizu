@@ -1,20 +1,14 @@
-// Package contract defines a transport-neutral service contract.
+// Package contract defines transport-neutral service contracts.
 //
-// A contract is derived from a plain Go service (struct + methods).
-// The service contains zero framework dependencies and is easy to test.
+// A contract is derived from a plain Go struct with methods.
+// The service contains zero framework dependencies.
 //
-// Supported canonical method signature:
+// Supported method signatures:
 //
 //	func (s *S) Method(ctx context.Context, in *In) (*Out, error)
-//
-// Variants supported:
-//
 //	func (s *S) Method(ctx context.Context) (*Out, error)
 //	func (s *S) Method(ctx context.Context, in *In) error
 //	func (s *S) Method(ctx context.Context) error
-//
-// Reflection is performed once at registration time.
-// Runtime calls use compiled invokers.
 package contract
 
 import (
@@ -58,18 +52,11 @@ type MethodOptions struct {
 	Summary     string
 	Tags        []string
 	Deprecated  bool
-	// REST-specific overrides (optional)
-	HTTPMethod string // Override verb (GET, POST, etc.)
-	HTTPPath   string // Override path
+	HTTPMethod  string // REST verb override
+	HTTPPath    string // REST path override
 }
 
-// Register inspects a service and returns its contract.
-//
-// The service must be a struct or pointer to struct.
-// All exported methods are considered part of the contract.
-//
-// If the service implements ServiceMeta, metadata is extracted.
-// If the service implements MethodMeta, method metadata is extracted.
+// Register creates a Service from a Go struct.
 func Register(name string, svc any) (*Service, error) {
 	if name == "" {
 		return nil, fmt.Errorf("%w: empty name", ErrInvalidService)
@@ -80,7 +67,6 @@ func Register(name string, svc any) (*Service, error) {
 
 	v := reflect.ValueOf(svc)
 	t := v.Type()
-
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
@@ -88,15 +74,13 @@ func Register(name string, svc any) (*Service, error) {
 		return nil, fmt.Errorf("%w: expected struct, got %s", ErrInvalidService, t)
 	}
 
-	reg := newTypeRegistry()
-
+	types := newTypes()
 	out := &Service{
 		Name:         name,
-		Types:        reg,
+		Types:        types,
 		methodByName: make(map[string]*Method),
 	}
 
-	// Extract service metadata if available
 	if sm, ok := svc.(ServiceMeta); ok {
 		opts := sm.ContractServiceMeta()
 		out.Description = opts.Description
@@ -104,19 +88,15 @@ func Register(name string, svc any) (*Service, error) {
 		out.Tags = opts.Tags
 	}
 
-	// Extract method metadata if available
 	var methodMeta map[string]MethodOptions
 	if mm, ok := svc.(MethodMeta); ok {
 		methodMeta = mm.ContractMeta()
 	}
 
 	rt := reflect.TypeOf(svc)
-
 	for i := 0; i < rt.NumMethod(); i++ {
 		rm := rt.Method(i)
-
-		// Skip metadata interface methods
-		if isMetadataMethod(rm.Name) {
+		if isMetaMethod(rm.Name) {
 			continue
 		}
 
@@ -132,9 +112,10 @@ func Register(name string, svc any) (*Service, error) {
 			sig:      sig,
 			inType:   inT,
 			outType:  outT,
+			recv:     v,
+			method:   rm,
 		}
 
-		// Apply method metadata if available
 		if methodMeta != nil {
 			if opts, ok := methodMeta[rm.Name]; ok {
 				m.Description = opts.Description
@@ -147,7 +128,7 @@ func Register(name string, svc any) (*Service, error) {
 		}
 
 		if inT != nil {
-			tr, err := reg.Add(inT)
+			tr, err := types.Add(inT)
 			if err != nil {
 				return nil, err
 			}
@@ -155,14 +136,12 @@ func Register(name string, svc any) (*Service, error) {
 		}
 
 		if outT != nil {
-			tr, err := reg.Add(outT)
+			tr, err := types.Add(outT)
 			if err != nil {
 				return nil, err
 			}
 			m.Output = tr
 		}
-
-		m.Invoker = newInvoker(reflect.ValueOf(svc), rm, sig, inT, outT)
 
 		out.Methods = append(out.Methods, m)
 		out.methodByName[m.Name] = m
@@ -179,14 +158,14 @@ func Register(name string, svc any) (*Service, error) {
 	return out, nil
 }
 
-// Service represents a transport-neutral service contract.
+// Service represents a registered service contract.
 type Service struct {
 	Name        string
 	Description string
 	Version     string
 	Tags        []string
 	Methods     []*Method
-	Types       *TypeRegistry
+	Types       *Types
 
 	methodByName map[string]*Method
 }
@@ -216,18 +195,55 @@ type Method struct {
 	Tags        []string
 	Deprecated  bool
 
-	// REST-specific overrides
 	HTTPMethod string
 	HTTPPath   string
 
-	Input  *TypeRef
-	Output *TypeRef
-
-	Invoker Invoker
+	Input  *Type
+	Output *Type
 
 	inType  reflect.Type
 	outType reflect.Type
 	sig     sigKind
+	recv    reflect.Value
+	method  reflect.Method
+}
+
+// Call invokes the method with the given input.
+func (m *Method) Call(ctx context.Context, in any) (any, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	var args []reflect.Value
+	switch m.sig {
+	case sigCtxErr, sigCtxOutErr:
+		args = []reflect.Value{m.recv, reflect.ValueOf(ctx)}
+	case sigCtxInErr, sigCtxInOutErr:
+		if in == nil {
+			return nil, ErrNilInput
+		}
+		args = []reflect.Value{m.recv, reflect.ValueOf(ctx), reflect.ValueOf(in)}
+	}
+
+	out := m.method.Func.Call(args)
+
+	switch m.sig {
+	case sigCtxErr, sigCtxInErr:
+		if !out[0].IsNil() {
+			return nil, out[0].Interface().(error)
+		}
+		return nil, nil
+	case sigCtxOutErr, sigCtxInOutErr:
+		var err error
+		if !out[1].IsNil() {
+			err = out[1].Interface().(error)
+		}
+		if out[0].IsNil() {
+			return nil, err
+		}
+		return out[0].Interface(), err
+	}
+	return nil, ErrInvalidMethod
 }
 
 // NewInput creates a new instance of the input type.
@@ -239,31 +255,18 @@ func (m *Method) NewInput() any {
 }
 
 // HasInput returns true if the method accepts input.
-func (m *Method) HasInput() bool {
-	return m.inType != nil
-}
+func (m *Method) HasInput() bool { return m.inType != nil }
 
 // HasOutput returns true if the method returns output.
-func (m *Method) HasOutput() bool {
-	return m.outType != nil
-}
+func (m *Method) HasOutput() bool { return m.outType != nil }
 
 // InputType returns the reflect.Type of the input, or nil.
-func (m *Method) InputType() reflect.Type {
-	return m.inType
-}
+func (m *Method) InputType() reflect.Type { return m.inType }
 
 // OutputType returns the reflect.Type of the output, or nil.
-func (m *Method) OutputType() reflect.Type {
-	return m.outType
-}
+func (m *Method) OutputType() reflect.Type { return m.outType }
 
-// Invoker calls a compiled method.
-type Invoker interface {
-	Call(ctx context.Context, in any) (any, error)
-}
-
-// ---- invocation ----
+// ---- internal ----
 
 type sigKind int
 
@@ -279,14 +282,12 @@ var (
 	typeError   = reflect.TypeOf((*error)(nil)).Elem()
 )
 
-// isMetadataMethod returns true if the method name is a metadata interface method.
-func isMetadataMethod(name string) bool {
+func isMetaMethod(name string) bool {
 	switch name {
 	case "ContractServiceMeta", "ContractMeta", "ContractEnum":
 		return true
-	default:
-		return false
 	}
+	return false
 }
 
 func parseSignature(t reflect.Type) (sig sigKind, in, out reflect.Type, err error) {
@@ -327,53 +328,4 @@ func parseSignature(t reflect.Type) (sig sigKind, in, out reflect.Type, err erro
 	}
 
 	return 0, nil, nil, fmt.Errorf("unsupported signature")
-}
-
-type reflectInvoker struct {
-	recv   reflect.Value
-	method reflect.Method
-	sig    sigKind
-	inType reflect.Type
-}
-
-func newInvoker(recv reflect.Value, m reflect.Method, sig sigKind, in, out reflect.Type) Invoker {
-	return &reflectInvoker{recv: recv, method: m, sig: sig, inType: in}
-}
-
-func (x *reflectInvoker) Call(ctx context.Context, in any) (any, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	var args []reflect.Value
-
-	switch x.sig {
-	case sigCtxErr, sigCtxOutErr:
-		args = []reflect.Value{x.recv, reflect.ValueOf(ctx)}
-	case sigCtxInErr, sigCtxInOutErr:
-		if in == nil {
-			return nil, ErrNilInput
-		}
-		args = []reflect.Value{x.recv, reflect.ValueOf(ctx), reflect.ValueOf(in)}
-	}
-
-	out := x.method.Func.Call(args)
-
-	switch x.sig {
-	case sigCtxErr, sigCtxInErr:
-		if !out[0].IsNil() {
-			return nil, out[0].Interface().(error)
-		}
-		return nil, nil
-	case sigCtxOutErr, sigCtxInOutErr:
-		var err error
-		if !out[1].IsNil() {
-			err = out[1].Interface().(error)
-		}
-		if out[0].IsNil() {
-			return nil, err
-		}
-		return out[0].Interface(), err
-	}
-	return nil, ErrInvalidMethod
 }

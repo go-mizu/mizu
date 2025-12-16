@@ -12,31 +12,17 @@ import (
 // Handler handles tRPC requests over HTTP.
 type Handler struct {
 	service  *contract.Service
-	resolver contract.Resolver
-	invoker  contract.TransportInvoker
 	basePath string
 }
 
 // Option configures the handler.
 type Option func(*Handler)
 
-// WithResolver sets a custom method resolver.
-func WithResolver(r contract.Resolver) Option {
-	return func(h *Handler) { h.resolver = r }
-}
-
-// WithInvoker sets a custom method invoker.
-func WithInvoker(i contract.TransportInvoker) Option {
-	return func(h *Handler) { h.invoker = i }
-}
-
 // NewHandler creates a new tRPC handler.
 func NewHandler(basePath string, svc *contract.Service, opts ...Option) *Handler {
 	h := &Handler{
 		service:  svc,
 		basePath: basePath,
-		resolver: &contract.ServiceResolver{Service: svc},
-		invoker:  &contract.DefaultInvoker{},
 	}
 	for _, opt := range opts {
 		opt(h)
@@ -79,7 +65,7 @@ func (h *Handler) CallHandler() http.HandlerFunc {
 			return
 		}
 
-		method := h.resolver.Resolve(proc)
+		method := h.resolve(proc)
 		if method == nil {
 			h.writeError(w, http.StatusBadRequest, "unknown procedure")
 			return
@@ -89,19 +75,32 @@ func (h *Handler) CallHandler() http.HandlerFunc {
 	}
 }
 
+func (h *Handler) resolve(name string) *contract.Method {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil
+	}
+	if strings.Contains(name, ".") {
+		parts := strings.Split(name, ".")
+		if len(parts) != 2 || parts[0] != h.service.Name {
+			return nil
+		}
+		return h.service.Method(parts[1])
+	}
+	return h.service.Method(name)
+}
+
 func (h *Handler) handleCall(w http.ResponseWriter, ctx context.Context, m *contract.Method, r *http.Request) {
 	var raw json.RawMessage
 	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
-		// EOF is acceptable (empty body)
 		if !isEOFError(err) {
 			h.writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 	}
 
-	result, err := h.invoker.Invoke(ctx, m, raw)
+	result, err := h.invoke(ctx, m, raw)
 	if err != nil {
-		// Application errors return 200 with error envelope
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(ErrorEnvelope(CodeInternalError, err.Error()))
 		return
@@ -109,6 +108,29 @@ func (h *Handler) handleCall(w http.ResponseWriter, ctx context.Context, m *cont
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(SuccessEnvelope(result))
+}
+
+func (h *Handler) invoke(ctx context.Context, m *contract.Method, params []byte) (any, error) {
+	var in any
+	if m.HasInput() {
+		in = m.NewInput()
+		params = trimJSONSpace(params)
+		if len(params) > 0 && !isJSONNull(params) {
+			if len(params) > 0 && params[0] == '{' {
+				if err := json.Unmarshal(params, in); err != nil {
+					return nil, contract.NewError(contract.InvalidArgument, "invalid input: "+err.Error())
+				}
+			} else {
+				return nil, contract.NewError(contract.InvalidArgument, "input must be a JSON object")
+			}
+		}
+	} else {
+		params = trimJSONSpace(params)
+		if len(params) > 0 && !isJSONNull(params) {
+			return nil, contract.NewError(contract.InvalidArgument, "method does not accept parameters")
+		}
+	}
+	return m.Call(ctx, in)
 }
 
 func (h *Handler) writeError(w http.ResponseWriter, status int, msg string) {
@@ -135,11 +157,13 @@ func (h *Handler) buildMeta() ServiceMeta {
 	}
 
 	schemas := make([]Schema, 0)
-	for _, s := range h.service.Types.Schemas() {
-		schemas = append(schemas, Schema{
-			ID:   s.ID,
-			JSON: s.JSON,
-		})
+	for _, t := range h.service.Types.All() {
+		if s := h.service.Types.Schema(t.ID); s != nil {
+			schemas = append(schemas, Schema{
+				ID:   t.ID,
+				JSON: s,
+			})
+		}
 	}
 
 	return ServiceMeta{
@@ -169,4 +193,30 @@ func Mount(mux *http.ServeMux, base string, svc *contract.Service, opts ...Optio
 
 func isEOFError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "EOF")
+}
+
+func trimJSONSpace(b []byte) []byte {
+	i, j := 0, len(b)
+	for i < j && isSpace(b[i]) {
+		i++
+	}
+	for j > i && isSpace(b[j-1]) {
+		j--
+	}
+	return b[i:j]
+}
+
+func isSpace(c byte) bool {
+	return c == ' ' || c == '\n' || c == '\r' || c == '\t'
+}
+
+func isJSONNull(b []byte) bool {
+	b = trimJSONSpace(b)
+	if len(b) != 4 {
+		return false
+	}
+	return (b[0] == 'n' || b[0] == 'N') &&
+		(b[1] == 'u' || b[1] == 'U') &&
+		(b[2] == 'l' || b[2] == 'L') &&
+		(b[3] == 'l' || b[3] == 'L')
 }

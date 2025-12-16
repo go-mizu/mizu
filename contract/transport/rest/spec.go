@@ -266,8 +266,11 @@ func Generate(services ...*contract.Service) *Document {
 
 func addService(doc *Document, svc *contract.Service) {
 	// Add schemas
-	for _, schema := range svc.Types.Schemas() {
-		doc.Components.Schemas[schema.ID] = convertSchema(schema.JSON)
+	for _, t := range svc.Types.All() {
+		schema := svc.Types.Schema(t.ID)
+		if schema != nil {
+			doc.Components.Schemas[t.ID] = convertSchema(schema)
+		}
 	}
 
 	basePath := "/" + pluralize(svc.Name)
@@ -496,35 +499,3 @@ func (d *Document) MarshalIndent() ([]byte, error) {
 	return json.MarshalIndent(d, "", "  ")
 }
 
-// Helper functions
-
-func pluralize(s string) string {
-	if strings.HasSuffix(s, "s") {
-		return s
-	}
-	return s + "s"
-}
-
-func restVerb(name string) string {
-	switch {
-	case strings.HasPrefix(name, "Create"):
-		return "POST"
-	case strings.HasPrefix(name, "Get"):
-		return "GET"
-	case strings.HasPrefix(name, "List"):
-		return "GET"
-	case strings.HasPrefix(name, "Update"):
-		return "PUT"
-	case strings.HasPrefix(name, "Delete"):
-		return "DELETE"
-	default:
-		return "POST"
-	}
-}
-
-func needsID(m *contract.Method) bool {
-	if m.Input == nil {
-		return false
-	}
-	return strings.Contains(strings.ToLower(m.Input.Name), "id")
-}

@@ -135,7 +135,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Invoke method
-	out, err := route.method.Invoker.Call(r.Context(), in)
+	out, err := route.method.Call(r.Context(), in)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -406,39 +406,37 @@ func applyQueryParams(in any, query map[string][]string) error {
 	return nil
 }
 
-func mapErrorToStatus(code contract.ErrorCode) int {
-	switch code {
-	case contract.ErrCodeInvalidArgument:
-		return http.StatusBadRequest
-	case contract.ErrCodeNotFound:
-		return http.StatusNotFound
-	case contract.ErrCodeAlreadyExists:
-		return http.StatusConflict
-	case contract.ErrCodePermissionDenied:
-		return http.StatusForbidden
-	case contract.ErrCodeUnauthenticated:
-		return http.StatusUnauthorized
-	case contract.ErrCodeResourceExhausted:
-		return http.StatusTooManyRequests
-	case contract.ErrCodeFailedPrecondition:
-		return http.StatusBadRequest
-	case contract.ErrCodeAborted:
-		return http.StatusConflict
-	case contract.ErrCodeOutOfRange:
-		return http.StatusBadRequest
-	case contract.ErrCodeUnimplemented:
-		return http.StatusNotImplemented
-	case contract.ErrCodeInternal:
-		return http.StatusInternalServerError
-	case contract.ErrCodeUnavailable:
-		return http.StatusServiceUnavailable
-	case contract.ErrCodeDataLoss:
-		return http.StatusInternalServerError
-	case contract.ErrCodeCanceled:
-		return 499 // Client Closed Request
-	case contract.ErrCodeDeadlineExceeded:
-		return http.StatusGatewayTimeout
+func mapErrorToStatus(code contract.Code) int {
+	return contract.CodeToHTTP(code)
+}
+
+func pluralize(s string) string {
+	if strings.HasSuffix(s, "s") {
+		return s
+	}
+	return s + "s"
+}
+
+func needsID(m *contract.Method) bool {
+	if m.Input == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(m.Input.Name), "id")
+}
+
+func restVerb(name string) string {
+	switch {
+	case strings.HasPrefix(name, "Create"):
+		return http.MethodPost
+	case strings.HasPrefix(name, "Get"), strings.HasPrefix(name, "List"):
+		return http.MethodGet
+	case strings.HasPrefix(name, "Update"):
+		return http.MethodPut
+	case strings.HasPrefix(name, "Delete"):
+		return http.MethodDelete
+	case strings.HasPrefix(name, "Patch"):
+		return http.MethodPatch
 	default:
-		return http.StatusInternalServerError
+		return http.MethodPost
 	}
 }

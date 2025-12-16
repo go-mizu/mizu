@@ -12,32 +12,18 @@ import (
 
 // Handler handles JSON-RPC 2.0 requests over HTTP.
 type Handler struct {
-	service  *contract.Service
-	resolver contract.Resolver
-	invoker  contract.TransportInvoker
-	codec    *Codec
+	service *contract.Service
+	codec   *Codec
 }
 
 // Option configures the handler.
 type Option func(*Handler)
 
-// WithResolver sets a custom method resolver.
-func WithResolver(r contract.Resolver) Option {
-	return func(h *Handler) { h.resolver = r }
-}
-
-// WithInvoker sets a custom method invoker.
-func WithInvoker(i contract.TransportInvoker) Option {
-	return func(h *Handler) { h.invoker = i }
-}
-
 // NewHandler creates a new JSON-RPC handler for the service.
 func NewHandler(svc *contract.Service, opts ...Option) *Handler {
 	h := &Handler{
-		service:  svc,
-		codec:    NewCodec(),
-		resolver: &contract.ServiceResolver{Service: svc},
-		invoker:  &contract.DefaultInvoker{},
+		service: svc,
+		codec:   NewCodec(),
 	}
 	for _, opt := range opts {
 		opt(h)
@@ -79,7 +65,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// All notifications: no response
 	if len(responses) == 0 {
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -95,10 +80,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = h.codec.Encode(w, responses[0])
 }
 
-// handleOne processes a single JSON-RPC request.
-// Returns the response and whether to include it in output.
 func (h *Handler) handleOne(ctx context.Context, req *Request) (*Response, bool) {
-	// Validate request
 	if err := h.codec.Validate(req); err != nil {
 		if req.IsNotification() {
 			return nil, false
@@ -106,8 +88,7 @@ func (h *Handler) handleOne(ctx context.Context, req *Request) (*Response, bool)
 		return NewErrorResponse(req.ID, err), true
 	}
 
-	// Resolve method
-	method := h.resolver.Resolve(req.Method)
+	method := h.resolve(req.Method)
 	if method == nil {
 		if req.IsNotification() {
 			return nil, false
@@ -115,8 +96,7 @@ func (h *Handler) handleOne(ctx context.Context, req *Request) (*Response, bool)
 		return NewErrorResponse(req.ID, MethodNotFound(req.Method)), true
 	}
 
-	// Invoke method
-	result, err := h.invoker.Invoke(ctx, method, req.Params)
+	result, err := h.invoke(ctx, method, req.Params)
 	if err != nil {
 		if req.IsNotification() {
 			return nil, false
@@ -124,7 +104,6 @@ func (h *Handler) handleOne(ctx context.Context, req *Request) (*Response, bool)
 		return NewErrorResponse(req.ID, MapError(err)), true
 	}
 
-	// Notification: no response
 	if req.IsNotification() {
 		return nil, false
 	}
@@ -132,7 +111,44 @@ func (h *Handler) handleOne(ctx context.Context, req *Request) (*Response, bool)
 	return NewResponse(req.ID, result), true
 }
 
-// writeError writes an error response.
+func (h *Handler) resolve(name string) *contract.Method {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil
+	}
+	if strings.Contains(name, ".") {
+		parts := strings.Split(name, ".")
+		if len(parts) != 2 || parts[0] != h.service.Name {
+			return nil
+		}
+		return h.service.Method(parts[1])
+	}
+	return h.service.Method(name)
+}
+
+func (h *Handler) invoke(ctx context.Context, m *contract.Method, params []byte) (any, error) {
+	var in any
+	if m.HasInput() {
+		in = m.NewInput()
+		params = trimSpace(params)
+		if len(params) > 0 && !isNull(params) {
+			if len(params) > 0 && params[0] == '{' {
+				if err := json.Unmarshal(params, in); err != nil {
+					return nil, contract.NewError(contract.InvalidArgument, "invalid input: "+err.Error())
+				}
+			} else {
+				return nil, contract.NewError(contract.InvalidArgument, "input must be a JSON object")
+			}
+		}
+	} else {
+		params = trimSpace(params)
+		if len(params) > 0 && !isNull(params) {
+			return nil, contract.NewError(contract.InvalidArgument, "method does not accept parameters")
+		}
+	}
+	return m.Call(ctx, in)
+}
+
 func (h *Handler) writeError(w http.ResponseWriter, id json.RawMessage, err *Error) {
 	w.Header().Set("Content-Type", h.codec.ContentType())
 	_ = h.codec.EncodeError(w, id, err)
@@ -144,62 +160,21 @@ func MapError(err error) *Error {
 		return nil
 	}
 
-	// Check for JSON-RPC error
 	var rpcErr *Error
 	if errors.As(err, &rpcErr) {
 		return rpcErr
 	}
 
-	// Check for contract error
 	var ce *contract.Error
 	if errors.As(err, &ce) {
 		return &Error{
-			Code:    mapErrorCode(ce.Code),
+			Code:    contract.CodeToJSONRPC(ce.Code),
 			Message: ce.Message,
 			Data:    ce.Details,
 		}
 	}
 
-	// Generic error
 	return InternalError(err)
-}
-
-// mapErrorCode maps contract error codes to JSON-RPC codes.
-func mapErrorCode(code contract.ErrorCode) int {
-	switch code {
-	case contract.ErrCodeInvalidArgument:
-		return CodeInvalidParams
-	case contract.ErrCodeNotFound:
-		return CodeMethodNotFound
-	case contract.ErrCodeUnimplemented:
-		return CodeMethodNotFound
-	case contract.ErrCodeInternal:
-		return CodeInternalError
-	case contract.ErrCodeCanceled:
-		return -32001
-	case contract.ErrCodeDeadlineExceeded:
-		return -32002
-	case contract.ErrCodeAlreadyExists:
-		return -32003
-	case contract.ErrCodePermissionDenied:
-		return -32004
-	case contract.ErrCodeResourceExhausted:
-		return -32005
-	case contract.ErrCodeFailedPrecondition:
-		return -32006
-	case contract.ErrCodeAborted:
-		return -32007
-	case contract.ErrCodeOutOfRange:
-		return -32008
-	case contract.ErrCodeUnavailable:
-		return -32009
-	case contract.ErrCodeDataLoss:
-		return -32010
-	case contract.ErrCodeUnauthenticated:
-		return -32011
-	default:
-		return CodeInternalError
-	}
 }
 
 // Mount registers a JSON-RPC handler at the given path.

@@ -32,7 +32,7 @@ func (s *testService) Ping(ctx context.Context) error {
 }
 
 func (s *testService) Error(ctx context.Context) error {
-	return contract.ErrNotFound("resource not found")
+	return contract.NewError(contract.NotFound, "resource not found")
 }
 
 func TestCodec_Decode(t *testing.T) {
@@ -367,17 +367,17 @@ func TestMapError(t *testing.T) {
 		},
 		{
 			name:     "contract not found",
-			err:      contract.ErrNotFound("not found"),
+			err:      contract.NewError(contract.NotFound, "not found"),
 			wantCode: CodeMethodNotFound,
 		},
 		{
 			name:     "contract invalid argument",
-			err:      contract.ErrInvalidArgument("bad input"),
+			err:      contract.NewError(contract.InvalidArgument, "bad input"),
 			wantCode: CodeInvalidParams,
 		},
 		{
 			name:     "contract internal",
-			err:      contract.ErrInternal("oops"),
+			err:      contract.NewError(contract.Internal, "oops"),
 			wantCode: CodeInternalError,
 		},
 		{

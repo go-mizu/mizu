@@ -13,8 +13,6 @@ import (
 // Handler handles MCP requests over HTTP (Streamable HTTP transport).
 type Handler struct {
 	service    *contract.Service
-	resolver   contract.Resolver
-	invoker    contract.TransportInvoker
 	serverInfo ServerInfo
 
 	allowedOrigins []string
@@ -39,23 +37,11 @@ func WithAllowedOrigins(origins ...string) Option {
 	return func(h *Handler) { h.allowedOrigins = origins }
 }
 
-// WithResolver sets a custom method resolver.
-func WithResolver(r contract.Resolver) Option {
-	return func(h *Handler) { h.resolver = r }
-}
-
-// WithInvoker sets a custom method invoker.
-func WithInvoker(i contract.TransportInvoker) Option {
-	return func(h *Handler) { h.invoker = i }
-}
-
 // NewHandler creates a new MCP handler.
 func NewHandler(svc *contract.Service, opts ...Option) *Handler {
 	h := &Handler{
 		service:    svc,
 		serverInfo: DefaultServerInfo(),
-		resolver:   &contract.ServiceResolver{Service: svc},
-		invoker:    &contract.DefaultInvoker{},
 	}
 	for _, opt := range opts {
 		opt(h)
@@ -86,7 +72,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleSSE(w http.ResponseWriter, r *http.Request) {
-	// Minimal SSE response for endpoint validation
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -94,7 +79,6 @@ func (h *Handler) handleSSE(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
-	// Validate protocol version if present
 	if pv := strings.TrimSpace(r.Header.Get("MCP-Protocol-Version")); pv != "" {
 		if !isProtocolSupported(pv) {
 			http.Error(w, "unsupported MCP-Protocol-Version", http.StatusBadRequest)
@@ -108,13 +92,12 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	raw = contract.TrimJSONSpace(raw)
+	raw = trimJSONSpace(raw)
 	if len(raw) == 0 {
 		h.writeRPCError(w, nil, invalidRequest("empty body"))
 		return
 	}
 
-	// Check for response or notification (return 202)
 	if isRPCResponse(raw) || isRPCNotification(raw) {
 		w.WriteHeader(http.StatusAccepted)
 		return
@@ -131,8 +114,7 @@ func (h *Handler) handlePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Handle notification (no ID)
-	if len(req.ID) == 0 || contract.IsJSONNull(req.ID) {
+	if len(req.ID) == 0 || isJSONNull(req.ID) {
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
@@ -189,7 +171,6 @@ func (h *Handler) handleToolsList(w http.ResponseWriter, id json.RawMessage, par
 	for _, m := range h.service.Methods {
 		tools = append(tools, h.buildTool(m))
 	}
-
 	h.writeRPCResult(w, id, map[string]any{"tools": tools})
 }
 
@@ -206,13 +187,13 @@ func (h *Handler) handleToolsCall(w http.ResponseWriter, ctx context.Context, id
 		return
 	}
 
-	method := h.resolver.Resolve(name)
+	method := h.resolve(name)
 	if method == nil {
 		h.writeRPCError(w, id, methodNotFound("tools/call: "+name))
 		return
 	}
 
-	result, err := h.invoker.Invoke(ctx, method, p.Arguments)
+	result, err := h.invoke(ctx, method, p.Arguments)
 	if err != nil {
 		h.writeRPCResult(w, id, ErrorResult(err.Error()))
 		return
@@ -227,6 +208,44 @@ func (h *Handler) handleToolsCall(w http.ResponseWriter, ctx context.Context, id
 	h.writeRPCResult(w, id, SuccessResult(text))
 }
 
+func (h *Handler) resolve(name string) *contract.Method {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil
+	}
+	if strings.Contains(name, ".") {
+		parts := strings.Split(name, ".")
+		if len(parts) != 2 || parts[0] != h.service.Name {
+			return nil
+		}
+		return h.service.Method(parts[1])
+	}
+	return h.service.Method(name)
+}
+
+func (h *Handler) invoke(ctx context.Context, m *contract.Method, params []byte) (any, error) {
+	var in any
+	if m.HasInput() {
+		in = m.NewInput()
+		params = trimJSONSpace(params)
+		if len(params) > 0 && !isJSONNull(params) {
+			if len(params) > 0 && params[0] == '{' {
+				if err := json.Unmarshal(params, in); err != nil {
+					return nil, contract.NewError(contract.InvalidArgument, "invalid input: "+err.Error())
+				}
+			} else {
+				return nil, contract.NewError(contract.InvalidArgument, "input must be a JSON object")
+			}
+		}
+	} else {
+		params = trimJSONSpace(params)
+		if len(params) > 0 && !isJSONNull(params) {
+			return nil, contract.NewError(contract.InvalidArgument, "method does not accept parameters")
+		}
+	}
+	return m.Call(ctx, in)
+}
+
 func (h *Handler) buildTool(m *contract.Method) Tool {
 	tool := Tool{
 		Name:        h.service.Name + "." + m.Name,
@@ -239,14 +258,14 @@ func (h *Handler) buildTool(m *contract.Method) Tool {
 	}
 
 	if m.Input != nil {
-		if schema, ok := h.service.Types.Schema(m.Input.ID); ok {
-			tool.InputSchema = schema.JSON
+		if schema := h.service.Types.Schema(m.Input.ID); schema != nil {
+			tool.InputSchema = schema
 		}
 	}
 
 	if m.Output != nil {
-		if schema, ok := h.service.Types.Schema(m.Output.ID); ok {
-			tool.OutputSchema = schema.JSON
+		if schema := h.service.Types.Schema(m.Output.ID); schema != nil {
+			tool.OutputSchema = schema
 		}
 	}
 
@@ -259,7 +278,6 @@ func (h *Handler) allowOrigin(r *http.Request) bool {
 		return true
 	}
 
-	// Check allowed origins
 	if len(h.allowedOrigins) > 0 {
 		for _, allowed := range h.allowedOrigins {
 			if allowed == "*" || allowed == origin {
@@ -269,7 +287,6 @@ func (h *Handler) allowOrigin(r *http.Request) bool {
 		return false
 	}
 
-	// Default: same-host check
 	u, err := url.Parse(origin)
 	if err != nil || u.Host == "" {
 		return false
@@ -309,7 +326,6 @@ func Mount(mux *http.ServeMux, path string, svc *contract.Service, opts ...Optio
 	mux.Handle(path, NewHandler(svc, opts...))
 }
 
-// isRPCResponse checks if raw JSON is a JSON-RPC response.
 func isRPCResponse(raw []byte) bool {
 	var m map[string]json.RawMessage
 	if json.Unmarshal(raw, &m) != nil {
@@ -324,7 +340,6 @@ func isRPCResponse(raw []byte) bool {
 	return false
 }
 
-// isRPCNotification checks if raw JSON is a JSON-RPC notification.
 func isRPCNotification(raw []byte) bool {
 	var m map[string]json.RawMessage
 	if json.Unmarshal(raw, &m) != nil {
@@ -349,4 +364,30 @@ func stripDefaultPort(h string) string {
 		return strings.TrimSuffix(h, ":443")
 	}
 	return h
+}
+
+func trimJSONSpace(b []byte) []byte {
+	i, j := 0, len(b)
+	for i < j && isSpace(b[i]) {
+		i++
+	}
+	for j > i && isSpace(b[j-1]) {
+		j--
+	}
+	return b[i:j]
+}
+
+func isSpace(c byte) bool {
+	return c == ' ' || c == '\n' || c == '\r' || c == '\t'
+}
+
+func isJSONNull(b []byte) bool {
+	b = trimJSONSpace(b)
+	if len(b) != 4 {
+		return false
+	}
+	return (b[0] == 'n' || b[0] == 'N') &&
+		(b[1] == 'u' || b[1] == 'U') &&
+		(b[2] == 'l' || b[2] == 'L') &&
+		(b[3] == 'l' || b[3] == 'L')
 }
