@@ -1,0 +1,387 @@
+---
+title: "Error Codes Reference"
+description: "Complete reference for Contract error codes and their mappings"
+---
+
+# Error Codes Reference
+
+Complete reference for all Contract error codes and their mappings to HTTP, JSON-RPC, gRPC, and tRPC protocols.
+
+## Error Code Table
+
+| Code | Description | HTTP | JSON-RPC | gRPC | tRPC |
+|------|-------------|------|----------|------|------|
+| `OK` | Success | 200 | - | 0 | - |
+| `CANCELED` | Operation canceled | 499 | -32001 | 1 | `INTERNAL_ERROR` |
+| `UNKNOWN` | Unknown error | 500 | -32000 | 2 | `INTERNAL_ERROR` |
+| `INVALID_ARGUMENT` | Invalid input | 400 | -32602 | 3 | `BAD_REQUEST` |
+| `DEADLINE_EXCEEDED` | Timeout | 504 | -32002 | 4 | `INTERNAL_ERROR` |
+| `NOT_FOUND` | Resource not found | 404 | -32601 | 5 | `NOT_FOUND` |
+| `ALREADY_EXISTS` | Resource exists | 409 | -32003 | 6 | `INTERNAL_ERROR` |
+| `PERMISSION_DENIED` | Forbidden | 403 | -32004 | 7 | `FORBIDDEN` |
+| `RESOURCE_EXHAUSTED` | Rate limited | 429 | -32005 | 8 | `INTERNAL_ERROR` |
+| `FAILED_PRECONDITION` | Precondition failed | 412 | -32006 | 9 | `BAD_REQUEST` |
+| `ABORTED` | Operation aborted | 409 | -32007 | 10 | `INTERNAL_ERROR` |
+| `OUT_OF_RANGE` | Value out of range | 400 | -32008 | 11 | `BAD_REQUEST` |
+| `UNIMPLEMENTED` | Not implemented | 501 | -32601 | 12 | `INTERNAL_ERROR` |
+| `INTERNAL` | Internal error | 500 | -32603 | 13 | `INTERNAL_ERROR` |
+| `UNAVAILABLE` | Service unavailable | 503 | -32009 | 14 | `INTERNAL_ERROR` |
+| `DATA_LOSS` | Data loss | 500 | -32010 | 15 | `INTERNAL_ERROR` |
+| `UNAUTHENTICATED` | Not authenticated | 401 | -32011 | 16 | `UNAUTHORIZED` |
+
+## Code Descriptions
+
+### OK
+
+Success. Not typically used in error responses.
+
+```go
+// Used internally to indicate success
+code := contract.ErrCodeOK
+```
+
+### CANCELED
+
+The operation was canceled, typically by the caller.
+
+```go
+contract.NewError(contract.ErrCodeCanceled, "request canceled by client")
+```
+
+**Use when:**
+- Client cancels the request
+- Context is canceled
+- User aborts an operation
+
+### UNKNOWN
+
+Unknown error. Use when the error doesn't fit other categories.
+
+```go
+contract.NewError(contract.ErrCodeUnknown, "an unexpected error occurred")
+```
+
+**Use when:**
+- Catching unexpected panics
+- Error from external system with no clear mapping
+
+### INVALID_ARGUMENT
+
+Client specified an invalid argument.
+
+```go
+contract.ErrInvalidArgument("title must not be empty")
+contract.ErrInvalidArgument("email is not a valid email address")
+```
+
+**Use when:**
+- Missing required field
+- Invalid format (email, URL, etc.)
+- Value constraint violated
+- Type mismatch
+
+### DEADLINE_EXCEEDED
+
+Deadline expired before operation could complete.
+
+```go
+contract.NewError(contract.ErrCodeDeadlineExceeded, "operation timed out")
+```
+
+**Use when:**
+- Context deadline exceeded
+- External service timeout
+- Long-running operation timeout
+
+### NOT_FOUND
+
+Requested resource not found.
+
+```go
+contract.ErrNotFound("user not found")
+contract.ErrNotFound("todo not found").WithDetail("id", todoID)
+```
+
+**Use when:**
+- Resource doesn't exist
+- Resource was deleted
+- Invalid resource identifier
+
+### ALREADY_EXISTS
+
+Resource already exists.
+
+```go
+contract.NewError(contract.ErrCodeAlreadyExists, "user already exists")
+```
+
+**Use when:**
+- Creating a resource that already exists
+- Unique constraint violation
+- Duplicate key error
+
+### PERMISSION_DENIED
+
+Caller doesn't have permission. Use `UNAUTHENTICATED` if identity is unknown.
+
+```go
+contract.ErrPermissionDenied("admin access required")
+contract.ErrPermissionDenied("cannot modify this resource")
+```
+
+**Use when:**
+- User lacks required role
+- Resource ownership check fails
+- Action not allowed for current user
+
+### RESOURCE_EXHAUSTED
+
+Resource has been exhausted (quotas, rate limits).
+
+```go
+contract.NewError(contract.ErrCodeResourceExhausted, "rate limit exceeded")
+```
+
+**Use when:**
+- Rate limit hit
+- Quota exceeded
+- Storage full
+- Too many concurrent requests
+
+### FAILED_PRECONDITION
+
+Operation rejected because system is not in required state.
+
+```go
+contract.NewError(contract.ErrCodeFailedPrecondition, "account must be verified first")
+```
+
+**Use when:**
+- Resource in wrong state
+- Required setup not complete
+- Dependency not satisfied
+
+### ABORTED
+
+Operation was aborted, typically due to concurrency issue.
+
+```go
+contract.NewError(contract.ErrCodeAborted, "concurrent modification detected")
+```
+
+**Use when:**
+- Optimistic locking failure
+- Transaction conflict
+- Concurrent modification
+
+### OUT_OF_RANGE
+
+Value is out of valid range.
+
+```go
+contract.NewError(contract.ErrCodeOutOfRange, "page must be between 1 and 100")
+```
+
+**Use when:**
+- Pagination beyond data
+- Numeric value outside bounds
+- Index out of range
+
+### UNIMPLEMENTED
+
+Operation is not implemented.
+
+```go
+contract.NewError(contract.ErrCodeUnimplemented, "feature not yet implemented")
+```
+
+**Use when:**
+- Feature not built yet
+- Method not supported
+- Version incompatibility
+
+### INTERNAL
+
+Internal error. Don't expose details to clients.
+
+```go
+contract.ErrInternal("service temporarily unavailable")
+
+// With cause for logging (cause not exposed to client)
+contract.ErrInternal("failed to process request").WithCause(dbErr)
+```
+
+**Use when:**
+- Database error
+- Unexpected server error
+- Bug in server code
+
+### UNAVAILABLE
+
+Service is currently unavailable.
+
+```go
+contract.NewError(contract.ErrCodeUnavailable, "service is under maintenance")
+```
+
+**Use when:**
+- Server overloaded
+- Maintenance mode
+- Dependent service down
+
+### DATA_LOSS
+
+Unrecoverable data loss or corruption.
+
+```go
+contract.NewError(contract.ErrCodeDataLoss, "data corruption detected")
+```
+
+**Use when:**
+- Data corruption detected
+- Backup not available
+- Unrecoverable state
+
+### UNAUTHENTICATED
+
+Request doesn't have valid authentication credentials.
+
+```go
+contract.ErrUnauthenticated("invalid or expired token")
+contract.ErrUnauthenticated("authentication required")
+```
+
+**Use when:**
+- No authentication provided
+- Token expired
+- Invalid credentials
+
+## JSON-RPC Error Codes
+
+Standard JSON-RPC error codes:
+
+| Code | Message |
+|------|---------|
+| -32700 | Parse error |
+| -32600 | Invalid Request |
+| -32601 | Method not found |
+| -32602 | Invalid params |
+| -32603 | Internal error |
+| -32000 to -32099 | Server error (reserved) |
+
+Contract uses -32000 range for custom errors.
+
+## HTTP Status Code Mapping
+
+```go
+// Get HTTP status for an error
+err := contract.ErrNotFound("not found")
+status := err.HTTPStatus() // 404
+
+// Convert HTTP status to error code
+code := contract.HTTPStatusToErrorCode(404) // ErrCodeNotFound
+```
+
+## gRPC Compatibility
+
+Error codes are aligned with gRPC status codes:
+
+```go
+import "google.golang.org/grpc/codes"
+
+err := contract.ErrNotFound("not found")
+grpcCode := err.GRPCCode() // codes.NotFound (5)
+```
+
+## Transport-Specific Formats
+
+### REST
+
+```http
+HTTP/1.1 404 Not Found
+Content-Type: text/plain
+
+user not found
+```
+
+### JSON-RPC
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "error": {
+    "code": -32601,
+    "message": "user not found"
+  }
+}
+```
+
+### tRPC
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "user not found"
+  }
+}
+```
+
+### MCP
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "user not found"
+      }
+    ],
+    "isError": true
+  }
+}
+```
+
+## Best Practices
+
+### Choose the Right Code
+
+| Situation | Use |
+|-----------|-----|
+| Bad user input | `INVALID_ARGUMENT` |
+| Resource missing | `NOT_FOUND` |
+| Not logged in | `UNAUTHENTICATED` |
+| Logged in but not allowed | `PERMISSION_DENIED` |
+| Server bug | `INTERNAL` |
+| Rate limited | `RESOURCE_EXHAUSTED` |
+| Service down | `UNAVAILABLE` |
+
+### Provide Context
+
+```go
+// Good: specific message with context
+contract.ErrNotFound("user not found").WithDetail("userId", id)
+
+// Bad: generic message
+contract.ErrNotFound("not found")
+```
+
+### Don't Leak Internals
+
+```go
+// Good: safe message
+contract.ErrInternal("database error")
+
+// Bad: exposes internals
+contract.ErrInternal("postgres: connection refused to 10.0.0.1:5432")
+```
+
+## See Also
+
+- [Error Handling](/contract/errors) - Error handling patterns
+- [Transports Overview](/contract/transports-overview) - How errors map
+- [API Reference](/contract/api-reference) - Complete API reference

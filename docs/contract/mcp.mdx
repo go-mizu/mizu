@@ -1,0 +1,405 @@
+---
+title: "MCP Transport"
+description: "Model Context Protocol transport for AI tool integration"
+---
+
+# MCP Transport
+
+The MCP (Model Context Protocol) transport exposes your contract services as tools that AI models can call. This enables seamless integration with AI assistants like Claude.
+
+## Quick Start
+
+```go
+import "github.com/go-mizu/mizu/contract/transport/mcp"
+
+svc, _ := contract.Register("todo", &todo.Service{})
+
+mux := http.NewServeMux()
+mcp.Mount(mux, "/mcp", svc)
+
+http.ListenAndServe(":8080", mux)
+```
+
+Your service methods are now available as MCP tools!
+
+## What is MCP?
+
+MCP (Model Context Protocol) is a standardized protocol for AI model interactions. It allows AI assistants to:
+
+- **Discover tools**: List available operations
+- **Call tools**: Execute operations with structured input/output
+- **Handle errors**: Receive structured error responses
+
+## How Methods Become Tools
+
+Each service method is exposed as an MCP tool:
+
+| Method | Tool Name |
+|--------|-----------|
+| `Create` | `todo.Create` |
+| `List` | `todo.List` |
+| `Get` | `todo.Get` |
+
+Tool names follow the `<service>.<method>` convention.
+
+## MCP Endpoints
+
+The MCP transport provides:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/mcp` | POST | JSON-RPC 2.0 requests |
+| `/mcp` | GET | SSE endpoint for server events |
+
+### Supported Methods
+
+| Method | Description |
+|--------|-------------|
+| `initialize` | Protocol handshake |
+| `notifications/initialized` | Client ready signal |
+| `tools/list` | List available tools |
+| `tools/call` | Execute a tool |
+
+## Initialize
+
+The first request should be `initialize`:
+
+```bash
+curl -X POST http://localhost:8080/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+      "protocolVersion": "2025-06-18"
+    }
+  }'
+```
+
+Response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "protocolVersion": "2025-06-18",
+    "capabilities": {
+      "tools": {
+        "listChanged": false
+      }
+    },
+    "serverInfo": {
+      "name": "mizu-contract",
+      "title": "Mizu Contract MCP Server",
+      "version": "0.1.0"
+    }
+  }
+}
+```
+
+## List Tools
+
+Discover available tools:
+
+```bash
+curl -X POST http://localhost:8080/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "tools/list"
+  }'
+```
+
+Response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "tools": [
+      {
+        "name": "todo.Create",
+        "title": "todo.Create",
+        "description": "Create a new todo item",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "title": {"type": "string"}
+          },
+          "required": ["title"]
+        }
+      },
+      {
+        "name": "todo.List",
+        "title": "todo.List",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    ]
+  }
+}
+```
+
+## Call Tools
+
+Execute a tool:
+
+```bash
+curl -X POST http://localhost:8080/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 3,
+    "method": "tools/call",
+    "params": {
+      "name": "todo.Create",
+      "arguments": {
+        "title": "Buy groceries"
+      }
+    }
+  }'
+```
+
+Success response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"id\":\"1\",\"title\":\"Buy groceries\"}"
+      }
+    ],
+    "isError": false
+  }
+}
+```
+
+Error response (method error):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "todo not found"
+      }
+    ],
+    "isError": true
+  }
+}
+```
+
+## Configuration Options
+
+The new `mcp` package provides additional configuration:
+
+```go
+import "github.com/go-mizu/mizu/contract/transport/mcp"
+
+mcp.Mount(mux, "/mcp", svc,
+    // Custom server info
+    mcp.WithServerInfo(mcp.ServerInfo{
+        Name:    "my-api",
+        Title:   "My API MCP Server",
+        Version: "1.0.0",
+    }),
+
+    // Instructions shown during initialization
+    mcp.WithInstructions("Use these tools to manage todos. Always confirm before deleting."),
+
+    // CORS allowed origins
+    mcp.WithAllowedOrigins("https://claude.ai", "https://example.com"),
+
+    // Custom method resolver
+    mcp.WithResolver(customResolver),
+
+    // Custom invoker for middleware
+    mcp.WithInvoker(customInvoker),
+)
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `WithServerInfo` | Customize server metadata |
+| `WithInstructions` | Provide usage instructions to AI |
+| `WithAllowedOrigins` | Set CORS allowed origins |
+| `WithResolver` | Custom method name resolution |
+| `WithInvoker` | Custom method invocation |
+
+## Protocol Versions
+
+Supported MCP protocol versions:
+
+| Version | Status |
+|---------|--------|
+| `2025-06-18` | Latest (default) |
+| `2025-03-26` | Supported |
+| `2024-11-05` | Legacy |
+
+Set protocol version in request header:
+
+```bash
+curl -X POST http://localhost:8080/mcp \
+  -H "MCP-Protocol-Version: 2025-06-18" \
+  -H "Content-Type: application/json" \
+  -d '...'
+```
+
+## Security
+
+### Origin Validation
+
+By default, MCP validates the `Origin` header to prevent DNS rebinding attacks. Requests from different origins are rejected.
+
+Configure allowed origins:
+
+```go
+mcp.Mount(mux, "/mcp", svc,
+    mcp.WithAllowedOrigins("*"), // Allow all (not recommended for production)
+)
+```
+
+### Authentication
+
+Add authentication using middleware:
+
+```go
+func authMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        token := r.Header.Get("Authorization")
+        if !isValidToken(token) {
+            http.Error(w, "unauthorized", http.StatusUnauthorized)
+            return
+        }
+        next.ServeHTTP(w, r)
+    })
+}
+
+mux.Handle("/mcp", authMiddleware(mcp.NewHandler(svc)))
+```
+
+## Complete Example
+
+### Service
+
+```go
+package todo
+
+import "context"
+
+type Service struct{}
+
+type CreateInput struct {
+    Title string `json:"title"`
+}
+
+type Todo struct {
+    ID    string `json:"id"`
+    Title string `json:"title"`
+    Done  bool   `json:"done"`
+}
+
+type ListOutput struct {
+    Items []*Todo `json:"items"`
+}
+
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    return &Todo{ID: "1", Title: in.Title}, nil
+}
+
+func (s *Service) List(ctx context.Context) (*ListOutput, error) {
+    return &ListOutput{Items: []*Todo{}}, nil
+}
+```
+
+### Server
+
+```go
+package main
+
+import (
+    "net/http"
+
+    "github.com/go-mizu/mizu/contract"
+    "github.com/go-mizu/mizu/contract/transport/mcp"
+    "yourmodule/todo"
+)
+
+func main() {
+    svc, _ := contract.Register("todo", &todo.Service{})
+
+    mux := http.NewServeMux()
+    mcp.Mount(mux, "/mcp", svc,
+        mcp.WithInstructions("Manage todos with these tools"),
+    )
+
+    http.ListenAndServe(":8080", mux)
+}
+```
+
+### Testing with curl
+
+```bash
+# Initialize
+curl -X POST http://localhost:8080/mcp \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}'
+
+# List tools
+curl -X POST http://localhost:8080/mcp \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+
+# Call tool
+curl -X POST http://localhost:8080/mcp \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"todo.Create","arguments":{"title":"Test"}}}'
+```
+
+## Notifications
+
+MCP notifications (requests without `id`) return HTTP 202 Accepted:
+
+```bash
+curl -X POST http://localhost:8080/mcp \
+  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+# HTTP 202 Accepted (no body)
+```
+
+## Error Codes
+
+JSON-RPC error codes used:
+
+| Code | Message | Description |
+|------|---------|-------------|
+| -32700 | Parse error | Invalid JSON |
+| -32600 | Invalid Request | Bad JSON-RPC format |
+| -32601 | Method not found | Unknown method or tool |
+| -32602 | Invalid params | Bad parameters |
+| -32603 | Internal error | Server error |
+
+## Limitations
+
+Current limitations of the MCP transport:
+
+- **Tools only**: Resources and prompts not yet supported
+- **Stateless**: No session management
+- **Single service**: Each endpoint serves one service
+
+## See Also
+
+- [JSON-RPC Transport](/contract/jsonrpc) - Similar protocol, different use case
+- [REST Transport](/contract/rest) - Traditional HTTP REST
+- [Transports Overview](/contract/transports-overview) - Compare all transports

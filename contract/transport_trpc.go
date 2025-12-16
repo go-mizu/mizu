@@ -10,6 +10,9 @@ import (
 
 // MountTRPC mounts a tRPC-like HTTP transport over a contract.Service.
 //
+// Deprecated: Use trpc.Mount from github.com/go-mizu/mizu/contract/transport/trpc instead.
+// The new package provides additional options like custom resolver and invoker.
+//
 // Endpoint layout (v1):
 //   - POST <base>/<proc>       call a procedure
 //   - GET  <base>.meta         introspection (methods + schemas)
@@ -58,7 +61,6 @@ func MountTRPC(mux *http.ServeMux, base string, svc *Service) {
 	})
 
 	// Calls: POST /trpc/<proc>
-	// Note: http.ServeMux patterns are path-prefix matches when ending with "/".
 	mux.HandleFunc(base+"/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -81,7 +83,6 @@ func MountTRPC(mux *http.ServeMux, base string, svc *Service) {
 		ctx := r.Context()
 		out, terr := trpcCall(ctx, m, r)
 		if terr != nil {
-			// Transport-level error (bad JSON, wrong shape).
 			writeTRPCTransportError(w, http.StatusBadRequest, terr.Error())
 			return
 		}
@@ -138,8 +139,6 @@ func trpcCall(ctx context.Context, m *Method, r *http.Request) (map[string]any, 
 	// Read body into RawMessage (allows empty body).
 	var raw json.RawMessage
 	dec := json.NewDecoder(r.Body)
-	// Keep it forgiving: do not DisallowUnknownFields here. The contract types are plain structs,
-	// and strictness is usually a transport policy decision.
 	if err := dec.Decode(&raw); err != nil {
 		// If the body is empty, Decode returns EOF. Treat it as empty input.
 		if !errors.Is(err, context.Canceled) && strings.Contains(err.Error(), "EOF") {
@@ -149,7 +148,7 @@ func trpcCall(ctx context.Context, m *Method, r *http.Request) (map[string]any, 
 		}
 	}
 
-	raw = trpcBytesTrimSpace(raw)
+	raw = TrimJSONSpace(raw)
 
 	if m.Input != nil {
 		in = m.NewInput()
@@ -161,7 +160,7 @@ func trpcCall(ctx context.Context, m *Method, r *http.Request) (map[string]any, 
 		//   - empty body
 		//   - null
 		//   - object
-		if len(raw) == 0 || trpcIsJSONNull(raw) {
+		if len(raw) == 0 || IsJSONNull(raw) {
 			// Keep zero value input.
 		} else if raw[0] == '{' {
 			if err := json.Unmarshal(raw, in); err != nil {
@@ -172,7 +171,7 @@ func trpcCall(ctx context.Context, m *Method, r *http.Request) (map[string]any, 
 		}
 	} else {
 		// No input expected: accept empty or null; reject anything else.
-		if len(raw) != 0 && !trpcIsJSONNull(raw) {
+		if len(raw) != 0 && !IsJSONNull(raw) {
 			return nil, errors.New("procedure takes no input")
 		}
 	}
@@ -205,16 +204,4 @@ func writeTRPCTransportError(w http.ResponseWriter, status int, msg string) {
 			"code":    "BAD_REQUEST",
 		},
 	})
-}
-
-// tRPC uses shared helper functions from helpers.go:
-// - jsonIsNull
-// - jsonTrimSpace
-
-func trpcIsJSONNull(b []byte) bool {
-	return jsonIsNull(b)
-}
-
-func trpcBytesTrimSpace(b []byte) []byte {
-	return jsonTrimSpace(b)
 }

@@ -70,18 +70,54 @@
               "concepts/error",
               "concepts/middleware"
             ]
-          },
+          }
+        ]
+      },
+      {
+        "tab": "Contract",
+        "groups": [
           {
-            "group": "Contract",
+            "group": "Getting Started",
             "pages": [
               "contract/overview",
+              "contract/quick-start",
+              "contract/architecture"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
               "contract/service",
               "contract/register",
               "contract/types",
               "contract/invoker",
+              "contract/errors"
+            ]
+          },
+          {
+            "group": "Transports",
+            "pages": [
+              "contract/transports-overview",
               "contract/rest",
               "contract/jsonrpc",
+              "contract/mcp",
+              "contract/trpc",
               "contract/openapi"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "contract/middleware",
+              "contract/testing",
+              "contract/client-generation"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "contract/api-reference",
+              "contract/error-codes"
             ]
           }
         ]

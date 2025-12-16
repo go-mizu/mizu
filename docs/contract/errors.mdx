@@ -1,0 +1,293 @@
+---
+title: "Error Handling"
+description: "Portable error handling across all transports"
+---
+
+# Error Handling
+
+The Contract package provides a portable error system that maps consistently across all transports. Define errors once, and they automatically translate to appropriate HTTP status codes, JSON-RPC error codes, and more.
+
+## Quick Start
+
+```go
+import "github.com/go-mizu/mizu/contract"
+
+func (s *Service) Get(ctx context.Context, in *GetInput) (*Todo, error) {
+    todo := s.findTodo(in.ID)
+    if todo == nil {
+        return nil, contract.ErrNotFound("todo not found")
+    }
+    return todo, nil
+}
+```
+
+This error becomes:
+- **REST**: `404 Not Found`
+- **JSON-RPC**: `{"error": {"code": -32601, "message": "todo not found"}}`
+- **tRPC**: `{"error": {"code": "NOT_FOUND", "message": "todo not found"}}`
+- **MCP**: `{"content": [{"type": "text", "text": "todo not found"}], "isError": true}`
+
+## Error Codes
+
+Error codes are aligned with gRPC status codes for interoperability:
+
+| Code | Description | HTTP Status |
+|------|-------------|-------------|
+| `OK` | Success | 200 |
+| `CANCELED` | Operation canceled | 499 |
+| `UNKNOWN` | Unknown error | 500 |
+| `INVALID_ARGUMENT` | Invalid input | 400 |
+| `DEADLINE_EXCEEDED` | Timeout | 504 |
+| `NOT_FOUND` | Resource not found | 404 |
+| `ALREADY_EXISTS` | Resource exists | 409 |
+| `PERMISSION_DENIED` | Forbidden | 403 |
+| `RESOURCE_EXHAUSTED` | Rate limited | 429 |
+| `FAILED_PRECONDITION` | Precondition failed | 412 |
+| `ABORTED` | Operation aborted | 409 |
+| `OUT_OF_RANGE` | Value out of range | 400 |
+| `UNIMPLEMENTED` | Not implemented | 501 |
+| `INTERNAL` | Internal error | 500 |
+| `UNAVAILABLE` | Service unavailable | 503 |
+| `DATA_LOSS` | Data loss | 500 |
+| `UNAUTHENTICATED` | Not authenticated | 401 |
+
+## Creating Errors
+
+### Using Constructors
+
+```go
+// Simple errors
+contract.ErrNotFound("user not found")
+contract.ErrInvalidArgument("title is required")
+contract.ErrPermissionDenied("admin access required")
+contract.ErrUnauthenticated("invalid token")
+contract.ErrInternal("database error")
+```
+
+### Using NewError
+
+```go
+err := contract.NewError(contract.ErrCodeNotFound, "user not found")
+```
+
+### Using Errorf (with formatting)
+
+```go
+err := contract.Errorf(contract.ErrCodeNotFound, "user %s not found", userID)
+```
+
+## Adding Details
+
+Add structured details to errors:
+
+```go
+err := contract.ErrInvalidArgument("validation failed").
+    WithDetails(map[string]any{
+        "field": "email",
+        "reason": "invalid format",
+    })
+```
+
+Or add a single detail:
+
+```go
+err := contract.ErrNotFound("user not found").
+    WithDetail("userId", userID)
+```
+
+## Wrapping Errors
+
+Wrap underlying errors while preserving the cause:
+
+```go
+dbErr := db.FindUser(id)
+if dbErr != nil {
+    return nil, contract.ErrInternal("database error").WithCause(dbErr)
+}
+```
+
+Check wrapped errors:
+
+```go
+if errors.Is(err, sql.ErrNoRows) {
+    // Handle specific case
+}
+```
+
+## Error Type
+
+The `contract.Error` type:
+
+```go
+type Error struct {
+    Code    ErrorCode      `json:"code"`
+    Message string         `json:"message"`
+    Details map[string]any `json:"details,omitempty"`
+}
+```
+
+### Methods
+
+```go
+err.Error()      // Returns message (implements error)
+err.HTTPStatus() // Returns HTTP status code
+err.JSONRPCCode() // Returns JSON-RPC error code
+err.GRPCCode()   // Returns gRPC status code
+err.Unwrap()     // Returns wrapped cause
+```
+
+## Transport Mappings
+
+### REST
+
+```go
+contract.ErrNotFound("not found")
+// HTTP 404
+// Body: "not found"
+```
+
+### JSON-RPC
+
+```go
+contract.ErrNotFound("not found")
+// {"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"not found"}}
+```
+
+JSON-RPC error code mapping:
+
+| Contract Code | JSON-RPC Code |
+|---------------|---------------|
+| INVALID_ARGUMENT | -32602 |
+| NOT_FOUND | -32601 |
+| INTERNAL | -32603 |
+| CANCELED | -32001 |
+| Others | -32000 range |
+
+### tRPC
+
+```go
+contract.ErrNotFound("not found")
+// {"error":{"code":"NOT_FOUND","message":"not found"}}
+```
+
+### MCP
+
+```go
+contract.ErrNotFound("not found")
+// Tool result with isError: true
+// {"content":[{"type":"text","text":"not found"}],"isError":true}
+```
+
+## Converting Errors
+
+### From Any Error
+
+Convert any error to a contract error:
+
+```go
+err := contract.AsError(someError)
+// If someError is already *contract.Error, returns it
+// Otherwise, wraps it as INTERNAL error
+```
+
+### From HTTP Status
+
+```go
+code := contract.HTTPStatusToErrorCode(404)
+// Returns ErrCodeNotFound
+```
+
+## Best Practices
+
+### Use Appropriate Codes
+
+```go
+// Good: specific error codes
+contract.ErrNotFound("user not found")
+contract.ErrInvalidArgument("email is required")
+
+// Bad: generic internal errors
+contract.ErrInternal("not found") // Should be NOT_FOUND
+```
+
+### Include Helpful Messages
+
+```go
+// Good: actionable message
+contract.ErrInvalidArgument("email must be a valid email address")
+
+// Bad: generic message
+contract.ErrInvalidArgument("invalid")
+```
+
+### Add Relevant Details
+
+```go
+// Good: include context
+contract.ErrNotFound("order not found").
+    WithDetail("orderId", orderID)
+
+// Bad: no context
+contract.ErrNotFound("not found")
+```
+
+### Don't Leak Internals
+
+```go
+// Good: user-friendly message
+contract.ErrInternal("service temporarily unavailable")
+
+// Bad: exposes internals
+contract.ErrInternal("postgres connection refused at 10.0.0.1:5432")
+```
+
+## Complete Example
+
+```go
+package todo
+
+import (
+    "context"
+    "github.com/go-mizu/mizu/contract"
+)
+
+type Service struct {
+    db *database
+}
+
+func (s *Service) Get(ctx context.Context, in *GetInput) (*Todo, error) {
+    if in.ID == "" {
+        return nil, contract.ErrInvalidArgument("id is required")
+    }
+
+    todo, err := s.db.FindTodo(in.ID)
+    if err != nil {
+        if errors.Is(err, sql.ErrNoRows) {
+            return nil, contract.ErrNotFound("todo not found").
+                WithDetail("id", in.ID)
+        }
+        return nil, contract.ErrInternal("failed to fetch todo").
+            WithCause(err)
+    }
+
+    return todo, nil
+}
+
+func (s *Service) Delete(ctx context.Context, in *DeleteInput) error {
+    if !s.canDelete(ctx, in.ID) {
+        return contract.ErrPermissionDenied("cannot delete this todo")
+    }
+
+    if err := s.db.DeleteTodo(in.ID); err != nil {
+        return contract.ErrInternal("failed to delete").WithCause(err)
+    }
+
+    return nil
+}
+```
+
+## See Also
+
+- [Error Codes Reference](/contract/error-codes) - Complete code reference
+- [Service Definition](/contract/service) - Method signatures
+- [Transports Overview](/contract/transports-overview) - How errors map

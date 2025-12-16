@@ -1,0 +1,242 @@
+---
+title: "Architecture"
+description: "Understanding the Contract architecture and design"
+---
+
+# Architecture
+
+The Contract package provides a transport-neutral service layer. Your business logic remains free of HTTP dependencies while being accessible via multiple protocols.
+
+## High-Level Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Plain Go Service                             │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  service/todo/todo.go                                    │   │
+│  │  - No framework dependencies                             │   │
+│  │  - Pure business logic                                   │   │
+│  │  - Easy to test                                          │   │
+│  └─────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ contract.Register()
+┌─────────────────────────────────────────────────────────────────┐
+│                    contract.Service                             │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  - Methods with compiled invokers                        │   │
+│  │  - TypeRegistry with JSON schemas                        │   │
+│  │  - Transport-neutral contract                            │   │
+│  └─────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+          ┌───────────────────┼───────────────────┐
+          │                   │                   │
+          ▼                   ▼                   ▼
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│     REST     │     │   JSON-RPC   │     │     MCP      │
+│  MountREST() │     │MountJSONRPC()│     │   Mount()    │
+└──────────────┘     └──────────────┘     └──────────────┘
+          │                   │                   │
+          └───────────────────┼───────────────────┘
+                              ▼
+                      HTTP Requests
+```
+
+## Core Components
+
+### Service
+
+A plain Go struct with methods. No interfaces to implement, no framework dependencies:
+
+```go
+type TodoService struct{}
+
+func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    // Pure business logic
+    return &Todo{ID: "1", Title: in.Title}, nil
+}
+```
+
+### contract.Service
+
+The result of `contract.Register()`. Contains:
+
+- **Methods**: Metadata and invokers for each method
+- **Types**: TypeRegistry with JSON schemas
+- **Metadata**: Name, description, version
+
+```go
+svc, err := contract.Register("todo", &TodoService{})
+// svc.Name == "todo"
+// svc.Methods == [Create, List, Get, ...]
+// svc.Types.Schemas() == [{ID: "CreateInput", JSON: {...}}, ...]
+```
+
+### Invoker
+
+Compiled method callers created at registration time. No runtime reflection:
+
+```go
+// At registration: method signatures are parsed once
+// At runtime: compiled invoker is called directly
+result, err := method.Invoker.Call(ctx, input)
+```
+
+### TypeRegistry
+
+Manages types and their JSON schemas:
+
+```go
+// Schemas generated from Go types
+svc.Types.Schema("CreateInput")
+// Returns: {"type": "object", "properties": {"title": {"type": "string"}}, ...}
+```
+
+### Transports
+
+Protocol handlers that serve the contract:
+
+| Transport | Protocol | Package |
+|-----------|----------|---------|
+| REST | HTTP REST | `contract` |
+| JSON-RPC | JSON-RPC 2.0 | `contract`, `transport/jsonrpc` |
+| MCP | Model Context Protocol | `transport/mcp` |
+| tRPC | tRPC-like | `transport/trpc` |
+| OpenAPI | OpenAPI 3.1 | `contract`, `transport/openapi` |
+
+## Request Flow
+
+### 1. Registration (Once at Startup)
+
+```go
+svc, _ := contract.Register("todo", &TodoService{})
+```
+
+1. Reflect on service struct
+2. Parse each method signature
+3. Generate JSON schemas for input/output types
+4. Create compiled invokers
+
+### 2. Request Handling (Per Request)
+
+```
+HTTP Request
+    │
+    ▼
+Transport Handler (e.g., JSON-RPC)
+    │
+    ├─ 1. Decode request (protocol-specific)
+    │
+    ├─ 2. Resolve method by name
+    │      resolver.Resolve("Create") → *Method
+    │
+    ├─ 3. Invoke method
+    │      invoker.Invoke(ctx, method, rawInput)
+    │      │
+    │      ├─ Unmarshal input
+    │      ├─ Call method.Invoker.Call(ctx, input)
+    │      └─ Return result or error
+    │
+    └─ 4. Encode response (protocol-specific)
+           │
+           ▼
+      HTTP Response
+```
+
+## Package Structure
+
+```
+contract/
+├── contract.go           # Core: Service, Method, Register
+├── schema.go             # TypeRegistry, JSON schema generation
+├── errors.go             # Error types and codes
+├── transport.go          # Transport interfaces (Resolver, Invoker)
+├── transport_rest.go     # REST transport
+├── transport_jsonrpc.go  # JSON-RPC transport (deprecated, use pkg)
+├── transport_mcp.go      # MCP transport (deprecated, use pkg)
+├── transport_trpc.go     # tRPC transport (deprecated, use pkg)
+└── transport/
+    ├── jsonrpc/          # JSON-RPC 2.0 package
+    │   ├── jsonrpc.go    # Types and codec
+    │   └── handler.go    # HTTP handler
+    ├── openapi/          # OpenAPI 3.1 package
+    │   ├── spec.go       # Document generation
+    │   └── handler.go    # HTTP handler
+    ├── mcp/              # MCP package
+    │   ├── mcp.go        # Types
+    │   └── handler.go    # HTTP handler
+    └── trpc/             # tRPC package
+        ├── trpc.go       # Types and envelope
+        └── handler.go    # HTTP handler
+```
+
+## Key Interfaces
+
+### Resolver
+
+Finds methods by name:
+
+```go
+type Resolver interface {
+    Resolve(name string) *Method
+}
+```
+
+### TransportInvoker
+
+Invokes methods with raw input:
+
+```go
+type TransportInvoker interface {
+    Invoke(ctx context.Context, method *Method, input []byte) (any, error)
+}
+```
+
+### Transport
+
+Base interface for all transports:
+
+```go
+type Transport interface {
+    Name() string
+}
+```
+
+## Design Decisions
+
+### Why Reflection at Registration?
+
+- **Once at startup**: Parse signatures and generate schemas
+- **Never at runtime**: Use compiled invokers for performance
+- **Type safety**: Catch signature errors early
+
+### Why Multiple Transports?
+
+Different use cases need different protocols:
+
+| Use Case | Best Transport |
+|----------|----------------|
+| Web clients | REST |
+| RPC clients | JSON-RPC |
+| AI integration | MCP |
+| TypeScript clients | tRPC |
+| Documentation | OpenAPI |
+
+### Why Transport-Neutral Errors?
+
+Errors map consistently across protocols:
+
+```go
+contract.ErrNotFound("user not found")
+// → REST: 404 Not Found
+// → JSON-RPC: -32601
+// → MCP: error in content
+// → tRPC: {"error": {"code": "NOT_FOUND"}}
+```
+
+## See Also
+
+- [Service Definition](/contract/service) - Writing services
+- [Registration](/contract/register) - The registration process
+- [Transports Overview](/contract/transports-overview) - Compare transports

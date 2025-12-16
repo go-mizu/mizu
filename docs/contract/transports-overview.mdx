@@ -1,0 +1,260 @@
+---
+title: "Transports Overview"
+description: "Compare and choose the right transport for your use case"
+---
+
+# Transports Overview
+
+Contract services can be exposed via multiple transports. Choose based on your clients and use case.
+
+## Available Transports
+
+| Transport | Protocol | Best For |
+|-----------|----------|----------|
+| [REST](/contract/rest) | HTTP REST | Web apps, browsers, curl |
+| [JSON-RPC](/contract/jsonrpc) | JSON-RPC 2.0 | RPC clients, batch operations |
+| [MCP](/contract/mcp) | Model Context Protocol | AI assistants, Claude |
+| [tRPC](/contract/trpc) | tRPC-like | TypeScript clients |
+| [OpenAPI](/contract/openapi) | OpenAPI 3.1 | Documentation, code generation |
+
+## Quick Comparison
+
+| Feature | REST | JSON-RPC | MCP | tRPC |
+|---------|------|----------|-----|------|
+| HTTP Methods | GET/POST/PUT/DELETE | POST only | POST/GET | POST only |
+| Batching | No | Yes | No | No |
+| Notifications | No | Yes | Yes | No |
+| Introspection | OpenAPI | No | tools/list | .meta |
+| Error Format | HTTP status | JSON-RPC error | isError flag | Envelope |
+| Ideal Client | Browser/curl | RPC library | AI model | TypeScript |
+
+## Using Multiple Transports
+
+Mount all transports on the same service:
+
+```go
+svc, _ := contract.Register("todo", &TodoService{})
+
+mux := http.NewServeMux()
+
+// REST: /todos/*
+contract.MountREST(mux, svc)
+
+// JSON-RPC: /rpc
+contract.MountJSONRPC(mux, "/rpc", svc)
+
+// tRPC: /trpc/*
+trpc.Mount(mux, "/trpc", svc)
+
+// MCP: /mcp
+mcp.Mount(mux, "/mcp", svc)
+
+// OpenAPI: /openapi.json
+contract.ServeOpenAPI(mux, "/openapi.json", svc)
+
+http.ListenAndServe(":8080", mux)
+```
+
+## REST
+
+**Best for**: Web applications, browser clients, simple HTTP integrations
+
+```bash
+# Create
+curl -X POST http://localhost:8080/todos -d '{"title":"Buy milk"}'
+
+# List
+curl http://localhost:8080/todos
+
+# Get
+curl http://localhost:8080/todos/123
+
+# Delete
+curl -X DELETE http://localhost:8080/todos/123
+```
+
+**Pros**:
+- Familiar to web developers
+- Works with any HTTP client
+- Cacheable responses
+
+**Cons**:
+- No batching
+- Multiple round trips for related data
+- Verb conventions can be limiting
+
+[Learn more about REST](/contract/rest)
+
+## JSON-RPC
+
+**Best for**: RPC-style APIs, batch operations, language-agnostic clients
+
+```bash
+# Single request
+curl -X POST http://localhost:8080/rpc \
+  -d '{"jsonrpc":"2.0","id":1,"method":"Create","params":{"title":"Buy milk"}}'
+
+# Batch request
+curl -X POST http://localhost:8080/rpc \
+  -d '[
+    {"jsonrpc":"2.0","id":1,"method":"Create","params":{"title":"First"}},
+    {"jsonrpc":"2.0","id":2,"method":"Create","params":{"title":"Second"}}
+  ]'
+```
+
+**Pros**:
+- Batch multiple operations
+- Notifications (no response)
+- Standard protocol
+
+**Cons**:
+- POST only
+- Less familiar to web developers
+- No built-in caching
+
+[Learn more about JSON-RPC](/contract/jsonrpc)
+
+## MCP
+
+**Best for**: AI model integration, Claude Desktop, AI assistants
+
+```bash
+# Initialize
+curl -X POST http://localhost:8080/mcp \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}'
+
+# List tools
+curl -X POST http://localhost:8080/mcp \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+
+# Call tool
+curl -X POST http://localhost:8080/mcp \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"todo.Create","arguments":{"title":"Buy milk"}}}'
+```
+
+**Pros**:
+- AI-native protocol
+- Auto-discovery of capabilities
+- Structured tool definitions
+
+**Cons**:
+- Tools only (no resources/prompts yet)
+- JSON-RPC based complexity
+- Specialized use case
+
+[Learn more about MCP](/contract/mcp)
+
+## tRPC
+
+**Best for**: TypeScript clients, type-safe frontends
+
+```bash
+# Call procedure
+curl -X POST http://localhost:8080/trpc/Create \
+  -d '{"title":"Buy milk"}'
+
+# Get metadata for client generation
+curl http://localhost:8080/trpc.meta
+```
+
+**Pros**:
+- Simple URL structure
+- Introspection for code generation
+- Typed response envelope
+
+**Cons**:
+- POST only
+- No batching
+- Less mature than original tRPC
+
+[Learn more about tRPC](/contract/trpc)
+
+## OpenAPI
+
+**Best for**: API documentation, client code generation
+
+```bash
+# Get OpenAPI spec
+curl http://localhost:8080/openapi.json
+```
+
+**Pros**:
+- Industry standard
+- Wide tooling support
+- Auto-generated from types
+
+**Cons**:
+- Read-only (documentation)
+- Not a transport per se
+
+[Learn more about OpenAPI](/contract/openapi)
+
+## Choosing a Transport
+
+### Web Application
+
+Use **REST** for browser clients:
+
+```go
+contract.MountREST(mux, svc)
+contract.ServeOpenAPI(mux, "/openapi.json", svc)
+```
+
+### Microservices
+
+Use **JSON-RPC** for service-to-service:
+
+```go
+contract.MountJSONRPC(mux, "/rpc", svc)
+```
+
+### AI Integration
+
+Use **MCP** for AI assistants:
+
+```go
+mcp.Mount(mux, "/mcp", svc)
+```
+
+### TypeScript Frontend
+
+Use **tRPC** + type generation:
+
+```go
+trpc.Mount(mux, "/trpc", svc)
+```
+
+### Multiple Clients
+
+Use **all of them**:
+
+```go
+contract.MountREST(mux, svc)
+contract.MountJSONRPC(mux, "/rpc", svc)
+mcp.Mount(mux, "/mcp", svc)
+trpc.Mount(mux, "/trpc", svc)
+contract.ServeOpenAPI(mux, "/openapi.json", svc)
+```
+
+## Error Handling Across Transports
+
+Errors map consistently:
+
+```go
+contract.ErrNotFound("user not found")
+```
+
+| Transport | Result |
+|-----------|--------|
+| REST | HTTP 404, body: "user not found" |
+| JSON-RPC | `{"error":{"code":-32601,"message":"user not found"}}` |
+| tRPC | `{"error":{"code":"NOT_FOUND","message":"user not found"}}` |
+| MCP | `{"content":[{"text":"user not found"}],"isError":true}` |
+
+## See Also
+
+- [REST Transport](/contract/rest)
+- [JSON-RPC Transport](/contract/jsonrpc)
+- [MCP Transport](/contract/mcp)
+- [tRPC Transport](/contract/trpc)
+- [OpenAPI](/contract/openapi)

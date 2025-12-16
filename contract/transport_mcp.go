@@ -11,14 +11,15 @@ import (
 )
 
 const (
-	mcpProtocolLatest = "2025-06-18"
-
-	// The transports spec says: if server cannot identify, SHOULD assume 2025-03-26.
-	// We accept missing header, but we validate if it is present.
+	mcpProtocolLatest   = "2025-06-18"
 	mcpProtocolFallback = "2025-03-26"
 )
 
 // MountMCP mounts an MCP (Model Context Protocol) endpoint using Streamable HTTP.
+//
+// Deprecated: Use mcp.Mount from github.com/go-mizu/mizu/contract/transport/mcp instead.
+// The new package provides additional options like custom server info, instructions,
+// and allowed origins.
 //
 // Supported (tools-only):
 //   - initialize
@@ -30,13 +31,6 @@ const (
 //   - POST with JSON-RPC request -> 200 + application/json response
 //   - POST with JSON-RPC notification/response -> 202 Accepted, no body
 //   - GET -> returns a minimal SSE response (valid endpoint, no server-initiated messages)
-//
-// Notes:
-//   - This is a tools-only MCP server adapter over your core contract.Service.
-//   - Tool name convention: "<service>.<method>" (e.g. "todo.Create").
-//   - For tools/call, arguments MUST be an object (named params) and map to input struct fields.
-//
-// Spec references: MCP lifecycle and tools. :contentReference[oaicite:0]{index=0}
 func MountMCP(mux *http.ServeMux, path string, svc *Service) {
 	if mux == nil || svc == nil {
 		return
@@ -62,8 +56,6 @@ func MountMCP(mux *http.ServeMux, path string, svc *Service) {
 
 		switch r.Method {
 		case http.MethodGet:
-			// Minimal SSE response to satisfy GET support.
-			// A richer implementation would keep this open and push notifications.
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.Header().Set("Cache-Control", "no-cache")
 			w.Header().Set("Connection", "keep-alive")
@@ -71,15 +63,11 @@ func MountMCP(mux *http.ServeMux, path string, svc *Service) {
 			return
 
 		case http.MethodPost:
-			// Validate MCP-Protocol-Version header if present.
 			if pv := strings.TrimSpace(r.Header.Get("MCP-Protocol-Version")); pv != "" {
 				if !mcpProtocolSupported(pv) {
 					http.Error(w, "unsupported MCP-Protocol-Version", http.StatusBadRequest)
 					return
 				}
-			} else {
-				// If missing, we accept (clients may still be compatible).
-				_ = mcpProtocolFallback
 			}
 
 			var raw json.RawMessage
@@ -89,16 +77,13 @@ func MountMCP(mux *http.ServeMux, path string, svc *Service) {
 				return
 			}
 
-			raw = mcpBytesTrimSpace(raw)
+			raw = TrimJSONSpace(raw)
 			if len(raw) == 0 {
 				mcpWriteRPCError(w, nil, rpcInvalidRequest(errors.New("empty body")))
 				return
 			}
 
-			// MCP over Streamable HTTP expects exactly one JSON-RPC message per POST. :contentReference[oaicite:1]{index=1}
-			// If the client sends a response or notification, server returns 202. :contentReference[oaicite:2]{index=2}
 			if isJSONRPCResponse(raw) || isJSONRPCNotification(raw) {
-				// Best-effort validate/parse.
 				w.WriteHeader(http.StatusAccepted)
 				return
 			}
@@ -112,8 +97,7 @@ func MountMCP(mux *http.ServeMux, path string, svc *Service) {
 				mcpWriteRPCError(w, req.ID, rpcInvalidRequest(errors.New("jsonrpc must be 2.0")))
 				return
 			}
-			if len(req.ID) == 0 || mcpIsJSONNull(req.ID) {
-				// MCP requests should have an id; treat as notification.
+			if len(req.ID) == 0 || IsJSONNull(req.ID) {
 				w.WriteHeader(http.StatusAccepted)
 				return
 			}
@@ -123,7 +107,6 @@ func MountMCP(mux *http.ServeMux, path string, svc *Service) {
 				mcpHandleInitialize(w, req.ID, req.Params, serverInfo)
 
 			case "notifications/initialized":
-				// Client indicates it is ready; accept. :contentReference[oaicite:3]{index=3}
 				w.WriteHeader(http.StatusAccepted)
 
 			case "tools/list":
@@ -169,7 +152,6 @@ func mcpHandleInitialize(w http.ResponseWriter, id json.RawMessage, params json.
 
 	negotiated := mcpNegotiateProtocol(p.ProtocolVersion)
 	if negotiated == "" {
-		// The lifecycle page shows -32602 for unsupported protocol version with data supported/requested. :contentReference[oaicite:4]{index=4}
 		mcpWriteRPCError(w, id, &rpcError{
 			Code:    -32602,
 			Message: "Unsupported protocol version",
@@ -195,7 +177,6 @@ func mcpHandleInitialize(w http.ResponseWriter, id json.RawMessage, params json.
 }
 
 func mcpHandleToolsList(w http.ResponseWriter, id json.RawMessage, params json.RawMessage, svc *Service) {
-	// Supports pagination cursor; v1 ignores and returns all tools. :contentReference[oaicite:5]{index=5}
 	type listParams struct {
 		Cursor string `json:"cursor,omitempty"`
 	}
@@ -230,7 +211,6 @@ func mcpHandleToolsCall(w http.ResponseWriter, ctx context.Context, id json.RawM
 
 	m := mcpResolveTool(svc, name)
 	if m == nil {
-		// MCP tools/call uses JSON-RPC errors for method not found at RPC layer.
 		mcpWriteRPCError(w, id, rpcMethodNotFound("tools/call: "+name))
 		return
 	}
@@ -239,8 +219,8 @@ func mcpHandleToolsCall(w http.ResponseWriter, ctx context.Context, id json.RawM
 	if m.Input != nil {
 		in = m.NewInput()
 
-		a := mcpBytesTrimSpace(p.Arguments)
-		if len(a) == 0 || mcpIsJSONNull(a) {
+		a := TrimJSONSpace(p.Arguments)
+		if len(a) == 0 || IsJSONNull(a) {
 			// zero value input
 		} else if len(a) > 0 && a[0] == '{' {
 			if err := json.Unmarshal(a, in); err != nil {
@@ -252,8 +232,8 @@ func mcpHandleToolsCall(w http.ResponseWriter, ctx context.Context, id json.RawM
 			return
 		}
 	} else {
-		a := mcpBytesTrimSpace(p.Arguments)
-		if len(a) != 0 && !mcpIsJSONNull(a) {
+		a := TrimJSONSpace(p.Arguments)
+		if len(a) != 0 && !IsJSONNull(a) {
 			mcpWriteRPCError(w, id, rpcInvalidParams(errors.New("tool takes no arguments")))
 			return
 		}
@@ -261,7 +241,6 @@ func mcpHandleToolsCall(w http.ResponseWriter, ctx context.Context, id json.RawM
 
 	out, err := m.Invoker.Call(ctx, in)
 	if err != nil {
-		// Tools return isError=true in result payload. :contentReference[oaicite:6]{index=6}
 		mcpWriteRPCResult(w, id, map[string]any{
 			"content": []map[string]any{
 				{
@@ -274,7 +253,6 @@ func mcpHandleToolsCall(w http.ResponseWriter, ctx context.Context, id json.RawM
 		return
 	}
 
-	// Default: represent output as JSON text for maximum client compatibility.
 	text := "ok"
 	if out != nil {
 		b, _ := json.Marshal(out)
@@ -324,12 +302,10 @@ func mcpToolDef(svc *Service, m *Method) map[string]any {
 }
 
 func mcpToolName(svc *Service, m *Method) string {
-	// Convention: "<service>.<method>"
 	return svc.Name + "." + m.Name
 }
 
 func mcpResolveTool(svc *Service, name string) *Method {
-	// Accept "<service>.<method>" or "<method>".
 	if strings.Contains(name, ".") {
 		parts := strings.Split(name, ".")
 		if len(parts) != 2 {
@@ -351,7 +327,6 @@ func mcpNegotiateProtocol(requested string) string {
 	if mcpProtocolSupported(requested) {
 		return requested
 	}
-	// If the client requested something else, we do not guess.
 	return ""
 }
 
@@ -405,11 +380,11 @@ func mcpWriteRPCError(w http.ResponseWriter, id json.RawMessage, e *rpcError) {
 }
 
 func rpcParseError(err error) *rpcError {
-	return &rpcError{Code: -32700, Message: "Parse error", Data: jsonSafeErr(err)}
+	return &rpcError{Code: -32700, Message: "Parse error", Data: SafeErrorString(err)}
 }
 
 func rpcInvalidRequest(err error) *rpcError {
-	return &rpcError{Code: -32600, Message: "Invalid Request", Data: jsonSafeErr(err)}
+	return &rpcError{Code: -32600, Message: "Invalid Request", Data: SafeErrorString(err)}
 }
 
 func rpcMethodNotFound(method string) *rpcError {
@@ -417,12 +392,10 @@ func rpcMethodNotFound(method string) *rpcError {
 }
 
 func rpcInvalidParams(err error) *rpcError {
-	return &rpcError{Code: -32602, Message: "Invalid params", Data: jsonSafeErr(err)}
+	return &rpcError{Code: -32602, Message: "Invalid params", Data: SafeErrorString(err)}
 }
 
 func isJSONRPCResponse(raw []byte) bool {
-	// Heuristic: a JSON-RPC response contains "result" or "error" at top-level.
-	// This is good enough for returning 202 for responses per transport rules.
 	var m map[string]json.RawMessage
 	if json.Unmarshal(raw, &m) != nil {
 		return false
@@ -437,7 +410,6 @@ func isJSONRPCResponse(raw []byte) bool {
 }
 
 func isJSONRPCNotification(raw []byte) bool {
-	// Notification: has "method" but no "id".
 	var m map[string]json.RawMessage
 	if json.Unmarshal(raw, &m) != nil {
 		return false
@@ -458,8 +430,6 @@ func mcpAllowOrigin(r *http.Request) bool {
 	if err != nil || u.Host == "" {
 		return false
 	}
-	// Minimal anti-DNS-rebinding stance: require same host.
-	// A production server should allowlist origins and add auth. :contentReference[oaicite:8]{index=8}
 	return sameHost(u.Host, r.Host)
 }
 
@@ -479,18 +449,4 @@ func stripDefaultPort(h string) string {
 	return h
 }
 
-// MCP uses shared helper functions from helpers.go:
-// - jsonIsNull (aliased below)
-// - jsonTrimSpace (aliased below)
-
-func mcpIsJSONNull(b []byte) bool {
-	return jsonIsNull(b)
-}
-
-func mcpBytesTrimSpace(b []byte) []byte {
-	return jsonTrimSpace(b)
-}
-
-// Optional: if you later implement long-lived SSE streams, you will want
-// server-side pings/keepalives and session IDs. The spec allows session IDs via Mcp-Session-Id.
 var _ = time.Second
