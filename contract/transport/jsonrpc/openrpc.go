@@ -171,8 +171,10 @@ func GenerateOpenRPC(svc *contract.Service) *OpenRPCDocument {
 	}
 
 	// Add schemas from types registry
-	for _, schema := range svc.Types.Schemas() {
-		doc.Components.Schemas[schema.ID] = convertSchema(schema.JSON)
+	for _, t := range svc.Types.All() {
+		if schema := svc.Types.Schema(t.ID); schema != nil {
+			doc.Components.Schemas[t.ID] = convertSchema(schema)
+		}
 	}
 
 	// Add methods

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -61,7 +60,7 @@ func (s *TodoService) Create(ctx context.Context, in *CreateTodoInput) (*Todo, e
 
 func (s *TodoService) Get(ctx context.Context, in *GetTodoInput) (*Todo, error) {
 	if in.ID == "" {
-		return nil, ErrNotFound("todo not found")
+		return nil, NewError(NotFound, "todo not found")
 	}
 	return &Todo{
 		ID:        in.ID,
@@ -168,13 +167,13 @@ func TestRegisterErrors(t *testing.T) {
 	}
 }
 
-func TestInvoker(t *testing.T) {
+func TestMethodCall(t *testing.T) {
 	svc, _ := Register("todo", &TodoService{})
 	ctx := context.Background()
 
 	// Test Create
 	create := svc.Method("Create")
-	out, err := create.Invoker.Call(ctx, &CreateTodoInput{Title: "Test"})
+	out, err := create.Call(ctx, &CreateTodoInput{Title: "Test"})
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -185,15 +184,15 @@ func TestInvoker(t *testing.T) {
 
 	// Test Delete (no output)
 	del := svc.Method("Delete")
-	_, err = del.Invoker.Call(ctx, &DeleteTodoInput{ID: "1"})
+	_, err = del.Call(ctx, &DeleteTodoInput{ID: "1"})
 	if err != nil {
 		t.Fatalf("Delete failed: %v", err)
 	}
 }
 
-func TestTestClient(t *testing.T) {
+func TestClient(t *testing.T) {
 	svc, _ := Register("todo", &TodoService{})
-	client := NewTestClient(svc)
+	client := NewClient(svc)
 
 	ctx := context.Background()
 
@@ -220,18 +219,17 @@ func TestTestClient(t *testing.T) {
 		t.Errorf("expected title 'JSON Test', got %q", jsonTodo.Title)
 	}
 
-	// Test MustCall
-	out = client.MustCall(ctx, "List", &ListTodosInput{})
-	list := out.(*ListTodosOutput)
-	if len(list.Todos) != 2 {
-		t.Errorf("expected 2 todos, got %d", len(list.Todos))
+	// Test method not found
+	_, err = client.Call(ctx, "Unknown", nil)
+	if err == nil {
+		t.Error("expected error for unknown method")
 	}
 }
 
 func TestError(t *testing.T) {
 	// Test error creation
-	err := NewError(ErrCodeNotFound, "resource not found")
-	if err.Code != ErrCodeNotFound {
+	err := NewError(NotFound, "resource not found")
+	if err.Code != NotFound {
 		t.Errorf("expected NOT_FOUND, got %v", err.Code)
 	}
 	if err.Error() != "resource not found" {
@@ -244,7 +242,7 @@ func TestError(t *testing.T) {
 	}
 
 	// Test with details
-	err = err.WithDetail("id", "123")
+	err = err.WithDetails(map[string]any{"id": "123"})
 	if err.Details["id"] != "123" {
 		t.Error("expected detail 'id' = '123'")
 	}
@@ -258,7 +256,7 @@ func TestError(t *testing.T) {
 
 	// Test AsError
 	asErr := AsError(errors.New("plain error"))
-	if asErr.Code != ErrCodeInternal {
+	if asErr.Code != Internal {
 		t.Errorf("expected INTERNAL, got %v", asErr.Code)
 	}
 }
@@ -266,26 +264,31 @@ func TestError(t *testing.T) {
 func TestSchemaGeneration(t *testing.T) {
 	svc, _ := Register("todo", &TodoService{})
 
-	schemas := svc.Types.Schemas()
-	if len(schemas) == 0 {
-		t.Fatal("expected schemas")
+	types := svc.Types.All()
+	if len(types) == 0 {
+		t.Fatal("expected types")
 	}
 
 	// Find CreateTodoInput schema
-	var createSchema Schema
-	for _, s := range schemas {
-		if strings.Contains(s.ID, "CreateTodoInput") {
-			createSchema = s
+	var foundID string
+	for _, typ := range types {
+		if strings.Contains(typ.ID, "CreateTodoInput") {
+			foundID = typ.ID
 			break
 		}
 	}
 
-	if createSchema.ID == "" {
+	if foundID == "" {
 		t.Fatal("CreateTodoInput schema not found")
 	}
 
+	schema := svc.Types.Schema(foundID)
+	if schema == nil {
+		t.Fatal("schema not found for ID")
+	}
+
 	// Check schema structure
-	props, ok := createSchema.JSON["properties"].(map[string]any)
+	props, ok := schema["properties"].(map[string]any)
 	if !ok {
 		t.Fatal("expected properties in schema")
 	}
@@ -295,18 +298,15 @@ func TestSchemaGeneration(t *testing.T) {
 	}
 }
 
-// Transport tests moved to transport/rest and transport/jsonrpc packages
-// to avoid circular imports.
-
-func TestIntrospection(t *testing.T) {
+func TestDescribe(t *testing.T) {
 	svc, _ := Register("todo", &TodoService{})
-	resp := Introspect(svc)
+	desc := Describe(svc)
 
-	if len(resp.Services) != 1 {
-		t.Fatalf("expected 1 service, got %d", len(resp.Services))
+	if len(desc.Services) != 1 {
+		t.Fatalf("expected 1 service, got %d", len(desc.Services))
 	}
 
-	sd := resp.Services[0]
+	sd := desc.Services[0]
 	if sd.Name != "todo" {
 		t.Errorf("expected name 'todo', got %q", sd.Name)
 	}
@@ -314,8 +314,8 @@ func TestIntrospection(t *testing.T) {
 		t.Errorf("expected 5 methods, got %d", len(sd.Methods))
 	}
 
-	// Check REST hints
-	var createMethod *MethodDescriptor
+	// Check HTTP hints
+	var createMethod *MethodDesc
 	for i := range sd.Methods {
 		if sd.Methods[i].Name == "Create" {
 			createMethod = &sd.Methods[i]
@@ -325,23 +325,8 @@ func TestIntrospection(t *testing.T) {
 	if createMethod == nil {
 		t.Fatal("Create method not found")
 	}
-	if createMethod.REST.Method != http.MethodPost {
-		t.Errorf("expected POST, got %s", createMethod.REST.Method)
-	}
-}
-
-func TestClientDescriptor(t *testing.T) {
-	svc, _ := Register("todo", &TodoService{})
-	desc := GenerateClientDescriptor("example", svc)
-
-	if desc.Package != "example" {
-		t.Errorf("expected package 'example', got %q", desc.Package)
-	}
-	if len(desc.Services) != 1 {
-		t.Fatalf("expected 1 service, got %d", len(desc.Services))
-	}
-	if len(desc.Errors) == 0 {
-		t.Error("expected standard errors")
+	if createMethod.HTTP.Method != http.MethodPost {
+		t.Errorf("expected POST, got %s", createMethod.HTTP.Method)
 	}
 }
 
@@ -349,7 +334,7 @@ func TestMiddleware(t *testing.T) {
 	svc, _ := Register("todo", &TodoService{})
 
 	var logs []string
-	logMW := func(next MethodInvoker) MethodInvoker {
+	logMW := func(next Invoker) Invoker {
 		return func(ctx context.Context, method *Method, in any) (any, error) {
 			logs = append(logs, "before:"+method.Name)
 			out, err := next(ctx, method, in)
@@ -358,10 +343,14 @@ func TestMiddleware(t *testing.T) {
 		}
 	}
 
-	wrapped := svc.WithMiddleware(logMW)
-	ctx := context.Background()
+	// Apply middleware
+	invoker := logMW(func(ctx context.Context, method *Method, in any) (any, error) {
+		return method.Call(ctx, in)
+	})
 
-	_, err := wrapped.Call(ctx, "Create", &CreateTodoInput{Title: "Test"})
+	ctx := context.Background()
+	create := svc.Method("Create")
+	_, err := invoker(ctx, create, &CreateTodoInput{Title: "Test"})
 	if err != nil {
 		t.Fatalf("Call failed: %v", err)
 	}
@@ -383,60 +372,58 @@ func TestRecoveryMiddleware(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	wrapped := svc.WithMiddleware(RecoveryMiddleware())
-	ctx := context.Background()
-
-	_, err = wrapped.Call(ctx, "Create", &CreateTodoInput{Title: "Test"})
-	if err != nil {
-		t.Fatalf("Call failed: %v", err)
-	}
-}
-
-func TestMockService(t *testing.T) {
-	mock := NewMockService("todo")
-	mock.OnReturn("Get", &Todo{ID: "mock-1", Title: "Mocked"}, nil)
-
-	ctx := context.Background()
-	out, err := mock.Call(ctx, "Get", &GetTodoInput{ID: "1"})
-	if err != nil {
-		t.Fatalf("Call failed: %v", err)
-	}
-
-	todo := out.(*Todo)
-	if todo.Title != "Mocked" {
-		t.Errorf("expected 'Mocked', got %q", todo.Title)
-	}
-
-	// Test error return
-	mock.OnError("Delete", ErrNotFound("not found"))
-	_, err = mock.Call(ctx, "Delete", nil)
-	if err == nil {
-		t.Error("expected error")
-	}
-}
-
-func TestRecordingMock(t *testing.T) {
-	mock := NewRecordingMock("todo")
-	mock.OnRecord("Create", func(ctx context.Context, in any) (any, error) {
-		input := in.(*CreateTodoInput)
-		return &Todo{ID: "recorded", Title: input.Title}, nil
+	recovery := Recovery()
+	invoker := recovery(func(ctx context.Context, method *Method, in any) (any, error) {
+		return method.Call(ctx, in)
 	})
 
 	ctx := context.Background()
-	_, _ = mock.Call(ctx, "Create", &CreateTodoInput{Title: "Recorded"})
+	create := svc.Method("Create")
+	_, err = invoker(ctx, create, &CreateTodoInput{Title: "Test"})
+	if err != nil {
+		t.Fatalf("Call failed: %v", err)
+	}
+}
 
-	calls := mock.CallsFor("Create")
-	if len(calls) != 1 {
-		t.Errorf("expected 1 call, got %d", len(calls))
+func TestChainMiddleware(t *testing.T) {
+	var calls []string
+
+	mw1 := func(next Invoker) Invoker {
+		return func(ctx context.Context, method *Method, in any) (any, error) {
+			calls = append(calls, "mw1-before")
+			out, err := next(ctx, method, in)
+			calls = append(calls, "mw1-after")
+			return out, err
+		}
 	}
 
-	if mock.CallCount("Create") != 1 {
-		t.Errorf("expected call count 1, got %d", mock.CallCount("Create"))
+	mw2 := func(next Invoker) Invoker {
+		return func(ctx context.Context, method *Method, in any) (any, error) {
+			calls = append(calls, "mw2-before")
+			out, err := next(ctx, method, in)
+			calls = append(calls, "mw2-after")
+			return out, err
+		}
 	}
 
-	mock.Reset()
-	if len(mock.Calls()) != 0 {
-		t.Error("expected 0 calls after reset")
+	chained := Chain(mw1, mw2)
+	invoker := chained(func(ctx context.Context, method *Method, in any) (any, error) {
+		calls = append(calls, "handler")
+		return nil, nil
+	})
+
+	svc, _ := Register("todo", &TodoService{})
+	create := svc.Method("Create")
+	_, _ = invoker(context.Background(), create, &CreateTodoInput{Title: "Test"})
+
+	expected := []string{"mw1-before", "mw2-before", "handler", "mw2-after", "mw1-after"}
+	if len(calls) != len(expected) {
+		t.Fatalf("expected %d calls, got %d: %v", len(expected), len(calls), calls)
+	}
+	for i, e := range expected {
+		if calls[i] != e {
+			t.Errorf("call %d: expected %q, got %q", i, e, calls[i])
+		}
 	}
 }
 
@@ -460,16 +447,21 @@ type TaskWithEnum struct {
 }
 
 func TestEnumSchema(t *testing.T) {
-	reg := newTypeRegistry()
-	_, err := reg.Add(reflect.TypeOf(TaskWithEnum{}))
+	svc, err := Register("task", &taskService{})
 	if err != nil {
-		t.Fatalf("Add failed: %v", err)
+		t.Fatalf("Register failed: %v", err)
 	}
 
-	schemas := reg.Schemas()
-	if len(schemas) == 0 {
-		t.Fatal("expected schema")
+	types := svc.Types.All()
+	if len(types) == 0 {
+		t.Fatal("expected types")
 	}
+}
+
+type taskService struct{}
+
+func (s *taskService) Get(ctx context.Context, in *GetTodoInput) (*TaskWithEnum, error) {
+	return &TaskWithEnum{ID: in.ID, Status: StatusPending}, nil
 }
 
 // ---- Array and Map Types Test ----
@@ -484,19 +476,28 @@ type NestedType struct {
 	Value int `json:"value"`
 }
 
+type complexService struct{}
+
+func (s *complexService) Process(ctx context.Context, in *ComplexInput) error {
+	return nil
+}
+
 func TestComplexTypeSchema(t *testing.T) {
-	reg := newTypeRegistry()
-	_, err := reg.Add(reflect.TypeOf(ComplexInput{}))
+	svc, err := Register("complex", &complexService{})
 	if err != nil {
-		t.Fatalf("Add failed: %v", err)
+		t.Fatalf("Register failed: %v", err)
 	}
 
-	schemas := reg.Schemas()
+	types := svc.Types.All()
 	var found bool
-	for _, s := range schemas {
-		if strings.Contains(s.ID, "ComplexInput") {
+	for _, typ := range types {
+		if strings.Contains(typ.ID, "ComplexInput") {
 			found = true
-			props := s.JSON["properties"].(map[string]any)
+			schema := svc.Types.Schema(typ.ID)
+			if schema == nil {
+				t.Fatal("schema not found")
+			}
+			props := schema["properties"].(map[string]any)
 
 			// Check tags is array
 			tagsSchema := props["tags"].(map[string]any)
@@ -516,48 +517,44 @@ func TestComplexTypeSchema(t *testing.T) {
 	}
 }
 
-func TestErrorCodeMappings(t *testing.T) {
+func TestCodeMappings(t *testing.T) {
 	tests := []struct {
-		code       ErrorCode
+		code       Code
 		httpStatus int
-		grpcCode   int
 	}{
-		{ErrCodeOK, 200, 0},
-		{ErrCodeNotFound, 404, 5},
-		{ErrCodeInvalidArgument, 400, 3},
-		{ErrCodePermissionDenied, 403, 7},
-		{ErrCodeUnauthenticated, 401, 16},
-		{ErrCodeInternal, 500, 13},
+		{OK, 200},
+		{NotFound, 404},
+		{InvalidArgument, 400},
+		{PermissionDenied, 403},
+		{Unauthenticated, 401},
+		{Internal, 500},
 	}
 
 	for _, tt := range tests {
 		t.Run(string(tt.code), func(t *testing.T) {
-			if got := ErrorCodeToHTTPStatus(tt.code); got != tt.httpStatus {
+			if got := CodeToHTTP(tt.code); got != tt.httpStatus {
 				t.Errorf("HTTP: expected %d, got %d", tt.httpStatus, got)
-			}
-			if got := ErrorCodeToGRPC(tt.code); got != tt.grpcCode {
-				t.Errorf("gRPC: expected %d, got %d", tt.grpcCode, got)
 			}
 		})
 	}
 }
 
-func TestHTTPStatusToErrorCode(t *testing.T) {
+func TestHTTPToCode(t *testing.T) {
 	tests := []struct {
 		status int
-		code   ErrorCode
+		code   Code
 	}{
-		{200, ErrCodeOK},
-		{400, ErrCodeInvalidArgument},
-		{401, ErrCodeUnauthenticated},
-		{403, ErrCodePermissionDenied},
-		{404, ErrCodeNotFound},
-		{500, ErrCodeInternal},
+		{200, OK},
+		{400, InvalidArgument},
+		{401, Unauthenticated},
+		{403, PermissionDenied},
+		{404, NotFound},
+		{500, Internal},
 	}
 
 	for _, tt := range tests {
 		t.Run(string(rune(tt.status)), func(t *testing.T) {
-			if got := HTTPStatusToErrorCode(tt.status); got != tt.code {
+			if got := HTTPToCode(tt.status); got != tt.code {
 				t.Errorf("expected %s, got %s", tt.code, got)
 			}
 		})
