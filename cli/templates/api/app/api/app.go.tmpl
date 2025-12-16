@@ -1,85 +1,20 @@
 package api
 
-import (
-	"context"
-	"errors"
-	"log"
-	"net/http"
-	"time"
-
-	"{{.Module}}/feature/health"
-)
+import "github.com/go-mizu/mizu"
 
 type App struct {
-	cfg    Config
-	server *http.Server
+	cfg Config
+	app *mizu.App
 }
 
-func New(cfg Config) (*App, error) {
-	mux := http.NewServeMux()
-
-	// Mount health endpoints
-	health.Mount(mux)
-
-	// Mount API routes
-	mux.HandleFunc("GET /api/v1/hello", handleHello)
-
-	handler := withLogging(withRecovery(mux))
-
-	return &App{
+func New(cfg Config) *App {
+	a := &App{
 		cfg: cfg,
-		server: &http.Server{
-			Addr:              cfg.Addr,
-			Handler:           handler,
-			ReadHeaderTimeout: 5 * time.Second,
-			IdleTimeout:       60 * time.Second,
-		},
-	}, nil
-}
-
-func (a *App) Run(ctx context.Context) error {
-	errCh := make(chan error, 1)
-
-	go func() {
-		log.Printf("starting server on %s", a.cfg.Addr)
-		if err := a.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- err
-		}
-		close(errCh)
-	}()
-
-	select {
-	case err := <-errCh:
-		return err
-	case <-ctx.Done():
-		log.Println("shutting down...")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		return a.server.Shutdown(shutdownCtx)
+		app: mizu.New(),
 	}
+	a.routes()
+	return a
 }
 
-func handleHello(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"message":"Hello from {{.Name}}!"}`))
-}
-
-func withLogging(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		next.ServeHTTP(w, r)
-		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start))
-	})
-}
-
-func withRecovery(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if err := recover(); err != nil {
-				log.Printf("panic recovered: %v", err)
-				http.Error(w, "internal server error", http.StatusInternalServerError)
-			}
-		}()
-		next.ServeHTTP(w, r)
-	})
-}
+func (a *App) Listen(addr string) error { return a.app.Listen(addr) }
+func (a *App) Shutdown() error          { return a.app.Shutdown() }

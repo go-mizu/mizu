@@ -13,24 +13,13 @@ import (
 	"time"
 )
 
-// serveFlags holds flags for the serve command.
-type serveFlags struct {
-	cmd  string
-	envs envList
-	args string
+// devFlags holds flags for the dev command.
+type devFlags struct {
+	cmd string
 }
 
-// envList is a flag.Value for repeatable --env flags.
-type envList []string
-
-func (e *envList) String() string { return strings.Join(*e, ",") }
-func (e *envList) Set(s string) error {
-	*e = append(*e, s)
-	return nil
-}
-
-// serveEvent represents a lifecycle event for JSON output.
-type serveEvent struct {
+// devEvent represents a lifecycle event for JSON output.
+type devEvent struct {
 	Event     string `json:"event"`
 	Timestamp string `json:"timestamp"`
 	Message   string `json:"message,omitempty"`
@@ -38,28 +27,26 @@ type serveEvent struct {
 }
 
 //nolint:cyclop // CLI command with sequential logic
-func runServe(args []string, gf *globalFlags) int {
+func runDev(args []string, gf *globalFlags) int {
 	out := newOutput(gf.json, gf.quiet, gf.noColor, gf.verbose)
-	sf := &serveFlags{}
+	df := &devFlags{}
 
 	// Parse flags
-	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	fs.StringVar(&sf.cmd, "cmd", "", "Explicit main package path")
-	fs.Var(&sf.envs, "env", "Set env var (k=v, repeatable)")
-	fs.StringVar(&sf.args, "args", "", "Args passed to the program")
+	fs := flag.NewFlagSet("dev", flag.ContinueOnError)
+	fs.StringVar(&df.cmd, "cmd", "", "Explicit main package path")
 
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
-			usageServe()
+			usageDev()
 			return exitOK
 		}
 		return exitUsage
 	}
 
 	// Find main package
-	mainPkg, err := findMainPackage(sf.cmd)
+	mainPkg, err := findMainPackage(df.cmd)
 	if err != nil {
-		emitEvent(out, "error", err.Error(), 0)
+		emitDevEvent(out, "error", err.Error(), 0)
 		if !out.json {
 			out.errorf("error: %v\n", err)
 		}
@@ -67,7 +54,7 @@ func runServe(args []string, gf *globalFlags) int {
 	}
 
 	out.verbosef(1, "discovered main package: %s\n", mainPkg)
-	emitEvent(out, "starting", fmt.Sprintf("running %s", mainPkg), 0)
+	emitDevEvent(out, "starting", fmt.Sprintf("running %s", mainPkg), 0)
 
 	if !out.json {
 		out.print("Starting %s...\n", out.cyan(mainPkg))
@@ -82,32 +69,24 @@ func runServe(args []string, gf *globalFlags) int {
 
 	// Build arguments for go run
 	goArgs := []string{"run", mainPkg}
-	if sf.args != "" {
-		goArgs = append(goArgs, strings.Fields(sf.args)...)
-	}
 
 	// Create command
 	cmd := exec.CommandContext(ctx, "go", goArgs...) //nolint:gosec // args are constructed safely
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
-
-	// Set environment
 	cmd.Env = os.Environ()
-	for _, e := range sf.envs {
-		cmd.Env = append(cmd.Env, e)
-	}
 
 	// Start process
 	if err := cmd.Start(); err != nil {
-		emitEvent(out, "error", err.Error(), 0)
+		emitDevEvent(out, "error", err.Error(), 0)
 		if !out.json {
 			out.errorf("error: failed to start: %v\n", err)
 		}
 		return exitError
 	}
 
-	emitEvent(out, "started", fmt.Sprintf("pid %d", cmd.Process.Pid), 0)
+	emitDevEvent(out, "started", fmt.Sprintf("pid %d", cmd.Process.Pid), 0)
 
 	// Wait for signal or process exit
 	doneCh := make(chan error, 1)
@@ -117,7 +96,7 @@ func runServe(args []string, gf *globalFlags) int {
 
 	select {
 	case sig := <-sigCh:
-		emitEvent(out, "signal", sig.String(), 0)
+		emitDevEvent(out, "signal", sig.String(), 0)
 		if !out.json {
 			out.print("\nReceived %s, shutting down...\n", sig)
 		}
@@ -128,40 +107,40 @@ func runServe(args []string, gf *globalFlags) int {
 		// Wait for graceful shutdown with timeout
 		select {
 		case err := <-doneCh:
-			return handleProcessExit(out, err)
+			return handleDevProcessExit(out, err)
 		case <-time.After(15 * time.Second):
-			emitEvent(out, "timeout", "forcing shutdown", 0)
+			emitDevEvent(out, "timeout", "forcing shutdown", 0)
 			_ = cmd.Process.Kill()
 			return exitError
 		}
 
 	case err := <-doneCh:
-		return handleProcessExit(out, err)
+		return handleDevProcessExit(out, err)
 	}
 }
 
-func handleProcessExit(out *output, err error) int {
+func handleDevProcessExit(out *output, err error) int {
 	if err == nil {
-		emitEvent(out, "stopped", "clean exit", 0)
+		emitDevEvent(out, "stopped", "clean exit", 0)
 		return exitOK
 	}
 
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		code := exitErr.ExitCode()
-		emitEvent(out, "stopped", fmt.Sprintf("exit code %d", code), code)
+		emitDevEvent(out, "stopped", fmt.Sprintf("exit code %d", code), code)
 		return code
 	}
 
-	emitEvent(out, "error", err.Error(), 1)
+	emitDevEvent(out, "error", err.Error(), 1)
 	return exitError
 }
 
-func emitEvent(out *output, event, message string, exitCode int) {
+func emitDevEvent(out *output, event, message string, exitCode int) {
 	if !out.json {
 		return
 	}
 
-	ev := serveEvent{
+	ev := devEvent{
 		Event:     event,
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Message:   message,
@@ -233,20 +212,19 @@ func hasMainGo(dir string) bool {
 	return false
 }
 
-func usageServe() {
+func usageDev() {
 	fmt.Println("Usage:")
-	fmt.Println("  mizu serve [flags]")
+	fmt.Println("  mizu dev [flags] [-- <args>]")
 	fmt.Println()
-	fmt.Println("Run the project with graceful shutdown.")
+	fmt.Println("Run the current project in development mode.")
 	fmt.Println()
 	fmt.Println("Behavior:")
-	fmt.Println("  - Detects a runnable main package (cmd/* preferred, then module root)")
-	fmt.Println("  - Runs it with predictable env and graceful shutdown")
+	fmt.Println("  - auto-detect main package (cmd/* or main package)")
+	fmt.Println("  - build if needed")
+	fmt.Println("  - run until interrupted (SIGINT/SIGTERM)")
 	fmt.Println()
 	fmt.Println("Flags:")
-	fmt.Println("      --cmd <path>     Explicit main package path (ex: ./cmd/api)")
-	fmt.Println("      --env k=v        Set env var (repeatable)")
-	fmt.Println("      --args \"<args>\"  Args passed to the program")
-	fmt.Println("      --json           Emit lifecycle events as JSON")
-	fmt.Println("  -h, --help           Show help")
+	fmt.Println("      --cmd <path>         Explicit main package path")
+	fmt.Println("      --json               Emit lifecycle events as JSON")
+	fmt.Println("  -h, --help               Show help")
 }

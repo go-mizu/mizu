@@ -58,27 +58,6 @@ func dirExists(path string) bool {
 	return info.IsDir()
 }
 
-// findGoMod walks up from dir looking for go.mod.
-func findGoMod(dir string) (string, error) {
-	abs, err := filepath.Abs(dir)
-	if err != nil {
-		return "", err
-	}
-
-	for {
-		gomod := filepath.Join(abs, "go.mod")
-		if fileExists(gomod) {
-			return gomod, nil
-		}
-
-		parent := filepath.Dir(abs)
-		if parent == abs {
-			return "", nil // reached root
-		}
-		abs = parent
-	}
-}
-
 // readFileString reads a file as a string.
 func readFileString(path string) (string, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // path is validated by caller

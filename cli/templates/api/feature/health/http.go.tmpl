@@ -1,30 +1,7 @@
 package health
 
-import (
-	"io"
-	"net/http"
-)
+import "github.com/go-mizu/mizu"
 
-func Mount(mux *http.ServeMux) {
-	mux.HandleFunc("GET /healthz", handleHealth)
-	mux.HandleFunc("GET /readyz", handleReady)
-	mux.HandleFunc("GET /livez", handleLive)
-}
-
-func handleHealth(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	io.WriteString(w, "ok\n")
-}
-
-func handleReady(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	io.WriteString(w, "ok\n")
-}
-
-func handleLive(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	io.WriteString(w, "ok\n")
+func Get(c *mizu.Ctx) error {
+	return c.Text(200, "ok\n")
 }

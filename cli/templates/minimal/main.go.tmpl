@@ -1,19 +1,20 @@
 package main
 
 import (
-	"fmt"
 	"log"
-	"net/http"
+
+	"github.com/go-mizu/mizu"
 )
 
 func main() {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "Hello from {{.Name}}!")
+	app := mizu.New()
+
+	app.Get("/", func(c *mizu.Ctx) error {
+		return c.Text(200, "Hello from {{.Name}}\n")
 	})
 
-	addr := ":8080"
-	log.Printf("Starting server on %s", addr)
-	if err := http.ListenAndServe(addr, nil); err != nil {
+	log.Println("listening on :8080")
+	if err := app.Listen(":8080"); err != nil {
 		log.Fatal(err)
 	}
 }

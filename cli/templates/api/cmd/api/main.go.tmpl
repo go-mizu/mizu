@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"log"
 	"os"
 	"os/signal"
@@ -11,18 +10,24 @@ import (
 )
 
 func main() {
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-
 	cfg := api.LoadConfig()
+	app := api.New(cfg)
 
-	app, err := api.New(cfg)
-	if err != nil {
-		log.Fatalf("failed to create app: %v", err)
-	}
+	log.Printf("listening on %s", cfg.Addr)
 
-	if err := app.Run(ctx); err != nil {
-		log.Printf("server error: %v", err)
-		os.Exit(1)
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+
+	errc := make(chan error, 1)
+	go func() { errc <- app.Listen(cfg.Addr) }()
+
+	select {
+	case sig := <-stop:
+		log.Printf("shutdown: %s", sig.String())
+		_ = app.Shutdown()
+	case err := <-errc:
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 }
