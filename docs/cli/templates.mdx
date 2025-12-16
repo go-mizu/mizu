@@ -1,0 +1,174 @@
+---
+title: "Templates"
+description: "Built-in project templates for Mizu applications"
+---
+
+# Templates
+
+The Mizu CLI includes built-in templates for scaffolding new projects. Each template provides a complete, runnable starting point with idiomatic Go project structure.
+
+## Available Templates
+
+| Template | Description | Use Case |
+|----------|-------------|----------|
+| [`minimal`](/cli/template-minimal) | Smallest runnable Mizu project | Quick prototypes, learning |
+| [`api`](/cli/template-api) | JSON API service with recommended layout | Production APIs, microservices |
+
+## List Templates
+
+```bash
+mizu new --list
+```
+
+Output:
+```
+Template  Purpose
+api       JSON API service with a recommended layout
+minimal   Smallest runnable Mizu project
+```
+
+## Using Templates
+
+### Basic Usage
+
+```bash
+# Create project with template
+mizu new myapp --template api
+```
+
+### With Custom Module Path
+
+```bash
+mizu new myapp --template api --module github.com/myorg/myapp
+```
+
+### Preview Before Creating
+
+```bash
+mizu new myapp --template api --dry-run
+```
+
+## Template Variables
+
+Templates use Go's `text/template` syntax. The following variables are available:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `{{.Name}}` | Project name | `myapp` |
+| `{{.Module}}` | Go module path | `github.com/myorg/myapp` |
+| `{{.License}}` | License identifier | `MIT` |
+| `{{.Year}}` | Current year | `2024` |
+| `{{.Vars.key}}` | Custom variables | Any value |
+
+### Setting Variables
+
+```bash
+# Set project name (default: derived from path)
+mizu new myapp --template api --name my-service
+
+# Set module path (default: example.com/<name>)
+mizu new myapp --template api --module github.com/myorg/myapp
+
+# Set license (default: MIT)
+mizu new myapp --template api --license Apache-2.0
+
+# Set custom variables
+mizu new myapp --template api --var author="John Doe"
+```
+
+## Common Files
+
+All templates include these common files:
+
+### `.gitignore`
+
+```gitignore
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output
+*.out
+
+# Go workspace
+go.work
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+```
+
+### `go.mod`
+
+```go
+module {{.Module}}
+
+go 1.25
+
+require github.com/go-mizu/mizu v0.0.0
+```
+
+### `README.md`
+
+Each template generates a README with:
+- Project description
+- Setup instructions
+- Running instructions
+- Project structure overview
+
+## Template Architecture
+
+Templates are embedded in the CLI binary using Go's `embed` directive. This means:
+
+- No network required to create projects
+- Templates always match CLI version
+- Consistent across all platforms
+
+## File Naming
+
+Special file name mappings handle dotfiles:
+
+| Template Name | Output Name |
+|---------------|-------------|
+| `gitignore` | `.gitignore` |
+| `dockerignore` | `.dockerignore` |
+| `env` | `.env` |
+| `env.example` | `.env.example` |
+
+Files with `.tmpl` extension are processed as templates, and the extension is removed in output.
+
+## Choosing a Template
+
+<CardGroup cols={2}>
+  <Card title="Minimal Template" icon="feather" href="/cli/template-minimal">
+    Best for learning Mizu basics, quick experiments, or when you want full control over structure.
+  </Card>
+  <Card title="API Template" icon="server" href="/cli/template-api">
+    Best for production APIs with clean architecture, feature-based organization, and graceful shutdown.
+  </Card>
+</CardGroup>
+
+### Decision Guide
+
+| Scenario | Recommended Template |
+|----------|---------------------|
+| Learning Mizu | `minimal` |
+| Quick prototype | `minimal` |
+| Production API | `api` |
+| Microservice | `api` |
+| Custom structure | `minimal` |
+| Team project | `api` |
+
+## See Also
+
+- [Minimal Template](/cli/template-minimal) - Single-file starter
+- [API Template](/cli/template-api) - Full-featured API service
+- [mizu new](/cli/new) - Create projects from templates

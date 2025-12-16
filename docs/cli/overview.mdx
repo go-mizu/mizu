@@ -1,0 +1,83 @@
+---
+title: "CLI Overview"
+description: "The Mizu CLI is the official project toolkit for the go-mizu framework"
+---
+
+# Mizu CLI
+
+The `mizu` command-line interface is the official project toolkit for building and running Mizu applications. It provides a streamlined developer experience with project scaffolding, development server, and machine-readable output for CI/CD integration.
+
+## Quick Start
+
+```bash
+# Create a new project
+mizu new myapp --template api
+
+# Navigate to your project
+cd myapp
+
+# Install dependencies
+go mod tidy
+
+# Run in development mode
+mizu dev
+```
+
+## Features
+
+<CardGroup cols={2}>
+  <Card title="Project Scaffolding" icon="folder-plus">
+    Generate new Mizu projects from built-in templates with customizable variables
+  </Card>
+  <Card title="Development Server" icon="play">
+    Auto-detect and run your main package with graceful shutdown support
+  </Card>
+  <Card title="JSON Output" icon="code">
+    Machine-readable output for CI/CD pipelines and scripting automation
+  </Card>
+  <Card title="Zero Config" icon="gear">
+    Works out of the box with sensible defaults and auto-detection
+  </Card>
+</CardGroup>
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| [`mizu new`](/cli/new) | Create a new project from a template |
+| [`mizu dev`](/cli/dev) | Run the current project in development mode |
+| [`mizu version`](/cli/version) | Print version information |
+
+## Architecture
+
+The Mizu CLI follows a simple command structure:
+
+```
+mizu <command> [flags]
+```
+
+Global flags can be placed before or after the command:
+
+```bash
+# Both are valid
+mizu --verbose dev
+mizu dev --verbose
+```
+
+## Design Philosophy
+
+1. **Convention over Configuration** - Auto-detect project structure when possible
+2. **Explicit is Better** - Provide clear flags for override when needed
+3. **Machine-Friendly** - JSON output mode for all commands
+4. **Fail Fast** - Clear error messages with actionable hints
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/cli/installation">
+    Install the Mizu CLI on your system
+  </Card>
+  <Card title="Create a Project" icon="rocket" href="/cli/new">
+    Scaffold a new Mizu application
+  </Card>
+</CardGroup>

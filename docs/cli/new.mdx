@@ -1,0 +1,255 @@
+---
+title: "mizu new"
+description: "Create a new Mizu project from a template"
+---
+
+# mizu new
+
+The `mizu new` command scaffolds a new Mizu project from a built-in template. It generates all necessary files with proper Go module configuration and project structure.
+
+## Synopsis
+
+```bash
+mizu new [path] [flags]
+```
+
+## Description
+
+Creates a new Mizu project in the specified directory (or current directory if not specified) using a template. The command:
+
+1. Validates the target path
+2. Loads template files from embedded templates
+3. Renders template variables (project name, module path, etc.)
+4. Creates directories and writes files atomically
+5. Provides next-step instructions
+
+## Arguments
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `path` | Target directory for the new project | `.` (current directory) |
+
+## Flags
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--template <name>` | `-t` | Template to use (required unless `--list`) |
+| `--list` | | List all available templates |
+| `--force` | | Overwrite existing files without prompting |
+| `--dry-run` | | Show planned operations without writing files |
+| `--name <value>` | | Project name (default: derived from path) |
+| `--module <value>` | | Go module path (default: `example.com/<name>`) |
+| `--license <value>` | | License identifier (default: MIT) |
+| `--var k=v` | | Set custom template variable (repeatable) |
+| `--json` | | Output in JSON format |
+| `--help` | `-h` | Show help |
+
+## Examples
+
+### List Available Templates
+
+```bash
+mizu new --list
+```
+
+Output:
+```
+Template  Purpose
+api       JSON API service with a recommended layout
+minimal   Smallest runnable Mizu project
+```
+
+### Create a Minimal Project
+
+```bash
+# In current directory
+mizu new . --template minimal
+
+# In a new directory
+mizu new myapp --template minimal
+```
+
+### Create an API Project
+
+```bash
+mizu new myapi --template api
+```
+
+### Preview Changes (Dry Run)
+
+```bash
+mizu new myapp --template api --dry-run
+```
+
+Output:
+```
+Plan: create /path/to/myapp (template: api)
+
++ mkdir   app
++ mkdir   app/api
++ mkdir   cmd
++ mkdir   cmd/api
++ mkdir   feature
++ mkdir   feature/echo
++ mkdir   feature/health
++ mkdir   feature/hello
++ mkdir   feature/users
++ write   .gitignore
++ write   README.md
++ write   app/api/app.go
++ write   app/api/config.go
++ write   app/api/routes.go
++ write   cmd/api/main.go
++ write   feature/echo/http.go
++ write   feature/health/http.go
++ write   feature/hello/http.go
++ write   feature/users/http.go
++ write   go.mod
+
+Summary:
+  create dirs: 9
+  write files: 11
+  overwrite: 0
+  skipped: 0
+```
+
+### Custom Module Path
+
+```bash
+mizu new myapp --template api --module github.com/myorg/myapp
+```
+
+### Custom Project Name
+
+```bash
+mizu new ./projects/service --template api --name user-service
+```
+
+### Set Custom Variables
+
+```bash
+mizu new myapp --template api --var author="John Doe" --var version="1.0.0"
+```
+
+### Force Overwrite
+
+```bash
+mizu new myapp --template minimal --force
+```
+
+### JSON Output
+
+```bash
+mizu new myapp --template minimal --json
+```
+
+Output:
+```json
+{
+  "success": true,
+  "data": {
+    "template": "minimal",
+    "root": "/path/to/myapp",
+    "ops": [
+      {"op": "write", "path": ".gitignore", "bytes": 42, "mode": "0644"},
+      {"op": "write", "path": "README.md", "bytes": 156, "mode": "0644"},
+      {"op": "write", "path": "go.mod", "bytes": 78, "mode": "0644"},
+      {"op": "write", "path": "main.go", "bytes": 245, "mode": "0644"}
+    ],
+    "summary": {
+      "mkdir": 0,
+      "write": 4,
+      "overwrite": 0,
+      "skip": 0
+    }
+  }
+}
+```
+
+## Workflow
+
+### Typical Usage
+
+```bash
+# 1. Create the project
+mizu new myapp --template api
+
+# 2. Navigate to the project
+cd myapp
+
+# 3. Initialize Go modules
+go mod tidy
+
+# 4. Start development
+mizu dev
+```
+
+### Overwriting Files
+
+By default, `mizu new` refuses to overwrite existing files:
+
+```bash
+$ mizu new myapp --template minimal
+error: files already exist:
+  main.go
+  go.mod
+Use --force to overwrite.
+```
+
+Use `--force` to overwrite:
+
+```bash
+mizu new myapp --template minimal --force
+```
+
+## Template Variables
+
+Templates have access to these variables:
+
+| Variable | Description | Source |
+|----------|-------------|--------|
+| `{{.Name}}` | Project name | `--name` flag or derived from path |
+| `{{.Module}}` | Go module path | `--module` flag or derived |
+| `{{.License}}` | License identifier | `--license` flag (default: MIT) |
+| `{{.Year}}` | Current year | Auto-generated |
+| `{{.Vars.<key>}}` | Custom variables | `--var` flags |
+
+## Error Handling
+
+### Missing Template
+
+```bash
+$ mizu new myapp --template unknown
+error: unknown template "unknown"
+Run 'mizu new --list' to see available templates.
+```
+
+### File Conflicts
+
+```bash
+$ mizu new . --template minimal
+error: files already exist:
+  main.go
+Use --force to overwrite.
+```
+
+### Invalid Path
+
+```bash
+$ mizu new ../../../etc --template minimal
+error: path traversal not allowed: ../../../etc
+```
+
+## Exit Codes
+
+| Code | Description |
+|------|-------------|
+| 0 | Success |
+| 1 | General error (template rendering, file write) |
+| 2 | Usage error (missing template, invalid flags) |
+
+## See Also
+
+- [Templates Overview](/cli/templates) - Available templates
+- [Minimal Template](/cli/template-minimal) - Smallest runnable project
+- [API Template](/cli/template-api) - Full-featured API service

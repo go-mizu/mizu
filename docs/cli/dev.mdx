@@ -1,0 +1,271 @@
+---
+title: "mizu dev"
+description: "Run your Mizu project in development mode"
+---
+
+# mizu dev
+
+The `mizu dev` command runs your Mizu application in development mode with automatic main package detection and graceful shutdown support.
+
+## Synopsis
+
+```bash
+mizu dev [flags] [-- <args>]
+```
+
+## Description
+
+The development server:
+
+1. Auto-detects the main package (in `cmd/*/` or root directory)
+2. Builds the project if needed using `go run`
+3. Runs the application
+4. Handles SIGINT/SIGTERM for graceful shutdown
+5. Propagates the exit code from your application
+
+## Flags
+
+| Flag | Description |
+|------|-------------|
+| `--cmd <path>` | Explicit main package path (overrides auto-detection) |
+| `--json` | Emit lifecycle events as JSON |
+| `--help`, `-h` | Show help |
+
+## Main Package Discovery
+
+The CLI uses this discovery order:
+
+1. **Explicit path** - If `--cmd` is provided, use that path directly
+2. **cmd/ directory** - Look for `cmd/*/main.go` packages
+3. **Root directory** - Check for `package main` in the current directory
+
+### Discovery Examples
+
+```
+myapp/
+├── cmd/
+│   └── api/           # Detected: ./cmd/api
+│       └── main.go
+└── go.mod
+```
+
+```
+myapp/
+├── main.go            # Detected: .
+└── go.mod
+```
+
+## Examples
+
+### Basic Usage
+
+```bash
+# Auto-detect and run
+mizu dev
+```
+
+Output:
+```
+Starting ./cmd/api...
+```
+
+### Explicit Main Package
+
+```bash
+# Specify the main package explicitly
+mizu dev --cmd ./cmd/server
+```
+
+### With Verbose Output
+
+```bash
+mizu dev -v
+```
+
+Output:
+```
+discovered main package: ./cmd/api
+Starting ./cmd/api...
+```
+
+### JSON Output Mode
+
+```bash
+mizu dev --json
+```
+
+Output (NDJSON - one JSON object per line):
+```json
+{"event":"starting","timestamp":"2024-01-15T10:30:00Z","message":"running ./cmd/api"}
+{"event":"started","timestamp":"2024-01-15T10:30:01Z","message":"pid 12345"}
+```
+
+### Pass Arguments to Application
+
+Use `--` to separate CLI flags from application arguments:
+
+```bash
+mizu dev -- --port 9000 --debug
+```
+
+## Lifecycle Events
+
+When using `--json`, the CLI emits lifecycle events:
+
+| Event | Description |
+|-------|-------------|
+| `starting` | About to start the process |
+| `started` | Process started successfully (includes PID) |
+| `signal` | Received shutdown signal |
+| `timeout` | Graceful shutdown timed out |
+| `stopped` | Process exited (includes exit code) |
+| `error` | An error occurred |
+
+### Event Schema
+
+```typescript
+interface DevEvent {
+  event: string;       // Event type
+  timestamp: string;   // ISO 8601 timestamp (UTC)
+  message?: string;    // Human-readable message
+  exit_code?: number;  // Exit code (for stopped events)
+}
+```
+
+### Example Events
+
+```json
+{"event":"starting","timestamp":"2024-01-15T10:30:00Z","message":"running ./cmd/api"}
+{"event":"started","timestamp":"2024-01-15T10:30:01Z","message":"pid 12345"}
+{"event":"signal","timestamp":"2024-01-15T10:35:00Z","message":"interrupt"}
+{"event":"stopped","timestamp":"2024-01-15T10:35:02Z","message":"clean exit"}
+```
+
+## Signal Handling
+
+The CLI handles shutdown signals gracefully:
+
+1. Receives SIGINT (Ctrl+C) or SIGTERM
+2. Forwards the signal to your application
+3. Waits up to 15 seconds for graceful shutdown
+4. Force-kills if timeout exceeded
+
+```bash
+$ mizu dev
+Starting ./cmd/api...
+^C
+Received interrupt, shutting down...
+```
+
+## Error Handling
+
+### No Main Package Found
+
+```bash
+$ mizu dev
+error: no runnable main package found (try --cmd)
+```
+
+**Solution:** Ensure you have either:
+- A `cmd/<name>/main.go` directory structure
+- A `main.go` with `package main` in the root
+
+### Explicit Path Not Found
+
+```bash
+$ mizu dev --cmd ./cmd/missing
+error: path does not exist: ./cmd/missing
+```
+
+### Build Errors
+
+Build errors from `go run` are displayed directly:
+
+```bash
+$ mizu dev
+Starting ./cmd/api...
+# github.com/example/myapp/cmd/api
+./main.go:10:5: undefined: mizu
+```
+
+## Exit Codes
+
+| Code | Description |
+|------|-------------|
+| 0 | Clean exit |
+| 1 | General error |
+| 2 | Usage error |
+| 3 | No project found |
+| N | Propagated from your application |
+
+<Note>
+The exit code from your application is propagated through `mizu dev`. If your app exits with code 5, `mizu dev` also exits with code 5.
+</Note>
+
+## Best Practices
+
+### Project Structure
+
+For the best experience, use the standard Go project layout:
+
+```
+myapp/
+├── cmd/
+│   └── api/
+│       └── main.go     # Entry point
+├── app/
+│   └── api/
+│       ├── app.go      # Application setup
+│       └── routes.go   # Route definitions
+├── feature/
+│   └── users/
+│       └── http.go     # Feature handlers
+├── go.mod
+└── go.sum
+```
+
+### Multiple Binaries
+
+If you have multiple commands, specify which one to run:
+
+```
+myapp/
+├── cmd/
+│   ├── api/
+│   │   └── main.go
+│   └── worker/
+│       └── main.go
+```
+
+```bash
+# Run the API server
+mizu dev --cmd ./cmd/api
+
+# Run the worker
+mizu dev --cmd ./cmd/worker
+```
+
+### Development Workflow
+
+```bash
+# Terminal 1: Run the server
+mizu dev
+
+# Terminal 2: Make changes, server auto-detected on restart
+# (File watching not included - restart manually)
+```
+
+## Integration with CI/CD
+
+Use JSON output for machine-readable logs:
+
+```bash
+mizu dev --json 2>&1 | jq -r 'select(.event == "started") | .message'
+# Output: pid 12345
+```
+
+## See Also
+
+- [mizu new](/cli/new) - Create a new project
+- [Global Flags](/cli/global-flags) - Flags available on all commands
+- [Exit Codes](/cli/exit-codes) - Full exit code reference

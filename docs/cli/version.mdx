@@ -1,0 +1,126 @@
+---
+title: "mizu version"
+description: "Print version and build information"
+---
+
+# mizu version
+
+The `mizu version` command displays version and build information about the CLI.
+
+## Synopsis
+
+```bash
+mizu version [flags]
+```
+
+## Flags
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Output version info as JSON |
+| `--help`, `-h` | Show help |
+
+## Examples
+
+### Basic Usage
+
+```bash
+mizu version
+```
+
+Output:
+```
+mizu version 0.1.0
+go version: go1.24
+commit: abc1234
+built: 2024-01-15T10:30:00Z
+```
+
+### JSON Output
+
+```bash
+mizu version --json
+```
+
+Output:
+```json
+{
+  "success": true,
+  "data": {
+    "version": "0.1.0",
+    "go_version": "go1.24",
+    "commit": "abc1234",
+    "built_at": "2024-01-15T10:30:00Z"
+  }
+}
+```
+
+## Version Information
+
+| Field | Description |
+|-------|-------------|
+| `version` | Semantic version of the CLI |
+| `go_version` | Go runtime version used to build |
+| `commit` | Git commit hash (short form) |
+| `built_at` | Build timestamp (ISO 8601 UTC) |
+
+## Build-time Variables
+
+Version information is set at build time using `-ldflags`:
+
+```bash
+go build -ldflags "\
+  -X github.com/go-mizu/mizu/cli.Version=1.0.0 \
+  -X github.com/go-mizu/mizu/cli.Commit=$(git rev-parse --short HEAD) \
+  -X github.com/go-mizu/mizu/cli.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -o mizu ./cmd/mizu
+```
+
+### Default Values
+
+If not set at build time, these defaults are used:
+
+| Variable | Default |
+|----------|---------|
+| Version | `dev` |
+| Commit | `unknown` |
+| BuildTime | `unknown` |
+
+## Use Cases
+
+### Checking Installation
+
+```bash
+# Verify mizu is installed correctly
+mizu version
+```
+
+### Bug Reports
+
+Include version info in bug reports:
+
+```bash
+mizu version --json > version-info.json
+```
+
+### CI/CD Verification
+
+```bash
+# Check minimum version in scripts
+VERSION=$(mizu version --json | jq -r '.data.version')
+if [[ "$VERSION" < "0.2.0" ]]; then
+  echo "Please upgrade mizu to version 0.2.0 or later"
+  exit 1
+fi
+```
+
+## Exit Codes
+
+| Code | Description |
+|------|-------------|
+| 0 | Success |
+
+## See Also
+
+- [Installation](/cli/installation) - Install or update the CLI
+- [Global Flags](/cli/global-flags) - Flags available on all commands

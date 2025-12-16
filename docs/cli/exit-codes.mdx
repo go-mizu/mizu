@@ -1,0 +1,261 @@
+---
+title: "Exit Codes"
+description: "CLI exit codes for scripting and automation"
+---
+
+# Exit Codes
+
+The Mizu CLI uses specific exit codes to indicate different outcomes. These codes are useful for scripting, CI/CD pipelines, and automation.
+
+## Exit Code Reference
+
+| Code | Name | Description |
+|------|------|-------------|
+| 0 | `OK` | Success - operation completed successfully |
+| 1 | `Error` | General error - something went wrong |
+| 2 | `Usage` | Usage error - invalid flags or arguments |
+| 3 | `NoProject` | No project - couldn't find main package |
+
+## Detailed Descriptions
+
+### Exit Code 0: Success
+
+The operation completed successfully.
+
+```bash
+mizu new myapp --template minimal
+echo $?  # 0
+
+mizu version
+echo $?  # 0
+```
+
+### Exit Code 1: General Error
+
+An error occurred during execution. Examples:
+- File write failed
+- Template rendering error
+- Process failed to start
+- Network error
+
+```bash
+# Template error (corrupted template)
+mizu new myapp --template broken
+echo $?  # 1
+
+# Write error (permission denied)
+mizu new /root/myapp --template minimal
+echo $?  # 1
+```
+
+### Exit Code 2: Usage Error
+
+Invalid command usage. Examples:
+- Unknown command
+- Missing required flag
+- Invalid flag value
+- Invalid arguments
+
+```bash
+# Unknown command
+mizu unknown
+echo $?  # 2
+
+# Missing required template
+mizu new myapp
+echo $?  # 2
+
+# Unknown template
+mizu new myapp --template nonexistent
+echo $?  # 2
+```
+
+### Exit Code 3: No Project Found
+
+Specific to `mizu dev` - couldn't find a runnable main package.
+
+```bash
+# In empty directory
+cd /tmp/empty
+mizu dev
+# error: no runnable main package found (try --cmd)
+echo $?  # 3
+```
+
+## Command-Specific Exit Codes
+
+### `mizu new`
+
+| Code | Situation |
+|------|-----------|
+| 0 | Project created successfully |
+| 1 | File write error, template render error |
+| 2 | Missing `--template`, unknown template, invalid path |
+
+### `mizu dev`
+
+| Code | Situation |
+|------|-----------|
+| 0 | Process exited cleanly |
+| 1 | Process failed to start, timeout during shutdown |
+| 2 | Invalid flags |
+| 3 | No main package found |
+| N | Exit code from your application |
+
+<Note>
+`mizu dev` propagates exit codes from your application. If your app exits with code 5, `mizu dev` also exits with code 5.
+</Note>
+
+### `mizu version`
+
+| Code | Situation |
+|------|-----------|
+| 0 | Version displayed successfully |
+
+## Using Exit Codes in Scripts
+
+### Bash
+
+```bash
+#!/bin/bash
+set -e  # Exit on any error
+
+# Create project (exits if fails)
+mizu new myapp --template api
+
+# Or handle specific codes
+mizu dev || {
+    code=$?
+    case $code in
+        1) echo "Error occurred" ;;
+        2) echo "Invalid usage" ;;
+        3) echo "No project found" ;;
+        *) echo "App exited with code $code" ;;
+    esac
+    exit $code
+}
+```
+
+### Check for Success
+
+```bash
+if mizu new myapp --template minimal; then
+    echo "Project created!"
+    cd myapp && mizu dev
+else
+    echo "Failed to create project"
+    exit 1
+fi
+```
+
+### CI/CD Pipeline
+
+```yaml
+# GitHub Actions
+steps:
+  - name: Create project
+    run: mizu new myapp --template api
+    # Fails job if exit code != 0
+
+  - name: Validate project
+    run: |
+      cd myapp
+      go mod tidy
+      go build ./...
+```
+
+### Makefile
+
+```makefile
+.PHONY: new dev
+
+new:
+	mizu new $(NAME) --template $(TEMPLATE) || exit 1
+
+dev:
+	mizu dev || (echo "Dev server failed with code $$?"; exit 1)
+```
+
+## Error Messages
+
+Exit codes are accompanied by error messages:
+
+```bash
+$ mizu unknown
+error: unknown command "unknown"
+Run 'mizu --help' for usage.
+$ echo $?
+2
+
+$ mizu new myapp
+error: template is required
+Run 'mizu new --list' to see available templates.
+$ echo $?
+2
+
+$ mizu dev  # in empty directory
+error: no runnable main package found (try --cmd)
+$ echo $?
+3
+```
+
+## JSON Error Output
+
+With `--json`, errors include structured information:
+
+```bash
+mizu new myapp --json 2>&1
+```
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "missing_template",
+    "message": "template is required (use --template or --list)"
+  }
+}
+```
+
+## Best Practices
+
+### Always Check Exit Codes
+
+```bash
+# Bad - ignores failures
+mizu new myapp --template api
+cd myapp
+
+# Good - fails fast
+mizu new myapp --template api && cd myapp
+```
+
+### Use `set -e` in Scripts
+
+```bash
+#!/bin/bash
+set -e  # Script exits on first error
+set -o pipefail  # Pipeline fails on first error
+
+mizu new myapp --template api
+cd myapp
+go mod tidy
+mizu dev
+```
+
+### Handle Specific Codes
+
+```bash
+mizu dev
+case $? in
+    0) echo "Clean shutdown" ;;
+    3) echo "Run from a Go project directory" ;;
+    *) echo "Unexpected exit" ;;
+esac
+```
+
+## See Also
+
+- [Global Flags](/cli/global-flags) - CLI flags reference
+- [JSON Output](/cli/json-output) - Machine-readable output format
+- [mizu dev](/cli/dev) - Development server

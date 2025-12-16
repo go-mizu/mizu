@@ -1,0 +1,137 @@
+---
+title: "Installation"
+description: "Install the Mizu CLI on your system"
+---
+
+# Installation
+
+There are several ways to install the Mizu CLI on your system.
+
+## Using Go Install (Recommended)
+
+The simplest way to install the Mizu CLI is using `go install`:
+
+```bash
+go install github.com/go-mizu/mizu/cmd/mizu@latest
+```
+
+This will download, compile, and install the `mizu` binary to your `$GOPATH/bin` directory.
+
+<Note>
+Make sure `$GOPATH/bin` is in your `PATH` environment variable to run `mizu` from anywhere.
+</Note>
+
+## From Source
+
+Clone the repository and build from source:
+
+```bash
+# Clone the repository
+git clone https://github.com/go-mizu/mizu.git
+cd mizu
+
+# Build the CLI
+go build -o mizu ./cmd/mizu
+
+# Move to your PATH (optional)
+sudo mv mizu /usr/local/bin/
+```
+
+### Build with Version Information
+
+For production builds, include version information:
+
+```bash
+go build -ldflags "-X github.com/go-mizu/mizu/cli.Version=1.0.0 \
+  -X github.com/go-mizu/mizu/cli.Commit=$(git rev-parse --short HEAD) \
+  -X github.com/go-mizu/mizu/cli.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -o mizu ./cmd/mizu
+```
+
+## Verify Installation
+
+After installation, verify the CLI is working:
+
+```bash
+mizu version
+```
+
+Expected output:
+
+```
+mizu version 0.1.0
+go version: go1.24
+commit: abc1234
+built: 2024-01-15T10:30:00Z
+```
+
+## Shell Completion
+
+The Mizu CLI provides completion suggestions. Configure your shell:
+
+### Bash
+
+```bash
+# Add to ~/.bashrc
+complete -W "new dev version" mizu
+```
+
+### Zsh
+
+```zsh
+# Add to ~/.zshrc
+compctl -k "(new dev version)" mizu
+```
+
+## Updating
+
+To update the CLI to the latest version:
+
+```bash
+go install github.com/go-mizu/mizu/cmd/mizu@latest
+```
+
+## Requirements
+
+- **Go 1.21+** - Required for building and running the CLI
+- **Git** - Required for version information in builds
+
+## Troubleshooting
+
+### Command Not Found
+
+If you get `command not found: mizu`, ensure your Go bin directory is in your PATH:
+
+```bash
+# Add to your shell profile (~/.bashrc, ~/.zshrc, etc.)
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
+
+Then reload your shell or run:
+
+```bash
+source ~/.bashrc  # or ~/.zshrc
+```
+
+### Permission Denied
+
+If you get permission errors when installing globally:
+
+```bash
+# Option 1: Use sudo
+sudo go install github.com/go-mizu/mizu/cmd/mizu@latest
+
+# Option 2: Install to user directory (recommended)
+GOPATH=$HOME/go go install github.com/go-mizu/mizu/cmd/mizu@latest
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Create a Project" icon="rocket" href="/cli/new">
+    Scaffold your first Mizu application
+  </Card>
+  <Card title="Run in Dev Mode" icon="play" href="/cli/dev">
+    Start your development server
+  </Card>
+</CardGroup>
