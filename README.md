@@ -52,6 +52,68 @@ go run main.go
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+### CLI Installation
+
+The Mizu CLI provides project scaffolding and development tools.
+
+**Using Go install:**
+
+```bash
+go install github.com/go-mizu/mizu/cmd/mizu@latest
+```
+
+**From source:**
+
+```bash
+git clone https://github.com/go-mizu/mizu.git
+cd mizu
+make install
+```
+
+This installs the `mizu` binary to `$HOME/bin`. Ensure this directory is in your `PATH`.
+
+**Verify installation:**
+
+```bash
+mizu version
+```
+
+### Using the CLI
+
+The CLI provides commands for creating and running Mizu projects.
+
+**Create a new project:**
+
+```bash
+# List available templates
+mizu new --list
+
+# Create a project from a template
+mizu new ./myapp --template minimal
+
+# Preview what will be created (dry run)
+mizu new ./myapp --template api --dry-run
+```
+
+**Run in development mode:**
+
+```bash
+cd myapp
+mizu dev
+```
+
+The `dev` command auto-detects your main package (checking `cmd/` or the current directory) and runs it. Use `--cmd` to specify a custom path if needed.
+
+**Global flags:**
+
+| Flag           | Description                       |
+|----------------|-----------------------------------|
+| `--json`       | Emit machine-readable JSON output |
+| `--no-color`   | Disable colored output            |
+| `-q, --quiet`  | Reduce output to errors only      |
+| `-v, --verbose`| Increase verbosity (repeatable)   |
+| `-h, --help`   | Show help                         |
+
 ### Contributing
 
 Mizu is an open project, and everyone is welcome.
