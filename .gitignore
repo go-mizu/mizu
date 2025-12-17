@@ -69,7 +69,7 @@ vendor/
 # Test data / fixtures (optional)
 # ------------------------------
 *.testdata
-testdata/
+# Note: Do NOT exclude testdata/ folders - they contain test fixtures needed for CI/CD
 *.snap
 
 # ------------------------------

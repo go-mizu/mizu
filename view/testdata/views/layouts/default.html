@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{slot "title" "Default Title"}}</title>
+    {{stack "styles"}}
+</head>
+<body>
+    <header>{{slot "header" "Default Header"}}</header>
+    <main>{{slot "content"}}</main>
+    <footer>{{slot "footer" "Default Footer"}}</footer>
+    {{stack "scripts"}}
+</body>
+</html>
