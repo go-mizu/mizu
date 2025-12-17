@@ -103,3 +103,6 @@ gomodcache/
 
 coverage.html
 coverage.out
+
+# Temporary, remove later
+CLAUDE.md
