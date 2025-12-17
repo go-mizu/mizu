@@ -22,14 +22,14 @@
 // # Basic Usage
 //
 //	// Create engine
-//	engine := view.New(view.Options{
+//	engine := view.New(view.Config{
 //	    Dir:         "views",
 //	    Development: true,
 //	})
 //
-//	// Add middleware to Mizu app
+//	// Add handler to Mizu app
 //	app := mizu.New()
-//	app.Use(view.Middleware(engine))
+//	app.Use(engine.Handler())
 //
 //	// Render in handlers
 //	func handler(c *mizu.Ctx) error {
@@ -79,7 +79,7 @@
 //	//go:embed views
 //	var viewsFS embed.FS
 //
-//	engine := view.New(view.Options{
+//	engine := view.New(view.Config{
 //	    FS: viewsFS,
 //	})
 package view
