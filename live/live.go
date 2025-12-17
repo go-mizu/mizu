@@ -17,22 +17,21 @@
 // # Basic usage
 //
 //	server := live.New(live.Options{
-//	    OnAuth: func(ctx context.Context, r *http.Request) (live.Meta, error) {
+//	    OnAuth: func(ctx context.Context, r *http.Request) (any, error) {
 //	        token := r.Header.Get("Authorization")
 //	        if !validateToken(token) {
-//	            return nil, live.ErrAuthFailed
+//	            return nil, errors.New("invalid token")
 //	        }
-//	        return live.Meta{"user_id": getUserID(token)}, nil
+//	        return UserInfo{ID: getUserID(token)}, nil
 //	    },
-//	    OnMessage: func(ctx context.Context, s *live.Session, msg live.Message) {
-//	        switch msg.Type {
+//	    OnMessage: func(ctx context.Context, s *live.Session, topic string, data []byte) {
+//	        var cmd Command
+//	        json.Unmarshal(data, &cmd)
+//	        switch cmd.Type {
 //	        case "subscribe":
-//	            server.Subscribe(s, msg.Topic)
-//	            s.Send(live.Message{Type: "ack", Topic: msg.Topic, Ref: msg.Ref})
+//	            server.Subscribe(s, topic)
 //	        case "unsubscribe":
-//	            server.Unsubscribe(s, msg.Topic)
-//	        case "publish":
-//	            server.Publish(msg.Topic, msg)
+//	            server.Unsubscribe(s, topic)
 //	        }
 //	    },
 //	    OnClose: func(s *live.Session, err error) {
@@ -50,9 +49,9 @@
 //  2. OnAuth called (optional) to authenticate
 //  3. WebSocket upgrade performed
 //  4. Session created and registered
-//  5. Read loop decodes messages and calls OnMessage
+//  5. Read loop receives messages and calls OnMessage
 //  6. Write loop sends queued messages to client
-//  7. On disconnect: cleanup subscriptions, call OnClose
+//  7. On disconnect: cleanup subscriptions, call OnClose with close reason
 //
 // # Backpressure
 //
@@ -62,20 +61,15 @@
 package live
 
 import (
-	"bufio"
 	"context"
 	"crypto/rand"
-	"crypto/sha1" //nolint:gosec // G505: SHA1 is required by WebSocket protocol (RFC 6455)
-	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"io"
-	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/go-mizu/mizu/live/internal/ws"
 )
 
 // -----------------------------------------------------------------------------
@@ -89,61 +83,21 @@ var (
 	// ErrQueueFull is returned when the send queue is full.
 	// When this happens, the session is closed to protect server health.
 	ErrQueueFull = errors.New("live: send queue full")
-
-	// ErrAuthFailed is returned when authentication fails.
-	ErrAuthFailed = errors.New("live: authentication failed")
-
-	// ErrInvalidVersion is returned when the WebSocket version is not supported.
-	ErrInvalidVersion = errors.New("live: unsupported WebSocket version")
-
-	// ErrMessageTooLarge is returned when a message exceeds the read limit.
-	ErrMessageTooLarge = errors.New("live: message too large")
-
-	// ErrProtocolError is returned for WebSocket protocol violations.
-	ErrProtocolError = errors.New("live: protocol error")
 )
 
 // -----------------------------------------------------------------------------
 // Types
 // -----------------------------------------------------------------------------
 
-// Message is the transport envelope for all live communications.
-// It carries typed messages between clients and server.
+// Message is the transport envelope for pub/sub.
+// It carries topic and opaque data between clients and server.
 type Message struct {
-	// Type identifies the message purpose (e.g., "subscribe", "message", "ack").
-	// The live package does not interpret this field; higher layers define semantics.
-	Type string `json:"type"`
-
 	// Topic is the routing key for pub/sub operations.
-	// Empty for messages that don't target a specific topic.
 	Topic string `json:"topic,omitempty"`
 
-	// Ref is a client-generated reference for correlating request/response pairs.
-	// Servers should echo Ref in acknowledgments.
-	Ref string `json:"ref,omitempty"`
-
-	// Body contains the message payload as opaque bytes.
-	// Higher layers define the schema. When using JSON codec, this is base64-encoded.
-	Body []byte `json:"body,omitempty"`
-}
-
-// Meta holds authenticated connection metadata.
-// Populated by OnAuth callback and accessible via Session.Meta().
-// The live package treats this as read-only after creation.
-type Meta map[string]any
-
-// Get returns the value for key, or nil if not present.
-func (m Meta) Get(key string) any {
-	if m == nil {
-		return nil
-	}
-	return m[key]
-}
-
-// GetString returns the string value for key, or empty string if not present or not a string.
-func (m Meta) GetString(key string) string {
-	v, _ := m.Get(key).(string)
-	return v
+	// Data contains the message payload as opaque JSON.
+	// Higher layers define the schema.
+	Data json.RawMessage `json:"data,omitempty"`
 }
 
 // -----------------------------------------------------------------------------
@@ -162,23 +116,22 @@ type Options struct {
 	QueueSize int
 
 	// ReadLimit is the maximum message size in bytes. Default: 4MB.
-	// Messages exceeding this limit cause the connection to be closed
-	// with a 1009 (message too big) close code.
+	// Messages exceeding this limit cause the connection to be closed.
 	ReadLimit int
 
 	// OnAuth is called to authenticate new connections.
-	// Return Meta with user info on success, or an error to reject.
+	// Return any value on success (accessible via Session.Value()),
+	// or an error to reject the connection.
 	// If nil, all connections are accepted without authentication.
-	OnAuth func(ctx context.Context, r *http.Request) (Meta, error)
+	OnAuth func(ctx context.Context, r *http.Request) (any, error)
 
 	// OnMessage is called when a message is received from a client.
+	// The topic and data are extracted from the incoming JSON message.
 	// This is where you implement subscribe/unsubscribe/publish logic.
-	// The live package does not interpret message types; higher layers
-	// define the protocol (e.g., "subscribe", "publish", "unsubscribe").
-	OnMessage func(ctx context.Context, s *Session, msg Message)
+	OnMessage func(ctx context.Context, s *Session, topic string, data []byte)
 
 	// OnClose is called when a session is closed.
-	// The error may be nil for clean closes.
+	// The error contains the actual close reason (may be nil for clean closes).
 	OnClose func(s *Session, err error)
 
 	// Origins is a list of allowed origins for WebSocket connections.
@@ -202,10 +155,9 @@ type Options struct {
 
 // Server owns sessions, pubsub state, and the WebSocket handler.
 type Server struct {
-	opts         Options
-	pubsub       *memPubSub
-	sessions     sync.Map // map[string]*Session
-	sessionCount atomic.Int64
+	opts     Options
+	pubsub   *memPubSub
+	sessions sync.Map // map[string]*Session
 }
 
 // New creates a new live server with the given options.
@@ -231,19 +183,9 @@ func (srv *Server) Handler() http.Handler {
 	return http.HandlerFunc(srv.handleConn)
 }
 
-// Publish sends a message to all subscribers of a topic.
-func (srv *Server) Publish(topic string, msg Message) {
-	srv.pubsub.publish(topic, msg)
-}
-
-// Broadcast sends a message to all connected sessions.
-func (srv *Server) Broadcast(msg Message) {
-	srv.sessions.Range(func(_, value any) bool {
-		if s, ok := value.(*Session); ok {
-			_ = s.Send(msg)
-		}
-		return true
-	})
+// Publish sends data to all subscribers of a topic.
+func (srv *Server) Publish(topic string, data []byte) {
+	srv.pubsub.publish(topic, data)
 }
 
 // Subscribe adds a session to a topic.
@@ -256,22 +198,14 @@ func (srv *Server) Unsubscribe(s *Session, topic string) {
 	srv.pubsub.unsubscribe(s, topic)
 }
 
-// SessionCount returns the number of connected sessions.
-// This is an O(1) operation using an atomic counter.
-func (srv *Server) SessionCount() int {
-	return int(srv.sessionCount.Load())
-}
-
 // addSession registers a session with the server.
 func (srv *Server) addSession(s *Session) {
 	srv.sessions.Store(s.id, s)
-	srv.sessionCount.Add(1)
 }
 
 // removeSession unregisters a session from the server.
 func (srv *Server) removeSession(s *Session) {
 	srv.sessions.Delete(s.id)
-	srv.sessionCount.Add(-1)
 	srv.pubsub.unsubscribeAll(s)
 }
 
@@ -300,24 +234,25 @@ func encodeHex(b []byte) string {
 // It is safe for concurrent use.
 type Session struct {
 	id       string
-	meta     Meta
+	value    any
 	sendCh   chan Message
 	server   *Server
 	topics   map[string]struct{}
 	mu       sync.RWMutex
 	closed   atomic.Bool
+	closeErr atomic.Value // stores error
 	doneCh   chan struct{}
-	conn     net.Conn // underlying connection for cleanup
+	wsConn   *ws.Conn // underlying WebSocket connection
 }
 
-// newSession creates a new session with the given ID and metadata.
-func newSession(id string, meta Meta, queueSize int, server *Server) *Session {
+// newSession creates a new session with the given ID and value.
+func newSession(id string, value any, queueSize int, server *Server) *Session {
 	if queueSize <= 0 {
 		queueSize = defaultQueueSize
 	}
 	return &Session{
 		id:     id,
-		meta:   meta,
+		value:  value,
 		sendCh: make(chan Message, queueSize),
 		server: server,
 		topics: make(map[string]struct{}),
@@ -330,9 +265,10 @@ func (s *Session) ID() string {
 	return s.id
 }
 
-// Meta returns the session's metadata set during authentication.
-func (s *Session) Meta() Meta {
-	return s.meta
+// Value returns the opaque value set during authentication.
+// Cast to your application type as needed.
+func (s *Session) Value() any {
+	return s.value
 }
 
 // Send queues a message for delivery to the client.
@@ -363,18 +299,29 @@ func (s *Session) Close() error {
 }
 
 // closeWithError closes the session with the given error.
-// It also closes the underlying connection to unblock any blocked reads.
+// The error is stored and passed to OnClose.
 func (s *Session) closeWithError(err error) error {
 	if !s.closed.CompareAndSwap(false, true) {
 		return nil // Already closed
 	}
-	_ = err // error stored for internal use only
+	if err != nil {
+		s.closeErr.Store(err)
+	}
 	close(s.doneCh)
 	// Close the underlying connection to unblock readLoop
-	if s.conn != nil {
-		_ = s.conn.Close()
+	if s.wsConn != nil {
+		_ = s.wsConn.Close()
 	}
 	return nil
+}
+
+// CloseError returns the error that caused the session to close, if any.
+func (s *Session) CloseError() error {
+	v := s.closeErr.Load()
+	if v == nil {
+		return nil
+	}
+	return v.(error)
 }
 
 // IsClosed returns true if the session has been closed.
@@ -489,16 +436,11 @@ func (p *memPubSub) unsubscribeAll(s *Session) {
 	}
 }
 
-// publish sends a message to all subscribers of a topic.
+// publish sends data to all subscribers of a topic.
 // Messages are sent asynchronously; slow receivers don't block the publisher.
-func (p *memPubSub) publish(topic string, msg Message) {
+func (p *memPubSub) publish(topic string, data []byte) {
 	if topic == "" {
 		return
-	}
-
-	// Set the topic on the message if not already set
-	if msg.Topic == "" {
-		msg.Topic = topic
 	}
 
 	p.mu.RLock()
@@ -515,23 +457,17 @@ func (p *memPubSub) publish(topic string, msg Message) {
 	}
 	p.mu.RUnlock()
 
+	// Create message with topic and data
+	msg := Message{
+		Topic: topic,
+		Data:  data,
+	}
+
 	// Send to all subscribers
 	for _, s := range sessions {
 		// Non-blocking send; if it fails (queue full), session will be closed
 		_ = s.Send(msg)
 	}
-}
-
-// count returns the number of subscribers for a topic.
-func (p *memPubSub) count(topic string) int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-
-	subs, ok := p.topics[topic]
-	if !ok {
-		return 0
-	}
-	return len(subs)
 }
 
 // -----------------------------------------------------------------------------
@@ -543,55 +479,25 @@ func encodeMessage(m Message) ([]byte, error) {
 	return json.Marshal(m)
 }
 
-// decodeMessage deserializes JSON to a message.
-func decodeMessage(data []byte) (Message, error) {
+// decodeMessage deserializes JSON to extract topic and data.
+func decodeMessage(data []byte) (topic string, payload []byte, err error) {
 	var m Message
 	if err := json.Unmarshal(data, &m); err != nil {
-		return Message{}, err
+		return "", nil, err
 	}
-	return m, nil
+	return m.Topic, m.Data, nil
 }
 
 // -----------------------------------------------------------------------------
-// WebSocket
+// Connection Handler
 // -----------------------------------------------------------------------------
-
-const websocketGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-
-// WebSocket message types (opcodes)
-const (
-	wsContinuation  = 0
-	wsTextMessage   = 1
-	wsBinaryMessage = 2
-	wsCloseMessage  = 8
-	wsPingMessage   = 9
-	wsPongMessage   = 10
-)
-
-// WebSocket close codes per RFC 6455
-const (
-	wsCloseNormal        = 1000 // Normal closure
-	wsCloseGoingAway     = 1001 // Endpoint going away
-	wsCloseProtocolError = 1002 // Protocol error
-	wsCloseUnsupported   = 1003 // Unsupported data type
-	wsCloseTooLarge      = 1009 // Message too big
-)
-
-// wsConn represents a WebSocket connection.
-type wsConn struct {
-	conn      net.Conn
-	reader    *bufio.Reader
-	writer    *bufio.Writer
-	mu        sync.Mutex
-	readLimit int // maximum message size
-}
 
 // handleConn handles a new WebSocket connection.
 //
 //nolint:cyclop // Connection handling requires multiple steps
 func (srv *Server) handleConn(w http.ResponseWriter, r *http.Request) {
 	// Check if it's a WebSocket upgrade request
-	if !isWebSocketUpgrade(r) {
+	if !ws.IsUpgradeRequest(r) {
 		http.Error(w, "websocket upgrade required", http.StatusBadRequest)
 		return
 	}
@@ -626,129 +532,91 @@ func (srv *Server) handleConn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Authenticate if OnAuth is set
-	var meta Meta
+	var value any
 	if srv.opts.OnAuth != nil {
 		var err error
-		meta, err = srv.opts.OnAuth(r.Context(), r)
+		value, err = srv.opts.OnAuth(r.Context(), r)
 		if err != nil {
 			http.Error(w, "authentication failed", http.StatusUnauthorized)
 			return
 		}
 	}
 
-	// Get and validate WebSocket key
+	// Validate WebSocket key
 	key := r.Header.Get("Sec-WebSocket-Key")
-	if key == "" {
-		http.Error(w, "missing Sec-WebSocket-Key", http.StatusBadRequest)
-		return
-	}
-	if !validateWebSocketKey(key) {
+	if key == "" || !ws.ValidateKey(key) {
 		http.Error(w, "invalid Sec-WebSocket-Key", http.StatusBadRequest)
 		return
 	}
 
-	// Calculate accept key
-	acceptKey := computeAcceptKey(key)
-
-	// Hijack connection
-	hijacker, ok := w.(http.Hijacker)
-	if !ok {
-		http.Error(w, "websocket: hijack not supported", http.StatusInternalServerError)
-		return
-	}
-
-	conn, bufrw, err := hijacker.Hijack()
+	// Upgrade to WebSocket
+	wsConn, err := ws.Upgrade(w, r, srv.opts.ReadLimit)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return // Error already sent to client
 	}
 
-	// Send upgrade response
-	response := "HTTP/1.1 101 Switching Protocols\r\n" +
-		"Upgrade: websocket\r\n" +
-		"Connection: Upgrade\r\n" +
-		"Sec-WebSocket-Accept: " + acceptKey + "\r\n\r\n"
-
-	_, _ = bufrw.WriteString(response)
-	_ = bufrw.Flush()
-
-	// Create WebSocket connection wrapper
-	ws := &wsConn{
-		conn:      conn,
-		reader:    bufrw.Reader,
-		writer:    bufrw.Writer,
-		readLimit: srv.opts.ReadLimit,
-	}
-
-	// Create session and store connection for cleanup
-	session := newSession(srv.opts.IDGenerator(), meta, srv.opts.QueueSize, srv)
-	session.conn = conn
+	// Create session
+	session := newSession(srv.opts.IDGenerator(), value, srv.opts.QueueSize, srv)
+	session.wsConn = wsConn
 	srv.addSession(session)
 
 	// Start write loop
-	go srv.writeLoop(session, ws)
+	go srv.writeLoop(session)
 
 	// Run read loop (blocking)
-	readErr := srv.readLoop(r, session, ws)
+	readErr := srv.readLoop(r, session)
 
-	// Cleanup (closeWithError already closes the underlying conn)
+	// Close session with the read error as reason
 	session.closeWithError(readErr)
 	srv.removeSession(session)
 
-	// Call OnClose callback
+	// Call OnClose callback with actual close reason
 	if srv.opts.OnClose != nil {
-		srv.opts.OnClose(session, readErr)
+		srv.opts.OnClose(session, session.CloseError())
 	}
 }
 
-// validateWebSocketKey validates that the Sec-WebSocket-Key is valid base64
-// and decodes to exactly 16 bytes (per RFC 6455).
-func validateWebSocketKey(key string) bool {
-	decoded, err := base64.StdEncoding.DecodeString(key)
-	return err == nil && len(decoded) == 16
-}
-
 // readLoop reads messages from the WebSocket and dispatches to OnMessage.
-func (srv *Server) readLoop(r *http.Request, session *Session, ws *wsConn) error {
+func (srv *Server) readLoop(r *http.Request, session *Session) error {
 	ctx := r.Context()
 
 	for {
-		msgType, data, err := ws.readMessage()
+		opcode, data, err := session.wsConn.ReadMessage()
 		if err != nil {
 			return err
 		}
 
 		// Handle control frames
-		switch msgType {
-		case wsCloseMessage:
+		switch opcode {
+		case ws.OpClose:
 			return nil
-		case wsPingMessage:
-			_ = ws.writeMessage(wsPongMessage, data)
+		case ws.OpPing:
+			_ = session.wsConn.WriteMessage(ws.OpPong, data)
 			continue
-		case wsPongMessage:
+		case ws.OpPong:
 			continue
 		}
 
 		// Only process text/binary messages
-		if msgType != wsTextMessage && msgType != wsBinaryMessage {
+		if opcode != ws.OpText && opcode != ws.OpBinary {
 			continue
 		}
 
-		// Decode message
-		msg, err := decodeMessage(data)
+		// Decode message to get topic and payload
+		topic, payload, err := decodeMessage(data)
 		if err != nil {
 			continue // Skip invalid messages
 		}
 
 		// Dispatch to handler
 		if srv.opts.OnMessage != nil {
-			srv.opts.OnMessage(ctx, session, msg)
+			srv.opts.OnMessage(ctx, session, topic, payload)
 		}
 	}
 }
 
 // writeLoop sends messages from the session queue to the WebSocket.
-func (srv *Server) writeLoop(session *Session, ws *wsConn) {
+func (srv *Server) writeLoop(session *Session) {
 	for {
 		select {
 		case msg := <-session.sendCh:
@@ -756,151 +624,14 @@ func (srv *Server) writeLoop(session *Session, ws *wsConn) {
 			if err != nil {
 				continue
 			}
-			if err := ws.writeMessage(wsTextMessage, data); err != nil {
+			if err := session.wsConn.WriteMessage(ws.OpText, data); err != nil {
 				session.closeWithError(err)
 				return
 			}
 		case <-session.doneCh:
 			// Send close frame
-			_ = ws.writeMessage(wsCloseMessage, []byte{0x03, 0xe8}) // 1000 normal closure
+			_ = session.wsConn.WriteClose(ws.CloseNormal)
 			return
 		}
 	}
-}
-
-// isWebSocketUpgrade checks if request is a WebSocket upgrade.
-func isWebSocketUpgrade(r *http.Request) bool {
-	return strings.EqualFold(r.Header.Get("Upgrade"), "websocket") &&
-		strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade")
-}
-
-// computeAcceptKey computes the Sec-WebSocket-Accept header value.
-func computeAcceptKey(key string) string {
-	h := sha1.New() //nolint:gosec // G401: SHA1 required by WebSocket protocol (RFC 6455)
-	h.Write([]byte(key + websocketGUID))
-	return base64.StdEncoding.EncodeToString(h.Sum(nil))
-}
-
-// readMessage reads a WebSocket frame.
-// It enforces RFC 6455 requirements:
-// - Client frames must be masked
-// - Control frames must have payload ≤ 125 bytes and FIN=1
-// - Fragmentation is rejected (FIN=0 or opcode=0 continuation)
-// - Message size is limited by readLimit
-//
-//nolint:cyclop // WebSocket frame parsing requires multiple format checks
-func (ws *wsConn) readMessage() (messageType int, data []byte, err error) {
-	// Read first byte (FIN + RSV + opcode)
-	b, err := ws.reader.ReadByte()
-	if err != nil {
-		return 0, nil, err
-	}
-
-	fin := b&0x80 != 0
-	opcode := int(b & 0x0F)
-
-	// Reject continuation frames (we don't support fragmentation)
-	if opcode == wsContinuation {
-		return 0, nil, ErrProtocolError
-	}
-
-	// Reject fragmented data frames (FIN=0)
-	// Control frames (8-10) must always have FIN=1
-	isControlFrame := opcode >= wsCloseMessage
-	if !fin {
-		return 0, nil, ErrProtocolError
-	}
-
-	// Read second byte (MASK + payload length)
-	b, err = ws.reader.ReadByte()
-	if err != nil {
-		return 0, nil, err
-	}
-
-	masked := b&0x80 != 0
-	length := int(b & 0x7F)
-
-	// RFC 6455: Client frames MUST be masked
-	if !masked {
-		return 0, nil, ErrProtocolError
-	}
-
-	// Control frames must have payload length ≤ 125
-	if isControlFrame && length > 125 {
-		return 0, nil, ErrProtocolError
-	}
-
-	// Extended payload length
-	switch length {
-	case 126:
-		lenBytes := make([]byte, 2)
-		if _, err := io.ReadFull(ws.reader, lenBytes); err != nil {
-			return 0, nil, err
-		}
-		length = int(binary.BigEndian.Uint16(lenBytes))
-	case 127:
-		lenBytes := make([]byte, 8)
-		if _, err := io.ReadFull(ws.reader, lenBytes); err != nil {
-			return 0, nil, err
-		}
-		length64 := binary.BigEndian.Uint64(lenBytes)
-		// Check for overflow and read limit
-		if length64 > uint64(ws.readLimit) {
-			return 0, nil, ErrMessageTooLarge
-		}
-		length = int(length64)
-	}
-
-	// Check read limit for all payload lengths
-	if ws.readLimit > 0 && length > ws.readLimit {
-		return 0, nil, ErrMessageTooLarge
-	}
-
-	// Read masking key (always present since we require masked frames)
-	mask := make([]byte, 4)
-	if _, err := io.ReadFull(ws.reader, mask); err != nil {
-		return 0, nil, err
-	}
-
-	// Read payload
-	data = make([]byte, length)
-	if _, err := io.ReadFull(ws.reader, data); err != nil {
-		return 0, nil, err
-	}
-
-	// Unmask data
-	for i := range data {
-		data[i] ^= mask[i%4]
-	}
-
-	return opcode, data, nil
-}
-
-// writeMessage writes a WebSocket frame.
-func (ws *wsConn) writeMessage(messageType int, data []byte) error {
-	ws.mu.Lock()
-	defer ws.mu.Unlock()
-
-	// First byte: FIN + opcode
-	_ = ws.writer.WriteByte(0x80 | byte(messageType))
-
-	// Second byte: payload length (server never masks)
-	length := len(data)
-	if length <= 125 {
-		_ = ws.writer.WriteByte(byte(length))
-	} else if length <= 65535 {
-		_ = ws.writer.WriteByte(126)
-		_ = ws.writer.WriteByte(byte(length >> 8))
-		_ = ws.writer.WriteByte(byte(length))
-	} else {
-		_ = ws.writer.WriteByte(127)
-		for i := 7; i >= 0; i-- {
-			_ = ws.writer.WriteByte(byte(length >> (8 * i)))
-		}
-	}
-
-	// Write payload
-	_, _ = ws.writer.Write(data)
-
-	return ws.writer.Flush()
 }

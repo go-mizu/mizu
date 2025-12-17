@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"io/fs"
 	"net/http"
 	"os"
@@ -89,34 +90,58 @@ func (a *App) setupLive() {
 	})
 }
 
-func (a *App) handleLiveMessage(ctx context.Context, s *live.Session, msg live.Message) {
+// LiveMessage is the application-level protocol envelope.
+// The live package only handles transport (topic + data).
+// The application defines its own message format in the data field.
+type LiveMessage struct {
+	Type    string          `json:"type"`
+	Ref     string          `json:"ref,omitempty"`
+	Payload json.RawMessage `json:"payload,omitempty"`
+}
+
+func (a *App) handleLiveMessage(ctx context.Context, s *live.Session, topic string, data []byte) {
+	var msg LiveMessage
+	if err := json.Unmarshal(data, &msg); err != nil {
+		return
+	}
+
 	switch msg.Type {
 	case "subscribe":
-		a.liveServer.Subscribe(s, msg.Topic)
-		_ = s.Send(live.Message{Type: "ack", Ref: msg.Ref, Topic: msg.Topic})
+		a.liveServer.Subscribe(s, topic)
+		a.sendResponse(s, topic, "ack", msg.Ref, nil)
 	case "unsubscribe":
-		a.liveServer.Unsubscribe(s, msg.Topic)
+		a.liveServer.Unsubscribe(s, topic)
 	case "mount":
-		a.handleMount(ctx, s, msg)
+		a.handleMount(ctx, s, topic, msg)
 	case "event":
-		a.handleEvent(ctx, s, msg)
+		a.handleEvent(ctx, s, topic, msg)
 	}
 }
 
-func (a *App) handleMount(ctx context.Context, s *live.Session, msg live.Message) {
+func (a *App) handleMount(ctx context.Context, s *live.Session, topic string, msg LiveMessage) {
 	// Route to appropriate view handler based on topic
-	switch msg.Topic {
+	switch topic {
 	case "view:counter":
-		a.counter.Mount(s, msg)
+		a.counter.Mount(s, topic, msg.Ref)
 	}
 }
 
-func (a *App) handleEvent(ctx context.Context, s *live.Session, msg live.Message) {
+func (a *App) handleEvent(ctx context.Context, s *live.Session, topic string, msg LiveMessage) {
 	// Route to appropriate view handler based on topic
-	switch msg.Topic {
+	switch topic {
 	case "view:counter":
-		a.counter.HandleEvent(s, msg)
+		a.counter.HandleEvent(s, topic, msg.Payload)
 	}
+}
+
+// sendResponse sends a response message to the client.
+func (a *App) sendResponse(s *live.Session, topic, msgType, ref string, payload any) {
+	resp := LiveMessage{Type: msgType, Ref: ref}
+	if payload != nil {
+		resp.Payload, _ = json.Marshal(payload)
+	}
+	data, _ := json.Marshal(resp)
+	_ = s.Send(live.Message{Topic: topic, Data: data})
 }
 
 // staticHandler serves embedded static files

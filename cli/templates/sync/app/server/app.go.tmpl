@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"io/fs"
 	"net/http"
 	"os"
@@ -76,18 +77,40 @@ func (a *App) setupViews() {
 	a.app.Use(a.engine.Handler())
 }
 
+// LiveMessage is the application-level protocol envelope.
+type LiveMessage struct {
+	Type    string          `json:"type"`
+	Ref     string          `json:"ref,omitempty"`
+	Payload json.RawMessage `json:"payload,omitempty"`
+}
+
 func (a *App) setupLive() {
 	a.liveServer = live.New(live.Options{
-		OnMessage: func(ctx context.Context, s *live.Session, msg live.Message) {
+		OnMessage: func(ctx context.Context, s *live.Session, topic string, data []byte) {
+			var msg LiveMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				return
+			}
+
 			switch msg.Type {
 			case "subscribe":
-				a.liveServer.Subscribe(s, msg.Topic)
-				_ = s.Send(live.Message{Type: "ack", Ref: msg.Ref, Topic: msg.Topic})
+				a.liveServer.Subscribe(s, topic)
+				a.sendResponse(s, topic, "ack", msg.Ref, nil)
 			case "unsubscribe":
-				a.liveServer.Unsubscribe(s, msg.Topic)
+				a.liveServer.Unsubscribe(s, topic)
 			}
 		},
 	})
+}
+
+// sendResponse sends a response message to the client.
+func (a *App) sendResponse(s *live.Session, topic, msgType, ref string, payload any) {
+	resp := LiveMessage{Type: msgType, Ref: ref}
+	if payload != nil {
+		resp.Payload, _ = json.Marshal(payload)
+	}
+	data, _ := json.Marshal(resp)
+	_ = s.Send(live.Message{Topic: topic, Data: data})
 }
 
 func (a *App) setupSync() {
@@ -113,11 +136,12 @@ func (a *App) setupSync() {
 func (a *App) syncNotifier(prefix string) sync.Notifier {
 	return sync.NotifierFunc(func(scope string, cursor uint64) {
 		topic := prefix + scope
-		a.liveServer.Publish(topic, live.Message{
-			Type:  "sync",
-			Topic: topic,
-			Body:  []byte(`{"cursor":` + uintToString(cursor) + `}`),
+		// Publish sync notification with cursor
+		data, _ := json.Marshal(LiveMessage{
+			Type:    "sync",
+			Payload: json.RawMessage(`{"cursor":` + uintToString(cursor) + `}`),
 		})
+		a.liveServer.Publish(topic, data)
 	})
 }
 
