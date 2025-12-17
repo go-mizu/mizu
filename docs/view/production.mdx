@@ -30,11 +30,11 @@ func main() {
     engine := view.New(view.Config{
         FS:            viewsFS,    // Use embedded filesystem
         Extension:     ".html",
-        DefaultLayout: "layout",
+        DefaultLayout: "default",
     })
 
     app := mizu.New()
-    engine.Middleware(app)
+    app.Use(engine.Middleware())
 
     // ... routes ...
 
@@ -50,9 +50,11 @@ The `//go:embed` directive embeds a directory relative to the source file:
 myapp/
 ├── main.go           # Contains //go:embed views
 ├── views/
-│   ├── layout.html
-│   ├── home.html
-│   └── about.html
+│   ├── layouts/
+│   │   └── default.html
+│   └── pages/
+│       ├── home.html
+│       └── about.html
 └── go.mod
 ```
 
@@ -81,7 +83,7 @@ func main() {
 
     config := view.Config{
         Extension:     ".html",
-        DefaultLayout: "layout",
+        DefaultLayout: "default",
         Development:   isDev,
     }
 
@@ -110,7 +112,7 @@ In production, preload all templates at startup to:
 ```go
 engine := view.New(view.Config{
     FS:            viewsFS,
-    DefaultLayout: "layout",
+    DefaultLayout: "default",
 })
 
 // Preload and validate all templates
@@ -119,7 +121,7 @@ if err := engine.Load(); err != nil {
 }
 
 app := mizu.New()
-engine.Middleware(app)
+app.Use(engine.Middleware())
 ```
 
 ### Preload Errors
@@ -167,7 +169,7 @@ func handler(c *mizu.Ctx) error {
     featured := filterFeatured(posts)
     byCategory := groupByCategory(posts)
 
-    return view.From(c).Render(c, "posts", view.Data{
+    return view.Render(c, "posts", view.Data{
         "Posts":      posts,
         "Featured":   featured,
         "ByCategory": byCategory,
@@ -177,7 +179,7 @@ func handler(c *mizu.Ctx) error {
 
 ```html
 <!-- Simple template: just displays pre-computed data -->
-{{range .Featured}}
+{{range .Data.Featured}}
     <article>{{.Title}}</article>
 {{end}}
 ```
@@ -188,16 +190,16 @@ Complex templates are slower. Keep them focused:
 
 ```html
 <!-- Avoid: deeply nested conditionals -->
-{{if .A}}
-    {{if .B}}
-        {{if .C}}
+{{if .Data.A}}
+    {{if .Data.B}}
+        {{if .Data.C}}
             ...
         {{end}}
     {{end}}
 {{end}}
 
 <!-- Better: compute in Go, pass simple flag -->
-{{if .ShowSpecialContent}}
+{{if .Data.ShowSpecialContent}}
     ...
 {{end}}
 ```
@@ -209,25 +211,21 @@ Complex templates are slower. Keep them focused:
 Create error page templates:
 
 ```html
-<!-- views/404.html -->
-{{define "content"}}
+<!-- views/pages/404.html -->
 <div class="error-page">
     <h1>404</h1>
     <p>The page you're looking for doesn't exist.</p>
     <a href="/">Go Home</a>
 </div>
-{{end}}
 ```
 
 ```html
-<!-- views/500.html -->
-{{define "content"}}
+<!-- views/pages/500.html -->
 <div class="error-page">
     <h1>500</h1>
     <p>Something went wrong on our end.</p>
     <p>Please try again later.</p>
 </div>
-{{end}}
 ```
 
 ### Error Handler
@@ -257,8 +255,7 @@ app.ErrorHandler = func(c *mizu.Ctx, err error) {
 
     // Render error page
     c.Status(code)
-    engine := view.From(c)
-    if renderErr := engine.Render(c, page, view.Data{
+    if renderErr := view.Render(c, page, view.Data{
         "Title": "Error",
         "Error": err,
     }); renderErr != nil {
@@ -274,7 +271,7 @@ Handle template rendering errors gracefully:
 
 ```go
 func handler(c *mizu.Ctx) error {
-    err := view.From(c).Render(c, "page", data)
+    err := view.Render(c, "page", data)
     if err != nil {
         // Log the error
         log.Printf("Template error: %v", err)
@@ -308,10 +305,10 @@ Go templates escape HTML by default. Only bypass escaping for trusted content:
 
 ```html
 <!-- Safe: auto-escaped -->
-{{.UserComment}}
+{{.Data.UserComment}}
 
 <!-- Only for trusted content -->
-{{.TrustedHTML}}
+{{.Data.TrustedHTML}}
 ```
 
 ```go
@@ -328,7 +325,7 @@ Include CSRF tokens in forms:
 
 ```html
 <form method="POST" action="/submit">
-    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="csrf_token" value="{{.Data.CSRFToken}}">
     <!-- form fields -->
 </form>
 ```
@@ -343,7 +340,7 @@ Track template rendering performance:
 func handler(c *mizu.Ctx) error {
     start := time.Now()
 
-    err := view.From(c).Render(c, "page", data)
+    err := view.Render(c, "page", data)
 
     duration := time.Since(start)
     metrics.RecordTemplateRender("page", duration)
@@ -359,6 +356,7 @@ Verify templates work in health checks:
 ```go
 app.Get("/health", func(c *mizu.Ctx) error {
     // Try rendering a simple template
+    engine := view.From(c)
     var buf bytes.Buffer
     err := engine.Render(&buf, "health-check", nil, view.NoLayout())
     if err != nil {
@@ -449,7 +447,7 @@ func main() {
     // Create view engine
     config := view.Config{
         Extension:     ".html",
-        DefaultLayout: "layout",
+        DefaultLayout: "default",
         Development:   isDev,
     }
 
@@ -471,7 +469,7 @@ func main() {
 
     // Create app
     app := mizu.New()
-    engine.Middleware(app)
+    app.Use(engine.Middleware())
 
     // Error handler
     app.ErrorHandler = func(c *mizu.Ctx, err error) {
@@ -491,7 +489,7 @@ func main() {
         }
 
         c.Status(code)
-        view.From(c).Render(c, page, view.Data{"Title": "Error"})
+        view.Render(c, page, view.Data{"Title": "Error"})
     }
 
     // Routes
@@ -506,21 +504,21 @@ func main() {
 }
 
 func homeHandler(c *mizu.Ctx) error {
-    return view.From(c).Render(c, "home", view.Data{
+    return view.Render(c, "home", view.Data{
         "Title": "Welcome",
     })
 }
 
 func aboutHandler(c *mizu.Ctx) error {
-    return view.From(c).Render(c, "about", view.Data{
+    return view.Render(c, "about", view.Data{
         "Title": "About Us",
     })
 }
 ```
 
-## Next Steps
+## What's Next?
 
 Now that your views are ready for production, explore:
 
-- **[Sync](/view/sync-overview)** - Server-side state synchronization
-- **[Live](/view/live-overview)** - Real-time WebSocket communication
+- **[Sync Overview](/view/sync-overview)** - Client-side state synchronization
+- **[Live Overview](/view/live-overview)** - Real-time WebSocket communication

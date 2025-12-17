@@ -1,13 +1,13 @@
 ---
 title: "Functions"
-description: "Built-in helper functions and how to add custom functions"
+description: "Built-in helper functions and custom template functions"
 ---
 
 The view engine provides built-in template functions that make your templates more expressive. This guide covers all available functions and how to add your own.
 
 ## Built-in Functions
 
-The view engine includes these helper functions in addition to Go's standard template functions.
+These functions are available in all templates.
 
 ### Data Structure Functions
 
@@ -40,7 +40,7 @@ Creates a slice from values:
 Converts a string to uppercase:
 
 ```html
-<span class="status">{{upper .Status}}</span>
+<span class="status">{{upper .Data.Status}}</span>
 <!-- "active" → "ACTIVE" -->
 ```
 
@@ -49,7 +49,7 @@ Converts a string to uppercase:
 Converts a string to lowercase:
 
 ```html
-<div class="type-{{lower .Type}}">
+<div class="type-{{lower .Data.Type}}">
 <!-- "Featured" → "featured" -->
 ```
 
@@ -58,7 +58,7 @@ Converts a string to lowercase:
 Removes leading and trailing whitespace:
 
 ```html
-<p>{{trim .Description}}</p>
+<p>{{trim .Data.Description}}</p>
 ```
 
 #### contains
@@ -66,7 +66,7 @@ Removes leading and trailing whitespace:
 Checks if a string contains a substring:
 
 ```html
-{{if contains .Email "@company.com"}}
+{{if contains .Data.Email "@company.com"}}
     <span class="internal">Internal User</span>
 {{end}}
 ```
@@ -76,7 +76,7 @@ Checks if a string contains a substring:
 Replaces occurrences of a substring:
 
 ```html
-{{replace .Content "\n" "<br>" -1}}
+{{replace .Data.Content "\n" "<br>" -1}}
 <!-- Replace all newlines with <br> -->
 ```
 
@@ -87,7 +87,7 @@ The third argument is the maximum number of replacements (-1 means all).
 Splits a string into a slice:
 
 ```html
-{{$parts := split .Tags ","}}
+{{$parts := split .Data.Tags ","}}
 {{range $parts}}
     <span class="tag">{{trim .}}</span>
 {{end}}
@@ -98,7 +98,7 @@ Splits a string into a slice:
 Joins a slice into a string:
 
 ```html
-<meta name="keywords" content="{{join .Keywords ", "}}">
+<meta name="keywords" content="{{join .Data.Keywords ", "}}">
 ```
 
 #### hasPrefix
@@ -106,7 +106,7 @@ Joins a slice into a string:
 Checks if a string starts with a prefix:
 
 ```html
-{{if hasPrefix .URL "https"}}
+{{if hasPrefix .Data.URL "https"}}
     <span class="secure">Secure</span>
 {{end}}
 ```
@@ -116,7 +116,7 @@ Checks if a string starts with a prefix:
 Checks if a string ends with a suffix:
 
 ```html
-{{if hasSuffix .Filename ".pdf"}}
+{{if hasSuffix .Data.Filename ".pdf"}}
     <span class="file-icon">PDF</span>
 {{end}}
 ```
@@ -127,15 +127,15 @@ Checks if a string ends with a suffix:
 |----------|-------------|---------|
 | `dict` | Create a map | `{{dict "key" "value"}}` |
 | `list` | Create a slice | `{{list 1 2 3}}` |
-| `upper` | Uppercase string | `{{upper .Name}}` |
-| `lower` | Lowercase string | `{{lower .Name}}` |
-| `trim` | Trim whitespace | `{{trim .Text}}` |
-| `contains` | Check substring | `{{if contains .Text "hello"}}` |
-| `replace` | Replace substring | `{{replace .Text "old" "new" -1}}` |
-| `split` | Split string | `{{split .Tags ","}}` |
-| `join` | Join slice | `{{join .Items ", "}}` |
-| `hasPrefix` | Check prefix | `{{if hasPrefix .URL "https"}}` |
-| `hasSuffix` | Check suffix | `{{if hasSuffix .File ".go"}}` |
+| `upper` | Uppercase string | `{{upper .Data.Name}}` |
+| `lower` | Lowercase string | `{{lower .Data.Name}}` |
+| `trim` | Trim whitespace | `{{trim .Data.Text}}` |
+| `contains` | Check substring | `{{if contains .Data.Text "hello"}}` |
+| `replace` | Replace substring | `{{replace .Data.Text "old" "new" -1}}` |
+| `split` | Split string | `{{split .Data.Tags ","}}` |
+| `join` | Join slice | `{{join .Data.Items ", "}}` |
+| `hasPrefix` | Check prefix | `{{if hasPrefix .Data.URL "https"}}` |
+| `hasSuffix` | Check suffix | `{{if hasSuffix .Data.File ".go"}}` |
 
 ## Go's Standard Functions
 
@@ -153,9 +153,9 @@ Go's `html/template` package provides these built-in functions:
 | `ge` | Greater than or equal |
 
 ```html
-{{if eq .Status "active"}}Active{{end}}
-{{if gt .Count 10}}Many items{{end}}
-{{if le .Stock 5}}Low stock{{end}}
+{{if eq .Data.Status "active"}}Active{{end}}
+{{if gt .Data.Count 10}}Many items{{end}}
+{{if le .Data.Stock 5}}Low stock{{end}}
 ```
 
 ### Logic Functions
@@ -167,9 +167,9 @@ Go's `html/template` package provides these built-in functions:
 | `not` | Logical NOT |
 
 ```html
-{{if and .LoggedIn .IsAdmin}}Admin controls{{end}}
-{{if or .Error .Warning}}Alert{{end}}
-{{if not .Disabled}}Enabled{{end}}
+{{if and .Data.LoggedIn .Data.IsAdmin}}Admin controls{{end}}
+{{if or .Data.Error .Data.Warning}}Alert{{end}}
+{{if not .Data.Disabled}}Enabled{{end}}
 ```
 
 ### Other Standard Functions
@@ -186,9 +186,9 @@ Go's `html/template` package provides these built-in functions:
 | `urlquery` | URL query escape |
 
 ```html
-<p>{{len .Items}} items</p>
-<p>First: {{index .Items 0}}</p>
-<p>{{printf "%.2f" .Price}}</p>
+<p>{{len .Data.Items}} items</p>
+<p>First: {{index .Data.Items 0}}</p>
+<p>{{printf "%.2f" .Data.Price}}</p>
 ```
 
 ## Adding Custom Functions
@@ -244,15 +244,15 @@ engine := view.New(view.Config{
 ### Using Custom Functions
 
 ```html
-<h1>{{greet .Name}}</h1>
+<h1>{{greet .Data.Name}}</h1>
 
-<p>{{.Count}} {{pluralize .Count "item" "items"}}</p>
+<p>{{.Data.Count}} {{pluralize .Data.Count "item" "items"}}</p>
 
-<p>Published: {{formatDate .CreatedAt "January 2, 2006"}}</p>
+<p>Published: {{formatDate .Data.CreatedAt "January 2, 2006"}}</p>
 
-<p>{{wordCount .Content}} words</p>
+<p>{{wordCount .Data.Content}} words</p>
 
-<p>{{truncate .Description 100}}</p>
+<p>{{truncate .Data.Description 100}}</p>
 ```
 
 ## Common Custom Functions
@@ -280,8 +280,8 @@ engine := view.New(view.Config{
 ```
 
 ```html
-<time>{{formatDate .CreatedAt "Jan 2, 2006"}}</time>
-<span>{{timeAgo .CreatedAt}}</span>
+<time>{{formatDate .Data.CreatedAt "Jan 2, 2006"}}</time>
+<span>{{timeAgo .Data.CreatedAt}}</span>
 ```
 
 ### Number Formatting
@@ -293,7 +293,6 @@ engine := view.New(view.Config{
     if len(s) <= 3 {
         return s
     }
-    // Insert commas
     var result []byte
     for i, c := range s {
         if i > 0 && (len(s)-i)%3 == 0 {
@@ -310,8 +309,8 @@ engine := view.New(view.Config{
 ```
 
 ```html
-<p>{{formatNumber .Views}} views</p>
-<p>Price: {{formatCurrency .Price}}</p>
+<p>{{formatNumber .Data.Views}} views</p>
+<p>Price: {{formatCurrency .Data.Price}}</p>
 ```
 
 ### URL Helpers
@@ -328,8 +327,8 @@ engine := view.New(view.Config{
 ```
 
 ```html
-<a href="/search?q={{urlEncode .Query}}">Search</a>
-<a href="/" class="{{activeClass .CurrentPath "/"}}">Home</a>
+<a href="/search?q={{urlEncode .Data.Query}}">Search</a>
+<a href="/" class="{{activeClass .Data.CurrentPath "/"}}">Home</a>
 ```
 
 ### Safe HTML (Use Carefully!)
@@ -342,7 +341,7 @@ engine := view.New(view.Config{
 
 ```html
 {{/* Only use with trusted content! */}}
-{{safeHTML .TrustedContent}}
+{{safeHTML .Data.TrustedContent}}
 ```
 
 ### Default Values
@@ -357,7 +356,7 @@ engine := view.New(view.Config{
 ```
 
 ```html
-<img src="{{default "/default-avatar.png" .Avatar}}">
+<img src="{{default "/default-avatar.png" .Data.Avatar}}">
 ```
 
 ## Best Practices
@@ -395,10 +394,10 @@ Functions should not have side effects:
 
 ```html
 <!-- Good: pipeline style -->
-<p>{{.Bio | truncate 200 | upper}}</p>
+<p>{{.Data.Bio | truncate 200 | upper}}</p>
 
 <!-- Also fine: nested calls -->
-<p>{{upper (truncate .Bio 200)}}</p>
+<p>{{upper (truncate .Data.Bio 200)}}</p>
 ```
 
 ### 4. Document Your Functions
@@ -445,10 +444,10 @@ Only use `safeHTML` with content you completely trust:
 
 ```html
 <!-- Safe: your own content -->
-{{safeHTML .TrustedContent}}
+{{safeHTML .Data.TrustedContent}}
 
 <!-- Dangerous: user content - let Go escape it -->
-{{.UserComment}}  <!-- Auto-escaped -->
+{{.Data.UserComment}}  <!-- Auto-escaped -->
 ```
 
 ## Complete Example
@@ -469,7 +468,7 @@ import (
 func main() {
     engine := view.New(view.Config{
         Dir:           "./views",
-        DefaultLayout: "layout",
+        DefaultLayout: "default",
         Funcs: template.FuncMap{
             // String helpers
             "truncate": truncate,
@@ -490,7 +489,7 @@ func main() {
     })
 
     app := mizu.New()
-    engine.Middleware(app)
+    app.Use(engine.Middleware())
 
     // ... routes
 

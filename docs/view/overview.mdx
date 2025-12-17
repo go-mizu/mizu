@@ -11,19 +11,19 @@ When a user visits your website, the server generates the complete HTML page and
 
 ```
 User Request       Server              Browser
-    │                │                    │
-    │  GET /users    │                    │
-    │───────────────▶│                    │
-    │                │                    │
-    │                │ 1. Fetch data      │
-    │                │ 2. Render template │
-    │                │ 3. Return HTML     │
-    │                │                    │
-    │   <html>...    │                    │
-    │◀───────────────│                    │
-    │                │                    │
-    │                │    Display page    │
-    │                │───────────────────▶│
+    |                |                    |
+    |  GET /users    |                    |
+    |--------------->|                    |
+    |                |                    |
+    |                | 1. Fetch data      |
+    |                | 2. Render template |
+    |                | 3. Return HTML     |
+    |                |                    |
+    |   <html>...    |                    |
+    |<---------------|                    |
+    |                |                    |
+    |                |    Display page    |
+    |                |------------------->|
 ```
 
 **Benefits of SSR:**
@@ -37,7 +37,7 @@ User Request       Server              Browser
 | Feature | Description |
 |---------|-------------|
 | Template Engine | Wraps Go's `html/template` with convenience methods |
-| Layouts | Wrap content in a consistent page structure |
+| Layouts | Wrap page content in a consistent structure |
 | Custom Functions | Add your own template helpers |
 | Hot Reload | Templates reload automatically during development |
 | Embedded Files | Bundle templates in your binary for production |
@@ -47,24 +47,39 @@ User Request       Server              Browser
 The view package follows a simple flow:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        Engine                                │
-│                                                              │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
-│  │   Config     │───▶│   Templates  │───▶│   Output     │  │
-│  │              │    │              │    │              │  │
-│  │ - Dir        │    │ - home.html  │    │ <html>...    │  │
-│  │ - Extension  │    │ - user.html  │    │              │  │
-│  │ - Funcs      │    │ - layout.html│    │              │  │
-│  │ - Layout     │    │              │    │              │  │
-│  └──────────────┘    └──────────────┘    └──────────────┘  │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+                     Engine
+┌─────────────────────────────────────────────────────────┐
+|                                                         |
+|  Config         Templates            Output             |
+|  ┌─────────┐    ┌─────────────┐     ┌─────────────┐    |
+|  | Dir     |    | pages/      |     |             |    |
+|  | FS      |--->| layouts/    |---->| <html>...   |    |
+|  | Funcs   |    |             |     |             |    |
+|  | Layout  |    └─────────────┘     └─────────────┘    |
+|  └─────────┘                                           |
+|                                                         |
+└─────────────────────────────────────────────────────────┘
 ```
 
 1. **Configure** - Tell the engine where templates are and how to process them
 2. **Load** - Engine parses and caches your template files
 3. **Render** - Pass data to a template, get HTML back
+
+## Directory Structure
+
+The view package expects templates organized in subdirectories:
+
+```
+views/
+├── layouts/
+│   └── default.html    # Layout templates
+└── pages/
+    ├── home.html       # Page templates
+    └── about.html
+```
+
+- **layouts/** - Templates that wrap around page content (HTML shell, navigation, footer)
+- **pages/** - Individual page templates that define content
 
 ## Quick Example
 
@@ -75,29 +90,29 @@ Here's a minimal example showing the view package in action:
 myapp/
 ├── main.go
 └── views/
-    ├── layout.html
-    └── home.html
+    ├── layouts/
+    │   └── default.html
+    └── pages/
+        └── home.html
 ```
 
-**views/layout.html:**
+**views/layouts/default.html:**
 ```html
 <!DOCTYPE html>
 <html>
 <head>
-    <title>{{.Title}}</title>
+    <title>{{.Data.Title}}</title>
 </head>
 <body>
-    {{template "content" .}}
+    {{.Content}}
 </body>
 </html>
 ```
 
-**views/home.html:**
+**views/pages/home.html:**
 ```html
-{{define "content"}}
-<h1>Welcome, {{.Name}}!</h1>
-<p>You have {{.Count}} messages.</p>
-{{end}}
+<h1>Welcome, {{.Data.Name}}!</h1>
+<p>You have {{.Data.Count}} messages.</p>
 ```
 
 **main.go:**
@@ -112,20 +127,19 @@ import (
 func main() {
     // Create the template engine
     engine := view.New(view.Config{
-        Dir:           "./views",
-        Extension:     ".html",
-        DefaultLayout: "layout",
+        Dir:         "./views",
+        Development: true,
     })
 
     // Create the app
     app := mizu.New()
 
     // Add engine to app (makes it available in handlers)
-    engine.Middleware(app)
+    app.Use(engine.Middleware())
 
     // Define a route
     app.Get("/", func(c *mizu.Ctx) error {
-        return view.From(c).Render(c, "home", view.Data{
+        return view.Render(c, "home", view.Data{
             "Title": "My App",
             "Name":  "Alice",
             "Count": 5,
@@ -150,53 +164,38 @@ When you visit `http://localhost:8080`, you'll see:
 </html>
 ```
 
-## Core Concepts
+## Template Data
 
-### Engine
-
-The `Engine` is the main object. You create one, configure it, and use it to render templates.
+When you render a template, your data is wrapped in a structure that provides additional context:
 
 ```go
-engine := view.New(view.Config{
-    Dir:       "./views",
-    Extension: ".html",
+// What you pass:
+view.Render(c, "home", view.Data{
+    "Title": "My App",
+    "User":  currentUser,
 })
+
+// What templates receive:
+// .Page.Name   - Template name ("home")
+// .Page.Layout - Layout name ("default")
+// .Data        - Your data (access .Data.Title, .Data.User)
+// .Content     - Rendered page content (only in layouts)
 ```
 
-### Templates
-
-Templates are HTML files with special syntax for inserting dynamic content. They use Go's `html/template` package.
-
+**In page templates:**
 ```html
-<h1>Hello, {{.Name}}!</h1>
+<h1>{{.Data.Title}}</h1>
+<p>Welcome, {{.Data.User.Name}}</p>
 ```
 
-The `{{.Name}}` part is replaced with actual data when rendering.
-
-### Layouts
-
-A layout is a template that wraps around your content. It typically contains the `<html>`, `<head>`, and `<body>` tags that every page needs.
-
+**In layout templates:**
 ```html
-<!-- layout.html -->
-<!DOCTYPE html>
-<html>
+<head>
+    <title>{{.Data.Title}}</title>
+</head>
 <body>
-    {{template "content" .}}  <!-- Your content goes here -->
+    {{.Content}}  <!-- Rendered page content goes here -->
 </body>
-</html>
-```
-
-### Data
-
-Data is a `map[string]any` that you pass to templates. Templates can access this data using the dot notation.
-
-```go
-view.Data{
-    "Title":   "Home",
-    "User":    currentUser,
-    "Items":   []string{"a", "b", "c"},
-}
 ```
 
 ## When to Use View

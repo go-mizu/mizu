@@ -1,6 +1,6 @@
 ---
 title: "Templates"
-description: "Understanding Go template syntax and data access in Mizu's view system"
+description: "Understanding Go template syntax and data access"
 ---
 
 This guide covers everything you need to know about writing templates in Mizu's view system. We'll explore Go's template syntax, how data flows through your templates, and common patterns.
@@ -10,30 +10,56 @@ This guide covers everything you need to know about writing templates in Mizu's 
 Mizu uses Go's standard `html/template` package. Templates are HTML files with special markers (`{{` and `}}`) for dynamic content.
 
 ```html
-<!-- views/home.html -->
-{{define "content"}}
-<h1>Hello, {{.Name}}!</h1>
+<!-- views/pages/home.html -->
+<h1>Hello, {{.Data.Name}}!</h1>
 <p>Welcome to our site.</p>
-{{end}}
 ```
+
+## Accessing Data
+
+In Mizu templates, your data is wrapped in a structure. Access your data using `.Data`:
+
+```go
+// In your handler:
+view.Render(c, "home", view.Data{
+    "Title":   "Welcome",
+    "User":    user,
+    "Items":   items,
+})
+```
+
+```html
+<!-- In your template: -->
+<h1>{{.Data.Title}}</h1>
+<p>Hello, {{.Data.User.Name}}</p>
+```
+
+### The Template Data Structure
+
+Templates receive this structure:
+
+| Field | Description | Available In |
+|-------|-------------|--------------|
+| `.Page.Name` | Template name (e.g., "home") | Pages and Layouts |
+| `.Page.Layout` | Layout name (e.g., "default") | Pages and Layouts |
+| `.Data` | Your data from the handler | Pages and Layouts |
+| `.Content` | Rendered page content | Layouts only |
 
 ## Go Template Syntax
 
-If you're new to Go templates, here's a quick introduction.
-
 ### Outputting Values
 
-Use `.` (the dot) to access data passed to the template:
+Use `.Data.` to access your data:
 
 ```html
 <!-- Simple value -->
-<h1>{{.Title}}</h1>
+<h1>{{.Data.Title}}</h1>
 
-<!-- Nested value -->
-<p>Author: {{.Post.Author.Name}}</p>
+<!-- Nested struct field -->
+<p>Author: {{.Data.Post.Author.Name}}</p>
 
-<!-- Map access -->
-<p>Setting: {{.Settings.theme}}</p>
+<!-- Map key -->
+<p>Setting: {{.Data.Settings.theme}}</p>
 ```
 
 ### Conditions
@@ -41,14 +67,14 @@ Use `.` (the dot) to access data passed to the template:
 Use `if` to show content conditionally:
 
 ```html
-{{if .LoggedIn}}
+{{if .Data.LoggedIn}}
     <p>Welcome back!</p>
 {{else}}
     <p>Please log in.</p>
 {{end}}
 
-{{if .Error}}
-    <div class="error">{{.Error}}</div>
+{{if .Data.Error}}
+    <div class="error">{{.Data.Error}}</div>
 {{end}}
 ```
 
@@ -58,18 +84,18 @@ Go templates provide comparison functions:
 
 | Function | Description | Example |
 |----------|-------------|---------|
-| `eq` | Equal | `{{if eq .Status "active"}}` |
-| `ne` | Not equal | `{{if ne .Count 0}}` |
-| `lt` | Less than | `{{if lt .Price 100}}` |
-| `le` | Less than or equal | `{{if le .Stock 5}}` |
-| `gt` | Greater than | `{{if gt .Price 100}}` |
-| `ge` | Greater than or equal | `{{if ge .Age 18}}` |
+| `eq` | Equal | `{{if eq .Data.Status "active"}}` |
+| `ne` | Not equal | `{{if ne .Data.Count 0}}` |
+| `lt` | Less than | `{{if lt .Data.Price 100}}` |
+| `le` | Less than or equal | `{{if le .Data.Stock 5}}` |
+| `gt` | Greater than | `{{if gt .Data.Price 100}}` |
+| `ge` | Greater than or equal | `{{if ge .Data.Age 18}}` |
 
 ```html
-{{if eq .Status "active"}}Active{{end}}
-{{if ne .Count 0}}Has items{{end}}
-{{if gt .Price 100}}Premium{{end}}
-{{if le .Stock 5}}Low stock{{end}}
+{{if eq .Data.Status "active"}}Active{{end}}
+{{if ne .Data.Count 0}}Has items{{end}}
+{{if gt .Data.Price 100}}Premium{{end}}
+{{if le .Data.Stock 5}}Low stock{{end}}
 ```
 
 ### Boolean Logic
@@ -77,15 +103,15 @@ Go templates provide comparison functions:
 Combine conditions with `and`, `or`, and `not`:
 
 ```html
-{{if and .LoggedIn .IsAdmin}}
+{{if and .Data.LoggedIn .Data.IsAdmin}}
     Admin controls
 {{end}}
 
-{{if or .Error .Warning}}
+{{if or .Data.Error .Data.Warning}}
     <div class="alert">Check messages</div>
 {{end}}
 
-{{if not .Disabled}}
+{{if not .Data.Disabled}}
     <button>Click me</button>
 {{end}}
 ```
@@ -97,20 +123,20 @@ Use `range` to iterate over slices, arrays, or maps:
 ```html
 <!-- Loop over slice -->
 <ul>
-    {{range .Items}}
+    {{range .Data.Items}}
     <li>{{.}}</li>
     {{end}}
 </ul>
 
 <!-- With index -->
 <ul>
-    {{range $index, $item := .Items}}
+    {{range $index, $item := .Data.Items}}
     <li>{{$index}}: {{$item}}</li>
     {{end}}
 </ul>
 
 <!-- Empty case -->
-{{range .Items}}
+{{range .Data.Items}}
     <li>{{.}}</li>
 {{else}}
     <li>No items found.</li>
@@ -122,7 +148,7 @@ Use `range` to iterate over slices, arrays, or maps:
 When ranging over a slice of structs:
 
 ```html
-{{range .Users}}
+{{range .Data.Users}}
     <!-- Inside range, . is the current user -->
     <div class="user">
         <h3>{{.Name}}</h3>
@@ -134,7 +160,7 @@ When ranging over a slice of structs:
 ### Looping Over Maps
 
 ```html
-{{range $key, $value := .Settings}}
+{{range $key, $value := .Data.Settings}}
     <p>{{$key}}: {{$value}}</p>
 {{end}}
 ```
@@ -144,10 +170,10 @@ When ranging over a slice of structs:
 Assign values to variables with `:=`:
 
 ```html
-{{$name := .User.Name}}
+{{$name := .Data.User.Name}}
 <p>Hello, {{$name}}!</p>
 
-{{$fullName := printf "%s %s" .FirstName .LastName}}
+{{$fullName := printf "%s %s" .Data.FirstName .Data.LastName}}
 <p>{{$fullName}}</p>
 ```
 
@@ -156,9 +182,9 @@ Assign values to variables with `:=`:
 Inside a `range` loop, `.` refers to the current item. Use `$` to access the root context:
 
 ```html
-{{range .Users}}
+{{range .Data.Users}}
     <p>{{.Name}}</p>
-    {{if $.ShowEmail}}
+    {{if $.Data.ShowEmail}}
         <p>{{.Email}}</p>
     {{end}}
 {{end}}
@@ -172,10 +198,10 @@ Chain operations with `|`:
 
 ```html
 <!-- Apply function to value -->
-<p>{{.Name | upper}}</p>
+<p>{{.Data.Name | upper}}</p>
 
 <!-- Chain multiple functions -->
-<p>{{.Title | lower | trim}}</p>
+<p>{{.Data.Title | lower | trim}}</p>
 ```
 
 ### Comments
@@ -192,128 +218,34 @@ Template comments are stripped from output:
 Use `-` to trim whitespace:
 
 ```html
-{{- .Name -}}    <!-- Trims whitespace before and after -->
-{{- .Name}}      <!-- Trims whitespace before -->
-{{.Name -}}      <!-- Trims whitespace after -->
+{{- .Data.Name -}}    <!-- Trims whitespace before and after -->
+{{- .Data.Name}}      <!-- Trims whitespace before -->
+{{.Data.Name -}}      <!-- Trims whitespace after -->
 ```
 
 This is useful for keeping your HTML clean:
 
 ```html
 <ul>
-    {{- range .Items}}
+    {{- range .Data.Items}}
     <li>{{.}}</li>
     {{- end}}
 </ul>
 ```
 
-## Template Blocks
-
-### define and template
-
-Templates can define named blocks that other templates reference:
-
-```html
-<!-- Define a reusable block -->
-{{define "header"}}
-<header>
-    <h1>{{.Title}}</h1>
-</header>
-{{end}}
-
-<!-- Use the block -->
-{{template "header" .}}
-```
-
-The second argument to `template` is the data passed to the block. Use `.` to pass all current data.
-
-### block with Default Content
-
-`block` defines a template with default content that can be overridden:
-
-```html
-<!-- In layout.html -->
-{{block "sidebar" .}}
-<aside>Default sidebar content</aside>
-{{end}}
-```
-
-If another template defines `sidebar`, that content is used instead.
-
-## Working with Data
-
-### Passing Data from Handlers
-
-In your Go handler:
-
-```go
-view.From(c).Render(c, "profile", view.Data{
-    "User":    user,
-    "Posts":   posts,
-    "IsAdmin": true,
-})
-```
-
-In your template:
-
-```html
-<h1>{{.User.Name}}</h1>
-
-{{if .IsAdmin}}
-<a href="/admin">Admin Panel</a>
-{{end}}
-
-{{range .Posts}}
-<article>{{.Title}}</article>
-{{end}}
-```
-
-### Accessing Nested Data
-
-```html
-<!-- Struct field -->
-{{.User.Profile.Bio}}
-
-<!-- Map key -->
-{{.Settings.theme}}
-
-<!-- Slice index -->
-{{index .Items 0}}
-```
-
-### Calling Methods
-
-If your data has methods, you can call them:
-
-```go
-type User struct {
-    FirstName string
-    LastName  string
-}
-
-func (u User) FullName() string {
-    return u.FirstName + " " + u.LastName
-}
-```
-
-```html
-<p>{{.User.FullName}}</p>
-```
-
-Note: Methods must have no parameters or only one parameter (which must be passed).
-
-## Layout Templates
-
-Layouts wrap your page content. They use `{{template "content" .}}` to include the page.
+## Layouts and Pages
 
 ### Layout Structure
 
+Layouts use `{{.Content}}` to include the rendered page:
+
 ```html
-<!-- views/layout.html -->
+<!-- views/layouts/default.html -->
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>{{.Title}}</title>
+    <meta charset="UTF-8">
+    <title>{{.Data.Title}}</title>
 </head>
 <body>
     <nav>
@@ -321,7 +253,7 @@ Layouts wrap your page content. They use `{{template "content" .}}` to include t
         <a href="/about">About</a>
     </nav>
     <main>
-        {{template "content" .}}
+        {{.Content}}
     </main>
     <footer>
         Copyright 2024
@@ -330,30 +262,30 @@ Layouts wrap your page content. They use `{{template "content" .}}` to include t
 </html>
 ```
 
-### Page Template
+### Page Structure
 
-Pages define the `content` block:
+Pages are simple - just write HTML with template expressions:
 
 ```html
-<!-- views/home.html -->
-{{define "content"}}
-<h1>Welcome, {{.Name}}!</h1>
+<!-- views/pages/home.html -->
+<h1>Welcome, {{.Data.Name}}!</h1>
 <p>This is the home page.</p>
-{{end}}
 ```
+
+The page content is rendered first, then inserted into the layout's `{{.Content}}`.
 
 ## Common Patterns
 
 ### Conditional Classes
 
 ```html
-<div class="card {{if .Featured}}card-featured{{end}}">
+<div class="card {{if .Data.Featured}}card-featured{{end}}">
     ...
 </div>
 
 <!-- Multiple conditional classes -->
-<button class="btn {{if .Primary}}btn-primary{{else}}btn-secondary{{end}} {{if .Large}}btn-lg{{end}}">
-    {{.Label}}
+<button class="btn {{if .Data.Primary}}btn-primary{{else}}btn-secondary{{end}} {{if .Data.Large}}btn-lg{{end}}">
+    {{.Data.Label}}
 </button>
 ```
 
@@ -362,10 +294,10 @@ Pages define the `content` block:
 ```html
 <input
     type="text"
-    name="{{.Name}}"
-    value="{{.Value}}"
-    {{if .Required}}required{{end}}
-    {{if .Disabled}}disabled{{end}}
+    name="{{.Data.Name}}"
+    value="{{.Data.Value}}"
+    {{if .Data.Required}}required{{end}}
+    {{if .Data.Disabled}}disabled{{end}}
 >
 ```
 
@@ -375,8 +307,8 @@ By default, Go templates escape HTML to prevent XSS attacks:
 
 ```html
 <!-- Escaped (safe) - shows HTML as text -->
-<div>{{.Content}}</div>
-<!-- If .Content is "<b>bold</b>", outputs: &lt;b&gt;bold&lt;/b&gt; -->
+<div>{{.Data.Content}}</div>
+<!-- If .Data.Content is "<b>bold</b>", outputs: &lt;b&gt;bold&lt;/b&gt; -->
 ```
 
 To output raw HTML (use only with trusted content!):
@@ -390,7 +322,7 @@ view.Data{
 ```
 
 ```html
-<div>{{.Content}}</div>
+<div>{{.Data.Content}}</div>
 <!-- Now outputs: <b>bold</b> -->
 ```
 
@@ -398,14 +330,14 @@ view.Data{
 
 ```html
 <!-- Check for empty string -->
-{{if .Description}}
-    <p>{{.Description}}</p>
+{{if .Data.Description}}
+    <p>{{.Data.Description}}</p>
 {{end}}
 
 <!-- Check slice length -->
-{{if .Items}}
+{{if .Data.Items}}
     <ul>
-        {{range .Items}}
+        {{range .Data.Items}}
         <li>{{.}}</li>
         {{end}}
     </ul>
@@ -417,8 +349,8 @@ view.Data{
 ### Building Links
 
 ```html
-<a href="/users/{{.User.ID}}">View Profile</a>
-<a href="/posts?page={{.Page}}">Next Page</a>
+<a href="/users/{{.Data.User.ID}}">View Profile</a>
+<a href="/posts?page={{.Data.Page}}">Next Page</a>
 ```
 
 ### Formatting Numbers and Dates
@@ -426,8 +358,8 @@ view.Data{
 Use custom functions or `printf`:
 
 ```html
-<p>Price: ${{printf "%.2f" .Price}}</p>
-<p>Count: {{printf "%d" .Count}}</p>
+<p>Price: ${{printf "%.2f" .Data.Price}}</p>
+<p>Count: {{printf "%d" .Data.Count}}</p>
 ```
 
 For dates, either format in Go or use a custom function:
@@ -451,7 +383,7 @@ view.Config{
 ```
 
 ```html
-<p>Published: {{formatDate .PublishedAt}}</p>
+<p>Published: {{formatDate .Data.PublishedAt}}</p>
 ```
 
 ## Debugging Templates
@@ -461,13 +393,13 @@ view.Config{
 Use `printf` with `%#v` to see the Go syntax representation:
 
 ```html
-<pre>{{printf "%#v" .}}</pre>
+<pre>{{printf "%#v" .Data}}</pre>
 ```
 
 ### Check Types
 
 ```html
-<p>Type: {{printf "%T" .Items}}</p>
+<p>Type: {{printf "%T" .Data.Items}}</p>
 ```
 
 ### Enable Development Mode
@@ -494,13 +426,13 @@ view.Data{"IsVIP": isVIP}
 
 ```html
 <!-- Template just uses the result -->
-{{if .IsVIP}}VIP Member{{end}}
+{{if .Data.IsVIP}}VIP Member{{end}}
 ```
 
 ### 2. Use Meaningful Variable Names
 
 ```html
-{{range $user := .Users}}
+{{range $user := .Data.Users}}
     <p>{{$user.Name}}</p>
 {{end}}
 ```
@@ -528,7 +460,7 @@ Keep generated HTML clean:
 
 ```html
 <ul>
-{{- range .Items}}
+{{- range .Data.Items}}
     <li>{{.}}</li>
 {{- end}}
 </ul>

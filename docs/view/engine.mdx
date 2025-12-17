@@ -1,6 +1,6 @@
 ---
 title: "Engine"
-description: "Learn how to configure the view engine for development and production"
+description: "Configure the view engine for development and production"
 ---
 
 The view engine is the core of Mizu's template system. This guide covers all configuration options and how to use them effectively.
@@ -15,7 +15,7 @@ import "github.com/go-mizu/mizu/view"
 engine := view.New(view.Config{
     Dir:           "./views",
     Extension:     ".html",
-    DefaultLayout: "layout",
+    DefaultLayout: "default",
     Development:   true,
 })
 ```
@@ -28,17 +28,19 @@ The directory where your templates are stored.
 
 ```go
 view.Config{
-    Dir: "./views",  // Default: "." (current directory)
+    Dir: "./views",  // Default: "views"
 }
 ```
 
-The engine looks for template files directly in this directory:
+The engine expects this structure inside the directory:
 
 ```
 views/
-├── layout.html    # Layout template
-├── home.html      # Page template
-└── about.html     # Another page template
+├── layouts/       # Layout templates
+│   └── default.html
+└── pages/         # Page templates
+    ├── home.html
+    └── about.html
 ```
 
 ### FS
@@ -56,7 +58,7 @@ engine := view.New(view.Config{
 })
 ```
 
-When `FS` is set, templates are loaded from the embedded filesystem instead of the local filesystem. The `Dir` field should match the path prefix in your embed directive.
+When `FS` is set, templates are loaded from the embedded filesystem instead of the local filesystem. The directory structure inside the embedded FS should match what you'd have on disk.
 
 ### Extension
 
@@ -78,15 +80,15 @@ view.Config{
 
 ### DefaultLayout
 
-The layout template to use when rendering pages.
+The layout template to use when rendering pages. This refers to a file in the `layouts/` directory.
 
 ```go
 view.Config{
-    DefaultLayout: "layout",  // Uses layout.html
+    DefaultLayout: "default",  // Uses layouts/default.html
 }
 ```
 
-If not set, pages are rendered without a layout wrapper. You can override this per-render with `view.Layout()` or disable it with `view.NoLayout()`.
+You can override this per-render with `view.Layout()` or disable it with `view.NoLayout()`.
 
 ### Delims
 
@@ -101,14 +103,14 @@ view.Config{
 Now templates use `<% %>` instead:
 
 ```html
-<h1>Hello, <%.Name%></h1>
+<h1>Hello, <%.Data.Name%></h1>
 ```
 
 ### Development
 
 Enables development mode features:
 
-- **Template reload** - Templates reload on every request
+- **Template reload** - Templates are re-read from disk on every request
 - **No caching** - Templates are never cached
 
 ```go
@@ -148,8 +150,8 @@ view.Config{
 Now you can use these in templates:
 
 ```html
-<h1>{{uppercase .Name}}</h1>
-<p>Posted on {{formatDate .CreatedAt}}</p>
+<h1>{{uppercase .Data.Name}}</h1>
+<p>Posted on {{formatDate .Data.CreatedAt}}</p>
 ```
 
 ## Built-in Functions
@@ -160,15 +162,164 @@ The view engine provides these functions by default:
 |----------|-------------|---------|
 | `dict` | Create a map | `{{dict "key" "value"}}` |
 | `list` | Create a slice | `{{list 1 2 3}}` |
-| `upper` | Uppercase string | `{{upper .Name}}` |
-| `lower` | Lowercase string | `{{lower .Name}}` |
-| `trim` | Trim whitespace | `{{trim .Text}}` |
-| `contains` | Check substring | `{{if contains .Text "hello"}}` |
-| `replace` | Replace substring | `{{replace .Text "old" "new"}}` |
-| `split` | Split string | `{{split .Tags ","}}` |
-| `join` | Join slice | `{{join .Items ", "}}` |
-| `hasPrefix` | Check prefix | `{{if hasPrefix .URL "https"}}` |
-| `hasSuffix` | Check suffix | `{{if hasSuffix .File ".go"}}` |
+| `upper` | Uppercase string | `{{upper .Data.Name}}` |
+| `lower` | Lowercase string | `{{lower .Data.Name}}` |
+| `trim` | Trim whitespace | `{{trim .Data.Text}}` |
+| `contains` | Check substring | `{{if contains .Data.Text "hello"}}` |
+| `replace` | Replace substring | `{{replace .Data.Text "old" "new"}}` |
+| `split` | Split string | `{{split .Data.Tags ","}}` |
+| `join` | Join slice | `{{join .Data.Items ", "}}` |
+| `hasPrefix` | Check prefix | `{{if hasPrefix .Data.URL "https"}}` |
+| `hasSuffix` | Check suffix | `{{if hasSuffix .Data.File ".go"}}` |
+
+## Engine Methods
+
+### New
+
+Creates a new view engine with the given configuration.
+
+```go
+engine := view.New(view.Config{
+    Dir:         "./views",
+    Development: true,
+})
+```
+
+### Load
+
+Loads and validates all templates at startup. Call this in production to fail fast if templates have errors.
+
+```go
+engine := view.New(config)
+
+if err := engine.Load(); err != nil {
+    log.Fatal("template error:", err)
+}
+```
+
+This loads all files in `layouts/` and `pages/` directories.
+
+### Clear
+
+Clears the template cache. Useful if you need to reload templates without restarting.
+
+```go
+engine.Clear()
+```
+
+### Render
+
+Renders a page template. The first argument is an `io.Writer` (like `http.ResponseWriter`), followed by the template name, data, and optional render options.
+
+```go
+err := engine.Render(w, "home", view.Data{
+    "Title": "Home",
+    "User":  currentUser,
+})
+```
+
+The template name refers to a file in `pages/` without the extension.
+
+### Middleware
+
+Returns a Mizu middleware that adds the engine to every request context.
+
+```go
+app := mizu.New()
+app.Use(engine.Middleware())
+```
+
+After adding this middleware, you can use `view.From(c)` and `view.Render(c, ...)` in handlers.
+
+## Package Functions
+
+### From
+
+Retrieves the engine from a request context. Use this in handlers after adding the middleware.
+
+```go
+func handler(c *mizu.Ctx) error {
+    engine := view.From(c)
+    if engine == nil {
+        return errors.New("view engine not configured")
+    }
+    return engine.Render(c.Writer(), "page", data)
+}
+```
+
+### Render (package-level)
+
+A convenience function that gets the engine from context and renders. This is the most common way to render templates.
+
+```go
+func handler(c *mizu.Ctx) error {
+    return view.Render(c, "home", view.Data{
+        "Title": "Home",
+    })
+}
+```
+
+This is equivalent to:
+
+```go
+engine := view.From(c)
+c.Writer().Header().Set("Content-Type", "text/html; charset=utf-8")
+c.Writer().WriteHeader(200)
+return engine.Render(c.Writer(), "home", data)
+```
+
+## Render Options
+
+When calling `Render()`, you can pass options to customize behavior.
+
+### Layout
+
+Override the default layout for this render:
+
+```go
+view.Render(c, "dashboard", data, view.Layout("admin"))
+```
+
+This uses `layouts/admin.html` instead of the default layout.
+
+### NoLayout
+
+Render without any layout (useful for partial responses):
+
+```go
+view.Render(c, "user-row", data, view.NoLayout())
+```
+
+## Template Data Structure
+
+When you render a template, your data is wrapped in a structure:
+
+```go
+type pageData struct {
+    Page    pageMeta      // Template metadata
+    Data    any           // Your data
+    Content template.HTML // Rendered page (only in layouts)
+}
+
+type pageMeta struct {
+    Name   string  // Template name (e.g., "home")
+    Layout string  // Layout name (e.g., "default")
+}
+```
+
+**In page templates:**
+```html
+<h1>{{.Data.Title}}</h1>
+<p>Template: {{.Page.Name}}</p>
+```
+
+**In layout templates:**
+```html
+<title>{{.Data.Title}}</title>
+<body>
+    {{.Content}}  <!-- Rendered page content -->
+</body>
+```
 
 ## Complete Example
 
@@ -196,7 +347,7 @@ func main() {
 
     config := view.Config{
         Extension:     ".html",
-        DefaultLayout: "layout",
+        DefaultLayout: "default",
         Development:   isDev,
         Funcs: template.FuncMap{
             "formatDate": formatDate,
@@ -222,9 +373,10 @@ func main() {
     }
 
     app := mizu.New()
-    engine.Middleware(app)
+    app.Use(engine.Middleware())
 
-    // ... routes ...
+    app.Get("/", homeHandler)
+    app.Get("/about", aboutHandler)
 
     app.Listen(":8080")
 }
@@ -239,126 +391,17 @@ func truncate(s string, length int) string {
     }
     return s[:length] + "..."
 }
-```
 
-## Engine Methods
-
-### Load
-
-Loads and validates all templates at startup. Call this in production to fail fast if templates have errors.
-
-```go
-engine := view.New(config)
-
-if err := engine.Load(); err != nil {
-    log.Fatal("template error:", err)
-}
-```
-
-### Clear
-
-Clears the template cache. Useful if you need to reload templates without restarting.
-
-```go
-engine.Clear()
-```
-
-### Render
-
-Renders a page template. The first argument is an `io.Writer` (like `http.ResponseWriter`), followed by the template name, data, and optional render options.
-
-```go
-err := engine.Render(w, "home", view.Data{
-    "Title": "Home",
-    "User":  currentUser,
-})
-```
-
-### Middleware
-
-Adds the engine to a Mizu app so it's available in all handlers via `view.From()`.
-
-```go
-app := mizu.New()
-engine.Middleware(app)
-```
-
-### From
-
-Retrieves the engine from a request context. Use this in handlers after adding the middleware.
-
-```go
-func handler(c *mizu.Ctx) error {
-    engine := view.From(c)
-    return engine.Render(c, "page", data)
-}
-```
-
-## Render Options
-
-When calling `Render()`, you can pass options to customize behavior.
-
-### Layout
-
-Override the default layout for this render:
-
-```go
-engine.Render(c, "dashboard", data, view.Layout("admin"))
-```
-
-### NoLayout
-
-Render without any layout (useful for partial responses):
-
-```go
-engine.Render(c, "user-row", data, view.NoLayout())
-```
-
-## Using with Mizu
-
-### Adding the Middleware
-
-The middleware makes the engine available to all handlers:
-
-```go
-app := mizu.New()
-engine.Middleware(app)
-```
-
-### Rendering in Handlers
-
-Use `view.From()` to get the engine and render pages:
-
-```go
 func homeHandler(c *mizu.Ctx) error {
-    return view.From(c).Render(c, "home", view.Data{
+    return view.Render(c, "home", view.Data{
         "Title": "Welcome",
-        "User":  currentUser,
     })
 }
-```
 
-### Rendering Without Layout
-
-For HTMX or AJAX partial responses:
-
-```go
-func partialHandler(c *mizu.Ctx) error {
-    return view.From(c).Render(c, "user-row", view.Data{
-        "User": user,
-    }, view.NoLayout())
-}
-```
-
-### Using a Different Layout
-
-Override the default layout for specific pages:
-
-```go
-func adminHandler(c *mizu.Ctx) error {
-    return view.From(c).Render(c, "dashboard", view.Data{
-        "Stats": stats,
-    }, view.Layout("admin"))
+func aboutHandler(c *mizu.Ctx) error {
+    return view.Render(c, "about", view.Data{
+        "Title": "About Us",
+    })
 }
 ```
 
@@ -373,8 +416,24 @@ err := engine.Render(w, "page", data)
 if err != nil {
     var viewErr *view.Error
     if errors.As(err, &viewErr) {
-        log.Printf("Template error: %s", viewErr.Error())
+        log.Printf("Template error (%s %q): %v",
+            viewErr.Kind, viewErr.Name, viewErr.Err)
     }
+}
+```
+
+The `Error` type has:
+- `Kind` - "page", "layout", or "template"
+- `Name` - Template name
+- `Err` - Underlying error (nil if not found)
+
+### ErrNotFound
+
+Returned when a template file doesn't exist:
+
+```go
+if errors.Is(err, view.ErrNotFound) {
+    // Template file not found
 }
 ```
 
@@ -435,11 +494,16 @@ type PageData struct {
     Posts []Post
 }
 
-engine.Render(c, "home", PageData{
+view.Render(c, "home", PageData{
     Title: "Home",
     User:  currentUser,
     Posts: posts,
 })
 ```
 
-This provides type safety and documentation for what each template expects.
+Note: When using a struct instead of `view.Data` (which is `map[string]any`), access it directly in templates:
+
+```html
+<h1>{{.Data.Title}}</h1>  <!-- With view.Data map -->
+<h1>{{.Data.Title}}</h1>  <!-- With struct - same access pattern -->
+```
