@@ -35,11 +35,11 @@ func New(cfg Config) *App {
 	// Setup view engine
 	a.setupViews()
 
-	// Setup sync engine
-	a.setupSync()
-
-	// Setup live server
+	// Setup live server first (needed for sync notifier)
 	a.setupLive()
+
+	// Setup sync engine with live notifier
+	a.setupSync()
 
 	// Setup routes
 	a.routes()
@@ -59,43 +59,21 @@ func (a *App) setupViews() {
 	}
 
 	if !a.cfg.Dev {
-		// Production: use embedded filesystem
 		viewsFS, _ := fs.Sub(assets.ViewsFS, "views")
 		opts.FS = viewsFS
 	} else {
-		// Development: use disk filesystem
 		opts.Dir = "assets/views"
 	}
 
 	a.engine = view.New(opts)
 
-	// Preload templates in production
 	if !a.cfg.Dev {
 		if err := a.engine.Preload(); err != nil {
 			panic("failed to load templates: " + err.Error())
 		}
 	}
 
-	// Add view middleware
 	a.app.Use(view.Middleware(a.engine))
-}
-
-func (a *App) setupSync() {
-	// Create in-memory implementations
-	store := memory.NewStore()
-	log := memory.NewLog()
-	applied := memory.NewApplied()
-
-	// Create mutator
-	mutator := todo.NewMutator()
-
-	// Note: Notify is set after live server is created
-	a.syncEngine = sync.New(sync.Options{
-		Store:   store,
-		Log:     log,
-		Applied: applied,
-		Mutator: mutator,
-	})
 }
 
 func (a *App) setupLive() {
@@ -110,12 +88,23 @@ func (a *App) setupLive() {
 			}
 		},
 	})
+}
 
-	// Connect sync notifications to live by recreating engine with notifier
+func (a *App) setupSync() {
+	// Create storage backends
+	store := memory.NewStore()
+	log := memory.NewLog()
+	applied := memory.NewApplied()
+
+	// Create mutator
+	mutator := todo.NewMutator()
+
+	// Create sync engine with live notifier
 	a.syncEngine = sync.New(sync.Options{
-		Store:   a.syncEngine.Store(),
-		Log:     a.syncEngine.Log(),
-		Mutator: todo.NewMutator(),
+		Store:   store,
+		Log:     log,
+		Applied: applied,
+		Mutator: mutator,
 		Notify:  live.SyncNotifier(a.liveServer, "sync:"),
 	})
 }
