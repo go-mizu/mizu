@@ -1,0 +1,29 @@
+{{define "title"}}Live Demo - Home{{end}}
+
+{{define "content"}}
+<div class="home">
+    <h1>Mizu Live Views</h1>
+    <p class="lead">
+        Build real-time interactive applications with server-driven UI updates.
+    </p>
+
+    <div class="features">
+        <div class="feature">
+            <h3>Server-Driven Updates</h3>
+            <p>UI changes happen on the server and are pushed to the browser as DOM patches.</p>
+        </div>
+        <div class="feature">
+            <h3>Instant Feedback</h3>
+            <p>WebSocket communication provides sub-50ms UI updates.</p>
+        </div>
+        <div class="feature">
+            <h3>Progressive Enhancement</h3>
+            <p>Server-rendered HTML works without JavaScript, enhanced when available.</p>
+        </div>
+    </div>
+
+    <div class="cta">
+        <a href="/counter" class="btn btn-primary">Try the Counter Demo</a>
+    </div>
+</div>
+{{end}}

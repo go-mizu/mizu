@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{slot "title" "Live Demo"}}</title>
+    <link rel="stylesheet" href="/static/css/app.css">
+    {{stack "styles"}}
+</head>
+<body>
+    {{partial "header"}}
+
+    <main class="container">
+        {{slot "content"}}
+    </main>
+
+    {{partial "footer"}}
+
+    <script src="/static/js/app.js"></script>
+    <script src="/static/js/live-client.js"></script>
+    <script src="/static/js/live-view.js"></script>
+    {{stack "scripts"}}
+</body>
+</html>

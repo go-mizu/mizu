@@ -1,0 +1,76 @@
+{{define "title"}}Live Counter{{end}}
+
+{{define "content"}}
+<div class="counter-app" data-live-view="counter">
+    <h1>Live Counter</h1>
+
+    {{component "connection-status"}}
+
+    <div class="counter-display">
+        <span id="count">{{.Data.Count}}</span>
+    </div>
+
+    <div class="counter-controls">
+        <button data-live-click="decrement" class="btn btn-secondary">
+            -1
+        </button>
+        <button data-live-click="reset" class="btn btn-outline">
+            Reset
+        </button>
+        <button data-live-click="increment" class="btn btn-primary">
+            +1
+        </button>
+    </div>
+
+    <div class="counter-custom">
+        <h3>Custom Actions</h3>
+        <div class="custom-controls">
+            <button data-live-click="add" data-value="5" class="btn btn-sm">+5</button>
+            <button data-live-click="add" data-value="10" class="btn btn-sm">+10</button>
+            <button data-live-click="add" data-value="-5" class="btn btn-sm">-5</button>
+            <button data-live-click="add" data-value="-10" class="btn btn-sm">-10</button>
+        </div>
+    </div>
+
+    <div class="info-panel">
+        <h3>How it works</h3>
+        <ul>
+            <li>Click buttons to send events via WebSocket</li>
+            <li>Server processes events and updates state</li>
+            <li>Server sends DOM patches back to browser</li>
+            <li>Browser applies patches to update UI</li>
+        </ul>
+    </div>
+</div>
+
+{{push "scripts"}}
+<script>
+    // Initialize live connection
+    const liveClient = new LiveClient({
+        url: 'ws://' + window.location.host + '/ws',
+        onConnect: () => updateConnectionStatus('connected'),
+        onDisconnect: () => updateConnectionStatus('disconnected')
+    });
+
+    // Initialize counter view
+    const counterView = new LiveView({
+        socket: liveClient,
+        viewId: 'counter',
+        element: document.querySelector('[data-live-view="counter"]')
+    });
+
+    // Connect and mount
+    liveClient.connect();
+    counterView.mount();
+
+    function updateConnectionStatus(status) {
+        const indicator = document.querySelector('.status-indicator');
+        const text = document.querySelector('.status-text');
+        if (indicator && text) {
+            indicator.className = 'status-indicator ' + status;
+            text.textContent = status === 'connected' ? 'Connected' : 'Disconnected';
+        }
+    }
+</script>
+{{end}}
+{{end}}

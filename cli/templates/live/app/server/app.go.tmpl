@@ -1,0 +1,131 @@
+package server
+
+import (
+	"context"
+	"io/fs"
+	"net/http"
+	"os"
+
+	"github.com/go-mizu/mizu"
+	"github.com/go-mizu/mizu/live"
+	"github.com/go-mizu/mizu/view"
+
+	"{{.Module}}/assets"
+	"{{.Module}}/handler"
+)
+
+// App holds the application components.
+type App struct {
+	cfg        Config
+	app        *mizu.App
+	engine     *view.Engine
+	liveServer *live.Server
+	counter    *handler.CounterView
+}
+
+// New creates and configures a new application instance.
+func New(cfg Config) *App {
+	a := &App{
+		cfg: cfg,
+		app: mizu.New(),
+	}
+
+	// Setup view engine
+	a.setupViews()
+
+	// Setup live server
+	a.setupLive()
+
+	// Setup routes
+	a.routes()
+
+	return a
+}
+
+// Listen starts the HTTP server.
+func (a *App) Listen(addr string) error {
+	return a.app.Listen(addr)
+}
+
+func (a *App) setupViews() {
+	opts := view.Options{
+		DefaultLayout: "default",
+		Development:   a.cfg.Dev,
+	}
+
+	if !a.cfg.Dev {
+		// Production: use embedded filesystem
+		viewsFS, _ := fs.Sub(assets.ViewsFS, "views")
+		opts.FS = viewsFS
+	} else {
+		// Development: use disk filesystem
+		opts.Dir = "assets/views"
+	}
+
+	a.engine = view.New(opts)
+
+	// Preload templates in production
+	if !a.cfg.Dev {
+		if err := a.engine.Preload(); err != nil {
+			panic("failed to load templates: " + err.Error())
+		}
+	}
+
+	// Add view middleware
+	a.app.Use(view.Middleware(a.engine))
+}
+
+func (a *App) setupLive() {
+	// Create counter view handler
+	a.counter = handler.NewCounterView()
+
+	// Create live server
+	a.liveServer = live.New(live.Options{
+		OnMessage: a.handleLiveMessage,
+		OnClose: func(s *live.Session, err error) {
+			// Cleanup session from all views
+			a.counter.RemoveSession(s.ID())
+		},
+	})
+}
+
+func (a *App) handleLiveMessage(ctx context.Context, s *live.Session, msg live.Message) {
+	switch msg.Type {
+	case "subscribe":
+		a.liveServer.PubSub().Subscribe(s, msg.Topic)
+		_ = s.Send(live.Message{Type: "ack", Ref: msg.Ref, Topic: msg.Topic})
+	case "unsubscribe":
+		a.liveServer.PubSub().Unsubscribe(s, msg.Topic)
+	case "mount":
+		a.handleMount(ctx, s, msg)
+	case "event":
+		a.handleEvent(ctx, s, msg)
+	}
+}
+
+func (a *App) handleMount(ctx context.Context, s *live.Session, msg live.Message) {
+	// Route to appropriate view handler based on topic
+	switch msg.Topic {
+	case "view:counter":
+		a.counter.Mount(s, msg)
+	}
+}
+
+func (a *App) handleEvent(ctx context.Context, s *live.Session, msg live.Message) {
+	// Route to appropriate view handler based on topic
+	switch msg.Topic {
+	case "view:counter":
+		a.counter.HandleEvent(s, msg)
+	}
+}
+
+// staticHandler serves embedded static files
+func staticHandler(dev bool) http.Handler {
+	var staticFS fs.FS
+	if dev {
+		staticFS = os.DirFS("assets/static")
+	} else {
+		staticFS, _ = fs.Sub(assets.StaticFS, "static")
+	}
+	return http.StripPrefix("/static/", http.FileServer(http.FS(staticFS)))
+}
