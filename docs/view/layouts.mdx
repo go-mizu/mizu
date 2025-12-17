@@ -1,11 +1,9 @@
 ---
 title: "Layouts"
-description: "Learn how to use layouts and slots to create consistent page structures"
+description: "Learn how to use layouts to create consistent page structures"
 ---
 
-# Layouts
-
-Layouts are the HTML shell that wraps your pages. They contain the common structure shared across pages: doctype, head, navigation, footer, and more. This guide explains how to create layouts and use the slot system.
+Layouts are the HTML shell that wraps your pages. They contain the common structure shared across pages: doctype, head, navigation, footer, and more. This guide explains how to create and use layouts.
 
 ## What is a Layout?
 
@@ -29,16 +27,15 @@ A layout is a template that defines the outer structure of your pages. Instead o
 
 ```html
 <!-- With layouts: defined once, pages fill in the blanks -->
-<!-- Layout -->
 <!DOCTYPE html>
 <html>
 <head>
-    <title>{{slot "title"}}</title>
+    <title>{{.Title}}</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
     <nav>...</nav>
-    {{slot "content"}}
+    {{template "content" .}}
     <footer>...</footer>
 </body>
 </html>
@@ -46,127 +43,91 @@ A layout is a template that defines the outer structure of your pages. Instead o
 
 ## Creating a Layout
 
-Layouts go in the `views/layouts/` directory:
-
-```
-views/
-├── layouts/
-│   ├── default.html    # The default layout
-│   ├── admin.html      # Admin panel layout
-│   └── minimal.html    # Minimal layout (no nav/footer)
-```
+Layouts are template files that use `{{template "content" .}}` to include page content.
 
 ### Basic Layout Example
 
 ```html
-<!-- views/layouts/default.html -->
+<!-- views/layout.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{slot "title" "My App"}}</title>
+    <title>{{.Title}}</title>
     <link rel="stylesheet" href="/css/main.css">
-    {{slot "head"}}
 </head>
 <body>
     <header>
-        {{partial "header"}}
+        <nav>
+            <a href="/">Home</a>
+            <a href="/about">About</a>
+            <a href="/contact">Contact</a>
+        </nav>
     </header>
 
-    <nav>
-        {{partial "nav"}}
-    </nav>
-
     <main>
-        {{slot "content"}}
+        {{template "content" .}}
     </main>
 
-    <aside>
-        {{slot "sidebar"}}
-    </aside>
-
     <footer>
-        {{partial "footer"}}
+        <p>&copy; 2024 My Company</p>
     </footer>
 
     <script src="/js/main.js"></script>
-    {{stack "scripts"}}
 </body>
 </html>
 ```
 
-## The Slot System
+### Page Template
 
-Slots are placeholders in layouts that pages can fill with content.
-
-### Defining Slots
-
-Use the `slot` function in layouts:
+Pages define a "content" block that gets inserted into the layout:
 
 ```html
-{{slot "name"}}                     <!-- Slot with no default -->
-{{slot "name" "Default content"}}   <!-- Slot with default value -->
-```
-
-### Filling Slots
-
-Pages fill slots using `define` blocks:
-
-```html
-<!-- views/pages/about.html -->
-{{define "title"}}About Us - My App{{end}}
-
+<!-- views/home.html -->
 {{define "content"}}
-<h1>About Us</h1>
-<p>Welcome to our company.</p>
-{{end}}
-
-{{define "sidebar"}}
-<h3>Quick Links</h3>
-<ul>
-    <li><a href="/team">Our Team</a></li>
-    <li><a href="/history">History</a></li>
-</ul>
+<h1>Welcome, {{.Name}}!</h1>
+<p>This is the home page.</p>
 {{end}}
 ```
 
-### Slots with Default Values
+## Setting the Default Layout
 
-When a page doesn't fill a slot, the default value (if any) is used:
+Configure the default layout in your engine:
 
-```html
-<!-- Layout -->
-<title>{{slot "title" "Welcome"}}</title>  <!-- Default: "Welcome" -->
-
-{{slot "sidebar"}}  <!-- No default, renders empty if not filled -->
-```
-
-```html
-<!-- Page (doesn't define "title" or "sidebar") -->
-{{define "content"}}
-<p>Just some content.</p>
-{{end}}
-```
-
-Result:
-```html
-<title>Welcome</title>  <!-- Used default -->
-<!-- sidebar is empty because no default and page didn't define it -->
+```go
+engine := view.New(view.Config{
+    Dir:           "./views",
+    Extension:     ".html",
+    DefaultLayout: "layout",  // Uses layout.html
+})
 ```
 
 ## Multiple Layouts
 
 Create different layouts for different sections of your site.
 
-### Admin Layout
+### Directory Structure
+
+```
+views/
+├── layout.html       # Main public layout
+├── admin-layout.html # Admin panel layout
+├── minimal.html      # Minimal layout (login, etc.)
+├── home.html
+├── about.html
+└── admin/
+    └── dashboard.html
+```
+
+### Admin Layout Example
 
 ```html
-<!-- views/layouts/admin.html -->
+<!-- views/admin-layout.html -->
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Admin - {{slot "title"}}</title>
+    <title>Admin - {{.Title}}</title>
     <link rel="stylesheet" href="/css/admin.css">
 </head>
 <body class="admin">
@@ -180,10 +141,10 @@ Create different layouts for different sections of your site.
     </div>
     <div class="admin-content">
         <header>
-            <h1>{{slot "page-title"}}</h1>
+            <h1>{{.PageTitle}}</h1>
         </header>
         <main>
-            {{slot "content"}}
+            {{template "content" .}}
         </main>
     </div>
 </body>
@@ -192,199 +153,211 @@ Create different layouts for different sections of your site.
 
 ### Using a Different Layout
 
-**Option 1: In the page template**
-
-```html
-<!-- views/pages/admin/dashboard.html -->
-{{define "layout"}}admin{{end}}
-
-{{define "page-title"}}Dashboard{{end}}
-
-{{define "content"}}
-<div class="stats">
-    <p>Welcome to the admin panel!</p>
-</div>
-{{end}}
-```
-
-**Option 2: In the handler**
+Override the default layout when rendering:
 
 ```go
 func dashboardHandler(c *mizu.Ctx) error {
-    return view.Render(c, "admin/dashboard", data, view.Layout("admin"))
+    return view.From(c).Render(c, "admin/dashboard", view.Data{
+        "Title":     "Dashboard",
+        "PageTitle": "Admin Dashboard",
+        "Stats":     stats,
+    }, view.Layout("admin-layout"))
 }
 ```
-
-The handler option takes precedence over the template option.
 
 ### Minimal Layout
 
 For simple pages that don't need full navigation:
 
 ```html
-<!-- views/layouts/minimal.html -->
+<!-- views/minimal.html -->
 <!DOCTYPE html>
 <html>
 <head>
-    <title>{{slot "title"}}</title>
+    <title>{{.Title}}</title>
     <style>
-        body { font-family: sans-serif; max-width: 600px; margin: 50px auto; }
+        body {
+            font-family: sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+        }
     </style>
 </head>
 <body>
-    {{slot "content"}}
+    {{template "content" .}}
 </body>
 </html>
 ```
 
-### No Layout
+```go
+func loginHandler(c *mizu.Ctx) error {
+    return view.From(c).Render(c, "login", view.Data{
+        "Title": "Login",
+    }, view.Layout("minimal"))
+}
+```
 
-For AJAX responses or partial HTML:
+## No Layout
+
+For AJAX responses, partial HTML, or API endpoints that return HTML fragments:
 
 ```go
 // Returns just the page content, no layout
-view.Render(c, "user-row", data, view.NoLayout())
+view.From(c).Render(c, "user-row", data, view.NoLayout())
 ```
 
-## The Stack System
+This is useful for:
+- HTMX partial updates
+- AJAX content loading
+- Email templates (that define their own complete HTML)
 
-Stacks complement slots by collecting content from multiple sources. They're perfect for scripts and styles that components might need.
+## Layout Data Access
 
-### How Stacks Work
+Layouts have access to all data passed to `Render()`:
 
-1. **Push** content to a named stack:
-```html
-{{push "scripts"}}<script src="/js/chart.js"></script>{{end}}
+```go
+view.From(c).Render(c, "home", view.Data{
+    "Title":       "Home Page",
+    "CurrentUser": user,
+    "Year":        time.Now().Year(),
+})
 ```
 
-2. **Render** the stack in the layout:
 ```html
-{{stack "scripts"}}
+<!-- views/layout.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{.Title}}</title>
+</head>
+<body>
+    <nav>
+        {{if .CurrentUser}}
+            <span>Hello, {{.CurrentUser.Name}}</span>
+            <a href="/logout">Logout</a>
+        {{else}}
+            <a href="/login">Login</a>
+        {{end}}
+    </nav>
+
+    <main>
+        {{template "content" .}}
+    </main>
+
+    <footer>
+        <p>&copy; {{.Year}} My Company</p>
+    </footer>
+</body>
+</html>
 ```
 
-All pushed content is concatenated in order.
+## Additional Template Blocks
 
-### Example: Component Scripts
+Pages can define more than just "content". Use Go's template inheritance:
 
-A chart component needs Chart.js:
+### Layout with Multiple Blocks
 
 ```html
-<!-- views/components/chart.html -->
-<canvas id="chart-{{.ID}}"></canvas>
+<!-- views/layout.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{.Title}}</title>
+    {{block "head" .}}{{end}}
+</head>
+<body>
+    <nav>...</nav>
 
-{{push "scripts"}}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <main>
+        {{template "content" .}}
+    </main>
+
+    <footer>...</footer>
+
+    {{block "scripts" .}}{{end}}
+</body>
+</html>
+```
+
+### Page with Extra Blocks
+
+```html
+<!-- views/chart-page.html -->
+{{define "head"}}
+<link rel="stylesheet" href="/css/charts.css">
+{{end}}
+
+{{define "content"}}
+<h1>Statistics</h1>
+<div id="chart"></div>
+{{end}}
+
+{{define "scripts"}}
+<script src="/js/chart.js"></script>
 <script>
-    new Chart(document.getElementById('chart-{{.ID}}'), {
-        type: '{{.Type}}',
-        data: {{safeJSON .ChartData}}
-    });
+    renderChart('#chart', {{.ChartData}});
 </script>
 {{end}}
 ```
 
-The layout renders all scripts at the bottom:
+The `block` directive defines a template with optional default content. If the page doesn't define that block, the default (or nothing) is used.
 
-```html
-<!-- views/layouts/default.html -->
-<body>
-    {{slot "content"}}
-    {{stack "scripts"}}
-</body>
-```
-
-Now, using the chart component automatically includes its scripts:
-
-```html
-{{component "chart" (dict "ID" "sales" "Type" "bar" "ChartData" .Data.SalesData)}}
-```
-
-### Deduplication
-
-By default, duplicate stack entries are removed. If multiple components push the same script:
-
-```html
-{{push "scripts"}}<script src="/lib/htmx.js"></script>{{end}}
-{{push "scripts"}}<script src="/lib/htmx.js"></script>{{end}}
-```
-
-Result (with `DedupeStacks: true`):
-```html
-<script src="/lib/htmx.js"></script>
-```
-
-### Common Stacks
-
-| Stack Name | Purpose |
-|------------|---------|
-| `scripts` | JavaScript files and inline scripts |
-| `styles` | CSS files and inline styles |
-| `head` | Additional head content (meta tags, etc.) |
-| `foot` | Content before closing body tag |
-
-## Layout Data Access
-
-Layouts have access to the same data as pages:
-
-```html
-<!-- Layout can use .Data -->
-<nav>
-    {{if .Data.CurrentUser}}
-        <span>Hello, {{.Data.CurrentUser.Name}}</span>
-        <a href="/logout">Logout</a>
-    {{else}}
-        <a href="/login">Login</a>
-    {{end}}
-</nav>
-```
-
-### Built-in Context
-
-Layouts can access:
-
-```html
-<body data-page="{{.Page}}" data-layout="{{.Layout}}">
-    <!-- Request info -->
-    <link rel="canonical" href="https://example.com{{.Request.URL.Path}}">
-</body>
-```
-
-## Nesting and Composition
-
-### Using Partials in Layouts
-
-Break layouts into smaller pieces:
-
-```html
-<!-- views/layouts/default.html -->
-<!DOCTYPE html>
-<html>
-<head>
-    {{partial "meta-tags"}}
-    <title>{{slot "title"}}</title>
-    {{partial "stylesheets"}}
-</head>
-<body>
-    {{partial "header"}}
-    {{partial "navigation"}}
-    <main>{{slot "content"}}</main>
-    {{partial "footer"}}
-    {{partial "scripts"}}
-</body>
-</html>
-```
+## Common Patterns
 
 ### Dynamic Navigation
 
 Highlight the current page:
 
 ```html
-<!-- views/partials/nav.html -->
+<!-- views/layout.html -->
 <nav>
-    <a href="/" {{if eq .Request.URL.Path "/"}}class="active"{{end}}>Home</a>
-    <a href="/about" {{if eq .Request.URL.Path "/about"}}class="active"{{end}}>About</a>
-    <a href="/contact" {{if eq .Request.URL.Path "/contact"}}class="active"{{end}}>Contact</a>
+    <a href="/" class="{{if eq .CurrentPath "/"}}active{{end}}">Home</a>
+    <a href="/about" class="{{if eq .CurrentPath "/about"}}active{{end}}">About</a>
+    <a href="/contact" class="{{if eq .CurrentPath "/contact"}}active{{end}}">Contact</a>
 </nav>
+```
+
+Pass the current path in your handler or middleware:
+
+```go
+view.Data{
+    "CurrentPath": c.Path(),
+}
+```
+
+### Flash Messages
+
+Display flash messages from sessions:
+
+```html
+{{if .Flash}}
+<div class="flash flash-{{.Flash.Type}}">
+    {{.Flash.Message}}
+</div>
+{{end}}
+```
+
+### Page-Specific Body Classes
+
+```html
+<body class="{{.BodyClass}}">
+```
+
+```go
+view.Data{
+    "BodyClass": "page-home dark-mode",
+}
+```
+
+### Meta Tags
+
+```html
+<head>
+    <title>{{.Title}}</title>
+    <meta name="description" content="{{.Description}}">
+    {{if .NoIndex}}<meta name="robots" content="noindex">{{end}}
+</head>
 ```
 
 ## Best Practices
@@ -393,94 +366,60 @@ Highlight the current page:
 
 Each layout should serve a clear purpose:
 
-- `default.html` - Main public pages
-- `admin.html` - Admin panel
-- `auth.html` - Login/signup pages
-- `email.html` - Email templates
+- `layout.html` - Main public pages
+- `admin-layout.html` - Admin panel
+- `auth-layout.html` - Login/signup pages
+- `email-layout.html` - Email templates
 
-### 2. Use Meaningful Slot Names
+### 2. Pass Common Data via Middleware
 
-```html
-<!-- Good: describes the purpose -->
-{{slot "page-title"}}
-{{slot "sidebar-widgets"}}
-{{slot "footer-links"}}
+Instead of passing the same data in every handler, use middleware:
 
-<!-- Avoid: generic names -->
-{{slot "content1"}}
-{{slot "extra"}}
+```go
+func commonDataMiddleware(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        c.Locals("Year", time.Now().Year())
+        c.Locals("CurrentPath", c.Path())
+        return next(c)
+    }
+}
 ```
 
-### 3. Always Provide Defaults for Optional Slots
+### 3. Use Meaningful Names
 
-```html
-<!-- Optional sidebar with sensible default -->
-{{slot "sidebar" ""}}
+```go
+// Good: clear purpose
+view.Layout("admin-layout")
+view.Layout("email-layout")
 
-<!-- Meta description with fallback -->
-<meta name="description" content="{{slot "description" "Welcome to My App"}}">
+// Avoid: unclear
+view.Layout("layout2")
+view.Layout("other")
 ```
 
-### 4. Use Stacks for Component Assets
+### 4. Don't Overcomplicate
 
-Don't hardcode component scripts in the layout. Let components declare their dependencies:
+Start simple. Most sites only need 2-3 layouts:
+- Main layout for public pages
+- Admin layout for backend
+- Minimal layout for auth pages
 
-```html
-<!-- Bad: layout knows about component needs -->
-<script src="/js/chart.js"></script>
+### 5. Test All Layouts
 
-<!-- Good: component pushes its own scripts -->
-{{stack "scripts"}}
-```
+Make sure every layout works with your data:
 
-### 5. Keep Layouts DRY with Partials
+```go
+// In tests
+func TestLayouts(t *testing.T) {
+    engine := view.New(config)
 
-If multiple layouts share elements, extract them:
-
-```html
-<!-- Both layouts use the same header -->
-{{partial "header"}}
-```
-
-## Common Patterns
-
-### Conditional Layout Sections
-
-```html
-{{if slot "sidebar"}}
-<div class="with-sidebar">
-    <main>{{slot "content"}}</main>
-    <aside>{{slot "sidebar"}}</aside>
-</div>
-{{else}}
-<main class="full-width">{{slot "content"}}</main>
-{{end}}
-```
-
-### Flash Messages
-
-Display flash messages from the session:
-
-```html
-{{if .Data.Flash}}
-<div class="flash flash-{{.Data.Flash.Type}}">
-    {{.Data.Flash.Message}}
-</div>
-{{end}}
-```
-
-### Page-Specific Body Classes
-
-```html
-<body class="page-{{.Page}} layout-{{.Layout}}">
-```
-
-Pages can add more classes:
-
-```html
-{{define "body-class"}}dark-mode{{end}}
-```
-
-```html
-<body class="page-{{.Page}} {{slot "body-class"}}">
+    layouts := []string{"layout", "admin-layout", "minimal"}
+    for _, layout := range layouts {
+        var buf bytes.Buffer
+        err := engine.Render(&buf, "test-page", testData, view.Layout(layout))
+        if err != nil {
+            t.Errorf("Layout %s failed: %v", layout, err)
+        }
+    }
+}
 ```

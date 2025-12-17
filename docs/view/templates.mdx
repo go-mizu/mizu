@@ -1,49 +1,29 @@
 ---
 title: "Templates"
-description: "Understanding template types, syntax, and data access in Mizu's view system"
+description: "Understanding Go template syntax and data access in Mizu's view system"
 ---
 
-# Templates
+This guide covers everything you need to know about writing templates in Mizu's view system. We'll explore Go's template syntax, how data flows through your templates, and common patterns.
 
-This guide covers everything you need to know about writing templates in Mizu's view system. We'll explore the four template types, Go's template syntax, and how data flows through your templates.
+## Template Basics
 
-## The Four Template Types
+Mizu uses Go's standard `html/template` package. Templates are HTML files with special markers (`{{` and `}}`) for dynamic content.
 
-Mizu uses four types of templates, each with a specific purpose:
-
-| Type | Directory | Purpose | Data Access |
-|------|-----------|---------|-------------|
-| Pages | `views/pages/` | Main content for routes | Full data context |
-| Layouts | `views/layouts/` | Shell that wraps pages | Full data context |
-| Components | `views/components/` | Reusable UI pieces | Only passed data |
-| Partials | `views/partials/` | Template fragments | Full data context |
-
-### How They Fit Together
-
-```
-┌─────────────────────────────────────────────────┐
-│                    Layout                        │
-│  ┌───────────────────────────────────────────┐  │
-│  │               {{slot "content"}}           │  │
-│  │   ┌───────────────────────────────────┐   │  │
-│  │   │              Page                  │   │  │
-│  │   │                                    │   │  │
-│  │   │   {{partial "sidebar"}}            │   │  │
-│  │   │                                    │   │  │
-│  │   │   {{component "button" (dict...)}} │   │  │
-│  │   │                                    │   │  │
-│  │   └───────────────────────────────────┘   │  │
-│  └───────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────┘
+```html
+<!-- views/home.html -->
+{{define "content"}}
+<h1>Hello, {{.Name}}!</h1>
+<p>Welcome to our site.</p>
+{{end}}
 ```
 
-## Go Template Syntax Basics
+## Go Template Syntax
 
-If you're new to Go templates, here's a quick introduction. Templates use `{{` and `}}` to mark dynamic content.
+If you're new to Go templates, here's a quick introduction.
 
 ### Outputting Values
 
-Use `.` to access data:
+Use `.` (the dot) to access data passed to the template:
 
 ```html
 <!-- Simple value -->
@@ -52,8 +32,8 @@ Use `.` to access data:
 <!-- Nested value -->
 <p>Author: {{.Post.Author.Name}}</p>
 
-<!-- Method call (parentheses required even with no arguments) -->
-<p>Length: {{.Items.Len}}</p>
+<!-- Map access -->
+<p>Setting: {{.Settings.theme}}</p>
 ```
 
 ### Conditions
@@ -69,6 +49,44 @@ Use `if` to show content conditionally:
 
 {{if .Error}}
     <div class="error">{{.Error}}</div>
+{{end}}
+```
+
+### Comparison Operators
+
+Go templates provide comparison functions:
+
+| Function | Description | Example |
+|----------|-------------|---------|
+| `eq` | Equal | `{{if eq .Status "active"}}` |
+| `ne` | Not equal | `{{if ne .Count 0}}` |
+| `lt` | Less than | `{{if lt .Price 100}}` |
+| `le` | Less than or equal | `{{if le .Stock 5}}` |
+| `gt` | Greater than | `{{if gt .Price 100}}` |
+| `ge` | Greater than or equal | `{{if ge .Age 18}}` |
+
+```html
+{{if eq .Status "active"}}Active{{end}}
+{{if ne .Count 0}}Has items{{end}}
+{{if gt .Price 100}}Premium{{end}}
+{{if le .Stock 5}}Low stock{{end}}
+```
+
+### Boolean Logic
+
+Combine conditions with `and`, `or`, and `not`:
+
+```html
+{{if and .LoggedIn .IsAdmin}}
+    Admin controls
+{{end}}
+
+{{if or .Error .Warning}}
+    <div class="alert">Check messages</div>
+{{end}}
+
+{{if not .Disabled}}
+    <button>Click me</button>
 {{end}}
 ```
 
@@ -99,6 +117,28 @@ Use `range` to iterate over slices, arrays, or maps:
 {{end}}
 ```
 
+### Looping Over Structs
+
+When ranging over a slice of structs:
+
+```html
+{{range .Users}}
+    <!-- Inside range, . is the current user -->
+    <div class="user">
+        <h3>{{.Name}}</h3>
+        <p>{{.Email}}</p>
+    </div>
+{{end}}
+```
+
+### Looping Over Maps
+
+```html
+{{range $key, $value := .Settings}}
+    <p>{{$key}}: {{$value}}</p>
+{{end}}
+```
+
 ### Variables
 
 Assign values to variables with `:=`:
@@ -111,16 +151,31 @@ Assign values to variables with `:=`:
 <p>{{$fullName}}</p>
 ```
 
+### The Root Context ($)
+
+Inside a `range` loop, `.` refers to the current item. Use `$` to access the root context:
+
+```html
+{{range .Users}}
+    <p>{{.Name}}</p>
+    {{if $.ShowEmail}}
+        <p>{{.Email}}</p>
+    {{end}}
+{{end}}
+```
+
+`$` always refers to the original data passed to the template.
+
 ### Pipelines
 
 Chain operations with `|`:
 
 ```html
 <!-- Apply function to value -->
-<p>{{.Name | uppercase}}</p>
+<p>{{.Name | upper}}</p>
 
 <!-- Chain multiple functions -->
-<p>{{.Bio | truncate 100 | safeHTML}}</p>
+<p>{{.Title | lower | trim}}</p>
 ```
 
 ### Comments
@@ -137,251 +192,169 @@ Template comments are stripped from output:
 Use `-` to trim whitespace:
 
 ```html
-{{- .Name -}}  <!-- Trims whitespace before and after -->
+{{- .Name -}}    <!-- Trims whitespace before and after -->
+{{- .Name}}      <!-- Trims whitespace before -->
+{{.Name -}}      <!-- Trims whitespace after -->
 ```
 
-## Data Context
+This is useful for keeping your HTML clean:
 
-Understanding how data flows through templates is crucial.
+```html
+<ul>
+    {{- range .Items}}
+    <li>{{.}}</li>
+    {{- end}}
+</ul>
+```
 
-### The Data Object
+## Template Blocks
 
-When you call `view.Render()`, you pass data:
+### define and template
+
+Templates can define named blocks that other templates reference:
+
+```html
+<!-- Define a reusable block -->
+{{define "header"}}
+<header>
+    <h1>{{.Title}}</h1>
+</header>
+{{end}}
+
+<!-- Use the block -->
+{{template "header" .}}
+```
+
+The second argument to `template` is the data passed to the block. Use `.` to pass all current data.
+
+### block with Default Content
+
+`block` defines a template with default content that can be overridden:
+
+```html
+<!-- In layout.html -->
+{{block "sidebar" .}}
+<aside>Default sidebar content</aside>
+{{end}}
+```
+
+If another template defines `sidebar`, that content is used instead.
+
+## Working with Data
+
+### Passing Data from Handlers
+
+In your Go handler:
 
 ```go
-view.Render(c, "profile", view.Data{
+view.From(c).Render(c, "profile", view.Data{
     "User":    user,
     "Posts":   posts,
     "IsAdmin": true,
 })
 ```
 
-In templates, this data is available at `.Data`:
+In your template:
 
 ```html
-<h1>{{.Data.User.Name}}</h1>
+<h1>{{.User.Name}}</h1>
 
-{{if .Data.IsAdmin}}
+{{if .IsAdmin}}
 <a href="/admin">Admin Panel</a>
 {{end}}
 
-{{range .Data.Posts}}
+{{range .Posts}}
 <article>{{.Title}}</article>
 {{end}}
 ```
 
-### Built-in Context Values
-
-Every template has access to:
-
-| Path | Description |
-|------|-------------|
-| `.Data` | Your custom data |
-| `.Layout` | Current layout name |
-| `.Page` | Current page name |
-| `.Request` | The HTTP request |
-
-Example:
+### Accessing Nested Data
 
 ```html
-<p>Current page: {{.Page}}</p>
-<p>Request URL: {{.Request.URL.Path}}</p>
+<!-- Struct field -->
+{{.User.Profile.Bio}}
+
+<!-- Map key -->
+{{.Settings.theme}}
+
+<!-- Slice index -->
+{{index .Items 0}}
 ```
 
-### Context in Range Loops
+### Calling Methods
 
-Inside a `range`, `.` refers to the current item:
-
-```html
-{{range .Data.Users}}
-    <!-- Here, . is a User -->
-    <p>{{.Name}} - {{.Email}}</p>
-{{end}}
-```
-
-To access parent data inside a loop, use `$`:
-
-```html
-{{range .Data.Users}}
-    <p>{{.Name}}</p>
-    {{if $.Data.ShowEmail}}
-        <p>{{.Email}}</p>
-    {{end}}
-{{end}}
-```
-
-`$` always refers to the root context.
-
-## Pages in Detail
-
-Pages are the main content templates. They fill slots in layouts.
-
-### Basic Page Structure
-
-```html
-<!-- views/pages/home.html -->
-
-{{define "title"}}Home Page{{end}}
-
-{{define "content"}}
-<h1>Welcome</h1>
-<p>This is the home page.</p>
-{{end}}
-```
-
-The `define` blocks fill named slots in the layout.
-
-### Specifying a Layout
-
-Pages use the default layout by default. To use a different layout:
-
-```html
-{{define "layout"}}admin{{end}}
-
-{{define "title"}}Dashboard{{end}}
-
-{{define "content"}}
-<h1>Admin Dashboard</h1>
-{{end}}
-```
-
-Or specify in the handler:
+If your data has methods, you can call them:
 
 ```go
-view.Render(c, "dashboard", data, view.Layout("admin"))
+type User struct {
+    FirstName string
+    LastName  string
+}
+
+func (u User) FullName() string {
+    return u.FirstName + " " + u.LastName
+}
 ```
-
-### Nested Pages
-
-Organize pages in subdirectories:
-
-```
-views/pages/
-├── home.html
-├── about.html
-└── users/
-    ├── list.html
-    └── profile.html
-```
-
-Render nested pages with forward slashes:
-
-```go
-view.Render(c, "users/profile", data)
-view.Render(c, "users/list", data)
-```
-
-## Layouts in Detail
-
-Layouts provide the HTML shell for pages.
-
-### Basic Layout Structure
 
 ```html
-<!-- views/layouts/default.html -->
+<p>{{.User.FullName}}</p>
+```
+
+Note: Methods must have no parameters or only one parameter (which must be passed).
+
+## Layout Templates
+
+Layouts wrap your page content. They use `{{template "content" .}}` to include the page.
+
+### Layout Structure
+
+```html
+<!-- views/layout.html -->
 <!DOCTYPE html>
 <html>
 <head>
-    <title>{{slot "title" "My App"}}</title>
-    {{slot "head"}}
+    <title>{{.Title}}</title>
 </head>
 <body>
-    <nav>{{partial "nav"}}</nav>
+    <nav>
+        <a href="/">Home</a>
+        <a href="/about">About</a>
+    </nav>
     <main>
-        {{slot "content"}}
+        {{template "content" .}}
     </main>
     <footer>
-        {{slot "footer"}}
-        {{partial "footer"}}
+        Copyright 2024
     </footer>
 </body>
 </html>
 ```
 
-### Slot Function
+### Page Template
 
-`slot` defines where page content goes:
-
-```html
-{{slot "name"}}                    <!-- Required slot, empty if not filled -->
-{{slot "name" "Default Value"}}    <!-- Slot with default value -->
-```
-
-See the [Layouts](/view/layouts) guide for more on slots.
-
-## Components in Detail
-
-Components are isolated, reusable templates.
-
-### Creating a Component
+Pages define the `content` block:
 
 ```html
-<!-- views/components/alert.html -->
-<div class="alert alert-{{.Type}}">
-    <strong>{{.Title}}</strong>
-    <p>{{.Message}}</p>
-</div>
+<!-- views/home.html -->
+{{define "content"}}
+<h1>Welcome, {{.Name}}!</h1>
+<p>This is the home page.</p>
+{{end}}
 ```
-
-### Using a Component
-
-```html
-{{component "alert" (dict
-    "Type" "warning"
-    "Title" "Watch Out!"
-    "Message" "This is a warning message."
-)}}
-```
-
-### Component Data Isolation
-
-Components only see the data you pass to them. They **cannot** access `.Data` from the parent template. This keeps them reusable and predictable.
-
-See the [Components](/view/components) guide for more.
-
-## Partials in Detail
-
-Partials are fragments that share the parent's data context.
-
-### Creating a Partial
-
-```html
-<!-- views/partials/user-card.html -->
-<div class="user-card">
-    <img src="{{.Data.User.Avatar}}">
-    <h3>{{.Data.User.Name}}</h3>
-</div>
-```
-
-### Using a Partial
-
-```html
-{{partial "user-card"}}
-```
-
-Partials inherit the full data context, making them good for breaking up large templates without passing data manually.
-
-See the [Partials](/view/partials) guide for more.
-
-## Template Comparison
-
-| Feature | Page | Layout | Component | Partial |
-|---------|------|--------|-----------|---------|
-| Access `.Data` | Yes | Yes | No | Yes |
-| Receives passed data | No | No | Yes | No |
-| Can define slots | Yes | No | No | No |
-| Can use `slot` | No | Yes | No | No |
-| Supports nesting | Yes | No | Yes | Yes |
-| Use case | Route content | HTML shell | Reusable UI | Code organization |
 
 ## Common Patterns
 
 ### Conditional Classes
 
 ```html
-<div class="card {{if .Data.Featured}}card-featured{{end}}">
+<div class="card {{if .Featured}}card-featured{{end}}">
     ...
 </div>
+
+<!-- Multiple conditional classes -->
+<button class="btn {{if .Primary}}btn-primary{{else}}btn-secondary{{end}} {{if .Large}}btn-lg{{end}}">
+    {{.Label}}
+</button>
 ```
 
 ### Dynamic Attributes
@@ -390,6 +363,7 @@ See the [Partials](/view/partials) guide for more.
 <input
     type="text"
     name="{{.Name}}"
+    value="{{.Value}}"
     {{if .Required}}required{{end}}
     {{if .Disabled}}disabled{{end}}
 >
@@ -397,70 +371,165 @@ See the [Partials](/view/partials) guide for more.
 
 ### Safe HTML Output
 
-By default, Go templates escape HTML. To output raw HTML:
+By default, Go templates escape HTML to prevent XSS attacks:
 
 ```html
-<!-- Escaped (safe but shows HTML as text) -->
+<!-- Escaped (safe) - shows HTML as text -->
 <div>{{.Content}}</div>
-
-<!-- Unescaped (use only with trusted content!) -->
-<div>{{safeHTML .Content}}</div>
+<!-- If .Content is "<b>bold</b>", outputs: &lt;b&gt;bold&lt;/b&gt; -->
 ```
 
-### Comparing Values
+To output raw HTML (use only with trusted content!):
 
-```html
-{{if eq .Status "active"}}Active{{end}}
-{{if ne .Count 0}}Has items{{end}}
-{{if gt .Price 100}}Premium{{end}}
-{{if le .Stock 5}}Low stock{{end}}
+```go
+import "html/template"
+
+view.Data{
+    "Content": template.HTML("<b>bold</b>"),
+}
 ```
 
-### Boolean Logic
+```html
+<div>{{.Content}}</div>
+<!-- Now outputs: <b>bold</b> -->
+```
+
+### Empty/Nil Checks
 
 ```html
-{{if and .LoggedIn .IsAdmin}}
-    Admin controls
+<!-- Check for empty string -->
+{{if .Description}}
+    <p>{{.Description}}</p>
 {{end}}
 
-{{if or .Error .Warning}}
-    <div class="alert">Check messages</div>
-{{end}}
-
-{{if not .Disabled}}
-    <button>Click me</button>
+<!-- Check slice length -->
+{{if .Items}}
+    <ul>
+        {{range .Items}}
+        <li>{{.}}</li>
+        {{end}}
+    </ul>
+{{else}}
+    <p>No items found.</p>
 {{end}}
 ```
 
-### Default Values
+### Building Links
 
 ```html
-<p>{{default .Name "Anonymous"}}</p>
-<img src="{{default .Avatar "/default.png"}}">
+<a href="/users/{{.User.ID}}">View Profile</a>
+<a href="/posts?page={{.Page}}">Next Page</a>
+```
+
+### Formatting Numbers and Dates
+
+Use custom functions or `printf`:
+
+```html
+<p>Price: ${{printf "%.2f" .Price}}</p>
+<p>Count: {{printf "%d" .Count}}</p>
+```
+
+For dates, either format in Go or use a custom function:
+
+```go
+view.Data{
+    "FormattedDate": time.Now().Format("January 2, 2006"),
+}
+```
+
+Or add a custom function:
+
+```go
+view.Config{
+    Funcs: template.FuncMap{
+        "formatDate": func(t time.Time) string {
+            return t.Format("Jan 2, 2006")
+        },
+    },
+}
+```
+
+```html
+<p>Published: {{formatDate .PublishedAt}}</p>
 ```
 
 ## Debugging Templates
 
 ### Print Values
 
+Use `printf` with `%#v` to see the Go syntax representation:
+
 ```html
-<pre>{{printf "%#v" .Data}}</pre>
+<pre>{{printf "%#v" .}}</pre>
 ```
 
 ### Check Types
 
 ```html
-<p>Type: {{printf "%T" .Data.Items}}</p>
+<p>Type: {{printf "%T" .Items}}</p>
 ```
 
-### Template Errors
+### Enable Development Mode
 
-Enable development mode for detailed errors:
+For detailed error messages with line numbers:
 
 ```go
-view.New(view.Options{
+view.New(view.Config{
     Development: true,
 })
 ```
 
-Errors will include template source and line numbers.
+## Best Practices
+
+### 1. Keep Templates Simple
+
+Put complex logic in Go handlers, not templates:
+
+```go
+// Good: logic in handler
+isVIP := user.TotalPurchases > 1000 && user.MemberSince.Before(cutoff)
+view.Data{"IsVIP": isVIP}
+```
+
+```html
+<!-- Template just uses the result -->
+{{if .IsVIP}}VIP Member{{end}}
+```
+
+### 2. Use Meaningful Variable Names
+
+```html
+{{range $user := .Users}}
+    <p>{{$user.Name}}</p>
+{{end}}
+```
+
+### 3. Document Expected Data
+
+Add comments at the top of templates:
+
+```html
+{{/*
+    Expected data:
+    - Title: string
+    - User: {Name, Email}
+    - Posts: []Post
+*/}}
+```
+
+### 4. Escape User Input
+
+Always let Go's default escaping protect against XSS. Only use `template.HTML` for content you trust completely.
+
+### 5. Use Whitespace Trimming
+
+Keep generated HTML clean:
+
+```html
+<ul>
+{{- range .Items}}
+    <li>{{.}}</li>
+{{- end}}
+</ul>
+```

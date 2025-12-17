@@ -1,15 +1,13 @@
 ---
-title: "Production Deployment"
+title: "Production"
 description: "Deploy your views in production with embedded templates and caching"
 ---
-
-# Production Deployment
 
 This guide covers everything you need to deploy your Mizu views in production: embedding templates, caching, performance optimization, and best practices.
 
 ## Embedding Templates
 
-In production, you should embed templates into your binary. This eliminates file system dependencies and ensures templates can't be accidentally modified.
+In production, embed templates into your binary. This eliminates file system dependencies and ensures templates can't be accidentally modified.
 
 ### Using embed.FS
 
@@ -20,6 +18,7 @@ package main
 
 import (
     "embed"
+
     "github.com/go-mizu/mizu"
     "github.com/go-mizu/mizu/view"
 )
@@ -28,12 +27,14 @@ import (
 var viewsFS embed.FS
 
 func main() {
-    engine := view.New(view.Options{
-        FS: viewsFS,  // Use embedded filesystem
+    engine := view.New(view.Config{
+        FS:            viewsFS,    // Use embedded filesystem
+        Extension:     ".html",
+        DefaultLayout: "layout",
     })
 
     app := mizu.New()
-    app.Use(view.Middleware(engine))
+    engine.Middleware(app)
 
     // ... routes ...
 
@@ -49,12 +50,9 @@ The `//go:embed` directive embeds a directory relative to the source file:
 myapp/
 ├── main.go           # Contains //go:embed views
 ├── views/
-│   ├── layouts/
-│   │   └── default.html
-│   ├── pages/
-│   │   └── home.html
-│   └── components/
-│       └── button.html
+│   ├── layout.html
+│   ├── home.html
+│   └── about.html
 └── go.mod
 ```
 
@@ -62,7 +60,7 @@ After building, the binary contains all templates.
 
 ### Conditional Embedding
 
-Use build tags or environment variables to switch between development and production:
+Use environment variables to switch between development and production:
 
 ```go
 package main
@@ -70,6 +68,7 @@ package main
 import (
     "embed"
     "os"
+
     "github.com/go-mizu/mizu"
     "github.com/go-mizu/mizu/view"
 )
@@ -80,23 +79,21 @@ var viewsFS embed.FS
 func main() {
     isDev := os.Getenv("ENV") != "production"
 
-    var opts view.Options
+    config := view.Config{
+        Extension:     ".html",
+        DefaultLayout: "layout",
+        Development:   isDev,
+    }
 
     if isDev {
         // Development: filesystem for hot reload
-        opts = view.Options{
-            Dir:         "views",
-            Development: true,
-        }
+        config.Dir = "./views"
     } else {
         // Production: embedded with caching
-        opts = view.Options{
-            FS:          viewsFS,
-            Development: false,
-        }
+        config.FS = viewsFS
     }
 
-    engine := view.New(opts)
+    engine := view.New(config)
 
     // ... rest of application
 }
@@ -111,33 +108,32 @@ In production, preload all templates at startup to:
 3. **Validate** - Ensure all templates parse correctly
 
 ```go
-engine := view.New(view.Options{
-    FS: viewsFS,
+engine := view.New(view.Config{
+    FS:            viewsFS,
+    DefaultLayout: "layout",
 })
 
 // Preload and validate all templates
-if err := engine.Preload(); err != nil {
+if err := engine.Load(); err != nil {
     log.Fatal("Template error:", err)
 }
 
 app := mizu.New()
-app.Use(view.Middleware(engine))
+engine.Middleware(app)
 ```
 
 ### Preload Errors
 
-Preload catches errors like:
+`Load()` catches errors like:
 
 - Missing template files
 - Template syntax errors
-- Invalid slot references
-- Missing component templates
+- Invalid template references
 
 ```go
-err := engine.Preload()
+err := engine.Load()
 if err != nil {
-    // err contains details:
-    // "template parse error: views/pages/home.html:15: unexpected end"
+    // err contains details about the failure
     log.Fatal(err)
 }
 ```
@@ -148,45 +144,14 @@ if err != nil {
 
 In production mode (`Development: false`), templates are cached:
 
-- **Parsed once** - Templates are parsed at first use or preload
+- **Parsed once** - Templates are parsed at first use or Load()
 - **Reused** - Same parsed template serves all requests
 - **No disk I/O** - Templates read from memory
 
 ```go
-view.Options{
+view.Config{
     Development: false,  // Enable caching (default)
 }
-```
-
-### Buffer Pooling
-
-The view engine uses buffer pools to reduce allocations:
-
-```go
-// Internal: engine pools buffers
-// You don't need to do anything special
-```
-
-### Minimize Template Complexity
-
-Complex templates are slower. Keep them focused:
-
-```html
-<!-- Avoid: deeply nested conditionals -->
-{{if .A}}
-    {{if .B}}
-        {{if .C}}
-            {{if .D}}
-                ...
-            {{end}}
-        {{end}}
-    {{end}}
-{{end}}
-
-<!-- Better: compute in Go, pass simple flag -->
-{{if .ShowSpecialContent}}
-    ...
-{{end}}
 ```
 
 ### Pre-compute in Handlers
@@ -202,7 +167,7 @@ func handler(c *mizu.Ctx) error {
     featured := filterFeatured(posts)
     byCategory := groupByCategory(posts)
 
-    return view.Render(c, "posts", view.Data{
+    return view.From(c).Render(c, "posts", view.Data{
         "Posts":      posts,
         "Featured":   featured,
         "ByCategory": byCategory,
@@ -212,8 +177,28 @@ func handler(c *mizu.Ctx) error {
 
 ```html
 <!-- Simple template: just displays pre-computed data -->
-{{range .Data.Featured}}
+{{range .Featured}}
     <article>{{.Title}}</article>
+{{end}}
+```
+
+### Minimize Template Complexity
+
+Complex templates are slower. Keep them focused:
+
+```html
+<!-- Avoid: deeply nested conditionals -->
+{{if .A}}
+    {{if .B}}
+        {{if .C}}
+            ...
+        {{end}}
+    {{end}}
+{{end}}
+
+<!-- Better: compute in Go, pass simple flag -->
+{{if .ShowSpecialContent}}
+    ...
 {{end}}
 ```
 
@@ -221,12 +206,10 @@ func handler(c *mizu.Ctx) error {
 
 ### Custom Error Pages
 
-Create custom error page templates:
+Create error page templates:
 
 ```html
-<!-- views/pages/errors/404.html -->
-{{define "title"}}Page Not Found{{end}}
-
+<!-- views/404.html -->
 {{define "content"}}
 <div class="error-page">
     <h1>404</h1>
@@ -237,9 +220,7 @@ Create custom error page templates:
 ```
 
 ```html
-<!-- views/pages/errors/500.html -->
-{{define "title"}}Server Error{{end}}
-
+<!-- views/500.html -->
 {{define "content"}}
 <div class="error-page">
     <h1>500</h1>
@@ -258,14 +239,14 @@ app := mizu.New()
 
 app.ErrorHandler = func(c *mizu.Ctx, err error) {
     code := 500
-    page := "errors/500"
+    page := "500"
 
     // Check for HTTP errors
     var httpErr *mizu.Error
     if errors.As(err, &httpErr) {
         code = httpErr.Code
         if code == 404 {
-            page = "errors/404"
+            page = "404"
         }
     }
 
@@ -276,9 +257,13 @@ app.ErrorHandler = func(c *mizu.Ctx, err error) {
 
     // Render error page
     c.Status(code)
-    if renderErr := view.Render(c, page, view.Data{"Error": err}); renderErr != nil {
+    engine := view.From(c)
+    if renderErr := engine.Render(c, page, view.Data{
+        "Title": "Error",
+        "Error": err,
+    }); renderErr != nil {
         // Fallback if error page fails
-        c.Text(code, "An error occurred")
+        c.Text("An error occurred")
     }
 }
 ```
@@ -289,15 +274,10 @@ Handle template rendering errors gracefully:
 
 ```go
 func handler(c *mizu.Ctx) error {
-    err := view.Render(c, "page", data)
+    err := view.From(c).Render(c, "page", data)
     if err != nil {
         // Log the error
         log.Printf("Template error: %v", err)
-
-        // Check error type
-        if errors.Is(err, view.ErrTemplateNotFound) {
-            return c.Status(404).Text("Page not found")
-        }
 
         // Return generic error
         return c.Status(500).Text("Internal error")
@@ -310,7 +290,7 @@ func handler(c *mizu.Ctx) error {
 
 ### Content Security Policy
 
-Set appropriate headers in your layout or middleware:
+Set appropriate headers:
 
 ```go
 app.Use(func(next mizu.Handler) mizu.Handler {
@@ -322,25 +302,33 @@ app.Use(func(next mizu.Handler) mizu.Handler {
 })
 ```
 
-### Trusted HTML
+### HTML Escaping
 
-Be careful with `safeHTML`:
+Go templates escape HTML by default. Only bypass escaping for trusted content:
 
 ```html
-<!-- Safe: your own content -->
-{{safeHTML .Content}}
+<!-- Safe: auto-escaped -->
+{{.UserComment}}
 
-<!-- Dangerous: user content -->
-{{.UserComment}}  <!-- Auto-escaped -->
+<!-- Only for trusted content -->
+{{.TrustedHTML}}
 ```
 
-### Form Tokens
+```go
+import "html/template"
+
+view.Data{
+    "TrustedHTML": template.HTML(trustedContent),
+}
+```
+
+### CSRF Tokens
 
 Include CSRF tokens in forms:
 
 ```html
 <form method="POST" action="/submit">
-    <input type="hidden" name="csrf_token" value="{{.Data.CSRFToken}}">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <!-- form fields -->
 </form>
 ```
@@ -355,7 +343,7 @@ Track template rendering performance:
 func handler(c *mizu.Ctx) error {
     start := time.Now()
 
-    err := view.Render(c, "page", data)
+    err := view.From(c).Render(c, "page", data)
 
     duration := time.Since(start)
     metrics.RecordTemplateRender("page", duration)
@@ -372,7 +360,7 @@ Verify templates work in health checks:
 app.Get("/health", func(c *mizu.Ctx) error {
     // Try rendering a simple template
     var buf bytes.Buffer
-    err := engine.Render(&buf, "health-check", nil)
+    err := engine.Render(&buf, "health-check", nil, view.NoLayout())
     if err != nil {
         return c.Status(500).JSON(map[string]string{
             "status": "unhealthy",
@@ -392,7 +380,7 @@ app.Get("/health", func(c *mizu.Ctx) error {
 
 - [ ] Set `Development: false`
 - [ ] Use `embed.FS` for templates
-- [ ] Call `Preload()` at startup
+- [ ] Call `Load()` at startup
 - [ ] Create error page templates
 - [ ] Set up error handler
 - [ ] Test all pages render correctly
@@ -432,13 +420,14 @@ EXPOSE 8080
 CMD ["./server"]
 ```
 
-### Complete Production Setup
+## Complete Production Setup
 
 ```go
 package main
 
 import (
     "embed"
+    "errors"
     "log"
     "os"
 
@@ -458,42 +447,56 @@ func main() {
     isDev := os.Getenv("ENV") != "production"
 
     // Create view engine
-    var opts view.Options
-    if isDev {
-        opts = view.Options{
-            Dir:         "views",
-            Development: true,
-            StrictMode:  true,
-        }
-    } else {
-        opts = view.Options{
-            FS:           viewsFS,
-            Development:  false,
-            DedupeStacks: true,
-        }
+    config := view.Config{
+        Extension:     ".html",
+        DefaultLayout: "layout",
+        Development:   isDev,
     }
 
-    engine := view.New(opts)
+    if isDev {
+        config.Dir = "./views"
+    } else {
+        config.FS = viewsFS
+    }
+
+    engine := view.New(config)
 
     // Preload in production
     if !isDev {
-        if err := engine.Preload(); err != nil {
+        if err := engine.Load(); err != nil {
             log.Fatal("Template error:", err)
         }
-        log.Println("Templates preloaded successfully")
+        log.Println("Templates loaded successfully")
     }
 
     // Create app
     app := mizu.New()
-    app.Use(view.Middleware(engine))
+    engine.Middleware(app)
 
     // Error handler
-    app.ErrorHandler = errorHandler
+    app.ErrorHandler = func(c *mizu.Ctx, err error) {
+        code := 500
+        page := "500"
+
+        var httpErr *mizu.Error
+        if errors.As(err, &httpErr) {
+            code = httpErr.Code
+            if code == 404 {
+                page = "404"
+            }
+        }
+
+        if code >= 500 {
+            log.Printf("Error: %v", err)
+        }
+
+        c.Status(code)
+        view.From(c).Render(c, page, view.Data{"Title": "Error"})
+    }
 
     // Routes
     app.Get("/", homeHandler)
     app.Get("/about", aboutHandler)
-    // ... more routes
 
     // Start server
     log.Printf("Server starting on :%s (dev=%v)", port, isDev)
@@ -502,31 +505,16 @@ func main() {
     }
 }
 
-func errorHandler(c *mizu.Ctx, err error) {
-    code := 500
-    if httpErr, ok := err.(*mizu.Error); ok {
-        code = httpErr.Code
-    }
-
-    page := "errors/500"
-    if code == 404 {
-        page = "errors/404"
-    }
-
-    c.Status(code)
-    if renderErr := view.Render(c, page, nil); renderErr != nil {
-        c.Text(code, "Error")
-    }
-}
-
 func homeHandler(c *mizu.Ctx) error {
-    return view.Render(c, "home", view.Data{
+    return view.From(c).Render(c, "home", view.Data{
         "Title": "Welcome",
     })
 }
 
 func aboutHandler(c *mizu.Ctx) error {
-    return view.Render(c, "about", nil)
+    return view.From(c).Render(c, "about", view.Data{
+        "Title": "About Us",
+    })
 }
 ```
 
@@ -534,5 +522,5 @@ func aboutHandler(c *mizu.Ctx) error {
 
 Now that your views are ready for production, explore:
 
-- **[Live (Realtime)](/view/live-overview)** - Add real-time updates with WebSockets
-- **[Sync (State)](/view/sync-overview)** - Implement offline-first state synchronization
+- **[Sync](/view/sync-overview)** - Server-side state synchronization
+- **[Live](/view/live-overview)** - Real-time WebSocket communication

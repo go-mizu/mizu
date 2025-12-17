@@ -1,41 +1,28 @@
 ---
-title: "Template Functions"
-description: "Built-in helper functions available in all templates"
+title: "Functions"
+description: "Built-in helper functions and how to add custom functions"
 ---
 
-# Template Functions
+The view engine provides built-in template functions that make your templates more expressive. This guide covers all available functions and how to add your own.
 
-Mizu's view engine provides a rich set of built-in template functions that make your templates more expressive. This guide covers all available functions and how to add your own.
+## Built-in Functions
 
-## Data Structure Functions
+The view engine includes these helper functions in addition to Go's standard template functions.
 
-### dict
+### Data Structure Functions
 
-Creates a map from key-value pairs. Essential for passing data to components.
+#### dict
 
-```html
-{{dict "name" "Alice" "age" 30 "admin" true}}
-```
-
-Usage with components:
+Creates a map from key-value pairs:
 
 ```html
-{{component "user-card" (dict
-    "Name" "Alice"
-    "Email" "alice@example.com"
-    "Role" "admin"
-)}}
+{{$user := dict "Name" "Alice" "Age" 30 "Admin" true}}
+<p>{{$user.Name}} is {{$user.Age}} years old</p>
 ```
 
-### list
+#### list
 
-Creates a slice from values.
-
-```html
-{{list "apple" "banana" "cherry"}}
-```
-
-Usage:
+Creates a slice from values:
 
 ```html
 {{$fruits := list "apple" "banana" "cherry"}}
@@ -46,153 +33,58 @@ Usage:
 </ul>
 ```
 
-### first
+### String Functions
 
-Returns the first element of a slice.
+#### upper
 
-```html
-{{first .Data.Items}}    {{/* First item */}}
-```
-
-### last
-
-Returns the last element of a slice.
-
-```html
-{{last .Data.Items}}     {{/* Last item */}}
-```
-
-### rest
-
-Returns all elements except the first.
-
-```html
-{{rest .Data.Items}}     {{/* All items except first */}}
-```
-
-### reverse
-
-Reverses a slice.
-
-```html
-{{range reverse .Data.Posts}}
-    <article>{{.Title}}</article>
-{{end}}
-```
-
-### sort
-
-Sorts a slice. For slices of structs, specify the field.
-
-```html
-{{/* Sort strings */}}
-{{range sort .Data.Tags}}
-    <span>{{.}}</span>
-{{end}}
-
-{{/* Sort by field */}}
-{{range sort .Data.Users "Name"}}
-    <li>{{.Name}}</li>
-{{end}}
-```
-
-### uniq
-
-Removes duplicate values from a slice.
-
-```html
-{{range uniq .Data.Tags}}
-    <span class="tag">{{.}}</span>
-{{end}}
-```
-
-### contains
-
-Checks if a slice contains a value.
-
-```html
-{{if contains .Data.Roles "admin"}}
-    <a href="/admin">Admin Panel</a>
-{{end}}
-```
-
-### in
-
-Checks if a value is in a slice (reverse of contains).
-
-```html
-{{if in "admin" .Data.Roles}}
-    <span class="admin-badge">Admin</span>
-{{end}}
-```
-
-## String Functions
-
-### upper / uppercase
-
-Converts a string to uppercase.
+Converts a string to uppercase:
 
 ```html
 <span class="status">{{upper .Status}}</span>
 <!-- "active" → "ACTIVE" -->
 ```
 
-### lower / lowercase
+#### lower
 
-Converts a string to lowercase.
+Converts a string to lowercase:
 
 ```html
 <div class="type-{{lower .Type}}">
 <!-- "Featured" → "featured" -->
 ```
 
-### title
+#### trim
 
-Converts a string to title case.
-
-```html
-<h1>{{title .Slug}}</h1>
-<!-- "hello-world" → "Hello World" -->
-```
-
-### trim
-
-Removes leading and trailing whitespace.
+Removes leading and trailing whitespace:
 
 ```html
 <p>{{trim .Description}}</p>
 ```
 
-### trimPrefix
+#### contains
 
-Removes a prefix from a string.
-
-```html
-{{trimPrefix "Dr. " .Name}}
-<!-- "Dr. Smith" → "Smith" -->
-```
-
-### trimSuffix
-
-Removes a suffix from a string.
+Checks if a string contains a substring:
 
 ```html
-{{trimSuffix ".html" .Filename}}
-<!-- "page.html" → "page" -->
+{{if contains .Email "@company.com"}}
+    <span class="internal">Internal User</span>
+{{end}}
 ```
 
-### replace
+#### replace
 
-Replaces occurrences of a substring.
+Replaces occurrences of a substring:
 
 ```html
 {{replace .Content "\n" "<br>" -1}}
 <!-- Replace all newlines with <br> -->
 ```
 
-### split
+The third argument is the maximum number of replacements (-1 means all).
 
-Splits a string into a slice.
+#### split
+
+Splits a string into a slice:
 
 ```html
 {{$parts := split .Tags ","}}
@@ -201,406 +93,102 @@ Splits a string into a slice.
 {{end}}
 ```
 
-### join
+#### join
 
-Joins a slice into a string.
-
-```html
-<meta name="keywords" content="{{join .Data.Keywords ", "}}">
-```
-
-### repeat
-
-Repeats a string.
+Joins a slice into a string:
 
 ```html
-{{repeat "⭐" .Rating}}
-<!-- Rating 3 → "⭐⭐⭐" -->
+<meta name="keywords" content="{{join .Keywords ", "}}">
 ```
 
-### truncate
+#### hasPrefix
 
-Truncates a string to a maximum length.
-
-```html
-<p>{{truncate .Description 100}}</p>
-<!-- Adds "..." if truncated -->
-```
-
-### hasPrefix
-
-Checks if a string starts with a prefix.
+Checks if a string starts with a prefix:
 
 ```html
 {{if hasPrefix .URL "https"}}
-    <span class="secure">🔒</span>
+    <span class="secure">Secure</span>
 {{end}}
 ```
 
-### hasSuffix
+#### hasSuffix
 
-Checks if a string ends with a suffix.
+Checks if a string ends with a suffix:
 
 ```html
 {{if hasSuffix .Filename ".pdf"}}
-    <span class="file-icon">📄</span>
+    <span class="file-icon">PDF</span>
 {{end}}
 ```
 
-### slugify
-
-Converts a string to a URL-friendly slug.
-
-```html
-<a href="/posts/{{slugify .Title}}">{{.Title}}</a>
-<!-- "Hello World!" → "hello-world" -->
-```
-
-### nl2br
-
-Converts newlines to `<br>` tags.
-
-```html
-<p>{{nl2br .Bio | safeHTML}}</p>
-```
-
-## HTML Functions
-
-### safeHTML
-
-Marks a string as safe HTML (bypasses escaping).
-
-```html
-{{safeHTML .Content}}
-```
-
-**Warning:** Only use with trusted content to avoid XSS attacks.
-
-### safeAttr
-
-Marks a string as safe for use in attributes.
-
-```html
-<div data-config='{{safeAttr .ConfigJSON}}'>
-```
-
-### safeURL
-
-Marks a string as a safe URL.
-
-```html
-<a href="{{safeURL .ExternalLink}}">
-```
-
-### safeCSS
-
-Marks a string as safe CSS.
-
-```html
-<div style="{{safeCSS .CustomStyle}}">
-```
-
-### safeJS
-
-Marks a string as safe JavaScript.
-
-```html
-<script>var data = {{safeJS .JSONData}};</script>
-```
-
-### safeJSON
-
-Converts a value to JSON for embedding in HTML.
-
-```html
-<script>
-    const config = {{safeJSON .Config}};
-</script>
-```
-
-### escapeHTML
-
-Escapes HTML characters (usually automatic).
-
-```html
-<pre>{{escapeHTML .Code}}</pre>
-```
-
-## Number Functions
-
-### add
-
-Adds numbers.
-
-```html
-<p>Page {{add .Page 1}} of {{.TotalPages}}</p>
-<!-- 0-indexed to 1-indexed -->
-```
-
-### sub
-
-Subtracts numbers.
-
-```html
-<p>{{sub .Total .Used}} remaining</p>
-```
-
-### mul
-
-Multiplies numbers.
-
-```html
-<p>Total: ${{mul .Price .Quantity}}</p>
-```
-
-### div
-
-Divides numbers.
-
-```html
-<p>Average: {{div .Sum .Count}}</p>
-```
-
-### mod
-
-Returns the remainder.
-
-```html
-{{if eq (mod $index 2) 0}}even{{else}}odd{{end}}
-```
-
-### max
-
-Returns the larger value.
-
-```html
-<div style="width: {{max .Progress 10}}%">
-```
-
-### min
-
-Returns the smaller value.
-
-```html
-<p>Showing {{min .Total 100}} items</p>
-```
-
-### round
-
-Rounds a number.
-
-```html
-<p>Rating: {{round .AverageRating 1}}</p>
-<!-- 4.567 → 4.6 -->
-```
-
-### formatNumber
-
-Formats a number with thousands separators.
-
-```html
-<p>{{formatNumber .Views}} views</p>
-<!-- 1234567 → "1,234,567" -->
-```
-
-### formatCurrency
-
-Formats a number as currency.
-
-```html
-<p>{{formatCurrency .Price "USD"}}</p>
-<!-- 29.99 → "$29.99" -->
-```
-
-### formatPercent
-
-Formats a number as a percentage.
-
-```html
-<p>{{formatPercent .Progress}}</p>
-<!-- 0.75 → "75%" -->
-```
-
-## Comparison Functions
-
-### eq
-
-Equals.
+### Summary Table
+
+| Function | Description | Example |
+|----------|-------------|---------|
+| `dict` | Create a map | `{{dict "key" "value"}}` |
+| `list` | Create a slice | `{{list 1 2 3}}` |
+| `upper` | Uppercase string | `{{upper .Name}}` |
+| `lower` | Lowercase string | `{{lower .Name}}` |
+| `trim` | Trim whitespace | `{{trim .Text}}` |
+| `contains` | Check substring | `{{if contains .Text "hello"}}` |
+| `replace` | Replace substring | `{{replace .Text "old" "new" -1}}` |
+| `split` | Split string | `{{split .Tags ","}}` |
+| `join` | Join slice | `{{join .Items ", "}}` |
+| `hasPrefix` | Check prefix | `{{if hasPrefix .URL "https"}}` |
+| `hasSuffix` | Check suffix | `{{if hasSuffix .File ".go"}}` |
+
+## Go's Standard Functions
+
+Go's `html/template` package provides these built-in functions:
+
+### Comparison Functions
+
+| Function | Description |
+|----------|-------------|
+| `eq` | Equal |
+| `ne` | Not equal |
+| `lt` | Less than |
+| `le` | Less than or equal |
+| `gt` | Greater than |
+| `ge` | Greater than or equal |
 
 ```html
 {{if eq .Status "active"}}Active{{end}}
+{{if gt .Count 10}}Many items{{end}}
+{{if le .Stock 5}}Low stock{{end}}
 ```
 
-### ne
+### Logic Functions
 
-Not equals.
+| Function | Description |
+|----------|-------------|
+| `and` | Logical AND |
+| `or` | Logical OR |
+| `not` | Logical NOT |
 
 ```html
-{{if ne .Status "deleted"}}Show item{{end}}
+{{if and .LoggedIn .IsAdmin}}Admin controls{{end}}
+{{if or .Error .Warning}}Alert{{end}}
+{{if not .Disabled}}Enabled{{end}}
 ```
 
-### lt
+### Other Standard Functions
 
-Less than.
-
-```html
-{{if lt .Stock 10}}Low stock!{{end}}
-```
-
-### le
-
-Less than or equal.
-
-```html
-{{if le .Age 17}}Minor{{end}}
-```
-
-### gt
-
-Greater than.
+| Function | Description |
+|----------|-------------|
+| `len` | Length of array, slice, map, or string |
+| `index` | Index into array, slice, or map |
+| `print` | Format with default formatting |
+| `printf` | Format with format string |
+| `println` | Format with newline |
+| `html` | HTML escape |
+| `js` | JavaScript escape |
+| `urlquery` | URL query escape |
 
 ```html
-{{if gt .Comments 100}}Popular!{{end}}
-```
-
-### ge
-
-Greater than or equal.
-
-```html
-{{if ge .Score 60}}Passed{{end}}
-```
-
-## Logic Functions
-
-### and
-
-Logical AND.
-
-```html
-{{if and .LoggedIn .IsAdmin}}
-    Admin controls here
-{{end}}
-```
-
-### or
-
-Logical OR.
-
-```html
-{{if or .Error .Warning}}
-    <div class="alert">Check messages</div>
-{{end}}
-```
-
-### not
-
-Logical NOT.
-
-```html
-{{if not .Disabled}}
-    <button>Click me</button>
-{{end}}
-```
-
-### default
-
-Returns a default value if the first is empty/nil/false.
-
-```html
-<img src="{{default .Avatar "/default-avatar.png"}}">
-<p>{{default .Bio "No bio provided."}}</p>
-```
-
-### coalesce
-
-Returns the first non-empty value.
-
-```html
-<p>{{coalesce .Nickname .Username .Email "Anonymous"}}</p>
-```
-
-### ternary
-
-Inline if-else.
-
-```html
-<span class="{{ternary .Active "text-green" "text-gray"}}">
-    {{ternary .Active "Active" "Inactive"}}
-</span>
-```
-
-## Date Functions
-
-### now
-
-Returns the current time.
-
-```html
-<p>Generated at {{now.Format "2006-01-02 15:04:05"}}</p>
-<footer>&copy; {{now.Year}} My Company</footer>
-```
-
-### formatDate
-
-Formats a time value.
-
-```html
-<time datetime="{{.CreatedAt.Format "2006-01-02"}}">
-    {{formatDate .CreatedAt "January 2, 2006"}}
-</time>
-```
-
-### timeAgo
-
-Returns a human-readable time difference.
-
-```html
-<span>{{timeAgo .CreatedAt}}</span>
-<!-- "5 minutes ago", "2 hours ago", "3 days ago" -->
-```
-
-### duration
-
-Formats a duration.
-
-```html
-<span>{{duration .PlayTime}}</span>
-<!-- "1h 23m 45s" -->
-```
-
-## URL Functions
-
-### urlEncode
-
-URL-encodes a string.
-
-```html
-<a href="/search?q={{urlEncode .Query}}">
-```
-
-### urlDecode
-
-URL-decodes a string.
-
-```html
-<p>Search: {{urlDecode .EncodedQuery}}</p>
-```
-
-### absURL
-
-Converts a path to an absolute URL.
-
-```html
-<link rel="canonical" href="{{absURL .Path}}">
-```
-
-### relURL
-
-Ensures a URL is relative.
-
-```html
-<a href="{{relURL .Link}}">
+<p>{{len .Items}} items</p>
+<p>First: {{index .Items 0}}</p>
+<p>{{printf "%.2f" .Price}}</p>
 ```
 
 ## Adding Custom Functions
@@ -612,11 +200,12 @@ import (
     "html/template"
     "strings"
     "time"
+
     "github.com/go-mizu/mizu/view"
 )
 
-engine := view.New(view.Options{
-    Dir: "views",
+engine := view.New(view.Config{
+    Dir: "./views",
     Funcs: template.FuncMap{
         // Simple function
         "greet": func(name string) string {
@@ -631,65 +220,151 @@ engine := view.New(view.Options{
             return plural
         },
 
-        // Function using other packages
+        // Date formatting
+        "formatDate": func(t time.Time, layout string) string {
+            return t.Format(layout)
+        },
+
+        // Word count
         "wordCount": func(s string) int {
             return len(strings.Fields(s))
         },
 
-        // Function returning multiple values (use with "with")
-        "parseDate": func(s string) (time.Time, error) {
-            return time.Parse("2006-01-02", s)
+        // Truncate with ellipsis
+        "truncate": func(s string, length int) string {
+            if len(s) <= length {
+                return s
+            }
+            return s[:length] + "..."
         },
     },
 })
 ```
 
-Usage:
+### Using Custom Functions
 
 ```html
 <h1>{{greet .Name}}</h1>
 
 <p>{{.Count}} {{pluralize .Count "item" "items"}}</p>
 
+<p>Published: {{formatDate .CreatedAt "January 2, 2006"}}</p>
+
 <p>{{wordCount .Content}} words</p>
 
-{{with parseDate .DateString}}
-    <time>{{.Format "January 2, 2006"}}</time>
-{{end}}
+<p>{{truncate .Description 100}}</p>
+```
+
+## Common Custom Functions
+
+### Date Formatting
+
+```go
+"formatDate": func(t time.Time, layout string) string {
+    return t.Format(layout)
+},
+
+"timeAgo": func(t time.Time) string {
+    duration := time.Since(t)
+    switch {
+    case duration < time.Minute:
+        return "just now"
+    case duration < time.Hour:
+        return fmt.Sprintf("%d minutes ago", int(duration.Minutes()))
+    case duration < 24*time.Hour:
+        return fmt.Sprintf("%d hours ago", int(duration.Hours()))
+    default:
+        return fmt.Sprintf("%d days ago", int(duration.Hours()/24))
+    }
+},
+```
+
+```html
+<time>{{formatDate .CreatedAt "Jan 2, 2006"}}</time>
+<span>{{timeAgo .CreatedAt}}</span>
+```
+
+### Number Formatting
+
+```go
+"formatNumber": func(n int) string {
+    // Simple thousands separator
+    s := strconv.Itoa(n)
+    if len(s) <= 3 {
+        return s
+    }
+    // Insert commas
+    var result []byte
+    for i, c := range s {
+        if i > 0 && (len(s)-i)%3 == 0 {
+            result = append(result, ',')
+        }
+        result = append(result, byte(c))
+    }
+    return string(result)
+},
+
+"formatCurrency": func(amount float64) string {
+    return fmt.Sprintf("$%.2f", amount)
+},
+```
+
+```html
+<p>{{formatNumber .Views}} views</p>
+<p>Price: {{formatCurrency .Price}}</p>
+```
+
+### URL Helpers
+
+```go
+"urlEncode": url.QueryEscape,
+
+"activeClass": func(currentPath, linkPath string) string {
+    if currentPath == linkPath {
+        return "active"
+    }
+    return ""
+},
+```
+
+```html
+<a href="/search?q={{urlEncode .Query}}">Search</a>
+<a href="/" class="{{activeClass .CurrentPath "/"}}">Home</a>
+```
+
+### Safe HTML (Use Carefully!)
+
+```go
+"safeHTML": func(s string) template.HTML {
+    return template.HTML(s)
+},
+```
+
+```html
+{{/* Only use with trusted content! */}}
+{{safeHTML .TrustedContent}}
+```
+
+### Default Values
+
+```go
+"default": func(defaultVal, val interface{}) interface{} {
+    if val == nil || val == "" || val == 0 {
+        return defaultVal
+    }
+    return val
+},
+```
+
+```html
+<img src="{{default "/default-avatar.png" .Avatar}}">
 ```
 
 ## Best Practices
 
-### 1. Use Pipelines for Readability
+### 1. Keep Functions Pure
 
-```html
-<!-- Good: pipeline style -->
-<p>{{.Bio | truncate 200 | nl2br | safeHTML}}</p>
-
-<!-- Also fine: nested calls -->
-<p>{{safeHTML (nl2br (truncate .Bio 200))}}</p>
-```
-
-### 2. Always Use Default for Optional Values
-
-```html
-<img src="{{default .Image "/placeholder.png"}}">
-<p>{{default .Description "No description available."}}</p>
-```
-
-### 3. Be Careful with safeHTML
-
-```html
-<!-- Safe: content from your database that you control -->
-{{safeHTML .Content}}
-
-<!-- Dangerous: user-provided content -->
-{{.UserComment}}  <!-- Let Go escape this! -->
-```
-
-### 4. Keep Functions Pure
-
-Custom functions should not have side effects:
+Functions should not have side effects:
 
 ```go
 // Good: pure function
@@ -702,12 +377,174 @@ Custom functions should not have side effects:
 },
 ```
 
-### 5. Document Custom Functions
+### 2. Handle Edge Cases
+
+```go
+"truncate": func(s string, length int) string {
+    if s == "" || length <= 0 {
+        return ""
+    }
+    if len(s) <= length {
+        return s
+    }
+    return s[:length] + "..."
+},
+```
+
+### 3. Use Pipelines for Readability
+
+```html
+<!-- Good: pipeline style -->
+<p>{{.Bio | truncate 200 | upper}}</p>
+
+<!-- Also fine: nested calls -->
+<p>{{upper (truncate .Bio 200)}}</p>
+```
+
+### 4. Document Your Functions
 
 ```go
 Funcs: template.FuncMap{
     // formatPhone formats a phone number as (XXX) XXX-XXXX
     // Example: "1234567890" → "(123) 456-7890"
     "formatPhone": formatPhone,
+
+    // pluralize returns singular if count is 1, plural otherwise
+    // Example: pluralize 1 "item" "items" → "item"
+    "pluralize": pluralize,
+}
+```
+
+### 5. Test Custom Functions
+
+```go
+func TestTruncate(t *testing.T) {
+    tests := []struct {
+        input    string
+        length   int
+        expected string
+    }{
+        {"hello", 10, "hello"},
+        {"hello world", 5, "hello..."},
+        {"", 5, ""},
+    }
+
+    for _, tt := range tests {
+        result := truncate(tt.input, tt.length)
+        if result != tt.expected {
+            t.Errorf("truncate(%q, %d) = %q, want %q",
+                tt.input, tt.length, result, tt.expected)
+        }
+    }
+}
+```
+
+### 6. Be Careful with safeHTML
+
+Only use `safeHTML` with content you completely trust:
+
+```html
+<!-- Safe: your own content -->
+{{safeHTML .TrustedContent}}
+
+<!-- Dangerous: user content - let Go escape it -->
+{{.UserComment}}  <!-- Auto-escaped -->
+```
+
+## Complete Example
+
+```go
+package main
+
+import (
+    "fmt"
+    "html/template"
+    "strings"
+    "time"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/view"
+)
+
+func main() {
+    engine := view.New(view.Config{
+        Dir:           "./views",
+        DefaultLayout: "layout",
+        Funcs: template.FuncMap{
+            // String helpers
+            "truncate": truncate,
+            "slugify":  slugify,
+
+            // Date helpers
+            "formatDate": formatDate,
+            "timeAgo":    timeAgo,
+
+            // Number helpers
+            "formatNumber":   formatNumber,
+            "formatCurrency": formatCurrency,
+
+            // Logic helpers
+            "default":   defaultValue,
+            "pluralize": pluralize,
+        },
+    })
+
+    app := mizu.New()
+    engine.Middleware(app)
+
+    // ... routes
+
+    app.Listen(":8080")
+}
+
+func truncate(s string, length int) string {
+    if len(s) <= length {
+        return s
+    }
+    return s[:length] + "..."
+}
+
+func slugify(s string) string {
+    return strings.ToLower(strings.ReplaceAll(s, " ", "-"))
+}
+
+func formatDate(t time.Time, layout string) string {
+    return t.Format(layout)
+}
+
+func timeAgo(t time.Time) string {
+    d := time.Since(t)
+    switch {
+    case d < time.Minute:
+        return "just now"
+    case d < time.Hour:
+        return fmt.Sprintf("%dm ago", int(d.Minutes()))
+    case d < 24*time.Hour:
+        return fmt.Sprintf("%dh ago", int(d.Hours()))
+    default:
+        return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+    }
+}
+
+func formatNumber(n int) string {
+    return fmt.Sprintf("%d", n) // Simplified
+}
+
+func formatCurrency(amount float64) string {
+    return fmt.Sprintf("$%.2f", amount)
+}
+
+func defaultValue(defaultVal, val interface{}) interface{} {
+    if val == nil || val == "" {
+        return defaultVal
+    }
+    return val
+}
+
+func pluralize(count int, singular, plural string) string {
+    if count == 1 {
+        return singular
+    }
+    return plural
 }
 ```
