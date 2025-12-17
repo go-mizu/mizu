@@ -4,10 +4,6 @@
 // cursor-based replication so clients can converge to correct state
 // across retries, disconnects, offline operation, and server restarts.
 //
-// The package is transport-agnostic. HTTP is the default transport,
-// but correctness does not depend on realtime delivery. Realtime systems
-// such as live may accelerate convergence but are optional.
-//
 // # Design principles
 //
 //   - Authoritative: All durable state changes are applied on the server
@@ -16,30 +12,34 @@
 //   - Pull-based: Clients converge by pulling changes since a cursor
 //   - Scoped: All data and cursors are partitioned by scope
 //
+// # Core primitives
+//
+//  1. Mutation: client intent with stable ID for dedupe
+//  2. ApplyFunc: application logic that mutates state and emits changes
+//  3. Log: ordered changes served by cursor
+//  4. SnapshotFunc: bootstrap when cursor is too old
+//
 // # Basic usage
 //
-//	store := memory.NewStore()
 //	log := memory.NewLog()
-//	applied := memory.NewApplied()
+//	dedupe := memory.NewDedupe()
 //
 //	engine := sync.New(sync.Options{
-//	    Store:   store,
-//	    Log:     log,
-//	    Applied: applied,
-//	    Mutator: myMutator,
+//	    Log:   log,
+//	    Dedupe: dedupe,
+//	    Apply: func(ctx context.Context, m sync.Mutation) ([]sync.Change, error) {
+//	        // Application logic here
+//	        return changes, nil
+//	    },
 //	})
-//
-//	// Mount HTTP handlers
-//	engine.Mount(app)
 //
 // # Mutation flow
 //
 //  1. Client sends mutation via Push
-//  2. Engine checks idempotency (Applied)
-//  3. Mutator applies business logic to Store
+//  2. Engine checks idempotency (Dedupe.Seen)
+//  3. ApplyFunc processes mutation and returns changes
 //  4. Changes are recorded in Log
-//  5. Result is stored in Applied
-//  6. Notifier is called (if configured)
+//  5. Dedupe.Mark is called for idempotency
 //
 // # Client synchronization
 //
@@ -51,10 +51,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
 	"time"
-
-	"github.com/go-mizu/mizu"
 )
 
 // -----------------------------------------------------------------------------
@@ -64,9 +61,6 @@ import (
 var (
 	// ErrNotFound is returned when an entity is not found.
 	ErrNotFound = errors.New("sync: not found")
-
-	// ErrUnknownMutation is returned when a mutation name has no handler.
-	ErrUnknownMutation = errors.New("sync: unknown mutation")
 
 	// ErrInvalidMutation is returned when a mutation is malformed.
 	ErrInvalidMutation = errors.New("sync: invalid mutation")
@@ -83,16 +77,6 @@ var (
 // DefaultScope is used when no scope is specified.
 const DefaultScope = "_default"
 
-// Error codes for HTTP responses.
-const (
-	codeNotFound     = "not_found"
-	codeUnknown      = "unknown_mutation"
-	codeInvalid      = "invalid_mutation"
-	codeCursorTooOld = "cursor_too_old"
-	codeConflict     = "conflict"
-	codeInternal     = "internal_error"
-)
-
 // -----------------------------------------------------------------------------
 // Types
 // -----------------------------------------------------------------------------
@@ -103,73 +87,36 @@ type Mutation struct {
 	// ID uniquely identifies this mutation for idempotency.
 	ID string `json:"id"`
 
-	// Name identifies the mutation type.
-	Name string `json:"name"`
-
 	// Scope identifies the data partition.
 	Scope string `json:"scope,omitempty"`
 
-	// Client identifies the originating client.
-	Client string `json:"client,omitempty"`
+	// Name identifies the mutation type.
+	Name string `json:"name"`
 
-	// Seq is a client-local sequence number.
-	Seq uint64 `json:"seq,omitempty"`
-
-	// Args contains mutation-specific arguments.
-	Args map[string]any `json:"args,omitempty"`
+	// Args contains mutation-specific arguments as opaque JSON.
+	Args json.RawMessage `json:"args,omitempty"`
 }
 
 // Result describes the outcome of applying a mutation.
 type Result struct {
 	OK      bool     `json:"ok"`
 	Cursor  uint64   `json:"cursor,omitempty"`
-	Code    string   `json:"code,omitempty"`
 	Error   string   `json:"error,omitempty"`
 	Changes []Change `json:"changes,omitempty"`
 }
 
 // Change is a single durable state change recorded in the log.
+// The Data field is opaque - applications define their own payload schema.
 type Change struct {
 	Cursor uint64          `json:"cursor"`
 	Scope  string          `json:"scope"`
-	Entity string          `json:"entity"`
-	ID     string          `json:"id"`
-	Op     Op              `json:"op"`
-	Data   json.RawMessage `json:"data,omitempty"`
 	Time   time.Time       `json:"time"`
+	Data   json.RawMessage `json:"data,omitempty"`
 }
-
-// Op defines the type of change operation.
-type Op string
-
-const (
-	Create Op = "create"
-	Update Op = "update"
-	Delete Op = "delete"
-)
 
 // -----------------------------------------------------------------------------
 // Interfaces
 // -----------------------------------------------------------------------------
-
-// Store is the authoritative state store.
-// Data is typically stored as JSON for interoperability with clients.
-type Store interface {
-	// Get retrieves an entity by scope/entity/id.
-	// Returns ErrNotFound if the entity does not exist.
-	Get(ctx context.Context, scope, entity, id string) (json.RawMessage, error)
-
-	// Set stores an entity.
-	Set(ctx context.Context, scope, entity, id string, data json.RawMessage) error
-
-	// Delete removes an entity.
-	// Returns nil if the entity does not exist.
-	Delete(ctx context.Context, scope, entity, id string) error
-
-	// Snapshot returns all data in a scope.
-	// Returns map[entity]map[id]data.
-	Snapshot(ctx context.Context, scope string) (map[string]map[string]json.RawMessage, error)
-}
 
 // Log records ordered changes and serves them by cursor.
 type Log interface {
@@ -191,51 +138,22 @@ type Log interface {
 	Trim(ctx context.Context, scope string, before uint64) error
 }
 
-// Mutator contains application business logic.
-// It processes mutations and returns the resulting changes.
-type Mutator interface {
-	// Apply processes a mutation and returns the resulting changes.
-	// The mutator should:
-	//   1. Validate the mutation
-	//   2. Apply changes to the store
-	//   3. Return the list of changes for the log
-	Apply(ctx context.Context, store Store, m Mutation) ([]Change, error)
-}
+// ApplyFunc processes a mutation and returns the resulting changes.
+// It closes over whatever storage the application uses.
+type ApplyFunc func(ctx context.Context, m Mutation) ([]Change, error)
 
-// MutatorFunc is a function that implements Mutator.
-type MutatorFunc func(context.Context, Store, Mutation) ([]Change, error)
+// SnapshotFunc returns a snapshot of all data in a scope with the current cursor.
+// Used for initial sync or recovery when cursor is too old.
+type SnapshotFunc func(ctx context.Context, scope string) (json.RawMessage, uint64, error)
 
-// Apply implements Mutator.
-func (f MutatorFunc) Apply(ctx context.Context, s Store, m Mutation) ([]Change, error) {
-	return f(ctx, s, m)
-}
+// Dedupe tracks mutations already processed for idempotency.
+// This enables "at-most-once" semantics - replayed mutations become no-ops.
+type Dedupe interface {
+	// Seen returns true if the mutation has already been processed.
+	Seen(ctx context.Context, scope, id string) (bool, error)
 
-// Applied tracks mutations already processed.
-// This enables strict idempotency - replayed mutations
-// return their original result without re-execution.
-type Applied interface {
-	// Get retrieves a stored result for a mutation key.
-	// Returns (result, true, nil) if found.
-	// Returns (Result{}, false, nil) if not found.
-	Get(ctx context.Context, scope, key string) (Result, bool, error)
-
-	// Put stores a result for a mutation key.
-	Put(ctx context.Context, scope, key string, res Result) error
-}
-
-// Notifier is an optional integration hook.
-// It is called after changes are committed to notify
-// external systems (e.g., live/websocket connections).
-type Notifier interface {
-	Notify(scope string, cursor uint64)
-}
-
-// NotifierFunc wraps a function as a Notifier.
-type NotifierFunc func(scope string, cursor uint64)
-
-// Notify implements Notifier.
-func (f NotifierFunc) Notify(scope string, cursor uint64) {
-	f(scope, cursor)
+	// Mark records that a mutation has been processed.
+	Mark(ctx context.Context, scope, id string) error
 }
 
 // -----------------------------------------------------------------------------
@@ -244,41 +162,23 @@ func (f NotifierFunc) Notify(scope string, cursor uint64) {
 
 // Engine coordinates mutation application and replication.
 type Engine struct {
-	store        Store
-	log          Log
-	applied      Applied
-	mutator      Mutator
-	notify       Notifier
-	now          func() time.Time
-	scopeFunc    func(context.Context, string) (string, error)
-	maxPullLimit int
-	maxPushBatch int
+	log      Log
+	apply    ApplyFunc
+	snapshot SnapshotFunc
+	dedupe   Dedupe
+	now      func() time.Time
 }
 
 // Options configures the sync engine.
 type Options struct {
-	Store   Store    // Required: authoritative state store
-	Log     Log      // Required: change log
-	Applied Applied  // Optional: idempotency tracker (nil disables deduplication)
-	Mutator Mutator  // Required: mutation processor
-	Notify  Notifier // Optional: notification hook
+	Log      Log         // Required: change log
+	Apply    ApplyFunc   // Required: mutation processor
+	Snapshot SnapshotFunc // Optional: snapshot provider
+	Dedupe   Dedupe      // Optional: idempotency tracker (nil disables deduplication)
 
 	// Now returns the current time. Defaults to time.Now if nil.
 	// Useful for testing and deterministic timestamps.
 	Now func() time.Time
-
-	// ScopeFunc derives the authoritative scope from request context and claimed scope.
-	// If nil, the claimed scope from the mutation is used directly.
-	// Use this to enforce authorization (e.g., derive scope from JWT claims).
-	ScopeFunc func(ctx context.Context, claimed string) (string, error)
-
-	// MaxPullLimit caps the limit parameter for Pull requests.
-	// Defaults to 1000 if zero.
-	MaxPullLimit int
-
-	// MaxPushBatch caps the number of mutations in a Push request.
-	// Defaults to 100 if zero.
-	MaxPushBatch int
 }
 
 // New creates a new sync engine.
@@ -287,63 +187,27 @@ func New(opts Options) *Engine {
 	if now == nil {
 		now = time.Now
 	}
-	maxPull := opts.MaxPullLimit
-	if maxPull <= 0 {
-		maxPull = 1000
-	}
-	maxPush := opts.MaxPushBatch
-	if maxPush <= 0 {
-		maxPush = 100
-	}
 	return &Engine{
-		store:        opts.Store,
-		log:          opts.Log,
-		applied:      opts.Applied,
-		mutator:      opts.Mutator,
-		notify:       opts.Notify,
-		now:          now,
-		scopeFunc:    opts.ScopeFunc,
-		maxPullLimit: maxPull,
-		maxPushBatch: maxPush,
+		log:      opts.Log,
+		apply:    opts.Apply,
+		snapshot: opts.Snapshot,
+		dedupe:   opts.Dedupe,
+		now:      now,
 	}
 }
 
 // Push applies mutations and returns results.
 // For each mutation:
 //  1. Compute dedupe key (mutation.ID)
-//  2. If already applied, return stored result
-//  3. Call Mutator.Apply
+//  2. If already applied (Dedupe.Seen), return success without re-executing
+//  3. Call ApplyFunc
 //  4. Append changes to Log (with timestamps)
-//  5. Store Result in Applied
-//  6. Call Notify with latest cursor
+//  5. Call Dedupe.Mark
 func (e *Engine) Push(ctx context.Context, mutations []Mutation) ([]Result, error) {
 	results := make([]Result, len(mutations))
-	affectedScopes := make(map[string]uint64) // scope -> max cursor
 
 	for i, mut := range mutations {
-		result := e.processMutation(ctx, mut)
-		results[i] = result
-
-		if result.OK && result.Cursor > 0 {
-			// Use scope from changes (which reflects ScopeFunc override)
-			// Fall back to mutation scope if no changes
-			scope := mut.Scope
-			if len(result.Changes) > 0 {
-				scope = result.Changes[0].Scope
-			} else if scope == "" {
-				scope = DefaultScope
-			}
-			if result.Cursor > affectedScopes[scope] {
-				affectedScopes[scope] = result.Cursor
-			}
-		}
-	}
-
-	// Notify affected scopes
-	if e.notify != nil {
-		for scope, cursor := range affectedScopes {
-			e.notify.Notify(scope, cursor)
-		}
+		results[i] = e.processMutation(ctx, mut)
 	}
 
 	return results, nil
@@ -355,26 +219,21 @@ func (e *Engine) processMutation(ctx context.Context, mut Mutation) Result {
 		scope = DefaultScope
 	}
 
-	// Apply ScopeFunc if configured (for authorization)
-	if e.scopeFunc != nil {
-		var err error
-		scope, err = e.scopeFunc(ctx, scope)
-		if err != nil {
-			return Result{OK: false, Code: codeInternal, Error: err.Error()}
-		}
-	}
-
 	// Check idempotency
-	if e.applied != nil && mut.ID != "" {
-		if res, found, err := e.applied.Get(ctx, scope, mut.ID); err != nil {
-			return Result{OK: false, Code: codeInternal, Error: err.Error()}
-		} else if found {
-			return res
+	if e.dedupe != nil && mut.ID != "" {
+		seen, err := e.dedupe.Seen(ctx, scope, mut.ID)
+		if err != nil {
+			return Result{OK: false, Error: err.Error()}
+		}
+		if seen {
+			// Return success for duplicate - mutation was already processed
+			cursor, _ := e.log.Cursor(ctx, scope)
+			return Result{OK: true, Cursor: cursor}
 		}
 	}
 
 	// Apply mutation
-	changes, err := e.mutator.Apply(ctx, e.store, mut)
+	changes, err := e.apply(ctx, mut)
 	if err != nil {
 		return e.errorResult(err)
 	}
@@ -396,7 +255,7 @@ func (e *Engine) processMutation(ctx context.Context, mut Mutation) Result {
 		var err error
 		cursor, err = e.log.Append(ctx, scope, changes)
 		if err != nil {
-			return Result{OK: false, Code: codeInternal, Error: err.Error()}
+			return Result{OK: false, Error: err.Error()}
 		}
 	} else {
 		cursor, _ = e.log.Cursor(ctx, scope)
@@ -408,11 +267,10 @@ func (e *Engine) processMutation(ctx context.Context, mut Mutation) Result {
 		Changes: changes,
 	}
 
-	// Store for idempotency - failure here means replay could re-apply,
-	// so we return an error to maintain the idempotency guarantee.
-	if e.applied != nil && mut.ID != "" {
-		if err := e.applied.Put(ctx, scope, mut.ID, result); err != nil {
-			return Result{OK: false, Code: codeInternal, Error: "failed to store idempotency key"}
+	// Mark for idempotency
+	if e.dedupe != nil && mut.ID != "" {
+		if err := e.dedupe.Mark(ctx, scope, mut.ID); err != nil {
+			return Result{OK: false, Error: "failed to mark idempotency key"}
 		}
 	}
 
@@ -420,18 +278,7 @@ func (e *Engine) processMutation(ctx context.Context, mut Mutation) Result {
 }
 
 func (e *Engine) errorResult(err error) Result {
-	code := codeInternal
-	switch {
-	case errors.Is(err, ErrNotFound):
-		code = codeNotFound
-	case errors.Is(err, ErrUnknownMutation):
-		code = codeUnknown
-	case errors.Is(err, ErrInvalidMutation):
-		code = codeInvalid
-	case errors.Is(err, ErrConflict):
-		code = codeConflict
-	}
-	return Result{OK: false, Code: code, Error: err.Error()}
+	return Result{OK: false, Error: err.Error()}
 }
 
 // Pull returns changes since a cursor.
@@ -442,9 +289,6 @@ func (e *Engine) Pull(ctx context.Context, scope string, cursor uint64, limit in
 	}
 	if limit <= 0 {
 		limit = 100
-	}
-	if limit > e.maxPullLimit {
-		limit = e.maxPullLimit
 	}
 
 	// Request one extra to detect hasMore
@@ -462,157 +306,25 @@ func (e *Engine) Pull(ctx context.Context, scope string, cursor uint64, limit in
 }
 
 // Snapshot returns all data in a scope with the current cursor.
-func (e *Engine) Snapshot(ctx context.Context, scope string) (map[string]map[string]json.RawMessage, uint64, error) {
+// Returns (data, cursor, error).
+func (e *Engine) Snapshot(ctx context.Context, scope string) (json.RawMessage, uint64, error) {
 	if scope == "" {
 		scope = DefaultScope
 	}
 
-	cursor, err := e.log.Cursor(ctx, scope)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	data, err := e.store.Snapshot(ctx, scope)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	return data, cursor, nil
-}
-
-// -----------------------------------------------------------------------------
-// HTTP Transport
-// -----------------------------------------------------------------------------
-
-// HTTP request/response types (internal wire format)
-type pushRequest struct {
-	Mutations []Mutation `json:"mutations"`
-}
-
-type pushResponse struct {
-	Results []Result `json:"results"`
-}
-
-type pullRequest struct {
-	Scope  string `json:"scope,omitempty"`
-	Cursor uint64 `json:"cursor"`
-	Limit  int    `json:"limit,omitempty"`
-}
-
-type pullResponse struct {
-	Changes []Change `json:"changes"`
-	HasMore bool     `json:"has_more"`
-}
-
-type snapshotRequest struct {
-	Scope string `json:"scope,omitempty"`
-}
-
-type snapshotResponse struct {
-	Data   map[string]map[string]json.RawMessage `json:"data"`
-	Cursor uint64                                `json:"cursor"`
-}
-
-// Mount registers sync routes on a Mizu app at /_sync/*.
-func (e *Engine) Mount(app *mizu.App) {
-	e.MountAt(app, "/_sync")
-}
-
-// MountAt registers sync routes at a custom prefix.
-func (e *Engine) MountAt(app *mizu.App, prefix string) {
-	app.Post(prefix+"/push", e.handlePush())
-	app.Post(prefix+"/pull", e.handlePull())
-	app.Post(prefix+"/snapshot", e.handleSnapshot())
-}
-
-func (e *Engine) handlePush() mizu.Handler {
-	return func(c *mizu.Ctx) error {
-		var req pushRequest
-		if err := c.BindJSON(&req, 1<<20); err != nil { // 1MB max
-			return c.JSON(http.StatusBadRequest, map[string]string{
-				"code":  codeInvalid,
-				"error": "invalid request body",
-			})
-		}
-
-		if len(req.Mutations) == 0 {
-			return c.JSON(http.StatusBadRequest, map[string]string{
-				"code":  codeInvalid,
-				"error": "no mutations provided",
-			})
-		}
-
-		if len(req.Mutations) > e.maxPushBatch {
-			return c.JSON(http.StatusBadRequest, map[string]string{
-				"code":  codeInvalid,
-				"error": "too many mutations in batch",
-			})
-		}
-
-		results, err := e.Push(c.Context(), req.Mutations)
+	if e.snapshot == nil {
+		// Return empty snapshot if no snapshot function configured
+		cursor, err := e.log.Cursor(ctx, scope)
 		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{
-				"code":  codeInternal,
-				"error": err.Error(),
-			})
+			return nil, 0, err
 		}
-
-		return c.JSON(http.StatusOK, pushResponse{Results: results})
+		return json.RawMessage("{}"), cursor, nil
 	}
+
+	return e.snapshot(ctx, scope)
 }
 
-func (e *Engine) handlePull() mizu.Handler {
-	return func(c *mizu.Ctx) error {
-		var req pullRequest
-		if err := c.BindJSON(&req, 1<<16); err != nil { // 64KB max
-			return c.JSON(http.StatusBadRequest, map[string]string{
-				"code":  codeInvalid,
-				"error": "invalid request body",
-			})
-		}
-
-		changes, hasMore, err := e.Pull(c.Context(), req.Scope, req.Cursor, req.Limit)
-		if err != nil {
-			code := http.StatusInternalServerError
-			errCode := codeInternal
-			if errors.Is(err, ErrCursorTooOld) {
-				code = http.StatusGone
-				errCode = codeCursorTooOld
-			}
-			return c.JSON(code, map[string]string{
-				"code":  errCode,
-				"error": err.Error(),
-			})
-		}
-
-		return c.JSON(http.StatusOK, pullResponse{
-			Changes: changes,
-			HasMore: hasMore,
-		})
-	}
-}
-
-func (e *Engine) handleSnapshot() mizu.Handler {
-	return func(c *mizu.Ctx) error {
-		var req snapshotRequest
-		if err := c.BindJSON(&req, 1<<16); err != nil { // 64KB max
-			return c.JSON(http.StatusBadRequest, map[string]string{
-				"code":  codeInvalid,
-				"error": "invalid request body",
-			})
-		}
-
-		data, cursor, err := e.Snapshot(c.Context(), req.Scope)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{
-				"code":  codeInternal,
-				"error": err.Error(),
-			})
-		}
-
-		return c.JSON(http.StatusOK, snapshotResponse{
-			Data:   data,
-			Cursor: cursor,
-		})
-	}
+// Log returns the underlying log for direct access if needed.
+func (e *Engine) Log() Log {
+	return e.log
 }
