@@ -1,0 +1,55 @@
+package handler
+
+import (
+	"encoding/json"
+	"sort"
+	"time"
+
+	"github.com/go-mizu/mizu"
+	"github.com/go-mizu/mizu/sync"
+	"github.com/go-mizu/mizu/view"
+)
+
+// Home returns a handler for the home page.
+func Home(engine *sync.Engine) mizu.Handler {
+	return func(c *mizu.Ctx) error {
+		// Get current todos from store
+		scope := "_default"
+		data, cursor, err := engine.Snapshot(c.Context(), scope)
+		if err != nil {
+			return err
+		}
+
+		// Parse todos from store data
+		var todos []Todo
+		if todoData, ok := data["todo"]; ok {
+			for id, jsonData := range todoData {
+				var t Todo
+				if err := json.Unmarshal(jsonData, &t); err != nil {
+					continue
+				}
+				t.ID = id
+				todos = append(todos, t)
+			}
+		}
+
+		// Sort by created time
+		sort.Slice(todos, func(i, j int) bool {
+			return todos[i].CreatedAt.Before(todos[j].CreatedAt)
+		})
+
+		return view.Render(c, "home", view.Data{
+			"Todos":  todos,
+			"Cursor": cursor,
+			"Scope":  scope,
+		})
+	}
+}
+
+// Todo represents a todo item.
+type Todo struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Done      bool      `json:"done"`
+	CreatedAt time.Time `json:"created_at"`
+}

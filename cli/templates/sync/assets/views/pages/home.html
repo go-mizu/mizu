@@ -1,0 +1,42 @@
+{{define "title"}}Todos - Offline-First App{{end}}
+
+{{define "content"}}
+<div class="todo-app" data-scope="{{.Data.Scope}}" data-cursor="{{.Data.Cursor}}">
+    <header class="todo-header">
+        <h1>Todos</h1>
+        {{component "sync-status"}}
+    </header>
+
+    <form class="todo-form" onsubmit="return todoApp.handleSubmit(event)">
+        <input type="text" name="title" placeholder="What needs to be done?" autocomplete="off" required>
+        <button type="submit">Add</button>
+    </form>
+
+    <div class="todo-list" id="todo-list">
+        {{range .Data.Todos}}
+        {{component "todo-item" .}}
+        {{else}}
+        <p class="empty-state">No todos yet. Add one above!</p>
+        {{end}}
+    </div>
+
+    <footer class="todo-footer">
+        <span class="todo-count">
+            <strong id="active-count">{{len .Data.Todos}}</strong> items
+        </span>
+    </footer>
+</div>
+
+{{push "scripts"}}
+<script src="/static/js/sync-client.js"></script>
+<script src="/static/js/live-client.js"></script>
+<script>
+    const todoApp = new TodoApp({
+        scope: '{{.Data.Scope}}',
+        cursor: {{.Data.Cursor}},
+        baseURL: '/_sync',
+        wsURL: 'ws://' + window.location.host + '/ws'
+    });
+</script>
+{{end}}
+{{end}}
