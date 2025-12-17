@@ -6,14 +6,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/view"
-	"golang.org/x/net/websocket"
 )
 
 // sessionHandler manages a single live session.
@@ -25,7 +23,7 @@ type sessionHandler struct {
 	ctx     *Ctx
 	mizuCtx *mizu.Ctx
 
-	conn      *websocket.Conn
+	conn      *wsConn
 	connMu    sync.Mutex
 	isConn    atomic.Bool
 	serverCh  chan any
@@ -72,7 +70,7 @@ func generateSessionID() string {
 }
 
 // run is the main session event loop.
-func (h *sessionHandler) run(ctx context.Context, conn *websocket.Conn, join *JoinPayload) error {
+func (h *sessionHandler) run(ctx context.Context, conn *wsConn, join *JoinPayload) error {
 	h.conn = conn
 	h.isConn.Store(true)
 	defer h.cleanup()
@@ -130,7 +128,7 @@ func (h *sessionHandler) eventLoop(ctx context.Context) error {
 		for {
 			msg, err := h.readMessage()
 			if err != nil {
-				if err != io.EOF {
+				if err != ErrConnectionClose {
 					errCh <- err
 				}
 				close(clientCh)
@@ -479,14 +477,14 @@ func (h *sessionHandler) send(msgType byte, ref uint32, payload any) {
 	defer h.connMu.Unlock()
 
 	if h.conn != nil {
-		websocket.Message.Send(h.conn, string(data))
+		h.conn.WriteMessage(string(data))
 	}
 }
 
 // readMessage reads a message from the WebSocket.
 func (h *sessionHandler) readMessage() (*Message, error) {
-	var data string
-	if err := websocket.Message.Receive(h.conn, &data); err != nil {
+	data, err := h.conn.ReadMessage()
+	if err != nil {
 		return nil, err
 	}
 	return decodeMessage([]byte(data))

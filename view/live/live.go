@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/view"
-	"golang.org/x/net/websocket"
 )
 
 // Default configuration values.
@@ -117,8 +116,7 @@ func (l *Live) Mount(app *mizu.App) {
 	app.Get("/_live/runtime.js", l.runtimeHandler())
 
 	// WebSocket endpoint.
-	wsHandler := websocket.Handler(l.websocketHandler)
-	app.Compat.Handle("/_live/websocket", wsHandler)
+	app.Compat.Handle("/_live/websocket", http.HandlerFunc(l.websocketHTTPHandler))
 }
 
 // Handle creates a handler for a live page.
@@ -223,13 +221,23 @@ func (l *Live) runtimeHandler() mizu.Handler {
 	}
 }
 
-// websocketHandler handles WebSocket connections.
-func (l *Live) websocketHandler(conn *websocket.Conn) {
+// websocketHTTPHandler handles WebSocket upgrade requests.
+func (l *Live) websocketHTTPHandler(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgradeHTTP(w, r)
+	if err != nil {
+		http.Error(w, "WebSocket upgrade failed", http.StatusBadRequest)
+		return
+	}
 	defer conn.Close()
 
+	l.handleWebSocket(conn)
+}
+
+// handleWebSocket handles a WebSocket connection.
+func (l *Live) handleWebSocket(conn *wsConn) {
 	// Read first message (should be JOIN).
-	var data string
-	if err := websocket.Message.Receive(conn, &data); err != nil {
+	data, err := conn.ReadMessage()
+	if err != nil {
 		return
 	}
 
@@ -273,12 +281,12 @@ func (l *Live) websocketHandler(conn *websocket.Conn) {
 	}
 }
 
-func sendWsError(conn *websocket.Conn, code, message string) {
+func sendWsError(conn *wsConn, code, message string) {
 	data, _ := encodeMessage(MsgTypeError, 0, ErrorPayload{
 		Code:    code,
 		Message: message,
 	})
-	websocket.Message.Send(conn, string(data))
+	conn.WriteMessage(string(data))
 }
 
 // isWebSocketUpgrade checks if the request is a WebSocket upgrade.
