@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/go-mizu/mizu/contract"
+	"github.com/go-mizu/mizu/contract/v1"
 )
 
 // TestService is a simple service for testing.

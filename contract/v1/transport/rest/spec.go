@@ -14,7 +14,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/go-mizu/mizu/contract"
+	"github.com/go-mizu/mizu/contract/v1"
 )
 
 // Version is the OpenAPI specification version.
@@ -22,12 +22,12 @@ const Version = "3.1.0"
 
 // Document represents an OpenAPI 3.1 document.
 type Document struct {
-	OpenAPI    string                `json:"openapi"`
-	Info       *Info                 `json:"info"`
-	Servers    []*Server             `json:"servers,omitempty"`
-	Paths      map[string]*PathItem  `json:"paths,omitempty"`
-	Components *Components           `json:"components,omitempty"`
-	Tags       []*Tag                `json:"tags,omitempty"`
+	OpenAPI    string               `json:"openapi"`
+	Info       *Info                `json:"info"`
+	Servers    []*Server            `json:"servers,omitempty"`
+	Paths      map[string]*PathItem `json:"paths,omitempty"`
+	Components *Components          `json:"components,omitempty"`
+	Tags       []*Tag               `json:"tags,omitempty"`
 }
 
 // Info provides metadata about the API.
@@ -104,14 +104,14 @@ func (p *PathItem) SetOperation(method string, op *Operation) {
 
 // Operation describes a single API operation on a path.
 type Operation struct {
-	OperationID string              `json:"operationId,omitempty"`
-	Summary     string              `json:"summary,omitempty"`
-	Description string              `json:"description,omitempty"`
-	Tags        []string            `json:"tags,omitempty"`
-	Deprecated  bool                `json:"deprecated,omitempty"`
-	Parameters  []*Param            `json:"parameters,omitempty"`
-	RequestBody *RequestBody        `json:"requestBody,omitempty"`
-	Responses   map[string]*Resp    `json:"responses"`
+	OperationID string                `json:"operationId,omitempty"`
+	Summary     string                `json:"summary,omitempty"`
+	Description string                `json:"description,omitempty"`
+	Tags        []string              `json:"tags,omitempty"`
+	Deprecated  bool                  `json:"deprecated,omitempty"`
+	Parameters  []*Param              `json:"parameters,omitempty"`
+	RequestBody *RequestBody          `json:"requestBody,omitempty"`
+	Responses   map[string]*Resp      `json:"responses"`
 	Security    []map[string][]string `json:"security,omitempty"`
 }
 
@@ -498,4 +498,3 @@ func (d *Document) MarshalJSON() ([]byte, error) {
 func (d *Document) MarshalIndent() ([]byte, error) {
 	return json.MarshalIndent(d, "", "  ")
 }
-

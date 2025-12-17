@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/go-mizu/mizu/contract"
+	"github.com/go-mizu/mizu/contract/v1"
 )
 
 // OpenRPCVersion is the OpenRPC specification version.
@@ -14,11 +14,11 @@ const OpenRPCVersion = "1.3.0"
 
 // OpenRPCDocument represents an OpenRPC 1.3 document.
 type OpenRPCDocument struct {
-	OpenRPC    string              `json:"openrpc"`
-	Info       *OpenRPCInfo        `json:"info"`
-	Servers    []*OpenRPCServer    `json:"servers,omitempty"`
-	Methods    []*OpenRPCMethod    `json:"methods"`
-	Components *OpenRPCComponents  `json:"components,omitempty"`
+	OpenRPC    string             `json:"openrpc"`
+	Info       *OpenRPCInfo       `json:"info"`
+	Servers    []*OpenRPCServer   `json:"servers,omitempty"`
+	Methods    []*OpenRPCMethod   `json:"methods"`
+	Components *OpenRPCComponents `json:"components,omitempty"`
 }
 
 // OpenRPCInfo provides metadata about the API.
@@ -54,14 +54,14 @@ type OpenRPCServer struct {
 
 // OpenRPCMethod describes a JSON-RPC method.
 type OpenRPCMethod struct {
-	Name        string                  `json:"name"`
-	Summary     string                  `json:"summary,omitempty"`
-	Description string                  `json:"description,omitempty"`
-	Tags        []*OpenRPCTag           `json:"tags,omitempty"`
-	Params      []*OpenRPCContentDesc   `json:"params"`
-	Result      *OpenRPCContentDesc     `json:"result,omitempty"`
-	Deprecated  bool                    `json:"deprecated,omitempty"`
-	Errors      []*OpenRPCErrorRef      `json:"errors,omitempty"`
+	Name        string                   `json:"name"`
+	Summary     string                   `json:"summary,omitempty"`
+	Description string                   `json:"description,omitempty"`
+	Tags        []*OpenRPCTag            `json:"tags,omitempty"`
+	Params      []*OpenRPCContentDesc    `json:"params"`
+	Result      *OpenRPCContentDesc      `json:"result,omitempty"`
+	Deprecated  bool                     `json:"deprecated,omitempty"`
+	Errors      []*OpenRPCErrorRef       `json:"errors,omitempty"`
 	Examples    []*OpenRPCExamplePairing `json:"examples,omitempty"`
 }
 
@@ -90,9 +90,9 @@ type OpenRPCErrorRef struct {
 
 // OpenRPCExamplePairing groups request and result examples.
 type OpenRPCExamplePairing struct {
-	Name        string         `json:"name,omitempty"`
-	Description string         `json:"description,omitempty"`
-	Summary     string         `json:"summary,omitempty"`
+	Name        string            `json:"name,omitempty"`
+	Description string            `json:"description,omitempty"`
+	Summary     string            `json:"summary,omitempty"`
 	Params      []*OpenRPCExample `json:"params,omitempty"`
 	Result      *OpenRPCExample   `json:"result,omitempty"`
 }
