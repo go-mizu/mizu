@@ -1,42 +1,52 @@
-// Package sync provides offline-first data synchronization with push/pull semantics.
+// Package sync provides authoritative, offline-first state synchronization.
 //
-// The sync package implements a change log based synchronization protocol that allows
-// clients to operate offline and converge to consistent state when connectivity returns.
+// It defines a durable mutation pipeline, an ordered change log, and
+// cursor-based replication so clients can converge to correct state
+// across retries, disconnects, offline operation, and server restarts.
 //
-// # Core Concepts
+// The package is transport-agnostic. HTTP is the default transport,
+// but correctness does not depend on realtime delivery. Realtime systems
+// such as live may accelerate convergence but are optional.
 //
-//   - Mutation: A client-originated state change request
-//   - Change: A logged state change with a monotonically increasing cursor
-//   - ChangeLog: Stores and retrieves changes for a scope
-//   - Store: Scoped key-value storage for entity data
-//   - Mutator: Business logic that applies mutations and produces changes
-//   - PokeBroker: Notifies live connections when data changes
+// # Design principles
 //
-// # Integration with mizu/live
+//   - Authoritative: All durable state changes are applied on the server
+//   - Offline-first: Clients may enqueue and replay mutations safely
+//   - Idempotent: Replayed mutations must not apply twice
+//   - Pull-based: Clients converge by pulling changes since a cursor
+//   - Scoped: All data and cursors are partitioned by scope
 //
-// The sync package integrates with mizu/live via the PokeBroker interface.
-// When mutations are applied, the sync engine calls broker.Poke() to notify
-// live connections that data has changed, triggering an immediate pull.
+// # Basic usage
 //
-// # Example Usage
+//	store := memory.NewStore()
+//	log := memory.NewLog()
+//	applied := memory.NewApplied()
 //
-//	// Create a mutator
-//	mutator := sync.MutatorFunc(func(ctx context.Context, store sync.Store, m sync.Mutation) ([]sync.Change, error) {
-//	    switch m.Name {
-//	    case "todo/create":
-//	        // Apply mutation and return changes
-//	    }
-//	    return nil, fmt.Errorf("unknown mutation: %s", m.Name)
-//	})
+//	mutator := sync.NewMutatorMap()
+//	mutator.Register("todo/create", handleTodoCreate)
+//	mutator.Register("todo/toggle", handleTodoToggle)
 //
-//	// Create engine
 //	engine := sync.New(sync.Options{
-//	    Store:     sync.NewMemoryStore(),
-//	    ChangeLog: sync.NewMemoryChangeLog(),
-//	    Mutator:   mutator,
-//	    Broker:    pokeBroker,
+//	    Store:   store,
+//	    Log:     log,
+//	    Applied: applied,
+//	    Mutator: mutator,
 //	})
 //
-//	// Mount on app
+//	// Mount HTTP handlers
 //	engine.Mount(app)
+//
+// # Mutation flow
+//
+//  1. Client sends mutation via Push
+//  2. Engine checks idempotency (Applied)
+//  3. Mutator applies business logic to Store
+//  4. Changes are recorded in Log
+//  5. Result is stored in Applied
+//  6. Notifier is called (if configured)
+//
+// # Client synchronization
+//
+// Clients maintain a cursor and call Pull to receive changes since that cursor.
+// For initial sync or recovery, clients can call Snapshot to get full state.
 package sync

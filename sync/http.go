@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/go-mizu/mizu"
@@ -13,13 +14,12 @@ type PushRequest struct {
 
 // PushResponse is returned from POST /_sync/push
 type PushResponse struct {
-	Results []MutationResult `json:"results"`
-	Cursor  uint64           `json:"cursor"`
+	Results []Result `json:"results"`
 }
 
 // PullRequest is the payload for POST /_sync/pull
 type PullRequest struct {
-	Scope  string `json:"scope"`
+	Scope  string `json:"scope,omitempty"`
 	Cursor uint64 `json:"cursor"`
 	Limit  int    `json:"limit,omitempty"`
 }
@@ -27,37 +27,33 @@ type PullRequest struct {
 // PullResponse is returned from POST /_sync/pull
 type PullResponse struct {
 	Changes []Change `json:"changes"`
-	Cursor  uint64   `json:"cursor"`
 	HasMore bool     `json:"has_more"`
 }
 
 // SnapshotRequest is the payload for POST /_sync/snapshot
 type SnapshotRequest struct {
-	Scope string `json:"scope"`
+	Scope string `json:"scope,omitempty"`
 }
 
 // SnapshotResponse is returned from POST /_sync/snapshot
 type SnapshotResponse struct {
-	Data   map[string]map[string]any `json:"data"`
-	Cursor uint64                    `json:"cursor"`
+	Data   map[string]map[string][]byte `json:"data"`
+	Cursor uint64                       `json:"cursor"`
 }
 
-// Mount registers sync routes on a Mizu app.
+// Mount registers sync routes on a Mizu app at /_sync/*.
 func (e *Engine) Mount(app *mizu.App) {
-	app.Post("/_sync/push", e.pushHandler())
-	app.Post("/_sync/pull", e.pullHandler())
-	app.Post("/_sync/snapshot", e.snapshotHandler())
+	e.MountAt(app, "/_sync")
 }
 
 // MountAt registers sync routes at a custom prefix.
 func (e *Engine) MountAt(app *mizu.App, prefix string) {
-	app.Post(prefix+"/push", e.pushHandler())
-	app.Post(prefix+"/pull", e.pullHandler())
-	app.Post(prefix+"/snapshot", e.snapshotHandler())
+	app.Post(prefix+"/push", e.handlePush())
+	app.Post(prefix+"/pull", e.handlePull())
+	app.Post(prefix+"/snapshot", e.handleSnapshot())
 }
 
-// pushHandler handles POST /_sync/push
-func (e *Engine) pushHandler() mizu.Handler {
+func (e *Engine) handlePush() mizu.Handler {
 	return func(c *mizu.Ctx) error {
 		var req PushRequest
 		if err := c.BindJSON(&req, 1<<20); err != nil { // 1MB max
@@ -79,18 +75,11 @@ func (e *Engine) pushHandler() mizu.Handler {
 			})
 		}
 
-		// Get final cursor
-		cursor, _ := e.changelog.Cursor(c.Context())
-
-		return c.JSON(http.StatusOK, PushResponse{
-			Results: results,
-			Cursor:  cursor,
-		})
+		return c.JSON(http.StatusOK, PushResponse{Results: results})
 	}
 }
 
-// pullHandler handles POST /_sync/pull
-func (e *Engine) pullHandler() mizu.Handler {
+func (e *Engine) handlePull() mizu.Handler {
 	return func(c *mizu.Ctx) error {
 		var req PullRequest
 		if err := c.BindJSON(&req, 1<<16); err != nil { // 64KB max
@@ -99,34 +88,33 @@ func (e *Engine) pullHandler() mizu.Handler {
 			})
 		}
 
-		changes, cursor, hasMore, err := e.Pull(c.Context(), req.Scope, req.Cursor, req.Limit)
+		changes, hasMore, err := e.Pull(c.Context(), req.Scope, req.Cursor, req.Limit)
 		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{
+			code := http.StatusInternalServerError
+			errCode := CodeInternal
+			if errors.Is(err, ErrCursorTooOld) {
+				code = http.StatusGone
+				errCode = CodeCursorTooOld
+			}
+			return c.JSON(code, map[string]string{
+				"code":  errCode,
 				"error": err.Error(),
 			})
 		}
 
 		return c.JSON(http.StatusOK, PullResponse{
 			Changes: changes,
-			Cursor:  cursor,
 			HasMore: hasMore,
 		})
 	}
 }
 
-// snapshotHandler handles POST /_sync/snapshot
-func (e *Engine) snapshotHandler() mizu.Handler {
+func (e *Engine) handleSnapshot() mizu.Handler {
 	return func(c *mizu.Ctx) error {
 		var req SnapshotRequest
 		if err := c.BindJSON(&req, 1<<16); err != nil { // 64KB max
 			return c.JSON(http.StatusBadRequest, map[string]string{
 				"error": "invalid request body",
-			})
-		}
-
-		if req.Scope == "" {
-			return c.JSON(http.StatusBadRequest, map[string]string{
-				"error": "scope is required",
 			})
 		}
 
@@ -144,18 +132,18 @@ func (e *Engine) snapshotHandler() mizu.Handler {
 	}
 }
 
-// Handlers returns individual handlers for custom mounting.
+// Handlers provides individual handlers for custom mounting.
 type Handlers struct {
 	Push     mizu.Handler
 	Pull     mizu.Handler
 	Snapshot mizu.Handler
 }
 
-// GetHandlers returns individual sync handlers.
-func (e *Engine) GetHandlers() Handlers {
+// Handlers returns individual sync handlers.
+func (e *Engine) Handlers() Handlers {
 	return Handlers{
-		Push:     e.pushHandler(),
-		Pull:     e.pullHandler(),
-		Snapshot: e.snapshotHandler(),
+		Push:     e.handlePush(),
+		Pull:     e.handlePull(),
+		Snapshot: e.handleSnapshot(),
 	}
 }
