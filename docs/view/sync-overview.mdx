@@ -1,300 +1,337 @@
 ---
 title: "Overview"
-description: "Authoritative, offline-first state synchronization for Go applications"
+description: "Client-side reactive state management with offline-first synchronization"
 ---
 
-The `sync` package provides server-side state synchronization with support for offline-first clients. It defines a durable mutation pipeline, an ordered change log, and cursor-based replication so clients can converge to correct state across retries, disconnects, offline operation, and server restarts.
+The `sync` package provides a client-side runtime for building offline-first applications. It combines reactive state primitives (Signals, Computed values, Effects) with synchronized collections that stay in sync with a server.
 
-## What is State Synchronization?
+## What is Offline-First?
 
-In traditional web apps, every action requires a server round-trip:
-
-```
-Client: "Create todo"  →  Server: Creates and confirms
-Client: "Update todo"  →  Server: Updates and confirms
-Client: "Get todos"    →  Server: Returns todos
-```
-
-This has problems:
-- **Offline doesn't work** - No internet means no app
-- **Latency feels slow** - Every action waits for the server
-- **Missed updates** - How do clients know when data changed?
-
-State synchronization solves this with a **mutation + change log** pattern:
+In a traditional web application, the server is the source of truth. When you're offline, the app doesn't work.
 
 ```
-Client: Sends mutations (intent to change)
-Server: Applies mutations, records changes
-        Returns changes since client's cursor
-Clients: Pull changes to stay in sync
+Traditional App:
+┌─────────┐    Request    ┌─────────┐
+│ Client  │ ────────────> │ Server  │
+│         │ <──────────── │         │
+└─────────┘    Response   └─────────┘
+
+     If server is unreachable = App broken
 ```
 
-## Design Principles
-
-| Principle | Description |
-|-----------|-------------|
-| Authoritative | All durable state changes are applied on the server |
-| Offline-first | Clients can queue and replay mutations safely |
-| Idempotent | Replayed mutations don't apply twice |
-| Pull-based | Clients converge by pulling changes since a cursor |
-| Scoped | All data and cursors are partitioned by scope |
-
-## Architecture Overview
+In an **offline-first** application, the client keeps a local copy of the data. Changes are queued locally and synced when connectivity is available.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        SERVER                                │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │                   Sync Engine                         │   │
-│  │                                                       │   │
-│  │  ┌─────────┐  ┌─────────┐  ┌──────────┐             │   │
-│  │  │   Log   │  │  Apply  │  │  Dedupe  │             │   │
-│  │  │(changes)│  │  Func   │  │(idempot.)│             │   │
-│  │  └─────────┘  └─────────┘  └──────────┘             │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                            │                                 │
-│                     Push / Pull / Snapshot                   │
-│                            │                                 │
-└────────────────────────────│─────────────────────────────────┘
-                             │
-              ┌──────────────┴──────────────┐
-              │                             │
-              ▼                             ▼
-┌─────────────────────────┐   ┌─────────────────────────┐
-│        CLIENT A         │   │        CLIENT B         │
-│                         │   │                         │
-│  cursor: 42             │   │  cursor: 38             │
-│  pending mutations: 2   │   │  pending mutations: 0   │
-│                         │   │                         │
-└─────────────────────────┘   └─────────────────────────┘
+Offline-First App:
+┌─────────────────────────────────────┐
+│            Client                   │
+│  ┌─────────────┐  ┌──────────────┐  │
+│  │ Local State │  │ Mutation     │  │
+│  │             │  │ Queue        │  │
+│  └─────────────┘  └──────────────┘  │
+│         │                │          │
+│         │                │          │
+└─────────│────────────────│──────────┘
+          │   Background   │
+          ▼    Sync        ▼
+     ┌─────────┐
+     │ Server  │
+     └─────────┘
+
+     If server is unreachable = App still works!
 ```
 
-## Core Concepts
+**Benefits:**
+- App works without internet
+- Instant UI updates (no loading spinners)
+- Better user experience on slow connections
+- Resilience to network failures
 
-### Mutation
+## What the Sync Package Provides
 
-A **mutation** is a client request to change state. It's a command, not a data patch:
+### Reactive Primitives
+
+| Type | Description |
+|------|-------------|
+| `Signal[T]` | A reactive value container |
+| `Computed[T]` | A derived value that updates automatically |
+| `Effect` | A side effect that runs when dependencies change |
+
+These provide fine-grained reactivity similar to SolidJS or Vue's Composition API.
+
+### Synchronized State
+
+| Type | Description |
+|------|-------------|
+| `Client` | Manages server sync, mutation queue, and connection state |
+| `Collection[T]` | A reactive set of entities that syncs with the server |
+| `Entity[T]` | A single synchronized record |
+
+### The Sync Protocol
+
+The client and server communicate using a simple protocol:
+
+```
+┌────────────┐                     ┌────────────┐
+│   Client   │                     │   Server   │
+└────────────┘                     └────────────┘
+      │                                   │
+      │──── Push(mutations) ─────────────>│
+      │                                   │
+      │<─── Pull(cursor) ─────────────────│
+      │     Returns changes since cursor  │
+      │                                   │
+      │<─── Snapshot(scope) ──────────────│
+      │     Returns full state            │
+      │                                   │
+```
+
+- **Push**: Client sends queued mutations to server
+- **Pull**: Client requests changes since last sync point (cursor)
+- **Snapshot**: Client requests full state (initial load or resync)
+
+## Reactive Primitives
+
+### Signal
+
+A Signal holds a value and notifies subscribers when it changes:
 
 ```go
-type Mutation struct {
-    ID    string          // Unique ID for idempotency
-    Scope string          // Data partition
-    Name  string          // Operation type (e.g., "todo.create")
-    Args  json.RawMessage // Operation arguments
-}
+import "github.com/go-mizu/mizu/view/sync"
+
+// Create a signal with initial value
+count := sync.NewSignal(0)
+
+// Read the value
+fmt.Println(count.Get())  // 0
+
+// Update the value
+count.Set(5)
+fmt.Println(count.Get())  // 5
+
+// Update with a function
+count.Update(func(v int) int {
+    return v + 1
+})
+fmt.Println(count.Get())  // 6
 ```
 
-Example mutation:
-```json
-{
-    "id": "abc123",
-    "scope": "user:456",
-    "name": "todo.create",
-    "args": {"title": "Buy milk", "completed": false}
-}
-```
+### Computed
 
-### Change
-
-A **change** is a record of what actually happened:
+A Computed value derives from other signals and updates automatically:
 
 ```go
-type Change struct {
-    Cursor uint64          // Position in log
-    Scope  string          // Data partition
-    Time   time.Time       // When it happened
-    Data   json.RawMessage // What changed (opaque)
-}
+count := sync.NewSignal(10)
+price := sync.NewSignal(5.0)
+
+// Automatically tracks dependencies
+total := sync.NewComputed(func() float64 {
+    return float64(count.Get()) * price.Get()
+})
+
+fmt.Println(total.Get())  // 50.0
+
+count.Set(20)
+fmt.Println(total.Get())  // 100.0 (auto-updated!)
 ```
 
-The `Data` field is application-defined. You decide the schema.
+### Effect
 
-### Cursor
-
-A **cursor** is a position in the change log. Clients track their cursor and pull changes since that point:
-
-```
-Log:  [Change 1] [Change 2] [Change 3] [Change 4] [Change 5]
-                     ^
-                     │
-              Client cursor = 2
-
-Pull since cursor 2 → Returns changes 3, 4, 5
-New cursor = 5
-```
-
-### Scope
-
-A **scope** partitions data for different users or tenants:
-
-```
-scope: "user:123"    # User 123's private data
-scope: "team:456"    # Team 456's shared data
-scope: "_default"    # Default scope if not specified
-```
-
-Clients only sync data within their scope.
-
-## How It Works
-
-### Push: Apply Mutations
+An Effect runs a function whenever its dependencies change:
 
 ```go
-// Client sends mutations
-mutations := []sync.Mutation{
-    {ID: "m1", Name: "todo.create", Args: ...},
-}
+count := sync.NewSignal(0)
 
-// Engine processes them
-results, err := engine.Push(ctx, mutations)
+effect := sync.NewEffect(func() {
+    fmt.Printf("Count is now: %d\n", count.Get())
+})
+// Prints: "Count is now: 0"
+
+count.Set(1)
+// Prints: "Count is now: 1"
+
+count.Set(2)
+// Prints: "Count is now: 2"
+
+// Stop the effect
+effect.Stop()
 ```
 
-The Push flow:
-1. Check idempotency (was this mutation ID already processed?)
-2. If duplicate, return success without re-executing
-3. Call ApplyFunc to process the mutation
-4. Append resulting changes to the Log
-5. Mark mutation ID as processed (for idempotency)
+## Collections and Entities
 
-### Pull: Get Changes
+Collections manage groups of entities that sync with a server:
 
 ```go
-// Client pulls changes since their cursor
-changes, hasMore, err := engine.Pull(ctx, scope, cursor, limit)
-
-// Process changes and update local state
-for _, change := range changes {
-    // Apply change to local state
-    cursor = change.Cursor
+// Define your data type
+type Todo struct {
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
 }
+
+// Create a client
+client := sync.New(sync.Options{
+    BaseURL: "http://localhost:8080/_sync",
+    Scope:   "user:123",
+})
+
+// Create a collection
+todos := sync.NewCollection[Todo](client, "todo")
+
+// Create an entity
+todo := todos.Create("todo-1", Todo{
+    Title:     "Buy groceries",
+    Completed: false,
+})
+
+// Read (reactive - tracks dependencies)
+fmt.Println(todo.Get().Title)
+
+// Update
+todo.Set(Todo{
+    Title:     "Buy groceries",
+    Completed: true,
+})
+
+// Delete
+todo.Delete()
+
+// Query the collection
+all := todos.All()          // All entities (reactive)
+count := todos.Count()      // Entity count (reactive)
+found := todos.Find(func(t Todo) bool {
+    return !t.Completed
+})
 ```
 
-### Snapshot: Full State
+## Quick Example
 
-When a cursor is too old (log has been trimmed), clients can get a full snapshot:
-
-```go
-data, cursor, err := engine.Snapshot(ctx, scope)
-// data contains full current state
-// cursor is the current position
-```
-
-## Basic Usage
+Here's a complete example showing the sync system:
 
 ```go
 package main
 
 import (
     "context"
-    "encoding/json"
-    "github.com/go-mizu/mizu/sync"
-    "github.com/go-mizu/mizu/sync/memory"
+    "fmt"
+    "time"
+
+    "github.com/go-mizu/mizu/view/sync"
 )
 
-func main() {
-    // Create in-memory implementations
-    log := memory.NewLog()
-    dedupe := memory.NewDedupe()
+type Todo struct {
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
+}
 
-    // Create the sync engine
-    engine := sync.New(sync.Options{
-        Log:    log,
-        Dedupe: dedupe,
-        Apply: func(ctx context.Context, m sync.Mutation) ([]sync.Change, error) {
-            // Your application logic here
-            switch m.Name {
-            case "todo.create":
-                // Create todo in your database
-                // Return changes describing what happened
-                return []sync.Change{
-                    {Data: json.RawMessage(`{"op":"create","entity":"todo","id":"123"}`)},
-                }, nil
-            default:
-                return nil, sync.ErrInvalidMutation
-            }
+func main() {
+    // Create client
+    client := sync.New(sync.Options{
+        BaseURL: "http://localhost:8080/_sync",
+        Scope:   "user:demo",
+        OnSync: func(cursor uint64) {
+            fmt.Printf("Synced to cursor %d\n", cursor)
+        },
+        OnOnline: func() {
+            fmt.Println("Connected!")
+        },
+        OnOffline: func() {
+            fmt.Println("Offline - changes will sync later")
         },
     })
 
-    // Use the engine
+    // Start sync
     ctx := context.Background()
+    client.Start(ctx)
+    defer client.Stop()
 
-    // Push mutations
-    results, _ := engine.Push(ctx, []sync.Mutation{
-        {ID: "m1", Name: "todo.create", Args: json.RawMessage(`{"title":"Buy milk"}`)},
+    // Create a collection
+    todos := sync.NewCollection[Todo](client, "todo")
+
+    // Create a todo (works offline!)
+    todo := todos.Create("todo-1", Todo{
+        Title: "Learn sync",
     })
 
-    // Pull changes
-    changes, hasMore, _ := engine.Pull(ctx, sync.DefaultScope, 0, 100)
+    // Create an effect to react to changes
+    sync.NewEffect(func() {
+        t := todo.Get()
+        status := "pending"
+        if t.Completed {
+            status = "done"
+        }
+        fmt.Printf("Todo: %s [%s]\n", t.Title, status)
+    })
+
+    // Update the todo
+    todo.Set(Todo{
+        Title:     "Learn sync",
+        Completed: true,
+    })
+
+    // Wait a bit to see sync happen
+    time.Sleep(2 * time.Second)
 }
 ```
 
-## Integration with Live
+## Architecture
 
-Combine sync with the `live` package for real-time updates:
-
-```go
-// When changes are pushed
-results, _ := engine.Push(ctx, mutations)
-for _, r := range results {
-    if r.OK && len(r.Changes) > 0 {
-        // Notify connected clients via WebSocket
-        liveServer.Publish("sync:"+scope, []byte(`{"cursor":`+strconv.FormatUint(r.Cursor, 10)+`}`))
-    }
-}
-
-// Clients receive notification and pull immediately
+```
+┌─────────────────────────────────────────────────────┐
+│                     Client                          │
+│                                                     │
+│  ┌───────────────┐    ┌──────────────────────────┐  │
+│  │   Reactive    │    │      Sync Engine         │  │
+│  │   Layer       │    │                          │  │
+│  │               │    │  ┌────────────────────┐  │  │
+│  │  Signal[T]    │    │  │   Mutation Queue   │  │  │
+│  │  Computed[T]  │    │  │   (offline-safe)   │  │  │
+│  │  Effect       │    │  └────────────────────┘  │  │
+│  │               │    │                          │  │
+│  └───────────────┘    │  ┌────────────────────┐  │  │
+│         │             │  │   Store            │  │  │
+│         ▼             │  │   (local state)    │  │  │
+│  ┌───────────────┐    │  └────────────────────┘  │  │
+│  │  Collections  │    │                          │  │
+│  │               │◄───┤  ┌────────────────────┐  │  │
+│  │  Entity[T]    │    │  │   Cursor           │  │  │
+│  │               │    │  │   (sync position)  │  │  │
+│  └───────────────┘    │  └────────────────────┘  │  │
+│                       │                          │  │
+│                       └──────────────────────────┘  │
+│                                  │                  │
+└──────────────────────────────────│──────────────────┘
+                                   │
+                    ┌──────────────┴──────────────┐
+                    │                             │
+                    ▼                             ▼
+              Push/Pull                      Live Updates
+              (HTTP)                        (WebSocket)
+                    │                             │
+                    └──────────────┬──────────────┘
+                                   │
+                                   ▼
+                            ┌─────────────┐
+                            │   Server    │
+                            └─────────────┘
 ```
 
-Without live integration, clients can poll:
-- Pull every N seconds
-- Pull after reconnection
-- Pull on user action
+## When to Use Sync
 
-## Error Handling
+**Use sync when:**
+- Building offline-capable applications
+- You need instant UI updates without loading states
+- Multiple clients need to see synchronized data
+- You want fine-grained reactivity in Go
 
-The sync package defines these errors:
-
-| Error | Description |
-|-------|-------------|
-| `ErrNotFound` | Entity not found |
-| `ErrInvalidMutation` | Mutation is malformed |
-| `ErrConflict` | Concurrent modification conflict |
-| `ErrCursorTooOld` | Cursor has been trimmed from log |
-
-```go
-changes, _, err := engine.Pull(ctx, scope, cursor, limit)
-if errors.Is(err, sync.ErrCursorTooOld) {
-    // Client needs a full snapshot
-    data, newCursor, _ := engine.Snapshot(ctx, scope)
-}
-```
-
-## Use Cases
-
-### Offline-First Mobile App
-
-1. User creates/edits data offline
-2. Mutations queue locally
-3. When online, push mutations to server
-4. Server applies and returns changes
-5. Client pulls to reconcile
-
-### Collaborative Application
-
-1. User A makes change, pushes mutation
-2. Server applies, records change
-3. User B pulls, receives change
-4. With live integration: User B notified instantly
-
-### Event Sourcing
-
-The change log provides an audit trail:
-- Every change is recorded
-- Replay from any cursor
-- Time-travel debugging
+**Consider alternatives when:**
+- Building server-side only applications
+- You don't need offline support
+- Simple request/response patterns are sufficient
 
 ## What's Next?
 
-1. **[Quick Start](/view/sync-quick-start)** - Build your first synced endpoint
-2. **[Server](/view/sync-server)** - Engine configuration and options
-3. **[Integration](/view/sync-integration)** - Combine with Live for real-time
+1. **[Quick Start](/view/sync-quick-start)** - Build your first synced app
+2. **[Client](/view/sync-client)** - Client configuration and lifecycle
+3. **[Reactive](/view/sync-reactive)** - Deep dive into Signal, Computed, Effect
+4. **[Collections](/view/sync-collections)** - Working with synchronized data
+5. **[Integration](/view/sync-integration)** - Combining sync with live for real-time updates

@@ -1,16 +1,16 @@
 ---
 title: "Layouts"
-description: "Learn how to use layouts to create consistent page structures"
+description: "Create consistent page structures with layouts"
 ---
 
-Layouts are the HTML shell that wraps your pages. They contain the common structure shared across pages: doctype, head, navigation, footer, and more. This guide explains how to create and use layouts.
+Layouts are the HTML shell that wraps your pages. They contain the common structure shared across pages: doctype, head, navigation, footer, and more.
 
 ## What is a Layout?
 
-A layout is a template that defines the outer structure of your pages. Instead of repeating the HTML boilerplate in every page, you define it once in a layout:
+A layout is a template that defines the outer structure of your pages. Instead of repeating the HTML boilerplate in every page, you define it once in a layout.
 
+**Without layouts - every page repeats this:**
 ```html
-<!-- Without layouts: every page repeats this -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -25,36 +25,49 @@ A layout is a template that defines the outer structure of your pages. Instead o
 </html>
 ```
 
+**With layouts - define once, pages fill in the content:**
 ```html
-<!-- With layouts: defined once, pages fill in the blanks -->
 <!DOCTYPE html>
 <html>
 <head>
-    <title>{{.Title}}</title>
+    <title>{{.Data.Title}}</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
     <nav>...</nav>
-    {{template "content" .}}
+    {{.Content}}
     <footer>...</footer>
 </body>
 </html>
 ```
 
+## Directory Structure
+
+Layouts live in the `layouts/` subdirectory:
+
+```
+views/
+├── layouts/
+│   ├── default.html    # Default layout
+│   ├── admin.html      # Admin layout
+│   └── minimal.html    # Minimal layout
+└── pages/
+    ├── home.html
+    └── dashboard.html
+```
+
 ## Creating a Layout
 
-Layouts are template files that use `{{template "content" .}}` to include page content.
-
-### Basic Layout Example
+### Basic Layout
 
 ```html
-<!-- views/layout.html -->
+<!-- views/layouts/default.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{.Title}}</title>
+    <title>{{.Data.Title}}</title>
     <link rel="stylesheet" href="/css/main.css">
 </head>
 <body>
@@ -67,7 +80,7 @@ Layouts are template files that use `{{template "content" .}}` to include page c
     </header>
 
     <main>
-        {{template "content" .}}
+        {{.Content}}
     </main>
 
     <footer>
@@ -79,17 +92,33 @@ Layouts are template files that use `{{template "content" .}}` to include page c
 </html>
 ```
 
+**Key point:** `{{.Content}}` is where the rendered page content is inserted.
+
 ### Page Template
 
-Pages define a "content" block that gets inserted into the layout:
+Pages simply provide content - no layout wrapper needed:
 
 ```html
-<!-- views/home.html -->
-{{define "content"}}
-<h1>Welcome, {{.Name}}!</h1>
+<!-- views/pages/home.html -->
+<h1>Welcome, {{.Data.Name}}!</h1>
 <p>This is the home page.</p>
-{{end}}
 ```
+
+## How It Works
+
+When you render a page:
+
+```go
+view.Render(c, "home", view.Data{
+    "Title": "Home",
+    "Name":  "Alice",
+})
+```
+
+The engine:
+1. Renders `pages/home.html` with your data
+2. Puts the result in `.Content`
+3. Renders `layouts/default.html` with `.Content` set
 
 ## Setting the Default Layout
 
@@ -98,8 +127,7 @@ Configure the default layout in your engine:
 ```go
 engine := view.New(view.Config{
     Dir:           "./views",
-    Extension:     ".html",
-    DefaultLayout: "layout",  // Uses layout.html
+    DefaultLayout: "default",  // Uses layouts/default.html
 })
 ```
 
@@ -107,27 +135,14 @@ engine := view.New(view.Config{
 
 Create different layouts for different sections of your site.
 
-### Directory Structure
-
-```
-views/
-├── layout.html       # Main public layout
-├── admin-layout.html # Admin panel layout
-├── minimal.html      # Minimal layout (login, etc.)
-├── home.html
-├── about.html
-└── admin/
-    └── dashboard.html
-```
-
-### Admin Layout Example
+### Admin Layout
 
 ```html
-<!-- views/admin-layout.html -->
+<!-- views/layouts/admin.html -->
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Admin - {{.Title}}</title>
+    <title>Admin - {{.Data.Title}}</title>
     <link rel="stylesheet" href="/css/admin.css">
 </head>
 <body class="admin">
@@ -141,10 +156,10 @@ views/
     </div>
     <div class="admin-content">
         <header>
-            <h1>{{.PageTitle}}</h1>
+            <h1>{{.Data.PageTitle}}</h1>
         </header>
         <main>
-            {{template "content" .}}
+            {{.Content}}
         </main>
     </div>
 </body>
@@ -157,11 +172,11 @@ Override the default layout when rendering:
 
 ```go
 func dashboardHandler(c *mizu.Ctx) error {
-    return view.From(c).Render(c, "admin/dashboard", view.Data{
+    return view.Render(c, "admin/dashboard", view.Data{
         "Title":     "Dashboard",
         "PageTitle": "Admin Dashboard",
         "Stats":     stats,
-    }, view.Layout("admin-layout"))
+    }, view.Layout("admin"))
 }
 ```
 
@@ -170,11 +185,11 @@ func dashboardHandler(c *mizu.Ctx) error {
 For simple pages that don't need full navigation:
 
 ```html
-<!-- views/minimal.html -->
+<!-- views/layouts/minimal.html -->
 <!DOCTYPE html>
 <html>
 <head>
-    <title>{{.Title}}</title>
+    <title>{{.Data.Title}}</title>
     <style>
         body {
             font-family: sans-serif;
@@ -185,14 +200,14 @@ For simple pages that don't need full navigation:
     </style>
 </head>
 <body>
-    {{template "content" .}}
+    {{.Content}}
 </body>
 </html>
 ```
 
 ```go
 func loginHandler(c *mizu.Ctx) error {
-    return view.From(c).Render(c, "login", view.Data{
+    return view.Render(c, "login", view.Data{
         "Title": "Login",
     }, view.Layout("minimal"))
 }
@@ -204,7 +219,7 @@ For AJAX responses, partial HTML, or API endpoints that return HTML fragments:
 
 ```go
 // Returns just the page content, no layout
-view.From(c).Render(c, "user-row", data, view.NoLayout())
+view.Render(c, "user-row", data, view.NoLayout())
 ```
 
 This is useful for:
@@ -214,10 +229,17 @@ This is useful for:
 
 ## Layout Data Access
 
-Layouts have access to all data passed to `Render()`:
+Layouts have access to all the same data as pages:
+
+| Field | Description |
+|-------|-------------|
+| `.Data` | Your data from the handler |
+| `.Page.Name` | Page template name |
+| `.Page.Layout` | Layout name |
+| `.Content` | Rendered page content |
 
 ```go
-view.From(c).Render(c, "home", view.Data{
+view.Render(c, "home", view.Data{
     "Title":       "Home Page",
     "CurrentUser": user,
     "Year":        time.Now().Year(),
@@ -225,16 +247,16 @@ view.From(c).Render(c, "home", view.Data{
 ```
 
 ```html
-<!-- views/layout.html -->
+<!-- views/layouts/default.html -->
 <!DOCTYPE html>
 <html>
 <head>
-    <title>{{.Title}}</title>
+    <title>{{.Data.Title}}</title>
 </head>
 <body>
     <nav>
-        {{if .CurrentUser}}
-            <span>Hello, {{.CurrentUser.Name}}</span>
+        {{if .Data.CurrentUser}}
+            <span>Hello, {{.Data.CurrentUser.Name}}</span>
             <a href="/logout">Logout</a>
         {{else}}
             <a href="/login">Login</a>
@@ -242,66 +264,15 @@ view.From(c).Render(c, "home", view.Data{
     </nav>
 
     <main>
-        {{template "content" .}}
+        {{.Content}}
     </main>
 
     <footer>
-        <p>&copy; {{.Year}} My Company</p>
+        <p>&copy; {{.Data.Year}} My Company</p>
     </footer>
 </body>
 </html>
 ```
-
-## Additional Template Blocks
-
-Pages can define more than just "content". Use Go's template inheritance:
-
-### Layout with Multiple Blocks
-
-```html
-<!-- views/layout.html -->
-<!DOCTYPE html>
-<html>
-<head>
-    <title>{{.Title}}</title>
-    {{block "head" .}}{{end}}
-</head>
-<body>
-    <nav>...</nav>
-
-    <main>
-        {{template "content" .}}
-    </main>
-
-    <footer>...</footer>
-
-    {{block "scripts" .}}{{end}}
-</body>
-</html>
-```
-
-### Page with Extra Blocks
-
-```html
-<!-- views/chart-page.html -->
-{{define "head"}}
-<link rel="stylesheet" href="/css/charts.css">
-{{end}}
-
-{{define "content"}}
-<h1>Statistics</h1>
-<div id="chart"></div>
-{{end}}
-
-{{define "scripts"}}
-<script src="/js/chart.js"></script>
-<script>
-    renderChart('#chart', {{.ChartData}});
-</script>
-{{end}}
-```
-
-The `block` directive defines a template with optional default content. If the page doesn't define that block, the default (or nothing) is used.
 
 ## Common Patterns
 
@@ -310,15 +281,15 @@ The `block` directive defines a template with optional default content. If the p
 Highlight the current page:
 
 ```html
-<!-- views/layout.html -->
+<!-- views/layouts/default.html -->
 <nav>
-    <a href="/" class="{{if eq .CurrentPath "/"}}active{{end}}">Home</a>
-    <a href="/about" class="{{if eq .CurrentPath "/about"}}active{{end}}">About</a>
-    <a href="/contact" class="{{if eq .CurrentPath "/contact"}}active{{end}}">Contact</a>
+    <a href="/" class="{{if eq .Page.Name "home"}}active{{end}}">Home</a>
+    <a href="/about" class="{{if eq .Page.Name "about"}}active{{end}}">About</a>
+    <a href="/contact" class="{{if eq .Page.Name "contact"}}active{{end}}">Contact</a>
 </nav>
 ```
 
-Pass the current path in your handler or middleware:
+Or pass the current path:
 
 ```go
 view.Data{
@@ -326,14 +297,18 @@ view.Data{
 }
 ```
 
+```html
+<a href="/" class="{{if eq .Data.CurrentPath "/"}}active{{end}}">Home</a>
+```
+
 ### Flash Messages
 
 Display flash messages from sessions:
 
 ```html
-{{if .Flash}}
-<div class="flash flash-{{.Flash.Type}}">
-    {{.Flash.Message}}
+{{if .Data.Flash}}
+<div class="flash flash-{{.Data.Flash.Type}}">
+    {{.Data.Flash.Message}}
 </div>
 {{end}}
 ```
@@ -341,7 +316,7 @@ Display flash messages from sessions:
 ### Page-Specific Body Classes
 
 ```html
-<body class="{{.BodyClass}}">
+<body class="{{.Data.BodyClass}}">
 ```
 
 ```go
@@ -354,10 +329,23 @@ view.Data{
 
 ```html
 <head>
-    <title>{{.Title}}</title>
-    <meta name="description" content="{{.Description}}">
-    {{if .NoIndex}}<meta name="robots" content="noindex">{{end}}
+    <title>{{.Data.Title}}</title>
+    <meta name="description" content="{{.Data.Description}}">
+    {{if .Data.NoIndex}}<meta name="robots" content="noindex">{{end}}
 </head>
+```
+
+### Conditional Scripts
+
+```html
+<body>
+    {{.Content}}
+
+    <script src="/js/main.js"></script>
+    {{if .Data.NeedsChart}}
+    <script src="/js/chart.js"></script>
+    {{end}}
+</body>
 ```
 
 ## Best Practices
@@ -366,10 +354,10 @@ view.Data{
 
 Each layout should serve a clear purpose:
 
-- `layout.html` - Main public pages
-- `admin-layout.html` - Admin panel
-- `auth-layout.html` - Login/signup pages
-- `email-layout.html` - Email templates
+- `default.html` - Main public pages
+- `admin.html` - Admin panel
+- `auth.html` - Login/signup pages
+- `email.html` - Email templates
 
 ### 2. Pass Common Data via Middleware
 
@@ -389,8 +377,8 @@ func commonDataMiddleware(next mizu.Handler) mizu.Handler {
 
 ```go
 // Good: clear purpose
-view.Layout("admin-layout")
-view.Layout("email-layout")
+view.Layout("admin")
+view.Layout("email")
 
 // Avoid: unclear
 view.Layout("layout2")
@@ -409,11 +397,10 @@ Start simple. Most sites only need 2-3 layouts:
 Make sure every layout works with your data:
 
 ```go
-// In tests
 func TestLayouts(t *testing.T) {
     engine := view.New(config)
 
-    layouts := []string{"layout", "admin-layout", "minimal"}
+    layouts := []string{"default", "admin", "minimal"}
     for _, layout := range layouts {
         var buf bytes.Buffer
         err := engine.Render(&buf, "test-page", testData, view.Layout(layout))

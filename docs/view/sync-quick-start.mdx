@@ -1,15 +1,14 @@
 ---
 title: "Quick Start"
-description: "Build your first sync endpoint in 10 minutes"
+description: "Build your first offline-first app with sync in 10 minutes"
 ---
 
-This guide walks you through creating a simple sync-enabled API endpoint. You'll learn how to set up the sync engine, handle mutations, and serve changes to clients.
+This guide walks you through creating a simple offline-first application using the sync package. You'll learn how to set up a client, create collections, and use reactive primitives.
 
 ## Prerequisites
 
 - Go 1.22 or later
 - Basic understanding of Go
-- Familiarity with REST APIs
 
 ## Step 1: Create Your Project
 
@@ -19,7 +18,7 @@ go mod init sync-demo
 go get github.com/go-mizu/mizu
 ```
 
-## Step 2: Create the Sync Engine
+## Step 2: Define Your Data Type
 
 Create `main.go`:
 
@@ -28,297 +27,276 @@ package main
 
 import (
     "context"
-    "encoding/json"
-    "log"
-    gosync "sync"
+    "fmt"
+    "time"
 
-    "github.com/go-mizu/mizu"
-    "github.com/go-mizu/mizu/sync"
-    "github.com/go-mizu/mizu/sync/memory"
+    "github.com/go-mizu/mizu/view/sync"
 )
 
-// Todo represents a todo item
+// Todo is our synchronized data type
 type Todo struct {
-    ID        string `json:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
+}
+```
+
+## Step 3: Create and Configure the Client
+
+```go
+func main() {
+    // Create the sync client
+    client := sync.New(sync.Options{
+        BaseURL: "http://localhost:8080/_sync",  // Your sync server
+        Scope:   "user:demo",                     // Data partition
+
+        // Optional callbacks
+        OnSync: func(cursor uint64) {
+            fmt.Printf("Synced to cursor %d\n", cursor)
+        },
+        OnOnline: func() {
+            fmt.Println("Connected to server")
+        },
+        OnOffline: func() {
+            fmt.Println("Working offline")
+        },
+        OnError: func(err error) {
+            fmt.Printf("Error: %v\n", err)
+        },
+    })
+
+    // ... continue below
+}
+```
+
+## Step 4: Start the Client
+
+```go
+    // Start sync in the background
+    ctx := context.Background()
+    if err := client.Start(ctx); err != nil {
+        fmt.Printf("Initial sync failed: %v\n", err)
+        // Client continues working offline
+    }
+    defer client.Stop()
+```
+
+## Step 5: Create a Collection
+
+```go
+    // Create a typed collection
+    todos := sync.NewCollection[Todo](client, "todo")
+```
+
+## Step 6: Use the Collection
+
+```go
+    // Create a todo (works even offline!)
+    todo := todos.Create("todo-1", Todo{
+        Title:     "Learn sync",
+        Completed: false,
+    })
+
+    // Read the value
+    fmt.Printf("Created: %s\n", todo.Get().Title)
+
+    // Update it
+    todo.Set(Todo{
+        Title:     "Learn sync",
+        Completed: true,
+    })
+
+    // List all todos
+    fmt.Printf("\nAll todos (%d):\n", todos.Count())
+    for _, entity := range todos.All() {
+        t := entity.Get()
+        status := "[ ]"
+        if t.Completed {
+            status = "[x]"
+        }
+        fmt.Printf("  %s %s\n", status, t.Title)
+    }
+```
+
+## Step 7: Add Reactivity
+
+```go
+    // React to changes automatically
+    sync.NewEffect(func() {
+        count := todos.Count()
+        fmt.Printf("\n>>> Todo count changed: %d\n", count)
+    })
+
+    // Create more todos
+    todos.Create("todo-2", Todo{Title: "Build app"})
+    todos.Create("todo-3", Todo{Title: "Deploy"})
+
+    // Delete one
+    todos.Get("todo-2").Delete()
+```
+
+## Complete Example
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "time"
+
+    "github.com/go-mizu/mizu/view/sync"
+)
+
+type Todo struct {
     Title     string `json:"title"`
     Completed bool   `json:"completed"`
 }
 
-// In-memory store (replace with database in production)
-var (
-    todos   = make(map[string]Todo)
-    todosMu gosync.RWMutex
-)
-
 func main() {
-    // Create sync engine components
-    changeLog := memory.NewLog()
-    dedupe := memory.NewDedupe()
-
-    // Create the sync engine with our mutation handler
-    engine := sync.New(sync.Options{
-        Log:    changeLog,
-        Dedupe: dedupe,
-        Apply:  applyMutation,
-        Snapshot: func(ctx context.Context, scope string) (json.RawMessage, uint64, error) {
-            todosMu.RLock()
-            defer todosMu.RUnlock()
-
-            // Return all todos as snapshot
-            data, err := json.Marshal(todos)
-            if err != nil {
-                return nil, 0, err
-            }
-
-            cursor, _ := changeLog.Cursor(ctx, scope)
-            return data, cursor, nil
+    // Create client
+    client := sync.New(sync.Options{
+        BaseURL: "http://localhost:8080/_sync",
+        Scope:   "user:demo",
+        OnSync: func(cursor uint64) {
+            fmt.Printf("Synced to cursor %d\n", cursor)
+        },
+        OnOnline: func() {
+            fmt.Println("Connected!")
+        },
+        OnOffline: func() {
+            fmt.Println("Offline - changes will sync later")
         },
     })
 
-    // Create Mizu app
-    app := mizu.New()
+    // Start sync
+    ctx := context.Background()
+    client.Start(ctx)
+    defer client.Stop()
 
-    // Mount sync endpoints
-    app.Post("/sync/push", pushHandler(engine))
-    app.Get("/sync/pull", pullHandler(engine))
-    app.Get("/sync/snapshot", snapshotHandler(engine))
+    // Create collection
+    todos := sync.NewCollection[Todo](client, "todo")
 
-    log.Println("Server starting on :8080")
-    app.Listen(":8080")
+    // Log changes reactively
+    sync.NewEffect(func() {
+        fmt.Printf("Todo count: %d\n", todos.Count())
+    })
+
+    // Create some todos
+    todos.Create("1", Todo{Title: "Learn Go"})
+    todos.Create("2", Todo{Title: "Build sync app"})
+    todos.Create("3", Todo{Title: "Deploy"})
+
+    // Mark one complete
+    entity := todos.Get("1")
+    todo := entity.Get()
+    todo.Completed = true
+    entity.Set(todo)
+
+    // Find incomplete
+    incomplete := todos.Find(func(t Todo) bool {
+        return !t.Completed
+    })
+    fmt.Printf("\nIncomplete todos:\n")
+    for _, e := range incomplete {
+        fmt.Printf("  - %s\n", e.Get().Title)
+    }
+
+    // Keep running to see sync happen
+    time.Sleep(3 * time.Second)
 }
 ```
 
-## Step 3: Implement the Mutation Handler
+## Running the Example
 
-Add the `applyMutation` function:
-
-```go
-// applyMutation processes mutations and returns changes
-func applyMutation(ctx context.Context, m sync.Mutation) ([]sync.Change, error) {
-    switch m.Name {
-    case "todo.create":
-        return createTodo(m.Args)
-    case "todo.update":
-        return updateTodo(m.Args)
-    case "todo.delete":
-        return deleteTodo(m.Args)
-    default:
-        return nil, sync.ErrInvalidMutation
-    }
-}
-
-func createTodo(args json.RawMessage) ([]sync.Change, error) {
-    var input struct {
-        ID    string `json:"id"`
-        Title string `json:"title"`
-    }
-    if err := json.Unmarshal(args, &input); err != nil {
-        return nil, sync.ErrInvalidMutation
-    }
-
-    todo := Todo{
-        ID:        input.ID,
-        Title:     input.Title,
-        Completed: false,
-    }
-
-    todosMu.Lock()
-    todos[todo.ID] = todo
-    todosMu.Unlock()
-
-    // Return change describing what happened
-    changeData, _ := json.Marshal(map[string]any{
-        "op":     "create",
-        "entity": "todo",
-        "id":     todo.ID,
-        "data":   todo,
-    })
-
-    return []sync.Change{
-        {Data: changeData},
-    }, nil
-}
-
-func updateTodo(args json.RawMessage) ([]sync.Change, error) {
-    var input struct {
-        ID        string `json:"id"`
-        Title     string `json:"title,omitempty"`
-        Completed *bool  `json:"completed,omitempty"`
-    }
-    if err := json.Unmarshal(args, &input); err != nil {
-        return nil, sync.ErrInvalidMutation
-    }
-
-    todosMu.Lock()
-    todo, exists := todos[input.ID]
-    if !exists {
-        todosMu.Unlock()
-        return nil, sync.ErrNotFound
-    }
-
-    if input.Title != "" {
-        todo.Title = input.Title
-    }
-    if input.Completed != nil {
-        todo.Completed = *input.Completed
-    }
-    todos[input.ID] = todo
-    todosMu.Unlock()
-
-    changeData, _ := json.Marshal(map[string]any{
-        "op":     "update",
-        "entity": "todo",
-        "id":     todo.ID,
-        "data":   todo,
-    })
-
-    return []sync.Change{
-        {Data: changeData},
-    }, nil
-}
-
-func deleteTodo(args json.RawMessage) ([]sync.Change, error) {
-    var input struct {
-        ID string `json:"id"`
-    }
-    if err := json.Unmarshal(args, &input); err != nil {
-        return nil, sync.ErrInvalidMutation
-    }
-
-    todosMu.Lock()
-    _, exists := todos[input.ID]
-    if !exists {
-        todosMu.Unlock()
-        return nil, sync.ErrNotFound
-    }
-    delete(todos, input.ID)
-    todosMu.Unlock()
-
-    changeData, _ := json.Marshal(map[string]any{
-        "op":     "delete",
-        "entity": "todo",
-        "id":     input.ID,
-    })
-
-    return []sync.Change{
-        {Data: changeData},
-    }, nil
-}
-```
-
-## Step 4: Create HTTP Handlers
-
-Add the HTTP handlers:
-
-```go
-func pushHandler(engine *sync.Engine) mizu.Handler {
-    return func(c *mizu.Ctx) error {
-        var mutations []sync.Mutation
-        if err := c.BodyJSON(&mutations); err != nil {
-            return c.Status(400).JSON(map[string]string{"error": "invalid request"})
-        }
-
-        results, err := engine.Push(c.Context(), mutations)
-        if err != nil {
-            return c.Status(500).JSON(map[string]string{"error": err.Error()})
-        }
-
-        return c.JSON(results)
-    }
-}
-
-func pullHandler(engine *sync.Engine) mizu.Handler {
-    return func(c *mizu.Ctx) error {
-        scope := c.Query("scope", sync.DefaultScope)
-        cursor := uint64(c.QueryInt("cursor", 0))
-        limit := c.QueryInt("limit", 100)
-
-        changes, hasMore, err := engine.Pull(c.Context(), scope, cursor, limit)
-        if err != nil {
-            return c.Status(500).JSON(map[string]string{"error": err.Error()})
-        }
-
-        return c.JSON(map[string]any{
-            "changes": changes,
-            "hasMore": hasMore,
-        })
-    }
-}
-
-func snapshotHandler(engine *sync.Engine) mizu.Handler {
-    return func(c *mizu.Ctx) error {
-        scope := c.Query("scope", sync.DefaultScope)
-
-        data, cursor, err := engine.Snapshot(c.Context(), scope)
-        if err != nil {
-            return c.Status(500).JSON(map[string]string{"error": err.Error()})
-        }
-
-        return c.JSON(map[string]any{
-            "data":   json.RawMessage(data),
-            "cursor": cursor,
-        })
-    }
-}
-```
-
-## Step 5: Run and Test
-
-Start the server:
+If you have a sync server running:
 
 ```bash
 go run main.go
 ```
 
-### Create a Todo
+Output:
+```
+Connected!
+Synced to cursor 0
+Todo count: 0
+Todo count: 1
+Todo count: 2
+Todo count: 3
 
-```bash
-curl -X POST http://localhost:8080/sync/push \
-  -H "Content-Type: application/json" \
-  -d '[{"id":"m1","name":"todo.create","args":{"id":"t1","title":"Buy milk"}}]'
+Incomplete todos:
+  - Build sync app
+  - Deploy
+Synced to cursor 3
 ```
 
-Response:
-```json
-[{"ok":true,"cursor":1,"changes":[...]}]
-```
-
-### Pull Changes
-
-```bash
-curl "http://localhost:8080/sync/pull?cursor=0"
-```
-
-### Get Snapshot
-
-```bash
-curl "http://localhost:8080/sync/snapshot"
-```
-
-## Understanding the Flow
+## What Just Happened?
 
 ```
-1. Client sends mutation
-   POST /sync/push [{id, name, args}]
-         │
-         ▼
-2. Engine checks idempotency (dedupe)
-         │
-         ▼
-3. ApplyFunc runs your business logic
-         │
-         ▼
-4. Changes appended to log
-         │
-         ▼
-5. Client receives result with cursor
-         │
-         ▼
-6. Other clients pull changes
-   GET /sync/pull?cursor=N
+1. Client connects to server
+   │
+   ▼
+2. Initial sync (pulls any existing data)
+   │
+   ▼
+3. Collections created (bound to client)
+   │
+   ▼
+4. Effects set up (react to changes)
+   │
+   ▼
+5. Local changes made (immediate)
+   │
+   ▼
+6. Mutations queued (background)
+   │
+   ▼
+7. Push to server (when online)
+   │
+   ▼
+8. OnSync callback (confirms sync)
 ```
+
+**Key points:**
+- Changes are **immediate** locally
+- Sync happens in the **background**
+- Works **offline** - mutations queue until connected
+- **Reactive** - effects run automatically when data changes
+
+## Understanding the Parts
+
+### Client
+
+The client manages:
+- Connection to sync server
+- Mutation queue (for offline support)
+- Pulling changes from server
+- Online/offline state
+
+### Collection
+
+A collection is a reactive set of entities:
+- Type-safe with generics
+- Syncs with server automatically
+- Supports CRUD operations
+- Reactive (triggers effects)
+
+### Entity
+
+An entity is a single record:
+- Has a unique ID
+- Reactive Get/Set
+- Can be deleted
+- Tracks existence
+
+### Reactive Primitives
+
+- **Signal**: A value that notifies when changed
+- **Computed**: A derived value that auto-updates
+- **Effect**: A function that runs when dependencies change
 
 ## Next Steps
 
-- **[Server](/view/sync-server)** - Engine configuration options
-- **[Integration](/view/sync-integration)** - Add real-time with Live
+- **[Client](/view/sync-client)** - Configuration options and lifecycle
+- **[Reactive](/view/sync-reactive)** - Deep dive into signals and effects
+- **[Collections](/view/sync-collections)** - Working with data
+- **[Integration](/view/sync-integration)** - Real-time updates with Live
