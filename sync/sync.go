@@ -49,6 +49,7 @@ package sync
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -72,11 +73,18 @@ var (
 
 	// ErrConflict is returned when there is a conflict during mutation.
 	ErrConflict = errors.New("sync: conflict")
+
+	// ErrCursorTooOld is returned when a cursor has been trimmed from the log.
+	// Log.Since implementations must return this error when the requested
+	// cursor is below the log's retention window.
+	ErrCursorTooOld = errors.New("sync: cursor too old")
 )
 
-// Error codes for internal use in HTTP responses.
+// DefaultScope is used when no scope is specified.
+const DefaultScope = "_default"
+
+// Error codes for HTTP responses.
 const (
-	codeOK           = ""
 	codeNotFound     = "not_found"
 	codeUnknown      = "unknown_mutation"
 	codeInvalid      = "invalid_mutation"
@@ -84,9 +92,6 @@ const (
 	codeConflict     = "conflict"
 	codeInternal     = "internal_error"
 )
-
-// errCursorTooOld is returned when a cursor has been trimmed from the log.
-var errCursorTooOld = errors.New("sync: cursor too old")
 
 // -----------------------------------------------------------------------------
 // Types
@@ -125,13 +130,13 @@ type Result struct {
 
 // Change is a single durable state change recorded in the log.
 type Change struct {
-	Cursor uint64    `json:"cursor"`
-	Scope  string    `json:"scope"`
-	Entity string    `json:"entity"`
-	ID     string    `json:"id"`
-	Op     Op        `json:"op"`
-	Data   []byte    `json:"data,omitempty"`
-	Time   time.Time `json:"time"`
+	Cursor uint64          `json:"cursor"`
+	Scope  string          `json:"scope"`
+	Entity string          `json:"entity"`
+	ID     string          `json:"id"`
+	Op     Op              `json:"op"`
+	Data   json.RawMessage `json:"data,omitempty"`
+	Time   time.Time       `json:"time"`
 }
 
 // Op defines the type of change operation.
@@ -148,14 +153,14 @@ const (
 // -----------------------------------------------------------------------------
 
 // Store is the authoritative state store.
-// All data is stored as JSON bytes to avoid type ambiguity.
+// Data is typically stored as JSON for interoperability with clients.
 type Store interface {
 	// Get retrieves an entity by scope/entity/id.
 	// Returns ErrNotFound if the entity does not exist.
-	Get(ctx context.Context, scope, entity, id string) ([]byte, error)
+	Get(ctx context.Context, scope, entity, id string) (json.RawMessage, error)
 
 	// Set stores an entity.
-	Set(ctx context.Context, scope, entity, id string, data []byte) error
+	Set(ctx context.Context, scope, entity, id string, data json.RawMessage) error
 
 	// Delete removes an entity.
 	// Returns nil if the entity does not exist.
@@ -163,18 +168,20 @@ type Store interface {
 
 	// Snapshot returns all data in a scope.
 	// Returns map[entity]map[id]data.
-	Snapshot(ctx context.Context, scope string) (map[string]map[string][]byte, error)
+	Snapshot(ctx context.Context, scope string) (map[string]map[string]json.RawMessage, error)
 }
 
 // Log records ordered changes and serves them by cursor.
 type Log interface {
 	// Append adds changes to the log and returns the final cursor.
-	// Changes are assigned sequential cursor values starting after
-	// the current cursor. The returned cursor is the last assigned.
+	// Implementations MUST assign sequential Change.Cursor values in-place
+	// starting after the current cursor. The returned cursor is the last assigned.
+	// This allows callers to see the assigned cursors in the input slice.
 	Append(ctx context.Context, scope string, changes []Change) (uint64, error)
 
 	// Since returns changes after the given cursor for a scope.
 	// Returns up to limit changes.
+	// Returns ErrCursorTooOld if the cursor has been trimmed from the log.
 	Since(ctx context.Context, scope string, cursor uint64, limit int) ([]Change, error)
 
 	// Cursor returns the current latest cursor for a scope.
@@ -237,11 +244,15 @@ func (f NotifierFunc) Notify(scope string, cursor uint64) {
 
 // Engine coordinates mutation application and replication.
 type Engine struct {
-	store   Store
-	log     Log
-	applied Applied
-	mutator Mutator
-	notify  Notifier
+	store        Store
+	log          Log
+	applied      Applied
+	mutator      Mutator
+	notify       Notifier
+	now          func() time.Time
+	scopeFunc    func(context.Context, string) (string, error)
+	maxPullLimit int
+	maxPushBatch int
 }
 
 // Options configures the sync engine.
@@ -251,16 +262,49 @@ type Options struct {
 	Applied Applied  // Optional: idempotency tracker (nil disables deduplication)
 	Mutator Mutator  // Required: mutation processor
 	Notify  Notifier // Optional: notification hook
+
+	// Now returns the current time. Defaults to time.Now if nil.
+	// Useful for testing and deterministic timestamps.
+	Now func() time.Time
+
+	// ScopeFunc derives the authoritative scope from request context and claimed scope.
+	// If nil, the claimed scope from the mutation is used directly.
+	// Use this to enforce authorization (e.g., derive scope from JWT claims).
+	ScopeFunc func(ctx context.Context, claimed string) (string, error)
+
+	// MaxPullLimit caps the limit parameter for Pull requests.
+	// Defaults to 1000 if zero.
+	MaxPullLimit int
+
+	// MaxPushBatch caps the number of mutations in a Push request.
+	// Defaults to 100 if zero.
+	MaxPushBatch int
 }
 
 // New creates a new sync engine.
 func New(opts Options) *Engine {
+	now := opts.Now
+	if now == nil {
+		now = time.Now
+	}
+	maxPull := opts.MaxPullLimit
+	if maxPull <= 0 {
+		maxPull = 1000
+	}
+	maxPush := opts.MaxPushBatch
+	if maxPush <= 0 {
+		maxPush = 100
+	}
 	return &Engine{
-		store:   opts.Store,
-		log:     opts.Log,
-		applied: opts.Applied,
-		mutator: opts.Mutator,
-		notify:  opts.Notify,
+		store:        opts.Store,
+		log:          opts.Log,
+		applied:      opts.Applied,
+		mutator:      opts.Mutator,
+		notify:       opts.Notify,
+		now:          now,
+		scopeFunc:    opts.ScopeFunc,
+		maxPullLimit: maxPull,
+		maxPushBatch: maxPush,
 	}
 }
 
@@ -281,9 +325,13 @@ func (e *Engine) Push(ctx context.Context, mutations []Mutation) ([]Result, erro
 		results[i] = result
 
 		if result.OK && result.Cursor > 0 {
+			// Use scope from changes (which reflects ScopeFunc override)
+			// Fall back to mutation scope if no changes
 			scope := mut.Scope
-			if scope == "" {
-				scope = "_default"
+			if len(result.Changes) > 0 {
+				scope = result.Changes[0].Scope
+			} else if scope == "" {
+				scope = DefaultScope
 			}
 			if result.Cursor > affectedScopes[scope] {
 				affectedScopes[scope] = result.Cursor
@@ -304,7 +352,16 @@ func (e *Engine) Push(ctx context.Context, mutations []Mutation) ([]Result, erro
 func (e *Engine) processMutation(ctx context.Context, mut Mutation) Result {
 	scope := mut.Scope
 	if scope == "" {
-		scope = "_default"
+		scope = DefaultScope
+	}
+
+	// Apply ScopeFunc if configured (for authorization)
+	if e.scopeFunc != nil {
+		var err error
+		scope, err = e.scopeFunc(ctx, scope)
+		if err != nil {
+			return Result{OK: false, Code: codeInternal, Error: err.Error()}
+		}
 	}
 
 	// Check idempotency
@@ -323,7 +380,7 @@ func (e *Engine) processMutation(ctx context.Context, mut Mutation) Result {
 	}
 
 	// Set timestamps and scope on changes
-	now := time.Now()
+	now := e.now()
 	for i := range changes {
 		if changes[i].Time.IsZero() {
 			changes[i].Time = now
@@ -351,9 +408,12 @@ func (e *Engine) processMutation(ctx context.Context, mut Mutation) Result {
 		Changes: changes,
 	}
 
-	// Store for idempotency
+	// Store for idempotency - failure here means replay could re-apply,
+	// so we return an error to maintain the idempotency guarantee.
 	if e.applied != nil && mut.ID != "" {
-		_ = e.applied.Put(ctx, scope, mut.ID, result)
+		if err := e.applied.Put(ctx, scope, mut.ID, result); err != nil {
+			return Result{OK: false, Code: codeInternal, Error: "failed to store idempotency key"}
+		}
 	}
 
 	return result
@@ -378,10 +438,13 @@ func (e *Engine) errorResult(err error) Result {
 // Returns (changes, hasMore, error) where hasMore indicates more data exists.
 func (e *Engine) Pull(ctx context.Context, scope string, cursor uint64, limit int) ([]Change, bool, error) {
 	if scope == "" {
-		scope = "_default"
+		scope = DefaultScope
 	}
 	if limit <= 0 {
 		limit = 100
+	}
+	if limit > e.maxPullLimit {
+		limit = e.maxPullLimit
 	}
 
 	// Request one extra to detect hasMore
@@ -399,9 +462,9 @@ func (e *Engine) Pull(ctx context.Context, scope string, cursor uint64, limit in
 }
 
 // Snapshot returns all data in a scope with the current cursor.
-func (e *Engine) Snapshot(ctx context.Context, scope string) (map[string]map[string][]byte, uint64, error) {
+func (e *Engine) Snapshot(ctx context.Context, scope string) (map[string]map[string]json.RawMessage, uint64, error) {
 	if scope == "" {
-		scope = "_default"
+		scope = DefaultScope
 	}
 
 	cursor, err := e.log.Cursor(ctx, scope)
@@ -446,8 +509,8 @@ type snapshotRequest struct {
 }
 
 type snapshotResponse struct {
-	Data   map[string]map[string][]byte `json:"data"`
-	Cursor uint64                       `json:"cursor"`
+	Data   map[string]map[string]json.RawMessage `json:"data"`
+	Cursor uint64                                `json:"cursor"`
 }
 
 // Mount registers sync routes on a Mizu app at /_sync/*.
@@ -467,19 +530,29 @@ func (e *Engine) handlePush() mizu.Handler {
 		var req pushRequest
 		if err := c.BindJSON(&req, 1<<20); err != nil { // 1MB max
 			return c.JSON(http.StatusBadRequest, map[string]string{
+				"code":  codeInvalid,
 				"error": "invalid request body",
 			})
 		}
 
 		if len(req.Mutations) == 0 {
 			return c.JSON(http.StatusBadRequest, map[string]string{
+				"code":  codeInvalid,
 				"error": "no mutations provided",
+			})
+		}
+
+		if len(req.Mutations) > e.maxPushBatch {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"code":  codeInvalid,
+				"error": "too many mutations in batch",
 			})
 		}
 
 		results, err := e.Push(c.Context(), req.Mutations)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"code":  codeInternal,
 				"error": err.Error(),
 			})
 		}
@@ -493,6 +566,7 @@ func (e *Engine) handlePull() mizu.Handler {
 		var req pullRequest
 		if err := c.BindJSON(&req, 1<<16); err != nil { // 64KB max
 			return c.JSON(http.StatusBadRequest, map[string]string{
+				"code":  codeInvalid,
 				"error": "invalid request body",
 			})
 		}
@@ -501,7 +575,7 @@ func (e *Engine) handlePull() mizu.Handler {
 		if err != nil {
 			code := http.StatusInternalServerError
 			errCode := codeInternal
-			if errors.Is(err, errCursorTooOld) {
+			if errors.Is(err, ErrCursorTooOld) {
 				code = http.StatusGone
 				errCode = codeCursorTooOld
 			}
@@ -523,6 +597,7 @@ func (e *Engine) handleSnapshot() mizu.Handler {
 		var req snapshotRequest
 		if err := c.BindJSON(&req, 1<<16); err != nil { // 64KB max
 			return c.JSON(http.StatusBadRequest, map[string]string{
+				"code":  codeInvalid,
 				"error": "invalid request body",
 			})
 		}
@@ -530,6 +605,7 @@ func (e *Engine) handleSnapshot() mizu.Handler {
 		data, cursor, err := e.Snapshot(c.Context(), req.Scope)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"code":  codeInternal,
 				"error": err.Error(),
 			})
 		}
