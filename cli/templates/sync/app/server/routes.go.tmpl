@@ -1,0 +1,21 @@
+package server
+
+import (
+	"github.com/go-mizu/mizu"
+
+	"{{.Module}}/handler"
+)
+
+func (a *App) routes() {
+	// Static files
+	a.app.Get("/static/*", mizu.Compat(staticHandler(a.cfg.Dev)))
+
+	// Page routes
+	a.app.Get("/", handler.Home(a.syncEngine))
+
+	// Sync API
+	a.syncEngine.Mount(a.app)
+
+	// WebSocket for live updates
+	a.app.Get("/ws", mizu.Compat(a.liveServer.Handler()))
+}

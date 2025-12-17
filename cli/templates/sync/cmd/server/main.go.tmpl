@@ -1,0 +1,22 @@
+package main
+
+import (
+	"log"
+
+	"{{.Module}}/app/server"
+)
+
+func main() {
+	cfg := server.LoadConfig()
+	app := server.New(cfg)
+
+	log.Printf("listening on %s", cfg.Addr)
+	if cfg.Dev {
+		log.Printf("development mode enabled")
+	}
+
+	// Listen blocks and handles graceful shutdown on SIGINT/SIGTERM
+	if err := app.Listen(cfg.Addr); err != nil {
+		log.Fatal(err)
+	}
+}

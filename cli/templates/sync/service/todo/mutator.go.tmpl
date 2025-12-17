@@ -1,0 +1,187 @@
+package todo
+
+import (
+	"context"
+	"encoding/json"
+	"time"
+
+	"github.com/go-mizu/mizu/sync"
+)
+
+// Todo represents a todo item.
+type Todo struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Done      bool      `json:"done"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Mutator handles todo mutations.
+type Mutator struct{}
+
+// NewMutator creates a new todo mutator.
+func NewMutator() *Mutator {
+	return &Mutator{}
+}
+
+// Apply applies a mutation and returns the resulting changes.
+func (m *Mutator) Apply(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
+	switch mut.Name {
+	case "todo.create":
+		return m.createTodo(ctx, store, mut)
+	case "todo.update":
+		return m.updateTodo(ctx, store, mut)
+	case "todo.delete":
+		return m.deleteTodo(ctx, store, mut)
+	case "todo.toggle":
+		return m.toggleTodo(ctx, store, mut)
+	default:
+		return nil, sync.ErrUnknownMutation
+	}
+}
+
+func (m *Mutator) createTodo(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
+	id, _ := mut.Args["id"].(string)
+	title, _ := mut.Args["title"].(string)
+
+	if id == "" || title == "" {
+		return nil, sync.ErrInvalidMutation
+	}
+
+	// Check if already exists
+	if _, err := store.Get(ctx, mut.Scope, "todo", id); err == nil {
+		return nil, sync.ErrConflict
+	}
+
+	todo := Todo{
+		ID:        id,
+		Title:     title,
+		Done:      false,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	data, err := json.Marshal(todo)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := store.Set(ctx, mut.Scope, "todo", id, data); err != nil {
+		return nil, err
+	}
+
+	return []sync.Change{{
+		Scope:  mut.Scope,
+		Entity: "todo",
+		ID:     id,
+		Op:     sync.Create,
+		Data:   data,
+	}}, nil
+}
+
+func (m *Mutator) updateTodo(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
+	id, _ := mut.Args["id"].(string)
+	if id == "" {
+		return nil, sync.ErrInvalidMutation
+	}
+
+	// Get existing todo
+	existingData, err := store.Get(ctx, mut.Scope, "todo", id)
+	if err != nil {
+		return nil, sync.ErrNotFound
+	}
+
+	var todo Todo
+	if err := json.Unmarshal(existingData, &todo); err != nil {
+		return nil, err
+	}
+
+	// Apply updates
+	if title, ok := mut.Args["title"].(string); ok {
+		todo.Title = title
+	}
+	if done, ok := mut.Args["done"].(bool); ok {
+		todo.Done = done
+	}
+	todo.UpdatedAt = time.Now()
+
+	data, err := json.Marshal(todo)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := store.Set(ctx, mut.Scope, "todo", id, data); err != nil {
+		return nil, err
+	}
+
+	return []sync.Change{{
+		Scope:  mut.Scope,
+		Entity: "todo",
+		ID:     id,
+		Op:     sync.Update,
+		Data:   data,
+	}}, nil
+}
+
+func (m *Mutator) deleteTodo(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
+	id, _ := mut.Args["id"].(string)
+	if id == "" {
+		return nil, sync.ErrInvalidMutation
+	}
+
+	// Check if exists
+	if _, err := store.Get(ctx, mut.Scope, "todo", id); err != nil {
+		return nil, sync.ErrNotFound
+	}
+
+	if err := store.Delete(ctx, mut.Scope, "todo", id); err != nil {
+		return nil, err
+	}
+
+	return []sync.Change{{
+		Scope:  mut.Scope,
+		Entity: "todo",
+		ID:     id,
+		Op:     sync.Delete,
+	}}, nil
+}
+
+func (m *Mutator) toggleTodo(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
+	id, _ := mut.Args["id"].(string)
+	if id == "" {
+		return nil, sync.ErrInvalidMutation
+	}
+
+	// Get existing todo
+	existingData, err := store.Get(ctx, mut.Scope, "todo", id)
+	if err != nil {
+		return nil, sync.ErrNotFound
+	}
+
+	var todo Todo
+	if err := json.Unmarshal(existingData, &todo); err != nil {
+		return nil, err
+	}
+
+	// Toggle done status
+	todo.Done = !todo.Done
+	todo.UpdatedAt = time.Now()
+
+	data, err := json.Marshal(todo)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := store.Set(ctx, mut.Scope, "todo", id, data); err != nil {
+		return nil, err
+	}
+
+	return []sync.Change{{
+		Scope:  mut.Scope,
+		Entity: "todo",
+		ID:     id,
+		Op:     sync.Update,
+		Data:   data,
+	}}, nil
+}

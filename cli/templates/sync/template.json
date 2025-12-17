@@ -1,0 +1,9 @@
+{
+  "name": "sync",
+  "description": "Offline-first app with sync, live updates, and reactive state",
+  "tags": ["go", "mizu", "sync", "live", "offline-first", "realtime"],
+  "variables": {
+    "name": { "description": "Project name", "default": "" },
+    "module": { "description": "Go module path", "default": "" }
+  }
+}
