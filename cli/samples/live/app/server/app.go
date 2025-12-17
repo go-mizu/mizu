@@ -11,8 +11,8 @@ import (
 	"github.com/go-mizu/mizu/live"
 	"github.com/go-mizu/mizu/view"
 
-	"{{.Module}}/assets"
-	"{{.Module}}/handler"
+	"example.com/live/assets"
+	"example.com/live/handler"
 )
 
 // App holds the application components.

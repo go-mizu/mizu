@@ -48,7 +48,7 @@ func New(cfg Config) *App {
 	}
 
 	// Add view middleware
-	a.app.Use(a.engine.Handler())
+	a.app.Use(a.engine.Middleware())
 
 	// Setup routes
 	a.routes()

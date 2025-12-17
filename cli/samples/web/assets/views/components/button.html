@@ -1,0 +1,32 @@
+{{$variant := default "primary" .Variant}}
+{{$size := default "md" .Size}}
+
+{{$baseClass := "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"}}
+
+{{$variantClass := ""}}
+{{if eq $variant "primary"}}
+    {{$variantClass = "bg-primary text-primary-foreground hover:bg-primary/90"}}
+{{else if eq $variant "secondary"}}
+    {{$variantClass = "bg-secondary text-secondary-foreground hover:bg-secondary/80"}}
+{{else if eq $variant "outline"}}
+    {{$variantClass = "border border-border bg-background hover:bg-accent hover:text-accent-foreground"}}
+{{else if eq $variant "ghost"}}
+    {{$variantClass = "hover:bg-accent hover:text-accent-foreground"}}
+{{else if eq $variant "destructive"}}
+    {{$variantClass = "bg-destructive text-destructive-foreground hover:bg-destructive/90"}}
+{{end}}
+
+{{$sizeClass := ""}}
+{{if eq $size "sm"}}
+    {{$sizeClass = "h-9 px-3"}}
+{{else if eq $size "md"}}
+    {{$sizeClass = "h-10 px-4 py-2"}}
+{{else if eq $size "lg"}}
+    {{$sizeClass = "h-11 px-8"}}
+{{end}}
+
+{{if .Href}}
+<a href="{{.Href}}" class="{{$baseClass}} {{$variantClass}} {{$sizeClass}}">{{.Label}}</a>
+{{else}}
+<button type="{{default "button" .Type}}" class="{{$baseClass}} {{$variantClass}} {{$sizeClass}}" {{if .Disabled}}disabled{{end}}>{{.Label}}</button>
+{{end}}

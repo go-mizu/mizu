@@ -1,0 +1,15 @@
+# binaries
+live
+dist/
+bin/
+
+# build artifacts
+*.exe
+*.out
+*.test
+coverage.out
+
+# editor
+.DS_Store
+.idea
+.vscode

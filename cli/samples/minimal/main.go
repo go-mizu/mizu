@@ -1,0 +1,20 @@
+package main
+
+import (
+	"log"
+
+	"github.com/go-mizu/mizu"
+)
+
+func main() {
+	app := mizu.New()
+
+	app.Get("/", func(c *mizu.Ctx) error {
+		return c.Text(200, "Hello from minimal\n")
+	})
+
+	log.Println("listening on :8080")
+	if err := app.Listen(":8080"); err != nil {
+		log.Fatal(err)
+	}
+}

@@ -1,0 +1,45 @@
+package main
+
+import (
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"example.com/contract/app/server"
+	"example.com/contract/service/todo"
+)
+
+func main() {
+	cfg := server.LoadConfig()
+
+	// Create the plain Go service (no framework dependencies).
+	todoSvc := &todo.Service{}
+
+	// Create the server with all transports.
+	srv, err := server.New(cfg, todoSvc)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Printf("listening on %s", cfg.Addr)
+	log.Printf("REST:     http://localhost%s/todos", cfg.Addr)
+	log.Printf("JSON-RPC: http://localhost%s/rpc", cfg.Addr)
+	log.Printf("OpenAPI:  http://localhost%s/openapi.json", cfg.Addr)
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+
+	errc := make(chan error, 1)
+	go func() { errc <- srv.ListenAndServe() }()
+
+	select {
+	case sig := <-stop:
+		log.Printf("shutdown: %s", sig.String())
+		_ = srv.Close()
+	case err := <-errc:
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+}
