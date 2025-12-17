@@ -93,8 +93,20 @@ test: ## Run tests (supports CHANGED=1 BASE=... EXCLUDE="...")
 			$(GO) list $(GOFLAGS) "./$$d" 2>/dev/null || true; \
 		done | sort -u)"; \
 	fi; \
-	if [ -n "$(EXCLUDE)" ] && [ -n "$$PKGS" ]
+	if [ -n "$(EXCLUDE)" ] && [ -n "$$PKGS" ]; then \
+		for excl in $(EXCLUDE); do \
+			PKGS="$$(printf "%s\n" $$PKGS | grep -v "$$excl" || true)"; \
+		done; \
+	fi; \
+	if [ -z "$$PKGS" ]; then \
+		echo "No packages to test after exclusions."; \
+		exit 0; \
+	fi; \
+	echo "Testing packages:"; \
+	printf "  %s\n" $$PKGS; \
+	$(GO) test $(GOTESTFLAGS) -count=$(COUNT) $(if $(RUN),-run $(RUN)) $$PKGS
 
+.PHONY: help
 help: ## Show help
 	@echo ""
 	@grep -E '^[a-zA-Z0-9_\-]+:.*?## ' $(MAKEFILE_LIST) | \
