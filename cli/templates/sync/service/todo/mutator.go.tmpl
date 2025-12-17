@@ -71,13 +71,15 @@ func (m *Mutator) createTodo(ctx context.Context, store sync.Store, mut sync.Mut
 		return nil, err
 	}
 
-	return []sync.Change{{
-		Scope:  mut.Scope,
-		Entity: "todo",
-		ID:     id,
-		Op:     sync.Create,
-		Data:   data,
-	}}, nil
+	return []sync.Change{
+		{
+			Scope:  mut.Scope,
+			Entity: "todo",
+			ID:     id,
+			Op:     sync.Create,
+			Data:   data,
+		},
+	}, nil
 }
 
 func (m *Mutator) updateTodo(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
@@ -115,13 +117,15 @@ func (m *Mutator) updateTodo(ctx context.Context, store sync.Store, mut sync.Mut
 		return nil, err
 	}
 
-	return []sync.Change{{
-		Scope:  mut.Scope,
-		Entity: "todo",
-		ID:     id,
-		Op:     sync.Update,
-		Data:   data,
-	}}, nil
+	return []sync.Change{
+		{
+			Scope:  mut.Scope,
+			Entity: "todo",
+			ID:     id,
+			Op:     sync.Update,
+			Data:   data,
+		},
+	}, nil
 }
 
 func (m *Mutator) deleteTodo(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
@@ -139,12 +143,14 @@ func (m *Mutator) deleteTodo(ctx context.Context, store sync.Store, mut sync.Mut
 		return nil, err
 	}
 
-	return []sync.Change{{
-		Scope:  mut.Scope,
-		Entity: "todo",
-		ID:     id,
-		Op:     sync.Delete,
-	}}, nil
+	return []sync.Change{
+		{
+			Scope:  mut.Scope,
+			Entity: "todo",
+			ID:     id,
+			Op:     sync.Delete,
+		},
+	}, nil
 }
 
 func (m *Mutator) toggleTodo(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
@@ -177,11 +183,13 @@ func (m *Mutator) toggleTodo(ctx context.Context, store sync.Store, mut sync.Mut
 		return nil, err
 	}
 
-	return []sync.Change{{
-		Scope:  mut.Scope,
-		Entity: "todo",
-		ID:     id,
-		Op:     sync.Update,
-		Data:   data,
-	}}, nil
+	return []sync.Change{
+		{
+			Scope:  mut.Scope,
+			Entity: "todo",
+			ID:     id,
+			Op:     sync.Update,
+			Data:   data,
+		},
+	}, nil
 }

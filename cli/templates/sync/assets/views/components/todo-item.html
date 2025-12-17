@@ -1,7 +1,7 @@
-<div class="todo-item{{if .Done}} done{{end}}" data-id="{{.ID}}">
-    <input type="checkbox" {{if .Done}}checked{{end}} onchange="todoApp.toggleTodo('{{.ID}}')">
-    <span class="todo-title">{{.Title}}</span>
-    <button class="delete-btn" onclick="todoApp.deleteTodo('{{.ID}}')" aria-label="Delete">
+<div class="todo-item{{ "{{" }}if .Done{{ "}}" }} done{{ "{{" }}end{{ "}}" }}" data-id="{{ "{{" }}.ID{{ "}}" }}">
+    <input type="checkbox" {{ "{{" }}if .Done{{ "}}" }}checked{{ "{{" }}end{{ "}}" }} onchange="todoApp.toggleTodo('{{ "{{" }}.ID{{ "}}" }}')">
+    <span class="todo-title">{{ "{{" }}.Title{{ "}}" }}</span>
+    <button class="delete-btn" onclick="todoApp.deleteTodo('{{ "{{" }}.ID{{ "}}" }}')" aria-label="Delete">
         &times;
     </button>
 </div>

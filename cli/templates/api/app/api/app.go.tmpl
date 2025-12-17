@@ -17,4 +17,3 @@ func New(cfg Config) *App {
 }
 
 func (a *App) Listen(addr string) error { return a.app.Listen(addr) }
-func (a *App) Shutdown() error          { return a.app.Shutdown() }
