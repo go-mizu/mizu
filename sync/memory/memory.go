@@ -7,6 +7,7 @@ package memory
 
 import (
 	"context"
+	"encoding/json"
 	gosync "sync"
 
 	"github.com/go-mizu/mizu/sync"
@@ -19,18 +20,18 @@ import (
 // Store is an in-memory implementation of sync.Store.
 type Store struct {
 	mu   gosync.RWMutex
-	data map[string]map[string]map[string][]byte // scope -> entity -> id -> data
+	data map[string]map[string]map[string]json.RawMessage // scope -> entity -> id -> data
 }
 
 // NewStore creates a new in-memory store.
 func NewStore() *Store {
 	return &Store{
-		data: make(map[string]map[string]map[string][]byte),
+		data: make(map[string]map[string]map[string]json.RawMessage),
 	}
 }
 
 // Get retrieves an entity by scope/entity/id.
-func (s *Store) Get(ctx context.Context, scope, entity, id string) ([]byte, error) {
+func (s *Store) Get(ctx context.Context, scope, entity, id string) (json.RawMessage, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -48,25 +49,25 @@ func (s *Store) Get(ctx context.Context, scope, entity, id string) ([]byte, erro
 	}
 
 	// Return a copy to avoid mutation
-	cp := make([]byte, len(data))
+	cp := make(json.RawMessage, len(data))
 	copy(cp, data)
 	return cp, nil
 }
 
 // Set stores an entity.
-func (s *Store) Set(ctx context.Context, scope, entity, id string, data []byte) error {
+func (s *Store) Set(ctx context.Context, scope, entity, id string, data json.RawMessage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.data[scope] == nil {
-		s.data[scope] = make(map[string]map[string][]byte)
+		s.data[scope] = make(map[string]map[string]json.RawMessage)
 	}
 	if s.data[scope][entity] == nil {
-		s.data[scope][entity] = make(map[string][]byte)
+		s.data[scope][entity] = make(map[string]json.RawMessage)
 	}
 
 	// Store a copy
-	cp := make([]byte, len(data))
+	cp := make(json.RawMessage, len(data))
 	copy(cp, data)
 	s.data[scope][entity][id] = cp
 	return nil
@@ -92,21 +93,21 @@ func (s *Store) Delete(ctx context.Context, scope, entity, id string) error {
 }
 
 // Snapshot returns all data in a scope.
-func (s *Store) Snapshot(ctx context.Context, scope string) (map[string]map[string][]byte, error) {
+func (s *Store) Snapshot(ctx context.Context, scope string) (map[string]map[string]json.RawMessage, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	entities, ok := s.data[scope]
 	if !ok {
-		return make(map[string]map[string][]byte), nil
+		return make(map[string]map[string]json.RawMessage), nil
 	}
 
 	// Deep copy
-	result := make(map[string]map[string][]byte, len(entities))
+	result := make(map[string]map[string]json.RawMessage, len(entities))
 	for entity, items := range entities {
-		result[entity] = make(map[string][]byte, len(items))
+		result[entity] = make(map[string]json.RawMessage, len(items))
 		for id, data := range items {
-			cp := make([]byte, len(data))
+			cp := make(json.RawMessage, len(data))
 			copy(cp, data)
 			result[entity][id] = cp
 		}
@@ -120,17 +121,19 @@ func (s *Store) Snapshot(ctx context.Context, scope string) (map[string]map[stri
 
 // Log is an in-memory implementation of sync.Log.
 type Log struct {
-	mu      gosync.RWMutex
-	entries map[string][]sync.Change // scope -> changes
-	cursors map[string]uint64        // scope -> current cursor
-	global  uint64                   // global cursor counter
+	mu        gosync.RWMutex
+	entries   map[string][]sync.Change // scope -> changes
+	cursors   map[string]uint64        // scope -> current cursor
+	minCursor map[string]uint64        // scope -> minimum cursor after trim
+	global    uint64                   // global cursor counter
 }
 
 // NewLog creates a new in-memory log.
 func NewLog() *Log {
 	return &Log{
-		entries: make(map[string][]sync.Change),
-		cursors: make(map[string]uint64),
+		entries:   make(map[string][]sync.Change),
+		cursors:   make(map[string]uint64),
+		minCursor: make(map[string]uint64),
 	}
 }
 
@@ -157,9 +160,15 @@ func (l *Log) Append(ctx context.Context, scope string, changes []sync.Change) (
 }
 
 // Since returns changes after the given cursor for a scope.
+// Returns ErrCursorTooOld if the cursor has been trimmed from the log.
 func (l *Log) Since(ctx context.Context, scope string, cursor uint64, limit int) ([]sync.Change, error) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
+
+	// Check if cursor is too old (has been trimmed)
+	if minCursor, ok := l.minCursor[scope]; ok && cursor > 0 && cursor < minCursor {
+		return nil, sync.ErrCursorTooOld
+	}
 
 	if limit <= 0 {
 		limit = 100
@@ -208,6 +217,8 @@ func (l *Log) Trim(ctx context.Context, scope string, before uint64) error {
 
 	if idx > 0 {
 		l.entries[scope] = entries[idx:]
+		// Track minimum cursor for ErrCursorTooOld detection
+		l.minCursor[scope] = before
 	}
 	return nil
 }

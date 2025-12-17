@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/sync"
@@ -26,12 +28,12 @@ func testMutator() sync.Mutator {
 			id, _ := mut.Args["id"].(string)
 			data, _ := mut.Args["data"].(string)
 
-			if err := store.Set(ctx, mut.Scope, entity, id, []byte(data)); err != nil {
+			if err := store.Set(ctx, mut.Scope, entity, id, json.RawMessage(data)); err != nil {
 				return nil, err
 			}
 
 			return []sync.Change{
-				{Entity: entity, ID: id, Op: sync.Create, Data: []byte(data)},
+				{Entity: entity, ID: id, Op: sync.Create, Data: json.RawMessage(data)},
 			}, nil
 
 		case "update":
@@ -43,12 +45,12 @@ func testMutator() sync.Mutator {
 				return nil, err
 			}
 
-			if err := store.Set(ctx, mut.Scope, entity, id, []byte(data)); err != nil {
+			if err := store.Set(ctx, mut.Scope, entity, id, json.RawMessage(data)); err != nil {
 				return nil, err
 			}
 
 			return []sync.Change{
-				{Entity: entity, ID: id, Op: sync.Update, Data: []byte(data)},
+				{Entity: entity, ID: id, Op: sync.Update, Data: json.RawMessage(data)},
 			}, nil
 
 		case "delete":
@@ -322,8 +324,8 @@ func TestEngine_Push_DefaultScope(t *testing.T) {
 
 	e.Push(ctx, mutations)
 
-	if notifiedScope != "_default" {
-		t.Errorf("notified scope = %q, want %q", notifiedScope, "_default")
+	if notifiedScope != sync.DefaultScope {
+		t.Errorf("notified scope = %q, want %q", notifiedScope, sync.DefaultScope)
 	}
 }
 
@@ -739,8 +741,8 @@ func TestHTTP_Snapshot_Success(t *testing.T) {
 	}
 
 	var resp struct {
-		Data   map[string]map[string][]byte `json:"data"`
-		Cursor uint64                       `json:"cursor"`
+		Data   map[string]map[string]json.RawMessage `json:"data"`
+		Cursor uint64                                `json:"cursor"`
 	}
 	json.NewDecoder(rec.Body).Decode(&resp)
 
@@ -763,7 +765,7 @@ func TestHTTP_Snapshot_Empty(t *testing.T) {
 	}
 
 	var resp struct {
-		Data map[string]map[string][]byte `json:"data"`
+		Data map[string]map[string]json.RawMessage `json:"data"`
 	}
 	json.NewDecoder(rec.Body).Decode(&resp)
 
@@ -824,5 +826,265 @@ func TestHTTP_DefaultScope(t *testing.T) {
 
 	if len(resp.Changes) != 1 {
 		t.Errorf("Got %d changes, want 1", len(resp.Changes))
+	}
+}
+
+// -----------------------------------------------------------------------------
+// New Feature Tests
+// -----------------------------------------------------------------------------
+
+func TestEngine_Pull_CursorTooOld(t *testing.T) {
+	ctx := context.Background()
+	log := memory.NewLog()
+
+	e := sync.New(sync.Options{
+		Store:   memory.NewStore(),
+		Log:     log,
+		Mutator: testMutator(),
+	})
+
+	// Create some data
+	for i := 0; i < 5; i++ {
+		e.Push(ctx, []sync.Mutation{
+			{Name: "create", Scope: "test", Args: map[string]any{"entity": "e", "id": string(rune('a' + i)), "data": "{}"}},
+		})
+	}
+
+	// Trim log entries before cursor 3
+	log.Trim(ctx, "test", 3)
+
+	// Try to pull with a cursor that's been trimmed
+	_, _, err := e.Pull(ctx, "test", 1, 100)
+	if !errors.Is(err, sync.ErrCursorTooOld) {
+		t.Errorf("Pull with old cursor should return ErrCursorTooOld, got %v", err)
+	}
+
+	// Pull with cursor at trim point should work
+	changes, _, err := e.Pull(ctx, "test", 3, 100)
+	if err != nil {
+		t.Errorf("Pull with valid cursor should succeed, got %v", err)
+	}
+	if len(changes) != 2 {
+		t.Errorf("Got %d changes, want 2 (cursors 4 and 5)", len(changes))
+	}
+}
+
+func TestHTTP_Pull_CursorTooOld(t *testing.T) {
+	log := memory.NewLog()
+	e := sync.New(sync.Options{
+		Store:   memory.NewStore(),
+		Log:     log,
+		Applied: memory.NewApplied(),
+		Mutator: testMutator(),
+	})
+
+	app := mizu.New()
+	e.Mount(app)
+
+	ctx := context.Background()
+
+	// Create some data and trim
+	for i := 0; i < 5; i++ {
+		e.Push(ctx, []sync.Mutation{
+			{Name: "create", Scope: "test", Args: map[string]any{"entity": "e", "id": string(rune('a' + i)), "data": "{}"}},
+		})
+	}
+	log.Trim(ctx, "test", 3)
+
+	// Pull with trimmed cursor
+	body := map[string]any{"scope": "test", "cursor": 1}
+	rec := doRequest(app, "POST", "/_sync/pull", body)
+
+	if rec.Code != http.StatusGone {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusGone)
+	}
+
+	var resp struct {
+		Code  string `json:"code"`
+		Error string `json:"error"`
+	}
+	json.NewDecoder(rec.Body).Decode(&resp)
+
+	if resp.Code != "cursor_too_old" {
+		t.Errorf("code = %q, want %q", resp.Code, "cursor_too_old")
+	}
+}
+
+func TestEngine_InjectableTime(t *testing.T) {
+	ctx := context.Background()
+
+	fixedTime := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	e := sync.New(sync.Options{
+		Store:   memory.NewStore(),
+		Log:     memory.NewLog(),
+		Mutator: testMutator(),
+		Now: func() time.Time {
+			return fixedTime
+		},
+	})
+
+	results, _ := e.Push(ctx, []sync.Mutation{
+		{Name: "create", Scope: "test", Args: map[string]any{"entity": "e", "id": "1", "data": "{}"}},
+	})
+
+	if len(results[0].Changes) == 0 {
+		t.Fatal("No changes returned")
+	}
+
+	changeTime := results[0].Changes[0].Time
+	if !changeTime.Equal(fixedTime) {
+		t.Errorf("Change time = %v, want %v", changeTime, fixedTime)
+	}
+}
+
+func TestEngine_ScopeFunc(t *testing.T) {
+	ctx := context.Background()
+
+	var capturedScope string
+	e := sync.New(sync.Options{
+		Store:   memory.NewStore(),
+		Log:     memory.NewLog(),
+		Mutator: testMutator(),
+		ScopeFunc: func(ctx context.Context, claimed string) (string, error) {
+			// Override scope to "authorized-scope"
+			capturedScope = claimed
+			return "authorized-scope", nil
+		},
+		Notify: sync.NotifierFunc(func(scope string, cursor uint64) {
+			// Verify notification uses the overridden scope
+			if scope != "authorized-scope" {
+				panic("expected authorized-scope")
+			}
+		}),
+	})
+
+	// Client claims scope "user-scope"
+	e.Push(ctx, []sync.Mutation{
+		{Name: "create", Scope: "user-scope", Args: map[string]any{"entity": "e", "id": "1", "data": "{}"}},
+	})
+
+	if capturedScope != "user-scope" {
+		t.Errorf("ScopeFunc received scope %q, want %q", capturedScope, "user-scope")
+	}
+
+	// Verify data is stored in the authorized scope
+	changes, _, _ := e.Pull(ctx, "authorized-scope", 0, 100)
+	if len(changes) != 1 {
+		t.Errorf("Expected 1 change in authorized-scope, got %d", len(changes))
+	}
+
+	// Original scope should be empty
+	changes, _, _ = e.Pull(ctx, "user-scope", 0, 100)
+	if len(changes) != 0 {
+		t.Errorf("Expected 0 changes in user-scope, got %d", len(changes))
+	}
+}
+
+func TestEngine_ScopeFunc_Error(t *testing.T) {
+	ctx := context.Background()
+
+	e := sync.New(sync.Options{
+		Store:   memory.NewStore(),
+		Log:     memory.NewLog(),
+		Mutator: testMutator(),
+		ScopeFunc: func(ctx context.Context, claimed string) (string, error) {
+			return "", errors.New("unauthorized")
+		},
+	})
+
+	results, _ := e.Push(ctx, []sync.Mutation{
+		{Name: "create", Scope: "test", Args: map[string]any{"entity": "e", "id": "1", "data": "{}"}},
+	})
+
+	if results[0].OK {
+		t.Error("Expected mutation to fail due to ScopeFunc error")
+	}
+	if results[0].Code != "internal_error" {
+		t.Errorf("code = %q, want %q", results[0].Code, "internal_error")
+	}
+}
+
+func TestEngine_MaxPullLimit(t *testing.T) {
+	ctx := context.Background()
+
+	e := sync.New(sync.Options{
+		Store:        memory.NewStore(),
+		Log:          memory.NewLog(),
+		Mutator:      testMutator(),
+		MaxPullLimit: 5, // Limit to 5
+	})
+
+	// Create 10 items
+	for i := 0; i < 10; i++ {
+		e.Push(ctx, []sync.Mutation{
+			{Name: "create", Scope: "test", Args: map[string]any{"entity": "e", "id": string(rune('a' + i)), "data": "{}"}},
+		})
+	}
+
+	// Try to pull with a large limit
+	changes, hasMore, _ := e.Pull(ctx, "test", 0, 1000)
+
+	if len(changes) != 5 {
+		t.Errorf("Got %d changes, want 5 (capped by MaxPullLimit)", len(changes))
+	}
+	if !hasMore {
+		t.Error("Expected hasMore=true")
+	}
+}
+
+func TestHTTP_MaxPushBatch(t *testing.T) {
+	e := sync.New(sync.Options{
+		Store:        memory.NewStore(),
+		Log:          memory.NewLog(),
+		Mutator:      testMutator(),
+		MaxPushBatch: 3, // Limit to 3
+	})
+
+	app := mizu.New()
+	e.Mount(app)
+
+	// Try to push more than limit
+	mutations := make([]map[string]any, 5)
+	for i := 0; i < 5; i++ {
+		mutations[i] = map[string]any{
+			"name":  "create",
+			"scope": "test",
+			"args":  map[string]any{"entity": "e", "id": string(rune('a' + i)), "data": "{}"},
+		}
+	}
+
+	body := map[string]any{"mutations": mutations}
+	rec := doRequest(app, "POST", "/_sync/push", body)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+
+	var resp struct {
+		Code  string `json:"code"`
+		Error string `json:"error"`
+	}
+	json.NewDecoder(rec.Body).Decode(&resp)
+
+	if resp.Error != "too many mutations in batch" {
+		t.Errorf("error = %q, want %q", resp.Error, "too many mutations in batch")
+	}
+}
+
+func TestDefaultScope_Constant(t *testing.T) {
+	// Verify the constant is exported and correct
+	if sync.DefaultScope != "_default" {
+		t.Errorf("DefaultScope = %q, want %q", sync.DefaultScope, "_default")
+	}
+}
+
+func TestErrCursorTooOld_Exported(t *testing.T) {
+	// Verify the error is exported
+	if sync.ErrCursorTooOld == nil {
+		t.Error("ErrCursorTooOld should not be nil")
+	}
+	if sync.ErrCursorTooOld.Error() != "sync: cursor too old" {
+		t.Errorf("ErrCursorTooOld message = %q, want %q", sync.ErrCursorTooOld.Error(), "sync: cursor too old")
 	}
 }
