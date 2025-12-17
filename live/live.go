@@ -67,6 +67,7 @@ import (
 	"crypto/rand"
 	"crypto/sha1" //nolint:gosec // G505: SHA1 is required by WebSocket protocol (RFC 6455)
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"io"
@@ -91,6 +92,15 @@ var (
 
 	// ErrAuthFailed is returned when authentication fails.
 	ErrAuthFailed = errors.New("live: authentication failed")
+
+	// ErrInvalidVersion is returned when the WebSocket version is not supported.
+	ErrInvalidVersion = errors.New("live: unsupported WebSocket version")
+
+	// ErrMessageTooLarge is returned when a message exceeds the read limit.
+	ErrMessageTooLarge = errors.New("live: message too large")
+
+	// ErrProtocolError is returned for WebSocket protocol violations.
+	ErrProtocolError = errors.New("live: protocol error")
 )
 
 // -----------------------------------------------------------------------------
@@ -140,13 +150,21 @@ func (m Meta) GetString(key string) string {
 // Options
 // -----------------------------------------------------------------------------
 
-const defaultQueueSize = 256
+const (
+	defaultQueueSize = 256
+	defaultReadLimit = 4 * 1024 * 1024 // 4MB
+)
 
 // Options configures the Server.
 type Options struct {
 	// QueueSize is the per-session send queue size. Default: 256.
 	// When the queue fills up, the session is closed.
 	QueueSize int
+
+	// ReadLimit is the maximum message size in bytes. Default: 4MB.
+	// Messages exceeding this limit cause the connection to be closed
+	// with a 1009 (message too big) close code.
+	ReadLimit int
 
 	// OnAuth is called to authenticate new connections.
 	// Return Meta with user info on success, or an error to reject.
@@ -155,6 +173,8 @@ type Options struct {
 
 	// OnMessage is called when a message is received from a client.
 	// This is where you implement subscribe/unsubscribe/publish logic.
+	// The live package does not interpret message types; higher layers
+	// define the protocol (e.g., "subscribe", "publish", "unsubscribe").
 	OnMessage func(ctx context.Context, s *Session, msg Message)
 
 	// OnClose is called when a session is closed.
@@ -162,8 +182,14 @@ type Options struct {
 	OnClose func(s *Session, err error)
 
 	// Origins is a list of allowed origins for WebSocket connections.
-	// If empty, all origins are allowed.
+	// If empty and CheckOrigin is nil, all origins are allowed.
+	// For more complex origin validation, use CheckOrigin instead.
 	Origins []string
+
+	// CheckOrigin validates the Origin header. Return true to allow.
+	// If set, this takes precedence over Origins.
+	// If nil and Origins is empty, all origins are allowed.
+	CheckOrigin func(r *http.Request) bool
 
 	// IDGenerator generates unique session IDs.
 	// If nil, random hex IDs are generated.
@@ -176,15 +202,19 @@ type Options struct {
 
 // Server owns sessions, pubsub state, and the WebSocket handler.
 type Server struct {
-	opts     Options
-	pubsub   *memPubSub
-	sessions sync.Map // map[string]*Session
+	opts         Options
+	pubsub       *memPubSub
+	sessions     sync.Map // map[string]*Session
+	sessionCount atomic.Int64
 }
 
 // New creates a new live server with the given options.
 func New(opts Options) *Server {
 	if opts.QueueSize <= 0 {
 		opts.QueueSize = defaultQueueSize
+	}
+	if opts.ReadLimit <= 0 {
+		opts.ReadLimit = defaultReadLimit
 	}
 	if opts.IDGenerator == nil {
 		opts.IDGenerator = generateID
@@ -227,23 +257,21 @@ func (srv *Server) Unsubscribe(s *Session, topic string) {
 }
 
 // SessionCount returns the number of connected sessions.
+// This is an O(1) operation using an atomic counter.
 func (srv *Server) SessionCount() int {
-	count := 0
-	srv.sessions.Range(func(_, _ any) bool {
-		count++
-		return true
-	})
-	return count
+	return int(srv.sessionCount.Load())
 }
 
 // addSession registers a session with the server.
 func (srv *Server) addSession(s *Session) {
 	srv.sessions.Store(s.id, s)
+	srv.sessionCount.Add(1)
 }
 
 // removeSession unregisters a session from the server.
 func (srv *Server) removeSession(s *Session) {
 	srv.sessions.Delete(s.id)
+	srv.sessionCount.Add(-1)
 	srv.pubsub.unsubscribeAll(s)
 }
 
@@ -279,6 +307,7 @@ type Session struct {
 	mu       sync.RWMutex
 	closed   atomic.Bool
 	doneCh   chan struct{}
+	conn     net.Conn // underlying connection for cleanup
 }
 
 // newSession creates a new session with the given ID and metadata.
@@ -334,12 +363,17 @@ func (s *Session) Close() error {
 }
 
 // closeWithError closes the session with the given error.
+// It also closes the underlying connection to unblock any blocked reads.
 func (s *Session) closeWithError(err error) error {
 	if !s.closed.CompareAndSwap(false, true) {
 		return nil // Already closed
 	}
 	_ = err // error stored for internal use only
 	close(s.doneCh)
+	// Close the underlying connection to unblock readLoop
+	if s.conn != nil {
+		_ = s.conn.Close()
+	}
 	return nil
 }
 
@@ -524,8 +558,9 @@ func decodeMessage(data []byte) (Message, error) {
 
 const websocketGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
-// WebSocket message types
+// WebSocket message types (opcodes)
 const (
+	wsContinuation  = 0
 	wsTextMessage   = 1
 	wsBinaryMessage = 2
 	wsCloseMessage  = 8
@@ -533,12 +568,22 @@ const (
 	wsPongMessage   = 10
 )
 
+// WebSocket close codes per RFC 6455
+const (
+	wsCloseNormal        = 1000 // Normal closure
+	wsCloseGoingAway     = 1001 // Endpoint going away
+	wsCloseProtocolError = 1002 // Protocol error
+	wsCloseUnsupported   = 1003 // Unsupported data type
+	wsCloseTooLarge      = 1009 // Message too big
+)
+
 // wsConn represents a WebSocket connection.
 type wsConn struct {
-	conn   net.Conn
-	reader *bufio.Reader
-	writer *bufio.Writer
-	mu     sync.Mutex
+	conn      net.Conn
+	reader    *bufio.Reader
+	writer    *bufio.Writer
+	mu        sync.Mutex
+	readLimit int // maximum message size
 }
 
 // handleConn handles a new WebSocket connection.
@@ -551,8 +596,21 @@ func (srv *Server) handleConn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check origin
-	if len(srv.opts.Origins) > 0 {
+	// Validate WebSocket version (RFC 6455 requires version 13)
+	version := r.Header.Get("Sec-WebSocket-Version")
+	if version != "13" {
+		w.Header().Set("Sec-WebSocket-Version", "13")
+		http.Error(w, "unsupported WebSocket version", http.StatusUpgradeRequired)
+		return
+	}
+
+	// Check origin using CheckOrigin callback or Origins list
+	if srv.opts.CheckOrigin != nil {
+		if !srv.opts.CheckOrigin(r) {
+			http.Error(w, "forbidden origin", http.StatusForbidden)
+			return
+		}
+	} else if len(srv.opts.Origins) > 0 {
 		origin := r.Header.Get("Origin")
 		allowed := false
 		for _, o := range srv.opts.Origins {
@@ -578,10 +636,14 @@ func (srv *Server) handleConn(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Get WebSocket key
+	// Get and validate WebSocket key
 	key := r.Header.Get("Sec-WebSocket-Key")
 	if key == "" {
 		http.Error(w, "missing Sec-WebSocket-Key", http.StatusBadRequest)
+		return
+	}
+	if !validateWebSocketKey(key) {
+		http.Error(w, "invalid Sec-WebSocket-Key", http.StatusBadRequest)
 		return
 	}
 
@@ -612,13 +674,15 @@ func (srv *Server) handleConn(w http.ResponseWriter, r *http.Request) {
 
 	// Create WebSocket connection wrapper
 	ws := &wsConn{
-		conn:   conn,
-		reader: bufrw.Reader,
-		writer: bufrw.Writer,
+		conn:      conn,
+		reader:    bufrw.Reader,
+		writer:    bufrw.Writer,
+		readLimit: srv.opts.ReadLimit,
 	}
 
-	// Create session
+	// Create session and store connection for cleanup
 	session := newSession(srv.opts.IDGenerator(), meta, srv.opts.QueueSize, srv)
+	session.conn = conn
 	srv.addSession(session)
 
 	// Start write loop
@@ -627,15 +691,21 @@ func (srv *Server) handleConn(w http.ResponseWriter, r *http.Request) {
 	// Run read loop (blocking)
 	readErr := srv.readLoop(r, session, ws)
 
-	// Cleanup
+	// Cleanup (closeWithError already closes the underlying conn)
 	session.closeWithError(readErr)
 	srv.removeSession(session)
-	_ = conn.Close()
 
 	// Call OnClose callback
 	if srv.opts.OnClose != nil {
 		srv.opts.OnClose(session, readErr)
 	}
+}
+
+// validateWebSocketKey validates that the Sec-WebSocket-Key is valid base64
+// and decodes to exactly 16 bytes (per RFC 6455).
+func validateWebSocketKey(key string) bool {
+	decoded, err := base64.StdEncoding.DecodeString(key)
+	return err == nil && len(decoded) == 16
 }
 
 // readLoop reads messages from the WebSocket and dispatches to OnMessage.
@@ -712,16 +782,34 @@ func computeAcceptKey(key string) string {
 }
 
 // readMessage reads a WebSocket frame.
+// It enforces RFC 6455 requirements:
+// - Client frames must be masked
+// - Control frames must have payload ≤ 125 bytes and FIN=1
+// - Fragmentation is rejected (FIN=0 or opcode=0 continuation)
+// - Message size is limited by readLimit
 //
 //nolint:cyclop // WebSocket frame parsing requires multiple format checks
 func (ws *wsConn) readMessage() (messageType int, data []byte, err error) {
-	// Read first byte (FIN + opcode)
+	// Read first byte (FIN + RSV + opcode)
 	b, err := ws.reader.ReadByte()
 	if err != nil {
 		return 0, nil, err
 	}
 
+	fin := b&0x80 != 0
 	opcode := int(b & 0x0F)
+
+	// Reject continuation frames (we don't support fragmentation)
+	if opcode == wsContinuation {
+		return 0, nil, ErrProtocolError
+	}
+
+	// Reject fragmented data frames (FIN=0)
+	// Control frames (8-10) must always have FIN=1
+	isControlFrame := opcode >= wsCloseMessage
+	if !fin {
+		return 0, nil, ErrProtocolError
+	}
 
 	// Read second byte (MASK + payload length)
 	b, err = ws.reader.ReadByte()
@@ -732,6 +820,16 @@ func (ws *wsConn) readMessage() (messageType int, data []byte, err error) {
 	masked := b&0x80 != 0
 	length := int(b & 0x7F)
 
+	// RFC 6455: Client frames MUST be masked
+	if !masked {
+		return 0, nil, ErrProtocolError
+	}
+
+	// Control frames must have payload length ≤ 125
+	if isControlFrame && length > 125 {
+		return 0, nil, ErrProtocolError
+	}
+
 	// Extended payload length
 	switch length {
 	case 126:
@@ -739,22 +837,29 @@ func (ws *wsConn) readMessage() (messageType int, data []byte, err error) {
 		if _, err := io.ReadFull(ws.reader, lenBytes); err != nil {
 			return 0, nil, err
 		}
-		length = int(lenBytes[0])<<8 | int(lenBytes[1])
+		length = int(binary.BigEndian.Uint16(lenBytes))
 	case 127:
 		lenBytes := make([]byte, 8)
 		if _, err := io.ReadFull(ws.reader, lenBytes); err != nil {
 			return 0, nil, err
 		}
-		length = int(lenBytes[4])<<24 | int(lenBytes[5])<<16 | int(lenBytes[6])<<8 | int(lenBytes[7])
+		length64 := binary.BigEndian.Uint64(lenBytes)
+		// Check for overflow and read limit
+		if length64 > uint64(ws.readLimit) {
+			return 0, nil, ErrMessageTooLarge
+		}
+		length = int(length64)
 	}
 
-	// Read masking key
-	var mask []byte
-	if masked {
-		mask = make([]byte, 4)
-		if _, err := io.ReadFull(ws.reader, mask); err != nil {
-			return 0, nil, err
-		}
+	// Check read limit for all payload lengths
+	if ws.readLimit > 0 && length > ws.readLimit {
+		return 0, nil, ErrMessageTooLarge
+	}
+
+	// Read masking key (always present since we require masked frames)
+	mask := make([]byte, 4)
+	if _, err := io.ReadFull(ws.reader, mask); err != nil {
+		return 0, nil, err
 	}
 
 	// Read payload
@@ -764,10 +869,8 @@ func (ws *wsConn) readMessage() (messageType int, data []byte, err error) {
 	}
 
 	// Unmask data
-	if masked {
-		for i := range data {
-			data[i] ^= mask[i%4]
-		}
+	for i := range data {
+		data[i] ^= mask[i%4]
 	}
 
 	return opcode, data, nil
