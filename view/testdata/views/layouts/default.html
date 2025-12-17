@@ -1,13 +1,11 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>{{slot "title" "Default Title"}}</title>
-    {{stack "styles"}}
+    <title>{{if .Page.Title}}{{.Page.Title}}{{else}}Default Title{{end}}</title>
 </head>
 <body>
-    <header>{{slot "header" "Default Header"}}</header>
-    <main>{{slot "content"}}</main>
-    <footer>{{slot "footer" "Default Footer"}}</footer>
-    {{stack "scripts"}}
+    <header>Default Header</header>
+    <main>{{.Content}}</main>
+    <footer>Default Footer</footer>
 </body>
 </html>

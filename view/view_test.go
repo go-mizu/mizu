@@ -87,24 +87,6 @@ func TestEngine_Render(t *testing.T) {
 		if !strings.Contains(output, "Welcome, Alice") {
 			t.Errorf("expected 'Welcome, Alice' in output, got: %s", output)
 		}
-		if !strings.Contains(output, "Home Page") {
-			t.Errorf("expected 'Home Page' title in output, got: %s", output)
-		}
-	})
-
-	t.Run("page with custom layout", func(t *testing.T) {
-		var buf bytes.Buffer
-		err := e.Render(&buf, "with-layout", nil)
-		if err != nil {
-			t.Fatalf("render error: %v", err)
-		}
-		output := buf.String()
-		if strings.Contains(output, "<!DOCTYPE html>") {
-			t.Error("expected bare layout (no DOCTYPE)")
-		}
-		if !strings.Contains(output, "Using bare layout") {
-			t.Errorf("expected 'Using bare layout' in output, got: %s", output)
-		}
 	})
 
 	t.Run("page with layout override", func(t *testing.T) {
@@ -131,38 +113,29 @@ func TestEngine_Render(t *testing.T) {
 	})
 }
 
-func TestEngine_Component(t *testing.T) {
+func TestEngine_RenderWithContent(t *testing.T) {
 	e := New(Config{
 		Dir:         "testdata/views",
 		Development: true,
 	})
 
-	t.Run("simple component", func(t *testing.T) {
+	t.Run("page renders into layout content", func(t *testing.T) {
 		var buf bytes.Buffer
-		err := e.Component(&buf, "button", Data{
-			"Label":   "Click Me",
-			"Variant": "primary",
-		})
+		err := e.Render(&buf, "home", Data{"Name": "Bob"})
 		if err != nil {
 			t.Fatalf("render error: %v", err)
 		}
 		output := buf.String()
-		if !strings.Contains(output, `class="btn btn-primary"`) {
-			t.Errorf("expected btn-primary class, got: %s", output)
-		}
-		if !strings.Contains(output, "Click Me") {
-			t.Errorf("expected 'Click Me' label, got: %s", output)
-		}
-	})
 
-	t.Run("component not found", func(t *testing.T) {
-		var buf bytes.Buffer
-		err := e.Component(&buf, "nonexistent", nil)
-		if err == nil {
-			t.Fatal("expected error for nonexistent component")
+		// Check that content is rendered in layout
+		if !strings.Contains(output, "Welcome, Bob") {
+			t.Errorf("expected page content in layout, got: %s", output)
 		}
-		if !errors.Is(err, ErrNotFound) {
-			t.Errorf("expected ErrNotFound, got: %v", err)
+		if !strings.Contains(output, "Default Header") {
+			t.Errorf("expected default header, got: %s", output)
+		}
+		if !strings.Contains(output, "Default Footer") {
+			t.Errorf("expected default footer, got: %s", output)
 		}
 	})
 }
@@ -204,30 +177,6 @@ func TestEngine_PartialInPage(t *testing.T) {
 	}
 	if !strings.Contains(output, "Sidebar Navigation") {
 		t.Errorf("expected 'Sidebar Navigation', got: %s", output)
-	}
-}
-
-func TestEngine_Slots(t *testing.T) {
-	e := New(Config{
-		Dir:         "testdata/views",
-		Development: true,
-	})
-
-	var buf bytes.Buffer
-	err := e.Render(&buf, "home", Data{"Name": "Bob"})
-	if err != nil {
-		t.Fatalf("render error: %v", err)
-	}
-	output := buf.String()
-
-	if !strings.Contains(output, "<title>Home Page</title>") {
-		t.Errorf("expected title slot filled, got: %s", output)
-	}
-	if !strings.Contains(output, "Default Header") {
-		t.Errorf("expected default header, got: %s", output)
-	}
-	if !strings.Contains(output, "Default Footer") {
-		t.Errorf("expected default footer, got: %s", output)
 	}
 }
 
@@ -283,14 +232,14 @@ func TestEngine_EmbedFS(t *testing.T) {
 	}
 }
 
-func TestHandler(t *testing.T) {
+func TestMiddleware(t *testing.T) {
 	e := New(Config{
 		Dir:         "testdata/views",
 		Development: true,
 	})
 
 	app := mizu.New()
-	app.Use(e.Handler())
+	app.Use(e.Middleware())
 
 	app.Get("/", func(c *mizu.Ctx) error {
 		return Render(c, "home", Data{"Name": "Test"})
@@ -316,7 +265,7 @@ func TestRender_Status(t *testing.T) {
 	})
 
 	app := mizu.New()
-	app.Use(e.Handler())
+	app.Use(e.Middleware())
 
 	app.Get("/not-found", func(c *mizu.Ctx) error {
 		return Render(c, "simple", nil, Status(404), NoLayout())
@@ -332,32 +281,6 @@ func TestRender_Status(t *testing.T) {
 	}
 }
 
-func TestComponent_Handler(t *testing.T) {
-	e := New(Config{
-		Dir:         "testdata/views",
-		Development: true,
-	})
-
-	app := mizu.New()
-	app.Use(e.Handler())
-
-	app.Get("/button", func(c *mizu.Ctx) error {
-		return Component(c, "button", Data{
-			"Label":   "Submit",
-			"Variant": "success",
-		})
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/button", nil)
-	rec := httptest.NewRecorder()
-
-	app.ServeHTTP(rec, req)
-
-	if !strings.Contains(rec.Body.String(), "btn-success") {
-		t.Errorf("expected btn-success, got: %s", rec.Body.String())
-	}
-}
-
 func TestFrom(t *testing.T) {
 	e := New(Config{
 		Dir:         "testdata/views",
@@ -365,7 +288,7 @@ func TestFrom(t *testing.T) {
 	})
 
 	app := mizu.New()
-	app.Use(e.Handler())
+	app.Use(e.Middleware())
 
 	var gotEngine *Engine
 	app.Get("/", func(c *mizu.Ctx) error {
@@ -394,27 +317,14 @@ func TestErrors(t *testing.T) {
 		if !errors.Is(err, ErrNotFound) {
 			t.Error("expected layout Error to match ErrNotFound")
 		}
-
-		err = &Error{Kind: "component", Name: "test"}
-		if !errors.Is(err, ErrNotFound) {
-			t.Error("expected component Error to match ErrNotFound")
-		}
-
-		err = &Error{Kind: "partial", Name: "test"}
-		if !errors.Is(err, ErrNotFound) {
-			t.Error("expected partial Error to match ErrNotFound")
-		}
 	})
 
 	t.Run("Error with wrapped error", func(t *testing.T) {
 		inner := errors.New("parse error")
-		err := &Error{Kind: "page", Name: "test", Line: 10, Err: inner}
+		err := &Error{Kind: "page", Name: "test", Err: inner}
 
 		if !strings.Contains(err.Error(), "test") {
 			t.Error("expected template name in error")
-		}
-		if !strings.Contains(err.Error(), "10") {
-			t.Error("expected line number in error")
 		}
 		if !errors.Is(err, inner) {
 			t.Error("expected Unwrap to return inner error")
@@ -522,46 +432,10 @@ func TestEmptyFunc(t *testing.T) {
 	}
 }
 
-func TestTernaryFunc(t *testing.T) {
-	t.Run("true condition", func(t *testing.T) {
-		result := ternaryFunc(true, "yes", "no")
-		if result != "yes" {
-			t.Errorf("expected 'yes', got %v", result)
-		}
-	})
-
-	t.Run("false condition", func(t *testing.T) {
-		result := ternaryFunc(false, "yes", "no")
-		if result != "no" {
-			t.Errorf("expected 'no', got %v", result)
-		}
-	})
-}
-
-func TestCoalesceFunc(t *testing.T) {
-	t.Run("returns first non-empty", func(t *testing.T) {
-		result := coalesceFunc("", nil, "value", "other")
-		if result != "value" {
-			t.Errorf("expected 'value', got %v", result)
-		}
-	})
-
-	t.Run("returns nil if all empty", func(t *testing.T) {
-		result := coalesceFunc("", nil, 0)
-		if result != nil {
-			t.Errorf("expected nil, got %v", result)
-		}
-	})
-}
-
 func TestComparisonFuncs(t *testing.T) {
 	funcs := baseFuncs()
 	eq := funcs["eq"].(func(any, any) bool)
 	ne := funcs["ne"].(func(any, any) bool)
-	lt := funcs["lt"].(func(any, any) bool)
-	le := funcs["le"].(func(any, any) bool)
-	gt := funcs["gt"].(func(any, any) bool)
-	ge := funcs["ge"].(func(any, any) bool)
 
 	t.Run("eq", func(t *testing.T) {
 		if !eq(5, 5) {
@@ -578,100 +452,6 @@ func TestComparisonFuncs(t *testing.T) {
 		}
 		if ne(5, 5) {
 			t.Error("expected 5 == 5")
-		}
-	})
-
-	t.Run("lt", func(t *testing.T) {
-		if !lt(5, 6) {
-			t.Error("expected 5 < 6")
-		}
-		if lt(6, 5) {
-			t.Error("expected not 6 < 5")
-		}
-	})
-
-	t.Run("le", func(t *testing.T) {
-		if !le(5, 6) {
-			t.Error("expected 5 <= 6")
-		}
-		if !le(5, 5) {
-			t.Error("expected 5 <= 5")
-		}
-	})
-
-	t.Run("gt", func(t *testing.T) {
-		if !gt(6, 5) {
-			t.Error("expected 6 > 5")
-		}
-		if gt(5, 6) {
-			t.Error("expected not 5 > 6")
-		}
-	})
-
-	t.Run("ge", func(t *testing.T) {
-		if !ge(6, 5) {
-			t.Error("expected 6 >= 5")
-		}
-		if !ge(5, 5) {
-			t.Error("expected 5 >= 5")
-		}
-	})
-}
-
-func TestMathFuncs(t *testing.T) {
-	funcs := baseFuncs()
-	add := funcs["add"].(func(any, any) any)
-	sub := funcs["sub"].(func(any, any) any)
-	mul := funcs["mul"].(func(any, any) any)
-	div := funcs["div"].(func(any, any) any)
-	mod := funcs["mod"].(func(any, any) any)
-
-	t.Run("add", func(t *testing.T) {
-		result := add(5, 3)
-		if result != 8.0 {
-			t.Errorf("expected 8, got %v", result)
-		}
-	})
-
-	t.Run("sub", func(t *testing.T) {
-		result := sub(5, 3)
-		if result != 2.0 {
-			t.Errorf("expected 2, got %v", result)
-		}
-	})
-
-	t.Run("mul", func(t *testing.T) {
-		result := mul(5, 3)
-		if result != 15.0 {
-			t.Errorf("expected 15, got %v", result)
-		}
-	})
-
-	t.Run("div", func(t *testing.T) {
-		result := div(6, 2)
-		if result != 3.0 {
-			t.Errorf("expected 3, got %v", result)
-		}
-	})
-
-	t.Run("div by zero", func(t *testing.T) {
-		result := div(6, 0)
-		if result != 0.0 {
-			t.Errorf("expected 0, got %v", result)
-		}
-	})
-
-	t.Run("mod", func(t *testing.T) {
-		result := mod(7, 3)
-		if result != int64(1) {
-			t.Errorf("expected 1, got %v", result)
-		}
-	})
-
-	t.Run("mod by zero", func(t *testing.T) {
-		result := mod(7, 0)
-		if result != int64(0) {
-			t.Errorf("expected 0, got %v", result)
 		}
 	})
 }
