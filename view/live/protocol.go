@@ -6,16 +6,19 @@ import (
 
 // Message types for the wire protocol.
 const (
-	MsgTypeJoin      byte = 0x01
-	MsgTypeLeave     byte = 0x02
-	MsgTypeEvent     byte = 0x03
-	MsgTypeHeartbeat byte = 0x04
-	MsgTypeReply     byte = 0x05
-	MsgTypePatch     byte = 0x06
-	MsgTypeCommand   byte = 0x07
-	MsgTypeError     byte = 0x08
-	MsgTypeRedirect  byte = 0x09
-	MsgTypeClose     byte = 0x0A
+	MsgTypeJoin        byte = 0x01
+	MsgTypeLeave       byte = 0x02
+	MsgTypeEvent       byte = 0x03
+	MsgTypeHeartbeat   byte = 0x04
+	MsgTypeReply       byte = 0x05
+	MsgTypePatch       byte = 0x06
+	MsgTypeCommand     byte = 0x07
+	MsgTypeError       byte = 0x08
+	MsgTypeRedirect    byte = 0x09
+	MsgTypeClose       byte = 0x0A
+	MsgTypePoke        byte = 0x0B // Sync: data changed notification
+	MsgTypeSubscribe   byte = 0x0C // Sync: subscribe to scope
+	MsgTypeUnsubscribe byte = 0x0D // Sync: unsubscribe from scope
 )
 
 // Message is the wire protocol envelope.
@@ -33,6 +36,7 @@ type JoinPayload struct {
 	Params    map[string]string `json:"params,omitempty"`
 	SessionID string            `json:"session,omitempty"`
 	Reconnect bool              `json:"reconnect,omitempty"`
+	Scopes    []string          `json:"scopes,omitempty"` // Sync scopes to subscribe to
 }
 
 // LeavePayload is the payload for LEAVE messages.
@@ -84,6 +88,22 @@ type ErrorPayload struct {
 type ClosePayload struct {
 	Reason  string `json:"reason"`
 	Message string `json:"message,omitempty"`
+}
+
+// PokePayload is the payload for POKE messages (sync integration).
+type PokePayload struct {
+	Scope  string `json:"scope"`
+	Cursor uint64 `json:"cursor"`
+}
+
+// SubscribePayload is the payload for SUBSCRIBE messages.
+type SubscribePayload struct {
+	Scopes []string `json:"scopes"`
+}
+
+// UnsubscribePayload is the payload for UNSUBSCRIBE messages.
+type UnsubscribePayload struct {
+	Scopes []string `json:"scopes"`
 }
 
 // encodeMessage creates a wire message.
