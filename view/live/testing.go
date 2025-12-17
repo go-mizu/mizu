@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu"
-	"golang.org/x/net/websocket"
 )
 
 // TestSession creates a test session with zero-value state.
@@ -40,7 +39,7 @@ func NewTestCtx() *Ctx {
 type TestClient struct {
 	t       TestingT
 	server  *httptest.Server
-	conn    *websocket.Conn
+	conn    *wsConn
 	mu      sync.Mutex
 	patches []PatchPayload
 	errors  []ErrorPayload
@@ -80,7 +79,7 @@ func (c *TestClient) Connect(path string) *TestConn {
 	// Convert http:// to ws://
 	wsURL := "ws" + strings.TrimPrefix(c.server.URL, "http") + "/_live/websocket"
 
-	conn, err := websocket.Dial(wsURL, "", c.server.URL)
+	conn, err := dialWebSocket(wsURL, c.server.URL)
 	if err != nil {
 		c.t.Fatal("Failed to connect:", err)
 	}
@@ -110,7 +109,7 @@ func (c *TestClient) Connect(path string) *TestConn {
 // TestConn represents a test WebSocket connection.
 type TestConn struct {
 	client    *TestClient
-	conn      *websocket.Conn
+	conn      *wsConn
 	path      string
 	sessionID string
 	html      string
@@ -121,8 +120,8 @@ type TestConn struct {
 
 func (c *TestConn) receiveLoop() {
 	for {
-		var data string
-		if err := websocket.Message.Receive(c.conn, &data); err != nil {
+		data, err := c.conn.ReadMessage()
+		if err != nil {
 			close(c.done)
 			return
 		}
@@ -154,7 +153,7 @@ func (c *TestConn) sendJoin(path string) {
 	msg.Payload = payloadBytes
 
 	data, _ := json.Marshal(msg)
-	websocket.Message.Send(c.conn, string(data))
+	c.conn.WriteMessage(string(data))
 }
 
 func (c *TestConn) waitForReply() {
@@ -228,7 +227,7 @@ func (c *TestConn) sendEventPayload(payload eventPayload) {
 	}
 
 	data, _ := json.Marshal(msg)
-	websocket.Message.Send(c.conn, string(data))
+	c.conn.WriteMessage(string(data))
 }
 
 // Wait waits for patches to arrive.
