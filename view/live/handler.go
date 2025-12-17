@@ -80,6 +80,11 @@ func (h *sessionHandler) run(ctx context.Context, conn *wsConn, join *JoinPayloa
 		h.live.pubsub.register(h.session.getID(), h.serverCh)
 		defer h.live.pubsub.unregister(h.session.getID())
 		defer h.live.pubsub.UnsubscribeAll(h.session.getID())
+
+		// Subscribe to sync scopes from join payload.
+		if len(join.Scopes) > 0 {
+			h.live.pubsub.Subscribe(h.session.getID(), join.Scopes...)
+		}
 	}
 
 	// Store session.
@@ -211,6 +216,28 @@ func (h *sessionHandler) handleClientMessage(msg *Message) error {
 		h.closeOnce.Do(func() { close(h.closeCh) })
 		return nil
 
+	case MsgTypeSubscribe:
+		var payload SubscribePayload
+		if err := msg.parsePayload(&payload); err != nil {
+			return err
+		}
+		if h.live.pubsub != nil && len(payload.Scopes) > 0 {
+			h.live.pubsub.Subscribe(h.session.getID(), payload.Scopes...)
+		}
+		h.send(MsgTypeReply, msg.Ref, ReplyPayload{Status: "ok"})
+		return nil
+
+	case MsgTypeUnsubscribe:
+		var payload UnsubscribePayload
+		if err := msg.parsePayload(&payload); err != nil {
+			return err
+		}
+		if h.live.pubsub != nil && len(payload.Scopes) > 0 {
+			h.live.pubsub.Unsubscribe(h.session.getID(), payload.Scopes...)
+		}
+		h.send(MsgTypeReply, msg.Ref, ReplyPayload{Status: "ok"})
+		return nil
+
 	default:
 		return fmt.Errorf("unknown message type: %d", msg.Type)
 	}
@@ -252,6 +279,15 @@ func (h *sessionHandler) handleEvent(msg *Message) error {
 
 // handleServerMessage processes a server-originated message.
 func (h *sessionHandler) handleServerMessage(msg any) error {
+	// Check if this is a sync poke - these are forwarded directly to the client.
+	if poke, ok := msg.(Poke); ok {
+		h.send(MsgTypePoke, 0, PokePayload{
+			Scope:  poke.Scope,
+			Cursor: poke.Cursor,
+		})
+		return nil
+	}
+
 	h.session.lock()
 	defer h.session.unlock()
 
