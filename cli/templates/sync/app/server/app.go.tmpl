@@ -53,27 +53,27 @@ func (a *App) Listen(addr string) error {
 }
 
 func (a *App) setupViews() {
-	opts := view.Options{
+	cfg := view.Config{
 		DefaultLayout: "default",
 		Development:   a.cfg.Dev,
 	}
 
 	if !a.cfg.Dev {
 		viewsFS, _ := fs.Sub(assets.ViewsFS, "views")
-		opts.FS = viewsFS
+		cfg.FS = viewsFS
 	} else {
-		opts.Dir = "assets/views"
+		cfg.Dir = "assets/views"
 	}
 
-	a.engine = view.New(opts)
+	a.engine = view.New(cfg)
 
 	if !a.cfg.Dev {
-		if err := a.engine.Preload(); err != nil {
+		if err := a.engine.Load(); err != nil {
 			panic("failed to load templates: " + err.Error())
 		}
 	}
 
-	a.app.Use(view.Middleware(a.engine))
+	a.app.Use(a.engine.Handler())
 }
 
 func (a *App) setupLive() {

@@ -24,7 +24,7 @@ func New(cfg Config) *App {
 	}
 
 	// Setup view engine
-	opts := view.Options{
+	viewCfg := view.Config{
 		DefaultLayout: "default",
 		Development:   cfg.Dev,
 	}
@@ -32,23 +32,23 @@ func New(cfg Config) *App {
 	if !cfg.Dev {
 		// Production: use embedded filesystem
 		viewsFS, _ := fs.Sub(assets.ViewsFS, "views")
-		opts.FS = viewsFS
+		viewCfg.FS = viewsFS
 	} else {
 		// Development: use disk filesystem
-		opts.Dir = "assets/views"
+		viewCfg.Dir = "assets/views"
 	}
 
-	a.engine = view.New(opts)
+	a.engine = view.New(viewCfg)
 
-	// Preload templates in production
+	// Load templates in production
 	if !cfg.Dev {
-		if err := a.engine.Preload(); err != nil {
+		if err := a.engine.Load(); err != nil {
 			panic("failed to load templates: " + err.Error())
 		}
 	}
 
 	// Add view middleware
-	a.app.Use(view.Middleware(a.engine))
+	a.app.Use(a.engine.Handler())
 
 	// Setup routes
 	a.routes()
