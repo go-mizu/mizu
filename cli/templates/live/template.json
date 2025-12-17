@@ -1,9 +1,0 @@
-{
-  "name": "live",
-  "description": "Full-stack web app with real-time interactivity using Mizu Live",
-  "tags": ["go", "mizu", "live", "websocket", "realtime", "tailwind"],
-  "variables": {
-    "name": { "description": "Project name", "default": "" },
-    "module": { "description": "Go module path", "default": "" }
-  }
-}
