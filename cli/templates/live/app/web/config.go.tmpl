@@ -1,0 +1,20 @@
+package web
+
+import "os"
+
+type Config struct {
+	Addr string
+	Dev  bool
+}
+
+func LoadConfig() Config {
+	addr := os.Getenv("ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+
+	return Config{
+		Addr: addr,
+		Dev:  os.Getenv("DEV") == "true",
+	}
+}

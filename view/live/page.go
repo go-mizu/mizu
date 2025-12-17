@@ -70,3 +70,9 @@ type pageHandler interface {
 	info(ctx *Ctx, s *sessionBase, msg any) error
 	newSession(id string) *sessionBase
 }
+
+// Wrap wraps a typed Page[T] for registration with RegisterPage.
+// This is used to register pages for WebSocket connections.
+func Wrap[T any](page Page[T]) pageHandler {
+	return &pageWrapper[T]{page: page}
+}

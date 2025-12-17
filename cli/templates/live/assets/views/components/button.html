@@ -1,0 +1,39 @@
+{{ "{{" }}$variant := .Params.Variant | default "primary"{{ "}}" }}
+{{ "{{" }}$size := .Params.Size | default "md"{{ "}}" }}
+{{ "{{" }}$href := .Params.Href{{ "}}" }}
+{{ "{{" }}$label := .Params.Label{{ "}}" }}
+{{ "{{" }}$disabled := .Params.Disabled{{ "}}" }}
+
+{{ "{{" }}$baseClass := "inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"{{ "}}" }}
+
+{{ "{{" }}$variantClass := ""{{ "}}" }}
+{{ "{{" }}if eq $variant "primary"{{ "}}" }}
+    {{ "{{" }}$variantClass = "bg-primary text-primary-foreground hover:bg-primary/90"{{ "}}" }}
+{{ "{{" }}else if eq $variant "secondary"{{ "}}" }}
+    {{ "{{" }}$variantClass = "bg-secondary text-secondary-foreground hover:bg-secondary/80"{{ "}}" }}
+{{ "{{" }}else if eq $variant "outline"{{ "}}" }}
+    {{ "{{" }}$variantClass = "border border-input bg-background hover:bg-accent hover:text-accent-foreground"{{ "}}" }}
+{{ "{{" }}else if eq $variant "ghost"{{ "}}" }}
+    {{ "{{" }}$variantClass = "hover:bg-accent hover:text-accent-foreground"{{ "}}" }}
+{{ "{{" }}else if eq $variant "destructive"{{ "}}" }}
+    {{ "{{" }}$variantClass = "bg-destructive text-destructive-foreground hover:bg-destructive/90"{{ "}}" }}
+{{ "{{" }}end{{ "}}" }}
+
+{{ "{{" }}$sizeClass := ""{{ "}}" }}
+{{ "{{" }}if eq $size "sm"{{ "}}" }}
+    {{ "{{" }}$sizeClass = "h-9 px-3 text-sm"{{ "}}" }}
+{{ "{{" }}else if eq $size "md"{{ "}}" }}
+    {{ "{{" }}$sizeClass = "h-10 px-4 py-2"{{ "}}" }}
+{{ "{{" }}else if eq $size "lg"{{ "}}" }}
+    {{ "{{" }}$sizeClass = "h-11 px-8 text-lg"{{ "}}" }}
+{{ "{{" }}end{{ "}}" }}
+
+{{ "{{" }}if $href{{ "}}" }}
+<a href="{{ "{{" }}$href{{ "}}" }}" class="{{ "{{" }}$baseClass{{ "}}" }} {{ "{{" }}$variantClass{{ "}}" }} {{ "{{" }}$sizeClass{{ "}}" }}">
+    {{ "{{" }}$label{{ "}}" }}
+</a>
+{{ "{{" }}else{{ "}}" }}
+<button class="{{ "{{" }}$baseClass{{ "}}" }} {{ "{{" }}$variantClass{{ "}}" }} {{ "{{" }}$sizeClass{{ "}}" }}" {{ "{{" }}if $disabled{{ "}}" }}disabled{{ "{{" }}end{{ "}}" }}>
+    {{ "{{" }}$label{{ "}}" }}
+</button>
+{{ "{{" }}end{{ "}}" }}

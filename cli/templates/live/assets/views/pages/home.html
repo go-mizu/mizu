@@ -1,0 +1,34 @@
+{{ "{{" }}define "title"{{ "}}" }}{{ "{{" }}.Data.Title{{ "}}" }}{{ "{{" }}end{{ "}}" }}
+
+{{ "{{" }}define "content"{{ "}}" }}
+<div class="flex flex-col items-center justify-center space-y-8 text-center">
+    <div class="space-y-4">
+        <h1 class="text-4xl font-bold tracking-tighter sm:text-5xl md:text-6xl">
+            {{ "{{" }}.Data.Title{{ "}}" }}
+        </h1>
+        <p class="mx-auto max-w-[700px] text-lg text-muted-foreground md:text-xl">
+            {{ "{{" }}.Data.Message{{ "}}" }}
+        </p>
+    </div>
+
+    <div class="grid gap-6 sm:grid-cols-2 max-w-2xl">
+        {{ "{{" }}component "card" (dict "Title" "Live Counter"){{ "}}" }}
+            <p class="text-muted-foreground mb-4">
+                Interactive counter demonstrating state management and event handling.
+            </p>
+            {{ "{{" }}component "button" (dict "Label" "Try Counter" "Variant" "primary" "Href" "/counter"){{ "}}" }}
+        {{ "{{" }}end{{ "}}" }}
+
+        {{ "{{" }}component "card" (dict "Title" "Live Chat"){{ "}}" }}
+            <p class="text-muted-foreground mb-4">
+                Real-time chat room showing PubSub and multi-user interaction.
+            </p>
+            {{ "{{" }}component "button" (dict "Label" "Join Chat" "Variant" "primary" "Href" "/chat"){{ "}}" }}
+        {{ "{{" }}end{{ "}}" }}
+    </div>
+
+    <div class="flex flex-col gap-4 sm:flex-row pt-4">
+        {{ "{{" }}component "button" (dict "Label" "Learn More" "Variant" "outline" "Href" "https://github.com/go-mizu/mizu"){{ "}}" }}
+    </div>
+</div>
+{{ "{{" }}end{{ "}}" }}
