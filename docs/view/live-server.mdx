@@ -1,21 +1,17 @@
 ---
-title: "Live Server"
+title: "Server"
 description: "Configure the live server for WebSocket connections"
 ---
 
-# Live Server
-
-The Live server manages WebSocket connections, handles message routing, and provides hooks for authentication and lifecycle events. This guide covers all configuration options.
+The Live server manages WebSocket connections, handles message routing, and provides hooks for authentication and lifecycle events.
 
 ## Creating a Server
-
-Create a server with `live.NewServer()`:
 
 ```go
 import "github.com/go-mizu/mizu/live"
 
-server := live.NewServer(live.Options{
-    // Configuration options
+server := live.New(live.Options{
+    // Options here
 })
 ```
 
@@ -23,209 +19,144 @@ server := live.NewServer(live.Options{
 
 ### OnAuth
 
-Called when a client attempts to connect. Returns the session ID and whether to accept the connection.
+Called when a client attempts to connect. Return a value to store in the session, or an error to reject.
 
 ```go
 live.Options{
-    OnAuth: func(r *http.Request) (string, bool) {
-        // Option 1: Accept with query parameter
+    OnAuth: func(ctx context.Context, r *http.Request) (any, error) {
+        // Option 1: Query parameter
         userID := r.URL.Query().Get("user")
         if userID == "" {
-            return "", false // Reject
+            return nil, errors.New("user required")
         }
-        return userID, true
+        return userID, nil
 
-        // Option 2: Validate JWT token
+        // Option 2: JWT token
         token := r.Header.Get("Authorization")
         claims, err := validateJWT(token)
         if err != nil {
-            return "", false
+            return nil, err
         }
-        return claims.UserID, true
+        return claims.UserID, nil
 
-        // Option 3: Use session cookie
+        // Option 3: Cookie session
         cookie, err := r.Cookie("session")
         if err != nil {
-            return "", false
+            return nil, err
         }
-        userID, err := getSessionUser(cookie.Value)
-        if err != nil {
-            return "", false
-        }
-        return userID, true
+        return getSessionUser(cookie.Value)
     },
 }
 ```
 
-If `OnAuth` is nil, all connections are accepted with an auto-generated ID.
-
-### OnConnect
-
-Called after a connection is authenticated and established.
-
-```go
-live.Options{
-    OnConnect: func(s *live.Session) {
-        log.Printf("User %s connected from %s", s.ID(), s.RemoteAddr())
-
-        // Subscribe to default topics
-        s.Subscribe("global")
-        s.Subscribe("user:" + s.ID())
-
-        // Send welcome message
-        s.Send([]byte(`{"type":"welcome"}`))
-
-        // Store session metadata
-        s.Set("connected_at", time.Now())
-    },
-}
-```
-
-### OnDisconnect
-
-Called when a connection closes (for any reason).
-
-```go
-live.Options{
-    OnDisconnect: func(s *live.Session) {
-        log.Printf("User %s disconnected", s.ID())
-
-        // Clean up resources
-        removeUserFromRoom(s.ID())
-
-        // Notify others
-        server.Publish("presence", []byte(fmt.Sprintf(
-            `{"type":"leave","user":"%s"}`, s.ID(),
-        )))
-    },
-}
-```
+If `OnAuth` is nil, all connections are accepted.
 
 ### OnMessage
 
-Called when a client sends a message.
+Called when a client sends a message. The message is parsed and topic/data are extracted.
 
 ```go
 live.Options{
-    OnMessage: func(s *live.Session, msg []byte) {
-        log.Printf("Message from %s: %s", s.ID(), msg)
+    OnMessage: func(ctx context.Context, s *live.Session, topic string, data []byte) {
+        userID := s.Value().(string)
+        log.Printf("Message from %s: %s", userID, topic)
 
-        // Parse message
-        var data map[string]any
-        if err := json.Unmarshal(msg, &data); err != nil {
-            return
-        }
-
-        // Route based on type
-        switch data["type"] {
-        case "chat":
-            handleChatMessage(s, data)
-        case "typing":
-            handleTypingIndicator(s, data)
+        switch topic {
         case "subscribe":
-            topic := data["topic"].(string)
-            s.Subscribe(topic)
+            var req struct{ Topic string `json:"topic"` }
+            json.Unmarshal(data, &req)
+            server.Subscribe(s, req.Topic)
+
+        case "chat":
+            server.Publish("chat:general", data)
         }
     },
 }
 ```
 
-### SendBuffer
+Client messages must be JSON with `topic` and `data`:
+```json
+{"topic": "chat", "data": {"text": "Hello"}}
+```
 
-The size of the send buffer per session. Messages are queued if the client can't keep up.
+### OnClose
+
+Called when a connection closes.
 
 ```go
 live.Options{
-    SendBuffer: 256,  // Default: 256
+    OnClose: func(s *live.Session, err error) {
+        userID := s.Value().(string)
+        if err != nil {
+            log.Printf("User %s disconnected with error: %v", userID, err)
+        } else {
+            log.Printf("User %s disconnected cleanly", userID)
+        }
+
+        // Clean up
+        removeFromOnlineList(userID)
+    },
 }
 ```
 
-If the buffer fills up, oldest messages are dropped to prevent blocking.
+### QueueSize
 
-### PingInterval
-
-How often to send ping frames to keep the connection alive.
+Per-session send buffer size. When full, the session is closed.
 
 ```go
 live.Options{
-    PingInterval: 30 * time.Second,  // Default: 30s
-}
-```
-
-### PongTimeout
-
-How long to wait for a pong response before closing the connection.
-
-```go
-live.Options{
-    PongTimeout: 10 * time.Second,  // Default: 10s
+    QueueSize: 256,  // Default: 256
 }
 ```
 
 ### ReadLimit
 
-Maximum message size from clients.
+Maximum incoming message size in bytes.
 
 ```go
 live.Options{
-    ReadLimit: 64 * 1024,  // Default: 64KB
+    ReadLimit: 4 * 1024 * 1024,  // Default: 4MB
 }
 ```
 
-Messages larger than this are rejected.
+### Origins
 
-## Complete Example
+List of allowed WebSocket origins.
 
 ```go
-server := live.NewServer(live.Options{
-    // Authentication
-    OnAuth: func(r *http.Request) (string, bool) {
-        token := r.URL.Query().Get("token")
-        userID, err := validateToken(token)
-        if err != nil {
-            return "", false
-        }
-        return userID, true
+live.Options{
+    Origins: []string{
+        "http://localhost:8080",
+        "https://myapp.com",
     },
+}
+```
 
-    // Connection lifecycle
-    OnConnect: func(s *live.Session) {
-        log.Printf("Connected: %s", s.ID())
+Use `"*"` to allow all origins (not recommended for production).
 
-        // Subscribe to user's topics
-        s.Subscribe("user:" + s.ID())
-        s.Subscribe("global")
+### CheckOrigin
 
-        // Track online users
-        onlineUsers.Add(s.ID())
+Custom origin validation (takes precedence over Origins).
 
-        // Broadcast presence
-        server.Publish("presence", []byte(fmt.Sprintf(
-            `{"type":"join","user":"%s"}`, s.ID(),
-        )))
+```go
+live.Options{
+    CheckOrigin: func(r *http.Request) bool {
+        origin := r.Header.Get("Origin")
+        return strings.HasSuffix(origin, ".mycompany.com")
     },
+}
+```
 
-    OnDisconnect: func(s *live.Session) {
-        log.Printf("Disconnected: %s", s.ID())
+### IDGenerator
 
-        onlineUsers.Remove(s.ID())
+Custom session ID generator.
 
-        server.Publish("presence", []byte(fmt.Sprintf(
-            `{"type":"leave","user":"%s"}`, s.ID(),
-        )))
+```go
+live.Options{
+    IDGenerator: func() string {
+        return uuid.New().String()
     },
-
-    // Message handling
-    OnMessage: func(s *live.Session, msg []byte) {
-        handleMessage(s, msg)
-    },
-
-    // Performance tuning
-    SendBuffer:   512,
-    PingInterval: 25 * time.Second,
-    PongTimeout:  10 * time.Second,
-    ReadLimit:    128 * 1024,
-})
+}
 ```
 
 ## Server Methods
@@ -235,275 +166,190 @@ server := live.NewServer(live.Options{
 Returns an HTTP handler for WebSocket upgrades.
 
 ```go
-app.Get("/ws", server.Handler())
+app.Get("/ws", mizu.Compat(server.Handler()))
 
-// Or with standard http.ServeMux
-mux.HandleFunc("/ws", server.Handler())
+// Or with standard library
+http.Handle("/ws", server.Handler())
 ```
 
 ### Publish
 
-Sends a message to all sessions subscribed to a topic.
+Sends data to all sessions subscribed to a topic.
 
 ```go
-// Publish to a topic
 server.Publish("chat:room1", []byte(`{"text":"Hello!"}`))
 
-// Publish with JSON
+// With JSON
 data, _ := json.Marshal(message)
 server.Publish(topic, data)
 ```
 
-### PublishExcept
+### Subscribe
 
-Publishes to all subscribers except specific session IDs.
+Subscribes a session to a topic.
 
 ```go
-// Send to everyone in room except sender
-server.PublishExcept("chat:room1", msg, senderID)
-
-// Exclude multiple sessions
-server.PublishExcept("chat:room1", msg, "user1", "user2")
+server.Subscribe(session, "chat:room1")
+server.Subscribe(session, "user:"+userID)
 ```
 
-### Session
+### Unsubscribe
 
-Gets a session by ID.
+Removes a session from a topic.
 
 ```go
-session := server.Session("user123")
-if session != nil {
-    session.Send([]byte("Direct message"))
+server.Unsubscribe(session, "chat:room1")
+```
+
+## Complete Example
+
+```go
+package main
+
+import (
+    "context"
+    "encoding/json"
+    "errors"
+    "log"
+    "net/http"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/live"
+)
+
+var server *live.Server
+
+func main() {
+    server = live.New(live.Options{
+        // Authentication
+        OnAuth: func(ctx context.Context, r *http.Request) (any, error) {
+            token := r.URL.Query().Get("token")
+            userID, err := validateToken(token)
+            if err != nil {
+                return nil, err
+            }
+            return userID, nil
+        },
+
+        // Message handling
+        OnMessage: func(ctx context.Context, s *live.Session, topic string, data []byte) {
+            handleMessage(s, topic, data)
+        },
+
+        // Cleanup on disconnect
+        OnClose: func(s *live.Session, err error) {
+            userID := s.Value().(string)
+            log.Printf("User %s disconnected", userID)
+            server.Publish("presence", []byte(`{"type":"leave","user":"`+userID+`"}`))
+        },
+
+        // Limits
+        QueueSize: 512,
+        ReadLimit: 64 * 1024,
+
+        // Origins
+        Origins: []string{"https://myapp.com"},
+    })
+
+    app := mizu.New()
+    app.Get("/ws", mizu.Compat(server.Handler()))
+    app.Listen(":8080")
+}
+
+func handleMessage(s *live.Session, topic string, data []byte) {
+    userID := s.Value().(string)
+
+    switch topic {
+    case "subscribe":
+        var req struct{ Topic string `json:"topic"` }
+        json.Unmarshal(data, &req)
+
+        // Validate subscription
+        if canSubscribe(userID, req.Topic) {
+            server.Subscribe(s, req.Topic)
+        }
+
+    case "unsubscribe":
+        var req struct{ Topic string `json:"topic"` }
+        json.Unmarshal(data, &req)
+        server.Unsubscribe(s, req.Topic)
+
+    case "chat":
+        // Broadcast chat message
+        msg, _ := json.Marshal(map[string]any{
+            "user": userID,
+            "data": json.RawMessage(data),
+        })
+        server.Publish("chat:general", msg)
+    }
 }
 ```
 
-### Sessions
-
-Returns all active sessions.
-
-```go
-for _, session := range server.Sessions() {
-    log.Printf("Active: %s", session.ID())
-}
-```
-
-### SessionCount
-
-Returns the number of active connections.
-
-```go
-log.Printf("Active connections: %d", server.SessionCount())
-```
-
-### Subscribers
-
-Returns sessions subscribed to a topic.
-
-```go
-subscribers := server.Subscribers("chat:room1")
-log.Printf("%d users in room1", len(subscribers))
-```
-
-### Close
-
-Gracefully shuts down the server, closing all connections.
-
-```go
-// Graceful shutdown
-ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-defer cancel()
-
-if err := server.Close(ctx); err != nil {
-    log.Printf("Shutdown error: %v", err)
-}
-```
-
-## Mounting the Server
+## Mounting the Handler
 
 ### With Mizu
 
 ```go
 app := mizu.New()
-app.Get("/ws", server.Handler())
-app.Listen(":8080")
+app.Get("/ws", mizu.Compat(server.Handler()))
 ```
 
 ### With Standard Library
 
 ```go
-mux := http.NewServeMux()
-mux.HandleFunc("/ws", server.Handler())
-http.ListenAndServe(":8080", mux)
-```
-
-### Multiple Endpoints
-
-Create different servers for different purposes:
-
-```go
-chatServer := live.NewServer(live.Options{...})
-notifyServer := live.NewServer(live.Options{...})
-
-app.Get("/ws/chat", chatServer.Handler())
-app.Get("/ws/notifications", notifyServer.Handler())
-```
-
-## Middleware Integration
-
-### Authentication Middleware
-
-Share authentication logic with HTTP routes:
-
-```go
-func authMiddleware(next mizu.Handler) mizu.Handler {
-    return func(c *mizu.Ctx) error {
-        token := c.Get("Authorization")
-        user, err := validateToken(token)
-        if err != nil {
-            return c.Status(401).JSON(map[string]string{"error": "unauthorized"})
-        }
-        c.Locals("user", user)
-        return next(c)
-    }
-}
-
-// HTTP routes use middleware
-app.Use(authMiddleware)
-
-// WebSocket uses OnAuth
-server := live.NewServer(live.Options{
-    OnAuth: func(r *http.Request) (string, bool) {
-        token := r.Header.Get("Authorization")
-        user, err := validateToken(token)
-        if err != nil {
-            return "", false
-        }
-        return user.ID, true
-    },
-})
-```
-
-## Error Handling
-
-### Connection Errors
-
-Errors during connection are logged internally. The client receives a WebSocket close frame.
-
-### Message Errors
-
-Handle errors in `OnMessage`:
-
-```go
-OnMessage: func(s *live.Session, msg []byte) {
-    var data Message
-    if err := json.Unmarshal(msg, &data); err != nil {
-        // Send error back to client
-        s.Send([]byte(`{"error":"invalid message format"}`))
-        return
-    }
-
-    if err := processMessage(data); err != nil {
-        s.Send([]byte(fmt.Sprintf(`{"error":"%s"}`, err.Error())))
-        return
-    }
-}
-```
-
-## Monitoring
-
-### Connection Metrics
-
-```go
-// Track metrics
-var (
-    activeConnections = prometheus.NewGauge(...)
-    messagesReceived  = prometheus.NewCounter(...)
-    messagesSent      = prometheus.NewCounter(...)
-)
-
-server := live.NewServer(live.Options{
-    OnConnect: func(s *live.Session) {
-        activeConnections.Inc()
-    },
-    OnDisconnect: func(s *live.Session) {
-        activeConnections.Dec()
-    },
-    OnMessage: func(s *live.Session, msg []byte) {
-        messagesReceived.Inc()
-        // ...
-    },
-})
-```
-
-### Health Check
-
-```go
-app.Get("/health", func(c *mizu.Ctx) error {
-    return c.JSON(map[string]any{
-        "status":      "healthy",
-        "connections": server.SessionCount(),
-    })
-})
+http.Handle("/ws", server.Handler())
+http.ListenAndServe(":8080", nil)
 ```
 
 ## Best Practices
 
 ### 1. Always Authenticate
 
-Never accept unauthenticated connections in production:
-
 ```go
-OnAuth: func(r *http.Request) (string, bool) {
-    // Always validate credentials
-    if !validateCredentials(r) {
-        return "", false
+OnAuth: func(ctx context.Context, r *http.Request) (any, error) {
+    // Never skip authentication in production
+    token := r.Header.Get("Authorization")
+    if token == "" {
+        return nil, errors.New("unauthorized")
     }
-    return userID, true
+    return validateToken(token)
 },
 ```
 
 ### 2. Set Reasonable Limits
 
-Protect against abuse:
-
 ```go
 live.Options{
-    SendBuffer: 256,         // Don't let buffers grow too large
-    ReadLimit:  64 * 1024,   // Limit incoming message size
+    QueueSize: 256,        // Prevent memory issues
+    ReadLimit: 64 * 1024,  // Limit message size
 }
 ```
 
-### 3. Handle Disconnects Gracefully
-
-Clean up resources when clients disconnect:
+### 3. Handle Close Gracefully
 
 ```go
-OnDisconnect: func(s *live.Session) {
-    cleanupUserResources(s.ID())
-    notifyOthers(s.ID(), "offline")
+OnClose: func(s *live.Session, err error) {
+    // Clean up resources
+    userID := s.Value().(string)
+    removeFromRooms(userID)
+    notifyOthers(userID, "offline")
 },
 ```
 
-### 4. Use Structured Messages
-
-Define a consistent message format:
+### 4. Validate Subscriptions
 
 ```go
-type Message struct {
-    Type    string `json:"type"`
-    Payload any    `json:"payload"`
-}
-```
+OnMessage: func(ctx context.Context, s *live.Session, topic string, data []byte) {
+    if topic == "subscribe" {
+        var req struct{ Topic string `json:"topic"` }
+        json.Unmarshal(data, &req)
 
-### 5. Log Important Events
-
-Log connections and errors for debugging:
-
-```go
-OnConnect: func(s *live.Session) {
-    log.Printf("Connected: id=%s addr=%s", s.ID(), s.RemoteAddr())
-},
-OnDisconnect: func(s *live.Session) {
-    log.Printf("Disconnected: id=%s", s.ID())
+        // Check permission before subscribing
+        if !canSubscribe(s.Value().(string), req.Topic) {
+            s.Send(live.Message{Topic: "error", Data: []byte(`"not allowed"`)})
+            return
+        }
+        server.Subscribe(s, req.Topic)
+    }
 },
 ```

@@ -1,11 +1,9 @@
 ---
-title: "Live Pub/Sub"
+title: "Pub/Sub"
 description: "Topic-based publish/subscribe for real-time messaging"
 ---
 
-# Live Pub/Sub
-
-The publish/subscribe (pub/sub) pattern is at the heart of Mizu's live package. Sessions subscribe to topics, and when you publish to a topic, all subscribers receive the message. This guide covers topic patterns, publishing strategies, and best practices.
+The publish/subscribe pattern is at the heart of the live package. Sessions subscribe to topics, and when you publish to a topic, all subscribers receive the message.
 
 ## How Pub/Sub Works
 
@@ -14,45 +12,38 @@ The publish/subscribe (pub/sub) pattern is at the heart of Mizu's live package. 
                     │         Server          │
                     │                         │
  Publish to         │   Topic: "chat:room1"   │      Delivered to
- "chat:room1"  ────▶│   ┌─────────────────┐   │────▶  Session A (subscribed)
-                    │   │  Subscribers:   │   │────▶  Session B (subscribed)
+ "chat:room1"  ────▶│   ┌─────────────────┐   │────▶  Session A
+                    │   │  Subscribers:   │   │────▶  Session B
                     │   │  - Session A    │   │
                     │   │  - Session B    │   │       Session C (not subscribed)
-                    │   │  - Session D    │   │────▶  Session D (subscribed)
+                    │   │  - Session D    │   │────▶  Session D
                     │   └─────────────────┘   │
                     │                         │
                     └─────────────────────────┘
 ```
 
-## Subscribing to Topics
+## Subscribing
 
-Sessions subscribe in `OnConnect` or via messages:
+Subscribe sessions to topics via server methods:
 
 ```go
-OnConnect: func(s *live.Session) {
-    // Subscribe to multiple topics
-    s.Subscribe("global")           // All users
-    s.Subscribe("user:" + s.ID())   // Personal channel
-    s.Subscribe("role:admin")       // Role-based
-}
-
-OnMessage: func(s *live.Session, msg []byte) {
-    var data struct {
-        Action string `json:"action"`
-        Topic  string `json:"topic"`
+// In OnMessage handler
+OnMessage: func(ctx context.Context, s *live.Session, topic string, data []byte) {
+    if topic == "subscribe" {
+        var req struct{ Topic string `json:"topic"` }
+        json.Unmarshal(data, &req)
+        server.Subscribe(s, req.Topic)
     }
-    json.Unmarshal(msg, &data)
 
-    switch data.Action {
-    case "subscribe":
-        s.Subscribe(data.Topic)
-    case "unsubscribe":
-        s.Unsubscribe(data.Topic)
+    if topic == "unsubscribe" {
+        var req struct{ Topic string `json:"topic"` }
+        json.Unmarshal(data, &req)
+        server.Unsubscribe(s, req.Topic)
     }
 }
 ```
 
-## Publishing Messages
+## Publishing
 
 ### To All Subscribers
 
@@ -60,123 +51,90 @@ OnMessage: func(s *live.Session, msg []byte) {
 server.Publish("chat:room1", []byte(`{"text":"Hello everyone!"}`))
 ```
 
-### Excluding Specific Sessions
+### With JSON Data
 
 ```go
-// Don't send back to sender
-server.PublishExcept("chat:room1", message, senderID)
-
-// Exclude multiple sessions
-server.PublishExcept("chat:room1", message, "user1", "user2")
+data, _ := json.Marshal(map[string]any{
+    "type": "message",
+    "user": userID,
+    "text": "Hello!",
+})
+server.Publish("chat:room1", data)
 ```
 
 ### To a Single Session
 
 ```go
-session := server.Session("user123")
-if session != nil {
-    session.Send(message)
-}
+s.Send(live.Message{
+    Topic: "notification",
+    Data:  []byte(`{"title":"Hello"}`),
+})
 ```
 
 ## Topic Naming Patterns
 
-Use consistent, hierarchical topic names:
+Use consistent, hierarchical names:
 
-### Resource-Based Topics
+### User Topics
 
 ```
-user:{userID}          # Personal messages
-user:{userID}:notifs   # User notifications
-team:{teamID}          # Team channel
-team:{teamID}:updates  # Team updates only
+user:{userID}              # Personal messages
+user:{userID}:notifications  # User notifications
 ```
 
 ### Room/Channel Topics
 
 ```
-chat:general           # General chat
-chat:room:{roomID}     # Specific room
-voice:channel:{id}     # Voice channel
+chat:general        # General chat
+chat:room:{roomID}  # Specific room
 ```
 
 ### Event Topics
 
 ```
-events:user:created    # User created events
-events:order:updated   # Order update events
-events:system          # System events
+events:user:created   # User events
+events:order:updated  # Order events
 ```
 
-### Wildcard Topics (Manual)
+### Resource Topics
 
-The live package doesn't support wildcards, but you can implement them:
-
-```go
-// Subscribe to all team updates
-func subscribeToTeamUpdates(s *live.Session, teamID string) {
-    s.Subscribe("team:" + teamID)
-    s.Subscribe("team:" + teamID + ":updates")
-    s.Subscribe("team:" + teamID + ":members")
-}
+```
+item:{itemID}         # Updates for specific item
+team:{teamID}         # Team broadcasts
 ```
 
-## Common Pub/Sub Patterns
+## Common Patterns
 
 ### Chat Room
 
 ```go
-type ChatMessage struct {
-    Room    string    `json:"room"`
-    User    string    `json:"user"`
-    Text    string    `json:"text"`
-    Time    time.Time `json:"time"`
-}
+OnMessage: func(ctx context.Context, s *live.Session, topic string, data []byte) {
+    userID := s.Value().(string)
 
-OnMessage: func(s *live.Session, msg []byte) {
-    var input struct {
-        Action string `json:"action"`
-        Room   string `json:"room"`
-        Text   string `json:"text"`
-    }
-    json.Unmarshal(msg, &input)
+    switch topic {
+    case "join_room":
+        var req struct{ Room string `json:"room"` }
+        json.Unmarshal(data, &req)
 
-    switch input.Action {
-    case "join":
-        s.Subscribe("chat:" + input.Room)
-        s.Set("room", input.Room)
+        server.Subscribe(s, "room:"+req.Room)
 
         // Announce join
-        join, _ := json.Marshal(map[string]string{
-            "type": "join",
-            "user": s.ID(),
-        })
-        server.Publish("chat:"+input.Room, join)
+        msg, _ := json.Marshal(map[string]string{"type": "join", "user": userID})
+        server.Publish("room:"+req.Room, msg)
 
-    case "leave":
-        room := s.Get("room").(string)
-        s.Unsubscribe("chat:" + room)
-        s.Delete("room")
-
-        leave, _ := json.Marshal(map[string]string{
-            "type": "leave",
-            "user": s.ID(),
-        })
-        server.Publish("chat:"+room, leave)
-
-    case "message":
-        room := s.Get("room").(string)
-        chatMsg := ChatMessage{
-            Room: room,
-            User: s.ID(),
-            Text: input.Text,
-            Time: time.Now(),
+    case "chat":
+        var req struct {
+            Room string `json:"room"`
+            Text string `json:"text"`
         }
-        data, _ := json.Marshal(map[string]any{
-            "type":    "message",
-            "message": chatMsg,
+        json.Unmarshal(data, &req)
+
+        msg, _ := json.Marshal(map[string]string{
+            "type": "message",
+            "user": userID,
+            "text": req.Text,
         })
-        server.Publish("chat:"+room, data)
+        server.Publish("room:"+req.Room, msg)
     }
 }
 ```
@@ -184,34 +142,14 @@ OnMessage: func(s *live.Session, msg []byte) {
 ### Notifications
 
 ```go
-type Notification struct {
-    ID      string    `json:"id"`
-    Type    string    `json:"type"`
-    Title   string    `json:"title"`
-    Message string    `json:"message"`
-    Read    bool      `json:"read"`
-    Time    time.Time `json:"time"`
-}
-
-// Send notification to user
-func NotifyUser(userID string, n Notification) {
-    n.ID = uuid.New().String()
-    n.Time = time.Now()
-
-    data, _ := json.Marshal(map[string]any{
-        "type":         "notification",
-        "notification": n,
-    })
-
-    server.Publish("user:"+userID+":notifs", data)
-
-    // Also persist to database
-    saveNotification(userID, n)
+// Send notification from anywhere in your app
+func NotifyUser(userID string, notification Notification) {
+    data, _ := json.Marshal(notification)
+    server.Publish("user:"+userID+":notifications", data)
 }
 
 // Usage
 NotifyUser("user123", Notification{
-    Type:    "order",
     Title:   "Order Shipped",
     Message: "Your order #456 has shipped!",
 })
@@ -220,25 +158,16 @@ NotifyUser("user123", Notification{
 ### Real-time Updates
 
 ```go
-// Subscribe to updates for specific resources
-OnConnect: func(s *live.Session) {
-    // Subscribe to entities the user is watching
-    watchedItems := getUserWatchList(s.ID())
-    for _, itemID := range watchedItems {
-        s.Subscribe("item:" + itemID)
-    }
-}
-
-// Publish updates when data changes
+// When data changes, notify watchers
 func UpdateItem(item Item) error {
     // Save to database
     if err := db.Save(item); err != nil {
         return err
     }
 
-    // Notify watchers
+    // Notify all watchers
     data, _ := json.Marshal(map[string]any{
-        "type": "item_updated",
+        "type": "updated",
         "item": item,
     })
     server.Publish("item:"+item.ID, data)
@@ -250,82 +179,44 @@ func UpdateItem(item Item) error {
 ### Presence
 
 ```go
-// Track who's in a room
-func joinRoom(s *live.Session, room string) {
-    s.Subscribe("room:" + room + ":presence")
-    s.Subscribe("room:" + room + ":messages")
+OnMessage: func(ctx context.Context, s *live.Session, topic string, data []byte) {
+    userID := s.Value().(string)
 
-    // Get current members
-    members := server.Subscribers("room:" + room + ":presence")
-    memberList := make([]string, len(members))
-    for i, m := range members {
-        memberList[i] = m.ID()
+    if topic == "join_room" {
+        var req struct{ Room string `json:"room"` }
+        json.Unmarshal(data, &req)
+
+        // Subscribe to room presence and messages
+        server.Subscribe(s, "room:"+req.Room+":presence")
+        server.Subscribe(s, "room:"+req.Room+":messages")
+
+        // Announce presence
+        msg, _ := json.Marshal(map[string]string{"type": "join", "user": userID})
+        server.Publish("room:"+req.Room+":presence", msg)
     }
+},
 
-    // Send member list to joiner
-    memberData, _ := json.Marshal(map[string]any{
-        "type":    "members",
-        "members": memberList,
-    })
-    s.Send(memberData)
-
-    // Announce join to others
-    joinData, _ := json.Marshal(map[string]any{
-        "type": "join",
-        "user": s.ID(),
-    })
-    server.PublishExcept("room:"+room+":presence", joinData, s.ID())
-}
-```
-
-### Live Cursors (Collaboration)
-
-```go
-type Cursor struct {
-    User string  `json:"user"`
-    X    float64 `json:"x"`
-    Y    float64 `json:"y"`
-}
-
-OnMessage: func(s *live.Session, msg []byte) {
-    var data struct {
-        Action string  `json:"action"`
-        DocID  string  `json:"doc_id"`
-        X      float64 `json:"x"`
-        Y      float64 `json:"y"`
-    }
-    json.Unmarshal(msg, &data)
-
-    if data.Action == "cursor_move" {
-        cursor := Cursor{
-            User: s.ID(),
-            X:    data.X,
-            Y:    data.Y,
-        }
-        cursorData, _ := json.Marshal(map[string]any{
-            "type":   "cursor",
-            "cursor": cursor,
-        })
-        // Send to all editors except sender
-        server.PublishExcept("doc:"+data.DocID+":cursors", cursorData, s.ID())
-    }
+OnClose: func(s *live.Session, err error) {
+    userID := s.Value().(string)
+    // Note: You'd need to track which rooms the user was in
+    // to announce departure
 }
 ```
 
 ## Publishing from HTTP Handlers
 
-You don't need to be in a WebSocket handler to publish:
+You can publish from any part of your application:
 
 ```go
 // API endpoint triggers notification
 app.Post("/api/items", func(c *mizu.Ctx) error {
     var item Item
-    c.BindJSON(&item, 1024)
+    c.BodyJSON(&item)
 
-    // Save to database
+    // Save
     db.Save(&item)
 
-    // Notify relevant users via WebSocket
+    // Notify via WebSocket
     data, _ := json.Marshal(map[string]any{
         "type": "new_item",
         "item": item,
@@ -340,7 +231,7 @@ func processJob(job Job) {
     // ... do work ...
 
     progress, _ := json.Marshal(map[string]any{
-        "type":     "job_progress",
+        "type":     "progress",
         "job_id":   job.ID,
         "progress": job.Progress,
     })
@@ -348,35 +239,47 @@ func processJob(job Job) {
 }
 ```
 
-## Performance Considerations
+## Message Format
+
+Messages sent to clients have this format:
+
+```json
+{
+    "topic": "chat:room1",
+    "data": {"type": "message", "user": "alice", "text": "Hello!"}
+}
+```
+
+Client-side parsing:
+
+```javascript
+ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    console.log(`Topic: ${msg.topic}`);
+    console.log(`Data:`, msg.data);
+};
+```
+
+## Performance Tips
 
 ### Topic Granularity
 
-**Too broad:**
 ```go
-// Bad: everyone gets everything
-s.Subscribe("all_updates")
-```
+// Too broad - everyone gets everything
+server.Subscribe(s, "all_updates")
 
-**Too narrow:**
-```go
-// Potentially bad: thousands of topics
-s.Subscribe("user:123:item:456:comment:789")
-```
+// Too narrow - many small topics
+server.Subscribe(s, "user:123:item:456:field:name")
 
-**Just right:**
-```go
-// Good: meaningful groups
-s.Subscribe("user:" + userID)
-s.Subscribe("team:" + teamID)
+// Just right - meaningful groups
+server.Subscribe(s, "user:"+userID)
+server.Subscribe(s, "team:"+teamID)
 ```
 
 ### Message Size
 
-Keep messages small:
-
 ```go
-// Bad: send entire object
+// Bad: send large objects
 server.Publish(topic, entireLargeObject)
 
 // Good: send just what changed
@@ -385,59 +288,52 @@ server.Publish(topic, []byte(`{"id":"123","status":"updated"}`))
 
 ### Fan-out
 
-Be aware of fan-out costs:
+Be aware of high fan-out:
 
 ```go
-// If topic has 10,000 subscribers, this sends 10,000 messages
+// 10,000 subscribers = 10,000 messages
 server.Publish("global", message)
 
-// Consider batching or pagination for large updates
+// Consider if all really need this update
 ```
 
-## Error Handling
+## Subscription Validation
 
-### Publish Failures
-
-`Publish` doesn't return errors for individual sends. Monitor dropped messages:
+Always validate subscriptions:
 
 ```go
-// Monitor in OnMessage or hooks
-if session.BufferFull() {
-    log.Printf("Warning: buffer full for %s", session.ID())
-}
-```
+OnMessage: func(ctx context.Context, s *live.Session, topic string, data []byte) {
+    if topic == "subscribe" {
+        var req struct{ Topic string `json:"topic"` }
+        json.Unmarshal(data, &req)
 
-### Subscription Validation
+        userID := s.Value().(string)
 
-Validate topic subscriptions:
-
-```go
-OnMessage: func(s *live.Session, msg []byte) {
-    var data struct {
-        Action string `json:"action"`
-        Topic  string `json:"topic"`
-    }
-    json.Unmarshal(msg, &data)
-
-    if data.Action == "subscribe" {
         // Validate permission
-        if !canSubscribe(s.ID(), data.Topic) {
-            s.Send([]byte(`{"error":"cannot subscribe to this topic"}`))
+        if !canSubscribe(userID, req.Topic) {
+            s.Send(live.Message{
+                Topic: "error",
+                Data:  []byte(`{"message":"not authorized"}`),
+            })
             return
         }
-        s.Subscribe(data.Topic)
+
+        server.Subscribe(s, req.Topic)
     }
 }
 
 func canSubscribe(userID, topic string) bool {
-    // Check if user can access this topic
+    // Check topic patterns
     if strings.HasPrefix(topic, "admin:") {
         return isAdmin(userID)
     }
     if strings.HasPrefix(topic, "team:") {
-        teamID := strings.TrimPrefix(topic, "team:")
-        teamID = strings.Split(teamID, ":")[0]
+        teamID := strings.Split(strings.TrimPrefix(topic, "team:"), ":")[0]
         return isTeamMember(userID, teamID)
+    }
+    if strings.HasPrefix(topic, "user:") {
+        targetUser := strings.Split(strings.TrimPrefix(topic, "user:"), ":")[0]
+        return targetUser == userID  // Can only subscribe to own topics
     }
     return true
 }
@@ -451,66 +347,38 @@ func canSubscribe(userID, topic string) bool {
 // Good: clear hierarchy
 "chat:room:123"
 "user:456:notifications"
-"team:789:updates"
 
 // Avoid: ambiguous
 "room123"
 "notifications"
 ```
 
-### 2. Document Topic Conventions
+### 2. Document Conventions
 
 ```go
 // Topic conventions:
-// - user:{id}           - Direct messages to user
-// - user:{id}:notifs    - User notifications
-// - team:{id}           - Team broadcast
-// - chat:{roomId}       - Chat room messages
-// - presence:{roomId}   - Room presence updates
+// - user:{id}           Direct messages to user
+// - user:{id}:notifs    User notifications
+// - team:{id}           Team broadcasts
+// - chat:{roomId}       Chat room messages
+// - presence:{roomId}   Room presence updates
 ```
 
-### 3. Validate Before Publishing
-
-```go
-func publishToRoom(roomID string, msg []byte) error {
-    if !roomExists(roomID) {
-        return errors.New("room not found")
-    }
-    server.Publish("room:"+roomID, msg)
-    return nil
-}
-```
-
-### 4. Use Consistent Message Formats
+### 3. Consistent Message Format
 
 ```go
 type Message struct {
-    Type      string `json:"type"`
-    Timestamp int64  `json:"ts"`
-    Data      any    `json:"data,omitempty"`
+    Type string `json:"type"`
+    Data any    `json:"data,omitempty"`
 }
 
 func publish(topic string, msgType string, data any) {
-    msg := Message{
-        Type:      msgType,
-        Timestamp: time.Now().UnixMilli(),
-        Data:      data,
-    }
+    msg := Message{Type: msgType, Data: data}
     bytes, _ := json.Marshal(msg)
     server.Publish(topic, bytes)
 }
-```
 
-### 5. Clean Up Subscriptions
-
-```go
-OnDisconnect: func(s *live.Session) {
-    // Sessions are automatically unsubscribed on disconnect,
-    // but you may want to notify others
-    if room := s.Get("room"); room != nil {
-        server.Publish("room:"+room.(string)+":presence", []byte(fmt.Sprintf(
-            `{"type":"leave","user":"%s"}`, s.ID(),
-        )))
-    }
-}
+// Usage
+publish("chat:room1", "message", ChatMessage{User: "alice", Text: "Hi"})
+publish("chat:room1", "typing", TypingIndicator{User: "bob"})
 ```

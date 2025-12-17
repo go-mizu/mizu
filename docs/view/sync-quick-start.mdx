@@ -1,27 +1,17 @@
 ---
-title: "Sync Quick Start"
-description: "Build your first offline-capable application with state synchronization"
+title: "Quick Start"
+description: "Build your first sync endpoint in 10 minutes"
 ---
 
-# Sync Quick Start
-
-In this guide, you'll build a simple todo app with offline support. Changes sync across devices, and the app works even without internet.
-
-## What We're Building
-
-A todo application where:
-1. Todos sync between server and clients
-2. Changes appear instantly (optimistic updates)
-3. The app works offline
-4. Multiple users see each other's changes
+This guide walks you through creating a simple sync-enabled API endpoint. You'll learn how to set up the sync engine, handle mutations, and serve changes to clients.
 
 ## Prerequisites
 
 - Go 1.22 or later
 - Basic understanding of Go
-- Completed the [View Quick Start](/view/quick-start) (helpful but not required)
+- Familiarity with REST APIs
 
-## Step 1: Project Setup
+## Step 1: Create Your Project
 
 ```bash
 mkdir sync-demo && cd sync-demo
@@ -29,9 +19,9 @@ go mod init sync-demo
 go get github.com/go-mizu/mizu
 ```
 
-## Step 2: Create the Server
+## Step 2: Create the Sync Engine
 
-The server manages the authoritative state. Create `main.go`:
+Create `main.go`:
 
 ```go
 package main
@@ -39,9 +29,8 @@ package main
 import (
     "context"
     "encoding/json"
-    "errors"
     "log"
-    "time"
+    gosync "sync"
 
     "github.com/go-mizu/mizu"
     "github.com/go-mizu/mizu/sync"
@@ -50,497 +39,286 @@ import (
 
 // Todo represents a todo item
 type Todo struct {
-    ID        string    `json:"id"`
-    Title     string    `json:"title"`
-    Completed bool      `json:"completed"`
-    CreatedAt time.Time `json:"created_at"`
+    ID        string `json:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
 }
+
+// In-memory store (replace with database in production)
+var (
+    todos   = make(map[string]Todo)
+    todosMu gosync.RWMutex
+)
 
 func main() {
-    // Step 1: Create storage backends (in-memory for demo)
-    store := memory.NewStore()     // Stores current state
-    log := memory.NewLog()         // Records changes
-    applied := memory.NewApplied() // Tracks processed mutations
+    // Create sync engine components
+    changeLog := memory.NewLog()
+    dedupe := memory.NewDedupe()
 
-    // Step 2: Create the sync engine
+    // Create the sync engine with our mutation handler
     engine := sync.New(sync.Options{
-        Store:   store,
-        Log:     log,
-        Applied: applied,
-        Mutator: &TodoMutator{}, // Our business logic
+        Log:    changeLog,
+        Dedupe: dedupe,
+        Apply:  applyMutation,
+        Snapshot: func(ctx context.Context, scope string) (json.RawMessage, uint64, error) {
+            todosMu.RLock()
+            defer todosMu.RUnlock()
+
+            // Return all todos as snapshot
+            data, err := json.Marshal(todos)
+            if err != nil {
+                return nil, 0, err
+            }
+
+            cursor, _ := changeLog.Cursor(ctx, scope)
+            return data, cursor, nil
+        },
     })
 
-    // Step 3: Create Mizu app and mount sync endpoints
+    // Create Mizu app
     app := mizu.New()
-    engine.Mount(app)  // Mounts /_sync/push, /_sync/pull, /_sync/snapshot
 
-    // Step 4: Serve a simple HTML client
-    app.Get("/", serveIndex)
+    // Mount sync endpoints
+    app.Post("/sync/push", pushHandler(engine))
+    app.Get("/sync/pull", pullHandler(engine))
+    app.Get("/sync/snapshot", snapshotHandler(engine))
 
-    // Step 5: Start server
-    log.Println("Server running on http://localhost:8080")
+    log.Println("Server starting on :8080")
     app.Listen(":8080")
 }
-
-// TodoMutator handles todo mutations
-type TodoMutator struct{}
-
-func (m *TodoMutator) Apply(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
-    switch mut.Name {
-    case "todo.create":
-        return m.createTodo(ctx, store, mut)
-    case "todo.update":
-        return m.updateTodo(ctx, store, mut)
-    case "todo.delete":
-        return m.deleteTodo(ctx, store, mut)
-    default:
-        return nil, sync.ErrUnknownMutation
-    }
-}
-
-func (m *TodoMutator) createTodo(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
-    // Extract args
-    id, _ := mut.Args["id"].(string)
-    title, _ := mut.Args["title"].(string)
-
-    if id == "" || title == "" {
-        return nil, sync.ErrInvalidMutation
-    }
-
-    // Create todo
-    todo := Todo{
-        ID:        id,
-        Title:     title,
-        Completed: false,
-        CreatedAt: time.Now(),
-    }
-
-    // Store it
-    data, _ := json.Marshal(todo)
-    if err := store.Set(ctx, mut.Scope, "todo", id, data); err != nil {
-        return nil, err
-    }
-
-    // Return the change
-    return []sync.Change{{
-        Entity: "todo",
-        ID:     id,
-        Op:     sync.Create,
-        Data:   data,
-    }}, nil
-}
-
-func (m *TodoMutator) updateTodo(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
-    id, _ := mut.Args["id"].(string)
-    if id == "" {
-        return nil, sync.ErrInvalidMutation
-    }
-
-    // Get existing todo
-    existing, err := store.Get(ctx, mut.Scope, "todo", id)
-    if err != nil {
-        return nil, err
-    }
-
-    var todo Todo
-    json.Unmarshal(existing, &todo)
-
-    // Apply updates
-    if title, ok := mut.Args["title"].(string); ok {
-        todo.Title = title
-    }
-    if completed, ok := mut.Args["completed"].(bool); ok {
-        todo.Completed = completed
-    }
-
-    // Save
-    data, _ := json.Marshal(todo)
-    if err := store.Set(ctx, mut.Scope, "todo", id, data); err != nil {
-        return nil, err
-    }
-
-    return []sync.Change{{
-        Entity: "todo",
-        ID:     id,
-        Op:     sync.Update,
-        Data:   data,
-    }}, nil
-}
-
-func (m *TodoMutator) deleteTodo(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
-    id, _ := mut.Args["id"].(string)
-    if id == "" {
-        return nil, sync.ErrInvalidMutation
-    }
-
-    // Delete from store
-    if err := store.Delete(ctx, mut.Scope, "todo", id); err != nil {
-        return nil, err
-    }
-
-    return []sync.Change{{
-        Entity: "todo",
-        ID:     id,
-        Op:     sync.Delete,
-    }}, nil
-}
-
-func serveIndex(c *mizu.Ctx) error {
-    return c.HTML(200, indexHTML)
-}
-
-const indexHTML = `<!DOCTYPE html>
-<html>
-<head>
-    <title>Sync Todo Demo</title>
-    <style>
-        body { font-family: sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
-        h1 { color: #333; }
-        .status { padding: 10px; border-radius: 5px; margin-bottom: 20px; }
-        .status.online { background: #d4edda; color: #155724; }
-        .status.offline { background: #f8d7da; color: #721c24; }
-        .status.syncing { background: #fff3cd; color: #856404; }
-        input[type="text"] { width: 70%; padding: 10px; font-size: 16px; }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
-        ul { list-style: none; padding: 0; }
-        li { padding: 15px; background: #f5f5f5; margin: 10px 0; border-radius: 5px; display: flex; align-items: center; }
-        li.completed { text-decoration: line-through; opacity: 0.6; }
-        li input[type="checkbox"] { margin-right: 15px; transform: scale(1.5); }
-        li span { flex: 1; }
-        li button { background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 3px; }
-        .pending { opacity: 0.7; font-style: italic; }
-    </style>
-</head>
-<body>
-    <h1>Sync Todo Demo</h1>
-
-    <div id="status" class="status offline">Connecting...</div>
-
-    <div>
-        <input type="text" id="newTodo" placeholder="What needs to be done?">
-        <button onclick="addTodo()">Add</button>
-    </div>
-
-    <ul id="todoList"></ul>
-
-    <p>
-        <button onclick="goOffline()">Simulate Offline</button>
-        <button onclick="goOnline()">Go Online</button>
-    </p>
-
-    <script>
-        // Simple client-side sync implementation for demo
-        const state = {
-            todos: {},
-            cursor: 0,
-            queue: [],
-            online: true,
-            scope: 'demo' // In real app, this would be user-specific
-        };
-
-        // Generate UUID
-        function uuid() {
-            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-                const r = Math.random() * 16 | 0;
-                return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-            });
-        }
-
-        // Render todos
-        function render() {
-            const list = document.getElementById('todoList');
-            list.innerHTML = '';
-
-            Object.values(state.todos).forEach(todo => {
-                const li = document.createElement('li');
-                li.className = todo.completed ? 'completed' : '';
-                if (todo.pending) li.classList.add('pending');
-
-                li.innerHTML = ` + "`" + `
-                    <input type="checkbox" ${todo.completed ? 'checked' : ''}
-                           onchange="toggleTodo('${todo.id}')">
-                    <span>${todo.title}</span>
-                    <button onclick="deleteTodo('${todo.id}')">Delete</button>
-                ` + "`" + `;
-                list.appendChild(li);
-            });
-        }
-
-        // Update status display
-        function updateStatus(text, className) {
-            const status = document.getElementById('status');
-            status.textContent = text;
-            status.className = 'status ' + className;
-        }
-
-        // Add a todo
-        function addTodo() {
-            const input = document.getElementById('newTodo');
-            const title = input.value.trim();
-            if (!title) return;
-
-            const id = uuid();
-            const todo = { id, title, completed: false, pending: true };
-
-            // Optimistic update
-            state.todos[id] = todo;
-            render();
-
-            // Queue mutation
-            queueMutation('todo.create', { id, title });
-
-            input.value = '';
-        }
-
-        // Toggle todo completion
-        function toggleTodo(id) {
-            const todo = state.todos[id];
-            if (!todo) return;
-
-            // Optimistic update
-            todo.completed = !todo.completed;
-            todo.pending = true;
-            render();
-
-            // Queue mutation
-            queueMutation('todo.update', { id, completed: todo.completed });
-        }
-
-        // Delete a todo
-        function deleteTodo(id) {
-            // Optimistic update
-            delete state.todos[id];
-            render();
-
-            // Queue mutation
-            queueMutation('todo.delete', { id });
-        }
-
-        // Queue a mutation
-        function queueMutation(name, args) {
-            state.queue.push({
-                id: uuid(),
-                name,
-                scope: state.scope,
-                args
-            });
-
-            if (state.online) {
-                pushMutations();
-            }
-        }
-
-        // Push mutations to server
-        async function pushMutations() {
-            if (state.queue.length === 0) return;
-
-            updateStatus('Syncing...', 'syncing');
-
-            try {
-                const response = await fetch('/_sync/push', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mutations: state.queue })
-                });
-
-                if (!response.ok) throw new Error('Push failed');
-
-                const data = await response.json();
-
-                // Remove successful mutations from queue
-                data.results.forEach((result, i) => {
-                    if (result.ok) {
-                        state.queue = state.queue.filter(m => m.id !== state.queue[i]?.id);
-                        if (result.cursor > state.cursor) {
-                            state.cursor = result.cursor;
-                        }
-                    }
-                });
-
-                // Clear pending flags
-                Object.values(state.todos).forEach(t => t.pending = false);
-                render();
-
-                updateStatus('Online - Synced', 'online');
-            } catch (err) {
-                console.error('Push error:', err);
-                updateStatus('Offline - Changes queued', 'offline');
-            }
-        }
-
-        // Pull changes from server
-        async function pullChanges() {
-            try {
-                const response = await fetch('/_sync/pull', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        scope: state.scope,
-                        cursor: state.cursor
-                    })
-                });
-
-                if (!response.ok) throw new Error('Pull failed');
-
-                const data = await response.json();
-
-                // Apply changes
-                data.changes.forEach(change => {
-                    if (change.entity === 'todo') {
-                        switch (change.op) {
-                            case 'create':
-                            case 'update':
-                                state.todos[change.id] = JSON.parse(new TextDecoder().decode(
-                                    new Uint8Array(atob(change.data).split('').map(c => c.charCodeAt(0)))
-                                ));
-                                break;
-                            case 'delete':
-                                delete state.todos[change.id];
-                                break;
-                        }
-                    }
-                    if (change.cursor > state.cursor) {
-                        state.cursor = change.cursor;
-                    }
-                });
-
-                render();
-                updateStatus('Online - Synced', 'online');
-
-                // Continue pulling if more data
-                if (data.has_more) {
-                    await pullChanges();
-                }
-            } catch (err) {
-                console.error('Pull error:', err);
-            }
-        }
-
-        // Initial sync
-        async function initialSync() {
-            try {
-                const response = await fetch('/_sync/snapshot', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ scope: state.scope })
-                });
-
-                if (!response.ok) throw new Error('Snapshot failed');
-
-                const data = await response.json();
-
-                // Load todos
-                if (data.data && data.data.todo) {
-                    Object.entries(data.data.todo).forEach(([id, bytes]) => {
-                        state.todos[id] = JSON.parse(new TextDecoder().decode(
-                            new Uint8Array(atob(bytes).split('').map(c => c.charCodeAt(0)))
-                        ));
-                    });
-                }
-
-                state.cursor = data.cursor;
-                render();
-                updateStatus('Online - Synced', 'online');
-            } catch (err) {
-                console.error('Initial sync error:', err);
-                updateStatus('Offline', 'offline');
-            }
-        }
-
-        // Simulate offline
-        function goOffline() {
-            state.online = false;
-            updateStatus('Offline - Changes will queue', 'offline');
-        }
-
-        // Go online
-        function goOnline() {
-            state.online = true;
-            pushMutations();
-            pullChanges();
-        }
-
-        // Start polling (in real app, use WebSocket)
-        setInterval(() => {
-            if (state.online) {
-                pullChanges();
-            }
-        }, 5000);
-
-        // Initial load
-        initialSync();
-    </script>
-</body>
-</html>
-`
 ```
 
-## Step 3: Run the Application
+## Step 3: Implement the Mutation Handler
+
+Add the `applyMutation` function:
+
+```go
+// applyMutation processes mutations and returns changes
+func applyMutation(ctx context.Context, m sync.Mutation) ([]sync.Change, error) {
+    switch m.Name {
+    case "todo.create":
+        return createTodo(m.Args)
+    case "todo.update":
+        return updateTodo(m.Args)
+    case "todo.delete":
+        return deleteTodo(m.Args)
+    default:
+        return nil, sync.ErrInvalidMutation
+    }
+}
+
+func createTodo(args json.RawMessage) ([]sync.Change, error) {
+    var input struct {
+        ID    string `json:"id"`
+        Title string `json:"title"`
+    }
+    if err := json.Unmarshal(args, &input); err != nil {
+        return nil, sync.ErrInvalidMutation
+    }
+
+    todo := Todo{
+        ID:        input.ID,
+        Title:     input.Title,
+        Completed: false,
+    }
+
+    todosMu.Lock()
+    todos[todo.ID] = todo
+    todosMu.Unlock()
+
+    // Return change describing what happened
+    changeData, _ := json.Marshal(map[string]any{
+        "op":     "create",
+        "entity": "todo",
+        "id":     todo.ID,
+        "data":   todo,
+    })
+
+    return []sync.Change{
+        {Data: changeData},
+    }, nil
+}
+
+func updateTodo(args json.RawMessage) ([]sync.Change, error) {
+    var input struct {
+        ID        string `json:"id"`
+        Title     string `json:"title,omitempty"`
+        Completed *bool  `json:"completed,omitempty"`
+    }
+    if err := json.Unmarshal(args, &input); err != nil {
+        return nil, sync.ErrInvalidMutation
+    }
+
+    todosMu.Lock()
+    todo, exists := todos[input.ID]
+    if !exists {
+        todosMu.Unlock()
+        return nil, sync.ErrNotFound
+    }
+
+    if input.Title != "" {
+        todo.Title = input.Title
+    }
+    if input.Completed != nil {
+        todo.Completed = *input.Completed
+    }
+    todos[input.ID] = todo
+    todosMu.Unlock()
+
+    changeData, _ := json.Marshal(map[string]any{
+        "op":     "update",
+        "entity": "todo",
+        "id":     todo.ID,
+        "data":   todo,
+    })
+
+    return []sync.Change{
+        {Data: changeData},
+    }, nil
+}
+
+func deleteTodo(args json.RawMessage) ([]sync.Change, error) {
+    var input struct {
+        ID string `json:"id"`
+    }
+    if err := json.Unmarshal(args, &input); err != nil {
+        return nil, sync.ErrInvalidMutation
+    }
+
+    todosMu.Lock()
+    _, exists := todos[input.ID]
+    if !exists {
+        todosMu.Unlock()
+        return nil, sync.ErrNotFound
+    }
+    delete(todos, input.ID)
+    todosMu.Unlock()
+
+    changeData, _ := json.Marshal(map[string]any{
+        "op":     "delete",
+        "entity": "todo",
+        "id":     input.ID,
+    })
+
+    return []sync.Change{
+        {Data: changeData},
+    }, nil
+}
+```
+
+## Step 4: Create HTTP Handlers
+
+Add the HTTP handlers:
+
+```go
+func pushHandler(engine *sync.Engine) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        var mutations []sync.Mutation
+        if err := c.BodyJSON(&mutations); err != nil {
+            return c.Status(400).JSON(map[string]string{"error": "invalid request"})
+        }
+
+        results, err := engine.Push(c.Context(), mutations)
+        if err != nil {
+            return c.Status(500).JSON(map[string]string{"error": err.Error()})
+        }
+
+        return c.JSON(results)
+    }
+}
+
+func pullHandler(engine *sync.Engine) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        scope := c.Query("scope", sync.DefaultScope)
+        cursor := uint64(c.QueryInt("cursor", 0))
+        limit := c.QueryInt("limit", 100)
+
+        changes, hasMore, err := engine.Pull(c.Context(), scope, cursor, limit)
+        if err != nil {
+            return c.Status(500).JSON(map[string]string{"error": err.Error()})
+        }
+
+        return c.JSON(map[string]any{
+            "changes": changes,
+            "hasMore": hasMore,
+        })
+    }
+}
+
+func snapshotHandler(engine *sync.Engine) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        scope := c.Query("scope", sync.DefaultScope)
+
+        data, cursor, err := engine.Snapshot(c.Context(), scope)
+        if err != nil {
+            return c.Status(500).JSON(map[string]string{"error": err.Error()})
+        }
+
+        return c.JSON(map[string]any{
+            "data":   json.RawMessage(data),
+            "cursor": cursor,
+        })
+    }
+}
+```
+
+## Step 5: Run and Test
+
+Start the server:
 
 ```bash
 go run main.go
 ```
 
-Open `http://localhost:8080` in your browser.
+### Create a Todo
 
-## Step 4: Try It Out
-
-1. **Add todos** - Type a title and click Add
-2. **Toggle completion** - Click the checkbox
-3. **Delete todos** - Click the Delete button
-4. **Open another tab** - Both tabs stay in sync
-5. **Click "Simulate Offline"** - Make changes (they queue)
-6. **Click "Go Online"** - Changes sync to server
-
-## Understanding the Code
-
-### Server-Side: Sync Engine
-
-```go
-engine := sync.New(sync.Options{
-    Store:   store,   // Where current state lives
-    Log:     log,     // Records all changes with cursors
-    Applied: applied, // Tracks processed mutations for idempotency
-    Mutator: &TodoMutator{},  // Your business logic
-})
+```bash
+curl -X POST http://localhost:8080/sync/push \
+  -H "Content-Type: application/json" \
+  -d '[{"id":"m1","name":"todo.create","args":{"id":"t1","title":"Buy milk"}}]'
 ```
 
-### Server-Side: Mutator
-
-The Mutator processes mutations and returns changes:
-
-```go
-func (m *TodoMutator) Apply(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
-    // 1. Validate the mutation
-    // 2. Apply business logic
-    // 3. Update the store
-    // 4. Return the changes
-}
+Response:
+```json
+[{"ok":true,"cursor":1,"changes":[...]}]
 ```
 
-### Client-Side: Optimistic Updates
+### Pull Changes
 
-```javascript
-// Update UI immediately
-state.todos[id] = todo;
-render();
-
-// Queue mutation for sync
-queueMutation('todo.create', { id, title });
+```bash
+curl "http://localhost:8080/sync/pull?cursor=0"
 ```
 
-### Client-Side: Sync Protocol
+### Get Snapshot
 
-1. **Push** - Send queued mutations to `/_sync/push`
-2. **Pull** - Get changes since cursor from `/_sync/pull`
-3. **Snapshot** - Get full state from `/_sync/snapshot`
+```bash
+curl "http://localhost:8080/sync/snapshot"
+```
+
+## Understanding the Flow
+
+```
+1. Client sends mutation
+   POST /sync/push [{id, name, args}]
+         │
+         ▼
+2. Engine checks idempotency (dedupe)
+         │
+         ▼
+3. ApplyFunc runs your business logic
+         │
+         ▼
+4. Changes appended to log
+         │
+         ▼
+5. Client receives result with cursor
+         │
+         ▼
+6. Other clients pull changes
+   GET /sync/pull?cursor=N
+```
 
 ## Next Steps
 
-You've built a syncing todo app! To learn more:
-
-- **[Server](/view/sync-server)** - Detailed server configuration
-- **[Client](/view/sync-client)** - The Go client runtime
-- **[Reactive](/view/sync-reactive)** - Signal, Computed, Effect
-- **[Collections](/view/sync-collections)** - Type-safe entity management
-- **[Integration](/view/sync-integration)** - Combine with Live for real-time
+- **[Server](/view/sync-server)** - Engine configuration options
+- **[Integration](/view/sync-integration)** - Add real-time with Live

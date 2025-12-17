@@ -1,176 +1,106 @@
 ---
-title: "View Overview"
-description: "Learn what the View package is and how it helps you build dynamic web pages in Go"
+title: "Overview"
+description: "Server-side HTML templating with Go's html/template"
 ---
 
-# View Overview
+The `view` package provides server-side HTML rendering using Go's built-in `html/template` engine. It adds a thin layer on top for layout support, custom functions, and development-friendly features like hot reloading.
 
-The `view` package is Mizu's template engine for building dynamic HTML pages. It builds on Go's standard `html/template` package and adds helpful features like layouts, reusable components, and development-time hot reload.
+## What is Server-Side Rendering?
 
-## What is a Template Engine?
-
-If you're new to web development, a **template engine** is a tool that helps you create HTML pages with dynamic content. Instead of writing HTML with hardcoded values, you write templates with placeholders that get filled in with real data.
-
-For example, instead of writing:
-
-```html
-<h1>Welcome, Alice!</h1>
-```
-
-You write a template:
-
-```html
-<h1>Welcome, {{.Name}}!</h1>
-```
-
-Then your Go code fills in the `.Name` value:
-
-```go
-view.Render(c, "welcome", view.Data{"Name": "Alice"})
-```
-
-This way, the same template can greet any user by name.
-
-## What Problem Does View Solve?
-
-Go's built-in `html/template` package is powerful, but building a real website with it requires quite a bit of setup:
-
-1. **No standard structure** - Where do you put templates? How do you organize them?
-2. **No layout system** - Every page needs the full HTML structure
-3. **No component reuse** - You end up copying HTML snippets everywhere
-4. **No development reload** - Change a template? Restart the server.
-
-The `view` package solves all of these:
-
-| Problem | View's Solution |
-|---------|-----------------|
-| No structure | Convention-based directory layout |
-| No layouts | Layout templates with named slots |
-| No components | Reusable component templates |
-| No reload | Development mode with auto-reload |
-
-## How View Works
-
-Here's the big picture of how the view system fits together:
+When a user visits your website, the server generates the complete HTML page and sends it to their browser. This is called **server-side rendering (SSR)**.
 
 ```
-Your App                          View Engine                    Browser
-   │                                   │                            │
-   │  1. Request comes in              │                            │
-   │ ◀──────────────────────────────────────────────────────────────│
-   │                                   │                            │
-   │  2. Handler prepares data         │                            │
-   │  3. Calls view.Render()           │                            │
-   │ ─────────────────────────────────▶│                            │
-   │                                   │                            │
-   │                4. Find page template                           │
-   │                5. Find layout template                         │
-   │                6. Render components                            │
-   │                7. Fill slots                                   │
-   │                8. Return HTML                                  │
-   │ ◀─────────────────────────────────│                            │
-   │                                   │                            │
-   │  9. Send response                 │                            │
-   │ ──────────────────────────────────────────────────────────────▶│
+User Request       Server              Browser
+    │                │                    │
+    │  GET /users    │                    │
+    │───────────────▶│                    │
+    │                │                    │
+    │                │ 1. Fetch data      │
+    │                │ 2. Render template │
+    │                │ 3. Return HTML     │
+    │                │                    │
+    │   <html>...    │                    │
+    │◀───────────────│                    │
+    │                │                    │
+    │                │    Display page    │
+    │                │───────────────────▶│
 ```
 
-## The Four Template Types
+**Benefits of SSR:**
+- Fast initial page load (browser displays content immediately)
+- SEO-friendly (search engines can read your content)
+- Works without JavaScript
+- Simple mental model (one language, one place)
 
-View uses a clear mental model with four types of templates:
+## What the View Package Provides
 
-### 1. Pages
+| Feature | Description |
+|---------|-------------|
+| Template Engine | Wraps Go's `html/template` with convenience methods |
+| Layouts | Wrap content in a consistent page structure |
+| Custom Functions | Add your own template helpers |
+| Hot Reload | Templates reload automatically during development |
+| Embedded Files | Bundle templates in your binary for production |
 
-A **page** is the main content for a specific route. When someone visits `/about`, you render the "about" page.
+## How It Works
 
-```
-views/pages/about.html
-views/pages/home.html
-views/pages/users/profile.html
-```
-
-### 2. Layouts
-
-A **layout** is the shell that wraps pages. It contains the common HTML structure: doctype, head, navigation, footer.
-
-```
-views/layouts/default.html
-views/layouts/admin.html
-```
-
-### 3. Components
-
-A **component** is a reusable UI piece with its own data. Think buttons, cards, modals - anything you use in multiple places.
+The view package follows a simple flow:
 
 ```
-views/components/button.html
-views/components/card.html
-views/components/alert.html
+┌─────────────────────────────────────────────────────────────┐
+│                        Engine                                │
+│                                                              │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
+│  │   Config     │───▶│   Templates  │───▶│   Output     │  │
+│  │              │    │              │    │              │  │
+│  │ - Dir        │    │ - home.html  │    │ <html>...    │  │
+│  │ - Extension  │    │ - user.html  │    │              │  │
+│  │ - Funcs      │    │ - layout.html│    │              │  │
+│  │ - Layout     │    │              │    │              │  │
+│  └──────────────┘    └──────────────┘    └──────────────┘  │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### 4. Partials
-
-A **partial** is a template fragment that shares data with its parent. It's for breaking up large templates into smaller pieces.
-
-```
-views/partials/sidebar.html
-views/partials/header.html
-```
+1. **Configure** - Tell the engine where templates are and how to process them
+2. **Load** - Engine parses and caches your template files
+3. **Render** - Pass data to a template, get HTML back
 
 ## Quick Example
 
-Let's see these working together. Here's a minimal setup:
+Here's a minimal example showing the view package in action:
 
 **Directory structure:**
-
 ```
-views/
-├── layouts/
-│   └── default.html
-├── pages/
-│   └── home.html
-└── components/
-    └── button.html
+myapp/
+├── main.go
+└── views/
+    ├── layout.html
+    └── home.html
 ```
 
-**views/layouts/default.html:**
-
+**views/layout.html:**
 ```html
 <!DOCTYPE html>
 <html>
 <head>
-    <title>{{slot "title" "My App"}}</title>
+    <title>{{.Title}}</title>
 </head>
 <body>
-    <nav>My Site</nav>
-    <main>
-        {{slot "content"}}
-    </main>
-    <footer>Copyright 2024</footer>
+    {{template "content" .}}
 </body>
 </html>
 ```
 
-**views/pages/home.html:**
-
+**views/home.html:**
 ```html
-{{define "title"}}Home - My App{{end}}
-
 {{define "content"}}
-<h1>Welcome, {{.Data.Name}}!</h1>
-<p>This is the home page.</p>
-
-{{component "button" (dict "Label" "Click Me" "Variant" "primary")}}
+<h1>Welcome, {{.Name}}!</h1>
+<p>You have {{.Count}} messages.</p>
 {{end}}
 ```
 
-**views/components/button.html:**
-
-```html
-<button class="btn btn-{{.Variant}}">{{.Label}}</button>
-```
-
 **main.go:**
-
 ```go
 package main
 
@@ -180,20 +110,25 @@ import (
 )
 
 func main() {
-    // Create view engine
-    engine := view.New(view.Options{
-        Dir:         "views",
-        Development: true, // Enable hot reload
+    // Create the template engine
+    engine := view.New(view.Config{
+        Dir:           "./views",
+        Extension:     ".html",
+        DefaultLayout: "layout",
     })
 
-    // Create Mizu app
+    // Create the app
     app := mizu.New()
-    app.Use(view.Middleware(engine))
 
-    // Define route
+    // Add engine to app (makes it available in handlers)
+    engine.Middleware(app)
+
+    // Define a route
     app.Get("/", func(c *mizu.Ctx) error {
-        return view.Render(c, "home", view.Data{
-            "Name": "World",
+        return view.From(c).Render(c, "home", view.Data{
+            "Title": "My App",
+            "Name":  "Alice",
+            "Count": 5,
         })
     })
 
@@ -201,99 +136,87 @@ func main() {
 }
 ```
 
-**Result:**
-
-When you visit `http://localhost:8080`, you get:
-
+When you visit `http://localhost:8080`, you'll see:
 ```html
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Home - My App</title>
+    <title>My App</title>
 </head>
 <body>
-    <nav>My Site</nav>
-    <main>
-        <h1>Welcome, World!</h1>
-        <p>This is the home page.</p>
-        <button class="btn btn-primary">Click Me</button>
-    </main>
-    <footer>Copyright 2024</footer>
+    <h1>Welcome, Alice!</h1>
+    <p>You have 5 messages.</p>
 </body>
 </html>
 ```
 
-## Key Features
+## Core Concepts
 
-### Slot System
+### Engine
 
-Slots let pages fill in specific parts of a layout. The layout defines where content can go:
-
-```html
-<!-- Layout defines slots -->
-<title>{{slot "title" "Default Title"}}</title>
-<main>{{slot "content"}}</main>
-```
-
-Pages fill those slots:
-
-```html
-<!-- Page fills slots -->
-{{define "title"}}My Page Title{{end}}
-{{define "content"}}My page content here{{end}}
-```
-
-### Component Data Isolation
-
-Components receive only the data you pass to them. This keeps them independent and reusable:
-
-```html
-{{component "button" (dict "Label" "Save" "Variant" "success")}}
-{{component "button" (dict "Label" "Cancel" "Variant" "secondary")}}
-```
-
-### Development Mode
-
-During development, templates reload automatically on every request. You can change a template and refresh the browser without restarting your server.
+The `Engine` is the main object. You create one, configure it, and use it to render templates.
 
 ```go
-engine := view.New(view.Options{
-    Development: true, // Enables auto-reload
+engine := view.New(view.Config{
+    Dir:       "./views",
+    Extension: ".html",
 })
 ```
 
-### Production Mode
+### Templates
 
-In production, templates are cached for performance. You can even embed them in your binary:
+Templates are HTML files with special syntax for inserting dynamic content. They use Go's `html/template` package.
+
+```html
+<h1>Hello, {{.Name}}!</h1>
+```
+
+The `{{.Name}}` part is replaced with actual data when rendering.
+
+### Layouts
+
+A layout is a template that wraps around your content. It typically contains the `<html>`, `<head>`, and `<body>` tags that every page needs.
+
+```html
+<!-- layout.html -->
+<!DOCTYPE html>
+<html>
+<body>
+    {{template "content" .}}  <!-- Your content goes here -->
+</body>
+</html>
+```
+
+### Data
+
+Data is a `map[string]any` that you pass to templates. Templates can access this data using the dot notation.
 
 ```go
-//go:embed views
-var viewsFS embed.FS
-
-engine := view.New(view.Options{
-    FS: viewsFS,
-    // Development defaults to false
-})
+view.Data{
+    "Title":   "Home",
+    "User":    currentUser,
+    "Items":   []string{"a", "b", "c"},
+}
 ```
 
 ## When to Use View
 
-Use the view package when you need:
+**Use the view package when:**
+- Building traditional server-rendered websites
+- Creating admin dashboards
+- Building email templates
+- Generating any HTML from Go
 
-- **Server-side rendered HTML** - Blog, marketing pages, admin panels
-- **Traditional web pages** - Forms, dashboards, reports
-- **Email templates** - Generate HTML emails
-- **PDF generation** - Create HTML for PDF conversion
-
-For single-page applications (SPAs) with React, Vue, or similar, you might only use view for the initial HTML shell, or skip it entirely in favor of a JSON API.
+**Consider alternatives when:**
+- Building single-page applications (SPAs) with React/Vue/etc.
+- Building APIs that return JSON
+- Using a separate frontend framework
 
 ## What's Next?
 
-Ready to start building? Here's your learning path:
-
-1. **[Quick Start](/view/quick-start)** - Create your first view in 5 minutes
-2. **[Engine Configuration](/view/engine)** - Learn all the configuration options
-3. **[Templates](/view/templates)** - Deep dive into template syntax
-4. **[Layouts](/view/layouts)** - Master the layout and slot system
-5. **[Components](/view/components)** - Build reusable components
-6. **[Production](/view/production)** - Deploy with embedded templates
+1. **[Quick Start](/view/quick-start)** - Build your first page step by step
+2. **[Engine](/view/engine)** - All configuration options explained
+3. **[Templates](/view/templates)** - Go template syntax guide
+4. **[Layouts](/view/layouts)** - Page structure and inheritance
+5. **[Functions](/view/functions)** - Built-in and custom helpers
+6. **[Production](/view/production)** - Deployment best practices
