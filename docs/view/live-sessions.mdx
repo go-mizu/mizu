@@ -1,0 +1,514 @@
+---
+title: "Live Sessions"
+description: "Managing WebSocket connections and session state"
+---
+
+# Live Sessions
+
+A Session represents a single WebSocket connection. Each connected client has its own session with a unique ID, subscriptions, and metadata. This guide covers session management and lifecycle.
+
+## Session Lifecycle
+
+```
+Client connects
+      │
+      ▼
+┌─────────────┐
+│   OnAuth    │ ──── Rejected ────▶ Connection closed
+└─────────────┘
+      │
+   Accepted
+      │
+      ▼
+┌─────────────┐
+│ OnConnect   │ ◀──── Session created
+└─────────────┘
+      │
+      ▼
+┌─────────────┐
+│   Active    │ ◀──── Send/Receive messages
+└─────────────┘
+      │
+   Client disconnects
+   or server closes
+      │
+      ▼
+┌─────────────┐
+│OnDisconnect │ ──── Session destroyed
+└─────────────┘
+```
+
+## Session Methods
+
+### ID
+
+Returns the session's unique identifier (set during `OnAuth`).
+
+```go
+OnConnect: func(s *live.Session) {
+    userID := s.ID()
+    log.Printf("User connected: %s", userID)
+}
+```
+
+### Send
+
+Sends a message directly to this session.
+
+```go
+// Send text
+s.Send([]byte("Hello!"))
+
+// Send JSON
+data, _ := json.Marshal(map[string]string{
+    "type": "notification",
+    "text": "Welcome!",
+})
+s.Send(data)
+```
+
+### Subscribe
+
+Subscribes the session to a topic.
+
+```go
+OnConnect: func(s *live.Session) {
+    s.Subscribe("global")           // Everyone
+    s.Subscribe("user:" + s.ID())   // Personal
+    s.Subscribe("room:lobby")       // Specific room
+}
+```
+
+### Unsubscribe
+
+Removes the session from a topic.
+
+```go
+OnMessage: func(s *live.Session, msg []byte) {
+    var data map[string]string
+    json.Unmarshal(msg, &data)
+
+    if data["action"] == "leave_room" {
+        s.Unsubscribe("room:" + data["room"])
+    }
+}
+```
+
+### Subscriptions
+
+Returns all topics the session is subscribed to.
+
+```go
+topics := s.Subscriptions()
+log.Printf("User %s is in: %v", s.ID(), topics)
+```
+
+### Close
+
+Closes the connection.
+
+```go
+// Kick a user
+session := server.Session("baduser")
+if session != nil {
+    session.Send([]byte(`{"type":"kicked","reason":"violation"}`))
+    session.Close()
+}
+```
+
+### RemoteAddr
+
+Returns the client's address.
+
+```go
+OnConnect: func(s *live.Session) {
+    log.Printf("Connection from: %s", s.RemoteAddr())
+}
+```
+
+## Session Metadata
+
+Store arbitrary data on sessions using `Set` and `Get`.
+
+### Set
+
+Stores a value.
+
+```go
+OnConnect: func(s *live.Session) {
+    s.Set("connected_at", time.Now())
+    s.Set("role", getUserRole(s.ID()))
+    s.Set("room", "lobby")
+}
+```
+
+### Get
+
+Retrieves a value.
+
+```go
+OnMessage: func(s *live.Session, msg []byte) {
+    role := s.Get("role")
+    if role != "admin" {
+        s.Send([]byte(`{"error":"permission denied"}`))
+        return
+    }
+    // Process admin command
+}
+```
+
+### Delete
+
+Removes a value.
+
+```go
+s.Delete("temporary_data")
+```
+
+## Common Patterns
+
+### User Presence
+
+Track who's online:
+
+```go
+var onlineUsers sync.Map
+
+server := live.NewServer(live.Options{
+    OnConnect: func(s *live.Session) {
+        onlineUsers.Store(s.ID(), true)
+
+        // Notify others
+        server.Publish("presence", []byte(fmt.Sprintf(
+            `{"type":"join","user":"%s","time":"%s"}`,
+            s.ID(), time.Now().Format(time.RFC3339),
+        )))
+    },
+    OnDisconnect: func(s *live.Session) {
+        onlineUsers.Delete(s.ID())
+
+        server.Publish("presence", []byte(fmt.Sprintf(
+            `{"type":"leave","user":"%s"}`, s.ID(),
+        )))
+    },
+})
+
+// API to get online users
+app.Get("/api/online", func(c *mizu.Ctx) error {
+    users := []string{}
+    onlineUsers.Range(func(key, value any) bool {
+        users = append(users, key.(string))
+        return true
+    })
+    return c.JSON(users)
+})
+```
+
+### Room Management
+
+Handle users joining and leaving rooms:
+
+```go
+OnMessage: func(s *live.Session, msg []byte) {
+    var data struct {
+        Action string `json:"action"`
+        Room   string `json:"room"`
+    }
+    json.Unmarshal(msg, &data)
+
+    switch data.Action {
+    case "join_room":
+        // Leave current room
+        if currentRoom := s.Get("room"); currentRoom != nil {
+            s.Unsubscribe("room:" + currentRoom.(string))
+            server.Publish("room:"+currentRoom.(string), []byte(fmt.Sprintf(
+                `{"type":"leave","user":"%s"}`, s.ID(),
+            )))
+        }
+
+        // Join new room
+        s.Subscribe("room:" + data.Room)
+        s.Set("room", data.Room)
+
+        server.Publish("room:"+data.Room, []byte(fmt.Sprintf(
+            `{"type":"join","user":"%s"}`, s.ID(),
+        )))
+
+    case "leave_room":
+        s.Unsubscribe("room:" + data.Room)
+        s.Delete("room")
+    }
+}
+```
+
+### Direct Messaging
+
+Send messages to specific users:
+
+```go
+OnMessage: func(s *live.Session, msg []byte) {
+    var data struct {
+        Action  string `json:"action"`
+        To      string `json:"to"`
+        Message string `json:"message"`
+    }
+    json.Unmarshal(msg, &data)
+
+    if data.Action == "dm" {
+        // Find recipient's session
+        recipient := server.Session(data.To)
+        if recipient == nil {
+            s.Send([]byte(`{"error":"user not online"}`))
+            return
+        }
+
+        // Send direct message
+        dm, _ := json.Marshal(map[string]string{
+            "type": "dm",
+            "from": s.ID(),
+            "text": data.Message,
+        })
+        recipient.Send(dm)
+
+        // Confirm to sender
+        s.Send([]byte(`{"type":"dm_sent"}`))
+    }
+}
+```
+
+### Session Timeout
+
+Kick inactive sessions:
+
+```go
+OnConnect: func(s *live.Session) {
+    s.Set("last_activity", time.Now())
+}
+
+OnMessage: func(s *live.Session, msg []byte) {
+    s.Set("last_activity", time.Now())
+    // Handle message...
+}
+
+// Background goroutine
+go func() {
+    for range time.Tick(time.Minute) {
+        for _, session := range server.Sessions() {
+            lastActivity := session.Get("last_activity").(time.Time)
+            if time.Since(lastActivity) > 30*time.Minute {
+                session.Send([]byte(`{"type":"timeout"}`))
+                session.Close()
+            }
+        }
+    }
+}()
+```
+
+### Rate Limiting
+
+Prevent spam:
+
+```go
+OnMessage: func(s *live.Session, msg []byte) {
+    // Get message count
+    count := 0
+    if c := s.Get("msg_count"); c != nil {
+        count = c.(int)
+    }
+
+    // Reset counter every minute
+    lastReset := s.Get("msg_reset")
+    if lastReset == nil || time.Since(lastReset.(time.Time)) > time.Minute {
+        count = 0
+        s.Set("msg_reset", time.Now())
+    }
+
+    // Check rate limit
+    if count > 60 { // 60 messages per minute
+        s.Send([]byte(`{"error":"rate limited"}`))
+        return
+    }
+
+    s.Set("msg_count", count+1)
+
+    // Process message...
+}
+```
+
+### Typing Indicators
+
+Show when users are typing:
+
+```go
+OnMessage: func(s *live.Session, msg []byte) {
+    var data struct {
+        Action string `json:"action"`
+        Room   string `json:"room"`
+    }
+    json.Unmarshal(msg, &data)
+
+    if data.Action == "typing" {
+        // Broadcast to room except sender
+        server.PublishExcept("room:"+data.Room, []byte(fmt.Sprintf(
+            `{"type":"typing","user":"%s"}`, s.ID(),
+        )), s.ID())
+    }
+}
+```
+
+## Multiple Sessions per User
+
+Users might connect from multiple devices. Handle this with a user-to-sessions mapping:
+
+```go
+var userSessions = struct {
+    sync.RWMutex
+    m map[string][]string // userID -> []sessionID
+}{m: make(map[string][]string)}
+
+server := live.NewServer(live.Options{
+    OnAuth: func(r *http.Request) (string, bool) {
+        userID := validateToken(r)
+        // Generate unique session ID
+        sessionID := userID + ":" + uuid.New().String()
+        return sessionID, true
+    },
+
+    OnConnect: func(s *live.Session) {
+        parts := strings.SplitN(s.ID(), ":", 2)
+        userID := parts[0]
+
+        userSessions.Lock()
+        userSessions.m[userID] = append(userSessions.m[userID], s.ID())
+        userSessions.Unlock()
+
+        s.Set("user_id", userID)
+    },
+
+    OnDisconnect: func(s *live.Session) {
+        userID := s.Get("user_id").(string)
+
+        userSessions.Lock()
+        sessions := userSessions.m[userID]
+        for i, id := range sessions {
+            if id == s.ID() {
+                userSessions.m[userID] = append(sessions[:i], sessions[i+1:]...)
+                break
+            }
+        }
+        if len(userSessions.m[userID]) == 0 {
+            delete(userSessions.m, userID)
+        }
+        userSessions.Unlock()
+    },
+})
+
+// Send to all of a user's sessions
+func sendToUser(userID string, msg []byte) {
+    userSessions.RLock()
+    sessions := userSessions.m[userID]
+    userSessions.RUnlock()
+
+    for _, sessionID := range sessions {
+        if session := server.Session(sessionID); session != nil {
+            session.Send(msg)
+        }
+    }
+}
+```
+
+## Best Practices
+
+### 1. Clean Up on Disconnect
+
+Always clean up resources:
+
+```go
+OnDisconnect: func(s *live.Session) {
+    // Remove from rooms
+    if room := s.Get("room"); room != nil {
+        notifyRoomLeave(room.(string), s.ID())
+    }
+
+    // Remove from tracking
+    removeFromOnlineList(s.ID())
+
+    // Cancel any timers
+    if timer := s.Get("reminder_timer"); timer != nil {
+        timer.(*time.Timer).Stop()
+    }
+}
+```
+
+### 2. Validate All Input
+
+Never trust client messages:
+
+```go
+OnMessage: func(s *live.Session, msg []byte) {
+    var data Message
+    if err := json.Unmarshal(msg, &data); err != nil {
+        s.Send([]byte(`{"error":"invalid json"}`))
+        return
+    }
+
+    // Validate message type
+    if !isValidAction(data.Action) {
+        s.Send([]byte(`{"error":"invalid action"}`))
+        return
+    }
+
+    // Validate permissions
+    if !canPerformAction(s, data.Action) {
+        s.Send([]byte(`{"error":"permission denied"}`))
+        return
+    }
+
+    // Process...
+}
+```
+
+### 3. Use Structured Messages
+
+Define clear message types:
+
+```go
+type Message struct {
+    Type    string `json:"type"`
+    Payload any    `json:"payload,omitempty"`
+    Error   string `json:"error,omitempty"`
+}
+
+func respond(s *live.Session, msgType string, payload any) {
+    data, _ := json.Marshal(Message{Type: msgType, Payload: payload})
+    s.Send(data)
+}
+
+func respondError(s *live.Session, err string) {
+    data, _ := json.Marshal(Message{Type: "error", Error: err})
+    s.Send(data)
+}
+```
+
+### 4. Handle Reconnection
+
+Clients will reconnect. Be prepared:
+
+```go
+OnConnect: func(s *live.Session) {
+    // Restore subscriptions
+    if rooms := getUserRooms(s.ID()); rooms != nil {
+        for _, room := range rooms {
+            s.Subscribe("room:" + room)
+        }
+    }
+
+    // Send missed messages
+    if lastSeen := getLastSeen(s.ID()); lastSeen != nil {
+        messages := getMessagesSince(lastSeen)
+        for _, msg := range messages {
+            s.Send(msg)
+        }
+    }
+}
+```

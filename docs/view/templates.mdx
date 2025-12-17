@@ -1,0 +1,466 @@
+---
+title: "Templates"
+description: "Understanding template types, syntax, and data access in Mizu's view system"
+---
+
+# Templates
+
+This guide covers everything you need to know about writing templates in Mizu's view system. We'll explore the four template types, Go's template syntax, and how data flows through your templates.
+
+## The Four Template Types
+
+Mizu uses four types of templates, each with a specific purpose:
+
+| Type | Directory | Purpose | Data Access |
+|------|-----------|---------|-------------|
+| Pages | `views/pages/` | Main content for routes | Full data context |
+| Layouts | `views/layouts/` | Shell that wraps pages | Full data context |
+| Components | `views/components/` | Reusable UI pieces | Only passed data |
+| Partials | `views/partials/` | Template fragments | Full data context |
+
+### How They Fit Together
+
+```
+┌─────────────────────────────────────────────────┐
+│                    Layout                        │
+│  ┌───────────────────────────────────────────┐  │
+│  │               {{slot "content"}}           │  │
+│  │   ┌───────────────────────────────────┐   │  │
+│  │   │              Page                  │   │  │
+│  │   │                                    │   │  │
+│  │   │   {{partial "sidebar"}}            │   │  │
+│  │   │                                    │   │  │
+│  │   │   {{component "button" (dict...)}} │   │  │
+│  │   │                                    │   │  │
+│  │   └───────────────────────────────────┘   │  │
+│  └───────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────┘
+```
+
+## Go Template Syntax Basics
+
+If you're new to Go templates, here's a quick introduction. Templates use `{{` and `}}` to mark dynamic content.
+
+### Outputting Values
+
+Use `.` to access data:
+
+```html
+<!-- Simple value -->
+<h1>{{.Title}}</h1>
+
+<!-- Nested value -->
+<p>Author: {{.Post.Author.Name}}</p>
+
+<!-- Method call (parentheses required even with no arguments) -->
+<p>Length: {{.Items.Len}}</p>
+```
+
+### Conditions
+
+Use `if` to show content conditionally:
+
+```html
+{{if .LoggedIn}}
+    <p>Welcome back!</p>
+{{else}}
+    <p>Please log in.</p>
+{{end}}
+
+{{if .Error}}
+    <div class="error">{{.Error}}</div>
+{{end}}
+```
+
+### Loops
+
+Use `range` to iterate over slices, arrays, or maps:
+
+```html
+<!-- Loop over slice -->
+<ul>
+    {{range .Items}}
+    <li>{{.}}</li>
+    {{end}}
+</ul>
+
+<!-- With index -->
+<ul>
+    {{range $index, $item := .Items}}
+    <li>{{$index}}: {{$item}}</li>
+    {{end}}
+</ul>
+
+<!-- Empty case -->
+{{range .Items}}
+    <li>{{.}}</li>
+{{else}}
+    <li>No items found.</li>
+{{end}}
+```
+
+### Variables
+
+Assign values to variables with `:=`:
+
+```html
+{{$name := .User.Name}}
+<p>Hello, {{$name}}!</p>
+
+{{$fullName := printf "%s %s" .FirstName .LastName}}
+<p>{{$fullName}}</p>
+```
+
+### Pipelines
+
+Chain operations with `|`:
+
+```html
+<!-- Apply function to value -->
+<p>{{.Name | uppercase}}</p>
+
+<!-- Chain multiple functions -->
+<p>{{.Bio | truncate 100 | safeHTML}}</p>
+```
+
+### Comments
+
+Template comments are stripped from output:
+
+```html
+{{/* This comment won't appear in the HTML */}}
+<p>Visible content</p>
+```
+
+### Whitespace Control
+
+Use `-` to trim whitespace:
+
+```html
+{{- .Name -}}  <!-- Trims whitespace before and after -->
+```
+
+## Data Context
+
+Understanding how data flows through templates is crucial.
+
+### The Data Object
+
+When you call `view.Render()`, you pass data:
+
+```go
+view.Render(c, "profile", view.Data{
+    "User":    user,
+    "Posts":   posts,
+    "IsAdmin": true,
+})
+```
+
+In templates, this data is available at `.Data`:
+
+```html
+<h1>{{.Data.User.Name}}</h1>
+
+{{if .Data.IsAdmin}}
+<a href="/admin">Admin Panel</a>
+{{end}}
+
+{{range .Data.Posts}}
+<article>{{.Title}}</article>
+{{end}}
+```
+
+### Built-in Context Values
+
+Every template has access to:
+
+| Path | Description |
+|------|-------------|
+| `.Data` | Your custom data |
+| `.Layout` | Current layout name |
+| `.Page` | Current page name |
+| `.Request` | The HTTP request |
+
+Example:
+
+```html
+<p>Current page: {{.Page}}</p>
+<p>Request URL: {{.Request.URL.Path}}</p>
+```
+
+### Context in Range Loops
+
+Inside a `range`, `.` refers to the current item:
+
+```html
+{{range .Data.Users}}
+    <!-- Here, . is a User -->
+    <p>{{.Name}} - {{.Email}}</p>
+{{end}}
+```
+
+To access parent data inside a loop, use `$`:
+
+```html
+{{range .Data.Users}}
+    <p>{{.Name}}</p>
+    {{if $.Data.ShowEmail}}
+        <p>{{.Email}}</p>
+    {{end}}
+{{end}}
+```
+
+`$` always refers to the root context.
+
+## Pages in Detail
+
+Pages are the main content templates. They fill slots in layouts.
+
+### Basic Page Structure
+
+```html
+<!-- views/pages/home.html -->
+
+{{define "title"}}Home Page{{end}}
+
+{{define "content"}}
+<h1>Welcome</h1>
+<p>This is the home page.</p>
+{{end}}
+```
+
+The `define` blocks fill named slots in the layout.
+
+### Specifying a Layout
+
+Pages use the default layout by default. To use a different layout:
+
+```html
+{{define "layout"}}admin{{end}}
+
+{{define "title"}}Dashboard{{end}}
+
+{{define "content"}}
+<h1>Admin Dashboard</h1>
+{{end}}
+```
+
+Or specify in the handler:
+
+```go
+view.Render(c, "dashboard", data, view.Layout("admin"))
+```
+
+### Nested Pages
+
+Organize pages in subdirectories:
+
+```
+views/pages/
+├── home.html
+├── about.html
+└── users/
+    ├── list.html
+    └── profile.html
+```
+
+Render nested pages with forward slashes:
+
+```go
+view.Render(c, "users/profile", data)
+view.Render(c, "users/list", data)
+```
+
+## Layouts in Detail
+
+Layouts provide the HTML shell for pages.
+
+### Basic Layout Structure
+
+```html
+<!-- views/layouts/default.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{slot "title" "My App"}}</title>
+    {{slot "head"}}
+</head>
+<body>
+    <nav>{{partial "nav"}}</nav>
+    <main>
+        {{slot "content"}}
+    </main>
+    <footer>
+        {{slot "footer"}}
+        {{partial "footer"}}
+    </footer>
+</body>
+</html>
+```
+
+### Slot Function
+
+`slot` defines where page content goes:
+
+```html
+{{slot "name"}}                    <!-- Required slot, empty if not filled -->
+{{slot "name" "Default Value"}}    <!-- Slot with default value -->
+```
+
+See the [Layouts](/view/layouts) guide for more on slots.
+
+## Components in Detail
+
+Components are isolated, reusable templates.
+
+### Creating a Component
+
+```html
+<!-- views/components/alert.html -->
+<div class="alert alert-{{.Type}}">
+    <strong>{{.Title}}</strong>
+    <p>{{.Message}}</p>
+</div>
+```
+
+### Using a Component
+
+```html
+{{component "alert" (dict
+    "Type" "warning"
+    "Title" "Watch Out!"
+    "Message" "This is a warning message."
+)}}
+```
+
+### Component Data Isolation
+
+Components only see the data you pass to them. They **cannot** access `.Data` from the parent template. This keeps them reusable and predictable.
+
+See the [Components](/view/components) guide for more.
+
+## Partials in Detail
+
+Partials are fragments that share the parent's data context.
+
+### Creating a Partial
+
+```html
+<!-- views/partials/user-card.html -->
+<div class="user-card">
+    <img src="{{.Data.User.Avatar}}">
+    <h3>{{.Data.User.Name}}</h3>
+</div>
+```
+
+### Using a Partial
+
+```html
+{{partial "user-card"}}
+```
+
+Partials inherit the full data context, making them good for breaking up large templates without passing data manually.
+
+See the [Partials](/view/partials) guide for more.
+
+## Template Comparison
+
+| Feature | Page | Layout | Component | Partial |
+|---------|------|--------|-----------|---------|
+| Access `.Data` | Yes | Yes | No | Yes |
+| Receives passed data | No | No | Yes | No |
+| Can define slots | Yes | No | No | No |
+| Can use `slot` | No | Yes | No | No |
+| Supports nesting | Yes | No | Yes | Yes |
+| Use case | Route content | HTML shell | Reusable UI | Code organization |
+
+## Common Patterns
+
+### Conditional Classes
+
+```html
+<div class="card {{if .Data.Featured}}card-featured{{end}}">
+    ...
+</div>
+```
+
+### Dynamic Attributes
+
+```html
+<input
+    type="text"
+    name="{{.Name}}"
+    {{if .Required}}required{{end}}
+    {{if .Disabled}}disabled{{end}}
+>
+```
+
+### Safe HTML Output
+
+By default, Go templates escape HTML. To output raw HTML:
+
+```html
+<!-- Escaped (safe but shows HTML as text) -->
+<div>{{.Content}}</div>
+
+<!-- Unescaped (use only with trusted content!) -->
+<div>{{safeHTML .Content}}</div>
+```
+
+### Comparing Values
+
+```html
+{{if eq .Status "active"}}Active{{end}}
+{{if ne .Count 0}}Has items{{end}}
+{{if gt .Price 100}}Premium{{end}}
+{{if le .Stock 5}}Low stock{{end}}
+```
+
+### Boolean Logic
+
+```html
+{{if and .LoggedIn .IsAdmin}}
+    Admin controls
+{{end}}
+
+{{if or .Error .Warning}}
+    <div class="alert">Check messages</div>
+{{end}}
+
+{{if not .Disabled}}
+    <button>Click me</button>
+{{end}}
+```
+
+### Default Values
+
+```html
+<p>{{default .Name "Anonymous"}}</p>
+<img src="{{default .Avatar "/default.png"}}">
+```
+
+## Debugging Templates
+
+### Print Values
+
+```html
+<pre>{{printf "%#v" .Data}}</pre>
+```
+
+### Check Types
+
+```html
+<p>Type: {{printf "%T" .Data.Items}}</p>
+```
+
+### Template Errors
+
+Enable development mode for detailed errors:
+
+```go
+view.New(view.Options{
+    Development: true,
+})
+```
+
+Errors will include template source and line numbers.

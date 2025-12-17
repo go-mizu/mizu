@@ -1,0 +1,713 @@
+---
+title: "Template Functions"
+description: "Built-in helper functions available in all templates"
+---
+
+# Template Functions
+
+Mizu's view engine provides a rich set of built-in template functions that make your templates more expressive. This guide covers all available functions and how to add your own.
+
+## Data Structure Functions
+
+### dict
+
+Creates a map from key-value pairs. Essential for passing data to components.
+
+```html
+{{dict "name" "Alice" "age" 30 "admin" true}}
+```
+
+Usage with components:
+
+```html
+{{component "user-card" (dict
+    "Name" "Alice"
+    "Email" "alice@example.com"
+    "Role" "admin"
+)}}
+```
+
+### list
+
+Creates a slice from values.
+
+```html
+{{list "apple" "banana" "cherry"}}
+```
+
+Usage:
+
+```html
+{{$fruits := list "apple" "banana" "cherry"}}
+<ul>
+{{range $fruits}}
+    <li>{{.}}</li>
+{{end}}
+</ul>
+```
+
+### first
+
+Returns the first element of a slice.
+
+```html
+{{first .Data.Items}}    {{/* First item */}}
+```
+
+### last
+
+Returns the last element of a slice.
+
+```html
+{{last .Data.Items}}     {{/* Last item */}}
+```
+
+### rest
+
+Returns all elements except the first.
+
+```html
+{{rest .Data.Items}}     {{/* All items except first */}}
+```
+
+### reverse
+
+Reverses a slice.
+
+```html
+{{range reverse .Data.Posts}}
+    <article>{{.Title}}</article>
+{{end}}
+```
+
+### sort
+
+Sorts a slice. For slices of structs, specify the field.
+
+```html
+{{/* Sort strings */}}
+{{range sort .Data.Tags}}
+    <span>{{.}}</span>
+{{end}}
+
+{{/* Sort by field */}}
+{{range sort .Data.Users "Name"}}
+    <li>{{.Name}}</li>
+{{end}}
+```
+
+### uniq
+
+Removes duplicate values from a slice.
+
+```html
+{{range uniq .Data.Tags}}
+    <span class="tag">{{.}}</span>
+{{end}}
+```
+
+### contains
+
+Checks if a slice contains a value.
+
+```html
+{{if contains .Data.Roles "admin"}}
+    <a href="/admin">Admin Panel</a>
+{{end}}
+```
+
+### in
+
+Checks if a value is in a slice (reverse of contains).
+
+```html
+{{if in "admin" .Data.Roles}}
+    <span class="admin-badge">Admin</span>
+{{end}}
+```
+
+## String Functions
+
+### upper / uppercase
+
+Converts a string to uppercase.
+
+```html
+<span class="status">{{upper .Status}}</span>
+<!-- "active" → "ACTIVE" -->
+```
+
+### lower / lowercase
+
+Converts a string to lowercase.
+
+```html
+<div class="type-{{lower .Type}}">
+<!-- "Featured" → "featured" -->
+```
+
+### title
+
+Converts a string to title case.
+
+```html
+<h1>{{title .Slug}}</h1>
+<!-- "hello-world" → "Hello World" -->
+```
+
+### trim
+
+Removes leading and trailing whitespace.
+
+```html
+<p>{{trim .Description}}</p>
+```
+
+### trimPrefix
+
+Removes a prefix from a string.
+
+```html
+{{trimPrefix "Dr. " .Name}}
+<!-- "Dr. Smith" → "Smith" -->
+```
+
+### trimSuffix
+
+Removes a suffix from a string.
+
+```html
+{{trimSuffix ".html" .Filename}}
+<!-- "page.html" → "page" -->
+```
+
+### replace
+
+Replaces occurrences of a substring.
+
+```html
+{{replace .Content "\n" "<br>" -1}}
+<!-- Replace all newlines with <br> -->
+```
+
+### split
+
+Splits a string into a slice.
+
+```html
+{{$parts := split .Tags ","}}
+{{range $parts}}
+    <span class="tag">{{trim .}}</span>
+{{end}}
+```
+
+### join
+
+Joins a slice into a string.
+
+```html
+<meta name="keywords" content="{{join .Data.Keywords ", "}}">
+```
+
+### repeat
+
+Repeats a string.
+
+```html
+{{repeat "⭐" .Rating}}
+<!-- Rating 3 → "⭐⭐⭐" -->
+```
+
+### truncate
+
+Truncates a string to a maximum length.
+
+```html
+<p>{{truncate .Description 100}}</p>
+<!-- Adds "..." if truncated -->
+```
+
+### hasPrefix
+
+Checks if a string starts with a prefix.
+
+```html
+{{if hasPrefix .URL "https"}}
+    <span class="secure">🔒</span>
+{{end}}
+```
+
+### hasSuffix
+
+Checks if a string ends with a suffix.
+
+```html
+{{if hasSuffix .Filename ".pdf"}}
+    <span class="file-icon">📄</span>
+{{end}}
+```
+
+### slugify
+
+Converts a string to a URL-friendly slug.
+
+```html
+<a href="/posts/{{slugify .Title}}">{{.Title}}</a>
+<!-- "Hello World!" → "hello-world" -->
+```
+
+### nl2br
+
+Converts newlines to `<br>` tags.
+
+```html
+<p>{{nl2br .Bio | safeHTML}}</p>
+```
+
+## HTML Functions
+
+### safeHTML
+
+Marks a string as safe HTML (bypasses escaping).
+
+```html
+{{safeHTML .Content}}
+```
+
+**Warning:** Only use with trusted content to avoid XSS attacks.
+
+### safeAttr
+
+Marks a string as safe for use in attributes.
+
+```html
+<div data-config='{{safeAttr .ConfigJSON}}'>
+```
+
+### safeURL
+
+Marks a string as a safe URL.
+
+```html
+<a href="{{safeURL .ExternalLink}}">
+```
+
+### safeCSS
+
+Marks a string as safe CSS.
+
+```html
+<div style="{{safeCSS .CustomStyle}}">
+```
+
+### safeJS
+
+Marks a string as safe JavaScript.
+
+```html
+<script>var data = {{safeJS .JSONData}};</script>
+```
+
+### safeJSON
+
+Converts a value to JSON for embedding in HTML.
+
+```html
+<script>
+    const config = {{safeJSON .Config}};
+</script>
+```
+
+### escapeHTML
+
+Escapes HTML characters (usually automatic).
+
+```html
+<pre>{{escapeHTML .Code}}</pre>
+```
+
+## Number Functions
+
+### add
+
+Adds numbers.
+
+```html
+<p>Page {{add .Page 1}} of {{.TotalPages}}</p>
+<!-- 0-indexed to 1-indexed -->
+```
+
+### sub
+
+Subtracts numbers.
+
+```html
+<p>{{sub .Total .Used}} remaining</p>
+```
+
+### mul
+
+Multiplies numbers.
+
+```html
+<p>Total: ${{mul .Price .Quantity}}</p>
+```
+
+### div
+
+Divides numbers.
+
+```html
+<p>Average: {{div .Sum .Count}}</p>
+```
+
+### mod
+
+Returns the remainder.
+
+```html
+{{if eq (mod $index 2) 0}}even{{else}}odd{{end}}
+```
+
+### max
+
+Returns the larger value.
+
+```html
+<div style="width: {{max .Progress 10}}%">
+```
+
+### min
+
+Returns the smaller value.
+
+```html
+<p>Showing {{min .Total 100}} items</p>
+```
+
+### round
+
+Rounds a number.
+
+```html
+<p>Rating: {{round .AverageRating 1}}</p>
+<!-- 4.567 → 4.6 -->
+```
+
+### formatNumber
+
+Formats a number with thousands separators.
+
+```html
+<p>{{formatNumber .Views}} views</p>
+<!-- 1234567 → "1,234,567" -->
+```
+
+### formatCurrency
+
+Formats a number as currency.
+
+```html
+<p>{{formatCurrency .Price "USD"}}</p>
+<!-- 29.99 → "$29.99" -->
+```
+
+### formatPercent
+
+Formats a number as a percentage.
+
+```html
+<p>{{formatPercent .Progress}}</p>
+<!-- 0.75 → "75%" -->
+```
+
+## Comparison Functions
+
+### eq
+
+Equals.
+
+```html
+{{if eq .Status "active"}}Active{{end}}
+```
+
+### ne
+
+Not equals.
+
+```html
+{{if ne .Status "deleted"}}Show item{{end}}
+```
+
+### lt
+
+Less than.
+
+```html
+{{if lt .Stock 10}}Low stock!{{end}}
+```
+
+### le
+
+Less than or equal.
+
+```html
+{{if le .Age 17}}Minor{{end}}
+```
+
+### gt
+
+Greater than.
+
+```html
+{{if gt .Comments 100}}Popular!{{end}}
+```
+
+### ge
+
+Greater than or equal.
+
+```html
+{{if ge .Score 60}}Passed{{end}}
+```
+
+## Logic Functions
+
+### and
+
+Logical AND.
+
+```html
+{{if and .LoggedIn .IsAdmin}}
+    Admin controls here
+{{end}}
+```
+
+### or
+
+Logical OR.
+
+```html
+{{if or .Error .Warning}}
+    <div class="alert">Check messages</div>
+{{end}}
+```
+
+### not
+
+Logical NOT.
+
+```html
+{{if not .Disabled}}
+    <button>Click me</button>
+{{end}}
+```
+
+### default
+
+Returns a default value if the first is empty/nil/false.
+
+```html
+<img src="{{default .Avatar "/default-avatar.png"}}">
+<p>{{default .Bio "No bio provided."}}</p>
+```
+
+### coalesce
+
+Returns the first non-empty value.
+
+```html
+<p>{{coalesce .Nickname .Username .Email "Anonymous"}}</p>
+```
+
+### ternary
+
+Inline if-else.
+
+```html
+<span class="{{ternary .Active "text-green" "text-gray"}}">
+    {{ternary .Active "Active" "Inactive"}}
+</span>
+```
+
+## Date Functions
+
+### now
+
+Returns the current time.
+
+```html
+<p>Generated at {{now.Format "2006-01-02 15:04:05"}}</p>
+<footer>&copy; {{now.Year}} My Company</footer>
+```
+
+### formatDate
+
+Formats a time value.
+
+```html
+<time datetime="{{.CreatedAt.Format "2006-01-02"}}">
+    {{formatDate .CreatedAt "January 2, 2006"}}
+</time>
+```
+
+### timeAgo
+
+Returns a human-readable time difference.
+
+```html
+<span>{{timeAgo .CreatedAt}}</span>
+<!-- "5 minutes ago", "2 hours ago", "3 days ago" -->
+```
+
+### duration
+
+Formats a duration.
+
+```html
+<span>{{duration .PlayTime}}</span>
+<!-- "1h 23m 45s" -->
+```
+
+## URL Functions
+
+### urlEncode
+
+URL-encodes a string.
+
+```html
+<a href="/search?q={{urlEncode .Query}}">
+```
+
+### urlDecode
+
+URL-decodes a string.
+
+```html
+<p>Search: {{urlDecode .EncodedQuery}}</p>
+```
+
+### absURL
+
+Converts a path to an absolute URL.
+
+```html
+<link rel="canonical" href="{{absURL .Path}}">
+```
+
+### relURL
+
+Ensures a URL is relative.
+
+```html
+<a href="{{relURL .Link}}">
+```
+
+## Adding Custom Functions
+
+Add your own functions via the `Funcs` option:
+
+```go
+import (
+    "html/template"
+    "strings"
+    "time"
+    "github.com/go-mizu/mizu/view"
+)
+
+engine := view.New(view.Options{
+    Dir: "views",
+    Funcs: template.FuncMap{
+        // Simple function
+        "greet": func(name string) string {
+            return "Hello, " + name + "!"
+        },
+
+        // Function with multiple arguments
+        "pluralize": func(count int, singular, plural string) string {
+            if count == 1 {
+                return singular
+            }
+            return plural
+        },
+
+        // Function using other packages
+        "wordCount": func(s string) int {
+            return len(strings.Fields(s))
+        },
+
+        // Function returning multiple values (use with "with")
+        "parseDate": func(s string) (time.Time, error) {
+            return time.Parse("2006-01-02", s)
+        },
+    },
+})
+```
+
+Usage:
+
+```html
+<h1>{{greet .Name}}</h1>
+
+<p>{{.Count}} {{pluralize .Count "item" "items"}}</p>
+
+<p>{{wordCount .Content}} words</p>
+
+{{with parseDate .DateString}}
+    <time>{{.Format "January 2, 2006"}}</time>
+{{end}}
+```
+
+## Best Practices
+
+### 1. Use Pipelines for Readability
+
+```html
+<!-- Good: pipeline style -->
+<p>{{.Bio | truncate 200 | nl2br | safeHTML}}</p>
+
+<!-- Also fine: nested calls -->
+<p>{{safeHTML (nl2br (truncate .Bio 200))}}</p>
+```
+
+### 2. Always Use Default for Optional Values
+
+```html
+<img src="{{default .Image "/placeholder.png"}}">
+<p>{{default .Description "No description available."}}</p>
+```
+
+### 3. Be Careful with safeHTML
+
+```html
+<!-- Safe: content from your database that you control -->
+{{safeHTML .Content}}
+
+<!-- Dangerous: user-provided content -->
+{{.UserComment}}  <!-- Let Go escape this! -->
+```
+
+### 4. Keep Functions Pure
+
+Custom functions should not have side effects:
+
+```go
+// Good: pure function
+"double": func(n int) int { return n * 2 },
+
+// Bad: has side effects
+"logAndReturn": func(s string) string {
+    log.Println(s)  // Side effect!
+    return s
+},
+```
+
+### 5. Document Custom Functions
+
+```go
+Funcs: template.FuncMap{
+    // formatPhone formats a phone number as (XXX) XXX-XXXX
+    // Example: "1234567890" → "(123) 456-7890"
+    "formatPhone": formatPhone,
+}
+```

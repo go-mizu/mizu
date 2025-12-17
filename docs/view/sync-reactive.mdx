@@ -1,0 +1,457 @@
+---
+title: "Sync Reactive State"
+description: "Signal, Computed, and Effect for reactive UI binding"
+---
+
+# Sync Reactive State
+
+The sync package includes a reactive state system inspired by SolidJS and Svelte. It provides **Signals** for state, **Computed** for derived values, and **Effects** for side effects. This enables automatic UI updates when data changes.
+
+## Core Concepts
+
+### Why Reactive State?
+
+Without reactivity:
+```go
+// Manual updates everywhere
+count := 0
+count++
+updateUI(count)     // Don't forget this!
+updateOtherThing()  // And this!
+```
+
+With reactivity:
+```go
+// Automatic propagation
+count := sync.NewSignal(0)
+count.Set(1)  // All dependents update automatically
+```
+
+## Signal
+
+A **Signal** is a reactive value container. When the value changes, all dependents are notified.
+
+### Creating Signals
+
+```go
+import "github.com/go-mizu/mizu/view/sync"
+
+// Signal with initial value
+count := sync.NewSignal(0)
+name := sync.NewSignal("Alice")
+items := sync.NewSignal([]string{"a", "b", "c"})
+```
+
+### Reading Values
+
+```go
+value := count.Get()  // Returns 0
+```
+
+When `Get()` is called inside a Computed or Effect, it automatically registers as a dependency.
+
+### Setting Values
+
+```go
+count.Set(5)  // All dependents are notified
+```
+
+### Updating Values
+
+```go
+// Update based on current value
+count.Update(func(current int) int {
+    return current + 1
+})
+```
+
+### Full Example
+
+```go
+count := sync.NewSignal(0)
+
+// Read
+fmt.Println(count.Get())  // 0
+
+// Set
+count.Set(10)
+fmt.Println(count.Get())  // 10
+
+// Update
+count.Update(func(n int) int { return n * 2 })
+fmt.Println(count.Get())  // 20
+```
+
+## Computed
+
+A **Computed** is a derived value that automatically recomputes when its dependencies change.
+
+### Creating Computed Values
+
+```go
+count := sync.NewSignal(5)
+
+// This automatically tracks count as a dependency
+doubled := sync.NewComputed(func() int {
+    return count.Get() * 2
+})
+```
+
+### Reading Computed Values
+
+```go
+fmt.Println(doubled.Get())  // 10
+
+count.Set(7)
+fmt.Println(doubled.Get())  // 14 (automatically recomputed)
+```
+
+### Lazy Evaluation
+
+Computed values are:
+1. **Lazy** - Only computed when accessed
+2. **Cached** - Not recomputed if dependencies haven't changed
+
+```go
+computeCount := 0
+
+result := sync.NewComputed(func() int {
+    computeCount++
+    return count.Get() * 2
+})
+
+// Not computed yet (lazy)
+fmt.Println(computeCount)  // 0
+
+result.Get()
+fmt.Println(computeCount)  // 1
+
+result.Get()  // Uses cache
+fmt.Println(computeCount)  // 1 (not recomputed)
+
+count.Set(10)  // Marks as dirty
+result.Get()   // Now recomputes
+fmt.Println(computeCount)  // 2
+```
+
+### Chained Computed
+
+Computed values can depend on other computed values:
+
+```go
+count := sync.NewSignal(5)
+
+doubled := sync.NewComputed(func() int {
+    return count.Get() * 2
+})
+
+quadrupled := sync.NewComputed(func() int {
+    return doubled.Get() * 2
+})
+
+fmt.Println(quadrupled.Get())  // 20
+
+count.Set(3)
+fmt.Println(quadrupled.Get())  // 12
+```
+
+## Effect
+
+An **Effect** runs a function whenever its dependencies change. Use it for side effects like logging, API calls, or UI updates.
+
+### Creating Effects
+
+```go
+count := sync.NewSignal(0)
+
+effect := sync.NewEffect(func() {
+    fmt.Printf("Count is now: %d\n", count.Get())
+})
+// Prints immediately: "Count is now: 0"
+
+count.Set(5)
+// Prints: "Count is now: 5"
+
+count.Set(10)
+// Prints: "Count is now: 10"
+```
+
+### Stopping Effects
+
+```go
+effect := sync.NewEffect(func() {
+    // ...
+})
+
+// Later, stop the effect
+effect.Stop()
+
+// Changes no longer trigger the effect
+count.Set(100)  // Nothing printed
+```
+
+### Effect Use Cases
+
+**Logging:**
+```go
+sync.NewEffect(func() {
+    log.Printf("User changed: %+v", user.Get())
+})
+```
+
+**UI Updates:**
+```go
+sync.NewEffect(func() {
+    updateTodoList(todos.All())
+})
+```
+
+**Persistence:**
+```go
+sync.NewEffect(func() {
+    settings := settingsSignal.Get()
+    saveToStorage(settings)
+})
+```
+
+## Practical Examples
+
+### Counter
+
+```go
+count := sync.NewSignal(0)
+
+increment := func() {
+    count.Update(func(n int) int { return n + 1 })
+}
+
+decrement := func() {
+    count.Update(func(n int) int { return n - 1 })
+}
+
+// Display effect
+sync.NewEffect(func() {
+    fmt.Printf("Counter: %d\n", count.Get())
+})
+
+increment()  // Counter: 1
+increment()  // Counter: 2
+decrement()  // Counter: 1
+```
+
+### Form Validation
+
+```go
+email := sync.NewSignal("")
+password := sync.NewSignal("")
+
+emailValid := sync.NewComputed(func() bool {
+    e := email.Get()
+    return strings.Contains(e, "@") && len(e) > 3
+})
+
+passwordValid := sync.NewComputed(func() bool {
+    return len(password.Get()) >= 8
+})
+
+formValid := sync.NewComputed(func() bool {
+    return emailValid.Get() && passwordValid.Get()
+})
+
+// UI effect
+sync.NewEffect(func() {
+    if formValid.Get() {
+        enableSubmitButton()
+    } else {
+        disableSubmitButton()
+    }
+})
+```
+
+### Filtered List
+
+```go
+items := sync.NewSignal([]Item{...})
+filter := sync.NewSignal("")
+
+filteredItems := sync.NewComputed(func() []Item {
+    f := strings.ToLower(filter.Get())
+    if f == "" {
+        return items.Get()
+    }
+
+    var result []Item
+    for _, item := range items.Get() {
+        if strings.Contains(strings.ToLower(item.Name), f) {
+            result = append(result, item)
+        }
+    }
+    return result
+})
+
+// Update filter
+filter.Set("search term")
+
+// filteredItems.Get() now returns only matching items
+```
+
+### Stats Dashboard
+
+```go
+sales := sync.NewSignal([]Sale{...})
+
+totalRevenue := sync.NewComputed(func() float64 {
+    var total float64
+    for _, s := range sales.Get() {
+        total += s.Amount
+    }
+    return total
+})
+
+averageSale := sync.NewComputed(func() float64 {
+    all := sales.Get()
+    if len(all) == 0 {
+        return 0
+    }
+    return totalRevenue.Get() / float64(len(all))
+})
+
+saleCount := sync.NewComputed(func() int {
+    return len(sales.Get())
+})
+```
+
+## Integration with Collections
+
+Collections are reactive:
+
+```go
+client := sync.New(opts)
+todos := sync.NewCollection[Todo](client, "todo")
+
+// This is reactive!
+sync.NewEffect(func() {
+    all := todos.All()  // Re-runs when todos change
+    fmt.Printf("Todo count: %d\n", len(all))
+})
+
+// Also reactive
+todoCount := sync.NewComputed(func() int {
+    return todos.Count()
+})
+```
+
+## Thread Safety
+
+All reactive primitives are thread-safe:
+
+```go
+count := sync.NewSignal(0)
+
+// Safe to call from multiple goroutines
+go func() {
+    count.Set(1)
+}()
+
+go func() {
+    count.Set(2)
+}()
+
+go func() {
+    fmt.Println(count.Get())
+}()
+```
+
+## Best Practices
+
+### 1. Keep Computations Pure
+
+```go
+// Good: pure computation
+doubled := sync.NewComputed(func() int {
+    return count.Get() * 2
+})
+
+// Bad: side effects in computed
+bad := sync.NewComputed(func() int {
+    log.Println("Computing...")  // Side effect!
+    return count.Get() * 2
+})
+```
+
+Use Effects for side effects.
+
+### 2. Avoid Deep Nesting
+
+```go
+// Harder to follow
+result := sync.NewComputed(func() int {
+    return sync.NewComputed(func() int {  // Don't nest like this
+        return count.Get() * 2
+    }).Get()
+})
+
+// Better: flat structure
+doubled := sync.NewComputed(func() int {
+    return count.Get() * 2
+})
+
+result := sync.NewComputed(func() int {
+    return doubled.Get()
+})
+```
+
+### 3. Stop Effects When Done
+
+```go
+effect := sync.NewEffect(func() { ... })
+defer effect.Stop()  // Clean up
+```
+
+### 4. Use Computed for Derived State
+
+```go
+// Bad: manual syncing
+items := sync.NewSignal([]Item{...})
+count := sync.NewSignal(0)
+
+sync.NewEffect(func() {
+    count.Set(len(items.Get()))  // Manually keeping in sync
+})
+
+// Good: computed
+items := sync.NewSignal([]Item{...})
+count := sync.NewComputed(func() int {
+    return len(items.Get())  // Automatically derived
+})
+```
+
+### 5. Break Down Complex Computations
+
+```go
+// Hard to read
+result := sync.NewComputed(func() Report {
+    items := items.Get()
+    filtered := filterItems(items, filter.Get())
+    sorted := sortItems(filtered, sortBy.Get())
+    paginated := paginateItems(sorted, page.Get(), pageSize.Get())
+    return buildReport(paginated)
+})
+
+// Better: intermediate computations
+filteredItems := sync.NewComputed(func() []Item {
+    return filterItems(items.Get(), filter.Get())
+})
+
+sortedItems := sync.NewComputed(func() []Item {
+    return sortItems(filteredItems.Get(), sortBy.Get())
+})
+
+paginatedItems := sync.NewComputed(func() []Item {
+    return paginateItems(sortedItems.Get(), page.Get(), pageSize.Get())
+})
+
+report := sync.NewComputed(func() Report {
+    return buildReport(paginatedItems.Get())
+})
+```

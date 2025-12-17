@@ -1,0 +1,422 @@
+---
+title: "Sync Client"
+description: "Client-side sync runtime for offline-first applications"
+---
+
+# Sync Client
+
+The sync client is a Go runtime for building offline-first applications. It manages local state, queues mutations, and synchronizes with the server. This guide covers client configuration and usage.
+
+> **Note:** The client runtime is designed for Go applications (mobile, desktop, CLI). For browser applications, you'll typically implement a JavaScript client that uses the same sync protocol.
+
+## Creating a Client
+
+```go
+import "github.com/go-mizu/mizu/view/sync"
+
+client := sync.New(sync.Options{
+    BaseURL: "https://api.example.com/_sync",
+    Scope:   "user:123",
+})
+```
+
+## Configuration Options
+
+### BaseURL (Required)
+
+The sync server endpoint:
+
+```go
+sync.Options{
+    BaseURL: "https://api.example.com/_sync",
+}
+```
+
+### Scope (Required)
+
+The data partition to sync:
+
+```go
+sync.Options{
+    Scope: "user:123",  // This client syncs user 123's data
+}
+```
+
+### HTTP
+
+Custom HTTP client for requests:
+
+```go
+sync.Options{
+    HTTP: &http.Client{
+        Timeout: 30 * time.Second,
+        Transport: &http.Transport{
+            // Custom transport settings
+        },
+    },
+}
+```
+
+### Persistence
+
+Save state between app restarts:
+
+```go
+type FilePersistence struct {
+    path string
+}
+
+func (p *FilePersistence) Save(cursor uint64, clientID string, queue []sync.Mutation, store map[string]map[string][]byte) error {
+    data := map[string]any{
+        "cursor":   cursor,
+        "clientID": clientID,
+        "queue":    queue,
+        "store":    store,
+    }
+    bytes, _ := json.Marshal(data)
+    return os.WriteFile(p.path, bytes, 0644)
+}
+
+func (p *FilePersistence) Load() (uint64, string, []sync.Mutation, map[string]map[string][]byte, error) {
+    bytes, err := os.ReadFile(p.path)
+    if err != nil {
+        return 0, "", nil, nil, nil // Fresh start
+    }
+    var data map[string]any
+    json.Unmarshal(bytes, &data)
+    // Extract and return values...
+}
+
+// Usage
+sync.Options{
+    Persistence: &FilePersistence{path: "sync-state.json"},
+}
+```
+
+### Callbacks
+
+React to sync events:
+
+```go
+sync.Options{
+    OnError: func(err error) {
+        log.Printf("Sync error: %v", err)
+    },
+    OnSync: func(cursor uint64) {
+        log.Printf("Synced to cursor %d", cursor)
+    },
+    OnOnline: func() {
+        log.Println("Back online!")
+    },
+    OnOffline: func() {
+        log.Println("Gone offline")
+    },
+}
+```
+
+### Intervals
+
+Control sync timing:
+
+```go
+sync.Options{
+    PushInterval: 1 * time.Second,   // Push mutations every second
+    PullInterval: 30 * time.Second,  // Poll for changes every 30s
+}
+```
+
+## Client Lifecycle
+
+### Starting the Client
+
+```go
+ctx := context.Background()
+client := sync.New(opts)
+
+if err := client.Start(ctx); err != nil {
+    log.Fatal(err)
+}
+```
+
+`Start` does:
+1. Loads persisted state (if configured)
+2. Performs initial sync (snapshot or pull)
+3. Starts background push/pull loops
+
+### Stopping the Client
+
+```go
+client.Stop()
+```
+
+`Stop` does:
+1. Cancels background goroutines
+2. Saves state (if persistence configured)
+
+### Manual Sync
+
+Force an immediate sync:
+
+```go
+if err := client.Sync(); err != nil {
+    log.Printf("Sync failed: %v", err)
+}
+```
+
+## Mutations
+
+### Queueing Mutations
+
+Use `Mutate` to queue changes:
+
+```go
+// Queue a mutation
+client.Mutate("todo.create", map[string]any{
+    "id":    "todo-123",
+    "title": "Buy milk",
+})
+
+// The mutation is:
+// 1. Added to the queue
+// 2. Pushed to server in background
+// 3. Removed from queue on success
+```
+
+### Mutation Flow
+
+```
+client.Mutate()
+      │
+      ▼
+┌─────────────┐
+│ Local Queue │ ◀──── Stored for offline support
+└─────────────┘
+      │
+      ▼ (background)
+┌─────────────┐
+│ Push to     │
+│ Server      │
+└─────────────┘
+      │
+      ▼
+┌─────────────┐
+│ On success: │
+│ Remove from │
+│ queue       │
+└─────────────┘
+```
+
+## Status
+
+### Online Status
+
+```go
+if client.IsOnline() {
+    fmt.Println("Connected to server")
+} else {
+    fmt.Println("Working offline")
+}
+```
+
+### Current Cursor
+
+```go
+cursor := client.Cursor()
+fmt.Printf("Synced to cursor %d\n", cursor)
+```
+
+## Live Integration
+
+For real-time updates, integrate with the live package:
+
+```go
+// When live receives sync notification
+liveClient.OnMessage(func(msg []byte) {
+    var data struct {
+        Cursor uint64 `json:"cursor"`
+    }
+    json.Unmarshal(msg, &data)
+
+    // Notify sync client
+    client.NotifyLive(data.Cursor)
+})
+```
+
+This triggers an immediate pull instead of waiting for the next poll interval.
+
+## Complete Example
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "os"
+    "os/signal"
+    "syscall"
+    "time"
+
+    "github.com/go-mizu/mizu/view/sync"
+)
+
+func main() {
+    // Create client
+    client := sync.New(sync.Options{
+        BaseURL:      "http://localhost:8080/_sync",
+        Scope:        "user:demo",
+        PushInterval: time.Second,
+        PullInterval: 5 * time.Second,
+        OnError: func(err error) {
+            log.Printf("Error: %v", err)
+        },
+        OnSync: func(cursor uint64) {
+            log.Printf("Synced to %d", cursor)
+        },
+        OnOnline: func() {
+            log.Println("Online")
+        },
+        OnOffline: func() {
+            log.Println("Offline")
+        },
+    })
+
+    // Start sync
+    ctx, cancel := context.WithCancel(context.Background())
+    if err := client.Start(ctx); err != nil {
+        log.Printf("Initial sync failed: %v", err)
+    }
+
+    // Create a todo
+    client.Mutate("todo.create", map[string]any{
+        "id":    fmt.Sprintf("todo-%d", time.Now().UnixNano()),
+        "title": "Test todo",
+    })
+
+    // Wait for shutdown
+    quit := make(chan os.Signal, 1)
+    signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+    <-quit
+
+    cancel()
+    client.Stop()
+    log.Println("Shutdown complete")
+}
+```
+
+## Error Handling
+
+### Sync Errors
+
+```go
+sync.Options{
+    OnError: func(err error) {
+        switch {
+        case errors.Is(err, sync.ErrNotStarted):
+            log.Println("Client not started")
+        case errors.Is(err, context.Canceled):
+            log.Println("Operation canceled")
+        default:
+            log.Printf("Sync error: %v", err)
+        }
+    },
+}
+```
+
+### Start Errors
+
+```go
+err := client.Start(ctx)
+if err != nil {
+    // Initial sync failed
+    // Client is still running, will retry
+    log.Printf("Initial sync failed: %v", err)
+}
+```
+
+### Double Start
+
+```go
+err := client.Start(ctx)
+if errors.Is(err, sync.ErrAlreadyStarted) {
+    log.Println("Client already running")
+}
+```
+
+## Best Practices
+
+### 1. Always Handle Errors
+
+```go
+sync.Options{
+    OnError: func(err error) {
+        // Log for debugging
+        log.Printf("Sync error: %v", err)
+
+        // Update UI
+        showSyncError(err)
+    },
+}
+```
+
+### 2. Use Persistence
+
+For a good offline experience, persist state:
+
+```go
+sync.Options{
+    Persistence: &MyPersistence{},
+}
+```
+
+### 3. Start Early
+
+Start the client as early as possible:
+
+```go
+func main() {
+    client := sync.New(opts)
+    client.Start(ctx)  // Start sync immediately
+
+    // Initialize rest of app...
+}
+```
+
+### 4. Handle Offline Gracefully
+
+```go
+func addTodo(client *sync.Client, title string) {
+    // This works offline!
+    client.Mutate("todo.create", map[string]any{
+        "id":    generateID(),
+        "title": title,
+    })
+
+    // Update UI immediately (optimistic)
+    updateTodoList()
+
+    if !client.IsOnline() {
+        showMessage("Saved offline - will sync when online")
+    }
+}
+```
+
+### 5. Integrate with Live
+
+For real-time updates:
+
+```go
+// Subscribe to sync notifications
+liveSession.Subscribe("sync:" + scope)
+
+// Handle notifications
+liveSession.OnMessage(func(msg []byte) {
+    var notification struct {
+        Cursor uint64 `json:"cursor"`
+    }
+    if json.Unmarshal(msg, &notification) == nil {
+        client.NotifyLive(notification.Cursor)
+    }
+})
+```
