@@ -81,10 +81,10 @@ func (a *App) setupLive() {
 		OnMessage: func(ctx context.Context, s *live.Session, msg live.Message) {
 			switch msg.Type {
 			case "subscribe":
-				a.liveServer.PubSub().Subscribe(s, msg.Topic)
+				a.liveServer.Subscribe(s, msg.Topic)
 				_ = s.Send(live.Message{Type: "ack", Ref: msg.Ref, Topic: msg.Topic})
 			case "unsubscribe":
-				a.liveServer.PubSub().Unsubscribe(s, msg.Topic)
+				a.liveServer.Unsubscribe(s, msg.Topic)
 			}
 		},
 	})
@@ -105,8 +105,34 @@ func (a *App) setupSync() {
 		Log:     log,
 		Applied: applied,
 		Mutator: mutator,
-		Notify:  live.SyncNotifier(a.liveServer, "sync:"),
+		Notify:  a.syncNotifier("sync:"),
 	})
+}
+
+// syncNotifier creates a sync.Notifier that publishes to live topics.
+func (a *App) syncNotifier(prefix string) sync.Notifier {
+	return sync.NotifierFunc(func(scope string, cursor uint64) {
+		topic := prefix + scope
+		a.liveServer.Publish(topic, live.Message{
+			Type:  "sync",
+			Topic: topic,
+			Body:  []byte(`{"cursor":` + uintToString(cursor) + `}`),
+		})
+	})
+}
+
+func uintToString(n uint64) string {
+	if n == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(buf[i:])
 }
 
 // staticHandler serves embedded static files
