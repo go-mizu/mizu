@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-//go:embed templates
+//go:embed all:templates
 var templatesFS embed.FS
 
 // templateMeta holds template metadata.

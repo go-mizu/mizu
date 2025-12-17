@@ -1,0 +1,40 @@
+{{ "{{" }}define "title"{{ "}}" }}{{ "{{" }}.Data.Title{{ "}}" }}{{ "{{" }}end{{ "}}" }}
+
+{{ "{{" }}define "content"{{ "}}" }}
+<div class="mx-auto max-w-2xl space-y-8">
+    <div class="space-y-4">
+        <h1 class="text-3xl font-bold tracking-tighter sm:text-4xl">
+            About This App
+        </h1>
+        <p class="text-muted-foreground">
+            This is a web application built with the Mizu framework for Go. It demonstrates
+            server-rendered HTML with a component-based architecture.
+        </p>
+    </div>
+
+    {{ "{{" }}component "card" (dict "Title" "Technology Stack"){{ "}}" }}
+        <dl class="space-y-4">
+            <div>
+                <dt class="font-medium">Framework</dt>
+                <dd class="text-muted-foreground">Mizu - A lightweight, composable web framework for Go</dd>
+            </div>
+            <div>
+                <dt class="font-medium">Templates</dt>
+                <dd class="text-muted-foreground">Go html/template with layouts, components, and partials</dd>
+            </div>
+            <div>
+                <dt class="font-medium">Styling</dt>
+                <dd class="text-muted-foreground">Tailwind CSS with shadcn-inspired design tokens</dd>
+            </div>
+            <div>
+                <dt class="font-medium">Static Assets</dt>
+                <dd class="text-muted-foreground">Embedded in binary for single-file deployment</dd>
+            </div>
+        </dl>
+    {{ "{{" }}end{{ "}}" }}
+
+    <div class="flex gap-4">
+        {{ "{{" }}component "button" (dict "Label" "Back to Home" "Variant" "outline" "Href" "/"){{ "}}" }}
+    </div>
+</div>
+{{ "{{" }}end{{ "}}" }}

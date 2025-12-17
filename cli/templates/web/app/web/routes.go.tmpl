@@ -1,0 +1,14 @@
+package web
+
+import (
+	"{{.Module}}/handler"
+)
+
+func (a *App) routes() {
+	// Static files
+	a.app.Mount("/static/", staticHandler(a.cfg.Dev))
+
+	// Pages
+	a.app.Get("/", handler.Home)
+	a.app.Get("/about", handler.About)
+}
