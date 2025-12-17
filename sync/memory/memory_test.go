@@ -11,173 +11,6 @@ import (
 )
 
 // -----------------------------------------------------------------------------
-// Store Tests
-// -----------------------------------------------------------------------------
-
-func TestStore_GetSetDelete(t *testing.T) {
-	ctx := context.Background()
-	s := memory.NewStore()
-
-	// Set
-	data := []byte(`{"name":"test"}`)
-	if err := s.Set(ctx, "scope1", "entity1", "id1", data); err != nil {
-		t.Fatalf("Set failed: %v", err)
-	}
-
-	// Get
-	got, err := s.Get(ctx, "scope1", "entity1", "id1")
-	if err != nil {
-		t.Fatalf("Get failed: %v", err)
-	}
-	if string(got) != string(data) {
-		t.Errorf("Get returned %q, want %q", got, data)
-	}
-
-	// Delete
-	if err := s.Delete(ctx, "scope1", "entity1", "id1"); err != nil {
-		t.Fatalf("Delete failed: %v", err)
-	}
-
-	// Get after delete
-	_, err = s.Get(ctx, "scope1", "entity1", "id1")
-	if err != sync.ErrNotFound {
-		t.Errorf("Get after delete returned err=%v, want ErrNotFound", err)
-	}
-}
-
-func TestStore_GetNotFound(t *testing.T) {
-	ctx := context.Background()
-	s := memory.NewStore()
-
-	_, err := s.Get(ctx, "scope", "entity", "nonexistent")
-	if err != sync.ErrNotFound {
-		t.Errorf("Get returned err=%v, want ErrNotFound", err)
-	}
-
-	// Non-existent scope
-	_, err = s.Get(ctx, "nonexistent", "entity", "id")
-	if err != sync.ErrNotFound {
-		t.Errorf("Get returned err=%v, want ErrNotFound", err)
-	}
-
-	// Non-existent entity
-	s.Set(ctx, "scope", "entity", "id", []byte("data"))
-	_, err = s.Get(ctx, "scope", "other", "id")
-	if err != sync.ErrNotFound {
-		t.Errorf("Get returned err=%v, want ErrNotFound", err)
-	}
-}
-
-func TestStore_Snapshot_Empty(t *testing.T) {
-	ctx := context.Background()
-	s := memory.NewStore()
-
-	snap, err := s.Snapshot(ctx, "scope")
-	if err != nil {
-		t.Fatalf("Snapshot failed: %v", err)
-	}
-	if len(snap) != 0 {
-		t.Errorf("Snapshot returned %d entities, want 0", len(snap))
-	}
-}
-
-func TestStore_Snapshot_WithData(t *testing.T) {
-	ctx := context.Background()
-	s := memory.NewStore()
-
-	// Add data
-	s.Set(ctx, "scope", "users", "u1", []byte(`{"id":"u1"}`))
-	s.Set(ctx, "scope", "users", "u2", []byte(`{"id":"u2"}`))
-	s.Set(ctx, "scope", "posts", "p1", []byte(`{"id":"p1"}`))
-	s.Set(ctx, "other", "users", "u3", []byte(`{"id":"u3"}`)) // Different scope
-
-	snap, err := s.Snapshot(ctx, "scope")
-	if err != nil {
-		t.Fatalf("Snapshot failed: %v", err)
-	}
-
-	if len(snap) != 2 {
-		t.Errorf("Snapshot returned %d entities, want 2", len(snap))
-	}
-	if len(snap["users"]) != 2 {
-		t.Errorf("users has %d items, want 2", len(snap["users"]))
-	}
-	if len(snap["posts"]) != 1 {
-		t.Errorf("posts has %d items, want 1", len(snap["posts"]))
-	}
-}
-
-func TestStore_Snapshot_IsCopy(t *testing.T) {
-	ctx := context.Background()
-	s := memory.NewStore()
-
-	original := []byte(`{"id":"1"}`)
-	s.Set(ctx, "scope", "entity", "id", original)
-
-	snap, _ := s.Snapshot(ctx, "scope")
-	// Modify the snapshot
-	snap["entity"]["id"][0] = 'X'
-
-	// Original should be unchanged
-	got, _ := s.Get(ctx, "scope", "entity", "id")
-	if string(got) != string(original) {
-		t.Errorf("Snapshot modification affected original data")
-	}
-}
-
-func TestStore_Get_IsCopy(t *testing.T) {
-	ctx := context.Background()
-	s := memory.NewStore()
-
-	original := []byte(`{"id":"1"}`)
-	s.Set(ctx, "scope", "entity", "id", original)
-
-	got, _ := s.Get(ctx, "scope", "entity", "id")
-	// Modify the result
-	got[0] = 'X'
-
-	// Getting again should return original
-	got2, _ := s.Get(ctx, "scope", "entity", "id")
-	if string(got2) != string(original) {
-		t.Errorf("Get modification affected stored data")
-	}
-}
-
-func TestStore_Concurrency(t *testing.T) {
-	ctx := context.Background()
-	s := memory.NewStore()
-
-	var wg gosync.WaitGroup
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			id := string(rune('a' + i%26))
-			s.Set(ctx, "scope", "entity", id, []byte("data"))
-			s.Get(ctx, "scope", "entity", id)
-			s.Snapshot(ctx, "scope")
-			s.Delete(ctx, "scope", "entity", id)
-		}(i)
-	}
-	wg.Wait()
-}
-
-func TestStore_DeleteCleansEmptyMaps(t *testing.T) {
-	ctx := context.Background()
-	s := memory.NewStore()
-
-	// Add and remove
-	s.Set(ctx, "scope", "entity", "id", []byte("data"))
-	s.Delete(ctx, "scope", "entity", "id")
-
-	// Snapshot should be empty
-	snap, _ := s.Snapshot(ctx, "scope")
-	if len(snap) != 0 {
-		t.Errorf("Snapshot after delete has %d entities, want 0", len(snap))
-	}
-}
-
-// -----------------------------------------------------------------------------
 // Log Tests
 // -----------------------------------------------------------------------------
 
@@ -186,7 +19,7 @@ func TestLog_Append_SingleChange(t *testing.T) {
 	l := memory.NewLog()
 
 	changes := []sync.Change{
-		{Entity: "users", ID: "1", Op: sync.Create, Data: []byte(`{}`)},
+		{Data: []byte(`{"entity":"users","id":"1"}`)},
 	}
 
 	cursor, err := l.Append(ctx, "scope", changes)
@@ -215,9 +48,9 @@ func TestLog_Append_MultipleChanges(t *testing.T) {
 	l := memory.NewLog()
 
 	changes := []sync.Change{
-		{Entity: "users", ID: "1", Op: sync.Create},
-		{Entity: "users", ID: "2", Op: sync.Create},
-		{Entity: "posts", ID: "1", Op: sync.Create},
+		{Data: []byte(`{"entity":"users","id":"1"}`)},
+		{Data: []byte(`{"entity":"users","id":"2"}`)},
+		{Data: []byte(`{"entity":"posts","id":"1"}`)},
 	}
 
 	cursor, err := l.Append(ctx, "scope", changes)
@@ -247,7 +80,7 @@ func TestLog_Append_Empty(t *testing.T) {
 	l := memory.NewLog()
 
 	// Append some initial changes
-	l.Append(ctx, "scope", []sync.Change{{Entity: "e", ID: "1", Op: sync.Create}})
+	l.Append(ctx, "scope", []sync.Change{{Data: []byte(`{}`)}})
 
 	// Append empty should return current cursor
 	cursor, err := l.Append(ctx, "scope", []sync.Change{})
@@ -278,7 +111,7 @@ func TestLog_Since_WithCursor(t *testing.T) {
 
 	// Add 5 changes
 	for i := 0; i < 5; i++ {
-		l.Append(ctx, "scope", []sync.Change{{Entity: "e", ID: string(rune('a' + i)), Op: sync.Create}})
+		l.Append(ctx, "scope", []sync.Change{{Data: []byte(`{}`)}})
 	}
 
 	// Get changes since cursor 2
@@ -300,7 +133,7 @@ func TestLog_Since_Limit(t *testing.T) {
 
 	// Add 10 changes
 	for i := 0; i < 10; i++ {
-		l.Append(ctx, "scope", []sync.Change{{Entity: "e", ID: string(rune('a' + i)), Op: sync.Create}})
+		l.Append(ctx, "scope", []sync.Change{{Data: []byte(`{}`)}})
 	}
 
 	changes, err := l.Since(ctx, "scope", 0, 3)
@@ -326,8 +159,8 @@ func TestLog_Cursor(t *testing.T) {
 	}
 
 	// Add changes
-	l.Append(ctx, "scope", []sync.Change{{Entity: "e", ID: "1", Op: sync.Create}})
-	l.Append(ctx, "scope", []sync.Change{{Entity: "e", ID: "2", Op: sync.Create}})
+	l.Append(ctx, "scope", []sync.Change{{Data: []byte(`{}`)}})
+	l.Append(ctx, "scope", []sync.Change{{Data: []byte(`{}`)}})
 
 	cursor, _ = l.Cursor(ctx, "scope")
 	if cursor != 2 {
@@ -341,7 +174,7 @@ func TestLog_Trim(t *testing.T) {
 
 	// Add 5 changes
 	for i := 0; i < 5; i++ {
-		l.Append(ctx, "scope", []sync.Change{{Entity: "e", ID: string(rune('a' + i)), Op: sync.Create}})
+		l.Append(ctx, "scope", []sync.Change{{Data: []byte(`{}`)}})
 	}
 
 	// Trim before cursor 3
@@ -364,9 +197,9 @@ func TestLog_Scoped(t *testing.T) {
 	l := memory.NewLog()
 
 	// Add changes to different scopes
-	l.Append(ctx, "scope1", []sync.Change{{Entity: "e", ID: "1", Op: sync.Create}})
-	l.Append(ctx, "scope2", []sync.Change{{Entity: "e", ID: "2", Op: sync.Create}})
-	l.Append(ctx, "scope1", []sync.Change{{Entity: "e", ID: "3", Op: sync.Create}})
+	l.Append(ctx, "scope1", []sync.Change{{Data: []byte(`{}`)}})
+	l.Append(ctx, "scope2", []sync.Change{{Data: []byte(`{}`)}})
+	l.Append(ctx, "scope1", []sync.Change{{Data: []byte(`{}`)}})
 
 	// Check scope1
 	changes1, _ := l.Since(ctx, "scope1", 0, 10)
@@ -392,7 +225,7 @@ func TestLog_SetsScope(t *testing.T) {
 	ctx := context.Background()
 	l := memory.NewLog()
 
-	changes := []sync.Change{{Entity: "e", ID: "1", Op: sync.Create}}
+	changes := []sync.Change{{Data: []byte(`{}`)}}
 	l.Append(ctx, "myScope", changes)
 
 	got, _ := l.Since(ctx, "myScope", 0, 10)
@@ -415,10 +248,8 @@ func TestLog_Concurrency(t *testing.T) {
 				scope = "scope2"
 			}
 			l.Append(ctx, scope, []sync.Change{{
-				Entity: "e",
-				ID:     string(rune('a' + i%26)),
-				Op:     sync.Create,
-				Time:   time.Now(),
+				Data: []byte(`{}`),
+				Time: time.Now(),
 			}})
 			l.Since(ctx, scope, 0, 10)
 			l.Cursor(ctx, scope)
@@ -427,129 +258,116 @@ func TestLog_Concurrency(t *testing.T) {
 	wg.Wait()
 }
 
-// -----------------------------------------------------------------------------
-// Applied Tests
-// -----------------------------------------------------------------------------
-
-func TestApplied_GetPut(t *testing.T) {
+func TestLog_CursorTooOld(t *testing.T) {
 	ctx := context.Background()
-	a := memory.NewApplied()
+	l := memory.NewLog()
 
-	result := sync.Result{
-		OK:     true,
-		Cursor: 42,
+	// Add changes and trim
+	for i := 0; i < 5; i++ {
+		l.Append(ctx, "scope", []sync.Change{{Data: []byte(`{}`)}})
+	}
+	l.Trim(ctx, "scope", 3)
+
+	// Cursor 1 is now too old
+	_, err := l.Since(ctx, "scope", 1, 10)
+	if err != sync.ErrCursorTooOld {
+		t.Errorf("Since returned err=%v, want ErrCursorTooOld", err)
 	}
 
-	// Put
-	if err := a.Put(ctx, "scope", "mut-1", result); err != nil {
-		t.Fatalf("Put failed: %v", err)
-	}
-
-	// Get
-	got, found, err := a.Get(ctx, "scope", "mut-1")
+	// Cursor 3 should work
+	changes, err := l.Since(ctx, "scope", 3, 10)
 	if err != nil {
-		t.Fatalf("Get failed: %v", err)
+		t.Errorf("Since(cursor=3) failed: %v", err)
 	}
-	if !found {
-		t.Fatal("Get returned found=false, want true")
-	}
-	if got.OK != result.OK || got.Cursor != result.Cursor {
-		t.Errorf("Get returned %+v, want %+v", got, result)
+	if len(changes) != 2 {
+		t.Errorf("Got %d changes, want 2", len(changes))
 	}
 }
 
-func TestApplied_GetNotFound(t *testing.T) {
-	ctx := context.Background()
-	a := memory.NewApplied()
+// -----------------------------------------------------------------------------
+// Dedupe Tests
+// -----------------------------------------------------------------------------
 
-	_, found, err := a.Get(ctx, "scope", "nonexistent")
+func TestDedupe_SeenMark(t *testing.T) {
+	ctx := context.Background()
+	d := memory.NewDedupe()
+
+	// Initially not seen
+	seen, err := d.Seen(ctx, "scope", "mut-1")
 	if err != nil {
-		t.Fatalf("Get failed: %v", err)
+		t.Fatalf("Seen failed: %v", err)
 	}
-	if found {
-		t.Error("Get returned found=true, want false")
+	if seen {
+		t.Error("Seen returned true, want false for new mutation")
+	}
+
+	// Mark as seen
+	if err := d.Mark(ctx, "scope", "mut-1"); err != nil {
+		t.Fatalf("Mark failed: %v", err)
+	}
+
+	// Now should be seen
+	seen, err = d.Seen(ctx, "scope", "mut-1")
+	if err != nil {
+		t.Fatalf("Seen failed: %v", err)
+	}
+	if !seen {
+		t.Error("Seen returned false, want true after Mark")
+	}
+}
+
+func TestDedupe_Scoped(t *testing.T) {
+	ctx := context.Background()
+	d := memory.NewDedupe()
+
+	// Mark in scope1
+	d.Mark(ctx, "scope1", "mut-1")
+
+	// Should be seen in scope1
+	seen1, _ := d.Seen(ctx, "scope1", "mut-1")
+	if !seen1 {
+		t.Error("Seen(scope1) = false, want true")
+	}
+
+	// Should not be seen in scope2
+	seen2, _ := d.Seen(ctx, "scope2", "mut-1")
+	if seen2 {
+		t.Error("Seen(scope2) = true, want false")
+	}
+}
+
+func TestDedupe_NotFound(t *testing.T) {
+	ctx := context.Background()
+	d := memory.NewDedupe()
+
+	seen, err := d.Seen(ctx, "scope", "nonexistent")
+	if err != nil {
+		t.Fatalf("Seen failed: %v", err)
+	}
+	if seen {
+		t.Error("Seen returned true for nonexistent mutation")
 	}
 
 	// Non-existent scope
-	_, found, _ = a.Get(ctx, "nonexistent", "key")
-	if found {
-		t.Error("Get for nonexistent scope returned found=true")
+	seen, _ = d.Seen(ctx, "nonexistent", "key")
+	if seen {
+		t.Error("Seen returned true for nonexistent scope")
 	}
 }
 
-func TestApplied_Scoped(t *testing.T) {
+func TestDedupe_Concurrency(t *testing.T) {
 	ctx := context.Background()
-	a := memory.NewApplied()
-
-	result1 := sync.Result{OK: true, Cursor: 1}
-	result2 := sync.Result{OK: true, Cursor: 2}
-
-	a.Put(ctx, "scope1", "key", result1)
-	a.Put(ctx, "scope2", "key", result2)
-
-	got1, found1, _ := a.Get(ctx, "scope1", "key")
-	got2, found2, _ := a.Get(ctx, "scope2", "key")
-
-	if !found1 || !found2 {
-		t.Fatal("Expected both results to be found")
-	}
-	if got1.Cursor != 1 || got2.Cursor != 2 {
-		t.Errorf("Scoped results incorrect: got cursors %d, %d, want 1, 2", got1.Cursor, got2.Cursor)
-	}
-}
-
-func TestApplied_Overwrite(t *testing.T) {
-	ctx := context.Background()
-	a := memory.NewApplied()
-
-	a.Put(ctx, "scope", "key", sync.Result{Cursor: 1})
-	a.Put(ctx, "scope", "key", sync.Result{Cursor: 2})
-
-	got, _, _ := a.Get(ctx, "scope", "key")
-	if got.Cursor != 2 {
-		t.Errorf("After overwrite, cursor = %d, want 2", got.Cursor)
-	}
-}
-
-func TestApplied_Concurrency(t *testing.T) {
-	ctx := context.Background()
-	a := memory.NewApplied()
+	d := memory.NewDedupe()
 
 	var wg gosync.WaitGroup
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			key := string(rune('a' + i%26))
-			result := sync.Result{OK: true, Cursor: uint64(i)}
-			a.Put(ctx, "scope", key, result)
-			a.Get(ctx, "scope", key)
+			id := string(rune('a' + i%26))
+			d.Mark(ctx, "scope", id)
+			d.Seen(ctx, "scope", id)
 		}(i)
 	}
 	wg.Wait()
-}
-
-func TestApplied_PreservesChanges(t *testing.T) {
-	ctx := context.Background()
-	a := memory.NewApplied()
-
-	changes := []sync.Change{
-		{Cursor: 1, Entity: "users", ID: "1", Op: sync.Create},
-		{Cursor: 2, Entity: "users", ID: "2", Op: sync.Update},
-	}
-	result := sync.Result{
-		OK:      true,
-		Cursor:  2,
-		Changes: changes,
-	}
-
-	a.Put(ctx, "scope", "key", result)
-
-	got, _, _ := a.Get(ctx, "scope", "key")
-	if len(got.Changes) != 2 {
-		t.Errorf("Got %d changes, want 2", len(got.Changes))
-	}
-	if got.Changes[0].Entity != "users" || got.Changes[1].Op != sync.Update {
-		t.Error("Changes not preserved correctly")
-	}
 }

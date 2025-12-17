@@ -14,108 +14,6 @@ import (
 )
 
 // -----------------------------------------------------------------------------
-// Store
-// -----------------------------------------------------------------------------
-
-// Store is an in-memory implementation of sync.Store.
-type Store struct {
-	mu   gosync.RWMutex
-	data map[string]map[string]map[string]json.RawMessage // scope -> entity -> id -> data
-}
-
-// NewStore creates a new in-memory store.
-func NewStore() *Store {
-	return &Store{
-		data: make(map[string]map[string]map[string]json.RawMessage),
-	}
-}
-
-// Get retrieves an entity by scope/entity/id.
-func (s *Store) Get(ctx context.Context, scope, entity, id string) (json.RawMessage, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	entities, ok := s.data[scope]
-	if !ok {
-		return nil, sync.ErrNotFound
-	}
-	items, ok := entities[entity]
-	if !ok {
-		return nil, sync.ErrNotFound
-	}
-	data, ok := items[id]
-	if !ok {
-		return nil, sync.ErrNotFound
-	}
-
-	// Return a copy to avoid mutation
-	cp := make(json.RawMessage, len(data))
-	copy(cp, data)
-	return cp, nil
-}
-
-// Set stores an entity.
-func (s *Store) Set(ctx context.Context, scope, entity, id string, data json.RawMessage) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.data[scope] == nil {
-		s.data[scope] = make(map[string]map[string]json.RawMessage)
-	}
-	if s.data[scope][entity] == nil {
-		s.data[scope][entity] = make(map[string]json.RawMessage)
-	}
-
-	// Store a copy
-	cp := make(json.RawMessage, len(data))
-	copy(cp, data)
-	s.data[scope][entity][id] = cp
-	return nil
-}
-
-// Delete removes an entity.
-func (s *Store) Delete(ctx context.Context, scope, entity, id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if entities, ok := s.data[scope]; ok {
-		if items, ok := entities[entity]; ok {
-			delete(items, id)
-			if len(items) == 0 {
-				delete(entities, entity)
-			}
-			if len(entities) == 0 {
-				delete(s.data, scope)
-			}
-		}
-	}
-	return nil
-}
-
-// Snapshot returns all data in a scope.
-func (s *Store) Snapshot(ctx context.Context, scope string) (map[string]map[string]json.RawMessage, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	entities, ok := s.data[scope]
-	if !ok {
-		return make(map[string]map[string]json.RawMessage), nil
-	}
-
-	// Deep copy
-	result := make(map[string]map[string]json.RawMessage, len(entities))
-	for entity, items := range entities {
-		result[entity] = make(map[string]json.RawMessage, len(items))
-		for id, data := range items {
-			cp := make(json.RawMessage, len(data))
-			copy(cp, data)
-			result[entity][id] = cp
-		}
-	}
-	return result, nil
-}
-
-// -----------------------------------------------------------------------------
 // Log
 // -----------------------------------------------------------------------------
 
@@ -224,43 +122,145 @@ func (l *Log) Trim(ctx context.Context, scope string, before uint64) error {
 }
 
 // -----------------------------------------------------------------------------
-// Applied
+// Dedupe
 // -----------------------------------------------------------------------------
 
-// Applied is an in-memory implementation of sync.Applied.
-type Applied struct {
-	mu    gosync.RWMutex
-	store map[string]map[string]sync.Result // scope -> key -> result
+// Dedupe is an in-memory implementation of sync.Dedupe.
+type Dedupe struct {
+	mu   gosync.RWMutex
+	seen map[string]map[string]bool // scope -> id -> seen
 }
 
-// NewApplied creates a new in-memory applied tracker.
-func NewApplied() *Applied {
-	return &Applied{
-		store: make(map[string]map[string]sync.Result),
+// NewDedupe creates a new in-memory dedupe tracker.
+func NewDedupe() *Dedupe {
+	return &Dedupe{
+		seen: make(map[string]map[string]bool),
 	}
 }
 
-// Get retrieves a stored result for a mutation key.
-func (a *Applied) Get(ctx context.Context, scope, key string) (sync.Result, bool, error) {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
+// Seen returns true if the mutation has already been processed.
+func (d *Dedupe) Seen(ctx context.Context, scope, id string) (bool, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
 
-	scoped, ok := a.store[scope]
+	scoped, ok := d.seen[scope]
 	if !ok {
-		return sync.Result{}, false, nil
+		return false, nil
 	}
-	result, ok := scoped[key]
-	return result, ok, nil
+	return scoped[id], nil
 }
 
-// Put stores a result for a mutation key.
-func (a *Applied) Put(ctx context.Context, scope, key string, res sync.Result) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+// Mark records that a mutation has been processed.
+func (d *Dedupe) Mark(ctx context.Context, scope, id string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 
-	if a.store[scope] == nil {
-		a.store[scope] = make(map[string]sync.Result)
+	if d.seen[scope] == nil {
+		d.seen[scope] = make(map[string]bool)
 	}
-	a.store[scope][key] = res
+	d.seen[scope][id] = true
 	return nil
+}
+
+// -----------------------------------------------------------------------------
+// Store (unexported helper for testing)
+// -----------------------------------------------------------------------------
+
+// store is an unexported in-memory key-value store.
+// It can be used as a helper for building ApplyFunc implementations in tests.
+type store struct {
+	mu   gosync.RWMutex
+	data map[string]map[string]map[string]json.RawMessage // scope -> entity -> id -> data
+}
+
+// newStore creates a new in-memory store.
+func newStore() *store {
+	return &store{
+		data: make(map[string]map[string]map[string]json.RawMessage),
+	}
+}
+
+// Get retrieves an entity by scope/entity/id.
+func (s *store) Get(ctx context.Context, scope, entity, id string) (json.RawMessage, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	entities, ok := s.data[scope]
+	if !ok {
+		return nil, sync.ErrNotFound
+	}
+	items, ok := entities[entity]
+	if !ok {
+		return nil, sync.ErrNotFound
+	}
+	data, ok := items[id]
+	if !ok {
+		return nil, sync.ErrNotFound
+	}
+
+	// Return a copy to avoid mutation
+	cp := make(json.RawMessage, len(data))
+	copy(cp, data)
+	return cp, nil
+}
+
+// Set stores an entity.
+func (s *store) Set(ctx context.Context, scope, entity, id string, data json.RawMessage) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.data[scope] == nil {
+		s.data[scope] = make(map[string]map[string]json.RawMessage)
+	}
+	if s.data[scope][entity] == nil {
+		s.data[scope][entity] = make(map[string]json.RawMessage)
+	}
+
+	// Store a copy
+	cp := make(json.RawMessage, len(data))
+	copy(cp, data)
+	s.data[scope][entity][id] = cp
+	return nil
+}
+
+// Delete removes an entity.
+func (s *store) Delete(ctx context.Context, scope, entity, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if entities, ok := s.data[scope]; ok {
+		if items, ok := entities[entity]; ok {
+			delete(items, id)
+			if len(items) == 0 {
+				delete(entities, entity)
+			}
+			if len(entities) == 0 {
+				delete(s.data, scope)
+			}
+		}
+	}
+	return nil
+}
+
+// Snapshot returns all data in a scope.
+func (s *store) Snapshot(ctx context.Context, scope string) (map[string]map[string]json.RawMessage, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	entities, ok := s.data[scope]
+	if !ok {
+		return make(map[string]map[string]json.RawMessage), nil
+	}
+
+	// Deep copy
+	result := make(map[string]map[string]json.RawMessage, len(entities))
+	for entity, items := range entities {
+		result[entity] = make(map[string]json.RawMessage, len(items))
+		for id, data := range items {
+			cp := make(json.RawMessage, len(data))
+			copy(cp, data)
+			result[entity][id] = cp
+		}
+	}
+	return result, nil
 }
