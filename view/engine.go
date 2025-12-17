@@ -232,6 +232,12 @@ func (e *Engine) renderComponent(w io.Writer, name string, data any, ctx *render
 	return nil
 }
 
+// RenderPartial renders a partial template directly.
+func (e *Engine) RenderPartial(w io.Writer, name string, data any) error {
+	ctx := newRenderContext(e)
+	return e.renderPartial(w, name, data, ctx)
+}
+
 // renderPartial renders a partial template.
 func (e *Engine) renderPartial(w io.Writer, name string, data any, ctx *renderContext) error {
 	content, err := e.getContent("partials", name)

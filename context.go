@@ -49,6 +49,23 @@ func newCtx(w http.ResponseWriter, r *http.Request, lg *slog.Logger) *Ctx {
 	}
 }
 
+// CtxFromRequest creates a Ctx from an http.Request.
+// Used by packages that need to create a Ctx outside the normal router flow.
+// If w is nil, a no-op writer is used.
+func CtxFromRequest(w http.ResponseWriter, r *http.Request) *Ctx {
+	if w == nil {
+		w = &noopWriter{}
+	}
+	return newCtx(w, r, nil)
+}
+
+// noopWriter is a no-op http.ResponseWriter for cases where we don't need response.
+type noopWriter struct{}
+
+func (noopWriter) Header() http.Header         { return http.Header{} }
+func (noopWriter) Write(b []byte) (int, error) { return len(b), nil }
+func (noopWriter) WriteHeader(int)             {}
+
 // --- Accessors ---
 
 func (c *Ctx) Request() *http.Request                   { return c.request }
