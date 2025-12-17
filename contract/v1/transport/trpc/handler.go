@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/go-mizu/mizu/contract"
+	"github.com/go-mizu/mizu/contract/v1"
 )
 
 // Handler handles tRPC requests over HTTP.

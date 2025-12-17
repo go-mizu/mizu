@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/go-mizu/mizu/contract"
+	"github.com/go-mizu/mizu/contract/v1"
 )
 
 // Handler serves REST endpoints for a contract service.

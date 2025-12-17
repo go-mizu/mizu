@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/go-mizu/mizu/contract"
+	"github.com/go-mizu/mizu/contract/v1"
 )
 
 // Handler handles MCP requests over HTTP (Streamable HTTP transport).
