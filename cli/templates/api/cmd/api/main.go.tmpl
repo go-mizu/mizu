@@ -2,9 +2,6 @@ package main
 
 import (
 	"log"
-	"os"
-	"os/signal"
-	"syscall"
 
 	"{{.Module}}/app/api"
 )
@@ -14,20 +11,7 @@ func main() {
 	app := api.New(cfg)
 
 	log.Printf("listening on %s", cfg.Addr)
-
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-
-	errc := make(chan error, 1)
-	go func() { errc <- app.Listen(cfg.Addr) }()
-
-	select {
-	case sig := <-stop:
-		log.Printf("shutdown: %s", sig.String())
-		_ = app.Shutdown()
-	case err := <-errc:
-		if err != nil {
-			log.Fatal(err)
-		}
+	if err := app.Listen(cfg.Addr); err != nil {
+		log.Fatal(err)
 	}
 }

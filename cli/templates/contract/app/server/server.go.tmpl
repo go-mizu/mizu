@@ -3,7 +3,9 @@ package server
 import (
 	"net/http"
 
-	"github.com/go-mizu/mizu/contract"
+	"github.com/go-mizu/mizu/contract/v1"
+	"github.com/go-mizu/mizu/contract/v1/transport/jsonrpc"
+	"github.com/go-mizu/mizu/contract/v1/transport/rest"
 	"{{.Module}}/service/todo"
 )
 
@@ -25,13 +27,15 @@ func New(cfg Config, todoSvc *todo.Service) (*Server, error) {
 	mux := http.NewServeMux()
 
 	// Mount REST endpoints (POST /todos, GET /todos, GET /todos/{id}, etc.)
-	contract.MountREST(mux, svc)
+	rest.Mount(mux, svc)
 
 	// Mount JSON-RPC 2.0 endpoint
-	contract.MountJSONRPC(mux, "/rpc", svc)
+	jsonrpc.Mount(mux, "/rpc", svc)
 
 	// Serve OpenAPI 3.1 spec
-	contract.ServeOpenAPI(mux, "/openapi.json", svc)
+	if err := rest.MountSpec(mux, "/openapi.json", svc); err != nil {
+		return nil, err
+	}
 
 	// Health check (simple)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

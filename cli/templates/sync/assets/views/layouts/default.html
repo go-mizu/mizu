@@ -3,20 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{slot "title" "Todo App"}}</title>
+    <title>{{ "{{" }}slot "title" "Todo App"{{ "}}" }}</title>
     <link rel="stylesheet" href="/static/css/app.css">
-    {{stack "styles"}}
+    {{ "{{" }}stack "styles"{{ "}}" }}
 </head>
 <body>
-    {{partial "header"}}
+    {{ "{{" }}partial "header"{{ "}}" }}
 
     <main class="container">
-        {{slot "content"}}
+        {{ "{{" }}slot "content"{{ "}}" }}
     </main>
 
-    {{partial "footer"}}
+    {{ "{{" }}partial "footer"{{ "}}" }}
 
     <script src="/static/js/app.js"></script>
-    {{stack "scripts"}}
+    {{ "{{" }}stack "scripts"{{ "}}" }}
 </body>
 </html>

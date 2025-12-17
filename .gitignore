@@ -106,3 +106,6 @@ coverage.out
 
 # Temporary, remove later
 CLAUDE.md
+
+# Generated sample apps (for template validation)
+cli/samples/

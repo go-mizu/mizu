@@ -1,13 +1,13 @@
-{{define "title"}}Live Counter{{end}}
+{{ "{{" }}define "title"{{ "}}" }}Live Counter{{ "{{" }}end{{ "}}" }}
 
-{{define "content"}}
+{{ "{{" }}define "content"{{ "}}" }}
 <div class="counter-app" data-live-view="counter">
     <h1>Live Counter</h1>
 
-    {{component "connection-status"}}
+    {{ "{{" }}component "connection-status"{{ "}}" }}
 
     <div class="counter-display">
-        <span id="count">{{.Data.Count}}</span>
+        <span id="count">{{ "{{" }}.Data.Count{{ "}}" }}</span>
     </div>
 
     <div class="counter-controls">
@@ -43,7 +43,7 @@
     </div>
 </div>
 
-{{push "scripts"}}
+{{ "{{" }}push "scripts"{{ "}}" }}
 <script>
     // Initialize live connection
     const liveClient = new LiveClient({
@@ -72,5 +72,5 @@
         }
     }
 </script>
-{{end}}
-{{end}}
+{{ "{{" }}end{{ "}}" }}
+{{ "{{" }}end{{ "}}" }}
