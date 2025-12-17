@@ -1,0 +1,32 @@
+{{define "title"}}{{.Data.Title}}{{end}}
+
+{{define "content"}}
+<div class="flex flex-col items-center justify-center space-y-8 text-center">
+    <div class="space-y-4">
+        <h1 class="text-4xl font-bold tracking-tighter sm:text-5xl md:text-6xl">
+            {{.Data.Title}}
+        </h1>
+        <p class="mx-auto max-w-[700px] text-lg text-muted-foreground md:text-xl">
+            {{.Data.Message}}
+        </p>
+    </div>
+
+    {{component "card" (dict "Title" "Features")}}
+        <ul class="space-y-2 text-left">
+            {{range .Data.Features}}
+            <li class="flex items-center space-x-2">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5 text-primary">
+                    <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd" />
+                </svg>
+                <span>{{.}}</span>
+            </li>
+            {{end}}
+        </ul>
+    {{end}}
+
+    <div class="flex flex-col gap-4 sm:flex-row">
+        {{component "button" (dict "Label" "Get Started" "Variant" "primary" "Href" "/about")}}
+        {{component "button" (dict "Label" "Learn More" "Variant" "outline" "Href" "https://github.com/go-mizu/mizu")}}
+    </div>
+</div>
+{{end}}

@@ -1,7 +1,7 @@
 package server
 
 import (
-	"{{.Module}}/handler"
+	"example.com/sync/handler"
 )
 
 func (a *App) routes() {

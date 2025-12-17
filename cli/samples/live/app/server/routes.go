@@ -1,7 +1,7 @@
 package server
 
 import (
-	"{{.Module}}/handler"
+	"example.com/live/handler"
 )
 
 func (a *App) routes() {
@@ -9,10 +9,8 @@ func (a *App) routes() {
 	a.app.Mount("/static/", staticHandler(a.cfg.Dev))
 
 	// Page routes
-	a.app.Get("/", handler.Home(a.store))
-
-	// Sync API (mounts at /_sync/*)
-	a.syncTransport.Mount(a.app)
+	a.app.Get("/", handler.Home())
+	a.app.Get("/counter", handler.Counter())
 
 	// WebSocket for live updates
 	a.app.Mount("/ws", a.liveServer.Handler())

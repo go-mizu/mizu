@@ -7,7 +7,7 @@ import (
 	"github.com/go-mizu/mizu/sync"
 	"github.com/go-mizu/mizu/view"
 
-	"{{.Module}}/service/todo"
+	"example.com/sync/service/todo"
 )
 
 // Home returns a handler for the home page.

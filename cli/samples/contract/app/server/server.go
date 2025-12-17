@@ -1,0 +1,69 @@
+package server
+
+import (
+	"net/http"
+
+	"github.com/go-mizu/mizu/contract/v1"
+	"github.com/go-mizu/mizu/contract/v1/transport/jsonrpc"
+	"github.com/go-mizu/mizu/contract/v1/transport/rest"
+	"example.com/contract/service/todo"
+)
+
+// Server wraps the HTTP server with all transports.
+type Server struct {
+	cfg    Config
+	server *http.Server
+	svc    *contract.Service
+}
+
+// New creates a server with REST, JSON-RPC, and OpenAPI transports.
+func New(cfg Config, todoSvc *todo.Service) (*Server, error) {
+	// Register the service to get a contract.
+	svc, err := contract.Register("todo", todoSvc)
+	if err != nil {
+		return nil, err
+	}
+
+	mux := http.NewServeMux()
+
+	// Mount REST endpoints (POST /todos, GET /todos, GET /todos/{id}, etc.)
+	rest.Mount(mux, svc)
+
+	// Mount JSON-RPC 2.0 endpoint
+	jsonrpc.Mount(mux, "/rpc", svc)
+
+	// Serve OpenAPI 3.1 spec
+	if err := rest.MountSpec(mux, "/openapi.json", svc); err != nil {
+		return nil, err
+	}
+
+	// Health check (simple)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok\n"))
+	})
+
+	return &Server{
+		cfg: cfg,
+		server: &http.Server{
+			Addr:    cfg.Addr,
+			Handler: mux,
+		},
+		svc: svc,
+	}, nil
+}
+
+// ListenAndServe starts the HTTP server.
+func (s *Server) ListenAndServe() error {
+	return s.server.ListenAndServe()
+}
+
+// Close shuts down the server.
+func (s *Server) Close() error {
+	return s.server.Close()
+}
+
+// Service returns the registered contract service.
+func (s *Server) Service() *contract.Service {
+	return s.svc
+}

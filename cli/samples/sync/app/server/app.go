@@ -14,8 +14,8 @@ import (
 	"github.com/go-mizu/mizu/sync/memory"
 	"github.com/go-mizu/mizu/view"
 
-	"{{.Module}}/assets"
-	"{{.Module}}/service/todo"
+	"example.com/sync/assets"
+	"example.com/sync/service/todo"
 )
 
 // App holds the application components.
