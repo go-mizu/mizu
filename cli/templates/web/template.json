@@ -1,0 +1,9 @@
+{
+  "name": "web",
+  "description": "Full-stack web app with views, components, and static assets",
+  "tags": ["go", "mizu", "web", "views", "tailwind"],
+  "variables": {
+    "name": { "description": "Project name", "default": "" },
+    "module": { "description": "Go module path", "default": "" }
+  }
+}

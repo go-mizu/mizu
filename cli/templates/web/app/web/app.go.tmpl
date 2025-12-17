@@ -1,0 +1,70 @@
+package web
+
+import (
+	"io/fs"
+	"net/http"
+	"os"
+
+	"github.com/go-mizu/mizu"
+	"github.com/go-mizu/mizu/view"
+
+	"{{.Module}}/assets"
+)
+
+type App struct {
+	cfg    Config
+	app    *mizu.App
+	engine *view.Engine
+}
+
+func New(cfg Config) *App {
+	a := &App{
+		cfg: cfg,
+		app: mizu.New(),
+	}
+
+	// Setup view engine
+	opts := view.Options{
+		DefaultLayout: "default",
+		Development:   cfg.Dev,
+	}
+
+	if !cfg.Dev {
+		// Production: use embedded filesystem
+		viewsFS, _ := fs.Sub(assets.ViewsFS, "views")
+		opts.FS = viewsFS
+	} else {
+		// Development: use disk filesystem
+		opts.Dir = "assets/views"
+	}
+
+	a.engine = view.New(opts)
+
+	// Preload templates in production
+	if !cfg.Dev {
+		if err := a.engine.Preload(); err != nil {
+			panic("failed to load templates: " + err.Error())
+		}
+	}
+
+	// Add view middleware
+	a.app.Use(view.Middleware(a.engine))
+
+	// Setup routes
+	a.routes()
+
+	return a
+}
+
+func (a *App) Listen(addr string) error { return a.app.Listen(addr) }
+
+// staticHandler serves embedded static files
+func staticHandler(dev bool) http.Handler {
+	var staticFS fs.FS
+	if dev {
+		staticFS = os.DirFS("assets/static")
+	} else {
+		staticFS, _ = fs.Sub(assets.StaticFS, "static")
+	}
+	return http.StripPrefix("/static/", http.FileServer(http.FS(staticFS)))
+}
