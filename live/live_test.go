@@ -913,6 +913,7 @@ func TestHandleConn_ForbiddenOrigin(t *testing.T) {
 	req.Header.Set("Upgrade", "websocket")
 	req.Header.Set("Connection", "Upgrade")
 	req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	req.Header.Set("Sec-WebSocket-Version", "13")
 	req.Header.Set("Origin", "https://forbidden.com")
 	rec := httptest.NewRecorder()
 
@@ -932,6 +933,7 @@ func TestHandleConn_AllowedOrigin(t *testing.T) {
 	req.Header.Set("Upgrade", "websocket")
 	req.Header.Set("Connection", "Upgrade")
 	req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	req.Header.Set("Sec-WebSocket-Version", "13")
 	req.Header.Set("Origin", "https://allowed.com")
 	rec := httptest.NewRecorder()
 
@@ -952,6 +954,7 @@ func TestHandleConn_WildcardOrigin(t *testing.T) {
 	req.Header.Set("Upgrade", "websocket")
 	req.Header.Set("Connection", "Upgrade")
 	req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	req.Header.Set("Sec-WebSocket-Version", "13")
 	req.Header.Set("Origin", "https://any.com")
 	rec := httptest.NewRecorder()
 
@@ -968,6 +971,7 @@ func TestHandleConn_MissingKey(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Upgrade", "websocket")
 	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Sec-WebSocket-Version", "13")
 	// Missing Sec-WebSocket-Key
 	rec := httptest.NewRecorder()
 
@@ -989,12 +993,170 @@ func TestHandleConn_AuthFailed(t *testing.T) {
 	req.Header.Set("Upgrade", "websocket")
 	req.Header.Set("Connection", "Upgrade")
 	req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	req.Header.Set("Sec-WebSocket-Version", "13")
 	rec := httptest.NewRecorder()
 
 	srv.Handler().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("expected %d, got %d", http.StatusUnauthorized, rec.Code)
+	}
+}
+
+func TestHandleConn_InvalidVersion(t *testing.T) {
+	srv := New(Options{})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	req.Header.Set("Sec-WebSocket-Version", "12") // Wrong version
+	rec := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUpgradeRequired {
+		t.Errorf("expected %d, got %d", http.StatusUpgradeRequired, rec.Code)
+	}
+
+	// Should include Sec-WebSocket-Version header
+	if rec.Header().Get("Sec-WebSocket-Version") != "13" {
+		t.Errorf("expected Sec-WebSocket-Version: 13 header")
+	}
+}
+
+func TestHandleConn_MissingVersion(t *testing.T) {
+	srv := New(Options{})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	// Missing Sec-WebSocket-Version
+	rec := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUpgradeRequired {
+		t.Errorf("expected %d, got %d", http.StatusUpgradeRequired, rec.Code)
+	}
+}
+
+func TestHandleConn_InvalidKey(t *testing.T) {
+	srv := New(Options{})
+
+	tests := []struct {
+		name string
+		key  string
+	}{
+		{"too short", "dG9vIHNob3J0"},                // Decodes to less than 16 bytes
+		{"invalid base64", "not-valid-base64!!!"},
+		{"too long", "dGhlIHNhbXBsZSBub25jZSBleHRyYQ=="}, // 20 bytes
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header.Set("Upgrade", "websocket")
+			req.Header.Set("Connection", "Upgrade")
+			req.Header.Set("Sec-WebSocket-Key", tt.key)
+			req.Header.Set("Sec-WebSocket-Version", "13")
+			rec := httptest.NewRecorder()
+
+			srv.Handler().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("expected %d, got %d for key %q", http.StatusBadRequest, rec.Code, tt.key)
+			}
+		})
+	}
+}
+
+func TestValidateWebSocketKey(t *testing.T) {
+	tests := []struct {
+		name  string
+		key   string
+		valid bool
+	}{
+		{"valid key", "dGhlIHNhbXBsZSBub25jZQ==", true}, // RFC example
+		{"invalid base64", "not-valid-base64!!!", false},
+		{"too short", "dG9vIHNob3J0", false},     // < 16 bytes
+		{"too long", "dGhlIHNhbXBsZSBub25jZSBleHRyYQ==", false}, // > 16 bytes
+		{"empty", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := validateWebSocketKey(tt.key); got != tt.valid {
+				t.Errorf("validateWebSocketKey(%q) = %v, want %v", tt.key, got, tt.valid)
+			}
+		})
+	}
+}
+
+func TestServer_CheckOrigin(t *testing.T) {
+	checkOriginCalled := false
+	srv := New(Options{
+		CheckOrigin: func(r *http.Request) bool {
+			checkOriginCalled = true
+			return r.Header.Get("Origin") == "https://custom.com"
+		},
+	})
+
+	// Should be allowed
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	req.Header.Set("Sec-WebSocket-Version", "13")
+	req.Header.Set("Origin", "https://custom.com")
+	rec := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec, req)
+
+	if !checkOriginCalled {
+		t.Error("CheckOrigin callback was not called")
+	}
+	// Should not be forbidden
+	if rec.Code == http.StatusForbidden {
+		t.Error("should not be forbidden for allowed custom origin")
+	}
+
+	// Should be forbidden
+	checkOriginCalled = false
+	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req2.Header.Set("Upgrade", "websocket")
+	req2.Header.Set("Connection", "Upgrade")
+	req2.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	req2.Header.Set("Sec-WebSocket-Version", "13")
+	req2.Header.Set("Origin", "https://other.com")
+	rec2 := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec2, req2)
+
+	if !checkOriginCalled {
+		t.Error("CheckOrigin callback was not called")
+	}
+	if rec2.Code != http.StatusForbidden {
+		t.Errorf("expected %d, got %d", http.StatusForbidden, rec2.Code)
+	}
+}
+
+func TestNew_ReadLimitDefault(t *testing.T) {
+	srv := New(Options{})
+
+	if srv.opts.ReadLimit != defaultReadLimit {
+		t.Errorf("ReadLimit = %d, want %d", srv.opts.ReadLimit, defaultReadLimit)
+	}
+}
+
+func TestNew_CustomReadLimit(t *testing.T) {
+	srv := New(Options{
+		ReadLimit: 1024,
+	})
+
+	if srv.opts.ReadLimit != 1024 {
+		t.Errorf("ReadLimit = %d, want 1024", srv.opts.ReadLimit)
 	}
 }
 
@@ -1097,21 +1259,21 @@ func TestWsConn_WriteMessageLengths(t *testing.T) {
 
 func TestWsConn_ReadMessage(t *testing.T) {
 	tests := []struct {
-		name     string
-		frame    []byte
-		wantType int
-		wantData []byte
-		wantErr  bool
+		name      string
+		frame     []byte
+		readLimit int
+		wantType  int
+		wantData  []byte
+		wantErr   bool
 	}{
 		{
-			name: "short unmasked text",
+			name: "unmasked text should error (RFC 6455 requires masked)",
 			frame: []byte{
 				0x81, // FIN + text opcode
-				0x05, // length 5
+				0x05, // length 5 (unmasked)
 				'h', 'e', 'l', 'l', 'o',
 			},
-			wantType: wsTextMessage,
-			wantData: []byte("hello"),
+			wantErr: true,
 		},
 		{
 			name: "masked text",
@@ -1124,6 +1286,26 @@ func TestWsConn_ReadMessage(t *testing.T) {
 			wantType: wsTextMessage,
 			wantData: []byte("Hello"),
 		},
+		{
+			name: "fragmented frame (FIN=0) should error",
+			frame: []byte{
+				0x01,                   // FIN=0, text opcode
+				0x85,                   // masked + length 5
+				0x37, 0xfa, 0x21, 0x3d, // mask key
+				0x7f, 0x9f, 0x4d, 0x51, 0x58, // masked data
+			},
+			wantErr: true,
+		},
+		{
+			name: "continuation frame should error",
+			frame: []byte{
+				0x80,                   // FIN=1, opcode 0 (continuation)
+				0x85,                   // masked + length 5
+				0x37, 0xfa, 0x21, 0x3d, // mask key
+				0x7f, 0x9f, 0x4d, 0x51, 0x58, // masked data
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1132,9 +1314,13 @@ func TestWsConn_ReadMessage(t *testing.T) {
 			mock.readBuf.Write(tt.frame)
 
 			ws := &wsConn{
-				conn:   mock,
-				reader: bufio.NewReader(mock.readBuf),
-				writer: bufio.NewWriter(mock.writeBuf),
+				conn:      mock,
+				reader:    bufio.NewReader(mock.readBuf),
+				writer:    bufio.NewWriter(mock.writeBuf),
+				readLimit: defaultReadLimit,
+			}
+			if tt.readLimit > 0 {
+				ws.readLimit = tt.readLimit
 			}
 
 			msgType, data, err := ws.readMessage()
@@ -1160,18 +1346,28 @@ func TestWsConn_ReadMessageExtendedLength(t *testing.T) {
 	for i := range data {
 		data[i] = 'a'
 	}
+
+	// Create masked frame with extended length
+	mask := []byte{0x12, 0x34, 0x56, 0x78}
+	maskedData := make([]byte, len(data))
+	for i := range data {
+		maskedData[i] = data[i] ^ mask[i%4]
+	}
+
 	frame := []byte{
 		0x82,       // FIN + binary opcode
-		0x7e,       // length 126 indicator
+		0xfe,       // masked + length 126 indicator
 		0x00, 0xc8, // 200 in big endian
 	}
-	frame = append(frame, data...)
+	frame = append(frame, mask...)
+	frame = append(frame, maskedData...)
 	mock.readBuf.Write(frame)
 
 	ws := &wsConn{
-		conn:   mock,
-		reader: bufio.NewReader(mock.readBuf),
-		writer: bufio.NewWriter(mock.writeBuf),
+		conn:      mock,
+		reader:    bufio.NewReader(mock.readBuf),
+		writer:    bufio.NewWriter(mock.writeBuf),
+		readLimit: defaultReadLimit,
 	}
 
 	msgType, received, err := ws.readMessage()
@@ -1191,9 +1387,10 @@ func TestWsConn_ReadMessageErrors(t *testing.T) {
 	// Test read error on first byte
 	mock := newMockConn()
 	ws := &wsConn{
-		conn:   mock,
-		reader: bufio.NewReader(mock.readBuf),
-		writer: bufio.NewWriter(mock.writeBuf),
+		conn:      mock,
+		reader:    bufio.NewReader(mock.readBuf),
+		writer:    bufio.NewWriter(mock.writeBuf),
+		readLimit: defaultReadLimit,
 	}
 
 	_, _, err := ws.readMessage()
@@ -1205,14 +1402,83 @@ func TestWsConn_ReadMessageErrors(t *testing.T) {
 	mock2 := newMockConn()
 	mock2.readBuf.Write([]byte{0x81}) // Only first byte
 	ws2 := &wsConn{
-		conn:   mock2,
-		reader: bufio.NewReader(mock2.readBuf),
-		writer: bufio.NewWriter(mock2.writeBuf),
+		conn:      mock2,
+		reader:    bufio.NewReader(mock2.readBuf),
+		writer:    bufio.NewWriter(mock2.writeBuf),
+		readLimit: defaultReadLimit,
 	}
 
 	_, _, err = ws2.readMessage()
 	if err == nil {
 		t.Error("expected error on partial frame")
+	}
+}
+
+func TestWsConn_ReadMessageSizeLimit(t *testing.T) {
+	// Test message exceeds read limit
+	mock := newMockConn()
+
+	// Create a masked frame with data larger than the limit
+	data := make([]byte, 100)
+	mask := []byte{0x12, 0x34, 0x56, 0x78}
+	maskedData := make([]byte, len(data))
+	for i := range data {
+		maskedData[i] = data[i] ^ mask[i%4]
+	}
+
+	frame := []byte{
+		0x81,       // FIN + text opcode
+		0xfe,       // masked + length 126 indicator
+		0x00, 0x64, // 100 in big endian
+	}
+	frame = append(frame, mask...)
+	frame = append(frame, maskedData...)
+	mock.readBuf.Write(frame)
+
+	ws := &wsConn{
+		conn:      mock,
+		reader:    bufio.NewReader(mock.readBuf),
+		writer:    bufio.NewWriter(mock.writeBuf),
+		readLimit: 50, // Limit smaller than message
+	}
+
+	_, _, err := ws.readMessage()
+	if err != ErrMessageTooLarge {
+		t.Errorf("expected ErrMessageTooLarge, got %v", err)
+	}
+}
+
+func TestWsConn_ReadMessageControlFrameConstraints(t *testing.T) {
+	// Test control frame with payload > 125 bytes should error
+	mock := newMockConn()
+
+	// Control frame (close) with payload > 125
+	mask := []byte{0x12, 0x34, 0x56, 0x78}
+	data := make([]byte, 130)
+	maskedData := make([]byte, len(data))
+	for i := range data {
+		maskedData[i] = data[i] ^ mask[i%4]
+	}
+
+	frame := []byte{
+		0x88,       // FIN + close opcode
+		0xfe,       // masked + length 126 indicator
+		0x00, 0x82, // 130 in big endian
+	}
+	frame = append(frame, mask...)
+	frame = append(frame, maskedData...)
+	mock.readBuf.Write(frame)
+
+	ws := &wsConn{
+		conn:      mock,
+		reader:    bufio.NewReader(mock.readBuf),
+		writer:    bufio.NewWriter(mock.writeBuf),
+		readLimit: defaultReadLimit,
+	}
+
+	_, _, err := ws.readMessage()
+	if err != ErrProtocolError {
+		t.Errorf("expected ErrProtocolError for control frame > 125 bytes, got %v", err)
 	}
 }
 
@@ -1289,6 +1555,7 @@ func TestServer_Integration(t *testing.T) {
 	req.Header.Set("Upgrade", "websocket")
 	req.Header.Set("Connection", "Upgrade")
 	req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	req.Header.Set("Sec-WebSocket-Version", "13")
 	// No Authorization header
 
 	resp, err = http.DefaultClient.Do(req)
@@ -1353,6 +1620,7 @@ func TestServer_Origins(t *testing.T) {
 			req.Header.Set("Upgrade", "websocket")
 			req.Header.Set("Connection", "Upgrade")
 			req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+			req.Header.Set("Sec-WebSocket-Version", "13")
 			req.Header.Set("Origin", tt.requestOrigin)
 			rec := httptest.NewRecorder()
 
@@ -1377,6 +1645,9 @@ func TestErrors(t *testing.T) {
 		{ErrSessionClosed, "live: session closed"},
 		{ErrQueueFull, "live: send queue full"},
 		{ErrAuthFailed, "live: authentication failed"},
+		{ErrInvalidVersion, "live: unsupported WebSocket version"},
+		{ErrMessageTooLarge, "live: message too large"},
+		{ErrProtocolError, "live: protocol error"},
 	}
 
 	for _, tt := range tests {
