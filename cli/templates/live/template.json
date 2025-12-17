@@ -1,0 +1,9 @@
+{
+  "name": "live",
+  "description": "Real-time interactive app with live views and instant updates",
+  "tags": ["go", "mizu", "live", "websocket", "realtime", "interactive"],
+  "variables": {
+    "name": { "description": "Project name", "default": "" },
+    "module": { "description": "Go module path", "default": "" }
+  }
+}
