@@ -11,7 +11,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 
@@ -78,7 +77,7 @@ type Engine struct {
 	cfg   Config
 	fs    fs.FS
 	mu    sync.RWMutex
-	cache map[string]string
+	cache map[string]*template.Template
 	funcs template.FuncMap
 }
 
@@ -87,7 +86,7 @@ func New(cfg Config) *Engine {
 	cfg.defaults()
 	e := &Engine{
 		cfg:   cfg,
-		cache: make(map[string]string),
+		cache: make(map[string]*template.Template),
 		funcs: baseFuncs(),
 	}
 	for k, v := range cfg.Funcs {
@@ -114,7 +113,7 @@ func (e *Engine) Load() error {
 // Clear clears the template cache.
 func (e *Engine) Clear() {
 	e.mu.Lock()
-	e.cache = make(map[string]string)
+	e.cache = make(map[string]*template.Template)
 	e.mu.Unlock()
 }
 
@@ -130,13 +129,8 @@ func (e *Engine) Render(w io.Writer, page string, data any, opts ...option) erro
 		Data: data,
 	}
 
-	// Load and parse page template
-	content, err := e.content("pages", page)
-	if err != nil {
-		return err
-	}
-
-	tmpl, err := e.parse(page, content)
+	// Get page template
+	tmpl, err := e.template("pages", page)
 	if err != nil {
 		return err
 	}
@@ -155,13 +149,8 @@ func (e *Engine) Render(w io.Writer, page string, data any, opts ...option) erro
 	// Set rendered content for layout
 	pd.Content = template.HTML(pageBuf.String()) //nolint:gosec
 
-	// Load and parse layout template
-	layoutContent, err := e.content("layouts", cfg.layout)
-	if err != nil {
-		return err
-	}
-
-	layoutTmpl, err := e.parse(cfg.layout, layoutContent)
+	// Get layout template
+	layoutTmpl, err := e.template("layouts", cfg.layout)
 	if err != nil {
 		return err
 	}
@@ -172,25 +161,42 @@ func (e *Engine) Render(w io.Writer, page string, data any, opts ...option) erro
 	return nil
 }
 
-func (e *Engine) content(kind, name string) (string, error) {
+func (e *Engine) template(kind, name string) (*template.Template, error) {
 	key := kind + "/" + name
+
+	// In development mode, always parse fresh
 	if e.cfg.Development {
-		return e.load(kind, name)
+		content, err := e.load(kind, name)
+		if err != nil {
+			return nil, err
+		}
+		return e.parse(name, content)
 	}
+
+	// Check cache first
 	e.mu.RLock()
-	content, ok := e.cache[key]
+	tmpl, ok := e.cache[key]
 	e.mu.RUnlock()
 	if ok {
-		return content, nil
+		return tmpl, nil
 	}
+
+	// Load and parse template
 	content, err := e.load(kind, name)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
+	tmpl, err = e.parse(name, content)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache the parsed template
 	e.mu.Lock()
-	e.cache[key] = content
+	e.cache[key] = tmpl
 	e.mu.Unlock()
-	return content, nil
+
+	return tmpl, nil
 }
 
 func (e *Engine) load(kind, name string) (string, error) {
@@ -216,11 +222,12 @@ func (e *Engine) loadDir(dir string) error {
 		if err != nil {
 			return err
 		}
-		if _, err := e.parse(name, content); err != nil {
+		tmpl, err := e.parse(name, content)
+		if err != nil {
 			return err
 		}
 		e.mu.Lock()
-		e.cache[key] = content
+		e.cache[key] = tmpl
 		e.mu.Unlock()
 		return nil
 	})
@@ -258,12 +265,10 @@ type pageData struct {
 	Page    pageMeta
 	Data    any
 	Content template.HTML // Rendered page content (for layouts)
-	CSRF    string
 }
 
 type pageMeta struct {
 	Name   string
-	Title  string
 	Layout string
 }
 
@@ -271,14 +276,8 @@ type pageMeta struct {
 type option func(*renderCfg)
 
 type renderCfg struct {
-	status   int
 	layout   string
 	noLayout bool
-}
-
-// Status sets the HTTP status code.
-func Status(code int) option {
-	return func(c *renderCfg) { c.status = code }
 }
 
 // Layout sets the layout name.
@@ -318,12 +317,8 @@ func Render(c *mizu.Ctx, page string, data any, opts ...option) error {
 	if e == nil {
 		return ErrNotFound
 	}
-	cfg := &renderCfg{status: 200, layout: e.cfg.DefaultLayout}
-	for _, opt := range opts {
-		opt(cfg)
-	}
 	c.Writer().Header().Set("Content-Type", "text/html; charset=utf-8")
-	c.Writer().WriteHeader(cfg.status)
+	c.Writer().WriteHeader(200)
 	return e.Render(c.Writer(), page, data, opts...)
 }
 
@@ -331,13 +326,8 @@ func Render(c *mizu.Ctx, page string, data any, opts ...option) error {
 func baseFuncs() template.FuncMap {
 	return template.FuncMap{
 		// Data helpers
-		"dict":    dictFunc,
-		"list":    listFunc,
-		"default": defaultFunc,
-		"empty":   emptyFunc,
-
-		// Safe content (use with caution)
-		"safeHTML": func(s string) template.HTML { return template.HTML(s) }, //nolint:gosec
+		"dict": dictFunc,
+		"list": listFunc,
 
 		// String helpers
 		"upper":     strings.ToUpper,
@@ -349,10 +339,6 @@ func baseFuncs() template.FuncMap {
 		"join":      strings.Join,
 		"hasPrefix": strings.HasPrefix,
 		"hasSuffix": strings.HasSuffix,
-
-		// Comparisons
-		"eq": func(a, b any) bool { return reflect.DeepEqual(a, b) },
-		"ne": func(a, b any) bool { return !reflect.DeepEqual(a, b) },
 	}
 }
 
@@ -372,33 +358,4 @@ func dictFunc(pairs ...any) (map[string]any, error) {
 }
 
 func listFunc(items ...any) []any { return items }
-
-func defaultFunc(def, val any) any {
-	if emptyFunc(val) {
-		return def
-	}
-	return val
-}
-
-func emptyFunc(val any) bool {
-	if val == nil {
-		return true
-	}
-	v := reflect.ValueOf(val)
-	switch v.Kind() {
-	case reflect.String, reflect.Array, reflect.Slice, reflect.Map:
-		return v.Len() == 0
-	case reflect.Bool:
-		return !v.Bool()
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return v.Int() == 0
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return v.Uint() == 0
-	case reflect.Float32, reflect.Float64:
-		return v.Float() == 0
-	case reflect.Ptr, reflect.Interface:
-		return v.IsNil()
-	}
-	return false
-}
 

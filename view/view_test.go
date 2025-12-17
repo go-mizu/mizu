@@ -258,29 +258,6 @@ func TestMiddleware(t *testing.T) {
 	}
 }
 
-func TestRender_Status(t *testing.T) {
-	e := New(Config{
-		Dir:         "testdata/views",
-		Development: true,
-	})
-
-	app := mizu.New()
-	app.Use(e.Middleware())
-
-	app.Get("/not-found", func(c *mizu.Ctx) error {
-		return Render(c, "simple", nil, Status(404), NoLayout())
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/not-found", nil)
-	rec := httptest.NewRecorder()
-
-	app.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("expected status 404, got %d", rec.Code)
-	}
-}
-
 func TestFrom(t *testing.T) {
 	e := New(Config{
 		Dir:         "testdata/views",
@@ -371,87 +348,4 @@ func TestListFunc(t *testing.T) {
 	if list[0] != "a" || list[1] != "b" || list[2] != "c" {
 		t.Errorf("unexpected list contents: %v", list)
 	}
-}
-
-func TestDefaultFunc(t *testing.T) {
-	t.Run("returns default for nil", func(t *testing.T) {
-		result := defaultFunc("default", nil)
-		if result != "default" {
-			t.Errorf("expected 'default', got %v", result)
-		}
-	})
-
-	t.Run("returns default for empty string", func(t *testing.T) {
-		result := defaultFunc("default", "")
-		if result != "default" {
-			t.Errorf("expected 'default', got %v", result)
-		}
-	})
-
-	t.Run("returns value when not empty", func(t *testing.T) {
-		result := defaultFunc("default", "actual")
-		if result != "actual" {
-			t.Errorf("expected 'actual', got %v", result)
-		}
-	})
-
-	t.Run("returns default for zero int", func(t *testing.T) {
-		result := defaultFunc(42, 0)
-		if result != 42 {
-			t.Errorf("expected 42, got %v", result)
-		}
-	})
-}
-
-func TestEmptyFunc(t *testing.T) {
-	tests := []struct {
-		name     string
-		val      any
-		expected bool
-	}{
-		{"nil", nil, true},
-		{"empty string", "", true},
-		{"non-empty string", "hello", false},
-		{"zero int", 0, true},
-		{"non-zero int", 42, false},
-		{"false bool", false, true},
-		{"true bool", true, false},
-		{"empty slice", []string{}, true},
-		{"non-empty slice", []string{"a"}, false},
-		{"empty map", map[string]int{}, true},
-		{"non-empty map", map[string]int{"a": 1}, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := emptyFunc(tt.val)
-			if result != tt.expected {
-				t.Errorf("empty(%v) = %v, want %v", tt.val, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestComparisonFuncs(t *testing.T) {
-	funcs := baseFuncs()
-	eq := funcs["eq"].(func(any, any) bool)
-	ne := funcs["ne"].(func(any, any) bool)
-
-	t.Run("eq", func(t *testing.T) {
-		if !eq(5, 5) {
-			t.Error("expected 5 == 5")
-		}
-		if eq(5, 6) {
-			t.Error("expected 5 != 6")
-		}
-	})
-
-	t.Run("ne", func(t *testing.T) {
-		if !ne(5, 6) {
-			t.Error("expected 5 != 6")
-		}
-		if ne(5, 5) {
-			t.Error("expected 5 == 5")
-		}
-	})
 }
