@@ -221,7 +221,7 @@ Example: activity feed updates when a background job publishes an event.
 ### Publish
 
 ```go
-lv.PubSub().Publish("user:123", ActivityEvent{Text: "New message"})
+lv.Publish("user:123", ActivityEvent{Text: "New message"})
 ```
 
 ### Subscribe in Mount

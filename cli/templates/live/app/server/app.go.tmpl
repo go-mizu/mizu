@@ -92,10 +92,10 @@ func (a *App) setupLive() {
 func (a *App) handleLiveMessage(ctx context.Context, s *live.Session, msg live.Message) {
 	switch msg.Type {
 	case "subscribe":
-		a.liveServer.PubSub().Subscribe(s, msg.Topic)
+		a.liveServer.Subscribe(s, msg.Topic)
 		_ = s.Send(live.Message{Type: "ack", Ref: msg.Ref, Topic: msg.Topic})
 	case "unsubscribe":
-		a.liveServer.PubSub().Unsubscribe(s, msg.Topic)
+		a.liveServer.Unsubscribe(s, msg.Topic)
 	case "mount":
 		a.handleMount(ctx, s, msg)
 	case "event":
