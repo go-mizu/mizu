@@ -356,6 +356,47 @@
         ]
       },
       {
+        "tab": "View",
+        "groups": [
+          {
+            "group": "View Engine",
+            "pages": [
+              "view/overview",
+              "view/quick-start",
+              "view/engine",
+              "view/templates",
+              "view/layouts",
+              "view/components",
+              "view/partials",
+              "view/functions",
+              "view/production"
+            ]
+          },
+          {
+            "group": "Live (Realtime)",
+            "pages": [
+              "view/live-overview",
+              "view/live-quick-start",
+              "view/live-server",
+              "view/live-sessions",
+              "view/live-pubsub"
+            ]
+          },
+          {
+            "group": "Sync (State)",
+            "pages": [
+              "view/sync-overview",
+              "view/sync-quick-start",
+              "view/sync-server",
+              "view/sync-client",
+              "view/sync-reactive",
+              "view/sync-collections",
+              "view/sync-integration"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "Examples",
         "groups": [
           {

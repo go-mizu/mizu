@@ -1,0 +1,369 @@
+---
+title: "View Quick Start"
+description: "Create your first dynamic web page with Mizu's view engine in 5 minutes"
+---
+
+# View Quick Start
+
+In this guide, you'll create a simple web page with a layout, dynamic content, and a reusable component. By the end, you'll understand the core concepts of Mizu's view system.
+
+## Prerequisites
+
+- Go 1.22 or later installed
+- Basic understanding of Go and HTML
+- A text editor
+
+## Step 1: Create Your Project
+
+First, create a new directory and initialize a Go module:
+
+```bash
+mkdir myapp && cd myapp
+go mod init myapp
+go get github.com/go-mizu/mizu
+```
+
+## Step 2: Create the Directory Structure
+
+Create the views directory with the standard layout:
+
+```bash
+mkdir -p views/layouts views/pages views/components
+```
+
+Your project should look like this:
+
+```
+myapp/
+├── go.mod
+├── go.sum
+├── main.go (we'll create this)
+└── views/
+    ├── layouts/
+    ├── pages/
+    └── components/
+```
+
+## Step 3: Create the Layout
+
+A layout is the HTML shell that wraps your pages. Create `views/layouts/default.html`:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{slot "title" "My App"}}</title>
+    <style>
+        /* Simple styles for our demo */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        nav {
+            background: #333;
+            color: white;
+            padding: 15px;
+            margin: -20px -20px 20px -20px;
+        }
+        nav a {
+            color: white;
+            text-decoration: none;
+            margin-right: 15px;
+        }
+        main {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        footer {
+            text-align: center;
+            margin-top: 20px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="/">Home</a>
+        <a href="/about">About</a>
+    </nav>
+    <main>
+        {{slot "content"}}
+    </main>
+    <footer>
+        Built with Mizu
+    </footer>
+</body>
+</html>
+```
+
+**What's happening here?**
+
+- `{{slot "title" "My App"}}` - Creates a slot named "title" with a default value
+- `{{slot "content"}}` - Creates a slot named "content" with no default (will be empty if not filled)
+- Pages will fill these slots with their own content
+
+## Step 4: Create a Page
+
+Pages go inside layouts. Create `views/pages/home.html`:
+
+```html
+{{define "title"}}Welcome Home{{end}}
+
+{{define "content"}}
+<h1>Hello, {{.Data.Name}}!</h1>
+
+<p>Welcome to our website. We're glad you're here.</p>
+
+<h2>What We Offer</h2>
+<ul>
+    {{range .Data.Features}}
+    <li>{{.}}</li>
+    {{end}}
+</ul>
+
+{{component "button" (dict "Label" "Get Started" "Color" "blue")}}
+{{component "button" (dict "Label" "Learn More" "Color" "gray")}}
+{{end}}
+```
+
+**What's happening here?**
+
+- `{{define "title"}}...{{end}}` - Fills the "title" slot in the layout
+- `{{define "content"}}...{{end}}` - Fills the "content" slot in the layout
+- `{{.Data.Name}}` - Accesses the "Name" field from data passed by the handler
+- `{{range .Data.Features}}...{{end}}` - Loops through a list
+- `{{component "button" (dict ...)}}` - Renders a button component with specific data
+
+## Step 5: Create a Component
+
+Components are reusable UI pieces. Create `views/components/button.html`:
+
+```html
+<button style="
+    background: {{if eq .Color "blue"}}#2563eb{{else}}#6b7280{{end}};
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    margin-right: 10px;
+">
+    {{.Label}}
+</button>
+```
+
+**What's happening here?**
+
+- Components receive data through the `dict` function
+- `{{.Label}}` and `{{.Color}}` access the passed data
+- `{{if eq .Color "blue"}}...{{else}}...{{end}}` - Conditional logic for styling
+
+## Step 6: Create the Go Application
+
+Now create `main.go`:
+
+```go
+package main
+
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/view"
+)
+
+func main() {
+    // Step 1: Create the view engine
+    engine := view.New(view.Options{
+        Dir:         "views",      // Where templates are stored
+        Development: true,         // Enable hot reload
+    })
+
+    // Step 2: Create the Mizu app
+    app := mizu.New()
+
+    // Step 3: Add the view middleware
+    // This makes the engine available to all handlers
+    app.Use(view.Middleware(engine))
+
+    // Step 4: Define routes
+    app.Get("/", homeHandler)
+    app.Get("/about", aboutHandler)
+
+    // Step 5: Start the server
+    app.Listen(":8080")
+}
+
+func homeHandler(c *mizu.Ctx) error {
+    return view.Render(c, "home", view.Data{
+        "Name": "Friend",
+        "Features": []string{
+            "Fast server-side rendering",
+            "Layouts and components",
+            "Development hot reload",
+            "Production caching",
+        },
+    })
+}
+
+func aboutHandler(c *mizu.Ctx) error {
+    return view.Render(c, "about", nil)
+}
+```
+
+**What's happening here?**
+
+1. **Create engine** - `view.New()` creates a view engine with your configuration
+2. **Add middleware** - `view.Middleware(engine)` makes the engine available in handlers
+3. **Render pages** - `view.Render(c, "home", data)` renders the "home" page with data
+
+## Step 7: Create the About Page
+
+Create one more page at `views/pages/about.html`:
+
+```html
+{{define "title"}}About Us{{end}}
+
+{{define "content"}}
+<h1>About Us</h1>
+
+<p>We are a team passionate about building great web applications with Go.</p>
+
+<h2>Our Mission</h2>
+<p>To make server-side rendering in Go simple, fast, and enjoyable.</p>
+
+{{component "button" (dict "Label" "Contact Us" "Color" "blue")}}
+{{end}}
+```
+
+## Step 8: Run Your Application
+
+Start the server:
+
+```bash
+go run main.go
+```
+
+Now open your browser to `http://localhost:8080`. You should see:
+
+- The home page with your name and features list
+- Two styled buttons
+- Navigation to the About page
+
+Try editing `views/pages/home.html` and refreshing your browser - the changes appear instantly because Development mode is enabled!
+
+## Understanding the Data Flow
+
+Here's what happens when someone visits your site:
+
+```
+1. Browser requests http://localhost:8080/
+                    │
+                    ▼
+2. Mizu routes to homeHandler
+                    │
+                    ▼
+3. Handler calls view.Render(c, "home", data)
+                    │
+                    ▼
+4. View engine finds views/pages/home.html
+                    │
+                    ▼
+5. Page defines "title" and "content" slots
+                    │
+                    ▼
+6. Engine processes {{component "button" ...}}
+   - Finds views/components/button.html
+   - Renders with passed data
+                    │
+                    ▼
+7. Engine finds layout views/layouts/default.html
+                    │
+                    ▼
+8. Layout's {{slot "title"}} replaced with "Welcome Home"
+   Layout's {{slot "content"}} replaced with page content
+                    │
+                    ▼
+9. Final HTML sent to browser
+```
+
+## Common Patterns
+
+### Passing Data to Templates
+
+Data passed to `view.Render()` is available at `.Data`:
+
+```go
+// In handler
+view.Render(c, "profile", view.Data{
+    "User": user,
+    "Posts": posts,
+})
+```
+
+```html
+<!-- In template -->
+<h1>{{.Data.User.Name}}</h1>
+{{range .Data.Posts}}
+<article>{{.Title}}</article>
+{{end}}
+```
+
+### Using a Different Layout
+
+Pages can specify which layout to use:
+
+```html
+{{define "layout"}}admin{{end}}  <!-- Uses views/layouts/admin.html -->
+
+{{define "content"}}
+Admin content here
+{{end}}
+```
+
+Or specify it in the handler:
+
+```go
+view.Render(c, "dashboard", data, view.Layout("admin"))
+```
+
+### Rendering Without a Layout
+
+For partial HTML responses (AJAX, htmx):
+
+```go
+view.Render(c, "partial", data, view.NoLayout())
+```
+
+## Next Steps
+
+You've learned the basics! Here's what to explore next:
+
+- **[Engine Configuration](/view/engine)** - All options for customizing the view engine
+- **[Templates](/view/templates)** - Deep dive into Go template syntax
+- **[Layouts](/view/layouts)** - Advanced layout patterns with slots and stacks
+- **[Components](/view/components)** - Building reusable, isolated components
+- **[Production](/view/production)** - Embedding templates and caching for production
+
+## Troubleshooting
+
+### "template not found" Error
+
+Check that:
+1. Your `views` directory exists
+2. The page is in `views/pages/` (not directly in `views/`)
+3. The file extension is `.html`
+4. The name in `Render()` matches the filename (without extension)
+
+### Changes Not Appearing
+
+Make sure `Development: true` is set in your view options. In production mode, templates are cached.
+
+### "layout not found" Error
+
+The default layout is `default.html`. Make sure `views/layouts/default.html` exists, or specify a different layout with `view.Layout("other")`.

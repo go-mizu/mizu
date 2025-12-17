@@ -1,0 +1,506 @@
+---
+title: "Sync Collections"
+description: "Type-safe entity management with Collections and Entities"
+---
+
+# Sync Collections
+
+Collections provide type-safe management of synchronized entities. They wrap the sync client's store with a convenient API for creating, reading, updating, and deleting records.
+
+## Overview
+
+```go
+// Define your type
+type Todo struct {
+    ID        string    `json:"id"`
+    Title     string    `json:"title"`
+    Completed bool      `json:"completed"`
+    CreatedAt time.Time `json:"created_at"`
+}
+
+// Create a collection
+client := sync.New(opts)
+todos := sync.NewCollection[Todo](client, "todo")
+
+// Use it
+todo := todos.Create("abc", Todo{Title: "Buy milk"})
+all := todos.All()
+found := todos.Find(func(t Todo) bool { return t.Completed })
+```
+
+## Creating a Collection
+
+```go
+import "github.com/go-mizu/mizu/view/sync"
+
+// Type parameter is your entity type
+// Second argument is the entity name (matches server)
+todos := sync.NewCollection[Todo](client, "todo")
+users := sync.NewCollection[User](client, "user")
+settings := sync.NewCollection[Settings](client, "settings")
+```
+
+The entity name should match what your server-side Mutator uses.
+
+## Collection Methods
+
+### Create
+
+Creates a new entity:
+
+```go
+todo := todos.Create("todo-123", Todo{
+    Title:     "Buy groceries",
+    Completed: false,
+})
+```
+
+This:
+1. Stores the entity locally (immediate)
+2. Queues a mutation (background sync)
+3. Returns an Entity reference
+
+### Get
+
+Gets an entity reference by ID:
+
+```go
+todo := todos.Get("todo-123")
+```
+
+This returns an Entity even if it doesn't exist yet. Use `Exists()` to check.
+
+### All
+
+Returns all entities in the collection (reactive):
+
+```go
+allTodos := todos.All()
+
+for _, entity := range allTodos {
+    todo := entity.Get()
+    fmt.Printf("%s: %s\n", todo.ID, todo.Title)
+}
+```
+
+### Count
+
+Returns the number of entities (reactive):
+
+```go
+count := todos.Count()
+fmt.Printf("%d todos\n", count)
+```
+
+### Find
+
+Finds entities matching a predicate:
+
+```go
+completed := todos.Find(func(t Todo) bool {
+    return t.Completed
+})
+
+urgent := todos.Find(func(t Todo) bool {
+    return strings.Contains(t.Title, "URGENT")
+})
+```
+
+### Has
+
+Checks if an entity exists:
+
+```go
+if todos.Has("todo-123") {
+    fmt.Println("Todo exists")
+}
+```
+
+## Entity Methods
+
+An Entity is a reference to a single record.
+
+### ID
+
+Returns the entity's unique identifier:
+
+```go
+entity := todos.Get("todo-123")
+fmt.Println(entity.ID())  // "todo-123"
+```
+
+### Get
+
+Returns the current value (reactive):
+
+```go
+entity := todos.Get("todo-123")
+todo := entity.Get()
+
+fmt.Println(todo.Title)
+fmt.Println(todo.Completed)
+```
+
+### Set
+
+Updates the entity value:
+
+```go
+entity := todos.Get("todo-123")
+
+// Get current value
+todo := entity.Get()
+
+// Modify
+todo.Title = "Updated title"
+todo.Completed = true
+
+// Save
+entity.Set(todo)
+```
+
+This:
+1. Updates local store (immediate)
+2. Queues an update mutation (background sync)
+
+### Delete
+
+Removes the entity:
+
+```go
+entity := todos.Get("todo-123")
+entity.Delete()
+```
+
+This:
+1. Removes from local store (immediate)
+2. Queues a delete mutation (background sync)
+
+### Exists
+
+Checks if the entity exists:
+
+```go
+entity := todos.Get("maybe-exists")
+
+if entity.Exists() {
+    todo := entity.Get()
+    fmt.Println(todo.Title)
+} else {
+    fmt.Println("Not found")
+}
+```
+
+## Reactive Usage
+
+Collections and entities are reactive. Use them with Computed and Effect:
+
+### Computed Example
+
+```go
+todos := sync.NewCollection[Todo](client, "todo")
+
+// Computed value updates when todos change
+completedCount := sync.NewComputed(func() int {
+    count := 0
+    for _, entity := range todos.All() {
+        if entity.Get().Completed {
+            count++
+        }
+    }
+    return count
+})
+
+// Or using Find
+completedTodos := sync.NewComputed(func() []*sync.Entity[Todo] {
+    return todos.Find(func(t Todo) bool { return t.Completed })
+})
+```
+
+### Effect Example
+
+```go
+// Log when todos change
+sync.NewEffect(func() {
+    all := todos.All()
+    fmt.Printf("Todos updated: %d items\n", len(all))
+})
+
+// Update UI when specific todo changes
+sync.NewEffect(func() {
+    entity := todos.Get("important-todo")
+    if entity.Exists() {
+        todo := entity.Get()
+        updateTodoUI(todo)
+    }
+})
+```
+
+## Complete Example: Todo App
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "time"
+
+    "github.com/go-mizu/mizu/view/sync"
+)
+
+type Todo struct {
+    ID        string    `json:"id"`
+    Title     string    `json:"title"`
+    Completed bool      `json:"completed"`
+    CreatedAt time.Time `json:"created_at"`
+}
+
+func main() {
+    // Create client and collection
+    client := sync.New(sync.Options{
+        BaseURL: "http://localhost:8080/_sync",
+        Scope:   "user:demo",
+    })
+
+    todos := sync.NewCollection[Todo](client, "todo")
+
+    // Start sync
+    ctx := context.Background()
+    client.Start(ctx)
+
+    // Reactive stats
+    stats := sync.NewComputed(func() string {
+        all := todos.All()
+        completed := 0
+        for _, e := range all {
+            if e.Get().Completed {
+                completed++
+            }
+        }
+        return fmt.Sprintf("%d/%d completed", completed, len(all))
+    })
+
+    // Log changes
+    sync.NewEffect(func() {
+        fmt.Println("Stats:", stats.Get())
+    })
+
+    // Create todos
+    todos.Create("1", Todo{Title: "Learn Go", CreatedAt: time.Now()})
+    todos.Create("2", Todo{Title: "Build app", CreatedAt: time.Now()})
+    todos.Create("3", Todo{Title: "Deploy", CreatedAt: time.Now()})
+
+    // Complete one
+    entity := todos.Get("1")
+    todo := entity.Get()
+    todo.Completed = true
+    entity.Set(todo)
+
+    // Find incomplete
+    incomplete := todos.Find(func(t Todo) bool { return !t.Completed })
+    fmt.Printf("\nIncomplete todos:\n")
+    for _, e := range incomplete {
+        fmt.Printf("- %s\n", e.Get().Title)
+    }
+
+    // Delete one
+    todos.Get("3").Delete()
+
+    // Keep running...
+    select {}
+}
+```
+
+## Patterns
+
+### CRUD Operations
+
+```go
+// Create
+entity := collection.Create(id, value)
+
+// Read
+entity := collection.Get(id)
+if entity.Exists() {
+    value := entity.Get()
+}
+
+// Update
+entity := collection.Get(id)
+value := entity.Get()
+value.Field = newValue
+entity.Set(value)
+
+// Delete
+collection.Get(id).Delete()
+```
+
+### List with Filter
+
+```go
+filter := sync.NewSignal("")
+
+filteredTodos := sync.NewComputed(func() []*sync.Entity[Todo] {
+    f := strings.ToLower(filter.Get())
+    if f == "" {
+        return todos.All()
+    }
+    return todos.Find(func(t Todo) bool {
+        return strings.Contains(strings.ToLower(t.Title), f)
+    })
+})
+```
+
+### Sorted List
+
+```go
+sortBy := sync.NewSignal("created_at")
+
+sortedTodos := sync.NewComputed(func() []*sync.Entity[Todo] {
+    all := todos.All()
+
+    // Convert to slice for sorting
+    items := make([]Todo, len(all))
+    for i, e := range all {
+        items[i] = e.Get()
+    }
+
+    // Sort
+    switch sortBy.Get() {
+    case "title":
+        sort.Slice(items, func(i, j int) bool {
+            return items[i].Title < items[j].Title
+        })
+    case "created_at":
+        sort.Slice(items, func(i, j int) bool {
+            return items[i].CreatedAt.Before(items[j].CreatedAt)
+        })
+    }
+
+    // Convert back to entities
+    result := make([]*sync.Entity[Todo], len(items))
+    for i, item := range items {
+        result[i] = todos.Get(item.ID)
+    }
+    return result
+})
+```
+
+### Pagination
+
+```go
+page := sync.NewSignal(0)
+pageSize := 10
+
+paginatedTodos := sync.NewComputed(func() []*sync.Entity[Todo] {
+    all := todos.All()
+    start := page.Get() * pageSize
+    end := start + pageSize
+
+    if start >= len(all) {
+        return nil
+    }
+    if end > len(all) {
+        end = len(all)
+    }
+
+    return all[start:end]
+})
+
+totalPages := sync.NewComputed(func() int {
+    return (todos.Count() + pageSize - 1) / pageSize
+})
+```
+
+### Multiple Collections
+
+```go
+projects := sync.NewCollection[Project](client, "project")
+tasks := sync.NewCollection[Task](client, "task")
+
+// Get tasks for a project
+projectTasks := func(projectID string) []*sync.Entity[Task] {
+    return tasks.Find(func(t Task) bool {
+        return t.ProjectID == projectID
+    })
+}
+
+// Reactive task count per project
+projectTaskCount := sync.NewComputed(func() map[string]int {
+    counts := make(map[string]int)
+    for _, entity := range tasks.All() {
+        task := entity.Get()
+        counts[task.ProjectID]++
+    }
+    return counts
+})
+```
+
+## Best Practices
+
+### 1. Use Meaningful IDs
+
+```go
+// Good: meaningful, unique ID
+todos.Create("user-123-todo-456", todo)
+
+// Bad: just a random string
+todos.Create("xyz", todo)
+```
+
+### 2. Keep Entities Small
+
+```go
+// Good: focused entity
+type Todo struct {
+    ID        string
+    Title     string
+    Completed bool
+}
+
+// Bad: entity with embedded large data
+type Todo struct {
+    ID          string
+    Title       string
+    Attachments [][]byte  // Large data
+}
+```
+
+### 3. Check Existence
+
+```go
+entity := collection.Get(id)
+
+// Always check before accessing
+if entity.Exists() {
+    value := entity.Get()
+    // Use value
+}
+```
+
+### 4. Use Computed for Derived Data
+
+```go
+// Good: computed derives from collection
+taskCount := sync.NewComputed(func() int {
+    return tasks.Count()
+})
+
+// Bad: manually tracking
+taskCount := sync.NewSignal(0)
+sync.NewEffect(func() {
+    taskCount.Set(len(tasks.All()))  // Manual sync
+})
+```
+
+### 5. Batch Related Operations
+
+```go
+// If creating multiple related entities,
+// they'll be queued and synced together
+project := projects.Create(projectID, Project{Name: "New Project"})
+tasks.Create(task1ID, Task{ProjectID: projectID, Title: "Task 1"})
+tasks.Create(task2ID, Task{ProjectID: projectID, Title: "Task 2"})
+// All mutations sync in order
+```

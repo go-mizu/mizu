@@ -1,0 +1,643 @@
+---
+title: "Sync + Live Integration"
+description: "Combine sync and live for real-time state synchronization"
+---
+
+# Sync + Live Integration
+
+By default, the sync client polls the server periodically for changes. By integrating with the live package, you can push notifications to clients for instant updates. This guide shows how to combine sync and live for real-time synchronization.
+
+## Why Integrate?
+
+| Without Live | With Live |
+|--------------|-----------|
+| Clients poll every 30 seconds | Clients sync instantly |
+| Higher latency for updates | Sub-second latency |
+| More bandwidth usage | Efficient push notifications |
+| Simpler setup | Requires WebSocket infrastructure |
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                          SERVER                                  │
+│                                                                  │
+│  ┌────────────────┐            ┌────────────────┐              │
+│  │  Sync Engine   │──Notify───▶│  Live Server   │              │
+│  │                │            │                │              │
+│  │  - Push        │            │  - Publish to  │              │
+│  │  - Pull        │            │    sync topics │              │
+│  │  - Snapshot    │            │                │              │
+│  └────────────────┘            └───────┬────────┘              │
+│                                        │                        │
+│                               WebSocket│                        │
+└────────────────────────────────────────│────────────────────────┘
+                                         │
+                              ┌──────────┴──────────┐
+                              │                     │
+                              ▼                     ▼
+                     ┌────────────────┐    ┌────────────────┐
+                     │   Client A     │    │   Client B     │
+                     │                │    │                │
+                     │ Sync Client    │    │ Sync Client    │
+                     │      ▲         │    │      ▲         │
+                     │      │         │    │      │         │
+                     │ Live Client ───│    │ Live Client ───│
+                     │ (WebSocket)    │    │ (WebSocket)    │
+                     └────────────────┘    └────────────────┘
+```
+
+## Server Setup
+
+### Step 1: Create Both Servers
+
+```go
+package main
+
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/live"
+    "github.com/go-mizu/mizu/sync"
+    "github.com/go-mizu/mizu/sync/memory"
+)
+
+func main() {
+    // Create Live server
+    liveServer := live.NewServer(live.Options{
+        OnAuth: func(r *http.Request) (string, bool) {
+            userID := r.URL.Query().Get("user")
+            return userID, userID != ""
+        },
+        OnConnect: func(s *live.Session) {
+            // Subscribe to user's sync topic
+            scope := "user:" + s.ID()
+            s.Subscribe("sync:" + scope)
+        },
+    })
+
+    // Create Sync engine with Live notification
+    syncEngine := sync.New(sync.Options{
+        Store:   memory.NewStore(),
+        Log:     memory.NewLog(),
+        Applied: memory.NewApplied(),
+        Mutator: &MyMutator{},
+        // This is the key integration!
+        Notify: sync.NotifierFunc(func(scope string, cursor uint64) {
+            // When sync changes happen, notify via Live
+            msg := fmt.Sprintf(`{"cursor":%d}`, cursor)
+            liveServer.Publish("sync:"+scope, []byte(msg))
+        }),
+    })
+
+    // Mount both on the app
+    app := mizu.New()
+    syncEngine.Mount(app)           // /_sync/*
+    app.Get("/ws", liveServer.Handler())
+
+    app.Listen(":8080")
+}
+```
+
+### Step 2: Implement the Mutator
+
+```go
+type MyMutator struct{}
+
+func (m *MyMutator) Apply(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
+    switch mut.Name {
+    case "todo.create":
+        // ... create logic ...
+        return []sync.Change{{
+            Entity: "todo",
+            ID:     id,
+            Op:     sync.Create,
+            Data:   data,
+        }}, nil
+    // ... other mutations ...
+    }
+    return nil, sync.ErrUnknownMutation
+}
+```
+
+## Client Setup (Go)
+
+### Using the Sync Client with Live
+
+```go
+package main
+
+import (
+    "context"
+    "encoding/json"
+    "log"
+
+    "github.com/go-mizu/mizu/view/sync"
+    "github.com/gorilla/websocket"
+)
+
+func main() {
+    ctx := context.Background()
+    scope := "user:demo"
+
+    // Create sync client
+    syncClient := sync.New(sync.Options{
+        BaseURL:      "http://localhost:8080/_sync",
+        Scope:        scope,
+        PullInterval: 30 * time.Second, // Fallback polling
+    })
+
+    // Start sync
+    syncClient.Start(ctx)
+
+    // Connect to Live for instant notifications
+    go connectLive(scope, syncClient)
+
+    // Use collections
+    todos := sync.NewCollection[Todo](syncClient, "todo")
+
+    // Your app logic...
+}
+
+func connectLive(scope string, syncClient *sync.Client) {
+    for {
+        conn, _, err := websocket.DefaultDialer.Dial(
+            "ws://localhost:8080/ws?user="+scope,
+            nil,
+        )
+        if err != nil {
+            log.Printf("WebSocket connect error: %v", err)
+            time.Sleep(5 * time.Second)
+            continue
+        }
+
+        log.Println("Live connected")
+
+        // Read messages
+        for {
+            _, msg, err := conn.ReadMessage()
+            if err != nil {
+                log.Printf("WebSocket read error: %v", err)
+                break
+            }
+
+            // Parse sync notification
+            var notification struct {
+                Cursor uint64 `json:"cursor"`
+            }
+            if json.Unmarshal(msg, &notification) == nil {
+                // Trigger immediate sync
+                syncClient.NotifyLive(notification.Cursor)
+            }
+        }
+
+        conn.Close()
+        log.Println("Live disconnected, reconnecting...")
+        time.Sleep(time.Second)
+    }
+}
+```
+
+## Client Setup (JavaScript)
+
+For browser clients:
+
+```javascript
+class SyncedClient {
+    constructor(baseURL, scope) {
+        this.baseURL = baseURL;
+        this.scope = scope;
+        this.cursor = 0;
+        this.store = {};
+        this.queue = [];
+        this.listeners = [];
+    }
+
+    // Connect to Live for instant updates
+    connectLive(wsURL) {
+        const ws = new WebSocket(`${wsURL}?user=${this.scope}`);
+
+        ws.onopen = () => {
+            console.log('Live connected');
+        };
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.cursor > this.cursor) {
+                // New data available - pull immediately!
+                this.pull();
+            }
+        };
+
+        ws.onclose = () => {
+            console.log('Live disconnected, reconnecting...');
+            setTimeout(() => this.connectLive(wsURL), 1000);
+        };
+    }
+
+    // Pull changes from server
+    async pull() {
+        try {
+            const response = await fetch(`${this.baseURL}/pull`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    scope: this.scope,
+                    cursor: this.cursor
+                })
+            });
+
+            const data = await response.json();
+
+            // Apply changes
+            for (const change of data.changes) {
+                this.applyChange(change);
+                if (change.cursor > this.cursor) {
+                    this.cursor = change.cursor;
+                }
+            }
+
+            // Notify listeners
+            this.notifyListeners();
+
+            // Continue if more data
+            if (data.has_more) {
+                await this.pull();
+            }
+        } catch (err) {
+            console.error('Pull error:', err);
+        }
+    }
+
+    applyChange(change) {
+        if (!this.store[change.entity]) {
+            this.store[change.entity] = {};
+        }
+
+        switch (change.op) {
+            case 'create':
+            case 'update':
+                this.store[change.entity][change.id] = JSON.parse(atob(change.data));
+                break;
+            case 'delete':
+                delete this.store[change.entity][change.id];
+                break;
+        }
+    }
+
+    // Subscribe to changes
+    onChange(callback) {
+        this.listeners.push(callback);
+    }
+
+    notifyListeners() {
+        for (const listener of this.listeners) {
+            listener(this.store);
+        }
+    }
+}
+
+// Usage
+const client = new SyncedClient('http://localhost:8080/_sync', 'user:demo');
+client.connectLive('ws://localhost:8080/ws');
+
+client.onChange((store) => {
+    console.log('Data updated:', store);
+    renderTodos(store.todo || {});
+});
+
+// Initial sync
+client.pull();
+```
+
+## Complete Example
+
+Here's a full working example:
+
+### Server (main.go)
+
+```go
+package main
+
+import (
+    "context"
+    "encoding/json"
+    "fmt"
+    "log"
+    "net/http"
+    "time"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/live"
+    "github.com/go-mizu/mizu/sync"
+    "github.com/go-mizu/mizu/sync/memory"
+)
+
+type Todo struct {
+    ID        string    `json:"id"`
+    Title     string    `json:"title"`
+    Completed bool      `json:"completed"`
+    CreatedAt time.Time `json:"created_at"`
+}
+
+type TodoMutator struct{}
+
+func (m *TodoMutator) Apply(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
+    switch mut.Name {
+    case "todo.create":
+        id := mut.Args["id"].(string)
+        title := mut.Args["title"].(string)
+
+        todo := Todo{
+            ID:        id,
+            Title:     title,
+            Completed: false,
+            CreatedAt: time.Now(),
+        }
+
+        data, _ := json.Marshal(todo)
+        store.Set(ctx, mut.Scope, "todo", id, data)
+
+        return []sync.Change{{
+            Entity: "todo",
+            ID:     id,
+            Op:     sync.Create,
+            Data:   data,
+        }}, nil
+
+    case "todo.toggle":
+        id := mut.Args["id"].(string)
+
+        existing, err := store.Get(ctx, mut.Scope, "todo", id)
+        if err != nil {
+            return nil, err
+        }
+
+        var todo Todo
+        json.Unmarshal(existing, &todo)
+        todo.Completed = !todo.Completed
+
+        data, _ := json.Marshal(todo)
+        store.Set(ctx, mut.Scope, "todo", id, data)
+
+        return []sync.Change{{
+            Entity: "todo",
+            ID:     id,
+            Op:     sync.Update,
+            Data:   data,
+        }}, nil
+
+    case "todo.delete":
+        id := mut.Args["id"].(string)
+        store.Delete(ctx, mut.Scope, "todo", id)
+
+        return []sync.Change{{
+            Entity: "todo",
+            ID:     id,
+            Op:     sync.Delete,
+        }}, nil
+    }
+
+    return nil, sync.ErrUnknownMutation
+}
+
+func main() {
+    // Live server
+    liveServer := live.NewServer(live.Options{
+        OnAuth: func(r *http.Request) (string, bool) {
+            scope := r.URL.Query().Get("scope")
+            return scope, scope != ""
+        },
+        OnConnect: func(s *live.Session) {
+            s.Subscribe("sync:" + s.ID())
+            log.Printf("Client connected: %s", s.ID())
+        },
+        OnDisconnect: func(s *live.Session) {
+            log.Printf("Client disconnected: %s", s.ID())
+        },
+    })
+
+    // Sync engine
+    syncEngine := sync.New(sync.Options{
+        Store:   memory.NewStore(),
+        Log:     memory.NewLog(),
+        Applied: memory.NewApplied(),
+        Mutator: &TodoMutator{},
+        Notify: sync.NotifierFunc(func(scope string, cursor uint64) {
+            msg := fmt.Sprintf(`{"type":"sync","cursor":%d}`, cursor)
+            liveServer.Publish("sync:"+scope, []byte(msg))
+            log.Printf("Notified scope %s of cursor %d", scope, cursor)
+        }),
+    })
+
+    // App
+    app := mizu.New()
+    syncEngine.Mount(app)
+    app.Get("/ws", liveServer.Handler())
+    app.Static("/", "./public")
+
+    log.Println("Server running on http://localhost:8080")
+    app.Listen(":8080")
+}
+```
+
+### Client (public/index.html)
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Real-time Sync Demo</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 50px auto; }
+        .status { padding: 10px; border-radius: 5px; margin-bottom: 20px; }
+        .online { background: #d4edda; }
+        .offline { background: #f8d7da; }
+        ul { list-style: none; padding: 0; }
+        li { padding: 10px; margin: 5px 0; background: #f5f5f5; display: flex; }
+        li.completed { text-decoration: line-through; opacity: 0.6; }
+        li span { flex: 1; }
+    </style>
+</head>
+<body>
+    <h1>Real-time Sync Demo</h1>
+    <div id="status" class="status offline">Connecting...</div>
+
+    <input type="text" id="input" placeholder="New todo...">
+    <button onclick="addTodo()">Add</button>
+
+    <ul id="todos"></ul>
+
+    <p><small>Open in multiple tabs to see real-time sync!</small></p>
+
+    <script>
+        const scope = 'demo';
+        let cursor = 0;
+        let todos = {};
+        let ws = null;
+
+        // Render todos
+        function render() {
+            const list = document.getElementById('todos');
+            list.innerHTML = '';
+            Object.values(todos).forEach(todo => {
+                const li = document.createElement('li');
+                li.className = todo.completed ? 'completed' : '';
+                li.innerHTML = `
+                    <input type="checkbox" ${todo.completed ? 'checked' : ''}
+                           onchange="toggleTodo('${todo.id}')">
+                    <span>${todo.title}</span>
+                    <button onclick="deleteTodo('${todo.id}')">X</button>
+                `;
+                list.appendChild(li);
+            });
+        }
+
+        // Connect to Live
+        function connectLive() {
+            ws = new WebSocket(`ws://${location.host}/ws?scope=${scope}`);
+
+            ws.onopen = () => {
+                document.getElementById('status').textContent = 'Connected (real-time)';
+                document.getElementById('status').className = 'status online';
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'sync' && data.cursor > cursor) {
+                    pull(); // Immediately sync!
+                }
+            };
+
+            ws.onclose = () => {
+                document.getElementById('status').textContent = 'Disconnected';
+                document.getElementById('status').className = 'status offline';
+                setTimeout(connectLive, 1000);
+            };
+        }
+
+        // Pull changes
+        async function pull() {
+            const response = await fetch('/_sync/pull', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ scope, cursor })
+            });
+            const data = await response.json();
+
+            data.changes.forEach(change => {
+                if (change.entity === 'todo') {
+                    if (change.op === 'delete') {
+                        delete todos[change.id];
+                    } else {
+                        todos[change.id] = JSON.parse(atob(change.data));
+                    }
+                }
+                if (change.cursor > cursor) cursor = change.cursor;
+            });
+
+            render();
+            if (data.has_more) await pull();
+        }
+
+        // Push mutation
+        async function push(name, args) {
+            await fetch('/_sync/push', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    mutations: [{
+                        id: crypto.randomUUID(),
+                        name,
+                        scope,
+                        args
+                    }]
+                })
+            });
+        }
+
+        // Actions
+        async function addTodo() {
+            const input = document.getElementById('input');
+            if (!input.value.trim()) return;
+
+            const id = crypto.randomUUID();
+            todos[id] = { id, title: input.value, completed: false };
+            render();
+
+            await push('todo.create', { id, title: input.value });
+            input.value = '';
+        }
+
+        async function toggleTodo(id) {
+            todos[id].completed = !todos[id].completed;
+            render();
+            await push('todo.toggle', { id });
+        }
+
+        async function deleteTodo(id) {
+            delete todos[id];
+            render();
+            await push('todo.delete', { id });
+        }
+
+        // Initialize
+        connectLive();
+        pull();
+    </script>
+</body>
+</html>
+```
+
+## Best Practices
+
+### 1. Use Live as Accelerator, Not Requirement
+
+The sync system should work without Live:
+
+```go
+// Sync still works with polling
+syncClient := sync.New(sync.Options{
+    PullInterval: 30 * time.Second,  // Fallback
+})
+```
+
+### 2. Handle Reconnection
+
+```go
+// Live reconnects automatically
+// Sync continues via polling during disconnection
+```
+
+### 3. Deduplicate Notifications
+
+```go
+// Client-side: check cursor before pulling
+if notification.cursor > currentCursor {
+    pull()
+}
+```
+
+### 4. Scope Topics Correctly
+
+```go
+// Match sync scope to live topic
+scope := "user:" + userID
+liveServer.Publish("sync:" + scope, msg)  // "sync:user:123"
+```
+
+### 5. Monitor Both Systems
+
+```go
+// Log sync and live events
+sync.Options{
+    OnSync: func(cursor uint64) {
+        log.Printf("Synced to %d", cursor)
+    },
+}
+
+live.Options{
+    OnConnect: func(s *live.Session) {
+        log.Printf("Live connected: %s", s.ID())
+    },
+}
+```

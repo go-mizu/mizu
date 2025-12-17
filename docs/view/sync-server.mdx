@@ -1,0 +1,574 @@
+---
+title: "Sync Server"
+description: "Configure the server-side sync engine for authoritative state management"
+---
+
+# Sync Server
+
+The sync engine is the server-side component that manages authoritative state. It processes mutations, maintains the change log, and serves data to clients. This guide covers engine configuration, interfaces, and HTTP endpoints.
+
+## Creating the Engine
+
+```go
+import (
+    "github.com/go-mizu/mizu/sync"
+    "github.com/go-mizu/mizu/sync/memory"
+)
+
+engine := sync.New(sync.Options{
+    Store:   memory.NewStore(),   // State storage
+    Log:     memory.NewLog(),     // Change log
+    Applied: memory.NewApplied(), // Idempotency tracker
+    Mutator: &MyMutator{},        // Business logic
+    Notify:  nil,                 // Optional: live notifications
+})
+```
+
+## Configuration Options
+
+### Store (Required)
+
+The Store holds the current state of all entities. It must implement:
+
+```go
+type Store interface {
+    Get(ctx context.Context, scope, entity, id string) ([]byte, error)
+    Set(ctx context.Context, scope, entity, id string, data []byte) error
+    Delete(ctx context.Context, scope, entity, id string) error
+    Snapshot(ctx context.Context, scope string) (map[string]map[string][]byte, error)
+}
+```
+
+**Memory implementation:**
+```go
+store := memory.NewStore()
+```
+
+**Custom implementation (e.g., PostgreSQL):**
+```go
+type PostgresStore struct {
+    db *sql.DB
+}
+
+func (s *PostgresStore) Get(ctx context.Context, scope, entity, id string) ([]byte, error) {
+    var data []byte
+    err := s.db.QueryRowContext(ctx,
+        "SELECT data FROM entities WHERE scope=$1 AND entity=$2 AND id=$3",
+        scope, entity, id,
+    ).Scan(&data)
+    if err == sql.ErrNoRows {
+        return nil, sync.ErrNotFound
+    }
+    return data, err
+}
+
+// Implement Set, Delete, Snapshot...
+```
+
+### Log (Required)
+
+The Log records ordered changes for cursor-based replication:
+
+```go
+type Log interface {
+    Append(ctx context.Context, scope string, changes []Change) (uint64, error)
+    Since(ctx context.Context, scope string, cursor uint64, limit int) ([]Change, error)
+    Cursor(ctx context.Context, scope string) (uint64, error)
+    Trim(ctx context.Context, scope string, before uint64) error
+}
+```
+
+**Memory implementation:**
+```go
+log := memory.NewLog()
+```
+
+### Applied (Optional)
+
+Applied tracks processed mutations for idempotency:
+
+```go
+type Applied interface {
+    Get(ctx context.Context, scope, key string) (Result, bool, error)
+    Put(ctx context.Context, scope, key string, res Result) error
+}
+```
+
+Without Applied, mutation idempotency is not guaranteed.
+
+```go
+applied := memory.NewApplied()
+```
+
+### Mutator (Required)
+
+The Mutator contains your business logic:
+
+```go
+type Mutator interface {
+    Apply(ctx context.Context, store Store, m Mutation) ([]Change, error)
+}
+```
+
+See [Implementing a Mutator](#implementing-a-mutator) below.
+
+### Notify (Optional)
+
+The Notifier is called after changes are committed:
+
+```go
+type Notifier interface {
+    Notify(scope string, cursor uint64)
+}
+```
+
+Use this to integrate with the live package:
+
+```go
+sync.Options{
+    Notify: sync.NotifierFunc(func(scope string, cursor uint64) {
+        liveServer.Publish("sync:"+scope, []byte(fmt.Sprintf(
+            `{"cursor":%d}`, cursor,
+        )))
+    }),
+}
+```
+
+## Implementing a Mutator
+
+The Mutator processes mutations and returns changes.
+
+### Basic Structure
+
+```go
+type MyMutator struct {
+    // Dependencies (database, services, etc.)
+}
+
+func (m *MyMutator) Apply(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
+    switch mut.Name {
+    case "todo.create":
+        return m.createTodo(ctx, store, mut)
+    case "todo.update":
+        return m.updateTodo(ctx, store, mut)
+    case "todo.delete":
+        return m.deleteTodo(ctx, store, mut)
+    default:
+        return nil, sync.ErrUnknownMutation
+    }
+}
+```
+
+### Mutation Handler Pattern
+
+```go
+func (m *MyMutator) createTodo(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
+    // 1. Extract and validate arguments
+    id, _ := mut.Args["id"].(string)
+    title, _ := mut.Args["title"].(string)
+
+    if id == "" || title == "" {
+        return nil, sync.ErrInvalidMutation
+    }
+
+    // 2. Check business rules
+    if len(title) > 200 {
+        return nil, errors.New("title too long")
+    }
+
+    // 3. Create entity
+    todo := Todo{
+        ID:        id,
+        Title:     title,
+        Completed: false,
+        CreatedAt: time.Now(),
+    }
+
+    // 4. Persist to store
+    data, _ := json.Marshal(todo)
+    if err := store.Set(ctx, mut.Scope, "todo", id, data); err != nil {
+        return nil, err
+    }
+
+    // 5. Return changes for the log
+    return []sync.Change{{
+        Entity: "todo",
+        ID:     id,
+        Op:     sync.Create,
+        Data:   data,
+    }}, nil
+}
+```
+
+### Multiple Changes per Mutation
+
+A mutation can produce multiple changes:
+
+```go
+func (m *MyMutator) archiveProject(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
+    projectID, _ := mut.Args["project_id"].(string)
+
+    // Update project
+    project := getProject(store, mut.Scope, projectID)
+    project.Archived = true
+
+    // Archive all tasks
+    tasks := getTasksByProject(store, mut.Scope, projectID)
+
+    var changes []sync.Change
+
+    // Project change
+    projectData, _ := json.Marshal(project)
+    store.Set(ctx, mut.Scope, "project", projectID, projectData)
+    changes = append(changes, sync.Change{
+        Entity: "project",
+        ID:     projectID,
+        Op:     sync.Update,
+        Data:   projectData,
+    })
+
+    // Task changes
+    for _, task := range tasks {
+        task.Archived = true
+        taskData, _ := json.Marshal(task)
+        store.Set(ctx, mut.Scope, "task", task.ID, taskData)
+        changes = append(changes, sync.Change{
+            Entity: "task",
+            ID:     task.ID,
+            Op:     sync.Update,
+            Data:   taskData,
+        })
+    }
+
+    return changes, nil
+}
+```
+
+### Error Handling
+
+Return appropriate errors:
+
+```go
+func (m *MyMutator) Apply(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
+    // Unknown mutation type
+    return nil, sync.ErrUnknownMutation
+
+    // Invalid arguments
+    return nil, sync.ErrInvalidMutation
+
+    // Entity not found
+    return nil, sync.ErrNotFound
+
+    // Conflict detected
+    return nil, sync.ErrConflict
+
+    // Custom error
+    return nil, errors.New("custom error message")
+}
+```
+
+## HTTP Endpoints
+
+Mount the sync endpoints:
+
+```go
+engine.Mount(app)  // Mounts at /_sync/*
+
+// Or with custom prefix
+engine.MountAt(app, "/api/sync")  // Mounts at /api/sync/*
+```
+
+### POST /_sync/push
+
+Receives mutations from clients.
+
+**Request:**
+```json
+{
+    "mutations": [
+        {
+            "id": "mut-123",
+            "name": "todo.create",
+            "scope": "user:456",
+            "args": {"id": "todo-1", "title": "Buy milk"}
+        }
+    ]
+}
+```
+
+**Response:**
+```json
+{
+    "results": [
+        {
+            "ok": true,
+            "cursor": 42,
+            "changes": [
+                {
+                    "cursor": 42,
+                    "entity": "todo",
+                    "id": "todo-1",
+                    "op": "create"
+                }
+            ]
+        }
+    ]
+}
+```
+
+### POST /_sync/pull
+
+Returns changes since a cursor.
+
+**Request:**
+```json
+{
+    "scope": "user:456",
+    "cursor": 40,
+    "limit": 100
+}
+```
+
+**Response:**
+```json
+{
+    "changes": [
+        {
+            "cursor": 41,
+            "scope": "user:456",
+            "entity": "todo",
+            "id": "todo-1",
+            "op": "update",
+            "data": "eyJpZCI6InRvZG8tMSIsLi4ufQ==",
+            "time": "2024-01-15T10:30:00Z"
+        },
+        {
+            "cursor": 42,
+            "scope": "user:456",
+            "entity": "todo",
+            "id": "todo-2",
+            "op": "create",
+            "data": "eyJpZCI6InRvZG8tMiIsLi4ufQ==",
+            "time": "2024-01-15T10:31:00Z"
+        }
+    ],
+    "has_more": false
+}
+```
+
+### POST /_sync/snapshot
+
+Returns full state for initial sync.
+
+**Request:**
+```json
+{
+    "scope": "user:456"
+}
+```
+
+**Response:**
+```json
+{
+    "data": {
+        "todo": {
+            "todo-1": "eyJpZCI6InRvZG8tMSIsLi4ufQ==",
+            "todo-2": "eyJpZCI6InRvZG8tMiIsLi4ufQ=="
+        },
+        "settings": {
+            "user-settings": "eyJ0aGVtZSI6ImRhcmsifQ=="
+        }
+    },
+    "cursor": 42
+}
+```
+
+## Scopes
+
+Scopes partition data for multi-tenancy or per-user data:
+
+```go
+// Per-user data
+scope := "user:" + userID
+
+// Per-team data
+scope := "team:" + teamID
+
+// Global data
+scope := "global"
+```
+
+### Extracting Scope from Authentication
+
+```go
+// Middleware to set scope
+func scopeMiddleware(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        user := getCurrentUser(c)
+        c.Locals("scope", "user:"+user.ID)
+        return next(c)
+    }
+}
+
+// In mutator, scope comes from mutation
+func (m *MyMutator) Apply(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
+    scope := mut.Scope // "user:123"
+    // Only access data in this scope
+}
+```
+
+## Complete Example
+
+```go
+package main
+
+import (
+    "context"
+    "encoding/json"
+    "log"
+    "time"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/sync"
+    "github.com/go-mizu/mizu/sync/memory"
+)
+
+type Todo struct {
+    ID        string    `json:"id"`
+    Title     string    `json:"title"`
+    Completed bool      `json:"completed"`
+    CreatedAt time.Time `json:"created_at"`
+}
+
+type TodoMutator struct{}
+
+func (m *TodoMutator) Apply(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
+    switch mut.Name {
+    case "todo.create":
+        id := mut.Args["id"].(string)
+        title := mut.Args["title"].(string)
+
+        todo := Todo{ID: id, Title: title, CreatedAt: time.Now()}
+        data, _ := json.Marshal(todo)
+        store.Set(ctx, mut.Scope, "todo", id, data)
+
+        return []sync.Change{{Entity: "todo", ID: id, Op: sync.Create, Data: data}}, nil
+
+    case "todo.update":
+        id := mut.Args["id"].(string)
+
+        existing, err := store.Get(ctx, mut.Scope, "todo", id)
+        if err != nil {
+            return nil, err
+        }
+
+        var todo Todo
+        json.Unmarshal(existing, &todo)
+
+        if title, ok := mut.Args["title"].(string); ok {
+            todo.Title = title
+        }
+        if completed, ok := mut.Args["completed"].(bool); ok {
+            todo.Completed = completed
+        }
+
+        data, _ := json.Marshal(todo)
+        store.Set(ctx, mut.Scope, "todo", id, data)
+
+        return []sync.Change{{Entity: "todo", ID: id, Op: sync.Update, Data: data}}, nil
+
+    case "todo.delete":
+        id := mut.Args["id"].(string)
+        store.Delete(ctx, mut.Scope, "todo", id)
+        return []sync.Change{{Entity: "todo", ID: id, Op: sync.Delete}}, nil
+
+    default:
+        return nil, sync.ErrUnknownMutation
+    }
+}
+
+func main() {
+    engine := sync.New(sync.Options{
+        Store:   memory.NewStore(),
+        Log:     memory.NewLog(),
+        Applied: memory.NewApplied(),
+        Mutator: &TodoMutator{},
+    })
+
+    app := mizu.New()
+    engine.Mount(app)
+
+    log.Println("Sync server running on :8080")
+    app.Listen(":8080")
+}
+```
+
+## Best Practices
+
+### 1. Validate All Input
+
+```go
+func (m *MyMutator) createTodo(...) ([]sync.Change, error) {
+    id, ok := mut.Args["id"].(string)
+    if !ok || id == "" {
+        return nil, sync.ErrInvalidMutation
+    }
+
+    title, ok := mut.Args["title"].(string)
+    if !ok || len(title) > 500 {
+        return nil, sync.ErrInvalidMutation
+    }
+    // ...
+}
+```
+
+### 2. Keep Mutations Small
+
+Each mutation should do one logical thing:
+
+```go
+// Good: specific mutations
+"todo.create"
+"todo.complete"
+"todo.rename"
+
+// Avoid: generic mutations
+"todo.update" // What specifically changed?
+```
+
+### 3. Use Scopes for Security
+
+Never allow cross-scope access:
+
+```go
+func (m *MyMutator) Apply(ctx context.Context, store sync.Store, mut sync.Mutation) ([]sync.Change, error) {
+    // All store operations use mut.Scope
+    store.Get(ctx, mut.Scope, "entity", id)
+    store.Set(ctx, mut.Scope, "entity", id, data)
+}
+```
+
+### 4. Log Changes Atomically
+
+All changes from one mutation share the same cursor position conceptually:
+
+```go
+// These changes are part of one atomic operation
+return []sync.Change{
+    {Entity: "project", ID: projectID, Op: sync.Update},
+    {Entity: "task", ID: task1ID, Op: sync.Update},
+    {Entity: "task", ID: task2ID, Op: sync.Update},
+}, nil
+```
+
+### 5. Handle Idempotency
+
+The Applied store handles this automatically, but design mutations to be naturally idempotent when possible:
+
+```go
+// Idempotent: set to specific value
+"todo.complete" // Sets completed=true
+
+// Not idempotent: toggle current value
+"todo.toggle" // Result depends on current state
+```

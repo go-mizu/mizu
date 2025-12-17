@@ -1,0 +1,598 @@
+---
+title: "Live Quick Start"
+description: "Build your first real-time feature with WebSockets in 10 minutes"
+---
+
+# Live Quick Start
+
+In this guide, you'll build a real-time notification system. Users will receive instant notifications when events happen, without refreshing the page.
+
+## Prerequisites
+
+- Go 1.22 or later
+- Basic understanding of Go and JavaScript
+- Completed the [View Quick Start](/view/quick-start) (optional but helpful)
+
+## What We're Building
+
+A notification system where:
+1. Users connect via WebSocket
+2. The server can push notifications to specific users
+3. Notifications appear instantly in the browser
+
+## Step 1: Project Setup
+
+Create a new project:
+
+```bash
+mkdir live-demo && cd live-demo
+go mod init live-demo
+go get github.com/go-mizu/mizu
+```
+
+Create the directory structure:
+
+```bash
+mkdir -p public
+```
+
+## Step 2: Create the Server
+
+Create `main.go`:
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "log"
+    "net/http"
+    "time"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/live"
+)
+
+// Notification represents a message to send to users
+type Notification struct {
+    Type    string `json:"type"`
+    Title   string `json:"title"`
+    Message string `json:"message"`
+    Time    string `json:"time"`
+}
+
+var server *live.Server
+
+func main() {
+    // Step 1: Create the live server
+    server = live.NewServer(live.Options{
+        // Authenticate connections
+        OnAuth: func(r *http.Request) (string, bool) {
+            // Get user ID from query parameter
+            // In production, validate a token instead
+            userID := r.URL.Query().Get("user")
+            if userID == "" {
+                return "", false // Reject anonymous connections
+            }
+            return userID, true
+        },
+
+        // Handle new connections
+        OnConnect: func(s *live.Session) {
+            log.Printf("User %s connected", s.ID())
+
+            // Subscribe user to their personal notification channel
+            s.Subscribe("user:" + s.ID())
+
+            // Subscribe to global announcements
+            s.Subscribe("global")
+
+            // Send a welcome message
+            welcome := Notification{
+                Type:    "info",
+                Title:   "Connected",
+                Message: "You're now receiving live notifications!",
+                Time:    time.Now().Format("15:04:05"),
+            }
+            data, _ := json.Marshal(welcome)
+            s.Send(data)
+        },
+
+        // Handle disconnections
+        OnDisconnect: func(s *live.Session) {
+            log.Printf("User %s disconnected", s.ID())
+        },
+    })
+
+    // Step 2: Create the Mizu app
+    app := mizu.New()
+
+    // Step 3: Mount the WebSocket endpoint
+    app.Get("/ws", server.Handler())
+
+    // Step 4: API endpoint to send notifications
+    app.Post("/api/notify", notifyHandler)
+    app.Post("/api/broadcast", broadcastHandler)
+
+    // Step 5: Serve static files
+    app.Static("/", "./public")
+
+    // Step 6: Start the server
+    log.Println("Server running on http://localhost:8080")
+    app.Listen(":8080")
+}
+
+// notifyHandler sends a notification to a specific user
+func notifyHandler(c *mizu.Ctx) error {
+    var req struct {
+        UserID  string `json:"user_id"`
+        Title   string `json:"title"`
+        Message string `json:"message"`
+    }
+
+    if err := c.BindJSON(&req, 1024); err != nil {
+        return c.Status(400).JSON(map[string]string{"error": "Invalid request"})
+    }
+
+    notification := Notification{
+        Type:    "notification",
+        Title:   req.Title,
+        Message: req.Message,
+        Time:    time.Now().Format("15:04:05"),
+    }
+
+    data, _ := json.Marshal(notification)
+
+    // Send to specific user
+    server.Publish("user:"+req.UserID, data)
+
+    return c.JSON(map[string]string{"status": "sent"})
+}
+
+// broadcastHandler sends a notification to all users
+func broadcastHandler(c *mizu.Ctx) error {
+    var req struct {
+        Title   string `json:"title"`
+        Message string `json:"message"`
+    }
+
+    if err := c.BindJSON(&req, 1024); err != nil {
+        return c.Status(400).JSON(map[string]string{"error": "Invalid request"})
+    }
+
+    notification := Notification{
+        Type:    "announcement",
+        Title:   req.Title,
+        Message: req.Message,
+        Time:    time.Now().Format("15:04:05"),
+    }
+
+    data, _ := json.Marshal(notification)
+
+    // Send to everyone subscribed to "global"
+    server.Publish("global", data)
+
+    return c.JSON(map[string]string{"status": "broadcast sent"})
+}
+```
+
+## Step 3: Create the Frontend
+
+Create `public/index.html`:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Notifications Demo</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        body {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        .status {
+            padding: 10px 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .notifications {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            min-height: 200px;
+        }
+
+        .notification {
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .notification.info {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+        }
+
+        .notification.notification-type {
+            background: #fff3e0;
+            border-left: 4px solid #ff9800;
+        }
+
+        .notification.announcement {
+            background: #fce4ec;
+            border-left: 4px solid #e91e63;
+        }
+
+        .notification-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .notification-time {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .controls {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .controls h3 {
+            margin-top: 0;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+
+        button {
+            background: #2196f3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+
+        button:hover {
+            background: #1976d2;
+        }
+
+        button.broadcast {
+            background: #e91e63;
+        }
+
+        button.broadcast:hover {
+            background: #c2185b;
+        }
+    </style>
+</head>
+<body>
+    <h1>Live Notifications Demo</h1>
+
+    <div id="status" class="status disconnected">
+        Disconnected
+    </div>
+
+    <h2>Your Notifications</h2>
+    <div id="notifications" class="notifications">
+        <p style="color: #666;">Waiting for notifications...</p>
+    </div>
+
+    <div class="controls">
+        <h3>Send Test Notifications</h3>
+
+        <div class="form-group">
+            <label>Your User ID</label>
+            <input type="text" id="userId" placeholder="Enter your user ID">
+        </div>
+
+        <button onclick="connect()">Connect</button>
+        <button onclick="disconnect()">Disconnect</button>
+
+        <hr style="margin: 20px 0;">
+
+        <h4>Send to Specific User</h4>
+        <div class="form-group">
+            <label>Target User ID</label>
+            <input type="text" id="targetUser" placeholder="User ID to notify">
+        </div>
+        <div class="form-group">
+            <label>Title</label>
+            <input type="text" id="notifyTitle" placeholder="Notification title">
+        </div>
+        <div class="form-group">
+            <label>Message</label>
+            <textarea id="notifyMessage" placeholder="Notification message"></textarea>
+        </div>
+        <button onclick="sendNotification()">Send Notification</button>
+
+        <hr style="margin: 20px 0;">
+
+        <h4>Broadcast to Everyone</h4>
+        <div class="form-group">
+            <label>Title</label>
+            <input type="text" id="broadcastTitle" placeholder="Broadcast title">
+        </div>
+        <div class="form-group">
+            <label>Message</label>
+            <textarea id="broadcastMessage" placeholder="Broadcast message"></textarea>
+        </div>
+        <button class="broadcast" onclick="sendBroadcast()">Broadcast</button>
+    </div>
+
+    <script>
+        let ws = null;
+        const notificationsEl = document.getElementById('notifications');
+        const statusEl = document.getElementById('status');
+
+        function connect() {
+            const userId = document.getElementById('userId').value;
+            if (!userId) {
+                alert('Please enter a user ID');
+                return;
+            }
+
+            // Close existing connection
+            if (ws) {
+                ws.close();
+            }
+
+            // Connect to WebSocket
+            ws = new WebSocket(`ws://localhost:8080/ws?user=${userId}`);
+
+            ws.onopen = () => {
+                statusEl.textContent = `Connected as: ${userId}`;
+                statusEl.className = 'status connected';
+                notificationsEl.innerHTML = '';
+            };
+
+            ws.onmessage = (event) => {
+                const notification = JSON.parse(event.data);
+                addNotification(notification);
+            };
+
+            ws.onclose = () => {
+                statusEl.textContent = 'Disconnected';
+                statusEl.className = 'status disconnected';
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                statusEl.textContent = 'Connection error';
+                statusEl.className = 'status disconnected';
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        function addNotification(notification) {
+            const div = document.createElement('div');
+            div.className = `notification ${notification.type === 'notification' ? 'notification-type' : notification.type}`;
+            div.innerHTML = `
+                <div class="notification-title">${notification.title}</div>
+                <div>${notification.message}</div>
+                <div class="notification-time">${notification.time}</div>
+            `;
+            notificationsEl.insertBefore(div, notificationsEl.firstChild);
+        }
+
+        async function sendNotification() {
+            const targetUser = document.getElementById('targetUser').value;
+            const title = document.getElementById('notifyTitle').value;
+            const message = document.getElementById('notifyMessage').value;
+
+            if (!targetUser || !title || !message) {
+                alert('Please fill in all fields');
+                return;
+            }
+
+            const response = await fetch('/api/notify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_id: targetUser,
+                    title: title,
+                    message: message
+                })
+            });
+
+            if (response.ok) {
+                document.getElementById('notifyTitle').value = '';
+                document.getElementById('notifyMessage').value = '';
+            }
+        }
+
+        async function sendBroadcast() {
+            const title = document.getElementById('broadcastTitle').value;
+            const message = document.getElementById('broadcastMessage').value;
+
+            if (!title || !message) {
+                alert('Please fill in all fields');
+                return;
+            }
+
+            const response = await fetch('/api/broadcast', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: title,
+                    message: message
+                })
+            });
+
+            if (response.ok) {
+                document.getElementById('broadcastTitle').value = '';
+                document.getElementById('broadcastMessage').value = '';
+            }
+        }
+    </script>
+</body>
+</html>
+```
+
+## Step 4: Run the Application
+
+Start the server:
+
+```bash
+go run main.go
+```
+
+Open your browser to `http://localhost:8080`.
+
+## Step 5: Try It Out
+
+1. **Connect as a user:**
+   - Enter a user ID (e.g., "alice")
+   - Click "Connect"
+   - You should see "Connected as: alice"
+
+2. **Open another browser tab:**
+   - Connect as a different user (e.g., "bob")
+
+3. **Send a direct notification:**
+   - In Alice's tab, enter "bob" as target user
+   - Add a title and message
+   - Click "Send Notification"
+   - Bob's tab receives it instantly!
+
+4. **Send a broadcast:**
+   - Click "Broadcast"
+   - Both tabs receive it!
+
+## Understanding the Code
+
+### Server Setup
+
+```go
+server = live.NewServer(live.Options{
+    OnAuth: func(r *http.Request) (string, bool) {
+        userID := r.URL.Query().Get("user")
+        return userID, userID != ""
+    },
+})
+```
+
+`OnAuth` is called for every new connection. It returns:
+- The session ID (user ID in this case)
+- Whether to accept the connection
+
+### Subscriptions
+
+```go
+OnConnect: func(s *live.Session) {
+    s.Subscribe("user:" + s.ID())  // Personal channel
+    s.Subscribe("global")           // Everyone
+},
+```
+
+Each session subscribes to topics. They'll receive messages published to those topics.
+
+### Publishing
+
+```go
+// To one user
+server.Publish("user:bob", data)
+
+// To everyone
+server.Publish("global", data)
+```
+
+### Client Connection
+
+```javascript
+const ws = new WebSocket(`ws://localhost:8080/ws?user=${userId}`);
+
+ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    // Handle incoming message
+};
+```
+
+The client connects with the user ID as a query parameter.
+
+## Next Steps
+
+You've built a working real-time notification system! To learn more:
+
+- **[Server Configuration](/view/live-server)** - All server options explained
+- **[Sessions](/view/live-sessions)** - Session lifecycle and management
+- **[Pub/Sub](/view/live-pubsub)** - Advanced topic patterns
+
+## Common Issues
+
+### "Connection refused"
+
+Make sure the server is running and you're connecting to the correct port.
+
+### "WebSocket is not open"
+
+The connection might have closed. Check `ws.onclose` for the reason.
+
+### Messages not received
+
+Verify the session is subscribed to the correct topic. Check server logs for publish events.

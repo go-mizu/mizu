@@ -1,0 +1,468 @@
+---
+title: "Partials"
+description: "Use partials to break up large templates into manageable pieces"
+---
+
+# Partials
+
+Partials are template fragments that inherit the full data context from their parent. They're perfect for breaking up large templates into smaller, more manageable pieces.
+
+## What is a Partial?
+
+A partial is a template snippet that:
+
+1. **Shares parent context** - Has access to all parent data
+2. **Reduces repetition** - Can be reused across templates
+3. **Organizes code** - Breaks large templates into sections
+
+Unlike components, partials don't have isolated data. They see everything the parent sees.
+
+## Creating Partials
+
+Partials go in `views/partials/`:
+
+```
+views/
+└── partials/
+    ├── header.html
+    ├── footer.html
+    ├── sidebar.html
+    └── navigation/
+        ├── main-nav.html
+        └── breadcrumb.html
+```
+
+### Basic Partial
+
+```html
+<!-- views/partials/header.html -->
+<header class="site-header">
+    <div class="logo">
+        <a href="/">My Site</a>
+    </div>
+    <nav class="main-nav">
+        <a href="/" {{if eq .Page "home"}}class="active"{{end}}>Home</a>
+        <a href="/about" {{if eq .Page "about"}}class="active"{{end}}>About</a>
+        <a href="/contact" {{if eq .Page "contact"}}class="active"{{end}}>Contact</a>
+    </nav>
+    {{if .Data.CurrentUser}}
+    <div class="user-menu">
+        <span>{{.Data.CurrentUser.Name}}</span>
+        <a href="/logout">Logout</a>
+    </div>
+    {{else}}
+    <div class="auth-links">
+        <a href="/login">Login</a>
+        <a href="/signup">Sign Up</a>
+    </div>
+    {{end}}
+</header>
+```
+
+### Using a Partial
+
+Use the `partial` function:
+
+```html
+{{partial "header"}}
+```
+
+That's it! The partial renders with access to all current data.
+
+## Data Flow
+
+Partials inherit the complete data context:
+
+```go
+// Handler passes this data
+view.Render(c, "home", view.Data{
+    "CurrentUser": user,
+    "Posts":       posts,
+    "Stats":       stats,
+})
+```
+
+```html
+<!-- views/pages/home.html -->
+{{define "content"}}
+    {{partial "user-greeting"}}   {{/* Can access .Data.CurrentUser */}}
+    {{partial "posts-list"}}       {{/* Can access .Data.Posts */}}
+    {{partial "sidebar-stats"}}    {{/* Can access .Data.Stats */}}
+{{end}}
+```
+
+```html
+<!-- views/partials/user-greeting.html -->
+<div class="greeting">
+    Hello, {{.Data.CurrentUser.Name}}!  {{/* Full context available */}}
+</div>
+```
+
+## Partial Examples
+
+### Navigation with Active States
+
+```html
+<!-- views/partials/navigation.html -->
+<nav class="nav" role="navigation">
+    {{$path := .Request.URL.Path}}
+    <ul class="nav-list">
+        <li>
+            <a href="/" {{if eq $path "/"}}aria-current="page"{{end}}>
+                Home
+            </a>
+        </li>
+        <li>
+            <a href="/products" {{if hasPrefix $path "/products"}}aria-current="page"{{end}}>
+                Products
+            </a>
+        </li>
+        <li>
+            <a href="/blog" {{if hasPrefix $path "/blog"}}aria-current="page"{{end}}>
+                Blog
+            </a>
+        </li>
+        <li>
+            <a href="/about" {{if eq $path "/about"}}aria-current="page"{{end}}>
+                About
+            </a>
+        </li>
+    </ul>
+</nav>
+```
+
+### Footer with Dynamic Content
+
+```html
+<!-- views/partials/footer.html -->
+<footer class="site-footer">
+    <div class="footer-columns">
+        <div class="footer-column">
+            <h4>Quick Links</h4>
+            <ul>
+                <li><a href="/about">About Us</a></li>
+                <li><a href="/contact">Contact</a></li>
+                <li><a href="/privacy">Privacy Policy</a></li>
+                <li><a href="/terms">Terms of Service</a></li>
+            </ul>
+        </div>
+        <div class="footer-column">
+            <h4>Categories</h4>
+            <ul>
+                {{range .Data.Categories}}
+                <li><a href="/category/{{.Slug}}">{{.Name}}</a></li>
+                {{end}}
+            </ul>
+        </div>
+        <div class="footer-column">
+            <h4>Connect</h4>
+            {{if .Data.SocialLinks}}
+            <ul class="social-links">
+                {{range .Data.SocialLinks}}
+                <li><a href="{{.URL}}" target="_blank">{{.Name}}</a></li>
+                {{end}}
+            </ul>
+            {{end}}
+        </div>
+    </div>
+    <div class="footer-bottom">
+        <p>&copy; {{now.Year}} My Company. All rights reserved.</p>
+    </div>
+</footer>
+```
+
+### Breadcrumb Navigation
+
+```html
+<!-- views/partials/breadcrumb.html -->
+<nav class="breadcrumb" aria-label="Breadcrumb">
+    <ol>
+        <li><a href="/">Home</a></li>
+        {{range $i, $crumb := .Data.Breadcrumbs}}
+        <li>
+            {{if $crumb.URL}}
+            <a href="{{$crumb.URL}}">{{$crumb.Title}}</a>
+            {{else}}
+            <span aria-current="page">{{$crumb.Title}}</span>
+            {{end}}
+        </li>
+        {{end}}
+    </ol>
+</nav>
+```
+
+Usage in a page:
+
+```go
+view.Render(c, "product", view.Data{
+    "Product": product,
+    "Breadcrumbs": []Breadcrumb{
+        {Title: "Products", URL: "/products"},
+        {Title: product.Category, URL: "/products/" + product.CategorySlug},
+        {Title: product.Name, URL: ""},  // Current page, no URL
+    },
+})
+```
+
+### Sidebar Widgets
+
+```html
+<!-- views/partials/sidebar.html -->
+<aside class="sidebar">
+    {{partial "widgets/search"}}
+    {{partial "widgets/categories"}}
+    {{partial "widgets/recent-posts"}}
+    {{partial "widgets/tags"}}
+</aside>
+```
+
+```html
+<!-- views/partials/widgets/recent-posts.html -->
+<div class="widget widget-recent-posts">
+    <h3 class="widget-title">Recent Posts</h3>
+    <ul>
+        {{range .Data.RecentPosts}}
+        <li>
+            <a href="/blog/{{.Slug}}">{{.Title}}</a>
+            <time datetime="{{.Date.Format "2006-01-02"}}">
+                {{.Date.Format "Jan 2, 2006"}}
+            </time>
+        </li>
+        {{else}}
+        <li>No posts yet.</li>
+        {{end}}
+    </ul>
+</div>
+```
+
+### Flash Messages
+
+```html
+<!-- views/partials/flash.html -->
+{{if .Data.Flash}}
+<div class="flash-messages">
+    {{range .Data.Flash}}
+    <div class="flash flash-{{.Type}}" role="alert">
+        {{if .Title}}<strong>{{.Title}}</strong>{{end}}
+        <p>{{.Message}}</p>
+        <button class="flash-close" aria-label="Dismiss">&times;</button>
+    </div>
+    {{end}}
+</div>
+{{end}}
+```
+
+## Nested Partials
+
+Partials can include other partials:
+
+```html
+<!-- views/partials/header.html -->
+<header>
+    {{partial "navigation/logo"}}
+    {{partial "navigation/main-nav"}}
+    {{partial "navigation/user-menu"}}
+</header>
+```
+
+Each nested partial still has access to the full data context.
+
+## Partials in Layouts
+
+Layouts commonly use partials for common elements:
+
+```html
+<!-- views/layouts/default.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {{partial "meta-tags"}}
+    <title>{{slot "title" "My App"}}</title>
+    {{partial "stylesheets"}}
+</head>
+<body>
+    {{partial "header"}}
+    {{partial "flash"}}
+    <main>
+        {{slot "content"}}
+    </main>
+    {{partial "footer"}}
+    {{partial "scripts"}}
+</body>
+</html>
+```
+
+## Partials in Pages
+
+Break up complex pages:
+
+```html
+<!-- views/pages/dashboard.html -->
+{{define "content"}}
+<div class="dashboard">
+    <div class="dashboard-header">
+        {{partial "dashboard/welcome"}}
+        {{partial "dashboard/quick-stats"}}
+    </div>
+    <div class="dashboard-grid">
+        {{partial "dashboard/recent-activity"}}
+        {{partial "dashboard/notifications"}}
+        {{partial "dashboard/quick-actions"}}
+    </div>
+</div>
+{{end}}
+```
+
+## Partial vs Component
+
+Here's when to use each:
+
+| Scenario | Use Partial | Use Component |
+|----------|-------------|---------------|
+| Breaking up a large template | Yes | No |
+| Needs parent's full data | Yes | No |
+| Reusable across different contexts | Maybe | Yes |
+| Isolated, predictable behavior | No | Yes |
+| Receives explicit data | No | Yes |
+| UI element (button, card, badge) | No | Yes |
+| Page section (header, footer, sidebar) | Yes | Maybe |
+
+### Example: Same Task, Different Approach
+
+**With a partial** (shares context):
+
+```html
+{{partial "user-info"}}
+```
+
+```html
+<!-- views/partials/user-info.html -->
+<div class="user-info">
+    <img src="{{.Data.CurrentUser.Avatar}}">
+    <span>{{.Data.CurrentUser.Name}}</span>
+</div>
+```
+
+**With a component** (explicit data):
+
+```html
+{{component "user-info" (dict
+    "Avatar" .Data.CurrentUser.Avatar
+    "Name" .Data.CurrentUser.Name
+)}}
+```
+
+```html
+<!-- views/components/user-info.html -->
+<div class="user-info">
+    <img src="{{.Avatar}}">
+    <span>{{.Name}}</span>
+</div>
+```
+
+The component version is more explicit but requires passing data. The partial version is simpler but less portable.
+
+## Best Practices
+
+### 1. Use Meaningful Names
+
+```
+views/partials/
+├── header.html          # Site header
+├── footer.html          # Site footer
+├── navigation/
+│   ├── main-nav.html    # Primary navigation
+│   ├── footer-nav.html  # Footer navigation
+│   └── breadcrumb.html  # Breadcrumb trail
+├── widgets/
+│   ├── search.html      # Search widget
+│   └── tags.html        # Tag cloud widget
+└── dashboard/
+    ├── stats.html       # Dashboard statistics
+    └── activity.html    # Recent activity
+```
+
+### 2. Keep Partials Focused
+
+Each partial should have one responsibility:
+
+```html
+<!-- Good: focused partials -->
+{{partial "navigation/main-nav"}}
+{{partial "navigation/user-menu"}}
+{{partial "navigation/mobile-toggle"}}
+
+<!-- Avoid: everything in one partial -->
+{{partial "all-navigation-stuff"}}
+```
+
+### 3. Document Data Dependencies
+
+Add comments listing what data the partial expects:
+
+```html
+<!-- views/partials/posts-list.html -->
+{{/*
+Expects:
+  - .Data.Posts ([]Post) - list of posts to display
+  - .Data.CurrentUser (optional) - for edit buttons
+*/}}
+<div class="posts">
+    {{range .Data.Posts}}
+    ...
+    {{end}}
+</div>
+```
+
+### 4. Handle Missing Data
+
+Always guard against nil values:
+
+```html
+{{if .Data.Posts}}
+{{range .Data.Posts}}
+...
+{{end}}
+{{else}}
+<p>No posts available.</p>
+{{end}}
+```
+
+### 5. Use Components for Reusable UI
+
+If you need the same UI in different data contexts, use a component:
+
+```html
+<!-- Instead of a partial that assumes specific data -->
+{{partial "user-avatar"}}
+
+<!-- Use a component with explicit data -->
+{{component "avatar" (dict "Src" .Data.Author.Avatar "Name" .Data.Author.Name)}}
+{{component "avatar" (dict "Src" .Data.CurrentUser.Avatar "Name" .Data.CurrentUser.Name)}}
+```
+
+## Common Patterns
+
+### Conditional Partials
+
+```html
+{{if .Data.CurrentUser}}
+    {{partial "user-nav"}}
+{{else}}
+    {{partial "guest-nav"}}
+{{end}}
+```
+
+### Loop with Partials
+
+```html
+{{range .Data.Sections}}
+    {{partial (printf "sections/%s" .Type)}}
+{{end}}
+```
+
+### Partials with Fallback
+
+```html
+{{partial "custom-footer" | default (partial "default-footer")}}
+```

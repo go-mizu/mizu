@@ -1,0 +1,342 @@
+---
+title: "Sync Overview"
+description: "Offline-first state synchronization for modern web applications"
+---
+
+# Sync Overview
+
+The `sync` package provides offline-first state synchronization for Mizu applications. It consists of two parts: a server-side engine that manages authoritative state, and a client-side runtime for reactive, offline-capable applications.
+
+## What is State Synchronization?
+
+In traditional web apps, data lives on the server. Every time you need data, you ask the server:
+
+```
+Client: "Get user profile"  →  Server: Returns user data
+Client: "Update name"       →  Server: Updates and confirms
+Client: "Get profile again" →  Server: Returns updated data
+```
+
+This works, but has problems:
+- **Offline doesn't work** - No internet means no app
+- **Latency feels slow** - Every action waits for the server
+- **State gets stale** - Other users' changes don't appear
+
+**State synchronization** solves this by keeping local copies of data that sync with the server:
+
+```
+Client: Has local data, shows instantly
+Client: User edits locally → Immediate UI update
+        └──── Background sync ────→ Server receives change
+Server: Broadcasts update ───────→ Other clients update
+```
+
+## What Problems Does Sync Solve?
+
+| Problem | Sync's Solution |
+|---------|-----------------|
+| Offline support | Mutations queue locally, sync when online |
+| Perceived latency | Optimistic updates show instantly |
+| Stale data | Pull-based sync keeps clients current |
+| Conflicts | Idempotent mutations prevent duplicates |
+| Data consistency | Server is authoritative source of truth |
+
+## Architecture Overview
+
+The sync system has two main components:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        SERVER                                │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │                   Sync Engine                         │   │
+│  │  ┌─────────┐  ┌─────────┐  ┌──────────┐  ┌────────┐ │   │
+│  │  │  Store  │  │   Log   │  │ Applied  │  │Mutator │ │   │
+│  │  │ (data)  │  │(changes)│  │ (dedupe) │  │(logic) │ │   │
+│  │  └─────────┘  └─────────┘  └──────────┘  └────────┘ │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                            │                                 │
+│                     HTTP: /push, /pull, /snapshot           │
+│                            │                                 │
+└────────────────────────────│─────────────────────────────────┘
+                             │
+              ┌──────────────┴──────────────┐
+              │                             │
+              ▼                             ▼
+┌─────────────────────────┐   ┌─────────────────────────┐
+│        CLIENT A         │   │        CLIENT B         │
+│  ┌───────────────────┐  │   │  ┌───────────────────┐  │
+│  │   Sync Client     │  │   │  │   Sync Client     │  │
+│  │ ┌───────┐ ┌─────┐ │  │   │  │ ┌───────┐ ┌─────┐ │  │
+│  │ │ Store │ │Queue│ │  │   │  │ │ Store │ │Queue│ │  │
+│  │ └───────┘ └─────┘ │  │   │  │ └───────┘ └─────┘ │  │
+│  │                   │  │   │  │                   │  │
+│  │  Reactive State   │  │   │  │  Reactive State   │  │
+│  │ Signal, Computed  │  │   │  │ Signal, Computed  │  │
+│  └───────────────────┘  │   │  └───────────────────┘  │
+└─────────────────────────┘   └─────────────────────────┘
+```
+
+### Server-Side: Sync Engine
+
+The server engine is the **authoritative** source of truth. It:
+
+1. **Receives mutations** - Client requests to change state
+2. **Applies business logic** - Via the Mutator interface
+3. **Records changes** - In an ordered log with cursors
+4. **Ensures idempotency** - Replayed mutations don't double-apply
+5. **Serves changes** - Clients pull changes since their cursor
+
+### Client-Side: Sync Client
+
+The client runtime provides:
+
+1. **Local store** - Immediate access to data
+2. **Mutation queue** - Pending changes waiting to sync
+3. **Background sync** - Automatic push/pull
+4. **Reactive state** - Signal/Computed/Effect for UI binding
+5. **Offline support** - Works without internet
+
+## Core Concepts
+
+### Mutations
+
+A **mutation** is a request to change state. It's a command, not a data patch:
+
+```go
+// Mutation sent from client
+{
+    "id": "abc123",           // Unique ID for idempotency
+    "name": "todo.create",    // What operation to perform
+    "scope": "user:456",      // Data partition
+    "args": {                 // Operation arguments
+        "title": "Buy milk",
+        "completed": false
+    }
+}
+```
+
+### Changes
+
+A **change** is a record of what actually changed:
+
+```go
+// Change recorded in log
+{
+    "cursor": 42,             // Position in log
+    "scope": "user:456",
+    "entity": "todo",         // What type of thing
+    "id": "todo-789",         // Which specific thing
+    "op": "create",           // create/update/delete
+    "data": {...},            // New state (JSON)
+    "time": "2024-01-15T..."  // When it happened
+}
+```
+
+### Cursors
+
+A **cursor** is a position in the change log. Clients track their cursor and pull changes since that point:
+
+```
+Log:  [Change 1] [Change 2] [Change 3] [Change 4] [Change 5]
+                     ^
+                     │
+              Client's cursor = 2
+
+Pull from cursor 2 → Returns changes 3, 4, 5
+New cursor = 5
+```
+
+### Scopes
+
+A **scope** partitions data for different users or tenants:
+
+```
+scope: "user:123"    # User 123's private data
+scope: "team:456"    # Team 456's shared data
+scope: "public"      # Global data
+```
+
+Clients only sync data in their scope.
+
+## How Sync Works
+
+### The Sync Flow
+
+```
+1. User creates a todo
+   │
+   ▼
+2. Client optimistically updates local store
+   │
+   ▼
+3. Mutation queued: {name: "todo.create", args: {...}}
+   │
+   ▼
+4. Background push sends mutations to server
+   │
+   ▼
+5. Server's Mutator applies business logic
+   │
+   ▼
+6. Change recorded in log: {cursor: 42, entity: "todo", op: "create"}
+   │
+   ▼
+7. Server responds with result
+   │
+   ▼
+8. Client removes mutation from queue
+   │
+   ▼
+9. Other clients pull changes via cursor
+   │
+   ▼
+10. Their local stores update reactively
+```
+
+### Offline Behavior
+
+When offline:
+
+1. **Reads work** - Data is in local store
+2. **Writes queue** - Mutations saved locally
+3. **UI updates** - Optimistic updates show immediately
+
+When back online:
+
+1. **Push queued mutations**
+2. **Pull changes since last cursor**
+3. **Resolve any conflicts**
+
+### Conflict Resolution
+
+Conflicts are rare with proper design. The sync system handles them:
+
+1. **Idempotency** - Same mutation won't apply twice
+2. **Server authority** - Server's version wins
+3. **Re-sync** - On conflict, client gets fresh snapshot
+
+## Use Cases
+
+### Todo App
+
+```go
+// Client creates todo
+todos.Create("abc", Todo{Title: "Buy milk"})
+// UI updates instantly
+// Background syncs to server
+// Other devices see the new todo
+```
+
+### Collaborative Document
+
+```go
+// User A edits
+doc.Update("doc1", Doc{Content: "Hello World"})
+
+// User B sees change via sync
+// Cursor-based sync means no missed updates
+```
+
+### Offline-First Mobile App
+
+```go
+// Works offline
+item := items.Get("item1").Get()  // From local store
+
+// Edits queue for later
+item.Set(Item{Name: "Updated"})  // Immediate UI update
+
+// Syncs when online
+client.Start(ctx)  // Pushes pending, pulls changes
+```
+
+## Reactive State
+
+The client includes a reactive system inspired by SolidJS:
+
+### Signal
+
+A value that notifies dependents when it changes:
+
+```go
+count := sync.NewSignal(0)
+count.Get()  // 0
+count.Set(1) // Notifies all dependents
+```
+
+### Computed
+
+A derived value that recomputes when dependencies change:
+
+```go
+doubled := sync.NewComputed(func() int {
+    return count.Get() * 2
+})
+doubled.Get() // 2 (auto-recomputes when count changes)
+```
+
+### Effect
+
+A side effect that runs when dependencies change:
+
+```go
+sync.NewEffect(func() {
+    fmt.Println("Count is:", count.Get())
+})
+// Prints whenever count changes
+```
+
+### Collections
+
+Type-safe entity management:
+
+```go
+todos := sync.NewCollection[Todo](client, "todo")
+
+// Create
+todo := todos.Create("abc", Todo{Title: "Buy milk"})
+
+// Read (reactive)
+title := todo.Get().Title
+
+// Update
+todo.Set(Todo{Title: "Buy oat milk", Completed: true})
+
+// Delete
+todo.Delete()
+
+// Query (reactive)
+all := todos.All()
+completed := todos.Find(func(t Todo) bool { return t.Completed })
+```
+
+## Integration with Live
+
+The sync package optionally integrates with `live` for instant updates:
+
+```go
+// Without live: clients poll every 30s
+client.opts.PullInterval = 30 * time.Second
+
+// With live: server pushes, clients sync immediately
+sync.Options{
+    Notify: liveServer.Notifier(),
+}
+```
+
+When changes occur:
+1. Server notifies via WebSocket
+2. Clients immediately pull new changes
+3. UI updates in real-time
+
+## What's Next?
+
+Ready to build offline-first applications?
+
+1. **[Quick Start](/view/sync-quick-start)** - Build your first synced app
+2. **[Server](/view/sync-server)** - Configure the sync engine
+3. **[Client](/view/sync-client)** - Use the client runtime
+4. **[Reactive](/view/sync-reactive)** - Signal, Computed, and Effect
+5. **[Collections](/view/sync-collections)** - Entity management
+6. **[Integration](/view/sync-integration)** - Combine with Live for real-time

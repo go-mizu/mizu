@@ -1,0 +1,516 @@
+---
+title: "Live Pub/Sub"
+description: "Topic-based publish/subscribe for real-time messaging"
+---
+
+# Live Pub/Sub
+
+The publish/subscribe (pub/sub) pattern is at the heart of Mizu's live package. Sessions subscribe to topics, and when you publish to a topic, all subscribers receive the message. This guide covers topic patterns, publishing strategies, and best practices.
+
+## How Pub/Sub Works
+
+```
+                    ┌─────────────────────────┐
+                    │         Server          │
+                    │                         │
+ Publish to         │   Topic: "chat:room1"   │      Delivered to
+ "chat:room1"  ────▶│   ┌─────────────────┐   │────▶  Session A (subscribed)
+                    │   │  Subscribers:   │   │────▶  Session B (subscribed)
+                    │   │  - Session A    │   │
+                    │   │  - Session B    │   │       Session C (not subscribed)
+                    │   │  - Session D    │   │────▶  Session D (subscribed)
+                    │   └─────────────────┘   │
+                    │                         │
+                    └─────────────────────────┘
+```
+
+## Subscribing to Topics
+
+Sessions subscribe in `OnConnect` or via messages:
+
+```go
+OnConnect: func(s *live.Session) {
+    // Subscribe to multiple topics
+    s.Subscribe("global")           // All users
+    s.Subscribe("user:" + s.ID())   // Personal channel
+    s.Subscribe("role:admin")       // Role-based
+}
+
+OnMessage: func(s *live.Session, msg []byte) {
+    var data struct {
+        Action string `json:"action"`
+        Topic  string `json:"topic"`
+    }
+    json.Unmarshal(msg, &data)
+
+    switch data.Action {
+    case "subscribe":
+        s.Subscribe(data.Topic)
+    case "unsubscribe":
+        s.Unsubscribe(data.Topic)
+    }
+}
+```
+
+## Publishing Messages
+
+### To All Subscribers
+
+```go
+server.Publish("chat:room1", []byte(`{"text":"Hello everyone!"}`))
+```
+
+### Excluding Specific Sessions
+
+```go
+// Don't send back to sender
+server.PublishExcept("chat:room1", message, senderID)
+
+// Exclude multiple sessions
+server.PublishExcept("chat:room1", message, "user1", "user2")
+```
+
+### To a Single Session
+
+```go
+session := server.Session("user123")
+if session != nil {
+    session.Send(message)
+}
+```
+
+## Topic Naming Patterns
+
+Use consistent, hierarchical topic names:
+
+### Resource-Based Topics
+
+```
+user:{userID}          # Personal messages
+user:{userID}:notifs   # User notifications
+team:{teamID}          # Team channel
+team:{teamID}:updates  # Team updates only
+```
+
+### Room/Channel Topics
+
+```
+chat:general           # General chat
+chat:room:{roomID}     # Specific room
+voice:channel:{id}     # Voice channel
+```
+
+### Event Topics
+
+```
+events:user:created    # User created events
+events:order:updated   # Order update events
+events:system          # System events
+```
+
+### Wildcard Topics (Manual)
+
+The live package doesn't support wildcards, but you can implement them:
+
+```go
+// Subscribe to all team updates
+func subscribeToTeamUpdates(s *live.Session, teamID string) {
+    s.Subscribe("team:" + teamID)
+    s.Subscribe("team:" + teamID + ":updates")
+    s.Subscribe("team:" + teamID + ":members")
+}
+```
+
+## Common Pub/Sub Patterns
+
+### Chat Room
+
+```go
+type ChatMessage struct {
+    Room    string    `json:"room"`
+    User    string    `json:"user"`
+    Text    string    `json:"text"`
+    Time    time.Time `json:"time"`
+}
+
+OnMessage: func(s *live.Session, msg []byte) {
+    var input struct {
+        Action string `json:"action"`
+        Room   string `json:"room"`
+        Text   string `json:"text"`
+    }
+    json.Unmarshal(msg, &input)
+
+    switch input.Action {
+    case "join":
+        s.Subscribe("chat:" + input.Room)
+        s.Set("room", input.Room)
+
+        // Announce join
+        join, _ := json.Marshal(map[string]string{
+            "type": "join",
+            "user": s.ID(),
+        })
+        server.Publish("chat:"+input.Room, join)
+
+    case "leave":
+        room := s.Get("room").(string)
+        s.Unsubscribe("chat:" + room)
+        s.Delete("room")
+
+        leave, _ := json.Marshal(map[string]string{
+            "type": "leave",
+            "user": s.ID(),
+        })
+        server.Publish("chat:"+room, leave)
+
+    case "message":
+        room := s.Get("room").(string)
+        chatMsg := ChatMessage{
+            Room: room,
+            User: s.ID(),
+            Text: input.Text,
+            Time: time.Now(),
+        }
+        data, _ := json.Marshal(map[string]any{
+            "type":    "message",
+            "message": chatMsg,
+        })
+        server.Publish("chat:"+room, data)
+    }
+}
+```
+
+### Notifications
+
+```go
+type Notification struct {
+    ID      string    `json:"id"`
+    Type    string    `json:"type"`
+    Title   string    `json:"title"`
+    Message string    `json:"message"`
+    Read    bool      `json:"read"`
+    Time    time.Time `json:"time"`
+}
+
+// Send notification to user
+func NotifyUser(userID string, n Notification) {
+    n.ID = uuid.New().String()
+    n.Time = time.Now()
+
+    data, _ := json.Marshal(map[string]any{
+        "type":         "notification",
+        "notification": n,
+    })
+
+    server.Publish("user:"+userID+":notifs", data)
+
+    // Also persist to database
+    saveNotification(userID, n)
+}
+
+// Usage
+NotifyUser("user123", Notification{
+    Type:    "order",
+    Title:   "Order Shipped",
+    Message: "Your order #456 has shipped!",
+})
+```
+
+### Real-time Updates
+
+```go
+// Subscribe to updates for specific resources
+OnConnect: func(s *live.Session) {
+    // Subscribe to entities the user is watching
+    watchedItems := getUserWatchList(s.ID())
+    for _, itemID := range watchedItems {
+        s.Subscribe("item:" + itemID)
+    }
+}
+
+// Publish updates when data changes
+func UpdateItem(item Item) error {
+    // Save to database
+    if err := db.Save(item); err != nil {
+        return err
+    }
+
+    // Notify watchers
+    data, _ := json.Marshal(map[string]any{
+        "type": "item_updated",
+        "item": item,
+    })
+    server.Publish("item:"+item.ID, data)
+
+    return nil
+}
+```
+
+### Presence
+
+```go
+// Track who's in a room
+func joinRoom(s *live.Session, room string) {
+    s.Subscribe("room:" + room + ":presence")
+    s.Subscribe("room:" + room + ":messages")
+
+    // Get current members
+    members := server.Subscribers("room:" + room + ":presence")
+    memberList := make([]string, len(members))
+    for i, m := range members {
+        memberList[i] = m.ID()
+    }
+
+    // Send member list to joiner
+    memberData, _ := json.Marshal(map[string]any{
+        "type":    "members",
+        "members": memberList,
+    })
+    s.Send(memberData)
+
+    // Announce join to others
+    joinData, _ := json.Marshal(map[string]any{
+        "type": "join",
+        "user": s.ID(),
+    })
+    server.PublishExcept("room:"+room+":presence", joinData, s.ID())
+}
+```
+
+### Live Cursors (Collaboration)
+
+```go
+type Cursor struct {
+    User string  `json:"user"`
+    X    float64 `json:"x"`
+    Y    float64 `json:"y"`
+}
+
+OnMessage: func(s *live.Session, msg []byte) {
+    var data struct {
+        Action string  `json:"action"`
+        DocID  string  `json:"doc_id"`
+        X      float64 `json:"x"`
+        Y      float64 `json:"y"`
+    }
+    json.Unmarshal(msg, &data)
+
+    if data.Action == "cursor_move" {
+        cursor := Cursor{
+            User: s.ID(),
+            X:    data.X,
+            Y:    data.Y,
+        }
+        cursorData, _ := json.Marshal(map[string]any{
+            "type":   "cursor",
+            "cursor": cursor,
+        })
+        // Send to all editors except sender
+        server.PublishExcept("doc:"+data.DocID+":cursors", cursorData, s.ID())
+    }
+}
+```
+
+## Publishing from HTTP Handlers
+
+You don't need to be in a WebSocket handler to publish:
+
+```go
+// API endpoint triggers notification
+app.Post("/api/items", func(c *mizu.Ctx) error {
+    var item Item
+    c.BindJSON(&item, 1024)
+
+    // Save to database
+    db.Save(&item)
+
+    // Notify relevant users via WebSocket
+    data, _ := json.Marshal(map[string]any{
+        "type": "new_item",
+        "item": item,
+    })
+    server.Publish("team:"+item.TeamID, data)
+
+    return c.JSON(item)
+})
+
+// Background job publishes updates
+func processJob(job Job) {
+    // ... do work ...
+
+    progress, _ := json.Marshal(map[string]any{
+        "type":     "job_progress",
+        "job_id":   job.ID,
+        "progress": job.Progress,
+    })
+    server.Publish("job:"+job.ID, progress)
+}
+```
+
+## Performance Considerations
+
+### Topic Granularity
+
+**Too broad:**
+```go
+// Bad: everyone gets everything
+s.Subscribe("all_updates")
+```
+
+**Too narrow:**
+```go
+// Potentially bad: thousands of topics
+s.Subscribe("user:123:item:456:comment:789")
+```
+
+**Just right:**
+```go
+// Good: meaningful groups
+s.Subscribe("user:" + userID)
+s.Subscribe("team:" + teamID)
+```
+
+### Message Size
+
+Keep messages small:
+
+```go
+// Bad: send entire object
+server.Publish(topic, entireLargeObject)
+
+// Good: send just what changed
+server.Publish(topic, []byte(`{"id":"123","status":"updated"}`))
+```
+
+### Fan-out
+
+Be aware of fan-out costs:
+
+```go
+// If topic has 10,000 subscribers, this sends 10,000 messages
+server.Publish("global", message)
+
+// Consider batching or pagination for large updates
+```
+
+## Error Handling
+
+### Publish Failures
+
+`Publish` doesn't return errors for individual sends. Monitor dropped messages:
+
+```go
+// Monitor in OnMessage or hooks
+if session.BufferFull() {
+    log.Printf("Warning: buffer full for %s", session.ID())
+}
+```
+
+### Subscription Validation
+
+Validate topic subscriptions:
+
+```go
+OnMessage: func(s *live.Session, msg []byte) {
+    var data struct {
+        Action string `json:"action"`
+        Topic  string `json:"topic"`
+    }
+    json.Unmarshal(msg, &data)
+
+    if data.Action == "subscribe" {
+        // Validate permission
+        if !canSubscribe(s.ID(), data.Topic) {
+            s.Send([]byte(`{"error":"cannot subscribe to this topic"}`))
+            return
+        }
+        s.Subscribe(data.Topic)
+    }
+}
+
+func canSubscribe(userID, topic string) bool {
+    // Check if user can access this topic
+    if strings.HasPrefix(topic, "admin:") {
+        return isAdmin(userID)
+    }
+    if strings.HasPrefix(topic, "team:") {
+        teamID := strings.TrimPrefix(topic, "team:")
+        teamID = strings.Split(teamID, ":")[0]
+        return isTeamMember(userID, teamID)
+    }
+    return true
+}
+```
+
+## Best Practices
+
+### 1. Use Namespaced Topics
+
+```go
+// Good: clear hierarchy
+"chat:room:123"
+"user:456:notifications"
+"team:789:updates"
+
+// Avoid: ambiguous
+"room123"
+"notifications"
+```
+
+### 2. Document Topic Conventions
+
+```go
+// Topic conventions:
+// - user:{id}           - Direct messages to user
+// - user:{id}:notifs    - User notifications
+// - team:{id}           - Team broadcast
+// - chat:{roomId}       - Chat room messages
+// - presence:{roomId}   - Room presence updates
+```
+
+### 3. Validate Before Publishing
+
+```go
+func publishToRoom(roomID string, msg []byte) error {
+    if !roomExists(roomID) {
+        return errors.New("room not found")
+    }
+    server.Publish("room:"+roomID, msg)
+    return nil
+}
+```
+
+### 4. Use Consistent Message Formats
+
+```go
+type Message struct {
+    Type      string `json:"type"`
+    Timestamp int64  `json:"ts"`
+    Data      any    `json:"data,omitempty"`
+}
+
+func publish(topic string, msgType string, data any) {
+    msg := Message{
+        Type:      msgType,
+        Timestamp: time.Now().UnixMilli(),
+        Data:      data,
+    }
+    bytes, _ := json.Marshal(msg)
+    server.Publish(topic, bytes)
+}
+```
+
+### 5. Clean Up Subscriptions
+
+```go
+OnDisconnect: func(s *live.Session) {
+    // Sessions are automatically unsubscribed on disconnect,
+    // but you may want to notify others
+    if room := s.Get("room"); room != nil {
+        server.Publish("room:"+room.(string)+":presence", []byte(fmt.Sprintf(
+            `{"type":"leave","user":"%s"}`, s.ID(),
+        )))
+    }
+}
+```

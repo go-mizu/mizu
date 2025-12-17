@@ -1,0 +1,497 @@
+---
+title: "Engine Configuration"
+description: "Learn how to configure the view engine for development and production"
+---
+
+# Engine Configuration
+
+The view engine is the core of Mizu's template system. This guide covers all configuration options and how to use them effectively.
+
+## Creating an Engine
+
+Create a view engine with `view.New()`:
+
+```go
+import "github.com/go-mizu/mizu/view"
+
+engine := view.New(view.Options{
+    Dir:         "views",
+    Development: true,
+})
+```
+
+## Configuration Options
+
+### Dir
+
+The directory where your templates are stored.
+
+```go
+view.Options{
+    Dir: "views",  // Default: "views"
+}
+```
+
+The engine expects this structure inside the directory:
+
+```
+views/
+├── layouts/      # Layout templates
+├── pages/        # Page templates
+├── components/   # Component templates
+└── partials/     # Partial templates
+```
+
+### FS
+
+An `fs.FS` filesystem to load templates from. Use this with `embed.FS` in production to bundle templates into your binary.
+
+```go
+import "embed"
+
+//go:embed views
+var viewsFS embed.FS
+
+engine := view.New(view.Options{
+    FS: viewsFS,  // Use embedded filesystem
+})
+```
+
+When `FS` is set, `Dir` is ignored. The embedded filesystem should have the same structure (`layouts/`, `pages/`, etc.).
+
+### Extension
+
+The file extension for template files.
+
+```go
+view.Options{
+    Extension: ".html",  // Default: ".html"
+}
+```
+
+You can use other extensions:
+
+```go
+view.Options{
+    Extension: ".tmpl",  // Now looks for .tmpl files
+}
+```
+
+### DefaultLayout
+
+The layout to use when a page doesn't specify one.
+
+```go
+view.Options{
+    DefaultLayout: "default",  // Default: "default"
+}
+```
+
+This means pages will use `views/layouts/default.html` unless they specify otherwise.
+
+### Delims
+
+Custom template delimiters. Useful if your templates contain `{{` and `}}` literally (common with Vue.js or Angular).
+
+```go
+view.Options{
+    Delims: [2]string{"<%", "%>"},  // Default: ["{{", "}}"]
+}
+```
+
+Now templates use `<% %>` instead:
+
+```html
+<h1>Hello, <%.Name%></h1>
+```
+
+### Development
+
+Enables development mode features:
+
+- **Template reload** - Templates reload on every request
+- **No caching** - Templates are never cached
+- **Detailed errors** - Error messages include template source context
+
+```go
+view.Options{
+    Development: true,  // Default: false
+}
+```
+
+**Important:** Never enable Development mode in production. It significantly impacts performance.
+
+A common pattern is to use an environment variable:
+
+```go
+view.Options{
+    Development: os.Getenv("ENV") != "production",
+}
+```
+
+### StrictMode
+
+When enabled, missing slots or components cause errors instead of rendering empty.
+
+```go
+view.Options{
+    StrictMode: true,  // Default: false
+}
+```
+
+In strict mode:
+
+```html
+{{slot "missing"}}  <!-- Error: slot not defined -->
+{{component "unknown" .}}  <!-- Error: component not found -->
+```
+
+This is useful during development to catch typos and missing templates.
+
+### DedupeStacks
+
+When enabled, duplicate entries in stacks are removed.
+
+```go
+view.Options{
+    DedupeStacks: true,  // Default: true
+}
+```
+
+Stacks are used to collect scripts and styles from components:
+
+```html
+<!-- In multiple components -->
+{{push "scripts"}}<script src="/app.js"></script>{{end}}
+{{push "scripts"}}<script src="/app.js"></script>{{end}}
+
+<!-- In layout -->
+{{stack "scripts"}}
+```
+
+With `DedupeStacks: true`, the script only appears once.
+
+### Funcs
+
+Custom template functions to add to all templates.
+
+```go
+import "html/template"
+import "strings"
+
+view.Options{
+    Funcs: template.FuncMap{
+        "uppercase": strings.ToUpper,
+        "formatDate": func(t time.Time) string {
+            return t.Format("Jan 2, 2006")
+        },
+    },
+}
+```
+
+Now you can use these in templates:
+
+```html
+<h1>{{uppercase .Name}}</h1>
+<p>Posted on {{formatDate .CreatedAt}}</p>
+```
+
+## Complete Example
+
+Here's a typical configuration for a production app:
+
+```go
+package main
+
+import (
+    "embed"
+    "html/template"
+    "os"
+    "strings"
+    "time"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/view"
+)
+
+//go:embed views
+var viewsFS embed.FS
+
+func main() {
+    isDev := os.Getenv("ENV") != "production"
+
+    var opts view.Options
+
+    if isDev {
+        // Development: load from filesystem
+        opts = view.Options{
+            Dir:         "views",
+            Development: true,
+            StrictMode:  true,  // Catch errors early
+        }
+    } else {
+        // Production: load from embedded FS
+        opts = view.Options{
+            FS:           viewsFS,
+            Development:  false,
+            DedupeStacks: true,
+        }
+    }
+
+    // Add custom functions
+    opts.Funcs = template.FuncMap{
+        "uppercase":  strings.ToUpper,
+        "formatDate": formatDate,
+        "truncate":   truncate,
+    }
+
+    engine := view.New(opts)
+
+    // Preload in production to fail fast
+    if !isDev {
+        if err := engine.Preload(); err != nil {
+            panic(err)
+        }
+    }
+
+    app := mizu.New()
+    app.Use(view.Middleware(engine))
+
+    // ... routes ...
+
+    app.Listen(":8080")
+}
+
+func formatDate(t time.Time) string {
+    return t.Format("January 2, 2006")
+}
+
+func truncate(s string, length int) string {
+    if len(s) <= length {
+        return s
+    }
+    return s[:length] + "..."
+}
+```
+
+## Engine Methods
+
+### Preload
+
+Loads and validates all templates at startup. Call this in production to fail fast if templates have errors.
+
+```go
+engine := view.New(opts)
+
+if err := engine.Preload(); err != nil {
+    log.Fatal("template error:", err)
+}
+```
+
+### ClearCache
+
+Clears the template cache. Useful if you need to reload templates without restarting.
+
+```go
+engine.ClearCache()
+```
+
+### Render
+
+Renders a page template to any `io.Writer`:
+
+```go
+var buf bytes.Buffer
+err := engine.Render(&buf, "home", data)
+```
+
+For HTTP responses, use `view.Render()` instead (covered below).
+
+### RenderComponent
+
+Renders a component directly:
+
+```go
+var buf bytes.Buffer
+err := engine.RenderComponent(&buf, "button", view.Data{
+    "Label": "Click",
+    "Color": "blue",
+})
+```
+
+### RenderPartial
+
+Renders a partial directly:
+
+```go
+var buf bytes.Buffer
+err := engine.RenderPartial(&buf, "sidebar", data)
+```
+
+## Using with Mizu
+
+### Adding the Middleware
+
+The middleware makes the engine available to all handlers:
+
+```go
+app := mizu.New()
+app.Use(view.Middleware(engine))
+```
+
+### Rendering in Handlers
+
+Use `view.Render()` to render pages:
+
+```go
+func homeHandler(c *mizu.Ctx) error {
+    return view.Render(c, "home", view.Data{
+        "Title": "Welcome",
+        "User":  currentUser,
+    })
+}
+```
+
+### Render Options
+
+#### Status Code
+
+Set the HTTP status code:
+
+```go
+// 404 page
+view.Render(c, "not-found", nil, view.Status(404))
+
+// Error page
+view.Render(c, "error", data, view.Status(500))
+```
+
+#### Custom Layout
+
+Override the default layout:
+
+```go
+view.Render(c, "dashboard", data, view.Layout("admin"))
+```
+
+#### No Layout
+
+Render without any layout (useful for partials/AJAX):
+
+```go
+view.Render(c, "user-row", data, view.NoLayout())
+```
+
+### Rendering Components Directly
+
+For HTMX or similar, render just a component:
+
+```go
+func buttonHandler(c *mizu.Ctx) error {
+    return view.RenderComponent(c, "button", view.Data{
+        "Label": "Submit",
+        "Color": "green",
+    })
+}
+```
+
+### Accessing the Engine
+
+Get the engine in a handler if you need it directly:
+
+```go
+func handler(c *mizu.Ctx) error {
+    engine := view.GetEngine(c)
+    // Use engine methods directly
+    return nil
+}
+```
+
+## Error Handling
+
+### Template Errors
+
+Template errors include context to help debugging:
+
+```go
+// TemplateError contains:
+// - Name: template name
+// - Line: line number (if known)
+// - Err: underlying error
+```
+
+In development mode, errors include the template source.
+
+### Not Found Errors
+
+Check for missing templates:
+
+```go
+import "errors"
+
+err := view.Render(c, "page", nil)
+if errors.Is(err, view.ErrTemplateNotFound) {
+    // Handle missing template
+}
+```
+
+Available error types:
+
+```go
+view.ErrTemplateNotFound   // Page not found
+view.ErrLayoutNotFound     // Layout not found
+view.ErrComponentNotFound  // Component not found
+view.ErrPartialNotFound    // Partial not found
+```
+
+## Best Practices
+
+### 1. Use Development Mode Locally
+
+Always enable development mode during development:
+
+```go
+Development: os.Getenv("ENV") != "production"
+```
+
+### 2. Preload in Production
+
+Call `Preload()` at startup to catch template errors early:
+
+```go
+if err := engine.Preload(); err != nil {
+    log.Fatal(err)
+}
+```
+
+### 3. Embed Templates for Production
+
+Use `embed.FS` so templates are bundled in your binary:
+
+```go
+//go:embed views
+var viewsFS embed.FS
+```
+
+### 4. Keep Custom Functions Pure
+
+Custom functions should be pure (no side effects):
+
+```go
+// Good: pure function
+"uppercase": strings.ToUpper,
+
+// Bad: has side effects
+"log": func(s string) string {
+    log.Println(s)  // Side effect!
+    return s
+},
+```
+
+### 5. Use StrictMode During Development
+
+Catch typos and missing templates early:
+
+```go
+StrictMode: isDev,
+```

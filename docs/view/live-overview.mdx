@@ -1,0 +1,377 @@
+---
+title: "Live Overview"
+description: "Real-time WebSocket communication with Mizu's live package"
+---
+
+# Live Overview
+
+The `live` package provides real-time, bidirectional communication between your server and clients using WebSockets. It's designed for scenarios where you need instant updates: chat applications, live notifications, collaborative editing, real-time dashboards, and more.
+
+## What is Real-time Communication?
+
+In traditional web applications, the browser sends a request and waits for a response. If you want new data, you have to make another request (or poll repeatedly).
+
+**Traditional HTTP:**
+```
+Client: "Give me messages"    →    Server: "Here are messages"
+Client: (waits...)
+Client: "Any new messages?"   →    Server: "Here are messages"
+Client: (waits...)
+Client: "Any new messages?"   →    Server: "No new messages"
+```
+
+With WebSockets, the connection stays open. Either side can send messages at any time.
+
+**WebSocket:**
+```
+Client: "Connect me"          →    Server: "Connected!"
+Server: "New message!"        →    Client: (receives instantly)
+Server: "Another message!"    →    Client: (receives instantly)
+Client: "I'm typing..."       →    Server: (receives instantly)
+```
+
+## What Problem Does Live Solve?
+
+Building real-time features from scratch is complex:
+
+1. **Connection management** - Handling connects, disconnects, reconnects
+2. **Message routing** - Sending messages to the right clients
+3. **Scaling** - Managing thousands of concurrent connections
+4. **Authentication** - Securing WebSocket connections
+5. **Backpressure** - Handling slow clients
+
+The `live` package handles all of this:
+
+| Problem | Live's Solution |
+|---------|-----------------|
+| Connection management | Built-in session lifecycle |
+| Message routing | Topic-based publish/subscribe |
+| Scaling | Efficient goroutine management |
+| Authentication | `OnAuth` callback hook |
+| Backpressure | Send buffers with configurable limits |
+
+## How Live Works
+
+Here's the architecture of the live system:
+
+```
+                          ┌─────────────────────┐
+                          │     Live Server     │
+                          │                     │
+Clients                   │  ┌───────────────┐  │
+  │                       │  │   Sessions    │  │
+  │  WebSocket            │  │               │  │
+  ├──────────────────────▶│  │  Session A    │  │
+  │                       │  │  Session B    │  │
+  │  WebSocket            │  │  Session C    │  │
+  ├──────────────────────▶│  │               │  │
+  │                       │  └───────────────┘  │
+  │  WebSocket            │         │          │
+  ├──────────────────────▶│         │          │
+  │                       │  ┌──────▼──────┐   │
+                          │  │   Topics    │   │
+                          │  │             │   │
+                          │  │ "chat:room1"│   │
+                          │  │ "user:123"  │   │
+                          │  │ "global"    │   │
+                          │  │             │   │
+                          │  └─────────────┘   │
+                          │                     │
+                          └─────────────────────┘
+```
+
+1. **Clients connect** via WebSocket
+2. **Sessions are created** for each connection
+3. **Sessions subscribe** to topics
+4. **Messages are published** to topics
+5. **All subscribers** receive the message
+
+## Core Concepts
+
+### Server
+
+The Server manages all WebSocket connections. You create one server and mount it on your Mizu app.
+
+```go
+import "github.com/go-mizu/mizu/live"
+
+server := live.NewServer(live.Options{
+    OnAuth: func(r *http.Request) (string, bool) {
+        // Authenticate the connection
+        return userID, true
+    },
+})
+
+app.Get("/ws", server.Handler())
+```
+
+### Session
+
+A Session represents one WebSocket connection. Each connected client has its own session.
+
+Sessions can:
+- Subscribe to topics
+- Receive messages
+- Have associated metadata (user ID, etc.)
+
+### Topic
+
+A Topic is a named channel for messages. Sessions subscribe to topics they're interested in. When you publish to a topic, all subscribers receive the message.
+
+```go
+// Publish to everyone subscribed to "notifications"
+server.Publish("notifications", []byte("New update available!"))
+```
+
+### Message
+
+Messages are simple byte slices. You can send any format: JSON, text, binary. The live package doesn't care about the content.
+
+```go
+// Send JSON
+data, _ := json.Marshal(map[string]string{"type": "alert", "text": "Hello!"})
+server.Publish("alerts", data)
+```
+
+## Quick Example
+
+Here's a minimal chat server:
+
+**Server (Go):**
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "net/http"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/live"
+)
+
+type ChatMessage struct {
+    User    string `json:"user"`
+    Message string `json:"message"`
+}
+
+func main() {
+    // Create live server
+    server := live.NewServer(live.Options{
+        OnAuth: func(r *http.Request) (string, bool) {
+            // In production, verify auth token
+            user := r.URL.Query().Get("user")
+            return user, user != ""
+        },
+        OnConnect: func(s *live.Session) {
+            // Subscribe to chat room
+            s.Subscribe("chat:general")
+        },
+        OnMessage: func(s *live.Session, msg []byte) {
+            // Broadcast received message
+            chatMsg := ChatMessage{
+                User:    s.ID(),
+                Message: string(msg),
+            }
+            data, _ := json.Marshal(chatMsg)
+            server.Publish("chat:general", data)
+        },
+    })
+
+    // Create app
+    app := mizu.New()
+    app.Get("/ws", server.Handler())
+
+    // Serve static files for the demo
+    app.Static("/", "./public")
+
+    app.Listen(":8080")
+}
+```
+
+**Client (JavaScript):**
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat</title>
+</head>
+<body>
+    <div id="messages"></div>
+    <input type="text" id="input" placeholder="Type a message...">
+    <button onclick="send()">Send</button>
+
+    <script>
+        const user = prompt("Enter your name:");
+        const ws = new WebSocket(`ws://localhost:8080/ws?user=${user}`);
+
+        ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            const div = document.createElement('div');
+            div.textContent = `${msg.user}: ${msg.message}`;
+            document.getElementById('messages').appendChild(div);
+        };
+
+        function send() {
+            const input = document.getElementById('input');
+            ws.send(input.value);
+            input.value = '';
+        }
+    </script>
+</body>
+</html>
+```
+
+## Key Features
+
+### Topic-Based Pub/Sub
+
+Subscribe to topics and receive only relevant messages:
+
+```go
+// Session subscribes to their own notifications
+session.Subscribe("user:" + userID)
+session.Subscribe("global")
+
+// Publish to specific user
+server.Publish("user:123", privateNotification)
+
+// Publish to everyone
+server.Publish("global", broadcastMessage)
+```
+
+### Authentication
+
+Secure connections with the `OnAuth` callback:
+
+```go
+server := live.NewServer(live.Options{
+    OnAuth: func(r *http.Request) (string, bool) {
+        token := r.Header.Get("Authorization")
+        userID, err := validateToken(token)
+        if err != nil {
+            return "", false  // Reject connection
+        }
+        return userID, true  // Accept, assign ID
+    },
+})
+```
+
+### Lifecycle Hooks
+
+React to connection events:
+
+```go
+live.Options{
+    OnConnect: func(s *live.Session) {
+        log.Printf("User %s connected", s.ID())
+    },
+    OnDisconnect: func(s *live.Session) {
+        log.Printf("User %s disconnected", s.ID())
+    },
+    OnMessage: func(s *live.Session, msg []byte) {
+        log.Printf("Message from %s: %s", s.ID(), msg)
+    },
+}
+```
+
+### Backpressure Handling
+
+Slow clients won't block fast clients:
+
+```go
+live.Options{
+    SendBuffer: 256,  // Messages buffered per session
+}
+```
+
+If a client can't keep up, oldest messages are dropped.
+
+## Use Cases
+
+### Chat Applications
+
+Real-time messaging between users:
+
+```go
+// User sends message
+OnMessage: func(s *live.Session, msg []byte) {
+    room := getUserRoom(s.ID())
+    server.Publish("chat:"+room, msg)
+}
+```
+
+### Live Notifications
+
+Push notifications to specific users:
+
+```go
+// When something happens
+func notifyUser(userID string, notification Notification) {
+    data, _ := json.Marshal(notification)
+    server.Publish("user:"+userID, data)
+}
+```
+
+### Real-time Dashboards
+
+Push updates to all viewers:
+
+```go
+// Background worker publishes metrics
+func updateMetrics() {
+    for range time.Tick(time.Second) {
+        metrics := collectMetrics()
+        data, _ := json.Marshal(metrics)
+        server.Publish("dashboard:metrics", data)
+    }
+}
+```
+
+### Collaborative Editing
+
+Broadcast changes to all editors:
+
+```go
+OnMessage: func(s *live.Session, msg []byte) {
+    documentID := getDocumentID(s)
+    // Broadcast to all editors except sender
+    server.PublishExcept("doc:"+documentID, msg, s.ID())
+}
+```
+
+### Live Sync Integration
+
+Notify sync clients of new data:
+
+```go
+// Sync engine notifies live when data changes
+sync.New(sync.Options{
+    Notify: live.NotifierFunc(func(scope string, cursor uint64) {
+        server.Publish("sync:"+scope, []byte(fmt.Sprintf(`{"cursor":%d}`, cursor)))
+    }),
+})
+```
+
+## When to Use Live
+
+**Use Live when:**
+- You need instant updates (< 100ms latency)
+- Multiple clients need to see the same data
+- You're building interactive features (chat, gaming)
+- You want to push data to clients
+
+**Consider alternatives when:**
+- Updates are infrequent (use Server-Sent Events or polling)
+- You need offline support (use Sync package)
+- You're building a simple REST API
+
+## What's Next?
+
+Ready to build real-time features?
+
+1. **[Quick Start](/view/live-quick-start)** - Build your first live feature
+2. **[Server Configuration](/view/live-server)** - All server options explained
+3. **[Sessions](/view/live-sessions)** - Managing connections and state
+4. **[Pub/Sub](/view/live-pubsub)** - Topics, publishing, and subscribing
