@@ -1,0 +1,50 @@
+{{ "{{" }}define "title"{{ "}}" }}Counter{{ "{{" }}end{{ "}}" }}
+
+{{ "{{" }}define "content"{{ "}}" }}
+<div id="lv-root" data-lv class="max-w-md mx-auto">
+    {{ "{{" }}component "card" (dict "Title" "Live Counter"){{ "}}" }}
+        <p class="text-muted-foreground mb-6 text-center">
+            Click the buttons to update the count in real-time. No page reload required!
+        </p>
+
+        <div id="count" class="text-center mb-8">
+            {{ "{{" }}partial "counter/count" .{{ "}}" }}
+        </div>
+
+        <div class="flex justify-center gap-4">
+            <button {{ "{{" }}lvClick "dec"{{ "}}" }} {{ "{{" }}lvLoading "opacity-50"{{ "}}" }}
+                class="w-12 h-12 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors text-xl font-bold">
+                -
+            </button>
+            <button {{ "{{" }}lvClick "reset"{{ "}}" }} {{ "{{" }}lvLoading "opacity-50"{{ "}}" }}
+                class="px-6 h-12 rounded-lg bg-muted text-muted-foreground hover:bg-muted/80 transition-colors font-medium">
+                Reset
+            </button>
+            <button {{ "{{" }}lvClick "inc"{{ "}}" }} {{ "{{" }}lvLoading "opacity-50"{{ "}}" }}
+                class="w-12 h-12 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-xl font-bold">
+                +
+            </button>
+        </div>
+
+        <div class="mt-8 pt-6 border-t">
+            <p class="text-sm text-muted-foreground text-center">
+                Increment by custom amount:
+            </p>
+            <div class="flex justify-center gap-2 mt-3">
+                <button {{ "{{" }}lvClick "inc" (lvVal "by" 5){{ "}}" }} {{ "{{" }}lvLoading "opacity-50"{{ "}}" }}
+                    class="px-4 py-2 rounded-md bg-accent text-accent-foreground hover:bg-accent/80 transition-colors text-sm">
+                    +5
+                </button>
+                <button {{ "{{" }}lvClick "inc" (lvVal "by" 10){{ "}}" }} {{ "{{" }}lvLoading "opacity-50"{{ "}}" }}
+                    class="px-4 py-2 rounded-md bg-accent text-accent-foreground hover:bg-accent/80 transition-colors text-sm">
+                    +10
+                </button>
+                <button {{ "{{" }}lvClick "inc" (lvVal "by" 100){{ "}}" }} {{ "{{" }}lvLoading "opacity-50"{{ "}}" }}
+                    class="px-4 py-2 rounded-md bg-accent text-accent-foreground hover:bg-accent/80 transition-colors text-sm">
+                    +100
+                </button>
+            </div>
+        </div>
+    {{ "{{" }}end{{ "}}" }}
+</div>
+{{ "{{" }}end{{ "}}" }}

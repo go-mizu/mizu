@@ -1,0 +1,86 @@
+package web
+
+import (
+	"io/fs"
+	"net/http"
+	"os"
+
+	"github.com/go-mizu/mizu"
+	"github.com/go-mizu/mizu/view"
+	"github.com/go-mizu/mizu/view/live"
+
+	"{{.Module}}/assets"
+)
+
+type App struct {
+	cfg    Config
+	app    *mizu.App
+	engine *view.Engine
+	live   *live.Live
+}
+
+func New(cfg Config) *App {
+	a := &App{
+		cfg: cfg,
+		app: mizu.New(),
+	}
+
+	// Setup view engine
+	opts := view.Options{
+		DefaultLayout: "default",
+		Development:   cfg.Dev,
+		Funcs:         live.TemplateFuncs(),
+	}
+
+	if !cfg.Dev {
+		// Production: use embedded filesystem
+		viewsFS, _ := fs.Sub(assets.ViewsFS, "views")
+		opts.FS = viewsFS
+	} else {
+		// Development: use disk filesystem
+		opts.Dir = "assets/views"
+	}
+
+	a.engine = view.New(opts)
+
+	// Preload templates in production
+	if !cfg.Dev {
+		if err := a.engine.Preload(); err != nil {
+			panic("failed to load templates: " + err.Error())
+		}
+	}
+
+	// Create live engine
+	a.live = live.New(live.Options{
+		View:   a.engine,
+		PubSub: live.NewInmemPubSub(),
+		Dev:    cfg.Dev,
+	})
+
+	// Mount live infrastructure
+	a.live.Mount(a.app)
+
+	// Add view middleware
+	a.app.Use(view.Middleware(a.engine))
+
+	// Setup routes
+	a.routes()
+
+	return a
+}
+
+func (a *App) Listen(addr string) error { return a.app.Listen(addr) }
+
+// Live returns the live engine for registering pages
+func (a *App) Live() *live.Live { return a.live }
+
+// staticHandler serves embedded static files
+func staticHandler(dev bool) http.Handler {
+	var staticFS fs.FS
+	if dev {
+		staticFS = os.DirFS("assets/static")
+	} else {
+		staticFS, _ = fs.Sub(assets.StaticFS, "static")
+	}
+	return http.StripPrefix("/static/", http.FileServer(http.FS(staticFS)))
+}

@@ -1,0 +1,31 @@
+package web
+
+import (
+	"github.com/go-mizu/mizu"
+	"github.com/go-mizu/mizu/view"
+	"github.com/go-mizu/mizu/view/live"
+
+	"{{.Module}}/page"
+)
+
+func (a *App) routes() {
+	// Static files
+	a.app.Mount("/static/", staticHandler(a.cfg.Dev))
+
+	// Home page (static)
+	a.app.Get("/", func(c *mizu.Ctx) error {
+		return view.Render(c, "home", view.Data{
+			"Title":   "Welcome to {{.Name}}",
+			"Message": "A real-time web application built with Mizu Live",
+		})
+	})
+
+	// Live pages
+	counterPage := &page.CounterPage{}
+	a.app.Get("/counter", live.Handle(a.live, counterPage))
+	a.live.RegisterPage("/counter", live.Wrap(counterPage))
+
+	chatPage := &page.ChatPage{PubSub: a.live.PubSub()}
+	a.app.Get("/chat", live.Handle(a.live, chatPage))
+	a.live.RegisterPage("/chat", live.Wrap(chatPage))
+}

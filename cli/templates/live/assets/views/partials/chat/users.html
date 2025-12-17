@@ -1,0 +1,12 @@
+{{ "{{" }}if .State.Users{{ "}}" }}
+    {{ "{{" }}range .State.Users{{ "}}" }}
+    <div class="flex items-center gap-2 text-sm py-1">
+        <span class="w-2 h-2 rounded-full bg-green-500"></span>
+        <span>{{ "{{" }}.{{ "}}" }}</span>
+    </div>
+    {{ "{{" }}end{{ "}}" }}
+{{ "{{" }}else{{ "}}" }}
+    <p class="text-muted-foreground text-sm py-2">
+        No users online
+    </p>
+{{ "{{" }}end{{ "}}" }}
