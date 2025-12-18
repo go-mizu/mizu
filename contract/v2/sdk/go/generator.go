@@ -6,128 +6,344 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"text/template"
 	"unicode"
 
 	contract "github.com/go-mizu/mizu/contract/v2"
+	"github.com/go-mizu/mizu/sdk"
 )
 
-// Config controls code generation.
+// Config controls Go SDK generation.
 type Config struct {
-	Package string // Go package name (default: lowercase service name)
+	// Package is the Go package name for generated code.
+	// Default: lowercase sanitized service name, or "sdk".
+	Package string
+
+	// Filename is the output file path.
+	// Default: "client.go".
+	Filename string
 }
 
-// Generate produces Go source code for a typed SDK client.
-func Generate(svc *contract.Service, cfg *Config) ([]byte, error) {
+// Generate produces a set of generated files for a typed Go SDK client.
+// The output is intentionally small: by default a single Go file in one package.
+func Generate(svc *contract.Service, cfg *Config) ([]*sdk.File, error) {
 	if svc == nil {
 		return nil, fmt.Errorf("sdkgo: nil service")
 	}
 
-	g := &generator{
-		svc:     svc,
-		imports: make(map[string]bool),
-		types:   make(map[string]*contract.Type),
+	m, err := buildModel(svc, cfg)
+	if err != nil {
+		return nil, err
 	}
 
-	// Set package name
+	var out bytes.Buffer
+	tpl, err := template.New("sdkgo").
+		Funcs(template.FuncMap{
+			"goName":       toGoName,
+			"sanitize":     sanitizeIdent,
+			"quote":        strconvQuote,
+			"lower":        strings.ToLower,
+			"hasPrefix":    strings.HasPrefix,
+			"trimSpace":    strings.TrimSpace,
+			"join":         strings.Join,
+			"variantField": variantFieldName,
+		}).
+		Parse(goTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("sdkgo: parse template: %w", err)
+	}
+
+	if err := tpl.Execute(&out, m); err != nil {
+		return nil, fmt.Errorf("sdkgo: execute template: %w", err)
+	}
+
+	filename := "client.go"
+	if cfg != nil && cfg.Filename != "" {
+		filename = cfg.Filename
+	}
+
+	return []*sdk.File{
+		{
+			Path:    filename,
+			Content: out.String(),
+		},
+	}, nil
+}
+
+type model struct {
+	Package string
+	Service struct {
+		Name        string
+		Sanitized   string
+		Description string
+	}
+
+	Defaults struct {
+		BaseURL  string
+		Auth    string
+		Headers []kv
+	}
+
+	Imports []string
+
+	HasTime      bool
+	HasStreaming bool
+
+	Types     []typeModel
+	Resources []resourceModel
+}
+
+type kv struct {
+	K string
+	V string
+}
+
+type typeModel struct {
+	Name        string
+	Description string
+	Kind        contract.TypeKind
+
+	Fields   []fieldModel
+	Elem     string
+	Tag      string
+	Variants []variantModel
+}
+
+type fieldModel struct {
+	Name        string
+	GoName      string
+	Description string
+	GoType      string
+	Tag         string
+
+	Optional bool
+	Nullable bool
+	Enum     []string
+	Const    string
+}
+
+type variantModel struct {
+	Value       string
+	Type        string
+	Description string
+	FieldName   string
+}
+
+type resourceModel struct {
+	Name        string
+	GoName      string
+	Description string
+	Methods     []methodModel
+}
+
+type methodModel struct {
+	Name        string
+	GoName      string
+	Description string
+
+	HasInput  bool
+	HasOutput bool
+
+	InputType  string
+	OutputType string
+
+	HTTPMethod string
+	HTTPPath   string
+
+	IsStreaming    bool
+	StreamMode     string
+	StreamIsSSE    bool
+	StreamItemType string
+
+	// Future hooks
+	HasBidirectional bool
+}
+
+func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
+	m := &model{}
+
+	// Package
 	if cfg != nil && cfg.Package != "" {
-		g.pkg = cfg.Package
+		m.Package = cfg.Package
 	} else {
-		g.pkg = strings.ToLower(sanitizeIdent(svc.Name))
-	}
-	if g.pkg == "" {
-		g.pkg = "sdk"
-	}
-
-	// Build type lookup
-	for _, t := range svc.Types {
-		if t != nil && t.Name != "" {
-			g.types[t.Name] = t
+		p := strings.ToLower(sanitizeIdent(svc.Name))
+		if p == "" {
+			p = "sdk"
 		}
+		m.Package = p
 	}
 
-	// Check for streaming and time.Time usage
-	g.hasStreaming = g.checkHasStreaming()
-	g.hasTime = g.checkHasTime()
+	// Service info
+	m.Service.Name = svc.Name
+	m.Service.Sanitized = sanitizeIdent(svc.Name)
+	m.Service.Description = svc.Description
 
-	// Generate code sections
-	g.emitHeader()
-	g.emitImports()
-	g.emitTypes()
-	g.emitClient()
-	g.emitResources()
-	if g.hasStreaming {
-		g.emitStreaming()
-	}
-	g.emitHelpers()
-
-	return g.buf.Bytes(), nil
-}
-
-// generator holds state during code generation.
-type generator struct {
-	svc          *contract.Service
-	pkg          string
-	buf          bytes.Buffer
-	imports      map[string]bool
-	types        map[string]*contract.Type
-	hasStreaming bool
-	hasTime      bool
-}
-
-func (g *generator) emit(format string, args ...any) {
-	fmt.Fprintf(&g.buf, format, args...)
-}
-
-func (g *generator) emitln(format string, args ...any) {
-	fmt.Fprintf(&g.buf, format+"\n", args...)
-}
-
-func (g *generator) nl() {
-	g.buf.WriteByte('\n')
-}
-
-// checkHasStreaming returns true if any method has streaming.
-func (g *generator) checkHasStreaming() bool {
-	for _, res := range g.svc.Resources {
-		if res == nil {
-			continue
-		}
-		for _, m := range res.Methods {
-			if m != nil && m.Stream != nil {
-				return true
+	// Defaults
+	if svc.Defaults != nil {
+		m.Defaults.BaseURL = strings.TrimRight(svc.Defaults.BaseURL, "/")
+		m.Defaults.Auth = strings.TrimSpace(svc.Defaults.Auth)
+		if len(svc.Defaults.Headers) > 0 {
+			keys := make([]string, 0, len(svc.Defaults.Headers))
+			for k := range svc.Defaults.Headers {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				m.Defaults.Headers = append(m.Defaults.Headers, kv{K: k, V: svc.Defaults.Headers[k]})
 			}
 		}
 	}
-	return false
-}
 
-// checkHasTime returns true if any type uses time.Time.
-func (g *generator) checkHasTime() bool {
-	for _, t := range g.svc.Types {
+	// Type lookup
+	typeByName := map[string]*contract.Type{}
+	for _, t := range svc.Types {
+		if t != nil && t.Name != "" {
+			typeByName[t.Name] = t
+		}
+	}
+
+	// Determine HasStreaming / HasTime
+	m.HasStreaming = hasStreaming(svc)
+	m.HasTime = hasTime(svc)
+
+	// Types
+	typeNames := make([]string, 0, len(typeByName))
+	for name := range typeByName {
+		typeNames = append(typeNames, name)
+	}
+	sort.Strings(typeNames)
+
+	for _, name := range typeNames {
+		t := typeByName[name]
 		if t == nil {
 			continue
 		}
-		for _, f := range t.Fields {
-			if f.Type == "time.Time" {
-				return true
+		tm := typeModel{
+			Name:        t.Name,
+			Description: t.Description,
+			Kind:        t.Kind,
+			Elem:        string(t.Elem),
+			Tag:         t.Tag,
+		}
+
+		switch t.Kind {
+		case contract.KindStruct:
+			for _, f := range t.Fields {
+				ft := goType(typeByName, f.Type, f.Optional, f.Nullable)
+				tag := f.Name
+				if f.Optional {
+					tag += ",omitempty"
+				}
+				tm.Fields = append(tm.Fields, fieldModel{
+					Name:        f.Name,
+					GoName:      toGoName(f.Name),
+					Description: f.Description,
+					GoType:      ft,
+					Tag:         tag,
+					Optional:    f.Optional,
+					Nullable:    f.Nullable,
+					Enum:        append([]string(nil), f.Enum...),
+					Const:       f.Const,
+				})
 			}
+		case contract.KindSlice:
+			tm.Elem = goType(typeByName, t.Elem, false, false)
+		case contract.KindMap:
+			tm.Elem = goType(typeByName, t.Elem, false, false)
+		case contract.KindUnion:
+			for _, v := range t.Variants {
+				vm := variantModel{
+					Value:       v.Value,
+					Type:        string(v.Type),
+					Description: v.Description,
+					FieldName:   variantFieldName(v),
+				}
+				tm.Variants = append(tm.Variants, vm)
+			}
+		default:
+			// ignore
 		}
-		if t.Elem == "time.Time" {
-			return true
-		}
+
+		m.Types = append(m.Types, tm)
 	}
-	return false
+
+	// Resources and methods
+	for _, r := range svc.Resources {
+		if r == nil {
+			continue
+		}
+		rm := resourceModel{
+			Name:        r.Name,
+			GoName:      toGoName(r.Name),
+			Description: r.Description,
+		}
+
+		for _, mm := range r.Methods {
+			if mm == nil {
+				continue
+			}
+
+			httpMethod := "POST"
+			httpPath := "/" + r.Name + "/" + mm.Name
+			if mm.HTTP != nil {
+				if strings.TrimSpace(mm.HTTP.Method) != "" {
+					httpMethod = strings.ToUpper(mm.HTTP.Method)
+				}
+				if strings.TrimSpace(mm.HTTP.Path) != "" {
+					httpPath = mm.HTTP.Path
+				}
+			}
+
+			hasInput := strings.TrimSpace(string(mm.Input)) != ""
+			hasOutput := strings.TrimSpace(string(mm.Output)) != ""
+
+			isStreaming := mm.Stream != nil
+			streamMode := ""
+			streamIsSSE := false
+			streamItem := ""
+			hasBidi := false
+
+			if isStreaming {
+				streamMode = strings.TrimSpace(mm.Stream.Mode)
+				if streamMode == "" || strings.EqualFold(streamMode, "sse") {
+					streamIsSSE = true
+				}
+				streamItem = strings.TrimSpace(string(mm.Stream.Item))
+				hasBidi = strings.TrimSpace(string(mm.Stream.InputItem)) != ""
+			}
+
+			method := methodModel{
+				Name:        mm.Name,
+				GoName:      toGoName(mm.Name),
+				Description: mm.Description,
+
+				HasInput:    hasInput,
+				HasOutput:   hasOutput,
+				InputType:   string(mm.Input),
+				OutputType:  string(mm.Output),
+				HTTPMethod:  httpMethod,
+				HTTPPath:    httpPath,
+				IsStreaming: isStreaming,
+
+				StreamMode:         streamMode,
+				StreamIsSSE:        streamIsSSE,
+				StreamItemType:     streamItem,
+				HasBidirectional:   hasBidi,
+			}
+
+			rm.Methods = append(rm.Methods, method)
+		}
+
+		m.Resources = append(m.Resources, rm)
+	}
+
+	// Imports
+	m.Imports = computeImports(m.HasStreaming, m.HasTime)
+
+	return m, nil
 }
 
-func (g *generator) emitHeader() {
-	g.emitln("// Code generated by sdkgo. DO NOT EDIT.")
-	g.nl()
-	g.emitln("package %s", g.pkg)
-	g.nl()
-}
-
-func (g *generator) emitImports() {
-	// Collect imports based on what we need
+func computeImports(hasStreaming, hasTime bool) []string {
 	imports := []string{
 		"bytes",
 		"context",
@@ -137,605 +353,76 @@ func (g *generator) emitImports() {
 		"net/http",
 		"strings",
 	}
-	if g.hasStreaming {
+
+	if hasStreaming {
 		imports = append(imports, "bufio")
 	}
-	if g.hasTime {
+	if hasTime {
 		imports = append(imports, "time")
 	}
+
 	sort.Strings(imports)
-
-	g.emitln("import (")
-	for _, imp := range imports {
-		g.emitln("\t%q", imp)
-	}
-	g.emitln(")")
-	g.nl()
+	return imports
 }
 
-func (g *generator) emitTypes() {
-	if len(g.svc.Types) == 0 {
-		return
-	}
-
-	g.emitln("// ────────────────────────────────────────────────────────────")
-	g.emitln("// Types")
-	g.emitln("// ────────────────────────────────────────────────────────────")
-	g.nl()
-
-	// Sort types for stable output
-	names := make([]string, 0, len(g.types))
-	for name := range g.types {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
-	for _, name := range names {
-		t := g.types[name]
-		g.emitType(t)
-		g.nl()
-	}
-}
-
-func (g *generator) emitType(t *contract.Type) {
-	if t == nil {
-		return
-	}
-
-	switch t.Kind {
-	case contract.KindStruct:
-		g.emitStruct(t)
-	case contract.KindSlice:
-		g.emitSlice(t)
-	case contract.KindMap:
-		g.emitMap(t)
-	case contract.KindUnion:
-		g.emitUnion(t)
-	}
-}
-
-func (g *generator) emitStruct(t *contract.Type) {
-	if t.Description != "" {
-		g.emitln("// %s %s", t.Name, t.Description)
-	}
-	g.emitln("type %s struct {", t.Name)
-	for _, f := range t.Fields {
-		g.emitField(f)
-	}
-	g.emitln("}")
-}
-
-func (g *generator) emitField(f contract.Field) {
-	goName := toGoName(f.Name)
-	goType := g.goType(f.Type, f.Optional, f.Nullable)
-
-	// Build JSON tag
-	tag := f.Name
-	if f.Optional {
-		tag += ",omitempty"
-	}
-
-	// Build comment
-	var comment string
-	if f.Const != "" {
-		comment = fmt.Sprintf(" // always %q", f.Const)
-	} else if len(f.Enum) > 0 {
-		comment = fmt.Sprintf(" // one of: %s", strings.Join(f.Enum, ", "))
-	} else if f.Description != "" {
-		comment = " // " + f.Description
-	}
-
-	g.emitln("\t%s %s `json:%q`%s", goName, goType, tag, comment)
-}
-
-func (g *generator) emitSlice(t *contract.Type) {
-	if t.Description != "" {
-		g.emitln("// %s %s", t.Name, t.Description)
-	}
-	elemType := g.goType(t.Elem, false, false)
-	g.emitln("type %s []%s", t.Name, elemType)
-}
-
-func (g *generator) emitMap(t *contract.Type) {
-	if t.Description != "" {
-		g.emitln("// %s %s", t.Name, t.Description)
-	}
-	elemType := g.goType(t.Elem, false, false)
-	g.emitln("type %s map[string]%s", t.Name, elemType)
-}
-
-func (g *generator) emitUnion(t *contract.Type) {
-	if t.Description != "" {
-		g.emitln("// %s %s", t.Name, t.Description)
-	} else {
-		g.emitln("// %s is a discriminated union (tag: %q).", t.Name, t.Tag)
-	}
-
-	// List variants in comment
-	var variantNames []string
-	for _, v := range t.Variants {
-		variantNames = append(variantNames, string(v.Type))
-	}
-	if len(variantNames) > 0 {
-		g.emitln("// Variants: %s", strings.Join(variantNames, ", "))
-	}
-
-	g.emitln("type %s struct {", t.Name)
-	for _, v := range t.Variants {
-		fieldName := variantFieldName(v)
-		g.emitln("\t%s *%s `json:\"-\"`", fieldName, v.Type)
-	}
-	g.emitln("}")
-	g.nl()
-
-	// MarshalJSON
-	g.emitln("func (u *%s) MarshalJSON() ([]byte, error) {", t.Name)
-	for _, v := range t.Variants {
-		fieldName := variantFieldName(v)
-		g.emitln("\tif u.%s != nil {", fieldName)
-		g.emitln("\t\treturn json.Marshal(u.%s)", fieldName)
-		g.emitln("\t}")
-	}
-	g.emitln("\treturn []byte(\"null\"), nil")
-	g.emitln("}")
-	g.nl()
-
-	// UnmarshalJSON
-	g.emitln("func (u *%s) UnmarshalJSON(data []byte) error {", t.Name)
-	g.emitln("\tvar disc struct {")
-	g.emitln("\t\t%s string `json:%q`", toGoName(t.Tag), t.Tag)
-	g.emitln("\t}")
-	g.emitln("\tif err := json.Unmarshal(data, &disc); err != nil {")
-	g.emitln("\t\treturn err")
-	g.emitln("\t}")
-	g.emitln("\tswitch disc.%s {", toGoName(t.Tag))
-	for _, v := range t.Variants {
-		fieldName := variantFieldName(v)
-		g.emitln("\tcase %q:", v.Value)
-		g.emitln("\t\tu.%s = new(%s)", fieldName, v.Type)
-		g.emitln("\t\treturn json.Unmarshal(data, u.%s)", fieldName)
-	}
-	g.emitln("\t}")
-	g.emitln("\treturn fmt.Errorf(\"unknown %s %s: %%q\", disc.%s)", t.Name, t.Tag, toGoName(t.Tag))
-	g.emitln("}")
-}
-
-func (g *generator) emitClient() {
-	g.emitln("// ────────────────────────────────────────────────────────────")
-	g.emitln("// Client")
-	g.emitln("// ────────────────────────────────────────────────────────────")
-	g.nl()
-
-	svcName := sanitizeIdent(g.svc.Name)
-	if svcName == "" {
-		svcName = "API"
-	}
-
-	g.emitln("// Client is the %s API client.", svcName)
-	g.emitln("type Client struct {")
-	// Resource fields
-	for _, res := range g.svc.Resources {
-		if res == nil {
+func hasStreaming(svc *contract.Service) bool {
+	for _, r := range svc.Resources {
+		if r == nil {
 			continue
 		}
-		resName := toGoName(res.Name)
-		g.emitln("\t%s *%sResource", resName, resName)
+		for _, m := range r.Methods {
+			if m != nil && m.Stream != nil {
+				return true
+			}
+		}
 	}
-	g.emitln("\t// internal")
-	g.emitln("\tbaseURL string")
-	g.emitln("\ttoken   string")
-	g.emitln("\theaders map[string]string")
-	g.emitln("\thttp    *http.Client")
-	g.emitln("}")
-	g.nl()
+	return false
+}
 
-	// NewClient
-	baseURL := ""
-	if g.svc.Defaults != nil && g.svc.Defaults.BaseURL != "" {
-		baseURL = strings.TrimRight(g.svc.Defaults.BaseURL, "/")
-	}
-
-	g.emitln("// NewClient creates a new %s client.", svcName)
-	g.emitln("func NewClient(token string, opts ...Option) *Client {")
-	g.emitln("\tc := &Client{")
-	g.emitln("\t\tbaseURL: %q,", baseURL)
-	g.emitln("\t\ttoken:   token,")
-	g.emitln("\t\theaders: make(map[string]string),")
-	g.emitln("\t\thttp:    http.DefaultClient,")
-	g.emitln("\t}")
-	g.emitln("\tfor _, opt := range opts {")
-	g.emitln("\t\topt(c)")
-	g.emitln("\t}")
-	// Initialize resources
-	for _, res := range g.svc.Resources {
-		if res == nil {
+func hasTime(svc *contract.Service) bool {
+	for _, t := range svc.Types {
+		if t == nil {
 			continue
 		}
-		resName := toGoName(res.Name)
-		g.emitln("\tc.%s = &%sResource{client: c}", resName, resName)
+		for _, f := range t.Fields {
+			if string(f.Type) == "time.Time" {
+				return true
+			}
+		}
+		if string(t.Elem) == "time.Time" {
+			return true
+		}
 	}
-	g.emitln("\treturn c")
-	g.emitln("}")
-	g.nl()
-
-	// Option type and common options
-	g.emitln("// Option configures the client.")
-	g.emitln("type Option func(*Client)")
-	g.nl()
-
-	g.emitln("// WithBaseURL sets a custom base URL.")
-	g.emitln("func WithBaseURL(url string) Option {")
-	g.emitln("\treturn func(c *Client) { c.baseURL = strings.TrimRight(url, \"/\") }")
-	g.emitln("}")
-	g.nl()
-
-	g.emitln("// WithHTTPClient sets a custom HTTP client.")
-	g.emitln("func WithHTTPClient(h *http.Client) Option {")
-	g.emitln("\treturn func(c *Client) { c.http = h }")
-	g.emitln("}")
-	g.nl()
-
-	g.emitln("// WithHeader adds a custom header to all requests.")
-	g.emitln("func WithHeader(key, value string) Option {")
-	g.emitln("\treturn func(c *Client) { c.headers[key] = value }")
-	g.emitln("}")
-	g.nl()
+	return false
 }
 
-func (g *generator) emitResources() {
-	if len(g.svc.Resources) == 0 {
-		return
-	}
-
-	g.emitln("// ────────────────────────────────────────────────────────────")
-	g.emitln("// Resources")
-	g.emitln("// ────────────────────────────────────────────────────────────")
-	g.nl()
-
-	for _, res := range g.svc.Resources {
-		if res == nil {
-			continue
-		}
-		g.emitResource(res)
-	}
-}
-
-func (g *generator) emitResource(res *contract.Resource) {
-	resName := toGoName(res.Name)
-
-	// Resource struct
-	if res.Description != "" {
-		g.emitln("// %sResource %s", resName, res.Description)
-	} else {
-		g.emitln("// %sResource handles %s operations.", resName, res.Name)
-	}
-	g.emitln("type %sResource struct {", resName)
-	g.emitln("\tclient *Client")
-	g.emitln("}")
-	g.nl()
-
-	// Methods
-	for _, m := range res.Methods {
-		if m == nil {
-			continue
-		}
-		g.emitMethod(res, m)
-	}
-}
-
-func (g *generator) emitMethod(res *contract.Resource, m *contract.Method) {
-	resName := toGoName(res.Name)
-	methodName := toGoName(m.Name)
-
-	// Determine HTTP binding
-	httpMethod := "POST"
-	httpPath := "/" + res.Name
-	if m.HTTP != nil {
-		if m.HTTP.Method != "" {
-			httpMethod = strings.ToUpper(m.HTTP.Method)
-		}
-		if m.HTTP.Path != "" {
-			httpPath = m.HTTP.Path
-		}
-	}
-
-	// Build signature
-	hasInput := m.Input != ""
-	hasOutput := m.Output != ""
-	isStreaming := m.Stream != nil
-
-	// Comment
-	if m.Description != "" {
-		g.emitln("// %s %s", methodName, m.Description)
-	}
-
-	if isStreaming {
-		// Streaming method - inline the stream setup
-		streamType := string(m.Stream.Item)
-		if hasInput {
-			g.emitln("func (r *%sResource) %s(ctx context.Context, in *%s) *EventStream[%s] {",
-				resName, methodName, m.Input, streamType)
-		} else {
-			g.emitln("func (r *%sResource) %s(ctx context.Context) *EventStream[%s] {",
-				resName, methodName, streamType)
-		}
-		g.emitln("\tparse := func(data []byte) (%s, error) {", streamType)
-		g.emitln("\t\tvar v %s", streamType)
-		g.emitln("\t\terr := json.Unmarshal(data, &v)")
-		g.emitln("\t\treturn v, err")
-		g.emitln("\t}")
-		g.nl()
-		g.emitln("\ts := &EventStream[%s]{parse: parse}", streamType)
-		g.emitln("\tu := r.client.baseURL + %q", httpPath)
-		g.nl()
-		g.emitln("\tvar body io.Reader")
-		if hasInput {
-			g.emitln("\tif in != nil {")
-			g.emitln("\t\tb, err := json.Marshal(in)")
-			g.emitln("\t\tif err != nil {")
-			g.emitln("\t\t\ts.err = err")
-			g.emitln("\t\t\treturn s")
-			g.emitln("\t\t}")
-			g.emitln("\t\tbody = bytes.NewReader(b)")
-			g.emitln("\t}")
-		}
-		g.nl()
-		g.emitln("\treq, err := http.NewRequestWithContext(ctx, %q, u, body)", httpMethod)
-		g.emitln("\tif err != nil {")
-		g.emitln("\t\ts.err = err")
-		g.emitln("\t\treturn s")
-		g.emitln("\t}")
-		g.nl()
-		g.emitln("\treq.Header.Set(\"Content-Type\", \"application/json\")")
-		g.emitln("\treq.Header.Set(\"Accept\", \"text/event-stream\")")
-		g.emitln("\tif r.client.token != \"\" {")
-		g.emitln("\t\treq.Header.Set(\"Authorization\", \"Bearer \"+r.client.token)")
-		g.emitln("\t}")
-		g.emitln("\tfor k, v := range r.client.headers {")
-		g.emitln("\t\treq.Header.Set(k, v)")
-		g.emitln("\t}")
-		g.nl()
-		g.emitln("\tresp, err := r.client.http.Do(req)")
-		g.emitln("\tif err != nil {")
-		g.emitln("\t\ts.err = err")
-		g.emitln("\t\treturn s")
-		g.emitln("\t}")
-		g.nl()
-		g.emitln("\tif resp.StatusCode >= 400 {")
-		g.emitln("\t\ts.err = decodeError(resp)")
-		g.emitln("\t\tresp.Body.Close()")
-		g.emitln("\t\treturn s")
-		g.emitln("\t}")
-		g.nl()
-		g.emitln("\ts.resp = resp")
-		g.emitln("\ts.scanner = bufio.NewScanner(resp.Body)")
-		g.emitln("\treturn s")
-		g.emitln("}")
-	} else {
-		// Regular method
-		switch {
-		case !hasInput && !hasOutput:
-			g.emitln("func (r *%sResource) %s(ctx context.Context) error {",
-				resName, methodName)
-			g.emitln("\treturn r.client.do(ctx, %q, %q, nil, nil)", httpMethod, httpPath)
-			g.emitln("}")
-		case !hasInput && hasOutput:
-			g.emitln("func (r *%sResource) %s(ctx context.Context) (*%s, error) {",
-				resName, methodName, m.Output)
-			g.emitln("\tvar out %s", m.Output)
-			g.emitln("\terr := r.client.do(ctx, %q, %q, nil, &out)", httpMethod, httpPath)
-			g.emitln("\tif err != nil {")
-			g.emitln("\t\treturn nil, err")
-			g.emitln("\t}")
-			g.emitln("\treturn &out, nil")
-			g.emitln("}")
-		case hasInput && !hasOutput:
-			g.emitln("func (r *%sResource) %s(ctx context.Context, in *%s) error {",
-				resName, methodName, m.Input)
-			g.emitln("\treturn r.client.do(ctx, %q, %q, in, nil)", httpMethod, httpPath)
-			g.emitln("}")
-		case hasInput && hasOutput:
-			g.emitln("func (r *%sResource) %s(ctx context.Context, in *%s) (*%s, error) {",
-				resName, methodName, m.Input, m.Output)
-			g.emitln("\tvar out %s", m.Output)
-			g.emitln("\terr := r.client.do(ctx, %q, %q, in, &out)", httpMethod, httpPath)
-			g.emitln("\tif err != nil {")
-			g.emitln("\t\treturn nil, err")
-			g.emitln("\t}")
-			g.emitln("\treturn &out, nil")
-			g.emitln("}")
-		}
-	}
-	g.nl()
-}
-
-func (g *generator) emitStreaming() {
-	g.emitln("// ────────────────────────────────────────────────────────────")
-	g.emitln("// Streaming")
-	g.emitln("// ────────────────────────────────────────────────────────────")
-	g.nl()
-
-	g.emitln("// EventStream reads server-sent events.")
-	g.emitln("type EventStream[T any] struct {")
-	g.emitln("\tresp    *http.Response")
-	g.emitln("\tscanner *bufio.Scanner")
-	g.emitln("\tparse   func([]byte) (T, error)")
-	g.emitln("\tcurrent T")
-	g.emitln("\terr     error")
-	g.emitln("}")
-	g.nl()
-
-	g.emitln("// Next advances to the next event. Returns false when done or on error.")
-	g.emitln("func (s *EventStream[T]) Next() bool {")
-	g.emitln("\tif s.err != nil || s.scanner == nil {")
-	g.emitln("\t\treturn false")
-	g.emitln("\t}")
-	g.emitln("\tfor s.scanner.Scan() {")
-	g.emitln("\t\tline := s.scanner.Text()")
-	g.emitln("\t\tif !strings.HasPrefix(line, \"data: \") {")
-	g.emitln("\t\t\tcontinue")
-	g.emitln("\t\t}")
-	g.emitln("\t\tdata := strings.TrimPrefix(line, \"data: \")")
-	g.emitln("\t\tif data == \"[DONE]\" {")
-	g.emitln("\t\t\treturn false")
-	g.emitln("\t\t}")
-	g.emitln("\t\ts.current, s.err = s.parse([]byte(data))")
-	g.emitln("\t\tif s.err != nil {")
-	g.emitln("\t\t\treturn false")
-	g.emitln("\t\t}")
-	g.emitln("\t\treturn true")
-	g.emitln("\t}")
-	g.emitln("\ts.err = s.scanner.Err()")
-	g.emitln("\treturn false")
-	g.emitln("}")
-	g.nl()
-
-	g.emitln("// Event returns the current event. Call after Next returns true.")
-	g.emitln("func (s *EventStream[T]) Event() T {")
-	g.emitln("\treturn s.current")
-	g.emitln("}")
-	g.nl()
-
-	g.emitln("// Err returns any error that occurred during streaming.")
-	g.emitln("func (s *EventStream[T]) Err() error {")
-	g.emitln("\treturn s.err")
-	g.emitln("}")
-	g.nl()
-
-	g.emitln("// Close closes the underlying connection.")
-	g.emitln("func (s *EventStream[T]) Close() error {")
-	g.emitln("\tif s.resp != nil && s.resp.Body != nil {")
-	g.emitln("\t\treturn s.resp.Body.Close()")
-	g.emitln("\t}")
-	g.emitln("\treturn nil")
-	g.emitln("}")
-	g.nl()
-}
-
-func (g *generator) emitHelpers() {
-	g.emitln("// ────────────────────────────────────────────────────────────")
-	g.emitln("// Internal helpers")
-	g.emitln("// ────────────────────────────────────────────────────────────")
-	g.nl()
-
-	// Error type
-	g.emitln("// Error represents an API error response.")
-	g.emitln("type Error struct {")
-	g.emitln("\tStatusCode int    `json:\"-\"`")
-	g.emitln("\tCode       string `json:\"code,omitempty\"`")
-	g.emitln("\tMessage    string `json:\"message\"`")
-	g.emitln("}")
-	g.nl()
-
-	g.emitln("func (e *Error) Error() string {")
-	g.emitln("\tif e.Code != \"\" {")
-	g.emitln("\t\treturn fmt.Sprintf(\"%%s: %%s\", e.Code, e.Message)")
-	g.emitln("\t}")
-	g.emitln("\treturn e.Message")
-	g.emitln("}")
-	g.nl()
-
-	// do method
-	g.emitln("func (c *Client) do(ctx context.Context, method, path string, in, out any) error {")
-	g.emitln("\tu := c.baseURL + path")
-	g.nl()
-	g.emitln("\tvar body io.Reader")
-	g.emitln("\tif method != \"GET\" && in != nil {")
-	g.emitln("\t\tb, err := json.Marshal(in)")
-	g.emitln("\t\tif err != nil {")
-	g.emitln("\t\t\treturn err")
-	g.emitln("\t\t}")
-	g.emitln("\t\tbody = bytes.NewReader(b)")
-	g.emitln("\t}")
-	g.nl()
-	g.emitln("\treq, err := http.NewRequestWithContext(ctx, method, u, body)")
-	g.emitln("\tif err != nil {")
-	g.emitln("\t\treturn err")
-	g.emitln("\t}")
-	g.nl()
-	g.emitln("\treq.Header.Set(\"Content-Type\", \"application/json\")")
-	g.emitln("\tif c.token != \"\" {")
-	g.emitln("\t\treq.Header.Set(\"Authorization\", \"Bearer \"+c.token)")
-	g.emitln("\t}")
-	g.emitln("\tfor k, v := range c.headers {")
-	g.emitln("\t\treq.Header.Set(k, v)")
-	g.emitln("\t}")
-	g.nl()
-	g.emitln("\tresp, err := c.http.Do(req)")
-	g.emitln("\tif err != nil {")
-	g.emitln("\t\treturn err")
-	g.emitln("\t}")
-	g.emitln("\tdefer resp.Body.Close()")
-	g.nl()
-	g.emitln("\tif resp.StatusCode >= 400 {")
-	g.emitln("\t\treturn decodeError(resp)")
-	g.emitln("\t}")
-	g.nl()
-	g.emitln("\tif out == nil || resp.StatusCode == http.StatusNoContent {")
-	g.emitln("\t\treturn nil")
-	g.emitln("\t}")
-	g.nl()
-	g.emitln("\treturn json.NewDecoder(resp.Body).Decode(out)")
-	g.emitln("}")
-	g.nl()
-
-	// decodeError helper
-	g.emitln("func decodeError(resp *http.Response) error {")
-	g.emitln("\tvar e Error")
-	g.emitln("\te.StatusCode = resp.StatusCode")
-	g.emitln("\tif err := json.NewDecoder(resp.Body).Decode(&e); err != nil {")
-	g.emitln("\t\te.Message = fmt.Sprintf(\"HTTP %%d\", resp.StatusCode)")
-	g.emitln("\t}")
-	g.emitln("\tif e.Message == \"\" {")
-	g.emitln("\t\te.Message = fmt.Sprintf(\"HTTP %%d\", resp.StatusCode)")
-	g.emitln("\t}")
-	g.emitln("\treturn &e")
-	g.emitln("}")
-	g.nl()
-
-	// Suppress unused import warnings
-	g.emitln("var _ = strings.TrimSpace")
-}
-
-// goType converts a contract.TypeRef to a Go type string.
-func (g *generator) goType(ref contract.TypeRef, optional, nullable bool) string {
+func goType(typeByName map[string]*contract.Type, ref contract.TypeRef, optional, nullable bool) string {
 	r := strings.TrimSpace(string(ref))
 	if r == "" {
-		return "any"
+		return "json.RawMessage"
 	}
 
-	base := g.baseGoType(r)
+	base := baseGoType(typeByName, r)
 
-	// Apply pointer for optional/nullable
+	// Pointerize scalars for optional/nullable.
+	// Avoid pointerizing slices/maps/raw.
 	if optional || nullable {
-		// Don't double-pointer slices, maps, or any
 		if !strings.HasPrefix(base, "[]") &&
 			!strings.HasPrefix(base, "map[") &&
-			base != "any" &&
-			base != "json.RawMessage" {
+			base != "json.RawMessage" &&
+			base != "interface{}" &&
+			base != "any" {
 			return "*" + base
 		}
 	}
 	return base
 }
 
-func (g *generator) baseGoType(r string) string {
-	// Check if it's a declared type
-	if _, ok := g.types[r]; ok {
+func baseGoType(typeByName map[string]*contract.Type, r string) string {
+	if _, ok := typeByName[r]; ok {
 		return r
 	}
 
-	// Handle collection syntax
-	if strings.HasPrefix(r, "[]") {
-		elem := strings.TrimPrefix(r, "[]")
-		return "[]" + g.baseGoType(elem)
-	}
-	if strings.HasPrefix(r, "map[string]") {
-		elem := strings.TrimPrefix(r, "map[string]")
-		return "map[string]" + g.baseGoType(elem)
-	}
-
-	// Primitives and externals
 	switch r {
 	case "string":
 		return "string"
@@ -771,61 +458,537 @@ func (g *generator) baseGoType(r string) string {
 		return "json.RawMessage"
 	case "any":
 		return "any"
+	case "interface{}":
+		return "interface{}"
 	}
 
-	// Unknown types become any
-	return "any"
+	// No pointer syntax in schema; collections are declared types (KindSlice/KindMap).
+	// If a user still uses inline syntax in TypeRef, support it defensively.
+	if strings.HasPrefix(r, "[]") {
+		elem := strings.TrimPrefix(r, "[]")
+		return "[]" + baseGoType(typeByName, strings.TrimSpace(elem))
+	}
+	if strings.HasPrefix(r, "map[string]") {
+		elem := strings.TrimPrefix(r, "map[string]")
+		return "map[string]" + baseGoType(typeByName, strings.TrimSpace(elem))
+	}
+
+	return "json.RawMessage"
 }
 
-// toGoName converts snake_case or kebab-case to PascalCase.
+// toGoName converts snake_case or kebab-case or dotted names to PascalCase.
 func toGoName(s string) string {
 	if s == "" {
 		return ""
 	}
 
-	var result strings.Builder
-	capitalizeNext := true
+	var b strings.Builder
+	capNext := true
 
 	for _, r := range s {
 		if r == '_' || r == '-' || r == '.' {
-			capitalizeNext = true
+			capNext = true
 			continue
 		}
-		if capitalizeNext {
-			result.WriteRune(unicode.ToUpper(r))
-			capitalizeNext = false
-		} else {
-			result.WriteRune(r)
+		if capNext {
+			b.WriteRune(unicode.ToUpper(r))
+			capNext = false
+			continue
 		}
+		b.WriteRune(r)
 	}
 
-	// Handle common acronyms
-	out := result.String()
+	out := b.String()
 	out = strings.ReplaceAll(out, "Id", "ID")
 	out = strings.ReplaceAll(out, "Url", "URL")
 	out = strings.ReplaceAll(out, "Http", "HTTP")
 	out = strings.ReplaceAll(out, "Api", "API")
 	out = strings.ReplaceAll(out, "Sse", "SSE")
 	out = strings.ReplaceAll(out, "Json", "JSON")
-
 	return out
 }
 
-// variantFieldName creates a Go field name for a union variant.
 func variantFieldName(v contract.Variant) string {
-	// Use the type name, but strip common prefixes that match the parent
-	name := string(v.Type)
-	// Convert to Go name
-	return toGoName(name)
+	return toGoName(string(v.Type))
 }
 
 // sanitizeIdent removes non-identifier characters.
 func sanitizeIdent(s string) string {
-	var result strings.Builder
+	var b strings.Builder
 	for _, r := range s {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' {
-			result.WriteRune(r)
+			b.WriteRune(r)
 		}
 	}
-	return result.String()
+	return b.String()
 }
+
+func strconvQuote(s string) string {
+	return fmt.Sprintf("%q", s)
+}
+
+const goTemplate = `// Code generated by sdkgo. DO NOT EDIT.
+
+package {{.Package}}
+
+import (
+{{- range .Imports}}
+	{{quote .}}
+{{- end}}
+)
+
+{{- if .Service.Description}}
+// {{.Service.Sanitized}} {{.Service.Description}}
+{{- end}}
+
+// Client is the {{if .Service.Sanitized}}{{.Service.Sanitized}}{{else}}API{{end}} API client.
+type Client struct {
+{{- range .Resources}}
+	{{.GoName}} *{{.GoName}}Resource
+{{- end}}
+
+	baseURL string
+	token   string
+	auth    string
+	headers map[string]string
+	http    *http.Client
+}
+
+// Option configures the client.
+type Option func(*Client)
+
+// NewClient creates a new client.
+func NewClient(token string, opts ...Option) *Client {
+	c := &Client{
+		baseURL: {{quote .Defaults.BaseURL}},
+		token:   token,
+		auth:    {{if .Defaults.Auth}}{{quote .Defaults.Auth}}{{else}}"bearer"{{end}},
+		headers: make(map[string]string),
+		http:    http.DefaultClient,
+	}
+
+{{- if .Defaults.Headers}}
+	// Defaults.Headers are recommended by the contract descriptor.
+{{- range .Defaults.Headers}}
+	c.headers[{{quote .K}}] = {{quote .V}}
+{{- end}}
+{{- end}}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+
+{{- range .Resources}}
+	c.{{.GoName}} = &{{.GoName}}Resource{client: c}
+{{- end}}
+
+	return c
+}
+
+// WithBaseURL sets a custom base URL.
+func WithBaseURL(url string) Option {
+	return func(c *Client) {
+		c.baseURL = strings.TrimRight(url, "/")
+	}
+}
+
+// WithHTTPClient sets a custom HTTP client.
+func WithHTTPClient(h *http.Client) Option {
+	return func(c *Client) { c.http = h }
+}
+
+// WithHeader adds a custom header to all requests.
+func WithHeader(key, value string) Option {
+	return func(c *Client) { c.headers[key] = value }
+}
+
+// WithAuth sets the auth hint ("bearer", "basic", "none").
+func WithAuth(auth string) Option {
+	return func(c *Client) { c.auth = auth }
+}
+
+{{- if .Types}}
+// Types
+{{- range .Types}}
+
+{{- if .Description}}
+// {{.Name}} {{.Description}}
+{{- end}}
+{{- if eq .Kind "struct"}}
+type {{.Name}} struct {
+{{- range .Fields}}
+	{{.GoName}} {{.GoType}} ` + "`" + `json:"{{.Tag}}"` + "`" + `{{- if .Const}} // always {{quote .Const}}{{else if .Enum}} // one of: {{join .Enum ", "}}{{else if .Description}} // {{.Description}}{{end}}
+{{- end}}
+}
+{{- end}}
+
+{{- if eq .Kind "slice"}}
+type {{.Name}} []{{.Elem}}
+{{- end}}
+
+{{- if eq .Kind "map"}}
+type {{.Name}} map[string]{{.Elem}}
+{{- end}}
+
+{{- if eq .Kind "union"}}
+{{- if .Tag}}
+// {{.Name}} is a discriminated union (tag: {{quote .Tag}}).
+{{- else}}
+// {{.Name}} is a discriminated union.
+{{- end}}
+type {{.Name}} struct {
+{{- range .Variants}}
+	{{.FieldName}} *{{.Type}} ` + "`" + `json:"-"` + "`" + `
+{{- end}}
+}
+
+func (u *{{.Name}}) MarshalJSON() ([]byte, error) {
+{{- range .Variants}}
+	if u.{{.FieldName}} != nil {
+		return json.Marshal(u.{{.FieldName}})
+	}
+{{- end}}
+	return []byte("null"), nil
+}
+
+func (u *{{.Name}}) UnmarshalJSON(data []byte) error {
+{{- if .Tag}}
+	var disc struct {
+		{{goName .Tag}} string ` + "`" + `json:"{{.Tag}}"` + "`" + `
+	}
+	if err := json.Unmarshal(data, &disc); err != nil {
+		return err
+	}
+	switch disc.{{goName .Tag}} {
+{{- range .Variants}}
+	case {{quote .Value}}:
+		u.{{.FieldName}} = new({{.Type}})
+		return json.Unmarshal(data, u.{{.FieldName}})
+{{- end}}
+	}
+	return fmt.Errorf("unknown {{.Name}} {{.Tag}}: %q", disc.{{goName .Tag}})
+{{- else}}
+	return fmt.Errorf("union {{.Name}} missing discriminator tag")
+{{- end}}
+}
+{{- end}}
+
+{{- end}}
+{{- end}}
+
+// Resources
+{{- range .Resources}}
+
+{{- if .Description}}
+// {{.GoName}}Resource {{.Description}}
+{{- else}}
+// {{.GoName}}Resource handles {{.Name}} operations.
+{{- end}}
+type {{.GoName}}Resource struct {
+	client *Client
+}
+
+{{- range .Methods}}
+
+{{- if .Description}}
+// {{.GoName}} {{.Description}}
+{{- end}}
+{{- if .IsStreaming}}
+{{- if .StreamIsSSE}}
+func (r *{{$.Resources | index 0 | printf "%T" | printf ""}}{{end}}
+{{- end}}
+{{- end}}
+{{- end}}
+{{- end}}
+
+{{/* The template above needs method generation; do it via a dedicated block to keep it readable. */}}
+{{- range .Resources}}
+{{- $res := .}}
+{{- range .Methods}}
+{{- $m := .}}
+
+{{- if $m.IsStreaming}}
+{{- if $m.StreamIsSSE}}
+func (r *{{$res.GoName}}Resource) {{$m.GoName}}(ctx context.Context{{if $m.HasInput}}, in *{{$m.InputType}}{{end}}) *EventStream[{{$m.StreamItemType}}] {
+	parse := func(data []byte) ({{$m.StreamItemType}}, error) {
+		var v {{$m.StreamItemType}}
+		err := json.Unmarshal(data, &v)
+		return v, err
+	}
+
+	s := &EventStream[{{$m.StreamItemType}}]{parse: parse}
+	u := r.client.baseURL + {{quote $m.HTTPPath}}
+
+	var body io.Reader
+{{- if $m.HasInput}}
+	if in != nil {
+		b, err := json.Marshal(in)
+		if err != nil {
+			s.err = err
+			return s
+		}
+		body = bytes.NewReader(b)
+	}
+{{- end}}
+
+	req, err := http.NewRequestWithContext(ctx, {{quote $m.HTTPMethod}}, u, body)
+	if err != nil {
+		s.err = err
+		return s
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+
+	applyAuth(req, r.client.auth, r.client.token)
+	for k, v := range r.client.headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := r.client.http.Do(req)
+	if err != nil {
+		s.err = err
+		return s
+	}
+
+	if resp.StatusCode >= 400 {
+		s.err = decodeError(resp)
+		_ = resp.Body.Close()
+		return s
+	}
+
+	s.resp = resp
+	s.scanner = bufio.NewScanner(resp.Body)
+	// Increase buffer for large events.
+	s.scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	return s
+}
+{{- else}}
+func (r *{{$res.GoName}}Resource) {{$m.GoName}}(ctx context.Context{{if $m.HasInput}}, in *{{$m.InputType}}{{end}}) error {
+	return fmt.Errorf("stream mode %q is not supported by this Go SDK generator", {{quote $m.StreamMode}})
+}
+{{- end}}
+
+{{- else}}
+{{- if and (not $m.HasInput) (not $m.HasOutput)}}
+func (r *{{$res.GoName}}Resource) {{$m.GoName}}(ctx context.Context) error {
+	return r.client.do(ctx, {{quote $m.HTTPMethod}}, {{quote $m.HTTPPath}}, nil, nil)
+}
+{{- end}}
+
+{{- if and (not $m.HasInput) $m.HasOutput}}
+func (r *{{$res.GoName}}Resource) {{$m.GoName}}(ctx context.Context) (*{{$m.OutputType}}, error) {
+	var out {{$m.OutputType}}
+	err := r.client.do(ctx, {{quote $m.HTTPMethod}}, {{quote $m.HTTPPath}}, nil, &out)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+{{- end}}
+
+{{- if and $m.HasInput (not $m.HasOutput)}}
+func (r *{{$res.GoName}}Resource) {{$m.GoName}}(ctx context.Context, in *{{$m.InputType}}) error {
+	return r.client.do(ctx, {{quote $m.HTTPMethod}}, {{quote $m.HTTPPath}}, in, nil)
+}
+{{- end}}
+
+{{- if and $m.HasInput $m.HasOutput}}
+func (r *{{$res.GoName}}Resource) {{$m.GoName}}(ctx context.Context, in *{{$m.InputType}}) (*{{$m.OutputType}}, error) {
+	var out {{$m.OutputType}}
+	err := r.client.do(ctx, {{quote $m.HTTPMethod}}, {{quote $m.HTTPPath}}, in, &out)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+{{- end}}
+{{- end}}
+
+{{- end}}
+{{- end}}
+
+{{- if .HasStreaming}}
+// Streaming
+
+// EventStream reads server-sent events.
+type EventStream[T any] struct {
+	resp    *http.Response
+	scanner *bufio.Scanner
+	parse   func([]byte) (T, error)
+
+	current T
+	err     error
+
+	buf strings.Builder
+}
+
+// Next advances to the next event. Returns false when done or on error.
+func (s *EventStream[T]) Next() bool {
+	if s.err != nil || s.scanner == nil {
+		return false
+	}
+
+	s.buf.Reset()
+
+	for s.scanner.Scan() {
+		line := s.scanner.Text()
+
+		// Empty line ends an event.
+		if line == "" {
+			data := strings.TrimSpace(s.buf.String())
+			if data == "" {
+				continue
+			}
+			if data == "[DONE]" {
+				return false
+			}
+			s.current, s.err = s.parse([]byte(data))
+			if s.err != nil {
+				return false
+			}
+			return true
+		}
+
+		// "data:" (with optional space) carries payload lines.
+		if strings.HasPrefix(line, "data:") {
+			data := strings.TrimPrefix(line, "data:")
+			if strings.HasPrefix(data, " ") {
+				data = strings.TrimPrefix(data, " ")
+			}
+			// Accumulate multi-line payloads.
+			if s.buf.Len() > 0 {
+				s.buf.WriteByte('\n')
+			}
+			s.buf.WriteString(data)
+			continue
+		}
+	}
+
+	// Scanner ended. If there is a buffered event, parse it once.
+	if err := s.scanner.Err(); err != nil {
+		s.err = err
+		return false
+	}
+
+	data := strings.TrimSpace(s.buf.String())
+	if data == "" || data == "[DONE]" {
+		return false
+	}
+
+	s.current, s.err = s.parse([]byte(data))
+	if s.err != nil {
+		return false
+	}
+	return true
+}
+
+// Event returns the current event. Call after Next returns true.
+func (s *EventStream[T]) Event() T { return s.current }
+
+// Err returns any error that occurred during streaming.
+func (s *EventStream[T]) Err() error { return s.err }
+
+// Close closes the underlying connection.
+func (s *EventStream[T]) Close() error {
+	if s.resp != nil && s.resp.Body != nil {
+		return s.resp.Body.Close()
+	}
+	return nil
+}
+{{- end}}
+
+// Errors and transport
+
+// Error represents an API error response.
+type Error struct {
+	StatusCode int    ` + "`" + `json:"-"` + "`" + `
+	Code       string ` + "`" + `json:"code,omitempty"` + "`" + `
+	Message    string ` + "`" + `json:"message"` + "`" + `
+}
+
+func (e *Error) Error() string {
+	if e.Code != "" {
+		return fmt.Sprintf("%s: %s", e.Code, e.Message)
+	}
+	return e.Message
+}
+
+func (c *Client) do(ctx context.Context, method, path string, in, out any) error {
+	u := c.baseURL + path
+
+	var body io.Reader
+	if method != "GET" && in != nil {
+		b, err := json.Marshal(in)
+		if err != nil {
+			return err
+		}
+		body = bytes.NewReader(b)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, u, body)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	applyAuth(req, c.auth, c.token)
+
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return decodeError(resp)
+	}
+
+	if out == nil || resp.StatusCode == http.StatusNoContent {
+		return nil
+	}
+
+	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func applyAuth(req *http.Request, auth, token string) {
+	if token == "" {
+		return
+	}
+	a := strings.ToLower(strings.TrimSpace(auth))
+	if a == "" {
+		a = "bearer"
+	}
+	switch a {
+	case "none":
+		return
+	case "basic":
+		req.Header.Set("Authorization", "Basic "+token)
+	default:
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+}
+
+func decodeError(resp *http.Response) error {
+	var e Error
+	e.StatusCode = resp.StatusCode
+
+	// Best-effort decode.
+	if err := json.NewDecoder(resp.Body).Decode(&e); err != nil {
+		e.Message = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		return &e
+	}
+	if e.Message == "" {
+		e.Message = fmt.Sprintf("HTTP %d", resp.StatusCode)
+	}
+	return &e
+}
+
+// Keep strings imported even if a build tag strips streaming.
+var _ = strings.TrimSpace
+`
