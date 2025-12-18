@@ -15,7 +15,7 @@ import (
 	"github.com/go-mizu/mizu/contract/v2/sdk"
 )
 
-// IMPORTANT: your repo currently has only templates/*.tmpl (no subfolders).
+// IMPORTANT: repo currently has only templates/*.tmpl (no subfolders).
 //
 //go:embed templates/*.tmpl
 var templateFS embed.FS
@@ -59,7 +59,11 @@ func Generate(svc *contract.Service, cfg *Config) ([]*sdk.File, error) {
 		return nil, fmt.Errorf("sdkpy: parse templates: %w", err)
 	}
 
-	// Match the templates you actually have in ./templates
+	// Provide a tiny inline template for __init__.py to avoid adding another file on disk.
+	if _, err := tpl.New("__init__.py.inline.tmpl").Parse(initTemplate); err != nil {
+		return nil, fmt.Errorf("sdkpy: parse inline __init__.py template: %w", err)
+	}
+
 	outPlan := []struct {
 		Path string
 		Tpl  string
@@ -67,21 +71,12 @@ func Generate(svc *contract.Service, cfg *Config) ([]*sdk.File, error) {
 		{Path: "pyproject.toml", Tpl: "pyproject.toml.tmpl"},
 		{Path: "README.md", Tpl: "README.md.tmpl"},
 
-		// Package content is generated via the templates. Keep filenames stable.
 		{Path: "src/" + m.Package + "/_client.py", Tpl: "_client.py.tmpl"},
 		{Path: "src/" + m.Package + "/_types.py", Tpl: "_types.py.tmpl"},
 		{Path: "src/" + m.Package + "/_streaming.py", Tpl: "_streaming.py.tmpl"},
 		{Path: "src/" + m.Package + "/_resource.py", Tpl: "_resource.py.tmpl"},
 
-		// A minimal public surface. If your templates already emit __init__.py elsewhere,
-		// keep only one source of truth. This generator emits it here.
 		{Path: "src/" + m.Package + "/__init__.py", Tpl: "__init__.py.inline.tmpl"},
-	}
-
-	// Provide a tiny inline template for __init__.py to avoid adding another file on disk.
-	// This is still rendered through text/template for consistency.
-	if _, err := tpl.New("__init__.py.inline.tmpl").Parse(initTemplate); err != nil {
-		return nil, fmt.Errorf("sdkpy: parse inline __init__.py template: %w", err)
 	}
 
 	var files []*sdk.File

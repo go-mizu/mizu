@@ -334,7 +334,6 @@ func writeGeneratedPySDK(t *testing.T, svc *contract.Service) string {
 
 	cfg := &sdkpy.Config{
 		Package: "openai",
-		Module:  "openai",
 		Version: "0.0.0-test",
 	}
 	files, err := sdkpy.Generate(svc, cfg)
@@ -403,8 +402,6 @@ func requireUV(t *testing.T) {
 func ensurePythonViaUV(t *testing.T) {
 	t.Helper()
 
-	// This will cause uv to provision a Python if needed (depending on uv config),
-	// and it validates that "uv run python" is functional.
 	cmd := exec.Command("uv", "run", "python", "-c", "import sys; print(sys.version.split()[0])")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
