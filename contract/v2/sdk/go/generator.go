@@ -36,23 +36,18 @@ func Generate(svc *contract.Service, cfg *Config) ([]*sdk.File, error) {
 		return nil, err
 	}
 
-	var out bytes.Buffer
 	tpl, err := template.New("sdkgo").
 		Funcs(template.FuncMap{
-			"goName":       toGoName,
-			"sanitize":     sanitizeIdent,
-			"quote":        strconvQuote,
-			"lower":        strings.ToLower,
-			"hasPrefix":    strings.HasPrefix,
-			"trimSpace":    strings.TrimSpace,
-			"join":         strings.Join,
-			"variantField": variantFieldName,
+			"quote":  quote,
+			"goName": toGoName,
+			"join":   strings.Join,
 		}).
 		Parse(goTemplate)
 	if err != nil {
 		return nil, fmt.Errorf("sdkgo: parse template: %w", err)
 	}
 
+	var out bytes.Buffer
 	if err := tpl.Execute(&out, m); err != nil {
 		return nil, fmt.Errorf("sdkgo: execute template: %w", err)
 	}
@@ -63,15 +58,13 @@ func Generate(svc *contract.Service, cfg *Config) ([]*sdk.File, error) {
 	}
 
 	return []*sdk.File{
-		{
-			Path:    filename,
-			Content: out.String(),
-		},
+		{Path: filename, Content: out.String()},
 	}, nil
 }
 
 type model struct {
 	Package string
+
 	Service struct {
 		Name        string
 		Sanitized   string
@@ -154,15 +147,11 @@ type methodModel struct {
 	StreamMode     string
 	StreamIsSSE    bool
 	StreamItemType string
-
-	// Future hooks
-	HasBidirectional bool
 }
 
 func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 	m := &model{}
 
-	// Package
 	if cfg != nil && cfg.Package != "" {
 		m.Package = cfg.Package
 	} else {
@@ -173,15 +162,14 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 		m.Package = p
 	}
 
-	// Service info
 	m.Service.Name = svc.Name
 	m.Service.Sanitized = sanitizeIdent(svc.Name)
 	m.Service.Description = svc.Description
 
-	// Defaults
 	if svc.Defaults != nil {
 		m.Defaults.BaseURL = strings.TrimRight(svc.Defaults.BaseURL, "/")
 		m.Defaults.Auth = strings.TrimSpace(svc.Defaults.Auth)
+
 		if len(svc.Defaults.Headers) > 0 {
 			keys := make([]string, 0, len(svc.Defaults.Headers))
 			for k := range svc.Defaults.Headers {
@@ -194,7 +182,6 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 		}
 	}
 
-	// Type lookup
 	typeByName := map[string]*contract.Type{}
 	for _, t := range svc.Types {
 		if t != nil && t.Name != "" {
@@ -202,11 +189,10 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 		}
 	}
 
-	// Determine HasStreaming / HasTime
 	m.HasStreaming = hasStreaming(svc)
 	m.HasTime = hasTime(svc)
 
-	// Types
+	// Types in stable order
 	typeNames := make([]string, 0, len(typeByName))
 	for name := range typeByName {
 		typeNames = append(typeNames, name)
@@ -218,6 +204,7 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 		if t == nil {
 			continue
 		}
+
 		tm := typeModel{
 			Name:        t.Name,
 			Description: t.Description,
@@ -229,7 +216,6 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 		switch t.Kind {
 		case contract.KindStruct:
 			for _, f := range t.Fields {
-				ft := goType(typeByName, f.Type, f.Optional, f.Nullable)
 				tag := f.Name
 				if f.Optional {
 					tag += ",omitempty"
@@ -238,7 +224,7 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 					Name:        f.Name,
 					GoName:      toGoName(f.Name),
 					Description: f.Description,
-					GoType:      ft,
+					GoType:      goType(typeByName, f.Type, f.Optional, f.Nullable),
 					Tag:         tag,
 					Optional:    f.Optional,
 					Nullable:    f.Nullable,
@@ -246,28 +232,28 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 					Const:       f.Const,
 				})
 			}
+
 		case contract.KindSlice:
 			tm.Elem = goType(typeByName, t.Elem, false, false)
+
 		case contract.KindMap:
 			tm.Elem = goType(typeByName, t.Elem, false, false)
+
 		case contract.KindUnion:
 			for _, v := range t.Variants {
-				vm := variantModel{
+				tm.Variants = append(tm.Variants, variantModel{
 					Value:       v.Value,
 					Type:        string(v.Type),
 					Description: v.Description,
-					FieldName:   variantFieldName(v),
-				}
-				tm.Variants = append(tm.Variants, vm)
+					FieldName:   toGoName(string(v.Type)),
+				})
 			}
-		default:
-			// ignore
 		}
 
 		m.Types = append(m.Types, tm)
 	}
 
-	// Resources and methods
+	// Resources
 	for _, r := range svc.Resources {
 		if r == nil {
 			continue
@@ -301,18 +287,14 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 			streamMode := ""
 			streamIsSSE := false
 			streamItem := ""
-			hasBidi := false
 
 			if isStreaming {
 				streamMode = strings.TrimSpace(mm.Stream.Mode)
-				if streamMode == "" || strings.EqualFold(streamMode, "sse") {
-					streamIsSSE = true
-				}
+				streamIsSSE = streamMode == "" || strings.EqualFold(streamMode, "sse")
 				streamItem = strings.TrimSpace(string(mm.Stream.Item))
-				hasBidi = strings.TrimSpace(string(mm.Stream.InputItem)) != ""
 			}
 
-			method := methodModel{
+			rm.Methods = append(rm.Methods, methodModel{
 				Name:        mm.Name,
 				GoName:      toGoName(mm.Name),
 				Description: mm.Description,
@@ -325,21 +307,16 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 				HTTPPath:    httpPath,
 				IsStreaming: isStreaming,
 
-				StreamMode:         streamMode,
-				StreamIsSSE:        streamIsSSE,
-				StreamItemType:     streamItem,
-				HasBidirectional:   hasBidi,
-			}
-
-			rm.Methods = append(rm.Methods, method)
+				StreamMode:     streamMode,
+				StreamIsSSE:    streamIsSSE,
+				StreamItemType: streamItem,
+			})
 		}
 
 		m.Resources = append(m.Resources, rm)
 	}
 
-	// Imports
 	m.Imports = computeImports(m.HasStreaming, m.HasTime)
-
 	return m, nil
 }
 
@@ -353,14 +330,12 @@ func computeImports(hasStreaming, hasTime bool) []string {
 		"net/http",
 		"strings",
 	}
-
 	if hasStreaming {
 		imports = append(imports, "bufio")
 	}
 	if hasTime {
 		imports = append(imports, "time")
 	}
-
 	sort.Strings(imports)
 	return imports
 }
@@ -404,14 +379,12 @@ func goType(typeByName map[string]*contract.Type, ref contract.TypeRef, optional
 
 	base := baseGoType(typeByName, r)
 
-	// Pointerize scalars for optional/nullable.
-	// Avoid pointerizing slices/maps/raw.
 	if optional || nullable {
 		if !strings.HasPrefix(base, "[]") &&
 			!strings.HasPrefix(base, "map[") &&
 			base != "json.RawMessage" &&
-			base != "interface{}" &&
-			base != "any" {
+			base != "any" &&
+			base != "interface{}" {
 			return "*" + base
 		}
 	}
@@ -462,21 +435,19 @@ func baseGoType(typeByName map[string]*contract.Type, r string) string {
 		return "interface{}"
 	}
 
-	// No pointer syntax in schema; collections are declared types (KindSlice/KindMap).
-	// If a user still uses inline syntax in TypeRef, support it defensively.
+	// Defensive support for inline collection refs.
 	if strings.HasPrefix(r, "[]") {
-		elem := strings.TrimPrefix(r, "[]")
-		return "[]" + baseGoType(typeByName, strings.TrimSpace(elem))
+		elem := strings.TrimSpace(strings.TrimPrefix(r, "[]"))
+		return "[]" + baseGoType(typeByName, elem)
 	}
 	if strings.HasPrefix(r, "map[string]") {
-		elem := strings.TrimPrefix(r, "map[string]")
-		return "map[string]" + baseGoType(typeByName, strings.TrimSpace(elem))
+		elem := strings.TrimSpace(strings.TrimPrefix(r, "map[string]"))
+		return "map[string]" + baseGoType(typeByName, elem)
 	}
 
 	return "json.RawMessage"
 }
 
-// toGoName converts snake_case or kebab-case or dotted names to PascalCase.
 func toGoName(s string) string {
 	if s == "" {
 		return ""
@@ -508,11 +479,6 @@ func toGoName(s string) string {
 	return out
 }
 
-func variantFieldName(v contract.Variant) string {
-	return toGoName(string(v.Type))
-}
-
-// sanitizeIdent removes non-identifier characters.
 func sanitizeIdent(s string) string {
 	var b strings.Builder
 	for _, r := range s {
@@ -523,7 +489,7 @@ func sanitizeIdent(s string) string {
 	return b.String()
 }
 
-func strconvQuote(s string) string {
+func quote(s string) string {
 	return fmt.Sprintf("%q", s)
 }
 
@@ -568,7 +534,6 @@ func NewClient(token string, opts ...Option) *Client {
 	}
 
 {{- if .Defaults.Headers}}
-	// Defaults.Headers are recommended by the contract descriptor.
 {{- range .Defaults.Headers}}
 	c.headers[{{quote .K}}] = {{quote .V}}
 {{- end}}
@@ -688,39 +653,27 @@ type {{.GoName}}Resource struct {
 	client *Client
 }
 
+{{- $res := .}}
 {{- range .Methods}}
 
 {{- if .Description}}
 // {{.GoName}} {{.Description}}
 {{- end}}
+
 {{- if .IsStreaming}}
 {{- if .StreamIsSSE}}
-func (r *{{$.Resources | index 0 | printf "%T" | printf ""}}{{end}}
-{{- end}}
-{{- end}}
-{{- end}}
-{{- end}}
-
-{{/* The template above needs method generation; do it via a dedicated block to keep it readable. */}}
-{{- range .Resources}}
-{{- $res := .}}
-{{- range .Methods}}
-{{- $m := .}}
-
-{{- if $m.IsStreaming}}
-{{- if $m.StreamIsSSE}}
-func (r *{{$res.GoName}}Resource) {{$m.GoName}}(ctx context.Context{{if $m.HasInput}}, in *{{$m.InputType}}{{end}}) *EventStream[{{$m.StreamItemType}}] {
-	parse := func(data []byte) ({{$m.StreamItemType}}, error) {
-		var v {{$m.StreamItemType}}
+func (r *{{$res.GoName}}Resource) {{.GoName}}(ctx context.Context{{if .HasInput}}, in *{{.InputType}}{{end}}) *EventStream[{{.StreamItemType}}] {
+	parse := func(data []byte) ({{.StreamItemType}}, error) {
+		var v {{.StreamItemType}}
 		err := json.Unmarshal(data, &v)
 		return v, err
 	}
 
-	s := &EventStream[{{$m.StreamItemType}}]{parse: parse}
-	u := r.client.baseURL + {{quote $m.HTTPPath}}
+	s := &EventStream[{{.StreamItemType}}]{parse: parse}
+	u := r.client.baseURL + {{quote .HTTPPath}}
 
 	var body io.Reader
-{{- if $m.HasInput}}
+{{- if .HasInput}}
 	if in != nil {
 		b, err := json.Marshal(in)
 		if err != nil {
@@ -731,7 +684,7 @@ func (r *{{$res.GoName}}Resource) {{$m.GoName}}(ctx context.Context{{if $m.HasIn
 	}
 {{- end}}
 
-	req, err := http.NewRequestWithContext(ctx, {{quote $m.HTTPMethod}}, u, body)
+	req, err := http.NewRequestWithContext(ctx, {{quote .HTTPMethod}}, u, body)
 	if err != nil {
 		s.err = err
 		return s
@@ -759,28 +712,27 @@ func (r *{{$res.GoName}}Resource) {{$m.GoName}}(ctx context.Context{{if $m.HasIn
 
 	s.resp = resp
 	s.scanner = bufio.NewScanner(resp.Body)
-	// Increase buffer for large events.
 	s.scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	return s
 }
 {{- else}}
-func (r *{{$res.GoName}}Resource) {{$m.GoName}}(ctx context.Context{{if $m.HasInput}}, in *{{$m.InputType}}{{end}}) error {
-	return fmt.Errorf("stream mode %q is not supported by this Go SDK generator", {{quote $m.StreamMode}})
+func (r *{{$res.GoName}}Resource) {{.GoName}}(ctx context.Context{{if .HasInput}}, in *{{.InputType}}{{end}}) error {
+	return fmt.Errorf("stream mode %q is not supported by this Go SDK generator", {{quote .StreamMode}})
 }
 {{- end}}
-
 {{- else}}
-{{- if and (not $m.HasInput) (not $m.HasOutput)}}
-func (r *{{$res.GoName}}Resource) {{$m.GoName}}(ctx context.Context) error {
-	return r.client.do(ctx, {{quote $m.HTTPMethod}}, {{quote $m.HTTPPath}}, nil, nil)
+
+{{- if and (not .HasInput) (not .HasOutput)}}
+func (r *{{$res.GoName}}Resource) {{.GoName}}(ctx context.Context) error {
+	return r.client.do(ctx, {{quote .HTTPMethod}}, {{quote .HTTPPath}}, nil, nil)
 }
 {{- end}}
 
-{{- if and (not $m.HasInput) $m.HasOutput}}
-func (r *{{$res.GoName}}Resource) {{$m.GoName}}(ctx context.Context) (*{{$m.OutputType}}, error) {
-	var out {{$m.OutputType}}
-	err := r.client.do(ctx, {{quote $m.HTTPMethod}}, {{quote $m.HTTPPath}}, nil, &out)
+{{- if and (not .HasInput) (.HasOutput)}}
+func (r *{{$res.GoName}}Resource) {{.GoName}}(ctx context.Context) (*{{.OutputType}}, error) {
+	var out {{.OutputType}}
+	err := r.client.do(ctx, {{quote .HTTPMethod}}, {{quote .HTTPPath}}, nil, &out)
 	if err != nil {
 		return nil, err
 	}
@@ -788,22 +740,23 @@ func (r *{{$res.GoName}}Resource) {{$m.GoName}}(ctx context.Context) (*{{$m.Outp
 }
 {{- end}}
 
-{{- if and $m.HasInput (not $m.HasOutput)}}
-func (r *{{$res.GoName}}Resource) {{$m.GoName}}(ctx context.Context, in *{{$m.InputType}}) error {
-	return r.client.do(ctx, {{quote $m.HTTPMethod}}, {{quote $m.HTTPPath}}, in, nil)
+{{- if and (.HasInput) (not .HasOutput)}}
+func (r *{{$res.GoName}}Resource) {{.GoName}}(ctx context.Context, in *{{.InputType}}) error {
+	return r.client.do(ctx, {{quote .HTTPMethod}}, {{quote .HTTPPath}}, in, nil)
 }
 {{- end}}
 
-{{- if and $m.HasInput $m.HasOutput}}
-func (r *{{$res.GoName}}Resource) {{$m.GoName}}(ctx context.Context, in *{{$m.InputType}}) (*{{$m.OutputType}}, error) {
-	var out {{$m.OutputType}}
-	err := r.client.do(ctx, {{quote $m.HTTPMethod}}, {{quote $m.HTTPPath}}, in, &out)
+{{- if and (.HasInput) (.HasOutput)}}
+func (r *{{$res.GoName}}Resource) {{.GoName}}(ctx context.Context, in *{{.InputType}}) (*{{.OutputType}}, error) {
+	var out {{.OutputType}}
+	err := r.client.do(ctx, {{quote .HTTPMethod}}, {{quote .HTTPPath}}, in, &out)
 	if err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 {{- end}}
+
 {{- end}}
 
 {{- end}}
@@ -835,7 +788,6 @@ func (s *EventStream[T]) Next() bool {
 	for s.scanner.Scan() {
 		line := s.scanner.Text()
 
-		// Empty line ends an event.
 		if line == "" {
 			data := strings.TrimSpace(s.buf.String())
 			if data == "" {
@@ -851,13 +803,11 @@ func (s *EventStream[T]) Next() bool {
 			return true
 		}
 
-		// "data:" (with optional space) carries payload lines.
 		if strings.HasPrefix(line, "data:") {
 			data := strings.TrimPrefix(line, "data:")
 			if strings.HasPrefix(data, " ") {
 				data = strings.TrimPrefix(data, " ")
 			}
-			// Accumulate multi-line payloads.
 			if s.buf.Len() > 0 {
 				s.buf.WriteByte('\n')
 			}
@@ -866,7 +816,6 @@ func (s *EventStream[T]) Next() bool {
 		}
 	}
 
-	// Scanner ended. If there is a buffered event, parse it once.
 	if err := s.scanner.Err(); err != nil {
 		s.err = err
 		return false
@@ -977,8 +926,6 @@ func applyAuth(req *http.Request, auth, token string) {
 func decodeError(resp *http.Response) error {
 	var e Error
 	e.StatusCode = resp.StatusCode
-
-	// Best-effort decode.
 	if err := json.NewDecoder(resp.Body).Decode(&e); err != nil {
 		e.Message = fmt.Sprintf("HTTP %d", resp.StatusCode)
 		return &e
@@ -989,6 +936,5 @@ func decodeError(resp *http.Response) error {
 	return &e
 }
 
-// Keep strings imported even if a build tag strips streaming.
 var _ = strings.TrimSpace
 `
