@@ -43,20 +43,30 @@ func Generate(svc *contract.Service, cfg *Config) ([]*sdk.File, error) {
 		return nil, err
 	}
 
-	tpl, err := template.New("sdkpy").
-		Funcs(template.FuncMap{
-			"pyQuote": pyQuote,
-			"pyIdent": pyIdent,
-			"snake":   toSnake,
-			"pascal":  toPascal,
-			"join":    strings.Join,
-			"trim":    strings.TrimSpace,
-			"lower":   strings.ToLower,
-			"indent":  indent,
-		}).
-		ParseFS(templateFS, "templates/*.tmpl")
-	if err != nil {
-		return nil, fmt.Errorf("sdkpy: parse templates: %w", err)
+	tpl := template.New("sdkpy").Funcs(template.FuncMap{
+		"pyQuote": pyQuote,
+		"pyIdent": pyIdent,
+		"snake":   toSnake,
+		"pascal":  toPascal,
+		"join":    strings.Join,
+		"trim":    strings.TrimSpace,
+		"lower":   strings.ToLower,
+		"indent":  indent,
+	})
+
+	// Parse only templates we actually need.
+	// This intentionally excludes README.md.tmpl to keep E2E stable and minimal.
+	need := []string{
+		"templates/pyproject.toml.tmpl",
+		"templates/_client.py.tmpl",
+		"templates/_types.py.tmpl",
+		"templates/_streaming.py.tmpl",
+		"templates/_resource.py.tmpl",
+	}
+	var errParse error
+	tpl, errParse = tpl.ParseFS(templateFS, need...)
+	if errParse != nil {
+		return nil, fmt.Errorf("sdkpy: parse templates: %w", errParse)
 	}
 
 	// Provide a tiny inline template for __init__.py to avoid adding another file on disk.
@@ -68,13 +78,12 @@ func Generate(svc *contract.Service, cfg *Config) ([]*sdk.File, error) {
 		Path string
 		Tpl  string
 	}{
-		{Path: "pyproject.toml", Tpl: "pyproject.toml.tmpl"},
-		{Path: "README.md", Tpl: "README.md.tmpl"},
+		{Path: "pyproject.toml", Tpl: "templates/pyproject.toml.tmpl"},
 
-		{Path: "src/" + m.Package + "/_client.py", Tpl: "_client.py.tmpl"},
-		{Path: "src/" + m.Package + "/_types.py", Tpl: "_types.py.tmpl"},
-		{Path: "src/" + m.Package + "/_streaming.py", Tpl: "_streaming.py.tmpl"},
-		{Path: "src/" + m.Package + "/_resource.py", Tpl: "_resource.py.tmpl"},
+		{Path: "src/" + m.Package + "/_client.py", Tpl: "templates/_client.py.tmpl"},
+		{Path: "src/" + m.Package + "/_types.py", Tpl: "templates/_types.py.tmpl"},
+		{Path: "src/" + m.Package + "/_streaming.py", Tpl: "templates/_streaming.py.tmpl"},
+		{Path: "src/" + m.Package + "/_resource.py", Tpl: "templates/_resource.py.tmpl"},
 
 		{Path: "src/" + m.Package + "/__init__.py", Tpl: "__init__.py.inline.tmpl"},
 	}

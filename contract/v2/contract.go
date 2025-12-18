@@ -29,11 +29,11 @@ import (
 
 // Service is a transport-neutral API descriptor.
 type Service struct {
-	Name        string     `json:"name" yaml:"name"`
-	Description string     `json:"description,omitempty" yaml:"description,omitempty"`
-	Defaults    *Defaults  `json:"defaults,omitempty" yaml:"defaults,omitempty"`
+	Name        string      `json:"name" yaml:"name"`
+	Description string      `json:"description,omitempty" yaml:"description,omitempty"`
+	Defaults    *Defaults   `json:"defaults,omitempty" yaml:"defaults,omitempty"`
 	Resources   []*Resource `json:"resources" yaml:"resources"`
-	Types       []*Type    `json:"types,omitempty" yaml:"types,omitempty"`
+	Types       []*Type     `json:"types,omitempty" yaml:"types,omitempty"`
 }
 
 // Defaults are global hints for transports and SDK generators.
@@ -58,33 +58,35 @@ type Resource struct {
 
 // Method describes a single operation.
 type Method struct {
-	Name        string  `json:"name" yaml:"name"`
-	Description string  `json:"description,omitempty" yaml:"description,omitempty"`
+	Name        string `json:"name" yaml:"name"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 
 	// Unary input/output
 	Input  TypeRef `json:"input,omitempty" yaml:"input,omitempty"`
 	Output TypeRef `json:"output,omitempty" yaml:"output,omitempty"`
 
 	// Streaming semantics (optional)
-	Stream *struct {
-		// Mode is a hint: "sse", "ws", "grpc", "async"
-		Mode string `json:"mode,omitempty" yaml:"mode,omitempty"`
-
-		// Item is the server -> client message type (required for streaming)
-		Item TypeRef `json:"item" yaml:"item"`
-
-		// Done is an optional terminal message type
-		Done TypeRef `json:"done,omitempty" yaml:"done,omitempty"`
-
-		// Error is an optional typed stream error
-		Error TypeRef `json:"error,omitempty" yaml:"error,omitempty"`
-
-		// InputItem enables bidirectional streams (WebSocket)
-		InputItem TypeRef `json:"input_item,omitempty" yaml:"input_item,omitempty"`
-	} `json:"stream,omitempty" yaml:"stream,omitempty"`
+	Stream *MethodStream `json:"stream,omitempty" yaml:"stream,omitempty"`
 
 	// Optional HTTP binding
 	HTTP *MethodHTTP `json:"http,omitempty" yaml:"http,omitempty"`
+}
+
+type MethodStream struct {
+	// Mode is a hint: "sse", "ws", "grpc", "async"
+	Mode string `json:"mode,omitempty" yaml:"mode,omitempty"`
+
+	// Item is the server -> client message type (required for streaming)
+	Item TypeRef `json:"item" yaml:"item"`
+
+	// Done is an optional terminal message type
+	Done TypeRef `json:"done,omitempty" yaml:"done,omitempty"`
+
+	// Error is an optional typed stream error
+	Error TypeRef `json:"error,omitempty" yaml:"error,omitempty"`
+
+	// InputItem enables bidirectional streams (WebSocket)
+	InputItem TypeRef `json:"input_item,omitempty" yaml:"input_item,omitempty"`
 }
 
 // MethodHTTP binds a method to an HTTP endpoint.
