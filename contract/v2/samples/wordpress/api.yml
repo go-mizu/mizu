@@ -1,0 +1,302 @@
+name: WordPress
+description: |
+  WordPress REST API subset (wp/v2) modeled for resource-oriented SDK generation.
+
+defaults:
+  base_url: https://example.com
+  auth: bearer
+  headers:
+    content-type: application/json
+
+resources:
+  - name: posts
+    description: Manage posts.
+    methods:
+      - name: list
+        description: List posts with filters.
+        input: ListPostsRequest
+        output: Posts
+        http:
+          method: GET
+          path: /wp-json/wp/v2/posts
+
+      - name: retrieve
+        description: Get a post by id.
+        input: GetPostRequest
+        output: Post
+        http:
+          method: GET
+          path: /wp-json/wp/v2/posts/{id}
+
+      - name: create
+        description: Create a post.
+        input: CreatePostRequest
+        output: Post
+        http:
+          method: POST
+          path: /wp-json/wp/v2/posts
+
+      - name: update
+        description: Update a post.
+        input: UpdatePostRequest
+        output: Post
+        http:
+          method: POST
+          path: /wp-json/wp/v2/posts/{id}
+
+      - name: delete
+        description: Delete a post.
+        input: DeletePostRequest
+        output: DeletePostResponse
+        http:
+          method: DELETE
+          path: /wp-json/wp/v2/posts/{id}
+
+  - name: pages
+    description: Manage pages.
+    methods:
+      - name: list
+        input: ListPagesRequest
+        output: Pages
+        http:
+          method: GET
+          path: /wp-json/wp/v2/pages
+
+      - name: retrieve
+        input: GetPageRequest
+        output: Page
+        http:
+          method: GET
+          path: /wp-json/wp/v2/pages/{id}
+
+  - name: media
+    description: Manage media (uploads, attachments).
+    methods:
+      - name: list
+        input: ListMediaRequest
+        output: MediaItems
+        http:
+          method: GET
+          path: /wp-json/wp/v2/media
+
+      - name: retrieve
+        input: GetMediaRequest
+        output: Media
+        http:
+          method: GET
+          path: /wp-json/wp/v2/media/{id}
+
+  - name: users
+    description: Manage users.
+    methods:
+      - name: me
+        description: Get the current user.
+        output: User
+        http:
+          method: GET
+          path: /wp-json/wp/v2/users/me
+
+types:
+  - name: Posts
+    kind: slice
+    elem: Post
+
+  - name: Post
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+      - name: date
+        type: string
+        optional: true
+      - name: status
+        type: string
+        optional: true
+      - name: slug
+        type: string
+        optional: true
+      - name: title
+        type: RenderedText
+        optional: true
+        nullable: true
+      - name: content
+        type: RenderedText
+        optional: true
+        nullable: true
+      - name: excerpt
+        type: RenderedText
+        optional: true
+        nullable: true
+
+  - name: RenderedText
+    kind: struct
+    fields:
+      - name: rendered
+        type: string
+        optional: true
+      - name: protected
+        type: bool
+        optional: true
+
+  - name: ListPostsRequest
+    kind: struct
+    fields:
+      - name: search
+        type: string
+        optional: true
+      - name: per_page
+        type: int
+        optional: true
+      - name: page
+        type: int
+        optional: true
+      - name: status
+        type: string
+        optional: true
+
+  - name: GetPostRequest
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+
+  - name: CreatePostRequest
+    kind: struct
+    fields:
+      - name: title
+        type: string
+        optional: true
+      - name: content
+        type: string
+        optional: true
+      - name: status
+        type: string
+        optional: true
+      - name: slug
+        type: string
+        optional: true
+
+  - name: UpdatePostRequest
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+      - name: title
+        type: string
+        optional: true
+      - name: content
+        type: string
+        optional: true
+      - name: status
+        type: string
+        optional: true
+      - name: slug
+        type: string
+        optional: true
+
+  - name: DeletePostRequest
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+      - name: force
+        type: bool
+        description: Whether to bypass trash.
+        optional: true
+
+  - name: DeletePostResponse
+    kind: struct
+    fields:
+      - name: deleted
+        type: bool
+      - name: previous
+        type: Post
+        optional: true
+        nullable: true
+
+  - name: Pages
+    kind: slice
+    elem: Page
+
+  - name: Page
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+      - name: title
+        type: RenderedText
+        optional: true
+        nullable: true
+
+  - name: ListPagesRequest
+    kind: struct
+    fields:
+      - name: search
+        type: string
+        optional: true
+      - name: per_page
+        type: int
+        optional: true
+      - name: page
+        type: int
+        optional: true
+
+  - name: GetPageRequest
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+
+  - name: MediaItems
+    kind: slice
+    elem: Media
+
+  - name: Media
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+      - name: source_url
+        type: string
+        optional: true
+      - name: mime_type
+        type: string
+        optional: true
+      - name: title
+        type: RenderedText
+        optional: true
+        nullable: true
+
+  - name: ListMediaRequest
+    kind: struct
+    fields:
+      - name: per_page
+        type: int
+        optional: true
+      - name: page
+        type: int
+        optional: true
+      - name: media_type
+        type: string
+        optional: true
+
+  - name: GetMediaRequest
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+
+  - name: User
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+      - name: name
+        type: string
+        optional: true
+      - name: slug
+        type: string
+        optional: true
+      - name: email
+        type: string
+        optional: true

@@ -1,0 +1,271 @@
+name: Petstore
+description: |
+  Example Petstore API using resource-oriented contracts.
+
+resources:
+  - name: pets
+    description: Manage pets.
+    methods:
+      - name: list
+        description: List pets with optional pagination.
+        input: ListPetsRequest
+        output: ListPetsResponse
+        http:
+          method: GET
+          path: /v1/pets
+
+      - name: create
+        description: Create a new pet.
+        input: CreatePetRequest
+        output: Pet
+        http:
+          method: POST
+          path: /v1/pets
+
+      - name: retrieve
+        description: Get a pet by id.
+        input: GetPetRequest
+        output: Pet
+        http:
+          method: GET
+          path: /v1/pets/{id}
+
+      - name: update
+        description: Update an existing pet.
+        input: UpdatePetRequest
+        output: Pet
+        http:
+          method: PATCH
+          path: /v1/pets/{id}
+
+      - name: delete
+        description: Delete a pet by id.
+        input: DeletePetRequest
+        http:
+          method: DELETE
+          path: /v1/pets/{id}
+
+  - name: stores
+    description: Store inventory and orders.
+    methods:
+      - name: getInventory
+        description: Get store inventory counts.
+        output: Inventory
+        http:
+          method: GET
+          path: /v1/store/inventory
+
+      - name: placeOrder
+        description: Place an order for a pet.
+        input: PlaceOrderRequest
+        output: Order
+        http:
+          method: POST
+          path: /v1/store/orders
+
+      - name: retrieveOrder
+        description: Get an order by id.
+        input: GetOrderRequest
+        output: Order
+        http:
+          method: GET
+          path: /v1/store/orders/{id}
+
+      - name: deleteOrder
+        description: Delete an order by id.
+        input: DeleteOrderRequest
+        http:
+          method: DELETE
+          path: /v1/store/orders/{id}
+
+  - name: users
+    description: User management.
+    methods:
+      - name: create
+        description: Create a user.
+        input: CreateUserRequest
+        output: User
+        http:
+          method: POST
+          path: /v1/users
+
+      - name: retrieve
+        description: Get a user by username.
+        input: GetUserRequest
+        output: User
+        http:
+          method: GET
+          path: /v1/users/{username}
+
+types:
+  - name: Pet
+    description: A pet in the store.
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+        description: Pet identifier.
+      - name: name
+        type: string
+        description: Pet name.
+      - name: status
+        type: string
+        description: Pet status (available, pending, sold).
+        optional: true
+      - name: tags
+        type: Tags
+        description: Tags for the pet.
+        optional: true
+        nullable: true
+
+  - name: Tags
+    description: List of tags.
+    kind: slice
+    elem: Tag
+
+  - name: Tag
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+        optional: true
+      - name: name
+        type: string
+        optional: true
+
+  - name: ListPetsRequest
+    kind: struct
+    fields:
+      - name: limit
+        type: int
+        description: Maximum number of results to return.
+        optional: true
+      - name: cursor
+        type: string
+        description: Pagination cursor.
+        optional: true
+
+  - name: ListPetsResponse
+    kind: struct
+    fields:
+      - name: data
+        type: Pets
+        description: List of pets.
+      - name: next_cursor
+        type: string
+        description: Cursor for next page.
+        optional: true
+
+  - name: Pets
+    kind: slice
+    elem: Pet
+
+  - name: CreatePetRequest
+    kind: struct
+    fields:
+      - name: name
+        type: string
+      - name: status
+        type: string
+        optional: true
+      - name: tags
+        type: Tags
+        optional: true
+        nullable: true
+
+  - name: GetPetRequest
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+
+  - name: UpdatePetRequest
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+        description: Pet identifier.
+      - name: name
+        type: string
+        optional: true
+      - name: status
+        type: string
+        optional: true
+      - name: tags
+        type: Tags
+        optional: true
+        nullable: true
+
+  - name: DeletePetRequest
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+
+  - name: Inventory
+    description: Inventory counts keyed by status.
+    kind: map
+    elem: int
+
+  - name: Order
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+      - name: pet_id
+        type: int64
+      - name: quantity
+        type: int
+      - name: ship_date
+        type: string
+        optional: true
+      - name: status
+        type: string
+        optional: true
+
+  - name: PlaceOrderRequest
+    kind: struct
+    fields:
+      - name: pet_id
+        type: int64
+      - name: quantity
+        type: int
+
+  - name: GetOrderRequest
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+
+  - name: DeleteOrderRequest
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+
+  - name: User
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+        optional: true
+      - name: username
+        type: string
+      - name: email
+        type: string
+        optional: true
+
+  - name: CreateUserRequest
+    kind: struct
+    fields:
+      - name: username
+        type: string
+      - name: email
+        type: string
+        optional: true
+
+  - name: GetUserRequest
+    kind: struct
+    fields:
+      - name: username
+        type: string
