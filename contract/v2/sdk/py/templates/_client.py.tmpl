@@ -1,0 +1,232 @@
+{{define "_client.py.tmpl"}}
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
+
+import httpx
+
+from ._resources import build_resources
+
+
+class SDKError(Exception):
+    pass
+
+
+class APIConnectionError(SDKError):
+    pass
+
+
+class APIStatusError(SDKError):
+    def __init__(self, status_code: int, message: str, body: Any | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.body = body
+
+
+@dataclass(frozen=True)
+class RequestOptions:
+    base_url: str
+    api_key: str | None
+    auth: str
+    headers: Dict[str, str]
+    timeout: float | None
+    max_retries: int
+
+
+def _apply_auth(headers: Dict[str, str], auth: str, api_key: str | None) -> None:
+    if not api_key:
+        return
+    a = (auth or "bearer").strip().lower()
+    if a == "none":
+        return
+    if a == "basic":
+        headers["Authorization"] = "Basic " + api_key
+        return
+    headers["Authorization"] = "Bearer " + api_key
+
+
+class OpenAI:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        timeout: float | None = None,
+        max_retries: int = 2,
+        default_headers: Dict[str, str] | None = None,
+    ):
+        base = (base_url or {{pyString .Defaults.BaseURL}}).rstrip("/")
+        hdrs: Dict[str, str] = {}
+{{- range .Defaults.Headers}}
+        hdrs[{{pyString .K}}] = {{pyString .V}}
+{{- end}}
+        if default_headers:
+            hdrs.update(default_headers)
+
+        opts = RequestOptions(
+            base_url=base,
+            api_key=api_key,
+            auth={{pyString .Defaults.Auth}},
+            headers=hdrs,
+            timeout=timeout,
+            max_retries=max_retries,
+        )
+        self._opts = opts
+        self._http = httpx.Client(base_url=opts.base_url, timeout=opts.timeout)
+        build_resources(self)
+
+    def with_options(
+        self,
+        *,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
+        default_headers: Dict[str, str] | None = None,
+    ) -> OpenAI:
+        hdrs = dict(self._opts.headers)
+        if default_headers:
+            hdrs.update(default_headers)
+        opts = RequestOptions(
+            base_url=(base_url or self._opts.base_url).rstrip("/"),
+            api_key=api_key if api_key is not None else self._opts.api_key,
+            auth=self._opts.auth,
+            headers=hdrs,
+            timeout=timeout if timeout is not None else self._opts.timeout,
+            max_retries=max_retries if max_retries is not None else self._opts.max_retries,
+        )
+        c = OpenAI.__new__(OpenAI)
+        c._opts = opts
+        c._http = httpx.Client(base_url=opts.base_url, timeout=opts.timeout)
+        build_resources(c)
+        return c
+
+    def close(self) -> None:
+        self._http.close()
+
+    def _request(self, method: str, path: str, *, json: Any | None = None, headers: Dict[str, str] | None = None) -> Any:
+        hdrs = dict(self._opts.headers)
+        hdrs["Content-Type"] = "application/json"
+        _apply_auth(hdrs, self._opts.auth, self._opts.api_key)
+        if headers:
+            hdrs.update(headers)
+
+        last_err: Exception | None = None
+        for attempt in range(self._opts.max_retries + 1):
+            try:
+                resp = self._http.request(method, path, json=json, headers=hdrs)
+                if resp.status_code >= 400:
+                    body = None
+                    msg = f"HTTP {resp.status_code}"
+                    try:
+                        body = resp.json()
+                        if isinstance(body, dict) and "message" in body:
+                            msg = str(body.get("message"))
+                    except Exception:
+                        body = resp.text
+                    raise APIStatusError(resp.status_code, msg, body)
+                if resp.status_code == 204:
+                    return None
+                if resp.headers.get("content-type", "").startswith("application/json"):
+                    return resp.json()
+                return resp.text
+            except APIStatusError:
+                raise
+            except Exception as e:
+                last_err = e
+        raise APIConnectionError(str(last_err) if last_err else "request failed")
+
+
+class AsyncOpenAI:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        timeout: float | None = None,
+        max_retries: int = 2,
+        default_headers: Dict[str, str] | None = None,
+    ):
+        base = (base_url or {{pyString .Defaults.BaseURL}}).rstrip("/")
+        hdrs: Dict[str, str] = {}
+{{- range .Defaults.Headers}}
+        hdrs[{{pyString .K}}] = {{pyString .V}}
+{{- end}}
+        if default_headers:
+            hdrs.update(default_headers)
+
+        opts = RequestOptions(
+            base_url=base,
+            api_key=api_key,
+            auth={{pyString .Defaults.Auth}},
+            headers=hdrs,
+            timeout=timeout,
+            max_retries=max_retries,
+        )
+        self._opts = opts
+        self._http = httpx.AsyncClient(base_url=opts.base_url, timeout=opts.timeout)
+        build_resources(self)
+
+    def with_options(
+        self,
+        *,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
+        default_headers: Dict[str, str] | None = None,
+    ) -> AsyncOpenAI:
+        hdrs = dict(self._opts.headers)
+        if default_headers:
+            hdrs.update(default_headers)
+        opts = RequestOptions(
+            base_url=(base_url or self._opts.base_url).rstrip("/"),
+            api_key=api_key if api_key is not None else self._opts.api_key,
+            auth=self._opts.auth,
+            headers=hdrs,
+            timeout=timeout if timeout is not None else self._opts.timeout,
+            max_retries=max_retries if max_retries is not None else self._opts.max_retries,
+        )
+        c = AsyncOpenAI.__new__(AsyncOpenAI)
+        c._opts = opts
+        c._http = httpx.AsyncClient(base_url=opts.base_url, timeout=opts.timeout)
+        build_resources(c)
+        return c
+
+    async def aclose(self) -> None:
+        await self._http.aclose()
+
+    async def close(self) -> None:
+        await self._http.aclose()
+
+    async def _request(self, method: str, path: str, *, json: Any | None = None, headers: Dict[str, str] | None = None) -> Any:
+        hdrs = dict(self._opts.headers)
+        hdrs["Content-Type"] = "application/json"
+        _apply_auth(hdrs, self._opts.auth, self._opts.api_key)
+        if headers:
+            hdrs.update(headers)
+
+        last_err: Exception | None = None
+        for attempt in range(self._opts.max_retries + 1):
+            try:
+                resp = await self._http.request(method, path, json=json, headers=hdrs)
+                if resp.status_code >= 400:
+                    body = None
+                    msg = f"HTTP {resp.status_code}"
+                    try:
+                        body = resp.json()
+                        if isinstance(body, dict) and "message" in body:
+                            msg = str(body.get("message"))
+                    except Exception:
+                        body = resp.text
+                    raise APIStatusError(resp.status_code, msg, body)
+                if resp.status_code == 204:
+                    return None
+                if resp.headers.get("content-type", "").startswith("application/json"):
+                    return resp.json()
+                return resp.text
+            except APIStatusError:
+                raise
+            except Exception as e:
+                last_err = e
+        raise APIConnectionError(str(last_err) if last_err else "request failed")
+{{end}}

@@ -1,0 +1,154 @@
+{{define "_streaming.py.tmpl"}}
+from __future__ import annotations
+
+from typing import Any, AsyncIterator, Iterator, Optional, Type
+
+import httpx
+
+
+def _iter_sse_lines(resp: httpx.Response) -> Iterator[str]:
+    buf: list[str] = []
+    for raw in resp.iter_lines():
+        line = raw.strip("\r\n")
+        if line == "":
+            data = "\n".join(buf).strip()
+            buf.clear()
+            if not data:
+                continue
+            yield data
+            continue
+        if line.startswith("data:"):
+            v = line[5:]
+            if v.startswith(" "):
+                v = v[1:]
+            buf.append(v)
+    if buf:
+        yield "\n".join(buf).strip()
+
+
+async def _aiter_sse_lines(resp: httpx.Response) -> AsyncIterator[str]:
+    buf: list[str] = []
+    async for raw in resp.aiter_lines():
+        line = raw.strip("\r\n")
+        if line == "":
+            data = "\n".join(buf).strip()
+            buf.clear()
+            if not data:
+                continue
+            yield data
+            continue
+        if line.startswith("data:"):
+            v = line[5:]
+            if v.startswith(" "):
+                v = v[1:]
+            buf.append(v)
+    if buf:
+        yield "\n".join(buf).strip()
+
+
+class Stream(Iterator[Any]):
+    def __init__(self, *, client: Any, method: str, path: str, json: Any | None, item_type: Type[Any]):
+        self._client = client
+        self._method = method
+        self._path = path
+        self._json = json
+        self._item_type = item_type
+        self._resp: httpx.Response | None = None
+        self._iter: Iterator[str] | None = None
+
+    def __iter__(self) -> "Stream":
+        if self._iter is not None:
+            return self
+        headers = dict(self._client._opts.headers)
+        headers["Accept"] = "text/event-stream"
+        headers["Content-Type"] = "application/json"
+        # auth is applied in _client._request for normal requests, but here we stream manually
+        from ._client import _apply_auth
+        _apply_auth(headers, self._client._opts.auth, self._client._opts.api_key)
+
+        self._resp = self._client._http.build_request(self._method, self._path, json=self._json, headers=headers)
+        resp = self._client._http.send(self._resp, stream=True)
+        if resp.status_code >= 400:
+            try:
+                body = resp.json()
+            except Exception:
+                body = resp.text
+            resp.close()
+            from ._client import APIStatusError
+            raise APIStatusError(resp.status_code, f"HTTP {resp.status_code}", body)
+
+        self._resp = resp
+        self._iter = _iter_sse_lines(resp)
+        return self
+
+    def __next__(self) -> Any:
+        if self._iter is None:
+            self.__iter__()
+        assert self._iter is not None
+        data = next(self._iter)
+        if data == "[DONE]":
+            self.close()
+            raise StopIteration
+        # pydantic model
+        return self._item_type.model_validate_json(data)
+
+    def close(self) -> None:
+        if self._resp is not None:
+            self._resp.close()
+            self._resp = None
+
+
+class AsyncStream(AsyncIterator[Any]):
+    def __init__(self, *, client: Any, method: str, path: str, json: Any | None, item_type: Type[Any]):
+        self._client = client
+        self._method = method
+        self._path = path
+        self._json = json
+        self._item_type = item_type
+        self._resp: httpx.Response | None = None
+        self._aiter: AsyncIterator[str] | None = None
+
+    def __aiter__(self) -> "AsyncStream":
+        return self
+
+    async def _ensure(self) -> None:
+        if self._aiter is not None:
+            return
+        headers = dict(self._client._opts.headers)
+        headers["Accept"] = "text/event-stream"
+        headers["Content-Type"] = "application/json"
+        from ._client import _apply_auth
+        _apply_auth(headers, self._client._opts.auth, self._client._opts.api_key)
+
+        req = self._client._http.build_request(self._method, self._path, json=self._json, headers=headers)
+        resp = await self._client._http.send(req, stream=True)
+        if resp.status_code >= 400:
+            try:
+                body = resp.json()
+            except Exception:
+                body = resp.text
+            await resp.aclose()
+            from ._client import APIStatusError
+            raise APIStatusError(resp.status_code, f"HTTP {resp.status_code}", body)
+
+        self._resp = resp
+        self._aiter = _aiter_sse_lines(resp)
+
+    async def __anext__(self) -> Any:
+        await self._ensure()
+        assert self._aiter is not None
+        try:
+            data = await self._aiter.__anext__()
+        except StopAsyncIteration:
+            await self.aclose()
+            raise
+        if data == "[DONE]":
+            await self.aclose()
+            raise StopAsyncIteration
+        return self._item_type.model_validate_json(data)
+
+    async def aclose(self) -> None:
+        if self._resp is not None:
+            await self._resp.aclose()
+            self._resp = None
+{{end}}
