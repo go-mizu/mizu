@@ -177,31 +177,31 @@ func (p *plan) apply(force bool) error {
 }
 
 // printHuman outputs the plan in human-readable format.
-func (p *plan) printHuman(out *output) {
-	out.print("Plan: create %s (template: %s)\n\n", out.cyan(p.root), out.bold(p.template))
+func (p *plan) printHuman(out *Output) {
+	out.Print("Plan: create %s (template: %s)\n\n", out.Cyan(p.root), out.Bold(p.template))
 
 	for _, o := range p.ops {
 		switch o.kind {
 		case opMkdir:
-			out.print("%s  %s\n", out.green("+ mkdir "), o.path)
+			out.Print("%s  %s\n", out.Green("+ mkdir "), o.path)
 		case opWrite:
 			fullPath := filepath.Join(p.root, o.path)
 			if fileExists(fullPath) {
-				out.print("%s  %s %s\n", out.yellow("~ write "), o.path, out.gray("(overwrite)"))
+				out.Print("%s  %s %s\n", out.Yellow("~ write "), o.path, out.Dim("(overwrite)"))
 			} else {
-				out.print("%s  %s\n", out.green("+ write "), o.path)
+				out.Print("%s  %s\n", out.Green("+ write "), o.path)
 			}
 		case opSkip:
-			out.print("%s  %s %s\n", out.gray("- skip  "), o.path, out.gray("("+o.reason+")"))
+			out.Print("%s  %s %s\n", out.Dim("- skip  "), o.path, out.Dim("("+o.reason+")"))
 		}
 	}
 
 	mkdir, write, overwrite, skip := p.summary()
-	out.print("\nSummary:\n")
-	out.print("  create dirs: %d\n", mkdir)
-	out.print("  write files: %d\n", write)
-	out.print("  overwrite: %d\n", overwrite)
-	out.print("  skipped: %d\n", skip)
+	out.Print("\nSummary:\n")
+	out.Print("  create dirs: %d\n", mkdir)
+	out.Print("  write files: %d\n", write)
+	out.Print("  overwrite: %d\n", overwrite)
+	out.Print("  skipped: %d\n", skip)
 }
 
 // planJSON is the JSON representation of a plan.

@@ -65,7 +65,7 @@ func runNewCmd(cmd *cobra.Command, args []string) error {
 		if Flags.JSON {
 			out.WriteJSONError("missing_template", "template is required (use --template or --list)")
 		} else {
-			out.Errorf("Error: template is required\n")
+			out.PrintError("template is required")
 			out.Print("Run 'mizu new --list' to see available templates.\n")
 		}
 		return fmt.Errorf("template is required")
@@ -76,7 +76,7 @@ func runNewCmd(cmd *cobra.Command, args []string) error {
 		if Flags.JSON {
 			out.WriteJSONError("unknown_template", fmt.Sprintf("unknown template: %s", newFlags.template))
 		} else {
-			out.Errorf("Error: unknown template %q\n", newFlags.template)
+			out.PrintError("unknown template %q", newFlags.template)
 			out.Print("Run 'mizu new --list' to see available templates.\n")
 		}
 		return fmt.Errorf("unknown template: %s", newFlags.template)
@@ -93,7 +93,7 @@ func runNewCmd(cmd *cobra.Command, args []string) error {
 		if Flags.JSON {
 			out.WriteJSONError("path_error", err.Error())
 		} else {
-			out.Errorf("Error: %v\n", err)
+			out.PrintError("%v", err)
 		}
 		return err
 	}
@@ -128,7 +128,7 @@ func runNewCmd(cmd *cobra.Command, args []string) error {
 		if Flags.JSON {
 			out.WriteJSONError("plan_error", err.Error())
 		} else {
-			out.Errorf("Error: %v\n", err)
+			out.PrintError("%v", err)
 		}
 		return err
 	}
@@ -138,7 +138,7 @@ func runNewCmd(cmd *cobra.Command, args []string) error {
 		if Flags.JSON {
 			out.WriteJSON(p.toJSON())
 		} else {
-			p.printHuman(newLegacyOutput())
+			p.printHuman(out)
 		}
 		return nil
 	}
@@ -150,9 +150,9 @@ func runNewCmd(cmd *cobra.Command, args []string) error {
 			if Flags.JSON {
 				out.WriteJSONError("conflicts", fmt.Sprintf("files exist: %v", conflicts))
 			} else {
-				out.Errorf("Error: files already exist:\n")
+				out.PrintError("files already exist:")
 				for _, c := range conflicts {
-					out.Errorf("  %s\n", c)
+					out.Print("  %s\n", c)
 				}
 				out.Print("Use --force to overwrite.\n")
 			}
@@ -168,7 +168,7 @@ func runNewCmd(cmd *cobra.Command, args []string) error {
 		if Flags.JSON {
 			out.WriteJSONError("apply_error", err.Error())
 		} else {
-			out.Errorf("Error: %v\n", err)
+			out.PrintError("%v", err)
 		}
 		return err
 	}
@@ -197,7 +197,7 @@ func listTemplatesCommand(out *Output) error {
 		if Flags.JSON {
 			out.WriteJSONError("list_error", err.Error())
 		} else {
-			out.Errorf("Error: %v\n", err)
+			out.PrintError("%v", err)
 		}
 		return err
 	}
@@ -215,11 +215,6 @@ func listTemplatesCommand(out *Output) error {
 	tbl.write(out.Stdout)
 
 	return nil
-}
-
-// newLegacyOutput creates an output compatible with the old code.
-func newLegacyOutput() *output {
-	return newOutput(Flags.JSON, Flags.Quiet, Flags.NoColor, Flags.Verbose)
 }
 
 // buildPlan creates a template plan (forwarded to existing implementation).

@@ -65,7 +65,7 @@ func runMiddlewareLsCmd(cmd *cobra.Command, args []string) error {
 			if Flags.JSON {
 				out.WriteJSONError("unknown_category", fmt.Sprintf("unknown category: %s", middlewareFlags.category))
 			} else {
-				out.Errorf("Error: unknown category %q\n", middlewareFlags.category)
+				out.PrintError("unknown category %q", middlewareFlags.category)
 				out.Print("Available categories: %s\n", strings.Join(categories, ", "))
 			}
 			return fmt.Errorf("unknown category: %s", middlewareFlags.category)
@@ -87,7 +87,7 @@ func runMiddlewareShowCmd(cmd *cobra.Command, args []string) error {
 		if Flags.JSON {
 			out.WriteJSONError("unknown_middleware", fmt.Sprintf("unknown middleware: %s", name))
 		} else {
-			out.Errorf("Error: unknown middleware %q\n", name)
+			out.PrintError("unknown middleware %q", name)
 			out.Print("Run 'mizu middleware ls' to see available middlewares.\n")
 		}
 		return fmt.Errorf("unknown middleware: %s", name)
