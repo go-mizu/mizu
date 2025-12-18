@@ -1,6 +1,87 @@
 {{define "streaming.go.tmpl"}}
 {{- if .HasSSE}}
 // Streaming
-...
+
+// EventStream reads server-sent events.
+type EventStream[T any] struct {
+	resp    *http.Response
+	scanner *bufio.Scanner
+	parse   func([]byte) (T, error)
+
+	current T
+	err     error
+
+	buf strings.Builder
+}
+
+// Next advances to the next event. Returns false when done or on error.
+func (s *EventStream[T]) Next() bool {
+	if s.err != nil || s.scanner == nil {
+		return false
+	}
+
+	s.buf.Reset()
+
+	for s.scanner.Scan() {
+		line := s.scanner.Text()
+
+		if line == "" {
+			data := strings.TrimSpace(s.buf.String())
+			if data == "" {
+				continue
+			}
+			if data == "[DONE]" {
+				return false
+			}
+			s.current, s.err = s.parse([]byte(data))
+			if s.err != nil {
+				return false
+			}
+			return true
+		}
+
+		if strings.HasPrefix(line, "data:") {
+			data := strings.TrimPrefix(line, "data:")
+			if strings.HasPrefix(data, " ") {
+				data = strings.TrimPrefix(data, " ")
+			}
+			if s.buf.Len() > 0 {
+				s.buf.WriteByte('\n')
+			}
+			s.buf.WriteString(data)
+			continue
+		}
+	}
+
+	if err := s.scanner.Err(); err != nil {
+		s.err = err
+		return false
+	}
+
+	data := strings.TrimSpace(s.buf.String())
+	if data == "" || data == "[DONE]" {
+		return false
+	}
+
+	s.current, s.err = s.parse([]byte(data))
+	if s.err != nil {
+		return false
+	}
+	return true
+}
+
+// Event returns the current event. Call after Next returns true.
+func (s *EventStream[T]) Event() T { return s.current }
+
+// Err returns any error that occurred during streaming.
+func (s *EventStream[T]) Err() error { return s.err }
+
+// Close closes the underlying connection.
+func (s *EventStream[T]) Close() error {
+	if s.resp != nil && s.resp.Body != nil {
+		return s.resp.Body.Close()
+	}
+	return nil
+}
 {{- end}}
 {{end}}
