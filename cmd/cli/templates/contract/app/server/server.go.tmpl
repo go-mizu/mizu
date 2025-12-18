@@ -4,11 +4,12 @@ import (
 	"github.com/go-mizu/mizu"
 	contract "github.com/go-mizu/mizu/contract/v2"
 	"github.com/go-mizu/mizu/contract/v2/transport/jsonrpc"
+	"github.com/go-mizu/mizu/contract/v2/transport/mcp"
 	"github.com/go-mizu/mizu/contract/v2/transport/rest"
 	"{{.Module}}/service/todo"
 )
 
-// New creates a new mizu app with REST and JSON-RPC transports.
+// New creates a new mizu app with REST, JSON-RPC, and MCP transports.
 func New(cfg Config, todoSvc *todo.Service) (*mizu.App, error) {
 	// Register service using code-first approach
 	svc := contract.Register[todo.API](todoSvc,
@@ -27,6 +28,13 @@ func New(cfg Config, todoSvc *todo.Service) (*mizu.App, error) {
 
 	// Mount JSON-RPC 2.0 endpoint
 	if err := jsonrpc.Mount(app.Router, "/rpc", svc); err != nil {
+		return nil, err
+	}
+
+	// Mount MCP endpoint (for LLM tool integration)
+	if err := mcp.Mount(app.Router, "/mcp", svc,
+		mcp.WithServerInfo("{{.Name}}", "1.0.0"),
+	); err != nil {
 		return nil, err
 	}
 
