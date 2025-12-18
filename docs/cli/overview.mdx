@@ -1,21 +1,11 @@
 ---
-title: "CLI Overview"
+title: "Overview"
 description: "Learn what the Mizu CLI is and how it helps you build web applications faster"
 ---
 
-# Mizu CLI
-
 The Mizu CLI (Command Line Interface) is a tool that helps you create and run Mizu web applications. If you've never used a CLI before, don't worry - this guide will walk you through everything step by step.
 
-## What is a CLI?
-
-A CLI is a program you run in your terminal (also called command prompt or shell). Instead of clicking buttons in a graphical interface, you type commands. For example:
-
-```bash
-mizu new myapp --template api
-```
-
-This command tells the Mizu CLI to create a new project called "myapp" using the "api" template.
+A CLI is a program you interact with by typing commands in your terminal (also called command prompt, shell, or console). Instead of clicking buttons in a graphical interface, you type text commands and press Enter. The terminal is the black (or white) window where you type commands - every computer has one built in.
 
 ## What Does the Mizu CLI Do?
 
@@ -54,15 +44,16 @@ Now open your browser and go to `http://localhost:8080`. You'll see your applica
 
 Press `Ctrl+C` in the terminal to stop the server.
 
-## Available Commands
+## Commands
 
-The Mizu CLI has four main commands:
+The Mizu CLI has five commands. Each command does one specific thing, making it easy to remember what to type.
 
 | Command | What it does |
 |---------|--------------|
 | `mizu new` | Creates a new project from a template |
 | `mizu dev` | Runs your project in development mode |
 | `mizu contract` | Works with service contracts (for API projects) |
+| `mizu middleware` | Explores available middlewares |
 | `mizu version` | Shows the CLI version |
 
 ### Getting Help
@@ -140,16 +131,16 @@ The Mizu CLI follows these principles:
 ## Next Steps
 
 <CardGroup cols={2}>
-  <Card title="Install the CLI" icon="download" href="/cli/installation">
+  <Card title="Installation" icon="download" href="/cli/installation">
     Get the Mizu CLI installed on your computer
   </Card>
-  <Card title="Create Your First Project" icon="rocket" href="/cli/new">
+  <Card title="Create Project" icon="rocket" href="/cli/new">
     Learn all the options for creating projects
   </Card>
-  <Card title="Explore Templates" icon="folder-tree" href="/cli/templates">
+  <Card title="Templates" icon="folder-tree" href="/cli/templates">
     See what each template includes
   </Card>
-  <Card title="Run in Dev Mode" icon="play" href="/cli/dev">
-    Learn about the development server
+  <Card title="Middlewares" icon="layer-group" href="/cli/middleware">
+    Explore 100+ available middlewares
   </Card>
 </CardGroup>
