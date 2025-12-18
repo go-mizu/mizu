@@ -25,7 +25,8 @@ func TestPySDK_E2E_Smoke_ImportAndInit(t *testing.T) {
 	if !e2eEnabled() {
 		t.Skip("SDKPY_E2E not enabled")
 	}
-	requireTools(t, "uv", "python")
+	requireUV(t)
+	ensurePythonViaUV(t)
 
 	svc := minimalServiceContract(t)
 	root := writeGeneratedPySDK(t, svc)
@@ -48,7 +49,8 @@ func TestPySDK_E2E_HTTP_RequestShape_Sync(t *testing.T) {
 	if !e2eEnabled() {
 		t.Skip("SDKPY_E2E not enabled")
 	}
-	requireTools(t, "uv", "python")
+	requireUV(t)
+	ensurePythonViaUV(t)
 
 	var got struct {
 		Method string
@@ -115,7 +117,8 @@ func TestPySDK_E2E_ErrorDecoding_Sync(t *testing.T) {
 	if !e2eEnabled() {
 		t.Skip("SDKPY_E2E not enabled")
 	}
-	requireTools(t, "uv", "python")
+	requireUV(t)
+	ensurePythonViaUV(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -140,7 +143,6 @@ try:
     print("NOERROR")
 except Exception as e:
     s = str(e)
-    # Avoid pinning to exact exception type name, but require fields in message.
     ok = ("bad_request" in s) or ("nope" in s) or ("400" in s)
     print("OK" if ok else ("BAD:" + s))
 `))
@@ -155,7 +157,8 @@ func TestPySDK_E2E_SSE_Stream_Sync(t *testing.T) {
 	if !e2eEnabled() {
 		t.Skip("SDKPY_E2E not enabled")
 	}
-	requireTools(t, "uv", "python")
+	requireUV(t)
+	ensurePythonViaUV(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/responses" {
@@ -196,15 +199,11 @@ from `+pkg+` import OpenAI
 
 client = OpenAI(api_key="sk-test", base_url="`+srv.URL+`")
 
-# Expect: client.responses.stream(...) yields events.
 n = 0
 texts = []
 
 for ev in client.responses.stream({"model":"gpt-test"}):
     n += 1
-    # Be flexible on event shape:
-    # - pydantic model with attributes
-    # - dict-like
     t = None
     if hasattr(ev, "text"):
         t = ev.text
@@ -234,9 +233,9 @@ func TestPySDK_E2E_AsyncClient_Basic(t *testing.T) {
 	if !e2eEnabled() {
 		t.Skip("SDKPY_E2E not enabled")
 	}
-	requireTools(t, "uv", "python")
+	requireUV(t)
+	ensurePythonViaUV(t)
 
-	// We do not require real HTTP calls here. Just validate import, init, close().
 	svc := minimalServiceContract(t)
 	root := writeGeneratedPySDK(t, svc)
 	runUV(t, root, "pip", "install", "-e", ".")
@@ -300,7 +299,6 @@ func minimalServiceContract(t *testing.T) *contract.Service {
 				Kind: contract.KindStruct,
 				Fields: []contract.Field{
 					{Name: "model", Type: "string"},
-					// Let python generator decide how to represent arbitrary JSON.
 					{Name: "input", Type: "json.RawMessage", Optional: true},
 				},
 			},
@@ -335,10 +333,9 @@ func writeGeneratedPySDK(t *testing.T, svc *contract.Service) string {
 	t.Helper()
 
 	cfg := &sdkpy.Config{
-		Package:  "openai",
-		Module:   "openai",
-		Version:  "0.0.0-test",
-		Filename: "", // generator decides
+		Package: "openai",
+		Module:  "openai",
+		Version: "0.0.0-test",
 	}
 	files, err := sdkpy.Generate(svc, cfg)
 	if err != nil {
@@ -382,46 +379,65 @@ func runUV(t *testing.T, dir string, args ...string) string {
 
 	err := cmd.Run()
 	if err != nil {
-		// Heuristic: if we cannot install due to missing Python deps or tooling constraints,
-		// skip unless strict mode is requested.
-		if isNonFatalE2E(err, stderr.String()) && !strictE2E() {
+		if isNonFatalE2E(err, stderr.String()) && !e2eStrict() {
 			t.Skipf("uv command failed in non-strict mode: uv %s\nerr: %v\nstderr:\n%s", strings.Join(args, " "), err, stderr.String())
 		}
 		t.Fatalf("uv %s failed: %v\nstderr:\n%s", strings.Join(args, " "), err, stderr.String())
 	}
 	if stderr.Len() > 0 {
-		// Keep stderr available in logs when -v is used.
 		t.Logf("uv %s stderr:\n%s", strings.Join(args, " "), stderr.String())
 	}
 	return stdout.String()
 }
 
-func requireTools(t *testing.T, tools ...string) {
+func requireUV(t *testing.T) {
 	t.Helper()
-	for _, tool := range tools {
-		if _, err := exec.LookPath(tool); err != nil {
-			t.Skipf("%s not installed", tool)
+	if _, err := exec.LookPath("uv"); err != nil {
+		t.Skip("uv not installed")
+	}
+	if runtime.GOOS == "windows" && !e2eStrict() {
+		t.Skip("windows e2e disabled unless SDKPY_E2E=strict")
+	}
+}
+
+func ensurePythonViaUV(t *testing.T) {
+	t.Helper()
+
+	// This will cause uv to provision a Python if needed (depending on uv config),
+	// and it validates that "uv run python" is functional.
+	cmd := exec.Command("uv", "run", "python", "-c", "import sys; print(sys.version.split()[0])")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		if !e2eStrict() {
+			t.Skipf("python via uv is not available (non-strict): %v\nstderr:\n%s", err, stderr.String())
 		}
+		t.Fatalf("python via uv is not available: %v\nstderr:\n%s", err, stderr.String())
 	}
-	// On Windows, uv and python plumbing can be more brittle. Prefer skip unless explicitly enabled.
-	if runtime.GOOS == "windows" && !strictE2E() {
-		t.Skip("windows e2e disabled unless strict mode is enabled")
-	}
+
+	t.Logf("uv python version: %s", strings.TrimSpace(stdout.String()))
 }
 
 func e2eEnabled() bool {
 	v := strings.TrimSpace(os.Getenv("SDKPY_E2E"))
-	return v == "1" || strings.EqualFold(v, "true") || strings.EqualFold(v, "yes")
+	if v == "" {
+		return false
+	}
+	v = strings.ToLower(v)
+	if v == "0" || v == "false" || v == "no" || v == "off" {
+		return false
+	}
+	return true
 }
 
-func strictE2E() bool {
-	v := strings.TrimSpace(os.Getenv("SDKPY_E2E_STRICT"))
-	return v == "1" || strings.EqualFold(v, "true") || strings.EqualFold(v, "yes")
+func e2eStrict() bool {
+	v := strings.TrimSpace(os.Getenv("SDKPY_E2E"))
+	return strings.EqualFold(v, "strict")
 }
 
 func isNonFatalE2E(err error, stderr string) bool {
-	// If uv or python tooling is present but environment cannot resolve deps (offline, missing wheels),
-	// treat as non-fatal unless strict mode is requested.
 	s := strings.ToLower(stderr)
 	if errors.Is(err, context.DeadlineExceeded) {
 		return true
@@ -456,5 +472,4 @@ func splitNonEmptyLines(s string) []string {
 	return out
 }
 
-// Compile-time guard: keep imports stable if sdk.File moves.
 var _ = sdk.File{}
