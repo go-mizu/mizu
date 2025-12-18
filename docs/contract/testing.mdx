@@ -34,7 +34,7 @@ With Contract:
 ```go
 // Testing a Contract service - just call the method!
 func TestCreate(t *testing.T) {
-    svc := &TodoService{}
+    svc := &todoService{}
 
     result, err := svc.Create(context.Background(), &CreateInput{Title: "Test"})
 
@@ -145,7 +145,7 @@ When using Contract's error types, verify the error code:
 ```go
 import (
     "errors"
-    "github.com/go-mizu/mizu/contract"
+    contract "github.com/go-mizu/mizu/contract/v2"
 )
 
 func TestGet_NotFound(t *testing.T) {
@@ -271,14 +271,27 @@ import (
     "strings"
     "testing"
 
-    "github.com/go-mizu/mizu/contract"
+    "github.com/go-mizu/mizu"
+    contract "github.com/go-mizu/mizu/contract/v2"
+    "github.com/go-mizu/mizu/contract/v2/transport/rest"
 )
+
+// Define your interface and types
+type TodoAPI interface {
+    Create(ctx context.Context, in *CreateInput) (*Todo, error)
+    List(ctx context.Context) (*ListOutput, error)
+    Get(ctx context.Context, in *GetInput) (*Todo, error)
+}
 
 func TestREST_Create(t *testing.T) {
     // Setup
-    svc, _ := contract.Register("todo", todo.NewService())
-    mux := http.NewServeMux()
-    contract.MountREST(mux, svc)
+    impl := newTodoService()
+    svc := contract.Register[TodoAPI](impl,
+        contract.WithDefaultResource("todos"),
+    )
+
+    app := mizu.New()
+    rest.Mount(app.Router, svc)
 
     // Create request
     body := strings.NewReader(`{"title": "Test"}`)
@@ -287,7 +300,7 @@ func TestREST_Create(t *testing.T) {
 
     // Execute
     rec := httptest.NewRecorder()
-    mux.ServeHTTP(rec, req)
+    app.Router.ServeHTTP(rec, req)
 
     // Verify status code
     if rec.Code != http.StatusOK {
@@ -295,7 +308,7 @@ func TestREST_Create(t *testing.T) {
     }
 
     // Verify response body
-    var result todo.Todo
+    var result Todo
     if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
         t.Fatalf("failed to decode response: %v", err)
     }
@@ -305,13 +318,17 @@ func TestREST_Create(t *testing.T) {
 }
 
 func TestREST_Get_NotFound(t *testing.T) {
-    svc, _ := contract.Register("todo", todo.NewService())
-    mux := http.NewServeMux()
-    contract.MountREST(mux, svc)
+    impl := newTodoService()
+    svc := contract.Register[TodoAPI](impl,
+        contract.WithDefaultResource("todos"),
+    )
+
+    app := mizu.New()
+    rest.Mount(app.Router, svc)
 
     req := httptest.NewRequest("GET", "/todos/nonexistent", nil)
     rec := httptest.NewRecorder()
-    mux.ServeHTTP(rec, req)
+    app.Router.ServeHTTP(rec, req)
 
     // Should return 404 for not found
     if rec.Code != http.StatusNotFound {
@@ -323,22 +340,30 @@ func TestREST_Get_NotFound(t *testing.T) {
 ### Testing JSON-RPC
 
 ```go
+import (
+    "github.com/go-mizu/mizu/contract/v2/transport/jsonrpc"
+)
+
 func TestJSONRPC_Create(t *testing.T) {
-    svc, _ := contract.Register("todo", todo.NewService())
-    mux := http.NewServeMux()
-    contract.MountJSONRPC(mux, "/rpc", svc)
+    impl := newTodoService()
+    svc := contract.Register[TodoAPI](impl,
+        contract.WithDefaultResource("todos"),
+    )
+
+    app := mizu.New()
+    jsonrpc.Mount(app.Router, "/rpc", svc)
 
     body := strings.NewReader(`{
         "jsonrpc": "2.0",
         "id": 1,
-        "method": "Create",
+        "method": "todos.create",
         "params": {"title": "Test"}
     }`)
     req := httptest.NewRequest("POST", "/rpc", body)
     req.Header.Set("Content-Type", "application/json")
 
     rec := httptest.NewRecorder()
-    mux.ServeHTTP(rec, req)
+    app.Router.ServeHTTP(rec, req)
 
     // Parse JSON-RPC response
     var resp struct {
@@ -361,17 +386,21 @@ func TestJSONRPC_Create(t *testing.T) {
 }
 
 func TestJSONRPC_Batch(t *testing.T) {
-    svc, _ := contract.Register("todo", todo.NewService())
-    mux := http.NewServeMux()
-    contract.MountJSONRPC(mux, "/rpc", svc)
+    impl := newTodoService()
+    svc := contract.Register[TodoAPI](impl,
+        contract.WithDefaultResource("todos"),
+    )
+
+    app := mizu.New()
+    jsonrpc.Mount(app.Router, "/rpc", svc)
 
     body := strings.NewReader(`[
-        {"jsonrpc": "2.0", "id": 1, "method": "Create", "params": {"title": "First"}},
-        {"jsonrpc": "2.0", "id": 2, "method": "Create", "params": {"title": "Second"}}
+        {"jsonrpc": "2.0", "id": 1, "method": "todos.create", "params": {"title": "First"}},
+        {"jsonrpc": "2.0", "id": 2, "method": "todos.create", "params": {"title": "Second"}}
     ]`)
     req := httptest.NewRequest("POST", "/rpc", body)
     rec := httptest.NewRecorder()
-    mux.ServeHTTP(rec, req)
+    app.Router.ServeHTTP(rec, req)
 
     var responses []map[string]any
     json.NewDecoder(rec.Body).Decode(&responses)
@@ -385,29 +414,33 @@ func TestJSONRPC_Batch(t *testing.T) {
 ### Testing MCP
 
 ```go
-import "github.com/go-mizu/mizu/contract/transport/mcp"
+import "github.com/go-mizu/mizu/contract/v2/transport/mcp"
 
 func TestMCP_ToolsCall(t *testing.T) {
-    svc, _ := contract.Register("todo", todo.NewService())
-    mux := http.NewServeMux()
-    mcp.Mount(mux, "/mcp", svc)
+    impl := newTodoService()
+    svc := contract.Register[TodoAPI](impl,
+        contract.WithDefaultResource("todos"),
+    )
+
+    app := mizu.New()
+    mcp.Mount(app.Router, "/mcp", svc)
 
     // First, initialize
     initBody := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`
     req := httptest.NewRequest("POST", "/mcp", strings.NewReader(initBody))
     rec := httptest.NewRecorder()
-    mux.ServeHTTP(rec, req)
+    app.Router.ServeHTTP(rec, req)
 
     // Then, call a tool
     callBody := `{
         "jsonrpc":"2.0",
         "id":2,
         "method":"tools/call",
-        "params":{"name":"todo.Create","arguments":{"title":"Test"}}
+        "params":{"name":"todos.create","arguments":{"title":"Test"}}
     }`
     req = httptest.NewRequest("POST", "/mcp", strings.NewReader(callBody))
     rec = httptest.NewRecorder()
-    mux.ServeHTTP(rec, req)
+    app.Router.ServeHTTP(rec, req)
 
     if rec.Code != http.StatusOK {
         t.Errorf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -436,33 +469,34 @@ Create helper functions to reduce boilerplate:
 
 ```go
 // Setup helper
-func setupTestServer(t *testing.T) (*httptest.Server, func()) {
+func setupTestApp(t *testing.T) *mizu.App {
     t.Helper()
 
-    svc, err := contract.Register("todo", todo.NewService())
-    if err != nil {
-        t.Fatalf("failed to register: %v", err)
-    }
+    impl := newTodoService()
+    svc := contract.Register[TodoAPI](impl,
+        contract.WithDefaultResource("todos"),
+    )
 
-    mux := http.NewServeMux()
-    contract.MountREST(mux, svc)
-    contract.MountJSONRPC(mux, "/rpc", svc)
+    app := mizu.New()
+    rest.Mount(app.Router, svc)
+    jsonrpc.Mount(app.Router, "/rpc", svc)
 
-    server := httptest.NewServer(mux)
-
-    cleanup := func() { server.Close() }
-    return server, cleanup
+    return app
 }
 
 // Usage
 func TestIntegration(t *testing.T) {
-    server, cleanup := setupTestServer(t)
-    defer cleanup()
+    app := setupTestApp(t)
 
-    // Use server.URL for requests
-    resp, _ := http.Post(server.URL+"/todos", "application/json",
-        strings.NewReader(`{"title":"Test"}`))
-    // ...
+    // Test REST
+    req := httptest.NewRequest("POST", "/todos", strings.NewReader(`{"title":"Test"}`))
+    req.Header.Set("Content-Type", "application/json")
+    rec := httptest.NewRecorder()
+    app.Router.ServeHTTP(rec, req)
+
+    if rec.Code != http.StatusOK {
+        t.Errorf("expected 200, got %d", rec.Code)
+    }
 }
 ```
 
@@ -529,7 +563,7 @@ func TestGet_Errors(t *testing.T) {
 }
 
 // Helper function
-func assertErrorCode(t *testing.T, err error, want contract.ErrCode) {
+func assertErrorCode(t *testing.T, err error, want contract.ErrorCode) {
     t.Helper()
     var contractErr *contract.Error
     if !errors.As(err, &contractErr) {
@@ -568,6 +602,6 @@ func TestService(t *testing.T) {
 
 ## See Also
 
-- [Defining Services](/contract/service) - Writing testable services
-- [Error Handling](/contract/errors) - Testing error conditions
+- [Services](/contract/service) - Writing testable services
+- [Errors](/contract/errors) - Testing error conditions
 - [Architecture](/contract/architecture) - Understanding what to test at each layer

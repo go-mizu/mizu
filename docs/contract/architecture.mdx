@@ -23,7 +23,7 @@ At its core, Contract does one simple thing: it takes your plain Go code and mak
 │  └───────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
                                    │
-                                   │ contract.Register("todo", &TodoService{})
+                                   │ contract.Register[TodoAPI](&todoService{})
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -97,7 +97,7 @@ func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error
 When you call `contract.Register()`, Contract inspects your service and creates a data structure that describes it:
 
 ```go
-svc, err := contract.Register("todo", &TodoService{})
+svc := contract.Register[TodoAPI](&todoService{})
 ```
 
 This registration process:
@@ -131,7 +131,6 @@ Each transport does this differently:
 | REST | HTTP verbs + paths | JSON body |
 | JSON-RPC | JSON with method name | JSON-RPC envelope |
 | MCP | JSON-RPC with tool calls | MCP content blocks |
-| tRPC | Path-based + JSON body | tRPC envelope |
 
 ## How a Request Flows Through the System
 
@@ -147,7 +146,7 @@ curl -X POST http://localhost:8080/todos \
 
 ### Step 2: REST Handler Receives It
 
-The REST handler (mounted by `contract.MountREST()`) receives the HTTP request:
+The REST handler (mounted by `rest.Mount()`) receives the HTTP request:
 
 ```
 Method: POST
@@ -317,32 +316,26 @@ result, err := method.Invoker.Call(ctx, input)
 
 ## Package Organization
 
-The contract package is organized into:
+The contract v2 package is organized into:
 
 ```
-contract/
-├── contract.go          # Core: Service, Method, Register
-├── types.go             # TypeRegistry, JSON schema generation
+contract/v2/
+├── contract.go          # Core: Register, RegisteredService
+├── types.go             # Type discovery, JSON schema generation
 ├── errors.go            # Error types and codes
-├── client.go            # Client-side utilities
 │
-├── transport_rest.go    # REST transport (MountREST)
-│
-└── transport/           # Additional transports
+└── transport/           # Transport implementations
+    ├── rest/            # REST transport
+    │   └── rest.go      # Mount, NewHandler
+    │
     ├── jsonrpc/         # JSON-RPC 2.0
-    │   ├── jsonrpc.go   # Request/Response types
-    │   └── handler.go   # HTTP handler
+    │   └── jsonrpc.go   # Mount, NewHandler, Request/Response types
     │
     ├── mcp/             # Model Context Protocol
-    │   ├── mcp.go       # MCP types
-    │   └── handler.go   # HTTP handler
+    │   └── mcp.go       # Mount, NewHandler
     │
-    ├── trpc/            # tRPC-like
-    │   ├── trpc.go      # Envelope types
-    │   └── handler.go   # HTTP handler
-    │
-    └── rest/            # REST utilities
-        └── spec.go      # OpenAPI generation
+    └── openapi/         # OpenAPI spec generation
+        └── openapi.go   # Mount, Generate
 ```
 
 ## Design Principles
@@ -366,7 +359,6 @@ return nil, contract.ErrNotFound("user not found")
 |----------|----------------|
 | REST | HTTP 404 + message body |
 | JSON-RPC | Error code -32601 |
-| tRPC | `{"error": {"code": "NOT_FOUND"}}` |
 | MCP | `{"isError": true, "content": [...]}` |
 
 ### 3. No Magic, Just Functions
