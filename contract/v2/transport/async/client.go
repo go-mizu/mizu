@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-mizu/mizu/contract"
+	contract "github.com/go-mizu/mizu/contract/v2"
 )
 
 // Client calls an async transport surface over a Broker.

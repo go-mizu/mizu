@@ -37,10 +37,16 @@ Supports JSON-RPC, OpenAPI, and OpenRPC discovery.`,
 }
 
 var contractLsCmd = &cobra.Command{
-	Use:     "ls [url]",
+	Use:     "ls [file|url]",
 	Aliases: []string{"list"},
 	Short:   "List services and methods",
-	RunE:    wrapRunE(runContractLsCmd),
+	Long: `List services and methods from a contract file or running server.
+
+For v2 contract files (.yaml, .yml), parses and displays the contract.
+For running servers, discovers via JSON-RPC, OpenRPC, or OpenAPI.`,
+	Example: `  mizu contract ls api.yaml
+  mizu contract ls http://localhost:8080`,
+	RunE: wrapRunE(runContractLsCmd),
 }
 
 var contractShowCmd = &cobra.Command{
@@ -58,9 +64,16 @@ var contractCallCmd = &cobra.Command{
 }
 
 var contractSpecCmd = &cobra.Command{
-	Use:   "spec [url]",
+	Use:   "spec [file|url]",
 	Short: "Export API specification",
-	RunE:  wrapRunE(runContractSpecCmd),
+	Long: `Export API specification from a contract file or running server.
+
+For v2 contract files (.yaml, .yml), generates OpenAPI, OpenRPC, or AsyncAPI.
+For running servers, fetches the existing specification.`,
+	Example: `  mizu contract spec api.yaml --format openapi
+  mizu contract spec api.yaml --format openrpc
+  mizu contract spec http://localhost:8080`,
+	RunE: wrapRunE(runContractSpecCmdEnhanced),
 }
 
 var contractTypesCmd = &cobra.Command{
@@ -109,7 +122,7 @@ func init() {
 
 	// Flags for spec
 	contractSpecCmd.Flags().StringVar(&contractFlags.url, "url", "", "Server URL")
-	contractSpecCmd.Flags().StringVar(&contractFlags.format, "format", "", "Output format (openapi, openrpc)")
+	contractSpecCmd.Flags().StringVar(&contractFlags.format, "format", "", "Output format (openapi, openrpc, asyncapi)")
 	contractSpecCmd.Flags().BoolVar(&contractFlags.pretty, "pretty", false, "Pretty print JSON")
 	contractSpecCmd.Flags().StringVarP(&contractFlags.output, "output", "o", "", "Output file")
 	contractSpecCmd.Flags().StringVar(&contractFlags.service, "service", "", "Export specific service")
@@ -122,16 +135,32 @@ func init() {
 func runContractLsCmd(cmd *cobra.Command, args []string) error {
 	out := NewOutput()
 
-	url := resolveContractURL(args)
-	info, err := discoverContractNew(url, out)
-	if err != nil {
-		if Flags.JSON {
-			emitContractErrorNew(out, err)
-		} else {
-			out.PrintError("%v", err)
-			out.PrintHint("is the server running? try: mizu dev")
+	// Check if first arg is a local contract file
+	var info *ContractInfo
+	var err error
+
+	if len(args) > 0 && isContractFile(args[0]) {
+		info, err = discoverContractV2File(args[0], out)
+		if err != nil {
+			if Flags.JSON {
+				emitContractErrorNew(out, err)
+			} else {
+				out.PrintError("parse failed: %v", err)
+			}
+			return err
 		}
-		return err
+	} else {
+		url := resolveContractURL(args)
+		info, err = discoverContractNew(url, out)
+		if err != nil {
+			if Flags.JSON {
+				emitContractErrorNew(out, err)
+			} else {
+				out.PrintError("%v", err)
+				out.PrintHint("is the server running? try: mizu dev")
+			}
+			return err
+		}
 	}
 
 	if Flags.JSON {
