@@ -27,9 +27,9 @@ BUILD_TIME ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 # Linker flags
 # --------------------------
 LDFLAGS := -s -w \
-	-X github.com/go-mizu/mizu/cli.Version=$(VERSION) \
-	-X github.com/go-mizu/mizu/cli.Commit=$(COMMIT) \
-	-X github.com/go-mizu/mizu/cli.BuildTime=$(BUILD_TIME)
+	-X github.com/go-mizu/mizu/cmd/cli.Version=$(VERSION) \
+	-X github.com/go-mizu/mizu/cmd/cli.Commit=$(COMMIT) \
+	-X github.com/go-mizu/mizu/cmd/cli.BuildTime=$(BUILD_TIME)
 
 # --------------------------
 # Test configuration
@@ -105,6 +105,17 @@ test: ## Run tests (supports CHANGED=1 BASE=... EXCLUDE="...")
 	echo "Testing packages:"; \
 	printf "  %s\n" $$PKGS; \
 	$(GO) test $(GOTESTFLAGS) -count=$(COUNT) $(if $(RUN),-run $(RUN)) $$PKGS
+
+.PHONY: workspace
+workspace: ## Initialize go.work for local development
+	@if [ ! -f go.work ]; then \
+		go work init; \
+		go work use .; \
+		go work use ./cmd; \
+		echo "Created go.work"; \
+	else \
+		echo "go.work already exists"; \
+	fi
 
 .PHONY: help
 help: ## Show help

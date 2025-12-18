@@ -62,15 +62,18 @@ The Mizu CLI provides project scaffolding and development tools.
 go install github.com/go-mizu/mizu/cmd/mizu@latest
 ```
 
-**From source:**
+This downloads and installs the CLI from the published module.
+
+**From source (for development):**
 
 ```bash
 git clone https://github.com/go-mizu/mizu.git
 cd mizu
+make workspace  # Creates go.work for local development
 make install
 ```
 
-This installs the `mizu` binary to `$HOME/bin`. Ensure this directory is in your `PATH`.
+This builds the CLI using your local changes and installs to `$HOME/bin`. Ensure this directory is in your `PATH`.
 
 **Verify installation:**
 
