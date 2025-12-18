@@ -1,13 +1,13 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 
+	"github.com/charmbracelet/fang"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/mango-cobra"
-	"github.com/muesli/roff"
 	"github.com/spf13/cobra"
 )
 
@@ -48,78 +48,7 @@ working with service contracts, and exploring available middlewares.`,
 	},
 }
 
-// manCmd generates man pages (hidden).
-var manCmd = &cobra.Command{
-	Use:    "man",
-	Short:  "Generate man pages",
-	Hidden: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		manPage, err := mcobra.NewManPage(1, rootCmd)
-		if err != nil {
-			return err
-		}
-
-		manPage = manPage.WithSection("Authors", "The go-mizu contributors <https://github.com/go-mizu/mizu>")
-		manPage = manPage.WithSection("Bugs", "Report bugs at https://github.com/go-mizu/mizu/issues")
-
-		fmt.Println(manPage.Build(roff.NewDocument()))
-		return nil
-	},
-}
-
-// completionCmd generates shell completions.
-var completionCmd = &cobra.Command{
-	Use:   "completion [bash|zsh|fish|powershell]",
-	Short: "Generate shell completion scripts",
-	Long: `Generate shell completion scripts for mizu.
-
-To load completions:
-
-Bash:
-  $ source <(mizu completion bash)
-  # To load completions for each session, execute once:
-  # Linux:
-  $ mizu completion bash > /etc/bash_completion.d/mizu
-  # macOS:
-  $ mizu completion bash > $(brew --prefix)/etc/bash_completion.d/mizu
-
-Zsh:
-  # If shell completion is not already enabled in your environment,
-  # you will need to enable it. You can execute the following once:
-  $ echo "autoload -U compinit; compinit" >> ~/.zshrc
-  # To load completions for each session, execute once:
-  $ mizu completion zsh > "${fpath[1]}/_mizu"
-  # You will need to start a new shell for this setup to take effect.
-
-Fish:
-  $ mizu completion fish | source
-  # To load completions for each session, execute once:
-  $ mizu completion fish > ~/.config/fish/completions/mizu.fish
-
-PowerShell:
-  PS> mizu completion powershell | Out-String | Invoke-Expression
-  # To load completions for every new session, run:
-  PS> mizu completion powershell > mizu.ps1
-  # and source this file from your PowerShell profile.
-`,
-	DisableFlagsInUseLine: true,
-	ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
-	Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		switch args[0] {
-		case "bash":
-			return rootCmd.GenBashCompletion(os.Stdout)
-		case "zsh":
-			return rootCmd.GenZshCompletion(os.Stdout)
-		case "fish":
-			return rootCmd.GenFishCompletion(os.Stdout, true)
-		case "powershell":
-			return rootCmd.GenPowerShellCompletionWithDesc(os.Stdout)
-		default:
-			return fmt.Errorf("unknown shell: %s", args[0])
-		}
-	},
-}
+// Note: man page generation and shell completions are now handled by Fang automatically
 
 func init() {
 	// Global flags
@@ -135,8 +64,7 @@ func init() {
 	rootCmd.AddCommand(contractCmd)
 	rootCmd.AddCommand(middlewareCmd)
 	rootCmd.AddCommand(versionCmd)
-	rootCmd.AddCommand(manCmd)
-	rootCmd.AddCommand(completionCmd)
+	// Note: man and completion commands are now provided by Fang automatically
 }
 
 // Run is the main entry point for the CLI.
@@ -146,10 +74,14 @@ func Run() int {
 		Flags.NoColor = true
 	}
 
-	if err := rootCmd.Execute(); err != nil {
-		// Print styled error
-		out := NewOutput()
-		out.Errorf("Error: %v\n", err)
+	// Execute with Fang for enhanced DX
+	// Fang provides styled help, automatic version handling, man pages, and completions
+	if err := fang.Execute(
+		context.Background(),
+		rootCmd,
+		fang.WithVersion(Version),
+		fang.WithCommit(Commit),
+	); err != nil {
 		return 1
 	}
 	return 0

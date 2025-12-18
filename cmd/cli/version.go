@@ -9,6 +9,7 @@ import (
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information",
+	Long:  "Print detailed version information including Go version, commit hash, and build time.",
 	RunE:  wrapRunE(runVersionCmd),
 }
 
