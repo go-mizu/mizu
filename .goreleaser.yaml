@@ -12,8 +12,8 @@ env:
 
 before:
   hooks:
-    - 'cd cmd && go mod tidy'
-    - 'cd cmd && go mod verify'
+    - go mod tidy -C cmd
+    - go mod verify -C cmd
 
 builds:
   - id: mizu
