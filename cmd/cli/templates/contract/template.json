@@ -1,7 +1,7 @@
 {
   "name": "contract",
-  "description": "Definition-first API contract with YAML schema, REST, JSON-RPC, and OpenAPI (v2)",
-  "tags": ["go", "mizu", "contract", "rest", "jsonrpc", "openapi", "yaml"],
+  "description": "Code-first API contract with mizu integration, REST, JSON-RPC, and OpenAPI (v2)",
+  "tags": ["go", "mizu", "contract", "rest", "jsonrpc", "openapi"],
   "variables": {
     "name": { "description": "Project name", "default": "" },
     "module": { "description": "Go module path", "default": "" }
