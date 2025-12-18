@@ -6,24 +6,30 @@ version: 2
 
 project_name: mizu
 
+# Disable go workspace mode - required because the CLI is in a separate module
+env:
+  - GOWORK=off
+
 before:
   hooks:
-    - go mod tidy
-    - go mod verify
+    - 'cd cmd && go mod tidy'
+    - 'cd cmd && go mod verify'
 
 builds:
   - id: mizu
-    main: ./cmd/mizu
+    dir: cmd
+    main: ./mizu
     binary: mizu
     env:
       - CGO_ENABLED=0
+      - GOWORK=off
     flags:
       - -trimpath
     ldflags:
       - -s -w
-      - -X 'github.com/go-mizu/mizu/cli.Version={{.Version}}'
-      - -X 'github.com/go-mizu/mizu/cli.Commit={{.ShortCommit}}'
-      - -X 'github.com/go-mizu/mizu/cli.BuildTime={{.Date}}'
+      - -X 'github.com/go-mizu/mizu/cmd/cli.Version={{.Version}}'
+      - -X 'github.com/go-mizu/mizu/cmd/cli.Commit={{.ShortCommit}}'
+      - -X 'github.com/go-mizu/mizu/cmd/cli.BuildTime={{.Date}}'
     goos:
       - linux
       - darwin

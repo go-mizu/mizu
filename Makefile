@@ -118,6 +118,25 @@ workspace: ## Initialize go.work for local development
 		echo "go.work already exists"; \
 	fi
 
+# --------------------------
+# Release targets (goreleaser)
+# --------------------------
+.PHONY: release-check
+release-check: ## Validate goreleaser configuration
+	@goreleaser check
+
+.PHONY: release-snapshot
+release-snapshot: ## Build a snapshot release locally (no publish)
+	@goreleaser release --snapshot --clean
+
+.PHONY: release
+release: ## Build and publish a release (requires GITHUB_TOKEN)
+	@if [ -z "$(GITHUB_TOKEN)" ]; then \
+		echo "Error: GITHUB_TOKEN is required for release"; \
+		exit 1; \
+	fi
+	@goreleaser release --clean
+
 .PHONY: help
 help: ## Show help
 	@echo ""
