@@ -3,22 +3,39 @@ title: "Quick Start"
 description: "Build your first Mizu app using plain Go."
 ---
 
-This guide shows how to create a simple Mizu app from scratch.
-If you have used Go before, you will feel right at home.
+This guide shows how to create a Mizu app from scratch. You'll build a working API server that handles multiple endpoints, parses JSON, and organizes routes into groups.
 
-### Install Mizu
+## Prerequisites
 
-Run this command inside your Go project to install Mizu.
+- **Go 1.22+** - Check with `go version`
+- **A code editor** - VS Code with the Go extension works well
+- **Basic Go knowledge** - Functions, structs, and packages
+
+## Step 1: Create a project
+
+Open your terminal and create a new directory:
+
+```bash
+mkdir myapi
+cd myapi
+go mod init myapi
+```
+
+The `go mod init` command creates a `go.mod` file. This tracks your project's dependencies.
+
+## Step 2: Install Mizu
+
+Add Mizu as a dependency:
 
 ```bash
 go get github.com/go-mizu/mizu@latest
 ```
 
-That is all you need. No extra setup or tools required.
+You'll see Mizu added to your `go.mod` file.
 
-### Write your first app
+## Step 3: Write your first handler
 
-Create a file called `main.go` and add this code.
+Create `main.go`:
 
 ```go
 package main
@@ -26,33 +43,286 @@ package main
 import "github.com/go-mizu/mizu"
 
 func main() {
-	app := mizu.New()
+    // Create a new Mizu app
+    // This sets up a router with default request logging
+    app := mizu.New()
 
-	app.Get("/", func(c *mizu.Ctx) error {
-		return c.Text(200, "Hello, Mizu!")
-	})
+    // Register a handler for GET /
+    // When someone visits this URL, the handler runs
+    app.Get("/", func(c *mizu.Ctx) error {
+        // c is the context - it has the request and response helpers
+        // Text(200, "...") sends a plain text response with status 200
+        return c.Text(200, "Hello, Mizu!")
+    })
 
-	app.Listen(":3000")
+    // Start the server on port 3000
+    // This runs until you press Ctrl+C
+    app.Listen(":3000")
 }
 ```
 
-### Run the app
-
-Start your server with:
+Run it:
 
 ```bash
 go run main.go
 ```
 
-Then open [http://localhost:3000](http://localhost:3000) in your browser.
-You should see "Hello, Mizu!" on the page.
+Open [http://localhost:3000](http://localhost:3000). You'll see "Hello, Mizu!" in the browser. The terminal shows request logs.
 
-### What's next
+Press **Ctrl+C** to stop the server.
 
-Now that your first app is running, you can:
+## Step 4: Add JSON responses
 
-- Add routes and return JSON or HTML responses.
-- Use middleware for logging and recovery.
-- Learn about graceful shutdowns for production use.
+Most APIs return JSON. Update `main.go`:
 
-Mizu keeps things simple. You write normal Go code, and it takes care of the details.
+```go
+package main
+
+import "github.com/go-mizu/mizu"
+
+// Define a struct for your data
+type User struct {
+    ID    string `json:"id"`
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+
+func main() {
+    app := mizu.New()
+
+    // Return JSON data
+    app.Get("/users", func(c *mizu.Ctx) error {
+        users := []User{
+            {ID: "1", Name: "Alice", Email: "alice@example.com"},
+            {ID: "2", Name: "Bob", Email: "bob@example.com"},
+        }
+        // JSON(200, data) encodes the struct and sets Content-Type header
+        return c.JSON(200, users)
+    })
+
+    // Path parameter: {id} captures that part of the URL
+    app.Get("/users/{id}", func(c *mizu.Ctx) error {
+        // c.Param("id") gets the captured value
+        id := c.Param("id")
+        user := User{ID: id, Name: "Alice", Email: "alice@example.com"}
+        return c.JSON(200, user)
+    })
+
+    app.Listen(":3000")
+}
+```
+
+Try these URLs:
+- `http://localhost:3000/users` → Returns a JSON array of users
+- `http://localhost:3000/users/42` → Returns a single user with ID "42"
+
+## Step 5: Handle POST requests
+
+APIs need to accept data too. Add a POST endpoint:
+
+```go
+package main
+
+import "github.com/go-mizu/mizu"
+
+type User struct {
+    ID    string `json:"id"`
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+
+// Input struct for creating users
+type CreateUserInput struct {
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+
+func main() {
+    app := mizu.New()
+
+    app.Get("/users", listUsers)
+    app.Get("/users/{id}", getUser)
+    app.Post("/users", createUser)
+
+    app.Listen(":3000")
+}
+
+func listUsers(c *mizu.Ctx) error {
+    users := []User{{ID: "1", Name: "Alice"}}
+    return c.JSON(200, users)
+}
+
+func getUser(c *mizu.Ctx) error {
+    id := c.Param("id")
+    return c.JSON(200, User{ID: id, Name: "Alice"})
+}
+
+func createUser(c *mizu.Ctx) error {
+    var input CreateUserInput
+
+    // BindJSON parses the request body into the struct
+    // 1<<20 is the max size (1MB) - prevents huge payloads
+    if err := c.BindJSON(&input, 1<<20); err != nil {
+        // Return 400 Bad Request if parsing fails
+        return c.JSON(400, map[string]string{"error": err.Error()})
+    }
+
+    // Validate the input
+    if input.Name == "" {
+        return c.JSON(400, map[string]string{"error": "name is required"})
+    }
+
+    // In a real app, you'd save to a database here
+    user := User{
+        ID:    "123", // Would be generated
+        Name:  input.Name,
+        Email: input.Email,
+    }
+
+    // Return 201 Created with the new user
+    return c.JSON(201, user)
+}
+```
+
+Test with curl:
+
+```bash
+curl -X POST http://localhost:3000/users \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Charlie", "email": "charlie@example.com"}'
+```
+
+## Step 6: Organize with route groups
+
+As your API grows, group related routes together:
+
+```go
+func main() {
+    app := mizu.New()
+
+    // Group all /api/v1 routes
+    app.Group("/api/v1", func(r *mizu.Router) {
+        // These become /api/v1/users, /api/v1/users/{id}, etc.
+        r.Get("/users", listUsers)
+        r.Get("/users/{id}", getUser)
+        r.Post("/users", createUser)
+
+        // Nested groups work too
+        r.Group("/admin", func(admin *mizu.Router) {
+            admin.Get("/stats", getStats)
+        })
+    })
+
+    // Root endpoint
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{
+            "message": "API v1 available at /api/v1",
+        })
+    })
+
+    app.Listen(":3000")
+}
+
+func getStats(c *mizu.Ctx) error {
+    return c.JSON(200, map[string]int{"users": 100})
+}
+```
+
+Routes are now:
+- `GET /` → API info
+- `GET /api/v1/users` → List users
+- `GET /api/v1/users/{id}` → Get user
+- `POST /api/v1/users` → Create user
+- `GET /api/v1/admin/stats` → Admin stats
+
+## Step 7: Add error handling
+
+Centralize how errors are reported:
+
+```go
+func main() {
+    app := mizu.New()
+
+    // Set a global error handler
+    app.ErrorHandler(func(c *mizu.Ctx, err error) {
+        // Log the error
+        c.Logger().Error("request failed", "error", err)
+
+        // Check if it's a panic (recovered automatically)
+        if perr, ok := err.(*mizu.PanicError); ok {
+            c.Logger().Error("panic", "value", perr.Value)
+        }
+
+        // Send a consistent error response
+        c.JSON(500, map[string]string{"error": "internal server error"})
+    })
+
+    app.Get("/error", func(c *mizu.Ctx) error {
+        // This error flows to the error handler
+        return fmt.Errorf("something went wrong")
+    })
+
+    app.Listen(":3000")
+}
+```
+
+## Project structure
+
+For larger projects, organize your code:
+
+```
+myapi/
+├── main.go           # Entry point
+├── handlers/
+│   ├── users.go      # User handlers
+│   └── admin.go      # Admin handlers
+├── models/
+│   └── user.go       # Data structures
+└── go.mod
+```
+
+Example `handlers/users.go`:
+
+```go
+package handlers
+
+import "github.com/go-mizu/mizu"
+
+func ListUsers(c *mizu.Ctx) error {
+    // ...
+}
+
+func GetUser(c *mizu.Ctx) error {
+    // ...
+}
+```
+
+Then in `main.go`:
+
+```go
+import "myapi/handlers"
+
+func main() {
+    app := mizu.New()
+    app.Get("/users", handlers.ListUsers)
+    app.Get("/users/{id}", handlers.GetUser)
+    app.Listen(":3000")
+}
+```
+
+## What you learned
+
+- Create a Mizu app with `mizu.New()`
+- Define handlers that return errors
+- Return JSON with `c.JSON(code, data)`
+- Capture path parameters with `{param}` and `c.Param()`
+- Parse JSON bodies with `c.BindJSON()`
+- Organize routes with `Group()`
+- Handle errors centrally with `ErrorHandler()`
+
+## Next steps
+
+- [Deployment](/get-started/deployment) - Run your app in production
+- [Routing](/concepts/routing) - Advanced routing patterns
+- [Middleware](/concepts/middleware) - Add logging, auth, and more
+- [Error Handling](/concepts/error) - Custom error responses

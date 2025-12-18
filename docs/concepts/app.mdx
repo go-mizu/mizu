@@ -3,95 +3,198 @@ title: "App"
 description: "The main entry point that runs your Mizu application."
 ---
 
-A Mizu application is the main part of your web server. <br/>
-It creates the router, manages middleware, runs the HTTP server, and handles shutdown safely when the server stops.
+An `App` is the main entry point for your web server. It wraps an HTTP server, manages its lifecycle, and handles graceful shutdown when the process receives a stop signal.
 
-### Create an app
+## What an App does
 
-Every Mizu project begins by creating an `App` instance.
+When you create an app with `mizu.New()`, you get:
+
+| Component | Description |
+|-----------|-------------|
+| **Router** | Embedded, so you can call `app.Get()`, `app.Post()` directly |
+| **Logger** | Request logging enabled by default |
+| **Panic recovery** | Catches panics in handlers, prevents crashes |
+| **Graceful shutdown** | Drains active requests before stopping |
+
+## Create an app
+
+Every Mizu project starts by creating an `App`:
 
 ```go
 package main
 
 import "github.com/go-mizu/mizu"
 
-func home(c *mizu.Ctx) error {
-	return c.Text(200, "Hello, Mizu!")
-}
-
 func main() {
-	app := mizu.New()
-	app.Get("/", home)
-	app.Listen(":3000")
+    // Create a new app with default settings
+    app := mizu.New()
+
+    // Define a route - App embeds Router, so this works directly
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.Text(200, "Hello, Mizu!")
+    })
+
+    // Start the HTTP server on port 3000
+    // This blocks until you press Ctrl+C
+    app.Listen(":3000")
 }
 ```
 
-`mizu.New()` creates a new app.<br/>
-`app.Get()` adds a route.<br/>
-`app.Listen()` starts the server on the given port.<br/>
-When you visit [http://localhost:3000](http://localhost:3000), the server responds with "Hello, Mizu!".
+When this runs:
+1. `mizu.New()` creates an app with a router and default logger
+2. `app.Get("/", ...)` registers a handler for GET requests to "/"
+3. `app.Listen(":3000")` starts the HTTP server
 
-### How it works
+The terminal shows startup logs:
 
-The `App` type embeds Mizu's `Router`, so you can define routes and middleware on it directly.
-When `Listen` is called, Mizu starts a standard Go `net/http` server.
-When the server receives a stop signal (SIGINT or SIGTERM), Mizu performs a graceful shutdown and lets running requests finish first.
-
-Mizu automatically handles:
-
-- Graceful shutdown when system signals are received
-- Structured logging for startup and shutdown
-- Panic recovery in handlers to prevent crashes
-
-### Configuration options
-
-You can customize shutdown behavior when creating the app:
-
-```go
-app := mizu.New(
-	mizu.WithPreShutdownDelay(2 * time.Second),
-	mizu.WithShutdownTimeout(30 * time.Second),
-)
+```
+INFO server starting addr=:3000 pid=12345 go_version=go1.22
 ```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `WithPreShutdownDelay` | 1 second | Time to wait after receiving shutdown signal before starting drain. Useful for load balancers to stop sending traffic. |
-| `WithShutdownTimeout` | 15 seconds | Maximum time to wait for active requests to complete during shutdown. |
-
-### Starting the server
+## Starting the server
 
 Mizu provides three ways to start your server:
 
 ```go
-// Listen on a TCP address
+// 1. Listen on a TCP address (most common)
 app.Listen(":3000")
 
-// Listen with TLS
+// 2. Listen with TLS (HTTPS)
 app.ListenTLS(":443", "cert.pem", "key.pem")
 
-// Use an existing listener
+// 3. Use an existing listener (advanced)
 listener, _ := net.Listen("tcp", ":3000")
 app.Serve(listener)
 ```
 
-### Health checks
+All three methods block until the server stops. They also handle graceful shutdown when the process receives SIGINT (Ctrl+C) or SIGTERM.
 
-You can add a health check endpoint for monitoring.<br/>
-This helps detect when the server is ready or shutting down.
+## Configuration
+
+Configure the app by setting fields after creation:
 
 ```go
-http.Handle("/healthz", app.HealthzHandler())
+app := mizu.New()
+
+// Shutdown timeout: how long to wait for active requests
+// Default: 15 seconds
+app.ShutdownTimeout = 30 * time.Second
 ```
 
-The endpoint returns `200 OK` when running and `503 Service Unavailable` during shutdown.<br/>
-It works with load balancers and orchestration tools such as Kubernetes.
+| Field | Default | Description |
+|-------|---------|-------------|
+| `ShutdownTimeout` | 15 seconds | Maximum time to wait for active requests to complete during shutdown |
 
-### Next steps
+## Graceful shutdown
 
-Once your app is running, learn more about these topics:
+When your app receives a stop signal (SIGINT or SIGTERM):
 
-- [Routing](/concepts/routing) to define URLs and methods
-- [Handler](/concepts/handler) to write request logic
-- [Logging](/concepts/logging) to record activity and errors
-- [Error](/concepts/error) to manage errors in one place
+1. **New connections refused** - The server stops accepting new connections
+2. **Active requests complete** - Running requests continue until finished (up to `ShutdownTimeout`)
+3. **Clean exit** - Server exits with success status
+
+This prevents dropped connections during deployments. Your load balancer can redirect traffic while the old instance drains.
+
+```
+INFO shutdown initiated
+INFO server stopped gracefully duration=1.234s
+```
+
+If requests don't finish within `ShutdownTimeout`, they're terminated.
+
+## Health check endpoints
+
+Mizu provides two health check handlers for load balancers and orchestrators like Kubernetes:
+
+```go
+app := mizu.New()
+
+// Liveness probe: is the process alive?
+// Always returns 200 OK
+http.Handle("/livez", app.LivezHandler())
+
+// Readiness probe: can it handle traffic?
+// Returns 200 normally, 503 during shutdown
+http.Handle("/readyz", app.ReadyzHandler())
+
+app.Listen(":3000")
+```
+
+| Endpoint | Normal | During Shutdown |
+|----------|--------|-----------------|
+| `/livez` | 200 OK | 200 OK |
+| `/readyz` | 200 OK | 503 Service Unavailable |
+
+**How they differ:**
+- **Liveness** (`/livez`): "Is the process running?" Used by Kubernetes to decide if the pod should be restarted
+- **Readiness** (`/readyz`): "Can it handle traffic?" Used by load balancers to route traffic
+
+During graceful shutdown, `/readyz` returns 503 so load balancers stop sending new traffic, while `/livez` continues returning 200 so the pod isn't killed prematurely.
+
+## Access the underlying server
+
+For advanced configuration, access the `http.Server` instance:
+
+```go
+app := mizu.New()
+
+// Configure routes...
+app.Get("/", handler)
+
+// Access the server (available after calling Listen/ListenTLS/Serve)
+// Can be used to configure TLSConfig, ConnState callbacks, etc.
+srv := app.Server()
+```
+
+## Complete example
+
+```go
+package main
+
+import (
+    "net/http"
+    "time"
+
+    "github.com/go-mizu/mizu"
+)
+
+func main() {
+    app := mizu.New()
+
+    // Configure shutdown timeout
+    app.ShutdownTimeout = 30 * time.Second
+
+    // Health check endpoints
+    http.Handle("/livez", app.LivezHandler())
+    http.Handle("/readyz", app.ReadyzHandler())
+
+    // Your API routes
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{"status": "ok"})
+    })
+
+    app.Group("/api", func(r *mizu.Router) {
+        r.Get("/users", listUsers)
+        r.Post("/users", createUser)
+    })
+
+    // Set error handler
+    app.ErrorHandler(func(c *mizu.Ctx, err error) {
+        c.Logger().Error("request failed", "error", err)
+        c.JSON(500, map[string]string{"error": "internal error"})
+    })
+
+    // Start server
+    app.Listen(":3000")
+}
+
+func listUsers(c *mizu.Ctx) error { return c.JSON(200, []string{}) }
+func createUser(c *mizu.Ctx) error { return c.JSON(201, nil) }
+```
+
+## Next steps
+
+- [Routing](/concepts/routing) - Define URLs and HTTP methods
+- [Handler](/concepts/handler) - Write request handling logic
+- [Middleware](/concepts/middleware) - Add cross-cutting behavior
+- [Error](/concepts/error) - Handle errors centrally
