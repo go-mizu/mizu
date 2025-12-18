@@ -3,45 +3,50 @@ title: "JSON-RPC Transport"
 description: "Use JSON-RPC 2.0 for batch operations and RPC-style APIs"
 ---
 
-# JSON-RPC Transport
+## What is JSON-RPC?
 
-JSON-RPC is a simple protocol for calling remote methods. Unlike REST which uses different HTTP verbs and paths, JSON-RPC sends all requests to a single endpoint with the method name in the request body. Its killer feature? **Batching** - send multiple requests in one HTTP call.
+JSON-RPC (Remote Procedure Call) is a protocol where you explicitly name the method you want to call. Unlike REST which uses different HTTP verbs and paths, JSON-RPC sends all requests to a single endpoint with the method name in the request body.
 
-## What Is JSON-RPC?
-
-JSON-RPC (Remote Procedure Call) is a protocol where you explicitly name the method you want to call:
+Its killer feature? **Batching** - send multiple requests in one HTTP call.
 
 ```json
 {
     "jsonrpc": "2.0",
     "id": 1,
-    "method": "Create",
+    "method": "todos.create",
     "params": {"title": "Buy milk"}
 }
 ```
 
-Instead of "POST to /todos to create", you say "call the Create method with these params". This is useful when:
-- You need to **batch multiple operations** in one request
-- Your methods don't map neatly to HTTP verbs
-- You're building service-to-service communication
-- You want explicit method names in your API
-
 ## Quick Start
 
 ```go
-import "github.com/go-mizu/mizu/contract"
+import (
+    "github.com/go-mizu/mizu"
+    contract "github.com/go-mizu/mizu/contract/v2"
+    "github.com/go-mizu/mizu/contract/v2/transport/jsonrpc"
+)
+
+// Define your interface
+type TodoAPI interface {
+    Create(ctx context.Context, in *CreateInput) (*Todo, error)
+    List(ctx context.Context) (*ListOutput, error)
+    Get(ctx context.Context, in *GetInput) (*Todo, error)
+}
 
 // Register your service
-svc, _ := contract.Register("todo", &TodoService{})
+svc := contract.Register[TodoAPI](impl,
+    contract.WithDefaultResource("todos"),
+)
 
-// Create HTTP server
-mux := http.NewServeMux()
+// Create mizu app
+app := mizu.New()
 
 // Mount JSON-RPC at /rpc
-contract.MountJSONRPC(mux, "/rpc", svc)
+jsonrpc.Mount(app.Router, "/rpc", svc)
 
 // Start server
-http.ListenAndServe(":8080", mux)
+app.Listen(":8080")
 ```
 
 Now call methods:
@@ -52,7 +57,7 @@ curl -X POST http://localhost:8080/rpc \
   -d '{
     "jsonrpc": "2.0",
     "id": 1,
-    "method": "Create",
+    "method": "todos.create",
     "params": {"title": "Buy milk"}
   }'
 ```
@@ -65,7 +70,7 @@ Every JSON-RPC request has the same structure:
 {
     "jsonrpc": "2.0",
     "id": 1,
-    "method": "Create",
+    "method": "todos.create",
     "params": {"title": "Buy milk"}
 }
 ```
@@ -73,11 +78,11 @@ Every JSON-RPC request has the same structure:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `jsonrpc` | Yes | Always `"2.0"` |
-| `id` | No* | Identifies your request (you get it back in the response) |
-| `method` | Yes | The method name to call |
+| `id` | No* | Identifies your request (returned in response) |
+| `method` | Yes | `resource.method` name to call |
 | `params` | No | Object with method parameters |
 
-*If you omit `id`, it becomes a "notification" - see below.
+*If you omit `id`, it becomes a "notification" (no response sent).
 
 ## Response Format
 
@@ -95,8 +100,6 @@ Every JSON-RPC request has the same structure:
 }
 ```
 
-The `id` matches your request, and `result` contains the method's return value.
-
 ### Error Response
 
 ```json
@@ -105,20 +108,29 @@ The `id` matches your request, and `result` contains the method's return value.
     "id": 1,
     "error": {
         "code": -32603,
-        "message": "Internal error",
-        "data": "todo not found"
+        "message": "todo not found",
+        "data": {"todoId": "123"}
     }
 }
 ```
 
-The `error` object contains:
-- `code`: A number indicating the error type
-- `message`: A short description
-- `data`: Additional details (optional)
+## Method Naming
 
-## Batching - The Power Feature
+Method names follow the pattern `resource.method`:
 
-Batching lets you send multiple requests in one HTTP call. This is huge for performance - instead of N HTTP round trips, you make just 1.
+| Interface Method | JSON-RPC Method |
+|-----------------|-----------------|
+| `Create` | `todos.create` |
+| `List` | `todos.list` |
+| `Get` | `todos.get` |
+| `Delete` | `todos.delete` |
+| `Update` | `todos.update` |
+
+The resource name comes from `WithDefaultResource` or `WithResource`.
+
+## Batching
+
+Batching lets you send multiple requests in one HTTP call. Instead of N HTTP round trips, you make just 1.
 
 ### How to Batch
 
@@ -128,9 +140,9 @@ Send an array of requests:
 curl -X POST http://localhost:8080/rpc \
   -H "Content-Type: application/json" \
   -d '[
-    {"jsonrpc": "2.0", "id": 1, "method": "Create", "params": {"title": "First"}},
-    {"jsonrpc": "2.0", "id": 2, "method": "Create", "params": {"title": "Second"}},
-    {"jsonrpc": "2.0", "id": 3, "method": "List"}
+    {"jsonrpc": "2.0", "id": 1, "method": "todos.create", "params": {"title": "First"}},
+    {"jsonrpc": "2.0", "id": 2, "method": "todos.create", "params": {"title": "Second"}},
+    {"jsonrpc": "2.0", "id": 3, "method": "todos.list"}
   ]'
 ```
 
@@ -138,75 +150,47 @@ Response:
 
 ```json
 [
-    {"jsonrpc": "2.0", "id": 1, "result": {"id": "1", "title": "First"}},
-    {"jsonrpc": "2.0", "id": 2, "result": {"id": "2", "title": "Second"}},
-    {"jsonrpc": "2.0", "id": 3, "result": {"items": [...]}}
+    {"jsonrpc": "2.0", "id": 1, "result": {"id": "1", "title": "First", "completed": false}},
+    {"jsonrpc": "2.0", "id": 2, "result": {"id": "2", "title": "Second", "completed": false}},
+    {"jsonrpc": "2.0", "id": 3, "result": {"items": [...], "count": 2}}
 ]
 ```
 
 ### When to Use Batching
 
-Batching is great for:
-- **Dashboard loads**: Fetch user, preferences, and recent items in one call
+- **Dashboard loads**: Fetch user, settings, and recent items in one call
 - **Bulk operations**: Create 100 items without 100 HTTP requests
 - **Related data**: Get a todo and its comments together
 - **Service-to-service**: Microservices calling each other
 
 ## Notifications (Fire and Forget)
 
-If you don't care about the response, omit the `id` field. The server won't send a response:
+Omit the `id` field to send a notification. The server won't send a response:
 
 ```bash
 curl -X POST http://localhost:8080/rpc \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc": "2.0", "method": "Create", "params": {"title": "Fire and forget"}}'
-# HTTP 204 No Content (empty response)
+  -d '{"jsonrpc": "2.0", "method": "todos.create", "params": {"title": "Fire and forget"}}'
+# HTTP 204 No Content
 ```
 
-This is useful for:
+Use notifications for:
 - Logging or analytics events
 - Triggering background jobs
 - Sending metrics
 
-You can even batch notifications:
+You can batch notifications:
 
 ```bash
 curl -X POST http://localhost:8080/rpc \
   -d '[
-    {"jsonrpc": "2.0", "method": "Log", "params": {"event": "page_view"}},
-    {"jsonrpc": "2.0", "method": "Log", "params": {"event": "click"}}
+    {"jsonrpc": "2.0", "method": "analytics.log", "params": {"event": "page_view"}},
+    {"jsonrpc": "2.0", "method": "analytics.log", "params": {"event": "click"}}
   ]'
 # HTTP 204 No Content
 ```
 
-## Method Naming
-
-You can call methods with or without the service name prefix:
-
-```bash
-# Both work the same:
-
-# Without prefix
-{"method": "Create", "params": {...}}
-
-# With service prefix
-{"method": "todo.Create", "params": {...}}
-```
-
-The prefix is useful when you have multiple services on the same endpoint:
-
-```go
-contract.MountJSONRPC(mux, "/rpc", todoSvc)
-contract.MountJSONRPC(mux, "/rpc", userSvc)
-
-// Now distinguish with prefixes:
-// {"method": "todo.Create", ...}
-// {"method": "user.Create", ...}
-```
-
 ## Complete Example
-
-### Service Definition
 
 ```go
 package main
@@ -214,22 +198,18 @@ package main
 import (
     "context"
     "fmt"
-    "net/http"
     "sync"
 
-    "github.com/go-mizu/mizu/contract"
+    "github.com/go-mizu/mizu"
+    contract "github.com/go-mizu/mizu/contract/v2"
+    "github.com/go-mizu/mizu/contract/v2/transport/jsonrpc"
 )
 
-type TodoService struct {
-    mu     sync.RWMutex
-    todos  map[string]*Todo
-    nextID int
-}
-
+// Types
 type Todo struct {
-    ID    string `json:"id"`
-    Title string `json:"title"`
-    Done  bool   `json:"done"`
+    ID        string `json:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
 }
 
 type CreateInput struct {
@@ -242,9 +222,28 @@ type GetInput struct {
 
 type ListOutput struct {
     Items []*Todo `json:"items"`
+    Count int     `json:"count"`
 }
 
-func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+// Interface
+type TodoAPI interface {
+    Create(ctx context.Context, in *CreateInput) (*Todo, error)
+    List(ctx context.Context) (*ListOutput, error)
+    Get(ctx context.Context, in *GetInput) (*Todo, error)
+}
+
+// Implementation
+type todoService struct {
+    mu     sync.RWMutex
+    todos  map[string]*Todo
+    nextID int
+}
+
+func (s *todoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    if in.Title == "" {
+        return nil, contract.ErrInvalidArgument("title is required")
+    }
+
     s.mu.Lock()
     defer s.mu.Unlock()
 
@@ -257,7 +256,18 @@ func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error
     return todo, nil
 }
 
-func (s *TodoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
+func (s *todoService) List(ctx context.Context) (*ListOutput, error) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
+    items := make([]*Todo, 0, len(s.todos))
+    for _, t := range s.todos {
+        items = append(items, t)
+    }
+    return &ListOutput{Items: items, Count: len(items)}, nil
+}
+
+func (s *todoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
     s.mu.RLock()
     defer s.mu.RUnlock()
 
@@ -268,63 +278,46 @@ func (s *TodoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
     return todo, nil
 }
 
-func (s *TodoService) List(ctx context.Context) (*ListOutput, error) {
-    s.mu.RLock()
-    defer s.mu.RUnlock()
-
-    items := make([]*Todo, 0, len(s.todos))
-    for _, t := range s.todos {
-        items = append(items, t)
-    }
-    return &ListOutput{Items: items}, nil
-}
-
-func (s *TodoService) Health(ctx context.Context) error {
-    return nil
-}
-
 func main() {
-    todoService := &TodoService{
-        todos: make(map[string]*Todo),
-    }
+    impl := &todoService{todos: make(map[string]*Todo)}
 
-    svc, _ := contract.Register("todo", todoService)
+    svc := contract.Register[TodoAPI](impl,
+        contract.WithDefaultResource("todos"),
+    )
 
-    mux := http.NewServeMux()
-    contract.MountJSONRPC(mux, "/rpc", svc)
+    app := mizu.New()
+
+    // Mount JSON-RPC at /rpc
+    jsonrpc.Mount(app.Router, "/rpc", svc)
 
     fmt.Println("JSON-RPC server running at http://localhost:8080/rpc")
-    http.ListenAndServe(":8080", mux)
+    fmt.Println("Methods: todos.create, todos.list, todos.get")
+    app.Listen(":8080")
 }
 ```
 
-### Testing
+### Test It
 
 ```bash
 # Create a todo
 curl -X POST http://localhost:8080/rpc \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"Create","params":{"title":"Buy milk"}}'
-
-# Get a todo
-curl -X POST http://localhost:8080/rpc \
-  -d '{"jsonrpc":"2.0","id":2,"method":"Get","params":{"id":"1"}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"todos.create","params":{"title":"Buy milk"}}'
 
 # List all todos
 curl -X POST http://localhost:8080/rpc \
-  -d '{"jsonrpc":"2.0","id":3,"method":"List"}'
+  -d '{"jsonrpc":"2.0","id":2,"method":"todos.list"}'
 
-# Health check (no params, no result)
+# Get a todo
 curl -X POST http://localhost:8080/rpc \
-  -d '{"jsonrpc":"2.0","id":4,"method":"Health"}'
-# Returns: {"jsonrpc":"2.0","id":4,"result":null}
+  -d '{"jsonrpc":"2.0","id":3,"method":"todos.get","params":{"id":"1"}}'
 
 # Batch request
 curl -X POST http://localhost:8080/rpc \
   -d '[
-    {"jsonrpc":"2.0","id":1,"method":"Create","params":{"title":"First"}},
-    {"jsonrpc":"2.0","id":2,"method":"Create","params":{"title":"Second"}},
-    {"jsonrpc":"2.0","id":3,"method":"List"}
+    {"jsonrpc":"2.0","id":1,"method":"todos.create","params":{"title":"First"}},
+    {"jsonrpc":"2.0","id":2,"method":"todos.create","params":{"title":"Second"}},
+    {"jsonrpc":"2.0","id":3,"method":"todos.list"}
   ]'
 ```
 
@@ -334,69 +327,80 @@ JSON-RPC uses standard error codes:
 
 | Code | Message | What It Means |
 |------|---------|---------------|
-| -32700 | Parse error | Your JSON is invalid |
-| -32600 | Invalid Request | Missing `jsonrpc` or `method` field |
-| -32601 | Method not found | The method doesn't exist |
-| -32602 | Invalid params | Parameters are wrong type or missing |
+| -32700 | Parse error | Invalid JSON |
+| -32600 | Invalid Request | Missing `jsonrpc` or `method` |
+| -32601 | Method not found | Method doesn't exist |
+| -32602 | Invalid params | Wrong parameter types |
 | -32603 | Internal error | Your method returned an error |
 
-### Error Examples
-
-**Parse error (invalid JSON):**
-```bash
-curl -X POST http://localhost:8080/rpc -d 'not json'
-```
-```json
-{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}
-```
-
-**Method not found:**
-```bash
-curl -X POST http://localhost:8080/rpc \
-  -d '{"jsonrpc":"2.0","id":1,"method":"DoesNotExist"}'
-```
-```json
-{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found"}}
-```
-
-**Invalid params (params should be object, not array):**
-```bash
-curl -X POST http://localhost:8080/rpc \
-  -d '{"jsonrpc":"2.0","id":1,"method":"Create","params":[1,2,3]}'
-```
-```json
-{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"Invalid params"}}
-```
-
-## Combining with Other Transports
-
-Use JSON-RPC alongside REST and other transports:
+Contract errors map to -32603 (Internal error) with the message from your error:
 
 ```go
-mux := http.NewServeMux()
+// In your method
+return nil, contract.ErrNotFound("todo not found")
 
-// REST for browsers
-contract.MountREST(mux, svc)
-
-// JSON-RPC for internal services
-contract.MountJSONRPC(mux, "/rpc", svc)
-
-// OpenAPI docs
-contract.ServeOpenAPI(mux, "/openapi.json", svc)
+// JSON-RPC response
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "error": {
+        "code": -32603,
+        "message": "todo not found",
+        "data": {"code": "NOT_FOUND"}
+    }
+}
 ```
 
-Same service, multiple access methods - clients choose what works best for them.
+## Multiple Services
 
-## Common Questions
+Mount multiple services on the same endpoint:
 
-### JSON-RPC vs REST - when to use which?
+```go
+todoSvc := contract.Register[TodoAPI](todoImpl, contract.WithDefaultResource("todos"))
+userSvc := contract.Register[UserAPI](userImpl, contract.WithDefaultResource("users"))
+
+app := mizu.New()
+
+// Both mounted at /rpc
+jsonrpc.Mount(app.Router, "/rpc", todoSvc)
+jsonrpc.Mount(app.Router, "/rpc", userSvc)
+
+// Now call:
+// {"method": "todos.create", ...}
+// {"method": "users.create", ...}
+```
+
+## Combining with REST
+
+Use JSON-RPC alongside REST:
+
+```go
+import (
+    "github.com/go-mizu/mizu/contract/v2/transport/rest"
+    "github.com/go-mizu/mizu/contract/v2/transport/jsonrpc"
+)
+
+app := mizu.New()
+
+// REST for browsers and simple clients
+rest.Mount(app.Router, svc)
+
+// JSON-RPC for batching and service-to-service
+jsonrpc.Mount(app.Router, "/rpc", svc)
+
+app.Listen(":8080")
+```
+
+## JSON-RPC vs REST
 
 | Use JSON-RPC when... | Use REST when... |
 |---------------------|------------------|
 | You need batching | Browser is the main client |
-| Service-to-service calls | You want caching |
-| Methods don't map to CRUD | Team is familiar with REST |
+| Service-to-service calls | You want HTTP caching |
+| Methods don't map to CRUD | Team knows REST |
 | You want explicit method names | Building a public API |
+
+## Common Questions
 
 ### Can I mix requests and notifications in a batch?
 
@@ -404,8 +408,8 @@ Yes! Requests (with `id`) get responses, notifications (without `id`) don't:
 
 ```json
 [
-    {"jsonrpc": "2.0", "id": 1, "method": "Get", "params": {"id": "1"}},
-    {"jsonrpc": "2.0", "method": "Log", "params": {"event": "accessed"}}
+    {"jsonrpc": "2.0", "id": 1, "method": "todos.get", "params": {"id": "1"}},
+    {"jsonrpc": "2.0", "method": "analytics.log", "params": {"event": "viewed"}}
 ]
 ```
 
@@ -418,7 +422,7 @@ Response only includes the request:
 
 ### What ID values can I use?
 
-Any JSON value works - numbers, strings, even null. Use whatever your client prefers:
+Any JSON value works:
 
 ```json
 {"id": 1, ...}
@@ -426,8 +430,30 @@ Any JSON value works - numbers, strings, even null. Use whatever your client pre
 {"id": null, ...}
 ```
 
-## See Also
+### How do I call methods without a resource?
 
-- [REST Transport](/contract/rest) - Comparison with REST
-- [Transports Overview](/contract/transports-overview) - All available transports
-- [Error Handling](/contract/errors) - Error codes and handling
+If you didn't use `WithDefaultResource`, use just the method name:
+
+```json
+{"method": "Create", ...}
+```
+
+With a resource:
+```json
+{"method": "todos.create", ...}
+```
+
+### Can I generate an OpenRPC spec?
+
+Yes:
+
+```go
+spec, err := jsonrpc.OpenRPC(svc.Descriptor())
+```
+
+## What's Next?
+
+- **[REST Transport](/contract/rest)** - For browser-friendly APIs
+- **[MCP Transport](/contract/mcp)** - Connect to AI assistants
+- **[Error Handling](/contract/errors)** - Error codes and handling
+- **[Transports Overview](/contract/transports-overview)** - Compare all transports

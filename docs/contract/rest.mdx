@@ -1,112 +1,145 @@
 ---
 title: "REST Transport"
-description: "Learn how Contract automatically creates RESTful HTTP endpoints from your methods"
+description: "Learn how to expose your Contract service as a RESTful HTTP API"
 ---
 
-# REST Transport
+## What is the REST Transport?
 
-The REST transport is the most familiar way to expose your API. It automatically creates standard HTTP endpoints from your service methods using naming conventions - no route definitions needed.
+The REST transport automatically creates standard HTTP endpoints from your service methods. It uses naming conventions to determine HTTP methods (GET, POST, PUT, DELETE) and paths, so you don't need to write routing code.
 
-## What Is REST?
-
-REST (Representational State Transfer) is the most common style of web API. It uses HTTP methods (verbs) to represent actions:
-
-| HTTP Method | Action | Example |
-|-------------|--------|---------|
-| GET | Read data | Get a user's profile |
-| POST | Create new data | Create a new user |
-| PUT | Update data | Update a user's email |
-| DELETE | Remove data | Delete a user |
-
-REST APIs are what you interact with when using curl, fetch in JavaScript, or any HTTP client.
+REST is the most familiar protocol for web APIs. It's what you use when calling APIs with curl, fetch in JavaScript, or any HTTP client.
 
 ## Quick Start
 
-Getting a REST API running takes just a few lines:
+Mount your service with the REST transport:
 
 ```go
-import "github.com/go-mizu/mizu/contract"
+import (
+    "github.com/go-mizu/mizu"
+    contract "github.com/go-mizu/mizu/contract/v2"
+    "github.com/go-mizu/mizu/contract/v2/transport/rest"
+)
+
+// Define your interface
+type TodoAPI interface {
+    Create(ctx context.Context, in *CreateInput) (*Todo, error)
+    List(ctx context.Context) (*ListOutput, error)
+    Get(ctx context.Context, in *GetInput) (*Todo, error)
+    Delete(ctx context.Context, in *DeleteInput) error
+}
 
 // Register your service
-svc, _ := contract.Register("todo", &TodoService{})
+svc := contract.Register[TodoAPI](impl,
+    contract.WithDefaultResource("todos"),
+)
 
-// Create HTTP server
-mux := http.NewServeMux()
+// Create mizu app
+app := mizu.New()
 
 // Mount REST endpoints
-contract.MountREST(mux, svc)
+rest.Mount(app.Router, svc)
 
 // Start server
-http.ListenAndServe(":8080", mux)
+app.Listen(":8080")
 ```
 
-That's it! Your service is now accessible via REST. If your service has `Create`, `List`, `Get`, `Update`, and `Delete` methods, you now have:
+Your service now has these endpoints:
 
-| Endpoint | HTTP Method | Service Method |
-|----------|-------------|----------------|
-| `/todos` | POST | Create |
-| `/todos` | GET | List |
-| `/todos/{id}` | GET | Get |
-| `/todos/{id}` | PUT | Update |
-| `/todos/{id}` | DELETE | Delete |
+| Method | Path | Handler |
+|--------|------|---------|
+| POST | `/todos` | Create |
+| GET | `/todos` | List |
+| GET | `/todos/{id}` | Get |
+| DELETE | `/todos/{id}` | Delete |
 
-## How Method Names Become Endpoints
+## Method Name to HTTP Mapping
 
-Contract uses method names to determine which HTTP verb to use:
+Contract automatically maps method names to HTTP verbs:
 
-### The Naming Convention
-
-| Method Name Starts With | HTTP Verb | Path |
-|-------------------------|-----------|------|
-| `Create` | POST | `/resources` |
-| `Get` | GET | `/resources/{id}` |
-| `List` | GET | `/resources` |
-| `Update` | PUT | `/resources/{id}` |
-| `Delete` | DELETE | `/resources/{id}` |
-| Anything else | POST | `/resources` |
+| Method Name Starts With | HTTP Method | Path Pattern |
+|------------------------|-------------|--------------|
+| `Create`, `Add`, `New` | POST | `/{resource}` |
+| `List`, `All`, `Search`, `Find*s` | GET | `/{resource}` |
+| `Get`, `Find`, `Fetch`, `Read` | GET | `/{resource}/{id}` |
+| `Update`, `Edit`, `Modify`, `Set` | PUT | `/{resource}/{id}` |
+| `Delete`, `Remove` | DELETE | `/{resource}/{id}` |
+| `Patch` | PATCH | `/{resource}/{id}` |
+| Other names | POST | `/{resource}/{action}` |
 
 ### Examples
 
 ```go
-// Method: Create or CreateTodo
-// Endpoint: POST /todos
-func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error)
+type ProductAPI interface {
+    // POST /products
+    Create(ctx context.Context, in *CreateInput) (*Product, error)
 
-// Method: List or ListAll
-// Endpoint: GET /todos
-func (s *Service) List(ctx context.Context) (*ListOutput, error)
+    // GET /products
+    List(ctx context.Context) (*ListOutput, error)
 
-// Method: Get or GetByID
-// Endpoint: GET /todos/{id}
-func (s *Service) Get(ctx context.Context, in *GetInput) (*Todo, error)
+    // GET /products (with query params)
+    SearchProducts(ctx context.Context, in *SearchInput) (*ListOutput, error)
 
-// Method: Update or UpdateStatus
-// Endpoint: PUT /todos/{id}
-func (s *Service) Update(ctx context.Context, in *UpdateInput) (*Todo, error)
+    // GET /products/{id}
+    Get(ctx context.Context, in *GetInput) (*Product, error)
 
-// Method: Delete or DeleteTodo
-// Endpoint: DELETE /todos/{id}
-func (s *Service) Delete(ctx context.Context, in *DeleteInput) error
+    // PUT /products/{id}
+    Update(ctx context.Context, in *UpdateInput) (*Product, error)
 
-// Method: Archive (doesn't match any prefix)
-// Endpoint: POST /todos
-func (s *Service) Archive(ctx context.Context, in *ArchiveInput) error
+    // DELETE /products/{id}
+    Delete(ctx context.Context, in *DeleteInput) error
+
+    // PATCH /products/{id}
+    Patch(ctx context.Context, in *PatchInput) (*Product, error)
+
+    // POST /products/archive (custom action)
+    Archive(ctx context.Context, in *ArchiveInput) error
+
+    // POST /products/publish (custom action)
+    Publish(ctx context.Context, in *PublishInput) (*Product, error)
+}
 ```
 
-### Path Pluralization
+## Mount Options
 
-The service name is automatically pluralized for the path:
+### Mount
 
-| Service Name | Path Prefix |
-|--------------|-------------|
-| `todo` | `/todos` |
-| `user` | `/users` |
-| `product` | `/products` |
-| `category` | `/categorys` (naive pluralization) |
+Mount all routes directly on the router:
+
+```go
+rest.Mount(app.Router, svc)
+```
+
+### MountAt
+
+Mount routes under a prefix:
+
+```go
+rest.MountAt(app.Router, "/api/v1", svc)
+
+// Now endpoints are:
+// POST /api/v1/todos
+// GET /api/v1/todos
+// etc.
+```
+
+### Getting Routes
+
+Get route definitions without mounting:
+
+```go
+routes, err := rest.Routes(svc)
+if err != nil {
+    log.Fatal(err)
+}
+
+for _, route := range routes {
+    fmt.Printf("%s %s -> %s.%s\n", route.Method, route.Path, route.Resource, route.Handler)
+}
+```
 
 ## Making Requests
 
-### Creating a Resource (POST)
+### Create (POST)
 
 ```bash
 curl -X POST http://localhost:8080/todos \
@@ -123,7 +156,7 @@ Response:
 }
 ```
 
-### Listing Resources (GET)
+### List (GET)
 
 ```bash
 curl http://localhost:8080/todos
@@ -140,7 +173,7 @@ Response:
 }
 ```
 
-### Getting a Single Resource (GET with ID)
+### Get (GET with ID)
 
 ```bash
 curl http://localhost:8080/todos/todo_1
@@ -155,7 +188,7 @@ Response:
 }
 ```
 
-### Updating a Resource (PUT)
+### Update (PUT)
 
 ```bash
 curl -X PUT http://localhost:8080/todos/todo_1 \
@@ -172,7 +205,7 @@ Response:
 }
 ```
 
-### Deleting a Resource (DELETE)
+### Delete (DELETE)
 
 ```bash
 curl -X DELETE http://localhost:8080/todos/todo_1
@@ -180,11 +213,88 @@ curl -X DELETE http://localhost:8080/todos/todo_1
 
 Response: HTTP 204 No Content (empty body)
 
+## Path Parameters
+
+For methods that need an ID from the URL path, use the `path` tag:
+
+```go
+type GetInput struct {
+    ID string `json:"id" path:"id"`  // Extracted from {id} in the path
+}
+
+type UpdateInput struct {
+    ID        string `json:"id" path:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
+}
+```
+
+### Multiple Path Parameters
+
+For nested resources:
+
+```go
+// Path: /users/{userId}/posts/{id}
+type GetPostInput struct {
+    UserID string `json:"userId" path:"userId"`
+    PostID string `json:"postId" path:"id"`
+}
+```
+
+Register with custom HTTP binding:
+
+```go
+svc := contract.Register[PostAPI](impl,
+    contract.WithMethodHTTP("GetPost", "GET", "/users/{userId}/posts/{id}"),
+)
+```
+
+## Query Parameters
+
+By default, input comes from the request body. For GET requests, you may want query parameters:
+
+```go
+type ListInput struct {
+    Limit  int    `json:"limit" query:"limit"`
+    Offset int    `json:"offset" query:"offset"`
+    Status string `json:"status" query:"status"`
+}
+```
+
+Request:
+```bash
+curl "http://localhost:8080/todos?limit=10&offset=0&status=completed"
+```
+
+## Custom HTTP Bindings
+
+Override the automatic HTTP mapping with `WithMethodHTTP`:
+
+```go
+svc := contract.Register[TodoAPI](impl,
+    contract.WithDefaultResource("todos"),
+
+    // Custom path for archive action
+    contract.WithMethodHTTP("Archive", "POST", "/todos/{id}/archive"),
+
+    // API versioning
+    contract.WithMethodHTTP("Create", "POST", "/v2/todos"),
+)
+```
+
+Or set multiple bindings at once:
+
+```go
+svc := contract.Register[TodoAPI](impl,
+    contract.WithHTTP(map[string]contract.HTTPBinding{
+        "Create": {Method: "POST", Path: "/v2/todos"},
+        "Get":    {Method: "GET", Path: "/v2/todos/{id}"},
+        "List":   {Method: "GET", Path: "/v2/todos"},
+    }),
+)
+```
+
 ## Complete Example
-
-Here's a full working example:
-
-### Define Your Service
 
 ```go
 package main
@@ -192,18 +302,12 @@ package main
 import (
     "context"
     "fmt"
-    "net/http"
     "sync"
 
-    "github.com/go-mizu/mizu/contract"
+    "github.com/go-mizu/mizu"
+    contract "github.com/go-mizu/mizu/contract/v2"
+    "github.com/go-mizu/mizu/contract/v2/transport/rest"
 )
-
-// Service holds our business logic
-type TodoService struct {
-    mu     sync.RWMutex
-    todos  map[string]*Todo
-    nextID int
-}
 
 // Types
 type Todo struct {
@@ -217,17 +321,17 @@ type CreateInput struct {
 }
 
 type GetInput struct {
-    ID string `json:"id"`
+    ID string `json:"id" path:"id"`
 }
 
 type UpdateInput struct {
-    ID        string `json:"id"`
+    ID        string `json:"id" path:"id"`
     Title     string `json:"title"`
     Completed bool   `json:"completed"`
 }
 
 type DeleteInput struct {
-    ID string `json:"id"`
+    ID string `json:"id" path:"id"`
 }
 
 type ListOutput struct {
@@ -235,9 +339,27 @@ type ListOutput struct {
     Count int     `json:"count"`
 }
 
-// Methods
+// Interface
+type TodoAPI interface {
+    Create(ctx context.Context, in *CreateInput) (*Todo, error)
+    List(ctx context.Context) (*ListOutput, error)
+    Get(ctx context.Context, in *GetInput) (*Todo, error)
+    Update(ctx context.Context, in *UpdateInput) (*Todo, error)
+    Delete(ctx context.Context, in *DeleteInput) error
+}
 
-func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+// Implementation
+type todoService struct {
+    mu     sync.RWMutex
+    todos  map[string]*Todo
+    nextID int
+}
+
+func (s *todoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    if in.Title == "" {
+        return nil, contract.ErrInvalidArgument("title is required")
+    }
+
     s.mu.Lock()
     defer s.mu.Unlock()
 
@@ -250,7 +372,7 @@ func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error
     return todo, nil
 }
 
-func (s *TodoService) List(ctx context.Context) (*ListOutput, error) {
+func (s *todoService) List(ctx context.Context) (*ListOutput, error) {
     s.mu.RLock()
     defer s.mu.RUnlock()
 
@@ -261,7 +383,7 @@ func (s *TodoService) List(ctx context.Context) (*ListOutput, error) {
     return &ListOutput{Items: items, Count: len(items)}, nil
 }
 
-func (s *TodoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
+func (s *todoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
     s.mu.RLock()
     defer s.mu.RUnlock()
 
@@ -272,7 +394,7 @@ func (s *TodoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
     return todo, nil
 }
 
-func (s *TodoService) Update(ctx context.Context, in *UpdateInput) (*Todo, error) {
+func (s *todoService) Update(ctx context.Context, in *UpdateInput) (*Todo, error) {
     s.mu.Lock()
     defer s.mu.Unlock()
 
@@ -285,7 +407,7 @@ func (s *TodoService) Update(ctx context.Context, in *UpdateInput) (*Todo, error
     return todo, nil
 }
 
-func (s *TodoService) Delete(ctx context.Context, in *DeleteInput) error {
+func (s *todoService) Delete(ctx context.Context, in *DeleteInput) error {
     s.mu.Lock()
     defer s.mu.Unlock()
 
@@ -297,175 +419,151 @@ func (s *TodoService) Delete(ctx context.Context, in *DeleteInput) error {
 }
 
 func main() {
-    // Create service
-    todoService := &TodoService{
-        todos: make(map[string]*Todo),
-    }
+    impl := &todoService{todos: make(map[string]*Todo)}
 
-    // Register with Contract
-    svc, err := contract.Register("todo", todoService)
-    if err != nil {
-        panic(err)
-    }
+    svc := contract.Register[TodoAPI](impl,
+        contract.WithName("Todo"),
+        contract.WithDefaultResource("todos"),
+    )
 
-    // Create HTTP server
-    mux := http.NewServeMux()
+    app := mizu.New()
 
-    // Mount REST endpoints
-    contract.MountREST(mux, svc)
+    // Mount REST
+    rest.Mount(app.Router, svc)
 
-    // Also serve OpenAPI docs
-    contract.ServeOpenAPI(mux, "/openapi.json", svc)
+    // Print routes
+    fmt.Println("REST Endpoints:")
+    fmt.Println("  POST   /todos      - Create a todo")
+    fmt.Println("  GET    /todos      - List all todos")
+    fmt.Println("  GET    /todos/{id} - Get a todo")
+    fmt.Println("  PUT    /todos/{id} - Update a todo")
+    fmt.Println("  DELETE /todos/{id} - Delete a todo")
 
-    fmt.Println("Server running on http://localhost:8080")
-    fmt.Println("REST endpoints: /todos")
-    fmt.Println("OpenAPI docs: /openapi.json")
-    http.ListenAndServe(":8080", mux)
+    app.Listen(":8080")
 }
 ```
 
-### Test It
+## Error Responses
 
-```bash
-# Create a todo
-curl -X POST http://localhost:8080/todos \
-  -H "Content-Type: application/json" \
-  -d '{"title": "Learn REST"}'
+Use Contract errors for proper HTTP status codes:
 
-# List all todos
-curl http://localhost:8080/todos
+```go
+// HTTP 404
+return nil, contract.ErrNotFound("todo not found")
 
-# Get one todo
-curl http://localhost:8080/todos/todo_1
+// HTTP 400
+return nil, contract.ErrInvalidArgument("title is required")
 
-# Update a todo
-curl -X PUT http://localhost:8080/todos/todo_1 \
-  -H "Content-Type: application/json" \
-  -d '{"id": "todo_1", "title": "Learn REST", "completed": true}'
+// HTTP 401
+return nil, contract.ErrUnauthenticated("please log in")
 
-# Delete a todo
-curl -X DELETE http://localhost:8080/todos/todo_1
+// HTTP 403
+return nil, contract.ErrPermissionDenied("admin access required")
+
+// HTTP 500
+return nil, contract.ErrInternal("database error")
+```
+
+Error response format:
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "todo not found"
+  }
+}
 ```
 
 ## Multiple Services
 
-You can mount multiple services on the same server:
+Mount multiple services on the same router:
 
 ```go
-todoSvc, _ := contract.Register("todo", &TodoService{})
-userSvc, _ := contract.Register("user", &UserService{})
-orderSvc, _ := contract.Register("order", &OrderService{})
+todoSvc := contract.Register[TodoAPI](todoImpl, contract.WithDefaultResource("todos"))
+userSvc := contract.Register[UserAPI](userImpl, contract.WithDefaultResource("users"))
 
-mux := http.NewServeMux()
+app := mizu.New()
 
-// Each gets its own path prefix
-contract.MountREST(mux, todoSvc)   // /todos/*
-contract.MountREST(mux, userSvc)   // /users/*
-contract.MountREST(mux, orderSvc)  // /orders/*
+rest.Mount(app.Router, todoSvc)  // /todos/*
+rest.Mount(app.Router, userSvc)  // /users/*
 
-http.ListenAndServe(":8080", mux)
+app.Listen(":8080")
 ```
 
-## Adding OpenAPI Documentation
+## Using with Middleware
 
-Serve automatically-generated API documentation:
+Apply middleware to your routes:
 
 ```go
-mux := http.NewServeMux()
-contract.MountREST(mux, svc)
-contract.ServeOpenAPI(mux, "/openapi.json", svc)
+app := mizu.New()
+
+// Global middleware
+app.Use(loggingMiddleware)
+app.Use(corsMiddleware)
+
+// Auth middleware for specific routes
+app.Use(authMiddleware, "/todos/*")
+
+// Mount REST
+rest.Mount(app.Router, svc)
+
+app.Listen(":8080")
 ```
 
-Now you can:
-1. View the spec: `curl http://localhost:8080/openapi.json`
-2. Use Swagger UI to browse your API
-3. Generate client code in any language
+## OpenAPI Documentation
 
-## Error Handling
-
-Use Contract's error types for proper HTTP status codes:
+Generate OpenAPI spec from your service:
 
 ```go
-func (s *Service) Get(ctx context.Context, in *GetInput) (*Todo, error) {
-    todo, ok := s.todos[in.ID]
-    if !ok {
-        // Returns HTTP 404 Not Found
-        return nil, contract.ErrNotFound("todo not found")
-    }
-    return todo, nil
+spec, err := rest.OpenAPI(svc.Descriptor())
+if err != nil {
+    log.Fatal(err)
 }
 
-func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
-    if in.Title == "" {
-        // Returns HTTP 400 Bad Request
-        return nil, contract.ErrInvalidArgument("title is required")
-    }
-    // ...
-}
+// Serve the spec
+app.Get("/openapi.json", func(c *mizu.Ctx) error {
+    return c.JSON(200, spec)
+})
 ```
 
-Error codes map to HTTP status codes:
-
-| Contract Error | HTTP Status |
-|---------------|-------------|
-| `ErrNotFound` | 404 Not Found |
-| `ErrInvalidArgument` | 400 Bad Request |
-| `ErrPermissionDenied` | 403 Forbidden |
-| `ErrUnauthenticated` | 401 Unauthorized |
-| `ErrInternal` | 500 Internal Server Error |
-| Plain `error` | 500 Internal Server Error |
+See the [OpenAPI documentation](/contract/openapi) for more details.
 
 ## Common Questions
 
-### How do I get the ID from the URL path?
+### How do I change the path for a method?
 
-For Get, Update, and Delete methods, the ID is extracted from the URL path and provided in your input struct. Make sure your input type has an `ID` field:
+Use `WithMethodHTTP`:
 
 ```go
-type GetInput struct {
-    ID string `json:"id"`
-}
+contract.WithMethodHTTP("Archive", "POST", "/todos/{id}/archive")
+```
 
-func (s *Service) Get(ctx context.Context, in *GetInput) (*Todo, error) {
-    // in.ID is automatically populated from the URL: /todos/{id}
-    return s.todos[in.ID], nil
+### How do I add query parameters?
+
+Use the `query` tag on input struct fields:
+
+```go
+type ListInput struct {
+    Page int `json:"page" query:"page"`
 }
 ```
 
-### Can I customize the URL paths?
+### Can I use different content types?
 
-The current REST transport uses conventions. If you need custom paths, you can:
-1. Use meaningful service names (`contract.Register("product", ...)` → `/products`)
-2. Use the JSON-RPC transport for more flexibility
-3. Wrap the handler with custom routing
+By default, REST uses `application/json`. For other content types, use standard mizu handlers instead of Contract.
 
-### Does REST support query parameters?
+### How do I handle file uploads?
 
-Currently, all input comes from the request body. Query parameter support may be added in future versions.
+File uploads aren't currently supported through Contract. Use standard mizu file handling for upload endpoints.
 
 ### How do I add authentication?
 
-Use standard HTTP middleware:
+Use mizu middleware to add authentication before requests reach your service methods. See [Mizu Middleware](/middlewares) documentation.
 
-```go
-func authMiddleware(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        token := r.Header.Get("Authorization")
-        if !isValid(token) {
-            http.Error(w, "unauthorized", 401)
-            return
-        }
-        next.ServeHTTP(w, r)
-    })
-}
+## What's Next?
 
-// Wrap the mux
-http.ListenAndServe(":8080", authMiddleware(mux))
-```
-
-## See Also
-
-- [JSON-RPC Transport](/contract/jsonrpc) - Alternative protocol with batching
-- [OpenAPI](/contract/openapi) - API documentation from your service
-- [Transports Overview](/contract/transports-overview) - Compare all transports
-- [Error Handling](/contract/errors) - Proper error responses
+- **[JSON-RPC Transport](/contract/jsonrpc)** - For batching and RPC-style APIs
+- **[MCP Transport](/contract/mcp)** - Connect your API to AI assistants
+- **[OpenAPI](/contract/openapi)** - Generate API documentation
+- **[Error Handling](/contract/errors)** - Proper error responses
