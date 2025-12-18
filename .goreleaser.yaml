@@ -199,5 +199,3 @@ docker_manifests:
       - "ghcr.io/go-mizu/mizu:latest-amd64"
       - "ghcr.io/go-mizu/mizu:latest-arm64"
 
-announce:
-  skip: "{{ not .IsRelease }}"
