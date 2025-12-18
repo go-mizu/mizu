@@ -1,0 +1,285 @@
+name: OpenAI
+description: OpenAI-compatible API modeled for SDK-first generation
+defaults:
+  base_url: https://api.openai.com
+  auth: bearer
+  headers:
+    content-type: application/json
+
+resources:
+  - name: responses
+    description: Create and stream model responses
+    methods:
+      - name: create
+        description: Create a response
+        input: ResponseCreateRequest
+        output: Response
+        http:
+          method: POST
+          path: /v1/responses
+
+      - name: stream
+        description: Stream response events (SSE)
+        input: ResponseCreateRequest
+        output: Response
+        stream:
+          mode: sse
+          item: ResponseEvent
+        http:
+          method: POST
+          path: /v1/responses
+
+  - name: models
+    description: List and retrieve available models
+    methods:
+      - name: list
+        description: List models
+        output: ModelList
+        http:
+          method: GET
+          path: /v1/models
+
+types:
+  # -------------------------
+  # Requests
+  # -------------------------
+  - name: ResponseCreateRequest
+    kind: struct
+    fields:
+      - name: model
+        description: Model ID, for example gpt-4.1-mini
+        type: string
+
+      - name: input
+        description: Input messages or content parts
+        type: InputMessageList
+
+      - name: stream
+        description: If true, server will stream events
+        type: bool
+        optional: true
+
+      - name: temperature
+        type: float64
+        optional: true
+
+      - name: max_output_tokens
+        type: int64
+        optional: true
+
+      - name: tools
+        description: Tool definitions
+        type: ToolList
+        optional: true
+
+  - name: InputMessageList
+    kind: slice
+    elem: InputMessage
+
+  - name: InputMessage
+    kind: struct
+    fields:
+      - name: role
+        type: string
+        enum: [system, user, assistant, tool]
+
+      - name: content
+        type: ContentPartList
+
+  - name: ContentPartList
+    kind: slice
+    elem: ContentPart
+
+  # Discriminated union for content parts
+  - name: ContentPart
+    kind: union
+    tag: type
+    variants:
+      - value: input_text
+        type: ContentPartInputText
+      - value: input_image
+        type: ContentPartInputImage
+
+  - name: ContentPartInputText
+    kind: struct
+    fields:
+      - name: type
+        type: string
+        const: input_text
+      - name: text
+        type: string
+
+  - name: ContentPartInputImage
+    kind: struct
+    fields:
+      - name: type
+        type: string
+        const: input_image
+      - name: image_url
+        type: string
+
+  # -------------------------
+  # Tools
+  # -------------------------
+  - name: ToolList
+    kind: slice
+    elem: Tool
+
+  - name: Tool
+    kind: union
+    tag: type
+    variants:
+      - value: function
+        type: FunctionTool
+
+  - name: FunctionTool
+    kind: struct
+    fields:
+      - name: type
+        type: string
+        const: function
+
+      - name: name
+        type: string
+
+      - name: description
+        type: string
+        optional: true
+
+      - name: parameters
+        description: JSON Schema for arguments (keep flexible for v1)
+        type: json.RawMessage
+        optional: true
+
+  # -------------------------
+  # Responses
+  # -------------------------
+  - name: Response
+    kind: struct
+    fields:
+      - name: id
+        type: string
+
+      - name: object
+        type: string
+        const: response
+
+      - name: model
+        type: string
+
+      - name: status
+        type: string
+        enum: [in_progress, completed, failed]
+
+      - name: output
+        type: OutputItemList
+        optional: true
+
+  - name: OutputItemList
+    kind: slice
+    elem: OutputItem
+
+  - name: OutputItem
+    kind: union
+    tag: type
+    variants:
+      - value: output_text
+        type: OutputTextItem
+      - value: tool_call
+        type: ToolCallItem
+
+  - name: OutputTextItem
+    kind: struct
+    fields:
+      - name: type
+        type: string
+        const: output_text
+      - name: text
+        type: string
+
+  - name: ToolCallItem
+    kind: struct
+    fields:
+      - name: type
+        type: string
+        const: tool_call
+      - name: tool_name
+        type: string
+      - name: arguments
+        type: json.RawMessage
+
+  # -------------------------
+  # Streaming events
+  # -------------------------
+  - name: ResponseEvent
+    kind: union
+    tag: type
+    variants:
+      - value: response.created
+        type: ResponseCreatedEvent
+      - value: response.output_text.delta
+        type: OutputTextDeltaEvent
+      - value: response.completed
+        type: ResponseCompletedEvent
+      - value: response.error
+        type: ResponseErrorEvent
+
+  - name: ResponseCreatedEvent
+    kind: struct
+    fields:
+      - name: type
+        type: string
+        const: response.created
+      - name: response
+        type: Response
+
+  - name: OutputTextDeltaEvent
+    kind: struct
+    fields:
+      - name: type
+        type: string
+        const: response.output_text.delta
+      - name: delta
+        type: string
+
+  - name: ResponseCompletedEvent
+    kind: struct
+    fields:
+      - name: type
+        type: string
+        const: response.completed
+      - name: response
+        type: Response
+
+  - name: ResponseErrorEvent
+    kind: struct
+    fields:
+      - name: type
+        type: string
+        const: response.error
+      - name: code
+        type: string
+      - name: message
+        type: string
+
+  # -------------------------
+  # Models
+  # -------------------------
+  - name: ModelList
+    kind: struct
+    fields:
+      - name: data
+        type: ModelListItems
+
+  - name: ModelListItems
+    kind: slice
+    elem: Model
+
+  - name: Model
+    kind: struct
+    fields:
+      - name: id
+        type: string
+      - name: object
+        type: string
+        const: model
