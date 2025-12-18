@@ -1,0 +1,442 @@
+name: GitHub
+description: GitHub REST API modeled for SDK-first generation
+defaults:
+  base_url: https://api.github.com
+  auth: bearer
+  headers:
+    accept: application/vnd.github+json
+    x-github-api-version: "2022-11-28"
+
+resources:
+  - name: repos
+    description: Repositories
+    methods:
+      - name: get
+        description: Get a repository
+        input: ReposGetRequest
+        output: Repo
+        http:
+          method: GET
+          path: /repos/{owner}/{repo}
+
+      - name: list_for_user
+        description: List repositories for a user
+        input: ReposListForUserRequest
+        output: RepoList
+        http:
+          method: GET
+          path: /users/{username}/repos
+
+  - name: issues
+    description: Issues
+    methods:
+      - name: list_for_repo
+        description: List issues for a repository
+        input: IssuesListForRepoRequest
+        output: IssueList
+        http:
+          method: GET
+          path: /repos/{owner}/{repo}/issues
+
+      - name: create
+        description: Create an issue
+        input: IssuesCreateRequest
+        output: Issue
+        http:
+          method: POST
+          path: /repos/{owner}/{repo}/issues
+
+      - name: add_comment
+        description: Create an issue comment
+        input: IssuesAddCommentRequest
+        output: IssueComment
+        http:
+          method: POST
+          path: /repos/{owner}/{repo}/issues/{issue_number}/comments
+
+  - name: pulls
+    description: Pull requests
+    methods:
+      - name: list_for_repo
+        description: List pull requests for a repository
+        input: PullsListForRepoRequest
+        output: PullRequestList
+        http:
+          method: GET
+          path: /repos/{owner}/{repo}/pulls
+
+      - name: get
+        description: Get a pull request
+        input: PullsGetRequest
+        output: PullRequest
+        http:
+          method: GET
+          path: /repos/{owner}/{repo}/pulls/{pull_number}
+
+  - name: users
+    description: Users
+    methods:
+      - name: get
+        description: Get a user
+        input: UsersGetRequest
+        output: User
+        http:
+          method: GET
+          path: /users/{username}
+
+types:
+  # -------------------------
+  # Common request patterns
+  # -------------------------
+  - name: RepoKey
+    kind: struct
+    fields:
+      - name: owner
+        type: string
+      - name: repo
+        type: string
+
+  - name: Pagination
+    kind: struct
+    fields:
+      - name: per_page
+        type: int64
+        optional: true
+      - name: page
+        type: int64
+        optional: true
+
+  # -------------------------
+  # repos.get
+  # -------------------------
+  - name: ReposGetRequest
+    kind: struct
+    fields:
+      - name: owner
+        type: string
+      - name: repo
+        type: string
+
+  - name: Repo
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+      - name: node_id
+        type: string
+      - name: name
+        type: string
+      - name: full_name
+        type: string
+      - name: private
+        type: bool
+      - name: html_url
+        type: string
+      - name: description
+        type: string
+        nullable: true
+      - name: fork
+        type: bool
+      - name: owner
+        type: UserSummary
+      - name: stargazers_count
+        type: int64
+      - name: forks_count
+        type: int64
+      - name: open_issues_count
+        type: int64
+      - name: default_branch
+        type: string
+
+  - name: RepoList
+    kind: slice
+    elem: Repo
+
+  - name: ReposListForUserRequest
+    kind: struct
+    fields:
+      - name: username
+        type: string
+      - name: type
+        description: Which repos to list
+        type: string
+        optional: true
+        enum: [all, owner, member]
+      - name: sort
+        type: string
+        optional: true
+        enum: [created, updated, pushed, full_name]
+      - name: direction
+        type: string
+        optional: true
+        enum: [asc, desc]
+      - name: per_page
+        type: int64
+        optional: true
+      - name: page
+        type: int64
+        optional: true
+
+  # -------------------------
+  # users.get
+  # -------------------------
+  - name: UsersGetRequest
+    kind: struct
+    fields:
+      - name: username
+        type: string
+
+  - name: User
+    kind: struct
+    fields:
+      - name: login
+        type: string
+      - name: id
+        type: int64
+      - name: node_id
+        type: string
+      - name: avatar_url
+        type: string
+      - name: html_url
+        type: string
+      - name: type
+        type: string
+        enum: [User, Organization]
+      - name: name
+        type: string
+        nullable: true
+      - name: company
+        type: string
+        nullable: true
+      - name: blog
+        type: string
+        nullable: true
+      - name: location
+        type: string
+        nullable: true
+      - name: public_repos
+        type: int64
+      - name: followers
+        type: int64
+      - name: following
+        type: int64
+
+  - name: UserSummary
+    kind: struct
+    fields:
+      - name: login
+        type: string
+      - name: id
+        type: int64
+      - name: avatar_url
+        type: string
+      - name: html_url
+        type: string
+      - name: type
+        type: string
+        enum: [User, Organization]
+
+  # -------------------------
+  # issues.list_for_repo
+  # -------------------------
+  - name: IssuesListForRepoRequest
+    kind: struct
+    fields:
+      - name: owner
+        type: string
+      - name: repo
+        type: string
+      - name: state
+        type: string
+        optional: true
+        enum: [open, closed, all]
+      - name: labels
+        description: Comma-separated label names
+        type: string
+        optional: true
+      - name: sort
+        type: string
+        optional: true
+        enum: [created, updated, comments]
+      - name: direction
+        type: string
+        optional: true
+        enum: [asc, desc]
+      - name: since
+        description: ISO 8601 timestamp
+        type: time.Time
+        optional: true
+      - name: per_page
+        type: int64
+        optional: true
+      - name: page
+        type: int64
+        optional: true
+
+  - name: IssueList
+    kind: slice
+    elem: Issue
+
+  # GitHub issue payload includes pull_request field when item is a PR in /issues list.
+  # Represent this via optional PullRequestRef.
+  - name: Issue
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+      - name: number
+        type: int64
+      - name: title
+        type: string
+      - name: state
+        type: string
+        enum: [open, closed]
+      - name: locked
+        type: bool
+      - name: user
+        type: UserSummary
+      - name: body
+        type: string
+        nullable: true
+      - name: comments
+        type: int64
+      - name: html_url
+        type: string
+      - name: pull_request
+        type: PullRequestRef
+        optional: true
+
+  - name: PullRequestRef
+    kind: struct
+    fields:
+      - name: url
+        type: string
+      - name: html_url
+        type: string
+      - name: diff_url
+        type: string
+      - name: patch_url
+        type: string
+
+  # -------------------------
+  # issues.create + issues.add_comment
+  # -------------------------
+  - name: IssuesCreateRequest
+    kind: struct
+    fields:
+      - name: owner
+        type: string
+      - name: repo
+        type: string
+      - name: title
+        type: string
+      - name: body
+        type: string
+        optional: true
+      - name: assignees
+        type: StringList
+        optional: true
+      - name: labels
+        type: StringList
+        optional: true
+
+  - name: IssuesAddCommentRequest
+    kind: struct
+    fields:
+      - name: owner
+        type: string
+      - name: repo
+        type: string
+      - name: issue_number
+        type: int64
+      - name: body
+        type: string
+
+  - name: IssueComment
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+      - name: html_url
+        type: string
+      - name: user
+        type: UserSummary
+      - name: body
+        type: string
+      - name: created_at
+        type: time.Time
+      - name: updated_at
+        type: time.Time
+
+  - name: StringList
+    kind: slice
+    elem: string
+
+  # -------------------------
+  # pulls.list_for_repo + pulls.get
+  # -------------------------
+  - name: PullsListForRepoRequest
+    kind: struct
+    fields:
+      - name: owner
+        type: string
+      - name: repo
+        type: string
+      - name: state
+        type: string
+        optional: true
+        enum: [open, closed, all]
+      - name: sort
+        type: string
+        optional: true
+        enum: [created, updated, popularity, long-running]
+      - name: direction
+        type: string
+        optional: true
+        enum: [asc, desc]
+      - name: per_page
+        type: int64
+        optional: true
+      - name: page
+        type: int64
+        optional: true
+
+  - name: PullsGetRequest
+    kind: struct
+    fields:
+      - name: owner
+        type: string
+      - name: repo
+        type: string
+      - name: pull_number
+        type: int64
+
+  - name: PullRequestList
+    kind: slice
+    elem: PullRequest
+
+  - name: PullRequest
+    kind: struct
+    fields:
+      - name: id
+        type: int64
+      - name: number
+        type: int64
+      - name: state
+        type: string
+        enum: [open, closed]
+      - name: title
+        type: string
+      - name: user
+        type: UserSummary
+      - name: body
+        type: string
+        nullable: true
+      - name: html_url
+        type: string
+      - name: merged
+        type: bool
+        optional: true
+      - name: draft
+        type: bool
+        optional: true
