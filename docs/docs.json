@@ -74,7 +74,7 @@
         ]
       },
       {
-        "tab": "Contract",
+        "tab": "Contracts",
         "groups": [
           {
             "group": "Getting Started",
@@ -402,7 +402,7 @@
         ]
       },
       {
-        "tab": "View",
+        "tab": "Views",
         "groups": [
           {
             "group": "View Engine",
