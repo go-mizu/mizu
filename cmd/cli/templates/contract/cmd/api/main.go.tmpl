@@ -23,7 +23,9 @@ func main() {
 	log.Printf("REST:     http://localhost%s/todos", cfg.Addr)
 	log.Printf("JSON-RPC: http://localhost%s/rpc", cfg.Addr)
 	log.Printf("MCP:      http://localhost%s/mcp", cfg.Addr)
+	log.Printf("Async:    http://localhost%s/async", cfg.Addr)
 	log.Printf("OpenAPI:  http://localhost%s/openapi.json", cfg.Addr)
+	log.Printf("AsyncAPI: http://localhost%s/asyncapi.json", cfg.Addr)
 
 	if err := app.Listen(cfg.Addr); err != nil {
 		log.Fatal(err)

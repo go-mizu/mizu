@@ -1,7 +1,7 @@
 {
   "name": "contract",
-  "description": "Code-first API contract with mizu integration, REST, JSON-RPC, MCP, and OpenAPI (v2)",
-  "tags": ["go", "mizu", "contract", "rest", "jsonrpc", "mcp", "openapi"],
+  "description": "Code-first API contract with mizu integration, REST, JSON-RPC, MCP, Async (SSE), and OpenAPI/AsyncAPI (v2)",
+  "tags": ["go", "mizu", "contract", "rest", "jsonrpc", "mcp", "async", "sse", "openapi", "asyncapi"],
   "variables": {
     "name": { "description": "Project name", "default": "" },
     "module": { "description": "Go module path", "default": "" }
