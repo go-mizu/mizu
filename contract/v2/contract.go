@@ -1,22 +1,25 @@
 // Package contract defines transport-neutral API contracts.
 //
-// This package contains pure data models only.
+// This package contains pure data models and minimal runtime interfaces.
 // All types are fully serializable to JSON/YAML.
 //
 // Design principles
 //
-//   - Transport-neutral: no REST / RPC / WS baked into the core model
-//   - SDK-first: shaped to generate elegant client SDKs
-//   - Resource-oriented: client.posts.list(), client.responses.create()
+//   - Transport-neutral (REST, JSON-RPC, SSE, WS, async, gRPC)
+//   - SDK-first (OpenAI / Stripe style clients)
+//   - Resource-oriented (client.responses.create())
 //   - Streaming is explicit and first-class
-//   - No pointer syntax: optionality and nullability live on fields
+//   - Minimal surface area
+//   - No pointer syntax in schema
 //   - Map keys are always string
 //
-// Runtime bindings (reflection, HTTP, JSON-RPC, SSE, WS, async, etc.)
-// live in separate packages.
+// Runtime bindings live in transport-specific packages.
 package contract
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 //
 // ────────────────────────────────────────────────────────────
@@ -26,32 +29,17 @@ import "context"
 
 // Service is a transport-neutral API descriptor.
 type Service struct {
-	// Name is the service name, for example "OpenAI", "Petstore".
-	Name string `json:"name" yaml:"name"`
-
-	// Description is optional human documentation.
-	Description string `json:"description,omitempty" yaml:"description,omitempty"`
-
-	// Defaults provides optional global hints for transports and SDK generators.
-	Defaults *Defaults `json:"defaults,omitempty" yaml:"defaults,omitempty"`
-
-	// Resources group methods into namespaces for SDK generation.
-	Resources []*Resource `json:"resources" yaml:"resources"`
-
-	// Types is the schema registry.
-	// Primitives and external types (string, int64, time.Time) do not need entries.
-	Types []*Type `json:"types,omitempty" yaml:"types,omitempty"`
+	Name        string     `json:"name" yaml:"name"`
+	Description string     `json:"description,omitempty" yaml:"description,omitempty"`
+	Defaults    *Defaults  `json:"defaults,omitempty" yaml:"defaults,omitempty"`
+	Resources   []*Resource `json:"resources" yaml:"resources"`
+	Types       []*Type    `json:"types,omitempty" yaml:"types,omitempty"`
 }
 
-// Defaults are global hints shared across transports and SDKs.
+// Defaults are global hints for transports and SDK generators.
 type Defaults struct {
-	// BaseURL is the default API endpoint.
-	BaseURL string `json:"base_url,omitempty" yaml:"base_url,omitempty"`
-
-	// Auth is an auth hint such as "bearer", "basic", "none".
-	Auth string `json:"auth,omitempty" yaml:"auth,omitempty"`
-
-	// Headers are default headers to send with requests.
+	BaseURL string            `json:"base_url,omitempty" yaml:"base_url,omitempty"`
+	Auth    string            `json:"auth,omitempty" yaml:"auth,omitempty"`
 	Headers map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
 }
 
@@ -61,11 +49,7 @@ type Defaults struct {
 // ────────────────────────────────────────────────────────────
 //
 
-// Resource is a logical namespace for related methods.
-//
-// Example client usage:
-//   client.models.list()
-//   client.responses.create()
+// Resource groups related methods into a namespace.
 type Resource struct {
 	Name        string    `json:"name" yaml:"name"`
 	Description string    `json:"description,omitempty" yaml:"description,omitempty"`
@@ -74,68 +58,36 @@ type Resource struct {
 
 // Method describes a single operation.
 type Method struct {
-	// Name is the method name within the resource.
-	// Examples: list, retrieve, create, update, delete.
-	Name string `json:"name" yaml:"name"`
+	Name        string  `json:"name" yaml:"name"`
+	Description string  `json:"description,omitempty" yaml:"description,omitempty"`
 
-	// Description is optional documentation.
-	Description string `json:"description,omitempty" yaml:"description,omitempty"`
-
-	// Input is the request type.
-	// Empty means no input.
-	Input TypeRef `json:"input,omitempty" yaml:"input,omitempty"`
-
-	// Output is the response type.
-	// Empty means no output (error-only).
+	// Unary input/output
+	Input  TypeRef `json:"input,omitempty" yaml:"input,omitempty"`
 	Output TypeRef `json:"output,omitempty" yaml:"output,omitempty"`
 
-	// Stream describes streaming semantics, if this method is streaming.
-	Stream *MethodStream `json:"stream,omitempty" yaml:"stream,omitempty"`
+	// Streaming semantics (optional)
+	Stream *struct {
+		// Mode is a hint: "sse", "ws", "grpc", "async"
+		Mode string `json:"mode,omitempty" yaml:"mode,omitempty"`
 
-	// HTTP is an optional HTTP binding (REST, SSE, WS entrypoint).
+		// Item is the server -> client message type (required for streaming)
+		Item TypeRef `json:"item" yaml:"item"`
+
+		// Done is an optional terminal message type
+		Done TypeRef `json:"done,omitempty" yaml:"done,omitempty"`
+
+		// Error is an optional typed stream error
+		Error TypeRef `json:"error,omitempty" yaml:"error,omitempty"`
+
+		// InputItem enables bidirectional streams (WebSocket)
+		InputItem TypeRef `json:"input_item,omitempty" yaml:"input_item,omitempty"`
+	} `json:"stream,omitempty" yaml:"stream,omitempty"`
+
+	// Optional HTTP binding
 	HTTP *MethodHTTP `json:"http,omitempty" yaml:"http,omitempty"`
 }
 
-//
-// ────────────────────────────────────────────────────────────
-// Streaming model
-// ────────────────────────────────────────────────────────────
-//
-
-// MethodStream defines streaming semantics for a method.
-//
-// This is transport-neutral. SSE, WebSocket, gRPC, and async brokers
-// are all carriers for the same logical stream.
-type MethodStream struct {
-	// Mode is a hint for SDKs and docs: "sse", "ws", "grpc", "async".
-	// Optional. Semantics are defined by Item/InputItem.
-	Mode string `json:"mode,omitempty" yaml:"mode,omitempty"`
-
-	// Item is the type emitted by the server.
-	// Required for streaming methods.
-	Item TypeRef `json:"item" yaml:"item"`
-
-	// Done is an optional terminal message type.
-	// If empty, end-of-stream is implied by connection close.
-	Done TypeRef `json:"done,omitempty" yaml:"done,omitempty"`
-
-	// Error is an optional typed error message for streams.
-	Error TypeRef `json:"error,omitempty" yaml:"error,omitempty"`
-
-	// InputItem enables bidirectional streaming (WebSocket).
-	// If set, the client may send messages after connect.
-	InputItem TypeRef `json:"input_item,omitempty" yaml:"input_item,omitempty"`
-}
-
-//
-// ────────────────────────────────────────────────────────────
-// Transport bindings
-// ────────────────────────────────────────────────────────────
-//
-
 // MethodHTTP binds a method to an HTTP endpoint.
-//
-// This is intentionally minimal and extensible.
 type MethodHTTP struct {
 	Method string `json:"method" yaml:"method"`
 	Path   string `json:"path" yaml:"path"`
@@ -149,8 +101,9 @@ type MethodHTTP struct {
 
 // TypeRef references a type by name.
 //
-// If the name matches a declared Type, it refers to that schema.
-// Otherwise it is treated as a primitive or external type.
+// If it matches a declared Type.Name, it refers to that schema.
+// Otherwise it is treated as a primitive or external type
+// (string, int64, bool, time.Time, json.RawMessage, etc).
 type TypeRef string
 
 // TypeKind describes the shape of a declared type.
@@ -160,45 +113,60 @@ const (
 	KindStruct TypeKind = "struct"
 	KindSlice  TypeKind = "slice"
 	KindMap    TypeKind = "map"
+	KindUnion  TypeKind = "union"
 )
 
 // Type is a schema definition.
 type Type struct {
-	// Name is the canonical type name.
-	Name string `json:"name" yaml:"name"`
+	Name        string   `json:"name" yaml:"name"`
+	Description string   `json:"description,omitempty" yaml:"description,omitempty"`
+	Kind        TypeKind `json:"kind" yaml:"kind"`
 
-	// Description is optional documentation.
-	Description string `json:"description,omitempty" yaml:"description,omitempty"`
-
-	// Kind determines which fields are valid.
-	Kind TypeKind `json:"kind" yaml:"kind"`
-
-	// Fields are used when Kind is struct.
+	// Struct only
 	Fields []Field `json:"fields,omitempty" yaml:"fields,omitempty"`
 
-	// Elem is used for slice and map.
-	//
+	// Slice and map
 	//   slice: elem is the element type
 	//   map:   elem is the value type (key is always string)
 	Elem TypeRef `json:"elem,omitempty" yaml:"elem,omitempty"`
+
+	// Union only (discriminated union)
+	//
+	// Tag is the discriminator field name (for example "type").
+	// Variants define the allowed shapes.
+	Tag      string    `json:"tag,omitempty" yaml:"tag,omitempty"`
+	Variants []Variant `json:"variants,omitempty" yaml:"variants,omitempty"`
+}
+
+// Variant is a single union alternative.
+type Variant struct {
+	// Value is the discriminator value (string literal).
+	// Example: "text", "image", "response.output_text".
+	Value string `json:"value" yaml:"value"`
+
+	// Type is the referenced struct type.
+	Type TypeRef `json:"type" yaml:"type"`
+
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 }
 
 // Field describes a struct field.
 type Field struct {
-	// Name is the wire name (JSON/YAML).
-	Name string `json:"name" yaml:"name"`
-
-	// Description is optional documentation.
-	Description string `json:"description,omitempty" yaml:"description,omitempty"`
-
-	// Type is the field type.
-	Type TypeRef `json:"type" yaml:"type"`
+	Name        string  `json:"name" yaml:"name"`
+	Description string  `json:"description,omitempty" yaml:"description,omitempty"`
+	Type        TypeRef `json:"type" yaml:"type"`
 
 	// Optional indicates the field may be omitted.
 	Optional bool `json:"optional,omitempty" yaml:"optional,omitempty"`
 
 	// Nullable indicates the field may be present with null value.
 	Nullable bool `json:"nullable,omitempty" yaml:"nullable,omitempty"`
+
+	// Enum restricts allowed values (usually for string).
+	Enum []string `json:"enum,omitempty" yaml:"enum,omitempty"`
+
+	// Const fixes the value to a literal (used for discriminators).
+	Const string `json:"const,omitempty" yaml:"const,omitempty"`
 }
 
 //
@@ -208,11 +176,11 @@ type Field struct {
 //
 
 // Method finds a method by resource and method name.
-func (s *Service) Method(resourceName, methodName string) *Method {
+func (s *Service) Method(resource, method string) *Method {
 	for _, r := range s.Resources {
-		if r != nil && r.Name == resourceName {
+		if r != nil && r.Name == resource {
 			for _, m := range r.Methods {
-				if m != nil && m.Name == methodName {
+				if m != nil && m.Name == method {
 					return m
 				}
 			}
@@ -233,31 +201,32 @@ type Descriptor interface {
 	Descriptor() *Service
 }
 
-// Invoker is the unary-call runtime surface.
+// Invoker is the unified runtime surface.
+//
+// Unary transports implement Call.
+// Streaming transports implement Stream.
+// Unsupported operations must return ErrUnsupported.
 type Invoker interface {
 	Descriptor
 
+	// Unary
 	Call(ctx context.Context, resource, method string, in any) (any, error)
 	NewInput(resource, method string) (any, error)
-}
 
-// StreamInvoker is the streaming runtime surface.
-type StreamInvoker interface {
-	Descriptor
-
-	// Stream starts a stream and returns a channel-like iterator.
+	// Streaming
 	Stream(ctx context.Context, resource, method string, in any) (Stream, error)
 }
 
-// Stream is a generic streaming interface.
+// Stream represents a live stream.
+//
+// SSE implements Recv only.
+// WebSocket implements Recv + Send.
+// Async brokers may implement both.
 type Stream interface {
-	// Recv blocks until the next item, or returns error on end/failure.
 	Recv() (any, error)
-
-	// Send sends a client-to-server message (bidirectional streams).
-	// Returns ErrUnsupported if not allowed.
 	Send(any) error
-
-	// Close terminates the stream.
 	Close() error
 }
+
+// ErrUnsupported indicates a transport does not support an operation.
+var ErrUnsupported = errors.New("contract: unsupported")
