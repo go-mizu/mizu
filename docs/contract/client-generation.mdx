@@ -7,6 +7,26 @@ description: "Generate typed API clients in any language from your Contract serv
 
 One of the best things about Contract is that you can generate typed clients in any language. Your Go service becomes a TypeScript client, Python client, or any other language - with full type safety.
 
+<Info>
+**Native SDK Generation**: Mizu now includes built-in SDK generators for Go, Python, and TypeScript that produce idiomatic, zero-dependency clients with better developer experience than OpenAPI-based generation. See [SDK Generation](/contract/sdk-overview) for details.
+</Info>
+
+## Two Approaches to Client Generation
+
+| Approach | Best For | Pros | Cons |
+|----------|----------|------|------|
+| **[Native SDKs](/contract/sdk-overview)** | Go, Python, TypeScript | Idiomatic code, zero deps, better DX, streaming support | Limited language support |
+| **OpenAPI (this page)** | Other languages, ecosystem compatibility | 40+ languages, mature tooling | Generic code, more dependencies |
+
+<CardGroup cols={2}>
+  <Card title="Native SDK Generation" icon="rocket" href="/contract/sdk-overview">
+    Built-in generators for Go, Python, and TypeScript with OpenAI-style developer experience
+  </Card>
+  <Card title="OpenAPI Generation" icon="file-code">
+    Use OpenAPI spec with third-party generators for any language (continue reading below)
+  </Card>
+</CardGroup>
+
 ## How It Works
 
 Contract provides machine-readable descriptions of your API:
@@ -597,6 +617,10 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
 
 ## See Also
 
+- [SDK Generation](/contract/sdk-overview) - Native SDK generators for Go, Python, TypeScript
+- [Go SDK](/contract/sdk-go) - Native Go client generation
+- [Python SDK](/contract/sdk-python) - Native Python client generation
+- [TypeScript SDK](/contract/sdk-typescript) - Native TypeScript client generation
 - [OpenAPI](/contract/openapi) - OpenAPI specification generation
 - [REST](/contract/rest) - REST endpoints
 - [JSON-RPC](/contract/jsonrpc) - JSON-RPC endpoints
