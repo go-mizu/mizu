@@ -1,5 +1,5 @@
-// Package sdkpy generates a modern Python SDK from contract.Service.
-package sdkpy
+// Package sdkts generates a modern TypeScript SDK from contract.Service.
+package sdkts
 
 import (
 	"bytes"
@@ -15,27 +15,27 @@ import (
 	"github.com/go-mizu/mizu/contract/v2/sdk"
 )
 
-// IMPORTANT: repo currently has only templates/*.tmpl (no subfolders).
+// Templates are organized to mirror output paths.
 //
-//go:embed templates/*.tmpl
+//go:embed templates/**/*.tmpl templates/*.tmpl
 var templateFS embed.FS
 
-// Config controls Python SDK generation.
+// Config controls TypeScript SDK generation.
 type Config struct {
-	// Package is the Python import package name (top-level module).
+	// Package is the npm package name.
 	// Default: sanitized lowercase service name, or "sdk".
 	Package string
 
-	// Version is the package version written to pyproject.toml.
+	// Version is the package version written to package.json.
 	// Default: "0.0.0".
 	Version string
 }
 
-// Generate produces a set of files for a Python SDK.
-// Output is a uv-friendly project with src/ layout (as implemented by templates).
+// Generate produces a set of files for a TypeScript SDK.
+// Output is ESM-first and fetch-based for Node.js, Bun, and Deno.
 func Generate(svc *contract.Service, cfg *Config) ([]*sdk.File, error) {
 	if svc == nil {
-		return nil, fmt.Errorf("sdkpy: nil service")
+		return nil, fmt.Errorf("sdkts: nil service")
 	}
 
 	m, err := buildModel(svc, cfg)
@@ -43,73 +43,75 @@ func Generate(svc *contract.Service, cfg *Config) ([]*sdk.File, error) {
 		return nil, err
 	}
 
-	tpl := template.New("sdkpy").Funcs(template.FuncMap{
-		"pyQuote":  pyQuote,
-		"pyString": pyQuote,
-		"pyIdent":  pyIdent,
-		"snake":    toSnake,
-		"pascal":   toPascal,
-		"join":     strings.Join,
-		"trim":     strings.TrimSpace,
-		"lower":    strings.ToLower,
-		"indent":   indent,
+	tpl := template.New("sdkts").Funcs(template.FuncMap{
+		"tsQuote": tsQuote,
+		"tsIdent": tsIdent,
+		"snake":   toSnake,
+		"pascal":  toPascal,
+		"camel":   toLowerCamel,
+		"join":    strings.Join,
+		"trim":    strings.TrimSpace,
+		"lower":   strings.ToLower,
+		"indent":  indent,
 	})
 
-	// Parse only templates we actually need.
-	// This intentionally excludes README.md.tmpl to keep E2E stable and minimal.
-	need := []string{
-		"templates/pyproject.toml.tmpl",
-		"templates/_client.py.tmpl",
-		"templates/_types.py.tmpl",
-		"templates/_streaming.py.tmpl",
-		"templates/_resource.py.tmpl",
-	}
-	var errParse error
-	tpl, errParse = tpl.ParseFS(templateFS, need...)
-	if errParse != nil {
-		return nil, fmt.Errorf("sdkpy: parse templates: %w", errParse)
-	}
+	// Parse templates by explicit paths (stable, avoids surprises).
+	paths := []string{
+		"templates/package.json.tmpl",
+		"templates/tsconfig.json.tmpl",
 
-	// Provide a tiny inline template for __init__.py to avoid adding another file on disk.
-	if _, err := tpl.New("__init__.py.inline.tmpl").Parse(initTemplate); err != nil {
-		return nil, fmt.Errorf("sdkpy: parse inline __init__.py template: %w", err)
+		"templates/src/index.ts.tmpl",
+		"templates/src/client.ts.tmpl",
+		"templates/src/core.ts.tmpl",
+		"templates/src/errors.ts.tmpl",
+		"templates/src/streaming.ts.tmpl",
+		"templates/src/types.ts.tmpl",
+
+		"templates/src/resources/resource.ts.tmpl",
 	}
 
-	outPlan := []struct {
-		Path string
-		Tpl  string
-	}{
-		{Path: "pyproject.toml", Tpl: "pyproject.toml.tmpl"},
-
-		{Path: "src/" + m.Package + "/_client.py", Tpl: "_client.py.tmpl"},
-		{Path: "src/" + m.Package + "/_types.py", Tpl: "_types.py.tmpl"},
-		{Path: "src/" + m.Package + "/_streaming.py", Tpl: "_streaming.py.tmpl"},
-		{Path: "src/" + m.Package + "/_resource.py", Tpl: "_resource.py.tmpl"},
-
-		{Path: "src/" + m.Package + "/__init__.py", Tpl: "__init__.py.inline.tmpl"},
+	tpl, err = tpl.ParseFS(templateFS, paths...)
+	if err != nil {
+		return nil, fmt.Errorf("sdkts: parse templates: %w", err)
 	}
 
 	var files []*sdk.File
-	for _, item := range outPlan {
-		var buf bytes.Buffer
-		if err := tpl.ExecuteTemplate(&buf, item.Tpl, m); err != nil {
-			return nil, fmt.Errorf("sdkpy: execute template %s: %w", item.Tpl, err)
+
+	// Top-level files.
+	files = append(files, execToFile(tpl, "templates/package.json.tmpl", "package.json", m))
+	files = append(files, execToFile(tpl, "templates/tsconfig.json.tmpl", "tsconfig.json", m))
+
+	// src files.
+	files = append(files, execToFile(tpl, "templates/src/index.ts.tmpl", "src/index.ts", m))
+	files = append(files, execToFile(tpl, "templates/src/client.ts.tmpl", "src/client.ts", m))
+	files = append(files, execToFile(tpl, "templates/src/core.ts.tmpl", "src/core.ts", m))
+	files = append(files, execToFile(tpl, "templates/src/errors.ts.tmpl", "src/errors.ts", m))
+	files = append(files, execToFile(tpl, "templates/src/streaming.ts.tmpl", "src/streaming.ts", m))
+	files = append(files, execToFile(tpl, "templates/src/types.ts.tmpl", "src/types.ts", m))
+
+	// Per-resource.
+	for _, r := range m.Resources {
+		rc := resourceCtx{
+			Model:    m,
+			Resource: r,
 		}
-		files = append(files, &sdk.File{
-			Path:    path.Clean(item.Path),
-			Content: buf.String(),
-		})
+		outPath := "src/resources/" + r.ClassName + ".ts"
+		files = append(files, execToFile(tpl, "templates/src/resources/resource.ts.tmpl", outPath, rc))
 	}
 
 	return files, nil
 }
 
-const initTemplate = `# Code generated by sdkpy. DO NOT EDIT.
-
-from ._client import OpenAI, AsyncOpenAI
-
-__all__ = ["OpenAI", "AsyncOpenAI"]
-`
+func execToFile(tpl *template.Template, tplName, outPath string, data any) *sdk.File {
+	var buf bytes.Buffer
+	if err := tpl.ExecuteTemplate(&buf, tplName, data); err != nil {
+		panic(fmt.Sprintf("sdkts: execute template %s: %v", tplName, err))
+	}
+	return &sdk.File{
+		Path:    path.Clean(outPath),
+		Content: buf.String(),
+	}
+}
 
 type model struct {
 	Package string
@@ -133,6 +135,11 @@ type model struct {
 	HasSSE bool
 }
 
+type resourceCtx struct {
+	Model    *model
+	Resource resourceModel
+}
+
 type kv struct {
 	K string
 	V string
@@ -151,9 +158,9 @@ type typeModel struct {
 
 type fieldModel struct {
 	Name        string
-	PyName      string
+	TSName      string
 	Description string
-	PyType      string
+	TSType      string
 
 	Optional bool
 	Nullable bool
@@ -165,26 +172,23 @@ type variantModel struct {
 	Value       string
 	Type        string
 	Description string
-	FieldName   string
 }
 
 type resourceModel struct {
 	Name        string
-	PyName      string
-	ClassName   string
+	PropName    string // client.<propName>
+	ClassName   string // exported class name
 	Description string
 	Methods     []methodModel
 }
 
 type methodModel struct {
 	Name        string
-	PyName      string
+	PropName    string
 	Description string
 
-	HasInput      bool
-	HasOutput     bool
-	InputIsStruct bool
-	InputFields   []fieldModel
+	HasInput  bool
+	HasOutput bool
 
 	InputType  string
 	OutputType string
@@ -196,22 +200,23 @@ type methodModel struct {
 	StreamMode     string
 	StreamIsSSE    bool
 	StreamItemType string
-	StreamItem     string
 }
 
 func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 	m := &model{}
 
+	// Package name.
 	if cfg != nil && strings.TrimSpace(cfg.Package) != "" {
-		m.Package = pyIdent(cfg.Package)
+		m.Package = strings.TrimSpace(cfg.Package)
 	} else {
 		p := strings.ToLower(sanitizeIdent(svc.Name))
 		if p == "" {
 			p = "sdk"
 		}
-		m.Package = pyIdent(p)
+		m.Package = p
 	}
 
+	// Version.
 	if cfg != nil && strings.TrimSpace(cfg.Version) != "" {
 		m.Version = strings.TrimSpace(cfg.Version)
 	} else {
@@ -222,6 +227,7 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 	m.Service.Sanitized = sanitizeIdent(svc.Name)
 	m.Service.Description = svc.Description
 
+	// Defaults.
 	if svc.Defaults != nil {
 		m.Defaults.BaseURL = strings.TrimRight(strings.TrimSpace(svc.Defaults.BaseURL), "/")
 		m.Defaults.Auth = strings.TrimSpace(svc.Defaults.Auth)
@@ -238,6 +244,7 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 		}
 	}
 
+	// Index types by name.
 	typeByName := map[string]*contract.Type{}
 	for _, t := range svc.Types {
 		if t != nil && strings.TrimSpace(t.Name) != "" {
@@ -245,35 +252,43 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 		}
 	}
 
+	// Streaming presence.
 	m.HasSSE = hasSSE(svc)
 
+	// Stable type order.
 	typeNames := make([]string, 0, len(typeByName))
 	for name := range typeByName {
 		typeNames = append(typeNames, name)
 	}
 	sort.Strings(typeNames)
 
+	// Types model.
 	for _, name := range typeNames {
 		t := typeByName[name]
 		if t == nil {
 			continue
 		}
+
 		tm := typeModel{
-			Name:        t.Name,
-			Description: t.Description,
+			Name:        toPascal(t.Name),
+			Description: strings.TrimSpace(t.Description),
 			Kind:        t.Kind,
-			Elem:        string(t.Elem),
-			Tag:         t.Tag,
+			Elem:        "",
+			Tag:         strings.TrimSpace(t.Tag),
 		}
 
 		switch t.Kind {
 		case contract.KindStruct:
 			for _, f := range t.Fields {
+				tsName := toLowerCamel(sanitizeIdent(f.Name))
+				if tsName == "" {
+					tsName = "x"
+				}
 				tm.Fields = append(tm.Fields, fieldModel{
 					Name:        f.Name,
-					PyName:      toSnake(f.Name),
-					Description: f.Description,
-					PyType:      pyType(typeByName, f.Type, f.Optional, f.Nullable),
+					TSName:      tsName,
+					Description: strings.TrimSpace(f.Description),
+					TSType:      tsType(typeByName, f.Type, f.Optional, f.Nullable),
 					Optional:    f.Optional,
 					Nullable:    f.Nullable,
 					Enum:        append([]string(nil), f.Enum...),
@@ -282,18 +297,17 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 			}
 
 		case contract.KindSlice:
-			tm.Elem = pyType(typeByName, t.Elem, false, false)
+			tm.Elem = tsType(typeByName, t.Elem, false, false)
 
 		case contract.KindMap:
-			tm.Elem = pyType(typeByName, t.Elem, false, false)
+			tm.Elem = tsType(typeByName, t.Elem, false, false)
 
 		case contract.KindUnion:
 			for _, v := range t.Variants {
 				tm.Variants = append(tm.Variants, variantModel{
 					Value:       v.Value,
-					Type:        string(v.Type),
-					Description: v.Description,
-					FieldName:   toPascal(string(v.Type)),
+					Type:        toPascal(string(v.Type)),
+					Description: strings.TrimSpace(v.Description),
 				})
 			}
 		}
@@ -301,19 +315,26 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 		m.Types = append(m.Types, tm)
 	}
 
+	// Resources.
 	for _, r := range svc.Resources {
-		if r == nil {
+		if r == nil || strings.TrimSpace(r.Name) == "" {
 			continue
 		}
+
+		prop := toLowerCamel(sanitizeIdent(r.Name))
+		if prop == "" {
+			prop = "resource"
+		}
+
 		rm := resourceModel{
 			Name:        r.Name,
-			PyName:      toSnake(r.Name),
+			PropName:    prop,
 			ClassName:   toPascal(r.Name),
-			Description: r.Description,
+			Description: strings.TrimSpace(r.Description),
 		}
 
 		for _, mm := range r.Methods {
-			if mm == nil {
+			if mm == nil || strings.TrimSpace(mm.Name) == "" {
 				continue
 			}
 
@@ -331,28 +352,6 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 			hasInput := strings.TrimSpace(string(mm.Input)) != ""
 			hasOutput := strings.TrimSpace(string(mm.Output)) != ""
 
-			// Check if input type is a struct and get its fields
-			inputIsStruct := false
-			var inputFields []fieldModel
-			if hasInput {
-				inputTypeName := strings.TrimSpace(string(mm.Input))
-				if t, ok := typeByName[inputTypeName]; ok && t.Kind == contract.KindStruct {
-					inputIsStruct = true
-					for _, f := range t.Fields {
-						inputFields = append(inputFields, fieldModel{
-							Name:        f.Name,
-							PyName:      toSnake(f.Name),
-							Description: f.Description,
-							PyType:      pyType(typeByName, f.Type, f.Optional, f.Nullable),
-							Optional:    f.Optional,
-							Nullable:    f.Nullable,
-							Enum:        append([]string(nil), f.Enum...),
-							Const:       f.Const,
-						})
-					}
-				}
-			}
-
 			isStreaming := mm.Stream != nil
 			streamMode := ""
 			streamIsSSE := false
@@ -366,15 +365,13 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 
 			rm.Methods = append(rm.Methods, methodModel{
 				Name:        mm.Name,
-				PyName:      toSnake(mm.Name),
-				Description: mm.Description,
+				PropName:    toLowerCamel(sanitizeIdent(mm.Name)),
+				Description: strings.TrimSpace(mm.Description),
 
-				HasInput:      hasInput,
-				HasOutput:     hasOutput,
-				InputIsStruct: inputIsStruct,
-				InputFields:   inputFields,
-				InputType:     string(mm.Input),
-				OutputType:    string(mm.Output),
+				HasInput:   hasInput,
+				HasOutput:  hasOutput,
+				InputType:  toPascal(string(mm.Input)),
+				OutputType: toPascal(string(mm.Output)),
 
 				HTTPMethod: httpMethod,
 				HTTPPath:   httpPath,
@@ -382,13 +379,17 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 				IsStreaming:    isStreaming,
 				StreamMode:     streamMode,
 				StreamIsSSE:    streamIsSSE,
-				StreamItemType: streamItem,
-				StreamItem:     streamItem,
+				StreamItemType: toPascal(streamItem),
 			})
 		}
 
 		m.Resources = append(m.Resources, rm)
 	}
+
+	// Stable resources order.
+	sort.Slice(m.Resources, func(i, j int) bool {
+		return m.Resources[i].PropName < m.Resources[j].PropName
+	})
 
 	return m, nil
 }
@@ -411,59 +412,98 @@ func hasSSE(svc *contract.Service) bool {
 	return false
 }
 
-func pyType(typeByName map[string]*contract.Type, ref contract.TypeRef, optional, nullable bool) string {
+func tsType(typeByName map[string]*contract.Type, ref contract.TypeRef, optional, nullable bool) string {
 	r := strings.TrimSpace(string(ref))
 	if r == "" {
-		return "object"
+		return "unknown"
 	}
 
-	base := basePyType(typeByName, r)
-	if optional || nullable {
-		if !strings.HasPrefix(base, "Optional[") {
-			return "Optional[" + base + "]"
-		}
+	base := baseTSType(typeByName, r)
+
+	if nullable {
+		base = base + " | null"
+	}
+	// Optional is encoded at property level with ?:, but for non-property contexts,
+	// allowing undefined improves composability.
+	if optional {
+		base = base + " | undefined"
 	}
 	return base
 }
 
-func basePyType(typeByName map[string]*contract.Type, r string) string {
-	if _, ok := typeByName[r]; ok {
-		return toPascal(r)
+func baseTSType(typeByName map[string]*contract.Type, r string) string {
+	if t, ok := typeByName[r]; ok && t != nil {
+		switch t.Kind {
+		case contract.KindStruct:
+			return toPascal(r)
+		case contract.KindSlice:
+			elem := tsType(typeByName, t.Elem, false, false)
+			return elem + "[]"
+		case contract.KindMap:
+			elem := tsType(typeByName, t.Elem, false, false)
+			return "Record<string, " + elem + ">"
+		case contract.KindUnion:
+			if len(t.Variants) == 0 {
+				return "unknown"
+			}
+			parts := make([]string, 0, len(t.Variants))
+			for _, v := range t.Variants {
+				parts = append(parts, baseTSType(typeByName, strings.TrimSpace(string(v.Type))))
+			}
+			parts = uniqueStringsStable(parts)
+			return strings.Join(parts, " | ")
+		default:
+			return "unknown"
+		}
 	}
 
 	switch r {
 	case "string":
-		return "str"
+		return "string"
 	case "bool", "boolean":
-		return "bool"
-	case "int", "int32", "int64", "uint", "uint32", "uint64":
-		return "int"
-	case "float32", "float64":
-		return "float"
+		return "boolean"
+	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "float32", "float64", "number":
+		return "number"
 	case "time.Time":
-		return "datetime"
-	case "json.RawMessage", "any", "interface{}":
-		return "object"
+		return "string"
+	case "json.RawMessage", "any", "interface{}", "object":
+		return "unknown"
 	}
 
-	if strings.HasPrefix(r, "[]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "[]"))
-		return "List[" + basePyType(typeByName, elem) + "]"
-	}
-	if strings.HasPrefix(r, "map[string]") {
-		elem := strings.TrimSpace(strings.TrimPrefix(r, "map[string]"))
-		return "Dict[str, " + basePyType(typeByName, elem) + "]"
-	}
-
-	return "object"
+	return "unknown"
 }
 
-func pyQuote(s string) string { return fmt.Sprintf("%q", s) }
+func uniqueStringsStable(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
+}
 
-func pyIdent(s string) string {
+func tsQuote(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	s = strings.ReplaceAll(s, "\n", `\n`)
+	s = strings.ReplaceAll(s, "\r", `\r`)
+	s = strings.ReplaceAll(s, "\t", `\t`)
+	return `"` + s + `"`
+}
+
+func tsIdent(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return "sdk"
+		return "x"
 	}
 	var b strings.Builder
 	for _, r := range s {
@@ -473,7 +513,7 @@ func pyIdent(s string) string {
 	}
 	out := b.String()
 	if out == "" {
-		return "sdk"
+		return "x"
 	}
 	r0 := rune(out[0])
 	if !(unicode.IsLetter(r0) || r0 == '_') {
@@ -499,28 +539,32 @@ func toSnake(s string) string {
 	}
 	var b strings.Builder
 	var prevLower bool
+	var lastUnderscore bool
 	for _, r := range s {
 		if r == '-' || r == '.' || r == ' ' {
 			r = '_'
 		}
 		if r == '_' {
-			if b.Len() > 0 && b.String()[b.Len()-1] != '_' {
+			if b.Len() > 0 && !lastUnderscore {
 				b.WriteByte('_')
+				lastUnderscore = true
 			}
 			prevLower = false
 			continue
 		}
 		if unicode.IsUpper(r) {
-			if prevLower {
+			if prevLower && !lastUnderscore {
 				b.WriteByte('_')
 			}
 			b.WriteRune(unicode.ToLower(r))
 			prevLower = false
+			lastUnderscore = false
 			continue
 		}
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			b.WriteRune(unicode.ToLower(r))
 			prevLower = unicode.IsLetter(r) && unicode.IsLower(r)
+			lastUnderscore = false
 			continue
 		}
 	}
@@ -532,8 +576,9 @@ func toSnake(s string) string {
 }
 
 func toPascal(s string) string {
+	s = strings.TrimSpace(s)
 	if s == "" {
-		return ""
+		return "X"
 	}
 	var b strings.Builder
 	capNext := true
@@ -560,6 +605,16 @@ func toPascal(s string) string {
 	out = strings.ReplaceAll(out, "Json", "JSON")
 	out = strings.ReplaceAll(out, "Sse", "SSE")
 	return out
+}
+
+func toLowerCamel(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	r := []rune(s)
+	r[0] = unicode.ToLower(r[0])
+	return string(r)
 }
 
 func indent(n int, s string) string {

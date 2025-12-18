@@ -328,7 +328,7 @@ func writeGeneratedPySDK(t *testing.T, svc *contract.Service) string {
 
 	cfg := &sdkpy.Config{
 		Package: "openai",
-		Version: "0.0.0-test",
+		Version: "0.0.0.dev0",
 	}
 	files, err := sdkpy.Generate(svc, cfg)
 	if err != nil {
@@ -347,7 +347,24 @@ func writeGeneratedPySDK(t *testing.T, svc *contract.Service) string {
 		mustWriteFile(t, p, []byte(f.Content))
 	}
 
+	// Create a virtual environment for the generated package
+	createVenv(t, root)
+
 	return root
+}
+
+func createVenv(t *testing.T, dir string) {
+	t.Helper()
+
+	cmd := exec.Command("uv", "venv")
+	cmd.Dir = dir
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("uv venv failed: %v\nstderr:\n%s", err, stderr.String())
+	}
 }
 
 func mustWriteFile(t *testing.T, path string, content []byte) {
