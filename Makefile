@@ -9,9 +9,10 @@ SHELL := /usr/bin/env bash
 # --------------------------
 GO        ?= go
 PKG       ?= ./...
-GOFLAGS   ?= -trimpath -mod=readonly
+GOFLAGS   ?= -trimpath
 BINARY    ?= $(HOME)/bin/mizu
-CMD_PATH  ?= ./cmd/mizu
+CMD_DIR   ?= ./cmd
+CMD_PKG   ?= ./mizu
 
 # --------------------------
 # Git metadata
@@ -57,18 +58,18 @@ EXCLUDE      ?= middlewares
 .PHONY: build
 build: ## Build the binary for current platform
 	@mkdir -p $(dir $(BINARY))
-	@$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY) $(CMD_PATH)
+	@cd $(CMD_DIR) && GOWORK=off $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY) $(CMD_PKG)
 	@echo "Built: $(BINARY) ($(VERSION))"
 
 .PHONY: install
 install: ## Install the binary to $$HOME/bin
 	@mkdir -p $(dir $(BINARY))
-	@$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY) $(CMD_PATH)
+	@cd $(CMD_DIR) && GOWORK=off $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY) $(CMD_PKG)
 	@echo "Installed: $(BINARY)"
 
 .PHONY: run
 run: ## Run the CLI (use ARGS="...")
-	@$(GO) run $(GOFLAGS) -ldflags "$(LDFLAGS)" $(CMD_PATH) $(ARGS)
+	@cd $(CMD_DIR) && GOWORK=off $(GO) run $(GOFLAGS) -ldflags "$(LDFLAGS)" $(CMD_PKG) $(ARGS)
 
 # --------------------------
 # Testing targets
