@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-mizu/mizu/contract"
+	contract "github.com/go-mizu/mizu/contract/v2"
 )
 
 // Client calls a JSON-RPC 2.0 endpoint described by a contract.Service.

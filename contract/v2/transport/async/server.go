@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-mizu/mizu/contract"
+	contract "github.com/go-mizu/mizu/contract/v2"
 )
 
 // Broker is the minimal pubsub surface required by this transport.

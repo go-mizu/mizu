@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/go-mizu/mizu/contract"
+	contract "github.com/go-mizu/mizu/contract/v2"
 )
 
 // OpenRPCDocument returns an OpenRPC document (JSON) for the JSON-RPC surface.

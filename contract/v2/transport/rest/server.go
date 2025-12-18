@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-mizu/mizu/contract"
+	contract "github.com/go-mizu/mizu/contract/v2"
 )
 
 // Server exposes a contract.Invoker over HTTP using method HTTP bindings.

@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/go-mizu/mizu/contract"
+	contract "github.com/go-mizu/mizu/contract/v2"
 )
 
 // Server exposes a contract.Invoker via JSON-RPC 2.0 over HTTP.

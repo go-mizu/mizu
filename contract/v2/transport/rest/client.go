@@ -13,7 +13,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/go-mizu/mizu/contract"
+	contract "github.com/go-mizu/mizu/contract/v2"
 )
 
 // Client calls a REST API described by a contract.Service using HTTP bindings.

@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/go-mizu/mizu/contract"
+	contract "github.com/go-mizu/mizu/contract/v2"
 )
 
 // AsyncAPIDocument builds an AsyncAPI document (JSON) for the async transport.
