@@ -11,10 +11,12 @@ Contract provides a portable error system that ensures your errors work correctl
 
 ## The Problem with Simple Errors
 
-Consider this code:
+Consider this code in a todo service:
 
 ```go
-func (s *todoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
+package todo
+
+func (s *Service) Get(ctx context.Context, in *GetInput) (*Todo, error) {
     todo := s.findTodo(in.ID)
     if todo == nil {
         return nil, errors.New("not found")  // Simple error
@@ -27,20 +29,22 @@ The problem? Different protocols expect errors in different formats:
 
 | Protocol | Expected Format |
 |----------|-----------------|
-| REST | HTTP 404 with error body |
+| REST | HTTP 404 status with error body |
 | JSON-RPC | `{"error": {"code": -32601, "message": "..."}}` |
 | MCP | `{"content": [...], "isError": true}` |
 
-With a simple `errors.New()`, Contract can't know which HTTP status to use, so it defaults to 500 Internal Server Error - even though "not found" should be 404.
+With a simple `errors.New()`, Contract can't know which HTTP status to use, so it defaults to 500 Internal Server Error - even though "not found" should clearly be 404.
 
 ## The Solution: Contract Errors
 
 Contract provides error types that know how to translate themselves to each protocol:
 
 ```go
+package todo
+
 import contract "github.com/go-mizu/mizu/contract/v2"
 
-func (s *todoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
+func (s *Service) Get(ctx context.Context, in *GetInput) (*Todo, error) {
     todo := s.findTodo(in.ID)
     if todo == nil {
         return nil, contract.ErrNotFound("todo not found")  // Contract error
@@ -49,13 +53,15 @@ func (s *todoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
 }
 ```
 
-This single line automatically becomes:
+This single line automatically becomes the right format for each protocol:
 
 | Protocol | Response |
 |----------|----------|
 | REST | HTTP 404 with `{"error": "todo not found"}` |
 | JSON-RPC | `{"error": {"code": -32601, "message": "todo not found"}}` |
 | MCP | `{"content": [{"type":"text","text":"todo not found"}], "isError": true}` |
+
+You write one error, and it works everywhere.
 
 ## Creating Errors
 
@@ -64,6 +70,8 @@ This single line automatically becomes:
 Contract provides convenient functions for common error types:
 
 ```go
+import contract "github.com/go-mizu/mizu/contract/v2"
+
 // Resource not found (HTTP 404)
 contract.ErrNotFound("user not found")
 
@@ -76,7 +84,7 @@ contract.ErrUnauthenticated("please log in")
 // User lacks permission (HTTP 403)
 contract.ErrPermissionDenied("admin access required")
 
-// Something broke (HTTP 500)
+// Something went wrong on the server (HTTP 500)
 contract.ErrInternal("database unavailable")
 
 // Resource already exists (HTTP 409)
@@ -102,7 +110,7 @@ err := contract.NewError(contract.ErrCodeNotFound, "user not found")
 
 ### Method 3: Errorf with Formatting
 
-Use `Errorf` when you need to include variables:
+Use `Errorf` when you need to include variables in the message:
 
 ```go
 err := contract.Errorf(contract.ErrCodeNotFound, "user %s not found", userID)
@@ -113,16 +121,16 @@ err := contract.Errorf(contract.ErrCodeInvalidArgument, "field %s: %s", fieldNam
 
 ### User's Fault (4xx HTTP Status)
 
-Use these when the client made a mistake:
+Use these when the client made a mistake or is requesting something they can't have:
 
 ```go
 // Resource doesn't exist
 contract.ErrNotFound("order #12345 not found")
 
-// Bad input data
+// Bad input data - validation failed
 contract.ErrInvalidArgument("email must be a valid email address")
 
-// Need to log in
+// Need to log in first
 contract.ErrUnauthenticated("session expired, please log in again")
 
 // Logged in but can't do this action
@@ -131,7 +139,7 @@ contract.ErrPermissionDenied("only admins can delete users")
 // Tried to create something that exists
 contract.ErrAlreadyExists("account with this email already exists")
 
-// Too many requests
+// Too many requests - rate limited
 contract.ErrResourceExhausted("rate limit exceeded, try again in 60 seconds")
 
 // Wrong state for operation
@@ -143,16 +151,16 @@ contract.ErrFailedPrecondition("order already shipped, cannot cancel")
 Use these when something went wrong on your end:
 
 ```go
-// Unexpected error
+// Unexpected error - bugs, panics caught
 contract.ErrInternal("an unexpected error occurred")
 
-// Database or service down
+// Database or external service down
 contract.ErrUnavailable("service temporarily unavailable")
 
 // Feature not built yet
 contract.ErrUnimplemented("bulk export coming soon")
 
-// Operation timed out
+// Operation took too long
 contract.ErrDeadlineExceeded("request timed out")
 ```
 
@@ -177,10 +185,10 @@ contract.ErrDeadlineExceeded("request timed out")
 
 ### Adding Details
 
-Details help clients understand and handle errors better:
+Details help clients understand and handle errors better. They appear in the error response but don't change the message:
 
 ```go
-// Add multiple details
+// Add multiple details at once
 err := contract.ErrInvalidArgument("validation failed").
     WithDetails(map[string]any{
         "field":  "email",
@@ -193,7 +201,7 @@ err := contract.ErrNotFound("todo not found").
     WithDetail("todoId", requestedID)
 ```
 
-Details appear in the error response:
+Details appear in the JSON response:
 
 ```json
 {
@@ -207,19 +215,26 @@ Details appear in the error response:
 }
 ```
 
+This is incredibly useful for:
+- **Frontend developers**: Can show "Please enter a valid email address" next to the email field
+- **API consumers**: Can programmatically handle specific error cases
+- **Debugging**: Includes context about what went wrong
+
 ### Wrapping Underlying Errors
 
 Preserve the original error for debugging while showing a user-friendly message:
 
 ```go
-func (s *todoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
+package todo
+
+func (s *Service) Get(ctx context.Context, in *GetInput) (*Todo, error) {
     todo, err := s.db.FindByID(in.ID)
     if err != nil {
         // sql.ErrNoRows -> user-friendly "not found"
         if errors.Is(err, sql.ErrNoRows) {
             return nil, contract.ErrNotFound("todo not found")
         }
-        // Other errors -> preserve original for logging
+        // Other database errors -> preserve for logging, show generic message
         return nil, contract.ErrInternal("database error").WithCause(err)
     }
     return todo, nil
@@ -227,23 +242,24 @@ func (s *todoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
 ```
 
 The `WithCause` method:
-- Preserves the original error for logging and debugging
-- Hides internal details from API responses
-- Supports `errors.Is()` and `errors.As()` for checking causes
+- **Preserves** the original error for logging and debugging
+- **Hides** internal details from API responses (security!)
+- **Supports** `errors.Is()` and `errors.As()` for checking causes
 
 ```go
 // In logging middleware
 if cause := errors.Unwrap(err); cause != nil {
     log.Printf("Original error: %v", cause)  // "connection refused"
 }
-// API response shows: "database error"
+// API response shows: "database error" (not the internal details)
 ```
 
 ## Complete Example
 
-Here's a realistic service with proper error handling:
+Here's a realistic service with proper error handling throughout:
 
 ```go
+// user/service.go
 package user
 
 import (
@@ -255,20 +271,24 @@ import (
     contract "github.com/go-mizu/mizu/contract/v2"
 )
 
-type UserAPI interface {
+// API defines user management operations
+type API interface {
     Create(ctx context.Context, in *CreateInput) (*User, error)
     Get(ctx context.Context, in *GetInput) (*User, error)
     Delete(ctx context.Context, in *DeleteInput) error
 }
 
-type userService struct {
+// Service implements user.API
+type Service struct {
     db *sql.DB
 }
 
+var _ API = (*Service)(nil)
+
 var emailRegex = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
 
-func (s *userService) Create(ctx context.Context, in *CreateInput) (*User, error) {
-    // Validate input
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*User, error) {
+    // Validate input - check each field
     if in.Email == "" {
         return nil, contract.ErrInvalidArgument("email is required")
     }
@@ -295,7 +315,7 @@ func (s *userService) Create(ctx context.Context, in *CreateInput) (*User, error
             WithDetail("email", in.Email)
     }
 
-    // Create user
+    // Create the user
     user, err := s.insertUser(ctx, in)
     if err != nil {
         return nil, contract.ErrInternal("failed to create user").WithCause(err)
@@ -304,7 +324,7 @@ func (s *userService) Create(ctx context.Context, in *CreateInput) (*User, error
     return user, nil
 }
 
-func (s *userService) Get(ctx context.Context, in *GetInput) (*User, error) {
+func (s *Service) Get(ctx context.Context, in *GetInput) (*User, error) {
     if in.ID == "" {
         return nil, contract.ErrInvalidArgument("id is required")
     }
@@ -321,7 +341,7 @@ func (s *userService) Get(ctx context.Context, in *GetInput) (*User, error) {
     return user, nil
 }
 
-func (s *userService) Delete(ctx context.Context, in *DeleteInput) error {
+func (s *Service) Delete(ctx context.Context, in *DeleteInput) error {
     // Get current user from context (set by auth middleware)
     currentUserID, ok := ctx.Value("userID").(string)
     if !ok {
@@ -336,7 +356,7 @@ func (s *userService) Delete(ctx context.Context, in *DeleteInput) error {
         }
     }
 
-    // Check user exists
+    // Check user exists before deleting
     _, err := s.findUser(ctx, in.ID)
     if err != nil {
         if errors.Is(err, sql.ErrNoRows) {
@@ -345,7 +365,7 @@ func (s *userService) Delete(ctx context.Context, in *DeleteInput) error {
         return contract.ErrInternal("failed to check user").WithCause(err)
     }
 
-    // Delete
+    // Delete the user
     if err := s.deleteUser(ctx, in.ID); err != nil {
         return contract.ErrInternal("failed to delete user").WithCause(err)
     }
@@ -353,16 +373,18 @@ func (s *userService) Delete(ctx context.Context, in *DeleteInput) error {
     return nil
 }
 
-// Helper methods
-func (s *userService) userExists(ctx context.Context, email string) (bool, error) { ... }
-func (s *userService) findUser(ctx context.Context, id string) (*User, error) { ... }
-func (s *userService) insertUser(ctx context.Context, in *CreateInput) (*User, error) { ... }
-func (s *userService) deleteUser(ctx context.Context, id string) error { ... }
+// Helper methods (implementation details)
+func (s *Service) userExists(ctx context.Context, email string) (bool, error) { /* ... */ }
+func (s *Service) findUser(ctx context.Context, id string) (*User, error)     { /* ... */ }
+func (s *Service) insertUser(ctx context.Context, in *CreateInput) (*User, error) { /* ... */ }
+func (s *Service) deleteUser(ctx context.Context, id string) error { /* ... */ }
 ```
 
 ## Best Practices
 
 ### 1. Use Specific Error Codes
+
+Specific codes map to correct HTTP status codes:
 
 ```go
 // Good: specific codes map to correct HTTP status
@@ -375,19 +397,28 @@ contract.ErrInternal("not found")            // -> HTTP 500 (wrong!)
 
 ### 2. Write User-Friendly Messages
 
+Messages should tell users what went wrong and what to do:
+
 ```go
 // Good: tells user what to do
 contract.ErrInvalidArgument("email must be like user@example.com")
+contract.ErrPermissionDenied("upgrade to Pro to access this feature")
 
-// Bad: cryptic
+// Bad: cryptic messages
 contract.ErrInvalidArgument("invalid")
+contract.ErrPermissionDenied("denied")
 ```
 
 ### 3. Include Relevant Details
 
+Details help clients handle errors intelligently:
+
 ```go
 // Good: client can show "Order #12345 not found"
 contract.ErrNotFound("order not found").WithDetail("orderId", "12345")
+
+// Good: client can highlight the email field
+contract.ErrInvalidArgument("invalid email").WithDetail("field", "email")
 
 // Bad: no context
 contract.ErrNotFound("not found")
@@ -395,30 +426,42 @@ contract.ErrNotFound("not found")
 
 ### 4. Don't Leak Internal Details
 
+Protect your infrastructure from exposure:
+
 ```go
 // Good: safe, user-friendly
 contract.ErrInternal("database temporarily unavailable")
 
 // Bad: exposes infrastructure
 contract.ErrInternal("connection to postgres at 10.0.0.5:5432 refused")
+contract.ErrInternal("query timeout after 30s on users table")
 ```
 
 ### 5. Handle Each Error Case
 
+Map different underlying errors to appropriate codes:
+
 ```go
-func (s *todoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
+package todo
+
+func (s *Service) Get(ctx context.Context, in *GetInput) (*Todo, error) {
     if in.ID == "" {
         return nil, contract.ErrInvalidArgument("id is required")
     }
 
     todo, err := s.db.Find(in.ID)
     if err != nil {
+        // Handle each error type appropriately
         if errors.Is(err, sql.ErrNoRows) {
             return nil, contract.ErrNotFound("todo not found")
         }
         if errors.Is(err, context.DeadlineExceeded) {
             return nil, contract.ErrDeadlineExceeded("request timed out")
         }
+        if errors.Is(err, context.Canceled) {
+            return nil, contract.ErrCanceled("request was canceled")
+        }
+        // Unknown errors -> Internal
         return nil, contract.ErrInternal("failed to fetch todo").WithCause(err)
     }
 
@@ -428,12 +471,23 @@ func (s *todoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
 
 ## Testing Errors
 
-Test that your errors have the correct code:
+Test that your errors have the correct code and details:
 
 ```go
+package user_test
+
+import (
+    "context"
+    "errors"
+    "testing"
+
+    contract "github.com/go-mizu/mizu/contract/v2"
+    "yourapp/user"
+)
+
 func TestGet_NotFound(t *testing.T) {
-    svc := &userService{db: mockDB}
-    _, err := svc.Get(ctx, &GetInput{ID: "nonexistent"})
+    svc := &user.Service{DB: mockDB}
+    _, err := svc.Get(context.Background(), &user.GetInput{ID: "nonexistent"})
 
     // Check it's a contract error
     var contractErr *contract.Error
@@ -453,21 +507,21 @@ func TestGet_NotFound(t *testing.T) {
 }
 
 func TestCreate_Validation(t *testing.T) {
-    svc := &userService{db: mockDB}
+    svc := &user.Service{DB: mockDB}
 
     tests := []struct {
         name     string
-        input    *CreateInput
+        input    *user.CreateInput
         wantCode contract.ErrCode
     }{
-        {"empty email", &CreateInput{Email: ""}, contract.ErrCodeInvalidArgument},
-        {"bad email", &CreateInput{Email: "not-email"}, contract.ErrCodeInvalidArgument},
-        {"short password", &CreateInput{Email: "a@b.com", Password: "short"}, contract.ErrCodeInvalidArgument},
+        {"empty email", &user.CreateInput{Email: ""}, contract.ErrCodeInvalidArgument},
+        {"bad email", &user.CreateInput{Email: "not-email"}, contract.ErrCodeInvalidArgument},
+        {"short password", &user.CreateInput{Email: "a@b.com", Password: "short"}, contract.ErrCodeInvalidArgument},
     }
 
     for _, tt := range tests {
         t.Run(tt.name, func(t *testing.T) {
-            _, err := svc.Create(ctx, tt.input)
+            _, err := svc.Create(context.Background(), tt.input)
 
             var contractErr *contract.Error
             if !errors.As(err, &contractErr) {
@@ -492,34 +546,43 @@ Regular errors are treated as `Internal` errors (HTTP 500):
 // This becomes HTTP 500
 return nil, errors.New("user not found")
 
-// This becomes HTTP 404
+// This becomes HTTP 404 (correct!)
 return nil, contract.ErrNotFound("user not found")
 ```
 
+**Rule of thumb**: Always use Contract errors for expected error cases. Use regular errors only for unexpected bugs that shouldn't happen.
+
 ### Can I create custom error codes?
 
-Contract uses standard codes that map consistently across protocols. For custom error types, use the details field:
+Contract uses standard codes that map consistently across protocols. For custom error semantics, use the details field:
 
 ```go
 contract.ErrInvalidArgument("validation failed").
-    WithDetail("customCode", "MY_CUSTOM_CODE").
-    WithDetail("field", "email")
+    WithDetail("customCode", "DUPLICATE_SKU").
+    WithDetail("field", "sku")
 ```
 
 ### Should I log errors in my service?
 
-Your service should return errors, not log them. Let middleware or the transport layer handle logging:
+Your service should return errors, not log them. Let middleware handle logging. This keeps your service focused and testable:
 
 ```go
-// In service - just return the error
-return nil, contract.ErrInternal("database error").WithCause(dbErr)
+// In your service - just return the error
+func (s *Service) Get(ctx context.Context, in *GetInput) (*Todo, error) {
+    // ...
+    return nil, contract.ErrInternal("database error").WithCause(dbErr)
+}
 
 // In middleware - log and let it propagate
-func loggingMiddleware(next Handler) Handler {
-    return func(ctx *Ctx) error {
-        err := next(ctx)
+func loggingMiddleware(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        err := next(c)
         if err != nil {
             log.Printf("error: %v", err)
+            // Log the original cause too
+            if cause := errors.Unwrap(err); cause != nil {
+                log.Printf("cause: %v", cause)
+            }
         }
         return err
     }
@@ -530,6 +593,7 @@ func loggingMiddleware(next Handler) Handler {
 
 Now that you understand error handling:
 
+- **[Error Codes](/contract/error-codes)** - Complete reference of all error codes
 - **[REST Transport](/contract/rest)** - How errors appear in REST responses
 - **[JSON-RPC Transport](/contract/jsonrpc)** - JSON-RPC error codes
 - **[Testing](/contract/testing)** - Testing error conditions

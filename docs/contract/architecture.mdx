@@ -15,15 +15,16 @@ At its core, Contract does one simple thing: it takes your plain Go code and mak
 ┌─────────────────────────────────────────────────────────────────────┐
 │                     YOUR CODE (Plain Go)                            │
 │  ┌───────────────────────────────────────────────────────────────┐  │
-│  │  type TodoService struct { ... }                               │  │
-│  │  func (s *TodoService) Create(...) (*Todo, error)              │  │
-│  │  func (s *TodoService) List(...) ([]*Todo, error)              │  │
+│  │  package todo                                                  │  │
+│  │  type Service struct { ... }                                   │  │
+│  │  func (s *Service) Create(...) (*Todo, error)                  │  │
+│  │  func (s *Service) List(...) ([]*Todo, error)                  │  │
 │  │                                                                │  │
 │  │  No HTTP. No JSON. No framework. Just business logic.          │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
                                    │
-                                   │ contract.Register[TodoAPI](&todoService{})
+                                   │ contract.Register[todo.API](todo.NewService())
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -67,11 +68,18 @@ At its core, Contract does one simple thing: it takes your plain Go code and mak
 This is the Go code you write. It contains your business logic with no knowledge of HTTP, JSON, or any protocol:
 
 ```go
-type TodoService struct {
+// todo/service.go
+package todo
+
+type Service struct {
     db *sql.DB  // Your dependencies go here
 }
 
-func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+func NewService(db *sql.DB) *Service {
+    return &Service{db: db}
+}
+
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
     // This is pure business logic
     // No http.Request, no JSON marshaling, no protocol concerns
 
@@ -97,7 +105,8 @@ func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error
 When you call `contract.Register()`, Contract inspects your service and creates a data structure that describes it:
 
 ```go
-svc := contract.Register[TodoAPI](&todoService{})
+impl := todo.NewService(db)
+svc := contract.Register[todo.API](impl)
 ```
 
 This registration process:

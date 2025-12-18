@@ -31,13 +31,14 @@ func Register[T any](impl T, opts ...Option) *RegisteredService
 
 **Example:**
 ```go
-type TodoAPI interface {
-    Create(ctx context.Context, in *CreateInput) (*Todo, error)
-    List(ctx context.Context) (*ListOutput, error)
-}
+// todo/api.go - Your interface is defined in a package
+// type API interface {
+//     Create(ctx context.Context, in *CreateInput) (*Todo, error)
+//     List(ctx context.Context) (*ListOutput, error)
+// }
 
-impl := &todoService{}
-svc := contract.Register[TodoAPI](impl,
+impl := todo.NewService()
+svc := contract.Register[todo.API](impl,
     contract.WithName("Todo"),
     contract.WithDefaultResource("todos"),
 )
@@ -591,29 +592,12 @@ func (s *Service) Health(ctx context.Context) error
 
 ## Complete Example
 
+This example shows a complete application using the recommended package-based organization:
+
 ```go
-package main
+// todo/types.go
+package todo
 
-import (
-    "context"
-
-    "github.com/go-mizu/mizu"
-    contract "github.com/go-mizu/mizu/contract/v2"
-    "github.com/go-mizu/mizu/contract/v2/transport/rest"
-    "github.com/go-mizu/mizu/contract/v2/transport/jsonrpc"
-    "github.com/go-mizu/mizu/contract/v2/transport/mcp"
-    "github.com/go-mizu/mizu/contract/v2/transport/openapi"
-)
-
-// Interface
-type TodoAPI interface {
-    Create(ctx context.Context, in *CreateInput) (*Todo, error)
-    List(ctx context.Context) (*ListOutput, error)
-    Get(ctx context.Context, in *GetInput) (*Todo, error)
-    Delete(ctx context.Context, in *DeleteInput) error
-}
-
-// Types
 type Todo struct {
     ID    string `json:"id"`
     Title string `json:"title"`
@@ -634,34 +618,83 @@ type DeleteInput struct {
 type ListOutput struct {
     Items []*Todo `json:"items"`
 }
+```
 
-// Implementation
-type todoService struct{}
+```go
+// todo/api.go
+package todo
 
-func (s *todoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+import "context"
+
+// API defines the contract for todo operations
+type API interface {
+    Create(ctx context.Context, in *CreateInput) (*Todo, error)
+    List(ctx context.Context) (*ListOutput, error)
+    Get(ctx context.Context, in *GetInput) (*Todo, error)
+    Delete(ctx context.Context, in *DeleteInput) error
+}
+```
+
+```go
+// todo/service.go
+package todo
+
+import (
+    "context"
+
+    contract "github.com/go-mizu/mizu/contract/v2"
+)
+
+// Service implements todo.API
+type Service struct{}
+
+// Compile-time check
+var _ API = (*Service)(nil)
+
+func NewService() *Service {
+    return &Service{}
+}
+
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
     if in.Title == "" {
         return nil, contract.ErrInvalidArgument("title is required")
     }
     return &Todo{ID: "1", Title: in.Title}, nil
 }
 
-func (s *todoService) List(ctx context.Context) (*ListOutput, error) {
+func (s *Service) List(ctx context.Context) (*ListOutput, error) {
     return &ListOutput{Items: []*Todo{}}, nil
 }
 
-func (s *todoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
+func (s *Service) Get(ctx context.Context, in *GetInput) (*Todo, error) {
     return &Todo{ID: in.ID, Title: "Sample"}, nil
 }
 
-func (s *todoService) Delete(ctx context.Context, in *DeleteInput) error {
+func (s *Service) Delete(ctx context.Context, in *DeleteInput) error {
     return nil
 }
+```
+
+```go
+// main.go
+package main
+
+import (
+    "github.com/go-mizu/mizu"
+    contract "github.com/go-mizu/mizu/contract/v2"
+    "github.com/go-mizu/mizu/contract/v2/transport/rest"
+    "github.com/go-mizu/mizu/contract/v2/transport/jsonrpc"
+    "github.com/go-mizu/mizu/contract/v2/transport/mcp"
+    "github.com/go-mizu/mizu/contract/v2/transport/openapi"
+
+    "yourapp/todo"
+)
 
 func main() {
-    impl := &todoService{}
+    impl := todo.NewService()
 
     // Register
-    svc := contract.Register[TodoAPI](impl,
+    svc := contract.Register[todo.API](impl,
         contract.WithName("Todo"),
         contract.WithDefaultResource("todos"),
     )

@@ -478,9 +478,11 @@ func UserFromContext(ctx context.Context) *User {
 Use both together for complete coverage:
 
 ```go
+import "yourapp/todo"
+
 func main() {
-    impl := &todoService{}
-    svc := contract.Register[TodoAPI](impl,
+    impl := todo.NewService()
+    svc := contract.Register[todo.API](impl,
         contract.WithDefaultResource("todos"),
     )
 

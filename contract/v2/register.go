@@ -8,84 +8,112 @@ import (
 	"unicode"
 )
 
-// RegisteredService combines the Invoker interface with service metadata.
-type RegisteredService struct {
+// invoker is the concrete runtime implementation produced by Register.
+// It is intentionally unexported. Users depend only on the Invoker interface.
+type invoker struct {
 	service *Service
 	impl    any
-	methods map[string]reflect.Method // "resource.method" -> reflect.Method
-	inputs  map[string]reflect.Type   // "resource.method" -> input type
+
+	// "resource.method" -> bound method value (receiver already bound)
+	methods map[string]reflect.Value
+
+	// "resource.method" -> input type (nil means no input)
+	inputs map[string]reflect.Type
 }
 
 // Descriptor returns the contract service descriptor.
-func (r *RegisteredService) Descriptor() *Service {
-	return r.service
-}
+func (r *invoker) Descriptor() *Service { return r.service }
 
 // Call implements Invoker.Call.
-func (r *RegisteredService) Call(ctx context.Context, resource, method string, in any) (any, error) {
+func (r *invoker) Call(ctx context.Context, resource, method string, in any) (any, error) {
 	key := resource + "." + method
-	m, ok := r.methods[key]
-	if !ok {
+	fn, ok := r.methods[key]
+	if !ok || !fn.IsValid() {
 		return nil, fmt.Errorf("contract: method %s not found", key)
 	}
 
-	implVal := reflect.ValueOf(r.impl)
-	args := []reflect.Value{reflect.ValueOf(ctx)}
-
-	if in != nil {
-		args = append(args, reflect.ValueOf(in))
+	wantIn, hasWant := r.inputs[key]
+	if !hasWant {
+		return nil, fmt.Errorf("contract: method %s not found", key)
 	}
 
-	results := implVal.Method(m.Index).Call(args)
+	args := []reflect.Value{reflect.ValueOf(ctx)}
 
-	// Handle return values: (output, error) or (error)
-	if len(results) == 1 {
-		// Only error returned
+	if wantIn != nil {
+		if in == nil {
+			return nil, fmt.Errorf("contract: method %s requires input", key)
+		}
+		v := reflect.ValueOf(in)
+		if !v.IsValid() {
+			return nil, fmt.Errorf("contract: method %s requires input", key)
+		}
+		if !v.Type().AssignableTo(wantIn) {
+			return nil, fmt.Errorf("contract: method %s: input type %s not assignable to %s", key, v.Type(), wantIn)
+		}
+		args = append(args, v)
+	} else {
+		if in != nil {
+			return nil, fmt.Errorf("contract: method %s does not accept input", key)
+		}
+	}
+
+	results := fn.Call(args)
+
+	switch len(results) {
+	case 1:
+		// (error)
 		if !results[0].IsNil() {
 			return nil, results[0].Interface().(error)
 		}
 		return nil, nil
-	}
 
-	// (output, error)
-	var err error
-	if !results[1].IsNil() {
-		err = results[1].Interface().(error)
-	}
+	case 2:
+		// (output, error)
+		var err error
+		if !results[1].IsNil() {
+			err = results[1].Interface().(error)
+		}
 
-	if results[0].IsNil() {
-		return nil, err
+		out := results[0]
+		if isNilable(out.Kind()) && out.IsNil() {
+			return nil, err
+		}
+		return out.Interface(), err
+
+	default:
+		return nil, fmt.Errorf("contract: method %s returned %d values (expected 1 or 2)", key, len(results))
 	}
-	return results[0].Interface(), err
 }
 
 // NewInput implements Invoker.NewInput.
-func (r *RegisteredService) NewInput(resource, method string) (any, error) {
+func (r *invoker) NewInput(resource, method string) (any, error) {
 	key := resource + "." + method
 	t, ok := r.inputs[key]
 	if !ok {
 		return nil, fmt.Errorf("contract: method %s not found", key)
 	}
 	if t == nil {
-		return nil, nil // No input for this method
+		return nil, nil
 	}
 
-	// Create new instance (handling pointer types)
+	// Always return a pointer when input is a pointer type.
 	if t.Kind() == reflect.Ptr {
 		return reflect.New(t.Elem()).Interface(), nil
 	}
+
+	// For non-pointer input types, return a value instance.
+	// (This is allowed, but Register validates inputs are pointer-to-struct by default.)
 	return reflect.New(t).Elem().Interface(), nil
 }
 
 // Stream implements Invoker.Stream.
-func (r *RegisteredService) Stream(ctx context.Context, resource, method string, in any) (Stream, error) {
-	// TODO: Implement streaming support
+func (r *invoker) Stream(ctx context.Context, resource, method string, in any) (Stream, error) {
 	return nil, ErrUnsupported
 }
 
 // Register creates a contract service from a Go interface and implementation.
 // T must be an interface type. impl must implement T.
-func Register[T any](impl T, opts ...Option) *RegisteredService {
+func Register[T any](impl T, opts ...Option) Invoker {
 	var t T
 	ifaceType := reflect.TypeOf(&t).Elem()
 	if ifaceType.Kind() != reflect.Interface {
@@ -95,12 +123,12 @@ func Register[T any](impl T, opts ...Option) *RegisteredService {
 	implVal := reflect.ValueOf(impl)
 	implType := implVal.Type()
 
-	// Verify impl implements the interface
+	// Verify impl implements the interface.
 	if !implType.Implements(ifaceType) {
 		panic(fmt.Sprintf("contract: %s does not implement %s", implType, ifaceType))
 	}
 
-	// Apply options
+	// Apply options.
 	o := &registerOptions{
 		name:      ifaceType.Name(),
 		resources: make(map[string][]string),
@@ -111,13 +139,14 @@ func Register[T any](impl T, opts ...Option) *RegisteredService {
 		opt(o)
 	}
 
-	// Build the service descriptor
-	rs := &RegisteredService{
+	// Build runtime.
+	rs := &invoker{
 		impl:    impl,
-		methods: make(map[string]reflect.Method),
+		methods: make(map[string]reflect.Value),
 		inputs:  make(map[string]reflect.Type),
 	}
 
+	// Build descriptor.
 	svc := &Service{
 		Name:        o.name,
 		Description: o.description,
@@ -126,49 +155,64 @@ func Register[T any](impl T, opts ...Option) *RegisteredService {
 		svc.Defaults = o.defaults
 	}
 
-	// Extract types from methods
-	typeRegistry := newTypeRegistry()
-
-	// Collect methods by resource
+	reg := newTypeRegistry()
 	resourceMethods := make(map[string][]*Method)
 
 	for i := 0; i < ifaceType.NumMethod(); i++ {
-		m := ifaceType.Method(i)
-		methodName := toLowerCamel(m.Name)
+		im := ifaceType.Method(i)
 
-		// Determine resource for this method
+		// Validate the method signature early to avoid confusing runtime behavior.
+		inType, outType, sigErr := validateAndExtractSignature(ifaceType, im)
+		if sigErr != nil {
+			panic(sigErr.Error())
+		}
+
+		methodName := toLowerCamel(im.Name)
+
+		// Determine resource for this method.
 		resourceName := o.defaultResource
 		if resourceName == "" {
 			resourceName = toLowerSnake(svc.Name)
 		}
 		for res, methods := range o.resources {
 			for _, mn := range methods {
-				if mn == m.Name {
+				if mn == im.Name {
 					resourceName = res
 					break
 				}
 			}
 		}
 
-		// Extract method info
-		method, inputType := extractMethod(m, methodName, typeRegistry, o)
-
-		// Add HTTP binding if not provided
-		if method.HTTP == nil {
-			method.HTTP = inferHTTPBinding(m.Name, resourceName, inputType)
+		// Build method descriptor.
+		m := &Method{
+			Name:        methodName,
+			Description: "",
 		}
 
-		// Check for explicit HTTP override
-		if binding, ok := o.http[m.Name]; ok {
-			method.HTTP = &MethodHTTP{
+		// Register types.
+		if inType != nil {
+			m.Input = reg.register(inType)
+		}
+		if outType != nil {
+			m.Output = reg.register(outType)
+		}
+
+		// Default HTTP binding if not provided.
+		if m.HTTP == nil {
+			m.HTTP = inferHTTPBinding(im.Name, resourceName, inType)
+		}
+
+		// Explicit HTTP override.
+		if binding, ok := o.http[im.Name]; ok {
+			m.HTTP = &MethodHTTP{
 				Method: binding.Method,
 				Path:   binding.Path,
 			}
 		}
 
-		// Check for streaming
-		if mode, ok := o.streaming[m.Name]; ok {
-			method.Stream = &struct {
+		// Streaming.
+		if mode, ok := o.streaming[im.Name]; ok {
+			m.Stream = &struct {
 				Mode      string  `json:"mode,omitempty" yaml:"mode,omitempty"`
 				Item      TypeRef `json:"item" yaml:"item"`
 				Done      TypeRef `json:"done,omitempty" yaml:"done,omitempty"`
@@ -176,22 +220,25 @@ func Register[T any](impl T, opts ...Option) *RegisteredService {
 				InputItem TypeRef `json:"input_item,omitempty" yaml:"input_item,omitempty"`
 			}{
 				Mode: string(mode),
-				Item: method.Output,
+				Item: m.Output,
 			}
 		}
 
-		resourceMethods[resourceName] = append(resourceMethods[resourceName], method)
+		resourceMethods[resourceName] = append(resourceMethods[resourceName], m)
 
-		// Store method mapping for invocation
-		// Find the method on the implementation type
-		implMethod, ok := implType.MethodByName(m.Name)
-		if ok {
-			rs.methods[resourceName+"."+methodName] = implMethod
-			rs.inputs[resourceName+"."+methodName] = inputType
+		// Bind method for invocation using a direct reflect.Value (avoid Index pitfalls).
+		bound := implVal.MethodByName(im.Name)
+		if !bound.IsValid() {
+			// Should not happen if Implements check passed, but keep deterministic.
+			panic(fmt.Sprintf("contract: method %s not found on implementation %s", im.Name, implType))
 		}
+
+		key := resourceName + "." + methodName
+		rs.methods[key] = bound
+		rs.inputs[key] = inType
 	}
 
-	// Build resources
+	// Build resources.
 	for name, methods := range resourceMethods {
 		res := &Resource{
 			Name:    name,
@@ -200,122 +247,221 @@ func Register[T any](impl T, opts ...Option) *RegisteredService {
 		svc.Resources = append(svc.Resources, res)
 	}
 
-	// Build types
-	svc.Types = typeRegistry.types()
-
+	// Build types.
+	svc.Types = reg.types()
 	rs.service = svc
 	return rs
 }
 
-// extractMethod extracts a Method descriptor from a reflect.Method.
-func extractMethod(m reflect.Method, methodName string, reg *typeRegistry, opts *registerOptions) (*Method, reflect.Type) {
-	method := &Method{
-		Name:        methodName,
-		Description: "", // Could be extracted from comments via go/doc
+var (
+	contextType = reflect.TypeOf((*context.Context)(nil)).Elem()
+	errorType   = reflect.TypeOf((*error)(nil)).Elem()
+)
+
+// validateAndExtractSignature enforces supported shapes and returns:
+// - inType: the single non-context input type (or nil)
+// - outType: the single non-error output type (or nil)
+// Supported:
+//
+//	M(ctx) error
+//	M(ctx) (*Out, error)
+//	M(ctx, *In) error
+//	M(ctx, *In) (*Out, error)
+func validateAndExtractSignature(iface reflect.Type, m reflect.Method) (inType reflect.Type, outType reflect.Type, err error) {
+	mt := m.Type
+
+	// Inputs: first param must be context.Context.
+	if mt.NumIn() < 1 || !mt.In(0).Implements(contextType) {
+		return nil, nil, fmt.Errorf("contract: %s.%s: first parameter must be context.Context", iface.Name(), m.Name)
 	}
-
-	mType := m.Type
-
-	// Input: first non-context param (if any)
-	var inputType reflect.Type
-	for i := 0; i < mType.NumIn(); i++ {
-		in := mType.In(i)
-		if in.Implements(reflect.TypeOf((*context.Context)(nil)).Elem()) {
-			continue
+	if mt.NumIn() > 2 {
+		return nil, nil, fmt.Errorf("contract: %s.%s: too many parameters (expected ctx or ctx+*In)", iface.Name(), m.Name)
+	}
+	if mt.NumIn() == 2 {
+		inType = mt.In(1)
+		// Keep v2 strict: require pointer input for stable optional semantics.
+		if inType.Kind() != reflect.Ptr || inType.Elem().Kind() != reflect.Struct {
+			return nil, nil, fmt.Errorf("contract: %s.%s: input must be pointer to struct (got %s)", iface.Name(), m.Name, inType)
 		}
-		inputType = in
-		method.Input = reg.register(in)
-		break
 	}
 
-	// Output: first non-error return (if any)
-	for i := 0; i < mType.NumOut(); i++ {
-		out := mType.Out(i)
-		if out.Implements(reflect.TypeOf((*error)(nil)).Elem()) {
-			continue
+	// Outputs: either (error) or (Out, error).
+	switch mt.NumOut() {
+	case 1:
+		if !mt.Out(0).Implements(errorType) {
+			return nil, nil, fmt.Errorf("contract: %s.%s: single return value must be error", iface.Name(), m.Name)
 		}
-		method.Output = reg.register(out)
-		break
-	}
+		return inType, nil, nil
 
-	return method, inputType
+	case 2:
+		if mt.Out(0).Implements(errorType) || !mt.Out(1).Implements(errorType) {
+			return nil, nil, fmt.Errorf("contract: %s.%s: expected (Out, error)", iface.Name(), m.Name)
+		}
+		outType = mt.Out(0)
+		return inType, outType, nil
+
+	default:
+		return nil, nil, fmt.Errorf("contract: %s.%s: invalid return arity %d (expected 1 or 2)", iface.Name(), m.Name, mt.NumOut())
+	}
 }
 
-// typeRegistry tracks discovered types.
+func isNilable(k reflect.Kind) bool {
+	switch k {
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer, reflect.Interface, reflect.Slice:
+		return true
+	default:
+		return false
+	}
+}
+
+//
+// Type registry (internal)
+//
+
 type typeRegistry struct {
-	seen  map[string]*Type
-	order []string
+	seen     map[string]*Type // key -> *Type
+	order    []string         // keys in insertion order
+	nameUsed map[string]int   // public schema name -> count
+	keyToRef map[string]TypeRef
 }
 
 func newTypeRegistry() *typeRegistry {
 	return &typeRegistry{
-		seen: make(map[string]*Type),
+		seen:     make(map[string]*Type),
+		nameUsed: make(map[string]int),
+		keyToRef: make(map[string]TypeRef),
 	}
 }
 
 func (r *typeRegistry) register(t reflect.Type) TypeRef {
-	// Handle pointer types
+	// Handle pointer types.
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
 
-	// Primitive types
+	// Primitives.
 	switch t.Kind() {
 	case reflect.String:
 		return TypeRef("string")
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return TypeRef("int")
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return TypeRef("int")
-	case reflect.Float32, reflect.Float64:
-		return TypeRef("float")
 	case reflect.Bool:
 		return TypeRef("bool")
+	case reflect.Int:
+		return TypeRef("int")
+	case reflect.Int8:
+		return TypeRef("int8")
+	case reflect.Int16:
+		return TypeRef("int16")
+	case reflect.Int32:
+		return TypeRef("int32")
+	case reflect.Int64:
+		return TypeRef("int64")
+	case reflect.Uint:
+		return TypeRef("uint")
+	case reflect.Uint8:
+		return TypeRef("uint8")
+	case reflect.Uint16:
+		return TypeRef("uint16")
+	case reflect.Uint32:
+		return TypeRef("uint32")
+	case reflect.Uint64:
+		return TypeRef("uint64")
+	case reflect.Float32:
+		return TypeRef("float32")
+	case reflect.Float64:
+		return TypeRef("float64")
 	}
 
-	// Special types
+	// Special types.
 	if t.PkgPath() == "time" && t.Name() == "Time" {
-		return TypeRef("string") // ISO 8601
+		return TypeRef("time.Time")
 	}
 	if t.PkgPath() == "encoding/json" && t.Name() == "RawMessage" {
 		return TypeRef("any")
 	}
 
-	name := t.Name()
-	if name == "" {
-		// Anonymous type - generate name
-		name = fmt.Sprintf("Type%d", len(r.seen))
+	// Slices: keep as a TypeRef grammar for now (minimal change).
+	if t.Kind() == reflect.Slice {
+		elemRef := r.register(t.Elem())
+		return TypeRef("[]" + string(elemRef))
 	}
+
+	// Compute a stable registry key.
+	key := typeKey(t)
 
 	// Already registered?
-	if _, ok := r.seen[name]; ok {
-		return TypeRef(name)
+	if ref, ok := r.keyToRef[key]; ok {
+		return ref
 	}
 
-	// Register based on kind
+	// Choose a schema name, ensuring no collisions across packages.
+	name := t.Name()
+	if name == "" {
+		name = fmt.Sprintf("Type%d", len(r.seen)+1)
+	}
+	name = r.uniqueName(name)
+
+	// Register based on kind.
 	switch t.Kind() {
 	case reflect.Struct:
-		r.registerStruct(name, t)
-	case reflect.Slice:
-		return r.registerSlice(name, t)
+		r.registerStruct(key, name, t)
 	case reflect.Map:
-		r.registerMap(name, t)
+		r.registerMap(key, name, t)
+	default:
+		// For unnamed / unsupported complex kinds, treat as external/any.
+		// Keep minimal behavior: do not panic, but make it explicit.
+		return TypeRef("any")
 	}
 
-	return TypeRef(name)
+	ref := TypeRef(name)
+	r.keyToRef[key] = ref
+	return ref
 }
 
-func (r *typeRegistry) registerStruct(name string, t reflect.Type) {
+func typeKey(t reflect.Type) string {
+	// Named types: fully qualified.
+	if t.Name() != "" {
+		return t.PkgPath() + "." + t.Name()
+	}
+	// Unnamed types: include kind and element info where relevant.
+	switch t.Kind() {
+	case reflect.Map:
+		return "map[string]" + typeKey(t.Elem())
+	case reflect.Struct:
+		// Anonymous struct types are hard to canonicalize; treat as unique by address.
+		// reflect.Type.String() includes field layout and is stable enough for this use.
+		return "struct:" + t.String()
+	default:
+		return t.Kind().String() + ":" + t.String()
+	}
+}
+
+func (r *typeRegistry) uniqueName(base string) string {
+	n := r.nameUsed[base]
+	if n == 0 {
+		r.nameUsed[base] = 1
+		return base
+	}
+	n++
+	r.nameUsed[base] = n
+	return fmt.Sprintf("%s_%d", base, n)
+}
+
+func (r *typeRegistry) registerStruct(key, name string, t reflect.Type) {
 	typ := &Type{
 		Name: name,
 		Kind: KindStruct,
 	}
-	r.seen[name] = typ
-	r.order = append(r.order, name)
+	r.seen[key] = typ
+	r.order = append(r.order, key)
 
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		if !f.IsExported() {
+			continue
+		}
+		if f.Anonymous {
+			// Minimal fix: skip anonymous fields to avoid surprising flattening.
+			// (Future enhancement can expand embedded fields explicitly.)
 			continue
 		}
 
@@ -324,12 +470,12 @@ func (r *typeRegistry) registerStruct(name string, t reflect.Type) {
 			Type: r.register(f.Type),
 		}
 
-		// Check for optional (omitempty)
+		// Optional (omitempty).
 		if tag := f.Tag.Get("json"); strings.Contains(tag, "omitempty") {
 			field.Optional = true
 		}
 
-		// Check for nullable (pointer type or explicit tag)
+		// Nullable (pointer type or explicit tag).
 		if f.Type.Kind() == reflect.Ptr {
 			field.Nullable = true
 		}
@@ -337,17 +483,17 @@ func (r *typeRegistry) registerStruct(name string, t reflect.Type) {
 			field.Nullable = true
 		}
 
-		// Check for required tag
+		// Required override.
 		if tag := f.Tag.Get("required"); tag == "true" {
 			field.Optional = false
 		}
 
-		// Check for enum
+		// Enum.
 		if tag := f.Tag.Get("enum"); tag != "" {
 			field.Enum = strings.Split(tag, ",")
 		}
 
-		// Check for description
+		// Description.
 		if tag := f.Tag.Get("desc"); tag != "" {
 			field.Description = tag
 		}
@@ -356,30 +502,32 @@ func (r *typeRegistry) registerStruct(name string, t reflect.Type) {
 	}
 }
 
-func (r *typeRegistry) registerSlice(name string, t reflect.Type) TypeRef {
-	elemRef := r.register(t.Elem())
-	return TypeRef("[]" + string(elemRef))
-}
+func (r *typeRegistry) registerMap(key, name string, t reflect.Type) {
+	// Only support string keys as per contract design.
+	if t.Key().Kind() != reflect.String {
+		// Keep minimal behavior: represent as any.
+		r.seen[key] = &Type{Name: name, Kind: KindMap, Elem: TypeRef("any")}
+		r.order = append(r.order, key)
+		return
+	}
 
-func (r *typeRegistry) registerMap(name string, t reflect.Type) {
 	typ := &Type{
 		Name: name,
 		Kind: KindMap,
 		Elem: r.register(t.Elem()),
 	}
-	r.seen[name] = typ
-	r.order = append(r.order, name)
+	r.seen[key] = typ
+	r.order = append(r.order, key)
 }
 
 func (r *typeRegistry) types() []*Type {
 	result := make([]*Type, 0, len(r.order))
-	for _, name := range r.order {
-		result = append(result, r.seen[name])
+	for _, key := range r.order {
+		result = append(result, r.seen[key])
 	}
 	return result
 }
 
-// getJSONName returns the JSON field name from struct tag.
 func getJSONName(f reflect.StructField) string {
 	tag := f.Tag.Get("json")
 	if tag == "" || tag == "-" {
@@ -392,7 +540,6 @@ func getJSONName(f reflect.StructField) string {
 	return toLowerSnake(f.Name)
 }
 
-// toLowerCamel converts PascalCase to camelCase.
 func toLowerCamel(s string) string {
 	if s == "" {
 		return s
@@ -402,18 +549,17 @@ func toLowerCamel(s string) string {
 	return string(runes)
 }
 
-// toLowerSnake converts PascalCase to snake_case.
 func toLowerSnake(s string) string {
-	var result strings.Builder
+	var b strings.Builder
 	for i, r := range s {
 		if unicode.IsUpper(r) {
 			if i > 0 {
-				result.WriteRune('_')
+				b.WriteByte('_')
 			}
-			result.WriteRune(unicode.ToLower(r))
-		} else {
-			result.WriteRune(r)
+			b.WriteRune(unicode.ToLower(r))
+			continue
 		}
+		b.WriteRune(r)
 	}
-	return result.String()
+	return b.String()
 }

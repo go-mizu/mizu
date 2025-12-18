@@ -7,135 +7,211 @@ description: "Learn how to design interfaces and implementations for Contract - 
 
 In Contract, a **service** is defined by two parts:
 
-1. **An interface** - Declares what operations your API supports
-2. **An implementation** - Contains the actual business logic
+1. **An interface** - Declares what operations your API supports (the "what")
+2. **An implementation** - Contains the actual business logic (the "how")
 
 This separation is intentional and powerful. The interface is your API contract - it's the source of truth for what your service can do. The implementation is a detail that clients don't need to know about.
 
+We recommend organizing each service in its own Go package. This lets you use clean, simple names like `API` and `Service` - the package name provides the context:
+
 ```go
-// The interface (the contract)
-type TodoAPI interface {
+package todo
+
+import "context"
+
+// API defines the contract for todo operations.
+// When imported, this becomes "todo.API" which reads naturally.
+type API interface {
     Create(ctx context.Context, in *CreateInput) (*Todo, error)
     List(ctx context.Context) (*ListOutput, error)
 }
 
-// The implementation (the details)
-type todoService struct {
-    db *sql.DB
+// Service implements todo.API with actual business logic.
+// When imported, this becomes "todo.Service".
+type Service struct {
+    db *sql.DB  // Dependencies go here
 }
 
-func (s *todoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
-    // actual code here
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    // Your business logic here
 }
 ```
 
 ## Why Interface-First?
 
+Before diving into the details, let's understand why this approach is valuable.
+
 ### Compile-Time Safety
 
-If your implementation doesn't match the interface, you'll know immediately:
+If your implementation doesn't match the interface, Go's compiler tells you immediately - before your code even runs:
 
 ```go
-type TodoAPI interface {
+package todo
+
+type API interface {
     Create(ctx context.Context, in *CreateInput) (*Todo, error)
 }
 
-type todoService struct{}
+type Service struct{}
 
-// This won't compile - todoService doesn't implement TodoAPI!
-// You'll see: "missing method Create"
-var _ TodoAPI = (*todoService)(nil)
+// This won't compile!
+// Error: cannot use &Service{} (type *Service) as type API
+// missing method Create
+
+// You can add a compile-time check explicitly:
+var _ API = (*Service)(nil)  // Fails if Service doesn't implement API
 ```
 
-The compiler catches mismatches before your code even runs.
+The compiler catches mismatches before your code even runs. This is a huge advantage over dynamic approaches where you might only discover problems when users hit a bug in production.
 
 ### Clear Contracts
 
-The interface IS your API documentation. Anyone can read it and understand exactly what your service does:
+The interface IS your API documentation. Anyone can read it and understand exactly what your service does, without digging through implementation details:
 
 ```go
-// This interface tells you everything about the API
-type UserAPI interface {
-    // Create a new user account
-    Create(ctx context.Context, in *CreateUserInput) (*User, error)
+package user
 
-    // Get user by ID
-    Get(ctx context.Context, in *GetUserInput) (*User, error)
+// API defines all operations for user management.
+// Reading this interface tells you everything about what the service can do.
+type API interface {
+    // Create registers a new user account.
+    // Returns the created user with a generated ID.
+    Create(ctx context.Context, in *CreateInput) (*User, error)
 
-    // Update user profile
-    Update(ctx context.Context, in *UpdateUserInput) (*User, error)
+    // Get retrieves a user by their unique ID.
+    // Returns NOT_FOUND error if the user doesn't exist.
+    Get(ctx context.Context, in *GetInput) (*User, error)
 
-    // Delete a user account (soft delete)
-    Delete(ctx context.Context, in *DeleteUserInput) error
+    // Update modifies an existing user's profile.
+    // Only fields provided in the input are changed.
+    Update(ctx context.Context, in *UpdateInput) (*User, error)
 
-    // List all users with pagination
-    List(ctx context.Context, in *ListUsersInput) (*ListUsersOutput, error)
+    // Delete removes a user account permanently.
+    // This operation cannot be undone.
+    Delete(ctx context.Context, in *DeleteInput) error
+
+    // List returns all users with pagination support.
+    List(ctx context.Context, in *ListInput) (*ListOutput, error)
 }
 ```
 
 ### Easy Testing
 
-You can create mock implementations for testing:
+Because the interface separates "what" from "how", you can easily create mock implementations for testing:
 
 ```go
-// Production implementation
-type userService struct {
-    db *sql.DB
+package user_test
+
+import "yourapp/user"
+
+// MockService implements user.API for testing.
+// It stores users in memory instead of a real database.
+type MockService struct {
+    users map[string]*user.User
 }
 
-// Test mock
-type mockUserService struct {
-    users map[string]*User
-}
-
-func (m *mockUserService) Get(ctx context.Context, in *GetUserInput) (*User, error) {
-    if user, ok := m.users[in.ID]; ok {
-        return user, nil
+func (m *MockService) Get(ctx context.Context, in *user.GetInput) (*user.User, error) {
+    if u, ok := m.users[in.ID]; ok {
+        return u, nil
     }
     return nil, errors.New("not found")
 }
 
-// Both implement UserAPI!
+func (m *MockService) Create(ctx context.Context, in *user.CreateInput) (*user.User, error) {
+    u := &user.User{ID: "test-123", Email: in.Email}
+    m.users[u.ID] = u
+    return u, nil
+}
+
+// ... implement other methods
+
+// Now use MockService in your tests!
+func TestSomethingThatNeedsUsers(t *testing.T) {
+    mock := &MockService{users: make(map[string]*user.User)}
+    // Use mock instead of real service
+}
 ```
 
 ### Multiple Implementations
 
-You can swap implementations without changing clients:
+You can have different implementations for different situations - all sharing the same interface:
 
 ```go
-type StorageAPI interface {
+package storage
+
+// API defines storage operations.
+// The same interface can have multiple implementations.
+type API interface {
     Save(ctx context.Context, in *SaveInput) error
     Load(ctx context.Context, in *LoadInput) (*Data, error)
 }
 
-// Implementation 1: Local file system
-type fileStorage struct { basePath string }
+// FileService stores data on the local filesystem.
+// Good for development and single-server deployments.
+type FileService struct {
+    basePath string
+}
 
-// Implementation 2: AWS S3
-type s3Storage struct { bucket string; client *s3.Client }
+// S3Service stores data in Amazon S3.
+// Good for production with multiple servers.
+type S3Service struct {
+    bucket string
+    client *s3.Client
+}
 
-// Implementation 3: In-memory (for tests)
-type memoryStorage struct { data map[string][]byte }
+// MemoryService stores data in memory.
+// Perfect for tests - fast and isolated.
+type MemoryService struct {
+    data map[string][]byte
+}
 
-// All implement StorageAPI - swap at runtime based on config
+// All three implement storage.API!
+// Your application can switch between them based on configuration.
 ```
+
+## Package Organization
+
+We recommend organizing each service in its own package with a consistent structure:
+
+```
+yourapp/
+├── main.go              # Wires everything together
+├── todo/
+│   ├── api.go           # Interface definition (todo.API)
+│   ├── service.go       # Implementation (todo.Service)
+│   └── types.go         # Input/output types
+├── user/
+│   ├── api.go           # Interface definition (user.API)
+│   ├── service.go       # Implementation (user.Service)
+│   └── types.go         # Input/output types
+```
+
+**Why this structure?**
+
+1. **Package-based naming**: `todo.API` is clearer than `TodoAPI`, and `user.Service` is clearer than `userService`
+2. **Encapsulation**: Each package is self-contained with its own types
+3. **Discoverability**: Finding the todo API? Look in the `todo` package
+4. **Scalability**: Adding a new service? Create a new package
 
 ## Defining Your Interface
 
 ### Basic Structure
 
-Every interface method must follow specific patterns:
+Every interface method must follow specific patterns. The rules are straightforward:
 
 ```go
-type MyAPI interface {
-    // Every method needs ctx as first parameter
+package myservice
+
+type API interface {
+    // Every method MUST have ctx as the first parameter
+    // This is required for timeouts, cancellation, and request-scoped values
     MethodName(ctx context.Context, ...) ...
 }
 ```
 
-### Method Signatures
+### Method Signature Patterns
 
-Contract supports four method patterns:
+Contract supports four method patterns. Let's explore each one with detailed explanations.
 
 #### Pattern 1: Input and Output
 
@@ -145,47 +221,70 @@ The most common pattern - receive data, return data:
 func MethodName(ctx context.Context, in *InputType) (*OutputType, error)
 ```
 
+**Breakdown:**
+- `ctx context.Context` - Required first parameter for request context
+- `in *InputType` - Pointer to a struct containing the input data
+- `*OutputType` - Pointer to a struct containing the result
+- `error` - Always the last return value; nil means success
+
 **Example:**
 
 ```go
-type OrderAPI interface {
-    // Place a new order
-    Create(ctx context.Context, in *CreateOrderInput) (*Order, error)
+package order
 
-    // Get order details
-    Get(ctx context.Context, in *GetOrderInput) (*Order, error)
+type API interface {
+    // Create places a new order.
+    // Input: order details (items, customer, shipping address)
+    // Output: the created order with generated ID and totals
+    Create(ctx context.Context, in *CreateInput) (*Order, error)
 
-    // Calculate shipping cost
+    // Get retrieves order details by ID.
+    // Input: the order ID to look up
+    // Output: full order information
+    Get(ctx context.Context, in *GetInput) (*Order, error)
+
+    // CalculateShipping determines shipping cost.
+    // Input: destination and items
+    // Output: available shipping options with prices
     CalculateShipping(ctx context.Context, in *ShippingInput) (*ShippingOutput, error)
 }
 ```
 
-**When to use:** Most CRUD operations, calculations, any method that receives and returns data.
+**When to use:** Most CRUD operations, calculations, queries - any method that receives data and returns data.
 
 #### Pattern 2: Output Only (No Input)
 
-Return data without receiving any input:
+Return data without receiving any input parameters:
 
 ```go
 func MethodName(ctx context.Context) (*OutputType, error)
 ```
 
+**Breakdown:**
+- No input parameter beyond context
+- Still returns output and error
+
 **Example:**
 
 ```go
-type DashboardAPI interface {
-    // Get current stats (no input needed)
+package dashboard
+
+type API interface {
+    // GetStats returns current system statistics.
+    // No input needed - just returns current stats.
     GetStats(ctx context.Context) (*StatsOutput, error)
 
-    // List all items (no filters)
+    // ListAll returns all items without any filters.
+    // Useful for small datasets or admin interfaces.
     ListAll(ctx context.Context) (*ListOutput, error)
 
-    // Get server health
+    // Health returns detailed health information.
+    // More detailed than a simple ping.
     Health(ctx context.Context) (*HealthOutput, error)
 }
 ```
 
-**When to use:** List operations, getting current status, dashboard data, health checks with results.
+**When to use:** Listing all items, getting current status, dashboard data, health checks that return information.
 
 #### Pattern 3: Input Only (No Output)
 
@@ -195,17 +294,27 @@ Accept input but return only success/failure:
 func MethodName(ctx context.Context, in *InputType) error
 ```
 
+**Breakdown:**
+- Accepts input data
+- Only returns error (nil means success)
+- No meaningful data to return
+
 **Example:**
 
 ```go
-type NotificationAPI interface {
-    // Send notification (we don't need a response)
+package notification
+
+type API interface {
+    // Send delivers a notification to a user.
+    // We don't need to return anything - just success/failure.
     Send(ctx context.Context, in *SendInput) error
 
-    // Delete a notification
+    // Delete removes a notification by ID.
+    // Nothing to return after deletion.
     Delete(ctx context.Context, in *DeleteInput) error
 
-    // Mark all as read
+    // MarkAllRead marks all notifications as read for a user.
+    // Fire-and-forget operation.
     MarkAllRead(ctx context.Context, in *MarkReadInput) error
 }
 ```
@@ -220,202 +329,305 @@ Just do something and report success/failure:
 func MethodName(ctx context.Context) error
 ```
 
+**Breakdown:**
+- Only context as input
+- Only error as output
+- Simplest possible signature
+
 **Example:**
 
 ```go
-type MaintenanceAPI interface {
-    // Ping the service
+package maintenance
+
+type API interface {
+    // Ping checks if the service is responsive.
+    // Returns nil if healthy, error if not.
     Ping(ctx context.Context) error
 
-    // Run cleanup (no params, no response)
+    // Cleanup runs maintenance tasks.
+    // No parameters needed, no results to return.
     Cleanup(ctx context.Context) error
 
-    // Check database connection
+    // CheckDB verifies database connectivity.
+    // Simple health check that returns error if DB is down.
     CheckDB(ctx context.Context) error
 }
 ```
 
-**When to use:** Health checks, ping endpoints, administrative operations.
+**When to use:** Health checks, ping endpoints, administrative operations with no configuration.
 
 ## Defining Input and Output Types
 
+Types define the shape of data that flows through your API. Good type design makes your API clear and easy to use.
+
 ### Input Types
 
-Input types describe what clients send to your methods:
+Input types describe what clients send to your methods. They should only contain fields that clients actually need to provide:
 
 ```go
-type CreateUserInput struct {
-    // Required fields
-    Email    string `json:"email"`
-    Password string `json:"password"`
-    Name     string `json:"name"`
+package user
 
-    // Optional fields (will be zero value if not sent)
-    Phone    string `json:"phone,omitempty"`
-    Avatar   string `json:"avatar,omitempty"`
+// CreateInput contains everything needed to create a new user.
+// Notice we don't include ID - that's generated by the server.
+type CreateInput struct {
+    // Required fields - must be provided by the client
+    Email    string `json:"email"`    // User's email address
+    Password string `json:"password"` // Plain text (we'll hash it)
+    Name     string `json:"name"`     // Display name
+
+    // Optional fields - zero value if not provided
+    Phone    string `json:"phone,omitempty"`  // "" if not sent
+    Avatar   string `json:"avatar,omitempty"` // "" if not sent
 }
 ```
 
 **Key points:**
-- Use pointer types in method signatures: `*CreateUserInput`
-- Use `json` tags for field names in JSON
-- Add `omitempty` for optional fields
+- Use pointer types in method signatures: `*CreateInput`
+- Use `json` tags to control field names in JSON
+- Add `omitempty` for optional fields (tells JSON encoder to skip empty values)
+- Don't include server-generated fields (like ID, CreatedAt)
 
 ### Output Types
 
-Output types describe what you return:
+Output types describe what you return to clients. They can include computed and server-generated fields:
 
 ```go
+package user
+
+// User represents a user in the system.
+// This is what clients receive back from the API.
 type User struct {
-    ID        string    `json:"id"`
-    Email     string    `json:"email"`
-    Name      string    `json:"name"`
-    CreatedAt time.Time `json:"createdAt"`
-    UpdatedAt time.Time `json:"updatedAt"`
+    ID        string    `json:"id"`        // Server-generated unique identifier
+    Email     string    `json:"email"`     // From input
+    Name      string    `json:"name"`      // From input
+    CreatedAt time.Time `json:"createdAt"` // Server-generated timestamp
+    UpdatedAt time.Time `json:"updatedAt"` // Server-managed timestamp
 }
 
-type ListUsersOutput struct {
-    Users []*User `json:"users"`
-    Total int     `json:"total"`
-    Page  int     `json:"page"`
-}
-```
-
-### Shared Types
-
-You can use the same type for both input and output:
-
-```go
-type Todo struct {
-    ID        string `json:"id"`
-    Title     string `json:"title"`
-    Completed bool   `json:"completed"`
-}
-
-type TodoAPI interface {
-    // Uses Todo for both input and output
-    Create(ctx context.Context, in *Todo) (*Todo, error)
-    Update(ctx context.Context, in *Todo) (*Todo, error)
+// ListOutput wraps a list of users with metadata.
+// Wrapping in a struct lets us add pagination info.
+type ListOutput struct {
+    Users []*User `json:"users"` // The actual user data
+    Total int     `json:"total"` // Total count for pagination
+    Page  int     `json:"page"`  // Current page number
 }
 ```
 
-However, it's often better to have separate types for clarity:
+### Why Separate Input and Output Types?
+
+You might wonder why we don't just use one `User` type everywhere. Here's why separation is valuable:
 
 ```go
-type CreateTodoInput struct {
-    Title string `json:"title"` // Only title needed for creation
-}
+package todo
 
-type UpdateTodoInput struct {
-    ID        string `json:"id"`        // Need ID to know which todo
-    Title     string `json:"title"`     // Can update title
-    Completed bool   `json:"completed"` // Can update status
-}
-
+// BAD: Using same type for input and output
+// Problems:
+// - Clients might try to set ID (server-generated)
+// - Clients might try to set CreatedAt (server-managed)
+// - No way to distinguish required vs optional fields
 type Todo struct {
     ID        string    `json:"id"`
     Title     string    `json:"title"`
     Completed bool      `json:"completed"`
+    CreatedAt time.Time `json:"createdAt"`
+}
+
+// GOOD: Separate types for different purposes
+// CreateInput - only what clients provide
+type CreateInput struct {
+    Title string `json:"title"` // Only field needed to create
+}
+
+// UpdateInput - what can be updated
+type UpdateInput struct {
+    ID        string `json:"id"`        // Which todo to update
+    Title     string `json:"title"`     // Can change title
+    Completed bool   `json:"completed"` // Can change status
+}
+
+// Todo - full representation with server data
+type Todo struct {
+    ID        string    `json:"id"`        // Server-generated
+    Title     string    `json:"title"`     // From input
+    Completed bool      `json:"completed"` // From input or default
     CreatedAt time.Time `json:"createdAt"` // Server-generated
-    UpdatedAt time.Time `json:"updatedAt"` // Server-generated
+    UpdatedAt time.Time `json:"updatedAt"` // Server-managed
 }
 ```
 
 ### Nested Types
 
-You can nest types for complex data:
+For complex data, nest types within each other. This creates clear, reusable structures:
 
 ```go
+package order
+
+// Order represents a complete order with all its details.
 type Order struct {
     ID       string     `json:"id"`
-    Customer *Customer  `json:"customer"`
-    Items    []*Item    `json:"items"`
-    Shipping *Address   `json:"shipping"`
-    Billing  *Address   `json:"billing"`
+    Customer *Customer  `json:"customer"`  // Nested customer info
+    Items    []*Item    `json:"items"`     // List of ordered items
+    Shipping *Address   `json:"shipping"`  // Where to ship
+    Billing  *Address   `json:"billing"`   // Billing address (can reuse Address)
+    Total    Money      `json:"total"`     // Order total
 }
 
+// Customer contains customer information.
 type Customer struct {
     ID    string `json:"id"`
     Name  string `json:"name"`
     Email string `json:"email"`
 }
 
+// Item represents one line item in an order.
 type Item struct {
-    ProductID string  `json:"productId"`
-    Quantity  int     `json:"quantity"`
-    Price     float64 `json:"price"`
+    ProductID string `json:"productId"`
+    Name      string `json:"name"`
+    Quantity  int    `json:"quantity"`
+    Price     Money  `json:"price"`
 }
 
+// Address is a physical address.
+// Reused for both shipping and billing.
 type Address struct {
     Street  string `json:"street"`
     City    string `json:"city"`
+    State   string `json:"state"`
     Country string `json:"country"`
     Zip     string `json:"zip"`
+}
+
+// Money represents a monetary amount.
+type Money struct {
+    Amount   int64  `json:"amount"`   // Amount in cents
+    Currency string `json:"currency"` // ISO currency code
 }
 ```
 
 ## Implementing Your Interface
+
+Now let's implement the interface with actual business logic.
 
 ### Basic Implementation
 
 Create a struct that implements all interface methods:
 
 ```go
-// The interface
-type TodoAPI interface {
-    Create(ctx context.Context, in *CreateInput) (*Todo, error)
-    List(ctx context.Context) (*ListOutput, error)
-    Get(ctx context.Context, in *GetInput) (*Todo, error)
-    Delete(ctx context.Context, in *DeleteInput) error
+package todo
+
+import (
+    "context"
+    "database/sql"
+    "time"
+)
+
+// Service implements todo.API.
+// It contains dependencies needed to perform operations.
+type Service struct {
+    db *sql.DB  // Database connection
 }
 
-// The implementation struct
-type todoService struct {
-    db *sql.DB  // Dependencies go here
+// Compile-time check that Service implements API.
+// If Service is missing methods, this line causes a compile error.
+var _ API = (*Service)(nil)
+
+// NewService creates a new todo Service with the given dependencies.
+// This is the "constructor" - the standard Go pattern for creating instances.
+func NewService(db *sql.DB) *Service {
+    return &Service{db: db}
 }
 
-// Constructor function
-func NewTodoService(db *sql.DB) TodoAPI {
-    return &todoService{db: db}
+// Create implements todo.API.Create
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    // Validate input
+    if in.Title == "" {
+        return nil, errors.New("title is required")
+    }
+
+    // Create the todo
+    now := time.Now()
+    todo := &Todo{
+        ID:        generateID(),
+        Title:     in.Title,
+        Completed: false,
+        CreatedAt: now,
+        UpdatedAt: now,
+    }
+
+    // Save to database
+    _, err := s.db.ExecContext(ctx,
+        "INSERT INTO todos (id, title, completed, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        todo.ID, todo.Title, todo.Completed, todo.CreatedAt, todo.UpdatedAt,
+    )
+    if err != nil {
+        return nil, err
+    }
+
+    return todo, nil
 }
 
-// Implement each method
-func (s *todoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
-    // Implementation
+// List implements todo.API.List
+func (s *Service) List(ctx context.Context) (*ListOutput, error) {
+    rows, err := s.db.QueryContext(ctx, "SELECT id, title, completed, created_at, updated_at FROM todos")
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    var todos []*Todo
+    for rows.Next() {
+        t := &Todo{}
+        if err := rows.Scan(&t.ID, &t.Title, &t.Completed, &t.CreatedAt, &t.UpdatedAt); err != nil {
+            return nil, err
+        }
+        todos = append(todos, t)
+    }
+
+    return &ListOutput{
+        Items: todos,
+        Count: len(todos),
+    }, nil
 }
 
-func (s *todoService) List(ctx context.Context) (*ListOutput, error) {
-    // Implementation
-}
-
-func (s *todoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
-    // Implementation
-}
-
-func (s *todoService) Delete(ctx context.Context, in *DeleteInput) error {
-    // Implementation
-}
+// ... implement other methods
 ```
 
-### With Dependencies
+### With Multiple Dependencies
 
-Inject dependencies through the constructor:
+Real services often need multiple dependencies. Inject them all through the constructor:
 
 ```go
-type userService struct {
-    db     *sql.DB           // Database
-    cache  *redis.Client     // Cache
-    mailer *email.Client     // Email service
-    logger *slog.Logger      // Logging
+package user
+
+import (
+    "context"
+    "database/sql"
+    "log/slog"
+
+    "github.com/redis/go-redis/v9"
+)
+
+// Service implements user.API with all required dependencies.
+type Service struct {
+    db     *sql.DB         // Primary database
+    cache  *redis.Client   // Cache for frequent lookups
+    mailer EmailSender     // For sending emails (interface for testability)
+    logger *slog.Logger    // Structured logging
 }
 
-func NewUserService(
+// EmailSender is an interface so we can mock it in tests.
+type EmailSender interface {
+    Send(ctx context.Context, to, subject, body string) error
+}
+
+// NewService creates a new user Service with all dependencies.
+func NewService(
     db *sql.DB,
     cache *redis.Client,
-    mailer *email.Client,
+    mailer EmailSender,
     logger *slog.Logger,
-) UserAPI {
-    return &userService{
+) *Service {
+    return &Service{
         db:     db,
         cache:  cache,
         mailer: mailer,
@@ -423,41 +635,73 @@ func NewUserService(
     }
 }
 
-func (s *userService) Create(ctx context.Context, in *CreateUserInput) (*User, error) {
-    // Use s.db to save to database
-    // Use s.cache to cache the result
-    // Use s.mailer to send welcome email
-    // Use s.logger to log the operation
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*User, error) {
+    s.logger.Info("creating user", "email", in.Email)
+
+    // Create user in database
+    user := &User{ID: generateID(), Email: in.Email, Name: in.Name}
+    if err := s.saveToDatabase(ctx, user); err != nil {
+        s.logger.Error("failed to save user", "error", err)
+        return nil, err
+    }
+
+    // Cache the user for fast lookups
+    if err := s.cacheUser(ctx, user); err != nil {
+        s.logger.Warn("failed to cache user", "error", err)
+        // Don't fail the request - caching is optional
+    }
+
+    // Send welcome email
+    if err := s.mailer.Send(ctx, user.Email, "Welcome!", "Thanks for signing up!"); err != nil {
+        s.logger.Warn("failed to send welcome email", "error", err)
+        // Don't fail the request - email is best-effort
+    }
+
+    return user, nil
 }
 ```
 
 ### Compile-Time Interface Check
 
-Add a compile-time check to ensure your implementation is complete:
+Always add a compile-time check to ensure your implementation is complete. This catches missing methods immediately:
 
 ```go
-// This line ensures todoService implements TodoAPI
-// If it doesn't, you'll get a compile error
-var _ TodoAPI = (*todoService)(nil)
-```
+package todo
 
-Put this after your struct definition:
+type API interface {
+    Create(ctx context.Context, in *CreateInput) (*Todo, error)
+    List(ctx context.Context) (*ListOutput, error)
+    Get(ctx context.Context, in *GetInput) (*Todo, error)
+    Delete(ctx context.Context, in *DeleteInput) error
+}
 
-```go
-type todoService struct {
+type Service struct {
     db *sql.DB
 }
 
-// Compile-time check
-var _ TodoAPI = (*todoService)(nil)
+// This line is a compile-time assertion.
+// If Service doesn't implement all methods of API, compilation fails.
+// The syntax works because:
+// - (*Service)(nil) creates a nil pointer of type *Service
+// - var _ API = ... checks if that pointer satisfies the API interface
+var _ API = (*Service)(nil)
 
-func (s *todoService) Create(...) { ... }
-// ...
+// Now implement the methods...
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    // ...
+}
+```
+
+If you forget to implement a method, you'll see a clear error:
+
+```
+cannot use (*Service)(nil) (type *Service) as type API in assignment:
+    *Service does not implement API (missing Delete method)
 ```
 
 ## Method Naming Conventions
 
-Method names affect how they're exposed via REST:
+Method names affect how they're exposed via REST. Contract uses naming conventions to determine HTTP methods:
 
 | Method Name Pattern | REST Endpoint | HTTP Method |
 |---------------------|--------------|-------------|
@@ -472,92 +716,103 @@ Method names affect how they're exposed via REST:
 **Examples:**
 
 ```go
-type ProductAPI interface {
-    CreateProduct(...)   // POST /products
-    ListProducts(...)    // GET /products
-    GetProduct(...)      // GET /products/{id}
-    UpdateProduct(...)   // PUT /products/{id}
-    DeleteProduct(...)   // DELETE /products/{id}
-    SearchProducts(...)  // GET /products (with query params)
-    ArchiveProduct(...)  // POST /products/archive_product
+package product
+
+type API interface {
+    Create(...)     // POST   /products         - Create new product
+    List(...)       // GET    /products         - List all products
+    Get(...)        // GET    /products/{id}    - Get one product
+    Update(...)     // PUT    /products/{id}    - Update product
+    Delete(...)     // DELETE /products/{id}    - Delete product
+    Search(...)     // GET    /products         - Search (with query params)
+    Archive(...)    // POST   /products/archive - Custom action
 }
 ```
 
 ## Using Context
 
-Every method receives `context.Context` as its first parameter. Use it for:
+Every method receives `context.Context` as its first parameter. Context is Go's standard way to pass request-scoped data and control request lifecycle.
 
 ### Cancellation
 
-Check if the client cancelled the request:
+Check if the client cancelled the request. This is important for long-running operations:
 
 ```go
-func (s *todoService) SlowOperation(ctx context.Context, in *Input) (*Output, error) {
-    for i := 0; i < 1000; i++ {
-        // Check if context was cancelled
-        if ctx.Err() != nil {
-            return nil, ctx.Err()
+func (s *Service) ProcessLargeDataset(ctx context.Context, in *ProcessInput) (*Output, error) {
+    for i, item := range in.Items {
+        // Check if context was cancelled before each item
+        if err := ctx.Err(); err != nil {
+            // Client disconnected or timeout occurred
+            return nil, err
         }
-        // Do some work
+
+        // Process the item
+        if err := s.processItem(ctx, item); err != nil {
+            return nil, err
+        }
     }
-    return &Output{}, nil
+    return &Output{ProcessedCount: len(in.Items)}, nil
 }
 ```
 
 ### Timeouts
 
-Pass context to database calls:
+Pass context to database and external calls. The context carries timeout information:
 
 ```go
-func (s *todoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
-    // Context timeout is respected by the database driver
+func (s *Service) Get(ctx context.Context, in *GetInput) (*Todo, error) {
+    // The context timeout is automatically respected by the database driver
     row := s.db.QueryRowContext(ctx, "SELECT * FROM todos WHERE id = $1", in.ID)
-    // ...
+
+    todo := &Todo{}
+    err := row.Scan(&todo.ID, &todo.Title, &todo.Completed)
+    if err == sql.ErrNoRows {
+        return nil, contract.ErrNotFound("todo not found")
+    }
+    return todo, err
 }
 ```
 
 ### Request-Scoped Values
 
-Access values set by middleware:
+Access values set by middleware (like authenticated user):
 
 ```go
-func (s *todoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
-    // Get authenticated user from context (set by auth middleware)
-    userID, ok := ctx.Value("userID").(string)
+// Key type for context values (prevents collisions)
+type contextKey string
+
+const userIDKey contextKey = "userID"
+
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    // Get authenticated user ID from context (set by auth middleware)
+    userID, ok := ctx.Value(userIDKey).(string)
     if !ok {
-        return nil, errors.New("not authenticated")
+        return nil, contract.ErrUnauthenticated("not logged in")
     }
 
     // Use userID in your logic
     todo := &Todo{
         ID:      generateID(),
         Title:   in.Title,
-        OwnerID: userID,  // Associate with the user
+        OwnerID: userID,  // Associate todo with the user
     }
-    // ...
+
+    // Save and return
+    return s.saveTodo(ctx, todo)
 }
 ```
 
 ## Complete Example
 
-Here's a complete, production-ready service:
+Here's a complete, production-ready service demonstrating all the concepts:
 
 ```go
+// user/types.go
 package user
 
-import (
-    "context"
-    "database/sql"
-    "errors"
-    "time"
+import "time"
 
-    "github.com/google/uuid"
-)
-
-// ─────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────
-
+// User represents a user in the system.
 type User struct {
     ID        string    `json:"id"`
     Email     string    `json:"email"`
@@ -566,69 +821,102 @@ type User struct {
     UpdatedAt time.Time `json:"updatedAt"`
 }
 
-type CreateUserInput struct {
+// CreateInput contains data needed to create a user.
+type CreateInput struct {
     Email string `json:"email"`
     Name  string `json:"name"`
 }
 
-type GetUserInput struct {
+// GetInput identifies which user to retrieve.
+type GetInput struct {
     ID string `json:"id"`
 }
 
-type UpdateUserInput struct {
+// UpdateInput contains data for updating a user.
+type UpdateInput struct {
     ID   string `json:"id"`
     Name string `json:"name"`
 }
 
-type DeleteUserInput struct {
+// DeleteInput identifies which user to delete.
+type DeleteInput struct {
     ID string `json:"id"`
 }
 
-type ListUsersInput struct {
+// ListInput contains pagination parameters.
+type ListInput struct {
     Limit  int `json:"limit"`
     Offset int `json:"offset"`
 }
 
-type ListUsersOutput struct {
+// ListOutput contains paginated user results.
+type ListOutput struct {
     Users []*User `json:"users"`
     Total int     `json:"total"`
 }
+```
 
-// ─────────────────────────────────────────────────────────────
-// Interface
-// ─────────────────────────────────────────────────────────────
+```go
+// user/api.go
+package user
 
-type UserAPI interface {
-    Create(ctx context.Context, in *CreateUserInput) (*User, error)
-    Get(ctx context.Context, in *GetUserInput) (*User, error)
-    Update(ctx context.Context, in *UpdateUserInput) (*User, error)
-    Delete(ctx context.Context, in *DeleteUserInput) error
-    List(ctx context.Context, in *ListUsersInput) (*ListUsersOutput, error)
+import "context"
+
+// API defines all user management operations.
+type API interface {
+    // Create registers a new user account.
+    Create(ctx context.Context, in *CreateInput) (*User, error)
+
+    // Get retrieves a user by ID.
+    Get(ctx context.Context, in *GetInput) (*User, error)
+
+    // Update modifies a user's profile.
+    Update(ctx context.Context, in *UpdateInput) (*User, error)
+
+    // Delete removes a user account.
+    Delete(ctx context.Context, in *DeleteInput) error
+
+    // List returns users with pagination.
+    List(ctx context.Context, in *ListInput) (*ListOutput, error)
 }
+```
 
-// ─────────────────────────────────────────────────────────────
-// Implementation
-// ─────────────────────────────────────────────────────────────
+```go
+// user/service.go
+package user
 
-type userService struct {
+import (
+    "context"
+    "database/sql"
+    "time"
+
+    "github.com/google/uuid"
+    contract "github.com/go-mizu/mizu/contract/v2"
+)
+
+// Service implements user.API.
+type Service struct {
     db *sql.DB
 }
 
-// Compile-time check
-var _ UserAPI = (*userService)(nil)
+// Compile-time interface check.
+var _ API = (*Service)(nil)
 
-func NewUserService(db *sql.DB) UserAPI {
-    return &userService{db: db}
+// NewService creates a new user Service.
+func NewService(db *sql.DB) *Service {
+    return &Service{db: db}
 }
 
-func (s *userService) Create(ctx context.Context, in *CreateUserInput) (*User, error) {
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*User, error) {
+    // Validate input
     if in.Email == "" {
-        return nil, errors.New("email is required")
+        return nil, contract.ErrInvalidArgument("email is required")
     }
     if in.Name == "" {
-        return nil, errors.New("name is required")
+        return nil, contract.ErrInvalidArgument("name is required")
     }
 
+    // Create user
     now := time.Now()
     user := &User{
         ID:        uuid.New().String(),
@@ -638,6 +926,7 @@ func (s *userService) Create(ctx context.Context, in *CreateUserInput) (*User, e
         UpdatedAt: now,
     }
 
+    // Save to database
     _, err := s.db.ExecContext(ctx,
         "INSERT INTO users (id, email, name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)",
         user.ID, user.Email, user.Name, user.CreatedAt, user.UpdatedAt,
@@ -649,7 +938,7 @@ func (s *userService) Create(ctx context.Context, in *CreateUserInput) (*User, e
     return user, nil
 }
 
-func (s *userService) Get(ctx context.Context, in *GetUserInput) (*User, error) {
+func (s *Service) Get(ctx context.Context, in *GetInput) (*User, error) {
     user := &User{}
     err := s.db.QueryRowContext(ctx,
         "SELECT id, email, name, created_at, updated_at FROM users WHERE id = $1",
@@ -657,7 +946,7 @@ func (s *userService) Get(ctx context.Context, in *GetUserInput) (*User, error) 
     ).Scan(&user.ID, &user.Email, &user.Name, &user.CreatedAt, &user.UpdatedAt)
 
     if err == sql.ErrNoRows {
-        return nil, errors.New("user not found")
+        return nil, contract.ErrNotFound("user not found")
     }
     if err != nil {
         return nil, err
@@ -666,7 +955,7 @@ func (s *userService) Get(ctx context.Context, in *GetUserInput) (*User, error) 
     return user, nil
 }
 
-func (s *userService) Update(ctx context.Context, in *UpdateUserInput) (*User, error) {
+func (s *Service) Update(ctx context.Context, in *UpdateInput) (*User, error) {
     now := time.Now()
 
     result, err := s.db.ExecContext(ctx,
@@ -679,13 +968,13 @@ func (s *userService) Update(ctx context.Context, in *UpdateUserInput) (*User, e
 
     rows, _ := result.RowsAffected()
     if rows == 0 {
-        return nil, errors.New("user not found")
+        return nil, contract.ErrNotFound("user not found")
     }
 
-    return s.Get(ctx, &GetUserInput{ID: in.ID})
+    return s.Get(ctx, &GetInput{ID: in.ID})
 }
 
-func (s *userService) Delete(ctx context.Context, in *DeleteUserInput) error {
+func (s *Service) Delete(ctx context.Context, in *DeleteInput) error {
     result, err := s.db.ExecContext(ctx, "DELETE FROM users WHERE id = $1", in.ID)
     if err != nil {
         return err
@@ -693,18 +982,20 @@ func (s *userService) Delete(ctx context.Context, in *DeleteUserInput) error {
 
     rows, _ := result.RowsAffected()
     if rows == 0 {
-        return errors.New("user not found")
+        return contract.ErrNotFound("user not found")
     }
 
     return nil
 }
 
-func (s *userService) List(ctx context.Context, in *ListUsersInput) (*ListUsersOutput, error) {
+func (s *Service) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
+    // Default limit
     limit := in.Limit
     if limit <= 0 {
         limit = 10
     }
 
+    // Query users
     rows, err := s.db.QueryContext(ctx,
         "SELECT id, email, name, created_at, updated_at FROM users LIMIT $1 OFFSET $2",
         limit, in.Offset,
@@ -723,10 +1014,11 @@ func (s *userService) List(ctx context.Context, in *ListUsersInput) (*ListUsersO
         users = append(users, user)
     }
 
+    // Get total count
     var total int
     s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&total)
 
-    return &ListUsersOutput{
+    return &ListOutput{
         Users: users,
         Total: total,
     }, nil
@@ -737,37 +1029,42 @@ func (s *userService) List(ctx context.Context, in *ListUsersInput) (*ListUsersO
 
 ### Keep Services Focused
 
-Each service should handle one domain:
+Each service should handle one domain. Don't create "god services" that do everything:
 
 ```go
-// Good: focused services
-type UserAPI interface { ... }
-type OrderAPI interface { ... }
-type ProductAPI interface { ... }
+// GOOD: Focused services, one domain each
+package todo    // type API interface { Create, List, Get, Delete }
+package user    // type API interface { Create, Get, Update, Delete }
+package order   // type API interface { Create, Get, List, Cancel }
 
-// Bad: one giant service
+// BAD: One giant service doing everything
+package api
 type EverythingAPI interface {
+    CreateTodo(...)
     CreateUser(...)
     CreateOrder(...)
-    CreateProduct(...)
-    // 50 more methods...
+    // 50 more methods from different domains...
 }
 ```
 
-### Use Clear Naming
+### Use Clear, Consistent Naming
 
-Names should be descriptive and consistent:
+Names should be descriptive and follow a consistent pattern:
 
 ```go
-// Good: clear and consistent
-type SubscriptionAPI interface {
-    Create(ctx context.Context, in *CreateSubscriptionInput) (*Subscription, error)
-    Get(ctx context.Context, in *GetSubscriptionInput) (*Subscription, error)
-    Cancel(ctx context.Context, in *CancelSubscriptionInput) error
-    Renew(ctx context.Context, in *RenewSubscriptionInput) (*Subscription, error)
+// GOOD: Clear and consistent naming
+package subscription
+
+type API interface {
+    Create(ctx context.Context, in *CreateInput) (*Subscription, error)
+    Get(ctx context.Context, in *GetInput) (*Subscription, error)
+    Cancel(ctx context.Context, in *CancelInput) error
+    Renew(ctx context.Context, in *RenewInput) (*Subscription, error)
 }
 
-// Bad: vague and inconsistent
+// BAD: Vague and inconsistent naming
+package sub
+
 type SubAPI interface {
     MakeSub(ctx context.Context, in *Input) (*Output, error)
     FetchSubscription(ctx context.Context, in *GetInput) (*Sub, error)
@@ -777,57 +1074,64 @@ type SubAPI interface {
 
 ### Inject Dependencies
 
-Pass dependencies through the constructor, not globally:
+Pass dependencies through the constructor, never use globals:
 
 ```go
-// Good: dependency injection
-type userService struct {
+// GOOD: Dependency injection through constructor
+type Service struct {
     db    Database
     cache Cache
 }
 
-func NewUserService(db Database, cache Cache) UserAPI {
-    return &userService{db: db, cache: cache}
+func NewService(db Database, cache Cache) *Service {
+    return &Service{db: db, cache: cache}
 }
 
-// Bad: global dependencies
-var globalDB *sql.DB
+// BAD: Global dependencies
+var globalDB *sql.DB  // DON'T DO THIS
 
-func (s *userService) Create(...) {
-    globalDB.Query(...)  // Don't do this!
+func (s *Service) Create(...) {
+    globalDB.Query(...)  // Untestable, hidden dependency
 }
 ```
 
-### Keep Business Logic in Implementation
+### Keep Business Logic in the Implementation
 
-The interface should be pure contracts, logic goes in the implementation:
+The interface should only declare operations. All logic goes in the implementation:
 
 ```go
-// Interface: just the contract
-type PaymentAPI interface {
-    Process(ctx context.Context, in *ProcessPaymentInput) (*Payment, error)
+// Interface: Pure contract, no logic
+type API interface {
+    ProcessPayment(ctx context.Context, in *PaymentInput) (*Payment, error)
 }
 
-// Implementation: all the logic
-func (s *paymentService) Process(ctx context.Context, in *ProcessPaymentInput) (*Payment, error) {
-    // Validation
+// Implementation: All the business logic
+func (s *Service) ProcessPayment(ctx context.Context, in *PaymentInput) (*Payment, error) {
+    // 1. Validation
     if in.Amount <= 0 {
-        return nil, errors.New("amount must be positive")
+        return nil, contract.ErrInvalidArgument("amount must be positive")
     }
 
-    // Business logic
+    // 2. Business rules
     fee := s.calculateFee(in.Amount)
     total := in.Amount + fee
 
-    // External calls
-    result, err := s.stripe.Charge(ctx, total)
+    // 3. External integrations
+    chargeResult, err := s.stripe.Charge(ctx, in.CardToken, total)
     if err != nil {
-        return nil, err
+        return nil, fmt.Errorf("payment failed: %w", err)
     }
 
-    // Persistence
-    payment := &Payment{ID: result.ID, Amount: in.Amount, Fee: fee}
-    s.db.Save(ctx, payment)
+    // 4. Persistence
+    payment := &Payment{
+        ID:     chargeResult.ID,
+        Amount: in.Amount,
+        Fee:    fee,
+        Status: "completed",
+    }
+    if err := s.db.SavePayment(ctx, payment); err != nil {
+        return nil, err
+    }
 
     return payment, nil
 }
@@ -837,18 +1141,27 @@ func (s *paymentService) Process(ctx context.Context, in *ProcessPaymentInput) (
 
 ### Can I have multiple return values?
 
-No, methods can only return `(*Output, error)` or `error`. Wrap multiple values in a struct:
+No, methods can only return `(*Output, error)` or `error`. If you need to return multiple values, wrap them in a struct:
 
 ```go
-// Instead of: func Get() (*User, *Profile, error)
-// Use:
+// Instead of: func Get() (*User, *Profile, error)  // NOT SUPPORTED
+// Use a wrapper struct:
+
 type GetUserResult struct {
     User    *User    `json:"user"`
     Profile *Profile `json:"profile"`
 }
 
 func (s *Service) GetUser(ctx context.Context, in *GetInput) (*GetUserResult, error) {
-    // ...
+    user, err := s.getUser(ctx, in.ID)
+    if err != nil {
+        return nil, err
+    }
+    profile, err := s.getProfile(ctx, in.ID)
+    if err != nil {
+        return nil, err
+    }
+    return &GetUserResult{User: user, Profile: profile}, nil
 }
 ```
 
@@ -857,31 +1170,48 @@ func (s *Service) GetUser(ctx context.Context, in *GetInput) (*GetUserResult, er
 Yes, always use pointers in the method signature:
 
 ```go
-// Good
+// GOOD - use pointers
 func (s *Service) Create(ctx context.Context, in *CreateInput) (*Output, error)
 
-// Bad
+// BAD - don't use value types
 func (s *Service) Create(ctx context.Context, in CreateInput) (Output, error)
 ```
 
+Contract requires pointers for proper JSON unmarshaling and to support nil inputs.
+
 ### How do I handle optional fields?
 
-Fields not provided by clients will have their zero value:
+Fields not provided by clients will have their zero value. For most cases, this works fine:
 
 ```go
 type UpdateInput struct {
-    ID    string `json:"id"`    // Required
-    Title string `json:"title"` // Optional: "" if not sent
-    Count int    `json:"count"` // Optional: 0 if not sent
+    ID    string `json:"id"`    // Required - must be provided
+    Title string `json:"title"` // Optional - "" if not sent
+    Count int    `json:"count"` // Optional - 0 if not sent
 }
 ```
 
-For truly optional fields where you need to distinguish "not sent" from "sent empty", use pointers:
+For fields where you need to distinguish "not sent" from "sent as empty/zero", use pointers:
 
 ```go
 type UpdateInput struct {
     ID    string  `json:"id"`
-    Title *string `json:"title"` // nil if not sent, "" if sent as empty
+    Title *string `json:"title"` // nil = not sent, "" = sent as empty
+    Count *int    `json:"count"` // nil = not sent, 0 = sent as zero
+}
+
+func (s *Service) Update(ctx context.Context, in *UpdateInput) (*Todo, error) {
+    todo, _ := s.Get(ctx, &GetInput{ID: in.ID})
+
+    // Only update if field was explicitly sent
+    if in.Title != nil {
+        todo.Title = *in.Title
+    }
+    if in.Count != nil {
+        todo.Count = *in.Count
+    }
+
+    return s.save(ctx, todo)
 }
 ```
 
