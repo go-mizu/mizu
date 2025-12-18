@@ -23,23 +23,23 @@ return nil, contract.ErrNotFound("user not found")
 // And it becomes:
 // - HTTP: 404 Not Found
 // - JSON-RPC: {"error": {"code": -32601, "message": "user not found"}}
-// - tRPC: {"error": {"code": "NOT_FOUND", "message": "user not found"}}
+// - MCP: {"isError": true, "content": [{"type": "text", "text": "user not found"}]}
 ```
 
 ## Quick Reference Table
 
-| Error Code | HTTP | JSON-RPC | tRPC | Use When |
-|------------|------|----------|------|----------|
-| `INVALID_ARGUMENT` | 400 | -32602 | `BAD_REQUEST` | Bad input from user |
-| `NOT_FOUND` | 404 | -32601 | `NOT_FOUND` | Resource doesn't exist |
-| `ALREADY_EXISTS` | 409 | -32003 | `INTERNAL_ERROR` | Trying to create duplicate |
-| `PERMISSION_DENIED` | 403 | -32004 | `FORBIDDEN` | User can't do this |
-| `UNAUTHENTICATED` | 401 | -32011 | `UNAUTHORIZED` | User not logged in |
-| `RESOURCE_EXHAUSTED` | 429 | -32005 | `INTERNAL_ERROR` | Rate limited |
-| `FAILED_PRECONDITION` | 412 | -32006 | `BAD_REQUEST` | System not ready |
-| `INTERNAL` | 500 | -32603 | `INTERNAL_ERROR` | Server bug |
-| `UNAVAILABLE` | 503 | -32009 | `INTERNAL_ERROR` | Service down |
-| `UNIMPLEMENTED` | 501 | -32601 | `INTERNAL_ERROR` | Feature not built |
+| Error Code | HTTP | JSON-RPC | Use When |
+|------------|------|----------|----------|
+| `INVALID_ARGUMENT` | 400 | -32602 | Bad input from user |
+| `NOT_FOUND` | 404 | -32601 | Resource doesn't exist |
+| `ALREADY_EXISTS` | 409 | -32003 | Trying to create duplicate |
+| `PERMISSION_DENIED` | 403 | -32004 | User can't do this |
+| `UNAUTHENTICATED` | 401 | -32011 | User not logged in |
+| `RESOURCE_EXHAUSTED` | 429 | -32005 | Rate limited |
+| `FAILED_PRECONDITION` | 412 | -32006 | System not ready |
+| `INTERNAL` | 500 | -32603 | Server bug |
+| `UNAVAILABLE` | 503 | -32009 | Service down |
+| `UNIMPLEMENTED` | 501 | -32601 | Feature not built |
 
 ## Detailed Error Code Guide
 
@@ -464,17 +464,6 @@ user not found
   "id": 1,
   "error": {
     "code": -32601,
-    "message": "user not found"
-  }
-}
-```
-
-### tRPC
-
-```json
-{
-  "error": {
-    "code": "NOT_FOUND",
     "message": "user not found"
   }
 }

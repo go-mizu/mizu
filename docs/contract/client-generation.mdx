@@ -14,19 +14,18 @@ Contract provides machine-readable descriptions of your API:
 ```
 Your Go Service
      ↓
-OpenAPI Spec / tRPC Meta / MCP Tools
+OpenAPI Spec / MCP Tools
      ↓
 Client Generator (openapi-generator, etc.)
      ↓
 TypeScript Client, Python Client, Go Client, etc.
 ```
 
-## Three Ways to Get API Metadata
+## Two Ways to Get API Metadata
 
 | Endpoint | Format | Best For |
 |----------|--------|----------|
 | `/openapi.json` | OpenAPI 3.1 | Most languages, best tooling |
-| `/trpc.meta` | tRPC metadata | TypeScript frontends |
 | `/mcp` (tools/list) | MCP tools | AI assistants |
 
 ## OpenAPI Client Generation
@@ -36,13 +35,23 @@ OpenAPI has the most mature tooling. This is the recommended approach.
 ### Step 1: Serve OpenAPI Spec
 
 ```go
-svc, _ := contract.Register("todo", &TodoService{})
+import (
+    "github.com/go-mizu/mizu"
+    contract "github.com/go-mizu/mizu/contract/v2"
+    "github.com/go-mizu/mizu/contract/v2/transport/rest"
+    "github.com/go-mizu/mizu/contract/v2/transport/openapi"
+)
 
-mux := http.NewServeMux()
-contract.MountREST(mux, svc)
-contract.ServeOpenAPI(mux, "/openapi.json", svc)
+impl := &todoService{}
+svc := contract.Register[TodoAPI](impl,
+    contract.WithDefaultResource("todos"),
+)
 
-http.ListenAndServe(":8080", mux)
+app := mizu.New()
+rest.Mount(app.Router, svc)
+openapi.Mount(app.Router, "/openapi.json", svc)
+
+app.Listen(":8080")
 ```
 
 ### Step 2: Download the Spec
@@ -115,141 +124,6 @@ openapi-generator-cli generate -i openapi.json -g ruby -o ./ruby-client
 
 # PHP
 openapi-generator-cli generate -i openapi.json -g php -o ./php-client
-```
-
-## TypeScript Client from tRPC Meta
-
-If you're using the tRPC transport, you can generate clients from the `.meta` endpoint.
-
-### Get the Metadata
-
-```bash
-curl http://localhost:8080/trpc.meta
-```
-
-Returns:
-```json
-{
-  "service": "todo",
-  "methods": [
-    {
-      "name": "Create",
-      "fullName": "todo.Create",
-      "input": {"id": "todo.CreateInput"},
-      "output": {"id": "todo.Todo"}
-    },
-    {
-      "name": "List",
-      "fullName": "todo.List",
-      "output": {"id": "todo.ListOutput"}
-    }
-  ],
-  "schemas": [
-    {
-      "id": "todo.CreateInput",
-      "json": {
-        "type": "object",
-        "properties": {"title": {"type": "string"}},
-        "required": ["title"]
-      }
-    }
-  ]
-}
-```
-
-### Create a TypeScript Client
-
-Here's a complete typed client you can adapt:
-
-```typescript
-// api-client.ts
-
-// Types from your service
-interface CreateInput {
-  title: string;
-}
-
-interface Todo {
-  id: string;
-  title: string;
-  done: boolean;
-}
-
-interface ListOutput {
-  items: Todo[];
-}
-
-interface GetInput {
-  id: string;
-}
-
-interface DeleteInput {
-  id: string;
-}
-
-// Error type
-interface ApiError {
-  code: string;
-  message: string;
-}
-
-// Response envelope (tRPC format)
-interface Envelope<T> {
-  result?: { data: T };
-  error?: ApiError;
-}
-
-// The client class
-export class TodoClient {
-  constructor(private baseUrl: string) {}
-
-  // Generic method caller
-  private async call<TInput, TOutput>(
-    method: string,
-    input?: TInput
-  ): Promise<TOutput> {
-    const response = await fetch(`${this.baseUrl}/trpc/${method}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: input !== undefined ? JSON.stringify(input) : undefined,
-    });
-
-    const envelope: Envelope<TOutput> = await response.json();
-
-    if (envelope.error) {
-      throw new Error(`${envelope.error.code}: ${envelope.error.message}`);
-    }
-
-    return envelope.result!.data;
-  }
-
-  // Typed methods
-  create(input: CreateInput): Promise<Todo> {
-    return this.call('Create', input);
-  }
-
-  list(): Promise<ListOutput> {
-    return this.call('List');
-  }
-
-  get(input: GetInput): Promise<Todo> {
-    return this.call('Get', input);
-  }
-
-  delete(input: DeleteInput): Promise<void> {
-    return this.call('Delete', input);
-  }
-}
-
-// Usage
-const client = new TodoClient('http://localhost:8080');
-
-// TypeScript knows the types!
-const todo = await client.create({ title: 'Buy milk' });
-console.log(todo.id);  // string
-
-const todos = await client.list();
-console.log(todos.items.length);  // TypeScript knows this is an array
 ```
 
 ## Handwritten Clients
@@ -667,8 +541,9 @@ jobs:
 
 Include version in your service:
 ```go
-svc, _ := contract.Register("todo", &TodoService{},
-    contract.WithVersion("1.0.0"),
+svc := contract.Register[TodoAPI](impl,
+    contract.WithName("Todo"),
+    contract.WithDefaultResource("todos"),
 )
 ```
 
@@ -721,6 +596,6 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
 ## See Also
 
 - [OpenAPI](/contract/openapi) - OpenAPI specification generation
-- [tRPC Transport](/contract/trpc) - tRPC metadata endpoint
-- [REST Transport](/contract/rest) - REST endpoints
-- [JSON-RPC Transport](/contract/jsonrpc) - JSON-RPC endpoints
+- [REST](/contract/rest) - REST endpoints
+- [JSON-RPC](/contract/jsonrpc) - JSON-RPC endpoints
+- [MCP](/contract/mcp) - MCP for AI assistants

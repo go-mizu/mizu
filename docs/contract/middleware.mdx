@@ -38,7 +38,7 @@ The most common way to add middleware is by creating a custom invoker that wraps
 ### Basic Structure
 
 ```go
-import "github.com/go-mizu/mizu/contract"
+import contract "github.com/go-mizu/mizu/contract/v2"
 
 // A custom invoker wraps the default invoker
 type LoggingInvoker struct {
@@ -67,10 +67,10 @@ Pass your invoker when mounting transports:
 
 ```go
 import (
-    "github.com/go-mizu/mizu/contract"
-    "github.com/go-mizu/mizu/contract/transport/mcp"
-    "github.com/go-mizu/mizu/contract/transport/trpc"
-    "github.com/go-mizu/mizu/contract/transport/jsonrpc"
+    contract "github.com/go-mizu/mizu/contract/v2"
+    "github.com/go-mizu/mizu/contract/v2/transport/mcp"
+    "github.com/go-mizu/mizu/contract/v2/transport/jsonrpc"
+    "github.com/go-mizu/mizu/contract/v2/transport/rest"
 )
 
 // Create the custom invoker
@@ -78,14 +78,14 @@ loggingInvoker := &LoggingInvoker{
     inner: contract.DefaultInvoker(svc),  // Wrap the default
 }
 
-// Use with MCP
-mcp.Mount(mux, "/mcp", svc, mcp.WithInvoker(loggingInvoker))
+// Use with REST
+rest.Mount(app.Router, svc, rest.WithInvoker(loggingInvoker))
 
-// Use with tRPC
-trpc.Mount(mux, "/trpc", svc, trpc.WithInvoker(loggingInvoker))
+// Use with MCP
+mcp.Mount(app.Router, "/mcp", svc, mcp.WithInvoker(loggingInvoker))
 
 // Use with JSON-RPC
-jsonrpc.Mount(mux, "/rpc", svc, jsonrpc.WithInvoker(loggingInvoker))
+jsonrpc.Mount(app.Router, "/rpc", svc, jsonrpc.WithInvoker(loggingInvoker))
 ```
 
 ## Common Middleware Examples
@@ -479,7 +479,10 @@ Use both together for complete coverage:
 
 ```go
 func main() {
-    svc, _ := contract.Register("todo", &TodoService{})
+    impl := &todoService{}
+    svc := contract.Register[TodoAPI](impl,
+        contract.WithDefaultResource("todos"),
+    )
 
     // Create invoker middleware chain
     invoker := ChainInvokers(

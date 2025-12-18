@@ -1,142 +1,59 @@
 ---
 title: "Reference"
-description: "Complete reference for all Contract functions, types, and options"
+description: "Complete reference for all Contract v2 functions, types, and options"
 ---
 
 # API Reference
 
-This page documents all public functions, types, and options in the Contract package.
+This page documents all public functions, types, and options in the Contract v2 package.
 
 ## Main Package
 
-Import: `github.com/go-mizu/mizu/contract`
+Import: `github.com/go-mizu/mizu/contract/v2`
 
 ### Functions
 
 #### Register
 
-Registers a Go struct as a Contract service.
+Registers a Go interface implementation as a Contract service.
 
 ```go
-func Register(name string, service any, opts ...Option) (*Service, error)
+func Register[T any](impl T, opts ...Option) *RegisteredService
 ```
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `name` | `string` | Service name (used in URLs and method prefixes) |
-| `service` | `any` | Pointer to your service struct |
+| `T` | type parameter | The interface type that defines your API |
+| `impl` | `T` | Your implementation that satisfies the interface |
 | `opts` | `...Option` | Optional configuration |
 
-**Returns:** `*Service` and an error if registration fails.
+**Returns:** `*RegisteredService` for mounting on transports.
 
 **Example:**
 ```go
-svc, err := contract.Register("todo", &TodoService{})
-if err != nil {
-    log.Fatal(err)
+type TodoAPI interface {
+    Create(ctx context.Context, in *CreateInput) (*Todo, error)
+    List(ctx context.Context) (*ListOutput, error)
 }
-```
 
----
-
-#### MountREST
-
-Mounts REST endpoints on an HTTP mux.
-
-```go
-func MountREST(mux *http.ServeMux, svc *Service, opts ...RESTOption)
-```
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `mux` | `*http.ServeMux` | HTTP router |
-| `svc` | `*Service` | Registered service |
-| `opts` | `...RESTOption` | Optional configuration |
-
-**Endpoints created:** `/{plural-name}` and `/{plural-name}/{id}`
-
-**Example:**
-```go
-contract.MountREST(mux, svc)
-// Creates: POST /todos, GET /todos, GET /todos/{id}, PUT /todos/{id}, DELETE /todos/{id}
-```
-
----
-
-#### MountJSONRPC
-
-Mounts a JSON-RPC 2.0 endpoint.
-
-```go
-func MountJSONRPC(mux *http.ServeMux, path string, svc *Service, opts ...JSONRPCOption)
-```
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `mux` | `*http.ServeMux` | HTTP router |
-| `path` | `string` | URL path for the endpoint |
-| `svc` | `*Service` | Registered service |
-| `opts` | `...JSONRPCOption` | Optional configuration |
-
-**Example:**
-```go
-contract.MountJSONRPC(mux, "/rpc", svc)
-```
-
----
-
-#### ServeOpenAPI
-
-Serves an OpenAPI 3.1 specification.
-
-```go
-func ServeOpenAPI(mux *http.ServeMux, path string, svc *Service)
-```
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `mux` | `*http.ServeMux` | HTTP router |
-| `path` | `string` | URL path for the spec |
-| `svc` | `*Service` | Registered service |
-
-**Example:**
-```go
-contract.ServeOpenAPI(mux, "/openapi.json", svc)
-```
-
----
-
-#### DefaultInvoker
-
-Returns the default transport invoker for a service.
-
-```go
-func DefaultInvoker(svc *Service) TransportInvoker
-```
-
-Use this when you need to wrap the invoker with middleware.
-
-**Example:**
-```go
-invoker := contract.DefaultInvoker(svc)
-customInvoker := &LoggingInvoker{inner: invoker}
+impl := &todoService{}
+svc := contract.Register[TodoAPI](impl,
+    contract.WithName("Todo"),
+    contract.WithDefaultResource("todos"),
+)
 ```
 
 ---
 
 ### Types
 
-#### Service
+#### RegisteredService
 
-A registered service with metadata and compiled invokers.
+A registered service ready to be mounted on transports.
 
 ```go
-type Service struct {
-    Name        string        // Service name
-    Description string        // Optional description
-    Version     string        // Optional version
-    Methods     []*Method     // All discovered methods
-    Types       *TypeRegistry // Type information and schemas
+type RegisteredService struct {
+    // ... internal fields
 }
 ```
 
@@ -144,7 +61,37 @@ type Service struct {
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `Resolve(name string)` | `*Method` | Find method by name |
+| `Descriptor()` | `*ServiceDescriptor` | Get service metadata |
+| `Call(ctx, resource, method, input)` | `(any, error)` | Invoke a method programmatically |
+| `NewInput(resource, method)` | `(any, error)` | Create new input instance |
+
+---
+
+#### ServiceDescriptor
+
+Metadata about a registered service.
+
+```go
+type ServiceDescriptor struct {
+    Name        string      // Service name
+    Description string      // Optional description
+    Resources   []*Resource // All resources
+    Types       []*TypeInfo // All discovered types
+}
+```
+
+---
+
+#### Resource
+
+A group of related methods (e.g., "todos").
+
+```go
+type Resource struct {
+    Name    string    // Resource name (e.g., "todos")
+    Methods []*Method // Methods in this resource
+}
+```
 
 ---
 
@@ -154,105 +101,39 @@ Metadata for a single method.
 
 ```go
 type Method struct {
-    Name        string      // Method name (e.g., "Create")
-    FullName    string      // Service.Method (e.g., "todo.Create")
-    Description string      // Optional description
-    Input       *TypeRef    // Input type reference (nil if no input)
-    Output      *TypeRef    // Output type reference (nil if no output)
-    Invoker     Invoker     // Pre-compiled method caller
-}
-```
-
-**Methods:**
-
-| Method | Returns | Description |
-|--------|---------|-------------|
-| `HasInput()` | `bool` | Whether method accepts input |
-| `HasOutput()` | `bool` | Whether method returns output |
-| `NewInput()` | `any` | Create new input instance |
-
----
-
-#### TypeRef
-
-Reference to a type with its schema.
-
-```go
-type TypeRef struct {
-    ID     string       // Unique identifier (e.g., "todo.CreateInput")
-    Name   string       // Type name (e.g., "CreateInput")
-    Type   reflect.Type // Go reflect type
-    Schema *Schema      // JSON Schema
+    Name        string       // Method name (e.g., "create")
+    Description string       // Optional description
+    Input       *TypeInfo    // Input type (nil if no input)
+    Output      *TypeInfo    // Output type (nil if no output)
+    HTTP        *HTTPBinding // HTTP method and path
+    Stream      StreamMode   // Streaming mode if any
 }
 ```
 
 ---
 
-#### TypeRegistry
+#### TypeInfo
 
-Manages Go types and their JSON schemas.
-
-```go
-type TypeRegistry struct {
-    // ... internal fields
-}
-```
-
-**Methods:**
-
-| Method | Returns | Description |
-|--------|---------|-------------|
-| `Schema(id string)` | `*Schema` | Get schema by ID |
-| `Schemas()` | `[]*Schema` | Get all schemas |
-
----
-
-#### Schema
-
-JSON Schema for a type.
+Information about a type used in the API.
 
 ```go
-type Schema struct {
-    ID   string         // Schema identifier
-    JSON map[string]any // JSON Schema object
+type TypeInfo struct {
+    Name   string         // Type name (e.g., "CreateInput")
+    Kind   string         // Type kind (struct, slice, etc.)
+    Schema map[string]any // JSON Schema
 }
 ```
 
 ---
 
-### Interfaces
+#### HTTPBinding
 
-#### Invoker
-
-Low-level interface for calling methods.
+HTTP method and path for a method.
 
 ```go
-type Invoker interface {
-    Call(ctx context.Context, in any) (any, error)
-}
-```
-
----
-
-#### TransportInvoker
-
-Higher-level interface for transports (accepts raw bytes).
-
-```go
-type TransportInvoker interface {
-    Invoke(ctx context.Context, method *Method, input []byte) (any, error)
-}
-```
-
----
-
-#### Resolver
-
-Interface for finding methods by name.
-
-```go
-type Resolver interface {
-    Resolve(name string) *Method
+type HTTPBinding struct {
+    Method string // HTTP method (GET, POST, etc.)
+    Path   string // URL path pattern
 }
 ```
 
@@ -260,134 +141,127 @@ type Resolver interface {
 
 ### Options
 
-#### Registration Options
+#### WithName
+
+Sets the service name:
 
 ```go
-// Set service description
-contract.WithDescription("Todo management service")
-
-// Set service version
-contract.WithVersion("1.0.0")
+contract.WithName("Todo")
 ```
 
-**Usage:**
+#### WithDescription
+
+Sets the service description:
+
 ```go
-svc, err := contract.Register("todo", &TodoService{},
-    contract.WithDescription("Manages todo items"),
-    contract.WithVersion("2.0.0"),
-)
+contract.WithDescription("Todo management API")
 ```
 
----
+#### WithDefaultResource
 
-## MCP Package
-
-Import: `github.com/go-mizu/mizu/contract/transport/mcp`
-
-### Functions
-
-#### Mount
-
-Mounts MCP endpoint.
+Groups all methods under a resource name:
 
 ```go
-func Mount(mux *http.ServeMux, path string, svc *contract.Service, opts ...Option)
+contract.WithDefaultResource("todos")
 ```
 
-**Example:**
+#### WithResource
+
+Groups specific methods under a resource:
+
 ```go
-mcp.Mount(mux, "/mcp", svc)
+contract.WithResource("users", "CreateUser", "GetUser", "ListUsers")
 ```
 
----
+#### WithMethodHTTP
 
-#### NewHandler
-
-Creates an MCP HTTP handler.
+Override HTTP binding for a method:
 
 ```go
-func NewHandler(svc *contract.Service, opts ...Option) http.Handler
+contract.WithMethodHTTP("Archive", "POST", "/todos/{id}/archive")
 ```
 
----
+#### WithHTTP
 
-### Options
+Set HTTP bindings for multiple methods:
 
 ```go
-// Custom method resolver
-mcp.WithResolver(resolver)
-
-// Custom invoker (for middleware)
-mcp.WithInvoker(invoker)
-
-// Server information
-mcp.WithServerInfo(mcp.ServerInfo{
-    Name:    "my-api",
-    Version: "1.0.0",
+contract.WithHTTP(map[string]contract.HTTPBinding{
+    "Create": {Method: "POST", Path: "/v1/todos"},
+    "Get":    {Method: "GET", Path: "/v1/todos/{id}"},
 })
-
-// Instructions for AI
-mcp.WithInstructions("Use these tools to manage todos.")
-
-// Allowed CORS origins
-mcp.WithAllowedOrigins("https://claude.ai")
 ```
 
----
+#### WithDefaults
 
-### Types
-
-#### ServerInfo
+Set global defaults:
 
 ```go
-type ServerInfo struct {
-    Name    string `json:"name"`
-    Version string `json:"version"`
-}
+contract.WithDefaults(contract.Defaults{
+    BaseURL: "https://api.example.com",
+})
+```
+
+#### WithStreaming
+
+Mark a method as streaming:
+
+```go
+contract.WithStreaming("Chat", contract.StreamSSE)
+```
+
+**Usage Example:**
+```go
+svc := contract.Register[TodoAPI](impl,
+    contract.WithName("Todo"),
+    contract.WithDescription("Manages todo items"),
+    contract.WithDefaultResource("todos"),
+)
 ```
 
 ---
 
-## tRPC Package
+## REST Package
 
-Import: `github.com/go-mizu/mizu/contract/transport/trpc`
+Import: `github.com/go-mizu/mizu/contract/v2/transport/rest`
 
 ### Functions
 
 #### Mount
 
-Mounts tRPC endpoints.
+Mounts REST endpoints on a router.
 
 ```go
-func Mount(mux *http.ServeMux, path string, svc *contract.Service, opts ...Option)
+func Mount(router *mizu.Router, svc *contract.RegisteredService, opts ...Option)
 ```
 
-**Creates:** `POST {path}/{method}` and `GET {path}.meta`
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `router` | `*mizu.Router` | Mizu router |
+| `svc` | `*RegisteredService` | Registered service |
+| `opts` | `...Option` | Optional configuration |
+
+**Endpoints created based on method names:**
+- `Create` -> `POST /{resource}`
+- `List` -> `GET /{resource}`
+- `Get` -> `GET /{resource}/{id}`
+- `Update` -> `PUT /{resource}/{id}`
+- `Delete` -> `DELETE /{resource}/{id}`
 
 **Example:**
 ```go
-trpc.Mount(mux, "/trpc", svc)
-// POST /trpc/Create, POST /trpc/List, GET /trpc.meta
+rest.Mount(app.Router, svc)
+// Creates: POST /todos, GET /todos, GET /todos/{id}, PUT /todos/{id}, DELETE /todos/{id}
 ```
 
 ---
 
 #### NewHandler
 
-Creates a tRPC HTTP handler.
+Creates an HTTP handler for the service.
 
 ```go
-func NewHandler(svc *contract.Service, opts ...Option) http.Handler
-```
-
----
-
-#### NewMetaHandler
-
-Creates handler for the `.meta` endpoint.
-
-```go
-func NewMetaHandler(svc *contract.Service) http.Handler
+func NewHandler(svc *contract.RegisteredService, opts ...Option) http.Handler
 ```
 
 ---
@@ -395,75 +269,50 @@ func NewMetaHandler(svc *contract.Service) http.Handler
 ### Options
 
 ```go
-// Custom method resolver
-trpc.WithResolver(resolver)
-
 // Custom invoker (for middleware)
-trpc.WithInvoker(invoker)
-```
+rest.WithInvoker(invoker)
 
----
-
-### Types
-
-#### Envelope
-
-Response envelope for all tRPC responses.
-
-```go
-type Envelope struct {
-    Result *Result `json:"result,omitempty"`
-    Error  *Error  `json:"error,omitempty"`
-}
-
-type Result struct {
-    Data any `json:"data"`
-}
-
-type Error struct {
-    Code    ErrorCode `json:"code"`
-    Message string    `json:"message"`
-}
-```
-
-#### ErrorCode
-
-```go
-type ErrorCode string
-
-const (
-    CodeBadRequest    ErrorCode = "BAD_REQUEST"
-    CodeInternalError ErrorCode = "INTERNAL_ERROR"
-    CodeNotFound      ErrorCode = "NOT_FOUND"
-    CodeUnauthorized  ErrorCode = "UNAUTHORIZED"
-    CodeForbidden     ErrorCode = "FORBIDDEN"
-)
+// Custom path prefix
+rest.WithPrefix("/api/v1")
 ```
 
 ---
 
 ## JSON-RPC Package
 
-Import: `github.com/go-mizu/mizu/contract/transport/jsonrpc`
+Import: `github.com/go-mizu/mizu/contract/v2/transport/jsonrpc`
 
 ### Functions
 
 #### Mount
 
-Mounts JSON-RPC endpoint.
+Mounts a JSON-RPC 2.0 endpoint.
 
 ```go
-func Mount(mux *http.ServeMux, path string, svc *contract.Service, opts ...Option)
+func Mount(router *mizu.Router, path string, svc *contract.RegisteredService, opts ...Option)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `router` | `*mizu.Router` | Mizu router |
+| `path` | `string` | URL path for the endpoint |
+| `svc` | `*RegisteredService` | Registered service |
+| `opts` | `...Option` | Optional configuration |
+
+**Example:**
+```go
+jsonrpc.Mount(app.Router, "/rpc", svc)
+// Methods available as: todos.create, todos.list, todos.get, etc.
 ```
 
 ---
 
 #### NewHandler
 
-Creates JSON-RPC HTTP handler.
+Creates a JSON-RPC HTTP handler.
 
 ```go
-func NewHandler(svc *contract.Service, opts ...Option) http.Handler
+func NewHandler(svc *contract.RegisteredService, opts ...Option) http.Handler
 ```
 
 ---
@@ -471,7 +320,7 @@ func NewHandler(svc *contract.Service, opts ...Option) http.Handler
 ### Options
 
 ```go
-jsonrpc.WithResolver(resolver)
+// Custom invoker (for middleware)
 jsonrpc.WithInvoker(invoker)
 ```
 
@@ -513,9 +362,74 @@ type Error struct {
 
 ---
 
+## MCP Package
+
+Import: `github.com/go-mizu/mizu/contract/v2/transport/mcp`
+
+### Functions
+
+#### Mount
+
+Mounts MCP endpoint.
+
+```go
+func Mount(router *mizu.Router, path string, svc *contract.RegisteredService, opts ...Option)
+```
+
+**Example:**
+```go
+mcp.Mount(app.Router, "/mcp", svc)
+```
+
+---
+
+#### NewHandler
+
+Creates an MCP HTTP handler.
+
+```go
+func NewHandler(svc *contract.RegisteredService, opts ...Option) http.Handler
+```
+
+---
+
+### Options
+
+```go
+// Server information
+mcp.WithServerInfo(mcp.ServerInfo{
+    Name:    "my-api",
+    Version: "1.0.0",
+})
+
+// Instructions for AI
+mcp.WithInstructions("Use these tools to manage todos.")
+
+// Allowed CORS origins
+mcp.WithAllowedOrigins("https://claude.ai")
+
+// Custom invoker (for middleware)
+mcp.WithInvoker(invoker)
+```
+
+---
+
+### Types
+
+#### ServerInfo
+
+```go
+type ServerInfo struct {
+    Name    string `json:"name"`
+    Version string `json:"version"`
+}
+```
+
+---
+
 ## OpenAPI Package
 
-Import: `github.com/go-mizu/mizu/contract/transport/openapi`
+Import: `github.com/go-mizu/mizu/contract/v2/transport/openapi`
 
 ### Functions
 
@@ -524,7 +438,12 @@ Import: `github.com/go-mizu/mizu/contract/transport/openapi`
 Mounts OpenAPI spec endpoint.
 
 ```go
-func Mount(mux *http.ServeMux, path string, svc *contract.Service)
+func Mount(router *mizu.Router, path string, svc *contract.RegisteredService)
+```
+
+**Example:**
+```go
+openapi.Mount(app.Router, "/openapi.json", svc)
 ```
 
 ---
@@ -534,7 +453,7 @@ func Mount(mux *http.ServeMux, path string, svc *contract.Service)
 Generates OpenAPI document from service.
 
 ```go
-func Generate(svc *contract.Service) *Document
+func Generate(svc *contract.RegisteredService) *Document
 ```
 
 ---
@@ -677,60 +596,92 @@ package main
 
 import (
     "context"
-    "log"
-    "net/http"
 
-    "github.com/go-mizu/mizu/contract"
-    "github.com/go-mizu/mizu/contract/transport/mcp"
-    "github.com/go-mizu/mizu/contract/transport/trpc"
+    "github.com/go-mizu/mizu"
+    contract "github.com/go-mizu/mizu/contract/v2"
+    "github.com/go-mizu/mizu/contract/v2/transport/rest"
+    "github.com/go-mizu/mizu/contract/v2/transport/jsonrpc"
+    "github.com/go-mizu/mizu/contract/v2/transport/mcp"
+    "github.com/go-mizu/mizu/contract/v2/transport/openapi"
 )
 
-// Service
-type TodoService struct{}
-
-// Types
-type CreateInput struct {
-    Title string `json:"title"`
+// Interface
+type TodoAPI interface {
+    Create(ctx context.Context, in *CreateInput) (*Todo, error)
+    List(ctx context.Context) (*ListOutput, error)
+    Get(ctx context.Context, in *GetInput) (*Todo, error)
+    Delete(ctx context.Context, in *DeleteInput) error
 }
 
+// Types
 type Todo struct {
     ID    string `json:"id"`
     Title string `json:"title"`
 }
 
-// Methods
-func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+type CreateInput struct {
+    Title string `json:"title"`
+}
+
+type GetInput struct {
+    ID string `json:"id" path:"id"`
+}
+
+type DeleteInput struct {
+    ID string `json:"id" path:"id"`
+}
+
+type ListOutput struct {
+    Items []*Todo `json:"items"`
+}
+
+// Implementation
+type todoService struct{}
+
+func (s *todoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
     if in.Title == "" {
         return nil, contract.ErrInvalidArgument("title is required")
     }
     return &Todo{ID: "1", Title: in.Title}, nil
 }
 
+func (s *todoService) List(ctx context.Context) (*ListOutput, error) {
+    return &ListOutput{Items: []*Todo{}}, nil
+}
+
+func (s *todoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
+    return &Todo{ID: in.ID, Title: "Sample"}, nil
+}
+
+func (s *todoService) Delete(ctx context.Context, in *DeleteInput) error {
+    return nil
+}
+
 func main() {
+    impl := &todoService{}
+
     // Register
-    svc, err := contract.Register("todo", &TodoService{},
-        contract.WithVersion("1.0.0"),
+    svc := contract.Register[TodoAPI](impl,
+        contract.WithName("Todo"),
+        contract.WithDefaultResource("todos"),
     )
-    if err != nil {
-        log.Fatal(err)
-    }
+
+    // Create app
+    app := mizu.New()
 
     // Mount transports
-    mux := http.NewServeMux()
-    contract.MountREST(mux, svc)
-    contract.MountJSONRPC(mux, "/rpc", svc)
-    contract.ServeOpenAPI(mux, "/openapi.json", svc)
-    trpc.Mount(mux, "/trpc", svc)
-    mcp.Mount(mux, "/mcp", svc)
+    rest.Mount(app.Router, svc)
+    jsonrpc.Mount(app.Router, "/rpc", svc)
+    mcp.Mount(app.Router, "/mcp", svc)
+    openapi.Mount(app.Router, "/openapi.json", svc)
 
-    log.Println("Server running on :8080")
-    http.ListenAndServe(":8080", mux)
+    app.Listen(":8080")
 }
 ```
 
 ## See Also
 
 - [Quick Start](/contract/quick-start) - Get started quickly
-- [Service Definition](/contract/service) - Method signatures in detail
-- [Error Handling](/contract/errors) - Error patterns
-- [Transports Overview](/contract/transports-overview) - All transports
+- [Services](/contract/service) - Method signatures in detail
+- [Errors](/contract/errors) - Error patterns
+- [Overview](/contract/transports-overview) - All transports

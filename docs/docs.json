@@ -101,7 +101,6 @@
               "contract/rest",
               "contract/jsonrpc",
               "contract/mcp",
-              "contract/trpc",
               "contract/openapi"
             ]
           },
