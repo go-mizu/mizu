@@ -6,124 +6,76 @@
 ## Overview
 Fix the goreleaser configuration, Dockerfile, and ensure the `make release` command works correctly with the existing GitHub Actions release workflow.
 
-## Current Issues
+## Issues Found and Fixed
 
-### 1. Goreleaser Config (`before.hooks` format)
-The current configuration uses map format for hooks which is not supported:
-```yaml
-before:
-  hooks:
-    - cmd: go mod tidy
-      dir: cmd
-    - cmd: go mod verify
-      dir: cmd
-```
+### 1. Dockerfile - GOWORK Conflict (Fixed)
+**Problem**: `go mod download` failed with "conflicting replacements" error because `go.work` was copied into the Docker context and `GOWORK=off` was only set for the build command.
 
-This produces the error:
-```
-yaml: unmarshal errors:
-  line 11: cannot unmarshal !!map into string
-  line 13: cannot unmarshal !!map into string
-```
+**Fix**: Added `ENV GOWORK=off` before the `go mod download` step.
 
-**Fix**: Use string format with shell commands:
-```yaml
-before:
-  hooks:
-    - 'cd cmd && go mod tidy'
-    - 'cd cmd && go mod verify'
-```
+### 2. .dockerignore - Truncated File (Fixed)
+**Problem**: File was truncated (ended with "# Docker-relat") and missing `go.work` exclusion.
 
-### 1b. Goreleaser Go Workspace Conflict
-When `go.work` exists, goreleaser's module info loading step fails with conflicting replacements.
+**Fix**: Completed the file and added `go.work` and `go.work.sum` exclusions.
 
-**Fix**: Add global `GOWORK=off` environment variable:
-```yaml
-env:
-  - GOWORK=off
-```
-
-### 2. Dockerfile Build Path Issues
-The Dockerfile has incorrect paths for the CLI module:
-
-1. **Ldflags path**: Uses `github.com/go-mizu/mizu/cli` but should be `github.com/go-mizu/mizu/cmd/cli`
-2. **Build command**: Doesn't account for the separate `cmd/` module with its own `go.mod`
-3. **Module download**: Copies root `go.mod` but CLI has separate `cmd/go.mod`
-
-**Current (broken)**:
-```dockerfile
-COPY go.mod go.sum* ./
-RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
-  -ldflags="-s -w \
-    -X github.com/go-mizu/mizu/cli.Version=${VERSION} \
-    ..." \
-  -o /out/mizu ./cmd/mizu
-```
-
-**Fix**: Handle the cmd/ module properly:
-```dockerfile
-WORKDIR /src
-COPY . .
-WORKDIR /src/cmd
-RUN go mod download
-RUN CGO_ENABLED=0 GOOS=linux GOWORK=off go build -trimpath \
-  -ldflags="-s -w \
-    -X github.com/go-mizu/mizu/cmd/cli.Version=${VERSION} \
-    ..." \
-  -o /out/mizu ./mizu
-```
-
-### 3. Makefile Release Targets
-The Makefile already has `release`, `release-check`, and `release-snapshot` targets. These are correct but depend on the goreleaser config being fixed.
-
-## Implementation Plan
-
-### Step 1: Fix Goreleaser Hooks
-Change the before.hooks section from map format to string format.
-
-### Step 2: Fix Dockerfile
-Update the Dockerfile to:
-- Use correct ldflags paths (`cmd/cli` instead of `cli`)
-- Handle the cmd/ module structure with GOWORK=off
-- Copy files and build from the correct directory
-
-### Step 3: Validate Configuration
-Run `goreleaser check` to ensure config is valid.
-
-### Step 4: Test Snapshot Release
-Run `make release-snapshot` to test the full build process locally (without publishing).
+### 3. Goreleaser Config - Already Working
+The `.goreleaser.yaml` was correctly configured:
+- Uses string format for before hooks: `'cd cmd && go mod tidy'`
+- Has `GOWORK=off` in global env and build env
+- `make release-check` passes
+- `make release-snapshot` succeeds
 
 ## File Changes
 
-### .goreleaser.yaml
-```yaml
-# Global environment - disable go workspace
-env:
-  - GOWORK=off
+### .dockerignore
+Added:
+```
+# Docker-related
+Dockerfile*
 
-# Before hooks - use string format with cd
-before:
-  hooks:
-    - 'cd cmd && go mod tidy'
-    - 'cd cmd && go mod verify'
+# Go workspace (causes conflicts during build)
+go.work
+go.work.sum
+
+# Spec files
+spec/
 ```
 
 ### Dockerfile
-- Fix ldflags path: `github.com/go-mizu/mizu/cli` -> `github.com/go-mizu/mizu/cmd/cli`
-- Change build strategy to work with cmd/ module
-- Add `GOWORK=off` to build command
+Added `ENV GOWORK=off` after build dependencies:
+```dockerfile
+FROM golang:1.25-alpine AS builder
+RUN apk add --no-cache git ca-certificates tzdata
+ENV GOWORK=off  # <-- Added this line
+```
 
-## Verification
+## Makefile Release Targets
+Already complete:
+- `make release-check` - Validate goreleaser configuration
+- `make release-snapshot` - Build a snapshot release locally
+- `make release` - Build and publish a release (requires GITHUB_TOKEN)
 
-1. `make release-check` - validates goreleaser config
-2. `make release-snapshot` - builds snapshot locally
-3. `docker build .` - verifies Dockerfile works
+## Verification Results
+
+```bash
+# Goreleaser config validation
+$ make release-check
+✓ 1 configuration file(s) validated
+
+# Docker build
+$ docker build -t mizu-test:latest .
+✓ Successfully built
+
+# Docker image test
+$ docker run --rm mizu-test:latest version
+mizu version dev
+go version: go1.25.5
+commit: unknown
+built: unknown
+```
 
 ## GitHub Actions Integration
-
-The existing `.github/workflows/release.yml` is already set up correctly:
+The existing `.github/workflows/release.yml` is correctly configured:
 - Triggers on `v*` tags
 - Uses goreleaser-action v6 with `version: "~> v2"`
 - Logs into GHCR for Docker image publishing

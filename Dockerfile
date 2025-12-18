@@ -7,6 +7,9 @@ FROM golang:1.25-alpine AS builder
 # Build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
 
+# Disable go workspace to avoid conflicts with cmd/ module
+ENV GOWORK=off
+
 WORKDIR /src
 
 # Copy source (includes cmd/go.mod with replace directive)
