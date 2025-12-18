@@ -96,6 +96,50 @@ func (o *Output) Warn(text string) string {
 	return warnStyle.Render(text)
 }
 
+// Green renders text in green (for success/create operations).
+func (o *Output) Green(text string) string {
+	if o.noColor {
+		return text
+	}
+	return successStyle.Render(text)
+}
+
+// Yellow renders text in yellow (for warnings/overwrites).
+func (o *Output) Yellow(text string) string {
+	if o.noColor {
+		return text
+	}
+	return warnStyle.Render(text)
+}
+
+// Error formats an error message with consistent "Error:" prefix styling.
+func (o *Output) Error(text string) string {
+	if o.noColor {
+		return "Error: " + text
+	}
+	return errorStyle.Render("Error:") + " " + text
+}
+
+// Hint formats a hint message with consistent "hint:" prefix styling.
+func (o *Output) Hint(text string) string {
+	if o.noColor {
+		return "hint: " + text
+	}
+	return dimStyle.Render("hint:") + " " + text
+}
+
+// PrintError prints a formatted error message to stderr.
+func (o *Output) PrintError(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	o.Errorf("%s\n", o.Error(msg))
+}
+
+// PrintHint prints a formatted hint message.
+func (o *Output) PrintHint(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	o.Print("%s\n", o.Hint(msg))
+}
+
 // WriteJSON writes a JSON-encoded value to stdout.
 func (o *Output) WriteJSON(v any) error {
 	enc := json.NewEncoder(o.Stdout)

@@ -56,7 +56,7 @@ func runDevCmd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		emitDevEventNew(out, "error", err.Error(), 0)
 		if !Flags.JSON {
-			out.Errorf("Error: %v\n", err)
+			out.PrintError("%v", err)
 		}
 		return err
 	}
@@ -89,7 +89,7 @@ func runDevCmd(cmd *cobra.Command, args []string) error {
 	if err := execCmd.Start(); err != nil {
 		emitDevEventNew(out, "error", err.Error(), 0)
 		if !Flags.JSON {
-			out.Errorf("Error: failed to start: %v\n", err)
+			out.PrintError("failed to start: %v", err)
 		}
 		return err
 	}

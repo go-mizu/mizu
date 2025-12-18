@@ -128,8 +128,8 @@ func runContractLsCmd(cmd *cobra.Command, args []string) error {
 		if Flags.JSON {
 			emitContractErrorNew(out, err)
 		} else {
-			out.Errorf("Error: %v\n", err)
-			out.Print("\nhint: is the server running? try: mizu dev\n")
+			out.PrintError("%v", err)
+			out.PrintHint("is the server running? try: mizu dev")
 		}
 		return err
 	}
@@ -193,7 +193,7 @@ func runContractShowCmd(cmd *cobra.Command, args []string) error {
 		if Flags.JSON {
 			emitContractErrorNew(out, err)
 		} else {
-			out.Errorf("Error: %v\n", err)
+			out.PrintError("%v", err)
 		}
 		return err
 	}
@@ -218,7 +218,7 @@ func runContractShowCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	if method == nil {
-		out.Errorf("Error: method not found: %s\n", methodName)
+		out.PrintError("method not found: %s", methodName)
 		if len(suggestions) > 0 {
 			out.Print("\ndid you mean?\n")
 			for _, s := range suggestions {
@@ -324,7 +324,7 @@ func runContractCallCmd(cmd *cobra.Command, args []string) error {
 		var err error
 		input, err = readInputData(inputData)
 		if err != nil {
-			out.Errorf("Error: %v\n", err)
+			out.PrintError("%v", err)
 			return err
 		}
 	}
@@ -334,7 +334,7 @@ func runContractCallCmd(cmd *cobra.Command, args []string) error {
 		if Flags.JSON {
 			emitContractErrorNew(out, err)
 		} else {
-			out.Errorf("Error: %v\n", err)
+			out.PrintError("%v", err)
 		}
 		return err
 	}
@@ -355,15 +355,15 @@ func runContractCallCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	if method == nil {
-		out.Errorf("Error: method not found: %s\n", methodName)
+		out.PrintError("method not found: %s", methodName)
 		return fmt.Errorf("method not found: %s", methodName)
 	}
 
 	// Validate input requirement
 	if method.Input != nil && len(input) == 0 {
-		out.Errorf("Error: missing required input\n")
+		out.PrintError("missing required input")
 		out.Print("  the %s method requires input\n", method.FullName)
-		out.Print("\nhint: mizu contract call %s '{...}'\n", method.FullName)
+		out.PrintHint("mizu contract call %s '{...}'", method.FullName)
 		out.Print("      mizu contract show %s  # see input schema\n", method.FullName)
 		return fmt.Errorf("missing required input")
 	}
@@ -381,12 +381,14 @@ func runContractCallCmd(cmd *cobra.Command, args []string) error {
 		if Flags.JSON {
 			emitContractErrorNew(out, err)
 		} else {
-			out.Errorf("Error: %v\n", err)
+			out.PrintError("%v", err)
 		}
 		return err
 	}
 
 	// Output result
+	// NOTE: Raw fmt.Print is intentional here for unformatted API responses
+	// that users may pipe to other tools (jq, etc.)
 	if contractFlags.raw {
 		fmt.Print(string(result))
 	} else {
@@ -420,7 +422,7 @@ func runContractSpecCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	if err != nil {
-		out.Errorf("Error: %v\n", err)
+		out.PrintError("%v", err)
 		return err
 	}
 
@@ -428,7 +430,7 @@ func runContractSpecCmd(cmd *cobra.Command, args []string) error {
 	if contractFlags.service != "" {
 		specData, err = filterSpecByService(specData, contractFlags.service)
 		if err != nil {
-			out.Errorf("Error: %v\n", err)
+			out.PrintError("%v", err)
 			return err
 		}
 	}
@@ -442,9 +444,10 @@ func runContractSpecCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Output
+	// NOTE: Raw fmt.Print is intentional for spec output that users pipe to files/tools
 	if contractFlags.output != "" {
 		if err := os.WriteFile(contractFlags.output, specData, 0644); err != nil {
-			out.Errorf("Error: %v\n", err)
+			out.PrintError("%v", err)
 			return err
 		}
 		out.Print("Wrote %s\n", contractFlags.output)
@@ -476,7 +479,7 @@ func runContractTypesCmd(cmd *cobra.Command, args []string) error {
 		if Flags.JSON {
 			emitContractErrorNew(out, err)
 		} else {
-			out.Errorf("Error: %v\n", err)
+			out.PrintError("%v", err)
 		}
 		return err
 	}
@@ -499,7 +502,7 @@ func runContractTypesCmd(cmd *cobra.Command, args []string) error {
 				return nil
 			}
 		}
-		out.Errorf("Error: type not found: %s\n", typeName)
+		out.PrintError("type not found: %s", typeName)
 		return fmt.Errorf("type not found: %s", typeName)
 	}
 
