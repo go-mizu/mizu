@@ -10,7 +10,7 @@ import (
 	"unicode"
 
 	contract "github.com/go-mizu/mizu/contract/v2"
-	"github.com/go-mizu/mizu/sdk"
+	"github.com/go-mizu/mizu/contract/v2/sdk"
 )
 
 // Config controls Go SDK generation.
