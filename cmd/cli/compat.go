@@ -7,17 +7,8 @@ import (
 	"strings"
 )
 
-// ANSI color codes.
-const (
-	colorReset  = "\033[0m"
-	colorGreen  = "\033[32m"
-	colorYellow = "\033[33m"
-	colorCyan   = "\033[36m"
-	colorGray   = "\033[90m"
-	colorBold   = "\033[1m"
-)
-
-// output handles CLI output with color, verbosity, and format support.
+// output is the legacy output type for backward compatibility.
+// New code should use Output instead.
 type output struct {
 	stdout  io.Writer
 	stderr  io.Writer
@@ -42,18 +33,28 @@ func (o *output) print(format string, args ...any) {
 	if o.quiet && !o.json {
 		return
 	}
-	_, _ = fmt.Fprintf(o.stdout, format, args...)
+	fmt.Fprintf(o.stdout, format, args...)
 }
 
 func (o *output) errorf(format string, args ...any) {
-	_, _ = fmt.Fprintf(o.stderr, format, args...)
+	fmt.Fprintf(o.stderr, format, args...)
 }
 
 func (o *output) verbosef(level int, format string, args ...any) {
 	if o.verbose >= level && !o.quiet {
-		_, _ = fmt.Fprintf(o.stderr, format, args...)
+		fmt.Fprintf(o.stderr, format, args...)
 	}
 }
+
+// ANSI color codes for legacy output.
+const (
+	colorReset  = "\033[0m"
+	colorGreen  = "\033[32m"
+	colorYellow = "\033[33m"
+	colorCyan   = "\033[36m"
+	colorGray   = "\033[90m"
+	colorBold   = "\033[1m"
+)
 
 func (o *output) color(c, text string) string {
 	if o.noColor {
@@ -67,18 +68,6 @@ func (o *output) yellow(text string) string { return o.color(colorYellow, text) 
 func (o *output) cyan(text string) string   { return o.color(colorCyan, text) }
 func (o *output) gray(text string) string   { return o.color(colorGray, text) }
 func (o *output) bold(text string) string   { return o.color(colorBold, text) }
-
-// isTerminal checks if w is a terminal (simplified check).
-func isTerminal(w io.Writer) bool {
-	if f, ok := w.(*os.File); ok {
-		info, err := f.Stat()
-		if err != nil {
-			return false
-		}
-		return (info.Mode() & os.ModeCharDevice) != 0
-	}
-	return false
-}
 
 // padRight pads s to width with spaces.
 func padRight(s string, width int) string {
