@@ -42,4 +42,12 @@ tmp
 temp
 *.tmp
 
-# Docker-relat
+# Docker-related
+Dockerfile*
+
+# Go workspace (causes conflicts during build)
+go.work
+go.work.sum
+
+# Spec files
+spec/
