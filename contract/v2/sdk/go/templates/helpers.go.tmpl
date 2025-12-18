@@ -1,0 +1,91 @@
+{{define "helpers.go.tmpl"}}
+// Errors and transport
+
+// Error represents an API error response.
+type Error struct {
+	StatusCode int    `json:"-"`
+	Code       string `json:"code,omitempty"`
+	Message    string `json:"message"`
+}
+
+func (e *Error) Error() string {
+	if e.Code != "" {
+		return fmt.Sprintf("%s: %s", e.Code, e.Message)
+	}
+	return e.Message
+}
+
+func (c *Client) do(ctx context.Context, method, path string, in, out any) error {
+	u := c.baseURL + path
+
+	var body io.Reader
+	if method != "GET" && in != nil {
+		b, err := json.Marshal(in)
+		if err != nil {
+			return err
+		}
+		body = bytes.NewReader(b)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, u, body)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	applyAuth(req, c.auth, c.token)
+
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return decodeError(resp)
+	}
+
+	if out == nil || resp.StatusCode == http.StatusNoContent {
+		return nil
+	}
+
+	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func applyAuth(req *http.Request, auth, token string) {
+	if token == "" {
+		return
+	}
+	a := strings.ToLower(strings.TrimSpace(auth))
+	if a == "" {
+		a = "bearer"
+	}
+	switch a {
+	case "none":
+		return
+	case "basic":
+		req.Header.Set("Authorization", "Basic "+token)
+	default:
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+}
+
+func decodeError(resp *http.Response) error {
+	var e Error
+	e.StatusCode = resp.StatusCode
+	if err := json.NewDecoder(resp.Body).Decode(&e); err != nil {
+		e.Message = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		return &e
+	}
+	if e.Message == "" {
+		e.Message = fmt.Sprintf("HTTP %d", resp.StatusCode)
+	}
+	return &e
+}
+
+var _ = strings.TrimSpace
+{{end}}
