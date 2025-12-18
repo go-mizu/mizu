@@ -105,6 +105,15 @@
             ]
           },
           {
+            "group": "SDK Generation",
+            "pages": [
+              "contract/sdk-overview",
+              "contract/sdk-go",
+              "contract/sdk-python",
+              "contract/sdk-typescript"
+            ]
+          },
+          {
             "group": "Advanced",
             "pages": [
               "contract/middleware",

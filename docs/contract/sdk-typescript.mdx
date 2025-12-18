@@ -1,0 +1,801 @@
+---
+title: "TypeScript SDK"
+description: "Generate runtime-agnostic, fully-typed TypeScript client libraries from your Contract services"
+---
+
+# TypeScript SDK Generator
+
+The TypeScript SDK generator (`sdkts`) creates modern TypeScript client libraries from your Contract services. The generated code works across Node.js, Bun, and Deno without modifications, uses native `fetch`, and provides full type inference with an OpenAI-style developer experience.
+
+## Key Features
+
+- **Runtime Agnostic**: Works on Node.js 18+, Bun, and Deno
+- **Zero Dependencies**: Uses native `fetch` API only
+- **TypeScript-First**: Full type inference and autocompletion
+- **ES Modules**: Modern JavaScript with `async/await`
+- **SSE Streaming**: First-class `AsyncIterable` streaming
+- **npm-Ready**: Includes `package.json` and `tsconfig.json`
+
+## Prerequisites
+
+Before generating a TypeScript SDK, you need:
+
+- A registered Contract service
+
+For running the generated SDK:
+- Node.js 18+ (for native fetch), Bun, or Deno
+- TypeScript 5.0+ (for type checking and compilation)
+
+## Quick Start
+
+### Step 1: Define Your Service
+
+```go
+// todo/api.go
+package todo
+
+type API interface {
+    Create(input CreateInput) (Todo, error)
+    List() (ListOutput, error)
+    Get(id string) (Todo, error)
+    Delete(id string) error
+}
+
+type Todo struct {
+    ID    string `json:"id"`
+    Title string `json:"title"`
+    Done  bool   `json:"done"`
+}
+
+type CreateInput struct {
+    Title string `json:"title"`
+}
+
+type ListOutput struct {
+    Items []Todo `json:"items"`
+    Total int    `json:"total"`
+}
+```
+
+### Step 2: Generate the SDK
+
+```go
+package main
+
+import (
+    "os"
+    "path/filepath"
+
+    "yourapp/todo"
+    contract "github.com/go-mizu/mizu/contract/v2"
+    sdkts "github.com/go-mizu/mizu/contract/v2/sdk/ts"
+)
+
+func main() {
+    impl := todo.NewService()
+    svc := contract.Register[todo.API](impl,
+        contract.WithDefaultResource("todos"),
+    )
+
+    files, err := sdkts.Generate(svc, &sdkts.Config{
+        Package: "todoclient",
+        Version: "1.0.0",
+    })
+    if err != nil {
+        panic(err)
+    }
+
+    // Write all files
+    for _, f := range files {
+        path := filepath.Join("sdk/typescript", f.Path)
+        os.MkdirAll(filepath.Dir(path), 0755)
+        os.WriteFile(path, []byte(f.Content), 0644)
+    }
+}
+```
+
+### Step 3: Install and Use
+
+```bash
+# Install dependencies and build
+cd sdk/typescript
+npm install
+npm run build
+```
+
+```typescript
+import { TodoService } from './dist/index.js';
+
+// Create a client
+const client = new TodoService({ baseURL: 'http://localhost:8080' });
+
+// Create a todo
+const todo = await client.todos.create({ title: 'Learn Mizu TypeScript SDK' });
+console.log(`Created: ${todo.id}`);
+
+// List all todos
+const result = await client.todos.list();
+console.log(`Total: ${result.total} todos`);
+
+// Get a specific todo
+const fetched = await client.todos.get({ id: todo.id });
+console.log(`Got: ${fetched.id} - ${fetched.title}`);
+
+// Delete
+await client.todos.delete({ id: todo.id });
+console.log('Deleted successfully');
+```
+
+## Generator API
+
+### Function Signature
+
+```go
+func Generate(svc *contract.Service, cfg *Config) ([]*sdk.File, error)
+```
+
+### Configuration
+
+```go
+type Config struct {
+    // Package is the npm package name.
+    // Default: sanitized lowercase service name, or "sdk".
+    Package string
+
+    // Version is the package version for package.json.
+    // Default: "0.0.0".
+    Version string
+}
+```
+
+### Return Value
+
+The generator returns multiple files:
+
+| File | Description |
+|------|-------------|
+| `package.json` | npm package configuration |
+| `tsconfig.json` | TypeScript compiler configuration |
+| `src/index.ts` | Main exports |
+| `src/_client.ts` | Client class with HTTP logic |
+| `src/_types.ts` | TypeScript type definitions |
+| `src/_resources.ts` | Resource classes |
+| `src/_streaming.ts` | SSE streaming utilities |
+
+## Generated Code Structure
+
+```
+sdk/typescript/
+├── package.json
+├── tsconfig.json
+└── src/
+    ├── index.ts
+    ├── _client.ts
+    ├── _types.ts
+    ├── _resources.ts
+    └── _streaming.ts
+```
+
+### package.json
+
+```json
+{
+  "name": "todoclient",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
+```
+
+### tsconfig.json
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2020", "DOM"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*"]
+}
+```
+
+## Client Configuration
+
+### Creating a Client
+
+```typescript
+import { TodoService } from 'todoclient';
+
+// Basic client
+const client = new TodoService({ baseURL: 'http://localhost:8080' });
+
+// With authentication
+const client = new TodoService({
+  apiKey: 'your-api-key',
+  baseURL: 'http://localhost:8080',
+});
+
+// With all options
+const client = new TodoService({
+  apiKey: 'your-api-key',
+  baseURL: 'http://localhost:8080',
+  timeout: 30000,           // 30 seconds
+  maxRetries: 3,
+  defaultHeaders: {
+    'X-Custom-Header': 'value',
+  },
+});
+```
+
+### Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `apiKey` | `string?` | `undefined` | Authentication token |
+| `baseURL` | `string?` | Service default | API base URL |
+| `timeout` | `number?` | `60000` | Request timeout in milliseconds |
+| `maxRetries` | `number?` | `2` | Maximum retry attempts |
+| `defaultHeaders` | `Record<string, string>?` | `{}` | Headers for all requests |
+
+### Accessing Config
+
+```typescript
+const client = new TodoService({ baseURL: 'http://localhost:8080' });
+
+// Access current configuration
+console.log(client.config.baseURL);  // "http://localhost:8080"
+console.log(client.config.timeout);  // 60000
+```
+
+## Type System
+
+### Type Mapping Reference
+
+| Contract Type | TypeScript Type |
+|---------------|-----------------|
+| `string` | `string` |
+| `bool` | `boolean` |
+| `int`, `int8`-`int64` | `number` |
+| `uint`, `uint8`-`uint64` | `number` |
+| `float32`, `float64` | `number` |
+| `time.Time` | `string` (ISO 8601) |
+| `json.RawMessage` | `unknown` |
+| `any` | `unknown` |
+| `[]T` | `T[]` |
+| `map[string]T` | `Record<string, T>` |
+
+### Interface Types
+
+Contract struct types generate TypeScript interfaces:
+
+```typescript
+export interface Todo {
+  id: string;
+  title: string;
+  done: boolean;
+  createdAt: string;  // ISO 8601 date string
+}
+```
+
+### Optional and Nullable Fields
+
+| Contract Definition | TypeScript Type |
+|---------------------|-----------------|
+| Required field | `T` |
+| `optional: true` | `T?` (optional property) |
+| `nullable: true` | `T \| null` |
+| Both optional and nullable | `(T \| null)?` |
+
+Example:
+
+```typescript
+export interface UpdateInput {
+  title: string;            // required
+  done?: boolean;           // optional
+  description?: string | null;  // optional and nullable
+}
+```
+
+### Enum Fields
+
+Enum fields generate as union types:
+
+```typescript
+export interface Task {
+  /** One of: "pending", "active", "completed" */
+  status: "pending" | "active" | "completed";
+}
+```
+
+### Const Fields
+
+Const fields generate as literal types:
+
+```typescript
+export interface TextContent {
+  type: "text";  // always "text"
+  content: string;
+}
+```
+
+### Array and Record Types
+
+```typescript
+// Contract: kind: slice, elem: Todo
+export type TodoList = Todo[];
+
+// Contract: kind: map, elem: string
+export type Metadata = Record<string, string>;
+```
+
+### Union Types (Discriminated)
+
+Union types generate as TypeScript union types:
+
+```typescript
+export type ContentPart = ContentPartText | ContentPartImage;
+
+// Type guards
+export function isContentPartText(v: ContentPart): v is ContentPartText {
+  return v.type === "text";
+}
+
+export function isContentPartImage(v: ContentPart): v is ContentPartImage {
+  return v.type === "image";
+}
+```
+
+Usage:
+
+```typescript
+function handleContent(part: ContentPart) {
+  if (isContentPartText(part)) {
+    console.log("Text:", part.content);
+  } else if (isContentPartImage(part)) {
+    console.log("Image:", part.url);
+  }
+}
+
+// Or with type narrowing
+function handleContent(part: ContentPart) {
+  switch (part.type) {
+    case "text":
+      console.log("Text:", part.content);
+      break;
+    case "image":
+      console.log("Image:", part.url);
+      break;
+  }
+}
+```
+
+## Resources and Methods
+
+### Resource Pattern
+
+Each contract resource becomes a property on the client:
+
+```typescript
+client.todos      // TodosResource
+client.users      // UsersResource
+```
+
+### Method Signatures
+
+Methods use camelCase naming:
+
+| Contract Method | TypeScript Signature |
+|-----------------|----------------------|
+| `Create` | `create(input: CreateInput): Promise<Todo>` |
+| `List` | `list(): Promise<ListOutput>` |
+| `Get` | `get(input: { id: string }): Promise<Todo>` |
+| `Delete` | `delete(input: { id: string }): Promise<void>` |
+
+### Calling Methods
+
+```typescript
+// Create with input object
+const todo = await client.todos.create({ title: 'My task' });
+
+// List (no input)
+const result = await client.todos.list();
+
+// Get with ID
+const fetched = await client.todos.get({ id: 'todo-123' });
+
+// Delete
+await client.todos.delete({ id: 'todo-123' });
+```
+
+## Streaming (SSE)
+
+For methods with streaming support, the SDK provides `AsyncIterable` streams:
+
+### Basic Streaming
+
+```typescript
+const stream = client.responses.stream({
+  model: 'gpt-4o',
+  input: 'Hello!',
+});
+
+for await (const event of stream) {
+  if (event.type === 'text_delta') {
+    process.stdout.write(event.text);
+  } else if (event.type === 'completed') {
+    console.log('\n--- Done ---');
+  }
+}
+```
+
+### Stream with Cancellation
+
+```typescript
+const stream = client.responses.stream({
+  model: 'gpt-4o',
+  input: 'Write a long story',
+});
+
+// Cancel after 5 seconds
+setTimeout(() => {
+  stream.controller.abort();
+}, 5000);
+
+try {
+  for await (const event of stream) {
+    console.log(event);
+  }
+} catch (error) {
+  if (error.name === 'AbortError') {
+    console.log('Stream cancelled');
+  } else {
+    throw error;
+  }
+}
+```
+
+### Collecting Stream Events
+
+```typescript
+// Collect all events into an array
+const events: ResponseEvent[] = [];
+for await (const event of client.responses.stream(input)) {
+  events.push(event);
+}
+
+// Or with Array.fromAsync (Node.js 22+)
+const events = await Array.fromAsync(client.responses.stream(input));
+```
+
+### Stream Type
+
+The stream object implements `AsyncIterable` and has an `AbortController`:
+
+```typescript
+interface Stream<T> extends AsyncIterable<T> {
+  readonly controller: AbortController;
+}
+```
+
+## Error Handling
+
+### Error Types
+
+The SDK defines three error classes:
+
+```typescript
+export class SDKError extends Error {
+  name = "SDKError";
+}
+
+export class APIConnectionError extends SDKError {
+  name = "APIConnectionError";
+}
+
+export class APIStatusError extends SDKError {
+  name = "APIStatusError";
+  readonly status: number;
+  readonly body: unknown;
+}
+```
+
+### Handling Errors
+
+```typescript
+import { TodoService, APIStatusError, APIConnectionError } from 'todoclient';
+
+const client = new TodoService({ baseURL: 'http://localhost:8080' });
+
+try {
+  const todo = await client.todos.get({ id: 'nonexistent' });
+} catch (error) {
+  if (error instanceof APIStatusError) {
+    switch (error.status) {
+      case 404:
+        console.log('Todo not found');
+        break;
+      case 401:
+        console.log('Unauthorized');
+        break;
+      case 400:
+        console.log(`Bad request: ${error.message}`);
+        break;
+      default:
+        console.log(`API error ${error.status}: ${error.message}`);
+    }
+  } else if (error instanceof APIConnectionError) {
+    console.log(`Connection failed: ${error.message}`);
+  } else {
+    throw error;
+  }
+}
+```
+
+### Automatic Retries
+
+The client automatically retries failed requests:
+
+```typescript
+const client = new TodoService({
+  baseURL: 'http://localhost:8080',
+  maxRetries: 5,  // Retry up to 5 times
+});
+```
+
+Retries are attempted for:
+- Network errors
+- Timeout errors
+
+Note: 4xx and 5xx errors are NOT retried (they throw immediately).
+
+## Advanced Usage
+
+### Custom Headers
+
+```typescript
+const client = new TodoService({
+  baseURL: 'http://localhost:8080',
+  defaultHeaders: {
+    'X-Request-ID': 'abc-123',
+    'X-API-Version': '2024-01',
+  },
+});
+```
+
+### Authentication Modes
+
+The SDK supports different authentication modes:
+
+```typescript
+// Bearer token (default)
+const client = new TodoService({ apiKey: 'your-token' });
+// Sends: Authorization: Bearer your-token
+
+// Basic auth (if service configured with auth: basic)
+const client = new TodoService({ apiKey: 'base64-credentials' });
+// Sends: Authorization: Basic base64-credentials
+
+// No auth (if service configured with auth: none)
+const client = new TodoService({});
+// Sends no Authorization header
+```
+
+### Timeout Configuration
+
+```typescript
+// Set timeout in milliseconds
+const client = new TodoService({
+  baseURL: 'http://localhost:8080',
+  timeout: 30000,  // 30 seconds
+});
+```
+
+### Using with Different Runtimes
+
+The SDK works across all modern JavaScript runtimes:
+
+<CodeGroup>
+```typescript Node.js
+// Requires Node.js 18+ for native fetch
+import { TodoService } from 'todoclient';
+
+const client = new TodoService({ baseURL: 'http://localhost:8080' });
+const todos = await client.todos.list();
+```
+
+```typescript Bun
+// Works out of the box with Bun
+import { TodoService } from 'todoclient';
+
+const client = new TodoService({ baseURL: 'http://localhost:8080' });
+const todos = await client.todos.list();
+```
+
+```typescript Deno
+// Works with Deno
+import { TodoService } from 'npm:todoclient';
+
+const client = new TodoService({ baseURL: 'http://localhost:8080' });
+const todos = await client.todos.list();
+```
+</CodeGroup>
+
+## Complete Example
+
+### Server
+
+```go
+// main.go
+package main
+
+import (
+    "github.com/go-mizu/mizu"
+    contract "github.com/go-mizu/mizu/contract/v2"
+    "github.com/go-mizu/mizu/contract/v2/transport/rest"
+
+    "yourapp/todo"
+)
+
+func main() {
+    impl := todo.NewService()
+    svc := contract.Register[todo.API](impl,
+        contract.WithDefaultResource("todos"),
+        contract.WithDefaults(&contract.Defaults{
+            BaseURL: "http://localhost:8080",
+        }),
+    )
+
+    app := mizu.New()
+    rest.Mount(app.Router, svc)
+    app.Listen(":8080")
+}
+```
+
+### Client Usage
+
+```typescript
+// example.ts
+import { TodoService } from 'todoclient';
+
+async function main() {
+  const client = new TodoService({ baseURL: 'http://localhost:8080' });
+
+  // Create a todo
+  const todo = await client.todos.create({ title: 'Buy groceries' });
+  console.log(`Created: ${todo.id}`);
+
+  // List all todos
+  const result = await client.todos.list();
+  console.log(`\nAll todos (${result.total} total):`);
+  for (const t of result.items) {
+    const status = t.done ? 'x' : ' ';
+    console.log(`  [${status}] ${t.id}: ${t.title}`);
+  }
+
+  // Get a specific todo
+  const fetched = await client.todos.get({ id: todo.id });
+  console.log(`\nFetched: ${fetched.title}`);
+
+  // Delete
+  await client.todos.delete({ id: todo.id });
+  console.log(`\nDeleted: ${todo.id}`);
+}
+
+main().catch(console.error);
+```
+
+### Streaming Example
+
+```typescript
+// streaming-example.ts
+import { ChatService } from 'chatclient';
+
+async function main() {
+  const client = new ChatService({
+    apiKey: process.env.API_KEY,
+    baseURL: 'http://localhost:8080',
+  });
+
+  console.log('Streaming response:\n');
+
+  const stream = client.chat.stream({
+    model: 'gpt-4o',
+    messages: [
+      { role: 'user', content: 'Write a haiku about programming' },
+    ],
+  });
+
+  for await (const event of stream) {
+    switch (event.type) {
+      case 'content_delta':
+        process.stdout.write(event.delta);
+        break;
+      case 'done':
+        console.log('\n\n--- Stream complete ---');
+        break;
+    }
+  }
+}
+
+main().catch(console.error);
+```
+
+## Installation and Distribution
+
+### Installing Locally
+
+```bash
+cd sdk/typescript
+npm install
+npm run build
+
+# Link for local development
+npm link
+
+# In another project
+npm link todoclient
+```
+
+### Publishing to npm
+
+```bash
+cd sdk/typescript
+
+# Build
+npm run build
+
+# Publish
+npm publish
+
+# Or with a specific tag
+npm publish --tag beta
+```
+
+### Installing from Git
+
+```bash
+npm install github:yourorg/yourrepo#main/sdk/typescript
+```
+
+### Using Without npm
+
+The generated code can be used directly in Deno or Bun without npm:
+
+```typescript
+// Deno - import from URL
+import { TodoService } from 'https://raw.githubusercontent.com/yourorg/yourrepo/main/sdk/typescript/src/index.ts';
+
+// Or copy the src/ folder directly
+import { TodoService } from './sdk/index.ts';
+```
+
+## See Also
+
+- [SDK Overview](/contract/sdk-overview) - Introduction to SDK generation
+- [Go SDK](/contract/sdk-go) - Generate Go clients
+- [Python SDK](/contract/sdk-python) - Generate Python clients
+- [Types](/contract/types) - Contract type system
+- [REST Transport](/contract/rest) - Serve your API over REST
