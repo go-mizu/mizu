@@ -105,7 +105,7 @@ test: ## Run tests (supports CHANGED=1 BASE=... EXCLUDE="...")
 	fi; \
 	echo "Testing packages:"; \
 	printf "  %s\n" $$PKGS; \
-	$(GO) test $(GOTESTFLAGS) -count=$(COUNT) $(if $(RUN),-run $(RUN)) $$PKGS
+	GOWORK=off $(GO) test $(GOTESTFLAGS) -count=$(COUNT) $(if $(RUN),-run $(RUN)) $$PKGS
 
 .PHONY: workspace
 workspace: ## Initialize go.work for local development
