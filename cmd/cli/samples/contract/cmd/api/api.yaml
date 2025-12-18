@@ -1,0 +1,134 @@
+name: contract
+description: A simple todo list API demonstrating contract/v2 features.
+
+defaults:
+  base_url: http://localhost:8080
+  headers:
+    content-type: application/json
+
+resources:
+  - name: todos
+    description: Manage todo items.
+    methods:
+      - name: list
+        description: List all todos.
+        output: TodoList
+        http:
+          method: GET
+          path: /todos
+
+      - name: create
+        description: Create a new todo.
+        input: CreateTodoRequest
+        output: Todo
+        http:
+          method: POST
+          path: /todos
+
+      - name: get
+        description: Get a todo by ID.
+        input: GetTodoRequest
+        output: Todo
+        http:
+          method: GET
+          path: /todos/{id}
+
+      - name: update
+        description: Update an existing todo.
+        input: UpdateTodoRequest
+        output: Todo
+        http:
+          method: PUT
+          path: /todos/{id}
+
+      - name: delete
+        description: Delete a todo.
+        input: DeleteTodoRequest
+        http:
+          method: DELETE
+          path: /todos/{id}
+
+  - name: health
+    description: Health check endpoints.
+    methods:
+      - name: check
+        description: Check service health.
+        output: HealthStatus
+        http:
+          method: GET
+          path: /health
+
+types:
+  - name: Todo
+    kind: struct
+    fields:
+      - name: id
+        type: string
+      - name: title
+        type: string
+      - name: completed
+        type: bool
+      - name: priority
+        type: string
+        enum: ["low", "medium", "high"]
+        optional: true
+
+  - name: TodoList
+    kind: struct
+    fields:
+      - name: items
+        type: Todos
+      - name: total
+        type: int
+
+  - name: Todos
+    kind: slice
+    elem: Todo
+
+  - name: CreateTodoRequest
+    kind: struct
+    fields:
+      - name: title
+        type: string
+      - name: priority
+        type: string
+        enum: ["low", "medium", "high"]
+        optional: true
+
+  - name: GetTodoRequest
+    kind: struct
+    fields:
+      - name: id
+        type: string
+
+  - name: UpdateTodoRequest
+    kind: struct
+    fields:
+      - name: id
+        type: string
+      - name: title
+        type: string
+        optional: true
+      - name: completed
+        type: bool
+        optional: true
+      - name: priority
+        type: string
+        enum: ["low", "medium", "high"]
+        optional: true
+
+  - name: DeleteTodoRequest
+    kind: struct
+    fields:
+      - name: id
+        type: string
+
+  - name: HealthStatus
+    kind: struct
+    fields:
+      - name: status
+        type: string
+        enum: ["ok", "degraded", "unhealthy"]
+      - name: version
+        type: string
+        optional: true

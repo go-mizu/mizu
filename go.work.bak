@@ -1,0 +1,12 @@
+go 1.25.5
+
+use (
+	.
+	./cmd
+	./cmd/cli/samples/api
+	./cmd/cli/samples/contract
+	./cmd/cli/samples/live
+	./cmd/cli/samples/minimal
+	./cmd/cli/samples/sync
+	./cmd/cli/samples/web
+)

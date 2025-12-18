@@ -92,21 +92,32 @@ func loadTemplateMeta(name string) (templateMeta, error) {
 }
 
 // loadTemplateFiles loads all files for a template.
+// Template-specific files override common files with the same path.
 func loadTemplateFiles(name string) ([]templateFile, error) {
-	var files []templateFile
+	fileMap := make(map[string]templateFile)
 
 	// Load common files first
 	commonFiles, err := loadFilesFromDir("templates/_common")
 	if err == nil {
-		files = append(files, commonFiles...)
+		for _, f := range commonFiles {
+			fileMap[f.path] = f
+		}
 	}
 
-	// Load template-specific files
+	// Load template-specific files (override common files)
 	templateFiles, err := loadFilesFromDir(path.Join("templates", name))
 	if err != nil {
 		return nil, fmt.Errorf("load template %s: %w", name, err)
 	}
-	files = append(files, templateFiles...)
+	for _, f := range templateFiles {
+		fileMap[f.path] = f
+	}
+
+	// Convert map to slice
+	files := make([]templateFile, 0, len(fileMap))
+	for _, f := range fileMap {
+		files = append(files, f)
+	}
 
 	return files, nil
 }
