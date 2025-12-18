@@ -10,6 +10,15 @@ import (
 	"sync"
 )
 
+// Priority levels for todos.
+type Priority string
+
+const (
+	PriorityLow    Priority = "low"
+	PriorityMedium Priority = "medium"
+	PriorityHigh   Priority = "high"
+)
+
 // Service is the todo business logic.
 // It has no HTTP or transport dependencies.
 type Service struct {
@@ -20,14 +29,16 @@ type Service struct {
 
 // Todo represents a todo item.
 type Todo struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Completed bool   `json:"completed"`
+	ID        string   `json:"id"`
+	Title     string   `json:"title"`
+	Completed bool     `json:"completed"`
+	Priority  Priority `json:"priority,omitempty"`
 }
 
 // CreateIn is the input for creating a todo.
 type CreateIn struct {
-	Title string `json:"title"`
+	Title    string   `json:"title"`
+	Priority Priority `json:"priority,omitempty"`
 }
 
 // GetIn is the input for getting a todo by ID.
@@ -37,9 +48,10 @@ type GetIn struct {
 
 // UpdateIn is the input for updating a todo.
 type UpdateIn struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Completed bool   `json:"completed"`
+	ID        string   `json:"id"`
+	Title     string   `json:"title,omitempty"`
+	Completed bool     `json:"completed,omitempty"`
+	Priority  Priority `json:"priority,omitempty"`
 }
 
 // DeleteIn is the input for deleting a todo.
@@ -50,12 +62,19 @@ type DeleteIn struct {
 // TodoList is a list of todos.
 type TodoList struct {
 	Items []*Todo `json:"items"`
+	Total int     `json:"total"`
+}
+
+// HealthStatus represents the service health.
+type HealthStatus struct {
+	Status  string `json:"status"`
+	Version string `json:"version,omitempty"`
 }
 
 // Errors returned by the service.
 var (
-	ErrNotFound     = errors.New("todo not found")
-	ErrTitleEmpty   = errors.New("title cannot be empty")
+	ErrNotFound   = errors.New("todo not found")
+	ErrTitleEmpty = errors.New("title cannot be empty")
 )
 
 // Create creates a new todo.
@@ -76,6 +95,10 @@ func (s *Service) Create(ctx context.Context, in *CreateIn) (*Todo, error) {
 		ID:        formatID(s.seq),
 		Title:     in.Title,
 		Completed: false,
+		Priority:  in.Priority,
+	}
+	if todo.Priority == "" {
+		todo.Priority = PriorityMedium
 	}
 	s.todos[todo.ID] = todo
 
@@ -105,7 +128,7 @@ func (s *Service) List(ctx context.Context) (*TodoList, error) {
 		items = append(items, t)
 	}
 
-	return &TodoList{Items: items}, nil
+	return &TodoList{Items: items, Total: len(items)}, nil
 }
 
 // Update updates an existing todo.
@@ -122,6 +145,9 @@ func (s *Service) Update(ctx context.Context, in *UpdateIn) (*Todo, error) {
 		todo.Title = in.Title
 	}
 	todo.Completed = in.Completed
+	if in.Priority != "" {
+		todo.Priority = in.Priority
+	}
 
 	return todo, nil
 }

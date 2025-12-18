@@ -1,6 +1,6 @@
-module example.com/contract
+module {{.Module}}
 
-go 1.24.11
+go 1.23
 
 require (
 	github.com/go-mizu/mizu v0.0.0
@@ -9,4 +9,3 @@ require (
 
 // For local development, use replace directive:
 // replace github.com/go-mizu/mizu => /path/to/mizu
-replace github.com/go-mizu/mizu => ../../../..

@@ -1,4 +1,4 @@
-# contract
+# {{.Name}}
 
 A contract-first API service using Mizu's contract/v2 framework.
 
@@ -52,7 +52,7 @@ go test ./...
 The API contract is defined in `cmd/api/api.yaml`:
 
 ```yaml
-name: contract
+name: {{.Name}}
 description: A simple todo list API
 
 resources:
@@ -107,4 +107,4 @@ curl -X POST http://localhost:8080/rpc \
 
 ## License
 
-MIT
+{{.License}}

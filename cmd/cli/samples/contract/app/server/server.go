@@ -3,44 +3,49 @@ package server
 import (
 	"net/http"
 
-	"github.com/go-mizu/mizu/contract/v1"
-	"github.com/go-mizu/mizu/contract/v1/transport/jsonrpc"
-	"github.com/go-mizu/mizu/contract/v1/transport/rest"
+	contract "github.com/go-mizu/mizu/contract/v2"
+	"github.com/go-mizu/mizu/contract/v2/transport/jsonrpc"
+	"github.com/go-mizu/mizu/contract/v2/transport/rest"
 	"example.com/contract/service/todo"
 )
 
 // Server wraps the HTTP server with all transports.
 type Server struct {
-	cfg    Config
-	server *http.Server
-	svc    *contract.Service
+	cfg      Config
+	server   *http.Server
+	contract *contract.Service
 }
 
 // New creates a server with REST, JSON-RPC, and OpenAPI transports.
-func New(cfg Config, todoSvc *todo.Service) (*Server, error) {
-	// Register the service to get a contract.
-	svc, err := contract.Register("todo", todoSvc)
-	if err != nil {
-		return nil, err
-	}
+func New(cfg Config, todoSvc *todo.Service, svc *contract.Service) (*Server, error) {
+	// Create invoker that dispatches to the service
+	invoker := todo.NewInvoker(todoSvc, svc)
 
 	mux := http.NewServeMux()
 
-	// Mount REST endpoints (POST /todos, GET /todos, GET /todos/{id}, etc.)
-	rest.Mount(mux, svc)
-
-	// Mount JSON-RPC 2.0 endpoint
-	jsonrpc.Mount(mux, "/rpc", svc)
-
-	// Serve OpenAPI 3.1 spec
-	if err := rest.MountSpec(mux, "/openapi.json", svc); err != nil {
+	// Mount REST endpoints using contract bindings
+	restServer, err := rest.NewServer(invoker)
+	if err != nil {
 		return nil, err
 	}
+	mux.Handle("/", restServer.Handler())
 
-	// Health check (simple)
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok\n"))
+	// Mount JSON-RPC 2.0 endpoint
+	rpcServer, err := jsonrpc.NewServer(invoker)
+	if err != nil {
+		return nil, err
+	}
+	mux.Handle("/rpc", rpcServer.Handler())
+
+	// Serve OpenAPI 3.0 spec
+	mux.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, r *http.Request) {
+		spec, err := rest.OpenAPIDocument(svc)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(spec)
 	})
 
 	return &Server{
@@ -49,7 +54,7 @@ func New(cfg Config, todoSvc *todo.Service) (*Server, error) {
 			Addr:    cfg.Addr,
 			Handler: mux,
 		},
-		svc: svc,
+		contract: svc,
 	}, nil
 }
 
@@ -63,7 +68,7 @@ func (s *Server) Close() error {
 	return s.server.Close()
 }
 
-// Service returns the registered contract service.
-func (s *Server) Service() *contract.Service {
-	return s.svc
+// Contract returns the loaded contract service.
+func (s *Server) Contract() *contract.Service {
+	return s.contract
 }
