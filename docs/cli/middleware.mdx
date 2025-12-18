@@ -1,0 +1,262 @@
+---
+title: "Middleware"
+description: "Explore and discover available middlewares for Mizu applications"
+---
+
+The `mizu middleware` command helps you discover and learn about the 100+ middlewares available for Mizu applications. Middlewares are reusable components that add functionality to your web application, such as authentication, logging, rate limiting, and security headers.
+
+Think of middlewares as building blocks. Instead of writing code for common tasks like logging every request or checking authentication, you use a pre-built middleware that handles it for you.
+
+## Quick Examples
+
+```bash
+# List all available middlewares
+mizu middleware ls
+
+# List middlewares in a specific category
+mizu middleware ls -c security
+
+# Show details about a specific middleware
+mizu middleware show helmet
+
+# Get JSON output for scripting
+mizu middleware ls --json
+```
+
+## Subcommands
+
+### mizu middleware ls
+
+Lists all available middlewares, grouped by category.
+
+```bash
+mizu middleware ls
+```
+
+Output:
+
+```
+SECURITY (16) - Authentication and security headers
+  basicauth        HTTP Basic authentication
+  bearerauth       Bearer token authentication
+  cors             Cross-Origin Resource Sharing
+  csrf             CSRF protection with tokens
+  helmet           Security headers
+  jwt              JSON Web Token validation
+  ...
+
+LOGGING (7) - Request/response logging and tracing
+  audit            Audit logging for compliance
+  logger           HTTP request logging
+  trace            Distributed request tracing
+  ...
+
+100 middlewares available. Use 'mizu middleware show <name>' for details.
+```
+
+#### Filter by Category
+
+Use `-c` or `--category` to show only middlewares in a specific category:
+
+```bash
+mizu middleware ls -c ratelimit
+```
+
+Output:
+
+```
+RATELIMIT (6)
+
+Name              Description
+adaptive          Adaptive rate limiting
+bulkhead          Bulkhead pattern for isolation
+concurrency       Concurrent request limiting
+maxconns          Maximum connections limit
+ratelimit         Token bucket rate limiting
+throttle          Simple request throttling
+
+6 middlewares available. Use 'mizu middleware show <name>' for details.
+```
+
+### mizu middleware show
+
+Shows detailed information about a specific middleware, including import path, quick start code, and related middlewares.
+
+```bash
+mizu middleware show helmet
+```
+
+Output:
+
+```
+HELMET
+
+Security headers middleware
+
+CATEGORY: security
+
+IMPORT:
+  github.com/go-mizu/mizu/middlewares/helmet
+
+QUICK START:
+  app.Use(helmet.Default())
+
+RELATED:
+  cors, csrf, secure
+```
+
+## Categories
+
+Middlewares are organized into 12 categories:
+
+| Category | Description | Examples |
+|----------|-------------|----------|
+| security | Authentication and security | basicauth, jwt, cors, helmet |
+| logging | Request/response logging | logger, trace, audit |
+| ratelimit | Rate limiting and flow control | ratelimit, throttle, bulkhead |
+| cache | Caching headers and strategies | cache, etag, nocache |
+| encoding | Compression and content encoding | compress, msgpack |
+| resilience | Circuit breaker, retry, timeout | circuitbreaker, retry, timeout |
+| routing | URL rewriting and redirects | rewrite, redirect, slash |
+| content | Static files and SPA | static, spa, favicon |
+| api | JSON-RPC, GraphQL, validation | jsonrpc, graphql, validator |
+| session | Sessions and state | session, feature, language |
+| observability | Metrics and profiling | prometheus, otel, pprof |
+| misc | Other utilities | requestid, proxy, websocket |
+
+## Using a Middleware
+
+Once you find a middleware you want to use, add it to your application:
+
+1. **Import the package** using the import path shown by `mizu middleware show`
+2. **Add the middleware** using `app.Use()` with the quick start code
+
+Example with the helmet middleware:
+
+```go
+package main
+
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/helmet"
+)
+
+func main() {
+    app := mizu.New()
+
+    // Add security headers to all responses
+    app.Use(helmet.Default())
+
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.Text(200, "Hello, secure world!")
+    })
+
+    app.Listen(":8080")
+}
+```
+
+## Flags
+
+| Flag | Description |
+|------|-------------|
+| `-c, --category <name>` | Filter list by category |
+| `--json` | Output as JSON for scripting |
+| `-h, --help` | Show help |
+
+## JSON Output
+
+Use `--json` to get machine-readable output for scripting:
+
+```bash
+mizu middleware ls --json
+```
+
+```json
+{
+  "categories": [
+    {
+      "name": "security",
+      "description": "Authentication and security headers",
+      "middlewares": [
+        {"name": "basicauth", "description": "HTTP Basic authentication", "category": "security"},
+        {"name": "helmet", "description": "Security headers", "category": "security"}
+      ]
+    }
+  ],
+  "total": 100
+}
+```
+
+```bash
+mizu middleware show helmet --json
+```
+
+```json
+{
+  "name": "helmet",
+  "description": "Security headers",
+  "category": "security",
+  "import": "github.com/go-mizu/mizu/middlewares/helmet",
+  "quick_start": "app.Use(helmet.Default())",
+  "related": ["cors", "csrf", "secure"]
+}
+```
+
+## Common Workflows
+
+### Finding Security Middlewares
+
+```bash
+# List all security-related middlewares
+mizu middleware ls -c security
+
+# Learn about JWT authentication
+mizu middleware show jwt
+
+# Learn about rate limiting
+mizu middleware show ratelimit
+```
+
+### Setting Up a Production API
+
+A typical production API uses several middlewares together:
+
+```go
+app := mizu.New()
+
+// Security
+app.Use(helmet.Default())
+app.Use(cors.WithOrigins("https://myapp.com"))
+
+// Logging
+app.Use(logger.New())
+app.Use(requestid.New())
+
+// Rate limiting
+app.Use(ratelimit.PerMinute(100))
+
+// Error recovery
+app.Use(recover.New())
+```
+
+Find each of these with:
+
+```bash
+mizu middleware show helmet
+mizu middleware show cors
+mizu middleware show logger
+mizu middleware show requestid
+mizu middleware show ratelimit
+mizu middleware show recover
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Templates" icon="folder-tree" href="/cli/templates">
+    See project templates that include middlewares
+  </Card>
+  <Card title="API Template" icon="code" href="/cli/api/overview">
+    Build a production API with middlewares
+  </Card>
+</CardGroup>

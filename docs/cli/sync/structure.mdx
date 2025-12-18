@@ -1,11 +1,9 @@
 ---
-title: "Sync Template Structure"
+title: "Structure"
 description: "Understanding the sync template organization"
 ---
 
-# Sync Template Structure
-
-The sync template combines view rendering, live updates, and data synchronization.
+The sync template combines view rendering, live updates, and data synchronization. The key component is the "sync engine" which tracks changes as operations, replays them to rebuild state, and broadcasts updates to all connected clients. This is how collaborative apps like Google Docs work.
 
 ## Directory Layout
 
