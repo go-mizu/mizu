@@ -1,4 +1,3 @@
-// contract/transport/async/asyncapi.go
 package async
 
 import (
@@ -9,6 +8,24 @@ import (
 
 	contract "github.com/go-mizu/mizu/contract/v2"
 )
+
+// RequestTopic returns the canonical request topic name for AsyncAPI spec.
+func RequestTopic(service, resource, method string) string {
+	return sanitizeTopic(service) + "." + sanitizeTopic(resource) + "." + sanitizeTopic(method) + ".request"
+}
+
+// ResponseTopic returns the canonical response topic name for AsyncAPI spec.
+func ResponseTopic(service, resource, method string) string {
+	return sanitizeTopic(service) + "." + sanitizeTopic(resource) + "." + sanitizeTopic(method) + ".response"
+}
+
+func sanitizeTopic(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.ReplaceAll(s, " ", "_")
+	s = strings.ReplaceAll(s, "/", "_")
+	s = strings.ReplaceAll(s, ":", "_")
+	return s
+}
 
 // AsyncAPIDocument builds an AsyncAPI document (JSON) for the async transport.
 //

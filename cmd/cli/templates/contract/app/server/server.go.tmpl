@@ -3,13 +3,14 @@ package server
 import (
 	"github.com/go-mizu/mizu"
 	contract "github.com/go-mizu/mizu/contract/v2"
+	"github.com/go-mizu/mizu/contract/v2/transport/async"
 	"github.com/go-mizu/mizu/contract/v2/transport/jsonrpc"
 	"github.com/go-mizu/mizu/contract/v2/transport/mcp"
 	"github.com/go-mizu/mizu/contract/v2/transport/rest"
 	"{{.Module}}/service/todo"
 )
 
-// New creates a new mizu app with REST, JSON-RPC, and MCP transports.
+// New creates a new mizu app with REST, JSON-RPC, MCP, and Async transports.
 func New(cfg Config, todoSvc *todo.Service) (*mizu.App, error) {
 	// Register service using code-first approach
 	svc := contract.Register[todo.API](todoSvc,
@@ -38,6 +39,11 @@ func New(cfg Config, todoSvc *todo.Service) (*mizu.App, error) {
 		return nil, err
 	}
 
+	// Mount Async endpoint (SSE-based async)
+	if err := async.Mount(app.Router, "/async", svc); err != nil {
+		return nil, err
+	}
+
 	// Serve OpenAPI 3.0 spec
 	app.Router.Get("/openapi.json", func(c *mizu.Ctx) error {
 		spec, err := rest.OpenAPI(svc.Descriptor())
@@ -52,6 +58,17 @@ func New(cfg Config, todoSvc *todo.Service) (*mizu.App, error) {
 	// Serve OpenRPC spec
 	app.Router.Get("/openrpc.json", func(c *mizu.Ctx) error {
 		spec, err := jsonrpc.OpenRPC(svc.Descriptor())
+		if err != nil {
+			return c.JSON(500, map[string]string{"error": err.Error()})
+		}
+		c.Header().Set("Content-Type", "application/json")
+		_, err = c.Write(spec)
+		return err
+	})
+
+	// Serve AsyncAPI spec
+	app.Router.Get("/asyncapi.json", func(c *mizu.Ctx) error {
+		spec, err := async.AsyncAPI(svc.Descriptor())
 		if err != nil {
 			return c.JSON(500, map[string]string{"error": err.Error()})
 		}
