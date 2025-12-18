@@ -1,10 +1,10 @@
-{{define "_resources.py.tmpl"}}
+{{define "_resource.py.tmpl"}}
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from ._types import *
-{{- if .HasStreamingSSE }}
+{{- if .HasSSE }}
 from ._streaming import Stream, AsyncStream
 {{- end }}
 
@@ -31,29 +31,16 @@ class {{.ClassName}}:
     def {{.PyName}}(
         self,
         {{- if .HasInput}}
-        {{- if .InputIsStruct}}
-        {{- range .InputFields}}
-        {{.PyName}}: {{.PyType}}{{if .Optional}} = None{{end}}{{if .Nullable}} = None{{end}},
-        {{- end}}
-        {{- else}}
-        input: {{.InputType}},
-        {{- end}}
+        request: Union[Dict[str, Any], {{.InputType}}],
         {{- end}}
     ):
+        {{- if .HasInput}}
+        payload = request if isinstance(request, dict) else request.model_dump()
+        {{- else}}
+        payload: Any = None
+        {{- end}}
         {{- if .IsStreaming}}
         {{- if .StreamIsSSE}}
-        payload: Any = None
-        {{- if .HasInput}}
-        {{- if .InputIsStruct}}
-        payload = {
-            {{- range .InputFields}}
-            {{pyString .Name}}: {{.PyName}},
-            {{- end}}
-        }
-        {{- else}}
-        payload = input
-        {{- end}}
-        {{- end}}
 
         if self._client.__class__.__name__ == "AsyncOpenAI":
             return AsyncStream(
@@ -75,19 +62,6 @@ class {{.ClassName}}:
         {{- end}}
         {{- else}}
 
-        payload: Any = None
-        {{- if .HasInput}}
-        {{- if .InputIsStruct}}
-        payload = {
-            {{- range .InputFields}}
-            {{pyString .Name}}: {{.PyName}},
-            {{- end}}
-        }
-        {{- else}}
-        payload = input
-        {{- end}}
-        {{- end}}
-
         if self._client.__class__.__name__ == "AsyncOpenAI":
             # The async client will overwrite this method at runtime via attribute binding in Python
             # but we keep a single template for simplicity.
@@ -99,8 +73,9 @@ class {{.ClassName}}:
         {{- else}}
         return data
         {{- end}}
+        {{- end}}
 
 {{- end}}
-
 {{- end}}
+
 {{end}}
