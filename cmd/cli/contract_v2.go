@@ -10,6 +10,10 @@ import (
 	"strings"
 
 	contract "github.com/go-mizu/mizu/contract/v2"
+	"github.com/go-mizu/mizu/contract/v2/sdk"
+	sdkgo "github.com/go-mizu/mizu/contract/v2/sdk/go"
+	sdkpy "github.com/go-mizu/mizu/contract/v2/sdk/py"
+	sdkts "github.com/go-mizu/mizu/contract/v2/sdk/ts"
 	"github.com/go-mizu/mizu/contract/v2/transport/async"
 	"github.com/go-mizu/mizu/contract/v2/transport/jsonrpc"
 	"github.com/go-mizu/mizu/contract/v2/transport/rest"
@@ -49,10 +53,19 @@ var contractGenCmd = &cobra.Command{
 	Short: "Generate code from contract definition",
 	Long: `Generate client/server code from a contract definition.
 
-Supports TypeScript and Go code generation.`,
-	Example: `  mizu contract gen api.yaml --lang typescript
+Supports TypeScript, Python, and Go code generation.
+
+Without --client: generates types only (lightweight, no HTTP client).
+With --client: generates full SDK client with typed methods, streaming, and error handling.`,
+	Example: `  # Generate types only
+  mizu contract gen api.yaml --lang typescript
   mizu contract gen api.yaml --lang go --package api
-  mizu contract gen api.yaml --lang typescript --output ./client`,
+
+  # Generate full SDK client
+  mizu contract gen api.yaml --client --lang go
+  mizu contract gen api.yaml --client --lang python --output ./sdk
+  mizu contract gen api.yaml --client --lang typescript
+  mizu contract gen api.yaml --client --lang all --output ./sdks`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: wrapRunE(runContractGenCmd),
 }
@@ -65,6 +78,7 @@ var contractV2Flags struct {
 	strict   bool
 	lang     string
 	pkg      string
+	version  string
 	client   bool
 	server   bool
 	types    bool
@@ -85,10 +99,11 @@ func init() {
 	contractValidateCmd.Flags().BoolVar(&contractV2Flags.strict, "strict", false, "Fail on warnings")
 
 	// Flags for gen
-	contractGenCmd.Flags().StringVar(&contractV2Flags.lang, "lang", "typescript", "Target language (typescript, go)")
+	contractGenCmd.Flags().StringVar(&contractV2Flags.lang, "lang", "typescript", "Target language (go, python, py, typescript, ts, all)")
 	contractGenCmd.Flags().StringVarP(&contractV2Flags.output, "output", "o", "", "Output directory")
-	contractGenCmd.Flags().StringVar(&contractV2Flags.pkg, "package", "api", "Package name (Go)")
-	contractGenCmd.Flags().BoolVar(&contractV2Flags.client, "client", false, "Generate client code")
+	contractGenCmd.Flags().StringVar(&contractV2Flags.pkg, "package", "", "Package/module name (default: from service name)")
+	contractGenCmd.Flags().StringVar(&contractV2Flags.version, "version", "0.0.0", "Package version (Python/TypeScript)")
+	contractGenCmd.Flags().BoolVarP(&contractV2Flags.client, "client", "c", false, "Generate full SDK client")
 	contractGenCmd.Flags().BoolVar(&contractV2Flags.server, "server", false, "Generate server code")
 	contractGenCmd.Flags().BoolVar(&contractV2Flags.types, "types", true, "Generate types")
 }
@@ -288,16 +303,26 @@ func runContractGenCmd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("contract has errors, cannot generate")
 	}
 
-	// Generate code
+	// If --client flag is set, generate full SDK client
+	if contractV2Flags.client {
+		return runContractGenClientCmd(svc, file)
+	}
+
+	// Types-only generation (original behavior)
 	var code string
 	var filename string
+
+	pkg := contractV2Flags.pkg
+	if pkg == "" {
+		pkg = "api"
+	}
 
 	switch contractV2Flags.lang {
 	case "typescript", "ts":
 		code = generateTypeScript(svc)
 		filename = "api.gen.ts"
 	case "go", "golang":
-		code = generateGo(svc, contractV2Flags.pkg)
+		code = generateGo(svc, pkg)
 		filename = "api.gen.go"
 	default:
 		out.PrintError("unsupported language: %s", contractV2Flags.lang)
@@ -326,6 +351,87 @@ func runContractGenCmd(cmd *cobra.Command, args []string) error {
 	out.Print("%s %s\n", out.Success("Generated"), outputPath)
 
 	return nil
+}
+
+// runContractGenClientCmd generates full SDK clients using the SDK generators.
+func runContractGenClientCmd(svc *contract.Service, inputFile string) error {
+	out := NewOutput()
+
+	lang := normalizeLang(contractV2Flags.lang)
+	outputDir := contractV2Flags.output
+	if outputDir == "" {
+		outputDir = filepath.Dir(inputFile)
+	}
+
+	languages := []string{lang}
+	if lang == "all" {
+		languages = []string{"go", "python", "typescript"}
+	}
+
+	for _, l := range languages {
+		subDir := outputDir
+		if lang == "all" {
+			subDir = filepath.Join(outputDir, l)
+		}
+
+		files, err := generateSDKClient(svc, l)
+		if err != nil {
+			out.PrintError("generate %s SDK failed: %v", l, err)
+			return err
+		}
+
+		// Write files
+		for _, f := range files {
+			path := filepath.Join(subDir, f.Path)
+			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+				out.PrintError("create directory failed: %v", err)
+				return err
+			}
+			if err := os.WriteFile(path, []byte(f.Content), 0644); err != nil {
+				out.PrintError("write failed: %v", err)
+				return err
+			}
+			out.Print("%s %s\n", out.Success("Created"), path)
+		}
+	}
+
+	return nil
+}
+
+// generateSDKClient generates SDK files for a specific language.
+func generateSDKClient(svc *contract.Service, lang string) ([]*sdk.File, error) {
+	pkg := contractV2Flags.pkg
+	version := contractV2Flags.version
+
+	switch lang {
+	case "go":
+		cfg := &sdkgo.Config{Package: pkg}
+		return sdkgo.Generate(svc, cfg)
+	case "python":
+		cfg := &sdkpy.Config{Package: pkg, Version: version}
+		return sdkpy.Generate(svc, cfg)
+	case "typescript":
+		cfg := &sdkts.Config{Package: pkg, Version: version}
+		return sdkts.Generate(svc, cfg)
+	default:
+		return nil, fmt.Errorf("unsupported language for SDK generation: %s", lang)
+	}
+}
+
+// normalizeLang normalizes language aliases to canonical names.
+func normalizeLang(lang string) string {
+	switch strings.ToLower(lang) {
+	case "go", "golang":
+		return "go"
+	case "python", "py":
+		return "python"
+	case "typescript", "ts":
+		return "typescript"
+	case "all":
+		return "all"
+	default:
+		return lang
+	}
 }
 
 // Enhanced spec command with v2 support
