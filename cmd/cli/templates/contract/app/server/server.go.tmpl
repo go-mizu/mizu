@@ -26,15 +26,24 @@ func New(cfg Config, todoSvc *todo.Service) (*mizu.App, error) {
 	}
 
 	// Mount JSON-RPC 2.0 endpoint
-	rpcServer, err := jsonrpc.NewServer(svc)
-	if err != nil {
+	if err := jsonrpc.Mount(app.Router, "/rpc", svc); err != nil {
 		return nil, err
 	}
-	app.Router.Mount("/rpc", rpcServer.Handler())
 
 	// Serve OpenAPI 3.0 spec
 	app.Router.Get("/openapi.json", func(c *mizu.Ctx) error {
 		spec, err := rest.OpenAPI(svc.Descriptor())
+		if err != nil {
+			return c.JSON(500, map[string]string{"error": err.Error()})
+		}
+		c.Header().Set("Content-Type", "application/json")
+		_, err = c.Write(spec)
+		return err
+	})
+
+	// Serve OpenRPC spec
+	app.Router.Get("/openrpc.json", func(c *mizu.Ctx) error {
+		spec, err := jsonrpc.OpenRPC(svc.Descriptor())
 		if err != nil {
 			return c.JSON(500, map[string]string{"error": err.Error()})
 		}
