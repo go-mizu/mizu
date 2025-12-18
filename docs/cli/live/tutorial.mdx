@@ -1,0 +1,201 @@
+---
+title: "Live Template Tutorial"
+description: "Build a real-time counter application"
+---
+
+# Live Template Tutorial
+
+In this tutorial, you'll build an interactive counter that updates in real-time across all connected browsers.
+
+## Step 1: Create the Project
+
+```bash
+mizu new livecounter --template live
+cd livecounter
+go mod tidy
+mizu dev
+```
+
+Open `http://localhost:8080` to see the default app.
+
+## Step 2: Understand the Counter
+
+The template includes a counter example. Let's examine how it works.
+
+### The Counter Handler
+
+Look at `handler/counter.go`:
+
+```go
+package handler
+
+import "github.com/go-mizu/mizu"
+
+func Counter() mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        return c.Render("pages/counter", map[string]any{
+            "Title": "Live Counter",
+            "Count": 0,
+        })
+    }
+}
+```
+
+### The Counter View
+
+Look at `views/pages/counter.html`:
+
+```html
+{{define "content"}}
+<div id="live-content">
+    <div class="counter">
+        <h1>{{.Count}}</h1>
+        <div class="buttons">
+            <button onclick="live.send('decrement', '')">-</button>
+            <button onclick="live.send('increment', '')">+</button>
+        </div>
+    </div>
+</div>
+<script src="/static/js/live.js"></script>
+{{end}}
+```
+
+### The WebSocket Handler
+
+In `app/server/app.go`, messages are handled:
+
+```go
+func (a *App) onMessage(ctx context.Context, s *live.Session, topic string, data []byte) {
+    switch topic {
+    case "increment":
+        a.count++
+    case "decrement":
+        a.count--
+    }
+
+    // Re-render and broadcast to all clients
+    html := a.renderCounter()
+    a.liveServer.Publish("counter", "update", []byte(html))
+}
+
+func (a *App) renderCounter() string {
+    return fmt.Sprintf(`
+        <div class="counter">
+            <h1>%d</h1>
+            <div class="buttons">
+                <button onclick="live.send('decrement', '')">-</button>
+                <button onclick="live.send('increment', '')">+</button>
+            </div>
+        </div>
+    `, a.count)
+}
+```
+
+## Step 3: Test Real-Time Updates
+
+1. Open `http://localhost:8080/counter` in one browser
+2. Open it in another browser window
+3. Click + or - in one window
+4. Watch both windows update!
+
+## Step 4: Add a Reset Button
+
+Update the `renderCounter` function:
+
+```go
+func (a *App) renderCounter() string {
+    return fmt.Sprintf(`
+        <div class="counter">
+            <h1>%d</h1>
+            <div class="buttons">
+                <button onclick="live.send('decrement', '')">-</button>
+                <button onclick="live.send('reset', '')">Reset</button>
+                <button onclick="live.send('increment', '')">+</button>
+            </div>
+        </div>
+    `, a.count)
+}
+```
+
+Handle the reset message:
+
+```go
+func (a *App) onMessage(ctx context.Context, s *live.Session, topic string, data []byte) {
+    switch topic {
+    case "increment":
+        a.count++
+    case "decrement":
+        a.count--
+    case "reset":
+        a.count = 0
+    }
+
+    html := a.renderCounter()
+    a.liveServer.Publish("counter", "update", []byte(html))
+}
+```
+
+## Step 5: Add Per-User Counters
+
+Each user can have their own counter:
+
+```go
+func (a *App) onConnect(ctx context.Context, s *live.Session) error {
+    // Initialize per-session counter
+    s.Set("count", 0)
+    return nil
+}
+
+func (a *App) onMessage(ctx context.Context, s *live.Session, topic string, data []byte) {
+    count := s.Get("count").(int)
+
+    switch topic {
+    case "increment":
+        count++
+    case "decrement":
+        count--
+    case "reset":
+        count = 0
+    }
+
+    s.Set("count", count)
+
+    // Send update to this session only
+    html := renderCounter(count)
+    s.Send("update", []byte(html))
+}
+```
+
+## How Live Updates Work
+
+```
+Browser                          Server
+   |                                |
+   | --- WebSocket Connect -------> |
+   |                                | (creates Session)
+   |                                |
+   | --- "increment" ------------> |
+   |                                | (updates count)
+   | <-- "update" (new HTML) ------ |
+   |                                |
+   | (replaces DOM)                 |
+```
+
+## What You Learned
+
+- WebSocket connection handling
+- Message-based communication
+- Broadcasting updates to all clients
+- Per-session state management
+- Server-side rendering for updates
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Sync Template" icon="rotate" href="/cli/sync/overview">
+    Add offline support and data sync
+  </Card>
+  <Card title="Live Documentation" icon="bolt" href="/view/live-overview">
+    Deep dive into live features
+  </Card>
+</CardGroup>

@@ -322,7 +322,7 @@
         "tab": "CLI",
         "groups": [
           {
-            "group": "Overview",
+            "group": "Getting Started",
             "pages": [
               "cli/overview",
               "cli/installation"
@@ -333,16 +333,62 @@
             "pages": [
               "cli/new",
               "cli/dev",
+              "cli/contract",
               "cli/version"
             ]
           },
           {
-            "group": "Templates",
+            "group": "Templates Overview",
             "pages": [
-              "cli/templates",
-              "cli/template-minimal",
-              "cli/template-api",
-              "cli/template-contract"
+              "cli/templates"
+            ]
+          },
+          {
+            "group": "Minimal Template",
+            "pages": [
+              "cli/minimal/overview",
+              "cli/minimal/structure",
+              "cli/minimal/tutorial"
+            ]
+          },
+          {
+            "group": "API Template",
+            "pages": [
+              "cli/api/overview",
+              "cli/api/structure",
+              "cli/api/tutorial"
+            ]
+          },
+          {
+            "group": "Contract Template",
+            "pages": [
+              "cli/contract-template/overview",
+              "cli/contract-template/structure",
+              "cli/contract-template/tutorial"
+            ]
+          },
+          {
+            "group": "Web Template",
+            "pages": [
+              "cli/web/overview",
+              "cli/web/structure",
+              "cli/web/tutorial"
+            ]
+          },
+          {
+            "group": "Live Template",
+            "pages": [
+              "cli/live/overview",
+              "cli/live/structure",
+              "cli/live/tutorial"
+            ]
+          },
+          {
+            "group": "Sync Template",
+            "pages": [
+              "cli/sync/overview",
+              "cli/sync/structure",
+              "cli/sync/tutorial"
             ]
           },
           {

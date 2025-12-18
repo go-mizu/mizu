@@ -1,83 +1,155 @@
 ---
 title: "CLI Overview"
-description: "The Mizu CLI is the official project toolkit for the go-mizu framework"
+description: "Learn what the Mizu CLI is and how it helps you build web applications faster"
 ---
 
 # Mizu CLI
 
-The `mizu` command-line interface is the official project toolkit for building and running Mizu applications. It provides a streamlined developer experience with project scaffolding, development server, and machine-readable output for CI/CD integration.
+The Mizu CLI (Command Line Interface) is a tool that helps you create and run Mizu web applications. If you've never used a CLI before, don't worry - this guide will walk you through everything step by step.
 
-## Quick Start
+## What is a CLI?
+
+A CLI is a program you run in your terminal (also called command prompt or shell). Instead of clicking buttons in a graphical interface, you type commands. For example:
 
 ```bash
-# Create a new project
 mizu new myapp --template api
+```
 
-# Navigate to your project
+This command tells the Mizu CLI to create a new project called "myapp" using the "api" template.
+
+## What Does the Mizu CLI Do?
+
+The Mizu CLI helps you with two main tasks:
+
+1. **Creating new projects** - Instead of creating files and folders manually, the CLI generates a complete project structure for you
+2. **Running your application** - The CLI can start your web server with a single command
+
+Think of it like a helpful assistant that handles the boring setup work so you can focus on building your application.
+
+## Quick Start Example
+
+Let's create your first Mizu application. Open your terminal and run these commands:
+
+```bash
+# Step 1: Create a new project
+mizu new myapp --template minimal
+
+# Step 2: Go into the project folder
 cd myapp
 
-# Install dependencies
+# Step 3: Download dependencies
 go mod tidy
 
-# Run in development mode
+# Step 4: Start the server
 mizu dev
 ```
 
-## Features
-
-<CardGroup cols={2}>
-  <Card title="Project Scaffolding" icon="folder-plus">
-    Generate new Mizu projects from built-in templates with customizable variables
-  </Card>
-  <Card title="Development Server" icon="play">
-    Auto-detect and run your main package with graceful shutdown support
-  </Card>
-  <Card title="JSON Output" icon="code">
-    Machine-readable output for CI/CD pipelines and scripting automation
-  </Card>
-  <Card title="Zero Config" icon="gear">
-    Works out of the box with sensible defaults and auto-detection
-  </Card>
-</CardGroup>
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| [`mizu new`](/cli/new) | Create a new project from a template |
-| [`mizu dev`](/cli/dev) | Run the current project in development mode |
-| [`mizu version`](/cli/version) | Print version information |
-
-## Architecture
-
-The Mizu CLI follows a simple command structure:
+You should see output like this:
 
 ```
-mizu <command> [flags]
+Starting ./cmd/server...
 ```
 
-Global flags can be placed before or after the command:
+Now open your browser and go to `http://localhost:8080`. You'll see your application running.
+
+Press `Ctrl+C` in the terminal to stop the server.
+
+## Available Commands
+
+The Mizu CLI has four main commands:
+
+| Command | What it does |
+|---------|--------------|
+| `mizu new` | Creates a new project from a template |
+| `mizu dev` | Runs your project in development mode |
+| `mizu contract` | Works with service contracts (for API projects) |
+| `mizu version` | Shows the CLI version |
+
+### Getting Help
+
+You can add `--help` to any command to see what options are available:
 
 ```bash
-# Both are valid
-mizu --verbose dev
-mizu dev --verbose
+# See all commands
+mizu --help
+
+# See options for creating a new project
+mizu new --help
+
+# See options for the dev command
+mizu dev --help
 ```
+
+## Choosing a Template
+
+When you create a new project with `mizu new`, you choose a template. Each template gives you a different starting point:
+
+| Template | Best for | Difficulty |
+|----------|----------|------------|
+| `minimal` | Learning Mizu, quick experiments | Beginner |
+| `api` | JSON APIs, backend services | Beginner |
+| `contract` | Multi-protocol APIs (REST + JSON-RPC) | Intermediate |
+| `web` | Server-rendered websites with HTML | Intermediate |
+| `live` | Real-time apps (chat, dashboards) | Intermediate |
+| `sync` | Offline-first apps with data sync | Advanced |
+
+**Not sure which to pick?** Start with `minimal` to learn the basics, then try `api` when you want to build a real project.
+
+To see all available templates:
+
+```bash
+mizu new --list
+```
+
+Output:
+
+```
+Template    Purpose
+api         JSON API service with a recommended layout
+contract    Transport-neutral service contract with REST, JSON-RPC, and OpenAPI
+live        Real-time interactive app with live views and instant updates
+minimal     Smallest runnable Mizu project
+sync        Offline-first app with sync, live updates, and reactive state
+web         Full-stack web app with views, components, and static assets
+```
+
+## How the CLI Works
+
+When you run `mizu new myapp --template api`, here's what happens:
+
+1. The CLI reads the template files
+2. It creates the `myapp` folder
+3. It generates all the project files with your project name filled in
+4. It sets up the correct Go module path
+
+When you run `mizu dev`, here's what happens:
+
+1. The CLI looks for your main package (usually in `cmd/` folder)
+2. It compiles and runs your Go code
+3. It watches for `Ctrl+C` to shut down gracefully
 
 ## Design Philosophy
 
-1. **Convention over Configuration** - Auto-detect project structure when possible
-2. **Explicit is Better** - Provide clear flags for override when needed
-3. **Machine-Friendly** - JSON output mode for all commands
-4. **Fail Fast** - Clear error messages with actionable hints
+The Mizu CLI follows these principles:
+
+- **Convention over Configuration** - It works with sensible defaults, so you don't need to configure everything
+- **Explicit when needed** - You can override any default with flags
+- **Machine-friendly** - All commands support `--json` output for scripts and automation
+- **Clear errors** - When something goes wrong, you get helpful messages explaining how to fix it
 
 ## Next Steps
 
 <CardGroup cols={2}>
-  <Card title="Installation" icon="download" href="/cli/installation">
-    Install the Mizu CLI on your system
+  <Card title="Install the CLI" icon="download" href="/cli/installation">
+    Get the Mizu CLI installed on your computer
   </Card>
-  <Card title="Create a Project" icon="rocket" href="/cli/new">
-    Scaffold a new Mizu application
+  <Card title="Create Your First Project" icon="rocket" href="/cli/new">
+    Learn all the options for creating projects
+  </Card>
+  <Card title="Explore Templates" icon="folder-tree" href="/cli/templates">
+    See what each template includes
+  </Card>
+  <Card title="Run in Dev Mode" icon="play" href="/cli/dev">
+    Learn about the development server
   </Card>
 </CardGroup>

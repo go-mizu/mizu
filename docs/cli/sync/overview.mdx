@@ -1,0 +1,170 @@
+---
+title: "Sync Template"
+description: "Offline-first application with data synchronization"
+---
+
+# Sync Template
+
+The sync template creates offline-first applications where data syncs automatically between client and server. Users can work offline, and changes merge when they reconnect.
+
+## When to Use This Template
+
+Use the sync template when:
+
+- **Offline support** - App works without network
+- **Collaborative editing** - Multiple users edit same data
+- **Optimistic updates** - UI updates before server confirms
+- **Conflict resolution** - Automatic merge of concurrent changes
+
+## What You Get
+
+- **Sync engine** - Handles data synchronization
+- **Operation log** - Tracks changes for replay
+- **Deduplication** - Prevents duplicate operations
+- **Live updates** - Real-time broadcast of changes
+- **Snapshot support** - Fast initial load
+
+## Quick Start
+
+```bash
+mizu new myapp --template sync
+cd myapp
+go mod tidy
+mizu dev
+```
+
+Open `http://localhost:8080` to see a syncing todo list.
+
+## How It Works
+
+### 1. Client Makes Change
+
+User adds a todo item (works offline).
+
+### 2. Operation Logged
+
+Change is recorded as an operation.
+
+### 3. Sync to Server
+
+When online, operation is sent to server.
+
+### 4. Server Applies
+
+Server validates and applies the operation.
+
+### 5. Broadcast
+
+Change is broadcast to all connected clients.
+
+### 6. UI Updates
+
+All clients see the new todo.
+
+## Project Structure
+
+```
+myapp/
+├── cmd/server/main.go         # Entry point
+├── app/server/
+│   ├── app.go                 # App + sync setup
+│   ├── config.go              # Configuration
+│   └── routes.go              # Routes
+├── handler/
+│   └── home.go                # Home page
+├── service/
+│   └── todo/
+│       └── mutator.go         # Todo operations
+├── assets/                    # Static files
+├── views/                     # Templates
+└── go.mod
+```
+
+## Key Concepts
+
+### Operations
+
+Changes are expressed as operations:
+
+```go
+type Operation struct {
+    ID     string          `json:"id"`
+    Type   string          `json:"type"`    // "create", "update", "delete"
+    Args   json.RawMessage `json:"args"`
+}
+```
+
+### Apply Function
+
+Server applies operations to state:
+
+```go
+func (s *Store) Apply(ctx context.Context, m sync.Mutation) ([]sync.Change, error) {
+    switch m.Type {
+    case "create":
+        // Create todo
+    case "update":
+        // Update todo
+    case "delete":
+        // Delete todo
+    }
+    return changes, nil
+}
+```
+
+### Snapshots
+
+Fast initial load with current state:
+
+```go
+func (s *Store) Snapshot(ctx context.Context, scope string) (json.RawMessage, uint64, error) {
+    todos := s.GetAll(scope)
+    data, _ := json.Marshal(todos)
+    return data, s.version, nil
+}
+```
+
+## Example: Todo App
+
+The template includes a todo list that syncs:
+
+```go
+// Create a todo
+mutation := sync.Mutation{
+    Type: "todo.create",
+    Args: json.RawMessage(`{"title":"Buy milk"}`),
+}
+
+// Apply and broadcast
+changes, err := store.Apply(ctx, mutation)
+syncEngine.Broadcast(scope, changes)
+```
+
+## Benefits
+
+### Works Offline
+
+Operations queue locally, sync when online.
+
+### Optimistic UI
+
+Changes appear immediately, confirmed later.
+
+### Conflict-Free
+
+Operations merge automatically using timestamps.
+
+### Efficient Sync
+
+Only operations are sent, not full state.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Project Structure" icon="folder" href="/cli/sync/structure">
+    Understand every file
+  </Card>
+  <Card title="Tutorial" icon="graduation-cap" href="/cli/sync/tutorial">
+    Build a syncing app
+  </Card>
+</CardGroup>

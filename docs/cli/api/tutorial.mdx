@@ -1,0 +1,554 @@
+---
+title: "API Template Tutorial"
+description: "Build a complete REST API from scratch"
+---
+
+# API Template Tutorial
+
+In this tutorial, you'll build a todo list API with full CRUD operations. You'll learn the patterns used in production Mizu APIs.
+
+## What We're Building
+
+A REST API with these endpoints:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/todos | List all todos |
+| POST | /api/todos | Create a todo |
+| GET | /api/todos/:id | Get a todo by ID |
+| PUT | /api/todos/:id | Update a todo |
+| DELETE | /api/todos/:id | Delete a todo |
+
+## Step 1: Create the Project
+
+```bash
+mizu new todoapi --template api
+cd todoapi
+go mod tidy
+```
+
+Verify it works:
+
+```bash
+mizu dev
+# In another terminal:
+curl http://localhost:8080/health
+```
+
+You should see `{"status":"ok"}`.
+
+## Step 2: Create the Todo Feature
+
+Create the feature directory:
+
+```bash
+mkdir -p feature/todos
+```
+
+Create `feature/todos/http.go`:
+
+```go
+package todos
+
+import (
+    "sync"
+    "github.com/go-mizu/mizu"
+)
+
+// Todo represents a todo item.
+type Todo struct {
+    ID        string `json:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
+}
+
+// Store is an in-memory todo store.
+type Store struct {
+    mu     sync.RWMutex
+    todos  map[string]*Todo
+    nextID int
+}
+
+// NewStore creates a new todo store.
+func NewStore() *Store {
+    return &Store{
+        todos: make(map[string]*Todo),
+    }
+}
+```
+
+This sets up our data types and a simple in-memory store.
+
+## Step 3: Implement List Handler
+
+Add to `feature/todos/http.go`:
+
+```go
+// List returns a handler that lists all todos.
+func List(store *Store) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        store.mu.RLock()
+        defer store.mu.RUnlock()
+
+        todos := make([]*Todo, 0, len(store.todos))
+        for _, t := range store.todos {
+            todos = append(todos, t)
+        }
+
+        return c.JSON(200, todos)
+    }
+}
+```
+
+## Step 4: Implement Create Handler
+
+Add to `feature/todos/http.go`:
+
+```go
+import (
+    "fmt"
+    // ... other imports
+)
+
+// CreateInput is the input for creating a todo.
+type CreateInput struct {
+    Title string `json:"title"`
+}
+
+// Create returns a handler that creates a todo.
+func Create(store *Store) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        var input CreateInput
+        if err := c.Bind(&input); err != nil {
+            return err
+        }
+
+        if input.Title == "" {
+            return c.JSON(400, map[string]string{
+                "error": "title is required",
+            })
+        }
+
+        store.mu.Lock()
+        defer store.mu.Unlock()
+
+        store.nextID++
+        todo := &Todo{
+            ID:        fmt.Sprintf("%d", store.nextID),
+            Title:     input.Title,
+            Completed: false,
+        }
+        store.todos[todo.ID] = todo
+
+        return c.JSON(201, todo)
+    }
+}
+```
+
+## Step 5: Implement Get Handler
+
+Add to `feature/todos/http.go`:
+
+```go
+// Get returns a handler that gets a todo by ID.
+func Get(store *Store) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        id := c.Param("id")
+
+        store.mu.RLock()
+        defer store.mu.RUnlock()
+
+        todo, ok := store.todos[id]
+        if !ok {
+            return c.JSON(404, map[string]string{
+                "error": "todo not found",
+            })
+        }
+
+        return c.JSON(200, todo)
+    }
+}
+```
+
+## Step 6: Implement Update Handler
+
+Add to `feature/todos/http.go`:
+
+```go
+// UpdateInput is the input for updating a todo.
+type UpdateInput struct {
+    Title     *string `json:"title"`
+    Completed *bool   `json:"completed"`
+}
+
+// Update returns a handler that updates a todo.
+func Update(store *Store) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        id := c.Param("id")
+
+        var input UpdateInput
+        if err := c.Bind(&input); err != nil {
+            return err
+        }
+
+        store.mu.Lock()
+        defer store.mu.Unlock()
+
+        todo, ok := store.todos[id]
+        if !ok {
+            return c.JSON(404, map[string]string{
+                "error": "todo not found",
+            })
+        }
+
+        if input.Title != nil {
+            todo.Title = *input.Title
+        }
+        if input.Completed != nil {
+            todo.Completed = *input.Completed
+        }
+
+        return c.JSON(200, todo)
+    }
+}
+```
+
+## Step 7: Implement Delete Handler
+
+Add to `feature/todos/http.go`:
+
+```go
+// Delete returns a handler that deletes a todo.
+func Delete(store *Store) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        id := c.Param("id")
+
+        store.mu.Lock()
+        defer store.mu.Unlock()
+
+        if _, ok := store.todos[id]; !ok {
+            return c.JSON(404, map[string]string{
+                "error": "todo not found",
+            })
+        }
+
+        delete(store.todos, id)
+
+        return c.JSON(200, map[string]string{
+            "message": "deleted",
+        })
+    }
+}
+```
+
+## Step 8: Register Routes
+
+Update `app/api/app.go` to include the store:
+
+```go
+package api
+
+import (
+    "github.com/go-mizu/mizu"
+    "example.com/todoapi/feature/todos"
+)
+
+type App struct {
+    cfg        Config
+    app        *mizu.App
+    todoStore  *todos.Store
+}
+
+func New(cfg Config) *App {
+    a := &App{
+        cfg:       cfg,
+        todoStore: todos.NewStore(),
+    }
+    a.app = mizu.New()
+    a.routes()
+    return a
+}
+
+func (a *App) Listen(addr string) error {
+    return a.app.Listen(addr)
+}
+```
+
+Update `app/api/routes.go`:
+
+```go
+package api
+
+import (
+    "example.com/todoapi/feature/health"
+    "example.com/todoapi/feature/todos"
+)
+
+func (a *App) routes() {
+    // Health check
+    a.app.Get("/health", health.Handler())
+
+    // Todo routes
+    a.app.Get("/api/todos", todos.List(a.todoStore))
+    a.app.Post("/api/todos", todos.Create(a.todoStore))
+    a.app.Get("/api/todos/:id", todos.Get(a.todoStore))
+    a.app.Put("/api/todos/:id", todos.Update(a.todoStore))
+    a.app.Delete("/api/todos/:id", todos.Delete(a.todoStore))
+}
+```
+
+## Step 9: Test the API
+
+Start the server:
+
+```bash
+mizu dev
+```
+
+In another terminal, test each endpoint:
+
+### List (empty)
+
+```bash
+curl http://localhost:8080/api/todos
+```
+
+Output: `[]`
+
+### Create
+
+```bash
+curl -X POST http://localhost:8080/api/todos \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Buy groceries"}'
+```
+
+Output:
+
+```json
+{"id":"1","title":"Buy groceries","completed":false}
+```
+
+### Create Another
+
+```bash
+curl -X POST http://localhost:8080/api/todos \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Walk the dog"}'
+```
+
+### List All
+
+```bash
+curl http://localhost:8080/api/todos
+```
+
+Output:
+
+```json
+[{"id":"1","title":"Buy groceries","completed":false},{"id":"2","title":"Walk the dog","completed":false}]
+```
+
+### Get One
+
+```bash
+curl http://localhost:8080/api/todos/1
+```
+
+### Update
+
+```bash
+curl -X PUT http://localhost:8080/api/todos/1 \
+  -H "Content-Type: application/json" \
+  -d '{"completed":true}'
+```
+
+Output:
+
+```json
+{"id":"1","title":"Buy groceries","completed":true}
+```
+
+### Delete
+
+```bash
+curl -X DELETE http://localhost:8080/api/todos/2
+```
+
+Output:
+
+```json
+{"message":"deleted"}
+```
+
+## Complete Code
+
+Here's the complete `feature/todos/http.go`:
+
+```go
+package todos
+
+import (
+    "fmt"
+    "sync"
+
+    "github.com/go-mizu/mizu"
+)
+
+// Todo represents a todo item.
+type Todo struct {
+    ID        string `json:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
+}
+
+// Store is an in-memory todo store.
+type Store struct {
+    mu     sync.RWMutex
+    todos  map[string]*Todo
+    nextID int
+}
+
+// NewStore creates a new todo store.
+func NewStore() *Store {
+    return &Store{
+        todos: make(map[string]*Todo),
+    }
+}
+
+// CreateInput is the input for creating a todo.
+type CreateInput struct {
+    Title string `json:"title"`
+}
+
+// UpdateInput is the input for updating a todo.
+type UpdateInput struct {
+    Title     *string `json:"title"`
+    Completed *bool   `json:"completed"`
+}
+
+// List returns a handler that lists all todos.
+func List(store *Store) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        store.mu.RLock()
+        defer store.mu.RUnlock()
+
+        todos := make([]*Todo, 0, len(store.todos))
+        for _, t := range store.todos {
+            todos = append(todos, t)
+        }
+        return c.JSON(200, todos)
+    }
+}
+
+// Create returns a handler that creates a todo.
+func Create(store *Store) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        var input CreateInput
+        if err := c.Bind(&input); err != nil {
+            return err
+        }
+        if input.Title == "" {
+            return c.JSON(400, map[string]string{"error": "title is required"})
+        }
+
+        store.mu.Lock()
+        defer store.mu.Unlock()
+
+        store.nextID++
+        todo := &Todo{
+            ID:        fmt.Sprintf("%d", store.nextID),
+            Title:     input.Title,
+            Completed: false,
+        }
+        store.todos[todo.ID] = todo
+        return c.JSON(201, todo)
+    }
+}
+
+// Get returns a handler that gets a todo by ID.
+func Get(store *Store) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        id := c.Param("id")
+
+        store.mu.RLock()
+        defer store.mu.RUnlock()
+
+        todo, ok := store.todos[id]
+        if !ok {
+            return c.JSON(404, map[string]string{"error": "todo not found"})
+        }
+        return c.JSON(200, todo)
+    }
+}
+
+// Update returns a handler that updates a todo.
+func Update(store *Store) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        id := c.Param("id")
+
+        var input UpdateInput
+        if err := c.Bind(&input); err != nil {
+            return err
+        }
+
+        store.mu.Lock()
+        defer store.mu.Unlock()
+
+        todo, ok := store.todos[id]
+        if !ok {
+            return c.JSON(404, map[string]string{"error": "todo not found"})
+        }
+
+        if input.Title != nil {
+            todo.Title = *input.Title
+        }
+        if input.Completed != nil {
+            todo.Completed = *input.Completed
+        }
+        return c.JSON(200, todo)
+    }
+}
+
+// Delete returns a handler that deletes a todo.
+func Delete(store *Store) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        id := c.Param("id")
+
+        store.mu.Lock()
+        defer store.mu.Unlock()
+
+        if _, ok := store.todos[id]; !ok {
+            return c.JSON(404, map[string]string{"error": "todo not found"})
+        }
+        delete(store.todos, id)
+        return c.JSON(200, map[string]string{"message": "deleted"})
+    }
+}
+```
+
+## What You Learned
+
+1. **Feature organization** - Grouping related code together
+2. **Handler factories** - Functions that return handlers
+3. **Dependency injection** - Passing the store to handlers
+4. **CRUD operations** - Create, Read, Update, Delete patterns
+5. **Input validation** - Checking required fields
+6. **Error responses** - Returning appropriate status codes
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Add a Database" icon="database" href="/examples/overview">
+    Replace in-memory store with a real database
+  </Card>
+  <Card title="Contract Template" icon="file-contract" href="/cli/contract-template/overview">
+    Learn about multi-protocol APIs
+  </Card>
+  <Card title="Add Middleware" icon="layer-group" href="/concepts/middleware">
+    Add logging, auth, and more
+  </Card>
+  <Card title="Error Handling" icon="exclamation-triangle" href="/concepts/error">
+    Improve error responses
+  </Card>
+</CardGroup>

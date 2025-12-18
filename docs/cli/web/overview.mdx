@@ -1,0 +1,155 @@
+---
+title: "Web Template"
+description: "Full-stack web application with views and static assets"
+---
+
+# Web Template
+
+The web template creates a full-stack web application with server-rendered HTML views, layouts, components, and static asset handling.
+
+## When to Use This Template
+
+Use the web template when:
+
+- **Building a website** - Server-rendered HTML pages
+- **Need layouts** - Shared headers, footers, navigation
+- **Static assets** - CSS, JavaScript, images
+- **SEO matters** - Search engine friendly HTML
+
+## What You Get
+
+- **View engine** - Template rendering with layouts
+- **Static file serving** - Embedded or file-based assets
+- **Page handlers** - Clean separation of routes and views
+- **Component system** - Reusable UI pieces
+
+## Quick Start
+
+```bash
+mizu new mysite --template web
+cd mysite
+go mod tidy
+mizu dev
+```
+
+Open `http://localhost:8080` in your browser.
+
+## Project Structure
+
+```
+mysite/
+├── cmd/
+│   └── web/
+│       └── main.go         # Entry point
+├── app/
+│   └── web/
+│       ├── app.go          # Application setup
+│       ├── config.go       # Configuration
+│       └── routes.go       # Route registration
+├── handler/
+│   ├── home.go             # Home page handler
+│   └── about.go            # About page handler
+├── assets/
+│   ├── embed.go            # Asset embedding
+│   ├── css/
+│   │   └── style.css       # Stylesheets
+│   └── js/
+│       └── app.js          # JavaScript
+├── views/
+│   ├── layouts/
+│   │   └── main.html       # Main layout
+│   ├── pages/
+│   │   ├── home.html       # Home page
+│   │   └── about.html      # About page
+│   └── partials/
+│       └── nav.html        # Navigation partial
+├── go.mod
+└── .gitignore
+```
+
+## Key Features
+
+### View Engine
+
+Renders HTML templates with data:
+
+```go
+func Home() mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        return c.Render("pages/home", map[string]any{
+            "Title": "Welcome",
+            "Items": []string{"One", "Two", "Three"},
+        })
+    }
+}
+```
+
+### Layouts
+
+Wrap pages in a consistent layout:
+
+```html
+<!-- views/layouts/main.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{.Title}}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    {{template "partials/nav" .}}
+    <main>
+        {{template "content" .}}
+    </main>
+</body>
+</html>
+```
+
+### Static Assets
+
+Serve CSS, JS, and images:
+
+```go
+app.Mount("/static/", staticHandler())
+```
+
+Assets are embedded in the binary for easy deployment.
+
+## Handlers
+
+```go
+// handler/home.go
+package handler
+
+import "github.com/go-mizu/mizu"
+
+func Home() mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        return c.Render("pages/home", map[string]any{
+            "Title":   "Home",
+            "Message": "Welcome to my site!",
+        })
+    }
+}
+```
+
+## Views
+
+```html
+<!-- views/pages/home.html -->
+{{define "content"}}
+<h1>{{.Message}}</h1>
+<p>This is the home page.</p>
+{{end}}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Project Structure" icon="folder" href="/cli/web/structure">
+    Understand every file
+  </Card>
+  <Card title="Tutorial" icon="graduation-cap" href="/cli/web/tutorial">
+    Build a website step by step
+  </Card>
+</CardGroup>

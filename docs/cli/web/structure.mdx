@@ -1,0 +1,235 @@
+---
+title: "Web Template Structure"
+description: "Understanding the web template files"
+---
+
+# Web Template Structure
+
+The web template provides a complete full-stack structure for server-rendered websites.
+
+## Directory Layout
+
+```
+mysite/
+├── cmd/web/main.go           # Entry point
+├── app/web/
+│   ├── app.go                # Application setup
+│   ├── config.go             # Configuration
+│   └── routes.go             # Route registration
+├── handler/
+│   ├── home.go               # Home page
+│   └── about.go              # About page
+├── assets/
+│   ├── embed.go              # Asset embedding
+│   ├── css/style.css         # Styles
+│   └── js/app.js             # JavaScript
+├── views/
+│   ├── layouts/main.html     # Main layout
+│   ├── pages/
+│   │   ├── home.html         # Home page
+│   │   └── about.html        # About page
+│   └── partials/nav.html     # Navigation
+├── go.mod
+└── .gitignore
+```
+
+## Core Files
+
+### app/web/app.go
+
+```go
+package web
+
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/view"
+)
+
+type App struct {
+    cfg    Config
+    app    *mizu.App
+    engine *view.Engine
+}
+
+func New(cfg Config) *App {
+    a := &App{cfg: cfg}
+    a.app = mizu.New()
+    a.engine = view.New(view.Options{
+        Root:   "views",
+        Layout: "layouts/main",
+    })
+    a.app.Use(a.engine.Middleware())
+    a.routes()
+    return a
+}
+```
+
+### app/web/routes.go
+
+```go
+package web
+
+import "example.com/mysite/handler"
+
+func (a *App) routes() {
+    a.app.Mount("/static/", staticHandler(a.cfg.Dev))
+    a.app.Get("/", handler.Home())
+    a.app.Get("/about", handler.About())
+}
+```
+
+## Handler Files
+
+### handler/home.go
+
+```go
+package handler
+
+import "github.com/go-mizu/mizu"
+
+func Home() mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        return c.Render("pages/home", map[string]any{
+            "Title":   "Home",
+            "Message": "Welcome to my website!",
+        })
+    }
+}
+```
+
+## View Files
+
+### views/layouts/main.html
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}} | My Site</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    {{template "partials/nav" .}}
+    <main class="container">
+        {{template "content" .}}
+    </main>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
+```
+
+### views/pages/home.html
+
+```html
+{{define "content"}}
+<h1>{{.Message}}</h1>
+<p>This is the home page content.</p>
+{{end}}
+```
+
+### views/partials/nav.html
+
+```html
+<nav>
+    <a href="/">Home</a>
+    <a href="/about">About</a>
+</nav>
+```
+
+## Asset Files
+
+### assets/embed.go
+
+```go
+package assets
+
+import "embed"
+
+//go:embed css js
+var FS embed.FS
+```
+
+This embeds CSS and JS files into the binary.
+
+### assets/css/style.css
+
+```css
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: system-ui, sans-serif;
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+}
+
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+nav {
+    background: #333;
+    padding: 1rem;
+}
+
+nav a {
+    color: white;
+    margin-right: 1rem;
+}
+```
+
+## Adding a New Page
+
+1. Create handler: `handler/contact.go`
+2. Create view: `views/pages/contact.html`
+3. Add route: `app/web/routes.go`
+
+```go
+// handler/contact.go
+package handler
+
+import "github.com/go-mizu/mizu"
+
+func Contact() mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        return c.Render("pages/contact", map[string]any{
+            "Title": "Contact",
+        })
+    }
+}
+```
+
+```html
+<!-- views/pages/contact.html -->
+{{define "content"}}
+<h1>Contact Us</h1>
+<form method="POST" action="/contact">
+    <input type="text" name="name" placeholder="Name">
+    <input type="email" name="email" placeholder="Email">
+    <textarea name="message" placeholder="Message"></textarea>
+    <button type="submit">Send</button>
+</form>
+{{end}}
+```
+
+```go
+// routes.go
+a.app.Get("/contact", handler.Contact())
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Tutorial" icon="graduation-cap" href="/cli/web/tutorial">
+    Build a complete website
+  </Card>
+  <Card title="View Engine" icon="eye" href="/view/overview">
+    Learn more about templates
+  </Card>
+</CardGroup>

@@ -1,0 +1,249 @@
+---
+title: "Contract Template"
+description: "Multi-protocol service with REST, JSON-RPC, and OpenAPI"
+---
+
+# Contract Template
+
+The contract template creates a service based on transport-neutral contracts. Define your API once as Go methods, then expose it via REST, JSON-RPC, and automatically generate OpenAPI documentation.
+
+## When to Use This Template
+
+Use the contract template when:
+
+- **Multiple protocols needed** - REST for web clients, JSON-RPC for internal services
+- **API-first design** - Define contracts before implementation
+- **Auto-generated docs** - OpenAPI specs from your code
+- **Clean architecture** - Business logic separate from transport
+
+## What You Get
+
+A complete service with:
+
+- **Service contracts** - Plain Go structs with typed methods
+- **REST transport** - RESTful HTTP endpoints
+- **JSON-RPC transport** - JSON-RPC 2.0 endpoint
+- **OpenAPI spec** - Auto-generated at `/openapi.json`
+- **Discovery endpoint** - List available methods
+
+## Quick Start
+
+```bash
+# Create the project
+mizu new myservice --template contract
+
+# Enter the project
+cd myservice
+
+# Install dependencies
+go mod tidy
+
+# Run the server
+mizu dev
+```
+
+Test the different protocols:
+
+```bash
+# REST
+curl http://localhost:8080/api/todo
+
+# JSON-RPC
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"todo.List","id":1}'
+
+# OpenAPI spec
+curl http://localhost:8080/openapi.json
+
+# Discovery
+mizu contract ls
+```
+
+## How Contracts Work
+
+### 1. Define a Service
+
+```go
+// service/todo/todo.go
+type Service struct {
+    // dependencies here
+}
+
+type Todo struct {
+    ID        string `json:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
+}
+
+type CreateInput struct {
+    Title string `json:"title"`
+}
+
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    // Implementation
+}
+
+func (s *Service) List(ctx context.Context) ([]*Todo, error) {
+    // Implementation
+}
+```
+
+### 2. Register with Contract System
+
+```go
+// In app setup
+registry := contract.NewRegistry()
+registry.Register("todo", &todo.Service{})
+```
+
+### 3. Mount Transports
+
+```go
+// REST transport
+rest := contract.NewREST(registry)
+app.Mount("/api", rest.Handler())
+
+// JSON-RPC transport
+rpc := contract.NewJSONRPC(registry)
+app.Post("/", rpc.Handler())
+
+// OpenAPI
+openapi := contract.NewOpenAPI(registry)
+app.Get("/openapi.json", openapi.Handler())
+```
+
+## Benefits
+
+### Write Once, Expose Multiple Ways
+
+Your business logic is in plain Go methods:
+
+```go
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    // This same code handles REST and JSON-RPC
+}
+```
+
+Both transports call the same method:
+
+```bash
+# REST: POST /api/todo
+# JSON-RPC: {"method": "todo.Create", ...}
+```
+
+### Automatic Documentation
+
+OpenAPI spec is generated from your Go types:
+
+```go
+type CreateInput struct {
+    Title string `json:"title" doc:"The title of the todo"`
+}
+```
+
+Generates:
+
+```json
+{
+  "CreateInput": {
+    "type": "object",
+    "properties": {
+      "title": {
+        "type": "string",
+        "description": "The title of the todo"
+      }
+    }
+  }
+}
+```
+
+### Type Safety
+
+Everything is strongly typed:
+
+```go
+// Input and output types are checked at compile time
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error)
+```
+
+### Discoverable
+
+Clients can discover available methods:
+
+```bash
+mizu contract ls
+```
+
+```
+todo
+  todo.Create    POST   /api/todo       Create a new todo
+  todo.List      GET    /api/todo       List all todos
+  todo.Get       GET    /api/todo/{id}  Get a todo by ID
+```
+
+## Project Structure
+
+```
+myservice/
+├── cmd/
+│   └── api/
+│       └── main.go           # Entry point
+├── app/
+│   └── server/
+│       ├── config.go         # Configuration
+│       └── server.go         # Server setup
+├── service/
+│   └── todo/
+│       └── todo.go           # Todo service contract
+├── go.mod
+└── .gitignore
+```
+
+## Available Transports
+
+| Transport | Endpoint | Use Case |
+|-----------|----------|----------|
+| REST | `/api/*` | Web clients, mobile apps |
+| JSON-RPC | `/` (POST) | Internal services, RPC clients |
+| OpenAPI | `/openapi.json` | Documentation, code generation |
+| OpenRPC | `/openrpc.json` | JSON-RPC documentation |
+
+## CLI Integration
+
+Use `mizu contract` to interact with your service:
+
+```bash
+# List all methods
+mizu contract ls
+
+# Show method details
+mizu contract show todo.Create
+
+# Call a method
+mizu contract call todo.Create '{"title":"Buy milk"}'
+
+# Export OpenAPI spec
+mizu contract spec > openapi.json
+```
+
+## When to Use Contract vs API Template
+
+| Aspect | API Template | Contract Template |
+|--------|--------------|-------------------|
+| Protocols | REST only | REST + JSON-RPC |
+| Documentation | Manual | Auto-generated |
+| Type safety | At boundaries | Throughout |
+| Complexity | Lower | Higher |
+| Best for | Simple APIs | Multi-protocol services |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Project Structure" icon="folder" href="/cli/contract-template/structure">
+    Understand every file in detail
+  </Card>
+  <Card title="Tutorial" icon="graduation-cap" href="/cli/contract-template/tutorial">
+    Build a contract-based service
+  </Card>
+</CardGroup>

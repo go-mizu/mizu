@@ -1,0 +1,142 @@
+---
+title: "Minimal Template"
+description: "The simplest Mizu project - perfect for learning"
+---
+
+# Minimal Template
+
+The minimal template creates the smallest possible runnable Mizu application. It's a single Go file with just enough code to start a web server.
+
+## When to Use This Template
+
+Use the minimal template when:
+
+- **Learning Mizu** - Understand the basics without distractions
+- **Quick experiments** - Test an idea in minutes
+- **Custom structure** - You want to build your own project layout
+- **Embedding examples** - Need a simple example to share
+
+## What You Get
+
+A single-file application with:
+
+- One Go file (`main.go`)
+- A basic route that returns "Hello"
+- A running server on port 8080
+
+That's it. No extra folders, no configuration files, just the essentials.
+
+## Quick Start
+
+```bash
+# Create the project
+mizu new hello --template minimal
+
+# Enter the project
+cd hello
+
+# Install dependencies
+go mod tidy
+
+# Run the server
+mizu dev
+```
+
+Open `http://localhost:8080` in your browser. You'll see:
+
+```
+Hello from hello
+```
+
+## What the Code Looks Like
+
+The entire application fits in one file:
+
+```go
+package main
+
+import (
+    "log"
+    "github.com/go-mizu/mizu"
+)
+
+func main() {
+    app := mizu.New()
+
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.Text(200, "Hello from minimal\n")
+    })
+
+    log.Println("listening on :8080")
+    if err := app.Listen(":8080"); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+Let's break this down:
+
+1. **Create the app** - `mizu.New()` creates a new Mizu application
+2. **Add a route** - `app.Get("/", ...)` handles GET requests to the root path
+3. **Return a response** - `c.Text(200, "...")` sends a plain text response
+4. **Start the server** - `app.Listen(":8080")` starts the HTTP server
+
+## Why Start Minimal?
+
+### Easy to Understand
+
+With just 20 lines of code, you can see exactly what Mizu does:
+- Creates an HTTP server
+- Routes requests to handlers
+- Sends responses
+
+### Easy to Modify
+
+Want to try something? Just edit the one file:
+
+```go
+// Add a JSON endpoint
+app.Get("/api/user", func(c *mizu.Ctx) error {
+    return c.JSON(200, map[string]string{
+        "name": "Alice",
+        "role": "admin",
+    })
+})
+```
+
+### Easy to Grow
+
+When you're ready for more structure, you can:
+1. Add new files to the same directory
+2. Migrate to the `api` template
+3. Build your own custom structure
+
+## Comparison with Other Templates
+
+| Aspect | minimal | api |
+|--------|---------|-----|
+| Files | 1 | 10+ |
+| Folders | 0 | 5+ |
+| Lines of code | ~20 | ~200 |
+| Learning curve | Minutes | Hours |
+| Production ready | No | Yes |
+
+## When to Upgrade
+
+Consider switching to the `api` template when:
+
+- You have more than 3-4 routes
+- You need configuration management
+- Multiple developers are working on the project
+- You want feature-based organization
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Project Structure" icon="folder" href="/cli/minimal/structure">
+    See exactly what files are created
+  </Card>
+  <Card title="Step-by-Step Tutorial" icon="graduation-cap" href="/cli/minimal/tutorial">
+    Build your first Mizu app
+  </Card>
+</CardGroup>

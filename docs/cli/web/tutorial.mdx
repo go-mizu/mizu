@@ -1,0 +1,289 @@
+---
+title: "Web Template Tutorial"
+description: "Build a server-rendered website"
+---
+
+# Web Template Tutorial
+
+In this tutorial, you'll build a simple blog with pages, a layout, and styling.
+
+## Step 1: Create the Project
+
+```bash
+mizu new myblog --template web
+cd myblog
+go mod tidy
+mizu dev
+```
+
+Open `http://localhost:8080` to see the default page.
+
+## Step 2: Update the Layout
+
+Edit `views/layouts/main.html`:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}} | My Blog</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <a href="/" class="logo">My Blog</a>
+            <div class="nav-links">
+                <a href="/">Home</a>
+                <a href="/about">About</a>
+            </div>
+        </nav>
+    </header>
+    <main>
+        {{template "content" .}}
+    </main>
+    <footer>
+        <p>&copy; 2024 My Blog</p>
+    </footer>
+</body>
+</html>
+```
+
+## Step 3: Create a Blog Post Handler
+
+Create `handler/posts.go`:
+
+```go
+package handler
+
+import "github.com/go-mizu/mizu"
+
+type Post struct {
+    ID      string
+    Title   string
+    Summary string
+    Content string
+    Date    string
+}
+
+var posts = []Post{
+    {
+        ID:      "1",
+        Title:   "Getting Started with Mizu",
+        Summary: "Learn how to build web apps with Mizu",
+        Content: "Mizu is a lightweight web framework for Go...",
+        Date:    "January 15, 2024",
+    },
+    {
+        ID:      "2",
+        Title:   "Building APIs",
+        Summary: "Create REST APIs quickly",
+        Content: "Building APIs with Mizu is straightforward...",
+        Date:    "January 10, 2024",
+    },
+}
+
+func PostList() mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        return c.Render("pages/posts", map[string]any{
+            "Title": "Blog Posts",
+            "Posts": posts,
+        })
+    }
+}
+
+func PostShow() mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        id := c.Param("id")
+
+        for _, p := range posts {
+            if p.ID == id {
+                return c.Render("pages/post", map[string]any{
+                    "Title": p.Title,
+                    "Post":  p,
+                })
+            }
+        }
+
+        return c.Text(404, "Post not found")
+    }
+}
+```
+
+## Step 4: Create Post Views
+
+Create `views/pages/posts.html`:
+
+```html
+{{define "content"}}
+<h1>{{.Title}}</h1>
+<div class="posts">
+    {{range .Posts}}
+    <article class="post-card">
+        <h2><a href="/posts/{{.ID}}">{{.Title}}</a></h2>
+        <p class="date">{{.Date}}</p>
+        <p>{{.Summary}}</p>
+        <a href="/posts/{{.ID}}" class="read-more">Read more →</a>
+    </article>
+    {{end}}
+</div>
+{{end}}
+```
+
+Create `views/pages/post.html`:
+
+```html
+{{define "content"}}
+<article class="post">
+    <header>
+        <h1>{{.Post.Title}}</h1>
+        <p class="date">{{.Post.Date}}</p>
+    </header>
+    <div class="content">
+        <p>{{.Post.Content}}</p>
+    </div>
+    <footer>
+        <a href="/">← Back to posts</a>
+    </footer>
+</article>
+{{end}}
+```
+
+## Step 5: Add Routes
+
+Update `app/web/routes.go`:
+
+```go
+package web
+
+import "example.com/myblog/handler"
+
+func (a *App) routes() {
+    a.app.Mount("/static/", staticHandler(a.cfg.Dev))
+
+    // Pages
+    a.app.Get("/", handler.PostList())
+    a.app.Get("/posts/:id", handler.PostShow())
+    a.app.Get("/about", handler.About())
+}
+```
+
+## Step 6: Add Styling
+
+Update `assets/css/style.css`:
+
+```css
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    line-height: 1.6;
+    color: #333;
+}
+
+header {
+    background: #1a1a2e;
+    padding: 1rem 2rem;
+}
+
+nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.logo {
+    color: white;
+    font-weight: bold;
+    font-size: 1.5rem;
+    text-decoration: none;
+}
+
+.nav-links a {
+    color: #ccc;
+    text-decoration: none;
+    margin-left: 1.5rem;
+}
+
+.nav-links a:hover {
+    color: white;
+}
+
+main {
+    max-width: 800px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+
+.post-card {
+    background: #f9f9f9;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    border-radius: 8px;
+}
+
+.post-card h2 a {
+    color: #1a1a2e;
+    text-decoration: none;
+}
+
+.date {
+    color: #666;
+    font-size: 0.9rem;
+    margin: 0.5rem 0;
+}
+
+.read-more {
+    color: #4a90d9;
+    text-decoration: none;
+}
+
+.post header {
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #eee;
+}
+
+footer {
+    margin-top: 3rem;
+    padding: 1rem 0;
+    text-align: center;
+    color: #666;
+    border-top: 1px solid #eee;
+}
+```
+
+## Step 7: Test It
+
+Restart the server and browse:
+
+- `http://localhost:8080/` - Post list
+- `http://localhost:8080/posts/1` - Single post
+- `http://localhost:8080/about` - About page
+
+## What You Learned
+
+- Creating page handlers
+- Using templates with data
+- Layouts and partials
+- URL parameters in routes
+- Styling with CSS
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Live Template" icon="bolt" href="/cli/live/overview">
+    Add real-time features
+  </Card>
+  <Card title="View Engine" icon="eye" href="/view/overview">
+    Learn more about templates
+  </Card>
+</CardGroup>

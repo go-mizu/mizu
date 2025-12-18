@@ -1,0 +1,192 @@
+---
+title: "Live Template Structure"
+description: "Understanding the live template organization"
+---
+
+# Live Template Structure
+
+The live template combines server-rendered views with WebSocket-powered real-time updates.
+
+## Directory Layout
+
+```
+myapp/
+├── cmd/server/main.go        # Entry point
+├── app/server/
+│   ├── app.go                # Application + live server setup
+│   ├── config.go             # Configuration
+│   └── routes.go             # HTTP + WebSocket routes
+├── handler/
+│   ├── home.go               # Static home page
+│   └── counter.go            # Live counter handler
+├── assets/
+│   ├── embed.go              # Asset embedding
+│   ├── css/style.css         # Styles
+│   └── js/live.js            # WebSocket client
+├── views/
+│   ├── layouts/main.html     # Main layout
+│   ├── pages/
+│   │   ├── home.html         # Home page
+│   │   └── counter.html      # Counter page
+│   └── partials/             # Shared partials
+├── go.mod
+└── .gitignore
+```
+
+## Core Files
+
+### app/server/app.go
+
+```go
+package server
+
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/live"
+    "github.com/go-mizu/mizu/view"
+)
+
+type App struct {
+    cfg        Config
+    app        *mizu.App
+    engine     *view.Engine
+    liveServer *live.Server
+}
+
+func New(cfg Config) *App {
+    a := &App{cfg: cfg}
+    a.app = mizu.New()
+
+    // View engine for templates
+    a.engine = view.New(view.Options{
+        Root:   "views",
+        Layout: "layouts/main",
+    })
+    a.app.Use(a.engine.Middleware())
+
+    // Live server for WebSocket
+    a.liveServer = live.NewServer(live.Options{
+        OnConnect: a.onConnect,
+        OnMessage: a.onMessage,
+    })
+
+    a.routes()
+    return a
+}
+
+func (a *App) onConnect(ctx context.Context, s *live.Session) error {
+    // Initialize session state
+    return nil
+}
+
+func (a *App) onMessage(ctx context.Context, s *live.Session, topic string, data []byte) {
+    // Handle incoming messages
+}
+```
+
+### app/server/routes.go
+
+```go
+package server
+
+import "example.com/myapp/handler"
+
+func (a *App) routes() {
+    // Static files
+    a.app.Mount("/static/", staticHandler(a.cfg.Dev))
+
+    // Pages
+    a.app.Get("/", handler.Home())
+    a.app.Get("/counter", handler.Counter(a.engine))
+
+    // WebSocket endpoint
+    a.app.Mount("/ws", a.liveServer.Handler())
+}
+```
+
+### handler/counter.go
+
+```go
+package handler
+
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/view"
+)
+
+func Counter(engine *view.Engine) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        return c.Render("pages/counter", map[string]any{
+            "Title": "Counter",
+            "Count": 0,
+        })
+    }
+}
+```
+
+### assets/js/live.js
+
+```javascript
+// WebSocket client for live updates
+class LiveSocket {
+    constructor(url) {
+        this.url = url;
+        this.connect();
+    }
+
+    connect() {
+        this.ws = new WebSocket(this.url);
+        this.ws.onmessage = (e) => this.handleMessage(e);
+        this.ws.onclose = () => setTimeout(() => this.connect(), 1000);
+    }
+
+    send(topic, data) {
+        this.ws.send(JSON.stringify({ topic, data }));
+    }
+
+    handleMessage(event) {
+        const { topic, data } = JSON.parse(event.data);
+        if (topic === 'update') {
+            document.getElementById('live-content').innerHTML = data;
+        }
+    }
+}
+
+// Initialize when DOM ready
+document.addEventListener('DOMContentLoaded', () => {
+    window.live = new LiveSocket('ws://' + location.host + '/ws');
+});
+```
+
+### views/pages/counter.html
+
+```html
+{{define "content"}}
+<div id="live-content">
+    <h1>Counter: {{.Count}}</h1>
+    <button onclick="live.send('increment', '')">+</button>
+    <button onclick="live.send('decrement', '')">-</button>
+</div>
+<script src="/static/js/live.js"></script>
+{{end}}
+```
+
+## Message Flow
+
+1. **Page Load** - Server renders initial HTML
+2. **WebSocket Connect** - Client connects to `/ws`
+3. **User Action** - Button click calls `live.send()`
+4. **Server Receives** - `OnMessage` handler processes
+5. **Server Sends** - New HTML sent back
+6. **DOM Update** - Client replaces content
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Tutorial" icon="graduation-cap" href="/cli/live/tutorial">
+    Build a real-time chat
+  </Card>
+  <Card title="Live Docs" icon="bolt" href="/view/live-overview">
+    Deep dive into live views
+  </Card>
+</CardGroup>

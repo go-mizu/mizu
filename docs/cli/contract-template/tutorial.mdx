@@ -1,0 +1,430 @@
+---
+title: "Contract Template Tutorial"
+description: "Build a multi-protocol API service"
+---
+
+# Contract Template Tutorial
+
+In this tutorial, you'll build a notes service that exposes both REST and JSON-RPC endpoints, with automatic OpenAPI documentation.
+
+## What We're Building
+
+A notes API with:
+- Create, list, get, update, delete operations
+- REST endpoints at `/api/notes/*`
+- JSON-RPC endpoint at `/`
+- OpenAPI spec at `/openapi.json`
+
+## Step 1: Create the Project
+
+```bash
+mizu new notes --template contract
+cd notes
+go mod tidy
+```
+
+Verify it works:
+
+```bash
+mizu dev
+```
+
+```bash
+# Test the default todo service
+curl http://localhost:8080/api/todo
+```
+
+## Step 2: Create the Notes Service
+
+Create the service directory:
+
+```bash
+mkdir -p service/notes
+```
+
+Create `service/notes/notes.go`:
+
+```go
+package notes
+
+import (
+    "context"
+    "fmt"
+    "sync"
+    "time"
+)
+
+// Service is the notes service.
+type Service struct {
+    mu     sync.RWMutex
+    notes  map[string]*Note
+    nextID int
+}
+
+// New creates a new notes service.
+func New() *Service {
+    return &Service{
+        notes: make(map[string]*Note),
+    }
+}
+
+// Note represents a note.
+type Note struct {
+    ID        string    `json:"id"`
+    Title     string    `json:"title"`
+    Content   string    `json:"content"`
+    CreatedAt time.Time `json:"createdAt"`
+    UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// CreateInput is the input for creating a note.
+type CreateInput struct {
+    Title   string `json:"title"`
+    Content string `json:"content"`
+}
+
+// UpdateInput is the input for updating a note.
+type UpdateInput struct {
+    ID      string  `json:"id"`
+    Title   *string `json:"title,omitempty"`
+    Content *string `json:"content,omitempty"`
+}
+
+// GetInput is the input for getting a note.
+type GetInput struct {
+    ID string `json:"id"`
+}
+
+// DeleteInput is the input for deleting a note.
+type DeleteInput struct {
+    ID string `json:"id"`
+}
+
+// DeleteOutput is the output for deleting a note.
+type DeleteOutput struct {
+    Success bool `json:"success"`
+}
+```
+
+## Step 3: Implement the Methods
+
+Add the methods to `service/notes/notes.go`:
+
+```go
+// Create creates a new note.
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Note, error) {
+    if in.Title == "" {
+        return nil, fmt.Errorf("title is required")
+    }
+
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    s.nextID++
+    now := time.Now()
+    note := &Note{
+        ID:        fmt.Sprintf("%d", s.nextID),
+        Title:     in.Title,
+        Content:   in.Content,
+        CreatedAt: now,
+        UpdatedAt: now,
+    }
+    s.notes[note.ID] = note
+
+    return note, nil
+}
+
+// List returns all notes.
+func (s *Service) List(ctx context.Context) ([]*Note, error) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
+    notes := make([]*Note, 0, len(s.notes))
+    for _, n := range s.notes {
+        notes = append(notes, n)
+    }
+    return notes, nil
+}
+
+// Get returns a note by ID.
+func (s *Service) Get(ctx context.Context, in *GetInput) (*Note, error) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
+    note, ok := s.notes[in.ID]
+    if !ok {
+        return nil, fmt.Errorf("note not found: %s", in.ID)
+    }
+    return note, nil
+}
+
+// Update updates a note.
+func (s *Service) Update(ctx context.Context, in *UpdateInput) (*Note, error) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    note, ok := s.notes[in.ID]
+    if !ok {
+        return nil, fmt.Errorf("note not found: %s", in.ID)
+    }
+
+    if in.Title != nil {
+        note.Title = *in.Title
+    }
+    if in.Content != nil {
+        note.Content = *in.Content
+    }
+    note.UpdatedAt = time.Now()
+
+    return note, nil
+}
+
+// Delete deletes a note.
+func (s *Service) Delete(ctx context.Context, in *DeleteInput) (*DeleteOutput, error) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    if _, ok := s.notes[in.ID]; !ok {
+        return nil, fmt.Errorf("note not found: %s", in.ID)
+    }
+
+    delete(s.notes, in.ID)
+    return &DeleteOutput{Success: true}, nil
+}
+```
+
+## Step 4: Register the Service
+
+Update `app/server/server.go`:
+
+```go
+package server
+
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/contract"
+    "example.com/notes/service/notes"  // Add this
+    "example.com/notes/service/todo"
+)
+
+type Server struct {
+    cfg      Config
+    app      *mizu.App
+    registry *contract.Registry
+}
+
+func New(cfg Config) *Server {
+    s := &Server{cfg: cfg}
+    s.app = mizu.New()
+    s.registry = contract.NewRegistry()
+
+    // Register services
+    s.registry.Register("todo", todo.New())
+    s.registry.Register("notes", notes.New())  // Add this
+
+    s.setupTransports()
+    return s
+}
+
+func (s *Server) setupTransports() {
+    // REST transport
+    rest := contract.NewREST(s.registry)
+    s.app.Mount("/api", rest.Handler())
+
+    // JSON-RPC transport
+    rpc := contract.NewJSONRPC(s.registry)
+    s.app.Post("/", rpc.Handler())
+
+    // OpenAPI spec
+    openapi := contract.NewOpenAPI(s.registry, contract.OpenAPIOptions{
+        Title:       "Notes API",
+        Description: "A simple notes service",
+        Version:     "1.0.0",
+    })
+    s.app.Get("/openapi.json", openapi.Handler())
+}
+
+func (s *Server) Listen(addr string) error {
+    return s.app.Listen(addr)
+}
+```
+
+## Step 5: Test the API
+
+Restart the server:
+
+```bash
+mizu dev
+```
+
+### Test via REST
+
+```bash
+# Create a note
+curl -X POST http://localhost:8080/api/notes \
+  -H "Content-Type: application/json" \
+  -d '{"title":"My First Note","content":"Hello world!"}'
+```
+
+```json
+{"id":"1","title":"My First Note","content":"Hello world!","createdAt":"2024-01-15T10:30:00Z","updatedAt":"2024-01-15T10:30:00Z"}
+```
+
+```bash
+# List notes
+curl http://localhost:8080/api/notes
+```
+
+```bash
+# Get a note
+curl http://localhost:8080/api/notes/1
+```
+
+```bash
+# Update a note
+curl -X PUT http://localhost:8080/api/notes/1 \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Updated Title"}'
+```
+
+```bash
+# Delete a note
+curl -X DELETE http://localhost:8080/api/notes/1
+```
+
+### Test via JSON-RPC
+
+```bash
+# Create via JSON-RPC
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "notes.Create",
+    "params": {"title": "RPC Note", "content": "Created via JSON-RPC"},
+    "id": 1
+  }'
+```
+
+```json
+{"jsonrpc":"2.0","result":{"id":"2","title":"RPC Note","content":"Created via JSON-RPC","createdAt":"...","updatedAt":"..."},"id":1}
+```
+
+```bash
+# List via JSON-RPC
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"notes.List","id":2}'
+```
+
+### Test via CLI
+
+```bash
+# List available methods
+mizu contract ls
+
+# Show method details
+mizu contract show notes.Create
+
+# Call a method
+mizu contract call notes.Create '{"title":"CLI Note","content":"From CLI"}'
+
+# List all notes
+mizu contract call notes.List
+```
+
+### View OpenAPI Spec
+
+```bash
+curl http://localhost:8080/openapi.json | jq .
+```
+
+Or open `http://localhost:8080/openapi.json` in your browser.
+
+## Step 6: Add Search Method
+
+Let's add a search capability. Add to `service/notes/notes.go`:
+
+```go
+// SearchInput is the input for searching notes.
+type SearchInput struct {
+    Query string `json:"query"`
+}
+
+// Search searches notes by title or content.
+func (s *Service) Search(ctx context.Context, in *SearchInput) ([]*Note, error) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
+    if in.Query == "" {
+        return []*Note{}, nil
+    }
+
+    query := strings.ToLower(in.Query)
+    var results []*Note
+
+    for _, n := range s.notes {
+        if strings.Contains(strings.ToLower(n.Title), query) ||
+           strings.Contains(strings.ToLower(n.Content), query) {
+            results = append(results, n)
+        }
+    }
+
+    return results, nil
+}
+```
+
+Add the import at the top:
+
+```go
+import (
+    "context"
+    "fmt"
+    "strings"  // Add this
+    "sync"
+    "time"
+)
+```
+
+Test it:
+
+```bash
+# Via REST (custom method becomes POST)
+curl -X POST http://localhost:8080/api/notes/search \
+  -H "Content-Type: application/json" \
+  -d '{"query":"hello"}'
+
+# Via JSON-RPC
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"notes.Search","params":{"query":"hello"},"id":1}'
+
+# Via CLI
+mizu contract call notes.Search '{"query":"hello"}'
+```
+
+## What You Learned
+
+1. **Service contracts** - Define business logic as Go methods
+2. **Transport-neutral** - Same code works for REST and JSON-RPC
+3. **Auto-discovery** - Methods are automatically exposed
+4. **OpenAPI generation** - Documentation from your code
+5. **CLI integration** - Test services from command line
+
+## Key Takeaways
+
+- **Separation of concerns** - Business logic in services, transport in setup
+- **Type safety** - Strongly typed inputs and outputs
+- **Consistency** - Same API via multiple protocols
+- **Discoverability** - Clients can explore your API
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Contract Concepts" icon="book" href="/contract/overview">
+    Learn more about the contract system
+  </Card>
+  <Card title="Web Template" icon="browser" href="/cli/web/overview">
+    Build server-rendered web apps
+  </Card>
+</CardGroup>

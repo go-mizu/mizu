@@ -1,0 +1,143 @@
+---
+title: "Live Template"
+description: "Real-time interactive applications with WebSockets"
+---
+
+# Live Template
+
+The live template creates real-time applications with WebSocket support. Build interactive dashboards, chat apps, and live updates without writing JavaScript.
+
+## When to Use This Template
+
+Use the live template when:
+
+- **Real-time updates** - Data changes pushed to clients instantly
+- **Interactive UI** - User actions trigger server-side updates
+- **Live dashboards** - Metrics, monitoring, feeds
+- **Collaborative features** - Chat, notifications, presence
+
+## What You Get
+
+- **Live views** - Server-rendered UI that updates automatically
+- **WebSocket handling** - Built-in connection management
+- **Pub/sub messaging** - Broadcast to all or specific clients
+- **Session management** - Track connected users
+
+## Quick Start
+
+```bash
+mizu new myapp --template live
+cd myapp
+go mod tidy
+mizu dev
+```
+
+Open `http://localhost:8080` to see a live counter example.
+
+## How It Works
+
+### 1. User Loads Page
+
+Server renders the initial HTML.
+
+### 2. WebSocket Connects
+
+JavaScript connects to `/ws` endpoint.
+
+### 3. User Interacts
+
+Click events send messages to server.
+
+### 4. Server Updates
+
+Server processes message, sends HTML back.
+
+### 5. UI Updates
+
+Client replaces DOM with new HTML.
+
+## Project Structure
+
+```
+myapp/
+├── cmd/server/main.go        # Entry point
+├── app/server/
+│   ├── app.go                # Application setup
+│   └── routes.go             # Routes
+├── handler/
+│   ├── home.go               # Home page
+│   └── counter.go            # Counter live view
+├── assets/                   # Static files
+├── views/                    # Templates
+└── go.mod
+```
+
+## Example: Counter
+
+```go
+// handler/counter.go
+func Counter(live *live.Server) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        return c.Render("pages/counter", nil)
+    }
+}
+
+// WebSocket handler
+func (h *CounterHandler) OnMessage(ctx context.Context, s *live.Session, topic string, data []byte) {
+    switch topic {
+    case "increment":
+        h.count++
+    case "decrement":
+        h.count--
+    }
+
+    // Re-render and send to client
+    html := h.render()
+    s.Send("update", html)
+}
+```
+
+## Key Features
+
+### Live Updates
+
+Push HTML updates to connected clients:
+
+```go
+// Send update to one session
+session.Send("update", html)
+
+// Broadcast to all sessions
+server.Publish("counter", "update", html)
+```
+
+### Session State
+
+Track per-connection state:
+
+```go
+func OnConnect(ctx context.Context, s *live.Session) error {
+    s.Set("username", "anonymous")
+    return nil
+}
+```
+
+### Topics
+
+Subscribe to specific channels:
+
+```go
+session.Subscribe("chat:room1")
+server.Publish("chat:room1", "message", data)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Project Structure" icon="folder" href="/cli/live/structure">
+    Understand every file
+  </Card>
+  <Card title="Tutorial" icon="graduation-cap" href="/cli/live/tutorial">
+    Build a real-time app
+  </Card>
+</CardGroup>
