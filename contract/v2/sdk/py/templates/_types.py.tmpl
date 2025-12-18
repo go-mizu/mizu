@@ -1,0 +1,50 @@
+{{define "_types.py.tmpl"}}
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Union, Literal
+
+from pydantic import BaseModel, Field, ConfigDict
+
+Model = BaseModel
+
+class _Base(Model):
+    model_config = ConfigDict(extra="allow")
+
+
+{{- range .Types}}
+
+{{- if .Description}}
+# {{.Description}}
+{{- end}}
+
+{{- if eq .Kind "struct"}}
+class {{.Name}}(_Base):
+{{- if not .Fields}}
+    pass
+{{- end}}
+{{- range .Fields}}
+    {{.PyName}}: {{.PyType}}{{if .Const}} = {{pyString .Const}}{{end}}
+{{- end}}
+
+{{- end}}
+
+{{- if eq .Kind "slice"}}
+{{.Name}} = List[{{.Elem}}]
+{{- end}}
+
+{{- if eq .Kind "map"}}
+{{.Name}} = Dict[str, {{.Elem}}]
+{{- end}}
+
+{{- if eq .Kind "union"}}
+# Discriminated union: tag "{{.Tag}}"
+{{.Name}} = Union[
+{{- range .Variants}}
+    {{.Type}},
+{{- end}}
+]
+{{- end}}
+
+{{end}}
+{{end}}

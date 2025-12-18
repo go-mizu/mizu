@@ -1,0 +1,106 @@
+{{define "_resources.py.tmpl"}}
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
+from ._types import *
+{{- if .HasStreamingSSE }}
+from ._streaming import Stream, AsyncStream
+{{- end }}
+
+
+def build_resources(client: Any) -> None:
+{{- range .Resources}}
+    client.{{.PyName}} = {{.ClassName}}(client)
+{{- end }}
+
+
+{{- range .Resources}}
+
+class {{.ClassName}}:
+    def __init__(self, client: Any):
+        self._client = client
+
+{{- $res := .}}
+{{- range .Methods}}
+
+    {{- if .Description}}
+    # {{.Description}}
+    {{- end}}
+
+    def {{.PyName}}(
+        self,
+        {{- if .HasInput}}
+        {{- if .InputIsStruct}}
+        {{- range .InputFields}}
+        {{.PyName}}: {{.PyType}}{{if .Optional}} = None{{end}}{{if .Nullable}} = None{{end}},
+        {{- end}}
+        {{- else}}
+        input: {{.InputType}},
+        {{- end}}
+        {{- end}}
+    ):
+        {{- if .IsStreaming}}
+        {{- if .StreamIsSSE}}
+        payload: Any = None
+        {{- if .HasInput}}
+        {{- if .InputIsStruct}}
+        payload = {
+            {{- range .InputFields}}
+            {{pyString .Name}}: {{.PyName}},
+            {{- end}}
+        }
+        {{- else}}
+        payload = input
+        {{- end}}
+        {{- end}}
+
+        if self._client.__class__.__name__ == "AsyncOpenAI":
+            return AsyncStream(
+                client=self._client,
+                method={{pyString .HTTPMethod}},
+                path={{pyString .HTTPPath}},
+                json=payload,
+                item_type={{.StreamItem}},
+            )
+        return Stream(
+            client=self._client,
+            method={{pyString .HTTPMethod}},
+            path={{pyString .HTTPPath}},
+            json=payload,
+            item_type={{.StreamItem}},
+        )
+        {{- else}}
+        raise NotImplementedError({{pyString (printf `stream mode "%s" is not supported` .StreamMode)}})
+        {{- end}}
+        {{- else}}
+
+        payload: Any = None
+        {{- if .HasInput}}
+        {{- if .InputIsStruct}}
+        payload = {
+            {{- range .InputFields}}
+            {{pyString .Name}}: {{.PyName}},
+            {{- end}}
+        }
+        {{- else}}
+        payload = input
+        {{- end}}
+        {{- end}}
+
+        if self._client.__class__.__name__ == "AsyncOpenAI":
+            # The async client will overwrite this method at runtime via attribute binding in Python
+            # but we keep a single template for simplicity.
+            raise RuntimeError("async method called on sync resource; use AsyncOpenAI")
+
+        data = self._client._request({{pyString .HTTPMethod}}, {{pyString .HTTPPath}}, json=payload)
+        {{- if .HasOutput}}
+        return {{.OutputType}}.model_validate(data)
+        {{- else}}
+        return data
+        {{- end}}
+
+{{- end}}
+
+{{- end}}
+{{end}}
