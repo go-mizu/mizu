@@ -83,8 +83,8 @@ type model struct {
 
 	Imports []string
 
-	HasTime      bool
-	HasStreaming bool
+	HasTime bool
+	HasSSE  bool
 
 	Types     []typeModel
 	Resources []resourceModel
@@ -193,7 +193,7 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 		}
 	}
 
-	m.HasStreaming = hasStreaming(svc)
+	m.HasSSE = hasSSE(svc)
 	m.HasTime = hasTime(svc)
 
 	typeNames := make([]string, 0, len(typeByName))
@@ -318,11 +318,11 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 		m.Resources = append(m.Resources, rm)
 	}
 
-	m.Imports = computeImports(m.HasStreaming, m.HasTime)
+	m.Imports = computeImports(m.HasSSE, m.HasTime)
 	return m, nil
 }
 
-func computeImports(hasStreaming, hasTime bool) []string {
+func computeImports(hasSSE, hasTime bool) []string {
 	imports := []string{
 		"bytes",
 		"context",
@@ -332,7 +332,7 @@ func computeImports(hasStreaming, hasTime bool) []string {
 		"net/http",
 		"strings",
 	}
-	if hasStreaming {
+	if hasSSE {
 		imports = append(imports, "bufio")
 	}
 	if hasTime {
@@ -342,13 +342,17 @@ func computeImports(hasStreaming, hasTime bool) []string {
 	return imports
 }
 
-func hasStreaming(svc *contract.Service) bool {
+func hasSSE(svc *contract.Service) bool {
 	for _, r := range svc.Resources {
 		if r == nil {
 			continue
 		}
 		for _, m := range r.Methods {
-			if m != nil && m.Stream != nil {
+			if m == nil || m.Stream == nil {
+				continue
+			}
+			mode := strings.TrimSpace(m.Stream.Mode)
+			if mode == "" || strings.EqualFold(mode, "sse") {
 				return true
 			}
 		}
