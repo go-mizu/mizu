@@ -212,13 +212,7 @@ func Register[T any](impl T, opts ...Option) Invoker {
 
 		// Streaming.
 		if mode, ok := o.streaming[im.Name]; ok {
-			m.Stream = &struct {
-				Mode      string  `json:"mode,omitempty" yaml:"mode,omitempty"`
-				Item      TypeRef `json:"item" yaml:"item"`
-				Done      TypeRef `json:"done,omitempty" yaml:"done,omitempty"`
-				Error     TypeRef `json:"error,omitempty" yaml:"error,omitempty"`
-				InputItem TypeRef `json:"input_item,omitempty" yaml:"input_item,omitempty"`
-			}{
+			m.Stream = &MethodStream{
 				Mode: string(mode),
 				Item: m.Output,
 			}
@@ -313,10 +307,6 @@ func isNilable(k reflect.Kind) bool {
 		return false
 	}
 }
-
-//
-// Type registry (internal)
-//
 
 type typeRegistry struct {
 	seen     map[string]*Type // key -> *Type

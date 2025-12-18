@@ -278,13 +278,7 @@ func minimalServiceContract(t *testing.T) *contract.Service {
 					{
 						Name:  "stream",
 						Input: "CreateRequest",
-						Stream: &struct {
-							Mode      string           `json:"mode,omitempty" yaml:"mode,omitempty"`
-							Item      contract.TypeRef `json:"item" yaml:"item"`
-							Done      contract.TypeRef `json:"done,omitempty" yaml:"done,omitempty"`
-							Error     contract.TypeRef `json:"error,omitempty" yaml:"error,omitempty"`
-							InputItem contract.TypeRef `json:"input_item,omitempty" yaml:"input_item,omitempty"`
-						}{
+						Stream: &contract.MethodStream{
 							Mode: "sse",
 							Item: "ResponseEvent",
 						},
