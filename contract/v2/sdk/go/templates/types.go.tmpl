@@ -1,0 +1,71 @@
+{{define "types.go.tmpl"}}
+{{- if .Types}}
+// Types
+{{- range .Types}}
+
+{{- if .Description}}
+// {{.Name}} {{.Description}}
+{{- end}}
+
+{{- if eq .Kind "struct"}}
+type {{.Name}} struct {
+{{- range .Fields}}
+	{{.GoName}} {{.GoType}} `json:"{{.Tag}}"`{{- if .Const}} // always {{quote .Const}}{{else if .Enum}} // one of: {{join .Enum ", "}}{{else if .Description}} // {{.Description}}{{end}}
+{{- end}}
+}
+{{- end}}
+
+{{- if eq .Kind "slice"}}
+type {{.Name}} []{{.Elem}}
+{{- end}}
+
+{{- if eq .Kind "map"}}
+type {{.Name}} map[string]{{.Elem}}
+{{- end}}
+
+{{- if eq .Kind "union"}}
+{{- if .Tag}}
+// {{.Name}} is a discriminated union (tag: {{quote .Tag}}).
+{{- else}}
+// {{.Name}} is a discriminated union.
+{{- end}}
+type {{.Name}} struct {
+{{- range .Variants}}
+	{{.FieldName}} *{{.Type}} `json:"-"`
+{{- end}}
+}
+
+func (u *{{.Name}}) MarshalJSON() ([]byte, error) {
+{{- range .Variants}}
+	if u.{{.FieldName}} != nil {
+		return json.Marshal(u.{{.FieldName}})
+	}
+{{- end}}
+	return []byte("null"), nil
+}
+
+func (u *{{.Name}}) UnmarshalJSON(data []byte) error {
+{{- if .Tag}}
+	var disc struct {
+		{{goName .Tag}} string `json:"{{.Tag}}"`
+	}
+	if err := json.Unmarshal(data, &disc); err != nil {
+		return err
+	}
+	switch disc.{{goName .Tag}} {
+{{- range .Variants}}
+	case {{quote .Value}}:
+		u.{{.FieldName}} = new({{.Type}})
+		return json.Unmarshal(data, u.{{.FieldName}})
+{{- end}}
+	}
+	return fmt.Errorf("unknown {{.Name}} {{.Tag}}: %q", disc.{{goName .Tag}})
+{{- else}}
+	return fmt.Errorf("union {{.Name}} missing discriminator tag")
+{{- end}}
+}
+{{- end}}
+
+{{- end}}
+{{- end}}
+{{end}}

@@ -1,0 +1,185 @@
+{{define "resources.go.tmpl"}}
+// Client is the {{if .Service.Sanitized}}{{.Service.Sanitized}}{{else}}API{{end}} API client.
+type Client struct {
+{{- range .Resources}}
+	{{.GoName}} *{{.GoName}}Resource
+{{- end}}
+
+	baseURL string
+	token   string
+	auth    string
+	headers map[string]string
+	http    *http.Client
+}
+
+// Option configures the client.
+type Option func(*Client)
+
+// NewClient creates a new client.
+func NewClient(token string, opts ...Option) *Client {
+	c := &Client{
+		baseURL: {{quote .Defaults.BaseURL}},
+		token:   token,
+		auth:    {{if .Defaults.Auth}}{{quote .Defaults.Auth}}{{else}}"bearer"{{end}},
+		headers: make(map[string]string),
+		http:    http.DefaultClient,
+	}
+
+{{- if .Defaults.Headers}}
+{{- range .Defaults.Headers}}
+	c.headers[{{quote .K}}] = {{quote .V}}
+{{- end}}
+{{- end}}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+
+{{- range .Resources}}
+	c.{{.GoName}} = &{{.GoName}}Resource{client: c}
+{{- end}}
+
+	return c
+}
+
+// WithBaseURL sets a custom base URL.
+func WithBaseURL(url string) Option {
+	return func(c *Client) { c.baseURL = strings.TrimRight(url, "/") }
+}
+
+// WithHTTPClient sets a custom HTTP client.
+func WithHTTPClient(h *http.Client) Option {
+	return func(c *Client) { c.http = h }
+}
+
+// WithHeader adds a custom header to all requests.
+func WithHeader(key, value string) Option {
+	return func(c *Client) { c.headers[key] = value }
+}
+
+// WithAuth sets the auth hint ("bearer", "basic", "none").
+func WithAuth(auth string) Option {
+	return func(c *Client) { c.auth = auth }
+}
+
+// Resources
+{{- range .Resources}}
+
+{{- if .Description}}
+// {{.GoName}}Resource {{.Description}}
+{{- else}}
+// {{.GoName}}Resource handles {{.Name}} operations.
+{{- end}}
+type {{.GoName}}Resource struct {
+	client *Client
+}
+
+{{- $res := .}}
+{{- range .Methods}}
+
+{{- if .Description}}
+// {{.GoName}} {{.Description}}
+{{- end}}
+
+{{- if .IsStreaming}}
+{{- if .StreamIsSSE}}
+func (r *{{$res.GoName}}Resource) {{.GoName}}(ctx context.Context{{if .HasInput}}, in *{{.InputType}}{{end}}) *EventStream[{{.StreamItemType}}] {
+	parse := func(data []byte) ({{.StreamItemType}}, error) {
+		var v {{.StreamItemType}}
+		err := json.Unmarshal(data, &v)
+		return v, err
+	}
+
+	s := &EventStream[{{.StreamItemType}}]{parse: parse}
+	u := r.client.baseURL + {{quote .HTTPPath}}
+
+	var body io.Reader
+{{- if .HasInput}}
+	if in != nil {
+		b, err := json.Marshal(in)
+		if err != nil {
+			s.err = err
+			return s
+		}
+		body = bytes.NewReader(b)
+	}
+{{- end}}
+
+	req, err := http.NewRequestWithContext(ctx, {{quote .HTTPMethod}}, u, body)
+	if err != nil {
+		s.err = err
+		return s
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+
+	applyAuth(req, r.client.auth, r.client.token)
+	for k, v := range r.client.headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := r.client.http.Do(req)
+	if err != nil {
+		s.err = err
+		return s
+	}
+
+	if resp.StatusCode >= 400 {
+		s.err = decodeError(resp)
+		_ = resp.Body.Close()
+		return s
+	}
+
+	s.resp = resp
+	s.scanner = bufio.NewScanner(resp.Body)
+	s.scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	return s
+}
+{{- else}}
+func (r *{{$res.GoName}}Resource) {{.GoName}}(ctx context.Context{{if .HasInput}}, in *{{.InputType}}{{end}}) error {
+	return fmt.Errorf("stream mode %q is not supported by this Go SDK generator", {{quote .StreamMode}})
+}
+{{- end}}
+{{- else}}
+
+{{- if and (not .HasInput) (not .HasOutput)}}
+func (r *{{$res.GoName}}Resource) {{.GoName}}(ctx context.Context) error {
+	return r.client.do(ctx, {{quote .HTTPMethod}}, {{quote .HTTPPath}}, nil, nil)
+}
+{{- end}}
+
+{{- if and (not .HasInput) (.HasOutput)}}
+func (r *{{$res.GoName}}Resource) {{.GoName}}(ctx context.Context) (*{{.OutputType}}, error) {
+	var out {{.OutputType}}
+	err := r.client.do(ctx, {{quote .HTTPMethod}}, {{quote .HTTPPath}}, nil, &out)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+{{- end}}
+
+{{- if and (.HasInput) (not .HasOutput)}}
+func (r *{{$res.GoName}}Resource) {{.GoName}}(ctx context.Context, in *{{.InputType}}) error {
+	return r.client.do(ctx, {{quote .HTTPMethod}}, {{quote .HTTPPath}}, in, nil)
+}
+{{- end}}
+
+{{- if and (.HasInput) (.HasOutput)}}
+func (r *{{$res.GoName}}Resource) {{.GoName}}(ctx context.Context, in *{{.InputType}}) (*{{.OutputType}}, error) {
+	var out {{.OutputType}}
+	err := r.client.do(ctx, {{quote .HTTPMethod}}, {{quote .HTTPPath}}, in, &out)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+{{- end}}
+
+{{- end}}
+
+{{- end}}
+{{- end}}
+{{end}}
