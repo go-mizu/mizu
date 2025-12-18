@@ -129,27 +129,6 @@ release:
   footer: |
     Full Changelog: https://github.com/go-mizu/mizu/compare/{{ .PreviousTag }}...{{ .Tag }}
 
-# Homebrew (kept for later, disabled for now)
-homebrew_casks:
-  - name: mizu
-
-    # Disable until go-mizu/homebrew-tap exists and HOMEBREW_TAP_TOKEN is configured.
-    disable: true
-    skip_upload: true
-
-    repository:
-      owner: go-mizu
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Casks
-    homepage: "https://github.com/go-mizu/mizu"
-    description: "Project toolkit for the go-mizu framework"
-    license: "MIT"
-    binaries:
-      - mizu
-    test: |
-      system "#{bin}/mizu", "version"
-
 # Docker (v2)
 dockers_v2:
   - id: mizu
