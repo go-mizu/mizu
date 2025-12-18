@@ -1,4 +1,3 @@
-// contract/transport/jsonrpc/client.go
 package jsonrpc
 
 import (
@@ -63,7 +62,7 @@ func (c *Client) Call(ctx context.Context, resource string, method string, in an
 	id := atomic.AddUint64(&c.nextID, 1)
 	full := resource + "." + method
 
-	req := rpcRequest{
+	req := request{
 		JSONRPC: "2.0",
 		Method:  full,
 		ID:      id,
@@ -76,7 +75,7 @@ func (c *Client) Call(ctx context.Context, resource string, method string, in an
 		req.Params = b
 	}
 
-	var resp rpcResponse
+	var resp response
 	if err := c.do(ctx, req, &resp); err != nil {
 		return err
 	}
@@ -101,7 +100,7 @@ func (c *Client) BatchCall(ctx context.Context, calls []BatchItem) ([]BatchResul
 		return nil, nil
 	}
 
-	reqs := make([]rpcRequest, 0, len(calls))
+	reqs := make([]request, 0, len(calls))
 	idToIndex := make(map[uint64]int, len(calls))
 
 	for i := range calls {
@@ -109,7 +108,7 @@ func (c *Client) BatchCall(ctx context.Context, calls []BatchItem) ([]BatchResul
 		idToIndex[id] = i
 
 		full := calls[i].Resource + "." + calls[i].Method
-		rq := rpcRequest{JSONRPC: "2.0", Method: full, ID: id}
+		rq := request{JSONRPC: "2.0", Method: full, ID: id}
 		if calls[i].In != nil {
 			b, err := json.Marshal(calls[i].In)
 			if err != nil {
@@ -120,7 +119,7 @@ func (c *Client) BatchCall(ctx context.Context, calls []BatchItem) ([]BatchResul
 		reqs = append(reqs, rq)
 	}
 
-	var rawResp []rpcResponse
+	var rawResp []response
 	if err := c.do(ctx, reqs, &rawResp); err != nil {
 		return nil, err
 	}
