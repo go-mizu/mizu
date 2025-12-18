@@ -1,97 +1,96 @@
 ---
-title: "Python SDK"
-description: "Generate modern, type-safe Python client libraries with sync and async support from your Contract services"
+title: "Python"
+description: "Generate modern, type-safe Python client libraries with sync and async support from your contract definitions"
 ---
 
-# Python SDK Generator
-
-The Python SDK generator (`sdkpy`) creates modern Python client libraries from your Contract services. The generated code features full type hints, dataclass models, and both synchronous and asynchronous clients powered by httpx.
+The Python SDK generator creates modern Python client libraries from your contract definitions. The generated code features full type hints, dataclass models, and both synchronous and asynchronous clients powered by httpx.
 
 ## Key Features
 
 - **Modern Python**: Python 3.8+ with full type hints
-- **Sync and Async**: Both `OpenAI` (sync) and `AsyncOpenAI` (async) clients
+- **Sync and Async**: Both `Client` (sync) and `AsyncClient` (async) clients
 - **httpx Powered**: Industry-standard HTTP client with automatic retries
 - **Dataclass Models**: Clean, typed data structures
 - **uv-Ready**: Includes `pyproject.toml` for modern Python packaging
 - **SSE Streaming**: First-class Server-Sent Events support
 
-## Prerequisites
-
-Before generating a Python SDK, you need:
-
-- Python 3.8 or later
-- A registered Contract service
-
-For running the generated SDK:
-- `httpx` library (`pip install httpx` or `uv add httpx`)
-
 ## Quick Start
 
-### Step 1: Define Your Service
+### Step 1: Define Your Contract
 
-```go
-// todo/api.go
-package todo
+```yaml
+# api.yaml
+name: TodoAPI
+description: Todo list API
 
-type API interface {
-    Create(input CreateInput) (Todo, error)
-    List() (ListOutput, error)
-    Get(id string) (Todo, error)
-    Delete(id string) error
-}
+defaults:
+  base_url: http://localhost:8080
 
-type Todo struct {
-    ID    string `json:"id"`
-    Title string `json:"title"`
-    Done  bool   `json:"done"`
-}
+resources:
+  - name: todos
+    description: Manage todo items
+    methods:
+      - name: create
+        input: CreateInput
+        output: Todo
+        http:
+          method: POST
+          path: /todos
+      - name: list
+        output: ListOutput
+        http:
+          method: GET
+          path: /todos
+      - name: get
+        input: GetInput
+        output: Todo
+        http:
+          method: GET
+          path: /todos/{id}
+      - name: delete
+        input: DeleteInput
+        http:
+          method: DELETE
+          path: /todos/{id}
 
-type CreateInput struct {
-    Title string `json:"title"`
-}
-
-type ListOutput struct {
-    Items []Todo `json:"items"`
-    Total int    `json:"total"`
-}
+types:
+  - name: Todo
+    kind: struct
+    fields:
+      - name: id
+        type: string
+      - name: title
+        type: string
+      - name: done
+        type: bool
+  - name: CreateInput
+    kind: struct
+    fields:
+      - name: title
+        type: string
+  - name: GetInput
+    kind: struct
+    fields:
+      - name: id
+        type: string
+  - name: DeleteInput
+    kind: struct
+    fields:
+      - name: id
+        type: string
+  - name: ListOutput
+    kind: struct
+    fields:
+      - name: items
+        type: "[]Todo"
+      - name: total
+        type: int
 ```
 
 ### Step 2: Generate the SDK
 
-```go
-package main
-
-import (
-    "os"
-    "path/filepath"
-
-    "yourapp/todo"
-    contract "github.com/go-mizu/mizu/contract/v2"
-    sdkpy "github.com/go-mizu/mizu/contract/v2/sdk/py"
-)
-
-func main() {
-    impl := todo.NewService()
-    svc := contract.Register[todo.API](impl,
-        contract.WithDefaultResource("todos"),
-    )
-
-    files, err := sdkpy.Generate(svc, &sdkpy.Config{
-        Package: "todoclient",
-        Version: "1.0.0",
-    })
-    if err != nil {
-        panic(err)
-    }
-
-    // Write all files
-    for _, f := range files {
-        path := filepath.Join("sdk/python", f.Path)
-        os.MkdirAll(filepath.Dir(path), 0755)
-        os.WriteFile(path, []byte(f.Content), 0644)
-    }
-}
+```bash
+mizu contract gen api.yaml --client --lang python --output ./sdk/python --package todoclient --version 1.0.0
 ```
 
 ### Step 3: Install and Use
@@ -106,10 +105,10 @@ pip install -e .
 ```
 
 ```python
-from todoclient import OpenAI
+from todoclient import Client
 
 # Create a client
-client = OpenAI(base_url="http://localhost:8080")
+client = Client(base_url="http://localhost:8080")
 
 # Create a todo
 todo = client.todos.create(title="Learn Mizu Python SDK")
@@ -127,41 +126,6 @@ print(f"Got: {todo.id} - {todo.title}")
 client.todos.delete(id=todo.id)
 print("Deleted successfully")
 ```
-
-## Generator API
-
-### Function Signature
-
-```go
-func Generate(svc *contract.Service, cfg *Config) ([]*sdk.File, error)
-```
-
-### Configuration
-
-```go
-type Config struct {
-    // Package is the Python import package name.
-    // Default: sanitized lowercase service name, or "sdk".
-    Package string
-
-    // Version is the package version for pyproject.toml.
-    // Default: "0.0.0".
-    Version string
-}
-```
-
-### Return Value
-
-The generator returns multiple files:
-
-| File | Description |
-|------|-------------|
-| `pyproject.toml` | Package configuration for pip/uv |
-| `src/{package}/__init__.py` | Package exports |
-| `src/{package}/_client.py` | Client classes (OpenAI, AsyncOpenAI) |
-| `src/{package}/_types.py` | Type definitions (dataclasses) |
-| `src/{package}/_resource.py` | Resource classes |
-| `src/{package}/_streaming.py` | SSE streaming utilities |
 
 ## Generated Code Structure
 
@@ -194,9 +158,9 @@ build-backend = "hatchling.build"
 ### __init__.py
 
 ```python
-from ._client import OpenAI, AsyncOpenAI
+from ._client import Client, AsyncClient
 
-__all__ = ["OpenAI", "AsyncOpenAI"]
+__all__ = ["Client", "AsyncClient"]
 ```
 
 ## Client Configuration
@@ -204,19 +168,19 @@ __all__ = ["OpenAI", "AsyncOpenAI"]
 ### Creating a Client
 
 ```python
-from todoclient import OpenAI
+from todoclient import Client
 
 # Basic client
-client = OpenAI(base_url="http://localhost:8080")
+client = Client(base_url="http://localhost:8080")
 
 # With authentication
-client = OpenAI(
+client = Client(
     api_key="your-api-key",
     base_url="http://localhost:8080",
 )
 
 # With all options
-client = OpenAI(
+client = Client(
     api_key="your-api-key",
     base_url="http://localhost:8080",
     timeout=30.0,
@@ -241,7 +205,7 @@ Create a new client with modified options:
 
 ```python
 # Original client
-client = OpenAI(api_key="key-1", base_url="http://localhost:8080")
+client = Client(api_key="key-1", base_url="http://localhost:8080")
 
 # New client with different API key
 other_client = client.with_options(api_key="key-2")
@@ -257,7 +221,7 @@ debug_client = client.with_options(
 Always close the client when done:
 
 ```python
-client = OpenAI(base_url="http://localhost:8080")
+client = Client(base_url="http://localhost:8080")
 try:
     # Use client...
     pass
@@ -270,7 +234,7 @@ Or use a context manager pattern:
 ```python
 from contextlib import closing
 
-with closing(OpenAI(base_url="http://localhost:8080")) as client:
+with closing(Client(base_url="http://localhost:8080")) as client:
     todo = client.todos.create(title="Task")
 ```
 
@@ -280,10 +244,10 @@ The SDK includes a fully async client for use with `asyncio`:
 
 ```python
 import asyncio
-from todoclient import AsyncOpenAI
+from todoclient import AsyncClient
 
 async def main():
-    client = AsyncOpenAI(base_url="http://localhost:8080")
+    client = AsyncClient(base_url="http://localhost:8080")
 
     try:
         # Create a todo
@@ -305,7 +269,7 @@ asyncio.run(main())
 
 ```python
 async def main():
-    client = AsyncOpenAI(base_url="http://localhost:8080")
+    client = AsyncClient(base_url="http://localhost:8080")
     try:
         todos = await client.todos.list()
     finally:
@@ -429,7 +393,7 @@ For methods with streaming support, the SDK provides iterator-based consumption:
 
 ```python
 # Stream events
-for event in client.responses.stream(model="gpt-4o", input="Hello"):
+for event in client.responses.stream(model="gpt-4", input="Hello"):
     if event.type == "text_delta":
         print(event.text, end="", flush=True)
     elif event.type == "completed":
@@ -439,7 +403,7 @@ for event in client.responses.stream(model="gpt-4o", input="Hello"):
 ### Async Streaming
 
 ```python
-async for event in client.responses.stream(model="gpt-4o", input="Hello"):
+async for event in client.responses.stream(model="gpt-4", input="Hello"):
     if event.type == "text_delta":
         print(event.text, end="", flush=True)
 ```
@@ -448,7 +412,7 @@ async for event in client.responses.stream(model="gpt-4o", input="Hello"):
 
 ```python
 # Collect all events into a list
-events = list(client.responses.stream(model="gpt-4o", input="Hello"))
+events = list(client.responses.stream(model="gpt-4", input="Hello"))
 
 # Or async
 events = [event async for event in client.responses.stream(...)]
@@ -478,10 +442,10 @@ class APIStatusError(SDKError):
 ### Handling Errors
 
 ```python
-from todoclient import OpenAI
+from todoclient import Client
 from todoclient._client import APIStatusError, APIConnectionError
 
-client = OpenAI(base_url="http://localhost:8080")
+client = Client(base_url="http://localhost:8080")
 
 try:
     todo = client.todos.get(id="nonexistent")
@@ -504,7 +468,7 @@ The client automatically retries failed requests (except for 4xx errors):
 
 ```python
 # Configure max retries
-client = OpenAI(
+client = Client(
     base_url="http://localhost:8080",
     max_retries=5,  # Retry up to 5 times
 )
@@ -521,7 +485,7 @@ Retries are attempted for:
 
 ```python
 # Default headers for all requests
-client = OpenAI(
+client = Client(
     base_url="http://localhost:8080",
     default_headers={
         "X-Request-ID": "abc-123",
@@ -536,15 +500,15 @@ The SDK supports different authentication modes based on your service configurat
 
 ```python
 # Bearer token (default)
-client = OpenAI(api_key="your-token")
+client = Client(api_key="your-token")
 # Sends: Authorization: Bearer your-token
 
 # Basic auth (if service configured with auth: basic)
-client = OpenAI(api_key="base64-encoded-credentials")
+client = Client(api_key="base64-encoded-credentials")
 # Sends: Authorization: Basic base64-encoded-credentials
 
 # No auth (if service configured with auth: none)
-client = OpenAI()
+client = Client()
 # Sends no Authorization header
 ```
 
@@ -552,13 +516,13 @@ client = OpenAI()
 
 ```python
 # Set timeout in seconds
-client = OpenAI(
+client = Client(
     base_url="http://localhost:8080",
     timeout=30.0,  # 30 second timeout
 )
 
 # No timeout (wait indefinitely)
-client = OpenAI(
+client = Client(
     base_url="http://localhost:8080",
     timeout=None,
 )
@@ -570,7 +534,7 @@ The generated SDK uses httpx internally. For advanced use cases, you can access 
 
 ```python
 # The SDK creates its own httpx client
-client = OpenAI(base_url="http://localhost:8080")
+client = Client(base_url="http://localhost:8080")
 # client._http is the httpx.Client instance
 ```
 
@@ -611,11 +575,11 @@ func main() {
 #!/usr/bin/env python3
 """Example usage of the generated Todo client."""
 
-from todoclient import OpenAI
+from todoclient import Client
 
 def main():
     # Create client
-    client = OpenAI(base_url="http://localhost:8080")
+    client = Client(base_url="http://localhost:8080")
 
     try:
         # Create a todo
@@ -651,10 +615,10 @@ if __name__ == "__main__":
 """Async example usage of the generated Todo client."""
 
 import asyncio
-from todoclient import AsyncOpenAI
+from todoclient import AsyncClient
 
 async def main():
-    client = AsyncOpenAI(base_url="http://localhost:8080")
+    client = AsyncClient(base_url="http://localhost:8080")
 
     try:
         # Create multiple todos concurrently
@@ -715,8 +679,8 @@ pip install git+https://github.com/yourorg/yourrepo.git#subdirectory=sdk/python
 
 ## See Also
 
-- [SDK Overview](/contract/sdk-overview) - Introduction to SDK generation
-- [Go SDK](/contract/sdk-go) - Generate Go clients
-- [TypeScript SDK](/contract/sdk-typescript) - Generate TypeScript clients
+- [Overview](/contract/sdk-overview) - Introduction to SDK generation
+- [Go](/contract/sdk-go) - Generate Go clients
+- [TypeScript](/contract/sdk-typescript) - Generate TypeScript clients
 - [Types](/contract/types) - Contract type system
 - [REST Transport](/contract/rest) - Serve your API over REST
