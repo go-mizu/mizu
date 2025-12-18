@@ -139,7 +139,7 @@ func (r *{{$res.GoName}}Resource) {{.GoName}}(ctx context.Context{{if .HasInput}
 }
 {{- else}}
 func (r *{{$res.GoName}}Resource) {{.GoName}}(ctx context.Context{{if .HasInput}}, in *{{.InputType}}{{end}}) error {
-	return fmt.Errorf("stream mode %q is not supported", {{quote .StreamMode}})
+	return fmt.Errorf(`stream mode "{{.StreamMode}}" is not supported`)
 }
 {{- end}}
 {{- else}}
