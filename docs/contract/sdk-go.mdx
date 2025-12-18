@@ -1,90 +1,96 @@
 ---
-title: "Go SDK"
-description: "Generate zero-dependency, type-safe Go client libraries from your Contract services"
+title: "Go"
+description: "Generate zero-dependency, type-safe Go client libraries from your contract definitions"
 ---
 
-# Go SDK Generator
-
-The Go SDK generator (`sdkgo`) creates native Go client libraries from your Contract services. The generated code uses only the standard library, requires no external dependencies, and provides an OpenAI-style developer experience with resource-based API access.
+The Go SDK generator creates native Go client libraries from your contract definitions. The generated code uses only the standard library, requires no external dependencies, and provides a resource-based API with full type safety.
 
 ## Key Features
 
 - **Zero Dependencies**: Only uses Go's standard library (`net/http`, `encoding/json`)
 - **Single File Output**: One self-contained Go file
-- **OpenAI-Style API**: Resource-based access (`client.Todos.Create()`)
+- **Resource-Based API**: Intuitive access (`client.Todos.Create()`)
 - **Full Type Safety**: Complete Go types with proper JSON tags
 - **SSE Streaming**: Built-in `EventStream[T]` for server-sent events
 - **Union Types**: Proper marshal/unmarshal for discriminated unions
 
-## Prerequisites
-
-Before generating a Go SDK, you need:
-
-- Go 1.18 or later (for generics support)
-- A registered Contract service
-
 ## Quick Start
 
-### Step 1: Define Your Service
+### Step 1: Define Your Contract
 
-```go
-// todo/api.go
-package todo
+```yaml
+# api.yaml
+name: TodoAPI
+description: Todo list API
 
-type API interface {
-    Create(input CreateInput) (Todo, error)
-    List() (ListOutput, error)
-    Get(id string) (Todo, error)
-    Delete(id string) error
-}
+defaults:
+  base_url: http://localhost:8080
 
-type Todo struct {
-    ID    string `json:"id"`
-    Title string `json:"title"`
-    Done  bool   `json:"done"`
-}
+resources:
+  - name: todos
+    description: Manage todo items
+    methods:
+      - name: create
+        input: CreateInput
+        output: Todo
+        http:
+          method: POST
+          path: /todos
+      - name: list
+        output: ListOutput
+        http:
+          method: GET
+          path: /todos
+      - name: get
+        input: GetInput
+        output: Todo
+        http:
+          method: GET
+          path: /todos/{id}
+      - name: delete
+        input: DeleteInput
+        http:
+          method: DELETE
+          path: /todos/{id}
 
-type CreateInput struct {
-    Title string `json:"title"`
-}
-
-type ListOutput struct {
-    Items []Todo `json:"items"`
-    Total int    `json:"total"`
-}
+types:
+  - name: Todo
+    kind: struct
+    fields:
+      - name: id
+        type: string
+      - name: title
+        type: string
+      - name: done
+        type: bool
+  - name: CreateInput
+    kind: struct
+    fields:
+      - name: title
+        type: string
+  - name: GetInput
+    kind: struct
+    fields:
+      - name: id
+        type: string
+  - name: DeleteInput
+    kind: struct
+    fields:
+      - name: id
+        type: string
+  - name: ListOutput
+    kind: struct
+    fields:
+      - name: items
+        type: "[]Todo"
+      - name: total
+        type: int
 ```
 
 ### Step 2: Generate the SDK
 
-```go
-package main
-
-import (
-    "os"
-
-    "yourapp/todo"
-    contract "github.com/go-mizu/mizu/contract/v2"
-    sdkgo "github.com/go-mizu/mizu/contract/v2/sdk/go"
-)
-
-func main() {
-    // Register your service
-    impl := todo.NewService()
-    svc := contract.Register[todo.API](impl,
-        contract.WithDefaultResource("todos"),
-    )
-
-    // Generate the SDK
-    files, err := sdkgo.Generate(svc, &sdkgo.Config{
-        Package: "todoclient",
-    })
-    if err != nil {
-        panic(err)
-    }
-
-    // Write to file
-    os.WriteFile("sdk/todoclient/client.go", []byte(files[0].Content), 0644)
-}
+```bash
+mizu contract gen api.yaml --client --lang go --output ./sdk/todoclient --package todoclient
 ```
 
 ### Step 3: Use the Generated Client
@@ -125,7 +131,7 @@ func main() {
     fmt.Printf("Total: %d todos\n", result.Total)
 
     // Get a specific todo
-    todo, err = client.Todos.Get(ctx, todo.ID)
+    todo, err = client.Todos.Get(ctx, &todoclient.GetInput{ID: todo.ID})
     if err != nil {
         log.Fatal(err)
     }
@@ -133,47 +139,12 @@ func main() {
 }
 ```
 
-## Generator API
-
-### Function Signature
-
-```go
-func Generate(svc *contract.Service, cfg *Config) ([]*sdk.File, error)
-```
-
-### Configuration
-
-```go
-type Config struct {
-    // Package is the Go package name for generated code.
-    // Default: lowercase sanitized service name, or "sdk".
-    Package string
-
-    // Filename is the output file path.
-    // Default: "client.go".
-    Filename string
-}
-```
-
-### Return Value
-
-The generator returns a slice of `*sdk.File`:
-
-```go
-type File struct {
-    Path    string // Relative path (e.g., "client.go")
-    Content string // Full file content
-}
-```
-
-For the Go SDK, only one file is returned containing all generated code.
-
 ## Generated Code Structure
 
 The generated file contains everything in a single package:
 
 ```go
-// Code generated by sdkgo. DO NOT EDIT.
+// Code generated by mizu contract gen. DO NOT EDIT.
 
 package todoclient
 
@@ -210,8 +181,8 @@ func WithHeaders(headers map[string]string) Option { ... }
 type TodosResource struct { ... }
 func (r *TodosResource) Create(ctx context.Context, in *CreateInput) (*Todo, error) { ... }
 func (r *TodosResource) List(ctx context.Context) (*ListOutput, error) { ... }
-func (r *TodosResource) Get(ctx context.Context, id string) (*Todo, error) { ... }
-func (r *TodosResource) Delete(ctx context.Context, id string) error { ... }
+func (r *TodosResource) Get(ctx context.Context, in *GetInput) (*Todo, error) { ... }
+func (r *TodosResource) Delete(ctx context.Context, in *DeleteInput) error { ... }
 
 // === Streaming (if applicable) ===
 
@@ -253,26 +224,6 @@ client := todoclient.NewClient("http://localhost:8080",
 | `WithAuth(token string)` | Set Bearer authentication token |
 | `WithHTTPClient(client *http.Client)` | Use custom HTTP client |
 | `WithHeaders(headers map[string]string)` | Add default headers to all requests |
-
-### Service Defaults
-
-If your contract service has defaults configured, they'll be used:
-
-```go
-// Server-side contract registration
-svc := contract.Register[todo.API](impl,
-    contract.WithDefaultResource("todos"),
-    contract.WithDefaults(&contract.Defaults{
-        BaseURL: "https://api.example.com",
-        Auth:    "bearer",
-        Headers: map[string]string{
-            "X-API-Version": "v1",
-        },
-    }),
-)
-```
-
-These defaults are embedded in the generated client code.
 
 ## Type System
 
@@ -345,16 +296,6 @@ Enum fields generate as the base type with a comment:
 // Generated:
 // Status is one of: pending, active, completed
 Status string `json:"status"`
-```
-
-### Const Fields
-
-Const fields generate with a comment indicating the constant value:
-
-```go
-// Contract: const: todo
-// Generated:
-Type string `json:"type"` // always "todo"
 ```
 
 ### Slice and Map Types
@@ -443,7 +384,7 @@ Access resources through the client:
 
 ```go
 client.Todos.Create(ctx, input)
-client.Users.Get(ctx, "user-123")
+client.Users.Get(ctx, &GetInput{ID: "user-123"})
 ```
 
 ### Method Signatures
@@ -493,7 +434,7 @@ func (s *EventStream[T]) Close() error
 
 ```go
 stream := client.Responses.Stream(ctx, &StreamRequest{
-    Model: "gpt-4o",
+    Model: "gpt-4",
     Input: "Hello!",
 })
 defer stream.Close()
@@ -559,7 +500,7 @@ func (e *Error) Error() string {
 ### Checking Errors
 
 ```go
-todo, err := client.Todos.Get(ctx, "nonexistent")
+todo, err := client.Todos.Get(ctx, &GetInput{ID: "nonexistent"})
 if err != nil {
     var apiErr *todoclient.Error
     if errors.As(err, &apiErr) {
@@ -635,7 +576,7 @@ for i, id := range ids {
     wg.Add(1)
     go func(idx int, todoID string) {
         defer wg.Done()
-        results[idx], errors[idx] = client.Todos.Get(ctx, todoID)
+        results[idx], errors[idx] = client.Todos.Get(ctx, &GetInput{ID: todoID})
     }(i, id)
 }
 
@@ -643,8 +584,6 @@ wg.Wait()
 ```
 
 ## Complete Example
-
-Here's a complete example showing the server and generated client:
 
 ### Server
 
@@ -715,9 +654,8 @@ func main() {
         fmt.Printf("[%s] %s: %s\n", status, t.ID, t.Title)
     }
 
-    // Update (if supported)
     // Delete
-    if err := client.Todos.Delete(ctx, todo.ID); err != nil {
+    if err := client.Todos.Delete(ctx, &todoclient.DeleteInput{ID: todo.ID}); err != nil {
         log.Fatal(err)
     }
     fmt.Println("Deleted successfully")
@@ -726,8 +664,8 @@ func main() {
 
 ## See Also
 
-- [SDK Overview](/contract/sdk-overview) - Introduction to SDK generation
-- [Python SDK](/contract/sdk-python) - Generate Python clients
-- [TypeScript SDK](/contract/sdk-typescript) - Generate TypeScript clients
+- [Overview](/contract/sdk-overview) - Introduction to SDK generation
+- [Python](/contract/sdk-python) - Generate Python clients
+- [TypeScript](/contract/sdk-typescript) - Generate TypeScript clients
 - [Types](/contract/types) - Contract type system
 - [REST Transport](/contract/rest) - Serve your API over REST

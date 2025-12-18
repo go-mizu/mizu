@@ -1,28 +1,44 @@
 ---
-title: "SDK Generation"
-description: "Generate native, type-safe client SDKs in Go, Python, and TypeScript directly from your Contract services"
+title: "Overview"
+description: "Generate native, type-safe client SDKs in Go, Python, and TypeScript from your contract definitions"
 ---
 
-# SDK Generation Overview
-
-Mizu Contract includes built-in SDK generators that create native, fully-typed client libraries directly from your Go service definitions. Unlike OpenAPI-based generators, these produce idiomatic code tailored for each language with an OpenAI-style developer experience.
+Mizu Contract includes built-in SDK generators that create native, fully-typed client libraries from your contract definitions. Generate idiomatic code for each language with resource-based API access and first-class streaming support.
 
 ## What is SDK Generation?
 
-SDK generation is the process of automatically creating client libraries from your API definition. Instead of writing HTTP client code by hand for each language, you define your API once in Go and generate clients automatically.
+SDK generation creates client libraries from your API contract. Instead of writing HTTP client code by hand for each language, you define your API once and generate clients automatically.
 
 ```
-Your Go Service (contract.Service)
+Contract Definition (api.yaml)
            │
            ▼
     ┌──────────────────┐
-    │  SDK Generator   │
+    │ mizu contract gen│
     │   (Go/Py/TS)     │
     └──────────────────┘
            │
            ▼
   Native Client Library
   (Types + Client + Streaming)
+```
+
+## Quick Start
+
+Generate SDK clients using the CLI:
+
+```bash
+# Generate a Go SDK client
+mizu contract gen api.yaml --client --lang go --output ./sdk/go
+
+# Generate a Python SDK client
+mizu contract gen api.yaml --client --lang python --output ./sdk/python
+
+# Generate a TypeScript SDK client
+mizu contract gen api.yaml --client --lang typescript --output ./sdk/typescript
+
+# Generate all languages at once
+mizu contract gen api.yaml --client --lang all --output ./sdk
 ```
 
 ## Why Use Native SDK Generators?
@@ -36,20 +52,18 @@ Your Go Service (contract.Service)
 | **Consistency** | Varies by author | Uniform patterns |
 | **Time to Ship** | Hours per language | Seconds |
 
-### Benefits Over OpenAPI-Based Generation
+### Benefits Over Generic OpenAPI-Based Generation
 
-OpenAPI generators are powerful but generic. Mizu's native generators produce:
-
-| Feature | OpenAPI Generators | Mizu SDK Generators |
+| Feature | Generic Generators | Mizu SDK Generators |
 |---------|-------------------|---------------------|
 | **Code Style** | Generic, verbose | Idiomatic, minimal |
-| **Dependencies** | Often many | Zero (stdlib only) |
+| **Dependencies** | Often many | Minimal (stdlib-focused) |
 | **API Feel** | HTTP-centric | Resource-oriented |
 | **Streaming** | Limited support | First-class SSE |
 | **Size** | Large output | Compact, focused |
 
 <Info>
-**When to use OpenAPI?** OpenAPI generators support 40+ languages and have mature tooling. Use them when you need languages Mizu doesn't support natively, or when you need OpenAPI compatibility with other tools. See [Client Generation](/contract/client-generation) for OpenAPI approaches.
+**When to use OpenAPI generators?** OpenAPI generators support 40+ languages and have mature tooling. Use them when you need languages Mizu doesn't support natively, or when you need OpenAPI compatibility with other tools. See [Client Generation](/contract/client-generation) for OpenAPI approaches.
 </Info>
 
 ## Available SDK Generators
@@ -57,13 +71,13 @@ OpenAPI generators are powerful but generic. Mizu's native generators produce:
 Mizu provides native SDK generators for three languages:
 
 <CardGroup cols={3}>
-  <Card title="Go SDK" icon="golang" href="/contract/sdk-go">
+  <Card title="Go" icon="golang" href="/contract/sdk-go">
     Zero dependencies, stdlib only. Fluent resource-based API with EventStream for streaming.
   </Card>
-  <Card title="Python SDK" icon="python" href="/contract/sdk-python">
+  <Card title="Python" icon="python" href="/contract/sdk-python">
     Modern Python with type hints. Sync and async clients using httpx.
   </Card>
-  <Card title="TypeScript SDK" icon="js" href="/contract/sdk-typescript">
+  <Card title="TypeScript" icon="js" href="/contract/sdk-typescript">
     Runtime agnostic (Node/Bun/Deno). AsyncIterable streaming with full type inference.
   </Card>
 </CardGroup>
@@ -72,135 +86,184 @@ Mizu provides native SDK generators for three languages:
 
 | Feature | Go SDK | Python SDK | TypeScript SDK |
 |---------|--------|------------|----------------|
-| **Package** | `sdkgo` | `sdkpy` | `sdkts` |
-| **Output** | Single `.go` file | uv project | npm package |
+| **Output** | Single `.go` file | uv/pip project | npm package |
 | **HTTP Client** | `net/http` | `httpx` | native `fetch` |
 | **Streaming** | `EventStream[T]` | Iterator/AsyncIterator | `AsyncIterable<T>` |
 | **Dependencies** | None (stdlib) | httpx | None |
-| **Runtimes** | Go 1.18+ | Python 3.8+ | Node/Bun/Deno |
+| **Runtimes** | Go 1.18+ | Python 3.8+ | Node 18+/Bun/Deno |
 
 ## How It Works
 
-### Step 1: Define Your Service
+### Step 1: Define Your Contract
 
-First, define your API contract in Go:
+Create a contract definition in YAML:
 
-```go
-package todo
+```yaml
+# api.yaml
+name: TodoAPI
+description: Todo list API
 
-import "time"
+defaults:
+  base_url: http://localhost:8080
 
-// API defines the Todo service interface
-type API interface {
-    Create(input CreateInput) (Todo, error)
-    List() (ListOutput, error)
-    Get(id string) (Todo, error)
-    Delete(id string) error
-}
+resources:
+  - name: todos
+    description: Manage todo items
+    methods:
+      - name: create
+        description: Create a new todo
+        input: CreateTodoInput
+        output: Todo
+        http:
+          method: POST
+          path: /todos
+      - name: list
+        description: List all todos
+        output: TodoList
+        http:
+          method: GET
+          path: /todos
+      - name: get
+        description: Get a todo by ID
+        input: GetTodoInput
+        output: Todo
+        http:
+          method: GET
+          path: /todos/{id}
+      - name: delete
+        description: Delete a todo
+        input: DeleteTodoInput
+        http:
+          method: DELETE
+          path: /todos/{id}
 
-type Todo struct {
-    ID        string    `json:"id"`
-    Title     string    `json:"title"`
-    Done      bool      `json:"done"`
-    CreatedAt time.Time `json:"created_at"`
-}
-
-type CreateInput struct {
-    Title string `json:"title"`
-}
-
-type ListOutput struct {
-    Items []Todo `json:"items"`
-    Total int    `json:"total"`
-}
+types:
+  - name: Todo
+    kind: struct
+    fields:
+      - name: id
+        type: string
+      - name: title
+        type: string
+      - name: done
+        type: bool
+      - name: created_at
+        type: time.Time
+        optional: true
+  - name: TodoList
+    kind: slice
+    elem: Todo
+  - name: CreateTodoInput
+    kind: struct
+    fields:
+      - name: title
+        type: string
+  - name: GetTodoInput
+    kind: struct
+    fields:
+      - name: id
+        type: string
+  - name: DeleteTodoInput
+    kind: struct
+    fields:
+      - name: id
+        type: string
 ```
 
-### Step 2: Register with Contract
+### Step 2: Generate SDK Clients
 
-Register your implementation to create a service descriptor:
+```bash
+# Generate Go SDK
+mizu contract gen api.yaml --client --lang go --output ./sdk/go --package todoclient
 
-```go
-package main
+# Generate Python SDK
+mizu contract gen api.yaml --client --lang python --output ./sdk/python --package todoclient --version 1.0.0
 
-import (
-    "yourapp/todo"
-    contract "github.com/go-mizu/mizu/contract/v2"
-)
-
-func main() {
-    impl := todo.NewService() // Your implementation
-    svc := contract.Register[todo.API](impl,
-        contract.WithDefaultResource("todos"),
-    )
-
-    // svc is now a *contract.Service that SDK generators can use
-}
+# Generate TypeScript SDK
+mizu contract gen api.yaml --client --lang typescript --output ./sdk/typescript --package todoclient --version 1.0.0
 ```
 
-### Step 3: Generate SDKs
-
-Use the SDK generators to create client libraries:
-
-<CodeGroup>
-```go Go SDK
-import sdkgo "github.com/go-mizu/mizu/contract/v2/sdk/go"
-
-files, err := sdkgo.Generate(svc, &sdkgo.Config{
-    Package: "todoclient",
-})
-// files[0].Content contains the generated Go code
-```
-
-```go Python SDK
-import sdkpy "github.com/go-mizu/mizu/contract/v2/sdk/py"
-
-files, err := sdkpy.Generate(svc, &sdkpy.Config{
-    Package: "todoclient",
-    Version: "1.0.0",
-})
-// files contains pyproject.toml, _client.py, _types.py, etc.
-```
-
-```go TypeScript SDK
-import sdkts "github.com/go-mizu/mizu/contract/v2/sdk/ts"
-
-files, err := sdkts.Generate(svc, &sdkts.Config{
-    Package: "todoclient",
-    Version: "1.0.0",
-})
-// files contains package.json, src/index.ts, src/_client.ts, etc.
-```
-</CodeGroup>
-
-### Step 4: Use the Generated Client
+### Step 3: Use the Generated Clients
 
 <CodeGroup>
 ```go Go
-client := todoclient.NewClient("http://localhost:8080")
+package main
 
-todo, err := client.Todos.Create(ctx, &todoclient.CreateInput{
-    Title: "Learn Mizu SDKs",
-})
+import (
+    "context"
+    "fmt"
+    "todoclient"
+)
+
+func main() {
+    client := todoclient.NewClient("http://localhost:8080")
+    ctx := context.Background()
+
+    todo, err := client.Todos.Create(ctx, &todoclient.CreateTodoInput{
+        Title: "Learn Mizu SDKs",
+    })
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("Created: %s\n", todo.ID)
+}
 ```
 
 ```python Python
-from todoclient import OpenAI
+from todoclient import Client
 
-client = OpenAI(base_url="http://localhost:8080")
+client = Client(base_url="http://localhost:8080")
 
 todo = client.todos.create(title="Learn Mizu SDKs")
 print(f"Created: {todo.id}")
 ```
 
 ```typescript TypeScript
-import { TodoService } from 'todoclient';
+import { Client } from 'todoclient';
 
-const client = new TodoService({ baseURL: 'http://localhost:8080' });
+const client = new Client({ baseURL: 'http://localhost:8080' });
 
 const todo = await client.todos.create({ title: 'Learn Mizu SDKs' });
 console.log(`Created: ${todo.id}`);
 ```
 </CodeGroup>
+
+## CLI Reference
+
+### Command Syntax
+
+```bash
+mizu contract gen <file> [flags]
+```
+
+### Flags
+
+| Flag | Short | Description | Default |
+|------|-------|-------------|---------|
+| `--lang` | | Target language: `go`, `golang`, `python`, `py`, `typescript`, `ts`, `all` | `typescript` |
+| `--output` | `-o` | Output directory | Same as input file |
+| `--package` | | Package/module name | Derived from service name |
+| `--version` | | Package version (Python/TypeScript) | `0.0.0` |
+| `--client` | `-c` | Generate full SDK client (not just types) | `false` |
+
+### Examples
+
+```bash
+# Types only (lightweight, no HTTP client)
+mizu contract gen api.yaml --lang go --package api
+
+# Full SDK client for Go
+mizu contract gen api.yaml --client --lang go --output ./sdk/go
+
+# Full SDK client for Python with version
+mizu contract gen api.yaml --client --lang python --output ./sdk/python --version 1.0.0
+
+# Full SDK client for TypeScript
+mizu contract gen api.yaml --client --lang typescript --output ./sdk/typescript
+
+# All languages at once
+mizu contract gen api.yaml --client --lang all --output ./sdk
+```
 
 ## Choosing the Right Approach
 
@@ -216,63 +279,9 @@ Use this decision matrix to choose between SDK generation and OpenAPI:
 | OpenAPI ecosystem compatibility | OpenAPI generators |
 | Both approaches | Both! Generate native SDKs and serve `/openapi.json` |
 
-## Common Patterns
+## CI/CD Integration
 
-### Build-Time Generation
-
-Generate SDKs as part of your build:
-
-```makefile
-# Makefile
-.PHONY: sdk
-sdk:
-	go run ./cmd/gensdks
-```
-
-```go
-// cmd/gensdks/main.go
-package main
-
-import (
-    "os"
-    "path/filepath"
-
-    "yourapp/todo"
-    contract "github.com/go-mizu/mizu/contract/v2"
-    sdkgo "github.com/go-mizu/mizu/contract/v2/sdk/go"
-    sdkpy "github.com/go-mizu/mizu/contract/v2/sdk/py"
-    sdkts "github.com/go-mizu/mizu/contract/v2/sdk/ts"
-)
-
-func main() {
-    impl := todo.NewService()
-    svc := contract.Register[todo.API](impl)
-
-    // Generate Go SDK
-    goFiles, _ := sdkgo.Generate(svc, &sdkgo.Config{Package: "todoclient"})
-    os.WriteFile("sdk/go/client.go", []byte(goFiles[0].Content), 0644)
-
-    // Generate Python SDK
-    pyFiles, _ := sdkpy.Generate(svc, &sdkpy.Config{Package: "todoclient"})
-    for _, f := range pyFiles {
-        path := filepath.Join("sdk/python", f.Path)
-        os.MkdirAll(filepath.Dir(path), 0755)
-        os.WriteFile(path, []byte(f.Content), 0644)
-    }
-
-    // Generate TypeScript SDK
-    tsFiles, _ := sdkts.Generate(svc, &sdkts.Config{Package: "todoclient"})
-    for _, f := range tsFiles {
-        path := filepath.Join("sdk/typescript", f.Path)
-        os.MkdirAll(filepath.Dir(path), 0755)
-        os.WriteFile(path, []byte(f.Content), 0644)
-    }
-}
-```
-
-### CI/CD Integration
-
-Regenerate SDKs on API changes:
+Regenerate SDKs on contract changes:
 
 ```yaml
 # .github/workflows/sdk.yml
@@ -281,8 +290,7 @@ name: Generate SDKs
 on:
   push:
     paths:
-      - 'api/**'
-      - 'internal/todo/**'
+      - 'api.yaml'
 
 jobs:
   generate:
@@ -290,12 +298,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v4
-        with:
-          go-version: '1.22'
+      - name: Install Mizu CLI
+        run: go install github.com/go-mizu/mizu/cmd/cli@latest
 
       - name: Generate SDKs
-        run: make sdk
+        run: |
+          mizu contract gen api.yaml --client --lang go --output ./sdk/go
+          mizu contract gen api.yaml --client --lang python --output ./sdk/python
+          mizu contract gen api.yaml --client --lang typescript --output ./sdk/typescript
 
       - name: Commit SDKs
         run: |
@@ -307,13 +317,13 @@ jobs:
 ## What's Next?
 
 <CardGroup cols={2}>
-  <Card title="Go SDK Guide" icon="golang" href="/contract/sdk-go">
+  <Card title="Go" icon="golang" href="/contract/sdk-go">
     Complete guide to generating and using Go SDKs
   </Card>
-  <Card title="Python SDK Guide" icon="python" href="/contract/sdk-python">
+  <Card title="Python" icon="python" href="/contract/sdk-python">
     Complete guide to generating and using Python SDKs
   </Card>
-  <Card title="TypeScript SDK Guide" icon="js" href="/contract/sdk-typescript">
+  <Card title="TypeScript" icon="js" href="/contract/sdk-typescript">
     Complete guide to generating and using TypeScript SDKs
   </Card>
   <Card title="OpenAPI Generation" icon="file-code" href="/contract/openapi">
