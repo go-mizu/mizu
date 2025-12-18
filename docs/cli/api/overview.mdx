@@ -1,0 +1,226 @@
+---
+title: "API Template"
+description: "Production-ready JSON API with feature-based organization"
+---
+
+# API Template
+
+The API template creates a well-structured JSON API service. It's designed for production use with a clean architecture that scales as your project grows.
+
+## When to Use This Template
+
+Use the API template when:
+
+- **Building a REST API** - JSON endpoints for web or mobile clients
+- **Multiple developers** - Clear structure everyone can follow
+- **Production service** - Ready for deployment
+- **Need organization** - More than a few routes
+
+## What You Get
+
+A complete project structure with:
+
+- **Feature-based organization** - Code grouped by domain
+- **Configuration management** - Environment-based config
+- **App lifecycle** - Clean startup and shutdown
+- **Example endpoints** - Health check, echo, users
+
+## Quick Start
+
+```bash
+# Create the project
+mizu new myapi --template api
+
+# Enter the project
+cd myapi
+
+# Install dependencies
+go mod tidy
+
+# Run the server
+mizu dev
+```
+
+Test it:
+
+```bash
+curl http://localhost:8080/health
+curl http://localhost:8080/hello
+curl http://localhost:8080/api/users
+```
+
+## Project Structure
+
+```
+myapi/
+├── cmd/
+│   └── api/
+│       └── main.go         # Entry point
+├── app/
+│   └── api/
+│       ├── app.go          # Application setup
+│       ├── config.go       # Configuration
+│       └── routes.go       # Route registration
+├── feature/
+│   ├── echo/
+│   │   └── http.go         # Echo handler
+│   ├── health/
+│   │   └── http.go         # Health check
+│   ├── hello/
+│   │   └── http.go         # Hello handler
+│   └── users/
+│       └── http.go         # Users API
+├── go.mod
+└── .gitignore
+```
+
+## Key Features
+
+### Feature-Based Organization
+
+Each feature (domain/module) gets its own folder:
+
+```
+feature/
+├── users/     # User management
+├── products/  # Product catalog
+├── orders/    # Order processing
+└── auth/      # Authentication
+```
+
+This keeps related code together and makes it easy to find things.
+
+### Configuration Management
+
+Configuration is loaded from environment variables:
+
+```go
+type Config struct {
+    Addr string // Server address
+    Dev  bool   // Development mode
+}
+
+func LoadConfig() Config {
+    return Config{
+        Addr: getEnv("ADDR", ":8080"),
+        Dev:  getEnv("DEV", "true") == "true",
+    }
+}
+```
+
+### Application Structure
+
+The `App` struct manages lifecycle:
+
+```go
+type App struct {
+    cfg Config
+    app *mizu.App
+}
+
+func New(cfg Config) *App {
+    a := &App{cfg: cfg}
+    a.app = mizu.New()
+    a.routes()
+    return a
+}
+```
+
+## Example Routes
+
+### Health Check
+
+```bash
+curl http://localhost:8080/health
+```
+
+```json
+{"status":"ok"}
+```
+
+### Hello Endpoint
+
+```bash
+curl http://localhost:8080/hello
+```
+
+```
+Hello from myapi
+```
+
+### Users API
+
+```bash
+curl http://localhost:8080/api/users
+```
+
+```json
+[{"id":"1","name":"Alice"},{"id":"2","name":"Bob"}]
+```
+
+### Echo Endpoint
+
+```bash
+curl -X POST http://localhost:8080/echo -d '{"message":"hi"}' -H "Content-Type: application/json"
+```
+
+```json
+{"message":"hi"}
+```
+
+## Why This Structure?
+
+### Scalability
+
+As your API grows, add new features without cluttering existing code:
+
+```bash
+# Add a new feature
+mkdir -p feature/products
+touch feature/products/http.go
+```
+
+### Testability
+
+Each feature can be tested independently:
+
+```bash
+go test ./feature/users/...
+go test ./feature/products/...
+```
+
+### Team Collaboration
+
+Clear boundaries mean less merge conflicts:
+
+- Developer A works on `feature/users/`
+- Developer B works on `feature/products/`
+
+### Maintainability
+
+Find code easily:
+
+- "Where's the user creation logic?" → `feature/users/`
+- "Where are routes defined?" → `app/api/routes.go`
+- "Where's the config?" → `app/api/config.go`
+
+## Comparison with Minimal
+
+| Aspect | minimal | api |
+|--------|---------|-----|
+| Files | 1 | 10+ |
+| Structure | None | Feature-based |
+| Config | Hardcoded | Environment variables |
+| Suitable for | Learning, prototypes | Production |
+| Scalability | Poor | Good |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Project Structure" icon="folder" href="/cli/api/structure">
+    Detailed file-by-file explanation
+  </Card>
+  <Card title="Tutorial" icon="graduation-cap" href="/cli/api/tutorial">
+    Build a complete API step by step
+  </Card>
+</CardGroup>

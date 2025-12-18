@@ -1,0 +1,436 @@
+---
+title: "Sync Template Tutorial"
+description: "Build an offline-first todo app with data synchronization"
+---
+
+# Sync Template Tutorial
+
+In this tutorial, you'll build a todo application that works offline and syncs automatically when reconnected. Changes from multiple users merge seamlessly.
+
+## Step 1: Create the Project
+
+```bash
+mizu new synctodo --template sync
+cd synctodo
+go mod tidy
+mizu dev
+```
+
+Open `http://localhost:8080` to see the default syncing todo app.
+
+## Step 2: Understand the Default App
+
+The template includes a working todo list. Let's trace how data flows.
+
+### The Store
+
+Look at `service/todo/mutator.go`:
+
+```go
+type Store struct {
+    mu    gosync.RWMutex
+    todos map[string]map[string]*Todo // scope -> id -> todo
+}
+
+type Todo struct {
+    ID        string `json:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
+}
+```
+
+The store uses a mutex for thread safety and organizes todos by scope (like a namespace).
+
+### The Apply Function
+
+This is the heart of sync - it processes mutations:
+
+```go
+func (s *Store) Apply(ctx context.Context, m sync.Mutation) ([]sync.Change, error) {
+    switch m.Type {
+    case "todo.create":
+        return s.createTodo(scope, m.Args)
+    case "todo.toggle":
+        return s.toggleTodo(scope, m.Args)
+    case "todo.delete":
+        return s.deleteTodo(scope, m.Args)
+    }
+    return nil, fmt.Errorf("unknown mutation: %s", m.Type)
+}
+```
+
+Each mutation type maps to a specific operation.
+
+### The Snapshot Function
+
+Returns current state for new clients:
+
+```go
+func (s *Store) Snapshot(ctx context.Context, scope string) (json.RawMessage, uint64, error) {
+    todos := s.GetAll(scope)
+    data, _ := json.Marshal(todos)
+    return data, 0, nil
+}
+```
+
+## Step 3: Test Offline Behavior
+
+1. Open the app in your browser
+2. Add some todos
+3. Open DevTools → Network → check "Offline"
+4. Add more todos (they appear immediately!)
+5. Uncheck "Offline"
+6. Watch todos sync to server
+
+The key insight: the UI updates **before** the server confirms.
+
+## Step 4: Add Priority Feature
+
+Let's add priority levels to todos.
+
+### Update the Model
+
+Edit `service/todo/mutator.go`:
+
+```go
+type Todo struct {
+    ID        string `json:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
+    Priority  string `json:"priority"` // "low", "medium", "high"
+}
+```
+
+### Update Create Function
+
+```go
+func (s *Store) createTodo(scope string, args json.RawMessage) ([]sync.Change, error) {
+    var input struct {
+        ID       string `json:"id"`
+        Title    string `json:"title"`
+        Priority string `json:"priority"`
+    }
+    if err := json.Unmarshal(args, &input); err != nil {
+        return nil, err
+    }
+
+    // Default priority
+    priority := input.Priority
+    if priority == "" {
+        priority = "medium"
+    }
+
+    todo := &Todo{
+        ID:        input.ID,
+        Title:     input.Title,
+        Completed: false,
+        Priority:  priority,
+    }
+    s.todos[scope][todo.ID] = todo
+
+    data, _ := json.Marshal(s.todos[scope])
+    return []sync.Change{{Scope: scope, Data: data}}, nil
+}
+```
+
+### Add Set Priority Mutation
+
+```go
+func (s *Store) Apply(ctx context.Context, m sync.Mutation) ([]sync.Change, error) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    scope := m.Scope
+    if s.todos[scope] == nil {
+        s.todos[scope] = make(map[string]*Todo)
+    }
+
+    switch m.Type {
+    case "todo.create":
+        return s.createTodo(scope, m.Args)
+    case "todo.toggle":
+        return s.toggleTodo(scope, m.Args)
+    case "todo.delete":
+        return s.deleteTodo(scope, m.Args)
+    case "todo.setPriority":
+        return s.setPriority(scope, m.Args)
+    default:
+        return nil, fmt.Errorf("unknown mutation: %s", m.Type)
+    }
+}
+
+func (s *Store) setPriority(scope string, args json.RawMessage) ([]sync.Change, error) {
+    var input struct {
+        ID       string `json:"id"`
+        Priority string `json:"priority"`
+    }
+    if err := json.Unmarshal(args, &input); err != nil {
+        return nil, err
+    }
+
+    todo := s.todos[scope][input.ID]
+    if todo == nil {
+        return nil, fmt.Errorf("todo not found: %s", input.ID)
+    }
+
+    todo.Priority = input.Priority
+
+    data, _ := json.Marshal(s.todos[scope])
+    return []sync.Change{{Scope: scope, Data: data}}, nil
+}
+```
+
+### Update the JavaScript Client
+
+Edit `assets/js/sync.js` to handle priority:
+
+```javascript
+class SyncClient {
+    constructor(url, scope) {
+        this.url = url;
+        this.scope = scope;
+        this.pending = [];
+        this.state = [];
+    }
+
+    async createTodo(title, priority = 'medium') {
+        await this.mutate('todo.create', {
+            id: crypto.randomUUID(),
+            title,
+            priority,
+        });
+    }
+
+    async setPriority(id, priority) {
+        await this.mutate('todo.setPriority', { id, priority });
+    }
+
+    async mutate(type, args) {
+        const mutation = {
+            id: crypto.randomUUID(),
+            type,
+            args,
+            scope: this.scope,
+        };
+
+        // Optimistic update
+        this.applyLocal(mutation);
+        this.render();
+
+        // Queue and sync
+        this.pending.push(mutation);
+        await this.sync();
+    }
+
+    applyLocal(mutation) {
+        switch (mutation.type) {
+        case 'todo.create':
+            this.state.push({
+                id: mutation.args.id,
+                title: mutation.args.title,
+                completed: false,
+                priority: mutation.args.priority || 'medium',
+            });
+            break;
+        case 'todo.setPriority':
+            const todo = this.state.find(t => t.id === mutation.args.id);
+            if (todo) todo.priority = mutation.args.priority;
+            break;
+        }
+    }
+
+    render() {
+        const container = document.getElementById('todos');
+        container.innerHTML = this.state
+            .sort((a, b) => this.priorityOrder(a) - this.priorityOrder(b))
+            .map(todo => `
+                <div class="todo priority-${todo.priority}">
+                    <span>${todo.title}</span>
+                    <select onchange="sync.setPriority('${todo.id}', this.value)">
+                        <option value="low" ${todo.priority === 'low' ? 'selected' : ''}>Low</option>
+                        <option value="medium" ${todo.priority === 'medium' ? 'selected' : ''}>Medium</option>
+                        <option value="high" ${todo.priority === 'high' ? 'selected' : ''}>High</option>
+                    </select>
+                </div>
+            `).join('');
+    }
+
+    priorityOrder(todo) {
+        return { high: 0, medium: 1, low: 2 }[todo.priority];
+    }
+
+    async sync() {
+        if (this.pending.length === 0) return;
+
+        try {
+            const res = await fetch(this.url + '/_sync/push', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    scope: this.scope,
+                    mutations: this.pending,
+                }),
+            });
+
+            if (res.ok) {
+                const { changes } = await res.json();
+                if (changes && changes.length > 0) {
+                    this.state = JSON.parse(changes[0].data);
+                    this.render();
+                }
+                this.pending = [];
+            }
+        } catch (e) {
+            console.log('Sync failed, will retry:', e);
+        }
+    }
+}
+
+// Initialize
+const sync = new SyncClient('', 'default');
+```
+
+## Step 5: Add Conflict Resolution
+
+When two users edit the same todo, we need to handle conflicts.
+
+### Last-Write-Wins Strategy
+
+The simplest approach - later mutations win:
+
+```go
+func (s *Store) setPriority(scope string, args json.RawMessage) ([]sync.Change, error) {
+    var input struct {
+        ID        string `json:"id"`
+        Priority  string `json:"priority"`
+        Timestamp int64  `json:"timestamp"`
+    }
+    if err := json.Unmarshal(args, &input); err != nil {
+        return nil, err
+    }
+
+    todo := s.todos[scope][input.ID]
+    if todo == nil {
+        return nil, fmt.Errorf("todo not found: %s", input.ID)
+    }
+
+    // Only apply if newer (last-write-wins)
+    if input.Timestamp > todo.UpdatedAt {
+        todo.Priority = input.Priority
+        todo.UpdatedAt = input.Timestamp
+    }
+
+    data, _ := json.Marshal(s.todos[scope])
+    return []sync.Change{{Scope: scope, Data: data}}, nil
+}
+```
+
+Update the Todo struct:
+
+```go
+type Todo struct {
+    ID        string `json:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
+    Priority  string `json:"priority"`
+    UpdatedAt int64  `json:"updatedAt"`
+}
+```
+
+## Step 6: Add Multi-User Support
+
+Open the app in two browser windows to test collaboration.
+
+### Add User Tracking
+
+```go
+// In app/server/app.go
+func (a *App) setupSync() {
+    log := memory.NewLog()
+    dedupe := memory.NewDedupe()
+
+    a.syncEngine = sync.New(sync.Options{
+        Log:      log,
+        Apply:    a.store.Apply,
+        Snapshot: a.store.Snapshot,
+        Dedupe:   dedupe,
+        OnChange: func(scope string, changes []sync.Change) {
+            // Broadcast to all connected clients via live server
+            for _, change := range changes {
+                a.liveServer.Publish(scope, "sync", change.Data)
+            }
+        },
+    })
+}
+```
+
+### Client Listens for Updates
+
+```javascript
+class SyncClient {
+    constructor(url, scope) {
+        this.url = url;
+        this.scope = scope;
+        this.pending = [];
+        this.state = [];
+        this.connectWebSocket();
+    }
+
+    connectWebSocket() {
+        this.ws = new WebSocket(`ws://${location.host}/ws`);
+        this.ws.onmessage = (e) => {
+            const { topic, data } = JSON.parse(e.data);
+            if (topic === 'sync') {
+                this.state = JSON.parse(data);
+                this.render();
+            }
+        };
+        this.ws.onopen = () => {
+            // Subscribe to our scope
+            this.ws.send(JSON.stringify({
+                topic: 'subscribe',
+                data: this.scope,
+            }));
+        };
+        this.ws.onclose = () => {
+            setTimeout(() => this.connectWebSocket(), 1000);
+        };
+    }
+}
+```
+
+## How Sync Works
+
+```
+User A (offline)              Server                User B (online)
+     |                          |                        |
+     | --- Create todo -------- | (queued locally)       |
+     |                          |                        |
+     | (goes online)            |                        |
+     |                          |                        |
+     | --- Push mutations ----> |                        |
+     |                          | --- Apply -----------> |
+     |                          | --- Broadcast -------> |
+     |                          |                        | (UI updates)
+     | <-- Confirm ------------ |                        |
+     |                          |                        |
+```
+
+## What You Learned
+
+- Mutation-based data changes
+- Optimistic UI updates
+- Offline queueing and sync
+- Conflict resolution strategies
+- Multi-user broadcasting
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Sync Documentation" icon="rotate" href="/view/sync-overview">
+    Deep dive into sync internals
+  </Card>
+  <Card title="Live Template" icon="bolt" href="/cli/live/overview">
+    Add real-time features without full sync
+  </Card>
+</CardGroup>

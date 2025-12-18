@@ -1,72 +1,133 @@
 ---
 title: "mizu version"
-description: "Print version and build information"
+description: "Display version and build information about the Mizu CLI"
 ---
 
 # mizu version
 
-The `mizu version` command displays version and build information about the CLI.
+The `mizu version` command shows information about the installed Mizu CLI, including the version number, Go version, and build details.
 
-## Synopsis
-
-```bash
-mizu version [flags]
-```
-
-## Flags
-
-| Flag | Description |
-|------|-------------|
-| `--json` | Output version info as JSON |
-| `--help`, `-h` | Show help |
-
-## Examples
-
-### Basic Usage
+## Basic Usage
 
 ```bash
 mizu version
 ```
 
 Output:
+
 ```
 mizu version 0.1.0
-go version: go1.24
+go version: go1.23.0
 commit: abc1234
 built: 2024-01-15T10:30:00Z
 ```
 
-### JSON Output
+## What Each Field Means
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| `version` | The semantic version of the CLI | `0.1.0` |
+| `go version` | The Go version used to compile | `go1.23.0` |
+| `commit` | Short Git commit hash | `abc1234` |
+| `built` | When this version was built (UTC) | `2024-01-15T10:30:00Z` |
+
+## Flags
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Output as JSON |
+| `-h, --help` | Show help |
+
+## JSON Output
+
+For scripts and automation, use `--json`:
 
 ```bash
 mizu version --json
 ```
 
 Output:
+
 ```json
 {
-  "success": true,
-  "data": {
-    "version": "0.1.0",
-    "go_version": "go1.24",
-    "commit": "abc1234",
-    "built_at": "2024-01-15T10:30:00Z"
-  }
+  "version": "0.1.0",
+  "go_version": "go1.23.0",
+  "commit": "abc1234",
+  "built_at": "2024-01-15T10:30:00Z"
 }
 ```
 
-## Version Information
+## When to Use This Command
 
-| Field | Description |
-|-------|-------------|
-| `version` | Semantic version of the CLI |
-| `go_version` | Go runtime version used to build |
-| `commit` | Git commit hash (short form) |
-| `built_at` | Build timestamp (ISO 8601 UTC) |
+### Verify Installation
 
-## Build-time Variables
+After installing the CLI, confirm it's working:
 
-Version information is set at build time using `-ldflags`:
+```bash
+mizu version
+```
+
+If you see version information, the CLI is installed correctly.
+
+### Check for Updates
+
+Compare your version with the latest release:
+
+```bash
+# Check your version
+mizu version
+
+# Update to latest
+go install github.com/go-mizu/mizu/cmd/mizu@latest
+
+# Verify update
+mizu version
+```
+
+### Include in Bug Reports
+
+When reporting issues, include your version information:
+
+```bash
+mizu version --json > version.json
+```
+
+Share this file with your bug report so maintainers know your exact setup.
+
+### CI/CD Version Checks
+
+Ensure a minimum version in build scripts:
+
+```bash
+#!/bin/bash
+
+# Get the version
+VERSION=$(mizu version --json | jq -r '.version')
+
+# Compare versions (requires semver comparison)
+if [[ "$VERSION" == "dev" ]]; then
+  echo "Warning: Using development build"
+fi
+
+echo "Using mizu $VERSION"
+```
+
+## Development Builds
+
+If you built from source without setting version flags, you'll see:
+
+```
+mizu version dev
+go version: go1.23.0
+commit: unknown
+built: unknown
+```
+
+This is normal for local development builds.
+
+## Setting Build Information
+
+When building the CLI, you can embed version information using Go's `-ldflags`:
 
 ```bash
 go build -ldflags "\
@@ -76,51 +137,48 @@ go build -ldflags "\
   -o mizu ./cmd/mizu
 ```
 
-### Default Values
+This is useful for:
+- Release builds
+- CI/CD pipelines
+- Custom distribution
 
-If not set at build time, these defaults are used:
+### Variables
 
 | Variable | Default |
 |----------|---------|
-| Version | `dev` |
-| Commit | `unknown` |
-| BuildTime | `unknown` |
-
-## Use Cases
-
-### Checking Installation
-
-```bash
-# Verify mizu is installed correctly
-mizu version
-```
-
-### Bug Reports
-
-Include version info in bug reports:
-
-```bash
-mizu version --json > version-info.json
-```
-
-### CI/CD Verification
-
-```bash
-# Check minimum version in scripts
-VERSION=$(mizu version --json | jq -r '.data.version')
-if [[ "$VERSION" < "0.2.0" ]]; then
-  echo "Please upgrade mizu to version 0.2.0 or later"
-  exit 1
-fi
-```
+| `cli.Version` | `dev` |
+| `cli.Commit` | `unknown` |
+| `cli.BuildTime` | `unknown` |
 
 ## Exit Codes
 
 | Code | Description |
 |------|-------------|
-| 0 | Success |
+| 0 | Success (always) |
 
-## See Also
+The version command always succeeds if the CLI is running.
 
-- [Installation](/cli/installation) - Install or update the CLI
-- [Global Flags](/cli/global-flags) - Flags available on all commands
+## Troubleshooting
+
+### "command not found: mizu"
+
+The CLI isn't installed or isn't in your PATH. See [Installation](/cli/installation).
+
+### Version Shows "dev"
+
+You're running a development build. This is fine for testing but you may want to install a release version:
+
+```bash
+go install github.com/go-mizu/mizu/cmd/mizu@latest
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/cli/installation">
+    Learn how to install or update the CLI
+  </Card>
+  <Card title="Create a Project" icon="rocket" href="/cli/new">
+    Start building with Mizu
+  </Card>
+</CardGroup>

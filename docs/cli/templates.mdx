@@ -1,47 +1,210 @@
 ---
 title: "Templates"
-description: "Built-in project templates for Mizu applications"
+description: "Choose the right template for your Mizu project"
 ---
 
 # Templates
 
-The Mizu CLI includes built-in templates for scaffolding new projects. Each template provides a complete, runnable starting point with idiomatic Go project structure.
+When you create a new project with `mizu new`, you choose a template. Each template gives you a different starting point optimized for specific use cases.
 
 ## Available Templates
 
-| Template | Description | Use Case |
+The Mizu CLI includes 6 built-in templates:
+
+| Template | Description | Best For |
 |----------|-------------|----------|
-| [`minimal`](/cli/template-minimal) | Smallest runnable Mizu project | Quick prototypes, learning |
-| [`api`](/cli/template-api) | JSON API service with recommended layout | Production APIs, microservices |
-| [`contract`](/cli/template-contract) | Transport-neutral service with REST, JSON-RPC, OpenAPI | Multi-protocol services, clean architecture |
+| **minimal** | Smallest runnable project | Learning, quick experiments |
+| **api** | JSON API service | REST APIs, backend services |
+| **contract** | Multi-protocol service | APIs with REST + JSON-RPC |
+| **web** | Full-stack web app | Server-rendered websites |
+| **live** | Real-time app | Chat, dashboards, live updates |
+| **sync** | Offline-first app | Collaborative apps, offline support |
 
 ## List Templates
+
+See all available templates:
 
 ```bash
 mizu new --list
 ```
 
 Output:
+
 ```
-Template   Purpose
-api        JSON API service with a recommended layout
-contract   Transport-neutral service with REST, JSON-RPC, and OpenAPI
-minimal    Smallest runnable Mizu project
+Template    Purpose
+api         JSON API service with a recommended layout
+contract    Transport-neutral service contract with REST, JSON-RPC, and OpenAPI
+live        Real-time interactive app with live views and instant updates
+minimal     Smallest runnable Mizu project
+sync        Offline-first app with sync, live updates, and reactive state
+web         Full-stack web app with views, components, and static assets
 ```
 
-## Using Templates
+## Which Template Should I Use?
 
-### Basic Usage
+Use this decision guide to pick the right template:
+
+### Are you learning Mizu?
+
+**Use `minimal`** - It has the least amount of code, making it easy to understand how Mizu works.
 
 ```bash
-# Create project with template
+mizu new learn-mizu --template minimal
+```
+
+### Are you building a REST API?
+
+**Use `api`** - It includes a recommended project structure with feature-based organization.
+
+```bash
+mizu new my-api --template api
+```
+
+### Do you need multiple protocols (REST + JSON-RPC)?
+
+**Use `contract`** - Define your API once, expose it via multiple transports.
+
+```bash
+mizu new my-service --template contract
+```
+
+### Are you building a website with HTML pages?
+
+**Use `web`** - Includes view templates, layouts, and static asset handling.
+
+```bash
+mizu new my-website --template web
+```
+
+### Do you need real-time updates (like chat)?
+
+**Use `live`** - Includes WebSocket support and live view rendering.
+
+```bash
+mizu new my-app --template live
+```
+
+### Do you need offline support with data sync?
+
+**Use `sync`** - The most advanced template with offline-first architecture.
+
+```bash
+mizu new my-app --template sync
+```
+
+## Template Comparison
+
+### Complexity Level
+
+```
+minimal ─────────────────────────────────────► sync
+  |           |           |           |          |
+simple      api        web/live    contract   advanced
+```
+
+### Features Included
+
+| Feature | minimal | api | contract | web | live | sync |
+|---------|:-------:|:---:|:--------:|:---:|:----:|:----:|
+| Single file | Yes | - | - | - | - | - |
+| Feature-based structure | - | Yes | Yes | Yes | Yes | Yes |
+| JSON responses | Yes | Yes | Yes | Yes | Yes | Yes |
+| HTML templates | - | - | - | Yes | Yes | Yes |
+| Static assets | - | - | - | Yes | Yes | Yes |
+| JSON-RPC | - | - | Yes | - | - | - |
+| OpenAPI generation | - | - | Yes | - | - | - |
+| WebSocket | - | - | - | - | Yes | Yes |
+| Live updates | - | - | - | - | Yes | Yes |
+| Offline support | - | - | - | - | - | Yes |
+| Data sync | - | - | - | - | - | Yes |
+
+## Common Patterns
+
+### Starting Simple, Then Growing
+
+Start with `minimal` to learn, then create a new project with `api`:
+
+```bash
+# Day 1: Learn Mizu
+mizu new learn --template minimal
+cd learn
+go mod tidy
+mizu dev
+
+# Day 2: Build a real project
+cd ..
+mizu new my-api --template api
+cd my-api
+go mod tidy
+mizu dev
+```
+
+### Prototyping to Production
+
+Start with `minimal` for a quick prototype, then migrate to `api` for production:
+
+1. Build your prototype with `minimal`
+2. Validate your idea works
+3. Create a new `api` project
+4. Copy your business logic over
+5. Enjoy the better structure
+
+### Frontend + Backend
+
+For apps with both a frontend and backend:
+
+- **API only (frontend in React/Vue):** Use `api`
+- **Server-rendered HTML:** Use `web`
+- **Real-time features:** Use `live` or `sync`
+
+## Template Architecture
+
+All templates share these principles:
+
+### Embedded in CLI
+
+Templates are built into the CLI binary. This means:
+- No network required to create projects
+- Templates always match CLI version
+- Works offline
+
+### Go Module Ready
+
+Every template creates a valid `go.mod` file:
+
+```go
+module {{.Module}}
+
+go 1.22
+
+require github.com/go-mizu/mizu v0.x.x
+```
+
+### Common Files
+
+All templates include:
+
+| File | Purpose |
+|------|---------|
+| `go.mod` | Go module definition |
+| `.gitignore` | Git ignore rules |
+| `README.md` | Project documentation |
+
+## Creating Projects
+
+### Basic Creation
+
+```bash
 mizu new myapp --template api
+cd myapp
+go mod tidy
+mizu dev
 ```
 
 ### With Custom Module Path
 
 ```bash
-mizu new myapp --template api --module github.com/myorg/myapp
+mizu new myapp --template api --module github.com/myname/myapp
 ```
 
 ### Preview Before Creating
@@ -50,135 +213,31 @@ mizu new myapp --template api --module github.com/myorg/myapp
 mizu new myapp --template api --dry-run
 ```
 
-## Template Variables
+## Explore Each Template
 
-Templates use Go's `text/template` syntax. The following variables are available:
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `{{.Name}}` | Project name | `myapp` |
-| `{{.Module}}` | Go module path | `github.com/myorg/myapp` |
-| `{{.License}}` | License identifier | `MIT` |
-| `{{.Year}}` | Current year | `2024` |
-| `{{.Vars.key}}` | Custom variables | Any value |
-
-### Setting Variables
-
-```bash
-# Set project name (default: derived from path)
-mizu new myapp --template api --name my-service
-
-# Set module path (default: example.com/<name>)
-mizu new myapp --template api --module github.com/myorg/myapp
-
-# Set license (default: MIT)
-mizu new myapp --template api --license Apache-2.0
-
-# Set custom variables
-mizu new myapp --template api --var author="John Doe"
-```
-
-## Common Files
-
-All templates include these common files:
-
-### `.gitignore`
-
-```gitignore
-# Binaries
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-# Test binary
-*.test
-
-# Output
-*.out
-
-# Go workspace
-go.work
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-```
-
-### `go.mod`
-
-```go
-module {{.Module}}
-
-go 1.25
-
-require github.com/go-mizu/mizu v0.0.0
-```
-
-### `README.md`
-
-Each template generates a README with:
-- Project description
-- Setup instructions
-- Running instructions
-- Project structure overview
-
-## Template Architecture
-
-Templates are embedded in the CLI binary using Go's `embed` directive. This means:
-
-- No network required to create projects
-- Templates always match CLI version
-- Consistent across all platforms
-
-## File Naming
-
-Special file name mappings handle dotfiles:
-
-| Template Name | Output Name |
-|---------------|-------------|
-| `gitignore` | `.gitignore` |
-| `dockerignore` | `.dockerignore` |
-| `env` | `.env` |
-| `env.example` | `.env.example` |
-
-Files with `.tmpl` extension are processed as templates, and the extension is removed in output.
-
-## Choosing a Template
-
-<CardGroup cols={3}>
-  <Card title="Minimal Template" icon="feather" href="/cli/template-minimal">
-    Best for learning Mizu basics, quick experiments, or when you want full control over structure.
+<CardGroup cols={2}>
+  <Card title="Minimal Template" icon="feather" href="/cli/minimal/overview">
+    Single-file starting point for learning
   </Card>
-  <Card title="API Template" icon="server" href="/cli/template-api">
-    Best for production APIs with clean architecture, feature-based organization, and graceful shutdown.
+  <Card title="API Template" icon="server" href="/cli/api/overview">
+    JSON API with feature-based structure
   </Card>
-  <Card title="Contract Template" icon="file-contract" href="/cli/template-contract">
-    Best for multi-protocol services, transport-neutral business logic, and auto-generated OpenAPI specs.
+  <Card title="Contract Template" icon="file-contract" href="/cli/contract-template/overview">
+    Multi-protocol service with OpenAPI
+  </Card>
+  <Card title="Web Template" icon="browser" href="/cli/web/overview">
+    Full-stack web app with views
+  </Card>
+  <Card title="Live Template" icon="bolt" href="/cli/live/overview">
+    Real-time app with WebSockets
+  </Card>
+  <Card title="Sync Template" icon="rotate" href="/cli/sync/overview">
+    Offline-first app with data sync
   </Card>
 </CardGroup>
 
-### Decision Guide
+## Next Steps
 
-| Scenario | Recommended Template |
-|----------|---------------------|
-| Learning Mizu | `minimal` |
-| Quick prototype | `minimal` |
-| Production REST API | `api` |
-| Microservice | `api` |
-| Custom structure | `minimal` |
-| Team project | `api` |
-| Multi-protocol API (REST + RPC) | `contract` |
-| Transport-neutral services | `contract` |
-| Auto-generated OpenAPI | `contract` |
-| Clean architecture | `contract` |
-
-## See Also
-
-- [Minimal Template](/cli/template-minimal) - Single-file starter
-- [API Template](/cli/template-api) - Full-featured API service
-- [Contract Template](/cli/template-contract) - Multi-protocol service with contracts
-- [mizu new](/cli/new) - Create projects from templates
+- Pick a template and explore its detailed documentation
+- Run `mizu new --template <name> --dry-run` to preview any template
+- Check out the tutorials for hands-on guides

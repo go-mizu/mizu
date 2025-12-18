@@ -1,0 +1,281 @@
+---
+title: "Sync Template Structure"
+description: "Understanding the sync template organization"
+---
+
+# Sync Template Structure
+
+The sync template combines view rendering, live updates, and data synchronization.
+
+## Directory Layout
+
+```
+myapp/
+├── cmd/server/main.go         # Entry point
+├── app/server/
+│   ├── app.go                 # App + sync engine setup
+│   ├── config.go              # Configuration
+│   └── routes.go              # HTTP + sync routes
+├── handler/
+│   └── home.go                # Home page handler
+├── service/
+│   └── todo/
+│       └── mutator.go         # Todo store and apply logic
+├── assets/
+│   ├── embed.go               # Asset embedding
+│   ├── css/style.css          # Styles
+│   └── js/sync.js             # Sync client
+├── views/
+│   ├── layouts/main.html      # Main layout
+│   └── pages/home.html        # Home page
+├── go.mod
+└── .gitignore
+```
+
+## Core Files
+
+### app/server/app.go
+
+```go
+package server
+
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/live"
+    "github.com/go-mizu/mizu/sync"
+    synchttp "github.com/go-mizu/mizu/sync/http"
+    "github.com/go-mizu/mizu/sync/memory"
+    "github.com/go-mizu/mizu/view"
+    "example.com/myapp/service/todo"
+)
+
+type App struct {
+    cfg           Config
+    app           *mizu.App
+    engine        *view.Engine
+    syncEngine    *sync.Engine
+    syncTransport *synchttp.Transport
+    liveServer    *live.Server
+    store         *todo.Store
+}
+
+func New(cfg Config) *App {
+    a := &App{cfg: cfg}
+    a.app = mizu.New()
+    a.store = todo.NewStore()
+
+    a.setupView()
+    a.setupSync()
+    a.setupLive()
+    a.routes()
+
+    return a
+}
+
+func (a *App) setupView() {
+    a.engine = view.New(view.Options{
+        Root:   "views",
+        Layout: "layouts/main",
+    })
+    a.app.Use(a.engine.Middleware())
+}
+
+func (a *App) setupSync() {
+    log := memory.NewLog()
+    dedupe := memory.NewDedupe()
+
+    a.syncEngine = sync.New(sync.Options{
+        Log:      log,
+        Apply:    a.store.Apply,
+        Snapshot: a.store.Snapshot,
+        Dedupe:   dedupe,
+    })
+
+    a.syncTransport = synchttp.New(synchttp.Options{
+        Engine: a.syncEngine,
+    })
+}
+
+func (a *App) setupLive() {
+    a.liveServer = live.NewServer(live.Options{})
+}
+```
+
+### service/todo/mutator.go
+
+```go
+package todo
+
+import (
+    "context"
+    "encoding/json"
+    "fmt"
+    gosync "sync"
+
+    "github.com/go-mizu/mizu/sync"
+)
+
+type Store struct {
+    mu    gosync.RWMutex
+    todos map[string]map[string]*Todo // scope -> id -> todo
+}
+
+type Todo struct {
+    ID        string `json:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
+}
+
+func NewStore() *Store {
+    return &Store{
+        todos: make(map[string]map[string]*Todo),
+    }
+}
+
+// Apply handles mutations (sync.ApplyFunc)
+func (s *Store) Apply(ctx context.Context, m sync.Mutation) ([]sync.Change, error) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    scope := m.Scope
+    if s.todos[scope] == nil {
+        s.todos[scope] = make(map[string]*Todo)
+    }
+
+    switch m.Type {
+    case "todo.create":
+        return s.createTodo(scope, m.Args)
+    case "todo.toggle":
+        return s.toggleTodo(scope, m.Args)
+    case "todo.delete":
+        return s.deleteTodo(scope, m.Args)
+    default:
+        return nil, fmt.Errorf("unknown mutation: %s", m.Type)
+    }
+}
+
+func (s *Store) createTodo(scope string, args json.RawMessage) ([]sync.Change, error) {
+    var input struct {
+        ID    string `json:"id"`
+        Title string `json:"title"`
+    }
+    if err := json.Unmarshal(args, &input); err != nil {
+        return nil, err
+    }
+
+    todo := &Todo{
+        ID:        input.ID,
+        Title:     input.Title,
+        Completed: false,
+    }
+    s.todos[scope][todo.ID] = todo
+
+    data, _ := json.Marshal(s.todos[scope])
+    return []sync.Change{{Scope: scope, Data: data}}, nil
+}
+
+// Snapshot returns current state (sync.SnapshotFunc)
+func (s *Store) Snapshot(ctx context.Context, scope string) (json.RawMessage, uint64, error) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
+    todos := s.GetAll(scope)
+    data, _ := json.Marshal(todos)
+    return data, 0, nil
+}
+
+// GetAll returns all todos for a scope
+func (s *Store) GetAll(scope string) []*Todo {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
+    if s.todos[scope] == nil {
+        return []*Todo{}
+    }
+
+    todos := make([]*Todo, 0, len(s.todos[scope]))
+    for _, t := range s.todos[scope] {
+        todos = append(todos, t)
+    }
+    return todos
+}
+```
+
+### app/server/routes.go
+
+```go
+package server
+
+import "example.com/myapp/handler"
+
+func (a *App) routes() {
+    a.app.Mount("/static/", staticHandler(a.cfg.Dev))
+    a.app.Get("/", handler.Home(a.store))
+    a.syncTransport.Mount(a.app)  // Mounts at /_sync/*
+    a.app.Mount("/ws", a.liveServer.Handler())
+}
+```
+
+### assets/js/sync.js
+
+```javascript
+class SyncClient {
+    constructor(url) {
+        this.url = url;
+        this.pending = [];
+    }
+
+    async mutate(type, args) {
+        const mutation = {
+            id: crypto.randomUUID(),
+            type,
+            args,
+        };
+
+        // Optimistic: apply locally
+        this.applyLocal(mutation);
+
+        // Queue for sync
+        this.pending.push(mutation);
+        await this.sync();
+    }
+
+    async sync() {
+        if (this.pending.length === 0) return;
+
+        try {
+            const res = await fetch(this.url + '/_sync/push', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mutations: this.pending }),
+            });
+
+            if (res.ok) {
+                this.pending = [];
+            }
+        } catch (e) {
+            // Will retry later
+        }
+    }
+}
+```
+
+## Sync Flow
+
+1. **Client Mutation** - User action creates mutation
+2. **Local Apply** - UI updates optimistically
+3. **Push to Server** - Mutation sent to `/_sync/push`
+4. **Server Apply** - Store.Apply processes mutation
+5. **Broadcast** - Changes sent to all clients
+6. **UI Sync** - All clients update
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Tutorial" icon="graduation-cap" href="/cli/sync/tutorial">
+    Build a syncing todo app
+  </Card>
+  <Card title="Sync Documentation" icon="rotate" href="/view/sync-overview">
+    Deep dive into sync
+  </Card>
+</CardGroup>

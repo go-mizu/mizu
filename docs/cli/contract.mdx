@@ -1,0 +1,532 @@
+---
+title: "mizu contract"
+description: "Work with service contracts - list methods, call APIs, and export specs"
+---
+
+# mizu contract
+
+The `mizu contract` command helps you work with service contracts. It can discover APIs, call methods, view schemas, and export specifications like OpenAPI.
+
+## What is a Service Contract?
+
+A service contract defines the interface of your API:
+- What methods are available
+- What data each method accepts
+- What data each method returns
+
+When you build APIs with the `contract` template, your services are automatically discoverable. The `mizu contract` command lets you explore and interact with these APIs from the command line.
+
+## Quick Examples
+
+```bash
+# List all available methods
+mizu contract ls
+
+# Show details about a specific method
+mizu contract show todo.Create
+
+# Call a method with JSON data
+mizu contract call todo.Create '{"title":"Buy milk"}'
+
+# Export the OpenAPI specification
+mizu contract spec > openapi.json
+```
+
+## Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `mizu contract ls` | List all services and methods |
+| `mizu contract show` | Show details about a method |
+| `mizu contract call` | Call a method |
+| `mizu contract spec` | Export API specification |
+| `mizu contract types` | List available types and schemas |
+
+## Setting the Server URL
+
+By default, commands connect to `http://localhost:8080`. You can change this in several ways:
+
+```bash
+# Pass as argument
+mizu contract ls http://api.example.com
+
+# Use the --url flag
+mizu contract ls --url http://api.example.com
+
+# Use environment variable
+export MIZU_URL=http://api.example.com
+mizu contract ls
+```
+
+Priority order: command argument > `--url` flag > `MIZU_URL` environment variable > default.
+
+---
+
+## mizu contract ls
+
+Lists all services and their methods.
+
+### Usage
+
+```bash
+mizu contract ls [url] [flags]
+```
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--url <string>` | Server URL |
+| `--all` | Include deprecated methods |
+| `--json` | Output as JSON |
+
+### Example
+
+```bash
+mizu contract ls
+```
+
+Output:
+
+```
+todo
+  todo.Create               POST   /api/todo            Create a new todo item
+  todo.List                 GET    /api/todo            List all todo items
+  todo.Get                  GET    /api/todo/{id}       Get a todo by ID
+  todo.Update               PUT    /api/todo/{id}       Update a todo item
+  todo.Delete               DELETE /api/todo/{id}       Delete a todo item
+```
+
+### JSON Output
+
+```bash
+mizu contract ls --json
+```
+
+```json
+{
+  "services": [{
+    "name": "todo",
+    "methods": [{
+      "name": "Create",
+      "fullName": "todo.Create",
+      "httpMethod": "POST",
+      "httpPath": "/api/todo",
+      "input": {"id": "CreateTodoInput", "name": "CreateTodoInput"},
+      "output": {"id": "Todo", "name": "Todo"}
+    }]
+  }],
+  "types": [...]
+}
+```
+
+---
+
+## mizu contract show
+
+Shows detailed information about a specific method.
+
+### Usage
+
+```bash
+mizu contract show <method> [url] [flags]
+```
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--url <string>` | Server URL |
+| `--schema` | Show full JSON schema |
+| `--json` | Output as JSON |
+
+### Example
+
+```bash
+mizu contract show todo.Create
+```
+
+Output:
+
+```
+todo.Create
+  POST /api/todo
+
+  Create a new todo item
+
+Input (CreateTodoInput):
+  title           string   required  The title of the todo item
+  description     string             Optional description
+  priority        integer            Priority level (1-5)
+
+Output (Todo):
+  id              string   required  Unique identifier
+  title           string   required  Todo title
+  description     string             Description
+  completed       boolean  required  Completion status
+  createdAt       string   required  Creation timestamp
+```
+
+### Show Full Schema
+
+```bash
+mizu contract show todo.Create --schema
+```
+
+Outputs the complete JSON Schema for input and output types.
+
+---
+
+## mizu contract call
+
+Calls a method with input data and returns the result.
+
+### Usage
+
+```bash
+mizu contract call <method> [input] [url] [flags]
+```
+
+### Input Formats
+
+| Format | Example | Description |
+|--------|---------|-------------|
+| JSON string | `'{"title":"Buy milk"}'` | Inline JSON |
+| File | `@input.json` | Read from file |
+| Stdin | `-` | Read from stdin |
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--url <string>` | Server URL |
+| `--id <string>` | Path parameter ID (for REST) |
+| `--timeout <duration>` | Request timeout (default: 30s) |
+| `-H, --header <key:value>` | Add request header (repeatable) |
+| `--raw` | Output raw response |
+
+### Examples
+
+**Call with inline JSON:**
+
+```bash
+mizu contract call todo.Create '{"title":"Buy milk","priority":1}'
+```
+
+Output:
+
+```json
+{
+  "id": "abc123",
+  "title": "Buy milk",
+  "priority": 1,
+  "completed": false,
+  "createdAt": "2024-01-15T10:30:00Z"
+}
+```
+
+**Call with file input:**
+
+```bash
+# Create input file
+echo '{"title":"Buy groceries"}' > input.json
+
+# Call with file
+mizu contract call todo.Create @input.json
+```
+
+**Call with stdin:**
+
+```bash
+echo '{"title":"Buy groceries"}' | mizu contract call todo.Create -
+```
+
+**Call a method that takes an ID:**
+
+```bash
+mizu contract call todo.Get --id abc123
+```
+
+**Add authentication header:**
+
+```bash
+mizu contract call todo.Create '{"title":"Secret todo"}' \
+  -H "Authorization: Bearer mytoken"
+```
+
+### Error Output
+
+If the call fails:
+
+```
+error: rpc error -32602: title is required
+```
+
+---
+
+## mizu contract spec
+
+Exports the API specification in OpenAPI or OpenRPC format.
+
+### Usage
+
+```bash
+mizu contract spec [url] [flags]
+```
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--url <string>` | Server URL |
+| `--format <string>` | Output format (openapi, openrpc) |
+| `--service <string>` | Export specific service only |
+| `--pretty` | Pretty print JSON |
+| `-o, --output <file>` | Write to file |
+
+### Examples
+
+**Export OpenAPI spec:**
+
+```bash
+mizu contract spec > openapi.json
+```
+
+**Export pretty-printed:**
+
+```bash
+mizu contract spec --pretty > openapi.json
+```
+
+**Export to file:**
+
+```bash
+mizu contract spec -o openapi.json
+```
+
+Output:
+
+```
+Wrote openapi.json
+```
+
+**Export OpenRPC format:**
+
+```bash
+mizu contract spec --format openrpc > openrpc.json
+```
+
+---
+
+## mizu contract types
+
+Lists all types and their schemas.
+
+### Usage
+
+```bash
+mizu contract types [type] [url] [flags]
+```
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--url <string>` | Server URL |
+| `--schema` | Show full JSON schema |
+| `--json` | Output as JSON |
+
+### List All Types
+
+```bash
+mizu contract types
+```
+
+Output:
+
+```
+CreateTodoInput           object     3 fields
+Todo                      object     5 fields
+UpdateTodoInput           object     4 fields
+Priority                  enum       5 values
+```
+
+### Show Specific Type
+
+```bash
+mizu contract types Todo
+```
+
+Output:
+
+```
+Todo (object)
+  id              string   required
+  title           string   required
+  description     string
+  completed       boolean  required
+  createdAt       string   required
+```
+
+### Show Full Schema
+
+```bash
+mizu contract types Todo --schema
+```
+
+```json
+{
+  "type": "object",
+  "required": ["id", "title", "completed", "createdAt"],
+  "properties": {
+    "id": {"type": "string", "description": "Unique identifier"},
+    "title": {"type": "string", "description": "Todo title"},
+    "description": {"type": "string"},
+    "completed": {"type": "boolean"},
+    "createdAt": {"type": "string", "format": "date-time"}
+  }
+}
+```
+
+---
+
+## Discovery Methods
+
+The CLI tries multiple methods to discover your API:
+
+1. **JSON-RPC Discovery** - Calls `rpc.discover` method
+2. **OpenRPC Spec** - Fetches `/openrpc.json`
+3. **OpenAPI Spec** - Fetches `/openapi.json`
+4. **Contract Endpoint** - Fetches `/_contract`
+
+It uses the first method that succeeds.
+
+---
+
+## Practical Workflows
+
+### Explore a New API
+
+```bash
+# Start by listing what's available
+mizu contract ls
+
+# Pick a method and see its details
+mizu contract show users.Create
+
+# Try calling it
+mizu contract call users.Create '{"name":"Alice","email":"alice@example.com"}'
+```
+
+### Generate Client Documentation
+
+```bash
+# Export the spec
+mizu contract spec --pretty -o api.json
+
+# Use tools like Swagger UI or Redoc to visualize
+npx @redocly/cli preview-docs api.json
+```
+
+### Test During Development
+
+```bash
+# In terminal 1: Run your server
+mizu dev
+
+# In terminal 2: Test your methods
+mizu contract call todo.Create '{"title":"Test item"}'
+mizu contract call todo.List
+```
+
+### CI/CD Integration
+
+```bash
+#!/bin/bash
+# Verify API is working
+
+# Wait for server to start
+sleep 5
+
+# Check discovery works
+if ! mizu contract ls --json > /dev/null; then
+  echo "API discovery failed"
+  exit 1
+fi
+
+# Check a specific method
+RESULT=$(mizu contract call health.Check)
+if [ $? -ne 0 ]; then
+  echo "Health check failed"
+  exit 1
+fi
+
+echo "API is healthy"
+```
+
+---
+
+## Error Messages
+
+### Cannot Discover Contract
+
+```
+error: cannot discover contract at http://localhost:8080
+```
+
+**Causes:**
+- Server is not running
+- Server doesn't expose discovery endpoints
+- Wrong URL
+
+**Fix:**
+1. Make sure your server is running (`mizu dev`)
+2. Verify the URL is correct
+3. Check that you're using the `contract` template
+
+### Method Not Found
+
+```
+error: method not found: todo.Unknown
+
+did you mean?
+  todo.Create
+  todo.Update
+```
+
+**Fix:** Check the method name. Use `mizu contract ls` to see available methods.
+
+### Missing Required Input
+
+```
+error: missing required input
+  the todo.Create method requires input
+
+hint: mizu contract call todo.Create '{...}'
+      mizu contract show todo.Create  # see input schema
+```
+
+**Fix:** Provide the required input data.
+
+---
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Error (API error, network error) |
+| 2 | Usage error (missing arguments) |
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Contract Template" icon="file-contract" href="/cli/contract-template/overview">
+    Learn how to build contract-based services
+  </Card>
+  <Card title="OpenAPI Export" icon="file-code" href="/contract/openapi">
+    Learn about OpenAPI spec generation
+  </Card>
+</CardGroup>

@@ -1,0 +1,386 @@
+---
+title: "Contract Template Structure"
+description: "Understanding the contract template file organization"
+---
+
+# Contract Template Structure
+
+The contract template separates your business logic from transport concerns. Here's what each file does.
+
+## Directory Layout
+
+```
+myservice/
+├── cmd/
+│   └── api/
+│       └── main.go           # Entry point
+├── app/
+│   └── server/
+│       ├── config.go         # Configuration
+│       └── server.go         # Server setup with transports
+├── service/
+│   └── todo/
+│       └── todo.go           # Todo service (business logic)
+├── go.mod
+├── .gitignore
+└── README.md
+```
+
+## The service/ Directory
+
+This is where your business logic lives. Services are plain Go structs.
+
+### service/todo/todo.go
+
+```go
+package todo
+
+import (
+    "context"
+    "fmt"
+    "sync"
+)
+
+// Service is the todo service.
+type Service struct {
+    mu     sync.RWMutex
+    todos  map[string]*Todo
+    nextID int
+}
+
+// New creates a new todo service.
+func New() *Service {
+    return &Service{
+        todos: make(map[string]*Todo),
+    }
+}
+
+// Todo is a todo item.
+type Todo struct {
+    ID        string `json:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
+}
+
+// CreateInput is the input for creating a todo.
+type CreateInput struct {
+    Title string `json:"title"`
+}
+
+// Create creates a new todo.
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    s.nextID++
+    todo := &Todo{
+        ID:    fmt.Sprintf("%d", s.nextID),
+        Title: in.Title,
+    }
+    s.todos[todo.ID] = todo
+    return todo, nil
+}
+
+// List returns all todos.
+func (s *Service) List(ctx context.Context) ([]*Todo, error) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
+    todos := make([]*Todo, 0, len(s.todos))
+    for _, t := range s.todos {
+        todos = append(todos, t)
+    }
+    return todos, nil
+}
+```
+
+**Key points:**
+
+- Pure Go - no HTTP or transport concerns
+- Context as first parameter
+- Strongly typed inputs and outputs
+- Returns errors for proper handling
+
+### Method Signatures
+
+The contract system recognizes these patterns:
+
+```go
+// With input and output
+func (s *Service) Method(ctx context.Context, in *Input) (*Output, error)
+
+// Output only (no input)
+func (s *Service) Method(ctx context.Context) (*Output, error)
+
+// Input only (no output)
+func (s *Service) Method(ctx context.Context, in *Input) error
+
+// No input or output
+func (s *Service) Method(ctx context.Context) error
+```
+
+## The app/ Directory
+
+Sets up the server and mounts transports.
+
+### app/server/server.go
+
+```go
+package server
+
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/contract"
+    "example.com/myservice/service/todo"
+)
+
+type Server struct {
+    cfg      Config
+    app      *mizu.App
+    registry *contract.Registry
+}
+
+func New(cfg Config) *Server {
+    s := &Server{cfg: cfg}
+    s.app = mizu.New()
+    s.registry = contract.NewRegistry()
+
+    // Register services
+    s.registry.Register("todo", todo.New())
+
+    // Setup transports
+    s.setupTransports()
+
+    return s
+}
+
+func (s *Server) setupTransports() {
+    // REST transport at /api/*
+    rest := contract.NewREST(s.registry)
+    s.app.Mount("/api", rest.Handler())
+
+    // JSON-RPC at root
+    rpc := contract.NewJSONRPC(s.registry)
+    s.app.Post("/", rpc.Handler())
+
+    // OpenAPI spec
+    openapi := contract.NewOpenAPI(s.registry, contract.OpenAPIOptions{
+        Title:   "My Service",
+        Version: "1.0.0",
+    })
+    s.app.Get("/openapi.json", openapi.Handler())
+}
+
+func (s *Server) Listen(addr string) error {
+    return s.app.Listen(addr)
+}
+```
+
+**What happens:**
+
+1. **Registry** - Collects all services
+2. **Register** - Adds a service under a namespace ("todo")
+3. **REST transport** - Maps methods to HTTP endpoints
+4. **JSON-RPC transport** - Handles JSON-RPC calls
+5. **OpenAPI** - Generates documentation
+
+### app/server/config.go
+
+```go
+package server
+
+import "os"
+
+type Config struct {
+    Addr string
+    Dev  bool
+}
+
+func LoadConfig() Config {
+    return Config{
+        Addr: getEnv("ADDR", ":8080"),
+        Dev:  getEnv("DEV", "true") == "true",
+    }
+}
+
+func getEnv(key, defaultValue string) string {
+    if v := os.Getenv(key); v != "" {
+        return v
+    }
+    return defaultValue
+}
+```
+
+## The cmd/ Directory
+
+Entry point for your service.
+
+### cmd/api/main.go
+
+```go
+package main
+
+import (
+    "log"
+    "example.com/myservice/app/server"
+)
+
+func main() {
+    cfg := server.LoadConfig()
+    srv := server.New(cfg)
+
+    log.Printf("listening on %s", cfg.Addr)
+    if err := srv.Listen(cfg.Addr); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+## How Transports Map Methods
+
+### REST Mapping
+
+Methods are mapped to HTTP endpoints automatically:
+
+| Method | HTTP | Path |
+|--------|------|------|
+| `todo.Create` | POST | /api/todo |
+| `todo.List` | GET | /api/todo |
+| `todo.Get` | GET | /api/todo/{id} |
+| `todo.Update` | PUT | /api/todo/{id} |
+| `todo.Delete` | DELETE | /api/todo/{id} |
+
+The mapping follows conventions:
+- `Create` → POST without ID
+- `List` → GET without ID
+- `Get` → GET with ID
+- `Update` → PUT with ID
+- `Delete` → DELETE with ID
+
+### JSON-RPC Mapping
+
+All methods are available via JSON-RPC:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "todo.Create",
+  "params": {"title": "Buy milk"},
+  "id": 1
+}
+```
+
+Response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {"id": "1", "title": "Buy milk", "completed": false},
+  "id": 1
+}
+```
+
+## Adding a New Service
+
+### 1. Create the Service
+
+```bash
+mkdir -p service/users
+```
+
+Create `service/users/users.go`:
+
+```go
+package users
+
+import "context"
+
+type Service struct {
+    // dependencies
+}
+
+func New() *Service {
+    return &Service{}
+}
+
+type User struct {
+    ID    string `json:"id"`
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+
+type CreateInput struct {
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*User, error) {
+    return &User{
+        ID:    "1",
+        Name:  in.Name,
+        Email: in.Email,
+    }, nil
+}
+
+func (s *Service) List(ctx context.Context) ([]*User, error) {
+    return []*User{}, nil
+}
+```
+
+### 2. Register the Service
+
+Update `app/server/server.go`:
+
+```go
+import "example.com/myservice/service/users"
+
+func New(cfg Config) *Server {
+    // ...
+    s.registry.Register("todo", todo.New())
+    s.registry.Register("users", users.New())  // Add this
+    // ...
+}
+```
+
+### 3. Test It
+
+```bash
+mizu dev
+
+# REST
+curl http://localhost:8080/api/users
+
+# JSON-RPC
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"users.List","id":1}'
+
+# CLI
+mizu contract ls
+mizu contract call users.Create '{"name":"Alice","email":"alice@example.com"}'
+```
+
+## Type Documentation
+
+Add documentation with struct tags:
+
+```go
+type Todo struct {
+    ID        string `json:"id" doc:"Unique identifier"`
+    Title     string `json:"title" doc:"The todo title"`
+    Completed bool   `json:"completed" doc:"Whether the todo is done"`
+}
+```
+
+This appears in the generated OpenAPI spec.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Tutorial" icon="graduation-cap" href="/cli/contract-template/tutorial">
+    Build a complete contract service
+  </Card>
+  <Card title="Contract Concepts" icon="book" href="/contract/overview">
+    Deep dive into contracts
+  </Card>
+</CardGroup>

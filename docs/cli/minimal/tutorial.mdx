@@ -1,0 +1,404 @@
+---
+title: "Minimal Template Tutorial"
+description: "Build your first Mizu application from scratch"
+---
+
+# Minimal Template Tutorial
+
+In this tutorial, you'll create a simple web application that responds to HTTP requests. By the end, you'll understand the core concepts of Mizu.
+
+## Prerequisites
+
+Before starting, make sure you have:
+
+- Go installed (version 1.22 or later)
+- Mizu CLI installed
+- A text editor
+
+Not sure? Run these commands:
+
+```bash
+go version    # Should show go1.22 or higher
+mizu version  # Should show mizu version info
+```
+
+## Step 1: Create the Project
+
+Open your terminal and run:
+
+```bash
+mizu new hello --template minimal
+```
+
+You should see:
+
+```
+Created hello from template minimal
+  0 directories, 4 files
+
+Next steps:
+  cd hello
+  go mod tidy
+  mizu dev
+```
+
+## Step 2: Enter the Project
+
+```bash
+cd hello
+```
+
+Look at what was created:
+
+```bash
+ls -la
+```
+
+Output:
+
+```
+.gitignore
+README.md
+go.mod
+main.go
+```
+
+## Step 3: Install Dependencies
+
+```bash
+go mod tidy
+```
+
+This downloads the Mizu framework and updates `go.mod` with the correct version.
+
+## Step 4: Run the Server
+
+```bash
+mizu dev
+```
+
+Output:
+
+```
+Starting .
+listening on :8080
+```
+
+Your server is running!
+
+## Step 5: Test It
+
+Open another terminal (keep the server running) and test with curl:
+
+```bash
+curl http://localhost:8080
+```
+
+Output:
+
+```
+Hello from hello
+```
+
+Or open `http://localhost:8080` in your browser.
+
+## Step 6: Stop the Server
+
+Go back to the terminal running `mizu dev` and press `Ctrl+C`:
+
+```
+^C
+Received interrupt, shutting down...
+```
+
+## Understanding the Code
+
+Now let's look at the code. Open `main.go` in your editor:
+
+```go
+package main
+
+import (
+    "log"
+    "github.com/go-mizu/mizu"
+)
+
+func main() {
+    app := mizu.New()
+
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.Text(200, "Hello from hello\n")
+    })
+
+    log.Println("listening on :8080")
+    if err := app.Listen(":8080"); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+### Key Concepts
+
+**1. Creating the App**
+
+```go
+app := mizu.New()
+```
+
+This creates a new Mizu application instance. It sets up the HTTP router and prepares everything for handling requests.
+
+**2. Adding a Route**
+
+```go
+app.Get("/", func(c *mizu.Ctx) error {
+    return c.Text(200, "Hello from hello\n")
+})
+```
+
+- `app.Get` means "handle GET requests"
+- `"/"` is the path (root URL)
+- The function is your handler - it runs when someone visits `/`
+- `c` is the context - it has request info and response methods
+- `c.Text(200, ...)` sends a plain text response with status code 200
+
+**3. Starting the Server**
+
+```go
+if err := app.Listen(":8080"); err != nil {
+    log.Fatal(err)
+}
+```
+
+This starts the HTTP server on port 8080 and waits for requests.
+
+## Exercise 1: Add a New Route
+
+Let's add an `/about` page.
+
+Edit `main.go`:
+
+```go
+package main
+
+import (
+    "log"
+    "github.com/go-mizu/mizu"
+)
+
+func main() {
+    app := mizu.New()
+
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.Text(200, "Hello from hello\n")
+    })
+
+    // NEW: Add about route
+    app.Get("/about", func(c *mizu.Ctx) error {
+        return c.Text(200, "This is the about page\n")
+    })
+
+    log.Println("listening on :8080")
+    if err := app.Listen(":8080"); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+Restart the server:
+
+```bash
+# Press Ctrl+C to stop, then:
+mizu dev
+```
+
+Test the new route:
+
+```bash
+curl http://localhost:8080/about
+```
+
+Output:
+
+```
+This is the about page
+```
+
+## Exercise 2: Return JSON
+
+APIs usually return JSON. Let's add a JSON endpoint.
+
+Edit `main.go`:
+
+```go
+package main
+
+import (
+    "log"
+    "github.com/go-mizu/mizu"
+)
+
+func main() {
+    app := mizu.New()
+
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.Text(200, "Hello from hello\n")
+    })
+
+    app.Get("/about", func(c *mizu.Ctx) error {
+        return c.Text(200, "This is the about page\n")
+    })
+
+    // NEW: Add JSON endpoint
+    app.Get("/api/status", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{
+            "status": "ok",
+            "app":    "hello",
+        })
+    })
+
+    log.Println("listening on :8080")
+    if err := app.Listen(":8080"); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+Restart and test:
+
+```bash
+curl http://localhost:8080/api/status
+```
+
+Output:
+
+```json
+{"app":"hello","status":"ok"}
+```
+
+## Exercise 3: URL Parameters
+
+Let's create a route that uses URL parameters.
+
+Edit `main.go`:
+
+```go
+package main
+
+import (
+    "log"
+    "github.com/go-mizu/mizu"
+)
+
+func main() {
+    app := mizu.New()
+
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.Text(200, "Hello from hello\n")
+    })
+
+    // NEW: Route with parameter
+    app.Get("/greet/:name", func(c *mizu.Ctx) error {
+        name := c.Param("name")
+        return c.Text(200, "Hello, "+name+"!\n")
+    })
+
+    log.Println("listening on :8080")
+    if err := app.Listen(":8080"); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+Restart and test:
+
+```bash
+curl http://localhost:8080/greet/Alice
+curl http://localhost:8080/greet/Bob
+```
+
+Output:
+
+```
+Hello, Alice!
+Hello, Bob!
+```
+
+The `:name` in the route is a **parameter**. Whatever value is in that position gets captured and is available via `c.Param("name")`.
+
+## Exercise 4: Query Parameters
+
+Query parameters are the `?key=value` part of URLs.
+
+Edit `main.go`:
+
+```go
+package main
+
+import (
+    "log"
+    "github.com/go-mizu/mizu"
+)
+
+func main() {
+    app := mizu.New()
+
+    // NEW: Route with query parameter
+    app.Get("/search", func(c *mizu.Ctx) error {
+        query := c.Query("q")
+        if query == "" {
+            query = "(no query)"
+        }
+        return c.Text(200, "Searching for: "+query+"\n")
+    })
+
+    log.Println("listening on :8080")
+    if err := app.Listen(":8080"); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+Restart and test:
+
+```bash
+curl "http://localhost:8080/search?q=mizu"
+curl "http://localhost:8080/search"
+```
+
+Output:
+
+```
+Searching for: mizu
+Searching for: (no query)
+```
+
+## What You've Learned
+
+In this tutorial, you learned:
+
+1. **Create a project** with `mizu new`
+2. **Run a server** with `mizu dev`
+3. **Add routes** with `app.Get()`
+4. **Return text** with `c.Text()`
+5. **Return JSON** with `c.JSON()`
+6. **Use URL parameters** with `:name` and `c.Param()`
+7. **Use query parameters** with `c.Query()`
+
+## Next Steps
+
+You've mastered the basics. Here are some options:
+
+<CardGroup cols={2}>
+  <Card title="API Template" icon="server" href="/cli/api/overview">
+    Learn a production-ready project structure
+  </Card>
+  <Card title="Middleware" icon="layer-group" href="/concepts/middleware">
+    Add logging, auth, and more to your routes
+  </Card>
+  <Card title="Context Deep Dive" icon="code" href="/concepts/context">
+    Learn all the context methods
+  </Card>
+  <Card title="Examples" icon="book" href="/examples/overview">
+    See more complete examples
+  </Card>
+</CardGroup>

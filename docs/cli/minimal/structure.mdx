@@ -1,0 +1,256 @@
+---
+title: "Minimal Template Structure"
+description: "Understanding the files in a minimal Mizu project"
+---
+
+# Minimal Template Structure
+
+The minimal template creates the simplest possible project structure. Let's look at every file.
+
+## Directory Layout
+
+```
+myapp/
+├── go.mod       # Go module definition
+├── main.go      # Your application code
+├── .gitignore   # Git ignore rules
+└── README.md    # Project documentation
+```
+
+That's only 4 files!
+
+## File Details
+
+### main.go
+
+This is your entire application:
+
+```go
+package main
+
+import (
+    "log"
+    "github.com/go-mizu/mizu"
+)
+
+func main() {
+    app := mizu.New()
+
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.Text(200, "Hello from myapp\n")
+    })
+
+    log.Println("listening on :8080")
+    if err := app.Listen(":8080"); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+**Line by line explanation:**
+
+| Line | Code | What it does |
+|------|------|--------------|
+| 1 | `package main` | Marks this as an executable program |
+| 4 | `"log"` | Import Go's logging package |
+| 5 | `"github.com/go-mizu/mizu"` | Import the Mizu framework |
+| 8 | `func main()` | Entry point - runs when you start the app |
+| 9 | `app := mizu.New()` | Create a new Mizu application |
+| 11 | `app.Get("/", ...)` | Register a handler for GET / |
+| 12 | `func(c *mizu.Ctx) error` | Handler function signature |
+| 13 | `return c.Text(200, ...)` | Send HTTP 200 with text |
+| 16 | `log.Println(...)` | Log that we're starting |
+| 17 | `app.Listen(":8080")` | Start server on port 8080 |
+| 18 | `log.Fatal(err)` | Exit if server fails to start |
+
+### go.mod
+
+The Go module file defines your project:
+
+```go
+module example.com/myapp
+
+go 1.22
+
+require github.com/go-mizu/mizu v0.0.0
+```
+
+**What each line means:**
+
+| Line | Meaning |
+|------|---------|
+| `module example.com/myapp` | Your project's import path |
+| `go 1.22` | Minimum Go version required |
+| `require github.com/go-mizu/mizu` | Dependency on Mizu |
+
+<Note>
+The version `v0.0.0` is a placeholder. When you run `go mod tidy`, it's replaced with the actual latest version.
+</Note>
+
+### .gitignore
+
+Tells Git which files to ignore:
+
+```gitignore
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output
+*.out
+
+# Go workspace
+go.work
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+```
+
+This prevents compiled binaries and editor files from being committed.
+
+### README.md
+
+Basic project documentation:
+
+```markdown
+# myapp
+
+A Mizu application.
+
+## Getting Started
+
+```bash
+go mod tidy
+mizu dev
+```
+
+Open http://localhost:8080
+```
+
+## Understanding the Code
+
+### The Handler
+
+```go
+app.Get("/", func(c *mizu.Ctx) error {
+    return c.Text(200, "Hello from myapp\n")
+})
+```
+
+This is a **handler** - a function that processes HTTP requests.
+
+- `app.Get` - Registers this handler for GET requests
+- `"/"` - The URL path to match
+- `func(c *mizu.Ctx) error` - The handler function
+- `c` - The context, contains request info and response methods
+- `c.Text(200, ...)` - Send a text response with status 200
+
+### The Context
+
+The `*mizu.Ctx` parameter gives you access to:
+
+```go
+// Request data
+c.Param("id")       // URL parameters like /users/:id
+c.Query("page")     // Query string like ?page=1
+c.Body()            // Request body
+
+// Response methods
+c.Text(200, "...")  // Plain text
+c.JSON(200, data)   // JSON response
+c.HTML(200, "...")  // HTML response
+```
+
+### Starting the Server
+
+```go
+if err := app.Listen(":8080"); err != nil {
+    log.Fatal(err)
+}
+```
+
+- `":8080"` means "listen on port 8080 on all interfaces"
+- `Listen` blocks until the server is stopped
+- If it fails (port in use, etc.), we log the error and exit
+
+## Common Modifications
+
+### Change the Port
+
+```go
+log.Println("listening on :3000")
+if err := app.Listen(":3000"); err != nil {
+    log.Fatal(err)
+}
+```
+
+### Add More Routes
+
+```go
+app.Get("/", func(c *mizu.Ctx) error {
+    return c.Text(200, "Home page")
+})
+
+app.Get("/about", func(c *mizu.Ctx) error {
+    return c.Text(200, "About page")
+})
+
+app.Get("/api/users", func(c *mizu.Ctx) error {
+    return c.JSON(200, []string{"Alice", "Bob"})
+})
+```
+
+### Add URL Parameters
+
+```go
+app.Get("/users/:id", func(c *mizu.Ctx) error {
+    id := c.Param("id")
+    return c.Text(200, "User ID: "+id)
+})
+```
+
+### Handle POST Requests
+
+```go
+app.Post("/users", func(c *mizu.Ctx) error {
+    // Read JSON from request body
+    var user struct {
+        Name string `json:"name"`
+    }
+    if err := c.Bind(&user); err != nil {
+        return err
+    }
+    return c.JSON(201, user)
+})
+```
+
+## When to Add More Structure
+
+Signs you've outgrown the minimal template:
+
+1. **main.go is over 100 lines** - Time to split into multiple files
+2. **You have related routes** - Group them into packages
+3. **You need configuration** - Add a config file/struct
+4. **Multiple developers** - Need clearer organization
+
+At this point, consider using the `api` template or building your own structure.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Tutorial" icon="graduation-cap" href="/cli/minimal/tutorial">
+    Build your first app step by step
+  </Card>
+  <Card title="API Template" icon="server" href="/cli/api/overview">
+    See a more structured approach
+  </Card>
+</CardGroup>

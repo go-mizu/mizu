@@ -1,0 +1,458 @@
+---
+title: "API Template Structure"
+description: "Understanding every file in the API template"
+---
+
+# API Template Structure
+
+The API template uses a feature-based architecture. This guide explains every file and folder.
+
+## Directory Layout
+
+```
+myapi/
+├── cmd/
+│   └── api/
+│       └── main.go         # Entry point
+├── app/
+│   └── api/
+│       ├── app.go          # Application struct and setup
+│       ├── config.go       # Configuration loading
+│       └── routes.go       # Route registration
+├── feature/
+│   ├── echo/
+│   │   └── http.go         # Echo endpoint
+│   ├── health/
+│   │   └── http.go         # Health check
+│   ├── hello/
+│   │   └── http.go         # Hello endpoint
+│   └── users/
+│       └── http.go         # Users API
+├── go.mod
+├── .gitignore
+└── README.md
+```
+
+## The cmd/ Directory
+
+Contains the entry point(s) for your application.
+
+### cmd/api/main.go
+
+```go
+package main
+
+import (
+    "log"
+    "example.com/myapi/app/api"
+)
+
+func main() {
+    cfg := api.LoadConfig()
+    app := api.New(cfg)
+
+    log.Printf("listening on %s", cfg.Addr)
+    if err := app.Listen(cfg.Addr); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+**What it does:**
+
+1. Loads configuration
+2. Creates the application
+3. Starts the HTTP server
+
+**Why separate from app/?**
+
+- Keeps `main()` minimal
+- Makes it easy to add more commands (workers, migrations)
+- Application logic is testable without `main()`
+
+## The app/ Directory
+
+Contains application setup and configuration.
+
+### app/api/app.go
+
+```go
+package api
+
+import "github.com/go-mizu/mizu"
+
+// App is the API application.
+type App struct {
+    cfg Config
+    app *mizu.App
+}
+
+// New creates a new App.
+func New(cfg Config) *App {
+    a := &App{cfg: cfg}
+    a.app = mizu.New()
+    a.routes()
+    return a
+}
+
+// Listen starts the HTTP server.
+func (a *App) Listen(addr string) error {
+    return a.app.Listen(addr)
+}
+```
+
+**What it does:**
+
+- Defines the `App` struct that holds configuration and router
+- Provides a `New()` constructor that sets everything up
+- Exposes a `Listen()` method to start the server
+
+**Key concepts:**
+
+| Part | Purpose |
+|------|---------|
+| `App` struct | Groups related state together |
+| `New()` | Constructor pattern for setup |
+| `routes()` | Called in constructor to register routes |
+| `Listen()` | Thin wrapper around mizu's Listen |
+
+### app/api/config.go
+
+```go
+package api
+
+import "os"
+
+// Config holds application configuration.
+type Config struct {
+    Addr string
+    Dev  bool
+}
+
+// LoadConfig loads configuration from environment.
+func LoadConfig() Config {
+    return Config{
+        Addr: getEnv("ADDR", ":8080"),
+        Dev:  getEnv("DEV", "true") == "true",
+    }
+}
+
+func getEnv(key, defaultValue string) string {
+    if value := os.Getenv(key); value != "" {
+        return value
+    }
+    return defaultValue
+}
+```
+
+**What it does:**
+
+- Defines configuration structure
+- Loads values from environment variables
+- Provides sensible defaults
+
+**Adding more config:**
+
+```go
+type Config struct {
+    Addr        string
+    Dev         bool
+    DatabaseURL string  // Add new field
+}
+
+func LoadConfig() Config {
+    return Config{
+        Addr:        getEnv("ADDR", ":8080"),
+        Dev:         getEnv("DEV", "true") == "true",
+        DatabaseURL: getEnv("DATABASE_URL", ""),  // Load it
+    }
+}
+```
+
+### app/api/routes.go
+
+```go
+package api
+
+import (
+    "example.com/myapi/feature/echo"
+    "example.com/myapi/feature/health"
+    "example.com/myapi/feature/hello"
+    "example.com/myapi/feature/users"
+)
+
+func (a *App) routes() {
+    a.app.Get("/health", health.Handler())
+    a.app.Get("/hello", hello.Handler())
+    a.app.Get("/api/users", users.List())
+    a.app.Post("/echo", echo.Handler())
+}
+```
+
+**What it does:**
+
+- Registers all routes in one place
+- Imports handlers from feature packages
+- Makes route structure visible at a glance
+
+**Adding a new route:**
+
+```go
+import "example.com/myapi/feature/products"
+
+func (a *App) routes() {
+    // Existing routes...
+
+    // Add new route
+    a.app.Get("/api/products", products.List())
+    a.app.Get("/api/products/:id", products.Get())
+    a.app.Post("/api/products", products.Create())
+}
+```
+
+## The feature/ Directory
+
+Contains your business logic, organized by domain.
+
+### feature/health/http.go
+
+```go
+package health
+
+import "github.com/go-mizu/mizu"
+
+// Handler returns a health check handler.
+func Handler() mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{
+            "status": "ok",
+        })
+    }
+}
+```
+
+**Pattern:** Factory function that returns a handler.
+
+**Why this pattern?**
+
+- Handlers can accept dependencies (database, logger)
+- Clean separation between setup and execution
+- Easy to test
+
+### feature/hello/http.go
+
+```go
+package hello
+
+import "github.com/go-mizu/mizu"
+
+// Handler returns the hello handler.
+func Handler() mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        return c.Text(200, "Hello from myapi\n")
+    }
+}
+```
+
+Simple text response handler.
+
+### feature/echo/http.go
+
+```go
+package echo
+
+import "github.com/go-mizu/mizu"
+
+// Handler returns the echo handler.
+func Handler() mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        var body map[string]any
+        if err := c.Bind(&body); err != nil {
+            return err
+        }
+        return c.JSON(200, body)
+    }
+}
+```
+
+**What it does:**
+
+- Reads JSON from request body
+- Returns the same JSON back
+- Useful for testing
+
+### feature/users/http.go
+
+```go
+package users
+
+import "github.com/go-mizu/mizu"
+
+// User represents a user.
+type User struct {
+    ID   string `json:"id"`
+    Name string `json:"name"`
+}
+
+// List returns a handler that lists users.
+func List() mizu.Handler {
+    // In a real app, this would query a database
+    users := []User{
+        {ID: "1", Name: "Alice"},
+        {ID: "2", Name: "Bob"},
+    }
+
+    return func(c *mizu.Ctx) error {
+        return c.JSON(200, users)
+    }
+}
+```
+
+**What it shows:**
+
+- Type definitions live with their handlers
+- Mock data for the example (replace with database)
+- Clean API boundary
+
+## Adding a New Feature
+
+Let's add a `products` feature:
+
+### 1. Create the Package
+
+```bash
+mkdir -p feature/products
+```
+
+### 2. Create the Handler
+
+Create `feature/products/http.go`:
+
+```go
+package products
+
+import "github.com/go-mizu/mizu"
+
+type Product struct {
+    ID    string  `json:"id"`
+    Name  string  `json:"name"`
+    Price float64 `json:"price"`
+}
+
+func List() mizu.Handler {
+    products := []Product{
+        {ID: "1", Name: "Widget", Price: 9.99},
+        {ID: "2", Name: "Gadget", Price: 19.99},
+    }
+
+    return func(c *mizu.Ctx) error {
+        return c.JSON(200, products)
+    }
+}
+
+func Get() mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        id := c.Param("id")
+        // In real app: query database
+        return c.JSON(200, Product{
+            ID:    id,
+            Name:  "Widget",
+            Price: 9.99,
+        })
+    }
+}
+```
+
+### 3. Register Routes
+
+Edit `app/api/routes.go`:
+
+```go
+import "example.com/myapi/feature/products"
+
+func (a *App) routes() {
+    // ... existing routes ...
+
+    a.app.Get("/api/products", products.List())
+    a.app.Get("/api/products/:id", products.Get())
+}
+```
+
+### 4. Test It
+
+```bash
+mizu dev
+curl http://localhost:8080/api/products
+curl http://localhost:8080/api/products/1
+```
+
+## File Naming Conventions
+
+| File | Purpose |
+|------|---------|
+| `http.go` | HTTP handlers |
+| `service.go` | Business logic (if needed) |
+| `store.go` | Database operations (if needed) |
+| `types.go` | Type definitions (if many) |
+
+## Best Practices
+
+### Keep Handlers Thin
+
+```go
+// Good: Handler calls service
+func Create(svc *ProductService) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        var input CreateProductInput
+        if err := c.Bind(&input); err != nil {
+            return err
+        }
+        product, err := svc.Create(c.Context(), input)
+        if err != nil {
+            return err
+        }
+        return c.JSON(201, product)
+    }
+}
+```
+
+### Use Dependency Injection
+
+```go
+// Handler factory accepts dependencies
+func List(db *sql.DB) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        // Use db here
+    }
+}
+
+// In routes.go
+a.app.Get("/api/users", users.List(a.db))
+```
+
+### Group Related Routes
+
+```go
+func (a *App) routes() {
+    // Public routes
+    a.app.Get("/health", health.Handler())
+
+    // API routes
+    a.app.Get("/api/users", users.List())
+    a.app.Post("/api/users", users.Create())
+
+    // Admin routes
+    a.app.Get("/admin/stats", admin.Stats())
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Tutorial" icon="graduation-cap" href="/cli/api/tutorial">
+    Build a complete API from scratch
+  </Card>
+  <Card title="Contract Template" icon="file-contract" href="/cli/contract-template/overview">
+    See an even more structured approach
+  </Card>
+</CardGroup>
