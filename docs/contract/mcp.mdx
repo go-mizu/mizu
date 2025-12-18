@@ -3,62 +3,69 @@ title: "MCP Transport"
 description: "Connect your API to AI assistants like Claude using the Model Context Protocol"
 ---
 
-# MCP Transport
+## What is MCP?
 
-The MCP (Model Context Protocol) transport lets AI assistants like Claude use your API as tools. Instead of telling an AI "call the todo API with this JSON", the AI can directly call your methods as if they were built-in capabilities.
+MCP (Model Context Protocol) is a protocol developed by Anthropic that lets AI assistants interact with external tools and services. When you expose your service via MCP:
 
-## What Is MCP?
-
-MCP is a protocol developed by Anthropic that lets AI models interact with external tools and services. When you expose your service via MCP:
-
-1. **AI can discover your tools**: Claude can ask "what can I do?" and see all your methods
-2. **AI can call your tools**: Claude can execute methods with proper parameters
-3. **AI understands the results**: Responses are formatted so the AI can interpret them
+1. **AI can discover your tools**: Claude can see all your methods and their parameters
+2. **AI can call your tools**: Claude can execute methods with proper inputs
+3. **AI understands the results**: Responses are formatted for AI interpretation
 
 Think of it like giving an AI a "toolbox" - each method in your service becomes a tool the AI can use.
 
 ## Quick Start
 
-Add MCP support in just a few lines:
-
 ```go
-import "github.com/go-mizu/mizu/contract/transport/mcp"
+import (
+    "github.com/go-mizu/mizu"
+    contract "github.com/go-mizu/mizu/contract/v2"
+    "github.com/go-mizu/mizu/contract/v2/transport/mcp"
+)
+
+// Define your interface
+type TodoAPI interface {
+    Create(ctx context.Context, in *CreateInput) (*Todo, error)
+    List(ctx context.Context) (*ListOutput, error)
+    Get(ctx context.Context, in *GetInput) (*Todo, error)
+}
 
 // Register your service
-svc, _ := contract.Register("todo", &TodoService{})
+svc := contract.Register[TodoAPI](impl,
+    contract.WithDefaultResource("todos"),
+)
 
-// Create HTTP server
-mux := http.NewServeMux()
+// Create mizu app
+app := mizu.New()
 
 // Mount MCP endpoint
-mcp.Mount(mux, "/mcp", svc)
+mcp.Mount(app.Router, "/mcp", svc)
 
 // Start server
-http.ListenAndServe(":8080", mux)
+app.Listen(":8080")
 ```
 
-Your service methods are now available as AI tools!
+Your service methods are now available as AI tools.
 
 ## How Methods Become Tools
 
-Each method in your service becomes an MCP tool:
+Each method becomes an MCP tool:
 
-| Service Method | MCP Tool Name |
-|----------------|---------------|
-| `Create` | `todo.Create` |
-| `List` | `todo.List` |
-| `Get` | `todo.Get` |
-| `Delete` | `todo.Delete` |
+| Interface Method | MCP Tool Name |
+|-----------------|---------------|
+| `Create` | `todos.create` |
+| `List` | `todos.list` |
+| `Get` | `todos.get` |
+| `Delete` | `todos.delete` |
 
-The tool name combines the service name and method name: `<service>.<method>`.
+Tool names follow the pattern `resource.method`.
 
-## The MCP Conversation
+## The MCP Protocol
 
-Here's how an AI interacts with your MCP server:
+MCP uses JSON-RPC 2.0 as its transport. Here's how an AI interacts with your server:
 
 ### Step 1: Initialize
 
-The AI starts by establishing a connection:
+The AI establishes a connection:
 
 ```bash
 curl -X POST http://localhost:8080/mcp \
@@ -97,7 +104,6 @@ The AI asks what tools are available:
 
 ```bash
 curl -X POST http://localhost:8080/mcp \
-  -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
     "id": 2,
@@ -113,7 +119,7 @@ Response:
   "result": {
     "tools": [
       {
-        "name": "todo.Create",
+        "name": "todos.create",
         "description": "Create a new todo",
         "inputSchema": {
           "type": "object",
@@ -124,7 +130,7 @@ Response:
         }
       },
       {
-        "name": "todo.List",
+        "name": "todos.list",
         "description": "List all todos",
         "inputSchema": {
           "type": "object",
@@ -136,24 +142,18 @@ Response:
 }
 ```
 
-The AI now knows:
-- What tools exist (`todo.Create`, `todo.List`)
-- What parameters each tool needs (`title` for Create)
-- What types those parameters should be (string)
-
 ### Step 3: Call a Tool
 
-The AI calls a tool to do something:
+The AI calls a tool:
 
 ```bash
 curl -X POST http://localhost:8080/mcp \
-  -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
     "id": 3,
     "method": "tools/call",
     "params": {
-      "name": "todo.Create",
+      "name": "todos.create",
       "arguments": {
         "title": "Buy groceries"
       }
@@ -170,7 +170,7 @@ Success response:
     "content": [
       {
         "type": "text",
-        "text": "{\"id\":\"1\",\"title\":\"Buy groceries\"}"
+        "text": "{\"id\":\"1\",\"title\":\"Buy groceries\",\"completed\":false}"
       }
     ],
     "isError": false
@@ -178,7 +178,7 @@ Success response:
 }
 ```
 
-Error response (if something goes wrong):
+Error response:
 ```json
 {
   "jsonrpc": "2.0",
@@ -195,9 +195,31 @@ Error response (if something goes wrong):
 }
 ```
 
-## Complete Example
+## Configuration Options
 
-### Define Your Service
+Customize your MCP server:
+
+```go
+mcp.Mount(app.Router, "/mcp", svc,
+    // Server information
+    mcp.WithServerInfo(mcp.ServerInfo{
+        Name:    "my-todo-api",
+        Version: "1.0.0",
+    }),
+
+    // Instructions for the AI
+    mcp.WithInstructions("Use these tools to manage todos. Be careful with delete operations."),
+)
+```
+
+### Available Options
+
+| Option | Description |
+|--------|-------------|
+| `WithServerInfo` | Set server name and version |
+| `WithInstructions` | Provide usage guidance to the AI |
+
+## Complete Example
 
 ```go
 package main
@@ -205,20 +227,15 @@ package main
 import (
     "context"
     "fmt"
-    "net/http"
     "sync"
 
-    "github.com/go-mizu/mizu/contract"
-    "github.com/go-mizu/mizu/contract/transport/mcp"
+    "github.com/go-mizu/mizu"
+    contract "github.com/go-mizu/mizu/contract/v2"
+    "github.com/go-mizu/mizu/contract/v2/transport/mcp"
+    "github.com/go-mizu/mizu/contract/v2/transport/rest"
 )
 
-// TodoService is our business logic
-type TodoService struct {
-    mu     sync.RWMutex
-    todos  map[string]*Todo
-    nextID int
-}
-
+// Types
 type Todo struct {
     ID        string `json:"id"`
     Title     string `json:"title"`
@@ -233,12 +250,34 @@ type GetInput struct {
     ID string `json:"id"`
 }
 
+type CompleteInput struct {
+    ID string `json:"id"`
+}
+
 type ListOutput struct {
     Items []*Todo `json:"items"`
 }
 
-// Create a new todo
-func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+// Interface
+type TodoAPI interface {
+    Create(ctx context.Context, in *CreateInput) (*Todo, error)
+    List(ctx context.Context) (*ListOutput, error)
+    Get(ctx context.Context, in *GetInput) (*Todo, error)
+    Complete(ctx context.Context, in *CompleteInput) (*Todo, error)
+}
+
+// Implementation
+type todoService struct {
+    mu     sync.RWMutex
+    todos  map[string]*Todo
+    nextID int
+}
+
+func (s *todoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    if in.Title == "" {
+        return nil, contract.ErrInvalidArgument("title is required")
+    }
+
     s.mu.Lock()
     defer s.mu.Unlock()
 
@@ -251,8 +290,7 @@ func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error
     return todo, nil
 }
 
-// List all todos
-func (s *TodoService) List(ctx context.Context) (*ListOutput, error) {
+func (s *todoService) List(ctx context.Context) (*ListOutput, error) {
     s.mu.RLock()
     defer s.mu.RUnlock()
 
@@ -263,8 +301,7 @@ func (s *TodoService) List(ctx context.Context) (*ListOutput, error) {
     return &ListOutput{Items: items}, nil
 }
 
-// Get a specific todo
-func (s *TodoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
+func (s *todoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
     s.mu.RLock()
     defer s.mu.RUnlock()
 
@@ -275,112 +312,102 @@ func (s *TodoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
     return todo, nil
 }
 
-func main() {
-    todoService := &TodoService{
-        todos: make(map[string]*Todo),
+func (s *todoService) Complete(ctx context.Context, in *CompleteInput) (*Todo, error) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    todo, ok := s.todos[in.ID]
+    if !ok {
+        return nil, contract.ErrNotFound("todo not found")
     }
+    todo.Completed = true
+    return todo, nil
+}
 
-    svc, _ := contract.Register("todo", todoService)
+func main() {
+    impl := &todoService{todos: make(map[string]*Todo)}
 
-    mux := http.NewServeMux()
+    svc := contract.Register[TodoAPI](impl,
+        contract.WithName("Todo"),
+        contract.WithDefaultResource("todos"),
+    )
 
-    // Mount MCP
-    mcp.Mount(mux, "/mcp", svc,
-        mcp.WithInstructions("Use these tools to manage a todo list."),
+    app := mizu.New()
+
+    // Mount MCP for AI assistants
+    mcp.Mount(app.Router, "/mcp", svc,
+        mcp.WithInstructions("Use these tools to manage a todo list. Available operations: create todos, list all todos, get a specific todo, and mark todos as complete."),
     )
 
     // Also mount REST for testing
-    contract.MountREST(mux, svc)
+    rest.Mount(app.Router, svc)
 
     fmt.Println("Server running on http://localhost:8080")
-    fmt.Println("MCP endpoint: /mcp")
-    fmt.Println("REST endpoint: /todos")
-    http.ListenAndServe(":8080", mux)
+    fmt.Println("MCP endpoint: /mcp (for AI assistants)")
+    fmt.Println("REST endpoint: /todos (for testing)")
+    app.Listen(":8080")
 }
 ```
 
 ### Test with curl
 
 ```bash
-# Initialize
+# Initialize connection
 curl -X POST http://localhost:8080/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}'
 
-# List tools
+# List available tools
 curl -X POST http://localhost:8080/mcp \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 
 # Create a todo
 curl -X POST http://localhost:8080/mcp \
-  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"todo.Create","arguments":{"title":"Buy milk"}}}'
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"todos.create","arguments":{"title":"Buy milk"}}}'
 
 # List todos
 curl -X POST http://localhost:8080/mcp \
-  -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"todo.List","arguments":{}}}'
+  -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"todos.list","arguments":{}}}'
+
+# Complete a todo
+curl -X POST http://localhost:8080/mcp \
+  -d '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"todos.complete","arguments":{"id":"1"}}}'
 ```
-
-## Configuration Options
-
-Customize the MCP server with options:
-
-```go
-mcp.Mount(mux, "/mcp", svc,
-    // Custom server info shown during initialization
-    mcp.WithServerInfo(mcp.ServerInfo{
-        Name:    "my-todo-api",
-        Title:   "My Todo API",
-        Version: "1.0.0",
-    }),
-
-    // Instructions shown to the AI
-    mcp.WithInstructions("Use these tools to manage todos. Be careful with delete operations."),
-
-    // CORS settings for browser-based AI interfaces
-    mcp.WithAllowedOrigins("https://claude.ai"),
-)
-```
-
-### Available Options
-
-| Option | Description |
-|--------|-------------|
-| `WithServerInfo` | Customize server name, title, and version |
-| `WithInstructions` | Provide usage guidance to the AI |
-| `WithAllowedOrigins` | Set allowed CORS origins |
-| `WithResolver` | Custom method name resolution |
-| `WithInvoker` | Custom method invocation (for middleware) |
 
 ## Using with Claude Desktop
 
-Claude Desktop can connect to MCP servers. To use your API with Claude Desktop:
+Claude Desktop can connect to MCP servers:
 
 1. Start your server:
 ```bash
 go run main.go
 # Server running on http://localhost:8080
-# MCP endpoint: /mcp
 ```
 
-2. Configure Claude Desktop to connect to your MCP server (see Claude Desktop documentation for details)
+2. Configure Claude Desktop to connect to `http://localhost:8080/mcp`
 
-3. Now you can ask Claude things like:
+3. Ask Claude:
    - "Create a todo to buy groceries"
    - "Show me all my todos"
    - "Mark the first todo as complete"
 
-Claude will use your MCP tools to fulfill these requests!
+Claude will use your MCP tools to fulfill these requests.
 
-## Security Considerations
+## Security
 
-### Origin Validation
+### Input Validation
 
-MCP validates the `Origin` header to prevent DNS rebinding attacks. By default, only same-origin requests are allowed.
+Always validate inputs - don't trust AI-provided data:
 
-For development or trusted origins:
 ```go
-mcp.Mount(mux, "/mcp", svc,
-    mcp.WithAllowedOrigins("https://claude.ai", "http://localhost:3000"),
-)
+func (s *todoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    if in.Title == "" {
+        return nil, contract.ErrInvalidArgument("title is required")
+    }
+    if len(in.Title) > 500 {
+        return nil, contract.ErrInvalidArgument("title too long")
+    }
+    // Proceed with validated input
+}
 ```
 
 ### Authentication
@@ -388,51 +415,29 @@ mcp.Mount(mux, "/mcp", svc,
 Add authentication with middleware:
 
 ```go
-func authMiddleware(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        token := r.Header.Get("Authorization")
+func authMiddleware(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        token := c.Get("Authorization")
         if !isValidToken(token) {
-            http.Error(w, "unauthorized", http.StatusUnauthorized)
-            return
+            return c.Status(401).SendString("unauthorized")
         }
-        next.ServeHTTP(w, r)
-    })
+        return next(c)
+    }
 }
 
-// Create the handler and wrap it
-handler := mcp.NewHandler(svc)
-mux.Handle("/mcp", authMiddleware(handler))
-```
-
-### Input Validation
-
-Always validate inputs in your service methods - don't trust AI-provided data:
-
-```go
-func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
-    // Validate input
-    if in.Title == "" {
-        return nil, contract.ErrInvalidArgument("title is required")
-    }
-    if len(in.Title) > 500 {
-        return nil, contract.ErrInvalidArgument("title too long")
-    }
-
-    // Proceed with validated input
-    // ...
-}
+app := mizu.New()
+app.Use(authMiddleware)
+mcp.Mount(app.Router, "/mcp", svc)
 ```
 
 ## Error Handling
 
-MCP has a specific way of reporting errors:
-
-### Method Errors (Your Code)
+### Method Errors
 
 When your method returns an error, MCP wraps it with `isError: true`:
 
 ```go
-func (s *Service) Get(ctx context.Context, in *GetInput) (*Todo, error) {
+func (s *todoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
     return nil, contract.ErrNotFound("todo not found")
 }
 ```
@@ -447,7 +452,7 @@ Response:
 }
 ```
 
-### Protocol Errors (JSON-RPC)
+### Protocol Errors
 
 Invalid requests return JSON-RPC errors:
 
@@ -460,53 +465,71 @@ Invalid requests return JSON-RPC errors:
 }
 ```
 
-| Error Code | Meaning |
-|------------|---------|
-| -32700 | Parse error (invalid JSON) |
-| -32600 | Invalid request format |
-| -32601 | Method/tool not found |
-| -32602 | Invalid parameters |
-| -32603 | Internal error |
+## Multiple Services
+
+Each service needs its own MCP endpoint:
+
+```go
+todoSvc := contract.Register[TodoAPI](todoImpl, contract.WithDefaultResource("todos"))
+userSvc := contract.Register[UserAPI](userImpl, contract.WithDefaultResource("users"))
+
+mcp.Mount(app.Router, "/mcp/todos", todoSvc)
+mcp.Mount(app.Router, "/mcp/users", userSvc)
+```
+
+## Combining Transports
+
+Use MCP alongside REST and JSON-RPC:
+
+```go
+import (
+    "github.com/go-mizu/mizu/contract/v2/transport/rest"
+    "github.com/go-mizu/mizu/contract/v2/transport/jsonrpc"
+    "github.com/go-mizu/mizu/contract/v2/transport/mcp"
+)
+
+app := mizu.New()
+
+// REST for browsers and testing
+rest.Mount(app.Router, svc)
+
+// JSON-RPC for service-to-service
+jsonrpc.Mount(app.Router, "/rpc", svc)
+
+// MCP for AI assistants
+mcp.Mount(app.Router, "/mcp", svc)
+
+app.Listen(":8080")
+```
+
+Same business logic, multiple access methods.
 
 ## Common Questions
 
 ### How does the AI know what parameters to use?
 
-The `tools/list` response includes `inputSchema` for each tool. This JSON Schema tells the AI exactly what parameters are expected, their types, and which are required.
+The `tools/list` response includes `inputSchema` for each tool. This JSON Schema tells the AI what parameters are expected, their types, and which are required.
 
-### Can I add descriptions to my tools?
+### Can I add descriptions to tools?
 
-Tool descriptions come from your method's doc comments (in future versions) or can be customized via method metadata. Currently, the description shows the method's full name.
+Tool descriptions come from your method organization. Use clear method names and the `WithInstructions` option to guide the AI.
 
-### What if I have multiple services?
+### What if the AI sends invalid data?
 
-Each service needs its own MCP endpoint:
-
-```go
-todoSvc, _ := contract.Register("todo", &TodoService{})
-userSvc, _ := contract.Register("user", &UserService{})
-
-mux := http.NewServeMux()
-mcp.Mount(mux, "/mcp/todo", todoSvc)
-mcp.Mount(mux, "/mcp/user", userSvc)
-```
+Your method receives the data and should validate it. Return `contract.ErrInvalidArgument` for validation failures - this shows as an error to the AI.
 
 ### Can I use MCP and REST together?
 
-Yes! Mount both transports:
+Yes, and it's recommended. REST is great for testing and debugging while MCP serves AI assistants:
 
 ```go
-mux := http.NewServeMux()
-mcp.Mount(mux, "/mcp", svc)           // For AI assistants
-contract.MountREST(mux, svc)          // For humans/curl
-contract.ServeOpenAPI(mux, "/openapi.json", svc)  // For docs
+rest.Mount(app.Router, svc)     // /todos
+mcp.Mount(app.Router, "/mcp", svc)  // /mcp
 ```
 
-This is actually recommended - REST is great for testing and debugging while MCP serves the AI.
+## What's Next?
 
-## See Also
-
-- [Transports Overview](/contract/transports-overview) - Compare all transports
-- [JSON-RPC Transport](/contract/jsonrpc) - Similar protocol (MCP is built on JSON-RPC)
-- [Error Handling](/contract/errors) - Proper error responses
-- [REST Transport](/contract/rest) - For human-facing APIs
+- **[REST Transport](/contract/rest)** - For browser-friendly APIs
+- **[JSON-RPC Transport](/contract/jsonrpc)** - Similar protocol with batching
+- **[Error Handling](/contract/errors)** - Proper error responses
+- **[Transports Overview](/contract/transports-overview)** - Compare all transports

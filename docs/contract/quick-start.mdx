@@ -3,56 +3,56 @@ title: "Quick Start"
 description: "Build your first Contract API in 5 minutes - a step-by-step guide for beginners"
 ---
 
-# Quick Start
-
-This guide walks you through building your first API with Contract. By the end, you'll have a working todo list API accessible via REST, JSON-RPC, and other protocols.
-
 ## What You'll Build
 
-A simple todo list service with these capabilities:
-- Create new todos
-- List all todos
-- Get a specific todo
-- Delete a todo
+This guide walks you through building your first API with Contract. By the end, you'll have a working todo list API accessible via REST and JSON-RPC.
 
-The same code will work across multiple protocols - you'll see how one implementation serves different types of clients.
+You'll learn the three-step pattern that every Contract service follows:
+
+1. **Define your interface** - The contract that describes your API
+2. **Implement the interface** - Your business logic
+3. **Register and serve** - Make it available via HTTP
 
 ## Prerequisites
 
 Before starting, make sure you have:
-- **Go 1.21 or later** installed ([download Go](https://go.dev/dl/))
+
+- **Go 1.22 or later** installed ([download Go](https://go.dev/dl/))
 - A terminal (Command Prompt, Terminal, or any shell)
 - A text editor (VS Code, GoLand, or your favorite)
 - **curl** for testing (usually pre-installed on Mac/Linux)
 
 ## Step 1: Create Your Project
 
-First, create a new directory and initialize a Go module:
+Create a new directory and initialize a Go module:
 
 ```bash
 # Create a new directory
 mkdir todo-api
 cd todo-api
 
-# Initialize a Go module (replace with your own module path)
+# Initialize a Go module
 go mod init todo-api
 ```
 
 **What this does**: Creates a new Go project with a `go.mod` file that tracks your dependencies.
 
-## Step 2: Install the Contract Package
+## Step 2: Install Dependencies
 
-Add the Contract package to your project:
+Add the required packages:
 
 ```bash
-go get github.com/go-mizu/mizu/contract
+go get github.com/go-mizu/mizu
+go get github.com/go-mizu/mizu/contract/v2
 ```
 
-**What this does**: Downloads the Contract library and adds it to your `go.mod` file.
+**What this does**: Downloads the mizu web framework and Contract v2 packages.
 
 ## Step 3: Create Your Service
 
-Create a file called `main.go` with this code:
+Create a file called `main.go`. We'll build it section by section, explaining each part.
+
+### Part A: Package and Imports
 
 ```go
 package main
@@ -61,72 +61,132 @@ import (
     "context"
     "errors"
     "fmt"
-    "net/http"
     "sync"
 
-    "github.com/go-mizu/mizu/contract"
+    "github.com/go-mizu/mizu"
+    contract "github.com/go-mizu/mizu/contract/v2"
+    "github.com/go-mizu/mizu/contract/v2/transport/rest"
+    "github.com/go-mizu/mizu/contract/v2/transport/jsonrpc"
 )
+```
 
-// =============================================================================
-// STEP 1: Define your data types
-// =============================================================================
+**What each import does**:
+- `context` - Go's standard context for request handling
+- `errors` - For creating error values
+- `fmt` - For string formatting
+- `sync` - For thread-safe data access
+- `mizu` - The web framework
+- `contract` - Contract v2's core package (we alias it as `contract`)
+- `rest` - REST transport for HTTP endpoints
+- `jsonrpc` - JSON-RPC transport for RPC-style calls
 
-// Todo represents a single todo item
-// The `json` tags tell Go how to convert this to/from JSON
+### Part B: Define Your Types
+
+These structs represent the data your API works with:
+
+```go
+// ─────────────────────────────────────────────────────────────
+// DATA TYPES
+// ─────────────────────────────────────────────────────────────
+
+// Todo represents a single todo item in our system.
+// The `json` tags tell Go how to convert this to/from JSON.
 type Todo struct {
     ID        string `json:"id"`
     Title     string `json:"title"`
     Completed bool   `json:"completed"`
 }
 
-// CreateInput is what clients send to create a new todo
+// CreateInput is what clients send when creating a new todo.
+// Only the title is needed - we generate the ID automatically.
 type CreateInput struct {
     Title string `json:"title"`
 }
 
-// GetInput is what clients send to get a specific todo
+// GetInput is what clients send when fetching a specific todo.
+// The ID is used to look up the todo.
 type GetInput struct {
     ID string `json:"id"`
 }
 
-// DeleteInput is what clients send to delete a todo
+// DeleteInput is what clients send when deleting a todo.
 type DeleteInput struct {
     ID string `json:"id"`
 }
 
-// ListOutput is what we return when listing all todos
+// ListOutput is what we return when listing all todos.
+// It includes both the items and a count for convenience.
 type ListOutput struct {
     Items []*Todo `json:"items"`
     Count int     `json:"count"`
 }
+```
 
-// =============================================================================
-// STEP 2: Define your service
-// =============================================================================
+**Why separate input/output types?**
+- Input types describe what clients send to you
+- Output types describe what you send back
+- Keeping them separate makes your API clear and flexible
 
-// TodoService holds our business logic and data
-// In a real app, you'd have a database connection here instead of a map
-type TodoService struct {
-    mu     sync.RWMutex       // Protects concurrent access to todos
-    todos  map[string]*Todo   // In-memory storage (use a database in production!)
-    nextID int                // Simple ID counter
+### Part C: Define Your Interface (The Contract)
+
+This is the heart of Contract - your interface defines what your API can do:
+
+```go
+// ─────────────────────────────────────────────────────────────
+// THE CONTRACT (Interface)
+// ─────────────────────────────────────────────────────────────
+
+// TodoAPI defines what operations our todo service supports.
+// This interface IS our API contract - it's the source of truth
+// for what methods exist and what they accept/return.
+type TodoAPI interface {
+    // Create adds a new todo and returns the created item
+    Create(ctx context.Context, in *CreateInput) (*Todo, error)
+
+    // List returns all todos
+    List(ctx context.Context) (*ListOutput, error)
+
+    // Get retrieves a single todo by ID
+    Get(ctx context.Context, in *GetInput) (*Todo, error)
+
+    // Delete removes a todo by ID
+    Delete(ctx context.Context, in *DeleteInput) error
+}
+```
+
+**Key points about the interface**:
+- Every method starts with `ctx context.Context` - this is required
+- Input types are pointers (`*CreateInput`)
+- Output types are pointers (`*Todo`) or `error`
+- Method names like `Create`, `List`, `Get`, `Delete` automatically map to HTTP verbs
+
+### Part D: Implement Your Interface
+
+Now we write the actual code that does the work:
+
+```go
+// ─────────────────────────────────────────────────────────────
+// THE IMPLEMENTATION
+// ─────────────────────────────────────────────────────────────
+
+// todoService implements TodoAPI with in-memory storage.
+// In a real app, you'd have a database connection here.
+type todoService struct {
+    mu     sync.RWMutex     // Protects concurrent access
+    todos  map[string]*Todo // In-memory storage
+    nextID int              // Simple ID counter
 }
 
-// NewTodoService creates a new service with empty storage
-func NewTodoService() *TodoService {
-    return &TodoService{
+// newTodoService creates a new service instance.
+func newTodoService() *todoService {
+    return &todoService{
         todos: make(map[string]*Todo),
     }
 }
 
-// =============================================================================
-// STEP 3: Implement your methods
-// =============================================================================
-
-// Create adds a new todo to our list
-// Method signature: (ctx context.Context, in *InputType) (*OutputType, error)
-func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
-    // Validate input
+// Create adds a new todo to our storage.
+func (s *todoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    // Validate the input
     if in.Title == "" {
         return nil, errors.New("title is required")
     }
@@ -134,7 +194,7 @@ func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error
     s.mu.Lock()
     defer s.mu.Unlock()
 
-    // Generate a simple ID
+    // Generate an ID
     s.nextID++
     id := fmt.Sprintf("todo_%d", s.nextID)
 
@@ -149,9 +209,8 @@ func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error
     return todo, nil
 }
 
-// List returns all todos
-// Method signature: (ctx context.Context) (*OutputType, error)
-func (s *TodoService) List(ctx context.Context) (*ListOutput, error) {
+// List returns all todos in storage.
+func (s *todoService) List(ctx context.Context) (*ListOutput, error) {
     s.mu.RLock()
     defer s.mu.RUnlock()
 
@@ -166,8 +225,8 @@ func (s *TodoService) List(ctx context.Context) (*ListOutput, error) {
     }, nil
 }
 
-// Get retrieves a single todo by ID
-func (s *TodoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
+// Get retrieves a single todo by ID.
+func (s *todoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
     s.mu.RLock()
     defer s.mu.RUnlock()
 
@@ -179,9 +238,8 @@ func (s *TodoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
     return todo, nil
 }
 
-// Delete removes a todo
-// Method signature: (ctx context.Context, in *InputType) error
-func (s *TodoService) Delete(ctx context.Context, in *DeleteInput) error {
+// Delete removes a todo from storage.
+func (s *todoService) Delete(ctx context.Context, in *DeleteInput) error {
     s.mu.Lock()
     defer s.mu.Unlock()
 
@@ -192,24 +250,33 @@ func (s *TodoService) Delete(ctx context.Context, in *DeleteInput) error {
     delete(s.todos, in.ID)
     return nil
 }
+```
 
-// =============================================================================
-// STEP 4: Register and serve your API
-// =============================================================================
+**Notice**: The struct is `todoService` (lowercase) but the interface is `TodoAPI` (uppercase). This is intentional - the interface is exported (public), the implementation is unexported (private). Clients depend on the interface, not the implementation.
+
+### Part E: Wire Everything Together
+
+The main function registers your service and starts the server:
+
+```go
+// ─────────────────────────────────────────────────────────────
+// MAIN - Register and Serve
+// ─────────────────────────────────────────────────────────────
 
 func main() {
     // Create an instance of your service
-    todoService := NewTodoService()
+    impl := newTodoService()
 
     // Register it with Contract
-    // "todo" is the service name - it becomes part of the API paths
-    svc, err := contract.Register("todo", todoService)
-    if err != nil {
-        panic(fmt.Sprintf("Failed to register service: %v", err))
-    }
+    // The generic parameter [TodoAPI] tells Contract which interface to use
+    svc := contract.Register[TodoAPI](impl,
+        // WithDefaultResource groups all methods under "todos"
+        // This affects the REST paths: /todos, /todos/{id}
+        contract.WithDefaultResource("todos"),
+    )
 
-    // Create an HTTP router
-    mux := http.NewServeMux()
+    // Create a mizu app
+    app := mizu.New()
 
     // Mount the REST transport
     // This creates endpoints like:
@@ -217,44 +284,161 @@ func main() {
     //   GET  /todos      -> List
     //   GET  /todos/{id} -> Get
     //   DELETE /todos/{id} -> Delete
-    contract.MountREST(mux, svc)
+    rest.Mount(app.Router, svc)
 
     // Mount the JSON-RPC transport at /rpc
-    // All methods are available via JSON-RPC at this endpoint
-    contract.MountJSONRPC(mux, "/rpc", svc)
+    // All methods available as: todos.create, todos.list, etc.
+    jsonrpc.Mount(app.Router, "/rpc", svc)
 
-    // Serve OpenAPI documentation at /openapi.json
-    contract.ServeOpenAPI(mux, "/openapi.json", svc)
-
-    // Start the server
-    fmt.Println("===========================================")
-    fmt.Println("Todo API is running!")
-    fmt.Println("===========================================")
-    fmt.Println("")
+    // Print helpful info
+    fmt.Println("═══════════════════════════════════════════")
+    fmt.Println("  Todo API is running!")
+    fmt.Println("═══════════════════════════════════════════")
+    fmt.Println()
     fmt.Println("REST endpoints:")
     fmt.Println("  POST   http://localhost:8080/todos      - Create a todo")
     fmt.Println("  GET    http://localhost:8080/todos      - List all todos")
     fmt.Println("  GET    http://localhost:8080/todos/{id} - Get a todo")
     fmt.Println("  DELETE http://localhost:8080/todos/{id} - Delete a todo")
-    fmt.Println("")
+    fmt.Println()
     fmt.Println("JSON-RPC endpoint:")
     fmt.Println("  POST   http://localhost:8080/rpc")
-    fmt.Println("")
-    fmt.Println("OpenAPI spec:")
-    fmt.Println("  GET    http://localhost:8080/openapi.json")
-    fmt.Println("")
+    fmt.Println("  Methods: todos.create, todos.list, todos.get, todos.delete")
+    fmt.Println()
 
-    if err := http.ListenAndServe(":8080", mux); err != nil {
-        panic(err)
-    }
+    // Start the server
+    app.Listen(":8080")
 }
 ```
 
-**What each part does**:
-1. **Data types** (`Todo`, `CreateInput`, etc.): Define the shape of your data
-2. **Service struct** (`TodoService`): Holds your business logic and dependencies
-3. **Methods** (`Create`, `List`, etc.): Implement your actual functionality
-4. **main function**: Wires everything together and starts the server
+## Complete Code
+
+Here's the complete `main.go` file all together:
+
+```go
+package main
+
+import (
+    "context"
+    "errors"
+    "fmt"
+    "sync"
+
+    "github.com/go-mizu/mizu"
+    contract "github.com/go-mizu/mizu/contract/v2"
+    "github.com/go-mizu/mizu/contract/v2/transport/rest"
+    "github.com/go-mizu/mizu/contract/v2/transport/jsonrpc"
+)
+
+// Data types
+type Todo struct {
+    ID        string `json:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
+}
+
+type CreateInput struct {
+    Title string `json:"title"`
+}
+
+type GetInput struct {
+    ID string `json:"id"`
+}
+
+type DeleteInput struct {
+    ID string `json:"id"`
+}
+
+type ListOutput struct {
+    Items []*Todo `json:"items"`
+    Count int     `json:"count"`
+}
+
+// The contract (interface)
+type TodoAPI interface {
+    Create(ctx context.Context, in *CreateInput) (*Todo, error)
+    List(ctx context.Context) (*ListOutput, error)
+    Get(ctx context.Context, in *GetInput) (*Todo, error)
+    Delete(ctx context.Context, in *DeleteInput) error
+}
+
+// The implementation
+type todoService struct {
+    mu     sync.RWMutex
+    todos  map[string]*Todo
+    nextID int
+}
+
+func newTodoService() *todoService {
+    return &todoService{todos: make(map[string]*Todo)}
+}
+
+func (s *todoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    if in.Title == "" {
+        return nil, errors.New("title is required")
+    }
+
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    s.nextID++
+    todo := &Todo{
+        ID:        fmt.Sprintf("todo_%d", s.nextID),
+        Title:     in.Title,
+        Completed: false,
+    }
+    s.todos[todo.ID] = todo
+    return todo, nil
+}
+
+func (s *todoService) List(ctx context.Context) (*ListOutput, error) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
+    items := make([]*Todo, 0, len(s.todos))
+    for _, t := range s.todos {
+        items = append(items, t)
+    }
+    return &ListOutput{Items: items, Count: len(items)}, nil
+}
+
+func (s *todoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
+    todo, ok := s.todos[in.ID]
+    if !ok {
+        return nil, errors.New("todo not found")
+    }
+    return todo, nil
+}
+
+func (s *todoService) Delete(ctx context.Context, in *DeleteInput) error {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    if _, ok := s.todos[in.ID]; !ok {
+        return errors.New("todo not found")
+    }
+    delete(s.todos, in.ID)
+    return nil
+}
+
+func main() {
+    impl := newTodoService()
+
+    svc := contract.Register[TodoAPI](impl,
+        contract.WithDefaultResource("todos"),
+    )
+
+    app := mizu.New()
+    rest.Mount(app.Router, svc)
+    jsonrpc.Mount(app.Router, "/rpc", svc)
+
+    fmt.Println("Todo API running at http://localhost:8080")
+    app.Listen(":8080")
+}
+```
 
 ## Step 4: Run Your Server
 
@@ -264,23 +448,16 @@ Start your API server:
 go run main.go
 ```
 
-You should see output like:
+You should see:
 ```
-===========================================
-Todo API is running!
-===========================================
-
-REST endpoints:
-  POST   http://localhost:8080/todos      - Create a todo
-  GET    http://localhost:8080/todos      - List all todos
-...
+Todo API running at http://localhost:8080
 ```
 
 **Leave this terminal running** and open a new terminal for testing.
 
 ## Step 5: Test Your API
 
-Now let's test your API using curl. Open a new terminal window.
+Let's test your API using curl. Open a new terminal window.
 
 ### Create a Todo (REST)
 
@@ -294,8 +471,6 @@ curl -X POST http://localhost:8080/todos \
 ```json
 {"id":"todo_1","title":"Buy groceries","completed":false}
 ```
-
-**What happened**: Your `Create` method was called, it created a new todo, and returned it as JSON.
 
 ### Create Another Todo
 
@@ -338,18 +513,16 @@ curl http://localhost:8080/todos/todo_1
 curl -X DELETE http://localhost:8080/todos/todo_1
 ```
 
-**Expected output**: (empty - HTTP 204 No Content)
+**Expected output**: Empty (HTTP 204 No Content)
 
 Verify it's deleted:
 ```bash
 curl http://localhost:8080/todos
 ```
 
-Now you should see only one todo remaining.
-
 ## Step 6: Try JSON-RPC
 
-The same service is also available via JSON-RPC! This is useful for clients that prefer RPC-style calls or need to batch multiple requests.
+The same service is also available via JSON-RPC. This is useful for clients that prefer RPC-style calls or need to batch multiple requests.
 
 ### Create via JSON-RPC
 
@@ -359,7 +532,7 @@ curl -X POST http://localhost:8080/rpc \
   -d '{
     "jsonrpc": "2.0",
     "id": 1,
-    "method": "Create",
+    "method": "todos.create",
     "params": {"title": "Call mom"}
   }'
 ```
@@ -369,6 +542,8 @@ curl -X POST http://localhost:8080/rpc \
 {"jsonrpc":"2.0","id":1,"result":{"id":"todo_3","title":"Call mom","completed":false}}
 ```
 
+Notice the method name is `todos.create` - that's `{resource}.{method}`.
+
 ### List via JSON-RPC
 
 ```bash
@@ -377,7 +552,7 @@ curl -X POST http://localhost:8080/rpc \
   -d '{
     "jsonrpc": "2.0",
     "id": 2,
-    "method": "List"
+    "method": "todos.list"
   }'
 ```
 
@@ -388,31 +563,25 @@ curl -X POST http://localhost:8080/rpc \
 
 ### Batch Requests (JSON-RPC Only)
 
-JSON-RPC lets you send multiple requests at once:
+JSON-RPC lets you send multiple requests in one HTTP call:
 
 ```bash
 curl -X POST http://localhost:8080/rpc \
   -H "Content-Type: application/json" \
   -d '[
-    {"jsonrpc":"2.0","id":1,"method":"Create","params":{"title":"First task"}},
-    {"jsonrpc":"2.0","id":2,"method":"Create","params":{"title":"Second task"}},
-    {"jsonrpc":"2.0","id":3,"method":"List"}
+    {"jsonrpc":"2.0","id":1,"method":"todos.create","params":{"title":"First task"}},
+    {"jsonrpc":"2.0","id":2,"method":"todos.create","params":{"title":"Second task"}},
+    {"jsonrpc":"2.0","id":3,"method":"todos.list"}
   ]'
 ```
 
-All three operations execute and you get all results back in one response!
-
-## Step 7: View the OpenAPI Spec
-
-Open your browser and go to: http://localhost:8080/openapi.json
-
-You'll see a complete API specification that was automatically generated from your Go types. This can be used with tools like Swagger UI or for generating client code.
+All three operations execute and return in one response.
 
 ## Understanding What Happened
 
 Let's recap what Contract did for you:
 
-1. **Inspected your service**: When you called `contract.Register()`, Contract used Go's reflection to discover all your methods and their input/output types.
+1. **Inspected your interface**: When you called `contract.Register[TodoAPI]()`, Contract used Go's reflection to discover all methods in the `TodoAPI` interface and their input/output types.
 
 2. **Generated JSON schemas**: Your Go structs (`Todo`, `CreateInput`, etc.) were converted to JSON schemas automatically.
 
@@ -422,62 +591,58 @@ Let's recap what Contract did for you:
    - `Get` → GET /todos/{id}
    - `Delete` → DELETE /todos/{id}
 
-4. **Created JSON-RPC handlers**: All methods became available via the `/rpc` endpoint.
+4. **Created JSON-RPC handlers**: All methods became available at `/rpc` as:
+   - `todos.create`
+   - `todos.list`
+   - `todos.get`
+   - `todos.delete`
 
-5. **Generated OpenAPI spec**: Complete API documentation was created automatically.
+5. **Compile-time safety**: If your implementation didn't match the interface, Go's compiler would have caught it before you even ran the program.
 
 ## Common Questions
 
 ### Why doesn't my method appear as an endpoint?
 
 Methods must:
-- Be exported (start with uppercase letter)
+- Be defined in the interface (not just on the struct)
 - Have `context.Context` as the first parameter
 - Return either `error`, `(*Output, error)`, or `(*Output, error)` where Output is a struct pointer
 
 ### How do I add more transports?
 
-Import the transport packages and mount them:
+Import the transport package and mount it:
 
 ```go
-import (
-    "github.com/go-mizu/mizu/contract/transport/mcp"
-    "github.com/go-mizu/mizu/contract/transport/trpc"
-)
+import "github.com/go-mizu/mizu/contract/v2/transport/mcp"
 
 // In main():
-mcp.Mount(mux, "/mcp", svc)    // For AI assistants
-trpc.Mount(mux, "/trpc", svc)  // For TypeScript clients
+mcp.Mount(app.Router, "/mcp", svc)  // For AI assistants
 ```
 
 ### How do I handle errors properly?
 
-Use Contract's error types for consistent error handling across protocols:
+The quick start uses simple `errors.New()`. For production, use Contract's typed errors for proper HTTP status codes:
 
 ```go
-import "github.com/go-mizu/mizu/contract"
+// Returns HTTP 404 Not Found
+return nil, contract.ErrNotFound("todo not found")
 
-func (s *TodoService) Get(ctx context.Context, in *GetInput) (*Todo, error) {
-    todo, exists := s.todos[in.ID]
-    if !exists {
-        return nil, contract.ErrNotFound("todo not found")
-    }
-    return todo, nil
-}
+// Returns HTTP 400 Bad Request
+return nil, contract.ErrInvalidArgument("title is required")
 ```
 
-This returns HTTP 404 for REST and the appropriate error code for other protocols.
+See the [Error Handling](/contract/errors) guide for details.
 
 ### How do I add a database?
 
 Replace the in-memory map with your database client:
 
 ```go
-type TodoService struct {
+type todoService struct {
     db *sql.DB  // Or *gorm.DB, *pgx.Pool, etc.
 }
 
-func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+func (s *todoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
     // Use s.db to insert into your database
     _, err := s.db.ExecContext(ctx, "INSERT INTO todos...")
     // ...
@@ -488,8 +653,10 @@ func (s *TodoService) Create(ctx context.Context, in *CreateInput) (*Todo, error
 
 Now that you have a working API, explore these topics:
 
-- **[Defining Services](/contract/service)** - Learn all the method signature patterns
+- **[Defining Services](/contract/service)** - Learn all the method signature patterns and interface design
+- **[Registration](/contract/register)** - Understand all registration options
 - **[Error Handling](/contract/errors)** - Proper error handling across protocols
-- **[Transports Overview](/contract/transports-overview)** - Compare REST, JSON-RPC, MCP, and tRPC
+- **[REST Transport](/contract/rest)** - Deep dive into REST configuration
+- **[JSON-RPC Transport](/contract/jsonrpc)** - Batch requests and notifications
+- **[MCP Transport](/contract/mcp)** - Connect your API to AI assistants
 - **[Testing](/contract/testing)** - How to test your services
-- **[Architecture](/contract/architecture)** - Deep dive into how Contract works
