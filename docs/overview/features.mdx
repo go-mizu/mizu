@@ -6,68 +6,226 @@ description: "What makes Mizu enjoyable to build with."
 
 Mizu provides a focused set of features for building web applications in Go. Each feature is designed to feel familiar if you already know Go's standard library.
 
-### Routing
+## Routing
 
-- Go 1.22 `ServeMux` patterns with `{param}` path parameters
-- HTTP method helpers: `Get`, `Post`, `Put`, `Patch`, `Delete`, and more
-- Route groups with `Group()` and `Prefix()` for organizing endpoints
-- Route-specific middleware with `With()`
-- Mount any `http.Handler` for interoperability
+Routing connects URLs to handler functions. Mizu uses Go 1.22's enhanced `ServeMux` which supports path parameters natively.
 
-### Request handling
+```go
+app.Get("/users/{id}", getUser)         // GET /users/123
+app.Post("/users", createUser)          // POST /users
+app.Delete("/users/{id}", deleteUser)   // DELETE /users/123
+```
 
-- `c.Param("name")` for path parameters
-- `c.Query("key")` and `c.QueryValues()` for query strings
-- `c.Form()` for form data
-- `c.MultipartForm()` for file uploads with automatic cleanup
-- `c.BindJSON()` for JSON body parsing with size limits
-- `c.Cookie()` for reading cookies
-- `c.ClientIP()` for client IP detection
+**Key features:**
+- **Path parameters** using `{param}` syntax (Go 1.22 `ServeMux` patterns)
+- **HTTP method helpers**: `Get`, `Post`, `Put`, `Patch`, `Delete`, `Head`, `Connect`, `Trace`
+- **Route groups** with `Group()` and `Prefix()` for organizing related endpoints
+- **Scoped middleware** with `With()` to apply middleware to specific routes
+- **Mount http.Handler** with `Mount()` for interoperability with standard handlers
 
-### Response helpers
+```go
+// Group routes under a prefix
+app.Group("/api", func(r *mizu.Router) {
+    r.Get("/users", listUsers)      // GET /api/users
+    r.Get("/users/{id}", getUser)   // GET /api/users/123
+})
+```
 
-- `c.Text()`, `c.JSON()`, `c.HTML()` for common response types
-- `c.File()` and `c.Download()` for serving files
-- `c.Stream()` for streaming responses
-- `c.SSE()` for Server-Sent Events
-- `c.Redirect()` and `c.NoContent()` for redirects and empty responses
-- `c.Hijack()` for WebSocket upgrades and raw connections
+## Request handling
 
-### Middleware
+Reading data from requests is explicit and straightforward. Each method does one thing clearly.
 
-- Simple function signature: `func(Handler) Handler`
-- Global middleware with `app.Use()`
-- Prepend middleware with `app.UseFirst()`
-- Route-specific middleware with `app.With()`
-- Compatible with standard `net/http` middleware via `Compat.Use()`
+| Method | Purpose | Example |
+|--------|---------|---------|
+| `c.Param("id")` | Path parameter from URL | `/users/{id}` → `c.Param("id")` |
+| `c.Query("page")` | Single query parameter | `?page=2` → `c.Query("page")` |
+| `c.QueryValues()` | All query parameters | Returns `url.Values` |
+| `c.Form()` | Form data (POST) | Returns `url.Values, error` |
+| `c.MultipartForm(max)` | File uploads | Returns `form, cleanup, error` |
+| `c.BindJSON(&v, max)` | JSON body to struct | Validates and parses |
+| `c.Cookie("name")` | Read a cookie | Returns `*http.Cookie, error` |
 
-### Logging
+```go
+func getUser(c *mizu.Ctx) error {
+    // Path parameter from /users/{id}
+    id := c.Param("id")
 
-- Built-in request logger using Go's `slog`
-- Automatic color output for terminals
-- JSON output for production environments
-- Configurable with `LoggerOptions` for request IDs, user agent logging, and trace extraction
-- Access logger from any handler with `c.Logger()`
+    // Query parameter from ?include=email
+    include := c.Query("include")
 
-### Error handling
+    return c.JSON(200, map[string]string{"id": id, "include": include})
+}
+```
 
-- Return errors directly from handlers
-- Central error handler with `app.ErrorHandler()`
-- Automatic panic recovery with stack traces via `PanicError`
-- Consistent error responses across your application
+## Response helpers
 
-### Server lifecycle
+Response methods write data with appropriate headers and status codes.
 
-- Graceful shutdown on SIGINT/SIGTERM
-- Configurable pre-shutdown delay with `WithPreShutdownDelay()`
-- Configurable shutdown timeout with `WithShutdownTimeout()`
-- Health check endpoint with `app.HealthzHandler()`
-- Support for `Listen()`, `ListenTLS()`, and `Serve()` with custom listeners
+| Method | Content-Type | Usage |
+|--------|--------------|-------|
+| `c.Text(code, s)` | `text/plain` | Plain text responses |
+| `c.JSON(code, v)` | `application/json` | Structs, maps, slices |
+| `c.HTML(code, s)` | `text/html` | HTML strings |
+| `c.File(code, path)` | Auto-detected | Serve files from disk |
+| `c.Download(code, path, name)` | With disposition | Force download |
+| `c.Stream(fn)` | Custom | Streaming responses |
+| `c.SSE(ch)` | `text/event-stream` | Server-Sent Events |
+| `c.Redirect(code, url)` | - | HTTP redirects |
+| `c.NoContent()` | - | 204 No Content |
 
-### Static files
+```go
+// Return JSON
+return c.JSON(200, user)
 
-- Serve files from disk with `app.Static()`
-- Works with `http.Dir` or embedded filesystems via `http.FS`
-- Automatic content-type detection
+// Serve a file with content-type auto-detection
+return c.File(200, "./public/image.png")
+
+// Force browser to download with a specific filename
+return c.Download(200, "./reports/data.csv", "report-2024.csv")
+```
+
+## Middleware
+
+Middleware wraps handlers to add behavior before or after request processing. The pattern is simple: take a handler, return a handler.
+
+```go
+type Middleware func(Handler) Handler
+```
+
+**Applying middleware:**
+
+```go
+// Global middleware - runs for all routes
+app.Use(myMiddleware)
+
+// Scoped middleware - only for routes on this router
+admin := app.With(authRequired)
+admin.Get("/settings", adminSettings)
+
+// Standard net/http middleware works too
+app.Compat.Use(existingMiddleware)
+```
+
+**Writing middleware:**
+
+```go
+func timing() mizu.Middleware {
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            start := time.Now()
+            err := next(c)
+            c.Logger().Info("request", "duration", time.Since(start))
+            return err
+        }
+    }
+}
+```
+
+## Logging
+
+Mizu includes a request logger that uses Go's `slog` package for structured logging.
+
+```go
+// Built-in logger is enabled by default
+app := mizu.New() // Includes Logger middleware
+
+// Access the logger in any handler
+c.Logger().Info("processing", "user_id", userID)
+
+// Configure logging behavior
+app.Use(mizu.Logger(mizu.LoggerOptions{
+    Mode:      mizu.Dev,   // Dev (text) or Prod (JSON)
+    Color:     true,       // Colored output for terminals
+    UserAgent: true,       // Include User-Agent in logs
+}))
+```
+
+**Log modes:**
+- `mizu.Auto` - Colored text for terminals, JSON for non-terminals (default)
+- `mizu.Dev` - Human-readable text format
+- `mizu.Prod` - JSON lines for log collectors
+
+## Error handling
+
+Handlers return errors directly. Mizu catches returned errors and recovered panics in one central place.
+
+```go
+// Handlers can return errors
+func getUser(c *mizu.Ctx) error {
+    user, err := findUser(c.Param("id"))
+    if err != nil {
+        return err // Caught by error handler
+    }
+    return c.JSON(200, user)
+}
+
+// Set a global error handler
+app.ErrorHandler(func(c *mizu.Ctx, err error) {
+    // Check for panics
+    if perr, ok := err.(*mizu.PanicError); ok {
+        c.Logger().Error("panic", "value", perr.Value)
+    }
+    c.JSON(500, map[string]string{"error": "internal error"})
+})
+```
+
+## Server lifecycle
+
+Mizu handles graceful shutdown automatically. When your server receives SIGINT (Ctrl+C) or SIGTERM, it:
+
+1. Stops accepting new connections
+2. Waits for active requests to complete (up to timeout)
+3. Shuts down cleanly
+
+```go
+app := mizu.New()
+
+// Configure shutdown timeout (default: 15 seconds)
+app.ShutdownTimeout = 30 * time.Second
+
+// Start methods
+app.Listen(":3000")                            // HTTP
+app.ListenTLS(":443", "cert.pem", "key.pem")   // HTTPS
+app.Serve(listener)                            // Custom listener
+```
+
+**Health check endpoints** for load balancers and Kubernetes:
+
+```go
+// Liveness probe - always returns 200
+http.Handle("/livez", app.LivezHandler())
+
+// Readiness probe - returns 503 during shutdown
+http.Handle("/readyz", app.ReadyzHandler())
+```
+
+## Static files
+
+Serve files from disk or embedded filesystems.
+
+```go
+// Serve ./public folder at /assets
+app.Static("/assets/", http.Dir("public"))
+// Access: /assets/logo.png → ./public/logo.png
+
+// Serve embedded files (Go 1.16+)
+//go:embed public/*
+var publicFS embed.FS
+
+sub, _ := fs.Sub(publicFS, "public")
+app.Static("/assets/", http.FS(sub))
+```
+
+## Summary
 
 Mizu stays small and predictable. Everything is plain Go code with no hidden behavior.
+
+| Category | Key point |
+|----------|-----------|
+| **Routing** | Go 1.22 ServeMux patterns with `{param}` syntax |
+| **Request** | Explicit methods: `Param`, `Query`, `Form`, `BindJSON` |
+| **Response** | Type helpers: `Text`, `JSON`, `HTML`, `File`, `SSE` |
+| **Middleware** | Simple `func(Handler) Handler` signature |
+| **Logging** | Built-in with `slog`, configurable modes |
+| **Errors** | Return from handlers, catch in one place |
+| **Lifecycle** | Graceful shutdown with configurable timeout |

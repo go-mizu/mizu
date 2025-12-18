@@ -11,19 +11,73 @@ style={{width: "200px"}}
 noZoom
 />
 
-Mizu is a lightweight web framework for Go. The name means "water" in Japanese.
+Mizu is a lightweight web framework for Go. The name means "water" in Japanese, reflecting the framework's goal: to flow naturally with Go's standard library rather than replacing it.
 
-Mizu adds a thin layer over Go's `net/http` package:
+## What is Mizu?
 
-- Routes with path parameters using Go 1.22's `ServeMux`
-- A context wrapper with helpers for JSON, forms, and cookies
-- Middleware that works like standard Go handlers
-- Graceful shutdown with configurable timeouts
-- Structured logging with `slog`
+Mizu helps you build web servers and APIs in Go. If you've used Python's Flask, Node's Express, or Ruby's Sinatra, Mizu fills a similar role but stays closer to how Go works.
+
+A web framework handles the repetitive parts of building HTTP servers:
+- **Routing**: Matching URLs like `/users/123` to your code
+- **Request handling**: Reading data from forms, JSON bodies, and URLs
+- **Response writing**: Sending back JSON, HTML, or files
+- **Middleware**: Running shared code (logging, auth) before handlers
+
+## What makes Mizu different?
+
+Mizu adds a thin layer over Go's `net/http` package instead of replacing it:
+
+| Feature | What it does | Why it matters |
+|---------|--------------|----------------|
+| **Go 1.22 ServeMux patterns** | Routes like `/users/{id}` with path parameters | Uses the standard library, not a custom router |
+| **Context wrapper** | `c.JSON()`, `c.Query()`, `c.Param()` helpers | Less boilerplate, cleaner handlers |
+| **Error returns** | Handlers return errors directly | Central error handling, simpler code |
+| **Graceful shutdown** | Finishes active requests before stopping | Safe deployments without dropped connections |
+| **Structured logging** | Uses Go's `slog` package | JSON logs for production, readable logs for development |
 
 Everything stays explicit. There is no reflection, code generation, or hidden behavior. If you know Go's `net/http`, you already understand how Mizu works.
 
-### Get started
+## Who is Mizu for?
+
+Mizu is a good fit if you:
+- Know Go basics and want to build web APIs
+- Prefer explicit code over "magic" conventions
+- Want to use standard library patterns, not framework-specific ones
+- Need a small, focused tool rather than a full-stack framework
+
+Mizu is **not** for you if you want an opinionated framework with ORM, admin panels, and auth built in. For those needs, consider frameworks like Buffalo or Beego.
+
+## A quick taste
+
+Here's a complete Mizu server in 15 lines:
+
+```go
+package main
+
+import "github.com/go-mizu/mizu"
+
+func main() {
+    app := mizu.New()
+
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.Text(200, "Hello, Mizu!")
+    })
+
+    app.Get("/users/{id}", func(c *mizu.Ctx) error {
+        id := c.Param("id")
+        return c.JSON(200, map[string]string{"user_id": id})
+    })
+
+    app.Listen(":3000")
+}
+```
+
+When this runs:
+- Visiting `http://localhost:3000/` returns "Hello, Mizu!" as plain text
+- Visiting `http://localhost:3000/users/42` returns `{"user_id":"42"}` as JSON
+- Pressing Ctrl+C stops the server gracefully
+
+## Get started
 
 <Columns cols={2}>
   <Card title="Quick Start" href="/overview/quick-start">

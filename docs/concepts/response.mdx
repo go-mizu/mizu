@@ -3,142 +3,282 @@ title: "Response"
 description: "Send responses with helpers that manage headers, status codes, and body writes."
 ---
 
-Every handler in Mizu uses a `*mizu.Ctx` to send responses.
-You can return text, JSON, HTML, files, or streams easily without working directly with `http.ResponseWriter`.
+Every handler in Mizu uses a `*mizu.Ctx` to send responses. The context provides helper methods for common response types like JSON, HTML, and files, while still giving you access to the underlying `http.ResponseWriter` when needed.
 
-### Set status codes
+## Response basics
 
-You can set a status code before writing the response body.
+Each response has three parts:
+1. **Status code** - HTTP status like 200, 404, or 500
+2. **Headers** - Metadata like Content-Type and Cache-Control
+3. **Body** - The actual data sent to the client
+
+Mizu's response helpers handle all three. You typically just call one method and return.
+
+## Text responses
+
+Send plain text with `c.Text()`:
+
+```go
+func handler(c *mizu.Ctx) error {
+    return c.Text(200, "Hello, world!")
+}
+```
+
+This sets:
+- Status: 200
+- Content-Type: `text/plain; charset=utf-8`
+- Body: "Hello, world!"
+
+If the string isn't valid UTF-8, it's sent as `application/octet-stream`.
+
+## JSON responses
+
+Send structured data with `c.JSON()`:
+
+```go
+func handler(c *mizu.Ctx) error {
+    user := User{ID: "123", Name: "Alice"}
+    return c.JSON(200, user)
+}
+
+// Works with maps too
+func status(c *mizu.Ctx) error {
+    return c.JSON(200, map[string]any{
+        "status": "ok",
+        "count":  42,
+    })
+}
+```
+
+This sets:
+- Status: 200
+- Content-Type: `application/json; charset=utf-8`
+- Body: JSON-encoded data
+
+## HTML responses
+
+Send HTML content with `c.HTML()`:
+
+```go
+func handler(c *mizu.Ctx) error {
+    return c.HTML(200, "<h1>Welcome</h1><p>Hello from Mizu!</p>")
+}
+```
+
+For templates, use Go's `html/template`:
+
+```go
+var tmpl = template.Must(template.New("page").Parse(`
+    <h1>{{.Title}}</h1>
+    <p>{{.Message}}</p>
+`))
+
+func handler(c *mizu.Ctx) error {
+    c.Header().Set("Content-Type", "text/html; charset=utf-8")
+    return tmpl.Execute(c.Writer(), map[string]string{
+        "Title":   "Welcome",
+        "Message": "Hello!",
+    })
+}
+```
+
+## Setting status codes
+
+Each response method takes a status code as the first argument:
+
+```go
+return c.JSON(201, createdUser)  // 201 Created
+return c.Text(400, "bad input")  // 400 Bad Request
+return c.JSON(500, errorBody)    // 500 Internal Server Error
+```
+
+If you pass `0`, Mizu uses the previously set status (default 200):
 
 ```go
 c.Status(202)
-return c.Text(0, "Accepted")
+return c.Text(0, "Accepted")  // Uses status 202
 ```
 
-If you pass `0` as the status code, Mizu uses the one already set.
-You can check it anytime.
+Check the current status:
 
 ```go
 code := c.StatusCode()
-c.Logger().Info("status", "code", code)
 ```
 
-### Send text
+## Working with headers
 
-Send a plain text response.
+Set headers before writing the body:
 
 ```go
-return c.Text(200, "Hello, world")
+func handler(c *mizu.Ctx) error {
+    // Set a header
+    c.Header().Set("Cache-Control", "max-age=3600")
+
+    // Set only if not already present
+    c.HeaderIfNone("X-Request-Id", "abc123")
+
+    return c.JSON(200, data)
+}
 ```
 
-If the text is not valid UTF-8, it will be written as binary data.
+Once you write the body (via `c.JSON()`, `c.Text()`, etc.), headers are sent and can't be changed.
 
-### Send JSON
+## Redirects
 
-Send structured data as JSON.
+Send the client to a different URL:
 
 ```go
-return c.JSON(200, map[string]any{
-	"message": "ok",
-	"id":      1,
-})
+func handler(c *mizu.Ctx) error {
+    return c.Redirect(302, "/login")
+}
 ```
 
-The content type is automatically set to `application/json; charset=utf-8`.
-If you pass `0`, Mizu keeps the current status code.
+| Code | Meaning | When to use |
+|------|---------|-------------|
+| 301 | Moved Permanently | URL changed forever |
+| 302 | Found | Temporary redirect (default if you pass 0) |
+| 303 | See Other | Redirect after POST |
+| 307 | Temporary Redirect | Preserve method |
+| 308 | Permanent Redirect | Preserve method |
 
-### Send HTML
+## Empty responses
 
-Send HTML content.
+Return no body with status 204:
 
 ```go
-return c.HTML(200, "<h1>Welcome</h1>")
+func deleteUser(c *mizu.Ctx) error {
+    // ... delete the user
+    return c.NoContent()  // 204 No Content
+}
 ```
 
-The response will include `Content-Type: text/html; charset=utf-8`.
+## Serving files
 
-### Work with headers
-
-You can set or check headers directly.
+Serve a file from disk:
 
 ```go
-c.Header().Set("Cache-Control", "no-store")
-c.HeaderIfNone("Content-Type", "text/plain")
+func handler(c *mizu.Ctx) error {
+    // File(statusCode, filePath)
+    return c.File(200, "./public/logo.png")
+}
 ```
 
-Set headers before writing the body so they are included in the response.
-
-### Redirect
-
-Redirect the client to another page.
+Force the browser to download (adds Content-Disposition header):
 
 ```go
-return c.Redirect(302, "/login")
+func handler(c *mizu.Ctx) error {
+    // Download(statusCode, filePath, downloadName)
+    return c.Download(200, "./reports/data.csv", "report-2024.csv")
+}
 ```
 
-If you pass `0`, the default is `302 Found`.
+Both methods:
+- Auto-detect Content-Type from the file extension
+- Support range requests (for video seeking, resumable downloads)
+- Handle If-Modified-Since caching
 
-### No content
+## Streaming responses
 
-Send an empty response with status code 204.
+Send data gradually as it becomes available:
 
 ```go
-return c.NoContent()
+func handler(c *mizu.Ctx) error {
+    return c.Stream(func(w io.Writer) error {
+        for i := 0; i < 10; i++ {
+            fmt.Fprintf(w, "chunk %d\n", i)
+            time.Sleep(100 * time.Millisecond)
+        }
+        return nil
+    })
+}
 ```
 
-### Serve files and downloads
+## Server-Sent Events (SSE)
 
-Serve files directly from disk.
+Send real-time updates to the client:
 
 ```go
-return c.File("./public/logo.png")
+func events(c *mizu.Ctx) error {
+    ch := make(chan any)
+
+    // Send updates from a goroutine
+    go func() {
+        defer close(ch)  // Closing the channel ends the stream
+        for i := 0; i < 10; i++ {
+            ch <- map[string]int{"count": i}
+            time.Sleep(time.Second)
+        }
+    }()
+
+    return c.SSE(ch)
+}
 ```
 
-Send files as downloads.
+SSE sets these headers automatically:
+- `Content-Type: text/event-stream`
+- `Cache-Control: no-cache`
+- `Connection: keep-alive`
+
+Client-side JavaScript:
+
+```javascript
+const events = new EventSource('/events');
+events.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    console.log('Received:', data);
+};
+```
+
+## Raw bytes
+
+Send arbitrary bytes with a custom content type:
 
 ```go
-return c.Download("./report.csv", "report.csv")
+func handler(c *mizu.Ctx) error {
+    data := []byte{0x00, 0x01, 0x02}
+    return c.Bytes(200, data, "application/octet-stream")
+}
 ```
 
-Mizu uses standard Go file serving, so range requests and caching work automatically.
+## Low-level control
 
-### Stream data
-
-Send data gradually as it becomes available.
+For advanced use cases, access the underlying response features:
 
 ```go
-return c.Stream(func(w io.Writer) error {
-	for i := 0; i < 3; i++ {
-		fmt.Fprintf(w, "chunk %d\n", i)
-	}
-	return nil
-})
+// Flush buffered data to the client
+c.Flush()
+
+// Hijack the connection (for WebSocket upgrades)
+conn, rw, err := c.Hijack()
+if err != nil {
+    return err
+}
+defer conn.Close()
+
+// Set write deadline
+c.SetWriteDeadline(time.Now().Add(5 * time.Second))
+
+// Enable full duplex (HTTP/2)
+c.EnableFullDuplex()
 ```
 
-### Server-Sent Events
+## Method reference
 
-Send live updates to the client using Server-Sent Events.
+| Method | Signature | Purpose |
+|--------|-----------|---------|
+| `Text` | `(code int, s string) error` | Plain text |
+| `JSON` | `(code int, v any) error` | JSON data |
+| `HTML` | `(code int, s string) error` | HTML content |
+| `File` | `(code int, path string) error` | Serve file |
+| `Download` | `(code int, path, name string) error` | Force download |
+| `Bytes` | `(code int, b []byte, ct string) error` | Raw bytes |
+| `Stream` | `(fn func(io.Writer) error) error` | Streaming |
+| `SSE` | `(ch <-chan any) error` | Server-Sent Events |
+| `Redirect` | `(code int, url string) error` | Redirect |
+| `NoContent` | `() error` | 204 No Content |
 
-```go
-ch := make(chan any)
-go func() {
-	for i := 0; i < 3; i++ {
-		ch <- map[string]int{"count": i}
-	}
-	close(ch)
-}()
-return c.SSE(ch)
-```
+## Next steps
 
-### Low-level control
-
-For more control, you can access lower-level response features.
-
-```go
-_ = c.Flush()
-conn, rw, _ := c.Hijack()
-_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
-_ = c.EnableFullDuplex()
-```
-
-These allow you to handle websockets, raw connections, or long-lived responses using normal Go behavior.
+- [Request](/concepts/request) - Read input from requests
+- [Streaming](/concepts/response#streaming-responses) - Real-time data delivery
+- [Error handling](/concepts/error) - Handle response errors

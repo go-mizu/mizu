@@ -6,31 +6,81 @@ description: "The idea and purpose behind the Mizu framework."
 
 Mizu exists because web frameworks often add complexity that Go developers do not need. Go already has excellent HTTP primitives. Mizu builds on them with a thin layer that improves ergonomics without hiding what is happening underneath.
 
+## The problem with most frameworks
+
+Many web frameworks introduce their own way of doing things:
+
+| Framework pattern | Problem for Go developers |
+|-------------------|---------------------------|
+| Magic routing annotations | Hard to trace which handler runs |
+| Dependency injection containers | Hidden object creation |
+| Custom context types | Must learn framework-specific APIs |
+| Code generation | Extra build steps, harder debugging |
+
+When something goes wrong, you spend time understanding the framework instead of fixing your code.
+
+## Mizu's approach
+
+Mizu takes a different path: **enhance Go's standard library, don't replace it**.
+
 ### Stay close to the standard library
 
-Mizu uses Go 1.22's enhanced `ServeMux` for routing. Your handlers receive a context that wraps `http.ResponseWriter` and `*http.Request`. You can access the underlying types anytime:
+Mizu uses Go 1.22's enhanced `ServeMux` for routing—the same router from the standard library, just with helper methods added. Your handlers receive a context that wraps `http.ResponseWriter` and `*http.Request`. You can access the underlying types anytime:
 
 ```go
 func handler(c *mizu.Ctx) error {
-    w := c.Writer()    // http.ResponseWriter
-    r := c.Request()   // *http.Request
+    w := c.Writer()    // http.ResponseWriter - the same type you know
+    r := c.Request()   // *http.Request - unchanged from net/http
     return c.Text(200, "ok")
 }
 ```
 
-Any `http.Handler` can be mounted directly. Any middleware that works with `net/http` works with Mizu.
+**Why this matters:**
+- Any `http.Handler` can be mounted directly
+- Any middleware that works with `net/http` works with Mizu
+- Stack traces show familiar Go types
+- Your existing knowledge transfers directly
 
 ### Return errors from handlers
 
-Standard Go handlers have no return value. Errors must be handled inline, which leads to repeated patterns. Mizu handlers return an error:
+Standard Go handlers have this signature:
 
 ```go
+func(w http.ResponseWriter, r *http.Request)
+```
+
+No return value means errors must be handled inline, leading to repeated patterns:
+
+```go
+// Standard library approach - repetitive error handling
+func createUser(w http.ResponseWriter, r *http.Request) {
+    var input UserInput
+    if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+        http.Error(w, err.Error(), 400)
+        return
+    }
+    if input.Name == "" {
+        http.Error(w, "name required", 400)
+        return
+    }
+    // finally, the actual logic
+}
+```
+
+Mizu handlers return an error:
+
+```go
+// Mizu approach - errors flow up
 func createUser(c *mizu.Ctx) error {
     var input UserInput
     if err := c.BindJSON(&input, 1<<20); err != nil {
         return err // handled centrally
     }
-    // ...
+    if input.Name == "" {
+        return fmt.Errorf("name required")
+    }
+    // focused on business logic
+    return c.JSON(201, user)
 }
 ```
 
@@ -41,36 +91,57 @@ One central error handler catches all returned errors and recovered panics. Your
 Mizu does not scan struct tags to bind parameters. It does not generate code. It does not use dependency injection. You read data with explicit method calls and write responses with explicit helpers.
 
 ```go
-id := c.Param("id")           // path parameter
-q := c.Query("search")        // query string
-form, _ := c.Form()           // form data
-name := form.Get("name")
+id := c.Param("id")           // path parameter - you control the key
+q := c.Query("search")        // query string - explicit lookup
+form, _ := c.Form()           // form data - standard url.Values
+name := form.Get("name")      // exactly what you expect
 ```
 
-This makes debugging straightforward. You can step through Mizu code and understand what happens at each line.
+**Why this matters:**
+- Debugging is straightforward—step through and see what happens
+- No surprises from automatic binding or conversion
+- Code is self-documenting—what you see is what runs
+- IDE navigation works perfectly
 
 ### Production defaults
 
 Mizu includes what you need for production without extra setup:
 
-- Graceful shutdown that drains connections
-- Structured logging with `slog`
-- Panic recovery with stack traces
-- Health check endpoints for load balancers
+| Feature | What it does | Why it matters |
+|---------|--------------|----------------|
+| **Graceful shutdown** | Drains active connections on SIGINT/SIGTERM | Zero dropped requests during deploys |
+| **Structured logging** | Uses Go's `slog` package | JSON logs for production, readable logs for dev |
+| **Panic recovery** | Catches panics, logs stack traces | Server stays running after bugs |
+| **Health endpoints** | `LivezHandler()`, `ReadyzHandler()` | Works with Kubernetes and load balancers |
 
 You can configure shutdown timing and swap out the logger, but sensible defaults work out of the box.
 
 ### Small surface area
 
-The entire framework fits in a few files. There are no plugins, no lifecycle hooks beyond middleware, and no framework-specific conventions to learn. If you understand Go's `net/http`, you understand Mizu.
+The entire framework fits in a few files:
 
-### When to use Mizu
+- `app.go` - Server lifecycle and configuration
+- `router.go` - Routing and middleware
+- `context.go` - Request/response helpers
+- `logger.go` - Request logging middleware
 
-Mizu works well when you want:
+There are no plugins, no lifecycle hooks beyond middleware, and no framework-specific conventions to learn. If you understand Go's `net/http`, you understand Mizu.
+
+## When to use Mizu
+
+**Mizu is a good fit when you want:**
 
 - A lightweight wrapper over Go's HTTP server
 - Explicit code without hidden behavior
 - Easy integration with existing `net/http` code
 - Production-ready defaults without external dependencies
+- To keep using Go idioms, not learn framework idioms
 
-If you need an opinionated full-stack framework with ORM, auth, and admin panels built in, Mizu is probably not the right choice. Mizu stays small so you can compose it with the libraries you prefer.
+**Mizu is NOT for you if:**
+
+- You want an opinionated full-stack framework with ORM, auth, and admin panels built in
+- You prefer convention over configuration
+- You want automatic parameter binding from struct tags
+- You need built-in WebSocket support (you'll add a library like gorilla/websocket)
+
+Mizu stays small so you can compose it with the libraries you prefer. Need authentication? Pick any Go auth library. Need a database? Use `database/sql` or any ORM. Mizu handles HTTP; you choose the rest.

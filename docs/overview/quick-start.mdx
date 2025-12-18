@@ -4,15 +4,99 @@ title: "Get Started"
 description: "Build your first Mizu app in minutes."
 ---
 
-### Install
+This guide walks you through building your first Mizu application. By the end, you'll have a working web server that handles different routes and returns JSON responses.
+
+## Prerequisites
+
+You need Go 1.22 or later installed. Check your version:
+
+```bash
+go version
+# Should show go1.22 or higher
+```
+
+If you need to install Go, visit [go.dev/dl](https://go.dev/dl/).
+
+## Create a new project
+
+First, create a directory for your project and initialize a Go module:
+
+```bash
+mkdir hello-mizu
+cd hello-mizu
+go mod init hello-mizu
+```
+
+The `go mod init` command creates a `go.mod` file that tracks your project's dependencies. The name `hello-mizu` can be anything you want.
+
+## Install Mizu
+
+Add Mizu as a dependency:
 
 ```bash
 go get github.com/go-mizu/mizu@latest
 ```
 
-### Hello, Mizu
+This downloads Mizu and adds it to your `go.mod` file.
 
-Create `main.go`:
+## Write your first app
+
+Create a file named `main.go` with this code:
+
+```go
+package main
+
+import "github.com/go-mizu/mizu"
+
+func main() {
+    // Create a new Mizu application
+    // This sets up the router, logger, and default middleware
+    app := mizu.New()
+
+    // Register a handler for GET requests to "/"
+    // When someone visits http://localhost:3000/, this runs
+    app.Get("/", func(c *mizu.Ctx) error {
+        // Return plain text with status 200 (OK)
+        return c.Text(200, "Hello, Mizu!")
+    })
+
+    // Start the server on port 3000
+    // This blocks until you press Ctrl+C
+    app.Listen(":3000")
+}
+```
+
+Let's break down what each part does:
+
+| Code | Purpose |
+|------|---------|
+| `mizu.New()` | Creates an app with built-in logging and panic recovery |
+| `app.Get("/", ...)` | Registers a handler for GET requests to the root path |
+| `*mizu.Ctx` | The context object with request data and response helpers |
+| `c.Text(200, "...")` | Sends a text response with HTTP status 200 |
+| `app.Listen(":3000")` | Starts the server and listens for connections |
+
+## Run the app
+
+Start your server:
+
+```bash
+go run main.go
+```
+
+You'll see log output showing the server started:
+
+```
+INFO server starting addr=:3000 pid=12345 go_version=go1.22
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser. You should see "Hello, Mizu!" on the page.
+
+Press **Ctrl+C** to stop the server. Notice the graceful shutdown message—Mizu waits for any active requests to finish before exiting.
+
+## Add more routes
+
+Let's expand the app to handle different routes and return JSON. Update your `main.go`:
 
 ```go
 package main
@@ -22,24 +106,67 @@ import "github.com/go-mizu/mizu"
 func main() {
     app := mizu.New()
 
+    // Home page
     app.Get("/", func(c *mizu.Ctx) error {
-        return c.Text(200, "Hello, Mizu!")
+        return c.Text(200, "Welcome to my API!")
+    })
+
+    // Return JSON data
+    app.Get("/status", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{
+            "status":  "running",
+            "version": "1.0.0",
+        })
+    })
+
+    // Capture a path parameter
+    // {name} captures that part of the URL
+    app.Get("/hello/{name}", func(c *mizu.Ctx) error {
+        name := c.Param("name") // Get the captured value
+        return c.JSON(200, map[string]string{
+            "message": "Hello, " + name + "!",
+        })
+    })
+
+    // Handle POST requests with JSON body
+    app.Post("/echo", func(c *mizu.Ctx) error {
+        var input map[string]any
+        if err := c.BindJSON(&input, 1<<20); err != nil { // 1MB limit
+            return c.JSON(400, map[string]string{"error": err.Error()})
+        }
+        return c.JSON(200, input)
     })
 
     app.Listen(":3000")
 }
 ```
 
-### Run
+Restart the server (`go run main.go`) and try:
+
+- `http://localhost:3000/` → "Welcome to my API!"
+- `http://localhost:3000/status` → JSON with status info
+- `http://localhost:3000/hello/Alice` → `{"message":"Hello, Alice!"}`
+
+To test the POST endpoint:
 
 ```bash
-go run main.go
+curl -X POST http://localhost:3000/echo \
+  -H "Content-Type: application/json" \
+  -d '{"name":"test"}'
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to see your app running.
+## What you learned
 
-### Next steps
+You now know how to:
+- Create a Mizu application with `mizu.New()`
+- Register handlers for different HTTP methods and paths
+- Return text and JSON responses
+- Capture path parameters with `{param}` syntax
+- Parse JSON request bodies with `BindJSON`
 
-- [Quick Start Guide](/get-started/quick-start) for a more detailed walkthrough
+## Next steps
+
+- [Quick Start Guide](/get-started/quick-start) for a deeper walkthrough with more examples
 - [Deployment](/get-started/deployment) to run your app in production
-- [Concepts](/concepts/overview) to understand how Mizu works
+- [Concepts](/concepts/overview) to understand how Mizu works under the hood
+- [Routing](/concepts/routing) to learn about route groups and middleware

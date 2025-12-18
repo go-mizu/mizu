@@ -3,39 +3,70 @@ title: "Routing"
 description: "Learn how to connect URLs to handlers."
 ---
 
-Routing controls which part of your code runs for each incoming request.<br/>
-Mizu uses Go 1.22's `ServeMux` for routing.
-You define routes using simple patterns that connect a path and a handler function.
+Routing determines which handler runs for each incoming request. It matches the request's URL path and HTTP method to your registered routes.
 
-### Define routes
+## How routing works
 
-Each route has an HTTP method and a path.<br/>
-A handler is a Go function that takes a `*mizu.Ctx` and returns an error.
+When a request arrives at `/users/42`:
+
+1. Mizu checks registered routes for a match
+2. It finds `GET /users/{id}` if you registered it
+3. The matching handler runs with `id = "42"`
+
+Mizu uses Go 1.22's `ServeMux` internally, which means you get the same routing patterns from the standard library with cleaner syntax.
+
+## Defining routes
+
+Each route has three parts: an HTTP method, a path, and a handler.
 
 ```go
 package main
 
 import "github.com/go-mizu/mizu"
 
-func home(c *mizu.Ctx) error {
-	return c.Text(200, "Home")
-}
-
-func submit(c *mizu.Ctx) error {
-	form, _ := c.Form()
-	name := form.Get("name")
-	return c.Text(200, "Submitted by "+name)
-}
-
 func main() {
-	app := mizu.New()
-	app.Get("/", home)
-	app.Post("/submit", submit)
-	app.Listen(":3000")
+    app := mizu.New()
+
+    // Method + Path + Handler
+    app.Get("/", home)           // GET requests to /
+    app.Post("/users", create)   // POST requests to /users
+    app.Put("/users/{id}", update)
+    app.Delete("/users/{id}", remove)
+
+    app.Listen(":3000")
+}
+
+func home(c *mizu.Ctx) error {
+    return c.Text(200, "Home")
+}
+
+func create(c *mizu.Ctx) error {
+    return c.JSON(201, map[string]string{"created": "true"})
+}
+
+func update(c *mizu.Ctx) error {
+    id := c.Param("id")
+    return c.JSON(200, map[string]string{"updated": id})
+}
+
+func remove(c *mizu.Ctx) error {
+    return c.NoContent()
 }
 ```
 
-You can register routes for any HTTP method such as `Get`, `Post`, `Put`, `Patch`, or `Delete`.
+### Available methods
+
+| Method | Usage |
+|--------|-------|
+| `app.Get(path, handler)` | Read resources |
+| `app.Post(path, handler)` | Create resources |
+| `app.Put(path, handler)` | Replace resources |
+| `app.Patch(path, handler)` | Update resources |
+| `app.Delete(path, handler)` | Remove resources |
+| `app.Head(path, handler)` | Like GET, headers only |
+| `app.Connect(path, handler)` | Establish tunnel |
+| `app.Trace(path, handler)` | Debugging |
+| `app.Handle(method, path, handler)` | Any method |
 
 ### Use path parameters
 
