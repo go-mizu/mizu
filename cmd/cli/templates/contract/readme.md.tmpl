@@ -1,15 +1,16 @@
 # {{.Name}}
 
-A contract-first API service using Mizu's contract/v2 framework.
+A code-first API service using Mizu's contract/v2 framework.
 
 ## Architecture
 
-This project uses a **definition-first** approach:
+This project uses a **code-first** approach:
 
-1. `cmd/api/api.yaml` - Contract definition (types, methods, HTTP bindings)
-2. `service/todo/` - Service implementation (business logic)
-3. `service/todo/invoker.go` - Bridges contract to service methods
-4. `app/server/` - HTTP server with REST and JSON-RPC transports
+1. `service/todo/api.go` - Go interface defining the API contract
+2. `service/todo/todo.go` - Service implementation (business logic)
+3. `app/server/` - Mizu app with REST and JSON-RPC transports
+
+The API contract is automatically derived from the Go interface using `contract.Register[API]()`.
 
 ## Getting Started
 
@@ -33,7 +34,6 @@ mizu dev
 | `GET /todos/{id}` | Get a todo by ID |
 | `PUT /todos/{id}` | Update a todo |
 | `DELETE /todos/{id}` | Delete a todo |
-| `GET /health` | Health check |
 | `POST /rpc` | JSON-RPC 2.0 endpoint |
 | `GET /openapi.json` | OpenAPI 3.0 specification |
 
@@ -47,24 +47,27 @@ make test
 go test ./...
 ```
 
-## Contract Definition
+## API Interface
 
-The API contract is defined in `cmd/api/api.yaml`:
+The API contract is defined in `service/todo/api.go`:
 
-```yaml
-name: {{.Name}}
-description: A simple todo list API
-
-resources:
-  - name: todos
-    methods:
-      - name: list
-        output: TodoList
-        http:
-          method: GET
-          path: /todos
-      # ... more methods
+```go
+// API defines the Todo service contract.
+type API interface {
+    Create(ctx context.Context, in *CreateIn) (*Todo, error)
+    List(ctx context.Context) (*TodoList, error)
+    Get(ctx context.Context, in *GetIn) (*Todo, error)
+    Update(ctx context.Context, in *UpdateIn) (*Todo, error)
+    Delete(ctx context.Context, in *DeleteIn) error
+}
 ```
+
+HTTP bindings are automatically inferred from method names:
+- `Create*` -> POST
+- `List*` -> GET (collection)
+- `Get*` -> GET (single)
+- `Update*` -> PUT
+- `Delete*` -> DELETE
 
 ## Example Usage
 

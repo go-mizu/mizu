@@ -1,35 +1,20 @@
 package main
 
 import (
-	_ "embed"
 	"log"
-	"os"
-	"os/signal"
-	"syscall"
 
-	contract "github.com/go-mizu/mizu/contract/v2"
-	"gopkg.in/yaml.v3"
 	"example.com/contract/app/server"
 	"example.com/contract/service/todo"
 )
 
-//go:embed api.yaml
-var apiYAML []byte
-
 func main() {
 	cfg := server.LoadConfig()
 
-	// Load contract from embedded YAML
-	var svc contract.Service
-	if err := yaml.Unmarshal(apiYAML, &svc); err != nil {
-		log.Fatalf("failed to load contract: %v", err)
-	}
-
-	// Create the plain Go service (no framework dependencies).
+	// Create the plain Go service (no framework dependencies)
 	todoSvc := &todo.Service{}
 
-	// Create the server with all transports.
-	srv, err := server.New(cfg, todoSvc, &svc)
+	// Create the mizu app with all transports
+	app, err := server.New(cfg, todoSvc)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -39,19 +24,7 @@ func main() {
 	log.Printf("JSON-RPC: http://localhost%s/rpc", cfg.Addr)
 	log.Printf("OpenAPI:  http://localhost%s/openapi.json", cfg.Addr)
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-
-	errc := make(chan error, 1)
-	go func() { errc <- srv.ListenAndServe() }()
-
-	select {
-	case sig := <-stop:
-		log.Printf("shutdown: %s", sig.String())
-		_ = srv.Close()
-	case err := <-errc:
-		if err != nil {
-			log.Fatal(err)
-		}
+	if err := app.Listen(cfg.Addr); err != nil {
+		log.Fatal(err)
 	}
 }

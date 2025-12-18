@@ -1,74 +1,47 @@
 package server
 
 import (
-	"net/http"
-
+	"github.com/go-mizu/mizu"
 	contract "github.com/go-mizu/mizu/contract/v2"
 	"github.com/go-mizu/mizu/contract/v2/transport/jsonrpc"
 	"github.com/go-mizu/mizu/contract/v2/transport/rest"
 	"example.com/contract/service/todo"
 )
 
-// Server wraps the HTTP server with all transports.
-type Server struct {
-	cfg      Config
-	server   *http.Server
-	contract *contract.Service
-}
+// New creates a new mizu app with REST and JSON-RPC transports.
+func New(cfg Config, todoSvc *todo.Service) (*mizu.App, error) {
+	// Register service using code-first approach
+	svc := contract.Register[todo.API](todoSvc,
+		contract.WithDefaultResource("todos"),
+		contract.WithName("Todo"),
+		contract.WithDescription("Todo management service"),
+	)
 
-// New creates a server with REST, JSON-RPC, and OpenAPI transports.
-func New(cfg Config, todoSvc *todo.Service, svc *contract.Service) (*Server, error) {
-	// Create invoker that dispatches to the service
-	invoker := todo.NewInvoker(todoSvc, svc)
+	// Create mizu app
+	app := mizu.New()
 
-	mux := http.NewServeMux()
-
-	// Mount REST endpoints using contract bindings
-	restServer, err := rest.NewServer(invoker)
-	if err != nil {
+	// Mount REST API
+	if err := rest.Mount(app.Router, svc); err != nil {
 		return nil, err
 	}
-	mux.Handle("/", restServer.Handler())
 
 	// Mount JSON-RPC 2.0 endpoint
-	rpcServer, err := jsonrpc.NewServer(invoker)
+	rpcServer, err := jsonrpc.NewServer(svc)
 	if err != nil {
 		return nil, err
 	}
-	mux.Handle("/rpc", rpcServer.Handler())
+	app.Router.Mount("/rpc", rpcServer.Handler())
 
 	// Serve OpenAPI 3.0 spec
-	mux.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, r *http.Request) {
-		spec, err := rest.OpenAPIDocument(svc)
+	app.Router.Get("/openapi.json", func(c *mizu.Ctx) error {
+		spec, err := rest.OpenAPI(svc.Descriptor())
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			return c.JSON(500, map[string]string{"error": err.Error()})
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(spec)
+		c.Header().Set("Content-Type", "application/json")
+		_, err = c.Write(spec)
+		return err
 	})
 
-	return &Server{
-		cfg: cfg,
-		server: &http.Server{
-			Addr:    cfg.Addr,
-			Handler: mux,
-		},
-		contract: svc,
-	}, nil
-}
-
-// ListenAndServe starts the HTTP server.
-func (s *Server) ListenAndServe() error {
-	return s.server.ListenAndServe()
-}
-
-// Close shuts down the server.
-func (s *Server) Close() error {
-	return s.server.Close()
-}
-
-// Contract returns the loaded contract service.
-func (s *Server) Contract() *contract.Service {
-	return s.contract
+	return app, nil
 }

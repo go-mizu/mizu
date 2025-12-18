@@ -16,6 +16,9 @@ import (
 
 // Server exposes a contract.Invoker over HTTP using method HTTP bindings.
 //
+// Deprecated: Use Mount, MountAt, or Handler functions instead for mizu integration.
+// Server returns http.Handler which doesn't integrate with mizu middleware.
+//
 // It is intentionally small:
 //   - It does not depend on any third-party router.
 //   - It uses the contract descriptor as the routing table.
@@ -47,6 +50,8 @@ type route struct {
 
 // NewServer constructs a REST server for the given invoker.
 // It builds an internal route table from svc.Resources[*].Methods[*].HTTP.
+//
+// Deprecated: Use Mount, MountAt, or Handler functions instead for mizu integration.
 func NewServer(inv contract.Invoker) (*Server, error) {
 	if inv == nil {
 		return nil, errors.New("rest: nil invoker")
