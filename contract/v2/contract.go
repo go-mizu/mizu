@@ -1,209 +1,213 @@
-// Package contract defines transport-neutral service contracts.
+// Package contract defines transport-neutral API contracts.
 //
-// Design goals
+// This package contains pure data models only.
+// All types are fully serializable to JSON/YAML.
 //
-//   - Service is a pure descriptor: fully serializable (JSON/YAML).
-//   - The descriptor is transport-neutral. It does not assume REST, JSON-RPC, gRPC, etc.
-//   - The descriptor is SDK-friendly. It is shaped to generate elegant client SDKs by grouping
-//     operations into resources (for example client.posts.list(), client.models.retrieve()).
-//   - Types are intentionally minimal in v1: struct, slice, map.
-//     Primitives and external types (for example string, int64, bool, time.Time) are allowed
-//     without explicit declaration.
+// Design principles
 //
-// Notes
+//   - Transport-neutral: no REST / RPC / WS baked into the core model
+//   - SDK-first: shaped to generate elegant client SDKs
+//   - Resource-oriented: client.posts.list(), client.responses.create()
+//   - Streaming is explicit and first-class
+//   - No pointer syntax: optionality and nullability live on fields
+//   - Map keys are always string
 //
-//   - No pointer syntax. Optionality and nullability are expressed on fields, not through "*T".
-//   - Map keys are always string. This matches JSON object semantics and simplifies codegen.
-//   - Arrays with fixed length are not modeled. Use slice instead.
-//
-// Runtime
-//
-// This file contains data models only. Runtime binding (reflection, registration, invocation)
-// should live in separate files so the descriptor remains pure data.
+// Runtime bindings (reflection, HTTP, JSON-RPC, SSE, WS, async, etc.)
+// live in separate packages.
 package contract
 
 import "context"
 
-// Service is a transport-neutral API descriptor.
 //
-// Service is pure data and safe to serialize to JSON/YAML.
-// It contains no reflection types, no runtime bindings, and no hidden lookup maps.
+// ────────────────────────────────────────────────────────────
+// Core service descriptor
+// ────────────────────────────────────────────────────────────
+//
+
+// Service is a transport-neutral API descriptor.
 type Service struct {
-	// Name is the service name, typically PascalCase (for example "OpenAI", "Petstore").
+	// Name is the service name, for example "OpenAI", "Petstore".
 	Name string `json:"name" yaml:"name"`
 
 	// Description is optional human documentation.
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 
-	// Defaults describes optional shared settings used by transports and client generators.
-	// These are hints. Transports may ignore them.
+	// Defaults provides optional global hints for transports and SDK generators.
 	Defaults *Defaults `json:"defaults,omitempty" yaml:"defaults,omitempty"`
 
-	// Resources groups methods into resource namespaces for SDK generation.
-	// Example:
-	//   resources: [{ name: "models", methods: [{ name: "list" }, { name: "retrieve" }] }]
+	// Resources group methods into namespaces for SDK generation.
 	Resources []*Resource `json:"resources" yaml:"resources"`
 
-	// Types is the schema registry for inputs/outputs.
-	// Primitives and external types do not need to appear here.
+	// Types is the schema registry.
+	// Primitives and external types (string, int64, time.Time) do not need entries.
 	Types []*Type `json:"types,omitempty" yaml:"types,omitempty"`
 }
 
-// Defaults contains global hints for transports and generated clients.
-//
-// This is optional and intentionally small.
-// Keep it stable and transport-agnostic.
-// If you need transport-specific knobs, add them inside the transport binding (for example MethodHTTP).
+// Defaults are global hints shared across transports and SDKs.
 type Defaults struct {
-	// BaseURL is an optional default API base URL (for example "https://api.openai.com").
+	// BaseURL is the default API endpoint.
 	BaseURL string `json:"base_url,omitempty" yaml:"base_url,omitempty"`
 
-	// Auth is an optional auth hint, commonly "bearer" or "basic".
-	// Transports and generators may use this to shape constructors and headers.
+	// Auth is an auth hint such as "bearer", "basic", "none".
 	Auth string `json:"auth,omitempty" yaml:"auth,omitempty"`
 
-	// Headers are optional default headers.
-	// Map keys are always strings.
+	// Headers are default headers to send with requests.
 	Headers map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
 }
 
-// Resource is a namespace that groups related methods.
 //
-// This enables elegant client SDK shapes such as:
-//   client.responses.create(...)
+// ────────────────────────────────────────────────────────────
+// Resources and methods
+// ────────────────────────────────────────────────────────────
+//
+
+// Resource is a logical namespace for related methods.
+//
+// Example client usage:
 //   client.models.list()
-//   client.models.retrieve(...)
+//   client.responses.create()
 type Resource struct {
-	// Name is the resource namespace, typically lowerCamel or lower_snake_case.
-	// Examples: "responses", "models", "pets", "users".
-	Name string `json:"name" yaml:"name"`
-
-	// Description is optional human documentation.
-	Description string `json:"description,omitempty" yaml:"description,omitempty"`
-
-	// Methods are the operations on this resource.
-	Methods []*Method `json:"methods" yaml:"methods"`
+	Name        string    `json:"name" yaml:"name"`
+	Description string    `json:"description,omitempty" yaml:"description,omitempty"`
+	Methods     []*Method `json:"methods" yaml:"methods"`
 }
 
-// Method describes a single callable operation.
-//
-// Method does not assume any particular transport.
-// Optional transport bindings (for example HTTP) can be attached.
+// Method describes a single operation.
 type Method struct {
 	// Name is the method name within the resource.
-	// For SDK-friendly design, use verbs like: "list", "create", "retrieve", "update", "delete".
+	// Examples: list, retrieve, create, update, delete.
 	Name string `json:"name" yaml:"name"`
 
-	// Description is optional human documentation.
+	// Description is optional documentation.
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 
-	// Input is the request type name. Empty means no input.
+	// Input is the request type.
+	// Empty means no input.
 	Input TypeRef `json:"input,omitempty" yaml:"input,omitempty"`
 
-	// Output is the response type name. Empty means no output (error-only in runtime terms).
+	// Output is the response type.
+	// Empty means no output (error-only).
 	Output TypeRef `json:"output,omitempty" yaml:"output,omitempty"`
 
-	// HTTP is an optional binding that maps this method to an HTTP endpoint.
-	// If present, SDK generators can produce a concrete HTTP client.
+	// Stream describes streaming semantics, if this method is streaming.
+	Stream *MethodStream `json:"stream,omitempty" yaml:"stream,omitempty"`
+
+	// HTTP is an optional HTTP binding (REST, SSE, WS entrypoint).
 	HTTP *MethodHTTP `json:"http,omitempty" yaml:"http,omitempty"`
 }
 
-// MethodHTTP is an optional HTTP binding.
 //
-// This is a small, practical subset sufficient for generating clients.
-// It can be expanded later if needed (for example query/body rules, pagination hints, retries).
-type MethodHTTP struct {
-	// Method is the HTTP verb (GET, POST, PATCH, DELETE, etc).
-	Method string `json:"method" yaml:"method"`
+// ────────────────────────────────────────────────────────────
+// Streaming model
+// ────────────────────────────────────────────────────────────
+//
 
-	// Path is the route path, optionally including template params like "{id}".
-	// Example: "/v1/models/{id}".
-	Path string `json:"path" yaml:"path"`
+// MethodStream defines streaming semantics for a method.
+//
+// This is transport-neutral. SSE, WebSocket, gRPC, and async brokers
+// are all carriers for the same logical stream.
+type MethodStream struct {
+	// Mode is a hint for SDKs and docs: "sse", "ws", "grpc", "async".
+	// Optional. Semantics are defined by Item/InputItem.
+	Mode string `json:"mode,omitempty" yaml:"mode,omitempty"`
+
+	// Item is the type emitted by the server.
+	// Required for streaming methods.
+	Item TypeRef `json:"item" yaml:"item"`
+
+	// Done is an optional terminal message type.
+	// If empty, end-of-stream is implied by connection close.
+	Done TypeRef `json:"done,omitempty" yaml:"done,omitempty"`
+
+	// Error is an optional typed error message for streams.
+	Error TypeRef `json:"error,omitempty" yaml:"error,omitempty"`
+
+	// InputItem enables bidirectional streaming (WebSocket).
+	// If set, the client may send messages after connect.
+	InputItem TypeRef `json:"input_item,omitempty" yaml:"input_item,omitempty"`
 }
 
-// TypeRef is a schema type reference.
 //
-// v1 rules:
+// ────────────────────────────────────────────────────────────
+// Transport bindings
+// ────────────────────────────────────────────────────────────
 //
-//   - If TypeRef matches a declared type name in Service.Types, it refers to that type.
-//   - Otherwise it is treated as a primitive or external type.
-//     Examples: "string", "int", "int64", "bool", "float64", "time.Time".
+
+// MethodHTTP binds a method to an HTTP endpoint.
 //
-// No pointer syntax is used. Optionality and nullability belong to fields.
+// This is intentionally minimal and extensible.
+type MethodHTTP struct {
+	Method string `json:"method" yaml:"method"`
+	Path   string `json:"path" yaml:"path"`
+}
+
+//
+// ────────────────────────────────────────────────────────────
+// Type system
+// ────────────────────────────────────────────────────────────
+//
+
+// TypeRef references a type by name.
+//
+// If the name matches a declared Type, it refers to that schema.
+// Otherwise it is treated as a primitive or external type.
 type TypeRef string
 
-// TypeKind is the shape kind of a declared type.
+// TypeKind describes the shape of a declared type.
 type TypeKind string
 
 const (
-	// KindStruct is a record/object type with named fields.
 	KindStruct TypeKind = "struct"
-
-	// KindSlice is a list/array type with a single element type.
-	KindSlice TypeKind = "slice"
-
-	// KindMap is a dictionary type with string keys and a single element (value) type.
-	// Keys are always string.
-	KindMap TypeKind = "map"
+	KindSlice  TypeKind = "slice"
+	KindMap    TypeKind = "map"
 )
 
-// Type is a schema definition in the registry.
-//
-// Types are stored as a list to preserve ordering and allow rich metadata.
-// Use Name as the default reference key.
+// Type is a schema definition.
 type Type struct {
-	// Name is the type name used by TypeRef (for example "User", "CreateUserRequest").
+	// Name is the canonical type name.
 	Name string `json:"name" yaml:"name"`
 
-	// Description is optional human documentation.
+	// Description is optional documentation.
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 
 	// Kind determines which fields are valid.
 	Kind TypeKind `json:"kind" yaml:"kind"`
 
-	// Fields is only used when Kind is "struct".
+	// Fields are used when Kind is struct.
 	Fields []Field `json:"fields,omitempty" yaml:"fields,omitempty"`
 
-	// Elem is used when Kind is "slice" or "map".
+	// Elem is used for slice and map.
 	//
-	// For KindSlice:
-	//   Elem is the element type (for example "User").
-	//
-	// For KindMap:
-	//   Elem is the value type (for example "int").
-	//   Keys are always string.
+	//   slice: elem is the element type
+	//   map:   elem is the value type (key is always string)
 	Elem TypeRef `json:"elem,omitempty" yaml:"elem,omitempty"`
 }
 
-// Field describes a field of a struct type.
+// Field describes a struct field.
 type Field struct {
-	// Name is the wire name used in JSON/YAML payloads.
-	// Recommended: lower_snake_case to match common REST conventions and OpenAPI schemas.
+	// Name is the wire name (JSON/YAML).
 	Name string `json:"name" yaml:"name"`
 
-	// Description is optional human documentation.
+	// Description is optional documentation.
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 
 	// Type is the field type.
 	Type TypeRef `json:"type" yaml:"type"`
 
 	// Optional indicates the field may be omitted.
-	//
-	// JSON Schema mapping:
-	//   If Optional is false, the field belongs in the parent's "required" list.
-	//   If Optional is true, it does not belong in "required".
 	Optional bool `json:"optional,omitempty" yaml:"optional,omitempty"`
 
-	// Nullable indicates the field may be present with a null value.
-	//
-	// JSON Schema mapping:
-	//   type: [T, "null"] or anyOf(T, null)
+	// Nullable indicates the field may be present with null value.
 	Nullable bool `json:"nullable,omitempty" yaml:"nullable,omitempty"`
 }
 
+//
+// ────────────────────────────────────────────────────────────
+// Descriptor helpers
+// ────────────────────────────────────────────────────────────
+//
+
 // Method finds a method by resource and method name.
-// This is a convenience helper for descriptor consumers.
-// It performs a linear scan and does not require hidden indexes on the descriptor.
 func (s *Service) Method(resourceName, methodName string) *Method {
 	for _, r := range s.Resources {
 		if r != nil && r.Name == resourceName {
@@ -218,22 +222,42 @@ func (s *Service) Method(resourceName, methodName string) *Method {
 	return nil
 }
 
-// Descriptor exposes the transport-neutral descriptor.
+//
+// ────────────────────────────────────────────────────────────
+// Runtime interfaces (transport-agnostic)
+// ────────────────────────────────────────────────────────────
+//
+
+// Descriptor exposes the service descriptor.
 type Descriptor interface {
 	Descriptor() *Service
 }
 
-// Invoker is the callable surface for any runtime binding (reflection or generated).
-//
-// This is intentionally small so transports can adapt it consistently.
-// Implementations typically validate input types and marshal/unmarshal as needed.
+// Invoker is the unary-call runtime surface.
 type Invoker interface {
 	Descriptor
 
-	// Call invokes a method by resource and method name.
-	// If the method has no input, pass nil for in.
-	Call(ctx context.Context, resource string, method string, in any) (any, error)
+	Call(ctx context.Context, resource, method string, in any) (any, error)
+	NewInput(resource, method string) (any, error)
+}
 
-	// NewInput allocates a suitable input value for the method, or nil if no input.
-	NewInput(resource string, method string) (any, error)
+// StreamInvoker is the streaming runtime surface.
+type StreamInvoker interface {
+	Descriptor
+
+	// Stream starts a stream and returns a channel-like iterator.
+	Stream(ctx context.Context, resource, method string, in any) (Stream, error)
+}
+
+// Stream is a generic streaming interface.
+type Stream interface {
+	// Recv blocks until the next item, or returns error on end/failure.
+	Recv() (any, error)
+
+	// Send sends a client-to-server message (bidirectional streams).
+	// Returns ErrUnsupported if not allowed.
+	Send(any) error
+
+	// Close terminates the stream.
+	Close() error
 }
