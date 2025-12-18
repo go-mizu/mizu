@@ -34,9 +34,9 @@ With Contract:
 ```go
 // Testing a Contract service - just call the method!
 func TestCreate(t *testing.T) {
-    svc := &todoService{}
+    svc := todo.NewService()
 
-    result, err := svc.Create(context.Background(), &CreateInput{Title: "Test"})
+    result, err := svc.Create(context.Background(), &todo.CreateInput{Title: "Test"})
 
     if err != nil {
         t.Fatalf("unexpected error: %v", err)
@@ -183,7 +183,9 @@ Real services have dependencies like databases and caches. Use dependency inject
 ### Define Interfaces
 
 ```go
-// In your service package
+// In your service package (e.g., todo/service.go)
+package todo
+
 type Service struct {
     db    Database
     cache Cache
@@ -274,19 +276,16 @@ import (
     "github.com/go-mizu/mizu"
     contract "github.com/go-mizu/mizu/contract/v2"
     "github.com/go-mizu/mizu/contract/v2/transport/rest"
+
+    "yourapp/todo"
 )
 
-// Define your interface and types
-type TodoAPI interface {
-    Create(ctx context.Context, in *CreateInput) (*Todo, error)
-    List(ctx context.Context) (*ListOutput, error)
-    Get(ctx context.Context, in *GetInput) (*Todo, error)
-}
+// Your interface is defined in the todo package as todo.API
 
 func TestREST_Create(t *testing.T) {
     // Setup
-    impl := newTodoService()
-    svc := contract.Register[TodoAPI](impl,
+    impl := todo.NewService()
+    svc := contract.Register[todo.API](impl,
         contract.WithDefaultResource("todos"),
     )
 
@@ -318,8 +317,8 @@ func TestREST_Create(t *testing.T) {
 }
 
 func TestREST_Get_NotFound(t *testing.T) {
-    impl := newTodoService()
-    svc := contract.Register[TodoAPI](impl,
+    impl := todo.NewService()
+    svc := contract.Register[todo.API](impl,
         contract.WithDefaultResource("todos"),
     )
 
@@ -342,11 +341,13 @@ func TestREST_Get_NotFound(t *testing.T) {
 ```go
 import (
     "github.com/go-mizu/mizu/contract/v2/transport/jsonrpc"
+
+    "yourapp/todo"
 )
 
 func TestJSONRPC_Create(t *testing.T) {
-    impl := newTodoService()
-    svc := contract.Register[TodoAPI](impl,
+    impl := todo.NewService()
+    svc := contract.Register[todo.API](impl,
         contract.WithDefaultResource("todos"),
     )
 
@@ -386,8 +387,8 @@ func TestJSONRPC_Create(t *testing.T) {
 }
 
 func TestJSONRPC_Batch(t *testing.T) {
-    impl := newTodoService()
-    svc := contract.Register[TodoAPI](impl,
+    impl := todo.NewService()
+    svc := contract.Register[todo.API](impl,
         contract.WithDefaultResource("todos"),
     )
 
@@ -417,8 +418,8 @@ func TestJSONRPC_Batch(t *testing.T) {
 import "github.com/go-mizu/mizu/contract/v2/transport/mcp"
 
 func TestMCP_ToolsCall(t *testing.T) {
-    impl := newTodoService()
-    svc := contract.Register[TodoAPI](impl,
+    impl := todo.NewService()
+    svc := contract.Register[todo.API](impl,
         contract.WithDefaultResource("todos"),
     )
 
@@ -472,8 +473,8 @@ Create helper functions to reduce boilerplate:
 func setupTestApp(t *testing.T) *mizu.App {
     t.Helper()
 
-    impl := newTodoService()
-    svc := contract.Register[TodoAPI](impl,
+    impl := todo.NewService()
+    svc := contract.Register[todo.API](impl,
         contract.WithDefaultResource("todos"),
     )
 

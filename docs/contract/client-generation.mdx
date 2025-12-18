@@ -40,10 +40,12 @@ import (
     contract "github.com/go-mizu/mizu/contract/v2"
     "github.com/go-mizu/mizu/contract/v2/transport/rest"
     "github.com/go-mizu/mizu/contract/v2/transport/openapi"
+
+    "yourapp/todo"
 )
 
-impl := &todoService{}
-svc := contract.Register[TodoAPI](impl,
+impl := todo.NewService()
+svc := contract.Register[todo.API](impl,
     contract.WithDefaultResource("todos"),
 )
 
@@ -541,7 +543,7 @@ jobs:
 
 Include version in your service:
 ```go
-svc := contract.Register[TodoAPI](impl,
+svc := contract.Register[todo.API](impl,
     contract.WithName("Todo"),
     contract.WithDefaultResource("todos"),
 )

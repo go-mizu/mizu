@@ -17,10 +17,11 @@ Imagine you're building a todo list application. You want to:
 - Let AI assistants (like Claude) use your API via MCP
 - Generate TypeScript types for your frontend
 
-Without Contract, you'd write repetitive code for each protocol:
+Without Contract, you'd write repetitive code for each protocol. Each protocol (REST, JSON-RPC, MCP) has its own request format, response format, and error handling. You'd end up writing essentially the same logic three times, just wrapped differently:
 
 ```go
 // REST handler - one version
+// This handles HTTP requests with methods like GET, POST, PUT, DELETE
 func handleRESTCreateTodo(w http.ResponseWriter, r *http.Request) {
     var input CreateInput
     json.NewDecoder(r.Body).Decode(&input)
@@ -33,6 +34,7 @@ func handleRESTCreateTodo(w http.ResponseWriter, r *http.Request) {
 }
 
 // JSON-RPC handler - another version
+// JSON-RPC uses a different format: method names in the body
 func handleJSONRPCCreateTodo(req JSONRPCRequest) JSONRPCResponse {
     var input CreateInput
     json.Unmarshal(req.Params, &input)
@@ -43,258 +45,396 @@ func handleJSONRPCCreateTodo(req JSONRPCRequest) JSONRPCResponse {
     return JSONRPCResponse{Result: todo}
 }
 
-// MCP handler - yet another version...
+// MCP handler - yet another version
+// MCP wraps responses in "content" blocks for AI assistants
 ```
 
-That's a lot of repetitive code! And if you add a new field to `CreateInput`, you need to update every handler.
+That's a lot of repetitive code! Every protocol handler does the same thing: parse input, call your business logic, format the response. And if you add a new field to `CreateInput`, you need to verify every handler handles it correctly.
 
 ## The Contract Solution
 
-With Contract, you define your API as a Go interface:
+With Contract, you organize your code into a dedicated package (like `todo`) and define your API as a Go interface. The interface is named simply `API` because the package name (`todo`) already provides context:
 
 ```go
-// Define the contract - what your API can do
-type TodoAPI interface {
+package todo
+
+import (
+    "context"
+)
+
+// API defines the contract for todo operations.
+// This interface describes what your service can do.
+// Anyone reading this interface immediately understands your API.
+type API interface {
+    // Create adds a new todo item.
     Create(ctx context.Context, in *CreateInput) (*Todo, error)
+
+    // List returns all todo items.
     List(ctx context.Context) (*ListOutput, error)
+
+    // Get retrieves a single todo by ID.
     Get(ctx context.Context, in *GetInput) (*Todo, error)
+
+    // Delete removes a todo by ID.
     Delete(ctx context.Context, in *DeleteInput) error
 }
 ```
 
-Then implement it with your business logic:
+Then implement it with your business logic. The implementation is a struct named `Service` (again, the package name provides context):
 
 ```go
-// Implement the contract
-type todoService struct {
-    db Database
+package todo
+
+// Service implements the todo.API interface.
+// This struct contains your actual business logic and dependencies.
+type Service struct {
+    db Database  // Your database connection
 }
 
-func (s *todoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+// Create implements todo.API.Create
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    // Your business logic here - no HTTP or protocol code!
     return &Todo{ID: generateID(), Title: in.Title}, nil
 }
-// ... other methods
+
+// ... implement other methods
 ```
 
-Finally, register and serve:
+Finally, register and serve. In your main package, you bring everything together:
 
 ```go
+package main
+
 import (
+    "github.com/go-mizu/mizu"
     contract "github.com/go-mizu/mizu/contract/v2"
     "github.com/go-mizu/mizu/contract/v2/transport/rest"
     "github.com/go-mizu/mizu/contract/v2/transport/jsonrpc"
     "github.com/go-mizu/mizu/contract/v2/transport/mcp"
+
+    "yourapp/todo"  // Import your todo package
 )
 
-// Register your implementation against the interface
-svc := contract.Register[TodoAPI](&todoService{},
-    contract.WithDefaultResource("todos"),
-)
+func main() {
+    // Create your service instance with its dependencies
+    todoSvc := &todo.Service{
+        // db: yourDatabase,
+    }
 
-// Mount on all transports
-rest.Mount(app.Router, svc)              // REST: POST /todos, GET /todos, etc.
-jsonrpc.Mount(app.Router, "/rpc", svc)   // JSON-RPC: todos.create, todos.list
-mcp.Mount(app.Router, "/mcp", svc)       // MCP tools for AI assistants
+    // Register your implementation against the interface.
+    // The type parameter [todo.API] tells Contract which interface to use.
+    // Contract inspects this interface to discover all your methods.
+    svc := contract.Register[todo.API](todoSvc,
+        // WithDefaultResource groups all methods under "todos".
+        // This affects URLs in REST and method names in JSON-RPC.
+        contract.WithDefaultResource("todos"),
+    )
+
+    app := mizu.New()
+
+    // Mount on all transports - same service, different protocols
+    rest.Mount(app.Router, svc)              // REST: POST /todos, GET /todos, etc.
+    jsonrpc.Mount(app.Router, "/rpc", svc)   // JSON-RPC: todos.create, todos.list
+    mcp.Mount(app.Router, "/mcp", svc)       // MCP tools for AI assistants
+
+    app.Listen(":8080")
+}
 ```
 
-**One implementation, all protocols.** Change your interface, and all transports update automatically.
+**One implementation, all protocols.** Change your interface, and all transports update automatically. Add a new method to `todo.API`, implement it in `todo.Service`, and it's instantly available via REST, JSON-RPC, and MCP.
 
 ## Why Interface-First?
 
-Contract uses Go interfaces to define your API. This is called "interface-first" or "contract-first" design, and it has several benefits:
+Contract uses Go interfaces to define your API. This is called "interface-first" or "contract-first" design. Let's explore why this approach is powerful.
 
 ### Compile-Time Safety
 
-If your implementation doesn't match the interface, Go's compiler catches it:
+Go's compiler checks that your implementation matches your interface. If you forget to implement a method, or if you implement it with the wrong signature, you get a compile error - not a runtime crash:
 
 ```go
-type TodoAPI interface {
+package todo
+
+type API interface {
     Create(ctx context.Context, in *CreateInput) (*Todo, error)
 }
 
-type brokenService struct{}
+// This won't compile!
+type BrokenService struct{}
 
-// Compiler error: brokenService does not implement TodoAPI
+// Error: BrokenService does not implement todo.API
 // (missing method Create)
 ```
 
+This is a huge advantage over dynamic approaches where you might only discover the mismatch when a user calls your API.
+
 ### Clear API Boundaries
 
-The interface is your API documentation. Anyone can read it and understand exactly what your service does:
+The interface serves as documentation. Anyone can read it and understand exactly what your service does, without digging through implementation details:
 
 ```go
-// This interface IS your API contract
-type UserAPI interface {
-    // Create a new user account
-    Create(ctx context.Context, in *CreateUserInput) (*User, error)
+package user
 
-    // Get user by ID
-    Get(ctx context.Context, in *GetUserInput) (*User, error)
+// API defines all operations for user management.
+// This interface is the single source of truth for your API.
+type API interface {
+    // Create registers a new user account.
+    // Returns an error if the email is already registered.
+    Create(ctx context.Context, in *CreateInput) (*User, error)
 
-    // List all users with pagination
-    List(ctx context.Context, in *ListUsersInput) (*ListUsersOutput, error)
+    // Get retrieves a user by their unique ID.
+    // Returns a NOT_FOUND error if the user doesn't exist.
+    Get(ctx context.Context, in *GetInput) (*User, error)
 
-    // Delete a user account
-    Delete(ctx context.Context, in *DeleteUserInput) error
+    // List returns all users with pagination support.
+    // Use Limit and Offset in the input to page through results.
+    List(ctx context.Context, in *ListInput) (*ListOutput, error)
+
+    // Delete removes a user account permanently.
+    // This action cannot be undone.
+    Delete(ctx context.Context, in *DeleteInput) error
 }
 ```
 
 ### Easy Testing
 
-You can mock the interface for testing:
+Because your business logic is in plain Go methods, you can test it directly without HTTP mocking. You can also create mock implementations for testing code that depends on your service:
 
 ```go
-// In your tests
-type mockUserAPI struct{}
+package user_test
 
-func (m *mockUserAPI) Create(ctx context.Context, in *CreateUserInput) (*User, error) {
+// MockService implements user.API for testing
+type MockService struct {
+    CreateFunc func(ctx context.Context, in *CreateInput) (*User, error)
+}
+
+func (m *MockService) Create(ctx context.Context, in *CreateInput) (*User, error) {
+    if m.CreateFunc != nil {
+        return m.CreateFunc(ctx, in)
+    }
+    // Return a default test user
     return &User{ID: "test-123", Name: in.Name}, nil
 }
 
-// Use the mock in tests
+func TestSomethingThatUsesUserAPI(t *testing.T) {
+    mock := &MockService{
+        CreateFunc: func(ctx context.Context, in *CreateInput) (*User, error) {
+            // Custom behavior for this test
+            return &User{ID: "custom-id"}, nil
+        },
+    }
+    // Use mock in your test...
+}
 ```
 
 ### Separation of Concerns
 
-The interface separates "what your API does" from "how it's implemented":
+The interface separates "what your API does" (the contract) from "how it's implemented" (the business logic). This lets you swap implementations without changing your API:
 
 ```go
-// The contract (what)
-type StorageAPI interface {
+package storage
+
+// API defines storage operations.
+// The same interface can have multiple implementations.
+type API interface {
     Save(ctx context.Context, in *SaveInput) error
     Load(ctx context.Context, in *LoadInput) (*Data, error)
 }
 
-// Implementation 1: File system (how)
-type fileStorage struct { basePath string }
+// FileService stores data on the local filesystem
+type FileService struct {
+    basePath string
+}
 
-// Implementation 2: S3 (how)
-type s3Storage struct { bucket string }
+// S3Service stores data in Amazon S3
+type S3Service struct {
+    bucket string
+}
 
-// Implementation 3: In-memory for tests (how)
-type memoryStorage struct { data map[string][]byte }
+// MemoryService stores data in memory (great for tests)
+type MemoryService struct {
+    data map[string][]byte
+}
 
-// All implement the same interface!
+// All three implement storage.API!
+// Your application can switch between them via configuration.
 ```
 
 ## How Contract Works
 
-Here's what happens when you use Contract:
+Here's what happens when you use Contract, step by step:
 
 ```
-                    Your Go Interface
-                          │
-                          ▼
-            contract.Register[TodoAPI](impl)
-                          │
-                          │  Inspects interface methods
-                          │  Extracts input/output types
-                          │  Generates JSON schemas
-                          ▼
-                   ┌─────────────┐
-                   │   Service   │
-                   │  Descriptor │
-                   │  - Methods  │
-                   │  - Types    │
-                   │  - HTTP     │
-                   └─────────────┘
-                          │
-         ┌────────────────┼────────────────┐
-         ▼                ▼                ▼
-    ┌─────────┐     ┌──────────┐     ┌─────────┐
-    │  REST   │     │ JSON-RPC │     │   MCP   │
-    │ Handler │     │ Handler  │     │ Handler │
-    └─────────┘     └──────────┘     └─────────┘
-         │                │                │
-         ▼                ▼                ▼
-    Web Browsers    Other Services    AI Assistants
+                    Your Go Interface (todo.API)
+                              │
+                              ▼
+                contract.Register[todo.API](impl)
+                              │
+                              │  1. Inspects interface using reflection
+                              │  2. Discovers all methods (Create, List, Get, Delete)
+                              │  3. Extracts input/output types
+                              │  4. Generates JSON schemas for each type
+                              ▼
+                       ┌─────────────┐
+                       │   Service   │
+                       │  Descriptor │
+                       │  - Methods  │
+                       │  - Types    │
+                       │  - Schemas  │
+                       └─────────────┘
+                              │
+             ┌────────────────┼────────────────┐
+             ▼                ▼                ▼
+        ┌─────────┐     ┌──────────┐     ┌─────────┐
+        │  REST   │     │ JSON-RPC │     │   MCP   │
+        │ Handler │     │ Handler  │     │ Handler │
+        └─────────┘     └──────────┘     └─────────┘
+             │                │                │
+             ▼                ▼                ▼
+        Web Browsers    Other Services    AI Assistants
 ```
 
-1. **You define** an interface with your API methods
-2. **You implement** the interface with your business logic
-3. **Contract inspects** your interface at startup (using reflection)
-4. **Contract creates** type-safe invokers and JSON schemas
-5. **Transport handlers** convert protocol-specific requests into method calls
-6. **Your method runs** and returns results or errors
-7. **Transport handlers** convert the response back to the protocol format
+1. **You define** an interface with your API methods (like `todo.API`)
+2. **You implement** the interface with your business logic (like `todo.Service`)
+3. **Contract inspects** your interface at startup using Go's reflection capabilities
+4. **Contract creates** efficient invokers and JSON schemas from your types
+5. **Transport handlers** receive HTTP requests and convert them to method calls
+6. **Your method runs** with the parsed input and returns results or errors
+7. **Transport handlers** convert the response back to the appropriate protocol format
+
+The key insight is that Contract does all the heavy lifting at startup time. When a request comes in, it's a fast, direct call to your method - no runtime reflection or type conversion overhead.
 
 ## Key Concepts
 
+Let's understand the core concepts you'll work with in Contract.
+
 ### Interface (The Contract)
 
-An interface defines what operations your API supports. Every method in the interface becomes an API endpoint:
+An interface defines what operations your API supports. Think of it as a menu at a restaurant - it lists what's available without explaining how each dish is prepared:
 
 ```go
-type TodoAPI interface {
+package todo
+
+// API is your service's "menu" - it lists all available operations.
+// Each method becomes an API endpoint that clients can call.
+type API interface {
+    // Create makes a new todo. Clients call this to add items.
     Create(ctx context.Context, in *CreateInput) (*Todo, error)
+
+    // List returns all todos. Clients call this to see everything.
     List(ctx context.Context) (*ListOutput, error)
+
+    // Get retrieves one todo by ID. Clients call this for details.
     Get(ctx context.Context, in *GetInput) (*Todo, error)
+
+    // Delete removes a todo. Clients call this to clean up.
     Delete(ctx context.Context, in *DeleteInput) error
 }
 ```
 
-### Implementation
+### Implementation (The Service)
 
-A struct that implements the interface with your actual business logic:
+A struct that implements the interface. This is where your actual business logic lives - the "kitchen" that prepares the dishes:
 
 ```go
-type todoService struct {
-    db Database  // Your dependencies
+package todo
+
+// Service implements todo.API with actual business logic.
+// It contains dependencies like databases, caches, and external services.
+type Service struct {
+    db    Database      // Where todos are stored
+    cache Cache         // For faster lookups
 }
 
-func (s *todoService) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
-    // Your business logic here
+// Create implements todo.API.Create
+func (s *Service) Create(ctx context.Context, in *CreateInput) (*Todo, error) {
+    // Validate input
+    if in.Title == "" {
+        return nil, contract.ErrInvalidArgument("title is required")
+    }
+
+    // Create the todo
+    todo := &Todo{
+        ID:    generateID(),
+        Title: in.Title,
+    }
+
+    // Save to database
+    if err := s.db.Save(ctx, todo); err != nil {
+        return nil, err
+    }
+
+    return todo, nil
 }
 ```
 
 ### Resource
 
-A resource is a namespace for related methods. Methods are grouped into resources for organization:
+A resource is a namespace that groups related methods. It affects how your API endpoints are named and organized:
 
 ```go
-svc := contract.Register[TodoAPI](impl,
-    contract.WithDefaultResource("todos"),  // All methods go to "todos" resource
+svc := contract.Register[todo.API](impl,
+    contract.WithDefaultResource("todos"),  // All methods grouped under "todos"
 )
 ```
 
-This makes your API endpoints:
-- REST: `/todos` (POST, GET), `/todos/{id}` (GET, DELETE)
+With this resource name, your endpoints become:
+- REST: `/todos` (POST for Create, GET for List), `/todos/{id}` (GET, DELETE)
 - JSON-RPC: `todos.create`, `todos.list`, `todos.get`, `todos.delete`
+- MCP tools: `todos.create`, `todos.list`, etc.
 
 ### Transport
 
-A transport is a protocol handler that converts HTTP requests into method calls. Contract provides:
+A transport is a protocol handler that converts HTTP requests into method calls. Think of transports as translators - they speak different "languages" (protocols) but all communicate with the same backend (your service):
 
 | Transport | Protocol | Best For |
 |-----------|----------|----------|
-| REST | HTTP REST | Web browsers, curl, general HTTP |
-| JSON-RPC | JSON-RPC 2.0 | Batch operations, RPC clients |
-| MCP | Model Context Protocol | AI assistants (Claude, etc.) |
+| REST | HTTP REST | Web browsers, curl, most HTTP clients |
+| JSON-RPC | JSON-RPC 2.0 | Batch operations, service-to-service calls |
+| MCP | Model Context Protocol | AI assistants like Claude |
 
 ### Type Registry
 
-Contract automatically creates JSON schemas from your Go types. These schemas are used for:
-- Input validation
-- API documentation (OpenAPI)
-- Client code generation
-- AI tool definitions (MCP)
+Contract automatically analyzes your Go types and creates JSON schemas. These schemas describe your data structures in a language-agnostic way:
+
+```go
+// Your Go type
+type CreateInput struct {
+    Title       string `json:"title"`
+    Description string `json:"description,omitempty"`
+}
+
+// Contract generates this JSON Schema automatically:
+// {
+//   "type": "object",
+//   "properties": {
+//     "title": {"type": "string"},
+//     "description": {"type": "string"}
+//   },
+//   "required": ["title"]
+// }
+```
+
+These schemas are used for:
+- **OpenAPI documentation**: Generate API docs automatically
+- **Client code generation**: Create typed clients in TypeScript, Python, etc.
+- **AI tool definitions**: Tell AI assistants what parameters your tools accept
 
 ## What You'll Learn
 
-This documentation will teach you:
+This documentation will teach you everything you need to build APIs with Contract:
 
-1. **[Quick Start](/contract/quick-start)** - Build your first API in 5 minutes
-2. **[Defining Services](/contract/service)** - How to write interfaces and implementations
-3. **[Registration](/contract/register)** - How Contract processes your service
-4. **[Type System](/contract/types)** - Understanding types and JSON schemas
-5. **[Error Handling](/contract/errors)** - How to return errors that work across protocols
-6. **[Transports](/contract/transports-overview)** - Choosing and using different protocols
-7. **[Testing](/contract/testing)** - How to test your services
-8. **[Architecture](/contract/architecture)** - Deep dive into how it all works
+1. **[Quick Start](/contract/quick-start)** - Build your first API in 5 minutes with step-by-step instructions
+2. **[Defining Services](/contract/service)** - How to structure your interfaces, implementations, and types
+3. **[Registration](/contract/register)** - What happens when you call `contract.Register` and available options
+4. **[Type System](/contract/types)** - How Go types map to JSON schemas and wire formats
+5. **[Error Handling](/contract/errors)** - Return meaningful errors that work across all protocols
+6. **[Transports](/contract/transports-overview)** - Choose the right protocol for your use case
+7. **[Testing](/contract/testing)** - Test your services easily without HTTP mocking
+8. **[Architecture](/contract/architecture)** - Understand how Contract works under the hood
 
 ## Quick Example
 
-Here's a complete, working example:
+Here's a complete, working example. You can copy this code, run it, and start experimenting:
 
 ```go
 package main
@@ -309,82 +449,152 @@ import (
     "github.com/go-mizu/mizu/contract/v2/transport/jsonrpc"
 )
 
+// ============================================================
 // Step 1: Define your types
+// These structs define the shape of your API's data.
+// ============================================================
+
+// GreetInput is what clients send when calling Greet.
+// The json tags control how fields are named in JSON.
 type GreetInput struct {
-    Name string `json:"name"`
+    Name string `json:"name"`  // The name to greet
 }
 
+// GreetOutput is what clients receive back from Greet.
 type GreetOutput struct {
-    Message string `json:"message"`
+    Message string `json:"message"`  // The greeting message
 }
 
+// ============================================================
 // Step 2: Define your interface (the contract)
-type GreetingAPI interface {
+// This interface declares what your API can do.
+// ============================================================
+
+// API defines the greeting service operations.
+// Any struct that implements this interface can be used as the service.
+type API interface {
+    // Greet creates a personalized greeting message.
+    // It takes a name and returns a friendly message.
     Greet(ctx context.Context, in *GreetInput) (*GreetOutput, error)
 }
 
+// ============================================================
 // Step 3: Implement the interface
-type greetingService struct{}
+// This struct contains your actual business logic.
+// ============================================================
 
-func (s *greetingService) Greet(ctx context.Context, in *GreetInput) (*GreetOutput, error) {
+// Service implements the API interface.
+type Service struct{}
+
+// Greet implements API.Greet with a simple greeting.
+func (s *Service) Greet(ctx context.Context, in *GreetInput) (*GreetOutput, error) {
+    // This is your business logic - simple in this example,
+    // but could include database calls, external APIs, etc.
     return &GreetOutput{
         Message: fmt.Sprintf("Hello, %s!", in.Name),
     }, nil
 }
 
+// ============================================================
+// Step 4: Wire everything together
+// ============================================================
+
 func main() {
-    // Step 4: Register your service
-    svc := contract.Register[GreetingAPI](&greetingService{},
+    // Create your service instance
+    impl := &Service{}
+
+    // Register the service with Contract.
+    // Contract analyzes the API interface and prepares it for serving.
+    svc := contract.Register[API](impl,
         contract.WithDefaultResource("greetings"),
     )
 
-    // Step 5: Create app and mount transports
+    // Create a mizu app to handle HTTP requests
     app := mizu.New()
-    rest.Mount(app.Router, svc)
-    jsonrpc.Mount(app.Router, "/rpc", svc)
 
-    // Step 6: Start the server
+    // Mount transports - each one exposes your service via a different protocol
+    rest.Mount(app.Router, svc)              // REST API
+    jsonrpc.Mount(app.Router, "/rpc", svc)   // JSON-RPC endpoint
+
+    // Start the server
     fmt.Println("Server running on http://localhost:8080")
+    fmt.Println("")
+    fmt.Println("Try these commands:")
+    fmt.Println("  REST:     curl -X POST http://localhost:8080/greetings -d '{\"name\":\"World\"}'")
+    fmt.Println("  JSON-RPC: curl -X POST http://localhost:8080/rpc -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"greetings.greet\",\"params\":{\"name\":\"World\"}}'")
+
     app.Listen(":8080")
 }
 ```
 
-Test it:
+Test it with these commands:
 
 ```bash
-# REST
+# REST - Uses HTTP POST with JSON body
 curl -X POST http://localhost:8080/greetings \
   -H "Content-Type: application/json" \
   -d '{"name": "World"}'
 # Output: {"message":"Hello, World!"}
 
-# JSON-RPC
+# JSON-RPC - Uses JSON-RPC envelope format
 curl -X POST http://localhost:8080/rpc \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"greetings.greet","params":{"name":"World"}}'
 # Output: {"jsonrpc":"2.0","id":1,"result":{"message":"Hello, World!"}}
 ```
 
+Both requests call the same `Greet` method - Contract handles the protocol translation automatically.
+
 ## Common Questions
 
 ### Do I need to learn all the transports?
 
-No! Start with REST - it's the most familiar. You can add other transports later as needed. Your business logic stays exactly the same.
+No! Start with REST - it's the most familiar and works with any HTTP client. You can add other transports later as needed. Your business logic stays exactly the same regardless of which transports you use.
 
 ### Is Contract only for new projects?
 
-Contract works great for new projects, but you can also gradually adopt it in existing codebases. Start by converting one service and see how it fits.
+Contract works great for new projects, but you can also gradually adopt it in existing codebases. Start by converting one service to see how it fits. Your existing REST handlers can coexist with Contract-powered endpoints.
 
 ### How does Contract handle authentication?
 
-Contract doesn't dictate how you handle auth. Use standard mizu middleware to authenticate requests before they reach your methods. Context values let you pass user information to your service methods.
+Contract focuses on business logic, not authentication. Use standard mizu middleware to authenticate requests before they reach your methods. You can pass user information to your service methods through context values:
 
-### Why use interfaces instead of structs?
+```go
+func authMiddleware(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        user := validateToken(c.Get("Authorization"))
+        ctx := context.WithValue(c.Context(), "user", user)
+        c.SetContext(ctx)
+        return next(c)
+    }
+}
+```
 
-Interfaces give you compile-time safety. If your implementation doesn't match the interface, the compiler catches it. With struct-based approaches, you only find out at runtime if a method signature is wrong.
+### Why use interfaces instead of structs with method tags?
+
+Interfaces give you compile-time safety. If your implementation doesn't match the interface, the compiler catches it immediately. With struct-based or decorator approaches, you might only find out at runtime if a method signature is wrong. Go's type system is your friend - let it help you catch bugs early.
+
+### How do I organize my code?
+
+We recommend organizing each service into its own package:
+
+```
+yourapp/
+├── main.go           # Wires everything together
+├── todo/
+│   ├── api.go        # Interface definition (todo.API)
+│   ├── service.go    # Implementation (todo.Service)
+│   └── types.go      # Input/output types
+├── user/
+│   ├── api.go        # Interface definition (user.API)
+│   ├── service.go    # Implementation (user.Service)
+│   └── types.go      # Input/output types
+```
+
+This keeps related code together and makes the package names meaningful (`todo.API` is clearer than `TodoAPI`).
 
 ## Next Steps
 
-Ready to build your first API? Start with the **[Quick Start Guide](/contract/quick-start)** - you'll have a working API in 5 minutes.
+Ready to build your first API? Start with the **[Quick Start Guide](/contract/quick-start)** - you'll have a working API in 5 minutes with detailed explanations of each step.
 
-If you prefer understanding the concepts first, read about **[Defining Services](/contract/service)** to learn how to structure your interfaces and implementations.
+If you prefer understanding the concepts first, read about **[Defining Services](/contract/service)** to learn how to structure your interfaces and implementations properly.
