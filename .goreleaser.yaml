@@ -129,31 +129,75 @@ release:
   footer: |
     Full Changelog: https://github.com/go-mizu/mizu/compare/{{ .PreviousTag }}...{{ .Tag }}
 
-# Docker (v2)
-dockers_v2:
-  - id: mizu
+# Docker
+dockers:
+  - id: mizu-amd64
     ids:
       - mizu
     dockerfile: Dockerfile.goreleaser
-    images:
-      - ghcr.io/go-mizu/mizu
-    tags:
-      - "{{ .Tag }}"
-      - "v{{ .Major }}"
-      - "v{{ .Major }}.{{ .Minor }}"
-      - "latest"
-    platforms:
-      - linux/amd64
-      - linux/arm64
-    labels:
-      org.opencontainers.image.title: "{{ .ProjectName }}"
-      org.opencontainers.image.description: "Project toolkit for the go-mizu framework"
-      org.opencontainers.image.url: "https://github.com/go-mizu/mizu"
-      org.opencontainers.image.source: "https://github.com/go-mizu/mizu"
-      org.opencontainers.image.version: "{{ .Version }}"
-      org.opencontainers.image.created: "{{ .Date }}"
-      org.opencontainers.image.revision: "{{ .FullCommit }}"
-      org.opencontainers.image.licenses: "MIT"
+    use: buildx
+    goos: linux
+    goarch: amd64
+    image_templates:
+      - "ghcr.io/go-mizu/mizu:{{ .Tag }}-amd64"
+      - "ghcr.io/go-mizu/mizu:v{{ .Major }}-amd64"
+      - "ghcr.io/go-mizu/mizu:v{{ .Major }}.{{ .Minor }}-amd64"
+      - "ghcr.io/go-mizu/mizu:latest-amd64"
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.description=Project toolkit for the go-mizu framework"
+      - "--label=org.opencontainers.image.url=https://github.com/go-mizu/mizu"
+      - "--label=org.opencontainers.image.source=https://github.com/go-mizu/mizu"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+
+  - id: mizu-arm64
+    ids:
+      - mizu
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    goos: linux
+    goarch: arm64
+    image_templates:
+      - "ghcr.io/go-mizu/mizu:{{ .Tag }}-arm64"
+      - "ghcr.io/go-mizu/mizu:v{{ .Major }}-arm64"
+      - "ghcr.io/go-mizu/mizu:v{{ .Major }}.{{ .Minor }}-arm64"
+      - "ghcr.io/go-mizu/mizu:latest-arm64"
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.description=Project toolkit for the go-mizu framework"
+      - "--label=org.opencontainers.image.url=https://github.com/go-mizu/mizu"
+      - "--label=org.opencontainers.image.source=https://github.com/go-mizu/mizu"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+
+# Docker manifests for multi-arch images
+docker_manifests:
+  - name_template: "ghcr.io/go-mizu/mizu:{{ .Tag }}"
+    image_templates:
+      - "ghcr.io/go-mizu/mizu:{{ .Tag }}-amd64"
+      - "ghcr.io/go-mizu/mizu:{{ .Tag }}-arm64"
+
+  - name_template: "ghcr.io/go-mizu/mizu:v{{ .Major }}"
+    image_templates:
+      - "ghcr.io/go-mizu/mizu:v{{ .Major }}-amd64"
+      - "ghcr.io/go-mizu/mizu:v{{ .Major }}-arm64"
+
+  - name_template: "ghcr.io/go-mizu/mizu:v{{ .Major }}.{{ .Minor }}"
+    image_templates:
+      - "ghcr.io/go-mizu/mizu:v{{ .Major }}.{{ .Minor }}-amd64"
+      - "ghcr.io/go-mizu/mizu:v{{ .Major }}.{{ .Minor }}-arm64"
+
+  - name_template: "ghcr.io/go-mizu/mizu:latest"
+    image_templates:
+      - "ghcr.io/go-mizu/mizu:latest-amd64"
+      - "ghcr.io/go-mizu/mizu:latest-arm64"
 
 announce:
   skip: "{{ not .IsRelease }}"
