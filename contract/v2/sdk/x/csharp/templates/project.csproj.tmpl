@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>{{.TargetFramework}}</TargetFramework>
+    <Nullable>{{.Nullable}}</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+
+    <PackageId>{{.PackageName}}</PackageId>
+    <Version>{{.Version}}</Version>
+{{- if .Service.Description}}
+    <Description>{{.Service.Description}}</Description>
+{{- else}}
+    <Description>Generated C# SDK for {{.Service.Name}}</Description>
+{{- end}}
+    <Authors>Generated</Authors>
+  </PropertyGroup>
+</Project>
