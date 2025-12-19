@@ -648,7 +648,7 @@ console.log(out.id);
 func minimalServiceContract() *contract.Service {
 	return &contract.Service{
 		Name: "OpenAI",
-		Defaults: &contract.Defaults{
+		Client: &contract.Client{
 			Auth: "bearer",
 		},
 		Resources: []*contract.Resource{

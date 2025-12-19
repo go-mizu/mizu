@@ -144,7 +144,7 @@ func runContractInitCmd(cmd *cobra.Command, args []string) error {
 		svc = &contract.Service{
 			Name:        name,
 			Description: fmt.Sprintf("%s API", name),
-			Defaults: &contract.Defaults{
+			Client: &contract.Client{
 				BaseURL: "http://localhost:8080",
 			},
 			Resources: []*contract.Resource{
@@ -950,7 +950,7 @@ func loadContractTemplate(name string) (*contract.Service, error) {
 	case "minimal":
 		return &contract.Service{
 			Description: "Minimal API template",
-			Defaults: &contract.Defaults{
+			Client: &contract.Client{
 				BaseURL: "http://localhost:8080",
 			},
 			Resources: []*contract.Resource{
