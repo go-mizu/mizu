@@ -1,0 +1,38 @@
+//! {{.Service.Name}} SDK
+//!
+//! {{.Service.Description}}
+//!
+//! ## Quick Start
+//!
+//! ```zig
+//! const std = @import("std");
+//! const {{.Package}} = @import("{{.Package}}");
+//!
+//! pub fn main() !void {
+//!     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+//!     defer _ = gpa.deinit();
+//!     const allocator = gpa.allocator();
+//!
+//!     var client = try {{.Package}}.Client.init(allocator, .{
+//!         .api_key = std.posix.getenv("API_KEY"),
+//!     });
+//!     defer client.deinit();
+//!
+//!     // Use client...
+//! }
+//! ```
+
+pub const Client = @import("client.zig").Client;
+pub const ClientConfig = @import("client.zig").ClientConfig;
+pub const AuthMode = @import("client.zig").AuthMode;
+
+pub const types = @import("types.zig");
+pub const resources = @import("resources.zig");
+pub const errors = @import("errors.zig");
+{{- if .HasSSE}}
+pub const streaming = @import("streaming.zig");
+{{- end}}
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

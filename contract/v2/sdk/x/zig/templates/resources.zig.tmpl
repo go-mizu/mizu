@@ -1,0 +1,68 @@
+//! Resource operations for the {{.Service.Name}} API.
+//!
+//! This module contains resource accessors that provide methods
+//! for interacting with the API endpoints.
+
+const std = @import("std");
+const json = std.json;
+const http = std.http;
+const Allocator = std.mem.Allocator;
+
+const Client = @import("client.zig").Client;
+const errors = @import("errors.zig");
+const types = @import("types.zig");
+{{- if .HasSSE}}
+const streaming = @import("streaming.zig");
+{{- end}}
+{{range .Resources}}
+/// Operations for the {{.Name}} resource.
+///
+/// {{.Description}}
+pub const {{.StructName}} = struct {
+    client: *Client,
+
+    const Self = @This();
+
+    /// Creates a new resource accessor.
+    pub fn init(client: *Client) Self {
+        return Self{ .client = client };
+    }
+{{range .Methods}}
+    /// {{if .Description}}{{.Description}}{{else}}{{.Name}} operation.{{end}}
+{{- if .IsStreaming}}
+    pub fn {{.ZigName}}(self: Self, request: types.{{.InputType}}) !streaming.EventStream(types.{{.StreamItemType}}) {
+        const body = try request.toJson(self.client.allocator);
+        defer self.client.allocator.free(body);
+
+        return streaming.EventStream(types.{{.StreamItemType}}).init(
+            self.client,
+            "{{.HTTPPath}}",
+            body,
+        );
+    }
+{{- else}}
+    pub fn {{.ZigName}}(self: Self, request: types.{{.InputType}}) !json.Parsed(types.{{.OutputType}}) {
+        const body = try request.toJson(self.client.allocator);
+        defer self.client.allocator.free(body);
+
+        const response_body = try self.client.requestWithRetry(.{{.HTTPMethod}}, "{{.HTTPPath}}", body);
+        defer self.client.allocator.free(response_body);
+
+        return types.{{.OutputType}}.fromJson(self.client.allocator, response_body);
+    }
+{{- end}}
+{{end}}
+};
+{{end}}
+// --- Tests ---
+
+test "resource initialization" {
+    const allocator = std.testing.allocator;
+    var client = Client.init(allocator, .{});
+    defer client.deinit();
+{{range .Resources}}
+    const {{.ZigName}}_resource = client.{{.ZigName}}();
+    try std.testing.expectEqual(&client, {{.ZigName}}_resource.client);
+{{- break}}
+{{end}}
+}

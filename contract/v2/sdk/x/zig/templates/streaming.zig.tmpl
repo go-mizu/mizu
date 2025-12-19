@@ -1,0 +1,243 @@
+//! Server-Sent Events (SSE) streaming support.
+//!
+//! This module provides SSE parsing and streaming capabilities
+//! for handling real-time event streams from the API.
+
+const std = @import("std");
+const http = std.http;
+const json = std.json;
+const mem = std.mem;
+const Allocator = mem.Allocator;
+
+const Client = @import("client.zig").Client;
+const errors = @import("errors.zig");
+const types = @import("types.zig");
+
+/// An SSE event.
+pub const SseEvent = struct {
+    /// Event type.
+    event: ?[]const u8 = null,
+    /// Event data.
+    data: ?[]const u8 = null,
+    /// Event ID.
+    id: ?[]const u8 = null,
+    /// Retry interval in milliseconds.
+    retry: ?u64 = null,
+
+    allocator: ?Allocator = null,
+
+    const Self = @This();
+
+    pub fn deinit(self: *Self) void {
+        if (self.allocator) |alloc| {
+            if (self.event) |e| alloc.free(e);
+            if (self.data) |d| alloc.free(d);
+            if (self.id) |i| alloc.free(i);
+        }
+        self.* = undefined;
+    }
+};
+
+/// SSE parser state.
+pub const SseParser = struct {
+    buffer: std.ArrayList(u8),
+    allocator: Allocator,
+
+    const Self = @This();
+
+    pub fn init(allocator: Allocator) Self {
+        return Self{
+            .buffer = std.ArrayList(u8).init(allocator),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.buffer.deinit();
+        self.* = undefined;
+    }
+
+    /// Feed data to the parser and return a complete event if available.
+    pub fn feed(self: *Self, data: []const u8) !?SseEvent {
+        try self.buffer.appendSlice(data);
+
+        // Look for complete event (double newline)
+        const buf = self.buffer.items;
+        if (mem.indexOf(u8, buf, "\n\n")) |pos| {
+            const event_data = buf[0..pos];
+
+            // Remove processed data from buffer
+            const remaining = buf[pos + 2 ..];
+            mem.copyForwards(u8, buf[0..remaining.len], remaining);
+            self.buffer.shrinkRetainingCapacity(remaining.len);
+
+            return try self.parseEvent(event_data);
+        }
+
+        return null;
+    }
+
+    fn parseEvent(self: *Self, data: []const u8) !SseEvent {
+        var event = SseEvent{ .allocator = self.allocator };
+        var data_parts = std.ArrayList(u8).init(self.allocator);
+        defer data_parts.deinit();
+
+        var lines = mem.splitScalar(u8, data, '\n');
+        while (lines.next()) |line| {
+            if (line.len == 0) continue;
+            if (line[0] == ':') continue; // Comment
+
+            const colon_pos = mem.indexOfScalar(u8, line, ':') orelse continue;
+
+            const field = line[0..colon_pos];
+            var value = line[colon_pos + 1 ..];
+            if (value.len > 0 and value[0] == ' ') {
+                value = value[1..];
+            }
+
+            if (mem.eql(u8, field, "event")) {
+                event.event = try self.allocator.dupe(u8, value);
+            } else if (mem.eql(u8, field, "data")) {
+                if (data_parts.items.len > 0) {
+                    try data_parts.append('\n');
+                }
+                try data_parts.appendSlice(value);
+            } else if (mem.eql(u8, field, "id")) {
+                event.id = try self.allocator.dupe(u8, value);
+            } else if (mem.eql(u8, field, "retry")) {
+                event.retry = std.fmt.parseInt(u64, value, 10) catch null;
+            }
+        }
+
+        if (data_parts.items.len > 0) {
+            event.data = try self.allocator.dupe(u8, data_parts.items);
+        }
+
+        return event;
+    }
+};
+
+/// A stream of typed events from an SSE endpoint.
+pub fn EventStream(comptime T: type) type {
+    return struct {
+        client: *Client,
+        path: []const u8,
+        request_body: []const u8,
+        parser: SseParser,
+        response_body: ?[]const u8 = null,
+        current_pos: usize = 0,
+        finished: bool = false,
+
+        const Self = @This();
+
+        pub fn init(client: *Client, path: []const u8, request_body: []const u8) Self {
+            return Self{
+                .client = client,
+                .path = path,
+                .request_body = request_body,
+                .parser = SseParser.init(client.allocator),
+            };
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.parser.deinit();
+            if (self.response_body) |body| {
+                self.client.allocator.free(body);
+            }
+            self.* = undefined;
+        }
+
+        /// Returns the next event in the stream.
+        pub fn next(self: *Self) !?json.Parsed(T) {
+            if (self.finished) return null;
+
+            // Initialize stream if needed
+            if (self.response_body == null) {
+                self.response_body = try self.client.request(.POST, self.path, self.request_body);
+            }
+
+            const body = self.response_body orelse return null;
+
+            // Process available data
+            while (self.current_pos < body.len) {
+                // Find next chunk to process
+                const remaining = body[self.current_pos..];
+                const chunk_end = mem.indexOf(u8, remaining, "\n\n") orelse remaining.len;
+                const chunk = remaining[0 .. chunk_end + 2];
+                self.current_pos += chunk.len;
+
+                if (try self.parser.feed(chunk)) |sse_event| {
+                    var event = sse_event;
+                    defer event.deinit();
+
+                    if (event.data) |data| {
+                        // Skip [DONE] marker
+                        if (mem.eql(u8, data, "[DONE]")) {
+                            self.finished = true;
+                            return null;
+                        }
+
+                        // Parse the event data
+                        return json.parseFromSlice(
+                            T,
+                            self.client.allocator,
+                            data,
+                            types.parse_options,
+                        ) catch |err| {
+                            _ = err;
+                            continue; // Skip malformed events
+                        };
+                    }
+                }
+            }
+
+            self.finished = true;
+            return null;
+        }
+    };
+}
+
+// --- Tests ---
+
+test "SseParser basic event" {
+    const allocator = std.testing.allocator;
+    var parser = SseParser.init(allocator);
+    defer parser.deinit();
+
+    var event = try parser.feed("event: message\ndata: hello\n\n");
+    if (event) |*e| {
+        defer e.deinit();
+        try std.testing.expectEqualStrings("message", e.event.?);
+        try std.testing.expectEqualStrings("hello", e.data.?);
+    } else {
+        return error.ExpectedEvent;
+    }
+}
+
+test "SseParser multiline data" {
+    const allocator = std.testing.allocator;
+    var parser = SseParser.init(allocator);
+    defer parser.deinit();
+
+    var event = try parser.feed("data: line1\ndata: line2\n\n");
+    if (event) |*e| {
+        defer e.deinit();
+        try std.testing.expectEqualStrings("line1\nline2", e.data.?);
+    } else {
+        return error.ExpectedEvent;
+    }
+}
+
+test "SseParser comment ignored" {
+    const allocator = std.testing.allocator;
+    var parser = SseParser.init(allocator);
+    defer parser.deinit();
+
+    var event = try parser.feed(": this is a comment\ndata: actual\n\n");
+    if (event) |*e| {
+        defer e.deinit();
+        try std.testing.expectEqualStrings("actual", e.data.?);
+    } else {
+        return error.ExpectedEvent;
+    }
+}

@@ -1,0 +1,215 @@
+//! HTTP client for the {{.Service.Name}} API.
+//!
+//! {{.Service.Description}}
+
+const std = @import("std");
+const http = std.http;
+const mem = std.mem;
+const Uri = std.Uri;
+const Allocator = mem.Allocator;
+
+const errors = @import("errors.zig");
+const resources = @import("resources.zig");
+
+/// Authentication mode for API requests.
+pub const AuthMode = enum {
+    /// Bearer token authentication.
+    bearer,
+    /// Basic authentication.
+    basic,
+    /// API key in header.
+    api_key,
+    /// No authentication.
+    none,
+};
+
+/// Configuration for the SDK client.
+pub const ClientConfig = struct {
+    /// API key for authentication.
+    api_key: ?[]const u8 = null,
+    /// Base URL for API requests.
+    base_url: []const u8 = {{zigQuote .Defaults.BaseURL}},
+    /// Authentication mode.
+    auth_mode: AuthMode = .bearer,
+    /// Request timeout in nanoseconds.
+    timeout_ns: u64 = 60 * std.time.ns_per_s,
+    /// Maximum retry attempts.
+    max_retries: u32 = 2,
+    /// User-Agent header value.
+    user_agent: []const u8 = "{{.Service.Name}} Zig SDK/{{.Version}}",
+};
+
+/// Client for the {{.Service.Name}} API.
+///
+/// The client manages HTTP connections and provides access to API resources.
+/// It is allocator-aware and requires explicit cleanup via `deinit()`.
+pub const Client = struct {
+    allocator: Allocator,
+    config: ClientConfig,
+    http_client: http.Client,
+
+    const Self = @This();
+
+    /// Creates a new client with the given configuration.
+    ///
+    /// The client takes ownership of managing HTTP connections.
+    /// Call `deinit()` when done to release resources.
+    pub fn init(allocator: Allocator, config: ClientConfig) Self {
+        return Self{
+            .allocator = allocator,
+            .config = config,
+            .http_client = http.Client{ .allocator = allocator },
+        };
+    }
+
+    /// Releases all resources associated with the client.
+    pub fn deinit(self: *Self) void {
+        self.http_client.deinit();
+        self.* = undefined;
+    }
+
+    /// Returns the configured base URL.
+    pub fn baseUrl(self: Self) []const u8 {
+        return self.config.base_url;
+    }
+
+    /// Makes an HTTP request and returns the response body.
+    pub fn request(
+        self: *Self,
+        method: http.Method,
+        path: []const u8,
+        body: ?[]const u8,
+    ) ![]const u8 {
+        const uri_string = try std.fmt.allocPrint(
+            self.allocator,
+            "{s}{s}",
+            .{ self.config.base_url, path },
+        );
+        defer self.allocator.free(uri_string);
+
+        const uri = Uri.parse(uri_string) catch return error.InvalidUrl;
+
+        var server_header_buffer: [16 * 1024]u8 = undefined;
+
+        var req = self.http_client.open(
+            method,
+            uri,
+            .{
+                .server_header_buffer = &server_header_buffer,
+                .extra_headers = &[_]http.Header{
+                    .{ .name = "Content-Type", .value = "application/json" },
+                    .{ .name = "Accept", .value = "application/json" },
+                    .{ .name = "User-Agent", .value = self.config.user_agent },
+                    {{- range .Defaults.Headers}}
+                    .{ .name = "{{.K}}", .value = "{{.V}}" },
+                    {{- end}}
+                },
+            },
+        ) catch return error.ConnectionFailed;
+        defer req.deinit();
+
+        // Add authentication
+        if (self.config.api_key) |key| {
+            switch (self.config.auth_mode) {
+                .bearer => {
+                    const auth_value = try std.fmt.allocPrint(self.allocator, "Bearer {s}", .{key});
+                    defer self.allocator.free(auth_value);
+                    req.headers.append(.{ .name = "Authorization", .value = auth_value });
+                },
+                .basic => {
+                    const auth_value = try std.fmt.allocPrint(self.allocator, "Basic {s}", .{key});
+                    defer self.allocator.free(auth_value);
+                    req.headers.append(.{ .name = "Authorization", .value = auth_value });
+                },
+                .api_key => {
+                    req.headers.append(.{ .name = "X-Api-Key", .value = key });
+                },
+                .none => {},
+            }
+        }
+
+        // Send body
+        if (body) |b| {
+            req.transfer_encoding = .{ .content_length = b.len };
+        }
+
+        req.send() catch return error.ConnectionFailed;
+
+        if (body) |b| {
+            req.writer().writeAll(b) catch return error.ConnectionFailed;
+        }
+
+        req.finish() catch return error.ConnectionFailed;
+        req.wait() catch return error.ConnectionFailed;
+
+        // Check status
+        const status = req.status;
+        if (@intFromEnum(status) >= 400) {
+            return error.HttpError;
+        }
+
+        // Read response
+        const response_body = req.reader().readAllAlloc(self.allocator, 10 * 1024 * 1024) catch return error.DeserializationError;
+        return response_body;
+    }
+
+    /// Makes a request with retry logic.
+    pub fn requestWithRetry(
+        self: *Self,
+        method: http.Method,
+        path: []const u8,
+        body: ?[]const u8,
+    ) ![]const u8 {
+        var last_err: anyerror = error.ConnectionFailed;
+        var attempt: u32 = 0;
+
+        while (attempt <= self.config.max_retries) : (attempt += 1) {
+            if (attempt > 0) {
+                // Exponential backoff
+                const delay_ns: u64 = (@as(u64, 500) * std.time.ns_per_ms) << @intCast(attempt - 1);
+                std.time.sleep(delay_ns);
+            }
+
+            const result = self.request(method, path, body);
+            if (result) |response| {
+                return response;
+            } else |err| {
+                last_err = err;
+                // Only retry on connection errors and server errors
+                if (err != error.ConnectionFailed and err != error.HttpError) {
+                    return err;
+                }
+            }
+        }
+
+        return last_err;
+    }
+
+    // Resource accessors
+{{- range .Resources}}
+
+    /// Access the {{.Name}} resource.
+    ///
+    /// {{.Description}}
+    pub fn {{.ZigName}}(self: *Self) resources.{{.StructName}} {
+        return resources.{{.StructName}}.init(self);
+    }
+{{- end}}
+};
+
+test "Client.init" {
+    const allocator = std.testing.allocator;
+    var client = Client.init(allocator, .{
+        .api_key = "test-key",
+    });
+    defer client.deinit();
+
+    try std.testing.expectEqualStrings({{zigQuote .Defaults.BaseURL}}, client.baseUrl());
+}
+
+test "ClientConfig defaults" {
+    const config = ClientConfig{};
+    try std.testing.expectEqualStrings({{zigQuote .Defaults.BaseURL}}, config.base_url);
+    try std.testing.expectEqual(AuthMode.bearer, config.auth_mode);
+    try std.testing.expectEqual(@as(u32, 2), config.max_retries);
+}
