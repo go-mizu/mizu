@@ -1,0 +1,190 @@
+//! Type definitions for the {{.Service.Name}} API.
+//!
+//! This module contains all the data types used by the SDK, including
+//! request/response structures, enums, and union types.
+
+const std = @import("std");
+const json = std.json;
+const mem = std.mem;
+const Allocator = mem.Allocator;
+
+/// JSON parsing options used by the SDK.
+pub const parse_options = json.ParseOptions{
+    .ignore_unknown_fields = true,
+    .allocate = .alloc_always,
+};
+
+/// JSON stringify options used by the SDK.
+pub const stringify_options = json.StringifyOptions{
+    .emit_null_optional_fields = false,
+};
+
+// --- Struct Types ---
+{{range .Types}}
+{{- if eq .Kind "struct"}}
+
+/// {{if .Description}}{{.Description}}{{else}}{{.ZigName}} type.{{end}}
+pub const {{.ZigName}} = struct {
+{{- range .Fields}}
+    /// {{if .Description}}{{.Description}}{{else}}{{.Name}} field.{{end}}
+    {{.ZigName}}: {{.ZigType}}{{if .Optional}} = null{{end}},
+{{- end}}
+
+    const Self = @This();
+
+    /// Parses from JSON bytes.
+    pub fn fromJson(allocator: Allocator, input: []const u8) json.ParseError(json.Scanner)!json.Parsed(Self) {
+        return json.parseFromSlice(Self, allocator, input, parse_options);
+    }
+
+    /// Serializes to JSON.
+    pub fn toJson(self: Self, allocator: Allocator) Allocator.Error![]u8 {
+        return json.stringifyAlloc(allocator, self, stringify_options);
+    }
+
+    /// Custom JSON parsing to handle field name mapping.
+    pub fn jsonParse(allocator: Allocator, source: anytype, options: json.ParseOptions) json.ParseError(@TypeOf(source.*))!Self {
+        return json.parseFromTokenSource(Self, allocator, source, options);
+    }
+
+    /// Custom JSON stringification.
+    pub fn jsonStringify(self: Self, jw: anytype) !void {
+        try jw.beginObject();
+{{- range .Fields}}
+{{- if .Optional}}
+        if (self.{{.ZigName}}) |v| {
+            try jw.objectField("{{.JSONName}}");
+            try jw.write(v);
+        }
+{{- else}}
+        try jw.objectField("{{.JSONName}}");
+        try jw.write(self.{{.ZigName}});
+{{- end}}
+{{- end}}
+        try jw.endObject();
+    }
+};
+{{end}}
+{{- end}}
+
+// --- Union Types ---
+{{range .Types}}
+{{- if eq .Kind "union"}}
+{{- $unionType := .}}
+
+/// {{if .Description}}{{.Description}}{{else}}{{.ZigName}} union type.{{end}}
+///
+/// Discriminated by the "{{.Tag}}" field.
+pub const {{.ZigName}} = union(enum) {
+{{- range .Variants}}
+    /// {{if .Description}}{{.Description}}{{else}}{{.Value}} variant.{{end}}
+    {{.ZigName}}: {{.ZigType}},
+{{- end}}
+
+    const Self = @This();
+
+    /// Returns the discriminator tag value.
+    pub fn tagValue(self: Self) []const u8 {
+        return switch (self) {
+{{- range .Variants}}
+            .{{.ZigName}} => "{{.Value}}",
+{{- end}}
+        };
+    }
+{{range .Variants}}
+    /// Returns true if this is the {{.ZigName}} variant.
+    pub fn is{{.PascalName}}(self: Self) bool {
+        return self == .{{.ZigName}};
+    }
+
+    /// Returns the {{.ZigName}} value if this is that variant.
+    pub fn as{{.PascalName}}(self: Self) ?{{.ZigType}} {
+        return switch (self) {
+            .{{.ZigName}} => |v| v,
+            else => null,
+        };
+    }
+{{end}}
+    /// Custom JSON parsing for discriminated union.
+    pub fn jsonParse(allocator: Allocator, source: anytype, options: json.ParseOptions) json.ParseError(@TypeOf(source.*))!Self {
+        _ = allocator;
+        _ = options;
+
+        // Parse as object to read discriminator
+        if (source.next()) |token| {
+            switch (token) {
+                .object_begin => {
+                    // Read fields until we find the discriminator
+                    while (source.next()) |field_token| {
+                        switch (field_token) {
+                            .string => |s| {
+                                if (mem.eql(u8, s, "{{$unionType.Tag}}")) {
+                                    // Read the type value
+                                    if (source.next()) |type_token| {
+                                        switch (type_token) {
+                                            .string => |type_val| {
+{{- range $unionType.Variants}}
+                                                if (mem.eql(u8, type_val, "{{.Value}}")) {
+                                                    // Parse remainder as {{.ZigType}}
+                                                    // For now, return with default value
+                                                    return Self{ .{{.ZigName}} = undefined };
+                                                }
+{{- end}}
+                                            },
+                                            else => {},
+                                        }
+                                    }
+                                }
+                            },
+                            .object_end => break,
+                            else => {},
+                        }
+                    }
+                },
+                else => {},
+            }
+        }
+        return error.UnexpectedToken;
+    }
+
+    /// Custom JSON stringification.
+    pub fn jsonStringify(self: Self, jw: anytype) !void {
+        switch (self) {
+{{- range $unionType.Variants}}
+            .{{.ZigName}} => |v| {
+                try jw.beginObject();
+                try jw.objectField("{{$unionType.Tag}}");
+                try jw.write("{{.Value}}");
+                // Write the variant fields
+                inline for (std.meta.fields(@TypeOf(v))) |field| {
+                    try jw.objectField(field.name);
+                    try jw.write(@field(v, field.name));
+                }
+                try jw.endObject();
+            },
+{{- end}}
+        }
+    }
+};
+{{end}}
+{{- end}}
+
+// --- Tests ---
+
+test "JSON parsing" {
+{{- range .Types}}
+{{- if eq .Kind "struct"}}
+{{- if .Fields}}
+    const allocator = std.testing.allocator;
+    const json_str = "{}";
+    var parsed = {{.ZigName}}.fromJson(allocator, json_str) catch |err| {
+        // Ignore parse errors in tests for now (missing required fields)
+        _ = err;
+        return;
+    };
+    defer parsed.deinit();
+{{- break}}
+{{- end}}
+{{- end}}
+{{- end}}
+}

@@ -1,0 +1,112 @@
+//! Error types for the {{.Service.Name}} SDK.
+
+const std = @import("std");
+
+/// Errors that can occur when using the SDK.
+pub const Error = error{
+    /// HTTP request failed.
+    HttpError,
+
+    /// Request timed out.
+    Timeout,
+
+    /// Connection failed.
+    ConnectionFailed,
+
+    /// Request was cancelled.
+    Cancelled,
+
+    /// Failed to serialize request body.
+    SerializationError,
+
+    /// Failed to deserialize response body.
+    DeserializationError,
+
+    /// Streaming error.
+    StreamError,
+
+    /// Invalid configuration.
+    InvalidConfig,
+
+    /// Out of memory.
+    OutOfMemory,
+
+    /// End of stream.
+    EndOfStream,
+
+    /// Invalid URL.
+    InvalidUrl,
+
+    /// TLS/SSL error.
+    TlsError,
+};
+
+/// HTTP error details.
+pub const HttpErrorInfo = struct {
+    /// HTTP status code.
+    status: u16,
+    /// Response body, if available.
+    body: ?[]const u8,
+    /// Allocator used for body (if allocated).
+    allocator: ?std.mem.Allocator,
+
+    const Self = @This();
+
+    pub fn deinit(self: *Self) void {
+        if (self.body) |body| {
+            if (self.allocator) |alloc| {
+                alloc.free(body);
+            }
+        }
+        self.* = undefined;
+    }
+
+    /// Returns true if this error is potentially retriable.
+    pub fn isRetriable(self: Self) bool {
+        return self.status >= 500 or self.status == 429;
+    }
+
+    /// Returns true if this is a client error (4xx).
+    pub fn isClientError(self: Self) bool {
+        return self.status >= 400 and self.status < 500;
+    }
+
+    /// Returns true if this is a server error (5xx).
+    pub fn isServerError(self: Self) bool {
+        return self.status >= 500;
+    }
+};
+
+/// Format an error for display.
+pub fn format(err: Error) []const u8 {
+    return switch (err) {
+        error.HttpError => "HTTP error",
+        error.Timeout => "request timed out",
+        error.ConnectionFailed => "connection failed",
+        error.Cancelled => "request cancelled",
+        error.SerializationError => "serialization error",
+        error.DeserializationError => "deserialization error",
+        error.StreamError => "streaming error",
+        error.InvalidConfig => "invalid configuration",
+        error.OutOfMemory => "out of memory",
+        error.EndOfStream => "end of stream",
+        error.InvalidUrl => "invalid URL",
+        error.TlsError => "TLS/SSL error",
+    };
+}
+
+test "HttpErrorInfo.isRetriable" {
+    const info_500 = HttpErrorInfo{ .status = 500, .body = null, .allocator = null };
+    try std.testing.expect(info_500.isRetriable());
+
+    const info_429 = HttpErrorInfo{ .status = 429, .body = null, .allocator = null };
+    try std.testing.expect(info_429.isRetriable());
+
+    const info_400 = HttpErrorInfo{ .status = 400, .body = null, .allocator = null };
+    try std.testing.expect(!info_400.isRetriable());
+}
+
+test "format" {
+    try std.testing.expectEqualStrings("HTTP error", format(error.HttpError));
+    try std.testing.expectEqualStrings("request timed out", format(error.Timeout));
+}
