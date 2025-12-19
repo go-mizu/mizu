@@ -1,0 +1,282 @@
+{{- /* Streaming implementation */ -}}
+/**
+ * @file streaming.c
+ * @brief SSE streaming implementation for {{.Package}} SDK.
+ */
+
+#include "{{.Package}}/streaming.h"
+#include "internal.h"
+#include <stdlib.h>
+#include <string.h>
+
+#define INITIAL_BUFFER_SIZE 1024
+#define MAX_EVENTS 16
+
+typedef struct {
+    char *data;
+    size_t len;
+    size_t cap;
+} buffer_t;
+
+struct {{.Package}}_sse_parser {
+    buffer_t line_buffer;       /* Current line being accumulated */
+    buffer_t data_buffer;       /* Data field accumulator */
+    char *event_type;           /* Current event type */
+    char *event_id;             /* Current event ID */
+    int retry;                  /* Retry value */
+
+    /* Queue of complete events */
+    {{.Package}}_sse_event_t events[MAX_EVENTS];
+    size_t event_head;
+    size_t event_tail;
+    size_t event_count;
+};
+
+static int buffer_init(buffer_t *buf) {
+    buf->data = malloc(INITIAL_BUFFER_SIZE);
+    if (!buf->data) return -1;
+    buf->data[0] = '\0';
+    buf->len = 0;
+    buf->cap = INITIAL_BUFFER_SIZE;
+    return 0;
+}
+
+static void buffer_free(buffer_t *buf) {
+    free(buf->data);
+    buf->data = NULL;
+    buf->len = 0;
+    buf->cap = 0;
+}
+
+static int buffer_append(buffer_t *buf, const char *data, size_t len) {
+    while (buf->len + len >= buf->cap) {
+        size_t new_cap = buf->cap * 2;
+        char *new_data = realloc(buf->data, new_cap);
+        if (!new_data) return -1;
+        buf->data = new_data;
+        buf->cap = new_cap;
+    }
+    memcpy(buf->data + buf->len, data, len);
+    buf->len += len;
+    buf->data[buf->len] = '\0';
+    return 0;
+}
+
+static void buffer_clear(buffer_t *buf) {
+    if (buf->data) {
+        buf->data[0] = '\0';
+        buf->len = 0;
+    }
+}
+
+void {{.Package}}_sse_event_init({{.Package}}_sse_event_t *event) {
+    if (event) {
+        event->event = NULL;
+        event->data = NULL;
+        event->id = NULL;
+        event->retry = -1;
+    }
+}
+
+void {{.Package}}_sse_event_free({{.Package}}_sse_event_t *event) {
+    if (event) {
+        free(event->event);
+        free(event->data);
+        free(event->id);
+        event->event = NULL;
+        event->data = NULL;
+        event->id = NULL;
+        event->retry = -1;
+    }
+}
+
+{{.Package}}_sse_parser_t *{{.Package}}_sse_parser_create(void) {
+    {{.Package}}_sse_parser_t *parser = calloc(1, sizeof(*parser));
+    if (!parser) return NULL;
+
+    if (buffer_init(&parser->line_buffer) != 0) {
+        free(parser);
+        return NULL;
+    }
+
+    if (buffer_init(&parser->data_buffer) != 0) {
+        buffer_free(&parser->line_buffer);
+        free(parser);
+        return NULL;
+    }
+
+    parser->retry = -1;
+    return parser;
+}
+
+static void enqueue_event({{.Package}}_sse_parser_t *parser) {
+    if (parser->event_count >= MAX_EVENTS) {
+        /* Drop oldest event */
+        {{.Package}}_sse_event_free(&parser->events[parser->event_head]);
+        parser->event_head = (parser->event_head + 1) % MAX_EVENTS;
+        parser->event_count--;
+    }
+
+    {{.Package}}_sse_event_t *ev = &parser->events[parser->event_tail];
+    {{.Package}}_sse_event_init(ev);
+
+    if (parser->data_buffer.len > 0) {
+        ev->data = {{.Package}}_strdup(parser->data_buffer.data);
+    }
+    ev->event = parser->event_type;
+    parser->event_type = NULL;
+    ev->id = parser->event_id;
+    parser->event_id = NULL;
+    ev->retry = parser->retry;
+
+    parser->event_tail = (parser->event_tail + 1) % MAX_EVENTS;
+    parser->event_count++;
+
+    /* Reset accumulators */
+    buffer_clear(&parser->data_buffer);
+    parser->retry = -1;
+}
+
+static void process_line({{.Package}}_sse_parser_t *parser, const char *line, size_t len) {
+    /* Empty line = dispatch event */
+    if (len == 0) {
+        if (parser->data_buffer.len > 0) {
+            enqueue_event(parser);
+        }
+        return;
+    }
+
+    /* Comment line */
+    if (line[0] == ':') {
+        return;
+    }
+
+    /* Find colon */
+    const char *colon = memchr(line, ':', len);
+    const char *value;
+    size_t field_len;
+    size_t value_len;
+
+    if (colon) {
+        field_len = colon - line;
+        value = colon + 1;
+        value_len = len - field_len - 1;
+        /* Skip leading space */
+        if (value_len > 0 && *value == ' ') {
+            value++;
+            value_len--;
+        }
+    } else {
+        field_len = len;
+        value = "";
+        value_len = 0;
+    }
+
+    if (field_len == 4 && strncmp(line, "data", 4) == 0) {
+        if (parser->data_buffer.len > 0) {
+            buffer_append(&parser->data_buffer, "\n", 1);
+        }
+        buffer_append(&parser->data_buffer, value, value_len);
+    } else if (field_len == 5 && strncmp(line, "event", 5) == 0) {
+        free(parser->event_type);
+        parser->event_type = malloc(value_len + 1);
+        if (parser->event_type) {
+            memcpy(parser->event_type, value, value_len);
+            parser->event_type[value_len] = '\0';
+        }
+    } else if (field_len == 2 && strncmp(line, "id", 2) == 0) {
+        /* Ignore if contains null */
+        if (!memchr(value, '\0', value_len)) {
+            free(parser->event_id);
+            parser->event_id = malloc(value_len + 1);
+            if (parser->event_id) {
+                memcpy(parser->event_id, value, value_len);
+                parser->event_id[value_len] = '\0';
+            }
+        }
+    } else if (field_len == 5 && strncmp(line, "retry", 5) == 0) {
+        char *end;
+        long val = strtol(value, &end, 10);
+        if (end == value + value_len && val >= 0) {
+            parser->retry = (int)val;
+        }
+    }
+}
+
+size_t {{.Package}}_sse_parser_feed(
+    {{.Package}}_sse_parser_t *parser,
+    const char *data,
+    size_t len
+) {
+    size_t i;
+    size_t initial_count;
+
+    if (!parser || !data || len == 0) {
+        return 0;
+    }
+
+    initial_count = parser->event_count;
+
+    for (i = 0; i < len; i++) {
+        char c = data[i];
+
+        if (c == '\r') {
+            /* Skip CR, handle in LF */
+            continue;
+        }
+
+        if (c == '\n') {
+            /* End of line */
+            process_line(parser, parser->line_buffer.data, parser->line_buffer.len);
+            buffer_clear(&parser->line_buffer);
+        } else {
+            buffer_append(&parser->line_buffer, &c, 1);
+        }
+    }
+
+    return parser->event_count - initial_count;
+}
+
+int {{.Package}}_sse_parser_pop(
+    {{.Package}}_sse_parser_t *parser,
+    {{.Package}}_sse_event_t *out_event
+) {
+    if (!parser || !out_event || parser->event_count == 0) {
+        return 0;
+    }
+
+    *out_event = parser->events[parser->event_head];
+    {{.Package}}_sse_event_init(&parser->events[parser->event_head]);
+    parser->event_head = (parser->event_head + 1) % MAX_EVENTS;
+    parser->event_count--;
+
+    return 1;
+}
+
+void {{.Package}}_sse_parser_reset({{.Package}}_sse_parser_t *parser) {
+    if (!parser) return;
+
+    buffer_clear(&parser->line_buffer);
+    buffer_clear(&parser->data_buffer);
+    free(parser->event_type);
+    parser->event_type = NULL;
+    free(parser->event_id);
+    parser->event_id = NULL;
+    parser->retry = -1;
+
+    /* Clear event queue */
+    while (parser->event_count > 0) {
+        {{.Package}}_sse_event_free(&parser->events[parser->event_head]);
+        parser->event_head = (parser->event_head + 1) % MAX_EVENTS;
+        parser->event_count--;
+    }
+}
+
+void {{.Package}}_sse_parser_destroy({{.Package}}_sse_parser_t *parser) {
+    if (!parser) return;
+
+    {{.Package}}_sse_parser_reset(parser);
+    buffer_free(&parser->line_buffer);
+    buffer_free(&parser->data_buffer);
+    free(parser);
+}

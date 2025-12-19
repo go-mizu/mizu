@@ -1,0 +1,386 @@
+{{- /* Client implementation */ -}}
+/**
+ * @file client.c
+ * @brief Client implementation for {{.Package}} SDK.
+ */
+
+#include "{{.Package}}/client.h"
+#include "internal.h"
+#include <stdlib.h>
+#include <string.h>
+#include <curl/curl.h>
+
+#define DEFAULT_BASE_URL {{cQuote .Defaults.BaseURL}}
+#define DEFAULT_TIMEOUT_MS 60000
+#define DEFAULT_CONNECT_TIMEOUT_MS 10000
+#define DEFAULT_MAX_RETRIES 2
+
+struct {{.Package}}_client {
+    char *base_url;
+    char *api_key;
+    {{.Package}}_auth_mode_t auth_mode;
+    uint32_t timeout_ms;
+    uint32_t connect_timeout_ms;
+    uint32_t max_retries;
+    char **headers;
+    size_t headers_count;
+    void *user_data;
+    int curl_initialized;
+};
+
+void {{.Package}}_client_config_init({{.Package}}_client_config_t *config) {
+    if (!config) {
+        return;
+    }
+    memset(config, 0, sizeof(*config));
+    config->base_url = NULL;  /* Will use default */
+{{- if eq .Defaults.Auth "bearer"}}
+    config->auth_mode = {{.PackageUpper}}_AUTH_BEARER;
+{{- else if eq .Defaults.Auth "basic"}}
+    config->auth_mode = {{.PackageUpper}}_AUTH_BASIC;
+{{- else if eq .Defaults.Auth "api-key"}}
+    config->auth_mode = {{.PackageUpper}}_AUTH_API_KEY;
+{{- else}}
+    config->auth_mode = {{.PackageUpper}}_AUTH_BEARER;
+{{- end}}
+    config->timeout_ms = 0;  /* Will use default */
+    config->connect_timeout_ms = 0;  /* Will use default */
+    config->max_retries = 0;  /* Will use default */
+}
+
+{{.Package}}_error_t {{.Package}}_client_create(
+    const {{.Package}}_client_config_t *config,
+    {{.Package}}_client_t **out_client
+) {
+    {{.Package}}_client_t *client;
+
+    if (!out_client) {
+        return {{.PackageUpper}}_ERR_NULL_ARG;
+    }
+
+    *out_client = NULL;
+
+    client = calloc(1, sizeof(*client));
+    if (!client) {
+        return {{.PackageUpper}}_ERR_ALLOC;
+    }
+
+    /* Initialize CURL globally if not already done */
+    if (curl_global_init(CURL_GLOBAL_DEFAULT) != 0) {
+        free(client);
+        return {{.PackageUpper}}_ERR_INTERNAL;
+    }
+    client->curl_initialized = 1;
+
+    /* Set base URL */
+    if (config && config->base_url) {
+        client->base_url = strdup(config->base_url);
+    } else {
+        client->base_url = strdup(DEFAULT_BASE_URL);
+    }
+    if (!client->base_url) {
+        {{.Package}}_client_destroy(client);
+        return {{.PackageUpper}}_ERR_ALLOC;
+    }
+
+    /* Remove trailing slash */
+    size_t len = strlen(client->base_url);
+    while (len > 0 && client->base_url[len - 1] == '/') {
+        client->base_url[--len] = '\0';
+    }
+
+    /* Set API key */
+    if (config && config->api_key) {
+        client->api_key = strdup(config->api_key);
+        if (!client->api_key) {
+            {{.Package}}_client_destroy(client);
+            return {{.PackageUpper}}_ERR_ALLOC;
+        }
+    }
+
+    /* Set auth mode */
+    client->auth_mode = config ? config->auth_mode : {{.PackageUpper}}_AUTH_BEARER;
+
+    /* Set timeouts */
+    client->timeout_ms = (config && config->timeout_ms > 0)
+        ? config->timeout_ms : DEFAULT_TIMEOUT_MS;
+    client->connect_timeout_ms = (config && config->connect_timeout_ms > 0)
+        ? config->connect_timeout_ms : DEFAULT_CONNECT_TIMEOUT_MS;
+    client->max_retries = (config && config->max_retries > 0)
+        ? config->max_retries : DEFAULT_MAX_RETRIES;
+
+    /* Copy custom headers */
+    if (config && config->headers) {
+        size_t count = 0;
+        for (const char **h = config->headers; *h; h++) {
+            count++;
+        }
+        if (count > 0) {
+            client->headers = calloc(count + 1, sizeof(char *));
+            if (!client->headers) {
+                {{.Package}}_client_destroy(client);
+                return {{.PackageUpper}}_ERR_ALLOC;
+            }
+            for (size_t i = 0; i < count; i++) {
+                client->headers[i] = strdup(config->headers[i]);
+                if (!client->headers[i]) {
+                    {{.Package}}_client_destroy(client);
+                    return {{.PackageUpper}}_ERR_ALLOC;
+                }
+            }
+            client->headers_count = count;
+        }
+    }
+
+    /* Set user data */
+    if (config) {
+        client->user_data = config->user_data;
+    }
+
+    *out_client = client;
+    return {{.PackageUpper}}_OK;
+}
+
+void {{.Package}}_client_destroy({{.Package}}_client_t *client) {
+    if (!client) {
+        return;
+    }
+
+    free(client->base_url);
+    free(client->api_key);
+
+    if (client->headers) {
+        for (size_t i = 0; i < client->headers_count; i++) {
+            free(client->headers[i]);
+        }
+        free(client->headers);
+    }
+
+    if (client->curl_initialized) {
+        curl_global_cleanup();
+    }
+
+    free(client);
+}
+
+void *{{.Package}}_client_get_user_data(const {{.Package}}_client_t *client) {
+    return client ? client->user_data : NULL;
+}
+
+const char *{{.Package}}_client_get_base_url(const {{.Package}}_client_t *client) {
+    return client ? client->base_url : DEFAULT_BASE_URL;
+}
+
+/* Internal functions for HTTP requests */
+typedef struct {
+    char *data;
+    size_t len;
+    size_t cap;
+} {{.Package}}_buffer_t;
+
+static size_t write_callback(char *ptr, size_t size, size_t nmemb, void *userdata) {
+    {{.Package}}_buffer_t *buf = userdata;
+    size_t total = size * nmemb;
+
+    /* Grow buffer if needed */
+    while (buf->len + total >= buf->cap) {
+        size_t new_cap = buf->cap * 2;
+        if (new_cap < 1024) new_cap = 1024;
+        char *new_data = realloc(buf->data, new_cap);
+        if (!new_data) {
+            return 0;  /* Signal error */
+        }
+        buf->data = new_data;
+        buf->cap = new_cap;
+    }
+
+    memcpy(buf->data + buf->len, ptr, total);
+    buf->len += total;
+    buf->data[buf->len] = '\0';
+
+    return total;
+}
+
+static uint32_t get_backoff_ms(uint32_t attempt) {
+    uint32_t base_delay = 500;
+    uint32_t delay = base_delay << attempt;
+    uint32_t jitter = (uint32_t)(rand() % 100);
+    return delay + jitter;
+}
+
+{{.Package}}_error_t {{.Package}}_http_request(
+    {{.Package}}_client_t *client,
+    const char *method,
+    const char *path,
+    const char *body,
+    char **out_response,
+    {{.Package}}_error_info_t *out_error
+) {
+    CURL *curl;
+    CURLcode res;
+    struct curl_slist *headers = NULL;
+    {{.Package}}_buffer_t buf = {0};
+    long http_status;
+    uint32_t attempt;
+    {{.Package}}_error_t last_error = {{.PackageUpper}}_ERR_CONNECTION;
+    char url[2048];
+
+    if (!client || !method || !path) {
+        if (out_error) {
+            out_error->code = {{.PackageUpper}}_ERR_NULL_ARG;
+            out_error->message = strdup("null argument");
+        }
+        return {{.PackageUpper}}_ERR_NULL_ARG;
+    }
+
+    if (out_response) {
+        *out_response = NULL;
+    }
+
+    /* Build URL */
+    snprintf(url, sizeof(url), "%s%s", client->base_url, path);
+
+    for (attempt = 0; attempt <= client->max_retries; attempt++) {
+        /* Reset buffer */
+        buf.len = 0;
+        if (buf.data) {
+            buf.data[0] = '\0';
+        }
+
+        curl = curl_easy_init();
+        if (!curl) {
+            last_error = {{.PackageUpper}}_ERR_INTERNAL;
+            continue;
+        }
+
+        /* Set URL and callbacks */
+        curl_easy_setopt(curl, CURLOPT_URL, url);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, (long)client->timeout_ms);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, (long)client->connect_timeout_ms);
+
+        /* Set method */
+        if (strcmp(method, "POST") == 0) {
+            curl_easy_setopt(curl, CURLOPT_POST, 1L);
+            if (body) {
+                curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
+            } else {
+                curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "");
+            }
+        } else if (strcmp(method, "PUT") == 0) {
+            curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
+            if (body) {
+                curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
+            }
+        } else if (strcmp(method, "DELETE") == 0) {
+            curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+        } else if (strcmp(method, "PATCH") == 0) {
+            curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
+            if (body) {
+                curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
+            }
+        }
+
+        /* Set headers */
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+        headers = curl_slist_append(headers, "Accept: application/json");
+
+        /* Default headers from contract */
+{{- range .Defaults.Headers}}
+        headers = curl_slist_append(headers, {{cQuote (printf "%s: %s" .K .V)}});
+{{- end}}
+
+        /* Apply auth */
+        if (client->api_key) {
+            char auth_header[1024];
+            switch (client->auth_mode) {
+            case {{.PackageUpper}}_AUTH_BEARER:
+                snprintf(auth_header, sizeof(auth_header),
+                    "Authorization: Bearer %s", client->api_key);
+                break;
+            case {{.PackageUpper}}_AUTH_BASIC:
+                snprintf(auth_header, sizeof(auth_header),
+                    "Authorization: Basic %s", client->api_key);
+                break;
+            case {{.PackageUpper}}_AUTH_API_KEY:
+                snprintf(auth_header, sizeof(auth_header),
+                    "X-API-Key: %s", client->api_key);
+                break;
+            default:
+                auth_header[0] = '\0';
+                break;
+            }
+            if (auth_header[0]) {
+                headers = curl_slist_append(headers, auth_header);
+            }
+        }
+
+        /* Apply custom headers */
+        for (size_t i = 0; i < client->headers_count; i++) {
+            headers = curl_slist_append(headers, client->headers[i]);
+        }
+
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+        /* Perform request */
+        res = curl_easy_perform(curl);
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_status);
+
+        curl_slist_free_all(headers);
+        headers = NULL;
+        curl_easy_cleanup(curl);
+
+        if (res == CURLE_OK) {
+            if (http_status >= 200 && http_status < 300) {
+                /* Success */
+                if (out_response) {
+                    *out_response = buf.data;
+                    buf.data = NULL;
+                }
+                free(buf.data);
+                return {{.PackageUpper}}_OK;
+            }
+
+            /* HTTP error - check if retriable */
+            if (http_status >= 500 || http_status == 429) {
+                if (attempt < client->max_retries) {
+                    uint32_t delay = get_backoff_ms(attempt);
+                    {{.Package}}_sleep_ms(delay);
+                    continue;
+                }
+            }
+
+            /* Non-retriable or exhausted retries */
+            if (out_error) {
+                out_error->code = {{.PackageUpper}}_ERR_HTTP;
+                out_error->http_status = (int)http_status;
+                out_error->message = strdup("HTTP error");
+                out_error->response_body = buf.data;
+                buf.data = NULL;
+            }
+            free(buf.data);
+            return {{.PackageUpper}}_ERR_HTTP;
+        }
+
+        /* CURL error */
+        if (res == CURLE_OPERATION_TIMEDOUT) {
+            last_error = {{.PackageUpper}}_ERR_TIMEOUT;
+        } else {
+            last_error = {{.PackageUpper}}_ERR_CONNECTION;
+        }
+
+        if (attempt < client->max_retries) {
+            uint32_t delay = get_backoff_ms(attempt);
+            {{.Package}}_sleep_ms(delay);
+        }
+    }
+
+    /* All retries exhausted */
+    if (out_error) {
+        out_error->code = last_error;
+        out_error->message = strdup(curl_easy_strerror(res));
+    }
+    free(buf.data);
+    return last_error;
+}

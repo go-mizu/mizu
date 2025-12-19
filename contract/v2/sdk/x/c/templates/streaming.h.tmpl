@@ -1,0 +1,96 @@
+{{- /* Streaming header */ -}}
+/**
+ * @file streaming.h
+ * @brief SSE streaming support for {{.Package}} SDK.
+ */
+
+#ifndef {{.HeaderGuardPrefix}}_STREAMING_H
+#define {{.HeaderGuardPrefix}}_STREAMING_H
+
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * @brief SSE event structure.
+ */
+typedef struct {
+    char *event;    /**< Event type (owned, may be NULL) */
+    char *data;     /**< Event data (owned, may be NULL) */
+    char *id;       /**< Event ID (owned, may be NULL) */
+    int retry;      /**< Retry interval in ms (-1 if not set) */
+} {{.Package}}_sse_event_t;
+
+/**
+ * @brief Initialize an SSE event structure.
+ *
+ * @param event Event to initialize.
+ */
+void {{.Package}}_sse_event_init({{.Package}}_sse_event_t *event);
+
+/**
+ * @brief Free SSE event resources.
+ *
+ * @param event Event to free (fields are freed, struct is not).
+ */
+void {{.Package}}_sse_event_free({{.Package}}_sse_event_t *event);
+
+/**
+ * @brief Opaque SSE parser handle.
+ */
+typedef struct {{.Package}}_sse_parser {{.Package}}_sse_parser_t;
+
+/**
+ * @brief Create a new SSE parser.
+ *
+ * @return Parser instance, or NULL on allocation failure.
+ */
+{{.Package}}_sse_parser_t *{{.Package}}_sse_parser_create(void);
+
+/**
+ * @brief Feed data to the SSE parser.
+ *
+ * @param parser The parser.
+ * @param data Data buffer.
+ * @param len Data length.
+ * @return Number of complete events now available.
+ */
+size_t {{.Package}}_sse_parser_feed(
+    {{.Package}}_sse_parser_t *parser,
+    const char *data,
+    size_t len
+);
+
+/**
+ * @brief Pop the next complete event from the parser.
+ *
+ * @param parser The parser.
+ * @param out_event Output event (caller must call {{.Package}}_sse_event_free).
+ * @return 1 if event available, 0 if no complete events.
+ */
+int {{.Package}}_sse_parser_pop(
+    {{.Package}}_sse_parser_t *parser,
+    {{.Package}}_sse_event_t *out_event
+);
+
+/**
+ * @brief Reset the parser state.
+ *
+ * @param parser The parser.
+ */
+void {{.Package}}_sse_parser_reset({{.Package}}_sse_parser_t *parser);
+
+/**
+ * @brief Destroy the SSE parser.
+ *
+ * @param parser Parser to destroy (safe to call with NULL).
+ */
+void {{.Package}}_sse_parser_destroy({{.Package}}_sse_parser_t *parser);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* {{.HeaderGuardPrefix}}_STREAMING_H */

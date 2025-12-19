@@ -1,0 +1,296 @@
+{{- /* Types header */ -}}
+/**
+ * @file types.h
+ * @brief Type definitions for {{.Package}} SDK.
+ */
+
+#ifndef {{.HeaderGuardPrefix}}_TYPES_H
+#define {{.HeaderGuardPrefix}}_TYPES_H
+
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* ============================================================================
+ * Forward Declarations
+ * ========================================================================== */
+{{range $t := .Types}}
+{{- if isStruct $t.Kind}}
+typedef struct {{$.Package}}_{{$t.CName}} {{$.Package}}_{{$t.CName}}_t;
+typedef struct {{$.Package}}_{{$t.CName}}_builder {{$.Package}}_{{$t.CName}}_builder_t;
+{{- else if isSlice $t.Kind}}
+typedef struct {{$.Package}}_{{$t.CName}}_array {{$.Package}}_{{$t.CName}}_array_t;
+{{- else if isMap $t.Kind}}
+typedef struct {{$.Package}}_{{$t.CName}}_map {{$.Package}}_{{$t.CName}}_map_t;
+{{- else if isUnion $t.Kind}}
+typedef struct {{$.Package}}_{{$t.CName}} {{$.Package}}_{{$t.CName}}_t;
+{{- end}}
+{{end}}
+
+/* ============================================================================
+ * Enum Types
+ * ========================================================================== */
+{{range $t := .Types}}
+{{- if isStruct $t.Kind}}
+{{- range $f := $t.Fields}}
+{{- if gt (len $f.Enum) 0}}
+/**
+ * @brief Enum values for {{$.Package}}_{{$t.CName}}_{{$f.CName}}.
+ */
+typedef enum {
+{{- range $i, $e := $f.Enum}}
+    {{$.PackageUpper}}_{{$e.Name}} = {{$i}},
+{{- end}}
+} {{$.Package}}_{{$t.CName}}_{{$f.CName}}_t;
+
+const char *{{$.Package}}_{{$t.CName}}_{{$f.CName}}_to_string({{$.Package}}_{{$t.CName}}_{{$f.CName}}_t value);
+int {{$.Package}}_{{$t.CName}}_{{$f.CName}}_from_string(const char *str, {{$.Package}}_{{$t.CName}}_{{$f.CName}}_t *out);
+{{end}}
+{{- end}}
+{{- end}}
+{{end}}
+
+/* ============================================================================
+ * Union Type Discriminators
+ * ========================================================================== */
+{{range $t := .Types}}
+{{- if isUnion $t.Kind}}
+/**
+ * @brief Discriminator for {{$t.CTypeName}}.
+{{- if $t.Description}}
+ *
+ * {{$t.Description}}
+{{- end}}
+ */
+typedef enum {
+    {{$.PackageUpper}}_{{$t.CName | upper}}_UNKNOWN = 0,
+{{- range $i, $v := $t.Variants}}
+    {{$.PackageUpper}}_{{$t.CName | upper}}_{{$v.CName | upper}},
+{{- end}}
+} {{$.Package}}_{{$t.CName}}_kind_t;
+{{end}}
+{{end}}
+
+/* ============================================================================
+ * Struct Types
+ * ========================================================================== */
+{{range $t := .Types}}
+{{- if isStruct $t.Kind}}
+
+/* --- {{$t.CTypeName}}_t --- */
+
+/**
+ * @brief {{if $t.Description}}{{$t.Description}}{{else}}{{$t.Name}} type.{{end}}
+ */
+
+/**
+ * @brief Create a new builder for {{$t.CTypeName}}.
+ *
+ * @return Builder instance, or NULL on allocation failure.
+ */
+{{$.Package}}_{{$t.CName}}_builder_t *{{$.Package}}_{{$t.CName}}_builder_create(void);
+
+/**
+ * @brief Destroy a builder without building.
+ *
+ * @param builder Builder to destroy (safe to call with NULL).
+ */
+void {{$.Package}}_{{$t.CName}}_builder_destroy({{$.Package}}_{{$t.CName}}_builder_t *builder);
+{{range $f := $t.Fields}}
+
+/**
+ * @brief Set the {{$f.CName}} field.
+{{- if $f.Description}}
+ *
+ * {{$f.Description}}
+{{- end}}
+ *
+ * @param builder The builder.
+ * @param value The value{{if isPointerType $f.CType}} (copied){{end}}.
+ * @return The builder for chaining.
+ */
+{{$.Package}}_{{$t.CName}}_builder_t *{{$.Package}}_{{$t.CName}}_builder_set_{{$f.CName}}(
+    {{$.Package}}_{{$t.CName}}_builder_t *builder,
+    {{$f.CType}} value
+);
+{{- end}}
+
+/**
+ * @brief Build the final object.
+ *
+ * @param builder The builder (consumed on success).
+ * @param out Output pointer for the built object.
+ * @return 0 on success, -1 if required fields are missing.
+ */
+int {{$.Package}}_{{$t.CName}}_builder_build(
+    {{$.Package}}_{{$t.CName}}_builder_t *builder,
+    {{$.Package}}_{{$t.CName}}_t **out
+);
+{{range $f := $t.Fields}}
+
+/**
+ * @brief Get the {{$f.CName}} field value.
+{{- if $f.Description}}
+ *
+ * {{$f.Description}}
+{{- end}}
+ *
+ * @param obj The object.
+ * @return Field value{{if isPointerType $f.CType}} (borrowed, do not free){{end}}.
+ */
+{{$f.CType}} {{$.Package}}_{{$t.CName}}_get_{{$f.CName}}(const {{$.Package}}_{{$t.CName}}_t *obj);
+{{- end}}
+
+/**
+ * @brief Destroy a {{$t.CTypeName}}_t instance.
+ *
+ * @param obj Object to destroy (safe to call with NULL).
+ */
+void {{$.Package}}_{{$t.CName}}_destroy({{$.Package}}_{{$t.CName}}_t *obj);
+
+/**
+ * @brief Serialize to JSON string.
+ *
+ * @param obj The object.
+ * @param out_json Output pointer for JSON string (caller owns).
+ * @return 0 on success, -1 on error.
+ */
+int {{$.Package}}_{{$t.CName}}_to_json(const {{$.Package}}_{{$t.CName}}_t *obj, char **out_json);
+
+/**
+ * @brief Deserialize from JSON string.
+ *
+ * @param json JSON string.
+ * @param out Output pointer for the object.
+ * @return 0 on success, -1 on error.
+ */
+int {{$.Package}}_{{$t.CName}}_from_json(const char *json, {{$.Package}}_{{$t.CName}}_t **out);
+{{end}}
+{{end}}
+
+/* ============================================================================
+ * Array Types
+ * ========================================================================== */
+{{range $t := .Types}}
+{{- if isSlice $t.Kind}}
+
+/* --- {{$t.CTypeName}}_array_t --- */
+
+/**
+ * @brief Create an empty array.
+ *
+ * @return Array instance, or NULL on allocation failure.
+ */
+{{$.Package}}_{{$t.CName}}_array_t *{{$.Package}}_{{$t.CName}}_array_create(void);
+
+/**
+ * @brief Get the array length.
+ *
+ * @param arr The array.
+ * @return Number of elements.
+ */
+size_t {{$.Package}}_{{$t.CName}}_array_len(const {{$.Package}}_{{$t.CName}}_array_t *arr);
+
+/**
+ * @brief Get an element by index.
+ *
+ * @param arr The array.
+ * @param index Element index.
+ * @return Element (borrowed), or NULL if out of bounds.
+ */
+{{$t.ElemC}} {{$.Package}}_{{$t.CName}}_array_get(
+    const {{$.Package}}_{{$t.CName}}_array_t *arr,
+    size_t index
+);
+
+/**
+ * @brief Append an element to the array.
+ *
+ * @param arr The array.
+ * @param elem Element to append (ownership transferred if pointer type).
+ * @return 0 on success, -1 on failure.
+ */
+int {{$.Package}}_{{$t.CName}}_array_push(
+    {{$.Package}}_{{$t.CName}}_array_t *arr,
+    {{$t.ElemC}} elem
+);
+
+/**
+ * @brief Destroy an array and all its elements.
+ *
+ * @param arr Array to destroy (safe to call with NULL).
+ */
+void {{$.Package}}_{{$t.CName}}_array_destroy({{$.Package}}_{{$t.CName}}_array_t *arr);
+{{end}}
+{{end}}
+
+/* ============================================================================
+ * Union Types
+ * ========================================================================== */
+{{range $t := .Types}}
+{{- if isUnion $t.Kind}}
+
+/* --- {{$t.CTypeName}}_t --- */
+
+/**
+ * @brief Get the kind/discriminator of a union value.
+ *
+ * @param u The union value.
+ * @return The discriminator kind.
+ */
+{{$.Package}}_{{$t.CName}}_kind_t {{$.Package}}_{{$t.CName}}_kind(const {{$.Package}}_{{$t.CName}}_t *u);
+{{range $v := $t.Variants}}
+
+/**
+ * @brief Get as {{$v.CName}} variant.
+ *
+ * @param u The union value.
+ * @return Variant value (borrowed), or NULL if wrong kind.
+ */
+const {{$.Package}}_{{$v.CName}}_t *{{$.Package}}_{{$t.CName}}_as_{{$v.CName}}(const {{$.Package}}_{{$t.CName}}_t *u);
+
+/**
+ * @brief Create union from {{$v.CName}} variant.
+ *
+ * @param value Variant value (ownership transferred).
+ * @return Union value, or NULL on error.
+ */
+{{$.Package}}_{{$t.CName}}_t *{{$.Package}}_{{$t.CName}}_from_{{$v.CName}}({{$.Package}}_{{$v.CName}}_t *value);
+{{- end}}
+
+/**
+ * @brief Destroy a union value.
+ *
+ * @param u Union to destroy (safe to call with NULL).
+ */
+void {{$.Package}}_{{$t.CName}}_destroy({{$.Package}}_{{$t.CName}}_t *u);
+
+/**
+ * @brief Serialize union to JSON string.
+ *
+ * @param u The union value.
+ * @param out_json Output pointer for JSON string (caller owns).
+ * @return 0 on success, -1 on error.
+ */
+int {{$.Package}}_{{$t.CName}}_to_json(const {{$.Package}}_{{$t.CName}}_t *u, char **out_json);
+
+/**
+ * @brief Deserialize union from JSON string.
+ *
+ * @param json JSON string.
+ * @param out Output pointer for the union.
+ * @return 0 on success, -1 on error.
+ */
+int {{$.Package}}_{{$t.CName}}_from_json(const char *json, {{$.Package}}_{{$t.CName}}_t **out);
+{{end}}
+{{end}}
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* {{.HeaderGuardPrefix}}_TYPES_H */

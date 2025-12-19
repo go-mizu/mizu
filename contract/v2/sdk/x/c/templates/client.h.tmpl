@@ -1,0 +1,95 @@
+{{- /* Client header */ -}}
+/**
+ * @file client.h
+ * @brief Client handle and configuration for {{.Package}} SDK.
+ */
+
+#ifndef {{.HeaderGuardPrefix}}_CLIENT_H
+#define {{.HeaderGuardPrefix}}_CLIENT_H
+
+#include "{{.Package}}/errors.h"
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/** Opaque client handle */
+typedef struct {{.Package}}_client {{.Package}}_client_t;
+
+/**
+ * @brief Authentication mode.
+ */
+typedef enum {
+    {{.PackageUpper}}_AUTH_NONE = 0,     /**< No authentication */
+    {{.PackageUpper}}_AUTH_BEARER,        /**< Bearer token authentication */
+    {{.PackageUpper}}_AUTH_BASIC,         /**< Basic authentication */
+    {{.PackageUpper}}_AUTH_API_KEY,       /**< API key header authentication */
+} {{.Package}}_auth_mode_t;
+
+/**
+ * @brief Client configuration options.
+ */
+typedef struct {
+    const char *api_key;              /**< API key (not copied, must outlive client) */
+    const char *base_url;             /**< Base URL (NULL for default) */
+    {{.Package}}_auth_mode_t auth_mode; /**< Authentication mode */
+    uint32_t timeout_ms;              /**< Request timeout in milliseconds (0 for default: 60000) */
+    uint32_t max_retries;             /**< Maximum retry attempts (0 for default: 2) */
+    uint32_t connect_timeout_ms;      /**< Connection timeout in milliseconds (0 for default: 10000) */
+
+    /** Custom headers (NULL-terminated array of "Key: Value" strings, may be NULL) */
+    const char **headers;
+
+    /** User data pointer passed to callbacks */
+    void *user_data;
+} {{.Package}}_client_config_t;
+
+/**
+ * @brief Initialize default client configuration.
+ *
+ * @param config Configuration to initialize.
+ */
+void {{.Package}}_client_config_init({{.Package}}_client_config_t *config);
+
+/**
+ * @brief Create a new client instance.
+ *
+ * @param config Client configuration (NULL for defaults).
+ * @param out_client Output pointer for the created client.
+ * @return Error code (OK on success).
+ */
+{{.Package}}_error_t {{.Package}}_client_create(
+    const {{.Package}}_client_config_t *config,
+    {{.Package}}_client_t **out_client
+);
+
+/**
+ * @brief Destroy a client instance and free all resources.
+ *
+ * @param client Client to destroy (safe to call with NULL).
+ */
+void {{.Package}}_client_destroy({{.Package}}_client_t *client);
+
+/**
+ * @brief Get the user data pointer associated with the client.
+ *
+ * @param client The client.
+ * @return User data pointer, or NULL if not set.
+ */
+void *{{.Package}}_client_get_user_data(const {{.Package}}_client_t *client);
+
+/**
+ * @brief Get the base URL from the client.
+ *
+ * @param client The client.
+ * @return Base URL string.
+ */
+const char *{{.Package}}_client_get_base_url(const {{.Package}}_client_t *client);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* {{.HeaderGuardPrefix}}_CLIENT_H */

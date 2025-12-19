@@ -1,0 +1,83 @@
+{{- /* Internal header for shared utilities */ -}}
+/**
+ * @file internal.h
+ * @brief Internal utilities for {{.Package}} SDK.
+ *
+ * This file is not part of the public API.
+ */
+
+#ifndef {{.HeaderGuardPrefix}}_INTERNAL_H
+#define {{.HeaderGuardPrefix}}_INTERNAL_H
+
+#include "{{.Package}}/client.h"
+#include "{{.Package}}/errors.h"
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * @brief Perform an HTTP request.
+ *
+ * @param client The SDK client.
+ * @param method HTTP method (GET, POST, PUT, DELETE, PATCH).
+ * @param path URL path (will be appended to base URL).
+ * @param body Request body JSON (may be NULL).
+ * @param out_response Output pointer for response body (caller owns).
+ * @param out_error Output pointer for error details (may be NULL).
+ * @return Error code.
+ */
+{{.Package}}_error_t {{.Package}}_http_request(
+    {{.Package}}_client_t *client,
+    const char *method,
+    const char *path,
+    const char *body,
+    char **out_response,
+    {{.Package}}_error_info_t *out_error
+);
+
+/**
+ * @brief Perform a streaming HTTP request.
+ *
+ * @param client The SDK client.
+ * @param method HTTP method.
+ * @param path URL path.
+ * @param body Request body JSON (may be NULL).
+ * @param callback Callback for each data chunk.
+ * @param user_data User data passed to callback.
+ * @param out_error Output pointer for error details (may be NULL).
+ * @return Error code.
+ */
+typedef int (*{{.Package}}_stream_callback_t)(const char *data, size_t len, void *user_data);
+
+{{.Package}}_error_t {{.Package}}_http_stream(
+    {{.Package}}_client_t *client,
+    const char *method,
+    const char *path,
+    const char *body,
+    {{.Package}}_stream_callback_t callback,
+    void *user_data,
+    {{.Package}}_error_info_t *out_error
+);
+
+/**
+ * @brief Sleep for a number of milliseconds.
+ *
+ * @param ms Milliseconds to sleep.
+ */
+void {{.Package}}_sleep_ms(uint32_t ms);
+
+/**
+ * @brief Duplicate a string safely.
+ *
+ * @param s String to duplicate (may be NULL).
+ * @return Duplicated string or NULL.
+ */
+char *{{.Package}}_strdup(const char *s);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* {{.HeaderGuardPrefix}}_INTERNAL_H */

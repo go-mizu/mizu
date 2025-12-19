@@ -1,0 +1,92 @@
+{{- /* Resources header */ -}}
+/**
+ * @file resources.h
+ * @brief Resource operations for {{.Package}} SDK.
+ */
+
+#ifndef {{.HeaderGuardPrefix}}_RESOURCES_H
+#define {{.HeaderGuardPrefix}}_RESOURCES_H
+
+#include "{{.Package}}/client.h"
+#include "{{.Package}}/types.h"
+#include "{{.Package}}/errors.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+{{range $res := .Resources}}
+
+/* ============================================================================
+ * {{$res.CName}} Resource
+ * ========================================================================== */
+{{if $res.Description}}
+/**
+ * @brief {{$res.Description}}
+ */
+{{end}}
+{{range $meth := $res.Methods}}
+
+/**
+ * @brief {{if $meth.Description}}{{$meth.Description}}{{else}}{{$meth.Name}} operation.{{end}}
+ *
+ * @param client The SDK client.
+{{- if $meth.HasInput}}
+ * @param request The request object (borrowed, not consumed).
+{{- end}}
+{{- if $meth.HasOutput}}
+ * @param out_response Output pointer for the response (caller owns).
+{{- end}}
+ * @param out_error Output pointer for error details (may be NULL).
+ * @return Error code (OK on success).
+ */
+{{- if $meth.IsStreaming}}
+{{- /* Streaming method callback type */}}
+typedef int (*{{$.Package}}_{{$res.CName}}_{{$meth.CName}}_callback_t)(
+    const {{$meth.StreamItemC}}_t *event,
+    void *user_data
+);
+
+/**
+ * @brief {{if $meth.Description}}{{$meth.Description}}{{else}}{{$meth.Name}} streaming operation.{{end}}
+ *
+ * This is a blocking call that invokes the callback for each event.
+ *
+ * @param client The SDK client.
+{{- if $meth.HasInput}}
+ * @param request The request object (borrowed).
+{{- end}}
+ * @param callback Callback for each event.
+ * @param user_data User data passed to callback.
+ * @param out_error Output pointer for error details (may be NULL).
+ * @return Error code (OK on success).
+ */
+{{$.Package}}_error_t {{$.Package}}_{{$res.CName}}_{{$meth.CName}}_stream(
+    {{$.Package}}_client_t *client,
+{{- if $meth.HasInput}}
+    const {{$meth.InputCType}}_t *request,
+{{- end}}
+    {{$.Package}}_{{$res.CName}}_{{$meth.CName}}_callback_t callback,
+    void *user_data,
+    {{$.Package}}_error_info_t *out_error
+);
+{{- else}}
+{{- /* Non-streaming method */}}
+{{$.Package}}_error_t {{$.Package}}_{{$res.CName}}_{{$meth.CName}}(
+    {{$.Package}}_client_t *client
+{{- if $meth.HasInput}},
+    const {{$meth.InputCType}}_t *request
+{{- end}}
+{{- if $meth.HasOutput}},
+    {{$meth.OutputCType}}_t **out_response
+{{- end}},
+    {{$.Package}}_error_info_t *out_error
+);
+{{- end}}
+{{end}}
+{{end}}
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* {{.HeaderGuardPrefix}}_RESOURCES_H */

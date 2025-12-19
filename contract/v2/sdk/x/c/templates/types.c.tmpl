@@ -1,0 +1,425 @@
+{{- /* Types implementation */ -}}
+/**
+ * @file types.c
+ * @brief Type implementations for {{.Package}} SDK.
+ */
+
+#include "{{.Package}}/types.h"
+#include "internal.h"
+#include <stdlib.h>
+#include <string.h>
+#include <cjson/cJSON.h>
+
+/* ============================================================================
+ * Internal Helpers
+ * ========================================================================== */
+
+void {{.Package}}_sleep_ms(uint32_t ms) {
+#ifdef _WIN32
+    Sleep(ms);
+#else
+    struct timespec ts;
+    ts.tv_sec = ms / 1000;
+    ts.tv_nsec = (ms % 1000) * 1000000;
+    nanosleep(&ts, NULL);
+#endif
+}
+
+char *{{.Package}}_strdup(const char *s) {
+    if (!s) return NULL;
+    size_t len = strlen(s);
+    char *dup = malloc(len + 1);
+    if (dup) {
+        memcpy(dup, s, len + 1);
+    }
+    return dup;
+}
+
+/* ============================================================================
+ * Struct Type Implementations
+ * ========================================================================== */
+{{range $t := .Types}}
+{{- if isStruct $t.Kind}}
+
+/* --- {{$t.CTypeName}}_t --- */
+
+struct {{$.Package}}_{{$t.CName}} {
+{{- range $f := $t.Fields}}
+{{- if isPointerType $f.CType}}
+    char *{{$f.CName}};
+{{- else}}
+    {{$f.CType}} {{$f.CName}};
+{{- end}}
+    int has_{{$f.CName}};
+{{- end}}
+};
+
+struct {{$.Package}}_{{$t.CName}}_builder {
+{{- range $f := $t.Fields}}
+{{- if isPointerType $f.CType}}
+    char *{{$f.CName}};
+{{- else}}
+    {{$f.CType}} {{$f.CName}};
+{{- end}}
+    int has_{{$f.CName}};
+{{- end}}
+};
+
+{{$.Package}}_{{$t.CName}}_builder_t *{{$.Package}}_{{$t.CName}}_builder_create(void) {
+    {{$.Package}}_{{$t.CName}}_builder_t *b = calloc(1, sizeof(*b));
+    return b;
+}
+
+void {{$.Package}}_{{$t.CName}}_builder_destroy({{$.Package}}_{{$t.CName}}_builder_t *builder) {
+    if (!builder) return;
+{{- range $f := $t.Fields}}
+{{- if isPointerType $f.CType}}
+    free(builder->{{$f.CName}});
+{{- end}}
+{{- end}}
+    free(builder);
+}
+{{range $f := $t.Fields}}
+
+{{$.Package}}_{{$t.CName}}_builder_t *{{$.Package}}_{{$t.CName}}_builder_set_{{$f.CName}}(
+    {{$.Package}}_{{$t.CName}}_builder_t *builder,
+    {{$f.CType}} value
+) {
+    if (!builder) return NULL;
+{{- if isPointerType $f.CType}}
+    free(builder->{{$f.CName}});
+    builder->{{$f.CName}} = value ? {{$.Package}}_strdup(value) : NULL;
+{{- else}}
+    builder->{{$f.CName}} = value;
+{{- end}}
+    builder->has_{{$f.CName}} = 1;
+    return builder;
+}
+{{- end}}
+
+int {{$.Package}}_{{$t.CName}}_builder_build(
+    {{$.Package}}_{{$t.CName}}_builder_t *builder,
+    {{$.Package}}_{{$t.CName}}_t **out
+) {
+    {{$.Package}}_{{$t.CName}}_t *obj;
+
+    if (!builder || !out) return -1;
+
+    /* Check required fields */
+{{- range $f := $t.Fields}}
+{{- if $f.IsRequired}}
+    if (!builder->has_{{$f.CName}}) return -1;
+{{- end}}
+{{- end}}
+
+    obj = calloc(1, sizeof(*obj));
+    if (!obj) return -1;
+
+{{- range $f := $t.Fields}}
+{{- if isPointerType $f.CType}}
+    obj->{{$f.CName}} = builder->{{$f.CName}};
+    builder->{{$f.CName}} = NULL;  /* Transfer ownership */
+{{- else}}
+    obj->{{$f.CName}} = builder->{{$f.CName}};
+{{- end}}
+    obj->has_{{$f.CName}} = builder->has_{{$f.CName}};
+{{- end}}
+
+    {{$.Package}}_{{$t.CName}}_builder_destroy(builder);
+    *out = obj;
+    return 0;
+}
+{{range $f := $t.Fields}}
+
+{{$f.CType}} {{$.Package}}_{{$t.CName}}_get_{{$f.CName}}(const {{$.Package}}_{{$t.CName}}_t *obj) {
+{{- if isPointerType $f.CType}}
+    return obj ? obj->{{$f.CName}} : NULL;
+{{- else}}
+    return obj ? obj->{{$f.CName}} : 0;
+{{- end}}
+}
+{{- end}}
+
+void {{$.Package}}_{{$t.CName}}_destroy({{$.Package}}_{{$t.CName}}_t *obj) {
+    if (!obj) return;
+{{- range $f := $t.Fields}}
+{{- if isPointerType $f.CType}}
+    free(obj->{{$f.CName}});
+{{- end}}
+{{- end}}
+    free(obj);
+}
+
+int {{$.Package}}_{{$t.CName}}_to_json(const {{$.Package}}_{{$t.CName}}_t *obj, char **out_json) {
+    cJSON *json;
+    char *str;
+
+    if (!obj || !out_json) return -1;
+
+    json = cJSON_CreateObject();
+    if (!json) return -1;
+
+{{- range $f := $t.Fields}}
+{{- if isPointerType $f.CType}}
+    if (obj->has_{{$f.CName}} && obj->{{$f.CName}}) {
+        cJSON_AddStringToObject(json, "{{$f.JSONName}}", obj->{{$f.CName}});
+    }
+{{- else if eq $f.CType "bool"}}
+    if (obj->has_{{$f.CName}}) {
+        cJSON_AddBoolToObject(json, "{{$f.JSONName}}", obj->{{$f.CName}});
+    }
+{{- else if or (eq $f.CType "int32_t") (eq $f.CType "int64_t") (eq $f.CType "int")}}
+    if (obj->has_{{$f.CName}}) {
+        cJSON_AddNumberToObject(json, "{{$f.JSONName}}", (double)obj->{{$f.CName}});
+    }
+{{- else if or (eq $f.CType "float") (eq $f.CType "double")}}
+    if (obj->has_{{$f.CName}}) {
+        cJSON_AddNumberToObject(json, "{{$f.JSONName}}", obj->{{$f.CName}});
+    }
+{{- end}}
+{{- end}}
+
+    str = cJSON_PrintUnformatted(json);
+    cJSON_Delete(json);
+
+    if (!str) return -1;
+    *out_json = str;
+    return 0;
+}
+
+int {{$.Package}}_{{$t.CName}}_from_json(const char *json_str, {{$.Package}}_{{$t.CName}}_t **out) {
+    cJSON *json;
+    cJSON *item;
+    {{$.Package}}_{{$t.CName}}_t *obj;
+
+    if (!json_str || !out) return -1;
+
+    json = cJSON_Parse(json_str);
+    if (!json) return -1;
+
+    obj = calloc(1, sizeof(*obj));
+    if (!obj) {
+        cJSON_Delete(json);
+        return -1;
+    }
+
+{{- range $f := $t.Fields}}
+    item = cJSON_GetObjectItemCaseSensitive(json, "{{$f.JSONName}}");
+{{- if isPointerType $f.CType}}
+    if (cJSON_IsString(item) && item->valuestring) {
+        obj->{{$f.CName}} = {{$.Package}}_strdup(item->valuestring);
+        obj->has_{{$f.CName}} = 1;
+    }
+{{- else if eq $f.CType "bool"}}
+    if (cJSON_IsBool(item)) {
+        obj->{{$f.CName}} = cJSON_IsTrue(item);
+        obj->has_{{$f.CName}} = 1;
+    }
+{{- else if or (eq $f.CType "int32_t") (eq $f.CType "int64_t") (eq $f.CType "int")}}
+    if (cJSON_IsNumber(item)) {
+        obj->{{$f.CName}} = ({{$f.CType}})item->valuedouble;
+        obj->has_{{$f.CName}} = 1;
+    }
+{{- else if or (eq $f.CType "float") (eq $f.CType "double")}}
+    if (cJSON_IsNumber(item)) {
+        obj->{{$f.CName}} = ({{$f.CType}})item->valuedouble;
+        obj->has_{{$f.CName}} = 1;
+    }
+{{- end}}
+{{- end}}
+
+    cJSON_Delete(json);
+    *out = obj;
+    return 0;
+}
+{{end}}
+{{end}}
+
+/* ============================================================================
+ * Array Type Implementations
+ * ========================================================================== */
+{{range $t := .Types}}
+{{- if isSlice $t.Kind}}
+
+/* --- {{$t.CTypeName}}_array_t --- */
+
+struct {{$.Package}}_{{$t.CName}}_array {
+    {{$t.ElemC}} *items;
+    size_t len;
+    size_t cap;
+};
+
+{{$.Package}}_{{$t.CName}}_array_t *{{$.Package}}_{{$t.CName}}_array_create(void) {
+    {{$.Package}}_{{$t.CName}}_array_t *arr = calloc(1, sizeof(*arr));
+    if (arr) {
+        arr->cap = 4;
+        arr->items = calloc(arr->cap, sizeof({{$t.ElemC}}));
+        if (!arr->items) {
+            free(arr);
+            return NULL;
+        }
+    }
+    return arr;
+}
+
+size_t {{$.Package}}_{{$t.CName}}_array_len(const {{$.Package}}_{{$t.CName}}_array_t *arr) {
+    return arr ? arr->len : 0;
+}
+
+{{$t.ElemC}} {{$.Package}}_{{$t.CName}}_array_get(
+    const {{$.Package}}_{{$t.CName}}_array_t *arr,
+    size_t index
+) {
+    if (!arr || index >= arr->len) {
+{{- if isPointerType $t.ElemC}}
+        return NULL;
+{{- else}}
+        return 0;
+{{- end}}
+    }
+    return arr->items[index];
+}
+
+int {{$.Package}}_{{$t.CName}}_array_push(
+    {{$.Package}}_{{$t.CName}}_array_t *arr,
+    {{$t.ElemC}} elem
+) {
+    if (!arr) return -1;
+
+    if (arr->len >= arr->cap) {
+        size_t new_cap = arr->cap * 2;
+        {{$t.ElemC}} *new_items = realloc(arr->items, new_cap * sizeof({{$t.ElemC}}));
+        if (!new_items) return -1;
+        arr->items = new_items;
+        arr->cap = new_cap;
+    }
+
+    arr->items[arr->len++] = elem;
+    return 0;
+}
+
+void {{$.Package}}_{{$t.CName}}_array_destroy({{$.Package}}_{{$t.CName}}_array_t *arr) {
+    if (!arr) return;
+{{- if isPointerType $t.ElemC}}
+    for (size_t i = 0; i < arr->len; i++) {
+        /* Note: caller should provide destructor or this should be specialized */
+        free(arr->items[i]);
+    }
+{{- end}}
+    free(arr->items);
+    free(arr);
+}
+{{end}}
+{{end}}
+
+/* ============================================================================
+ * Union Type Implementations
+ * ========================================================================== */
+{{range $t := .Types}}
+{{- if isUnion $t.Kind}}
+
+/* --- {{$t.CTypeName}}_t --- */
+
+struct {{$.Package}}_{{$t.CName}} {
+    {{$.Package}}_{{$t.CName}}_kind_t kind;
+    union {
+{{- range $v := $t.Variants}}
+        {{$.Package}}_{{$v.CName}}_t *{{$v.CName}};
+{{- end}}
+    } value;
+};
+
+{{$.Package}}_{{$t.CName}}_kind_t {{$.Package}}_{{$t.CName}}_kind(const {{$.Package}}_{{$t.CName}}_t *u) {
+    return u ? u->kind : {{$.PackageUpper}}_{{$t.CName | upper}}_UNKNOWN;
+}
+{{range $v := $t.Variants}}
+
+const {{$.Package}}_{{$v.CName}}_t *{{$.Package}}_{{$t.CName}}_as_{{$v.CName}}(const {{$.Package}}_{{$t.CName}}_t *u) {
+    if (!u || u->kind != {{$.PackageUpper}}_{{$t.CName | upper}}_{{$v.CName | upper}}) {
+        return NULL;
+    }
+    return u->value.{{$v.CName}};
+}
+
+{{$.Package}}_{{$t.CName}}_t *{{$.Package}}_{{$t.CName}}_from_{{$v.CName}}({{$.Package}}_{{$v.CName}}_t *value) {
+    {{$.Package}}_{{$t.CName}}_t *u;
+    if (!value) return NULL;
+
+    u = calloc(1, sizeof(*u));
+    if (!u) return NULL;
+
+    u->kind = {{$.PackageUpper}}_{{$t.CName | upper}}_{{$v.CName | upper}};
+    u->value.{{$v.CName}} = value;
+    return u;
+}
+{{- end}}
+
+void {{$.Package}}_{{$t.CName}}_destroy({{$.Package}}_{{$t.CName}}_t *u) {
+    if (!u) return;
+
+    switch (u->kind) {
+{{- range $v := $t.Variants}}
+    case {{$.PackageUpper}}_{{$t.CName | upper}}_{{$v.CName | upper}}:
+        {{$.Package}}_{{$v.CName}}_destroy(u->value.{{$v.CName}});
+        break;
+{{- end}}
+    default:
+        break;
+    }
+    free(u);
+}
+
+int {{$.Package}}_{{$t.CName}}_to_json(const {{$.Package}}_{{$t.CName}}_t *u, char **out_json) {
+    if (!u || !out_json) return -1;
+
+    switch (u->kind) {
+{{- range $v := $t.Variants}}
+    case {{$.PackageUpper}}_{{$t.CName | upper}}_{{$v.CName | upper}}:
+        return {{$.Package}}_{{$v.CName}}_to_json(u->value.{{$v.CName}}, out_json);
+{{- end}}
+    default:
+        return -1;
+    }
+}
+
+int {{$.Package}}_{{$t.CName}}_from_json(const char *json_str, {{$.Package}}_{{$t.CName}}_t **out) {
+    cJSON *json;
+    cJSON *type_item;
+    const char *type_str;
+    {{$.Package}}_{{$t.CName}}_t *u;
+
+    if (!json_str || !out) return -1;
+
+    json = cJSON_Parse(json_str);
+    if (!json) return -1;
+
+    /* Get discriminator */
+    type_item = cJSON_GetObjectItemCaseSensitive(json, "{{$t.Tag}}");
+    if (!cJSON_IsString(type_item)) {
+        cJSON_Delete(json);
+        return -1;
+    }
+    type_str = type_item->valuestring;
+
+{{- range $i, $v := $t.Variants}}
+    {{if $i}}else {{end}}if (strcmp(type_str, "{{$v.Value}}") == 0) {
+        {{$.Package}}_{{$v.CName}}_t *value;
+        if ({{$.Package}}_{{$v.CName}}_from_json(json_str, &value) != 0) {
+            cJSON_Delete(json);
+            return -1;
+        }
+        u = {{$.Package}}_{{$t.CName}}_from_{{$v.CName}}(value);
+    }
+{{- end}}
+    else {
+        cJSON_Delete(json);
+        return -1;
+    }
+
+    cJSON_Delete(json);
+    if (!u) return -1;
+    *out = u;
+    return 0;
+}
+{{end}}
+{{end}}

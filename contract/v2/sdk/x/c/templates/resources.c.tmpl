@@ -1,0 +1,298 @@
+{{- /* Resources implementation */ -}}
+/**
+ * @file resources.c
+ * @brief Resource implementations for {{.Package}} SDK.
+ */
+
+#include "{{.Package}}/resources.h"
+{{- if .HasSSE}}
+#include "{{.Package}}/streaming.h"
+{{- end}}
+#include "internal.h"
+#include <stdlib.h>
+#include <string.h>
+#include <curl/curl.h>
+#include <cjson/cJSON.h>
+{{range $res := .Resources}}
+
+/* ============================================================================
+ * {{$res.CName}} Resource
+ * ========================================================================== */
+{{range $meth := $res.Methods}}
+{{if $meth.IsStreaming}}
+
+/* --- {{$meth.CName}} (streaming) --- */
+
+typedef struct {
+    {{$.Package}}_sse_parser_t *parser;
+    {{$.Package}}_{{$res.CName}}_{{$meth.CName}}_callback_t callback;
+    void *user_data;
+    int aborted;
+} {{$.Package}}_{{$res.CName}}_{{$meth.CName}}_stream_ctx_t;
+
+static size_t {{$.Package}}_{{$res.CName}}_{{$meth.CName}}_stream_write(
+    char *ptr,
+    size_t size,
+    size_t nmemb,
+    void *userdata
+) {
+    {{$.Package}}_{{$res.CName}}_{{$meth.CName}}_stream_ctx_t *ctx = userdata;
+    size_t total = size * nmemb;
+    {{$.Package}}_sse_event_t event;
+
+    if (ctx->aborted) {
+        return 0;  /* Abort transfer */
+    }
+
+    {{$.Package}}_sse_parser_feed(ctx->parser, ptr, total);
+
+    while ({{$.Package}}_sse_parser_pop(ctx->parser, &event)) {
+        if (event.data && strcmp(event.data, "[DONE]") != 0) {
+            {{$meth.StreamItemC}}_t *parsed = NULL;
+            if ({{$meth.StreamItemC}}_from_json(event.data, &parsed) == 0) {
+                if (ctx->callback(parsed, ctx->user_data) != 0) {
+                    ctx->aborted = 1;
+                    {{$meth.StreamItemC}}_destroy(parsed);
+                    {{$.Package}}_sse_event_free(&event);
+                    return 0;  /* Abort transfer */
+                }
+                {{$meth.StreamItemC}}_destroy(parsed);
+            }
+        }
+        {{$.Package}}_sse_event_free(&event);
+    }
+
+    return total;
+}
+
+{{$.Package}}_error_t {{$.Package}}_{{$res.CName}}_{{$meth.CName}}_stream(
+    {{$.Package}}_client_t *client,
+{{- if $meth.HasInput}}
+    const {{$meth.InputCType}}_t *request,
+{{- end}}
+    {{$.Package}}_{{$res.CName}}_{{$meth.CName}}_callback_t callback,
+    void *user_data,
+    {{$.Package}}_error_info_t *out_error
+) {
+    CURL *curl;
+    CURLcode res;
+    struct curl_slist *headers = NULL;
+    char url[2048];
+    long http_status;
+    char *body = NULL;
+    {{$.Package}}_{{$res.CName}}_{{$meth.CName}}_stream_ctx_t ctx = {0};
+
+    if (!client || !callback) {
+        if (out_error) {
+            out_error->code = {{$.PackageUpper}}_ERR_NULL_ARG;
+            out_error->message = {{$.Package}}_strdup("null argument");
+        }
+        return {{$.PackageUpper}}_ERR_NULL_ARG;
+    }
+
+{{- if $meth.HasInput}}
+    if (!request) {
+        if (out_error) {
+            out_error->code = {{$.PackageUpper}}_ERR_NULL_ARG;
+            out_error->message = {{$.Package}}_strdup("null request");
+        }
+        return {{$.PackageUpper}}_ERR_NULL_ARG;
+    }
+
+    /* Serialize request */
+    if ({{$meth.InputCType}}_to_json(request, &body) != 0) {
+        if (out_error) {
+            out_error->code = {{$.PackageUpper}}_ERR_SERIALIZE;
+            out_error->message = {{$.Package}}_strdup("failed to serialize request");
+        }
+        return {{$.PackageUpper}}_ERR_SERIALIZE;
+    }
+{{- end}}
+
+    ctx.parser = {{$.Package}}_sse_parser_create();
+    if (!ctx.parser) {
+        free(body);
+        if (out_error) {
+            out_error->code = {{$.PackageUpper}}_ERR_ALLOC;
+            out_error->message = {{$.Package}}_strdup("failed to create parser");
+        }
+        return {{$.PackageUpper}}_ERR_ALLOC;
+    }
+    ctx.callback = callback;
+    ctx.user_data = user_data;
+
+    curl = curl_easy_init();
+    if (!curl) {
+        {{$.Package}}_sse_parser_destroy(ctx.parser);
+        free(body);
+        if (out_error) {
+            out_error->code = {{$.PackageUpper}}_ERR_INTERNAL;
+            out_error->message = {{$.Package}}_strdup("failed to init curl");
+        }
+        return {{$.PackageUpper}}_ERR_INTERNAL;
+    }
+
+    /* Build URL */
+    snprintf(url, sizeof(url), "%s{{$meth.HTTPPath}}", {{$.Package}}_client_get_base_url(client));
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, {{$.Package}}_{{$res.CName}}_{{$meth.CName}}_stream_write);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ctx);
+
+    /* Set method */
+{{- if eq $meth.HTTPMethod "POST"}}
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    if (body) {
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
+    } else {
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "");
+    }
+{{- else}}
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "{{$meth.HTTPMethod}}");
+    if (body) {
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
+    }
+{{- end}}
+
+    /* Set headers */
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+    headers = curl_slist_append(headers, "Accept: text/event-stream");
+
+{{- range $.Defaults.Headers}}
+    headers = curl_slist_append(headers, {{cQuote (printf "%s: %s" .K .V)}});
+{{- end}}
+
+    /* TODO: Add auth headers from client */
+
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+    /* Perform request */
+    res = curl_easy_perform(curl);
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_status);
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+    {{$.Package}}_sse_parser_destroy(ctx.parser);
+    free(body);
+
+    if (ctx.aborted) {
+        return {{$.PackageUpper}}_OK;  /* User cancelled */
+    }
+
+    if (res != CURLE_OK) {
+        if (out_error) {
+            if (res == CURLE_OPERATION_TIMEDOUT) {
+                out_error->code = {{$.PackageUpper}}_ERR_TIMEOUT;
+            } else {
+                out_error->code = {{$.PackageUpper}}_ERR_CONNECTION;
+            }
+            out_error->message = {{$.Package}}_strdup(curl_easy_strerror(res));
+        }
+        return res == CURLE_OPERATION_TIMEDOUT
+            ? {{$.PackageUpper}}_ERR_TIMEOUT
+            : {{$.PackageUpper}}_ERR_CONNECTION;
+    }
+
+    if (http_status >= 400) {
+        if (out_error) {
+            out_error->code = {{$.PackageUpper}}_ERR_HTTP;
+            out_error->http_status = (int)http_status;
+            out_error->message = {{$.Package}}_strdup("HTTP error");
+        }
+        return {{$.PackageUpper}}_ERR_HTTP;
+    }
+
+    return {{$.PackageUpper}}_OK;
+}
+
+{{- else}}
+
+/* --- {{$meth.CName}} --- */
+
+{{$.Package}}_error_t {{$.Package}}_{{$res.CName}}_{{$meth.CName}}(
+    {{$.Package}}_client_t *client
+{{- if $meth.HasInput}},
+    const {{$meth.InputCType}}_t *request
+{{- end}}
+{{- if $meth.HasOutput}},
+    {{$meth.OutputCType}}_t **out_response
+{{- end}},
+    {{$.Package}}_error_info_t *out_error
+) {
+    char *body = NULL;
+    char *response = NULL;
+    {{$.Package}}_error_t err;
+
+    if (!client) {
+        if (out_error) {
+            out_error->code = {{$.PackageUpper}}_ERR_NULL_ARG;
+            out_error->message = {{$.Package}}_strdup("null client");
+        }
+        return {{$.PackageUpper}}_ERR_NULL_ARG;
+    }
+
+{{- if $meth.HasInput}}
+    if (!request) {
+        if (out_error) {
+            out_error->code = {{$.PackageUpper}}_ERR_NULL_ARG;
+            out_error->message = {{$.Package}}_strdup("null request");
+        }
+        return {{$.PackageUpper}}_ERR_NULL_ARG;
+    }
+
+    /* Serialize request */
+    if ({{$meth.InputCType}}_to_json(request, &body) != 0) {
+        if (out_error) {
+            out_error->code = {{$.PackageUpper}}_ERR_SERIALIZE;
+            out_error->message = {{$.Package}}_strdup("failed to serialize request");
+        }
+        return {{$.PackageUpper}}_ERR_SERIALIZE;
+    }
+{{- end}}
+
+{{- if $meth.HasOutput}}
+    if (!out_response) {
+        free(body);
+        if (out_error) {
+            out_error->code = {{$.PackageUpper}}_ERR_NULL_ARG;
+            out_error->message = {{$.Package}}_strdup("null out_response");
+        }
+        return {{$.PackageUpper}}_ERR_NULL_ARG;
+    }
+    *out_response = NULL;
+{{- end}}
+
+    /* Make HTTP request */
+    err = {{$.Package}}_http_request(
+        client,
+        "{{$meth.HTTPMethod}}",
+        "{{$meth.HTTPPath}}",
+        body,
+        &response,
+        out_error
+    );
+
+    free(body);
+
+    if (err != {{$.PackageUpper}}_OK) {
+        return err;
+    }
+
+{{- if $meth.HasOutput}}
+    /* Parse response */
+    if ({{$meth.OutputCType}}_from_json(response, out_response) != 0) {
+        free(response);
+        if (out_error) {
+            out_error->code = {{$.PackageUpper}}_ERR_DESERIALIZE;
+            out_error->message = {{$.Package}}_strdup("failed to parse response");
+        }
+        return {{$.PackageUpper}}_ERR_DESERIALIZE;
+    }
+{{- end}}
+
+    free(response);
+    return {{$.PackageUpper}}_OK;
+}
+{{- end}}
+{{end}}
+{{end}}
