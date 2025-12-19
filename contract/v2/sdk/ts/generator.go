@@ -480,7 +480,7 @@ func tsIdent(s string) string {
 		return "sdk"
 	}
 	r0 := rune(out[0])
-	if !(unicode.IsLetter(r0) || r0 == '_') {
+	if !unicode.IsLetter(r0) && r0 != '_' {
 		out = "_" + out
 	}
 	return out

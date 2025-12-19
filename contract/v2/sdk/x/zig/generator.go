@@ -338,9 +338,7 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 			if len(f.Enum) > 0 {
 				tm.HasEnum = true
 				// Create enum values at the type level
-				for _, e := range f.Enum {
-					tm.Enum = append(tm.Enum, e)
-				}
+				tm.Enum = append(tm.Enum, f.Enum...)
 				break
 			}
 		}

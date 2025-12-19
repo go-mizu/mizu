@@ -53,12 +53,6 @@ func (h *hub) broadcast(data []byte) {
 	}
 }
 
-func (h *hub) clientCount() int {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return len(h.clients)
-}
-
 func generateID() string {
 	var b [8]byte
 	_, _ = rand.Read(b[:])

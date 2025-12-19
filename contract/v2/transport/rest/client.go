@@ -116,7 +116,7 @@ func (c *Client) Call(ctx context.Context, resource string, method string, in an
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		// Try decode server error shape, fallback to text.

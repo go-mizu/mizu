@@ -39,19 +39,6 @@ type rpcError struct {
 	Data    any    `json:"data,omitempty"`
 }
 
-// initializeParams is the params for initialize request.
-type initializeParams struct {
-	ProtocolVersion string      `json:"protocolVersion"`
-	Capabilities    any         `json:"capabilities"`
-	ClientInfo      *clientInfo `json:"clientInfo,omitempty"`
-}
-
-// clientInfo identifies the MCP client.
-type clientInfo struct {
-	Name    string `json:"name"`
-	Version string `json:"version,omitempty"`
-}
-
 // initializeResult is the result for initialize response.
 type initializeResult struct {
 	ProtocolVersion string             `json:"protocolVersion"`

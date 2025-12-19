@@ -236,10 +236,8 @@ func readSSEEvent(scanner *bufio.Scanner) (*sseEvent, error) {
 			event.Type = strings.TrimPrefix(line, "event: ")
 		} else if strings.HasPrefix(line, "data: ") {
 			event.Data = json.RawMessage(strings.TrimPrefix(line, "data: "))
-		} else if strings.HasPrefix(line, ": ") {
-			// Comment (ping), skip
-			continue
 		}
+		// Lines starting with ": " are comments (pings) - no action needed
 	}
 	if scanner.Err() != nil {
 		return nil, scanner.Err()
@@ -954,19 +952,25 @@ func TestMultipleClients(t *testing.T) {
 	ctx1, cancel1 := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel1()
 	req1, _ := http.NewRequestWithContext(ctx1, "GET", ts.URL+"/async", nil)
-	streamResp1, _ := http.DefaultClient.Do(req1)
-	defer streamResp1.Body.Close()
+	streamResp1, err := http.DefaultClient.Do(req1)
+	if err != nil {
+		t.Fatalf("stream request 1 failed: %v", err)
+	}
+	defer func() { _ = streamResp1.Body.Close() }()
 
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel2()
 	req2, _ := http.NewRequestWithContext(ctx2, "GET", ts.URL+"/async", nil)
-	streamResp2, _ := http.DefaultClient.Do(req2)
-	defer streamResp2.Body.Close()
+	streamResp2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatalf("stream request 2 failed: %v", err)
+	}
+	defer func() { _ = streamResp2.Body.Close() }()
 
 	time.Sleep(50 * time.Millisecond)
 
 	// Submit request
-	_, err := doSubmit(ts, submitRequest{
+	_, err = doSubmit(ts, submitRequest{
 		ID:     "multi-client-1",
 		Method: "todos.create",
 		Params: map[string]any{"title": "Multi Client Test"},

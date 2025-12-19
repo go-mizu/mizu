@@ -1,8 +1,6 @@
 package sdkdart_test
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -785,41 +783,5 @@ func minimalServiceContract(t *testing.T) *contract.Service {
 	}
 }
 
-func writeGeneratedDartSDK(t *testing.T, svc *contract.Service) string {
-	t.Helper()
-
-	cfg := &sdkdart.Config{
-		Package: "openai_sdk",
-		Version: "0.0.0",
-	}
-	files, err := sdkdart.Generate(svc, cfg)
-	if err != nil {
-		t.Fatalf("Generate: %v", err)
-	}
-	if len(files) == 0 {
-		t.Fatalf("Generate returned no files")
-	}
-
-	root := filepath.Join(t.TempDir(), "dart-sdk")
-	for _, f := range files {
-		if f == nil {
-			continue
-		}
-		p := filepath.Join(root, filepath.FromSlash(f.Path))
-		mustWriteFile(t, p, []byte(f.Content))
-	}
-
-	return root
-}
-
-func mustWriteFile(t *testing.T, path string, content []byte) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(path, content, 0o644); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
-}
 
 var _ = sdk.File{}

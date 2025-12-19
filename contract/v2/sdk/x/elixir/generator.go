@@ -814,10 +814,7 @@ func elixirQuote(s string) string {
 // elixirAtom returns an Elixir atom.
 func elixirAtom(s string) string {
 	// Check if it needs quoting (contains special chars or starts with number)
-	needsQuote := false
-	if len(s) > 0 && unicode.IsDigit(rune(s[0])) {
-		needsQuote = true
-	}
+	needsQuote := len(s) > 0 && unicode.IsDigit(rune(s[0]))
 	for _, r := range s {
 		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '@' {
 			needsQuote = true

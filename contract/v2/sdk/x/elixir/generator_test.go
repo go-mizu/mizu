@@ -1,8 +1,6 @@
 package sdkelixir_test
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -875,44 +873,6 @@ func minimalServiceContract(t *testing.T) *contract.Service {
 				},
 			},
 		},
-	}
-}
-
-func writeGeneratedElixirSDK(t *testing.T, svc *contract.Service) string {
-	t.Helper()
-
-	cfg := &sdkelixir.Config{
-		AppName:    "openai",
-		ModuleName: "OpenAI",
-		Version:    "0.0.0",
-	}
-	files, err := sdkelixir.Generate(svc, cfg)
-	if err != nil {
-		t.Fatalf("Generate: %v", err)
-	}
-	if len(files) == 0 {
-		t.Fatalf("Generate returned no files")
-	}
-
-	root := filepath.Join(t.TempDir(), "elixir-sdk")
-	for _, f := range files {
-		if f == nil {
-			continue
-		}
-		p := filepath.Join(root, filepath.FromSlash(f.Path))
-		mustWriteFile(t, p, []byte(f.Content))
-	}
-
-	return root
-}
-
-func mustWriteFile(t *testing.T, path string, content []byte) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(path, content, 0o644); err != nil {
-		t.Fatalf("write file: %v", err)
 	}
 }
 

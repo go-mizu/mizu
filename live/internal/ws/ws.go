@@ -37,6 +37,9 @@ const (
 	CloseTooLarge      = 1009
 )
 
+// maxInt is the maximum value of int for overflow checks.
+const maxInt = int(^uint(0) >> 1)
+
 // Errors returned by WebSocket operations.
 var (
 	// ErrProtocolError indicates a WebSocket protocol violation.
@@ -193,6 +196,9 @@ func (c *Conn) ReadMessage() (opcode int, data []byte, err error) {
 		length64 := binary.BigEndian.Uint64(lenBytes)
 		// Check for overflow and read limit
 		if c.readLimit > 0 && length64 > uint64(c.readLimit) {
+			return 0, nil, ErrMessageTooLarge
+		}
+		if length64 > uint64(maxInt) {
 			return 0, nil, ErrMessageTooLarge
 		}
 		length = int(length64)
