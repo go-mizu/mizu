@@ -262,7 +262,7 @@ func minimalServiceContract(t *testing.T) *contract.Service {
 	t.Helper()
 	return &contract.Service{
 		Name: "OpenAI",
-		Defaults: &contract.Defaults{
+		Client: &contract.Client{
 			Auth: "bearer",
 		},
 		Resources: []*contract.Resource{

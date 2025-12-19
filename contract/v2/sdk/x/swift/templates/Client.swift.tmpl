@@ -34,14 +34,14 @@ public struct ClientOptions: Sendable {
         authMode: AuthMode = .bearer
     ) {
         self.apiKey = apiKey
-        self.baseURL = baseURL ?? URL(string: {{swiftString .Defaults.BaseURL}})!
+        self.baseURL = baseURL ?? URL(string: {{swiftString .Client.BaseURL}})!
         self.timeout = timeout
         self.maxRetries = maxRetries
         self.authMode = authMode
 
         // Merge default headers
         var headers: [String: String] = [:]
-{{- range .Defaults.Headers}}
+{{- range .Client.Headers}}
         headers[{{swiftString .K}}] = {{swiftString .V}}
 {{- end}}
         for (key, value) in defaultHeaders {

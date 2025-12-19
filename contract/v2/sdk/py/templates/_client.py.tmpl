@@ -55,9 +55,9 @@ class OpenAI:
         max_retries: int = 2,
         default_headers: Dict[str, str] | None = None,
     ):
-        base = (base_url or {{pyString .Defaults.BaseURL}}).rstrip("/")
+        base = (base_url or {{pyString .Client.BaseURL}}).rstrip("/")
         hdrs: Dict[str, str] = {}
-{{- range .Defaults.Headers}}
+{{- range .Client.Headers}}
         hdrs[{{pyString .K}}] = {{pyString .V}}
 {{- end}}
         if default_headers:
@@ -66,7 +66,7 @@ class OpenAI:
         opts = RequestOptions(
             base_url=base,
             api_key=api_key,
-            auth={{pyString .Defaults.Auth}},
+            auth={{pyString .Client.Auth}},
             headers=hdrs,
             timeout=timeout,
             max_retries=max_retries,
@@ -146,9 +146,9 @@ class AsyncOpenAI:
         max_retries: int = 2,
         default_headers: Dict[str, str] | None = None,
     ):
-        base = (base_url or {{pyString .Defaults.BaseURL}}).rstrip("/")
+        base = (base_url or {{pyString .Client.BaseURL}}).rstrip("/")
         hdrs: Dict[str, str] = {}
-{{- range .Defaults.Headers}}
+{{- range .Client.Headers}}
         hdrs[{{pyString .K}}] = {{pyString .V}}
 {{- end}}
         if default_headers:
@@ -157,7 +157,7 @@ class AsyncOpenAI:
         opts = RequestOptions(
             base_url=base,
             api_key=api_key,
-            auth={{pyString .Defaults.Auth}},
+            auth={{pyString .Client.Auth}},
             headers=hdrs,
             timeout=timeout,
             max_retries=max_retries,

@@ -44,7 +44,7 @@ final case class ClientConfig(
   apiKey: Option[String] = None,
 
   /** Base URL for API requests. */
-  baseUrl: String = {{scalaString .Defaults.BaseURL}},
+  baseUrl: String = {{scalaString .Client.BaseURL}},
 
   /** Authentication mode. */
   authMode: AuthMode = AuthMode.Bearer,
@@ -56,9 +56,9 @@ final case class ClientConfig(
   maxRetries: Int = 2,
 
   /** Default headers to include in all requests. */
-  defaultHeaders: Map[String, String] = {{if .Defaults.Headers}}Map(
-{{- range $i, $h := .Defaults.Headers}}
-    {{scalaString $h.K}} -> {{scalaString $h.V}}{{if lt $i (sub (len $.Defaults.Headers) 1)}},{{end}}
+  defaultHeaders: Map[String, String] = {{if .Client.Headers}}Map(
+{{- range $i, $h := .Client.Headers}}
+    {{scalaString $h.K}} -> {{scalaString $h.V}}{{if lt $i (sub (len $.Client.Headers) 1)}},{{end}}
 {{- end}}
   ){{else}}Map.empty{{end}}
 )

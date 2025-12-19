@@ -115,7 +115,7 @@ func buildOpenAPI(svc *contract.Service) (map[string]any, error) {
 			op["responses"] = resp
 
 			// Security: bearer if hinted.
-			if svc.Defaults != nil && strings.EqualFold(svc.Defaults.Auth, "bearer") {
+			if svc.Client != nil && strings.EqualFold(svc.Client.Auth, "bearer") {
 				op["security"] = []any{map[string]any{"bearerAuth": []any{}}}
 			}
 
@@ -136,12 +136,12 @@ func buildOpenAPI(svc *contract.Service) (map[string]any, error) {
 		},
 	}
 
-	if svc.Defaults != nil && svc.Defaults.BaseURL != "" {
+	if svc.Client != nil && svc.Client.BaseURL != "" {
 		doc["servers"] = []any{
-			map[string]any{"url": strings.TrimRight(svc.Defaults.BaseURL, "/")},
+			map[string]any{"url": strings.TrimRight(svc.Client.BaseURL, "/")},
 		}
 	}
-	if svc.Defaults != nil && strings.EqualFold(svc.Defaults.Auth, "bearer") {
+	if svc.Client != nil && strings.EqualFold(svc.Client.Auth, "bearer") {
 		doc["components"].(map[string]any)["securitySchemes"] = map[string]any{
 			"bearerAuth": map[string]any{
 				"type":   "http",

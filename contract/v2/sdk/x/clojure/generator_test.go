@@ -11,7 +11,7 @@ func TestGenerate(t *testing.T) {
 	svc := &contract.Service{
 		Name:        "Anthropic",
 		Description: "Claude API client",
-		Defaults: &contract.Defaults{
+		Client: &contract.Client{
 			BaseURL: "https://api.anthropic.com",
 			Auth:    "bearer",
 			Headers: map[string]string{

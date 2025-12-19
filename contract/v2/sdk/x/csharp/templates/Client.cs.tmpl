@@ -37,7 +37,7 @@ public sealed record ClientOptions
     /// <summary>
     /// Base URL for API requests.
     /// </summary>
-    public string BaseUrl { get; init; } = {{csharpQuote .Defaults.BaseURL}};
+    public string BaseUrl { get; init; } = {{csharpQuote .Client.BaseURL}};
 
     /// <summary>
     /// Request timeout. Default: 60 seconds.
@@ -55,7 +55,7 @@ public sealed record ClientOptions
     public IReadOnlyDictionary<string, string> DefaultHeaders { get; init; } =
         new Dictionary<string, string>
         {
-{{- range .Defaults.Headers}}
+{{- range .Client.Headers}}
             [{{csharpQuote .K}}] = {{csharpQuote .V}},
 {{- end}}
         };
@@ -63,9 +63,9 @@ public sealed record ClientOptions
     /// <summary>
     /// Authentication mode for API requests.
     /// </summary>
-{{- if eq .Defaults.Auth "basic"}}
+{{- if eq .Client.Auth "basic"}}
     public AuthMode AuthMode { get; init; } = AuthMode.Basic;
-{{- else if eq .Defaults.Auth "none"}}
+{{- else if eq .Client.Auth "none"}}
     public AuthMode AuthMode { get; init; } = AuthMode.None;
 {{- else}}
     public AuthMode AuthMode { get; init; } = AuthMode.Bearer;

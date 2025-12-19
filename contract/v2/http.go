@@ -115,9 +115,9 @@ func extractIDParam(t reflect.Type) string {
 	return "id"
 }
 
-// extractPathParams extracts path parameters from an input type.
+// extractPathParamsFromType extracts path parameters from an input type.
 // Returns a map of param name -> field name.
-func extractPathParams(t reflect.Type) map[string]string {
+func extractPathParamsFromType(t reflect.Type) map[string]string {
 	result := make(map[string]string)
 
 	if t == nil {

@@ -4,7 +4,7 @@ package contract
 type registerOptions struct {
 	name            string
 	description     string
-	defaults        *Defaults
+	defaults        *Client
 	resources       map[string][]string // resource name -> method names
 	defaultResource string
 	http            map[string]HTTPBinding
@@ -60,10 +60,10 @@ func WithDefaultResource(name string) Option {
 	}
 }
 
-// WithDefaults sets service-level defaults.
-func WithDefaults(defaults Defaults) Option {
+// WithDefaults sets service-level client configuration.
+func WithDefaults(client Client) Option {
 	return func(o *registerOptions) {
-		o.defaults = &defaults
+		o.defaults = &client
 	}
 }
 

@@ -152,7 +152,7 @@ func Register[T any](impl T, opts ...Option) Invoker {
 		Description: o.description,
 	}
 	if o.defaults != nil {
-		svc.Defaults = o.defaults
+		svc.Client = o.defaults
 	}
 
 	reg := newTypeRegistry()

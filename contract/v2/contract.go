@@ -31,13 +31,13 @@ import (
 type Service struct {
 	Name        string      `json:"name" yaml:"name"`
 	Description string      `json:"description,omitempty" yaml:"description,omitempty"`
-	Defaults    *Defaults   `json:"defaults,omitempty" yaml:"defaults,omitempty"`
+	Client      *Client     `json:"client,omitempty" yaml:"client,omitempty"`
 	Resources   []*Resource `json:"resources" yaml:"resources"`
 	Types       []*Type     `json:"types,omitempty" yaml:"types,omitempty"`
 }
 
-// Defaults are global hints for transports and SDK generators.
-type Defaults struct {
+// Client contains global hints for transports and SDK generators.
+type Client struct {
 	BaseURL string            `json:"base_url,omitempty" yaml:"base_url,omitempty"`
 	Auth    string            `json:"auth,omitempty" yaml:"auth,omitempty"`
 	Headers map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`

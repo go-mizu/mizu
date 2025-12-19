@@ -158,7 +158,7 @@ static size_t {{$.Package}}_{{$res.CName}}_{{$meth.CName}}_stream_write(
     headers = curl_slist_append(headers, "Content-Type: application/json");
     headers = curl_slist_append(headers, "Accept: text/event-stream");
 
-{{- range $.Defaults.Headers}}
+{{- range $.Client.Headers}}
     headers = curl_slist_append(headers, {{cQuote (printf "%s: %s" .K .V)}});
 {{- end}}
 

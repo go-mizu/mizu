@@ -36,7 +36,7 @@ func TestGenerate_ProducesExpectedFiles(t *testing.T) {
 	svc := &contract.Service{
 		Name:        "TestAPI",
 		Description: "A test API",
-		Defaults: &contract.Defaults{
+		Client: &contract.Client{
 			BaseURL: "https://api.example.com",
 			Auth:    "bearer",
 		},
@@ -170,7 +170,7 @@ func TestGenerate_TypeMapping(t *testing.T) {
 func TestGenerate_StreamingMethods(t *testing.T) {
 	svc := &contract.Service{
 		Name: "StreamTest",
-		Defaults: &contract.Defaults{
+		Client: &contract.Client{
 			BaseURL: "https://api.example.com",
 		},
 		Resources: []*contract.Resource{
@@ -365,7 +365,7 @@ func TestGenerate_SliceAndMapTypes(t *testing.T) {
 func TestGenerate_DefaultHeaders(t *testing.T) {
 	svc := &contract.Service{
 		Name: "HeaderTest",
-		Defaults: &contract.Defaults{
+		Client: &contract.Client{
 			BaseURL: "https://api.example.com",
 			Headers: map[string]string{
 				"X-Custom-Header": "value",

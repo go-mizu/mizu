@@ -107,7 +107,7 @@ type model struct {
 		Description string
 	}
 
-	Defaults struct {
+	Client struct {
 		BaseURL string
 		Auth    string
 		Headers []kv
@@ -208,18 +208,18 @@ func buildModel(svc *contract.Service, cfg *Config) (*model, error) {
 	m.Service.Sanitized = sanitizeIdent(svc.Name)
 	m.Service.Description = svc.Description
 
-	if svc.Defaults != nil {
-		m.Defaults.BaseURL = strings.TrimRight(strings.TrimSpace(svc.Defaults.BaseURL), "/")
-		m.Defaults.Auth = strings.TrimSpace(svc.Defaults.Auth)
+	if svc.Client != nil {
+		m.Client.BaseURL = strings.TrimRight(strings.TrimSpace(svc.Client.BaseURL), "/")
+		m.Client.Auth = strings.TrimSpace(svc.Client.Auth)
 
-		if len(svc.Defaults.Headers) > 0 {
-			keys := make([]string, 0, len(svc.Defaults.Headers))
-			for k := range svc.Defaults.Headers {
+		if len(svc.Client.Headers) > 0 {
+			keys := make([]string, 0, len(svc.Client.Headers))
+			for k := range svc.Client.Headers {
 				keys = append(keys, k)
 			}
 			sort.Strings(keys)
 			for _, k := range keys {
-				m.Defaults.Headers = append(m.Defaults.Headers, kv{K: k, V: svc.Defaults.Headers[k]})
+				m.Client.Headers = append(m.Client.Headers, kv{K: k, V: svc.Client.Headers[k]})
 			}
 		}
 	}

@@ -32,13 +32,13 @@
 
 (def default-config
   "Default client configuration."
-  {:base-url {{cljString .Defaults.BaseURL}}
-   :auth-mode {{if eq .Defaults.Auth "bearer"}}:bearer{{else if eq .Defaults.Auth "basic"}}:basic{{else if eq .Defaults.Auth "apikey"}}:api-key{{else}}:bearer{{end}}
+  {:base-url {{cljString .Client.BaseURL}}
+   :auth-mode {{if eq .Client.Auth "bearer"}}:bearer{{else if eq .Client.Auth "basic"}}:basic{{else if eq .Client.Auth "apikey"}}:api-key{{else}}:bearer{{end}}
    :timeout-ms 60000
    :connection-timeout-ms 10000
    :max-retries 2
    :default-headers {{"{"}}"Content-Type" "application/json"
-                     "Accept" "application/json"{{range .Defaults.Headers}}
+                     "Accept" "application/json"{{range .Client.Headers}}
                      {{cljString .K}} {{cljString .V}}{{end}}{{"}"}}})
 
 (defrecord Client [config])
@@ -48,7 +48,7 @@
 
    Options:
      :api-key             - API key for authentication
-     :base-url            - Base URL for API requests (default: {{.Defaults.BaseURL}})
+     :base-url            - Base URL for API requests (default: {{.Client.BaseURL}})
      :auth-mode           - Authentication mode (:bearer, :basic, :api-key, :none)
      :timeout-ms          - Request timeout in milliseconds (default: 60000)
      :connection-timeout-ms - Connection timeout in milliseconds (default: 10000)
