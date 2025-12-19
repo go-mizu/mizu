@@ -34,7 +34,7 @@ data class ClientOptions(
     val apiKey: String? = null,
 
     /** Base URL for API requests. */
-    val baseUrl: String = {{kotlinString .Defaults.BaseURL}},
+    val baseUrl: String = {{kotlinString .Client.BaseURL}},
 
     /** Request timeout. */
     val timeout: Duration = 60.seconds,
@@ -43,9 +43,9 @@ data class ClientOptions(
     val maxRetries: Int = 2,
 
     /** Default headers to include in all requests. */
-    val defaultHeaders: Map<String, String> = {{if .Defaults.Headers}}mapOf(
-{{- range $i, $h := .Defaults.Headers}}
-        {{kotlinString $h.K}} to {{kotlinString $h.V}}{{if lt $i (sub (len $.Defaults.Headers) 1)}},{{end}}
+    val defaultHeaders: Map<String, String> = {{if .Client.Headers}}mapOf(
+{{- range $i, $h := .Client.Headers}}
+        {{kotlinString $h.K}} to {{kotlinString $h.V}}{{if lt $i (sub (len $.Client.Headers) 1)}},{{end}}
 {{- end}}
     ){{else}}emptyMap(){{end}},
 

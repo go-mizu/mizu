@@ -46,7 +46,7 @@ impl Default for ClientConfig {
     fn default() -> Self {
         Self {
             api_key: None,
-            base_url: {{rustString .Defaults.BaseURL}}.to_string(),
+            base_url: {{rustString .Client.BaseURL}}.to_string(),
             auth_mode: AuthMode::default(),
             timeout: Duration::from_secs(60),
             max_retries: 2,
@@ -134,7 +134,7 @@ impl ClientBuilder {
         );
 
         // Apply default headers from contract
-{{- range .Defaults.Headers}}
+{{- range .Client.Headers}}
         headers.insert(
             HeaderName::from_static({{rustString (.K | lower)}}),
             HeaderValue::from_static({{rustString .V}}),

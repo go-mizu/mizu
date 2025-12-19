@@ -40,13 +40,13 @@ func NewClient(svc *contract.Service) (*Client, error) {
 	token := ""
 	h := map[string]string{}
 
-	if svc.Defaults != nil {
-		base = strings.TrimRight(svc.Defaults.BaseURL, "/")
-		if strings.EqualFold(svc.Defaults.Auth, "bearer") {
+	if svc.Client != nil {
+		base = strings.TrimRight(svc.Client.BaseURL, "/")
+		if strings.EqualFold(svc.Client.Auth, "bearer") {
 			// Token remains empty until user sets it.
 			token = ""
 		}
-		for k, v := range svc.Defaults.Headers {
+		for k, v := range svc.Client.Headers {
 			h[k] = v
 		}
 	}

@@ -28,7 +28,7 @@ pub const ClientConfig = struct {
     /// API key for authentication.
     api_key: ?[]const u8 = null,
     /// Base URL for API requests.
-    base_url: []const u8 = {{zigQuote .Defaults.BaseURL}},
+    base_url: []const u8 = {{zigQuote .Client.BaseURL}},
     /// Authentication mode.
     auth_mode: AuthMode = .bearer,
     /// Request timeout in nanoseconds.
@@ -100,7 +100,7 @@ pub const Client = struct {
                     .{ .name = "Content-Type", .value = "application/json" },
                     .{ .name = "Accept", .value = "application/json" },
                     .{ .name = "User-Agent", .value = self.config.user_agent },
-                    {{- range .Defaults.Headers}}
+                    {{- range .Client.Headers}}
                     .{ .name = "{{.K}}", .value = "{{.V}}" },
                     {{- end}}
                 },
@@ -204,12 +204,12 @@ test "Client.init" {
     });
     defer client.deinit();
 
-    try std.testing.expectEqualStrings({{zigQuote .Defaults.BaseURL}}, client.baseUrl());
+    try std.testing.expectEqualStrings({{zigQuote .Client.BaseURL}}, client.baseUrl());
 }
 
 test "ClientConfig defaults" {
     const config = ClientConfig{};
-    try std.testing.expectEqualStrings({{zigQuote .Defaults.BaseURL}}, config.base_url);
+    try std.testing.expectEqualStrings({{zigQuote .Client.BaseURL}}, config.base_url);
     try std.testing.expectEqual(AuthMode.bearer, config.auth_mode);
     try std.testing.expectEqual(@as(u32, 2), config.max_retries);
 }

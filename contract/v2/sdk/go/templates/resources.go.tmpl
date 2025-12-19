@@ -18,15 +18,15 @@ type Option func(*Client)
 // NewClient creates a new client.
 func NewClient(token string, opts ...Option) *Client {
 	c := &Client{
-		baseURL: {{quote .Defaults.BaseURL}},
+		baseURL: {{quote .Client.BaseURL}},
 		token:   token,
-		auth:    {{if .Defaults.Auth}}{{quote .Defaults.Auth}}{{else}}"bearer"{{end}},
+		auth:    {{if .Client.Auth}}{{quote .Client.Auth}}{{else}}"bearer"{{end}},
 		headers: make(map[string]string),
 		http:    http.DefaultClient,
 	}
 
-{{- if .Defaults.Headers}}
-{{- range .Defaults.Headers}}
+{{- if .Client.Headers}}
+{{- range .Client.Headers}}
 	c.headers[{{quote .K}}] = {{quote .V}}
 {{- end}}
 {{- end}}

@@ -80,7 +80,7 @@ export class {{.Service.Sanitized}} {
 
   constructor(options: ClientOptions = {}) {
     const headers: Record<string, string> = {};
-{{- range .Defaults.Headers}}
+{{- range .Client.Headers}}
     headers[{{tsString .K}}] = {{tsString .V}};
 {{- end}}
     if (options.defaultHeaders) {
@@ -89,10 +89,10 @@ export class {{.Service.Sanitized}} {
 
     this._config = {
       apiKey: options.apiKey,
-      baseURL: (options.baseURL ?? {{tsString .Defaults.BaseURL}}).replace(/\/$/, ""),
+      baseURL: (options.baseURL ?? {{tsString .Client.BaseURL}}).replace(/\/$/, ""),
       timeout: options.timeout ?? 60000,
       maxRetries: options.maxRetries ?? 2,
-      auth: {{tsString .Defaults.Auth}},
+      auth: {{tsString .Client.Auth}},
       headers,
     };
 

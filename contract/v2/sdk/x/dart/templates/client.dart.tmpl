@@ -48,11 +48,11 @@ class ClientOptions {
 
   const ClientOptions({
     this.apiKey,
-    this.baseUrl = {{dartString .Defaults.BaseURL}},
+    this.baseUrl = {{dartString .Client.BaseURL}},
     this.timeout = const Duration(seconds: 60),
     this.maxRetries = 2,
-    this.defaultHeaders = {{if .Defaults.Headers}}const {
-{{- range $i, $h := .Defaults.Headers}}
+    this.defaultHeaders = {{if .Client.Headers}}const {
+{{- range $i, $h := .Client.Headers}}
       {{dartString $h.K}}: {{dartString $h.V}},
 {{- end}}
     }{{else}}const {}{{end}},

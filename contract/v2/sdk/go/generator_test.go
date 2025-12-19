@@ -100,10 +100,10 @@ func TestGenerate_DefaultPackageName_SanitizedLowercased(t *testing.T) {
 	mustParseAndTypecheck(t, "myapiv2", src)
 }
 
-func TestGenerate_Defaults_BaseURL_Headers_AuthApplied(t *testing.T) {
+func TestGenerate_Client_BaseURL_Headers_AuthApplied(t *testing.T) {
 	svc := &contract.Service{
 		Name: "Svc",
-		Defaults: &contract.Defaults{
+		Client: &contract.Client{
 			BaseURL: "https://example.com/",
 			Auth:    "bearer",
 			Headers: map[string]string{
@@ -128,9 +128,9 @@ func TestGenerate_Defaults_BaseURL_Headers_AuthApplied(t *testing.T) {
 		t.Fatalf("expected baseURL trimmed, src:\n%s", src)
 	}
 
-	// Auth defaulted from Defaults.Auth
+	// Auth defaulted from Client.Auth
 	if !strings.Contains(src, `auth:    "bearer",`) {
-		t.Fatalf("expected auth set from defaults, src:\n%s", src)
+		t.Fatalf("expected auth set from client, src:\n%s", src)
 	}
 
 	// Headers deterministic order: x-a then x-b

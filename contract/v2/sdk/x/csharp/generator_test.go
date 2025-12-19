@@ -475,7 +475,7 @@ func TestGenerate_HTTPMethods(t *testing.T) {
 func TestGenerate_AuthModes(t *testing.T) {
 	svc := &contract.Service{
 		Name: "TestAPI",
-		Defaults: &contract.Defaults{
+		Client: &contract.Client{
 			Auth:    "bearer",
 			BaseURL: "https://api.example.com",
 		},
@@ -511,7 +511,7 @@ func TestGenerate_AuthModes(t *testing.T) {
 func TestGenerate_DefaultHeaders(t *testing.T) {
 	svc := &contract.Service{
 		Name: "TestAPI",
-		Defaults: &contract.Defaults{
+		Client: &contract.Client{
 			Headers: map[string]string{
 				"X-Custom-Header": "custom-value",
 				"User-Agent":      "TestSDK/1.0",
@@ -572,7 +572,7 @@ func minimalServiceContract(t *testing.T) *contract.Service {
 	t.Helper()
 	return &contract.Service{
 		Name: "OpenAI",
-		Defaults: &contract.Defaults{
+		Client: &contract.Client{
 			Auth:    "bearer",
 			BaseURL: "https://api.openai.com",
 		},

@@ -40,8 +40,8 @@ func NewClient(svc *contract.Service) (*Client, error) {
 		return nil, errors.New("jsonrpc: nil service")
 	}
 	h := map[string]string{"content-type": "application/json"}
-	if svc.Defaults != nil {
-		for k, v := range svc.Defaults.Headers {
+	if svc.Client != nil {
+		for k, v := range svc.Client.Headers {
 			h[k] = v
 		}
 	}
