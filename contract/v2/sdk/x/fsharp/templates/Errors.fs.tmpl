@@ -1,0 +1,61 @@
+// Auto-generated F# error types for {{.Service.Name}} SDK.
+// Do not edit manually.
+
+namespace {{.Namespace}}
+
+open System
+
+/// SDK error types as a discriminated union.
+type SdkError =
+    /// Network connection failed.
+    | ConnectionError of exn: Exception
+    /// Server returned an error status code.
+    | ApiError of statusCode: int * message: string * responseBody: string option
+    /// Request timed out.
+    | TimeoutError of timeout: TimeSpan
+    /// Request was cancelled.
+    | CancelledError
+    /// Failed to serialize request.
+    | SerializationError of exn: Exception
+    /// Failed to deserialize response.
+    | DeserializationError of exn: Exception
+
+/// Helper functions for SdkError.
+module SdkError =
+    /// Returns true if this error is potentially retriable.
+    let isRetriable = function
+        | ConnectionError _ -> true
+        | ApiError (status, _, _) -> status >= 500 || status = 429
+        | TimeoutError _ -> true
+        | CancelledError -> false
+        | SerializationError _ -> false
+        | DeserializationError _ -> false
+
+    /// Returns the error message.
+    let message = function
+        | ConnectionError ex -> sprintf "Connection failed: %s" ex.Message
+        | ApiError (status, msg, _) -> sprintf "API error %d: %s" status msg
+        | TimeoutError ts -> sprintf "Request timed out after %O" ts
+        | CancelledError -> "Request was cancelled"
+        | SerializationError ex -> sprintf "Serialization failed: %s" ex.Message
+        | DeserializationError ex -> sprintf "Deserialization failed: %s" ex.Message
+
+    /// Returns the status code if this is an API error, None otherwise.
+    let statusCode = function
+        | ApiError (status, _, _) -> Some status
+        | _ -> None
+
+    /// Returns the response body if available.
+    let responseBody = function
+        | ApiError (_, _, body) -> body
+        | _ -> None
+
+    /// Returns true if this is a client error (4xx).
+    let isClientError = function
+        | ApiError (status, _, _) -> status >= 400 && status < 500
+        | _ -> false
+
+    /// Returns true if this is a server error (5xx).
+    let isServerError = function
+        | ApiError (status, _, _) -> status >= 500
+        | _ -> false

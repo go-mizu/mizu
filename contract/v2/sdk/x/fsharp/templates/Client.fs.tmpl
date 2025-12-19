@@ -1,0 +1,37 @@
+// Auto-generated F# client for {{.Service.Name}} SDK.
+// Do not edit manually.
+
+namespace {{.Namespace}}
+
+open System
+open System.Net.Http
+
+/// {{if .Service.Description}}{{.Service.Description}}{{else}}The main SDK client providing access to all API resources.{{end}}
+type {{.Service.Sanitized}}Client(options: ClientOptions) =
+    let httpClient =
+        options.HttpClient
+        |> Option.defaultWith (fun () ->
+            let client = new HttpClient()
+            client.Timeout <- options.Timeout
+            client)
+    let ownsHttpClient = options.HttpClient.IsNone
+    let http = HttpClientWrapper(httpClient, options)
+
+    /// Create client with default options.
+    new() = {{.Service.Sanitized}}Client(ClientOptions.defaults)
+
+    /// Create client with API key.
+    new(apiKey: string) =
+        {{.Service.Sanitized}}Client(ClientOptions.defaults |> ClientOptions.withApiKey apiKey)
+
+{{range .Resources}}
+    /// Access to {{.Name}} operations.
+    member _.{{.FSharpName}} = {{.TypeName}}(http)
+{{end}}
+
+    interface IDisposable with
+        member _.Dispose() =
+            if ownsHttpClient then httpClient.Dispose()
+
+    /// Dispose the client and release resources.
+    member this.Dispose() = (this :> IDisposable).Dispose()

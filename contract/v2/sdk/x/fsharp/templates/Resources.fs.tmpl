@@ -1,0 +1,50 @@
+// Auto-generated F# resource types for {{.Service.Name}} SDK.
+// Do not edit manually.
+
+namespace {{.Namespace}}
+
+open System.Collections.Generic
+open System.Net.Http
+open System.Threading
+open System.Threading.Tasks
+
+{{range .Resources}}
+/// {{if .Description}}{{.Description}}{{else}}Operations for {{.Name}}.{{end}}
+type {{.TypeName}} internal (http: HttpClientWrapper) =
+{{range .Methods}}
+{{if .IsStreaming}}
+    /// {{if .Description}}{{.Description}}{{else}}{{.FSharpName}} streaming operation.{{end}}
+    member _.{{.FSharpName}}
+        ({{if .HasInput}}request: {{.InputType}}, {{end}}?cancellationToken: CancellationToken)
+        : IAsyncEnumerable<{{.StreamItemType}}> =
+        let ct = defaultArg cancellationToken CancellationToken.None
+        http.StreamAsync<{{if .HasInput}}{{.InputType}}{{else}}obj{{end}}, {{.StreamItemType}}>(
+            HttpMethod.{{.HTTPMethod | httpMethod}},
+            {{fsharpQuote .HTTPPath}},
+            {{if .HasInput}}request{{else}}null{{end}},
+            ct)
+{{else}}
+    /// {{if .Description}}{{.Description}}{{else}}{{.FSharpName}} operation.{{end}}
+    member _.{{.FSharpName}}
+        ({{if .HasInput}}request: {{.InputType}}, {{end}}?cancellationToken: CancellationToken)
+        : Task<Result<{{if .HasOutput}}{{.OutputType}}{{else}}unit{{end}}, SdkError>> =
+        let ct = defaultArg cancellationToken CancellationToken.None
+{{if .HasOutput}}
+        http.RequestAsync<{{if .HasInput}}{{.InputType}}{{else}}obj{{end}}, {{.OutputType}}>(
+            HttpMethod.{{.HTTPMethod | httpMethod}},
+            {{fsharpQuote .HTTPPath}},
+            {{if .HasInput}}request{{else}}null{{end}},
+            ct)
+{{else}}
+        task {
+            let! result = http.RequestAsync<{{if .HasInput}}{{.InputType}}{{else}}obj{{end}}, obj>(
+                HttpMethod.{{.HTTPMethod | httpMethod}},
+                {{fsharpQuote .HTTPPath}},
+                {{if .HasInput}}request{{else}}null{{end}},
+                ct)
+            return result |> Result.map ignore
+        }
+{{end}}
+{{end}}
+{{end}}
+{{end}}

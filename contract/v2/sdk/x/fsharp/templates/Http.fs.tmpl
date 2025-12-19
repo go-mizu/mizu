@@ -1,0 +1,166 @@
+// Auto-generated F# HTTP client for {{.Service.Name}} SDK.
+// Do not edit manually.
+
+namespace {{.Namespace}}
+
+open System
+open System.Net.Http
+open System.Net.Http.Headers
+open System.Net.Http.Json
+open System.Text.Json
+open System.Text.Json.Serialization
+open System.Threading
+open System.Threading.Tasks
+
+/// Authentication mode for API requests.
+type AuthMode =
+    | Bearer
+    | Basic
+    | None
+
+/// Client configuration options.
+type ClientOptions = {
+    /// API key for authentication.
+    ApiKey: string option
+    /// Base URL for API requests.
+    BaseUrl: string
+    /// Request timeout.
+    Timeout: TimeSpan
+    /// Maximum retry attempts.
+    MaxRetries: int
+    /// Default headers.
+    DefaultHeaders: Map<string, string>
+    /// Authentication mode.
+    AuthMode: AuthMode
+    /// Optional HttpClient to use.
+    HttpClient: HttpClient option
+}
+
+/// Helper functions for ClientOptions.
+module ClientOptions =
+    /// Default client options.
+    let defaults = {
+        ApiKey = None
+        BaseUrl = {{fsharpQuote .Client.BaseURL}}
+        Timeout = TimeSpan.FromSeconds(60.0)
+        MaxRetries = 2
+        DefaultHeaders = Map.ofList [
+{{- range .Client.Headers}}
+            {{fsharpQuote .K}}, {{fsharpQuote .V}}
+{{- end}}
+        ]
+        AuthMode = {{if eq .Client.Auth "basic"}}Basic{{else if eq .Client.Auth "none"}}None{{else}}Bearer{{end}}
+        HttpClient = None
+    }
+
+    /// Create options with API key.
+    let withApiKey apiKey opts = { opts with ApiKey = Some apiKey }
+
+    /// Create options with base URL.
+    let withBaseUrl url opts = { opts with BaseUrl = url }
+
+    /// Create options with timeout.
+    let withTimeout timeout opts = { opts with Timeout = timeout }
+
+    /// Create options with max retries.
+    let withMaxRetries retries opts = { opts with MaxRetries = retries }
+
+    /// Add a default header.
+    let withHeader key value opts =
+        { opts with DefaultHeaders = opts.DefaultHeaders |> Map.add key value }
+
+    /// Create options with HttpClient.
+    let withHttpClient client opts = { opts with HttpClient = Some client }
+
+/// Internal HTTP client wrapper.
+type internal HttpClientWrapper(httpClient: HttpClient, options: ClientOptions) =
+    let jsonOptions =
+        let opts = JsonSerializerOptions()
+        opts.PropertyNamingPolicy <- JsonNamingPolicy.SnakeCaseLower
+        opts.DefaultIgnoreCondition <- JsonIgnoreCondition.WhenWritingNull
+        opts
+
+    let random = Random()
+
+    let buildUri path = Uri(options.BaseUrl.TrimEnd('/') + path)
+
+    let getBackoff attempt =
+        let baseDelay = 500.0
+        let exponential = baseDelay * float (1 <<< attempt)
+        let jitter = float (random.Next(0, 100))
+        TimeSpan.FromMilliseconds(exponential + jitter)
+
+    let applyHeaders (request: HttpRequestMessage) =
+        // Apply default headers
+        for kvp in options.DefaultHeaders do
+            request.Headers.TryAddWithoutValidation(kvp.Key, kvp.Value) |> ignore
+
+        // Apply authentication
+        match options.ApiKey with
+        | Some key ->
+            match options.AuthMode with
+            | Bearer ->
+                request.Headers.Authorization <- AuthenticationHeaderValue("Bearer", key)
+            | Basic ->
+                request.Headers.Authorization <- AuthenticationHeaderValue("Basic", key)
+            | None -> ()
+        | None -> ()
+
+    member _.JsonOptions = jsonOptions
+
+    member _.Options = options
+
+    member _.ApplyHeaders(request: HttpRequestMessage) = applyHeaders request
+
+    member _.BuildUri(path: string) = buildUri path
+
+    member _.RequestAsync<'TReq, 'TResp>
+        (method: HttpMethod, path: string, body: 'TReq, ct: CancellationToken)
+        : Task<Result<'TResp, SdkError>> = task {
+        let mutable lastError = Unchecked.defaultof<SdkError>
+
+        for attempt = 0 to options.MaxRetries do
+            try
+                use request = new HttpRequestMessage(method, buildUri path)
+                applyHeaders request
+                request.Content <- JsonContent.Create(body, options = jsonOptions)
+
+                let! response = httpClient.SendAsync(request, ct)
+
+                if not response.IsSuccessStatusCode then
+                    let! responseBody = response.Content.ReadAsStringAsync(ct)
+                    let error = ApiError(
+                        int response.StatusCode,
+                        sprintf "API error: %O" response.StatusCode,
+                        Some responseBody)
+
+                    if not (SdkError.isRetriable error) || attempt >= options.MaxRetries then
+                        return Error error
+                    else
+                        lastError <- error
+                        do! Task.Delay(getBackoff attempt, ct)
+                else
+                    let! result = response.Content.ReadFromJsonAsync<'TResp>(jsonOptions, ct)
+                    return Ok result
+
+            with
+            | :? OperationCanceledException when ct.IsCancellationRequested ->
+                return Error CancelledError
+            | :? TaskCanceledException when not ct.IsCancellationRequested ->
+                lastError <- TimeoutError options.Timeout
+                if attempt < options.MaxRetries then
+                    do! Task.Delay(getBackoff attempt, ct)
+            | :? HttpRequestException as ex ->
+                lastError <- ConnectionError ex
+                if attempt < options.MaxRetries then
+                    do! Task.Delay(getBackoff attempt, ct)
+            | ex ->
+                return Error (DeserializationError ex)
+
+        return Error lastError
+    }
+
+    member this.StreamAsync<'TReq, 'TItem>
+        (method: HttpMethod, path: string, body: 'TReq, ct: CancellationToken)
+        : Collections.Generic.IAsyncEnumerable<'TItem> =
+        SseParser.parseAsync<'TReq, 'TItem>(httpClient, this, method, path, body, ct)
