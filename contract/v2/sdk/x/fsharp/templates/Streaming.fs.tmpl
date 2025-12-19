@@ -1,0 +1,97 @@
+// Auto-generated F# SSE streaming support for {{.Service.Name}} SDK.
+// Do not edit manually.
+
+namespace {{.Namespace}}
+
+open System
+open System.Collections.Generic
+open System.IO
+open System.Net.Http
+open System.Net.Http.Headers
+open System.Net.Http.Json
+open System.Text
+open System.Text.Json
+open System.Threading
+open System.Threading.Tasks
+
+/// SSE (Server-Sent Events) parser.
+module SseParser =
+    /// Parse SSE events from an HTTP stream.
+    let parseAsync<'TReq, 'T>
+        (httpClient: HttpClient)
+        (wrapper: HttpClientWrapper)
+        (method: HttpMethod)
+        (path: string)
+        (body: 'TReq)
+        (ct: CancellationToken)
+        : IAsyncEnumerable<'T> =
+        { new IAsyncEnumerable<'T> with
+            member _.GetAsyncEnumerator(ct) =
+                let mutable current = Unchecked.defaultof<'T>
+                let mutable stream: Stream = null
+                let mutable reader: StreamReader = null
+                let mutable response: HttpResponseMessage = null
+                let dataBuffer = StringBuilder()
+                let mutable started = false
+
+                { new IAsyncEnumerator<'T> with
+                    member _.Current = current
+
+                    member _.MoveNextAsync() = ValueTask<bool>(task {
+                        try
+                            if not started then
+                                started <- true
+                                let request = new HttpRequestMessage(method, wrapper.BuildUri(path))
+                                wrapper.ApplyHeaders(request)
+                                request.Headers.Accept.Add(
+                                    MediaTypeWithQualityHeaderValue("text/event-stream"))
+                                request.Content <- JsonContent.Create(body, options = wrapper.JsonOptions)
+
+                                let! resp = httpClient.SendAsync(
+                                    request,
+                                    HttpCompletionOption.ResponseHeadersRead,
+                                    ct)
+                                response <- resp
+
+                                if not response.IsSuccessStatusCode then
+                                    let! responseBody = response.Content.ReadAsStringAsync(ct)
+                                    raise (Exception(sprintf "API error %d: %s"
+                                        (int response.StatusCode) responseBody))
+
+                                let! s = response.Content.ReadAsStreamAsync(ct)
+                                stream <- s
+                                reader <- new StreamReader(stream, Encoding.UTF8)
+
+                            while not reader.EndOfStream do
+                                ct.ThrowIfCancellationRequested()
+                                let! line = reader.ReadLineAsync(ct)
+
+                                if isNull line then
+                                    return false
+                                elif line.Length = 0 then
+                                    let data = dataBuffer.ToString().Trim()
+                                    dataBuffer.Clear() |> ignore
+
+                                    if data.Length > 0 && data <> "[DONE]" then
+                                        current <- JsonSerializer.Deserialize<'T>(data, wrapper.JsonOptions)
+                                        return true
+                                elif line.StartsWith("data:", StringComparison.Ordinal) then
+                                    let content = line.AsSpan(5).TrimStart()
+                                    if dataBuffer.Length > 0 then
+                                        dataBuffer.AppendLine() |> ignore
+                                    dataBuffer.Append(content) |> ignore
+                                // Ignore other SSE fields (event:, id:, retry:)
+
+                            return false
+                        with
+                        | :? OperationCanceledException ->
+                            return false
+                    })
+
+                    member _.DisposeAsync() = ValueTask(task {
+                        if not (isNull reader) then reader.Dispose()
+                        if not (isNull stream) then stream.Dispose()
+                        if not (isNull response) then response.Dispose()
+                    })
+                }
+        }

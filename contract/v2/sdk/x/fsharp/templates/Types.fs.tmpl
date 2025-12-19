@@ -1,0 +1,148 @@
+// Auto-generated F# types for {{.Service.Name}} SDK.
+// Do not edit manually.
+
+namespace {{.Namespace}}
+
+open System
+open System.Text.Json
+open System.Text.Json.Serialization
+
+{{- /* Generate enums first */}}
+{{- range .Enums}}
+
+/// {{.FSharpName}} enumeration.
+type {{.FSharpName}} =
+{{- range .Values}}
+    | {{.Name}}
+{{- end}}
+
+module {{.FSharpName}} =
+    /// Convert to JSON string value.
+    let toString = function
+{{- range .Values}}
+        | {{.Name}} -> {{fsharpQuote .Value}}
+{{- end}}
+
+    /// Parse from JSON string value.
+    let fromString = function
+{{- range .Values}}
+        | {{fsharpQuote .Value}} -> Some {{.Name}}
+{{- end}}
+        | _ -> None
+
+    /// Parse from string, throwing on invalid input.
+    let parse s =
+        match fromString s with
+        | Some v -> v
+        | None -> failwithf "Invalid {{.FSharpName}}: %s" s
+
+/// JSON converter for {{.FSharpName}}.
+type {{.FSharpName}}JsonConverter() =
+    inherit JsonConverter<{{.FSharpName}}>()
+
+    override _.Read(reader, _, _) =
+        let value = reader.GetString()
+        {{.FSharpName}}.parse value
+
+    override _.Write(writer, value, _) =
+        writer.WriteStringValue({{.FSharpName}}.toString value)
+{{- end}}
+
+{{- /* Generate discriminated unions */}}
+{{- range $union := .Unions}}
+
+/// {{if $union.Description}}{{$union.Description}}{{else}}{{$union.FSharpName}} discriminated union.{{end}}
+[<JsonConverter(typeof<{{$union.FSharpName}}JsonConverter>)>]
+type {{$union.FSharpName}} =
+{{- range $union.Variants}}
+{{- if .Fields}}
+    /// {{if .Description}}{{.Description}}{{else}}{{.FSharpName}} variant.{{end}}
+    | {{.FSharpName}} of {{range $i, $f := .Fields}}{{if $i}} * {{end}}{{$f.FSharpName}}: {{$f.FSharpType}}{{end}}
+{{- else}}
+    /// {{if .Description}}{{.Description}}{{else}}{{.FSharpName}} variant.{{end}}
+    | {{.FSharpName}}
+{{- end}}
+{{- end}}
+
+/// JSON converter for {{$union.FSharpName}}.
+and {{$union.FSharpName}}JsonConverter() =
+    inherit JsonConverter<{{$union.FSharpName}}>()
+
+    override _.Read(reader, _, options) =
+        use doc = JsonDocument.ParseValue(&reader)
+        let root = doc.RootElement
+        let tag = root.GetProperty({{fsharpQuote $union.Tag}}).GetString()
+
+        match tag with
+{{- range $union.Variants}}
+        | {{fsharpQuote .Value}} ->
+{{- if .Fields}}
+            let {{range $i, $f := .Fields}}{{if $i}}, {{end}}{{$f.FSharpName | lower}}{{end}} =
+{{- range .Fields}}
+{{- if isOption .FSharpType}}
+                (if root.TryGetProperty({{fsharpQuote .JSONName}}, &Unchecked.defaultof<JsonElement>)
+                 then Some (JsonSerializer.Deserialize<{{.FSharpType | listElem}}>(root.GetProperty({{fsharpQuote .JSONName}}), options))
+                 else None),
+{{- else}}
+                JsonSerializer.Deserialize<{{.FSharpType}}>(root.GetProperty({{fsharpQuote .JSONName}}), options),
+{{- end}}
+{{- end}}
+                ()
+            {{$union.FSharpName}}.{{.FSharpName}}({{range $i, $f := .Fields}}{{if $i}}, {{end}}{{$f.FSharpName | lower}}{{end}})
+{{- else}}
+            {{$union.FSharpName}}.{{.FSharpName}}
+{{- end}}
+{{- end}}
+        | _ -> failwithf "Unknown {{$union.FSharpName}} tag: %s" tag
+
+    override _.Write(writer, value, options) =
+        writer.WriteStartObject()
+        match value with
+{{- range $union.Variants}}
+{{- if .Fields}}
+        | {{.FSharpName}}({{range $i, $f := .Fields}}{{if $i}}, {{end}}{{$f.FSharpName | lower}}{{end}}) ->
+            writer.WriteString({{fsharpQuote $union.Tag}}, {{fsharpQuote .Value}})
+{{- range .Fields}}
+{{- if isOption .FSharpType}}
+            match {{.FSharpName | lower}} with
+            | Some v -> writer.WritePropertyName({{fsharpQuote .JSONName}}); JsonSerializer.Serialize(writer, v, options)
+            | None -> ()
+{{- else}}
+            writer.WritePropertyName({{fsharpQuote .JSONName}})
+            JsonSerializer.Serialize(writer, {{.FSharpName | lower}}, options)
+{{- end}}
+{{- end}}
+{{- else}}
+        | {{.FSharpName}} ->
+            writer.WriteString({{fsharpQuote $union.Tag}}, {{fsharpQuote .Value}})
+{{- end}}
+{{- end}}
+        writer.WriteEndObject()
+{{- end}}
+
+{{- /* Generate record types */}}
+{{- range .Types}}
+{{- if eq .Kind "struct"}}
+
+/// {{if .Description}}{{.Description}}{{else}}{{.FSharpName}} record type.{{end}}
+[<CLIMutable>]
+type {{.FSharpName}} = {
+{{- range .Fields}}
+    /// {{if .Description}}{{.Description}}{{else}}{{.FSharpName}} field.{{end}}
+    [<JsonPropertyName({{fsharpQuote .JSONName}})>]
+{{- if isOption .FSharpType}}
+    [<JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)>]
+{{- end}}
+    {{.FSharpName}}: {{.FSharpType}}
+{{- end}}
+}
+{{- else if eq .Kind "slice"}}
+
+/// {{if .Description}}{{.Description}}{{else}}{{.FSharpName}} type alias.{{end}}
+type {{.FSharpName}} = {{.Elem}} list
+{{- else if eq .Kind "map"}}
+
+/// {{if .Description}}{{.Description}}{{else}}{{.FSharpName}} type alias.{{end}}
+type {{.FSharpName}} = Map<string, {{.Elem}}>
+{{- end}}
+{{- end}}

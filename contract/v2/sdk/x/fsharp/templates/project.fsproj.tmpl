@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>{{.TargetFramework}}</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <PackageId>{{.PackageName}}</PackageId>
+    <Version>{{.Version}}</Version>
+{{- if .Service.Description}}
+    <Description>{{.Service.Description}}</Description>
+{{- end}}
+    <Authors>Generated</Authors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Files must be in compilation order for F# -->
+    <Compile Include="src/Types.fs" />
+    <Compile Include="src/Errors.fs" />
+    <Compile Include="src/Http.fs" />
+    <Compile Include="src/Streaming.fs" />
+    <Compile Include="src/Resources.fs" />
+    <Compile Include="src/Client.fs" />
+  </ItemGroup>
+</Project>
