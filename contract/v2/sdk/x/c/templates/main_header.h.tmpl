@@ -1,0 +1,23 @@
+{{- /* Main header that includes all public headers */ -}}
+/**
+ * @file {{.Package}}.h
+ * @brief {{.Service.Description}}
+ *
+ * This is the main header file for the {{.Package}} SDK.
+ * Include this file to access all SDK functionality.
+ *
+ * @version {{.Version}}
+ */
+
+#ifndef {{.HeaderGuardPrefix}}_H
+#define {{.HeaderGuardPrefix}}_H
+
+#include "{{.Package}}/errors.h"
+#include "{{.Package}}/client.h"
+#include "{{.Package}}/types.h"
+#include "{{.Package}}/resources.h"
+{{- if .HasSSE}}
+#include "{{.Package}}/streaming.h"
+{{- end}}
+
+#endif /* {{.HeaderGuardPrefix}}_H */

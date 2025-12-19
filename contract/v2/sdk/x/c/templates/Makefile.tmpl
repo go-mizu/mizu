@@ -1,0 +1,103 @@
+{{- /* Makefile template for C SDK */ -}}
+# {{.Package}} SDK Makefile
+
+CC ?= cc
+AR ?= ar
+CFLAGS ?= -Wall -Wextra -Wpedantic -std=c11 -O2
+LDFLAGS ?=
+
+# Debug build
+ifdef DEBUG
+CFLAGS += -g -O0 -DDEBUG
+endif
+
+# Directories
+PREFIX ?= /usr/local
+SRCDIR = src
+INCDIR = include
+BUILDDIR = build
+LIBDIR = $(BUILDDIR)/lib
+OBJDIR = $(BUILDDIR)/obj
+
+# Library name
+LIB_NAME = {{.Package}}
+LIB_STATIC = $(LIBDIR)/lib$(LIB_NAME).a
+LIB_SHARED = $(LIBDIR)/lib$(LIB_NAME).so
+
+# Sources
+SOURCES = $(wildcard $(SRCDIR)/*.c)
+OBJECTS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SOURCES))
+
+# Dependencies
+CURL_CFLAGS := $(shell pkg-config --cflags libcurl 2>/dev/null)
+CURL_LDFLAGS := $(shell pkg-config --libs libcurl 2>/dev/null)
+CJSON_CFLAGS := $(shell pkg-config --cflags libcjson 2>/dev/null)
+CJSON_LDFLAGS := $(shell pkg-config --libs libcjson 2>/dev/null)
+
+CFLAGS += -I$(INCDIR) -I$(SRCDIR) $(CURL_CFLAGS) $(CJSON_CFLAGS)
+LDFLAGS += $(CURL_LDFLAGS) $(CJSON_LDFLAGS)
+
+# Default target
+.PHONY: all
+all: static shared
+
+# Static library
+.PHONY: static
+static: $(LIB_STATIC)
+
+$(LIB_STATIC): $(OBJECTS) | $(LIBDIR)
+	$(AR) rcs $@ $^
+
+# Shared library
+.PHONY: shared
+shared: $(LIB_SHARED)
+
+$(LIB_SHARED): $(OBJECTS) | $(LIBDIR)
+	$(CC) -shared -o $@ $^ $(LDFLAGS)
+
+# Object files
+$(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
+	$(CC) $(CFLAGS) -fPIC -c -o $@ $<
+
+# Directories
+$(LIBDIR) $(OBJDIR):
+	mkdir -p $@
+
+# Install
+.PHONY: install
+install: all
+	install -d $(DESTDIR)$(PREFIX)/lib
+	install -d $(DESTDIR)$(PREFIX)/include/{{.Package}}
+	install -m 644 $(LIB_STATIC) $(DESTDIR)$(PREFIX)/lib/
+	install -m 755 $(LIB_SHARED) $(DESTDIR)$(PREFIX)/lib/
+	install -m 644 $(INCDIR)/{{.Package}}/*.h $(DESTDIR)$(PREFIX)/include/{{.Package}}/
+
+# Uninstall
+.PHONY: uninstall
+uninstall:
+	rm -f $(DESTDIR)$(PREFIX)/lib/lib$(LIB_NAME).a
+	rm -f $(DESTDIR)$(PREFIX)/lib/lib$(LIB_NAME).so
+	rm -rf $(DESTDIR)$(PREFIX)/include/{{.Package}}
+
+# Clean
+.PHONY: clean
+clean:
+	rm -rf $(BUILDDIR)
+
+# Help
+.PHONY: help
+help:
+	@echo "{{.Package}} SDK Build System"
+	@echo ""
+	@echo "Targets:"
+	@echo "  all      - Build static and shared libraries (default)"
+	@echo "  static   - Build static library only"
+	@echo "  shared   - Build shared library only"
+	@echo "  install  - Install libraries and headers"
+	@echo "  clean    - Remove build artifacts"
+	@echo ""
+	@echo "Variables:"
+	@echo "  CC       - C compiler (default: cc)"
+	@echo "  CFLAGS   - Compiler flags"
+	@echo "  PREFIX   - Install prefix (default: /usr/local)"
+	@echo "  DEBUG=1  - Enable debug build"

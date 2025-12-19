@@ -1,0 +1,107 @@
+{{- /* CMakeLists.txt template for C SDK */ -}}
+cmake_minimum_required(VERSION 3.14)
+project({{.Package}} VERSION {{.Version}} LANGUAGES C)
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
+
+# Options
+option(BUILD_SHARED_LIBS "Build shared library" ON)
+option({{.PackageUpper}}_BUILD_TESTS "Build tests" OFF)
+
+# Find dependencies
+find_package(CURL REQUIRED)
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(CJSON QUIET libcjson)
+endif()
+
+if(NOT CJSON_FOUND)
+    find_path(CJSON_INCLUDE_DIRS cjson/cJSON.h)
+    find_library(CJSON_LIBRARIES NAMES cjson cJSON)
+    if(CJSON_INCLUDE_DIRS AND CJSON_LIBRARIES)
+        set(CJSON_FOUND TRUE)
+    else()
+        message(FATAL_ERROR "cJSON library not found")
+    endif()
+endif()
+
+# Library sources
+set({{.PackageUpper}}_SOURCES
+    src/errors.c
+    src/client.c
+    src/types.c
+    src/resources.c
+    src/streaming.c
+)
+
+# Create library
+add_library(${PROJECT_NAME} ${{"${"}}{{.PackageUpper}}_SOURCES})
+
+target_include_directories(${PROJECT_NAME}
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CJSON_INCLUDE_DIRS}
+)
+
+target_link_libraries(${PROJECT_NAME}
+    PRIVATE
+        CURL::libcurl
+        ${CJSON_LIBRARIES}
+)
+
+# Platform-specific settings
+if(WIN32)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
+if(UNIX AND NOT APPLE)
+    target_link_libraries(${PROJECT_NAME} PRIVATE m pthread)
+endif()
+
+# Compiler warnings
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(${PROJECT_NAME} PRIVATE
+        -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration
+    )
+endif()
+
+# Install rules
+include(GNUInstallDirs)
+
+install(TARGETS ${PROJECT_NAME}
+    EXPORT ${PROJECT_NAME}Targets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(DIRECTORY include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+install(EXPORT ${PROJECT_NAME}Targets
+    FILE ${PROJECT_NAME}Config.cmake
+    NAMESPACE ${PROJECT_NAME}::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
+)
+
+# pkg-config file
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/{{.Package}}.pc.in
+    ${CMAKE_CURRENT_BINARY_DIR}/{{.Package}}.pc
+    @ONLY
+)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/{{.Package}}.pc
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+)
+
+# Tests
+if({{.PackageUpper}}_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

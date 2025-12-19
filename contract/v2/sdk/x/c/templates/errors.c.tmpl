@@ -1,0 +1,75 @@
+{{- /* Error handling implementation */ -}}
+/**
+ * @file errors.c
+ * @brief Error handling implementation for {{.Package}} SDK.
+ */
+
+#include "{{.Package}}/errors.h"
+#include <stdlib.h>
+#include <string.h>
+
+const char *{{.Package}}_error_string({{.Package}}_error_t code) {
+    switch (code) {
+    case {{.PackageUpper}}_OK:
+        return "success";
+    case {{.PackageUpper}}_ERR_NULL_ARG:
+        return "null argument provided";
+    case {{.PackageUpper}}_ERR_ALLOC:
+        return "memory allocation failed";
+    case {{.PackageUpper}}_ERR_INVALID_ARG:
+        return "invalid argument value";
+    case {{.PackageUpper}}_ERR_CONNECTION:
+        return "network connection failed";
+    case {{.PackageUpper}}_ERR_TIMEOUT:
+        return "request timed out";
+    case {{.PackageUpper}}_ERR_CANCELLED:
+        return "request was cancelled";
+    case {{.PackageUpper}}_ERR_HTTP:
+        return "HTTP error";
+    case {{.PackageUpper}}_ERR_SERIALIZE:
+        return "JSON serialization failed";
+    case {{.PackageUpper}}_ERR_DESERIALIZE:
+        return "JSON deserialization failed";
+    case {{.PackageUpper}}_ERR_STREAM:
+        return "streaming error";
+    case {{.PackageUpper}}_ERR_INTERNAL:
+        return "internal error";
+    default:
+        return "unknown error";
+    }
+}
+
+void {{.Package}}_error_info_init({{.Package}}_error_info_t *info) {
+    if (info) {
+        info->code = {{.PackageUpper}}_OK;
+        info->http_status = 0;
+        info->message = NULL;
+        info->response_body = NULL;
+    }
+}
+
+void {{.Package}}_error_info_free({{.Package}}_error_info_t *info) {
+    if (info) {
+        free(info->message);
+        info->message = NULL;
+        free(info->response_body);
+        info->response_body = NULL;
+    }
+}
+
+int {{.Package}}_error_is_retriable(const {{.Package}}_error_info_t *info) {
+    if (!info) {
+        return 0;
+    }
+
+    switch (info->code) {
+    case {{.PackageUpper}}_ERR_CONNECTION:
+    case {{.PackageUpper}}_ERR_TIMEOUT:
+        return 1;
+    case {{.PackageUpper}}_ERR_HTTP:
+        /* Retry on 5xx and 429 (rate limit) */
+        return info->http_status >= 500 || info->http_status == 429;
+    default:
+        return 0;
+    }
+}

@@ -1,0 +1,78 @@
+{{- /* Error handling header */ -}}
+/**
+ * @file errors.h
+ * @brief Error codes and error handling for {{.Package}} SDK.
+ */
+
+#ifndef {{.HeaderGuardPrefix}}_ERRORS_H
+#define {{.HeaderGuardPrefix}}_ERRORS_H
+
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * @brief Error codes for SDK operations.
+ */
+typedef enum {
+    {{.PackageUpper}}_OK = 0,                    /**< Success */
+    {{.PackageUpper}}_ERR_NULL_ARG,              /**< Null argument provided */
+    {{.PackageUpper}}_ERR_ALLOC,                 /**< Memory allocation failed */
+    {{.PackageUpper}}_ERR_INVALID_ARG,           /**< Invalid argument value */
+    {{.PackageUpper}}_ERR_CONNECTION,            /**< Network connection failed */
+    {{.PackageUpper}}_ERR_TIMEOUT,               /**< Request timed out */
+    {{.PackageUpper}}_ERR_CANCELLED,             /**< Request was cancelled */
+    {{.PackageUpper}}_ERR_HTTP,                  /**< HTTP error (check status code) */
+    {{.PackageUpper}}_ERR_SERIALIZE,             /**< JSON serialization failed */
+    {{.PackageUpper}}_ERR_DESERIALIZE,           /**< JSON deserialization failed */
+    {{.PackageUpper}}_ERR_STREAM,                /**< Streaming error */
+    {{.PackageUpper}}_ERR_INTERNAL,              /**< Internal error */
+} {{.Package}}_error_t;
+
+/**
+ * @brief Detailed error information.
+ */
+typedef struct {
+    {{.Package}}_error_t code;       /**< Error code */
+    int http_status;                  /**< HTTP status code (if applicable) */
+    char *message;                    /**< Human-readable error message (owned) */
+    char *response_body;              /**< Response body for HTTP errors (owned, may be NULL) */
+} {{.Package}}_error_info_t;
+
+/**
+ * @brief Get a human-readable description for an error code.
+ *
+ * @param code The error code.
+ * @return Static string describing the error.
+ */
+const char *{{.Package}}_error_string({{.Package}}_error_t code);
+
+/**
+ * @brief Initialize error info structure.
+ *
+ * @param info Error info to initialize.
+ */
+void {{.Package}}_error_info_init({{.Package}}_error_info_t *info);
+
+/**
+ * @brief Free error info resources.
+ *
+ * @param info Error info to free (safe to call with NULL fields).
+ */
+void {{.Package}}_error_info_free({{.Package}}_error_info_t *info);
+
+/**
+ * @brief Check if an error is retriable.
+ *
+ * @param info Error info to check.
+ * @return Non-zero if the error is potentially retriable.
+ */
+int {{.Package}}_error_is_retriable(const {{.Package}}_error_info_t *info);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* {{.HeaderGuardPrefix}}_ERRORS_H */
