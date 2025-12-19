@@ -646,10 +646,6 @@ func fixAcronyms(s string, isTypeName bool) string {
 		s = strings.ReplaceAll(s, "Api", "API")
 		s = strings.ReplaceAll(s, "Sse", "SSE")
 		s = strings.ReplaceAll(s, "Json", "JSON")
-	} else {
-		// For properties, acronyms at the start are lowercase
-		// "ID" at start -> "id", "ID" elsewhere -> "ID"
-		// This is tricky, we'll keep it simple for now
 	}
 	return s
 }

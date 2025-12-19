@@ -154,7 +154,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 		// If request has a body, merge JSON into the struct (non-GET typical).
 		if r.Body != nil && r.ContentLength != 0 {
-			defer r.Body.Close()
+			defer func() { _ = r.Body.Close() }()
 			dec := json.NewDecoder(r.Body)
 			dec.DisallowUnknownFields()
 

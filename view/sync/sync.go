@@ -675,12 +675,6 @@ func (q *queue) currentSeq() uint64 {
 	return q.seq
 }
 
-func (q *queue) setSeq(seq uint64) {
-	q.mu.Lock()
-	q.seq = seq
-	q.mu.Unlock()
-}
-
 func (q *queue) loadMutations(mutations []mutation) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -790,7 +784,7 @@ func (t *transport) post(ctx context.Context, path string, body, result any) err
 	if err != nil {
 		return fmt.Errorf("http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

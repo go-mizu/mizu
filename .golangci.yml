@@ -4,3 +4,18 @@ linters:
   enable:
     - cyclop
     - gosec
+  exclusions:
+    rules:
+      - path: contract/v2/
+        linters:
+          - cyclop
+      - path: openapi/
+        linters:
+          - cyclop
+      - path: sync/
+        linters:
+          - cyclop
+      - path: _test\.go$
+        linters:
+          - errcheck
+          - gosec

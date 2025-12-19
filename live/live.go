@@ -287,7 +287,7 @@ func (s *Session) Send(msg Message) error {
 		return nil
 	default:
 		// Queue is full - close session to enforce backpressure
-		s.closeWithError(ErrQueueFull)
+		_ = s.closeWithError(ErrQueueFull)
 		return ErrQueueFull
 	}
 }
@@ -567,7 +567,7 @@ func (srv *Server) handleConn(w http.ResponseWriter, r *http.Request) {
 	readErr := srv.readLoop(r, session)
 
 	// Close session with the read error as reason
-	session.closeWithError(readErr)
+	_ = session.closeWithError(readErr)
 	srv.removeSession(session)
 
 	// Call OnClose callback with actual close reason
@@ -625,7 +625,7 @@ func (srv *Server) writeLoop(session *Session) {
 				continue
 			}
 			if err := session.wsConn.WriteMessage(ws.OpText, data); err != nil {
-				session.closeWithError(err)
+				_ = session.closeWithError(err)
 				return
 			}
 		case <-session.doneCh:

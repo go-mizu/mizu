@@ -30,7 +30,7 @@ type JSONCodec struct {
 
 func (c JSONCodec) Decode(r io.Reader, v any) error {
 	dec := json.NewDecoder(r)
-	if c.Strict || (c.Strict == false && c.Strict == (JSONCodec{}).Strict) {
+	if c.Strict || !c.Strict && c.Strict == (JSONCodec{}).Strict {
 		dec.DisallowUnknownFields()
 	}
 	return dec.Decode(v)
@@ -57,11 +57,11 @@ func ParseBytes(b []byte, c Codec) (*Service, error)  { return Parse(bytes.NewRe
 func ParseString(s string, c Codec) (*Service, error) { return Parse(strings.NewReader(s), c) }
 
 func ParseFile(path string, c Codec) (*Service, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: path is intentionally variable for file parsing
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return Parse(f, c)
 }
 
