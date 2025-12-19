@@ -8,7 +8,7 @@ import (
 
 	contract "github.com/go-mizu/mizu/contract/v2"
 	"github.com/go-mizu/mizu/contract/v2/sdk"
-	sdkswift "github.com/go-mizu/mizu/contract/v2/sdk/swift"
+	sdkswift "github.com/go-mizu/mizu/contract/v2/sdk/x/swift"
 )
 
 func TestGenerate_NilService(t *testing.T) {
