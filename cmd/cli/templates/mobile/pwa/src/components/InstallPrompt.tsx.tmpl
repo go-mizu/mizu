@@ -1,0 +1,30 @@
+import { useInstallPrompt } from '../hooks/useInstallPrompt';
+import './InstallPrompt.css';
+
+export default function InstallPrompt() {
+  const { canInstall, install, dismiss } = useInstallPrompt();
+
+  if (!canInstall) {
+    return null;
+  }
+
+  return (
+    <div className="install-prompt">
+      <div className="install-prompt-content">
+        <span className="install-icon">+</span>
+        <div className="install-text">
+          <strong>Install {{.Name}}</strong>
+          <p>Add to your home screen for quick access</p>
+        </div>
+      </div>
+      <div className="install-actions">
+        <button className="install-button-secondary" onClick={dismiss}>
+          Not now
+        </button>
+        <button className="install-button-primary" onClick={install}>
+          Install
+        </button>
+      </div>
+    </div>
+  );
+}

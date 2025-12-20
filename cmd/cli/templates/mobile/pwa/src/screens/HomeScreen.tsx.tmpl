@@ -1,0 +1,37 @@
+import { useState } from 'react';
+import { useAuthStore } from '../store/authStore';
+import './HomeScreen.css';
+
+export default function HomeScreen() {
+  const [isLoading, setIsLoading] = useState(false);
+  const signOut = useAuthStore((state) => state.signOut);
+
+  const handleSignOut = async () => {
+    setIsLoading(true);
+    try {
+      await signOut();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="home-container">
+      <div className="home-content">
+        <div className="home-icon-container">
+          <span className="home-icon">&#10003;</span>
+        </div>
+        <h1 className="home-title">Welcome to {{.Name}}</h1>
+        <p className="home-subtitle">Connected to Mizu backend</p>
+
+        {isLoading ? (
+          <div className="home-loading">Loading...</div>
+        ) : (
+          <button className="home-button" onClick={handleSignOut}>
+            Sign Out
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}

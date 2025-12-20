@@ -1,0 +1,11 @@
+{
+  "name": "mobile/pwa",
+  "description": "Progressive Web App with React, Vite, TypeScript, and Mizu backend integration",
+  "tags": ["mizu", "mobile", "pwa", "web", "react", "vite", "typescript", "service-worker", "offline"],
+  "variables": {
+    "name": { "description": "Project name", "default": "" },
+    "workbox": { "description": "Use Workbox for service worker", "default": "false" },
+    "ui": { "description": "UI framework: css, tailwind", "default": "css" },
+    "push": { "description": "Enable push notifications", "default": "true" }
+  }
+}
