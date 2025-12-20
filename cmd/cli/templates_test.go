@@ -43,6 +43,7 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 	foundNext := false
 	foundNuxt := false
 	foundPreact := false
+	foundSveltekit := false
 	for _, tmpl := range templates {
 		if tmpl.Name == "frontend/spa/react" {
 			foundReact = true
@@ -67,6 +68,9 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 		}
 		if tmpl.Name == "frontend/spa/preact" {
 			foundPreact = true
+		}
+		if tmpl.Name == "frontend/spa/sveltekit" {
+			foundSveltekit = true
 		}
 	}
 
@@ -94,6 +98,9 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 	if !foundPreact {
 		t.Error("listTemplates() did not include nested template 'frontend/spa/preact'")
 	}
+	if !foundSveltekit {
+		t.Error("listTemplates() did not include nested template 'frontend/spa/sveltekit'")
+	}
 }
 
 func TestTemplateExistsNested(t *testing.T) {
@@ -112,6 +119,7 @@ func TestTemplateExistsNested(t *testing.T) {
 		{"frontend/spa/next", true},
 		{"frontend/spa/nuxt", true},
 		{"frontend/spa/preact", true},
+		{"frontend/spa/sveltekit", true},
 		{"frontend/spa/nonexistent", false},
 		{"frontend/nonexistent", false},
 		{"nonexistent", false},
@@ -143,6 +151,7 @@ func TestLoadTemplateMeta(t *testing.T) {
 		{"frontend/spa/next", "frontend/spa/next", true},
 		{"frontend/spa/nuxt", "frontend/spa/nuxt", true},
 		{"frontend/spa/preact", "frontend/spa/preact", true},
+		{"frontend/spa/sveltekit", "frontend/spa/sveltekit", true},
 	}
 
 	for _, tt := range tests {
@@ -2353,5 +2362,330 @@ func TestPreactTemplateMakefileHasNpmCommands(t *testing.T) {
 	}
 	if !strings.Contains(string(makefile), "client") {
 		t.Error("Preact Makefile should reference client directory")
+	}
+}
+
+// SvelteKit template tests
+
+func TestListTemplatesIncludesSvelteKit(t *testing.T) {
+	templates, err := listTemplates()
+	if err != nil {
+		t.Fatalf("listTemplates() error: %v", err)
+	}
+
+	found := false
+	for _, tmpl := range templates {
+		if tmpl.Name == "frontend/spa/sveltekit" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("listTemplates() did not include nested template 'frontend/spa/sveltekit'")
+	}
+}
+
+func TestTemplateExistsSvelteKit(t *testing.T) {
+	if !templateExists("frontend/spa/sveltekit") {
+		t.Error("templateExists('frontend/spa/sveltekit') returned false")
+	}
+}
+
+func TestLoadTemplateFilesSvelteKit(t *testing.T) {
+	files, err := loadTemplateFiles("frontend/spa/sveltekit")
+	if err != nil {
+		t.Fatalf("loadTemplateFiles() error: %v", err)
+	}
+
+	if len(files) == 0 {
+		t.Error("loadTemplateFiles() returned no files")
+	}
+
+	// Check for expected files
+	expectedFiles := []string{
+		".gitignore",                          // from _common
+		"go.mod",                              // from _common
+		"cmd/server/main.go",                  // template specific
+		"app/server/app.go",                   // template specific
+		"app/server/config.go",                // template specific
+		"app/server/routes.go",                // template specific
+		"client/package.json",                 // template specific
+		"client/svelte.config.js",             // template specific (SvelteKit)
+		"client/vite.config.ts",               // template specific
+		"client/src/app.html",                 // template specific (SvelteKit)
+		"client/src/routes/+layout.svelte",    // template specific (SvelteKit routing)
+		"client/src/routes/+page.svelte",      // template specific
+		"Makefile",                            // template specific
+	}
+
+	fileMap := make(map[string]bool)
+	for _, f := range files {
+		fileMap[f.path] = true
+	}
+
+	for _, expected := range expectedFiles {
+		if !fileMap[expected] {
+			t.Errorf("expected file %q not found in template files", expected)
+		}
+	}
+}
+
+func TestBuildPlanSvelteKitTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/sveltekit", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if len(p.ops) == 0 {
+		t.Error("buildPlan() returned empty plan")
+	}
+
+	// Check for expected operations
+	hasWrite := false
+	hasMkdir := false
+	for _, op := range p.ops {
+		switch op.kind {
+		case opWrite:
+			hasWrite = true
+		case opMkdir:
+			hasMkdir = true
+		}
+	}
+
+	if !hasWrite {
+		t.Error("plan has no write operations")
+	}
+	if !hasMkdir {
+		t.Error("plan has no mkdir operations")
+	}
+}
+
+func TestApplyPlanSvelteKitTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/sveltekit", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Verify key files exist
+	expectedFiles := []string{
+		"go.mod",
+		"cmd/server/main.go",
+		"app/server/app.go",
+		"app/server/config.go",
+		"app/server/routes.go",
+		"client/package.json",
+		"client/svelte.config.js",
+		"client/vite.config.ts",
+		"client/tsconfig.json",
+		"client/tailwind.config.ts",
+		"client/postcss.config.js",
+		"client/src/app.html",
+		"client/src/app.css",
+		"client/src/app.d.ts",
+		"client/src/routes/+layout.svelte",
+		"client/src/routes/+page.svelte",
+		"client/src/routes/about/+page.svelte",
+		"Makefile",
+	}
+
+	for _, file := range expectedFiles {
+		path := filepath.Join(tmpDir, file)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("expected file %q does not exist", file)
+		}
+	}
+}
+
+func TestSvelteKitTemplateVariableSubstitution(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("mysveltekitapp", "github.com/user/mysveltekitapp", "Apache-2.0", nil)
+
+	p, err := buildPlan("frontend/spa/sveltekit", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check go.mod contains the module path
+	gomod, err := os.ReadFile(filepath.Join(tmpDir, "go.mod"))
+	if err != nil {
+		t.Fatalf("ReadFile(go.mod) error: %v", err)
+	}
+
+	if !strings.Contains(string(gomod), "github.com/user/mysveltekitapp") {
+		t.Error("go.mod does not contain module path")
+	}
+
+	// Check package.json contains the project name
+	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "client/package.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(package.json) error: %v", err)
+	}
+
+	if !strings.Contains(string(pkgjson), "mysveltekitapp-client") {
+		t.Error("package.json does not contain project name")
+	}
+
+	// Check that package.json has SvelteKit dependencies
+	if !strings.Contains(string(pkgjson), `"svelte"`) {
+		t.Error("package.json does not contain svelte dependency")
+	}
+	if !strings.Contains(string(pkgjson), `"@sveltejs/kit"`) {
+		t.Error("package.json does not contain @sveltejs/kit dependency")
+	}
+	if !strings.Contains(string(pkgjson), `"@sveltejs/adapter-static"`) {
+		t.Error("package.json does not contain @sveltejs/adapter-static dependency")
+	}
+}
+
+func TestSvelteKitTemplateHasSvelteKitSpecificContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/sveltekit", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check svelte.config.js contains adapter-static
+	svelteConfig, err := os.ReadFile(filepath.Join(tmpDir, "client/svelte.config.js"))
+	if err != nil {
+		t.Fatalf("ReadFile(svelte.config.js) error: %v", err)
+	}
+
+	if !strings.Contains(string(svelteConfig), "adapter-static") {
+		t.Error("svelte.config.js does not import adapter-static")
+	}
+	if !strings.Contains(string(svelteConfig), "fallback: 'index.html'") {
+		t.Error("svelte.config.js does not configure SPA fallback")
+	}
+
+	// Check +layout.svelte uses Svelte 5 syntax
+	layout, err := os.ReadFile(filepath.Join(tmpDir, "client/src/routes/+layout.svelte"))
+	if err != nil {
+		t.Fatalf("ReadFile(+layout.svelte) error: %v", err)
+	}
+
+	if !strings.Contains(string(layout), "$props()") {
+		t.Error("+layout.svelte does not use Svelte 5 $props()")
+	}
+	if !strings.Contains(string(layout), "{@render children()}") {
+		t.Error("+layout.svelte does not use Svelte 5 {@render} for children")
+	}
+	if !strings.Contains(string(layout), "svelte:head") {
+		t.Error("+layout.svelte does not use svelte:head")
+	}
+
+	// Check +page.svelte uses Svelte 5 runes
+	page, err := os.ReadFile(filepath.Join(tmpDir, "client/src/routes/+page.svelte"))
+	if err != nil {
+		t.Fatalf("ReadFile(+page.svelte) error: %v", err)
+	}
+
+	if !strings.Contains(string(page), "$state(") {
+		t.Error("+page.svelte does not use Svelte 5 $state rune")
+	}
+	if !strings.Contains(string(page), "onMount") {
+		t.Error("+page.svelte does not use onMount lifecycle function")
+	}
+
+	// Check vite.config.ts uses SvelteKit plugin
+	viteConfig, err := os.ReadFile(filepath.Join(tmpDir, "client/vite.config.ts"))
+	if err != nil {
+		t.Fatalf("ReadFile(vite.config.ts) error: %v", err)
+	}
+
+	if !strings.Contains(string(viteConfig), "@sveltejs/kit/vite") {
+		t.Error("vite.config.ts does not import from @sveltejs/kit/vite")
+	}
+	if !strings.Contains(string(viteConfig), "sveltekit()") {
+		t.Error("vite.config.ts does not use sveltekit() plugin")
+	}
+
+	// Check app.html contains SvelteKit placeholders
+	appHtml, err := os.ReadFile(filepath.Join(tmpDir, "client/src/app.html"))
+	if err != nil {
+		t.Fatalf("ReadFile(app.html) error: %v", err)
+	}
+
+	if !strings.Contains(string(appHtml), "%sveltekit.head%") {
+		t.Error("app.html does not contain sveltekit.head placeholder")
+	}
+	if !strings.Contains(string(appHtml), "%sveltekit.body%") {
+		t.Error("app.html does not contain sveltekit.body placeholder")
+	}
+
+	// Check app.css imports Tailwind
+	appCss, err := os.ReadFile(filepath.Join(tmpDir, "client/src/app.css"))
+	if err != nil {
+		t.Fatalf("ReadFile(app.css) error: %v", err)
+	}
+
+	if !strings.Contains(string(appCss), "tailwindcss") {
+		t.Error("app.css does not import tailwindcss")
+	}
+
+	// Check app.go uses frontend middleware
+	appGo, err := os.ReadFile(filepath.Join(tmpDir, "app/server/app.go"))
+	if err != nil {
+		t.Fatalf("ReadFile(app.go) error: %v", err)
+	}
+
+	if !strings.Contains(string(appGo), "frontend.WithOptions") {
+		t.Error("app.go does not use frontend.WithOptions")
+	}
+	if !strings.Contains(string(appGo), "frontend.ModeAuto") {
+		t.Error("app.go does not use frontend.ModeAuto")
+	}
+}
+
+func TestSvelteKitTemplateMakefileHasNpmCommands(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/sveltekit", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check Makefile contains npm commands
+	makefile, err := os.ReadFile(filepath.Join(tmpDir, "Makefile"))
+	if err != nil {
+		t.Fatalf("ReadFile(Makefile) error: %v", err)
+	}
+
+	if !strings.Contains(string(makefile), "npm run build") {
+		t.Error("SvelteKit Makefile should contain npm run build")
+	}
+	if !strings.Contains(string(makefile), "npm run dev") {
+		t.Error("SvelteKit Makefile should contain npm run dev")
+	}
+	if !strings.Contains(string(makefile), "client") {
+		t.Error("SvelteKit Makefile should reference client directory")
+	}
+	if !strings.Contains(string(makefile), ".svelte-kit") {
+		t.Error("SvelteKit Makefile should clean .svelte-kit directory")
 	}
 }
