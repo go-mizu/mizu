@@ -1,0 +1,414 @@
+---
+title: "Quick Start"
+description: "Create your first mobile backend with Mizu in minutes."
+icon: "rocket"
+---
+
+This guide walks you through creating a mobile backend with Mizu. You'll have a working API with device detection, versioning, and mobile-optimized responses in under 5 minutes.
+
+## Prerequisites
+
+Before starting, make sure you have:
+
+- **Go 1.22 or later** - [Download Go](https://go.dev/dl/)
+- **Mizu CLI** - Install with `go install github.com/go-mizu/mizu/cmd/cli@latest`
+
+Verify your installation:
+
+```bash
+go version    # Should show 1.22 or later
+mizu version  # Should show the installed Mizu CLI version
+```
+
+## Create Your First Mobile Backend
+
+### Step 1: Create a New Project
+
+Create a minimal Mizu project:
+
+```bash
+mizu new ./my-mobile-api --template minimal
+cd my-mobile-api
+```
+
+### Step 2: Add Mobile Middleware
+
+Update your `main.go` to add mobile support:
+
+```go
+package main
+
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/mobile"
+)
+
+func main() {
+    app := mizu.New()
+
+    // Add mobile device detection
+    app.Use(mobile.New())
+
+    // Add API versioning
+    app.Use(mobile.VersionMiddleware(mobile.VersionOptions{
+        Supported:  []mobile.Version{{2, 0}, {1, 0}},
+        Deprecated: []mobile.Version{{1, 0}},
+        Default:    mobile.Version{Major: 2},
+    }))
+
+    // API routes
+    app.Get("/api/hello", handleHello)
+    app.Get("/api/users", handleUsers)
+
+    app.Listen(":3000")
+}
+
+func handleHello(c *mizu.Ctx) error {
+    device := mobile.DeviceFromCtx(c)
+
+    return c.JSON(200, map[string]any{
+        "message":    "Hello from Mizu Mobile!",
+        "platform":   device.Platform.String(),
+        "app_version": device.AppVersion,
+        "device_id":  device.DeviceID,
+    })
+}
+
+func handleUsers(c *mizu.Ctx) error {
+    version := mobile.VersionFromCtx(c)
+
+    users := []map[string]any{
+        {"id": 1, "name": "Alice"},
+        {"id": 2, "name": "Bob"},
+    }
+
+    // Version-aware response
+    if version.AtLeast(2, 0) {
+        // v2: Include metadata
+        return c.JSON(200, map[string]any{
+            "data":  users,
+            "count": len(users),
+        })
+    }
+
+    // v1: Simple array
+    return c.JSON(200, users)
+}
+```
+
+### Step 3: Run the Server
+
+```bash
+go run main.go
+```
+
+Your mobile backend is now running at `http://localhost:3000`.
+
+## Test Your API
+
+### Test with Mobile Headers
+
+```bash
+# Basic request with mobile headers
+curl -H "X-Device-ID: device-123" \
+     -H "X-App-Version: 2.1.0" \
+     -H "X-Platform: ios" \
+     http://localhost:3000/api/hello
+```
+
+Response:
+```json
+{
+  "message": "Hello from Mizu Mobile!",
+  "platform": "ios",
+  "app_version": "2.1.0",
+  "device_id": "device-123"
+}
+```
+
+### Test API Versioning
+
+```bash
+# v2 API (default)
+curl -H "X-API-Version: v2" \
+     http://localhost:3000/api/users
+
+# Response: {"data": [...], "count": 2}
+
+# v1 API (deprecated)
+curl -H "X-API-Version: v1" \
+     http://localhost:3000/api/users
+
+# Response: [...] (simple array)
+# Response header: X-API-Deprecated: true
+```
+
+## Add More Features
+
+### Require Device ID
+
+```go
+app.Use(mobile.WithOptions(mobile.Options{
+    RequireDeviceID: true,
+}))
+```
+
+Now requests without `X-Device-ID` return 400 Bad Request.
+
+### Enforce Minimum App Version
+
+```go
+app.Use(mobile.WithOptions(mobile.Options{
+    RequireAppVersion: true,
+    MinAppVersion:     "1.5.0",
+}))
+```
+
+Requests with app versions below 1.5.0 return 426 Upgrade Required.
+
+### Add Offline Sync
+
+```go
+app.Get("/api/sync", func(c *mizu.Ctx) error {
+    req := mobile.ParseSyncRequest(c)
+
+    var delta mobile.Delta[Item]
+    if req.IsInitial() {
+        // Full sync
+        delta.Created = getAllItems()
+    } else {
+        // Delta sync
+        since := req.Since()
+        delta.Created = getCreatedSince(since)
+        delta.Updated = getUpdatedSince(since)
+        delta.Deleted = getDeletedSince(since)
+    }
+
+    token := mobile.NewSyncToken(time.Now())
+    return c.JSON(200, mobile.NewSyncDelta(delta, token, false))
+})
+```
+
+### Add Push Token Registration
+
+```go
+app.Post("/api/push/register", func(c *mizu.Ctx) error {
+    token := mobile.ParsePushToken(c)
+    if token == nil {
+        return mobile.SendError(c, 400, mobile.NewError(
+            mobile.ErrInvalidRequest,
+            "Missing push token",
+        ))
+    }
+
+    // Validate token format
+    if !mobile.ValidateToken(token.Token, token.Provider) {
+        return mobile.SendError(c, 400, mobile.NewError(
+            mobile.ErrValidation,
+            "Invalid push token format",
+        ))
+    }
+
+    // Save token to database
+    // db.SavePushToken(token)
+
+    return c.NoContent()
+})
+```
+
+## Create a Mobile Client
+
+### Using a Template
+
+Create a complete mobile client with matching SDK:
+
+```bash
+# iOS app
+mizu new ./my-ios-app --template mobile/ios
+
+# Android app
+mizu new ./my-android-app --template mobile/android
+
+# Flutter app
+mizu new ./my-flutter-app --template mobile/flutter
+
+# React Native app
+mizu new ./my-rn-app --template mobile/reactnative
+```
+
+### Manual Client Setup
+
+#### iOS (Swift)
+
+```swift
+class APIClient {
+    let baseURL = "http://localhost:3000"
+    let deviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
+
+    func request(_ endpoint: String) async throws -> Data {
+        var request = URLRequest(url: URL(string: baseURL + endpoint)!)
+
+        // Add mobile headers
+        request.setValue(deviceID, forHTTPHeaderField: "X-Device-ID")
+        request.setValue(Bundle.main.appVersion, forHTTPHeaderField: "X-App-Version")
+        request.setValue("ios", forHTTPHeaderField: "X-Platform")
+        request.setValue("v2", forHTTPHeaderField: "X-API-Version")
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        return data
+    }
+}
+```
+
+#### Android (Kotlin)
+
+```kotlin
+class ApiClient(private val baseUrl: String) {
+    private val client = OkHttpClient()
+    private val deviceId = Settings.Secure.getString(
+        context.contentResolver,
+        Settings.Secure.ANDROID_ID
+    )
+
+    fun createRequest(endpoint: String): Request {
+        return Request.Builder()
+            .url("$baseUrl$endpoint")
+            .header("X-Device-ID", deviceId)
+            .header("X-App-Version", BuildConfig.VERSION_NAME)
+            .header("X-Platform", "android")
+            .header("X-API-Version", "v2")
+            .build()
+    }
+}
+```
+
+#### Flutter (Dart)
+
+```dart
+class ApiClient {
+  final String baseUrl;
+  final String deviceId;
+
+  ApiClient({required this.baseUrl, required this.deviceId});
+
+  Future<http.Response> get(String endpoint) {
+    return http.get(
+      Uri.parse('$baseUrl$endpoint'),
+      headers: {
+        'X-Device-ID': deviceId,
+        'X-App-Version': packageInfo.version,
+        'X-Platform': Platform.operatingSystem,
+        'X-API-Version': 'v2',
+      },
+    );
+  }
+}
+```
+
+## Project Structure
+
+A typical mobile backend project:
+
+```
+my-mobile-api/
+├── cmd/
+│   └── server/
+│       └── main.go          # Entry point
+├── app/
+│   └── server/
+│       ├── app.go           # Mizu app setup
+│       ├── config.go        # Configuration
+│       ├── routes.go        # Route definitions
+│       └── handlers/
+│           ├── users.go     # User handlers
+│           ├── sync.go      # Sync handlers
+│           └── push.go      # Push handlers
+├── internal/
+│   ├── models/              # Data models
+│   └── services/            # Business logic
+├── go.mod
+└── Makefile
+```
+
+## Common Patterns
+
+### Platform-Specific Responses
+
+```go
+func handler(c *mizu.Ctx) error {
+    device := mobile.DeviceFromCtx(c)
+
+    response := map[string]any{
+        "message": "Hello",
+    }
+
+    // Platform-specific data
+    switch device.Platform {
+    case mobile.PlatformIOS:
+        response["store_url"] = "https://apps.apple.com/app/id123"
+    case mobile.PlatformAndroid:
+        response["store_url"] = "https://play.google.com/store/apps/details?id=com.example"
+    }
+
+    return c.JSON(200, response)
+}
+```
+
+### Graceful Version Migration
+
+```go
+func handler(c *mizu.Ctx) error {
+    version := mobile.VersionFromCtx(c)
+
+    switch {
+    case version.AtLeast(3, 0):
+        return handleV3(c)
+    case version.AtLeast(2, 0):
+        return handleV2(c)
+    default:
+        return handleV1(c)
+    }
+}
+```
+
+### Structured Error Responses
+
+```go
+func handler(c *mizu.Ctx) error {
+    if !authorized {
+        return mobile.SendError(c, 401, mobile.NewError(
+            mobile.ErrUnauthorized,
+            "Invalid credentials",
+        ).WithDetails("reason", "token_expired"))
+    }
+
+    if !valid {
+        return mobile.SendError(c, 400, mobile.NewError(
+            mobile.ErrValidation,
+            "Invalid request",
+        ).WithDetails("field", "email").
+          WithDetails("error", "invalid format"))
+    }
+
+    return c.JSON(200, data)
+}
+```
+
+## Next Steps
+
+You've created your first mobile backend! Here's what to explore next:
+
+<CardGroup cols={2}>
+  <Card title="Device Detection" href="/mobile/device" icon="mobile-screen">
+    Deep dive into device parsing and validation
+  </Card>
+  <Card title="API Versioning" href="/mobile/versioning" icon="code-branch">
+    Learn about version management
+  </Card>
+  <Card title="Offline Sync" href="/mobile/sync" icon="arrows-rotate">
+    Implement delta synchronization
+  </Card>
+  <Card title="Push Notifications" href="/mobile/push" icon="bell">
+    Handle push token registration
+  </Card>
+</CardGroup>

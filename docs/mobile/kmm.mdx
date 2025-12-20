@@ -1,0 +1,296 @@
+---
+title: "Kotlin Multiplatform"
+description: "Build cross-platform apps with shared Kotlin code and Mizu backend integration."
+icon: "code"
+---
+
+Build cross-platform mobile applications with Kotlin Multiplatform Mobile (KMM) that share business logic between iOS and Android while using native UI on each platform.
+
+## Quick Start
+
+```bash
+mizu new ./my-kmm-app --template mobile/kmm
+```
+
+This creates a KMM project with:
+
+- Shared Kotlin module for business logic
+- Android app with Jetpack Compose
+- iOS app with SwiftUI
+- Ktor for networking
+- SQLDelight for local storage (optional)
+
+## Project Structure
+
+```
+my-kmm-app/
+├── backend/                    # Mizu Go backend
+│   └── ...
+│
+├── shared/                     # Shared Kotlin code
+│   ├── src/
+│   │   ├── commonMain/
+│   │   │   └── kotlin/
+│   │   │       ├── api/
+│   │   │       ├── models/
+│   │   │       └── repository/
+│   │   ├── androidMain/
+│   │   └── iosMain/
+│   └── build.gradle.kts
+│
+├── androidApp/                 # Android app
+│   ├── src/main/
+│   └── build.gradle.kts
+│
+├── iosApp/                     # iOS app
+│   └── iosApp.xcodeproj
+│
+└── build.gradle.kts
+```
+
+## Shared API Client
+
+```kotlin
+// shared/src/commonMain/kotlin/api/ApiClient.kt
+class ApiClient(
+    private val baseUrl: String,
+    private val deviceInfo: DeviceInfo
+) {
+    private val client = HttpClient {
+        install(ContentNegotiation) {
+            json(Json { ignoreUnknownKeys = true })
+        }
+        install(DefaultRequest) {
+            header("Content-Type", "application/json")
+            header("X-Device-ID", deviceInfo.deviceId)
+            header("X-App-Version", deviceInfo.appVersion)
+            header("X-Platform", deviceInfo.platform)
+            header("X-API-Version", "v2")
+        }
+    }
+
+    suspend fun <T> get(path: String, deserializer: DeserializationStrategy<T>): T {
+        val response = client.get("$baseUrl$path")
+        return Json.decodeFromString(deserializer, response.bodyAsText())
+    }
+
+    suspend fun <T, R> post(
+        path: String,
+        body: T,
+        serializer: SerializationStrategy<T>,
+        deserializer: DeserializationStrategy<R>
+    ): R {
+        val response = client.post("$baseUrl$path") {
+            setBody(Json.encodeToString(serializer, body))
+        }
+        return Json.decodeFromString(deserializer, response.bodyAsText())
+    }
+}
+
+// Platform-specific device info
+expect class DeviceInfo {
+    val deviceId: String
+    val appVersion: String
+    val platform: String
+}
+```
+
+### Android Implementation
+
+```kotlin
+// shared/src/androidMain/kotlin/DeviceInfo.kt
+actual class DeviceInfo(private val context: Context) {
+    actual val deviceId: String
+        get() = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+
+    actual val appVersion: String
+        get() = context.packageManager.getPackageInfo(context.packageName, 0).versionName
+
+    actual val platform: String = "android"
+}
+```
+
+### iOS Implementation
+
+```kotlin
+// shared/src/iosMain/kotlin/DeviceInfo.kt
+actual class DeviceInfo {
+    actual val deviceId: String
+        get() = UIDevice.currentDevice.identifierForVendor?.UUIDString ?: ""
+
+    actual val appVersion: String
+        get() = NSBundle.mainBundle.infoDictionary?.get("CFBundleShortVersionString") as? String ?: ""
+
+    actual val platform: String = "ios"
+}
+```
+
+## Shared Repository
+
+```kotlin
+// shared/src/commonMain/kotlin/repository/ItemRepository.kt
+class ItemRepository(private val api: ApiClient) {
+
+    suspend fun getItems(): Result<List<Item>> {
+        return try {
+            val response = api.get("/api/items", PageResponse.serializer(Item.serializer()))
+            Result.success(response.data)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getItem(id: String): Result<Item> {
+        return try {
+            val item = api.get("/api/items/$id", Item.serializer())
+            Result.success(item)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createItem(request: CreateItemRequest): Result<Item> {
+        return try {
+            val item = api.post(
+                "/api/items",
+                request,
+                CreateItemRequest.serializer(),
+                Item.serializer()
+            )
+            Result.success(item)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+}
+```
+
+## Android App
+
+```kotlin
+// androidApp/src/main/kotlin/MainActivity.kt
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        val deviceInfo = DeviceInfo(applicationContext)
+        val api = ApiClient(BuildConfig.API_URL, deviceInfo)
+        val repository = ItemRepository(api)
+
+        setContent {
+            MyAppTheme {
+                App(repository)
+            }
+        }
+    }
+}
+
+@Composable
+fun App(repository: ItemRepository) {
+    val viewModel = remember { ItemsViewModel(repository) }
+    val items by viewModel.items.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+
+    Scaffold(
+        topBar = { TopAppBar(title = { Text("Items") }) }
+    ) { padding ->
+        if (isLoading) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else {
+            LazyColumn(Modifier.padding(padding)) {
+                items(items) { item ->
+                    ItemCard(item)
+                }
+            }
+        }
+    }
+}
+```
+
+## iOS App
+
+```swift
+// iosApp/ContentView.swift
+import SwiftUI
+import shared
+
+struct ContentView: View {
+    @StateObject private var viewModel = ItemsViewModel()
+
+    var body: some View {
+        NavigationView {
+            Group {
+                if viewModel.isLoading {
+                    ProgressView()
+                } else {
+                    List(viewModel.items, id: \.id) { item in
+                        ItemRow(item: item)
+                    }
+                }
+            }
+            .navigationTitle("Items")
+        }
+        .task {
+            await viewModel.loadItems()
+        }
+    }
+}
+
+@MainActor
+class ItemsViewModel: ObservableObject {
+    @Published var items: [Item] = []
+    @Published var isLoading = false
+
+    private let repository: ItemRepository
+
+    init() {
+        let deviceInfo = DeviceInfo()
+        let api = ApiClient(baseUrl: Configuration.apiUrl, deviceInfo: deviceInfo)
+        self.repository = ItemRepository(api: api)
+    }
+
+    func loadItems() async {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let result = try await repository.getItems()
+            if let items = result.getOrNull() {
+                self.items = items
+            }
+        } catch {
+            print("Error loading items: \(error)")
+        }
+    }
+}
+```
+
+## Template Options
+
+```bash
+mizu new ./my-app --template mobile/kmm \
+  --var name=MyApp \
+  --var package=com.example.app \
+  --var platforms=android,ios \
+  --var storage=sqldelight
+```
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `name` | Project name | Directory name |
+| `package` | Package name | `com.example.app` |
+| `platforms` | Target platforms | `android,ios` |
+| `storage` | Local storage: `none`, `sqldelight` | `none` |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title=".NET MAUI" href="/mobile/dotnet" icon="microsoft">
+    Build with .NET MAUI
+  </Card>
+  <Card title="Templates" href="/mobile/templates" icon="layer-group">
+    All mobile templates
+  </Card>
+</CardGroup>

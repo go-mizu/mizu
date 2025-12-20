@@ -1,0 +1,586 @@
+---
+title: "Pagination"
+description: "Page-based and cursor-based pagination helpers for mobile APIs."
+icon: "list"
+---
+
+The mobile package provides built-in pagination helpers that work great with mobile clients, supporting both traditional page-based and cursor-based pagination.
+
+## Quick Start
+
+### Page-Based Pagination
+
+```go
+app.Get("/api/users", func(c *mizu.Ctx) error {
+    page := mobile.ParsePageRequest(c)
+
+    users, total := db.ListUsers(page.Offset(), page.Limit())
+
+    return c.JSON(200, mobile.NewPage(users, page, total))
+})
+```
+
+Request: `GET /api/users?page=2&per_page=20`
+
+Response:
+```json
+{
+  "data": [...],
+  "page": 2,
+  "per_page": 20,
+  "total": 150,
+  "total_pages": 8
+}
+```
+
+### Cursor-Based Pagination
+
+```go
+app.Get("/api/feed", func(c *mizu.Ctx) error {
+    page := mobile.ParsePageRequest(c)
+
+    items, nextCursor := db.ListAfter(page.CursorValue(), page.Limit())
+    hasMore := len(items) == page.Limit()
+
+    return c.JSON(200, mobile.NewCursorPage(items, nextCursor, "", hasMore))
+})
+```
+
+Request: `GET /api/feed?cursor=eyJpZCI6MTAwfQ&limit=20`
+
+Response:
+```json
+{
+  "data": [...],
+  "next_cursor": "eyJpZCI6MTIwfQ",
+  "has_more": true
+}
+```
+
+## Page Request
+
+The `PageRequest` type holds pagination parameters:
+
+```go
+type PageRequest struct {
+    Page    int    // 1-indexed page number
+    PerPage int    // Items per page
+    Cursor  string // Cursor for cursor-based pagination
+    Limit   int    // Limit (same as PerPage, for cursor-based)
+}
+```
+
+### Parsing Page Requests
+
+```go
+page := mobile.ParsePageRequest(c)
+
+// Query params parsed:
+// ?page=2         → page.Page = 2
+// ?per_page=20    → page.PerPage = 20
+// ?limit=20       → page.Limit = 20
+// ?cursor=abc123  → page.Cursor = "abc123"
+```
+
+### Default Values
+
+- `Page`: 1
+- `PerPage`: 20
+- `Limit`: 20
+- Maximum: 100 (capped automatically)
+
+### Page Request Methods
+
+```go
+page := mobile.ParsePageRequest(c)
+
+// Get offset for SQL OFFSET clause
+page.Offset()  // (page.Page - 1) * page.PerPage
+
+// Get limit for SQL LIMIT clause
+page.Limit()   // page.PerPage (or page.Limit)
+
+// Check if cursor-based
+page.IsCursor() // true if Cursor is set
+
+// Get cursor value
+page.CursorValue() // decoded cursor string
+```
+
+## Page-Based Pagination
+
+Traditional pagination with page numbers and totals.
+
+### Response Format
+
+```go
+type PageResponse[T any] struct {
+    Data       []T `json:"data"`
+    Page       int `json:"page"`
+    PerPage    int `json:"per_page"`
+    Total      int `json:"total"`
+    TotalPages int `json:"total_pages"`
+}
+```
+
+### Creating Page Responses
+
+```go
+func listUsers(c *mizu.Ctx) error {
+    page := mobile.ParsePageRequest(c)
+
+    // Query database
+    users := db.Query("SELECT * FROM users LIMIT ? OFFSET ?",
+        page.Limit(), page.Offset())
+
+    total := db.QueryRow("SELECT COUNT(*) FROM users")
+
+    return c.JSON(200, mobile.NewPage(users, page, total))
+}
+```
+
+### With Filtering
+
+```go
+func listUsers(c *mizu.Ctx) error {
+    page := mobile.ParsePageRequest(c)
+    role := c.Query("role")
+
+    var users []User
+    var total int
+
+    query := db.Model(&User{})
+    if role != "" {
+        query = query.Where("role = ?", role)
+    }
+
+    query.Count(&total)
+    query.Offset(page.Offset()).Limit(page.Limit()).Find(&users)
+
+    return c.JSON(200, mobile.NewPage(users, page, total))
+}
+```
+
+### With Sorting
+
+```go
+func listUsers(c *mizu.Ctx) error {
+    page := mobile.ParsePageRequest(c)
+    sortBy := c.Query("sort", "created_at")
+    order := c.Query("order", "desc")
+
+    users, total := db.ListUsers(
+        page.Offset(),
+        page.Limit(),
+        sortBy,
+        order,
+    )
+
+    response := mobile.NewPage(users, page, total)
+
+    // Add sorting info to response
+    return c.JSON(200, map[string]any{
+        "data":        response.Data,
+        "page":        response.Page,
+        "per_page":    response.PerPage,
+        "total":       response.Total,
+        "total_pages": response.TotalPages,
+        "sort":        sortBy,
+        "order":       order,
+    })
+}
+```
+
+## Cursor-Based Pagination
+
+Efficient pagination for infinite scroll and real-time feeds.
+
+### Response Format
+
+```go
+type CursorResponse[T any] struct {
+    Data       []T    `json:"data"`
+    NextCursor string `json:"next_cursor,omitempty"`
+    PrevCursor string `json:"prev_cursor,omitempty"`
+    HasMore    bool   `json:"has_more"`
+}
+```
+
+### Creating Cursor Responses
+
+```go
+func listFeed(c *mizu.Ctx) error {
+    page := mobile.ParsePageRequest(c)
+
+    // Parse cursor (e.g., base64 encoded ID)
+    var afterID int64
+    if page.IsCursor() {
+        afterID, _ = decodeCursor(page.CursorValue())
+    }
+
+    // Query items after cursor
+    items := db.Query(`
+        SELECT * FROM posts
+        WHERE id > ?
+        ORDER BY id
+        LIMIT ?
+    `, afterID, page.Limit())
+
+    // Generate next cursor from last item
+    var nextCursor string
+    if len(items) > 0 {
+        nextCursor = encodeCursor(items[len(items)-1].ID)
+    }
+
+    hasMore := len(items) == page.Limit()
+
+    return c.JSON(200, mobile.NewCursorPage(items, nextCursor, "", hasMore))
+}
+```
+
+### Bidirectional Cursors
+
+```go
+func listMessages(c *mizu.Ctx) error {
+    page := mobile.ParsePageRequest(c)
+    before := c.Query("before")
+    after := c.Query("after")
+
+    var messages []Message
+    var prevCursor, nextCursor string
+
+    if after != "" {
+        // Load newer messages
+        afterID, _ := decodeCursor(after)
+        messages = db.Query(`
+            SELECT * FROM messages
+            WHERE id > ?
+            ORDER BY id ASC
+            LIMIT ?
+        `, afterID, page.Limit())
+
+        if len(messages) > 0 {
+            nextCursor = encodeCursor(messages[len(messages)-1].ID)
+            prevCursor = encodeCursor(messages[0].ID)
+        }
+    } else if before != "" {
+        // Load older messages
+        beforeID, _ := decodeCursor(before)
+        messages = db.Query(`
+            SELECT * FROM messages
+            WHERE id < ?
+            ORDER BY id DESC
+            LIMIT ?
+        `, beforeID, page.Limit())
+
+        // Reverse for chronological order
+        slices.Reverse(messages)
+
+        if len(messages) > 0 {
+            nextCursor = encodeCursor(messages[len(messages)-1].ID)
+            prevCursor = encodeCursor(messages[0].ID)
+        }
+    } else {
+        // Initial load - get latest
+        messages = db.Query(`
+            SELECT * FROM messages
+            ORDER BY id DESC
+            LIMIT ?
+        `, page.Limit())
+
+        slices.Reverse(messages)
+
+        if len(messages) > 0 {
+            nextCursor = encodeCursor(messages[len(messages)-1].ID)
+        }
+    }
+
+    hasMore := len(messages) == page.Limit()
+
+    return c.JSON(200, mobile.NewCursorPage(
+        messages,
+        nextCursor,
+        prevCursor,
+        hasMore,
+    ))
+}
+```
+
+### Timestamp-Based Cursors
+
+```go
+func listNotifications(c *mizu.Ctx) error {
+    page := mobile.ParsePageRequest(c)
+
+    var since time.Time
+    if page.IsCursor() {
+        since, _ = time.Parse(time.RFC3339Nano, page.CursorValue())
+    }
+
+    notifications := db.Query(`
+        SELECT * FROM notifications
+        WHERE created_at < ?
+        ORDER BY created_at DESC
+        LIMIT ?
+    `, since, page.Limit())
+
+    var nextCursor string
+    if len(notifications) > 0 {
+        last := notifications[len(notifications)-1]
+        nextCursor = last.CreatedAt.Format(time.RFC3339Nano)
+    }
+
+    hasMore := len(notifications) == page.Limit()
+
+    return c.JSON(200, mobile.NewCursorPage(
+        notifications,
+        nextCursor,
+        "",
+        hasMore,
+    ))
+}
+```
+
+## Cursor Encoding
+
+### Simple ID Cursors
+
+```go
+func encodeCursor(id int64) string {
+    return base64.RawURLEncoding.EncodeToString(
+        []byte(strconv.FormatInt(id, 10)),
+    )
+}
+
+func decodeCursor(cursor string) (int64, error) {
+    data, err := base64.RawURLEncoding.DecodeString(cursor)
+    if err != nil {
+        return 0, err
+    }
+    return strconv.ParseInt(string(data), 10, 64)
+}
+```
+
+### Composite Cursors
+
+```go
+type Cursor struct {
+    ID        int64     `json:"id"`
+    CreatedAt time.Time `json:"created_at"`
+}
+
+func encodeCursor(c Cursor) string {
+    data, _ := json.Marshal(c)
+    return base64.RawURLEncoding.EncodeToString(data)
+}
+
+func decodeCursor(s string) (Cursor, error) {
+    var c Cursor
+    data, err := base64.RawURLEncoding.DecodeString(s)
+    if err != nil {
+        return c, err
+    }
+    err = json.Unmarshal(data, &c)
+    return c, err
+}
+```
+
+## When to Use Each
+
+### Page-Based Pagination
+
+**Use when:**
+- Displaying page numbers (1, 2, 3...)
+- Users need to jump to specific pages
+- Total count is needed
+- Data is relatively stable
+
+**Avoid when:**
+- Real-time feeds with frequent insertions
+- Large datasets (counting is expensive)
+- Infinite scroll UX
+
+### Cursor-Based Pagination
+
+**Use when:**
+- Infinite scroll UI
+- Real-time feeds
+- Large datasets
+- Data changes frequently
+
+**Avoid when:**
+- Need to show page numbers
+- Need to jump to specific pages
+- Total count is required
+
+## Client Implementation
+
+### iOS (Swift)
+
+```swift
+// Page-based
+struct PageResponse<T: Decodable>: Decodable {
+    let data: [T]
+    let page: Int
+    let perPage: Int
+    let total: Int
+    let totalPages: Int
+
+    enum CodingKeys: String, CodingKey {
+        case data, page, total
+        case perPage = "per_page"
+        case totalPages = "total_pages"
+    }
+}
+
+// Cursor-based
+struct CursorResponse<T: Decodable>: Decodable {
+    let data: [T]
+    let nextCursor: String?
+    let prevCursor: String?
+    let hasMore: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case data
+        case nextCursor = "next_cursor"
+        case prevCursor = "prev_cursor"
+        case hasMore = "has_more"
+    }
+}
+
+class FeedViewModel: ObservableObject {
+    @Published var items: [FeedItem] = []
+    @Published var hasMore = true
+    @Published var isLoading = false
+
+    private var cursor: String?
+
+    func loadMore() async {
+        guard !isLoading, hasMore else { return }
+        isLoading = true
+
+        var endpoint = "/api/feed?limit=20"
+        if let cursor = cursor {
+            endpoint += "&cursor=\(cursor)"
+        }
+
+        let response: CursorResponse<FeedItem> = try await api.get(endpoint)
+
+        items.append(contentsOf: response.data)
+        cursor = response.nextCursor
+        hasMore = response.hasMore
+        isLoading = false
+    }
+}
+```
+
+### Android (Kotlin)
+
+```kotlin
+// Page-based
+data class PageResponse<T>(
+    val data: List<T>,
+    val page: Int,
+    @SerializedName("per_page") val perPage: Int,
+    val total: Int,
+    @SerializedName("total_pages") val totalPages: Int
+)
+
+// Cursor-based
+data class CursorResponse<T>(
+    val data: List<T>,
+    @SerializedName("next_cursor") val nextCursor: String?,
+    @SerializedName("prev_cursor") val prevCursor: String?,
+    @SerializedName("has_more") val hasMore: Boolean
+)
+
+class FeedPagingSource(
+    private val api: ApiService
+) : PagingSource<String, FeedItem>() {
+
+    override suspend fun load(params: LoadParams<String>): LoadResult<String, FeedItem> {
+        return try {
+            val response = api.getFeed(
+                cursor = params.key,
+                limit = params.loadSize
+            )
+
+            LoadResult.Page(
+                data = response.data,
+                prevKey = response.prevCursor,
+                nextKey = if (response.hasMore) response.nextCursor else null
+            )
+        } catch (e: Exception) {
+            LoadResult.Error(e)
+        }
+    }
+}
+```
+
+### Flutter (Dart)
+
+```dart
+class PageResponse<T> {
+  final List<T> data;
+  final int page;
+  final int perPage;
+  final int total;
+  final int totalPages;
+
+  PageResponse({
+    required this.data,
+    required this.page,
+    required this.perPage,
+    required this.total,
+    required this.totalPages,
+  });
+}
+
+class CursorResponse<T> {
+  final List<T> data;
+  final String? nextCursor;
+  final String? prevCursor;
+  final bool hasMore;
+
+  CursorResponse({
+    required this.data,
+    this.nextCursor,
+    this.prevCursor,
+    required this.hasMore,
+  });
+}
+
+class FeedNotifier extends StateNotifier<FeedState> {
+  String? _cursor;
+
+  Future<void> loadMore() async {
+    if (state.isLoading || !state.hasMore) return;
+
+    state = state.copyWith(isLoading: true);
+
+    final response = await api.getFeed(cursor: _cursor, limit: 20);
+
+    state = state.copyWith(
+      items: [...state.items, ...response.data],
+      hasMore: response.hasMore,
+      isLoading: false,
+    );
+
+    _cursor = response.nextCursor;
+  }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Offline Sync" href="/mobile/sync" icon="arrows-rotate">
+    Delta synchronization for offline-first apps
+  </Card>
+  <Card title="Structured Errors" href="/mobile/errors" icon="circle-exclamation">
+    Consistent error responses
+  </Card>
+  <Card title="API Reference" href="/mobile/api-reference" icon="book">
+    Complete API documentation
+  </Card>
+</CardGroup>

@@ -1,0 +1,169 @@
+---
+title: "HTTP Headers"
+description: "Standard mobile headers for request and response."
+icon: "heading"
+---
+
+The mobile package uses standard HTTP headers for device detection, versioning, and synchronization.
+
+## Request Headers
+
+Headers sent by mobile clients:
+
+| Header | Description | Example |
+|--------|-------------|---------|
+| `X-Device-ID` | Unique device identifier | `550e8400-e29b-41d4-a716-446655440000` |
+| `X-App-Version` | Client app version | `2.1.0` |
+| `X-App-Build` | Build number | `2024.01.15` |
+| `X-Device-Model` | Device model | `iPhone15,2` |
+| `X-Platform` | Operating system | `ios`, `android` |
+| `X-OS-Version` | OS version | `17.0`, `14` |
+| `X-Timezone` | IANA timezone | `America/New_York` |
+| `X-Locale` | Device locale | `en-US`, `ja-JP` |
+| `X-Push-Token` | Push notification token | `abc123...` |
+| `X-API-Version` | API version | `v2`, `v2.1` |
+| `X-Sync-Token` | Last sync token | `YWJjMTIz...` |
+| `X-Idempotency-Key` | Request idempotency | `req-abc-123` |
+| `X-Request-ID` | Request trace ID | `trace-123` |
+
+## Response Headers
+
+Headers sent by the server:
+
+| Header | Description | Example |
+|--------|-------------|---------|
+| `X-API-Version` | API version used | `v2` |
+| `X-API-Deprecated` | Deprecation warning | `true` |
+| `X-Min-App-Version` | Minimum required version | `1.5.0` |
+| `X-Sync-Token` | New sync token | `ZGVmNDU2...` |
+| `X-Request-ID` | Request trace ID | `trace-123` |
+
+## Header Details
+
+### X-Device-ID
+
+A unique identifier for the device. Should persist across app reinstalls if possible.
+
+**iOS:**
+```swift
+UIDevice.current.identifierForVendor?.uuidString
+```
+
+**Android:**
+```kotlin
+Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+```
+
+### X-App-Version
+
+Semantic version of the client application.
+
+```
+X-App-Version: 2.1.0
+```
+
+### X-Platform
+
+Operating system identifier. Used for platform detection when User-Agent parsing is disabled.
+
+Valid values:
+- `ios`
+- `android`
+- `windows`
+- `macos`
+- `web`
+
+### X-API-Version
+
+API version requested by the client. Supports formats:
+- `v2`
+- `v2.1`
+- `2`
+- `2.1`
+
+### X-Sync-Token
+
+Opaque token for delta synchronization. Clients store and send back on subsequent sync requests.
+
+### X-API-Deprecated
+
+Response header indicating the requested API version is deprecated. Clients should plan to upgrade.
+
+```
+X-API-Deprecated: true
+```
+
+### X-Min-App-Version
+
+Response header indicating the minimum required app version. Clients below this version should prompt for update.
+
+```
+X-Min-App-Version: 1.5.0
+```
+
+## Client Implementation
+
+### iOS (Swift)
+
+```swift
+extension URLRequest {
+    mutating func addMizuHeaders() {
+        setValue(DeviceInfo.deviceId, forHTTPHeaderField: "X-Device-ID")
+        setValue(Bundle.main.appVersion, forHTTPHeaderField: "X-App-Version")
+        setValue(Bundle.main.buildNumber, forHTTPHeaderField: "X-App-Build")
+        setValue(UIDevice.current.modelIdentifier, forHTTPHeaderField: "X-Device-Model")
+        setValue("ios", forHTTPHeaderField: "X-Platform")
+        setValue(UIDevice.current.systemVersion, forHTTPHeaderField: "X-OS-Version")
+        setValue(TimeZone.current.identifier, forHTTPHeaderField: "X-Timezone")
+        setValue(Locale.current.identifier, forHTTPHeaderField: "X-Locale")
+        setValue("v2", forHTTPHeaderField: "X-API-Version")
+    }
+}
+```
+
+### Android (Kotlin)
+
+```kotlin
+class MizuHeaderInterceptor(private val context: Context) : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request().newBuilder()
+            .header("X-Device-ID", getDeviceId())
+            .header("X-App-Version", BuildConfig.VERSION_NAME)
+            .header("X-App-Build", BuildConfig.VERSION_CODE.toString())
+            .header("X-Device-Model", Build.MODEL)
+            .header("X-Platform", "android")
+            .header("X-OS-Version", Build.VERSION.RELEASE)
+            .header("X-Timezone", TimeZone.getDefault().id)
+            .header("X-Locale", Locale.getDefault().toLanguageTag())
+            .header("X-API-Version", "v2")
+            .build()
+        return chain.proceed(request)
+    }
+}
+```
+
+### Flutter (Dart)
+
+```dart
+final headers = {
+  'X-Device-ID': deviceId,
+  'X-App-Version': packageInfo.version,
+  'X-App-Build': packageInfo.buildNumber,
+  'X-Platform': Platform.operatingSystem,
+  'X-OS-Version': Platform.operatingSystemVersion,
+  'X-Timezone': DateTime.now().timeZoneName,
+  'X-Locale': Platform.localeName,
+  'X-API-Version': 'v2',
+};
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Device Detection" href="/mobile/device" icon="mobile-screen">
+    How headers are parsed
+  </Card>
+  <Card title="API Reference" href="/mobile/api-reference" icon="book">
+    Complete API documentation
+  </Card>
+</CardGroup>

@@ -1,0 +1,575 @@
+---
+title: "App Store Integration"
+description: "Version checking, force updates, and maintenance mode."
+icon: "store"
+---
+
+The mobile package provides app store integration features including version checking, force update prompts, maintenance mode, and platform-specific store URLs.
+
+## Quick Start
+
+```go
+import "github.com/go-mizu/mizu/mobile"
+
+// Create app info provider
+provider := mobile.NewStaticAppInfo(
+    "2.0.0",                                    // Current version
+    "1.5.0",                                    // Minimum version
+    "https://apps.apple.com/app/id123456789",   // Store URL
+)
+
+// Add version check endpoint
+app.Get("/api/app-info", mobile.AppInfoHandler(provider))
+```
+
+## App Info
+
+```go
+type AppInfo struct {
+    // CurrentVersion is the latest version in the store
+    CurrentVersion string `json:"current_version"`
+
+    // MinimumVersion is the minimum required version
+    MinimumVersion string `json:"minimum_version"`
+
+    // UpdateURL is the store URL for updating
+    UpdateURL string `json:"update_url"`
+
+    // ReleaseNotes is the latest release notes
+    ReleaseNotes string `json:"release_notes,omitempty"`
+
+    // ReleasedAt is when the current version was released
+    ReleasedAt time.Time `json:"released_at,omitempty"`
+
+    // ForceUpdate indicates if update is mandatory
+    ForceUpdate bool `json:"force_update"`
+
+    // MaintenanceMode indicates if the service is under maintenance
+    MaintenanceMode bool `json:"maintenance_mode"`
+
+    // MaintenanceMessage is the message to display during maintenance
+    MaintenanceMessage string `json:"maintenance_message,omitempty"`
+
+    // MaintenanceEndTime is when maintenance is expected to end
+    MaintenanceEndTime *time.Time `json:"maintenance_end_time,omitempty"`
+
+    // Features lists enabled feature flags
+    Features map[string]bool `json:"features,omitempty"`
+}
+```
+
+## Static App Info Provider
+
+For simple static configuration:
+
+```go
+provider := mobile.NewStaticAppInfo(
+    "2.0.0",  // Current version in store
+    "1.5.0",  // Minimum required version
+    "https://apps.apple.com/app/id123456789",
+)
+
+// Add platform-specific info
+provider.WithPlatformApp(mobile.PlatformIOS, "*", &mobile.AppInfo{
+    CurrentVersion: "2.0.0",
+    MinimumVersion: "1.5.0",
+    UpdateURL:      "https://apps.apple.com/app/id123456789",
+    ReleaseNotes:   "Bug fixes and performance improvements",
+})
+
+provider.WithPlatformApp(mobile.PlatformAndroid, "*", &mobile.AppInfo{
+    CurrentVersion: "2.0.1",  // Android may have different version
+    MinimumVersion: "1.5.0",
+    UpdateURL:      "https://play.google.com/store/apps/details?id=com.example.app",
+    ReleaseNotes:   "Bug fixes and performance improvements",
+})
+```
+
+## Dynamic App Info Provider
+
+For database-backed or API-driven configuration:
+
+```go
+type DBAppInfoProvider struct {
+    db *sql.DB
+}
+
+func (p *DBAppInfoProvider) GetAppInfo(
+    ctx context.Context,
+    platform mobile.Platform,
+    bundleID string,
+) (*mobile.AppInfo, error) {
+    var info mobile.AppInfo
+
+    err := p.db.QueryRowContext(ctx, `
+        SELECT current_version, minimum_version, update_url,
+               release_notes, released_at, force_update,
+               maintenance_mode, maintenance_message, maintenance_end_time
+        FROM app_versions
+        WHERE platform = $1 AND (bundle_id = $2 OR bundle_id = '*')
+        ORDER BY CASE WHEN bundle_id = $2 THEN 0 ELSE 1 END
+        LIMIT 1
+    `, platform.String(), bundleID).Scan(
+        &info.CurrentVersion, &info.MinimumVersion, &info.UpdateURL,
+        &info.ReleaseNotes, &info.ReleasedAt, &info.ForceUpdate,
+        &info.MaintenanceMode, &info.MaintenanceMessage, &info.MaintenanceEndTime,
+    )
+
+    if err == sql.ErrNoRows {
+        return nil, nil
+    }
+    if err != nil {
+        return nil, err
+    }
+
+    return &info, nil
+}
+
+// Use it
+provider := &DBAppInfoProvider{db: db}
+app.Get("/api/app-info", mobile.AppInfoHandler(provider))
+```
+
+## Update Status
+
+The `CheckUpdate` function compares versions:
+
+```go
+status := mobile.CheckUpdate(
+    "1.4.0",  // Client version
+    "2.0.0",  // Latest version
+    "1.5.0",  // Minimum version
+)
+
+// status.Available = true (1.4.0 < 2.0.0)
+// status.Required = true (1.4.0 < 1.5.0)
+```
+
+### Update Status Response
+
+```go
+type UpdateStatus struct {
+    Available      bool   `json:"update_available"`
+    Required       bool   `json:"update_required"`
+    CurrentVersion string `json:"current_version"`
+    LatestVersion  string `json:"latest_version"`
+    MinimumVersion string `json:"minimum_version,omitempty"`
+    UpdateURL      string `json:"update_url,omitempty"`
+    ReleaseNotes   string `json:"release_notes,omitempty"`
+}
+```
+
+Example response:
+
+```json
+{
+  "update_available": true,
+  "update_required": true,
+  "current_version": "1.4.0",
+  "latest_version": "2.0.0",
+  "minimum_version": "1.5.0",
+  "update_url": "https://apps.apple.com/app/id123456789",
+  "release_notes": "New features and bug fixes"
+}
+```
+
+## App Info Handler
+
+The built-in handler automatically:
+
+1. Extracts device info from mobile middleware context
+2. Fetches app info from provider
+3. Checks for maintenance mode
+4. Compares versions and builds response
+5. Sets `X-Min-App-Version` header
+
+```go
+app.Use(mobile.New())
+app.Get("/api/app-info", mobile.AppInfoHandler(provider))
+```
+
+### Maintenance Mode Response
+
+When maintenance mode is enabled:
+
+```json
+{
+  "maintenance": true,
+  "message": "We're upgrading our servers. Back soon!",
+  "end_time": "2024-01-15T10:00:00Z",
+  "minimum_version": "1.5.0"
+}
+```
+
+HTTP Status: `503 Service Unavailable`
+
+## Store URLs
+
+Helper functions for platform store URLs:
+
+```go
+// iOS App Store
+url := mobile.NewIOSStoreURL("123456789")
+// "https://apps.apple.com/app/id123456789"
+
+// Google Play Store
+url := mobile.NewAndroidStoreURL("com.example.app")
+// "https://play.google.com/store/apps/details?id=com.example.app"
+```
+
+### Store URLs by Platform
+
+```go
+type StoreURLs struct {
+    iOS     string `json:"ios,omitempty"`
+    Android string `json:"android,omitempty"`
+    Windows string `json:"windows,omitempty"`
+    Web     string `json:"web,omitempty"`
+}
+
+urls := mobile.StoreURLs{
+    iOS:     "https://apps.apple.com/app/id123456789",
+    Android: "https://play.google.com/store/apps/details?id=com.example.app",
+    Windows: "ms-windows-store://pdp/?ProductId=12345",
+    Web:     "https://example.com/download",
+}
+
+// Get URL for platform
+url := urls.URLFor(device.Platform)
+```
+
+## Force Update Middleware
+
+Block outdated apps from accessing the API:
+
+```go
+func forceUpdateMiddleware(provider mobile.AppInfoProvider) mizu.Middleware {
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            device := mobile.DeviceFromCtx(c)
+            if device == nil {
+                return next(c)
+            }
+
+            info, err := provider.GetAppInfo(c.Context(), device.Platform, "")
+            if err != nil || info == nil {
+                return next(c)
+            }
+
+            // Check maintenance
+            if info.MaintenanceMode {
+                return mobile.SendError(c, 503, mobile.NewError(
+                    mobile.ErrMaintenance,
+                    info.MaintenanceMessage,
+                ).WithDetails("end_time", info.MaintenanceEndTime))
+            }
+
+            // Check version
+            if device.AppVersion != "" && info.MinimumVersion != "" {
+                if mobile.CompareVersions(device.AppVersion, info.MinimumVersion) < 0 {
+                    c.Header().Set(mobile.HeaderMinVersion, info.MinimumVersion)
+
+                    return mobile.SendError(c, 426, mobile.NewError(
+                        mobile.ErrUpgradeRequired,
+                        "Please update to continue using the app",
+                    ).WithDetails("current_version", device.AppVersion).
+                      WithDetails("minimum_version", info.MinimumVersion).
+                      WithDetails("update_url", info.UpdateURL))
+                }
+            }
+
+            return next(c)
+        }
+    }
+}
+
+// Apply to all API routes
+app.Use(forceUpdateMiddleware(provider))
+```
+
+## Feature Flags
+
+Include feature flags in app info:
+
+```go
+provider := &FeatureFlagProvider{db: db}
+
+func (p *FeatureFlagProvider) GetAppInfo(
+    ctx context.Context,
+    platform mobile.Platform,
+    bundleID string,
+) (*mobile.AppInfo, error) {
+    info := &mobile.AppInfo{
+        CurrentVersion: "2.0.0",
+        MinimumVersion: "1.5.0",
+        Features: map[string]bool{
+            "dark_mode":      true,
+            "new_checkout":   platform == mobile.PlatformIOS, // iOS only
+            "beta_features":  false,
+        },
+    }
+
+    return info, nil
+}
+```
+
+Response:
+
+```json
+{
+  "update_available": false,
+  "update_required": false,
+  "current_version": "2.0.0",
+  "features": {
+    "dark_mode": true,
+    "new_checkout": true,
+    "beta_features": false
+  }
+}
+```
+
+## Client Implementation
+
+### iOS (Swift)
+
+```swift
+struct AppInfo: Decodable {
+    let updateAvailable: Bool
+    let updateRequired: Bool
+    let currentVersion: String
+    let latestVersion: String
+    let minimumVersion: String?
+    let updateUrl: String?
+    let releaseNotes: String?
+    let features: [String: Bool]?
+
+    enum CodingKeys: String, CodingKey {
+        case updateAvailable = "update_available"
+        case updateRequired = "update_required"
+        case currentVersion = "current_version"
+        case latestVersion = "latest_version"
+        case minimumVersion = "minimum_version"
+        case updateUrl = "update_url"
+        case releaseNotes = "release_notes"
+        case features
+    }
+}
+
+class AppUpdateManager {
+    func checkForUpdates() async {
+        do {
+            let info: AppInfo = try await api.get("/api/app-info")
+
+            if info.updateRequired {
+                showForceUpdateAlert(info)
+            } else if info.updateAvailable {
+                showOptionalUpdateAlert(info)
+            }
+
+            // Cache feature flags
+            FeatureFlags.shared.update(info.features ?? [:])
+
+        } catch let error as APIException where error.isMaintenance {
+            showMaintenanceScreen(error)
+        } catch {
+            // Handle silently or show error
+        }
+    }
+
+    private func showForceUpdateAlert(_ info: AppInfo) {
+        let alert = UIAlertController(
+            title: "Update Required",
+            message: "Please update to continue using the app.",
+            preferredStyle: .alert
+        )
+
+        alert.addAction(UIAlertAction(title: "Update", style: .default) { _ in
+            if let url = URL(string: info.updateUrl ?? "") {
+                UIApplication.shared.open(url)
+            }
+        })
+
+        // No cancel button - force update
+        rootViewController?.present(alert, animated: true)
+    }
+}
+```
+
+### Android (Kotlin)
+
+```kotlin
+data class AppInfo(
+    @SerializedName("update_available") val updateAvailable: Boolean,
+    @SerializedName("update_required") val updateRequired: Boolean,
+    @SerializedName("current_version") val currentVersion: String,
+    @SerializedName("latest_version") val latestVersion: String,
+    @SerializedName("minimum_version") val minimumVersion: String?,
+    @SerializedName("update_url") val updateUrl: String?,
+    @SerializedName("release_notes") val releaseNotes: String?,
+    val features: Map<String, Boolean>?
+)
+
+class AppUpdateManager(
+    private val api: ApiService,
+    private val context: Context
+) {
+    suspend fun checkForUpdates() {
+        try {
+            val info = api.getAppInfo()
+
+            when {
+                info.updateRequired -> showForceUpdateDialog(info)
+                info.updateAvailable -> showOptionalUpdateDialog(info)
+            }
+
+            // Update feature flags
+            info.features?.let { FeatureFlags.update(it) }
+
+        } catch (e: MaintenanceException) {
+            showMaintenanceScreen(e.message, e.endTime)
+        }
+    }
+
+    private fun showForceUpdateDialog(info: AppInfo) {
+        AlertDialog.Builder(context)
+            .setTitle("Update Required")
+            .setMessage("Please update to continue using the app.")
+            .setCancelable(false)
+            .setPositiveButton("Update") { _, _ ->
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    data = Uri.parse(info.updateUrl)
+                }
+                context.startActivity(intent)
+            }
+            .show()
+    }
+}
+```
+
+### Flutter (Dart)
+
+```dart
+class AppInfo {
+  final bool updateAvailable;
+  final bool updateRequired;
+  final String currentVersion;
+  final String latestVersion;
+  final String? minimumVersion;
+  final String? updateUrl;
+  final String? releaseNotes;
+  final Map<String, bool>? features;
+
+  AppInfo.fromJson(Map<String, dynamic> json)
+      : updateAvailable = json['update_available'],
+        updateRequired = json['update_required'],
+        currentVersion = json['current_version'],
+        latestVersion = json['latest_version'],
+        minimumVersion = json['minimum_version'],
+        updateUrl = json['update_url'],
+        releaseNotes = json['release_notes'],
+        features = json['features']?.cast<String, bool>();
+}
+
+class AppUpdateService {
+  Future<void> checkForUpdates(BuildContext context) async {
+    try {
+      final response = await api.get('/api/app-info');
+      final info = AppInfo.fromJson(response.data);
+
+      if (info.updateRequired) {
+        _showForceUpdateDialog(context, info);
+      } else if (info.updateAvailable) {
+        _showOptionalUpdateDialog(context, info);
+      }
+
+      // Update feature flags
+      if (info.features != null) {
+        FeatureFlags.update(info.features!);
+      }
+    } on MaintenanceException catch (e) {
+      _showMaintenanceScreen(context, e);
+    }
+  }
+
+  void _showForceUpdateDialog(BuildContext context, AppInfo info) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Update Required'),
+        content: const Text('Please update to continue using the app.'),
+        actions: [
+          TextButton(
+            onPressed: () => launchUrl(Uri.parse(info.updateUrl!)),
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+```
+
+## Best Practices
+
+### Check on App Launch
+
+Check for updates when the app launches and periodically while running:
+
+```go
+// Backend: track when clients check
+app.Get("/api/app-info", func(c *mizu.Ctx) error {
+    device := mobile.DeviceFromCtx(c)
+
+    // Log version distribution
+    metrics.RecordAppVersion(device.Platform, device.AppVersion)
+
+    return mobile.AppInfoHandler(provider)(c)
+})
+```
+
+### Gradual Rollouts
+
+Use minimum version to gradually force updates:
+
+1. Release 2.0.0 to stores
+2. Set minimum to 1.8.0 initially
+3. Monitor crash rates and feedback
+4. Gradually raise minimum to 2.0.0
+
+### Maintenance Windows
+
+Schedule maintenance during low-traffic periods:
+
+```go
+func (p *DBProvider) GetAppInfo(ctx context.Context, platform mobile.Platform, bundleID string) (*mobile.AppInfo, error) {
+    info := &mobile.AppInfo{
+        CurrentVersion: "2.0.0",
+        MinimumVersion: "1.5.0",
+    }
+
+    // Check scheduled maintenance
+    maintenance, _ := p.db.GetScheduledMaintenance(time.Now())
+    if maintenance != nil {
+        info.MaintenanceMode = true
+        info.MaintenanceMessage = maintenance.Message
+        info.MaintenanceEndTime = &maintenance.EndTime
+    }
+
+    return info, nil
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Templates" href="/mobile/templates" icon="layer-group">
+    Available mobile templates
+  </Card>
+  <Card title="Production" href="/mobile/production" icon="rocket">
+    Production deployment guide
+  </Card>
+  <Card title="API Reference" href="/mobile/api-reference" icon="book">
+    Complete API documentation
+  </Card>
+</CardGroup>

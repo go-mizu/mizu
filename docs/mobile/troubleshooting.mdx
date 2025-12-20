@@ -1,0 +1,277 @@
+---
+title: "Troubleshooting"
+description: "Debug common mobile backend issues."
+icon: "bug"
+---
+
+Common issues and solutions when developing mobile backends with Mizu.
+
+## Device Detection Issues
+
+### Device is nil
+
+**Problem:** `DeviceFromCtx(c)` returns `nil`.
+
+**Cause:** Mobile middleware not applied.
+
+**Solution:**
+```go
+app.Use(mobile.New())  // Must be added before routes
+```
+
+### Wrong Platform Detected
+
+**Problem:** Platform is `unknown` or incorrect.
+
+**Cause:** Missing headers or User-Agent not recognized.
+
+**Solution:**
+1. Ensure client sends `X-Platform` header
+2. Check User-Agent format
+3. Enable User-Agent parsing: `SkipUserAgent: false`
+
+```go
+app.Use(mobile.WithOptions(mobile.Options{
+    SkipUserAgent: false,  // Parse User-Agent
+}))
+```
+
+## Version Middleware Issues
+
+### Version Always Default
+
+**Problem:** `VersionFromCtx(c)` always returns default version.
+
+**Cause:** Client not sending version header.
+
+**Solution:**
+```go
+// Check header name matches
+app.Use(mobile.VersionMiddleware(mobile.VersionOptions{
+    Header: "X-API-Version",  // Must match client
+}))
+```
+
+Client should send:
+```
+X-API-Version: v2
+```
+
+### Unsupported Version Error
+
+**Problem:** 400 error for valid version.
+
+**Cause:** Version not in `Supported` list.
+
+**Solution:**
+```go
+app.Use(mobile.VersionMiddleware(mobile.VersionOptions{
+    Supported: []mobile.Version{
+        {3, 0},
+        {2, 0},  // Add missing version
+    },
+}))
+```
+
+## Push Notification Issues
+
+### Invalid Token Format
+
+**Problem:** Token validation fails.
+
+**Cause:** Token format doesn't match provider.
+
+**Solution:**
+```go
+// Check token format
+if device.Platform == mobile.PlatformIOS {
+    // APNS: 64 hex characters
+    if !mobile.ValidateAPNS(token.Token) {
+        // Invalid APNS token
+    }
+} else {
+    // FCM: 140-200 alphanumeric characters
+    if !mobile.ValidateFCM(token.Token) {
+        // Invalid FCM token
+    }
+}
+```
+
+### Provider Not Detected
+
+**Problem:** `PushProvider` is empty.
+
+**Cause:** Platform not set or unknown.
+
+**Solution:**
+```go
+// Explicitly set provider
+registration := mobile.PushRegistration{
+    Token:    token,
+    Provider: mobile.PushFCM,  // Explicit provider
+}
+```
+
+## Deep Link Issues
+
+### AASA Not Served
+
+**Problem:** `/.well-known/apple-app-site-association` returns 404.
+
+**Cause:** Middleware not configured or path conflict.
+
+**Solution:**
+```go
+// Ensure middleware is added
+app.Use(mobile.UniversalLinkMiddleware(mobile.UniversalLinkConfig{
+    Apple: []mobile.AppleAppConfig{
+        {TeamID: "...", BundleID: "..."},
+    },
+}))
+```
+
+### App Not Opening from Link
+
+**Problem:** Links open in browser instead of app.
+
+**Causes:**
+1. AASA not accessible over HTTPS
+2. Invalid AASA format
+3. App not installed
+
+**Solution:**
+1. Verify AASA is served: `curl https://yourdomain.com/.well-known/apple-app-site-association`
+2. Validate format: [Apple Validation Tool](https://search.developer.apple.com/appsearch-validation-tool/)
+3. Check app entitlements
+
+## Sync Issues
+
+### Token Always Empty
+
+**Problem:** `req.Token` is always empty.
+
+**Cause:** Token not sent in correct location.
+
+**Solution:**
+```go
+// Check both header and query param
+req := mobile.ParseSyncRequest(c)
+// Looks for:
+// - Header: X-Sync-Token
+// - Query: ?sync_token=xxx
+```
+
+Client should send:
+```
+X-Sync-Token: YWJjMTIz...
+```
+
+Or:
+```
+GET /api/sync?sync_token=YWJjMTIz...
+```
+
+### Full Sync Every Time
+
+**Problem:** Always getting full sync instead of delta.
+
+**Cause:** Token not stored or sent incorrectly.
+
+**Solution:**
+1. Store token after each sync
+2. Send token on next request
+3. Check `full_sync` query param not set
+
+## Error Response Issues
+
+### Error Format Wrong
+
+**Problem:** Error response not matching expected format.
+
+**Cause:** Not using `mobile.SendError`.
+
+**Solution:**
+```go
+// Use SendError for consistent format
+return mobile.SendError(c, 400, mobile.NewError(
+    mobile.ErrValidation,
+    "Invalid request",
+))
+```
+
+### Trace ID Missing
+
+**Problem:** Error responses don't include trace ID.
+
+**Solution:**
+```go
+err := mobile.NewError(mobile.ErrInternal, "Error").
+    WithTraceID(c.Request().Header.Get("X-Request-ID"))
+
+return mobile.SendError(c, 500, err)
+```
+
+## Debug Logging
+
+Add logging middleware to debug issues:
+
+```go
+app.Use(func(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        device := mobile.DeviceFromCtx(c)
+
+        log.Debug("Request",
+            "path", c.Path(),
+            "platform", device.Platform,
+            "app_version", device.AppVersion,
+            "device_id", device.DeviceID,
+            "api_version", c.Request().Header.Get("X-API-Version"),
+        )
+
+        return next(c)
+    }
+})
+```
+
+## Testing Endpoints
+
+### Test with curl
+
+```bash
+# Test device detection
+curl -H "X-Device-ID: test-123" \
+     -H "X-App-Version: 2.0.0" \
+     -H "X-Platform: ios" \
+     http://localhost:3000/api/test
+
+# Test versioning
+curl -H "X-API-Version: v2" \
+     http://localhost:3000/api/users
+
+# Test sync
+curl -H "X-Sync-Token: abc123" \
+     http://localhost:3000/api/sync
+```
+
+### Simulate Mobile Request
+
+```bash
+# iOS User-Agent
+curl -A "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15" \
+     http://localhost:3000/api/test
+
+# Android User-Agent
+curl -A "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36" \
+     http://localhost:3000/api/test
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Headers" href="/mobile/headers" icon="heading">
+    Header reference
+  </Card>
+  <Card title="API Reference" href="/mobile/api-reference" icon="book">
+    Complete API documentation
+  </Card>
+</CardGroup>

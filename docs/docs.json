@@ -492,6 +492,81 @@
         ]
       },
       {
+        "tab": "Mobile",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "mobile/overview",
+              "mobile/quick-start"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "mobile/device",
+              "mobile/versioning",
+              "mobile/errors",
+              "mobile/pagination"
+            ]
+          },
+          {
+            "group": "Backend Features",
+            "pages": [
+              "mobile/sync",
+              "mobile/push",
+              "mobile/deeplinks",
+              "mobile/appstore"
+            ]
+          },
+          {
+            "group": "Native Platforms",
+            "pages": [
+              "mobile/ios",
+              "mobile/android"
+            ]
+          },
+          {
+            "group": "Cross-Platform",
+            "pages": [
+              "mobile/flutter",
+              "mobile/reactnative",
+              "mobile/kmm",
+              "mobile/dotnet"
+            ]
+          },
+          {
+            "group": "Web & Games",
+            "pages": [
+              "mobile/pwa",
+              "mobile/game"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "mobile/production",
+              "mobile/security"
+            ]
+          },
+          {
+            "group": "Templates",
+            "pages": [
+              "mobile/templates",
+              "mobile/adapters"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "mobile/api-reference",
+              "mobile/headers",
+              "mobile/troubleshooting"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "Views",
         "groups": [
           {

@@ -1,0 +1,575 @@
+---
+title: "API Versioning"
+description: "Manage API versions with semantic versioning and deprecation warnings."
+icon: "code-branch"
+---
+
+The mobile package provides robust API versioning middleware that supports version detection from headers, query parameters, and URL paths, with built-in deprecation warnings and graceful migration paths.
+
+## Quick Start
+
+```go
+import "github.com/go-mizu/mizu/mobile"
+
+app := mizu.New()
+
+// Add version middleware
+app.Use(mobile.VersionMiddleware(mobile.VersionOptions{
+    Supported:  []mobile.Version{{2, 0}, {1, 0}},
+    Deprecated: []mobile.Version{{1, 0}},
+    Default:    mobile.Version{Major: 2},
+}))
+
+app.Get("/api/users", func(c *mizu.Ctx) error {
+    version := mobile.VersionFromCtx(c)
+
+    if version.AtLeast(2, 0) {
+        return c.JSON(200, v2Response)
+    }
+    return c.JSON(200, v1Response)
+})
+```
+
+## The Version Type
+
+```go
+type Version struct {
+    Major int
+    Minor int
+}
+```
+
+### Creating Versions
+
+```go
+// Major version only
+v1 := mobile.Version{Major: 1}        // v1
+v2 := mobile.Version{Major: 2}        // v2
+
+// Major.Minor versions
+v1_5 := mobile.Version{Major: 1, Minor: 5}  // v1.5
+v2_1 := mobile.Version{Major: 2, Minor: 1}  // v2.1
+```
+
+### Version Methods
+
+```go
+version := mobile.Version{Major: 2, Minor: 1}
+
+// String representation
+version.String()  // "v2.1"
+
+// Check if zero/unset
+version.IsZero()  // false
+
+// Compare versions
+version.Compare(mobile.Version{Major: 2, Minor: 0})  // 1 (greater)
+version.Compare(mobile.Version{Major: 2, Minor: 1})  // 0 (equal)
+version.Compare(mobile.Version{Major: 3, Minor: 0})  // -1 (less)
+
+// Convenience comparisons
+version.AtLeast(2, 0)  // true
+version.AtLeast(2, 1)  // true
+version.AtLeast(2, 2)  // false
+
+version.Before(3, 0)   // true
+version.Before(2, 1)   // false
+```
+
+### Parsing Versions
+
+```go
+// Parse from string
+v, err := mobile.ParseVersion("v2.1")   // Version{2, 1}
+v, err := mobile.ParseVersion("v2")     // Version{2, 0}
+v, err := mobile.ParseVersion("2.1")    // Version{2, 1}
+v, err := mobile.ParseVersion("2")      // Version{2, 0}
+```
+
+## Version Middleware
+
+### Configuration Options
+
+```go
+type VersionOptions struct {
+    // Header is the version header name
+    // Default: "X-API-Version"
+    Header string
+
+    // QueryParam is an alternative query parameter for version
+    // Default: "" (disabled)
+    QueryParam string
+
+    // PathPrefix enables extraction from URL path prefix (e.g., /v1/...)
+    // Default: false
+    PathPrefix bool
+
+    // Default is the default version when none specified
+    // Default: Version{Major: 1}
+    Default Version
+
+    // Supported lists all supported versions
+    // Empty means no validation
+    Supported []Version
+
+    // Deprecated lists deprecated versions (still work but warn)
+    Deprecated []Version
+
+    // OnUnsupported handles unsupported version requests
+    OnUnsupported func(c *mizu.Ctx, v Version) error
+
+    // EchoVersion includes X-API-Version in response
+    // Default: true
+    EchoVersion bool
+}
+```
+
+### Basic Setup
+
+```go
+app.Use(mobile.VersionMiddleware(mobile.VersionOptions{
+    Supported:  []mobile.Version{{3, 0}, {2, 0}, {1, 0}},
+    Deprecated: []mobile.Version{{1, 0}},
+    Default:    mobile.Version{Major: 3},
+}))
+```
+
+### Version Detection Sources
+
+The middleware checks version from multiple sources:
+
+**1. Header (default)**
+
+```bash
+curl -H "X-API-Version: v2" http://localhost:3000/api/users
+```
+
+**2. Query Parameter**
+
+```go
+app.Use(mobile.VersionMiddleware(mobile.VersionOptions{
+    QueryParam: "version",
+}))
+```
+
+```bash
+curl "http://localhost:3000/api/users?version=v2"
+```
+
+**3. URL Path Prefix**
+
+```go
+app.Use(mobile.VersionMiddleware(mobile.VersionOptions{
+    PathPrefix: true,
+}))
+```
+
+```bash
+curl http://localhost:3000/v2/api/users
+```
+
+**Priority order:** Header > Query > Path > Default
+
+### Supported Versions
+
+```go
+app.Use(mobile.VersionMiddleware(mobile.VersionOptions{
+    Supported: []mobile.Version{
+        {3, 0},  // v3 - latest
+        {2, 0},  // v2 - still supported
+        {1, 0},  // v1 - deprecated but works
+    },
+}))
+```
+
+Unsupported versions return 400 Bad Request:
+
+```json
+{
+  "code": "invalid_request",
+  "message": "Unsupported API version: v4",
+  "details": {
+    "requested": "v4",
+    "supported": ["v3", "v2", "v1"]
+  }
+}
+```
+
+### Deprecated Versions
+
+```go
+app.Use(mobile.VersionMiddleware(mobile.VersionOptions{
+    Supported:  []mobile.Version{{3, 0}, {2, 0}, {1, 0}},
+    Deprecated: []mobile.Version{{1, 0}},
+}))
+```
+
+Deprecated versions work but add response header:
+
+```
+X-API-Deprecated: true
+```
+
+### Custom Unsupported Handler
+
+```go
+app.Use(mobile.VersionMiddleware(mobile.VersionOptions{
+    Supported: []mobile.Version{{2, 0}},
+
+    OnUnsupported: func(c *mizu.Ctx, v mobile.Version) error {
+        return c.JSON(400, map[string]any{
+            "error":     "Version not supported",
+            "requested": v.String(),
+            "available": []string{"v2"},
+            "docs":      "https://api.example.com/docs/migration",
+        })
+    },
+}))
+```
+
+## Using Version Context
+
+### Access in Handlers
+
+```go
+func handler(c *mizu.Ctx) error {
+    version := mobile.VersionFromCtx(c)
+
+    // Returns zero Version if middleware not applied
+    if version.IsZero() {
+        version = mobile.Version{Major: 1} // Default
+    }
+
+    return c.JSON(200, map[string]any{
+        "api_version": version.String(),
+    })
+}
+```
+
+### Version-Aware Logic
+
+```go
+func getUsers(c *mizu.Ctx) error {
+    version := mobile.VersionFromCtx(c)
+    users := fetchUsers()
+
+    // v3: New response format
+    if version.AtLeast(3, 0) {
+        return c.JSON(200, V3Response{
+            Data:    users,
+            Meta:    getMeta(),
+            Links:   getLinks(),
+        })
+    }
+
+    // v2: Added pagination
+    if version.AtLeast(2, 0) {
+        return c.JSON(200, V2Response{
+            Data:       users,
+            Total:      len(users),
+            Page:       1,
+            PerPage:    20,
+        })
+    }
+
+    // v1: Simple array
+    return c.JSON(200, users)
+}
+```
+
+### Switch-Based Routing
+
+```go
+func handler(c *mizu.Ctx) error {
+    version := mobile.VersionFromCtx(c)
+
+    switch {
+    case version.AtLeast(3, 0):
+        return handleV3(c)
+    case version.AtLeast(2, 0):
+        return handleV2(c)
+    default:
+        return handleV1(c)
+    }
+}
+```
+
+### Field-Level Versioning
+
+```go
+type User struct {
+    ID        int    `json:"id"`
+    Name      string `json:"name"`
+    Email     string `json:"email"`
+    Username  string `json:"username,omitempty"` // v2+
+    Avatar    string `json:"avatar,omitempty"`   // v3+
+}
+
+func getUser(c *mizu.Ctx) error {
+    version := mobile.VersionFromCtx(c)
+    user := fetchUser(c.Param("id"))
+
+    // Create versioned response
+    response := User{
+        ID:    user.ID,
+        Name:  user.Name,
+        Email: user.Email,
+    }
+
+    if version.AtLeast(2, 0) {
+        response.Username = user.Username
+    }
+
+    if version.AtLeast(3, 0) {
+        response.Avatar = user.Avatar
+    }
+
+    return c.JSON(200, response)
+}
+```
+
+## Migration Patterns
+
+### Adding New Fields (Non-Breaking)
+
+```go
+// v1 response
+type UserV1 struct {
+    ID   int    `json:"id"`
+    Name string `json:"name"`
+}
+
+// v2 adds email (backward compatible)
+type UserV2 struct {
+    ID    int    `json:"id"`
+    Name  string `json:"name"`
+    Email string `json:"email"` // New field
+}
+
+func getUser(c *mizu.Ctx) error {
+    v := mobile.VersionFromCtx(c)
+    user := fetchUser()
+
+    if v.AtLeast(2, 0) {
+        return c.JSON(200, UserV2{
+            ID:    user.ID,
+            Name:  user.Name,
+            Email: user.Email,
+        })
+    }
+
+    return c.JSON(200, UserV1{
+        ID:   user.ID,
+        Name: user.Name,
+    })
+}
+```
+
+### Renaming Fields (Breaking)
+
+```go
+// v1: uses "fullname"
+type UserV1 struct {
+    ID       int    `json:"id"`
+    Fullname string `json:"fullname"`
+}
+
+// v2: renamed to "name"
+type UserV2 struct {
+    ID   int    `json:"id"`
+    Name string `json:"name"`
+}
+
+func getUser(c *mizu.Ctx) error {
+    v := mobile.VersionFromCtx(c)
+    user := fetchUser()
+
+    if v.AtLeast(2, 0) {
+        return c.JSON(200, UserV2{ID: user.ID, Name: user.Name})
+    }
+
+    // v1: Use old field name
+    return c.JSON(200, UserV1{ID: user.ID, Fullname: user.Name})
+}
+```
+
+### Changing Data Types (Breaking)
+
+```go
+// v1: role is a string
+type UserV1 struct {
+    ID   int    `json:"id"`
+    Role string `json:"role"` // "admin", "user"
+}
+
+// v2: role is an object
+type UserV2 struct {
+    ID   int      `json:"id"`
+    Role RoleInfo `json:"role"`
+}
+
+type RoleInfo struct {
+    ID          int      `json:"id"`
+    Name        string   `json:"name"`
+    Permissions []string `json:"permissions"`
+}
+
+func getUser(c *mizu.Ctx) error {
+    v := mobile.VersionFromCtx(c)
+    user := fetchUser()
+
+    if v.AtLeast(2, 0) {
+        return c.JSON(200, UserV2{
+            ID:   user.ID,
+            Role: getRoleInfo(user.RoleID),
+        })
+    }
+
+    return c.JSON(200, UserV1{
+        ID:   user.ID,
+        Role: user.RoleName,
+    })
+}
+```
+
+### Deprecation Workflow
+
+```go
+// Step 1: Mark as deprecated
+app.Use(mobile.VersionMiddleware(mobile.VersionOptions{
+    Supported:  []mobile.Version{{3, 0}, {2, 0}, {1, 0}},
+    Deprecated: []mobile.Version{{1, 0}},
+}))
+
+// Step 2: Log usage of deprecated versions
+func deprecationLogger() mizu.Middleware {
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            v := mobile.VersionFromCtx(c)
+
+            if v.Before(2, 0) {
+                log.Warn("Deprecated API version used",
+                    "version", v.String(),
+                    "path", c.Request().URL.Path,
+                    "device", mobile.DeviceFromCtx(c).DeviceID,
+                )
+            }
+
+            return next(c)
+        }
+    }
+}
+
+// Step 3: Remove support (after migration period)
+app.Use(mobile.VersionMiddleware(mobile.VersionOptions{
+    Supported: []mobile.Version{{3, 0}, {2, 0}}, // v1 removed
+}))
+```
+
+## Client Implementation
+
+### iOS (Swift)
+
+```swift
+class APIClient {
+    let apiVersion = "v2"
+
+    func request(_ endpoint: String) -> URLRequest {
+        var request = URLRequest(url: URL(string: baseURL + endpoint)!)
+        request.setValue(apiVersion, forHTTPHeaderField: "X-API-Version")
+        return request
+    }
+
+    func handleResponse(_ response: HTTPURLResponse) {
+        if response.value(forHTTPHeaderField: "X-API-Deprecated") == "true" {
+            // Warn user about deprecated API
+            NotificationCenter.default.post(
+                name: .apiDeprecated,
+                object: nil
+            )
+        }
+    }
+}
+```
+
+### Android (Kotlin)
+
+```kotlin
+class VersionInterceptor(private val apiVersion: String = "v2") : Interceptor {
+
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request().newBuilder()
+            .header("X-API-Version", apiVersion)
+            .build()
+
+        val response = chain.proceed(request)
+
+        if (response.header("X-API-Deprecated") == "true") {
+            // Handle deprecation warning
+            EventBus.post(ApiDeprecatedEvent())
+        }
+
+        return response
+    }
+}
+```
+
+### Flutter (Dart)
+
+```dart
+class ApiClient {
+  static const apiVersion = 'v2';
+
+  Future<Response> request(String endpoint) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl$endpoint'),
+      headers: {'X-API-Version': apiVersion},
+    );
+
+    if (response.headers['x-api-deprecated'] == 'true') {
+      // Show deprecation warning
+      showDeprecationWarning();
+    }
+
+    return response;
+  }
+}
+```
+
+## Best Practices
+
+### Version Naming
+
+- Use semantic versioning: `v1`, `v1.1`, `v2`
+- Major versions for breaking changes
+- Minor versions for backward-compatible additions
+
+### Deprecation Timeline
+
+1. **Announce**: Notify developers of upcoming deprecation
+2. **Warn**: Add to deprecated list (X-API-Deprecated header)
+3. **Monitor**: Track usage of deprecated versions
+4. **Remove**: Remove from supported list
+
+### Documentation
+
+- Document all supported versions
+- Maintain migration guides
+- Provide changelogs per version
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Structured Errors" href="/mobile/errors" icon="circle-exclamation">
+    Return consistent error responses
+  </Card>
+  <Card title="Pagination" href="/mobile/pagination" icon="list">
+    Page and cursor-based pagination
+  </Card>
+  <Card title="Offline Sync" href="/mobile/sync" icon="arrows-rotate">
+    Delta synchronization
+  </Card>
+  <Card title="API Reference" href="/mobile/api-reference" icon="book">
+    Complete API documentation
+  </Card>
+</CardGroup>

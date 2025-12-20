@@ -1,0 +1,412 @@
+---
+title: "API Reference"
+description: "Complete API documentation for the mobile package."
+icon: "book"
+---
+
+Complete reference documentation for `github.com/go-mizu/mizu/mobile`.
+
+## Middleware
+
+### New
+
+```go
+func New() mizu.Middleware
+```
+
+Creates mobile middleware with default options.
+
+### WithOptions
+
+```go
+func WithOptions(opts Options) mizu.Middleware
+```
+
+Creates mobile middleware with custom options.
+
+### VersionMiddleware
+
+```go
+func VersionMiddleware(opts VersionOptions) mizu.Middleware
+```
+
+Creates API versioning middleware.
+
+### UniversalLinkMiddleware
+
+```go
+func UniversalLinkMiddleware(cfg UniversalLinkConfig) mizu.Middleware
+```
+
+Creates middleware that serves deep link verification files.
+
+## Types
+
+### Options
+
+```go
+type Options struct {
+    RequireDeviceID       bool
+    RequireAppVersion     bool
+    AllowedPlatforms      []Platform
+    MinAppVersion         string
+    SkipPaths             []string
+    SkipUserAgent         bool
+    OnMissingHeader       func(c *mizu.Ctx, header string) error
+    OnUnsupportedPlatform func(c *mizu.Ctx, platform Platform) error
+    OnOutdatedApp         func(c *mizu.Ctx, version, minimum string) error
+}
+```
+
+### Device
+
+```go
+type Device struct {
+    Platform     Platform
+    OSVersion    string
+    AppVersion   string
+    AppBuild     string
+    DeviceID     string
+    DeviceModel  string
+    Locale       string
+    Timezone     string
+    PushToken    string
+    PushProvider PushProvider
+    UserAgent    string
+}
+```
+
+### Platform
+
+```go
+type Platform string
+
+const (
+    PlatformIOS     Platform = "ios"
+    PlatformAndroid Platform = "android"
+    PlatformWindows Platform = "windows"
+    PlatformMacOS   Platform = "macos"
+    PlatformWeb     Platform = "web"
+    PlatformUnknown Platform = "unknown"
+)
+
+func (p Platform) String() string
+func (p Platform) IsMobile() bool
+func (p Platform) IsDesktop() bool
+func (p Platform) IsNative() bool
+```
+
+### Version
+
+```go
+type Version struct {
+    Major int
+    Minor int
+}
+
+func ParseVersion(s string) (Version, error)
+func (v Version) String() string
+func (v Version) IsZero() bool
+func (v Version) Compare(other Version) int
+func (v Version) AtLeast(major, minor int) bool
+func (v Version) Before(major, minor int) bool
+```
+
+### VersionOptions
+
+```go
+type VersionOptions struct {
+    Header        string
+    QueryParam    string
+    PathPrefix    bool
+    Default       Version
+    Supported     []Version
+    Deprecated    []Version
+    EchoVersion   bool
+    OnUnsupported func(c *mizu.Ctx, v Version) error
+}
+```
+
+### Error
+
+```go
+type Error struct {
+    Code    string         `json:"code"`
+    Message string         `json:"message"`
+    Details map[string]any `json:"details,omitempty"`
+    TraceID string         `json:"trace_id,omitempty"`
+}
+
+func NewError(code, message string) *Error
+func (e *Error) WithDetails(key string, value any) *Error
+func (e *Error) WithTraceID(traceID string) *Error
+func (e *Error) Error() string
+```
+
+### SyncToken
+
+```go
+type SyncToken string
+
+func NewSyncToken(t time.Time) SyncToken
+func (t SyncToken) Time() time.Time
+func (t SyncToken) String() string
+func (t SyncToken) IsEmpty() bool
+```
+
+### SyncRequest
+
+```go
+type SyncRequest struct {
+    Token     SyncToken
+    Resources []string
+    FullSync  bool
+    Limit     int
+}
+
+func ParseSyncRequest(c *mizu.Ctx) SyncRequest
+func (r SyncRequest) Since() time.Time
+func (r SyncRequest) IsInitial() bool
+```
+
+### Delta
+
+```go
+type Delta[T any] struct {
+    Created []T      `json:"created,omitempty"`
+    Updated []T      `json:"updated,omitempty"`
+    Deleted []string `json:"deleted,omitempty"`
+}
+
+func (d Delta[T]) IsEmpty() bool
+func (d Delta[T]) Count() int
+```
+
+### SyncDelta
+
+```go
+type SyncDelta[T any] struct {
+    Delta[T]
+    SyncToken SyncToken `json:"sync_token"`
+    HasMore   bool      `json:"has_more"`
+    FullSync  bool      `json:"full_sync,omitempty"`
+}
+
+func NewSyncDelta[T any](delta Delta[T], token SyncToken, hasMore bool) SyncDelta[T]
+func NewFullSyncDelta[T any](delta Delta[T], token SyncToken, hasMore bool) SyncDelta[T]
+```
+
+### PushToken
+
+```go
+type PushToken struct {
+    Token      string       `json:"token"`
+    Provider   PushProvider `json:"provider"`
+    DeviceID   string       `json:"device_id,omitempty"`
+    Sandbox    bool         `json:"sandbox,omitempty"`
+    CreatedAt  time.Time    `json:"created_at,omitempty"`
+    UpdatedAt  time.Time    `json:"updated_at,omitempty"`
+    AppVersion string       `json:"app_version,omitempty"`
+}
+
+func ParsePushToken(c *mizu.Ctx) *PushToken
+```
+
+### PushProvider
+
+```go
+type PushProvider string
+
+const (
+    PushAPNS PushProvider = "apns"
+    PushFCM  PushProvider = "fcm"
+    PushWNS  PushProvider = "wns"
+)
+```
+
+### PushPayload
+
+```go
+type PushPayload struct {
+    Title            string         `json:"title,omitempty"`
+    Body             string         `json:"body,omitempty"`
+    Badge            *int           `json:"badge,omitempty"`
+    Sound            string         `json:"sound,omitempty"`
+    Data             map[string]any `json:"data,omitempty"`
+    Category         string         `json:"category,omitempty"`
+    ThreadID         string         `json:"thread_id,omitempty"`
+    ChannelID        string         `json:"channel_id,omitempty"`
+    CollapseKey      string         `json:"collapse_key,omitempty"`
+    Priority         string         `json:"priority,omitempty"`
+    TTL              int            `json:"ttl,omitempty"`
+    ContentAvailable bool           `json:"content_available,omitempty"`
+    MutableContent   bool           `json:"mutable_content,omitempty"`
+}
+
+func (p *PushPayload) WithData(key string, value any) *PushPayload
+func (p *PushPayload) SetBadge(n int) *PushPayload
+func (p *PushPayload) ToAPNS() map[string]any
+func (p *PushPayload) ToFCM() map[string]any
+```
+
+### DeepLink
+
+```go
+type DeepLink struct {
+    Scheme   string
+    Host     string
+    Paths    []string
+    Fallback string
+}
+
+func (d DeepLink) AppleAppSiteAssociation(teamID, bundleID string) []byte
+func (d DeepLink) AssetLinks(packageName, fingerprint string) []byte
+```
+
+### AppInfo
+
+```go
+type AppInfo struct {
+    CurrentVersion     string            `json:"current_version"`
+    MinimumVersion     string            `json:"minimum_version"`
+    UpdateURL          string            `json:"update_url"`
+    ReleaseNotes       string            `json:"release_notes,omitempty"`
+    ReleasedAt         time.Time         `json:"released_at,omitempty"`
+    ForceUpdate        bool              `json:"force_update"`
+    MaintenanceMode    bool              `json:"maintenance_mode"`
+    MaintenanceMessage string            `json:"maintenance_message,omitempty"`
+    MaintenanceEndTime *time.Time        `json:"maintenance_end_time,omitempty"`
+    Features           map[string]bool   `json:"features,omitempty"`
+}
+```
+
+## Functions
+
+### DeviceFromCtx
+
+```go
+func DeviceFromCtx(c *mizu.Ctx) *Device
+```
+
+Extracts Device from request context.
+
+### VersionFromCtx
+
+```go
+func VersionFromCtx(c *mizu.Ctx) Version
+```
+
+Extracts Version from request context.
+
+### SendError
+
+```go
+func SendError(c *mizu.Ctx, status int, err *Error) error
+```
+
+Sends a structured error response.
+
+### SetSyncToken
+
+```go
+func SetSyncToken(c *mizu.Ctx, token SyncToken)
+```
+
+Sets the sync token response header.
+
+### ValidateToken
+
+```go
+func ValidateToken(token string, provider PushProvider) bool
+```
+
+Validates a push token format.
+
+### ValidateAPNS
+
+```go
+func ValidateAPNS(token string) bool
+```
+
+Validates APNS token format.
+
+### ValidateFCM
+
+```go
+func ValidateFCM(token string) bool
+```
+
+Validates FCM token format.
+
+### CheckUpdate
+
+```go
+func CheckUpdate(clientVersion, latestVersion, minimumVersion string) UpdateStatus
+```
+
+Compares client version against store versions.
+
+### NewStaticAppInfo
+
+```go
+func NewStaticAppInfo(currentVersion, minVersion, updateURL string) *StaticAppInfo
+```
+
+Creates a StaticAppInfo provider.
+
+### NewIOSStoreURL
+
+```go
+func NewIOSStoreURL(appID string) string
+```
+
+Creates an iOS App Store URL.
+
+### NewAndroidStoreURL
+
+```go
+func NewAndroidStoreURL(packageName string) string
+```
+
+Creates a Google Play Store URL.
+
+## Constants
+
+### Error Codes
+
+```go
+const (
+    ErrInvalidRequest  = "invalid_request"
+    ErrUnauthorized    = "unauthorized"
+    ErrForbidden       = "forbidden"
+    ErrNotFound        = "not_found"
+    ErrConflict        = "conflict"
+    ErrValidation      = "validation_error"
+    ErrRateLimited     = "rate_limited"
+    ErrUpgradeRequired = "upgrade_required"
+    ErrMaintenance     = "maintenance"
+    ErrInternal        = "internal_error"
+)
+```
+
+### Headers
+
+```go
+const (
+    HeaderDeviceID    = "X-Device-ID"
+    HeaderAppVersion  = "X-App-Version"
+    HeaderAppBuild    = "X-App-Build"
+    HeaderDeviceModel = "X-Device-Model"
+    HeaderPlatform    = "X-Platform"
+    HeaderOSVersion   = "X-OS-Version"
+    HeaderTimezone    = "X-Timezone"
+    HeaderLocale      = "X-Locale"
+    HeaderPushToken   = "X-Push-Token"
+    HeaderAPIVersion  = "X-API-Version"
+    HeaderSyncToken   = "X-Sync-Token"
+    HeaderIdempotency = "X-Idempotency-Key"
+    HeaderRequestID   = "X-Request-ID"
+    HeaderMinVersion  = "X-Min-App-Version"
+    HeaderDeprecated  = "X-API-Deprecated"
+)
+```

@@ -1,0 +1,215 @@
+---
+title: ".NET MAUI"
+description: "Build cross-platform apps with C#, .NET MAUI, and Mizu backend integration."
+icon: "microsoft"
+---
+
+Build cross-platform mobile applications with .NET MAUI and C# that integrate seamlessly with your Mizu backend. The .NET MAUI template provides a complete project with MVVM architecture.
+
+## Quick Start
+
+```bash
+mizu new ./my-maui-app --template mobile/dotnet
+```
+
+This creates a .NET MAUI project with:
+
+- C# with .NET 8
+- MVVM pattern
+- HttpClient for networking
+- Shell navigation
+- iOS, Android, Windows, and macOS support
+
+## Project Structure
+
+```
+my-maui-app/
+├── backend/                    # Mizu Go backend
+│   └── ...
+│
+├── src/
+│   ├── MyApp/
+│   │   ├── App.xaml
+│   │   ├── AppShell.xaml
+│   │   ├── MauiProgram.cs
+│   │   ├── Services/
+│   │   │   ├── ApiService.cs
+│   │   │   └── AuthService.cs
+│   │   ├── ViewModels/
+│   │   ├── Views/
+│   │   └── Models/
+│   └── MyApp.csproj
+│
+└── Makefile
+```
+
+## API Service
+
+```csharp
+// Services/ApiService.cs
+public class ApiService
+{
+    private readonly HttpClient _client;
+    private readonly IDeviceInfo _deviceInfo;
+
+    public ApiService(IDeviceInfo deviceInfo)
+    {
+        _deviceInfo = deviceInfo;
+        _client = new HttpClient
+        {
+            BaseAddress = new Uri(Configuration.ApiUrl)
+        };
+    }
+
+    private void AddMizuHeaders(HttpRequestMessage request)
+    {
+        request.Headers.Add("X-Device-ID", _deviceInfo.DeviceId);
+        request.Headers.Add("X-App-Version", AppInfo.VersionString);
+        request.Headers.Add("X-Platform", DeviceInfo.Platform.ToString().ToLower());
+        request.Headers.Add("X-OS-Version", DeviceInfo.VersionString);
+        request.Headers.Add("X-API-Version", "v2");
+    }
+
+    public async Task<T> GetAsync<T>(string path)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, path);
+        AddMizuHeaders(request);
+
+        var response = await _client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+
+        var json = await response.Content.ReadAsStringAsync();
+        return JsonSerializer.Deserialize<T>(json);
+    }
+
+    public async Task<TResponse> PostAsync<TRequest, TResponse>(string path, TRequest data)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(data),
+                Encoding.UTF8,
+                "application/json"
+            )
+        };
+        AddMizuHeaders(request);
+
+        var response = await _client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+
+        var json = await response.Content.ReadAsStringAsync();
+        return JsonSerializer.Deserialize<TResponse>(json);
+    }
+}
+```
+
+## ViewModel
+
+```csharp
+// ViewModels/ItemsViewModel.cs
+public partial class ItemsViewModel : ObservableObject
+{
+    private readonly ApiService _api;
+
+    [ObservableProperty]
+    private ObservableCollection<Item> _items = new();
+
+    [ObservableProperty]
+    private bool _isLoading;
+
+    public ItemsViewModel(ApiService api)
+    {
+        _api = api;
+    }
+
+    [RelayCommand]
+    private async Task LoadItemsAsync()
+    {
+        if (IsLoading) return;
+
+        try
+        {
+            IsLoading = true;
+
+            var response = await _api.GetAsync<PageResponse<Item>>("/api/items");
+            Items.Clear();
+
+            foreach (var item in response.Data)
+            {
+                Items.Add(item);
+            }
+        }
+        catch (Exception ex)
+        {
+            await Shell.Current.DisplayAlert("Error", ex.Message, "OK");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+}
+```
+
+## View
+
+```xml
+<!-- Views/ItemsPage.xaml -->
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:viewmodel="clr-namespace:MyApp.ViewModels"
+             x:DataType="viewmodel:ItemsViewModel"
+             Title="Items">
+
+    <RefreshView IsRefreshing="{Binding IsLoading}"
+                 Command="{Binding LoadItemsCommand}">
+        <CollectionView ItemsSource="{Binding Items}">
+            <CollectionView.ItemTemplate>
+                <DataTemplate>
+                    <Frame Margin="10" Padding="10">
+                        <VerticalStackLayout>
+                            <Label Text="{Binding Name}"
+                                   FontSize="18"
+                                   FontAttributes="Bold" />
+                            <Label Text="{Binding Description}"
+                                   TextColor="Gray" />
+                        </VerticalStackLayout>
+                    </Frame>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+    </RefreshView>
+</ContentPage>
+```
+
+## Template Options
+
+```bash
+mizu new ./my-app --template mobile/dotnet \
+  --var name=MyApp \
+  --var namespace=MyCompany.MyApp \
+  --var bundleId=com.example.app \
+  --var platforms=ios,android \
+  --var nav=shell \
+  --var mvvm=toolkit
+```
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `name` | Project name | Directory name |
+| `namespace` | C# namespace | `name` |
+| `bundleId` | Bundle identifier | `com.example.app` |
+| `platforms` | Target platforms | `ios,android` |
+| `nav` | Navigation: `shell`, `plain` | `shell` |
+| `mvvm` | MVVM framework: `default`, `toolkit` | `default` |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="PWA" href="/mobile/pwa" icon="globe">
+    Build Progressive Web Apps
+  </Card>
+  <Card title="Templates" href="/mobile/templates" icon="layer-group">
+    All mobile templates
+  </Card>
+</CardGroup>

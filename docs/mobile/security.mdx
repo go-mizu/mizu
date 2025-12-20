@@ -1,0 +1,172 @@
+---
+title: "Security"
+description: "Security best practices for mobile backends."
+icon: "shield"
+---
+
+This guide covers security considerations for Mizu mobile backends.
+
+## Authentication
+
+### JWT Tokens
+
+```go
+func authMiddleware(secret []byte) mizu.Middleware {
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            auth := c.Request().Header.Get("Authorization")
+            if !strings.HasPrefix(auth, "Bearer ") {
+                return mobile.SendError(c, 401, mobile.NewError(
+                    mobile.ErrUnauthorized, "Missing token"))
+            }
+
+            token := strings.TrimPrefix(auth, "Bearer ")
+            claims, err := validateJWT(token, secret)
+            if err != nil {
+                return mobile.SendError(c, 401, mobile.NewError(
+                    mobile.ErrUnauthorized, "Invalid token"))
+            }
+
+            c.Set("user_id", claims.UserID)
+            return next(c)
+        }
+    }
+}
+```
+
+### Token Refresh
+
+```go
+app.Post("/api/auth/refresh", func(c *mizu.Ctx) error {
+    var req struct {
+        RefreshToken string `json:"refresh_token"`
+    }
+    c.BodyJSON(&req)
+
+    // Validate refresh token
+    claims, err := validateRefreshToken(req.RefreshToken)
+    if err != nil {
+        return mobile.SendError(c, 401, mobile.NewError(
+            mobile.ErrUnauthorized, "Invalid refresh token"))
+    }
+
+    // Issue new access token
+    accessToken, err := createAccessToken(claims.UserID)
+    if err != nil {
+        return mobile.SendError(c, 500, mobile.NewError(
+            mobile.ErrInternal, "Failed to create token"))
+    }
+
+    return c.JSON(200, map[string]string{
+        "access_token": accessToken,
+    })
+})
+```
+
+## Rate Limiting
+
+```go
+app.Use(limiter.New(limiter.Config{
+    Max:        100,
+    Expiration: time.Minute,
+    KeyGenerator: func(c *mizu.Ctx) string {
+        device := mobile.DeviceFromCtx(c)
+        if device != nil && device.DeviceID != "" {
+            return device.DeviceID
+        }
+        return c.IP()
+    },
+    LimitReached: func(c *mizu.Ctx) error {
+        return mobile.SendError(c, 429, mobile.NewError(
+            mobile.ErrRateLimited, "Too many requests").
+            WithDetails("retry_after", 60))
+    },
+}))
+```
+
+## Input Validation
+
+```go
+func createUser(c *mizu.Ctx) error {
+    var req CreateUserRequest
+    if err := c.BodyJSON(&req); err != nil {
+        return mobile.SendError(c, 400, mobile.NewError(
+            mobile.ErrInvalidRequest, "Invalid JSON"))
+    }
+
+    // Validate
+    if !isValidEmail(req.Email) {
+        return mobile.SendError(c, 400, mobile.NewError(
+            mobile.ErrValidation, "Invalid email"))
+    }
+
+    if len(req.Password) < 8 {
+        return mobile.SendError(c, 400, mobile.NewError(
+            mobile.ErrValidation, "Password too short"))
+    }
+
+    // Continue...
+}
+```
+
+## Security Headers
+
+```go
+app.Use(func(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        c.Header().Set("X-Content-Type-Options", "nosniff")
+        c.Header().Set("X-Frame-Options", "DENY")
+        c.Header().Set("X-XSS-Protection", "1; mode=block")
+        c.Header().Set("Strict-Transport-Security", "max-age=31536000")
+        return next(c)
+    }
+})
+```
+
+## Client Security
+
+### iOS: Keychain Storage
+
+```swift
+// Store tokens in Keychain, not UserDefaults
+KeychainHelper.save(accessToken, key: "access_token")
+```
+
+### Android: EncryptedSharedPreferences
+
+```kotlin
+val prefs = EncryptedSharedPreferences.create(
+    context,
+    "secure_prefs",
+    masterKey,
+    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+)
+```
+
+### Certificate Pinning
+
+```swift
+// iOS
+let serverTrustPolicy = ServerTrustPolicy.pinCertificates(
+    certificates: ServerTrustPolicy.certificates()
+)
+```
+
+```kotlin
+// Android
+CertificatePinner.Builder()
+    .add("api.example.com", "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+    .build()
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Production" href="/mobile/production" icon="rocket">
+    Production deployment
+  </Card>
+  <Card title="API Reference" href="/mobile/api-reference" icon="book">
+    Complete API documentation
+  </Card>
+</CardGroup>
