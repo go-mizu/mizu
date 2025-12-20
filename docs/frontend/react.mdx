@@ -1,10 +1,53 @@
 ---
 title: "React"
-description: "Build React applications with Mizu, Vite, and TypeScript."
+description: "Build modern, high-performance React applications with Mizu, Vite, and TypeScript."
 icon: "react"
 ---
 
-React is the most popular JavaScript library for building user interfaces. This guide shows you how to build a React SPA with Mizu as the backend.
+React is the most popular JavaScript library for building user interfaces. Created by Facebook, React revolutionized frontend development with its component-based architecture and virtual DOM. This comprehensive guide shows you how to build production-ready React SPAs with Mizu as your backend.
+
+## Why React?
+
+React has become the industry standard for frontend development:
+
+**Component-Based** - Build encapsulated components that manage their own state, then compose them into complex UIs.
+
+**Declarative** - Design simple views for each state in your application, and React efficiently updates and renders the right components when data changes.
+
+**Learn Once, Write Anywhere** - React doesn't make assumptions about your tech stack, so you can develop new features without rewriting existing code.
+
+**Huge Ecosystem** - The largest library ecosystem in frontend development. Whatever you need, there's probably a package for it.
+
+**Strong TypeScript Support** - First-class TypeScript integration for type-safe components and APIs.
+
+**Industry Adoption** - Used by Facebook, Instagram, Netflix, Airbnb, and thousands of other companies.
+
+### React vs Other Frameworks
+
+| Feature | React | Vue | Svelte | Angular |
+|---------|-------|-----|--------|---------|
+| **Bundle Size** | ~45kB | ~35kB | ~2kB | ~150kB |
+| **Learning Curve** | ⚠️ Moderate | ✅ Easy | ✅ Easy | ❌ Steep |
+| **Performance** | ⚡ Fast | ⚡ Fast | ⚡⚡ Fastest | ⚡ Fast |
+| **Ecosystem** | ✅ Huge | ⚡ Large | ⚠️ Growing | ⚡ Large |
+| **TypeScript** | ✅ Excellent | ✅ Excellent | ✅ Excellent | ✅ Native |
+| **Jobs** | ✅ Most | ⚡ Many | ⚠️ Growing | ⚡ Many |
+| **Best for** | SPAs, large apps | All | Performance | Enterprise |
+| **Community** | ✅ Largest | ⚡ Large | ⚠️ Growing | ⚡ Large |
+| **Company** | Meta (Facebook) | Independent | Independent | Google |
+
+**Choose React when:**
+- You need the largest ecosystem and community
+- TypeScript integration is important
+- Team has React experience
+- Building a complex, interactive SPA
+- Job market considerations matter
+
+**Choose something else when:**
+- Bundle size is critical → Use Preact or Svelte
+- Learning curve matters → Try Vue
+- Need full framework → Use Next.js
+- Need SSR → Use Next.js
 
 ## Quick Start
 
@@ -24,35 +67,91 @@ Visit `http://localhost:3000` to see your app!
 my-react-app/
 ├── cmd/
 │   └── server/
-│       └── main.go              # Entry point
+│       └── main.go              # Go entry point
 ├── app/
 │   └── server/
-│       ├── app.go               # Mizu app setup
-│       ├── config.go            # Configuration
-│       └── routes.go            # API routes
+│       ├── app.go               # Mizu app configuration
+│       ├── config.go            # Server configuration
+│       └── routes.go            # API routes (Go)
 ├── client/                      # React application
 │   ├── src/
-│   │   ├── main.tsx             # React entry point
-│   │   ├── App.tsx              # Root component
+│   │   ├── main.tsx            # React entry point
+│   │   ├── App.tsx             # Root component
 │   │   ├── components/
-│   │   │   └── Layout.tsx       # Layout component
+│   │   │   ├── Layout.tsx      # Layout component
+│   │   │   ├── Header.tsx
+│   │   │   └── Footer.tsx
 │   │   ├── pages/
-│   │   │   ├── Home.tsx         # Home page
-│   │   │   └── About.tsx        # About page
+│   │   │   ├── Home.tsx        # Home page
+│   │   │   ├── About.tsx       # About page
+│   │   │   └── Users.tsx       # Users page
+│   │   ├── hooks/              # Custom hooks
+│   │   │   ├── useUsers.ts
+│   │   │   └── useAuth.ts
+│   │   ├── contexts/           # React contexts
+│   │   │   └── AuthContext.tsx
+│   │   ├── types/              # TypeScript types
+│   │   │   └── user.ts
 │   │   └── styles/
-│   │       └── index.css        # Global styles
+│   │       └── index.css       # Global styles
 │   ├── public/
-│   │   └── vite.svg             # Public assets
-│   ├── index.html               # HTML template
-│   ├── package.json             # npm dependencies
-│   ├── vite.config.ts           # Vite configuration
-│   ├── tsconfig.json            # TypeScript config
-│   └── tsconfig.node.json       # TypeScript config for Vite
-├── dist/                        # Built files (after build)
+│   │   └── vite.svg           # Public assets
+│   ├── index.html             # HTML template
+│   ├── package.json           # npm dependencies
+│   ├── vite.config.ts         # Vite configuration
+│   ├── tsconfig.json          # TypeScript config
+│   └── tsconfig.node.json     # TypeScript for Vite
+├── dist/                       # Built files (after build)
 ├── go.mod
-├── go.sum
 └── Makefile
 ```
+
+## How React Works with Mizu
+
+When you build a React app with Mizu:
+
+```
+Development Mode
+    ↓
+┌─────────────────────────────┐
+│ Vite Dev Server (5173)      │
+│ - Hot Module Replacement    │
+│ - TypeScript compilation    │
+│ - Fast bundling             │
+└─────────────┬───────────────┘
+              │
+              ↓
+┌─────────────────────────────┐
+│ Mizu Server (3000)          │
+│ - Proxies to Vite           │
+│ - Handles /api requests     │
+│ - Serves WebSocket for HMR  │
+└─────────────────────────────┘
+
+Production Mode
+    ↓
+┌─────────────────────────────┐
+│ npm run build               │
+│ - Optimizes & minifies      │
+│ - Code splitting            │
+│ - Tree shaking              │
+└─────────────┬───────────────┘
+              ↓
+┌─────────────────────────────┐
+│ Embedded in Go Binary       │
+│ - All files in single bin   │
+│ - Served by Mizu            │
+│ - No Node.js needed         │
+└─────────────────────────────┘
+```
+
+**At runtime in production:**
+1. User requests `http://yourdomain.com`
+2. Mizu serves `index.html` from embedded FS
+3. Browser loads React bundle
+4. React hydrates and takes over
+5. Client-side routing handles navigation
+6. API calls go to Mizu Go handlers
 
 ## Backend Setup
 
@@ -75,16 +174,17 @@ var distFS embed.FS
 func New(cfg *Config) *mizu.App {
     app := mizu.New()
 
-    // API routes
+    // API routes come first
     setupRoutes(app)
 
-    // Frontend middleware
+    // Frontend middleware (handles all non-API routes)
     dist, _ := fs.Sub(distFS, "dist")
     app.Use(frontend.WithOptions(frontend.Options{
-        Mode:        frontend.ModeAuto,
-        FS:          dist,
-        DevServer:   "http://localhost:" + cfg.DevPort,
-        IgnorePaths: []string{"/api"},
+        Mode:        frontend.ModeAuto,       // Auto-detect dev/prod
+        FS:          dist,                     // Embedded files
+        Root:        "./dist",                 // Fallback to filesystem in dev
+        DevServer:   "http://localhost:" + cfg.DevPort,  // Vite dev server
+        IgnorePaths: []string{"/api"},        // Don't proxy /api to Vite
     }))
 
     return app
@@ -99,29 +199,63 @@ package server
 import "github.com/go-mizu/mizu"
 
 func setupRoutes(app *mizu.App) {
-    // Example API endpoint
-    app.Get("/api/hello", handleHello)
+    // User endpoints
     app.Get("/api/users", handleUsers)
-}
+    app.Post("/api/users", createUser)
+    app.Get("/api/users/{id}", getUser)
+    app.Put("/api/users/{id}", updateUser)
+    app.Delete("/api/users/{id}", deleteUser)
 
-func handleHello(c *mizu.Ctx) error {
-    return c.JSON(200, map[string]string{
-        "message": "Hello from Mizu!",
-    })
+    // Auth endpoints
+    app.Post("/api/auth/login", handleLogin)
+    app.Post("/api/auth/logout", handleLogout)
+    app.Get("/api/auth/me", handleMe)
 }
 
 func handleUsers(c *mizu.Ctx) error {
     users := []map[string]any{
-        {"id": 1, "name": "Alice", "email": "alice@example.com"},
-        {"id": 2, "name": "Bob", "email": "bob@example.com"},
+        {"id": 1, "name": "Alice", "email": "alice@example.com", "role": "admin"},
+        {"id": 2, "name": "Bob", "email": "bob@example.com", "role": "user"},
+        {"id": 3, "name": "Charlie", "email": "charlie@example.com", "role": "user"},
     }
     return c.JSON(200, users)
+}
+
+func createUser(c *mizu.Ctx) error {
+    var user map[string]any
+    if err := c.BodyJSON(&user); err != nil {
+        return c.JSON(400, map[string]string{"error": "Invalid JSON"})
+    }
+
+    // Validate
+    if user["name"] == nil || user["email"] == nil {
+        return c.JSON(400, map[string]string{"error": "Name and email required"})
+    }
+
+    // In real app, save to database
+    user["id"] = 4
+    user["role"] = "user"
+
+    return c.JSON(201, user)
+}
+
+func getUser(c *mizu.Ctx) error {
+    id := c.Param("id")
+    user := map[string]any{
+        "id":    id,
+        "name":  "User " + id,
+        "email": "user" + id + "@example.com",
+        "role":  "user",
+    }
+    return c.JSON(200, user)
 }
 ```
 
 ## Frontend Setup
 
-### `client/src/main.tsx`
+### Entry Point
+
+#### `client/src/main.tsx`
 
 ```tsx
 import React from 'react'
@@ -136,13 +270,22 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 )
 ```
 
-### `client/src/App.tsx`
+**Why StrictMode?**
+- Highlights potential problems in components
+- Warns about deprecated APIs
+- Detects unexpected side effects
+- Only in development, no production overhead
+
+### Root Component
+
+#### `client/src/App.tsx`
 
 ```tsx
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import Layout from './components/Layout'
 import Home from './pages/Home'
 import About from './pages/About'
+import Users from './pages/Users'
 
 function App() {
   return (
@@ -151,6 +294,7 @@ function App() {
         <Route path="/" element={<Layout />}>
           <Route index element={<Home />} />
           <Route path="about" element={<About />} />
+          <Route path="users" element={<Users />} />
         </Route>
       </Routes>
     </BrowserRouter>
@@ -160,7 +304,9 @@ function App() {
 export default App
 ```
 
-### `client/src/components/Layout.tsx`
+### Layout Component
+
+#### `client/src/components/Layout.tsx`
 
 ```tsx
 import { Link, Outlet } from 'react-router-dom'
@@ -168,10 +314,13 @@ import { Link, Outlet } from 'react-router-dom'
 export default function Layout() {
   return (
     <div className="app">
-      <nav>
-        <Link to="/">Home</Link>
-        <Link to="/about">About</Link>
-      </nav>
+      <header>
+        <nav>
+          <Link to="/">Home</Link>
+          <Link to="/about">About</Link>
+          <Link to="/users">Users</Link>
+        </nav>
+      </header>
 
       <main>
         <Outlet />
@@ -185,9 +334,332 @@ export default function Layout() {
 }
 ```
 
-### `client/src/pages/Home.tsx`
+## React Hooks Deep Dive
+
+React Hooks let you use state and other React features in function components.
+
+### useState
+
+Manage component state:
 
 ```tsx
+import { useState } from 'react'
+
+function Counter() {
+  const [count, setCount] = useState(0)
+  const [text, setText] = useState('')
+
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={() => setCount(count + 1)}>Increment</button>
+      <button onClick={() => setCount(prev => prev + 1)}>Better Increment</button>
+
+      <input
+        value={text}
+        onChange={e => setText(e.target.value)}
+      />
+    </div>
+  )
+}
+```
+
+**Functional updates:**
+```tsx
+// ❌ Don't do this with previous state
+setCount(count + 1)
+
+// ✅ Use functional update
+setCount(prev => prev + 1)
+```
+
+### useEffect
+
+Perform side effects:
+
+```tsx
+import { useState, useEffect } from 'react'
+
+function Users() {
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  // Run once on mount
+  useEffect(() => {
+    fetch('/api/users')
+      .then(res => res.json())
+      .then(data => {
+        setUsers(data)
+        setLoading(false)
+      })
+  }, [])  // Empty deps = run once
+
+  // Run when users changes
+  useEffect(() => {
+    console.log('Users updated:', users.length)
+  }, [users])
+
+  // Cleanup
+  useEffect(() => {
+    const interval = setInterval(() => {
+      console.log('Tick')
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [])
+
+  return <div>{/* render users */}</div>
+}
+```
+
+**Common patterns:**
+
+```tsx
+// Fetch on param change
+useEffect(() => {
+  fetch(`/api/users/${id}`)
+    .then(res => res.json())
+    .then(setUser)
+}, [id])
+
+// Subscribe to events
+useEffect(() => {
+  function handleResize() {
+    setWidth(window.innerWidth)
+  }
+
+  window.addEventListener('resize', handleResize)
+  return () => window.removeEventListener('resize', handleResize)
+}, [])
+
+// Debounced effect
+useEffect(() => {
+  const timer = setTimeout(() => {
+    // Do something with searchTerm
+  }, 500)
+
+  return () => clearTimeout(timer)
+}, [searchTerm])
+```
+
+### useContext
+
+Access context values:
+
+```tsx
+import { createContext, useContext, ReactNode } from 'react'
+
+interface Theme {
+  primary: string
+  secondary: string
+}
+
+const ThemeContext = createContext<Theme>({
+  primary: '#007bff',
+  secondary: '#6c757d'
+})
+
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const theme = {
+    primary: '#007bff',
+    secondary: '#6c757d'
+  }
+
+  return (
+    <ThemeContext.Provider value={theme}>
+      {children}
+    </ThemeContext.Provider>
+  )
+}
+
+export function useTheme() {
+  return useContext(ThemeContext)
+}
+
+// Usage
+function Button() {
+  const theme = useTheme()
+  return <button style={{ background: theme.primary }}>Click</button>
+}
+```
+
+### useReducer
+
+Manage complex state:
+
+```tsx
+import { useReducer } from 'react'
+
+interface State {
+  count: number
+  text: string
+}
+
+type Action =
+  | { type: 'increment' }
+  | { type: 'decrement' }
+  | { type: 'setText'; payload: string }
+  | { type: 'reset' }
+
+const initialState: State = {
+  count: 0,
+  text: ''
+}
+
+function reducer(state: State, action: Action): State {
+  switch (action.type) {
+    case 'increment':
+      return { ...state, count: state.count + 1 }
+    case 'decrement':
+      return { ...state, count: state.count - 1 }
+    case 'setText':
+      return { ...state, text: action.payload }
+    case 'reset':
+      return initialState
+    default:
+      return state
+  }
+}
+
+function Counter() {
+  const [state, dispatch] = useReducer(reducer, initialState)
+
+  return (
+    <div>
+      <p>Count: {state.count}</p>
+      <button onClick={() => dispatch({ type: 'increment' })}>+</button>
+      <button onClick={() => dispatch({ type: 'decrement' })}>-</button>
+      <button onClick={() => dispatch({ type: 'reset' })}>Reset</button>
+
+      <input
+        value={state.text}
+        onChange={e => dispatch({ type: 'setText', payload: e.target.value })}
+      />
+    </div>
+  )
+}
+```
+
+### useMemo
+
+Memoize expensive calculations:
+
+```tsx
+import { useMemo, useState } from 'react'
+
+function ExpensiveComponent({ items }: { items: number[] }) {
+  const [filter, setFilter] = useState(0)
+
+  // Only recalculates when items or filter changes
+  const filteredItems = useMemo(() => {
+    console.log('Filtering...')
+    return items.filter(item => item > filter)
+  }, [items, filter])
+
+  const total = useMemo(() => {
+    console.log('Calculating total...')
+    return filteredItems.reduce((sum, item) => sum + item, 0)
+  }, [filteredItems])
+
+  return (
+    <div>
+      <input
+        type="number"
+        value={filter}
+        onChange={e => setFilter(Number(e.target.value))}
+      />
+      <p>Filtered: {filteredItems.length}</p>
+      <p>Total: {total}</p>
+    </div>
+  )
+}
+```
+
+### useCallback
+
+Memoize callback functions:
+
+```tsx
+import { useCallback, useState, memo } from 'react'
+
+interface ItemProps {
+  id: number
+  onDelete: (id: number) => void
+}
+
+// Memoized child component
+const Item = memo(({ id, onDelete }: ItemProps) => {
+  console.log('Rendering item', id)
+  return <button onClick={() => onDelete(id)}>Delete {id}</button>
+})
+
+function List() {
+  const [items, setItems] = useState([1, 2, 3])
+
+  // Without useCallback, this creates a new function on every render
+  // causing all Item components to re-render
+  const handleDelete = useCallback((id: number) => {
+    setItems(prev => prev.filter(item => item !== id))
+  }, [])
+
+  return (
+    <div>
+      {items.map(id => (
+        <Item key={id} id={id} onDelete={handleDelete} />
+      ))}
+    </div>
+  )
+}
+```
+
+### useRef
+
+Reference DOM elements or persist values:
+
+```tsx
+import { useRef, useEffect } from 'react'
+
+function FocusInput() {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const renderCount = useRef(0)
+
+  useEffect(() => {
+    // Focus input on mount
+    inputRef.current?.focus()
+
+    // Track renders (doesn't cause re-render)
+    renderCount.current++
+    console.log('Rendered', renderCount.current, 'times')
+  })
+
+  return <input ref={inputRef} />
+}
+
+// Storing previous value
+function Counter() {
+  const [count, setCount] = useState(0)
+  const prevCount = useRef(0)
+
+  useEffect(() => {
+    prevCount.current = count
+  }, [count])
+
+  return (
+    <div>
+      <p>Current: {count}</p>
+      <p>Previous: {prevCount.current}</p>
+      <button onClick={() => setCount(count + 1)}>+</button>
+    </div>
+  )
+}
+```
+
+### Custom Hooks
+
+Reuse stateful logic:
+
+```tsx
+// hooks/useUsers.ts
 import { useState, useEffect } from 'react'
 
 interface User {
@@ -196,15 +668,15 @@ interface User {
   email: string
 }
 
-export default function Home() {
+export function useUsers() {
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<Error | null>(null)
 
   useEffect(() => {
     fetch('/api/users')
       .then(res => {
-        if (!res.ok) throw new Error('Failed to fetch users')
+        if (!res.ok) throw new Error('Failed to fetch')
         return res.json()
       })
       .then(data => {
@@ -212,213 +684,281 @@ export default function Home() {
         setLoading(false)
       })
       .catch(err => {
-        setError(err.message)
+        setError(err)
         setLoading(false)
       })
   }, [])
 
-  if (loading) return <div>Loading...</div>
-  if (error) return <div>Error: {error}</div>
+  const addUser = async (user: Omit<User, 'id'>) => {
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(user)
+    })
+    const newUser = await res.json()
+    setUsers([...users, newUser])
+    return newUser
+  }
 
-  return (
-    <div>
-      <h1>Users</h1>
-      <ul>
-        {users.map(user => (
-          <li key={user.id}>
-            {user.name} ({user.email})
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
+  const deleteUser = async (id: number) => {
+    await fetch(`/api/users/${id}`, { method: 'DELETE' })
+    setUsers(users.filter(u => u.id !== id))
+  }
+
+  const updateUser = async (id: number, updates: Partial<User>) => {
+    const res = await fetch(`/api/users/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    })
+    const updated = await res.json()
+    setUsers(users.map(u => u.id === id ? updated : u))
+    return updated
+  }
+
+  return { users, loading, error, addUser, deleteUser, updateUser }
 }
 ```
 
-## Vite Configuration
-
-### `client/vite.config.ts`
-
-```ts
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-
-export default defineConfig({
-  plugins: [react()],
-
-  // Development server
-  server: {
-    port: 5173,
-    strictPort: true,
-    hmr: {
-      clientPort: 3000,  // Mizu's port for HMR WebSocket
-    },
-  },
-
-  // Production build
-  build: {
-    outDir: '../dist',
-    emptyOutDir: true,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-        },
-      },
-    },
-  },
-})
-```
-
-**Key settings:**
-- **server.port**: Dev server port (must match backend config)
-- **server.hmr.clientPort**: Mizu's port for WebSocket (enables HMR through proxy)
-- **build.outDir**: Output directory (must match backend Root option)
-- **build.rollupOptions.manualChunks**: Code splitting for better caching
-
-## Development Workflow
-
-### Start Development
-
-```bash
-# Using Makefile (recommended)
-make dev
-
-# Or manually
-# Terminal 1
-cd client && npm run dev
-
-# Terminal 2
-go run cmd/server/main.go
-```
-
-### Making Changes
-
-**Frontend changes:**
-1. Edit any `.tsx` file in `client/src/`
-2. Save the file
-3. Browser updates instantly (HMR)
-
-**Backend changes:**
-1. Edit `.go` files
-2. Stop server (Ctrl+C)
-3. Restart with `go run cmd/server/main.go`
-
-Or use [air](https://github.com/cosmtrek/air) for auto-reload:
-
-```bash
-air
-```
-
-## API Integration
-
-### Fetching Data
-
-Using `fetch`:
+Usage:
 
 ```tsx
-const [data, setData] = useState(null)
+import { useUsers } from './hooks/useUsers'
 
-useEffect(() => {
-  fetch('/api/users')
-    .then(res => res.json())
-    .then(setData)
-}, [])
-```
+function UserList() {
+  const { users, loading, error, deleteUser } = useUsers()
 
-### Using React Query
-
-Install React Query:
-
-```bash
-cd client
-npm install @tanstack/react-query
-```
-
-Setup:
-
-```tsx
-// main.tsx
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-
-const queryClient = new QueryClient()
-
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <QueryClientProvider client={queryClient}>
-    <App />
-  </QueryClientProvider>
-)
-```
-
-Use in components:
-
-```tsx
-import { useQuery } from '@tanstack/react-query'
-
-function Users() {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['users'],
-    queryFn: () => fetch('/api/users').then(res => res.json())
-  })
-
-  if (isLoading) return <div>Loading...</div>
+  if (loading) return <div>Loading...</div>
   if (error) return <div>Error: {error.message}</div>
 
   return (
     <ul>
-      {data.map(user => (
-        <li key={user.id}>{user.name}</li>
+      {users.map(user => (
+        <li key={user.id}>
+          {user.name}
+          <button onClick={() => deleteUser(user.id)}>Delete</button>
+        </li>
       ))}
     </ul>
   )
 }
 ```
 
-### Form Submission
+More custom hooks:
 
 ```tsx
-function CreateUser() {
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
+// hooks/useDebounce.ts
+import { useState, useEffect } from 'react'
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+export function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value)
 
-    const response = await fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email }),
-    })
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedValue(value)
+    }, delay)
 
-    if (response.ok) {
-      const user = await response.json()
-      console.log('Created user:', user)
-      setName('')
-      setEmail('')
+    return () => clearTimeout(timer)
+  }, [value, delay])
+
+  return debouncedValue
+}
+
+// Usage
+function Search() {
+  const [search, setSearch] = useState('')
+  const debouncedSearch = useDebounce(search, 500)
+
+  useEffect(() => {
+    if (debouncedSearch) {
+      // Perform search
+      fetch(`/api/search?q=${debouncedSearch}`)
     }
-  }
+  }, [debouncedSearch])
+
+  return <input value={search} onChange={e => setSearch(e.target.value)} />
+}
+```
+
+```tsx
+// hooks/useLocalStorage.ts
+import { useState, useEffect } from 'react'
+
+export function useLocalStorage<T>(key: string, initialValue: T) {
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const item = window.localStorage.getItem(key)
+      return item ? JSON.parse(item) : initialValue
+    } catch {
+      return initialValue
+    }
+  })
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(key, JSON.stringify(value))
+    } catch {
+      // Handle error
+    }
+  }, [key, value])
+
+  return [value, setValue] as const
+}
+
+// Usage
+function Settings() {
+  const [theme, setTheme] = useLocalStorage('theme', 'light')
 
   return (
-    <form onSubmit={handleSubmit}>
-      <input
-        value={name}
-        onChange={e => setName(e.target.value)}
-        placeholder="Name"
-      />
-      <input
-        value={email}
-        onChange={e => setEmail(e.target.value)}
-        placeholder="Email"
-      />
-      <button type="submit">Create User</button>
-    </form>
+    <select value={theme} onChange={e => setTheme(e.target.value)}>
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+    </select>
+  )
+}
+```
+
+## React Router
+
+### Basic Routing
+
+```tsx
+import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
+
+function App() {
+  return (
+    <BrowserRouter>
+      <nav>
+        <Link to="/">Home</Link>
+        <Link to="/about">About</Link>
+        <Link to="/users/123">User 123</Link>
+      </nav>
+
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/users/:id" element={<User />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </BrowserRouter>
+  )
+}
+```
+
+### Nested Routes
+
+```tsx
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Layout />}>
+          <Route index element={<Home />} />
+          <Route path="about" element={<About />} />
+
+          <Route path="users" element={<UsersLayout />}>
+            <Route index element={<UsersList />} />
+            <Route path=":id" element={<UserDetail />} />
+            <Route path=":id/edit" element={<UserEdit />} />
+          </Route>
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  )
+}
+
+function UsersLayout() {
+  return (
+    <div>
+      <h1>Users</h1>
+      <Outlet />  {/* Child routes render here */}
+    </div>
+  )
+}
+```
+
+### Route Parameters
+
+```tsx
+import { useParams, useSearchParams } from 'react-router-dom'
+
+function UserDetail() {
+  const { id } = useParams<{ id: string }>()
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const tab = searchParams.get('tab') || 'profile'
+
+  return (
+    <div>
+      <h1>User {id}</h1>
+      <button onClick={() => setSearchParams({ tab: 'posts' })}>
+        View Posts
+      </button>
+      {tab === 'profile' && <Profile />}
+      {tab === 'posts' && <Posts />}
+    </div>
+  )
+}
+```
+
+### Programmatic Navigation
+
+```tsx
+import { useNavigate } from 'react-router-dom'
+
+function CreateUser() {
+  const navigate = useNavigate()
+
+  const handleSubmit = async (data) => {
+    const user = await createUser(data)
+    navigate(`/users/${user.id}`)  // Navigate to new user
+  }
+
+  return <form onSubmit={handleSubmit}>...</form>
+}
+
+// Go back
+function BackButton() {
+  const navigate = useNavigate()
+  return <button onClick={() => navigate(-1)}>Back</button>
+}
+```
+
+### Protected Routes
+
+```tsx
+import { Navigate, Outlet } from 'react-router-dom'
+import { useAuth } from './hooks/useAuth'
+
+function ProtectedRoute() {
+  const { user } = useAuth()
+
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+
+  return <Outlet />
+}
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+
+      <Route element={<ProtectedRoute />}>
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/profile" element={<Profile />} />
+      </Route>
+    </Routes>
   )
 }
 ```
 
 ## State Management
 
-### Context API (Built-in)
+### Context API
+
+Built-in state management:
 
 ```tsx
 // contexts/AuthContext.tsx
@@ -427,12 +967,14 @@ import { createContext, useContext, useState, ReactNode } from 'react'
 interface User {
   id: number
   name: string
+  email: string
 }
 
 interface AuthContextType {
   user: User | null
-  login: (user: User) => void
+  login: (email: string, password: string) => Promise<void>
   logout: () => void
+  isAuthenticated: boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -440,11 +982,33 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
 
-  const login = (user: User) => setUser(user)
-  const logout = () => setUser(null)
+  const login = async (email: string, password: string) => {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    })
+
+    if (res.ok) {
+      const data = await res.json()
+      setUser(data.user)
+    } else {
+      throw new Error('Login failed')
+    }
+  }
+
+  const logout = () => {
+    fetch('/api/auth/logout', { method: 'POST' })
+    setUser(null)
+  }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{
+      user,
+      login,
+      logout,
+      isAuthenticated: !!user
+    }}>
       {children}
     </AuthContext.Provider>
   )
@@ -452,96 +1016,103 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext)
-  if (!context) throw new Error('useAuth must be used within AuthProvider')
+  if (!context) {
+    throw new Error('useAuth must be used within AuthProvider')
+  }
   return context
 }
 ```
 
-Use in app:
+### Zustand
 
-```tsx
-// App.tsx
-import { AuthProvider } from './contexts/AuthContext'
-
-function App() {
-  return (
-    <AuthProvider>
-      <BrowserRouter>
-        {/* routes */}
-      </BrowserRouter>
-    </AuthProvider>
-  )
-}
-```
-
-```tsx
-// In components
-import { useAuth } from '../contexts/AuthContext'
-
-function UserProfile() {
-  const { user, logout } = useAuth()
-
-  if (!user) return <div>Please log in</div>
-
-  return (
-    <div>
-      <p>Welcome, {user.name}!</p>
-      <button onClick={logout}>Logout</button>
-    </div>
-  )
-}
-```
-
-### Zustand (Simple State Management)
-
-Install:
+Lightweight state management:
 
 ```bash
 npm install zustand
 ```
 
-Create store:
-
-```ts
+```tsx
 // stores/userStore.ts
 import { create } from 'zustand'
+import { devtools, persist } from 'zustand/middleware'
 
 interface User {
   id: number
   name: string
+  email: string
 }
 
-interface UserStore {
+interface UserState {
   users: User[]
   loading: boolean
+  error: string | null
+
   fetchUsers: () => Promise<void>
-  addUser: (user: User) => void
+  addUser: (user: Omit<User, 'id'>) => Promise<void>
+  deleteUser: (id: number) => Promise<void>
+  updateUser: (id: number, updates: Partial<User>) => Promise<void>
 }
 
-export const useUserStore = create<UserStore>((set) => ({
-  users: [],
-  loading: false,
+export const useUserStore = create<UserState>()(
+  devtools(
+    persist(
+      (set, get) => ({
+        users: [],
+        loading: false,
+        error: null,
 
-  fetchUsers: async () => {
-    set({ loading: true })
-    const response = await fetch('/api/users')
-    const users = await response.json()
-    set({ users, loading: false })
-  },
+        fetchUsers: async () => {
+          set({ loading: true, error: null })
+          try {
+            const res = await fetch('/api/users')
+            const users = await res.json()
+            set({ users, loading: false })
+          } catch (error) {
+            set({ error: (error as Error).message, loading: false })
+          }
+        },
 
-  addUser: (user) => set((state) => ({
-    users: [...state.users, user]
-  })),
-}))
+        addUser: async (user) => {
+          const res = await fetch('/api/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(user)
+          })
+          const newUser = await res.json()
+          set({ users: [...get().users, newUser] })
+        },
+
+        deleteUser: async (id) => {
+          await fetch(`/api/users/${id}`, { method: 'DELETE' })
+          set({ users: get().users.filter(u => u.id !== id) })
+        },
+
+        updateUser: async (id, updates) => {
+          const res = await fetch(`/api/users/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates)
+          })
+          const updated = await res.json()
+          set({
+            users: get().users.map(u => u.id === id ? updated : u)
+          })
+        }
+      }),
+      { name: 'user-storage' }
+    )
+  )
+)
 ```
 
-Use in components:
+Usage:
 
 ```tsx
-import { useUserStore } from '../stores/userStore'
+import { useUserStore } from './stores/userStore'
+import { useEffect } from 'react'
 
 function Users() {
-  const { users, loading, fetchUsers } = useUserStore()
+  const { users, loading, fetchUsers, deleteUser } = useUserStore()
 
   useEffect(() => {
     fetchUsers()
@@ -552,34 +1123,401 @@ function Users() {
   return (
     <ul>
       {users.map(user => (
-        <li key={user.id}>{user.name}</li>
+        <li key={user.id}>
+          {user.name}
+          <button onClick={() => deleteUser(user.id)}>Delete</button>
+        </li>
       ))}
     </ul>
   )
 }
 ```
 
-## Styling Options
+## Data Fetching
+
+### React Query
+
+Install:
+
+```bash
+npm install @tanstack/react-query
+```
+
+Setup:
+
+```tsx
+// main.tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 1,
+      staleTime: 5 * 60 * 1000, // 5 minutes
+    },
+  },
+})
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <QueryClientProvider client={queryClient}>
+    <App />
+    <ReactQueryDevtools initialIsOpen={false} />
+  </QueryClientProvider>
+)
+```
+
+Usage:
+
+```tsx
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+
+interface User {
+  id: number
+  name: string
+  email: string
+}
+
+function Users() {
+  const queryClient = useQueryClient()
+
+  // Fetch users
+  const { data: users, isLoading, error } = useQuery({
+    queryKey: ['users'],
+    queryFn: async () => {
+      const res = await fetch('/api/users')
+      if (!res.ok) throw new Error('Failed to fetch')
+      return res.json() as Promise<User[]>
+    }
+  })
+
+  // Create user mutation
+  const createMutation = useMutation({
+    mutationFn: async (user: Omit<User, 'id'>) => {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(user)
+      })
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+    }
+  })
+
+  // Delete user mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await fetch(`/api/users/${id}`, { method: 'DELETE' })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+    }
+  })
+
+  if (isLoading) return <div>Loading...</div>
+  if (error) return <div>Error: {error.message}</div>
+
+  return (
+    <div>
+      <ul>
+        {users?.map(user => (
+          <li key={user.id}>
+            {user.name}
+            <button
+              onClick={() => deleteMutation.mutate(user.id)}
+              disabled={deleteMutation.isPending}
+            >
+              Delete
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      <button
+        onClick={() => createMutation.mutate({ name: 'New', email: 'new@example.com' })}
+        disabled={createMutation.isPending}
+      >
+        Add User
+      </button>
+    </div>
+  )
+}
+```
+
+### SWR
+
+Alternative to React Query:
+
+```bash
+npm install swr
+```
+
+```tsx
+import useSWR from 'swr'
+
+const fetcher = (url: string) => fetch(url).then(r => r.json())
+
+function Users() {
+  const { data, error, isLoading, mutate } = useSWR('/api/users', fetcher)
+
+  if (isLoading) return <div>Loading...</div>
+  if (error) return <div>Error</div>
+
+  return (
+    <div>
+      {data.map(user => <div key={user.id}>{user.name}</div>)}
+      <button onClick={() => mutate()}>Refresh</button>
+    </div>
+  )
+}
+```
+
+## Form Handling
+
+### React Hook Form
+
+Install:
+
+```bash
+npm install react-hook-form
+```
+
+Basic usage:
+
+```tsx
+import { useForm } from 'react-hook-form'
+
+interface FormData {
+  name: string
+  email: string
+  age: number
+}
+
+function UserForm() {
+  const { register, handleSubmit, formState: { errors } } = useForm<FormData>()
+
+  const onSubmit = async (data: FormData) => {
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    })
+
+    if (res.ok) {
+      console.log('User created!')
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <input
+        {...register('name', {
+          required: 'Name is required',
+          minLength: { value: 2, message: 'Minimum 2 characters' }
+        })}
+        placeholder="Name"
+      />
+      {errors.name && <span>{errors.name.message}</span>}
+
+      <input
+        {...register('email', {
+          required: 'Email is required',
+          pattern: {
+            value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+            message: 'Invalid email'
+          }
+        })}
+        placeholder="Email"
+      />
+      {errors.email && <span>{errors.email.message}</span>}
+
+      <input
+        type="number"
+        {...register('age', {
+          required: 'Age is required',
+          min: { value: 18, message: 'Must be 18+' }
+        })}
+        placeholder="Age"
+      />
+      {errors.age && <span>{errors.age.message}</span>}
+
+      <button type="submit">Submit</button>
+    </form>
+  )
+}
+```
+
+With validation library:
+
+```bash
+npm install @hookform/resolvers yup
+```
+
+```tsx
+import { useForm } from 'react-hook-form'
+import { yupResolver } from '@hookform/resolvers/yup'
+import * as yup from 'yup'
+
+const schema = yup.object({
+  name: yup.string().required().min(2),
+  email: yup.string().email().required(),
+  age: yup.number().positive().integer().min(18).required(),
+}).required()
+
+function UserForm() {
+  const { register, handleSubmit, formState: { errors } } = useForm({
+    resolver: yupResolver(schema)
+  })
+
+  return <form>{/* same as above */}</form>
+}
+```
+
+## Error Handling
+
+### Error Boundaries
+
+```tsx
+import { Component, ReactNode, ErrorInfo } from 'react'
+
+interface Props {
+  children: ReactNode
+  fallback?: ReactNode
+}
+
+interface State {
+  hasError: boolean
+  error: Error | null
+}
+
+class ErrorBoundary extends Component<Props, State> {
+  constructor(props: Props) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('Error caught by boundary:', error, errorInfo)
+    // Log to error reporting service
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback || (
+        <div>
+          <h1>Something went wrong</h1>
+          <p>{this.state.error?.message}</p>
+          <button onClick={() => this.setState({ hasError: false, error: null })}>
+            Try again
+          </button>
+        </div>
+      )
+    }
+
+    return this.props.children
+  }
+}
+
+// Usage
+function App() {
+  return (
+    <ErrorBoundary>
+      <MyComponent />
+    </ErrorBoundary>
+  )
+}
+```
+
+Using react-error-boundary:
+
+```bash
+npm install react-error-boundary
+```
+
+```tsx
+import { ErrorBoundary } from 'react-error-boundary'
+
+function ErrorFallback({ error, resetErrorBoundary }) {
+  return (
+    <div role="alert">
+      <p>Something went wrong:</p>
+      <pre>{error.message}</pre>
+      <button onClick={resetErrorBoundary}>Try again</button>
+    </div>
+  )
+}
+
+function App() {
+  return (
+    <ErrorBoundary
+      FallbackComponent={ErrorFallback}
+      onReset={() => {
+        // Reset app state
+      }}
+    >
+      <MyComponent />
+    </ErrorBoundary>
+  )
+}
+```
+
+## Styling
 
 ### CSS Modules
 
 Built into Vite:
 
-```tsx
-// Button.module.css
+```css
+/* Button.module.css */
 .button {
-  background: blue;
+  background: #007bff;
   color: white;
-  padding: 8px 16px;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.button:hover {
+  background: #0056b3;
+}
+
+.button.primary {
+  background: #28a745;
+}
+
+.button.danger {
+  background: #dc3545;
 }
 ```
 
 ```tsx
-// Button.tsx
 import styles from './Button.module.css'
 
-export function Button({ children }) {
-  return <button className={styles.button}>{children}</button>
+interface ButtonProps {
+  variant?: 'primary' | 'danger'
+  children: ReactNode
+  onClick?: () => void
+}
+
+function Button({ variant, children, onClick }: ButtonProps) {
+  const className = [
+    styles.button,
+    variant && styles[variant]
+  ].filter(Boolean).join(' ')
+
+  return (
+    <button className={className} onClick={onClick}>
+      {children}
+    </button>
+  )
 }
 ```
 
@@ -602,34 +1540,258 @@ export default {
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        primary: '#007bff',
+        secondary: '#6c757d',
+      }
+    },
   },
   plugins: [],
 }
 ```
 
-Add to `src/styles/index.css`:
+Add directives to `src/styles/index.css`:
 
 ```css
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer components {
+  .btn {
+    @apply px-4 py-2 rounded font-medium transition-colors;
+  }
+
+  .btn-primary {
+    @apply bg-blue-500 text-white hover:bg-blue-600;
+  }
+}
 ```
 
-Use in components:
+Usage:
 
 ```tsx
-export default function Home() {
+function Button({ children }) {
   return (
-    <div className="container mx-auto px-4">
-      <h1 className="text-4xl font-bold">Hello!</h1>
-      <button className="bg-blue-500 text-white px-4 py-2 rounded">
-        Click me
-      </button>
+    <button className="btn btn-primary">
+      {children}
+    </button>
+  )
+}
+
+function Card() {
+  return (
+    <div className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
+      <h2 className="text-2xl font-bold mb-4">Title</h2>
+      <p className="text-gray-600">Content</p>
     </div>
   )
 }
 ```
+
+### Styled Components
+
+Install:
+
+```bash
+npm install styled-components
+npm install -D @types/styled-components
+```
+
+```tsx
+import styled from 'styled-components'
+
+const Button = styled.button<{ variant?: 'primary' | 'danger' }>`
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  background: ${props => {
+    switch (props.variant) {
+      case 'primary': return '#007bff'
+      case 'danger': return '#dc3545'
+      default: return '#6c757d'
+    }
+  }};
+  color: white;
+
+  &:hover {
+    opacity: 0.9;
+  }
+`
+
+const Card = styled.div`
+  background: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+`
+
+function MyComponent() {
+  return (
+    <Card>
+      <h1>Title</h1>
+      <Button variant="primary">Click me</Button>
+    </Card>
+  )
+}
+```
+
+## Vite Configuration
+
+### `client/vite.config.ts`
+
+```ts
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import path from 'path'
+
+export default defineConfig({
+  plugins: [
+    react({
+      // Enable Fast Refresh
+      fastRefresh: true,
+      // Babel options
+      babel: {
+        plugins: [
+          // Add babel plugins if needed
+        ]
+      }
+    })
+  ],
+
+  // Path aliases
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+      '@components': path.resolve(__dirname, './src/components'),
+      '@pages': path.resolve(__dirname, './src/pages'),
+      '@hooks': path.resolve(__dirname, './src/hooks'),
+    }
+  },
+
+  // Development server
+  server: {
+    port: 5173,
+    strictPort: true,
+    hmr: {
+      clientPort: 3000,  // Mizu's port for HMR WebSocket
+    },
+    // Proxy API requests in development (alternative to Mizu proxy)
+    // proxy: {
+    //   '/api': {
+    //     target: 'http://localhost:3000',
+    //     changeOrigin: true,
+    //   }
+    // }
+  },
+
+  // Production build
+  build: {
+    outDir: '../dist',
+    emptyOutDir: true,
+    sourcemap: false, // Enable for debugging
+
+    // Code splitting
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom'],
+          'router': ['react-router-dom'],
+          // Split large libraries
+          'query': ['@tanstack/react-query'],
+        },
+      },
+    },
+
+    // Chunk size warnings
+    chunkSizeWarningLimit: 500,
+
+    // Minification
+    minify: 'esbuild', // or 'terser' for better compression
+  },
+
+  // Optimize deps
+  optimizeDeps: {
+    include: ['react', 'react-dom', 'react-router-dom'],
+  },
+})
+```
+
+Then use path aliases in components:
+
+```tsx
+import Button from '@components/Button'
+import { useUsers } from '@hooks/useUsers'
+import Home from '@pages/Home'
+```
+
+Update `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@components/*": ["./src/components/*"],
+      "@pages/*": ["./src/pages/*"],
+      "@hooks/*": ["./src/hooks/*"]
+    }
+  }
+}
+```
+
+## Development Workflow
+
+### Start Development
+
+```bash
+# Using Makefile (recommended)
+make dev
+
+# Or manually
+# Terminal 1: React dev server
+cd client && npm run dev
+
+# Terminal 2: Mizu server
+go run cmd/server/main.go
+```
+
+Visit `http://localhost:3000`
+
+### Making Changes
+
+**Frontend changes:**
+1. Edit any `.tsx` file in `client/src/`
+2. Save the file
+3. Browser updates instantly (HMR)
+4. State is preserved during updates
+
+**Backend changes:**
+1. Edit `.go` files
+2. Stop server (Ctrl+C)
+3. Restart with `go run cmd/server/main.go`
+
+Or use [air](https://github.com/cosmtrek/air) for auto-reload:
+
+```bash
+go install github.com/cosmtrek/air@latest
+air
+```
+
+### React DevTools
+
+Install browser extension:
+- [Chrome Extension](https://chrome.google.com/webstore/detail/react-developer-tools/fmkadmapgofadopljbjfkapdkoienihi)
+- [Firefox Extension](https://addons.mozilla.org/en-US/firefox/addon/react-devtools/)
+
+Features:
+- Inspect component tree
+- View props and state
+- Track component updates
+- Profiler for performance
 
 ## Building for Production
 
@@ -640,11 +1802,11 @@ make build
 ```
 
 This:
-1. Builds the React app (`npm run build`)
-2. Builds the Go binary
-3. Embeds the frontend into the binary
+1. Runs `npm run build` in `client/`
+2. Builds Go binary with `go build`
+3. Embeds frontend in binary
 
-Output: `./bin/server`
+Output: `./bin/server` (single executable)
 
 Run in production:
 
@@ -652,77 +1814,571 @@ Run in production:
 MIZU_ENV=production ./bin/server
 ```
 
-## Advanced Topics
+### Build Optimizations
 
-### Code Splitting
-
-Lazy load routes:
+**Code splitting:**
 
 ```tsx
 import { lazy, Suspense } from 'react'
 
-const About = lazy(() => import('./pages/About'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const Settings = lazy(() => import('./pages/Settings'))
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/about" element={
-          <Suspense fallback={<div>Loading...</div>}>
-            <About />
-          </Suspense>
-        } />
-      </Routes>
-    </BrowserRouter>
+    <Routes>
+      <Route path="/" element={<Home />} />
+      <Route path="/dashboard" element={
+        <Suspense fallback={<div>Loading...</div>}>
+          <Dashboard />
+        </Suspense>
+      } />
+      <Route path="/settings" element={
+        <Suspense fallback={<div>Loading...</div>}>
+          <Settings />
+        </Suspense>
+      } />
+    </Routes>
   )
 }
 ```
 
-### Environment Variables
-
-In Vite, use `import.meta.env`:
+**Tree shaking:**
 
 ```tsx
-const apiUrl = import.meta.env.VITE_API_URL || '/api'
+// ❌ Bad - imports entire library
+import * as icons from 'react-icons/fa'
+
+// ✅ Good - imports only what you need
+import { FaUser, FaHome } from 'react-icons/fa'
 ```
 
-Or use Mizu's env injection:
+**Bundle analysis:**
 
-```go
-app.Use(frontend.WithOptions(frontend.Options{
-    InjectEnv: []string{"API_URL"},
-}))
+```bash
+cd client
+npm install -D rollup-plugin-visualizer
 ```
-
-```tsx
-const apiUrl = (window as any).__ENV__?.API_URL || '/api'
-```
-
-### TypeScript Types for API
-
-Share types between backend and frontend:
 
 ```ts
-// types/user.ts
-export interface User {
-  id: number
-  name: string
-  email: string
+// vite.config.ts
+import { visualizer } from 'rollup-plugin-visualizer'
+
+export default defineConfig({
+  plugins: [
+    react(),
+    visualizer({
+      open: true,
+      gzipSize: true,
+      brotliSize: true,
+    })
+  ]
+})
+```
+
+## Performance Optimization
+
+### React.memo
+
+Prevent unnecessary re-renders:
+
+```tsx
+import { memo } from 'react'
+
+interface UserCardProps {
+  user: { id: number; name: string }
+  onDelete: (id: number) => void
+}
+
+const UserCard = memo(({ user, onDelete }: UserCardProps) => {
+  console.log('Rendering user', user.id)
+
+  return (
+    <div>
+      <p>{user.name}</p>
+      <button onClick={() => onDelete(user.id)}>Delete</button>
+    </div>
+  )
+})
+
+// Custom comparison
+const UserCardOptimized = memo(
+  UserCard,
+  (prevProps, nextProps) => {
+    // Return true if props are equal (skip re-render)
+    return prevProps.user.id === nextProps.user.id
+  }
+)
+```
+
+### Virtual Lists
+
+For large lists, use windowing:
+
+```bash
+npm install react-window
+```
+
+```tsx
+import { FixedSizeList } from 'react-window'
+
+function VirtualList({ items }) {
+  const Row = ({ index, style }) => (
+    <div style={style}>
+      {items[index].name}
+    </div>
+  )
+
+  return (
+    <FixedSizeList
+      height={600}
+      itemCount={items.length}
+      itemSize={50}
+      width="100%"
+    >
+      {Row}
+    </FixedSizeList>
+  )
 }
 ```
 
-Use in frontend:
+### Lazy Load Images
 
 ```tsx
-import type { User } from '../types/user'
+import { useState, useEffect, useRef } from 'react'
 
-const [users, setUsers] = useState<User[]>([])
+function LazyImage({ src, alt }) {
+  const [isLoaded, setIsLoaded] = useState(false)
+  const [isInView, setIsInView] = useState(false)
+  const imgRef = useRef<HTMLImageElement>(null)
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setIsInView(true)
+        observer.disconnect()
+      }
+    })
+
+    if (imgRef.current) {
+      observer.observe(imgRef.current)
+    }
+
+    return () => observer.disconnect()
+  }, [])
+
+  return (
+    <img
+      ref={imgRef}
+      src={isInView ? src : undefined}
+      alt={alt}
+      onLoad={() => setIsLoaded(true)}
+      style={{ opacity: isLoaded ? 1 : 0, transition: 'opacity 0.3s' }}
+    />
+  )
+}
 ```
+
+## Real-World Example: Task Manager
+
+Complete task management app:
+
+### Backend
+
+```go
+// app/server/routes.go
+type Task struct {
+    ID        int    `json:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
+    CreatedAt string `json:"created_at"`
+}
+
+var tasks = []Task{
+    {ID: 1, Title: "Learn React", Completed: true, CreatedAt: "2025-01-01"},
+    {ID: 2, Title: "Build app", Completed: false, CreatedAt: "2025-01-02"},
+}
+
+func setupRoutes(app *mizu.App) {
+    app.Get("/api/tasks", handleTasks)
+    app.Post("/api/tasks", createTask)
+    app.Put("/api/tasks/{id}", updateTask)
+    app.Delete("/api/tasks/{id}", deleteTask)
+}
+
+func handleTasks(c *mizu.Ctx) error {
+    return c.JSON(200, tasks)
+}
+
+func createTask(c *mizu.Ctx) error {
+    var task Task
+    if err := c.BodyJSON(&task); err != nil {
+        return c.JSON(400, map[string]string{"error": "Invalid JSON"})
+    }
+
+    task.ID = len(tasks) + 1
+    task.CreatedAt = time.Now().Format("2006-01-02")
+    tasks = append(tasks, task)
+
+    return c.JSON(201, task)
+}
+```
+
+### Frontend Store
+
+```tsx
+// stores/taskStore.ts
+import { create } from 'zustand'
+
+interface Task {
+  id: number
+  title: string
+  completed: boolean
+  created_at: string
+}
+
+interface TaskState {
+  tasks: Task[]
+  filter: 'all' | 'active' | 'completed'
+  loading: boolean
+
+  filteredTasks: () => Task[]
+  activeCount: () => number
+
+  fetchTasks: () => Promise<void>
+  addTask: (title: string) => Promise<void>
+  toggleTask: (id: number) => Promise<void>
+  deleteTask: (id: number) => Promise<void>
+  setFilter: (filter: 'all' | 'active' | 'completed') => void
+}
+
+export const useTaskStore = create<TaskState>((set, get) => ({
+  tasks: [],
+  filter: 'all',
+  loading: false,
+
+  filteredTasks: () => {
+    const { tasks, filter } = get()
+    switch (filter) {
+      case 'active':
+        return tasks.filter(t => !t.completed)
+      case 'completed':
+        return tasks.filter(t => t.completed)
+      default:
+        return tasks
+    }
+  },
+
+  activeCount: () => get().tasks.filter(t => !t.completed).length,
+
+  fetchTasks: async () => {
+    set({ loading: true })
+    const res = await fetch('/api/tasks')
+    const tasks = await res.json()
+    set({ tasks, loading: false })
+  },
+
+  addTask: async (title) => {
+    const res = await fetch('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, completed: false })
+    })
+    const task = await res.json()
+    set({ tasks: [...get().tasks, task] })
+  },
+
+  toggleTask: async (id) => {
+    const task = get().tasks.find(t => t.id === id)
+    if (!task) return
+
+    await fetch(`/api/tasks/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...task, completed: !task.completed })
+    })
+
+    set({
+      tasks: get().tasks.map(t =>
+        t.id === id ? { ...t, completed: !t.completed } : t
+      )
+    })
+  },
+
+  deleteTask: async (id) => {
+    await fetch(`/api/tasks/${id}`, { method: 'DELETE' })
+    set({ tasks: get().tasks.filter(t => t.id !== id) })
+  },
+
+  setFilter: (filter) => set({ filter })
+}))
+```
+
+### Components
+
+```tsx
+// App.tsx
+import { useEffect } from 'react'
+import { useTaskStore } from './stores/taskStore'
+import TaskForm from './components/TaskForm'
+import TaskFilters from './components/TaskFilters'
+import TaskList from './components/TaskList'
+import './App.css'
+
+function App() {
+  const fetchTasks = useTaskStore(state => state.fetchTasks)
+  const loading = useTaskStore(state => state.loading)
+
+  useEffect(() => {
+    fetchTasks()
+  }, [])
+
+  if (loading) return <div className="loading">Loading tasks...</div>
+
+  return (
+    <div className="app">
+      <header>
+        <h1>Task Manager</h1>
+      </header>
+
+      <main>
+        <TaskForm />
+        <TaskFilters />
+        <TaskList />
+      </main>
+    </div>
+  )
+}
+
+export default App
+```
+
+```tsx
+// components/TaskForm.tsx
+import { useState } from 'react'
+import { useTaskStore } from '../stores/taskStore'
+
+export default function TaskForm() {
+  const [title, setTitle] = useState('')
+  const addTask = useTaskStore(state => state.addTask)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!title.trim()) return
+
+    await addTask(title)
+    setTitle('')
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="task-form">
+      <input
+        type="text"
+        value={title}
+        onChange={e => setTitle(e.target.value)}
+        placeholder="What needs to be done?"
+        className="task-input"
+      />
+      <button type="submit" className="btn-add">Add Task</button>
+    </form>
+  )
+}
+```
+
+```tsx
+// components/TaskFilters.tsx
+import { useTaskStore } from '../stores/taskStore'
+
+export default function TaskFilters() {
+  const filter = useTaskStore(state => state.filter)
+  const setFilter = useTaskStore(state => state.setFilter)
+  const activeCount = useTaskStore(state => state.activeCount())
+
+  return (
+    <div className="filters">
+      <button
+        className={filter === 'all' ? 'active' : ''}
+        onClick={() => setFilter('all')}
+      >
+        All
+      </button>
+      <button
+        className={filter === 'active' ? 'active' : ''}
+        onClick={() => setFilter('active')}
+      >
+        Active ({activeCount})
+      </button>
+      <button
+        className={filter === 'completed' ? 'active' : ''}
+        onClick={() => setFilter('completed')}
+      >
+        Completed
+      </button>
+    </div>
+  )
+}
+```
+
+```tsx
+// components/TaskList.tsx
+import { useTaskStore } from '../stores/taskStore'
+
+export default function TaskList() {
+  const filteredTasks = useTaskStore(state => state.filteredTasks())
+  const toggleTask = useTaskStore(state => state.toggleTask)
+  const deleteTask = useTaskStore(state => state.deleteTask)
+
+  if (filteredTasks.length === 0) {
+    return <p className="empty">No tasks found</p>
+  }
+
+  return (
+    <ul className="task-list">
+      {filteredTasks.map(task => (
+        <li key={task.id} className={task.completed ? 'completed' : ''}>
+          <input
+            type="checkbox"
+            checked={task.completed}
+            onChange={() => toggleTask(task.id)}
+          />
+          <span className="task-title">{task.title}</span>
+          <span className="task-date">{task.created_at}</span>
+          <button
+            onClick={() => deleteTask(task.id)}
+            className="btn-delete"
+          >
+            ×
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
+}
+```
+
+## Troubleshooting
+
+### HMR Not Working
+
+**Symptom:** Changes don't appear in browser
+
+**Cause:** HMR WebSocket not connecting through proxy
+
+**Solution:** Check `vite.config.ts`:
+
+```ts
+export default defineConfig({
+  server: {
+    hmr: {
+      clientPort: 3000  // Must match Mizu port
+    }
+  }
+})
+```
+
+---
+
+### White Screen / Blank Page
+
+**Symptom:** Production build shows blank page
+
+**Cause:** Base path mismatch or routing issues
+
+**Solution 1:** Check console for errors
+**Solution 2:** Ensure `BrowserRouter` (not `HashRouter`)
+**Solution 3:** Check Mizu's SPA fallback is enabled
+
+---
+
+### TypeScript Errors
+
+**Error:** "Cannot find module './App'"
+
+**Solution:** Check file extensions in imports:
+
+```tsx
+// ✅ Correct
+import App from './App.tsx'
+import App from './App'  // Also works if tsx is in resolve.extensions
+
+// ❌ Wrong
+import App from './App.ts'
+```
+
+---
+
+### 404 on Page Refresh
+
+**Symptom:** Direct URL works, but refresh gives 404
+
+**Cause:** SPA fallback not configured
+
+**Solution:** Mizu handles this automatically, but ensure:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode: frontend.ModeAuto,
+    Root: "./dist",
+    Index: "index.html",  // Important for SPA fallback
+}))
+```
+
+---
+
+### Large Bundle Size
+
+**Problem:** Bundle is too large
+
+**Solution:**
+
+1. Analyze bundle:
+```bash
+npm run build
+# Check dist/ folder size
+```
+
+2. Enable code splitting:
+```tsx
+const Dashboard = lazy(() => import('./Dashboard'))
+```
+
+3. Check for duplicate dependencies:
+```bash
+npm ls react
+```
+
+4. Use smaller alternatives:
+- Replace moment with date-fns
+- Replace lodash with individual functions
+- Consider Preact instead of React
+
+## When to Choose React
+
+### Choose React When:
+
+✅ You need the largest ecosystem and community
+✅ Building a complex, interactive SPA
+✅ TypeScript integration is important
+✅ Team has React experience or you're hiring React developers
+✅ You need access to thousands of third-party libraries
+✅ Job market considerations matter (most React jobs)
+✅ You want industry-standard patterns and practices
+
+### Choose Something Else When:
+
+- **Bundle size is critical** → Use Preact (3kB) or Svelte (2kB)
+- **Learning curve matters** → Try Vue (easier to learn)
+- **Need SSR/SSG** → Use Next.js (React framework)
+- **Need full framework** → Use Next.js or Remix
+- **Want simpler reactivity** → Try Vue or Svelte
+- **Performance is paramount** → Try Svelte
 
 ## Next Steps
 
 <CardGroup cols={2}>
+  <Card title="Next.js Guide" href="/frontend/nextjs" icon="code">
+    Full React framework with SSR
+  </Card>
   <Card title="API Integration" href="/frontend/api-integration" icon="plug">
     Best practices for API communication
   </Card>
@@ -732,7 +2388,10 @@ const [users, setUsers] = useState<User[]>([])
   <Card title="Vue Guide" href="/frontend/vue" icon="vuejs">
     Try Vue instead of React
   </Card>
-  <Card title="HTMX Guide" href="/frontend/htmx" icon="bolt">
-    Try server-rendered approach
+  <Card title="React Docs" href="https://react.dev" icon="external-link">
+    Official React documentation
+  </Card>
+  <Card title="React Query" href="https://tanstack.com/query" icon="external-link">
+    Powerful data fetching
   </Card>
 </CardGroup>
