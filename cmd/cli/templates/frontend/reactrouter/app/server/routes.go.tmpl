@@ -1,0 +1,82 @@
+package server
+
+import (
+	"github.com/go-mizu/mizu"
+)
+
+func setupRoutes(app *mizu.App) {
+	api := app.Prefix("/api")
+
+	// Health check
+	api.Get("/health", handleHealth)
+
+	// User endpoints
+	api.Get("/users", handleUsers)
+	api.Post("/users", createUser)
+	api.Get("/users/{id}", getUser)
+	api.Put("/users/{id}", updateUser)
+	api.Delete("/users/{id}", deleteUser)
+}
+
+func handleHealth(c *mizu.Ctx) error {
+	return c.JSON(200, map[string]any{
+		"status": "ok",
+		"service": "{{.Name}}",
+	})
+}
+
+func handleUsers(c *mizu.Ctx) error {
+	users := []map[string]any{
+		{"id": 1, "name": "Alice Johnson", "email": "alice@example.com", "role": "admin"},
+		{"id": 2, "name": "Bob Smith", "email": "bob@example.com", "role": "user"},
+		{"id": 3, "name": "Charlie Brown", "email": "charlie@example.com", "role": "user"},
+	}
+	return c.JSON(200, users)
+}
+
+func createUser(c *mizu.Ctx) error {
+	var user map[string]any
+	if err := c.BodyJSON(&user); err != nil {
+		return c.JSON(400, map[string]string{"error": "Invalid JSON"})
+	}
+
+	if user["name"] == nil || user["email"] == nil {
+		return c.JSON(400, map[string]string{"error": "Name and email required"})
+	}
+
+	user["id"] = 4
+	user["role"] = "user"
+
+	return c.JSON(201, user)
+}
+
+func getUser(c *mizu.Ctx) error {
+	id := c.Param("id")
+	user := map[string]any{
+		"id":    id,
+		"name":  "User " + id,
+		"email": "user" + id + "@example.com",
+		"role":  "user",
+	}
+	return c.JSON(200, user)
+}
+
+func updateUser(c *mizu.Ctx) error {
+	id := c.Param("id")
+	var updates map[string]any
+	if err := c.BodyJSON(&updates); err != nil {
+		return c.JSON(400, map[string]string{"error": "Invalid JSON"})
+	}
+
+	user := map[string]any{
+		"id":    id,
+		"name":  updates["name"],
+		"email": updates["email"],
+		"role":  updates["role"],
+	}
+	return c.JSON(200, user)
+}
+
+func deleteUser(c *mizu.Ctx) error {
+	return c.JSON(204, nil)
+}

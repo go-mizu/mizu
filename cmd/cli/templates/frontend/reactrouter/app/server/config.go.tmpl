@@ -1,0 +1,25 @@
+package server
+
+import "os"
+
+type Config struct {
+	Port    string
+	DevPort string
+	Env     string
+}
+
+func LoadConfig() *Config {
+	cfg := &Config{
+		Port:    getEnv("PORT", "3000"),
+		DevPort: getEnv("DEV_PORT", "5173"),
+		Env:     getEnv("MIZU_ENV", "development"),
+	}
+	return cfg
+}
+
+func getEnv(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
