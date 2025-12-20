@@ -1,0 +1,583 @@
+---
+title: "Deep Links"
+description: "Universal Links for iOS and App Links for Android."
+icon: "link"
+---
+
+The mobile package provides automatic generation of deep link verification files and handlers for Universal Links (iOS) and App Links (Android), enabling seamless app-to-web navigation.
+
+## Quick Start
+
+```go
+import "github.com/go-mizu/mizu/mobile"
+
+app := mizu.New()
+
+// Add Universal/App Links middleware
+app.Use(mobile.UniversalLinkMiddleware(mobile.UniversalLinkConfig{
+    Apple: []mobile.AppleAppConfig{
+        {
+            TeamID:   "ABCD1234XY",
+            BundleID: "com.example.app",
+            Paths:    []string{"/share/*", "/invite/*"},
+        },
+    },
+    Android: []mobile.AndroidAppConfig{
+        {
+            PackageName:  "com.example.app",
+            Fingerprints: []string{"AA:BB:CC:DD:..."},
+            Paths:        []string{"/share/*", "/invite/*"},
+        },
+    },
+}))
+```
+
+This automatically serves:
+- `/.well-known/apple-app-site-association` for iOS
+- `/.well-known/assetlinks.json` for Android
+
+## How Deep Links Work
+
+### Universal Links (iOS)
+
+1. User taps a link to your domain
+2. iOS checks `/.well-known/apple-app-site-association`
+3. If app is installed and paths match, app opens directly
+4. Otherwise, Safari opens the URL
+
+### App Links (Android)
+
+1. User taps a link to your domain
+2. Android checks `/.well-known/assetlinks.json`
+3. If app is installed and verified, app opens
+4. Otherwise, browser opens the URL
+
+## Configuration
+
+### Apple App Configuration
+
+```go
+type AppleAppConfig struct {
+    // TeamID is the Apple Developer Team ID (10 characters)
+    TeamID string
+
+    // BundleID is the iOS app bundle identifier
+    BundleID string
+
+    // Paths are the URL paths to handle (supports * wildcards)
+    Paths []string
+}
+```
+
+Find your Team ID in the [Apple Developer Portal](https://developer.apple.com/account).
+
+### Android App Configuration
+
+```go
+type AndroidAppConfig struct {
+    // PackageName is the Android app package name
+    PackageName string
+
+    // Fingerprints are SHA256 certificate fingerprints
+    Fingerprints []string
+
+    // Paths are the URL paths to handle
+    Paths []string
+}
+```
+
+Get your signing certificate fingerprint:
+
+```bash
+# For debug keystore
+keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android
+
+# For release keystore
+keytool -list -v -keystore your-release-key.keystore -alias your-alias
+```
+
+### Full Configuration
+
+```go
+app.Use(mobile.UniversalLinkMiddleware(mobile.UniversalLinkConfig{
+    Apple: []mobile.AppleAppConfig{
+        {
+            TeamID:   "ABCD1234XY",
+            BundleID: "com.example.app",
+            Paths:    []string{"*"}, // All paths
+        },
+        {
+            TeamID:   "ABCD1234XY",
+            BundleID: "com.example.app.dev",
+            Paths:    []string{"/dev/*"}, // Dev app for /dev/* only
+        },
+    },
+    Android: []mobile.AndroidAppConfig{
+        {
+            PackageName: "com.example.app",
+            Fingerprints: []string{
+                "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99",
+            },
+        },
+    },
+    WebCredentials: []string{
+        "com.example.app", // For password autofill
+    },
+    Fallback: "https://example.com",
+}))
+```
+
+## Generated Files
+
+### apple-app-site-association
+
+```json
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["ABCD1234XY.com.example.app"],
+        "components": [
+          {"/": "/share/*"},
+          {"/": "/invite/*"}
+        ]
+      }
+    ]
+  }
+}
+```
+
+### assetlinks.json
+
+```json
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.example.app",
+      "sha256_cert_fingerprints": [
+        "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99"
+      ]
+    }
+  }
+]
+```
+
+## Simple Deep Link Configuration
+
+For simple single-app setups:
+
+```go
+link := mobile.DeepLink{
+    Scheme:   "myapp",           // Custom URL scheme
+    Host:     "example.com",     // Universal link domain
+    Paths:    []string{"/share/*", "/invite/*"},
+    Fallback: "https://example.com",
+}
+
+app.Use(mobile.DeepLinkMiddleware(
+    link,
+    "ABCD1234XY",                    // Apple Team ID
+    "com.example.app",               // iOS Bundle ID
+    "com.example.app",               // Android Package
+    "AA:BB:CC:...",                  // Android SHA256 fingerprint
+))
+```
+
+## Deep Link Handler
+
+Handle deep links with smart fallback to web:
+
+```go
+// Redirect to app or web based on device
+app.Get("/share/:id", mobile.DeepLinkHandler(
+    "myapp",                    // URL scheme
+    "https://example.com/share", // Web fallback
+))
+```
+
+### How It Works
+
+1. Parses device from mobile middleware context
+2. For mobile devices: renders HTML that attempts app deep link
+3. Falls back to web URL after 2.5 seconds
+4. For desktop/web: redirects directly to fallback
+
+### Generated HTML
+
+For mobile devices, serves:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Opening App...</title>
+</head>
+<body>
+<div class="loader"></div>
+<p>Opening app...</p>
+<p>If the app doesn't open, <a href="https://example.com/share">click here</a></p>
+<script>
+(function() {
+  var timeout = setTimeout(function() {
+    window.location = "https://example.com/share";
+  }, 2500);
+  window.location = "myapp:///share/abc123";
+  window.addEventListener('blur', function() {
+    clearTimeout(timeout);
+  });
+})();
+</script>
+</body>
+</html>
+```
+
+## Custom Deep Link Handling
+
+```go
+app.Get("/invite/:code", func(c *mizu.Ctx) error {
+    code := c.Param("code")
+    device := mobile.DeviceFromCtx(c)
+
+    // Validate invite code
+    invite, err := db.GetInvite(code)
+    if err != nil {
+        return c.Redirect(302, "https://example.com/invalid-invite")
+    }
+
+    // Build deep link
+    deepLink := fmt.Sprintf("myapp://invite/%s", code)
+    fallback := fmt.Sprintf("https://example.com/invite/%s", code)
+
+    // Mobile: try app first
+    if device != nil && device.Platform.IsMobile() {
+        return c.HTML(200, renderDeepLinkPage(deepLink, fallback))
+    }
+
+    // Desktop: show web page
+    return c.Redirect(302, fallback)
+})
+
+func renderDeepLinkPage(deepLink, fallback string) string {
+    return fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Opening App...</title>
+    <style>
+        body { font-family: system-ui; text-align: center; padding: 50px; }
+        .button { display: inline-block; padding: 12px 24px;
+                  background: #007aff; color: white; border-radius: 8px;
+                  text-decoration: none; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h2>Opening in App...</h2>
+    <p>If the app doesn't open automatically:</p>
+    <a class="button" href="%s">Open in Browser</a>
+    <script>
+        setTimeout(function() {
+            window.location = "%s";
+        }, 100);
+        setTimeout(function() {
+            window.location = "%s";
+        }, 2500);
+    </script>
+</body>
+</html>`, fallback, deepLink, fallback)
+}
+```
+
+## Path Patterns
+
+### Wildcard Matching
+
+```go
+Paths: []string{
+    "/share/*",      // Matches /share/anything
+    "/user/*/posts", // Matches /user/123/posts
+    "*",             // Matches all paths
+}
+```
+
+### Excluding Paths (iOS)
+
+```go
+// In iOS, prefix with "NOT " to exclude
+Paths: []string{
+    "*",              // Match all
+    "NOT /api/*",     // Except API routes
+    "NOT /admin/*",   // Except admin routes
+}
+```
+
+## Deferred Deep Links
+
+Handle deep links when app is installed after click:
+
+```go
+// Store pending deep link
+app.Get("/invite/:code", func(c *mizu.Ctx) error {
+    code := c.Param("code")
+    device := mobile.DeviceFromCtx(c)
+
+    // Generate unique tracking ID
+    trackingID := uuid.New().String()
+
+    // Store pending deep link
+    cache.Set(trackingID, &PendingDeepLink{
+        Path:      "/invite/" + code,
+        CreatedAt: time.Now(),
+        DeviceInfo: device,
+    }, 24*time.Hour)
+
+    // Set cookie for web fallback
+    c.Cookie(&http.Cookie{
+        Name:     "pending_deeplink",
+        Value:    trackingID,
+        MaxAge:   86400,
+        Path:     "/",
+        HttpOnly: true,
+        Secure:   true,
+    })
+
+    // Try to open app
+    return mobile.DeepLinkHandler("myapp", "/install?track="+trackingID)(c)
+})
+
+// Called when app opens for first time
+app.Get("/api/check-pending-deeplink", func(c *mizu.Ctx) error {
+    device := mobile.DeviceFromCtx(c)
+
+    // Find pending deep link for this device
+    pending, err := db.FindPendingDeepLink(device.DeviceID)
+    if err != nil || pending == nil {
+        return c.JSON(200, map[string]any{"found": false})
+    }
+
+    // Mark as claimed
+    db.ClaimPendingDeepLink(pending.ID)
+
+    return c.JSON(200, map[string]any{
+        "found": true,
+        "path":  pending.Path,
+    })
+})
+```
+
+## Testing Deep Links
+
+### iOS Simulator
+
+```bash
+# Test Universal Link
+xcrun simctl openurl booted "https://example.com/share/123"
+
+# Test Custom Scheme
+xcrun simctl openurl booted "myapp://share/123"
+```
+
+### Android Emulator
+
+```bash
+# Test App Link
+adb shell am start -a android.intent.action.VIEW \
+    -d "https://example.com/share/123" \
+    com.example.app
+
+# Test Custom Scheme
+adb shell am start -a android.intent.action.VIEW \
+    -d "myapp://share/123" \
+    com.example.app
+```
+
+### Verify Configuration
+
+```bash
+# Check apple-app-site-association
+curl https://example.com/.well-known/apple-app-site-association
+
+# Check assetlinks.json
+curl https://example.com/.well-known/assetlinks.json
+
+# Validate AASA (Apple tool)
+# https://search.developer.apple.com/appsearch-validation-tool/
+
+# Validate Android (Google tool)
+# https://developers.google.com/digital-asset-links/tools/generator
+```
+
+## Client Implementation
+
+### iOS (Swift)
+
+```swift
+// In SceneDelegate
+func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+    guard userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+          let url = userActivity.webpageURL else {
+        return
+    }
+
+    handleDeepLink(url)
+}
+
+func handleDeepLink(_ url: URL) {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: true) else {
+        return
+    }
+
+    switch components.path {
+    case let path where path.hasPrefix("/share/"):
+        let id = String(path.dropFirst("/share/".count))
+        router.navigate(to: .share(id: id))
+
+    case let path where path.hasPrefix("/invite/"):
+        let code = String(path.dropFirst("/invite/".count))
+        router.navigate(to: .invite(code: code))
+
+    default:
+        router.navigate(to: .home)
+    }
+}
+```
+
+### Android (Kotlin)
+
+```kotlin
+// In AndroidManifest.xml
+<activity android:name=".MainActivity">
+    <intent-filter android:autoVerify="true">
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="https" android:host="example.com" />
+    </intent-filter>
+</activity>
+
+// In MainActivity
+override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
+
+    handleIntent(intent)
+}
+
+override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    handleIntent(intent)
+}
+
+private fun handleIntent(intent: Intent) {
+    val data = intent.data ?: return
+
+    when {
+        data.path?.startsWith("/share/") == true -> {
+            val id = data.path?.removePrefix("/share/")
+            navigateToShare(id)
+        }
+        data.path?.startsWith("/invite/") == true -> {
+            val code = data.path?.removePrefix("/invite/")
+            navigateToInvite(code)
+        }
+    }
+}
+```
+
+### Flutter (Dart)
+
+```dart
+import 'package:uni_links/uni_links.dart';
+
+class DeepLinkService {
+  StreamSubscription? _subscription;
+
+  void initialize() {
+    // Handle initial link
+    getInitialUri().then(_handleUri);
+
+    // Handle incoming links
+    _subscription = uriLinkStream.listen(_handleUri);
+  }
+
+  void _handleUri(Uri? uri) {
+    if (uri == null) return;
+
+    final path = uri.path;
+
+    if (path.startsWith('/share/')) {
+      final id = path.replaceFirst('/share/', '');
+      router.go('/share/$id');
+    } else if (path.startsWith('/invite/')) {
+      final code = path.replaceFirst('/invite/', '');
+      router.go('/invite/$code');
+    }
+  }
+
+  void dispose() {
+    _subscription?.cancel();
+  }
+}
+```
+
+## Best Practices
+
+### HTTPS Required
+
+Both Universal Links and App Links require HTTPS. The verification files must be served over HTTPS.
+
+### CDN Considerations
+
+If using a CDN, ensure the verification files are not cached aggressively:
+
+```go
+app.Get("/.well-known/*", func(c *mizu.Ctx) error {
+    c.Header().Set("Cache-Control", "max-age=3600") // 1 hour
+    return next(c)
+})
+```
+
+### Handle All Cases
+
+Always provide fallbacks for:
+- App not installed
+- Outdated app version
+- Invalid deep link paths
+
+### Track Deep Link Attribution
+
+Track where users come from:
+
+```go
+app.Get("/share/:id", func(c *mizu.Ctx) error {
+    source := c.Query("utm_source", "direct")
+    campaign := c.Query("utm_campaign", "")
+
+    analytics.Track("deep_link_clicked", map[string]any{
+        "path":     c.Request().URL.Path,
+        "source":   source,
+        "campaign": campaign,
+        "platform": mobile.DeviceFromCtx(c).Platform.String(),
+    })
+
+    // Continue with deep link handling...
+})
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="App Store" href="/mobile/appstore" icon="store">
+    Version checking and force updates
+  </Card>
+  <Card title="Push Notifications" href="/mobile/push" icon="bell">
+    Cross-platform push support
+  </Card>
+  <Card title="API Reference" href="/mobile/api-reference" icon="book">
+    Complete API documentation
+  </Card>
+</CardGroup>

@@ -1,0 +1,657 @@
+---
+title: "React Native"
+description: "Build cross-platform apps with TypeScript, Expo, and Mizu backend integration."
+icon: "react"
+---
+
+Build cross-platform mobile applications with React Native and TypeScript that integrate seamlessly with your Mizu backend. The React Native template provides a complete project with Expo, navigation, and state management.
+
+## Quick Start
+
+```bash
+mizu new ./my-rn-app --template mobile/reactnative
+```
+
+This creates a complete React Native project with:
+
+- TypeScript
+- Expo managed workflow
+- React Navigation
+- Zustand for state management
+- Axios for networking
+
+## Project Structure
+
+```
+my-rn-app/
+├── backend/                    # Mizu Go backend
+│   ├── cmd/server/
+│   ├── app/server/
+│   └── Makefile
+│
+├── app/                        # React Native app
+│   ├── src/
+│   │   ├── App.tsx
+│   │   ├── api/
+│   │   │   ├── client.ts
+│   │   │   ├── endpoints.ts
+│   │   │   └── types.ts
+│   │   ├── components/
+│   │   ├── hooks/
+│   │   ├── navigation/
+│   │   ├── screens/
+│   │   ├── stores/
+│   │   └── utils/
+│   ├── app.json
+│   ├── package.json
+│   └── tsconfig.json
+│
+└── Makefile
+```
+
+## Template Options
+
+```bash
+mizu new ./my-app --template mobile/reactnative \
+  --var name=MyApp \
+  --var bundleId=com.example.app \
+  --var platforms=ios,android \
+  --var expo=true
+```
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `name` | Project name | Directory name |
+| `bundleId` | Bundle identifier | `com.example.app` |
+| `platforms` | Target platforms | `ios,android` |
+| `expo` | Use Expo managed workflow | `true` |
+
+## API Client
+
+```typescript
+// src/api/client.ts
+import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
+import DeviceInfo from 'react-native-device-info';
+import { Platform } from 'react-native';
+import { useAuthStore } from '../stores/authStore';
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000';
+
+class ApiClient {
+  private client: AxiosInstance;
+  private deviceId: string | null = null;
+
+  constructor() {
+    this.client = axios.create({
+      baseURL: API_URL,
+      timeout: 30000,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    this.setupInterceptors();
+  }
+
+  private async setupInterceptors() {
+    // Request interceptor
+    this.client.interceptors.request.use(
+      async (config: InternalAxiosRequestConfig) => {
+        // Add Mizu headers
+        await this.addMizuHeaders(config);
+
+        // Add auth token
+        const token = useAuthStore.getState().accessToken;
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
+
+        return config;
+      }
+    );
+
+    // Response interceptor
+    this.client.interceptors.response.use(
+      (response) => {
+        // Check for deprecation warning
+        if (response.headers['x-api-deprecated'] === 'true') {
+          console.warn('API version is deprecated');
+        }
+        return response;
+      },
+      (error) => {
+        if (error.response?.status === 401) {
+          useAuthStore.getState().logout();
+        }
+        return Promise.reject(error);
+      }
+    );
+  }
+
+  private async addMizuHeaders(config: InternalAxiosRequestConfig) {
+    if (!this.deviceId) {
+      this.deviceId = await DeviceInfo.getUniqueId();
+    }
+
+    config.headers['X-Device-ID'] = this.deviceId;
+    config.headers['X-App-Version'] = DeviceInfo.getVersion();
+    config.headers['X-App-Build'] = DeviceInfo.getBuildNumber();
+    config.headers['X-Device-Model'] = DeviceInfo.getModel();
+    config.headers['X-Platform'] = Platform.OS;
+    config.headers['X-OS-Version'] = Platform.Version.toString();
+    config.headers['X-Timezone'] = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    config.headers['X-API-Version'] = 'v2';
+  }
+
+  get = <T>(url: string, params?: object) =>
+    this.client.get<T>(url, { params });
+
+  post = <T>(url: string, data?: object) =>
+    this.client.post<T>(url, data);
+
+  put = <T>(url: string, data?: object) =>
+    this.client.put<T>(url, data);
+
+  delete = <T>(url: string) =>
+    this.client.delete<T>(url);
+}
+
+export const api = new ApiClient();
+```
+
+## State Management with Zustand
+
+### Auth Store
+
+```typescript
+// src/stores/authStore.ts
+import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api } from '../api/client';
+
+interface User {
+  id: string;
+  email: string;
+  name: string;
+}
+
+interface AuthState {
+  user: User | null;
+  accessToken: string | null;
+  refreshToken: string | null;
+  isAuthenticated: boolean;
+
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => void;
+  refreshAuth: () => Promise<void>;
+}
+
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set, get) => ({
+      user: null,
+      accessToken: null,
+      refreshToken: null,
+      isAuthenticated: false,
+
+      login: async (email: string, password: string) => {
+        const { data } = await api.post<{
+          user: User;
+          access_token: string;
+          refresh_token: string;
+        }>('/api/auth/login', { email, password });
+
+        set({
+          user: data.user,
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token,
+          isAuthenticated: true,
+        });
+      },
+
+      logout: () => {
+        set({
+          user: null,
+          accessToken: null,
+          refreshToken: null,
+          isAuthenticated: false,
+        });
+      },
+
+      refreshAuth: async () => {
+        const { refreshToken } = get();
+        if (!refreshToken) throw new Error('No refresh token');
+
+        const { data } = await api.post<{
+          access_token: string;
+        }>('/api/auth/refresh', { token: refreshToken });
+
+        set({ accessToken: data.access_token });
+      },
+    }),
+    {
+      name: 'auth-storage',
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({
+        user: state.user,
+        accessToken: state.accessToken,
+        refreshToken: state.refreshToken,
+        isAuthenticated: state.isAuthenticated,
+      }),
+    }
+  )
+);
+```
+
+### Items Store
+
+```typescript
+// src/stores/itemsStore.ts
+import { create } from 'zustand';
+import { api } from '../api/client';
+
+interface Item {
+  id: string;
+  name: string;
+  description: string;
+}
+
+interface ItemsState {
+  items: Item[];
+  isLoading: boolean;
+  error: string | null;
+
+  fetchItems: () => Promise<void>;
+  addItem: (item: Omit<Item, 'id'>) => Promise<void>;
+  removeItem: (id: string) => Promise<void>;
+}
+
+export const useItemsStore = create<ItemsState>()((set, get) => ({
+  items: [],
+  isLoading: false,
+  error: null,
+
+  fetchItems: async () => {
+    set({ isLoading: true, error: null });
+
+    try {
+      const { data } = await api.get<{ data: Item[] }>('/api/items');
+      set({ items: data.data, isLoading: false });
+    } catch (error) {
+      set({ error: 'Failed to fetch items', isLoading: false });
+    }
+  },
+
+  addItem: async (item) => {
+    const { data } = await api.post<Item>('/api/items', item);
+    set({ items: [...get().items, data] });
+  },
+
+  removeItem: async (id) => {
+    await api.delete(`/api/items/${id}`);
+    set({ items: get().items.filter((i) => i.id !== id) });
+  },
+}));
+```
+
+## Navigation
+
+```typescript
+// src/navigation/RootNavigator.tsx
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useAuthStore } from '../stores/authStore';
+
+// Screens
+import { LoginScreen } from '../screens/LoginScreen';
+import { HomeScreen } from '../screens/HomeScreen';
+import { ProfileScreen } from '../screens/ProfileScreen';
+import { ItemDetailScreen } from '../screens/ItemDetailScreen';
+
+const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
+
+function MainTabs() {
+  return (
+    <Tab.Navigator>
+      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
+    </Tab.Navigator>
+  );
+}
+
+export function RootNavigator() {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  return (
+    <NavigationContainer>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {isAuthenticated ? (
+          <>
+            <Stack.Screen name="Main" component={MainTabs} />
+            <Stack.Screen
+              name="ItemDetail"
+              component={ItemDetailScreen}
+              options={{ headerShown: true }}
+            />
+          </>
+        ) : (
+          <Stack.Screen name="Login" component={LoginScreen} />
+        )}
+      </Stack.Navigator>
+    </NavigationContainer>
+  );
+}
+```
+
+## Screens
+
+```typescript
+// src/screens/HomeScreen.tsx
+import React, { useEffect } from 'react';
+import {
+  View,
+  FlatList,
+  Text,
+  TouchableOpacity,
+  RefreshControl,
+  StyleSheet,
+} from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { useItemsStore } from '../stores/itemsStore';
+
+export function HomeScreen() {
+  const navigation = useNavigation();
+  const { items, isLoading, error, fetchItems } = useItemsStore();
+
+  useEffect(() => {
+    fetchItems();
+  }, []);
+
+  if (error) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.error}>{error}</Text>
+        <TouchableOpacity onPress={fetchItems}>
+          <Text style={styles.retry}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <FlatList
+      data={items}
+      keyExtractor={(item) => item.id}
+      refreshControl={
+        <RefreshControl refreshing={isLoading} onRefresh={fetchItems} />
+      }
+      renderItem={({ item }) => (
+        <TouchableOpacity
+          style={styles.item}
+          onPress={() => navigation.navigate('ItemDetail', { id: item.id })}
+        >
+          <Text style={styles.itemTitle}>{item.name}</Text>
+          <Text style={styles.itemDescription}>{item.description}</Text>
+        </TouchableOpacity>
+      )}
+      ListEmptyComponent={
+        !isLoading ? (
+          <View style={styles.center}>
+            <Text>No items found</Text>
+          </View>
+        ) : null
+      }
+    />
+  );
+}
+
+const styles = StyleSheet.create({
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  error: { color: 'red', marginBottom: 16 },
+  retry: { color: 'blue' },
+  item: { padding: 16, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  itemTitle: { fontSize: 18, fontWeight: '600' },
+  itemDescription: { color: '#666', marginTop: 4 },
+});
+```
+
+## Push Notifications
+
+```typescript
+// src/services/pushService.ts
+import messaging from '@react-native-firebase/messaging';
+import { api } from '../api/client';
+import { Platform } from 'react-native';
+
+export async function initializePushNotifications() {
+  // Request permission
+  const authStatus = await messaging().requestPermission();
+  const enabled =
+    authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+    authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+
+  if (!enabled) {
+    console.log('Push notifications not authorized');
+    return;
+  }
+
+  // Get token
+  const token = await messaging().getToken();
+  await registerToken(token);
+
+  // Listen for token refresh
+  messaging().onTokenRefresh(registerToken);
+
+  // Handle foreground messages
+  messaging().onMessage(async (remoteMessage) => {
+    console.log('Foreground message:', remoteMessage);
+    // Show local notification
+  });
+
+  // Handle background messages
+  messaging().setBackgroundMessageHandler(async (remoteMessage) => {
+    console.log('Background message:', remoteMessage);
+  });
+}
+
+async function registerToken(token: string) {
+  try {
+    await api.post('/api/push/register', {
+      token,
+      provider: Platform.OS === 'ios' ? 'apns' : 'fcm',
+    });
+  } catch (error) {
+    console.error('Failed to register push token:', error);
+  }
+}
+```
+
+## Deep Links
+
+```typescript
+// src/services/deepLinkService.ts
+import { Linking } from 'react-native';
+import { NavigationContainerRef } from '@react-navigation/native';
+
+let navigationRef: NavigationContainerRef<any> | null = null;
+
+export function setNavigationRef(ref: NavigationContainerRef<any>) {
+  navigationRef = ref;
+}
+
+export async function initializeDeepLinks() {
+  // Handle initial URL
+  const initialUrl = await Linking.getInitialURL();
+  if (initialUrl) {
+    handleDeepLink(initialUrl);
+  }
+
+  // Listen for incoming URLs
+  Linking.addEventListener('url', ({ url }) => {
+    handleDeepLink(url);
+  });
+}
+
+function handleDeepLink(url: string) {
+  if (!navigationRef) return;
+
+  const parsed = new URL(url);
+  const path = parsed.pathname;
+
+  if (path.startsWith('/share/')) {
+    const id = path.replace('/share/', '');
+    navigationRef.navigate('ItemDetail', { id });
+  } else if (path.startsWith('/profile/')) {
+    navigationRef.navigate('Profile');
+  }
+}
+```
+
+## Offline Sync
+
+```typescript
+// src/services/syncService.ts
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api } from '../api/client';
+
+const SYNC_TOKEN_KEY = 'sync_token';
+
+export async function sync() {
+  const syncToken = await AsyncStorage.getItem(SYNC_TOKEN_KEY);
+
+  const params: Record<string, string> = {};
+  if (syncToken) {
+    params.sync_token = syncToken;
+  }
+
+  const { data } = await api.get<SyncResponse>('/api/sync', params);
+
+  // Apply changes to local storage
+  await applyChanges(data);
+
+  // Save new sync token
+  await AsyncStorage.setItem(SYNC_TOKEN_KEY, data.sync_token);
+}
+
+async function applyChanges(response: SyncResponse) {
+  // Get current items
+  const itemsJson = await AsyncStorage.getItem('items');
+  const items: Map<string, Item> = new Map(
+    itemsJson ? JSON.parse(itemsJson) : []
+  );
+
+  // Apply created
+  for (const item of response.created) {
+    items.set(item.id, item);
+  }
+
+  // Apply updated
+  for (const item of response.updated) {
+    items.set(item.id, item);
+  }
+
+  // Apply deleted
+  for (const id of response.deleted) {
+    items.delete(id);
+  }
+
+  // Save back
+  await AsyncStorage.setItem('items', JSON.stringify([...items]));
+}
+```
+
+## Running the Project
+
+### Start Backend
+
+```bash
+cd backend
+make run
+```
+
+### Run React Native App
+
+```bash
+cd app
+
+# Install dependencies
+npm install
+
+# iOS
+npx expo run:ios
+
+# Android
+npx expo run:android
+
+# Development with Expo Go
+npx expo start
+```
+
+## Best Practices
+
+### Type Safety
+
+```typescript
+// src/api/types.ts
+export interface PageResponse<T> {
+  data: T[];
+  page: number;
+  per_page: number;
+  total: number;
+  total_pages: number;
+}
+
+export interface ApiError {
+  code: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+// Type-safe API calls
+const response = await api.get<PageResponse<Item>>('/api/items');
+```
+
+### Error Handling
+
+```typescript
+// src/utils/errorHandler.ts
+import { AxiosError } from 'axios';
+import { Alert } from 'react-native';
+
+export function handleApiError(error: unknown) {
+  if (error instanceof AxiosError) {
+    const apiError = error.response?.data as ApiError | undefined;
+
+    switch (apiError?.code) {
+      case 'upgrade_required':
+        Alert.alert('Update Required', 'Please update the app to continue.');
+        break;
+      case 'maintenance':
+        Alert.alert('Maintenance', apiError.message);
+        break;
+      default:
+        Alert.alert('Error', apiError?.message ?? 'Something went wrong');
+    }
+  }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Flutter" href="/mobile/flutter" icon="layer-group">
+    Build with Flutter
+  </Card>
+  <Card title="Push Notifications" href="/mobile/push" icon="bell">
+    FCM integration
+  </Card>
+  <Card title="Deep Links" href="/mobile/deeplinks" icon="link">
+    Universal Links
+  </Card>
+  <Card title="Templates" href="/mobile/templates" icon="layer-group">
+    All mobile templates
+  </Card>
+</CardGroup>

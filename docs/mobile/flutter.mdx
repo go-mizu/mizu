@@ -1,0 +1,643 @@
+---
+title: "Flutter"
+description: "Build cross-platform apps with Dart, Riverpod, and Mizu backend integration."
+icon: "layer-group"
+---
+
+Build cross-platform mobile applications with Flutter and Dart that integrate seamlessly with your Mizu backend. The Flutter template provides a complete project with state management, networking, and platform-specific configurations.
+
+## Quick Start
+
+```bash
+mizu new ./my-flutter-app --template mobile/flutter
+```
+
+This creates a complete Flutter project with:
+
+- Dart with null safety
+- Riverpod for state management
+- Dio for HTTP networking
+- go_router for navigation
+- Platform-specific setup for iOS and Android
+
+## Project Structure
+
+```
+my-flutter-app/
+├── backend/                    # Mizu Go backend
+│   ├── cmd/server/
+│   ├── app/server/
+│   └── Makefile
+│
+├── flutter/                    # Flutter app
+│   ├── lib/
+│   │   ├── main.dart
+│   │   ├── app/
+│   │   │   ├── app.dart
+│   │   │   └── router.dart
+│   │   ├── core/
+│   │   │   ├── api/
+│   │   │   │   ├── api_client.dart
+│   │   │   │   ├── api_interceptor.dart
+│   │   │   │   └── endpoints.dart
+│   │   │   ├── providers/
+│   │   │   └── storage/
+│   │   ├── features/
+│   │   │   ├── auth/
+│   │   │   ├── home/
+│   │   │   └── settings/
+│   │   └── shared/
+│   │       ├── widgets/
+│   │       └── extensions/
+│   ├── ios/
+│   ├── android/
+│   ├── pubspec.yaml
+│   └── analysis_options.yaml
+│
+└── Makefile
+```
+
+## Template Options
+
+```bash
+mizu new ./my-app --template mobile/flutter \
+  --var name=my_app \
+  --var org=com.example \
+  --var platforms=ios,android \
+  --var ui=material
+```
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `name` | Project name | Directory name |
+| `org` | Organization identifier | `com.example` |
+| `platforms` | Target platforms | `ios,android` |
+| `ui` | UI framework: `material`, `cupertino` | `material` |
+
+## API Client
+
+```dart
+// core/api/api_client.dart
+import 'package:dio/dio.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+part 'api_client.g.dart';
+
+@riverpod
+ApiClient apiClient(ApiClientRef ref) {
+  final dio = Dio(BaseOptions(
+    baseUrl: const String.fromEnvironment('API_URL', defaultValue: 'http://localhost:3000'),
+    connectTimeout: const Duration(seconds: 30),
+    receiveTimeout: const Duration(seconds: 30),
+  ));
+
+  dio.interceptors.add(MizuInterceptor(ref));
+  dio.interceptors.add(AuthInterceptor(ref));
+
+  return ApiClient(dio);
+}
+
+class ApiClient {
+  final Dio _dio;
+
+  ApiClient(this._dio);
+
+  Future<Response<T>> get<T>(String path, {Map<String, dynamic>? params}) {
+    return _dio.get<T>(path, queryParameters: params);
+  }
+
+  Future<Response<T>> post<T>(String path, {dynamic data}) {
+    return _dio.post<T>(path, data: data);
+  }
+
+  Future<Response<T>> put<T>(String path, {dynamic data}) {
+    return _dio.put<T>(path, data: data);
+  }
+
+  Future<Response<T>> delete<T>(String path) {
+    return _dio.delete<T>(path);
+  }
+}
+```
+
+### Mizu Header Interceptor
+
+```dart
+// core/api/mizu_interceptor.dart
+class MizuInterceptor extends Interceptor {
+  final Ref ref;
+
+  MizuInterceptor(this.ref);
+
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
+    final deviceInfo = await ref.read(deviceInfoProvider.future);
+
+    options.headers.addAll({
+      'X-Device-ID': deviceInfo.deviceId,
+      'X-App-Version': deviceInfo.appVersion,
+      'X-App-Build': deviceInfo.buildNumber,
+      'X-Platform': Platform.operatingSystem,
+      'X-OS-Version': Platform.operatingSystemVersion,
+      'X-Timezone': DateTime.now().timeZoneName,
+      'X-Locale': Platform.localeName,
+      'X-API-Version': 'v2',
+    });
+
+    handler.next(options);
+  }
+
+  @override
+  void onResponse(Response response, ResponseInterceptorHandler handler) {
+    // Check for deprecation warning
+    if (response.headers.value('X-API-Deprecated') == 'true') {
+      ref.read(apiDeprecationProvider.notifier).setDeprecated(true);
+    }
+
+    handler.next(response);
+  }
+}
+```
+
+## State Management with Riverpod
+
+### Authentication
+
+```dart
+// features/auth/auth_provider.dart
+@riverpod
+class Auth extends _$Auth {
+  @override
+  FutureOr<AuthState> build() async {
+    final storage = ref.watch(secureStorageProvider);
+    final token = await storage.read(key: 'access_token');
+
+    if (token != null) {
+      try {
+        final user = await _fetchCurrentUser();
+        return AuthState.authenticated(user);
+      } catch (e) {
+        await storage.delete(key: 'access_token');
+      }
+    }
+
+    return const AuthState.unauthenticated();
+  }
+
+  Future<void> login(String email, String password) async {
+    state = const AsyncValue.loading();
+
+    state = await AsyncValue.guard(() async {
+      final api = ref.read(apiClientProvider);
+      final response = await api.post<Map<String, dynamic>>(
+        '/api/auth/login',
+        data: {'email': email, 'password': password},
+      );
+
+      final authResponse = AuthResponse.fromJson(response.data!);
+
+      // Save tokens
+      final storage = ref.read(secureStorageProvider);
+      await storage.write(key: 'access_token', value: authResponse.accessToken);
+      await storage.write(key: 'refresh_token', value: authResponse.refreshToken);
+
+      return AuthState.authenticated(authResponse.user);
+    });
+  }
+
+  Future<void> logout() async {
+    final storage = ref.read(secureStorageProvider);
+    await storage.deleteAll();
+    state = const AsyncData(AuthState.unauthenticated());
+  }
+}
+
+@freezed
+class AuthState with _$AuthState {
+  const factory AuthState.authenticated(User user) = _Authenticated;
+  const factory AuthState.unauthenticated() = _Unauthenticated;
+}
+```
+
+### Data Fetching
+
+```dart
+// features/home/items_provider.dart
+@riverpod
+class Items extends _$Items {
+  @override
+  FutureOr<List<Item>> build() => _fetchItems();
+
+  Future<List<Item>> _fetchItems() async {
+    final api = ref.read(apiClientProvider);
+    final response = await api.get<Map<String, dynamic>>('/api/items');
+    final pageResponse = PageResponse<Item>.fromJson(
+      response.data!,
+      (json) => Item.fromJson(json as Map<String, dynamic>),
+    );
+    return pageResponse.data;
+  }
+
+  Future<void> refresh() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(_fetchItems);
+  }
+
+  Future<void> addItem(CreateItemRequest request) async {
+    final api = ref.read(apiClientProvider);
+    final response = await api.post<Map<String, dynamic>>(
+      '/api/items',
+      data: request.toJson(),
+    );
+    final newItem = Item.fromJson(response.data!);
+
+    state = state.whenData((items) => [...items, newItem]);
+  }
+}
+```
+
+## UI Components
+
+### App Setup
+
+```dart
+// main.dart
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase for push notifications
+  await Firebase.initializeApp();
+
+  runApp(
+    const ProviderScope(
+      child: MyApp(),
+    ),
+  );
+}
+
+// app/app.dart
+class MyApp extends ConsumerWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final router = ref.watch(routerProvider);
+
+    return MaterialApp.router(
+      title: 'My App',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        useMaterial3: true,
+      ),
+      routerConfig: router,
+    );
+  }
+}
+```
+
+### Navigation
+
+```dart
+// app/router.dart
+@riverpod
+GoRouter router(RouterRef ref) {
+  final authState = ref.watch(authProvider);
+
+  return GoRouter(
+    initialLocation: '/',
+    redirect: (context, state) {
+      final isAuthenticated = authState.valueOrNull?.maybeWhen(
+        authenticated: (_) => true,
+        orElse: () => false,
+      ) ?? false;
+
+      final isAuthRoute = state.matchedLocation.startsWith('/auth');
+
+      if (!isAuthenticated && !isAuthRoute) {
+        return '/auth/login';
+      }
+
+      if (isAuthenticated && isAuthRoute) {
+        return '/';
+      }
+
+      return null;
+    },
+    routes: [
+      GoRoute(
+        path: '/',
+        builder: (context, state) => const HomeScreen(),
+        routes: [
+          GoRoute(
+            path: 'item/:id',
+            builder: (context, state) => ItemDetailScreen(
+              id: state.pathParameters['id']!,
+            ),
+          ),
+        ],
+      ),
+      GoRoute(
+        path: '/auth/login',
+        builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/settings',
+        builder: (context, state) => const SettingsScreen(),
+      ),
+    ],
+  );
+}
+```
+
+### Screen Example
+
+```dart
+// features/home/home_screen.dart
+class HomeScreen extends ConsumerWidget {
+  const HomeScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final itemsAsync = ref.watch(itemsProvider);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Home'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () => context.push('/settings'),
+          ),
+        ],
+      ),
+      body: itemsAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, stack) => ErrorWidget(
+          error: error,
+          onRetry: () => ref.invalidate(itemsProvider),
+        ),
+        data: (items) => RefreshIndicator(
+          onRefresh: () => ref.read(itemsProvider.notifier).refresh(),
+          child: ListView.builder(
+            itemCount: items.length,
+            itemBuilder: (context, index) {
+              final item = items[index];
+              return ItemCard(
+                item: item,
+                onTap: () => context.push('/item/${item.id}'),
+              );
+            },
+          ),
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showAddDialog(context, ref),
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+}
+```
+
+## Push Notifications
+
+```dart
+// core/services/push_service.dart
+class PushService {
+  final ApiClient _api;
+
+  PushService(this._api);
+
+  Future<void> initialize() async {
+    // Request permission
+    final settings = await FirebaseMessaging.instance.requestPermission();
+    if (settings.authorizationStatus != AuthorizationStatus.authorized) {
+      return;
+    }
+
+    // Get token
+    final token = await FirebaseMessaging.instance.getToken();
+    if (token != null) {
+      await _registerToken(token);
+    }
+
+    // Listen for token refresh
+    FirebaseMessaging.instance.onTokenRefresh.listen(_registerToken);
+
+    // Handle foreground messages
+    FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+
+    // Handle background messages
+    FirebaseMessaging.onBackgroundMessage(_handleBackgroundMessage);
+  }
+
+  Future<void> _registerToken(String token) async {
+    await _api.post('/api/push/register', data: {
+      'token': token,
+      'provider': Platform.isIOS ? 'apns' : 'fcm',
+    });
+  }
+
+  void _handleForegroundMessage(RemoteMessage message) {
+    // Show local notification or update UI
+    debugPrint('Foreground message: ${message.notification?.title}');
+  }
+}
+
+@pragma('vm:entry-point')
+Future<void> _handleBackgroundMessage(RemoteMessage message) async {
+  debugPrint('Background message: ${message.notification?.title}');
+}
+```
+
+## Deep Links
+
+```dart
+// app/deep_link_handler.dart
+@riverpod
+class DeepLinkHandler extends _$DeepLinkHandler {
+  @override
+  void build() {
+    _initDeepLinks();
+  }
+
+  void _initDeepLinks() async {
+    // Handle initial link
+    final initialUri = await getInitialUri();
+    if (initialUri != null) {
+      _handleUri(initialUri);
+    }
+
+    // Listen for incoming links
+    uriLinkStream.listen(_handleUri);
+  }
+
+  void _handleUri(Uri uri) {
+    final router = ref.read(routerProvider);
+
+    if (uri.path.startsWith('/share/')) {
+      final id = uri.path.replaceFirst('/share/', '');
+      router.push('/item/$id');
+    } else if (uri.path.startsWith('/profile/')) {
+      router.push('/profile');
+    }
+  }
+}
+```
+
+## Offline Sync
+
+```dart
+// core/services/sync_service.dart
+@riverpod
+class SyncService extends _$SyncService {
+  String? _syncToken;
+
+  @override
+  FutureOr<void> build() {
+    _loadSyncToken();
+  }
+
+  Future<void> sync() async {
+    final api = ref.read(apiClientProvider);
+
+    final params = <String, dynamic>{};
+    if (_syncToken != null) {
+      params['sync_token'] = _syncToken;
+    }
+
+    final response = await api.get<Map<String, dynamic>>(
+      '/api/sync',
+      params: params,
+    );
+
+    final syncResponse = SyncResponse.fromJson(response.data!);
+
+    // Apply changes to local database
+    final db = ref.read(databaseProvider);
+    await db.transaction(() async {
+      for (final item in syncResponse.created) {
+        await db.items.insertOnConflictUpdate(item);
+      }
+      for (final item in syncResponse.updated) {
+        await db.items.update(item);
+      }
+      for (final id in syncResponse.deleted) {
+        await db.items.deleteWhere((t) => t.id.equals(id));
+      }
+    });
+
+    // Save sync token
+    _syncToken = syncResponse.syncToken;
+    await _saveSyncToken();
+  }
+
+  Future<void> _loadSyncToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    _syncToken = prefs.getString('sync_token');
+  }
+
+  Future<void> _saveSyncToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_syncToken != null) {
+      await prefs.setString('sync_token', _syncToken!);
+    }
+  }
+}
+```
+
+## Running the Project
+
+### Start Backend
+
+```bash
+cd backend
+make run
+```
+
+### Run Flutter App
+
+```bash
+cd flutter
+
+# iOS
+flutter run -d ios
+
+# Android
+flutter run -d android
+
+# Web (if enabled)
+flutter run -d chrome
+```
+
+### Build for Release
+
+```bash
+# iOS
+flutter build ios --release
+
+# Android
+flutter build appbundle --release
+```
+
+## Best Practices
+
+### Error Handling
+
+```dart
+extension AsyncValueX<T> on AsyncValue<T> {
+  Widget when({
+    required Widget Function(T data) data,
+    required Widget Function(Object error, StackTrace stack) error,
+    required Widget Function() loading,
+  }) {
+    return this.when(
+      data: data,
+      error: (e, s) {
+        if (e is DioException) {
+          return error(ApiError.fromDioError(e), s);
+        }
+        return error(e, s);
+      },
+      loading: loading,
+    );
+  }
+}
+```
+
+### Testing
+
+```dart
+void main() {
+  group('ItemsProvider', () {
+    test('fetches items successfully', () async {
+      final container = ProviderContainer(
+        overrides: [
+          apiClientProvider.overrideWithValue(MockApiClient()),
+        ],
+      );
+
+      await container.read(itemsProvider.future);
+
+      expect(container.read(itemsProvider).value, isNotEmpty);
+    });
+  });
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="React Native" href="/mobile/reactnative" icon="react">
+    Build with React Native
+  </Card>
+  <Card title="Push Notifications" href="/mobile/push" icon="bell">
+    Cross-platform push
+  </Card>
+  <Card title="Offline Sync" href="/mobile/sync" icon="arrows-rotate">
+    Delta synchronization
+  </Card>
+  <Card title="Templates" href="/mobile/templates" icon="layer-group">
+    All mobile templates
+  </Card>
+</CardGroup>

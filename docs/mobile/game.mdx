@@ -1,0 +1,277 @@
+---
+title: "Unity Game"
+description: "Build mobile games with Unity, C#, and Mizu backend integration."
+icon: "gamepad"
+---
+
+Build cross-platform mobile games with Unity and C# that integrate with your Mizu backend for user accounts, leaderboards, multiplayer, and analytics.
+
+## Quick Start
+
+```bash
+mizu new ./my-game --template mobile/game
+```
+
+This creates a Unity project with:
+
+- Unity 2022 LTS
+- UniTask for async operations
+- REST client for API calls
+- WebSocket support for multiplayer
+- Analytics integration
+
+## Project Structure
+
+```
+my-game/
+├── backend/                    # Mizu Go backend
+│   ├── cmd/server/
+│   └── app/server/
+│       ├── handlers/
+│       │   ├── auth.go
+│       │   ├── leaderboard.go
+│       │   └── multiplayer.go
+│       └── ...
+│
+├── unity/                      # Unity project
+│   ├── Assets/
+│   │   ├── Scripts/
+│   │   │   ├── API/
+│   │   │   │   ├── ApiClient.cs
+│   │   │   │   └── Models/
+│   │   │   ├── Game/
+│   │   │   ├── Multiplayer/
+│   │   │   └── UI/
+│   │   ├── Scenes/
+│   │   ├── Prefabs/
+│   │   └── Resources/
+│   └── ProjectSettings/
+│
+└── Makefile
+```
+
+## API Client
+
+```csharp
+// Assets/Scripts/API/ApiClient.cs
+using System;
+using System.Text;
+using System.Threading;
+using Cysharp.Threading.Tasks;
+using UnityEngine;
+using UnityEngine.Networking;
+
+public class ApiClient : MonoBehaviour
+{
+    [SerializeField] private string baseUrl = "http://localhost:3000";
+
+    private string deviceId;
+    private string accessToken;
+
+    private void Awake()
+    {
+        deviceId = SystemInfo.deviceUniqueIdentifier;
+    }
+
+    public async UniTask<T> GetAsync<T>(string path, CancellationToken ct = default)
+    {
+        using var request = UnityWebRequest.Get($"{baseUrl}{path}");
+        AddHeaders(request);
+
+        await request.SendWebRequest().WithCancellation(ct);
+
+        if (request.result != UnityWebRequest.Result.Success)
+        {
+            throw new ApiException(request.error, request.responseCode);
+        }
+
+        return JsonUtility.FromJson<T>(request.downloadHandler.text);
+    }
+
+    public async UniTask<TResponse> PostAsync<TRequest, TResponse>(
+        string path,
+        TRequest data,
+        CancellationToken ct = default)
+    {
+        var json = JsonUtility.ToJson(data);
+        var bytes = Encoding.UTF8.GetBytes(json);
+
+        using var request = new UnityWebRequest($"{baseUrl}{path}", "POST")
+        {
+            uploadHandler = new UploadHandlerRaw(bytes),
+            downloadHandler = new DownloadHandlerBuffer()
+        };
+
+        AddHeaders(request);
+        request.SetRequestHeader("Content-Type", "application/json");
+
+        await request.SendWebRequest().WithCancellation(ct);
+
+        if (request.result != UnityWebRequest.Result.Success)
+        {
+            throw new ApiException(request.error, request.responseCode);
+        }
+
+        return JsonUtility.FromJson<TResponse>(request.downloadHandler.text);
+    }
+
+    private void AddHeaders(UnityWebRequest request)
+    {
+        request.SetRequestHeader("X-Device-ID", deviceId);
+        request.SetRequestHeader("X-App-Version", Application.version);
+        request.SetRequestHeader("X-Platform", GetPlatform());
+        request.SetRequestHeader("X-API-Version", "v2");
+
+        if (!string.IsNullOrEmpty(accessToken))
+        {
+            request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+        }
+    }
+
+    private string GetPlatform()
+    {
+        return Application.platform switch
+        {
+            RuntimePlatform.IPhonePlayer => "ios",
+            RuntimePlatform.Android => "android",
+            RuntimePlatform.WebGLPlayer => "web",
+            _ => "unknown"
+        };
+    }
+
+    public void SetAccessToken(string token) => accessToken = token;
+}
+```
+
+## Leaderboard
+
+```csharp
+// Assets/Scripts/API/LeaderboardService.cs
+public class LeaderboardService
+{
+    private readonly ApiClient _api;
+
+    public LeaderboardService(ApiClient api) => _api = api;
+
+    public async UniTask<LeaderboardEntry[]> GetTopScores(int limit = 10)
+    {
+        var response = await _api.GetAsync<LeaderboardResponse>(
+            $"/api/leaderboard?limit={limit}"
+        );
+        return response.entries;
+    }
+
+    public async UniTask SubmitScore(int score)
+    {
+        await _api.PostAsync<ScoreSubmission, EmptyResponse>(
+            "/api/leaderboard",
+            new ScoreSubmission { score = score }
+        );
+    }
+}
+
+[Serializable]
+public class LeaderboardEntry
+{
+    public string username;
+    public int score;
+    public int rank;
+}
+```
+
+## Multiplayer WebSocket
+
+```csharp
+// Assets/Scripts/Multiplayer/MultiplayerClient.cs
+using System;
+using NativeWebSocket;
+using Cysharp.Threading.Tasks;
+
+public class MultiplayerClient : MonoBehaviour
+{
+    private WebSocket ws;
+    public event Action<GameState> OnGameStateUpdated;
+    public event Action<PlayerAction> OnPlayerAction;
+
+    public async UniTask ConnectAsync(string roomId, string token)
+    {
+        var url = $"ws://localhost:3000/ws/game/{roomId}?token={token}";
+        ws = new WebSocket(url);
+
+        ws.OnMessage += OnMessage;
+        ws.OnClose += code => Debug.Log($"WS closed: {code}");
+        ws.OnError += error => Debug.LogError($"WS error: {error}");
+
+        await ws.Connect();
+    }
+
+    private void OnMessage(byte[] bytes)
+    {
+        var json = System.Text.Encoding.UTF8.GetString(bytes);
+        var message = JsonUtility.FromJson<ServerMessage>(json);
+
+        switch (message.type)
+        {
+            case "game_state":
+                OnGameStateUpdated?.Invoke(message.gameState);
+                break;
+            case "player_action":
+                OnPlayerAction?.Invoke(message.action);
+                break;
+        }
+    }
+
+    public void SendAction(PlayerAction action)
+    {
+        var json = JsonUtility.ToJson(new ClientMessage
+        {
+            type = "action",
+            action = action
+        });
+        ws.SendText(json);
+    }
+
+    private void Update()
+    {
+        ws?.DispatchMessageQueue();
+    }
+
+    private async void OnDestroy()
+    {
+        if (ws != null)
+        {
+            await ws.Close();
+        }
+    }
+}
+```
+
+## Template Options
+
+```bash
+mizu new ./my-app --template mobile/game \
+  --var name=MyGame \
+  --var mode=2d \
+  --var platforms=ios,android \
+  --var multiplayer=true \
+  --var analytics=true
+```
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `name` | Project name | Directory name |
+| `mode` | Game mode: `2d`, `3d` | `2d` |
+| `platforms` | Target platforms | `ios,android` |
+| `multiplayer` | Enable multiplayer | `false` |
+| `analytics` | Enable analytics | `true` |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Templates" href="/mobile/templates" icon="layer-group">
+    All mobile templates
+  </Card>
+  <Card title="API Reference" href="/mobile/api-reference" icon="book">
+    Complete API documentation
+  </Card>
+</CardGroup>

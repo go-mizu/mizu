@@ -1,0 +1,181 @@
+---
+title: "Templates"
+description: "Available mobile templates and how to use them."
+icon: "layer-group"
+---
+
+Mizu provides ready-to-use templates for mobile development across native and cross-platform frameworks.
+
+## Available Templates
+
+```bash
+# List all mobile templates
+mizu new --list-templates mobile
+```
+
+| Template | Framework | Description |
+|----------|-----------|-------------|
+| `mobile/ios` | Swift + SwiftUI | Native iOS app |
+| `mobile/android` | Kotlin + Compose | Native Android app |
+| `mobile/flutter` | Dart + Riverpod | Cross-platform Flutter |
+| `mobile/reactnative` | TypeScript + Expo | React Native app |
+| `mobile/pwa` | React + Vite | Progressive Web App |
+| `mobile/kmm` | Kotlin Multiplatform | Shared Kotlin code |
+| `mobile/dotnet` | C# + .NET MAUI | Cross-platform .NET |
+| `mobile/game` | Unity + C# | Mobile game |
+
+## Using Templates
+
+### Create New Project
+
+```bash
+mizu new ./my-app --template mobile/ios
+```
+
+### With Variables
+
+```bash
+mizu new ./my-app --template mobile/ios \
+  --var name=MyApp \
+  --var bundleId=com.example.myapp \
+  --var minIOS=16.0
+```
+
+### What's Included
+
+Each template includes:
+
+- **Backend**: Complete Mizu server with mobile middleware
+- **Mobile App**: Pre-configured client with API integration
+- **Networking**: API client with Mizu headers
+- **Authentication**: Login/logout flow
+- **Push Setup**: Push notification configuration
+- **Makefile**: Common development commands
+
+## Template Comparison
+
+| Feature | iOS | Android | Flutter | RN | PWA | KMM | .NET | Unity |
+|---------|-----|---------|---------|-----|-----|-----|------|-------|
+| **Language** | Swift | Kotlin | Dart | TS | TS | Kotlin | C# | C# |
+| **UI** | SwiftUI | Compose | Flutter | React | React | Native | MAUI | Unity |
+| **State** | @Observable | Flow | Riverpod | Zustand | Zustand | Flow | MVVM | - |
+| **Network** | URLSession | Retrofit | Dio | Axios | Fetch | Ktor | HttpClient | UnityWebRequest |
+| **Storage** | UserDefaults | DataStore | SharedPrefs | AsyncStorage | localStorage | - | Preferences | PlayerPrefs |
+| **Platforms** | iOS | Android | All | iOS/Android | Web | iOS/Android | All | All |
+
+## Template Variables
+
+### iOS
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `name` | Project name | Directory name |
+| `bundleId` | Bundle identifier | `com.example.{{name}}` |
+| `minIOS` | Minimum iOS version | `16.0` |
+| `ui` | UI framework: `swiftui`, `uikit` | `swiftui` |
+
+### Android
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `name` | Project name | Directory name |
+| `package` | Package name | `com.example.{{name}}` |
+| `minSdk` | Minimum SDK version | `26` |
+| `ui` | UI framework: `compose`, `views` | `compose` |
+
+### Flutter
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `name` | Project name | Directory name |
+| `org` | Organization identifier | `com.example` |
+| `platforms` | Target platforms | `ios,android` |
+| `ui` | UI framework: `material`, `cupertino` | `material` |
+
+### React Native
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `name` | Project name | Directory name |
+| `bundleId` | Bundle identifier | `com.example.app` |
+| `platforms` | Target platforms | `ios,android` |
+| `expo` | Use Expo workflow | `true` |
+
+### PWA
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `name` | Project name | Directory name |
+| `workbox` | Use Workbox | `false` |
+| `ui` | UI framework: `css`, `tailwind` | `css` |
+| `push` | Enable push notifications | `true` |
+
+### KMM
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `name` | Project name | Directory name |
+| `package` | Package name | `com.example.app` |
+| `platforms` | Target platforms | `android,ios` |
+| `storage` | Local storage: `none`, `sqldelight` | `none` |
+
+### .NET MAUI
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `name` | Project name | Directory name |
+| `namespace` | C# namespace | `name` |
+| `bundleId` | Bundle identifier | `com.example.app` |
+| `platforms` | Target platforms | `ios,android` |
+| `nav` | Navigation: `shell`, `plain` | `shell` |
+
+### Unity Game
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `name` | Project name | Directory name |
+| `mode` | Game mode: `2d`, `3d` | `2d` |
+| `platforms` | Target platforms | `ios,android` |
+| `multiplayer` | Enable multiplayer | `false` |
+| `analytics` | Enable analytics | `true` |
+
+## Template Structure
+
+### Common Backend Structure
+
+All templates include a similar backend:
+
+```
+backend/
+├── cmd/server/
+│   └── main.go              # Entry point
+├── app/server/
+│   ├── app.go               # App setup with mobile middleware
+│   ├── config.go            # Configuration
+│   ├── routes.go            # API routes
+│   └── handlers/            # Request handlers
+├── go.mod
+└── Makefile
+```
+
+### Makefile Commands
+
+All templates include:
+
+```bash
+make dev        # Start development
+make build      # Build for production
+make clean      # Clean artifacts
+make test       # Run tests
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" href="/mobile/quick-start" icon="rocket">
+    Create your first mobile app
+  </Card>
+  <Card title="Adapters" href="/mobile/adapters" icon="puzzle-piece">
+    Framework-specific adapters
+  </Card>
+</CardGroup>

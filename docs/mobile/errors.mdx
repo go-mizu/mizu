@@ -1,0 +1,558 @@
+---
+title: "Structured Errors"
+description: "Return consistent, mobile-friendly error responses."
+icon: "circle-exclamation"
+---
+
+The mobile package provides structured error handling with consistent response formats, error codes, and detailed context for mobile clients.
+
+## Quick Start
+
+```go
+import "github.com/go-mizu/mizu/mobile"
+
+func handler(c *mizu.Ctx) error {
+    if !authorized {
+        return mobile.SendError(c, 401, mobile.NewError(
+            mobile.ErrUnauthorized,
+            "Invalid credentials",
+        ).WithDetails("reason", "token_expired"))
+    }
+
+    return c.JSON(200, data)
+}
+```
+
+Response:
+```json
+{
+  "code": "unauthorized",
+  "message": "Invalid credentials",
+  "details": {
+    "reason": "token_expired"
+  },
+  "trace_id": "req-abc-123"
+}
+```
+
+## Error Codes
+
+Standard error codes for mobile clients:
+
+```go
+const (
+    ErrInvalidRequest   = "invalid_request"
+    ErrUnauthorized     = "unauthorized"
+    ErrForbidden        = "forbidden"
+    ErrNotFound         = "not_found"
+    ErrConflict         = "conflict"
+    ErrValidation       = "validation_error"
+    ErrRateLimited      = "rate_limited"
+    ErrUpgradeRequired  = "upgrade_required"
+    ErrMaintenance      = "maintenance"
+    ErrInternal         = "internal_error"
+)
+```
+
+## The Error Type
+
+```go
+type Error struct {
+    Code     string         `json:"code"`
+    Message  string         `json:"message"`
+    Details  map[string]any `json:"details,omitempty"`
+    TraceID  string         `json:"trace_id,omitempty"`
+}
+```
+
+### Creating Errors
+
+```go
+// Basic error
+err := mobile.NewError(mobile.ErrValidation, "Email is invalid")
+
+// With details
+err := mobile.NewError(mobile.ErrValidation, "Validation failed").
+    WithDetails("field", "email").
+    WithDetails("error", "invalid format")
+
+// With trace ID
+err := mobile.NewError(mobile.ErrInternal, "Something went wrong").
+    WithTraceID(c.Request().Header.Get("X-Request-ID"))
+```
+
+### Error Methods
+
+```go
+err := mobile.NewError(mobile.ErrValidation, "Validation failed")
+
+// Add single detail
+err = err.WithDetails("field", "email")
+
+// Add trace ID
+err = err.WithTraceID("req-123")
+
+// Check error type
+err.Code == mobile.ErrValidation  // true
+```
+
+## Sending Errors
+
+### Basic Usage
+
+```go
+func handler(c *mizu.Ctx) error {
+    return mobile.SendError(c, 400, mobile.NewError(
+        mobile.ErrInvalidRequest,
+        "Missing required field",
+    ))
+}
+```
+
+### With HTTP Status Codes
+
+| Error Code | HTTP Status | When to Use |
+|-----------|-------------|-------------|
+| `invalid_request` | 400 | Bad request format |
+| `validation_error` | 400 | Field validation failed |
+| `unauthorized` | 401 | Authentication required |
+| `forbidden` | 403 | Permission denied |
+| `not_found` | 404 | Resource not found |
+| `conflict` | 409 | Resource conflict |
+| `rate_limited` | 429 | Too many requests |
+| `upgrade_required` | 426 | App update needed |
+| `maintenance` | 503 | Service unavailable |
+| `internal_error` | 500 | Server error |
+
+## Common Patterns
+
+### Authentication Errors
+
+```go
+func authMiddleware() mizu.Middleware {
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            token := c.Request().Header.Get("Authorization")
+
+            if token == "" {
+                return mobile.SendError(c, 401, mobile.NewError(
+                    mobile.ErrUnauthorized,
+                    "Authentication required",
+                ).WithDetails("reason", "missing_token"))
+            }
+
+            user, err := validateToken(token)
+            if err != nil {
+                return mobile.SendError(c, 401, mobile.NewError(
+                    mobile.ErrUnauthorized,
+                    "Invalid token",
+                ).WithDetails("reason", err.Error()))
+            }
+
+            // Continue with authenticated user
+            return next(c)
+        }
+    }
+}
+```
+
+### Validation Errors
+
+```go
+type CreateUserRequest struct {
+    Email    string `json:"email"`
+    Password string `json:"password"`
+    Name     string `json:"name"`
+}
+
+func createUser(c *mizu.Ctx) error {
+    var req CreateUserRequest
+    if err := c.BodyJSON(&req); err != nil {
+        return mobile.SendError(c, 400, mobile.NewError(
+            mobile.ErrInvalidRequest,
+            "Invalid JSON body",
+        ))
+    }
+
+    // Validate fields
+    errors := make(map[string]string)
+
+    if req.Email == "" {
+        errors["email"] = "required"
+    } else if !isValidEmail(req.Email) {
+        errors["email"] = "invalid format"
+    }
+
+    if len(req.Password) < 8 {
+        errors["password"] = "minimum 8 characters"
+    }
+
+    if req.Name == "" {
+        errors["name"] = "required"
+    }
+
+    if len(errors) > 0 {
+        return mobile.SendError(c, 400, mobile.NewError(
+            mobile.ErrValidation,
+            "Validation failed",
+        ).WithDetails("errors", errors))
+    }
+
+    // Create user...
+    return c.JSON(201, user)
+}
+```
+
+Response:
+```json
+{
+  "code": "validation_error",
+  "message": "Validation failed",
+  "details": {
+    "errors": {
+      "email": "invalid format",
+      "password": "minimum 8 characters"
+    }
+  }
+}
+```
+
+### Not Found Errors
+
+```go
+func getUser(c *mizu.Ctx) error {
+    id := c.Param("id")
+
+    user, err := db.GetUser(id)
+    if err == sql.ErrNoRows {
+        return mobile.SendError(c, 404, mobile.NewError(
+            mobile.ErrNotFound,
+            "User not found",
+        ).WithDetails("id", id))
+    }
+    if err != nil {
+        return mobile.SendError(c, 500, mobile.NewError(
+            mobile.ErrInternal,
+            "Failed to fetch user",
+        ))
+    }
+
+    return c.JSON(200, user)
+}
+```
+
+### Rate Limiting Errors
+
+```go
+func rateLimitHandler(c *mizu.Ctx) error {
+    return mobile.SendError(c, 429, mobile.NewError(
+        mobile.ErrRateLimited,
+        "Too many requests",
+    ).WithDetails("retry_after", 60).
+      WithDetails("limit", 100).
+      WithDetails("remaining", 0))
+}
+```
+
+### Upgrade Required
+
+```go
+func checkVersion(c *mizu.Ctx) error {
+    device := mobile.DeviceFromCtx(c)
+
+    if mobile.CompareVersions(device.AppVersion, "2.0.0") < 0 {
+        return mobile.SendError(c, 426, mobile.NewError(
+            mobile.ErrUpgradeRequired,
+            "Please update to the latest version",
+        ).WithDetails("current_version", device.AppVersion).
+          WithDetails("minimum_version", "2.0.0").
+          WithDetails("store_url", getStoreURL(device.Platform)))
+    }
+
+    return nil
+}
+```
+
+### Maintenance Mode
+
+```go
+func maintenanceMiddleware(enabled bool, endTime time.Time) mizu.Middleware {
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            if enabled {
+                return mobile.SendError(c, 503, mobile.NewError(
+                    mobile.ErrMaintenance,
+                    "Service is under maintenance",
+                ).WithDetails("end_time", endTime.Format(time.RFC3339)).
+                  WithDetails("message", "We'll be back shortly"))
+            }
+            return next(c)
+        }
+    }
+}
+```
+
+## Error Response Format
+
+All errors follow a consistent format:
+
+```json
+{
+  "code": "error_code",
+  "message": "Human-readable message",
+  "details": {
+    "field1": "value1",
+    "field2": "value2"
+  },
+  "trace_id": "request-trace-id"
+}
+```
+
+### Adding Trace IDs
+
+```go
+app.Use(func(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        // Get or generate trace ID
+        traceID := c.Request().Header.Get("X-Request-ID")
+        if traceID == "" {
+            traceID = generateTraceID()
+        }
+
+        // Store in context for error handlers
+        c.Set("trace_id", traceID)
+
+        // Add to response header
+        c.Header().Set("X-Request-ID", traceID)
+
+        return next(c)
+    }
+})
+
+func handler(c *mizu.Ctx) error {
+    traceID := c.Get("trace_id").(string)
+
+    return mobile.SendError(c, 500, mobile.NewError(
+        mobile.ErrInternal,
+        "Something went wrong",
+    ).WithTraceID(traceID))
+}
+```
+
+## Client Implementation
+
+### iOS (Swift)
+
+```swift
+struct APIError: Decodable {
+    let code: String
+    let message: String
+    let details: [String: AnyCodable]?
+    let traceId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case code, message, details
+        case traceId = "trace_id"
+    }
+}
+
+enum APIErrorCode: String {
+    case invalidRequest = "invalid_request"
+    case unauthorized = "unauthorized"
+    case forbidden = "forbidden"
+    case notFound = "not_found"
+    case validation = "validation_error"
+    case rateLimited = "rate_limited"
+    case upgradeRequired = "upgrade_required"
+    case maintenance = "maintenance"
+    case internalError = "internal_error"
+}
+
+class APIClient {
+    func handleError(_ data: Data, statusCode: Int) -> Error {
+        guard let error = try? JSONDecoder().decode(APIError.self, from: data) else {
+            return GenericError(message: "Unknown error", code: statusCode)
+        }
+
+        switch APIErrorCode(rawValue: error.code) {
+        case .unauthorized:
+            return AuthError.unauthorized(error.message)
+        case .upgradeRequired:
+            let storeURL = error.details?["store_url"]?.value as? String
+            return UpgradeRequiredError(storeURL: storeURL)
+        case .validation:
+            let errors = error.details?["errors"]?.value as? [String: String]
+            return ValidationError(fields: errors ?? [:])
+        default:
+            return GenericError(message: error.message, code: statusCode)
+        }
+    }
+}
+```
+
+### Android (Kotlin)
+
+```kotlin
+data class ApiError(
+    val code: String,
+    val message: String,
+    val details: Map<String, Any>? = null,
+    @SerializedName("trace_id") val traceId: String? = null
+)
+
+sealed class ApiException(message: String) : Exception(message) {
+    class Unauthorized(message: String) : ApiException(message)
+    class NotFound(message: String) : ApiException(message)
+    class ValidationError(val errors: Map<String, String>) : ApiException("Validation failed")
+    class UpgradeRequired(val storeUrl: String?) : ApiException("Update required")
+    class Maintenance(val endTime: String?) : ApiException("Under maintenance")
+    class Unknown(message: String) : ApiException(message)
+}
+
+fun parseError(response: Response): ApiException {
+    val error = response.body?.let {
+        gson.fromJson(it.string(), ApiError::class.java)
+    } ?: return ApiException.Unknown("Unknown error")
+
+    return when (error.code) {
+        "unauthorized" -> ApiException.Unauthorized(error.message)
+        "not_found" -> ApiException.NotFound(error.message)
+        "validation_error" -> {
+            @Suppress("UNCHECKED_CAST")
+            val errors = error.details?.get("errors") as? Map<String, String> ?: emptyMap()
+            ApiException.ValidationError(errors)
+        }
+        "upgrade_required" -> {
+            val storeUrl = error.details?.get("store_url") as? String
+            ApiException.UpgradeRequired(storeUrl)
+        }
+        "maintenance" -> {
+            val endTime = error.details?.get("end_time") as? String
+            ApiException.Maintenance(endTime)
+        }
+        else -> ApiException.Unknown(error.message)
+    }
+}
+```
+
+### Flutter (Dart)
+
+```dart
+class ApiError {
+  final String code;
+  final String message;
+  final Map<String, dynamic>? details;
+  final String? traceId;
+
+  ApiError({
+    required this.code,
+    required this.message,
+    this.details,
+    this.traceId,
+  });
+
+  factory ApiError.fromJson(Map<String, dynamic> json) {
+    return ApiError(
+      code: json['code'],
+      message: json['message'],
+      details: json['details'],
+      traceId: json['trace_id'],
+    );
+  }
+}
+
+class ApiException implements Exception {
+  final ApiError error;
+  final int statusCode;
+
+  ApiException(this.error, this.statusCode);
+
+  bool get isUnauthorized => error.code == 'unauthorized';
+  bool get isNotFound => error.code == 'not_found';
+  bool get isValidationError => error.code == 'validation_error';
+  bool get isUpgradeRequired => error.code == 'upgrade_required';
+  bool get isMaintenance => error.code == 'maintenance';
+
+  Map<String, String>? get validationErrors {
+    if (!isValidationError) return null;
+    return (error.details?['errors'] as Map?)?.cast<String, String>();
+  }
+
+  String? get storeUrl => error.details?['store_url'];
+}
+```
+
+## Best Practices
+
+### Use Appropriate Status Codes
+
+- **400** - Client error (bad input)
+- **401** - Authentication required
+- **403** - Permission denied
+- **404** - Resource not found
+- **409** - Conflict (duplicate, etc.)
+- **422** - Validation error (alternative to 400)
+- **426** - Upgrade required
+- **429** - Rate limited
+- **500** - Server error
+- **503** - Maintenance
+
+### Be Specific in Error Messages
+
+```go
+// Bad
+mobile.NewError(mobile.ErrValidation, "Invalid input")
+
+// Good
+mobile.NewError(mobile.ErrValidation, "Email address is invalid").
+    WithDetails("field", "email").
+    WithDetails("provided", user.Email).
+    WithDetails("expected", "valid email format")
+```
+
+### Include Actionable Information
+
+```go
+// Rate limit with retry info
+mobile.NewError(mobile.ErrRateLimited, "Too many requests").
+    WithDetails("retry_after", 60)
+
+// Upgrade with store URL
+mobile.NewError(mobile.ErrUpgradeRequired, "Update required").
+    WithDetails("store_url", "https://apps.apple.com/...")
+```
+
+### Log Errors Server-Side
+
+```go
+func errorLogger() mizu.Middleware {
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            err := next(c)
+            if err != nil {
+                log.Error("Request failed",
+                    "error", err,
+                    "path", c.Request().URL.Path,
+                    "method", c.Request().Method,
+                    "device", mobile.DeviceFromCtx(c).DeviceID,
+                )
+            }
+            return err
+        }
+    }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Pagination" href="/mobile/pagination" icon="list">
+    Page and cursor-based pagination
+  </Card>
+  <Card title="Offline Sync" href="/mobile/sync" icon="arrows-rotate">
+    Delta synchronization
+  </Card>
+  <Card title="API Reference" href="/mobile/api-reference" icon="book">
+    Complete API documentation
+  </Card>
+</CardGroup>

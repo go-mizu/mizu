@@ -1,0 +1,482 @@
+---
+title: "Device Detection"
+description: "Parse and validate device information from mobile clients."
+icon: "mobile-screen"
+---
+
+The mobile middleware automatically parses device information from HTTP headers and User-Agent strings, providing rich context about the client device in your handlers.
+
+## Quick Start
+
+```go
+import "github.com/go-mizu/mizu/mobile"
+
+app := mizu.New()
+
+// Add mobile middleware
+app.Use(mobile.New())
+
+app.Get("/api/profile", func(c *mizu.Ctx) error {
+    device := mobile.DeviceFromCtx(c)
+
+    return c.JSON(200, map[string]any{
+        "platform":    device.Platform.String(),
+        "os_version":  device.OSVersion,
+        "app_version": device.AppVersion,
+        "device_id":   device.DeviceID,
+        "model":       device.DeviceModel,
+        "timezone":    device.Timezone,
+        "locale":      device.Locale,
+    })
+})
+```
+
+## The Device Struct
+
+```go
+type Device struct {
+    // Platform is the operating system (ios, android, windows, etc.)
+    Platform Platform
+
+    // OSVersion is the OS version (e.g., "17.0", "14.0")
+    OSVersion string
+
+    // AppVersion is the client app version (e.g., "1.2.3")
+    AppVersion string
+
+    // AppBuild is the build number (e.g., "123", "2024.01.15")
+    AppBuild string
+
+    // DeviceID is a unique device identifier
+    DeviceID string
+
+    // DeviceModel is the device model (e.g., "iPhone15,2", "Pixel 8")
+    DeviceModel string
+
+    // Locale is the device locale (e.g., "en-US", "ja-JP")
+    Locale string
+
+    // Timezone is the IANA timezone (e.g., "America/New_York")
+    Timezone string
+
+    // PushToken is the push notification token (if provided)
+    PushToken string
+
+    // PushProvider is APNS, FCM, or WNS
+    PushProvider PushProvider
+
+    // UserAgent is the raw User-Agent header
+    UserAgent string
+}
+```
+
+## Platform Types
+
+The `Platform` type represents the client operating system:
+
+```go
+const (
+    PlatformIOS     Platform = "ios"
+    PlatformAndroid Platform = "android"
+    PlatformWindows Platform = "windows"
+    PlatformMacOS   Platform = "macos"
+    PlatformWeb     Platform = "web"
+    PlatformUnknown Platform = "unknown"
+)
+```
+
+### Platform Methods
+
+```go
+// String returns the platform as a string
+device.Platform.String() // "ios"
+
+// IsMobile returns true for iOS and Android
+device.Platform.IsMobile() // true
+
+// IsDesktop returns true for Windows and macOS
+device.Platform.IsDesktop() // false
+
+// IsNative returns true for all except web and unknown
+device.Platform.IsNative() // true
+```
+
+## Header Parsing
+
+The middleware parses these standard headers:
+
+| Header | Field | Example |
+|--------|-------|---------|
+| `X-Device-ID` | DeviceID | `550e8400-e29b-41d4-a716-446655440000` |
+| `X-App-Version` | AppVersion | `2.1.0` |
+| `X-App-Build` | AppBuild | `2024.01.15` |
+| `X-Device-Model` | DeviceModel | `iPhone15,2` |
+| `X-Platform` | Platform | `ios` |
+| `X-OS-Version` | OSVersion | `17.0` |
+| `X-Timezone` | Timezone | `America/New_York` |
+| `X-Locale` | Locale | `en-US` |
+| `X-Push-Token` | PushToken | `abc123...` |
+
+### Platform Detection Priority
+
+1. **Explicit header** - `X-Platform` header takes priority
+2. **User-Agent parsing** - Falls back to User-Agent analysis
+3. **Unknown** - Default if no detection succeeds
+
+```go
+// Header takes priority
+// Request: X-Platform: ios
+device.Platform // PlatformIOS
+
+// Falls back to User-Agent
+// Request: User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_0...)
+device.Platform // PlatformIOS
+```
+
+## Configuration Options
+
+### Basic Options
+
+```go
+app.Use(mobile.WithOptions(mobile.Options{
+    // Require X-Device-ID header
+    RequireDeviceID: true,
+
+    // Require X-App-Version header
+    RequireAppVersion: true,
+
+    // Skip specific paths
+    SkipPaths: []string{"/health", "/metrics"},
+}))
+```
+
+### Platform Restrictions
+
+```go
+app.Use(mobile.WithOptions(mobile.Options{
+    // Only allow iOS and Android
+    AllowedPlatforms: []mobile.Platform{
+        mobile.PlatformIOS,
+        mobile.PlatformAndroid,
+    },
+}))
+```
+
+### Minimum App Version
+
+```go
+app.Use(mobile.WithOptions(mobile.Options{
+    RequireAppVersion: true,
+    MinAppVersion:     "1.5.0",
+}))
+```
+
+Requests with versions below 1.5.0 receive:
+
+```json
+{
+  "code": "upgrade_required",
+  "message": "Please update to the latest version",
+  "details": {
+    "current_version": "1.4.0",
+    "minimum_version": "1.5.0"
+  }
+}
+```
+
+With response header: `X-Min-App-Version: 1.5.0`
+
+### Custom Error Handlers
+
+```go
+app.Use(mobile.WithOptions(mobile.Options{
+    RequireDeviceID: true,
+
+    OnMissingHeader: func(c *mizu.Ctx, header string) error {
+        return c.JSON(400, map[string]string{
+            "error": "Missing header: " + header,
+        })
+    },
+
+    OnUnsupportedPlatform: func(c *mizu.Ctx, platform mobile.Platform) error {
+        return c.JSON(400, map[string]string{
+            "error": "Platform not supported: " + platform.String(),
+        })
+    },
+
+    OnOutdatedApp: func(c *mizu.Ctx, version, minimum string) error {
+        return c.JSON(426, map[string]any{
+            "error":           "Update required",
+            "current_version": version,
+            "minimum_version": minimum,
+            "store_url":       "https://apps.apple.com/app/id123",
+        })
+    },
+}))
+```
+
+### Performance Optimization
+
+```go
+app.Use(mobile.WithOptions(mobile.Options{
+    // Skip User-Agent parsing for performance
+    // Only use explicit headers
+    SkipUserAgent: true,
+}))
+```
+
+## Using Device Context
+
+### Access in Handlers
+
+```go
+func handler(c *mizu.Ctx) error {
+    device := mobile.DeviceFromCtx(c)
+
+    // Device may be nil if middleware not applied
+    if device == nil {
+        return c.JSON(400, "Device context not available")
+    }
+
+    // Use device info
+    log.Printf("Request from %s app v%s",
+        device.Platform, device.AppVersion)
+
+    return c.JSON(200, data)
+}
+```
+
+### Platform-Specific Logic
+
+```go
+func handler(c *mizu.Ctx) error {
+    device := mobile.DeviceFromCtx(c)
+
+    response := map[string]any{
+        "features": getFeatures(),
+    }
+
+    switch device.Platform {
+    case mobile.PlatformIOS:
+        response["store_url"] = "https://apps.apple.com/app/id123"
+        response["review_url"] = "https://apps.apple.com/app/id123?action=write-review"
+
+    case mobile.PlatformAndroid:
+        response["store_url"] = "https://play.google.com/store/apps/details?id=com.example"
+        response["review_url"] = "market://details?id=com.example"
+
+    case mobile.PlatformWeb:
+        response["signup_url"] = "https://example.com/signup"
+    }
+
+    return c.JSON(200, response)
+}
+```
+
+### Version-Based Features
+
+```go
+func handler(c *mizu.Ctx) error {
+    device := mobile.DeviceFromCtx(c)
+
+    features := map[string]bool{
+        "dark_mode": true,
+        "biometrics": true,
+    }
+
+    // Feature requires app version 2.0+
+    if mobile.CompareVersions(device.AppVersion, "2.0.0") >= 0 {
+        features["widgets"] = true
+    }
+
+    // Feature requires iOS 16+
+    if device.Platform == mobile.PlatformIOS {
+        if mobile.CompareVersions(device.OSVersion, "16.0") >= 0 {
+            features["live_activities"] = true
+        }
+    }
+
+    return c.JSON(200, features)
+}
+```
+
+### Timezone-Aware Responses
+
+```go
+func handler(c *mizu.Ctx) error {
+    device := mobile.DeviceFromCtx(c)
+
+    loc, err := time.LoadLocation(device.Timezone)
+    if err != nil {
+        loc = time.UTC
+    }
+
+    events := getEvents()
+    for i := range events {
+        events[i].LocalTime = events[i].Time.In(loc).Format(time.RFC3339)
+    }
+
+    return c.JSON(200, events)
+}
+```
+
+### Localized Responses
+
+```go
+func handler(c *mizu.Ctx) error {
+    device := mobile.DeviceFromCtx(c)
+
+    // Parse locale
+    lang := "en"
+    if device.Locale != "" {
+        lang = strings.Split(device.Locale, "-")[0]
+    }
+
+    messages := map[string]map[string]string{
+        "en": {"welcome": "Welcome!"},
+        "es": {"welcome": "Bienvenido!"},
+        "ja": {"welcome": "ようこそ!"},
+    }
+
+    msg, ok := messages[lang]
+    if !ok {
+        msg = messages["en"]
+    }
+
+    return c.JSON(200, msg)
+}
+```
+
+## User-Agent Patterns
+
+The middleware recognizes these User-Agent patterns:
+
+**iOS:**
+```
+Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)...
+Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)...
+```
+
+**Android:**
+```
+Mozilla/5.0 (Linux; Android 14; Pixel 8)...
+```
+
+**Windows:**
+```
+Mozilla/5.0 (Windows NT 10.0; Win64; x64)...
+```
+
+**macOS:**
+```
+Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)...
+```
+
+## Client Implementation
+
+### iOS (Swift)
+
+```swift
+extension URLRequest {
+    mutating func addMizuHeaders(deviceId: String) {
+        setValue(deviceId, forHTTPHeaderField: "X-Device-ID")
+        setValue(Bundle.main.appVersion, forHTTPHeaderField: "X-App-Version")
+        setValue(Bundle.main.buildNumber, forHTTPHeaderField: "X-App-Build")
+        setValue(UIDevice.current.modelIdentifier, forHTTPHeaderField: "X-Device-Model")
+        setValue("ios", forHTTPHeaderField: "X-Platform")
+        setValue(UIDevice.current.systemVersion, forHTTPHeaderField: "X-OS-Version")
+        setValue(TimeZone.current.identifier, forHTTPHeaderField: "X-Timezone")
+        setValue(Locale.current.identifier, forHTTPHeaderField: "X-Locale")
+    }
+}
+
+extension Bundle {
+    var appVersion: String {
+        infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+    }
+    var buildNumber: String {
+        infoDictionary?["CFBundleVersion"] as? String ?? "0"
+    }
+}
+```
+
+### Android (Kotlin)
+
+```kotlin
+class MizuHeaderInterceptor(
+    private val context: Context,
+    private val deviceId: String
+) : Interceptor {
+
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request().newBuilder()
+            .header("X-Device-ID", deviceId)
+            .header("X-App-Version", BuildConfig.VERSION_NAME)
+            .header("X-App-Build", BuildConfig.VERSION_CODE.toString())
+            .header("X-Device-Model", Build.MODEL)
+            .header("X-Platform", "android")
+            .header("X-OS-Version", Build.VERSION.RELEASE)
+            .header("X-Timezone", TimeZone.getDefault().id)
+            .header("X-Locale", Locale.getDefault().toLanguageTag())
+            .build()
+
+        return chain.proceed(request)
+    }
+}
+```
+
+### Flutter (Dart)
+
+```dart
+class MizuClient {
+  final String deviceId;
+  final PackageInfo packageInfo;
+
+  Map<String, String> get headers => {
+    'X-Device-ID': deviceId,
+    'X-App-Version': packageInfo.version,
+    'X-App-Build': packageInfo.buildNumber,
+    'X-Platform': Platform.operatingSystem,
+    'X-OS-Version': Platform.operatingSystemVersion,
+    'X-Timezone': DateTime.now().timeZoneName,
+    'X-Locale': Platform.localeName,
+  };
+}
+```
+
+### React Native (TypeScript)
+
+```typescript
+import DeviceInfo from 'react-native-device-info';
+import { Platform, NativeModules } from 'react-native';
+
+const getMizuHeaders = async () => ({
+  'X-Device-ID': await DeviceInfo.getUniqueId(),
+  'X-App-Version': DeviceInfo.getVersion(),
+  'X-App-Build': DeviceInfo.getBuildNumber(),
+  'X-Device-Model': DeviceInfo.getModel(),
+  'X-Platform': Platform.OS,
+  'X-OS-Version': Platform.Version.toString(),
+  'X-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone,
+  'X-Locale': NativeModules.SettingsManager?.settings?.AppleLocale
+    ?? NativeModules.I18nManager?.localeIdentifier
+    ?? 'en-US',
+});
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="API Versioning" href="/mobile/versioning" icon="code-branch">
+    Manage API versions with deprecation warnings
+  </Card>
+  <Card title="Structured Errors" href="/mobile/errors" icon="circle-exclamation">
+    Return consistent error responses
+  </Card>
+  <Card title="Push Notifications" href="/mobile/push" icon="bell">
+    Handle push token registration
+  </Card>
+  <Card title="API Reference" href="/mobile/api-reference" icon="book">
+    Complete API documentation
+  </Card>
+</CardGroup>

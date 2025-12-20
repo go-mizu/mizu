@@ -1,0 +1,231 @@
+---
+title: "Overview"
+description: "Build production-ready mobile backends with Mizu's comprehensive mobile integration."
+icon: "mobile"
+---
+
+Mizu provides powerful mobile backend integration that handles the unique requirements of iOS, Android, and cross-platform applications. Whether you're building a native Swift app, a Flutter application, or a React Native project, Mizu has you covered.
+
+## What is Mizu Mobile?
+
+The mobile package provides everything you need to build robust mobile backends:
+
+**Device Detection:**
+- Parse device information from headers and User-Agent
+- Platform detection (iOS, Android, Windows, macOS)
+- App version tracking and validation
+- Device model and locale information
+
+**API Versioning:**
+- Semantic version middleware with deprecation warnings
+- Version detection from headers, query params, or URL paths
+- Graceful version migration support
+
+**Offline Sync:**
+- Delta synchronization with opaque sync tokens
+- Conflict resolution strategies
+- Full sync and incremental sync support
+
+**Push Notifications:**
+- Cross-platform token management (APNS, FCM, WNS)
+- Token validation and provider detection
+- Unified payload format with platform conversion
+
+**Deep Links:**
+- Universal Links for iOS (apple-app-site-association)
+- App Links for Android (assetlinks.json)
+- Smart fallback to web
+
+**App Store Integration:**
+- Version checking and force updates
+- Maintenance mode support
+- Platform-specific store URLs
+
+## Supported Platforms
+
+Mizu supports native and cross-platform development:
+
+| Platform | Framework | Template |
+|----------|-----------|----------|
+| **iOS** | Swift + SwiftUI | `mobile/ios` |
+| **Android** | Kotlin + Compose | `mobile/android` |
+| **Flutter** | Dart + Riverpod | `mobile/flutter` |
+| **React Native** | TypeScript + Expo | `mobile/reactnative` |
+| **PWA** | React + Vite | `mobile/pwa` |
+| **KMM** | Kotlin Multiplatform | `mobile/kmm` |
+| **.NET MAUI** | C# + MVVM | `mobile/dotnet` |
+| **Unity** | C# | `mobile/game` |
+
+## How It Works
+
+### Request Flow
+
+```
+Mobile App Request
+    ↓
+┌──────────────────────────────────┐
+│ Mobile Middleware                 │
+│ - Parse device headers           │
+│ - Validate app version           │
+│ - Check platform                 │
+└──────────────┬───────────────────┘
+               ↓
+┌──────────────────────────────────┐
+│ Version Middleware (optional)     │
+│ - Parse API version              │
+│ - Set deprecation headers        │
+└──────────────┬───────────────────┘
+               ↓
+┌──────────────────────────────────┐
+│ Your Handler                      │
+│ - Access device via DeviceFromCtx│
+│ - Version-aware logic            │
+│ - Return structured response     │
+└──────────────────────────────────┘
+```
+
+### Mobile Headers
+
+The middleware parses standard mobile headers:
+
+**Request Headers:**
+```
+X-Device-ID: 550e8400-e29b-41d4-a716-446655440000
+X-App-Version: 2.1.0
+X-App-Build: 2024.01.15
+X-Device-Model: iPhone15,2
+X-Platform: ios
+X-OS-Version: 17.0
+X-Timezone: America/New_York
+X-Locale: en-US
+X-API-Version: v2
+```
+
+**Response Headers:**
+```
+X-API-Version: v2
+X-API-Deprecated: true
+X-Min-App-Version: 1.5.0
+X-Sync-Token: abc123...
+```
+
+## Feature Comparison
+
+### Native vs Cross-Platform
+
+| Feature | Native (iOS/Android) | Cross-Platform |
+|---------|---------------------|----------------|
+| **Performance** | Best | Good to Excellent |
+| **Platform APIs** | Full access | Limited/bridged |
+| **Development time** | Longer | Shorter |
+| **Code sharing** | None | High |
+| **Team expertise** | Platform-specific | Single codebase |
+| **App size** | Smaller | Larger |
+
+**Choose Native when:**
+- Maximum performance is critical
+- Deep platform integration needed
+- Separate iOS/Android teams available
+- Platform-specific UX required
+
+**Choose Cross-Platform when:**
+- Faster time to market needed
+- Single development team
+- Consistent UX across platforms
+- Budget constraints
+
+### When to Use Mizu Mobile
+
+Mizu Mobile is ideal for:
+
+- **Offline-first apps** - Built-in sync support
+- **Multi-platform backends** - Single Go backend for all clients
+- **Version-managed APIs** - Graceful deprecation and migration
+- **Push-enabled apps** - Cross-platform push token management
+- **Deep-linked apps** - Universal/App Links support
+
+## Quick Comparison
+
+### Traditional REST vs Mizu Mobile
+
+**Traditional REST:**
+```go
+app.Get("/api/users", func(c *mizu.Ctx) error {
+    // No device context
+    // No version awareness
+    // Manual header parsing
+    return c.JSON(200, users)
+})
+```
+
+**Mizu Mobile:**
+```go
+app.Use(mobile.New())
+app.Use(mobile.VersionMiddleware(mobile.VersionOptions{
+    Supported: []mobile.Version{{2, 0}, {1, 0}},
+}))
+
+app.Get("/api/users", func(c *mizu.Ctx) error {
+    device := mobile.DeviceFromCtx(c)
+    version := mobile.VersionFromCtx(c)
+
+    // Platform-specific response
+    if device.Platform == mobile.PlatformIOS {
+        // iOS-optimized response
+    }
+
+    // Version-aware logic
+    if version.AtLeast(2, 0) {
+        return c.JSON(200, v2Users)
+    }
+    return c.JSON(200, v1Users)
+})
+```
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     Mobile Clients                       │
+│  iOS App   Android App   Flutter   React Native   PWA   │
+└────────────────────────┬────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│                    Mizu Backend                          │
+│  ┌─────────────┐  ┌──────────────┐  ┌───────────────┐  │
+│  │   Mobile    │  │   Version    │  │    Your       │  │
+│  │ Middleware  │→ │  Middleware  │→ │   Handlers    │  │
+│  └─────────────┘  └──────────────┘  └───────────────┘  │
+│                                                          │
+│  ┌─────────────┐  ┌──────────────┐  ┌───────────────┐  │
+│  │    Sync     │  │    Push      │  │  Deep Links   │  │
+│  │   Engine    │  │   Tokens     │  │   Handler     │  │
+│  └─────────────┘  └──────────────┘  └───────────────┘  │
+└─────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+         ┌───────────────┴───────────────┐
+         │           Database             │
+         │  Users, Data, Push Tokens      │
+         └───────────────────────────────┘
+```
+
+## What's Next?
+
+Ready to build your first mobile backend with Mizu?
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" href="/mobile/quick-start" icon="rocket">
+    Create your first mobile backend in minutes
+  </Card>
+  <Card title="Device Detection" href="/mobile/device" icon="mobile-screen">
+    Learn about device parsing and validation
+  </Card>
+  <Card title="iOS Guide" href="/mobile/ios" icon="apple">
+    Build a native iOS app with Mizu
+  </Card>
+  <Card title="Flutter Guide" href="/mobile/flutter" icon="layer-group">
+    Build a cross-platform Flutter app
+  </Card>
+</CardGroup>

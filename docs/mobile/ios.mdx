@@ -1,0 +1,575 @@
+---
+title: "iOS"
+description: "Build native iOS apps with Swift, SwiftUI, and Mizu backend integration."
+icon: "apple"
+---
+
+Build native iOS applications with Swift and SwiftUI that seamlessly integrate with your Mizu backend. The iOS template provides a complete project structure with networking, state management, and platform best practices.
+
+## Quick Start
+
+```bash
+mizu new ./my-ios-app --template mobile/ios
+```
+
+This creates a complete iOS project with:
+
+- Swift + SwiftUI architecture
+- Pre-configured Mizu API client
+- Authentication flow
+- Offline support foundation
+- Push notification setup
+
+## Project Structure
+
+```
+my-ios-app/
+├── backend/                    # Mizu Go backend
+│   ├── cmd/server/
+│   │   └── main.go
+│   ├── app/server/
+│   │   ├── app.go
+│   │   ├── config.go
+│   │   └── routes.go
+│   ├── go.mod
+│   └── Makefile
+│
+├── ios/                        # iOS app
+│   ├── App/
+│   │   ├── MyApp.swift         # App entry point
+│   │   ├── ContentView.swift
+│   │   └── AppDelegate.swift
+│   ├── Core/
+│   │   ├── API/
+│   │   │   ├── APIClient.swift
+│   │   │   ├── APIError.swift
+│   │   │   └── Endpoints.swift
+│   │   ├── Auth/
+│   │   │   ├── AuthManager.swift
+│   │   │   └── KeychainHelper.swift
+│   │   └── Storage/
+│   │       └── UserDefaults+Extensions.swift
+│   ├── Features/
+│   │   ├── Home/
+│   │   ├── Profile/
+│   │   └── Settings/
+│   ├── Shared/
+│   │   ├── Components/
+│   │   ├── Extensions/
+│   │   └── Modifiers/
+│   ├── Resources/
+│   │   └── Assets.xcassets
+│   └── MyApp.xcodeproj
+│
+└── Makefile
+```
+
+## Template Options
+
+```bash
+mizu new ./my-app --template mobile/ios \
+  --var name=MyApp \
+  --var bundleId=com.example.myapp \
+  --var minIOS=16.0 \
+  --var ui=swiftui
+```
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `name` | Project name | Directory name |
+| `bundleId` | Bundle identifier | `com.example.{{name}}` |
+| `minIOS` | Minimum iOS version | `16.0` |
+| `ui` | UI framework: `swiftui`, `uikit`, `hybrid` | `swiftui` |
+
+## API Client
+
+The template includes a pre-configured API client:
+
+```swift
+// Core/API/APIClient.swift
+class APIClient {
+    static let shared = APIClient()
+
+    private let baseURL: URL
+    private let session: URLSession
+    private let deviceID: String
+
+    init() {
+        self.baseURL = URL(string: Configuration.apiBaseURL)!
+        self.deviceID = DeviceInfo.uniqueID
+
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.httpAdditionalHeaders = [
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        ]
+        self.session = URLSession(configuration: config)
+    }
+
+    func request<T: Decodable>(_ endpoint: Endpoint) async throws -> T {
+        var request = URLRequest(url: baseURL.appendingPathComponent(endpoint.path))
+        request.httpMethod = endpoint.method.rawValue
+
+        // Add mobile headers
+        request.addMizuHeaders(deviceID: deviceID)
+
+        // Add auth if available
+        if let token = AuthManager.shared.accessToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        // Add body
+        if let body = endpoint.body {
+            request.httpBody = try JSONEncoder().encode(body)
+        }
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+
+        // Handle errors
+        if httpResponse.statusCode >= 400 {
+            let error = try JSONDecoder().decode(APIErrorResponse.self, from: data)
+            throw APIError.server(error, statusCode: httpResponse.statusCode)
+        }
+
+        // Check deprecation warning
+        if httpResponse.value(forHTTPHeaderField: "X-API-Deprecated") == "true" {
+            NotificationCenter.default.post(name: .apiDeprecated, object: nil)
+        }
+
+        return try JSONDecoder().decode(T.self, from: data)
+    }
+}
+
+// Add Mizu headers
+extension URLRequest {
+    mutating func addMizuHeaders(deviceID: String) {
+        setValue(deviceID, forHTTPHeaderField: "X-Device-ID")
+        setValue(Bundle.main.appVersion, forHTTPHeaderField: "X-App-Version")
+        setValue(Bundle.main.buildNumber, forHTTPHeaderField: "X-App-Build")
+        setValue(UIDevice.current.modelIdentifier, forHTTPHeaderField: "X-Device-Model")
+        setValue("ios", forHTTPHeaderField: "X-Platform")
+        setValue(UIDevice.current.systemVersion, forHTTPHeaderField: "X-OS-Version")
+        setValue(TimeZone.current.identifier, forHTTPHeaderField: "X-Timezone")
+        setValue(Locale.current.identifier, forHTTPHeaderField: "X-Locale")
+        setValue("v2", forHTTPHeaderField: "X-API-Version")
+    }
+}
+```
+
+## Authentication
+
+```swift
+// Core/Auth/AuthManager.swift
+@MainActor
+class AuthManager: ObservableObject {
+    static let shared = AuthManager()
+
+    @Published var isAuthenticated = false
+    @Published var currentUser: User?
+
+    private let keychain = KeychainHelper.shared
+
+    var accessToken: String? {
+        keychain.read(key: "access_token")
+    }
+
+    func login(email: String, password: String) async throws {
+        let response: AuthResponse = try await APIClient.shared.request(
+            .login(email: email, password: password)
+        )
+
+        keychain.save(response.accessToken, key: "access_token")
+        keychain.save(response.refreshToken, key: "refresh_token")
+
+        currentUser = response.user
+        isAuthenticated = true
+    }
+
+    func logout() {
+        keychain.delete(key: "access_token")
+        keychain.delete(key: "refresh_token")
+        currentUser = nil
+        isAuthenticated = false
+    }
+
+    func refreshTokenIfNeeded() async throws {
+        guard let refreshToken = keychain.read(key: "refresh_token") else {
+            throw AuthError.notAuthenticated
+        }
+
+        let response: RefreshResponse = try await APIClient.shared.request(
+            .refreshToken(token: refreshToken)
+        )
+
+        keychain.save(response.accessToken, key: "access_token")
+    }
+}
+```
+
+## SwiftUI Integration
+
+### App Entry Point
+
+```swift
+// App/MyApp.swift
+@main
+struct MyApp: App {
+    @StateObject private var authManager = AuthManager.shared
+    @StateObject private var appState = AppState()
+
+    init() {
+        // Configure appearance
+        configureAppearance()
+
+        // Check for updates
+        Task {
+            await AppUpdateManager.shared.checkForUpdates()
+        }
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            Group {
+                if authManager.isAuthenticated {
+                    MainTabView()
+                } else {
+                    LoginView()
+                }
+            }
+            .environmentObject(authManager)
+            .environmentObject(appState)
+        }
+    }
+}
+```
+
+### View Model Pattern
+
+```swift
+// Features/Home/HomeViewModel.swift
+@MainActor
+class HomeViewModel: ObservableObject {
+    @Published var items: [Item] = []
+    @Published var isLoading = false
+    @Published var error: Error?
+
+    func loadItems() async {
+        isLoading = true
+        error = nil
+
+        do {
+            let response: PageResponse<Item> = try await APIClient.shared.request(.getItems())
+            items = response.data
+        } catch {
+            self.error = error
+        }
+
+        isLoading = false
+    }
+}
+
+// Features/Home/HomeView.swift
+struct HomeView: View {
+    @StateObject private var viewModel = HomeViewModel()
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if viewModel.isLoading {
+                    ProgressView()
+                } else if let error = viewModel.error {
+                    ErrorView(error: error, retry: { Task { await viewModel.loadItems() } })
+                } else {
+                    List(viewModel.items) { item in
+                        ItemRow(item: item)
+                    }
+                    .refreshable {
+                        await viewModel.loadItems()
+                    }
+                }
+            }
+            .navigationTitle("Home")
+        }
+        .task {
+            await viewModel.loadItems()
+        }
+    }
+}
+```
+
+## Push Notifications
+
+```swift
+// Core/Push/PushManager.swift
+class PushManager: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
+    static let shared = PushManager()
+
+    @Published var isRegistered = false
+
+    override init() {
+        super.init()
+        UNUserNotificationCenter.current().delegate = self
+    }
+
+    func requestPermission() async -> Bool {
+        do {
+            let granted = try await UNUserNotificationCenter.current()
+                .requestAuthorization(options: [.alert, .badge, .sound])
+
+            if granted {
+                await MainActor.run {
+                    UIApplication.shared.registerForRemoteNotifications()
+                }
+            }
+
+            return granted
+        } catch {
+            return false
+        }
+    }
+
+    func registerToken(_ deviceToken: Data) async {
+        let token = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
+
+        do {
+            try await APIClient.shared.request(
+                .registerPushToken(token: token, sandbox: isDebugBuild)
+            ) as EmptyResponse
+            isRegistered = true
+        } catch {
+            print("Failed to register push token: \(error)")
+        }
+    }
+
+    // Handle foreground notifications
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        return [.banner, .badge, .sound]
+    }
+
+    // Handle notification tap
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        let userInfo = response.notification.request.content.userInfo
+        handleNotificationData(userInfo)
+    }
+
+    private func handleNotificationData(_ userInfo: [AnyHashable: Any]) {
+        // Handle deep link or action
+        if let action = userInfo["action"] as? String {
+            NotificationCenter.default.post(
+                name: .handlePushAction,
+                object: nil,
+                userInfo: ["action": action]
+            )
+        }
+    }
+}
+```
+
+## Deep Links
+
+```swift
+// App/AppDelegate.swift
+class AppDelegate: NSObject, UIApplicationDelegate {
+
+    func application(
+        _ application: UIApplication,
+        continue userActivity: NSUserActivity
+    ) -> Bool {
+        guard userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+              let url = userActivity.webpageURL else {
+            return false
+        }
+
+        return DeepLinkHandler.shared.handle(url)
+    }
+}
+
+// Core/DeepLink/DeepLinkHandler.swift
+class DeepLinkHandler: ObservableObject {
+    static let shared = DeepLinkHandler()
+
+    @Published var pendingDeepLink: DeepLink?
+
+    func handle(_ url: URL) -> Bool {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: true) else {
+            return false
+        }
+
+        let deepLink = parseDeepLink(from: components)
+        pendingDeepLink = deepLink
+        return deepLink != nil
+    }
+
+    private func parseDeepLink(from components: URLComponents) -> DeepLink? {
+        let path = components.path
+
+        if path.hasPrefix("/share/") {
+            let id = String(path.dropFirst("/share/".count))
+            return .share(id: id)
+        }
+
+        if path.hasPrefix("/profile/") {
+            let username = String(path.dropFirst("/profile/".count))
+            return .profile(username: username)
+        }
+
+        return nil
+    }
+}
+
+enum DeepLink: Equatable {
+    case share(id: String)
+    case profile(username: String)
+    case settings
+}
+```
+
+## Offline Support
+
+```swift
+// Core/Sync/SyncManager.swift
+class SyncManager: ObservableObject {
+    static let shared = SyncManager()
+
+    @Published var isSyncing = false
+    @Published var lastSyncTime: Date?
+
+    private var syncToken: String? {
+        get { UserDefaults.standard.string(forKey: "sync_token") }
+        set { UserDefaults.standard.set(newValue, forKey: "sync_token") }
+    }
+
+    func sync() async throws {
+        guard !isSyncing else { return }
+        isSyncing = true
+
+        defer { isSyncing = false }
+
+        let endpoint: Endpoint = syncToken.map { .sync(token: $0) } ?? .sync(token: nil)
+        let response: SyncResponse<Item> = try await APIClient.shared.request(endpoint)
+
+        // Apply changes to local database
+        try await LocalDatabase.shared.apply(delta: response)
+
+        // Store new token
+        syncToken = response.syncToken
+        lastSyncTime = Date()
+    }
+}
+```
+
+## Running the Project
+
+### Start Backend
+
+```bash
+cd backend
+make run
+# Server running at http://localhost:3000
+```
+
+### Run iOS App
+
+1. Open `ios/MyApp.xcodeproj` in Xcode
+2. Select your target device or simulator
+3. Press Cmd+R to build and run
+
+### Development Tips
+
+```swift
+// Configuration.swift
+enum Configuration {
+    #if DEBUG
+    static let apiBaseURL = "http://localhost:3000"
+    #else
+    static let apiBaseURL = "https://api.example.com"
+    #endif
+}
+```
+
+## Best Practices
+
+### Error Handling
+
+```swift
+func loadData() async {
+    do {
+        let data: Response = try await APIClient.shared.request(.getData())
+        // Handle success
+    } catch APIError.server(let error, let statusCode) {
+        switch error.code {
+        case "unauthorized":
+            await AuthManager.shared.logout()
+        case "upgrade_required":
+            showUpdateAlert(storeURL: error.details?["store_url"])
+        default:
+            showError(error.message)
+        }
+    } catch {
+        showError("Something went wrong")
+    }
+}
+```
+
+### Combine with SwiftUI
+
+```swift
+// Use @Published for reactive updates
+class ViewModel: ObservableObject {
+    @Published var state: ViewState = .idle
+
+    enum ViewState {
+        case idle
+        case loading
+        case loaded([Item])
+        case error(Error)
+    }
+}
+```
+
+### Testing
+
+```swift
+// Mock API client for tests
+protocol APIClientProtocol {
+    func request<T: Decodable>(_ endpoint: Endpoint) async throws -> T
+}
+
+class MockAPIClient: APIClientProtocol {
+    var mockResponse: Any?
+    var mockError: Error?
+
+    func request<T: Decodable>(_ endpoint: Endpoint) async throws -> T {
+        if let error = mockError { throw error }
+        return mockResponse as! T
+    }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Android" href="/mobile/android" icon="android">
+    Build native Android apps
+  </Card>
+  <Card title="Push Notifications" href="/mobile/push" icon="bell">
+    Cross-platform push support
+  </Card>
+  <Card title="Deep Links" href="/mobile/deeplinks" icon="link">
+    Universal Links setup
+  </Card>
+  <Card title="Offline Sync" href="/mobile/sync" icon="arrows-rotate">
+    Delta synchronization
+  </Card>
+</CardGroup>

@@ -1,0 +1,607 @@
+---
+title: "Offline Sync"
+description: "Delta synchronization for offline-first mobile applications."
+icon: "arrows-rotate"
+---
+
+The mobile package provides delta synchronization helpers for building offline-first mobile applications. Sync tokens enable efficient incremental updates without re-downloading entire datasets.
+
+## Quick Start
+
+```go
+import "github.com/go-mizu/mizu/mobile"
+
+app.Get("/api/sync", func(c *mizu.Ctx) error {
+    req := mobile.ParseSyncRequest(c)
+
+    var delta mobile.Delta[Item]
+    if req.IsInitial() {
+        // Full sync - first time or forced
+        delta.Created = db.GetAllItems()
+    } else {
+        // Delta sync - only changes since last sync
+        since := req.Since()
+        delta.Created = db.GetCreatedSince(since)
+        delta.Updated = db.GetUpdatedSince(since)
+        delta.Deleted = db.GetDeletedSince(since)
+    }
+
+    token := mobile.NewSyncToken(time.Now())
+    return c.JSON(200, mobile.NewSyncDelta(delta, token, false))
+})
+```
+
+## Sync Tokens
+
+Sync tokens are opaque strings that encode a timestamp. Clients store the token and send it back on subsequent syncs to receive only changes since that point.
+
+### Creating Tokens
+
+```go
+// Create from current time
+token := mobile.NewSyncToken(time.Now())
+
+// Create from specific time
+token := mobile.NewSyncToken(lastModifiedAt)
+```
+
+### Token Methods
+
+```go
+token := mobile.NewSyncToken(time.Now())
+
+// Convert to string for response
+token.String()  // "YWJjMTIz..."
+
+// Check if empty
+token.IsEmpty() // false
+
+// Extract timestamp
+t := token.Time() // time.Time
+```
+
+### Response Header
+
+```go
+// Set sync token in response header
+mobile.SetSyncToken(c, token)
+// Sets: X-Sync-Token: abc123...
+```
+
+## Sync Request
+
+Parse sync parameters from the client:
+
+```go
+type SyncRequest struct {
+    Token     SyncToken // Last sync token (empty for initial)
+    Resources []string  // Specific resources to sync
+    FullSync  bool      // Force complete resync
+    Limit     int       // Maximum items to return
+}
+```
+
+### Parsing Requests
+
+```go
+req := mobile.ParseSyncRequest(c)
+
+// Parsed from:
+// Header: X-Sync-Token
+// Query: ?sync_token=abc123
+// Query: ?full_sync=true
+// Query: ?resources=users,posts
+// Query: ?limit=100
+```
+
+### Request Methods
+
+```go
+req := mobile.ParseSyncRequest(c)
+
+// Check if initial sync
+req.IsInitial() // true if no token or full_sync=true
+
+// Get timestamp to sync from
+since := req.Since() // time.Time (zero for initial)
+
+// Check specific resources
+for _, r := range req.Resources {
+    // Sync only requested resources
+}
+```
+
+## Delta Response
+
+The `Delta` type represents changes since the last sync:
+
+```go
+type Delta[T any] struct {
+    Created []T      `json:"created,omitempty"`
+    Updated []T      `json:"updated,omitempty"`
+    Deleted []string `json:"deleted,omitempty"` // IDs of deleted items
+}
+```
+
+### Creating Delta Responses
+
+```go
+delta := mobile.Delta[Item]{
+    Created: newItems,
+    Updated: modifiedItems,
+    Deleted: deletedIDs,
+}
+
+// Check if empty
+delta.IsEmpty() // true if no changes
+
+// Count total changes
+delta.Count() // len(created) + len(updated) + len(deleted)
+```
+
+### Wrapped Response
+
+```go
+type SyncDelta[T any] struct {
+    Delta[T]
+    SyncToken SyncToken `json:"sync_token"`
+    HasMore   bool      `json:"has_more"`
+    FullSync  bool      `json:"full_sync,omitempty"`
+}
+```
+
+```go
+// Create sync delta
+response := mobile.NewSyncDelta(delta, token, hasMore)
+
+// For full sync, mark it
+response := mobile.NewFullSyncDelta(delta, token, hasMore)
+```
+
+## Complete Example
+
+### Database Schema
+
+```sql
+CREATE TABLE items (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    data JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ  -- Soft delete
+);
+
+CREATE INDEX idx_items_updated ON items(updated_at);
+CREATE INDEX idx_items_deleted ON items(deleted_at);
+```
+
+### Model
+
+```go
+type Item struct {
+    ID        string    `json:"id" db:"id"`
+    Name      string    `json:"name" db:"name"`
+    Data      any       `json:"data" db:"data"`
+    CreatedAt time.Time `json:"created_at" db:"created_at"`
+    UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+}
+```
+
+### Repository
+
+```go
+type ItemRepo struct {
+    db *sql.DB
+}
+
+func (r *ItemRepo) GetAll() ([]Item, error) {
+    return r.query(`
+        SELECT * FROM items
+        WHERE deleted_at IS NULL
+        ORDER BY created_at
+    `)
+}
+
+func (r *ItemRepo) GetCreatedSince(since time.Time) ([]Item, error) {
+    return r.query(`
+        SELECT * FROM items
+        WHERE deleted_at IS NULL
+          AND created_at > $1
+        ORDER BY created_at
+    `, since)
+}
+
+func (r *ItemRepo) GetUpdatedSince(since time.Time) ([]Item, error) {
+    return r.query(`
+        SELECT * FROM items
+        WHERE deleted_at IS NULL
+          AND updated_at > $1
+          AND created_at <= $1  -- Exclude newly created
+        ORDER BY updated_at
+    `, since)
+}
+
+func (r *ItemRepo) GetDeletedSince(since time.Time) ([]string, error) {
+    rows, err := r.db.Query(`
+        SELECT id FROM items
+        WHERE deleted_at IS NOT NULL
+          AND deleted_at > $1
+    `, since)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    var ids []string
+    for rows.Next() {
+        var id string
+        rows.Scan(&id)
+        ids = append(ids, id)
+    }
+    return ids, nil
+}
+```
+
+### Handler
+
+```go
+func syncItems(c *mizu.Ctx) error {
+    req := mobile.ParseSyncRequest(c)
+    repo := &ItemRepo{db: db}
+
+    var delta mobile.Delta[Item]
+    var err error
+
+    if req.IsInitial() {
+        // Full sync
+        delta.Created, err = repo.GetAll()
+        if err != nil {
+            return mobile.SendError(c, 500, mobile.NewError(
+                mobile.ErrInternal, "Failed to fetch items"))
+        }
+    } else {
+        since := req.Since()
+
+        delta.Created, err = repo.GetCreatedSince(since)
+        if err != nil {
+            return mobile.SendError(c, 500, mobile.NewError(
+                mobile.ErrInternal, "Failed to fetch created items"))
+        }
+
+        delta.Updated, err = repo.GetUpdatedSince(since)
+        if err != nil {
+            return mobile.SendError(c, 500, mobile.NewError(
+                mobile.ErrInternal, "Failed to fetch updated items"))
+        }
+
+        delta.Deleted, err = repo.GetDeletedSince(since)
+        if err != nil {
+            return mobile.SendError(c, 500, mobile.NewError(
+                mobile.ErrInternal, "Failed to fetch deleted items"))
+        }
+    }
+
+    // Create new token with current time
+    token := mobile.NewSyncToken(time.Now())
+
+    // Check if there are more items (pagination)
+    hasMore := delta.Count() >= req.Limit
+
+    // Set token in header too
+    mobile.SetSyncToken(c, token)
+
+    if req.IsInitial() {
+        return c.JSON(200, mobile.NewFullSyncDelta(delta, token, hasMore))
+    }
+    return c.JSON(200, mobile.NewSyncDelta(delta, token, hasMore))
+}
+```
+
+## Conflict Resolution
+
+Handle conflicts when the same item is modified on client and server:
+
+```go
+type Conflict[T any] struct {
+    ID         string    `json:"id"`
+    ClientData T         `json:"client_data"`
+    ServerData T         `json:"server_data"`
+    ClientTime time.Time `json:"client_time"`
+    ServerTime time.Time `json:"server_time"`
+}
+
+type ConflictResolution string
+
+const (
+    ResolutionServerWins ConflictResolution = "server_wins"
+    ResolutionClientWins ConflictResolution = "client_wins"
+    ResolutionLatestWins ConflictResolution = "latest_wins"
+    ResolutionManual     ConflictResolution = "manual"
+)
+```
+
+### Detecting Conflicts
+
+```go
+type UpdateRequest struct {
+    ID         string    `json:"id"`
+    Data       Item      `json:"data"`
+    ClientTime time.Time `json:"client_time"`
+}
+
+func updateItem(c *mizu.Ctx) error {
+    var req UpdateRequest
+    if err := c.BodyJSON(&req); err != nil {
+        return mobile.SendError(c, 400, mobile.NewError(
+            mobile.ErrInvalidRequest, "Invalid request"))
+    }
+
+    // Get current server version
+    serverItem, err := repo.GetByID(req.ID)
+    if err != nil {
+        return mobile.SendError(c, 404, mobile.NewError(
+            mobile.ErrNotFound, "Item not found"))
+    }
+
+    // Check for conflict
+    if serverItem.UpdatedAt.After(req.ClientTime) {
+        return c.JSON(409, mobile.Conflict[Item]{
+            ID:         req.ID,
+            ClientData: req.Data,
+            ServerData: serverItem,
+            ClientTime: req.ClientTime,
+            ServerTime: serverItem.UpdatedAt,
+        })
+    }
+
+    // No conflict, apply update
+    updated, err := repo.Update(req.ID, req.Data)
+    if err != nil {
+        return mobile.SendError(c, 500, mobile.NewError(
+            mobile.ErrInternal, "Failed to update"))
+    }
+
+    return c.JSON(200, updated)
+}
+```
+
+### Resolving Conflicts
+
+```go
+type ResolveConflictRequest struct {
+    ID         string             `json:"id"`
+    Resolution ConflictResolution `json:"resolution"`
+    MergedData *Item              `json:"merged_data,omitempty"`
+}
+
+func resolveConflict(c *mizu.Ctx) error {
+    var req ResolveConflictRequest
+    c.BodyJSON(&req)
+
+    serverItem, _ := repo.GetByID(req.ID)
+    clientItem := getClientItem(c) // From request or session
+
+    var finalData Item
+
+    switch req.Resolution {
+    case mobile.ResolutionServerWins:
+        finalData = serverItem
+    case mobile.ResolutionClientWins:
+        finalData = clientItem
+    case mobile.ResolutionLatestWins:
+        if clientItem.UpdatedAt.After(serverItem.UpdatedAt) {
+            finalData = clientItem
+        } else {
+            finalData = serverItem
+        }
+    case mobile.ResolutionManual:
+        if req.MergedData == nil {
+            return mobile.SendError(c, 400, mobile.NewError(
+                mobile.ErrInvalidRequest, "Merged data required"))
+        }
+        finalData = *req.MergedData
+    }
+
+    updated, _ := repo.Update(req.ID, finalData)
+    return c.JSON(200, updated)
+}
+```
+
+## Multi-Resource Sync
+
+Sync multiple resource types in a single request:
+
+```go
+type SyncResponse struct {
+    Users     mobile.SyncDelta[User]    `json:"users,omitempty"`
+    Posts     mobile.SyncDelta[Post]    `json:"posts,omitempty"`
+    Comments  mobile.SyncDelta[Comment] `json:"comments,omitempty"`
+    SyncToken mobile.SyncToken          `json:"sync_token"`
+}
+
+func syncAll(c *mizu.Ctx) error {
+    req := mobile.ParseSyncRequest(c)
+    since := req.Since()
+
+    response := SyncResponse{}
+
+    // Check which resources to sync
+    syncUsers := len(req.Resources) == 0 || contains(req.Resources, "users")
+    syncPosts := len(req.Resources) == 0 || contains(req.Resources, "posts")
+    syncComments := len(req.Resources) == 0 || contains(req.Resources, "comments")
+
+    if syncUsers {
+        response.Users = getUsersDelta(since, req.IsInitial())
+    }
+    if syncPosts {
+        response.Posts = getPostsDelta(since, req.IsInitial())
+    }
+    if syncComments {
+        response.Comments = getCommentsDelta(since, req.IsInitial())
+    }
+
+    response.SyncToken = mobile.NewSyncToken(time.Now())
+
+    return c.JSON(200, response)
+}
+```
+
+## Client Implementation
+
+### iOS (Swift)
+
+```swift
+class SyncManager {
+    private var syncToken: String? {
+        get { UserDefaults.standard.string(forKey: "sync_token") }
+        set { UserDefaults.standard.set(newValue, forKey: "sync_token") }
+    }
+
+    func sync() async throws {
+        var endpoint = "/api/sync"
+        if let token = syncToken {
+            endpoint += "?sync_token=\(token)"
+        }
+
+        let response: SyncResponse<Item> = try await api.get(endpoint)
+
+        // Apply changes to local database
+        try await db.write { realm in
+            // Add created items
+            for item in response.created {
+                realm.add(item, update: .modified)
+            }
+
+            // Update modified items
+            for item in response.updated {
+                realm.add(item, update: .modified)
+            }
+
+            // Delete removed items
+            for id in response.deleted {
+                if let item = realm.object(ofType: Item.self, forPrimaryKey: id) {
+                    realm.delete(item)
+                }
+            }
+        }
+
+        // Store new sync token
+        syncToken = response.syncToken
+    }
+}
+```
+
+### Android (Kotlin)
+
+```kotlin
+class SyncManager(
+    private val api: ApiService,
+    private val dao: ItemDao,
+    private val prefs: SharedPreferences
+) {
+    private var syncToken: String?
+        get() = prefs.getString("sync_token", null)
+        set(value) = prefs.edit().putString("sync_token", value).apply()
+
+    suspend fun sync() {
+        val response = api.sync(syncToken)
+
+        dao.withTransaction {
+            // Insert created items
+            dao.insertAll(response.created)
+
+            // Update modified items
+            response.updated.forEach { dao.update(it) }
+
+            // Delete removed items
+            response.deleted.forEach { dao.deleteById(it) }
+        }
+
+        // Store new sync token
+        syncToken = response.syncToken
+    }
+}
+```
+
+### Flutter (Dart)
+
+```dart
+class SyncManager {
+  String? _syncToken;
+
+  Future<void> sync() async {
+    final params = _syncToken != null
+        ? {'sync_token': _syncToken}
+        : <String, String>{};
+
+    final response = await api.get('/api/sync', queryParameters: params);
+    final syncResponse = SyncResponse.fromJson(response.data);
+
+    // Apply changes to local database
+    await db.transaction(() async {
+      // Add created items
+      for (final item in syncResponse.created) {
+        await db.items.insertOnConflictUpdate(item);
+      }
+
+      // Update modified items
+      for (final item in syncResponse.updated) {
+        await db.items.update(item);
+      }
+
+      // Delete removed items
+      for (final id in syncResponse.deleted) {
+        await db.items.deleteWhere((t) => t.id.equals(id));
+      }
+    });
+
+    // Store new sync token
+    _syncToken = syncResponse.syncToken;
+    await prefs.setString('sync_token', _syncToken!);
+  }
+}
+```
+
+## Best Practices
+
+### Use Soft Deletes
+
+Never hard-delete records. Use a `deleted_at` timestamp so clients can receive deletion events.
+
+### Index Updated Timestamps
+
+Ensure `updated_at` and `deleted_at` columns are indexed for efficient delta queries.
+
+### Handle Large Initial Syncs
+
+For large datasets, paginate initial syncs:
+
+```go
+if req.IsInitial() && delta.Count() > maxInitialSync {
+    hasMore = true
+    delta.Created = delta.Created[:maxInitialSync]
+}
+```
+
+### Implement Retry Logic
+
+Clients should retry failed syncs with exponential backoff.
+
+### Store Sync State Atomically
+
+Store the sync token only after successfully applying all changes locally.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Push Notifications" href="/mobile/push" icon="bell">
+    Cross-platform push token management
+  </Card>
+  <Card title="Deep Links" href="/mobile/deeplinks" icon="link">
+    Universal and App Links
+  </Card>
+  <Card title="API Reference" href="/mobile/api-reference" icon="book">
+    Complete API documentation
+  </Card>
+</CardGroup>

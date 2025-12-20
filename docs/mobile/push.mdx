@@ -1,0 +1,626 @@
+---
+title: "Push Notifications"
+description: "Cross-platform push token management for APNS, FCM, and WNS."
+icon: "bell"
+---
+
+The mobile package provides cross-platform push notification support, handling token registration, validation, and payload formatting for Apple Push Notification Service (APNS), Firebase Cloud Messaging (FCM), and Windows Notification Service (WNS).
+
+## Quick Start
+
+```go
+import "github.com/go-mizu/mizu/mobile"
+
+app.Post("/api/push/register", func(c *mizu.Ctx) error {
+    token := mobile.ParsePushToken(c)
+    if token == nil {
+        return mobile.SendError(c, 400, mobile.NewError(
+            mobile.ErrInvalidRequest,
+            "Missing push token",
+        ))
+    }
+
+    // Validate token format
+    if !mobile.ValidateToken(token.Token, token.Provider) {
+        return mobile.SendError(c, 400, mobile.NewError(
+            mobile.ErrValidation,
+            "Invalid push token format",
+        ))
+    }
+
+    // Save to database
+    db.SavePushToken(token)
+
+    return c.NoContent()
+})
+```
+
+## Push Providers
+
+```go
+const (
+    PushAPNS PushProvider = "apns" // Apple Push Notification Service
+    PushFCM  PushProvider = "fcm"  // Firebase Cloud Messaging
+    PushWNS  PushProvider = "wns"  // Windows Notification Service
+)
+```
+
+## The PushToken Type
+
+```go
+type PushToken struct {
+    // Token is the push token value
+    Token string `json:"token"`
+
+    // Provider is the push service (apns, fcm, wns)
+    Provider PushProvider `json:"provider"`
+
+    // DeviceID is the associated device identifier
+    DeviceID string `json:"device_id,omitempty"`
+
+    // Sandbox indicates APNS sandbox environment
+    Sandbox bool `json:"sandbox,omitempty"`
+
+    // CreatedAt is when the token was registered
+    CreatedAt time.Time `json:"created_at,omitempty"`
+
+    // UpdatedAt is when the token was last updated
+    UpdatedAt time.Time `json:"updated_at,omitempty"`
+
+    // AppVersion is the app version when token was registered
+    AppVersion string `json:"app_version,omitempty"`
+}
+```
+
+## Token Parsing
+
+### From Headers
+
+```go
+// Parse from X-Push-Token header
+token := mobile.ParsePushToken(c)
+
+// token.Token = header value
+// token.Provider = inferred from device context
+// token.DeviceID = from X-Device-ID header
+// token.AppVersion = from X-App-Version header
+```
+
+### From Request Body
+
+```go
+type RegisterRequest struct {
+    Token    string              `json:"token"`
+    Provider mobile.PushProvider `json:"provider,omitempty"`
+    Sandbox  bool                `json:"sandbox,omitempty"`
+    Topics   []string            `json:"topics,omitempty"`
+}
+
+func registerPush(c *mizu.Ctx) error {
+    var req RegisterRequest
+    if err := c.BodyJSON(&req); err != nil {
+        return mobile.SendError(c, 400, mobile.NewError(
+            mobile.ErrInvalidRequest, "Invalid request"))
+    }
+
+    device := mobile.DeviceFromCtx(c)
+
+    token := &mobile.PushToken{
+        Token:      req.Token,
+        Provider:   req.Provider,
+        DeviceID:   device.DeviceID,
+        Sandbox:    req.Sandbox,
+        AppVersion: device.AppVersion,
+        CreatedAt:  time.Now(),
+    }
+
+    // Auto-detect provider if not specified
+    if token.Provider == "" {
+        token.Provider = inferProvider(device.Platform)
+    }
+
+    // Validate and save...
+    return c.NoContent()
+}
+```
+
+## Token Validation
+
+### APNS Tokens
+
+APNS tokens are 64 hexadecimal characters (32 bytes):
+
+```go
+// Validates APNS token format
+mobile.ValidateAPNS(token) // true/false
+
+// Example valid token:
+// "c4f3db1e2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d"
+```
+
+### FCM Tokens
+
+FCM tokens are 140-200 characters, alphanumeric with `:` and `-`:
+
+```go
+// Validates FCM token format
+mobile.ValidateFCM(token) // true/false
+```
+
+### Generic Validation
+
+```go
+// Validates based on provider
+mobile.ValidateToken(token, provider) // true/false
+
+// Auto-detects provider from format
+provider := detectProvider(token)
+```
+
+## Push Registration Endpoint
+
+```go
+type PushRegistration struct {
+    Token    string              `json:"token"`
+    Provider mobile.PushProvider `json:"provider,omitempty"`
+    Sandbox  bool                `json:"sandbox,omitempty"`
+    Topics   []string            `json:"topics,omitempty"`
+}
+
+func (r *PushRegistration) Validate() error {
+    if r.Token == "" {
+        return mobile.NewError(mobile.ErrValidation, "push token is required")
+    }
+
+    if r.Provider != "" && !mobile.ValidateToken(r.Token, r.Provider) {
+        return mobile.NewError(mobile.ErrValidation, "invalid push token format").
+            WithDetails("provider", r.Provider.String())
+    }
+
+    return nil
+}
+
+func registerPush(c *mizu.Ctx) error {
+    var reg mobile.PushRegistration
+    if err := c.BodyJSON(&reg); err != nil {
+        return mobile.SendError(c, 400, mobile.NewError(
+            mobile.ErrInvalidRequest, "Invalid JSON"))
+    }
+
+    if err := reg.Validate(); err != nil {
+        return mobile.SendError(c, 400, err.(*mobile.Error))
+    }
+
+    device := mobile.DeviceFromCtx(c)
+
+    // Store token
+    err := db.UpsertPushToken(&PushTokenRecord{
+        Token:      reg.Token,
+        Provider:   reg.Provider,
+        DeviceID:   device.DeviceID,
+        UserID:     getUserID(c),
+        Topics:     reg.Topics,
+        Sandbox:    reg.Sandbox,
+        AppVersion: device.AppVersion,
+        Platform:   device.Platform.String(),
+        UpdatedAt:  time.Now(),
+    })
+
+    if err != nil {
+        return mobile.SendError(c, 500, mobile.NewError(
+            mobile.ErrInternal, "Failed to save token"))
+    }
+
+    return c.NoContent()
+}
+```
+
+## Push Payload
+
+The `PushPayload` type provides a unified format that converts to platform-specific payloads:
+
+```go
+type PushPayload struct {
+    Title            string         `json:"title,omitempty"`
+    Body             string         `json:"body,omitempty"`
+    Badge            *int           `json:"badge,omitempty"`
+    Sound            string         `json:"sound,omitempty"`
+    Data             map[string]any `json:"data,omitempty"`
+    Category         string         `json:"category,omitempty"`
+    ThreadID         string         `json:"thread_id,omitempty"`        // iOS
+    ChannelID        string         `json:"channel_id,omitempty"`       // Android
+    CollapseKey      string         `json:"collapse_key,omitempty"`     // Android
+    Priority         string         `json:"priority,omitempty"`
+    TTL              int            `json:"ttl,omitempty"`
+    ContentAvailable bool           `json:"content_available,omitempty"` // iOS background
+    MutableContent   bool           `json:"mutable_content,omitempty"`   // iOS extensions
+}
+```
+
+### Creating Payloads
+
+```go
+// Simple notification
+payload := &mobile.PushPayload{
+    Title: "New Message",
+    Body:  "You have a new message from Alice",
+    Sound: "default",
+}
+
+// With data
+payload := &mobile.PushPayload{
+    Title: "New Order",
+    Body:  "Order #1234 has been placed",
+}
+payload.WithData("order_id", "1234")
+payload.WithData("action", "view_order")
+
+// With badge
+payload := &mobile.PushPayload{
+    Title: "3 new messages",
+    Body:  "You have unread messages",
+}
+payload.SetBadge(3)
+
+// Silent notification (iOS background fetch)
+payload := &mobile.PushPayload{
+    ContentAvailable: true,
+}
+payload.WithData("type", "sync")
+```
+
+### Converting to APNS Format
+
+```go
+apnsPayload := payload.ToAPNS()
+// {
+//   "aps": {
+//     "alert": {
+//       "title": "New Message",
+//       "body": "You have a new message from Alice"
+//     },
+//     "sound": "default",
+//     "badge": 3
+//   },
+//   "order_id": "1234"
+// }
+```
+
+### Converting to FCM Format
+
+```go
+fcmPayload := payload.ToFCM()
+// {
+//   "notification": {
+//     "title": "New Message",
+//     "body": "You have a new message from Alice"
+//   },
+//   "android": {
+//     "notification": {
+//       "channel_id": "messages"
+//     }
+//   },
+//   "data": {
+//     "order_id": "1234"
+//   }
+// }
+```
+
+## Sending Notifications
+
+### With APNS (Apple)
+
+```go
+import "github.com/sideshow/apns2"
+
+func sendAPNS(token *mobile.PushToken, payload *mobile.PushPayload) error {
+    notification := &apns2.Notification{
+        DeviceToken: token.Token,
+        Topic:       "com.example.app",
+        Payload:     payload.ToAPNS(),
+    }
+
+    client := apns2.NewClient(cert)
+    if token.Sandbox {
+        client = client.Development()
+    } else {
+        client = client.Production()
+    }
+
+    res, err := client.Push(notification)
+    if err != nil {
+        return err
+    }
+
+    if !res.Sent() {
+        // Handle failure (e.g., invalid token)
+        if res.Reason == apns2.ReasonBadDeviceToken {
+            db.DeletePushToken(token.Token)
+        }
+        return fmt.Errorf("APNS error: %s", res.Reason)
+    }
+
+    return nil
+}
+```
+
+### With FCM (Firebase)
+
+```go
+import firebase "firebase.google.com/go/v4/messaging"
+
+func sendFCM(token *mobile.PushToken, payload *mobile.PushPayload) error {
+    fcmPayload := payload.ToFCM()
+
+    message := &firebase.Message{
+        Token: token.Token,
+        Notification: &firebase.Notification{
+            Title: payload.Title,
+            Body:  payload.Body,
+        },
+        Data: fcmPayload["data"].(map[string]string),
+    }
+
+    if android, ok := fcmPayload["android"].(map[string]any); ok {
+        message.Android = &firebase.AndroidConfig{
+            Priority: "high",
+        }
+        if channelID, ok := android["notification"].(map[string]any)["channel_id"].(string); ok {
+            message.Android.Notification = &firebase.AndroidNotification{
+                ChannelID: channelID,
+            }
+        }
+    }
+
+    _, err := fcmClient.Send(ctx, message)
+    if err != nil {
+        if firebase.IsRegistrationTokenNotRegistered(err) {
+            db.DeletePushToken(token.Token)
+        }
+        return err
+    }
+
+    return nil
+}
+```
+
+### Platform-Agnostic Sending
+
+```go
+func sendPush(token *mobile.PushToken, payload *mobile.PushPayload) error {
+    switch token.Provider {
+    case mobile.PushAPNS:
+        return sendAPNS(token, payload)
+    case mobile.PushFCM:
+        return sendFCM(token, payload)
+    case mobile.PushWNS:
+        return sendWNS(token, payload)
+    default:
+        return fmt.Errorf("unknown provider: %s", token.Provider)
+    }
+}
+
+// Send to all user devices
+func notifyUser(userID string, payload *mobile.PushPayload) error {
+    tokens, err := db.GetPushTokensForUser(userID)
+    if err != nil {
+        return err
+    }
+
+    var errs []error
+    for _, token := range tokens {
+        if err := sendPush(token, payload); err != nil {
+            errs = append(errs, err)
+        }
+    }
+
+    if len(errs) > 0 {
+        return fmt.Errorf("failed to send %d notifications", len(errs))
+    }
+    return nil
+}
+```
+
+## Topic Subscriptions
+
+```go
+type TopicSubscription struct {
+    Token  string   `json:"token"`
+    Topics []string `json:"topics"`
+}
+
+func subscribeTopics(c *mizu.Ctx) error {
+    var req TopicSubscription
+    c.BodyJSON(&req)
+
+    device := mobile.DeviceFromCtx(c)
+
+    // Update topics in database
+    err := db.UpdateTokenTopics(req.Token, req.Topics)
+    if err != nil {
+        return mobile.SendError(c, 500, mobile.NewError(
+            mobile.ErrInternal, "Failed to update topics"))
+    }
+
+    // For FCM, also subscribe on Firebase
+    if device.Platform == mobile.PlatformAndroid {
+        for _, topic := range req.Topics {
+            fcmClient.SubscribeToTopic(ctx, []string{req.Token}, topic)
+        }
+    }
+
+    return c.NoContent()
+}
+
+// Send to topic
+func sendToTopic(topic string, payload *mobile.PushPayload) error {
+    // FCM native topic messaging
+    message := &firebase.Message{
+        Topic: topic,
+        Notification: &firebase.Notification{
+            Title: payload.Title,
+            Body:  payload.Body,
+        },
+    }
+    _, err := fcmClient.Send(ctx, message)
+    return err
+}
+```
+
+## Token Cleanup
+
+Remove invalid tokens:
+
+```go
+func cleanupTokens() {
+    // Get tokens not updated in 30 days
+    staleTokens := db.GetStaleTokens(30 * 24 * time.Hour)
+
+    for _, token := range staleTokens {
+        // Try to send a silent push to validate
+        err := sendPush(token, &mobile.PushPayload{
+            ContentAvailable: true,
+        })
+
+        if isInvalidTokenError(err) {
+            db.DeletePushToken(token.Token)
+        }
+    }
+}
+
+func isInvalidTokenError(err error) bool {
+    if err == nil {
+        return false
+    }
+
+    // Check for APNS invalid token
+    // Check for FCM unregistered token
+    // etc.
+    return strings.Contains(err.Error(), "InvalidToken") ||
+           strings.Contains(err.Error(), "NotRegistered")
+}
+```
+
+## Client Implementation
+
+### iOS (Swift)
+
+```swift
+import UserNotifications
+
+class PushManager: NSObject, UNUserNotificationCenterDelegate {
+
+    func requestPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(
+            options: [.alert, .badge, .sound]
+        ) { granted, error in
+            if granted {
+                DispatchQueue.main.async {
+                    UIApplication.shared.registerForRemoteNotifications()
+                }
+            }
+        }
+    }
+
+    func registerToken(_ deviceToken: Data) {
+        let token = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
+
+        Task {
+            try await api.post("/api/push/register", body: [
+                "token": token,
+                "provider": "apns",
+                "sandbox": isDebug
+            ])
+        }
+    }
+}
+
+// In AppDelegate
+func application(_ application: UIApplication,
+                 didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+    PushManager.shared.registerToken(deviceToken)
+}
+```
+
+### Android (Kotlin)
+
+```kotlin
+class MyFirebaseMessagingService : FirebaseMessagingService() {
+
+    override fun onNewToken(token: String) {
+        // Register token with server
+        CoroutineScope(Dispatchers.IO).launch {
+            api.post("/api/push/register") {
+                contentType(ContentType.Application.Json)
+                setBody(mapOf(
+                    "token" to token,
+                    "provider" to "fcm"
+                ))
+            }
+        }
+    }
+
+    override fun onMessageReceived(message: RemoteMessage) {
+        message.notification?.let { notification ->
+            showNotification(notification.title, notification.body)
+        }
+
+        // Handle data payload
+        message.data.let { data ->
+            handlePushData(data)
+        }
+    }
+}
+```
+
+### Flutter (Dart)
+
+```dart
+import 'package:firebase_messaging/firebase_messaging.dart';
+
+class PushService {
+  final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+
+  Future<void> initialize() async {
+    // Request permission
+    await _messaging.requestPermission();
+
+    // Get token
+    final token = await _messaging.getToken();
+    if (token != null) {
+      await _registerToken(token);
+    }
+
+    // Listen for token refresh
+    _messaging.onTokenRefresh.listen(_registerToken);
+
+    // Handle foreground messages
+    FirebaseMessaging.onMessage.listen(_handleMessage);
+  }
+
+  Future<void> _registerToken(String token) async {
+    await api.post('/api/push/register', data: {
+      'token': token,
+      'provider': Platform.isIOS ? 'apns' : 'fcm',
+    });
+  }
+
+  void _handleMessage(RemoteMessage message) {
+    // Show local notification or update UI
+  }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deep Links" href="/mobile/deeplinks" icon="link">
+    Universal and App Links
+  </Card>
+  <Card title="App Store" href="/mobile/appstore" icon="store">
+    Version checking and updates
+  </Card>
+  <Card title="API Reference" href="/mobile/api-reference" icon="book">
+    Complete API documentation
+  </Card>
+</CardGroup>

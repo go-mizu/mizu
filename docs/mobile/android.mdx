@@ -1,0 +1,605 @@
+---
+title: "Android"
+description: "Build native Android apps with Kotlin, Jetpack Compose, and Mizu backend integration."
+icon: "android"
+---
+
+Build native Android applications with Kotlin and Jetpack Compose that seamlessly integrate with your Mizu backend. The Android template provides a complete project structure with modern architecture patterns.
+
+## Quick Start
+
+```bash
+mizu new ./my-android-app --template mobile/android
+```
+
+This creates a complete Android project with:
+
+- Kotlin + Jetpack Compose UI
+- Coroutines and Flow for async
+- Retrofit for networking
+- Hilt for dependency injection
+- Room for local storage
+
+## Project Structure
+
+```
+my-android-app/
+├── backend/                    # Mizu Go backend
+│   ├── cmd/server/
+│   ├── app/server/
+│   ├── go.mod
+│   └── Makefile
+│
+├── android/                    # Android app
+│   ├── app/
+│   │   ├── src/main/
+│   │   │   ├── java/com/example/app/
+│   │   │   │   ├── MainActivity.kt
+│   │   │   │   ├── MyApplication.kt
+│   │   │   │   ├── di/              # Dependency injection
+│   │   │   │   ├── data/            # Data layer
+│   │   │   │   │   ├── api/
+│   │   │   │   │   ├── local/
+│   │   │   │   │   └── repository/
+│   │   │   │   ├── domain/          # Business logic
+│   │   │   │   ├── ui/              # UI layer
+│   │   │   │   │   ├── theme/
+│   │   │   │   │   ├── navigation/
+│   │   │   │   │   └── screens/
+│   │   │   │   └── util/
+│   │   │   ├── res/
+│   │   │   └── AndroidManifest.xml
+│   │   └── build.gradle.kts
+│   ├── gradle/
+│   ├── build.gradle.kts
+│   └── settings.gradle.kts
+│
+└── Makefile
+```
+
+## Template Options
+
+```bash
+mizu new ./my-app --template mobile/android \
+  --var name=MyApp \
+  --var package=com.example.myapp \
+  --var minSdk=26 \
+  --var ui=compose
+```
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `name` | Project name | Directory name |
+| `package` | Package name | `com.example.{{name}}` |
+| `minSdk` | Minimum SDK version | `26` |
+| `ui` | UI framework: `compose`, `views`, `hybrid` | `compose` |
+
+## API Client
+
+```kotlin
+// data/api/ApiService.kt
+interface ApiService {
+    @GET("api/users")
+    suspend fun getUsers(
+        @Query("page") page: Int = 1,
+        @Query("per_page") perPage: Int = 20
+    ): PageResponse<User>
+
+    @GET("api/users/{id}")
+    suspend fun getUser(@Path("id") id: String): User
+
+    @POST("api/auth/login")
+    suspend fun login(@Body request: LoginRequest): AuthResponse
+
+    @POST("api/push/register")
+    suspend fun registerPushToken(@Body request: PushTokenRequest)
+
+    @GET("api/sync")
+    suspend fun sync(@Query("sync_token") token: String?): SyncResponse<Item>
+}
+
+// data/api/MizuHeaderInterceptor.kt
+class MizuHeaderInterceptor(
+    private val context: Context,
+    private val deviceIdProvider: DeviceIdProvider
+) : Interceptor {
+
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request().newBuilder()
+            .header("X-Device-ID", deviceIdProvider.getDeviceId())
+            .header("X-App-Version", BuildConfig.VERSION_NAME)
+            .header("X-App-Build", BuildConfig.VERSION_CODE.toString())
+            .header("X-Device-Model", Build.MODEL)
+            .header("X-Platform", "android")
+            .header("X-OS-Version", Build.VERSION.RELEASE)
+            .header("X-Timezone", TimeZone.getDefault().id)
+            .header("X-Locale", Locale.getDefault().toLanguageTag())
+            .header("X-API-Version", "v2")
+            .build()
+
+        val response = chain.proceed(request)
+
+        // Check for deprecation warning
+        if (response.header("X-API-Deprecated") == "true") {
+            EventBus.post(ApiDeprecatedEvent())
+        }
+
+        return response
+    }
+}
+```
+
+## Dependency Injection
+
+```kotlin
+// di/NetworkModule.kt
+@Module
+@InstallIn(SingletonComponent::class)
+object NetworkModule {
+
+    @Provides
+    @Singleton
+    fun provideOkHttpClient(
+        authInterceptor: AuthInterceptor,
+        mizuHeaderInterceptor: MizuHeaderInterceptor
+    ): OkHttpClient {
+        return OkHttpClient.Builder()
+            .addInterceptor(mizuHeaderInterceptor)
+            .addInterceptor(authInterceptor)
+            .addInterceptor(HttpLoggingInterceptor().apply {
+                level = if (BuildConfig.DEBUG)
+                    HttpLoggingInterceptor.Level.BODY
+                else
+                    HttpLoggingInterceptor.Level.NONE
+            })
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideRetrofit(okHttpClient: OkHttpClient): Retrofit {
+        return Retrofit.Builder()
+            .baseUrl(BuildConfig.API_BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideApiService(retrofit: Retrofit): ApiService {
+        return retrofit.create(ApiService::class.java)
+    }
+}
+```
+
+## Authentication
+
+```kotlin
+// data/repository/AuthRepository.kt
+class AuthRepository @Inject constructor(
+    private val api: ApiService,
+    private val tokenManager: TokenManager
+) {
+    suspend fun login(email: String, password: String): Result<User> {
+        return try {
+            val response = api.login(LoginRequest(email, password))
+            tokenManager.saveTokens(response.accessToken, response.refreshToken)
+            Result.success(response.user)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun logout() {
+        tokenManager.clearTokens()
+    }
+
+    fun isAuthenticated(): Boolean = tokenManager.hasValidToken()
+}
+
+// data/local/TokenManager.kt
+class TokenManager @Inject constructor(
+    private val encryptedPrefs: SharedPreferences
+) {
+    fun saveTokens(accessToken: String, refreshToken: String) {
+        encryptedPrefs.edit()
+            .putString("access_token", accessToken)
+            .putString("refresh_token", refreshToken)
+            .apply()
+    }
+
+    fun getAccessToken(): String? = encryptedPrefs.getString("access_token", null)
+
+    fun hasValidToken(): Boolean = getAccessToken() != null
+
+    fun clearTokens() {
+        encryptedPrefs.edit().clear().apply()
+    }
+}
+```
+
+## Compose UI
+
+### Navigation
+
+```kotlin
+// ui/navigation/NavGraph.kt
+@Composable
+fun NavGraph(
+    navController: NavHostController = rememberNavController(),
+    startDestination: String = Screen.Home.route
+) {
+    NavHost(navController = navController, startDestination = startDestination) {
+        composable(Screen.Home.route) {
+            HomeScreen(
+                onNavigateToDetail = { id ->
+                    navController.navigate(Screen.Detail.createRoute(id))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.Detail.route,
+            arguments = listOf(navArgument("id") { type = NavType.StringType })
+        ) { backStackEntry ->
+            DetailScreen(
+                id = backStackEntry.arguments?.getString("id") ?: "",
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.Profile.route) {
+            ProfileScreen()
+        }
+    }
+}
+
+sealed class Screen(val route: String) {
+    object Home : Screen("home")
+    object Profile : Screen("profile")
+    object Detail : Screen("detail/{id}") {
+        fun createRoute(id: String) = "detail/$id"
+    }
+}
+```
+
+### ViewModel
+
+```kotlin
+// ui/screens/home/HomeViewModel.kt
+@HiltViewModel
+class HomeViewModel @Inject constructor(
+    private val repository: ItemRepository
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
+    val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    init {
+        loadItems()
+    }
+
+    fun loadItems() {
+        viewModelScope.launch {
+            _uiState.value = HomeUiState.Loading
+
+            repository.getItems()
+                .onSuccess { items ->
+                    _uiState.value = HomeUiState.Success(items)
+                }
+                .onFailure { error ->
+                    _uiState.value = HomeUiState.Error(error.message ?: "Unknown error")
+                }
+        }
+    }
+}
+
+sealed interface HomeUiState {
+    object Loading : HomeUiState
+    data class Success(val items: List<Item>) : HomeUiState
+    data class Error(val message: String) : HomeUiState
+}
+```
+
+### Screen
+
+```kotlin
+// ui/screens/home/HomeScreen.kt
+@Composable
+fun HomeScreen(
+    viewModel: HomeViewModel = hiltViewModel(),
+    onNavigateToDetail: (String) -> Unit
+) {
+    val uiState by viewModel.uiState.collectAsState()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(title = { Text("Home") })
+        }
+    ) { padding ->
+        when (val state = uiState) {
+            is HomeUiState.Loading -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
+
+            is HomeUiState.Error -> {
+                ErrorContent(
+                    message = state.message,
+                    onRetry = { viewModel.loadItems() },
+                    modifier = Modifier.padding(padding)
+                )
+            }
+
+            is HomeUiState.Success -> {
+                LazyColumn(
+                    modifier = Modifier.padding(padding),
+                    contentPadding = PaddingValues(16.dp)
+                ) {
+                    items(state.items) { item ->
+                        ItemCard(
+                            item = item,
+                            onClick = { onNavigateToDetail(item.id) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+## Push Notifications
+
+```kotlin
+// data/push/MyFirebaseMessagingService.kt
+class MyFirebaseMessagingService : FirebaseMessagingService() {
+
+    @Inject
+    lateinit var pushRepository: PushRepository
+
+    override fun onCreate() {
+        super.onCreate()
+        // Inject dependencies
+        EntryPointAccessors.fromApplication(
+            applicationContext,
+            PushServiceEntryPoint::class.java
+        ).inject(this)
+    }
+
+    override fun onNewToken(token: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            pushRepository.registerToken(token)
+        }
+    }
+
+    override fun onMessageReceived(message: RemoteMessage) {
+        // Handle notification
+        message.notification?.let { notification ->
+            showNotification(notification.title, notification.body)
+        }
+
+        // Handle data payload
+        message.data.let { data ->
+            handlePushData(data)
+        }
+    }
+
+    private fun showNotification(title: String?, body: String?) {
+        val channelId = "default"
+        val notificationManager = getSystemService(NotificationManager::class.java)
+
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify(System.currentTimeMillis().toInt(), notification)
+    }
+}
+```
+
+## Deep Links
+
+```kotlin
+// AndroidManifest.xml
+<activity android:name=".MainActivity">
+    <intent-filter android:autoVerify="true">
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="https" android:host="example.com" />
+    </intent-filter>
+</activity>
+
+// MainActivity.kt
+class MainActivity : ComponentActivity() {
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        setContent {
+            MyAppTheme {
+                val navController = rememberNavController()
+
+                LaunchedEffect(Unit) {
+                    handleIntent(intent, navController)
+                }
+
+                NavGraph(navController = navController)
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // Handle deep link from new intent
+    }
+
+    private fun handleIntent(intent: Intent, navController: NavController) {
+        intent.data?.let { uri ->
+            when {
+                uri.path?.startsWith("/share/") == true -> {
+                    val id = uri.path?.removePrefix("/share/") ?: return
+                    navController.navigate(Screen.Detail.createRoute(id))
+                }
+                uri.path?.startsWith("/profile/") == true -> {
+                    navController.navigate(Screen.Profile.route)
+                }
+            }
+        }
+    }
+}
+```
+
+## Offline Support
+
+```kotlin
+// data/repository/SyncRepository.kt
+class SyncRepository @Inject constructor(
+    private val api: ApiService,
+    private val database: AppDatabase,
+    private val prefs: SharedPreferences
+) {
+    private val syncTokenKey = "sync_token"
+
+    suspend fun sync(): Result<Unit> {
+        return try {
+            val token = prefs.getString(syncTokenKey, null)
+            val response = api.sync(token)
+
+            // Apply changes in transaction
+            database.withTransaction {
+                response.created.forEach { database.itemDao().insert(it) }
+                response.updated.forEach { database.itemDao().update(it) }
+                response.deleted.forEach { database.itemDao().deleteById(it) }
+            }
+
+            // Save new token
+            prefs.edit().putString(syncTokenKey, response.syncToken).apply()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+}
+```
+
+## Running the Project
+
+### Start Backend
+
+```bash
+cd backend
+make run
+```
+
+### Run Android App
+
+1. Open `android/` folder in Android Studio
+2. Sync Gradle files
+3. Select device or emulator
+4. Click Run
+
+### Build Configuration
+
+```kotlin
+// app/build.gradle.kts
+android {
+    buildTypes {
+        debug {
+            buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:3000\"")
+        }
+        release {
+            buildConfigField("String", "API_BASE_URL", "\"https://api.example.com\"")
+            isMinifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+        }
+    }
+}
+```
+
+## Best Practices
+
+### Error Handling
+
+```kotlin
+sealed class ApiResult<out T> {
+    data class Success<T>(val data: T) : ApiResult<T>()
+    data class Error(val exception: ApiException) : ApiResult<Nothing>()
+}
+
+suspend fun <T> safeApiCall(call: suspend () -> T): ApiResult<T> {
+    return try {
+        ApiResult.Success(call())
+    } catch (e: HttpException) {
+        val error = parseError(e.response())
+        when (error.code) {
+            "unauthorized" -> ApiResult.Error(UnauthorizedException())
+            "upgrade_required" -> ApiResult.Error(UpgradeRequiredException(error.details))
+            else -> ApiResult.Error(ServerException(error.message))
+        }
+    } catch (e: Exception) {
+        ApiResult.Error(NetworkException(e.message))
+    }
+}
+```
+
+### Testing
+
+```kotlin
+@HiltAndroidTest
+class HomeViewModelTest {
+
+    @get:Rule
+    val hiltRule = HiltAndroidRule(this)
+
+    @Inject
+    lateinit var repository: FakeItemRepository
+
+    private lateinit var viewModel: HomeViewModel
+
+    @Before
+    fun setup() {
+        hiltRule.inject()
+        viewModel = HomeViewModel(repository)
+    }
+
+    @Test
+    fun `loadItems success updates state`() = runTest {
+        repository.setItems(listOf(testItem))
+
+        viewModel.loadItems()
+
+        val state = viewModel.uiState.first()
+        assertThat(state).isInstanceOf(HomeUiState.Success::class.java)
+    }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="iOS" href="/mobile/ios" icon="apple">
+    Build native iOS apps
+  </Card>
+  <Card title="Flutter" href="/mobile/flutter" icon="layer-group">
+    Cross-platform with Flutter
+  </Card>
+  <Card title="Push Notifications" href="/mobile/push" icon="bell">
+    FCM integration
+  </Card>
+  <Card title="Deep Links" href="/mobile/deeplinks" icon="link">
+    App Links setup
+  </Card>
+</CardGroup>

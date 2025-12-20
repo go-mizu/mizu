@@ -1,0 +1,175 @@
+---
+title: "Adapters"
+description: "Framework-specific mobile adapters for common patterns."
+icon: "puzzle-piece"
+---
+
+Mobile adapters provide framework-specific defaults and optimizations for integrating Mizu with mobile clients.
+
+## Overview
+
+```go
+import "github.com/go-mizu/mizu/mobile/adapters"
+
+// Apply iOS-optimized defaults
+app.Use(adapters.IOS(mobile.Options{
+    RequireDeviceID: true,
+}))
+```
+
+## Available Adapters
+
+### iOS Adapter
+
+```go
+func IOS(opts mobile.Options) mizu.Middleware
+```
+
+Optimized for iOS applications:
+
+- Parses iOS User-Agent patterns
+- Infers APNS for push tokens
+- Handles iOS version formats
+
+```go
+app.Use(adapters.IOS(mobile.Options{
+    RequireDeviceID:   true,
+    RequireAppVersion: true,
+    MinAppVersion:     "2.0.0",
+}))
+```
+
+### Android Adapter
+
+```go
+func Android(opts mobile.Options) mizu.Middleware
+```
+
+Optimized for Android applications:
+
+- Parses Android User-Agent patterns
+- Infers FCM for push tokens
+- Handles Android version formats
+
+```go
+app.Use(adapters.Android(mobile.Options{
+    RequireDeviceID:   true,
+    RequireAppVersion: true,
+    MinAppVersion:     "2.0.0",
+}))
+```
+
+### Flutter Adapter
+
+```go
+func Flutter(opts mobile.Options) mizu.Middleware
+```
+
+Optimized for Flutter applications:
+
+- Handles both iOS and Android
+- Platform detection from headers
+- Cross-platform push token handling
+
+```go
+app.Use(adapters.Flutter(mobile.Options{
+    RequireDeviceID: true,
+}))
+```
+
+### React Native Adapter
+
+```go
+func ReactNative(opts mobile.Options) mizu.Middleware
+```
+
+Optimized for React Native:
+
+- Expo and bare workflow support
+- Cross-platform handling
+- JavaScript bridge considerations
+
+```go
+app.Use(adapters.ReactNative(mobile.Options{
+    RequireDeviceID: true,
+}))
+```
+
+### Capacitor Adapter
+
+```go
+func Capacitor(opts mobile.Options) mizu.Middleware
+```
+
+Optimized for Capacitor/Ionic:
+
+- Web view detection
+- Hybrid app handling
+- Native plugin headers
+
+```go
+app.Use(adapters.Capacitor(mobile.Options{
+    RequireDeviceID: true,
+}))
+```
+
+## Using Multiple Adapters
+
+For backends serving multiple client types:
+
+```go
+// Generic mobile middleware that handles all platforms
+app.Use(mobile.WithOptions(mobile.Options{
+    RequireDeviceID: true,
+}))
+
+// Platform-specific routes if needed
+app.Group("/ios", func(r *mizu.Router) {
+    r.Use(adapters.IOS(mobile.Options{}))
+    r.Get("/features", iosFeatures)
+})
+
+app.Group("/android", func(r *mizu.Router) {
+    r.Use(adapters.Android(mobile.Options{}))
+    r.Get("/features", androidFeatures)
+})
+```
+
+## Creating Custom Adapters
+
+```go
+package myadapters
+
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/mobile"
+)
+
+func MyFramework(opts mobile.Options) mizu.Middleware {
+    // Apply framework-specific defaults
+    if opts.SkipPaths == nil {
+        opts.SkipPaths = []string{"/health"}
+    }
+
+    // Custom header handling
+    opts.OnMissingHeader = func(c *mizu.Ctx, header string) error {
+        // Framework-specific error format
+        return c.JSON(400, map[string]string{
+            "framework_error": "Missing " + header,
+        })
+    }
+
+    return mobile.WithOptions(opts)
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Templates" href="/mobile/templates" icon="layer-group">
+    Available templates
+  </Card>
+  <Card title="API Reference" href="/mobile/api-reference" icon="book">
+    Complete API documentation
+  </Card>
+</CardGroup>

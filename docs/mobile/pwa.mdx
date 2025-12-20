@@ -1,0 +1,166 @@
+---
+title: "Progressive Web App"
+description: "Build offline-capable web apps with React, Vite, and Mizu backend integration."
+icon: "globe"
+---
+
+Build Progressive Web Apps (PWAs) that provide native-like experiences in the browser with offline support, push notifications, and home screen installation.
+
+## Quick Start
+
+```bash
+mizu new ./my-pwa --template mobile/pwa
+```
+
+This creates a PWA with:
+
+- React + TypeScript
+- Vite for building
+- Service worker with offline support
+- Web Push notifications
+- App manifest for installation
+
+## Project Structure
+
+```
+my-pwa/
+├── backend/                    # Mizu Go backend
+│   └── ...
+│
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx
+│   │   ├── api/
+│   │   ├── components/
+│   │   ├── hooks/
+│   │   └── sw.ts             # Service worker
+│   ├── public/
+│   │   ├── manifest.json
+│   │   └── icons/
+│   ├── package.json
+│   └── vite.config.ts
+│
+└── Makefile
+```
+
+## Service Worker
+
+```typescript
+// src/sw.ts
+import { precacheAndRoute } from 'workbox-precaching';
+import { registerRoute } from 'workbox-routing';
+import { NetworkFirst, CacheFirst } from 'workbox-strategies';
+
+// Precache static assets
+precacheAndRoute(self.__WB_MANIFEST);
+
+// API requests: Network first, fall back to cache
+registerRoute(
+  ({ url }) => url.pathname.startsWith('/api'),
+  new NetworkFirst({
+    cacheName: 'api-cache',
+    networkTimeoutSeconds: 10,
+  })
+);
+
+// Images: Cache first
+registerRoute(
+  ({ request }) => request.destination === 'image',
+  new CacheFirst({
+    cacheName: 'image-cache',
+  })
+);
+
+// Push notifications
+self.addEventListener('push', (event) => {
+  const data = event.data?.json();
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: '/icons/icon-192.png',
+      data: data.data,
+    })
+  );
+});
+```
+
+## Web Push Notifications
+
+```typescript
+// src/hooks/usePushNotifications.ts
+export function usePushNotifications() {
+  const subscribe = async () => {
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return null;
+
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: import.meta.env.VITE_VAPID_PUBLIC_KEY,
+    });
+
+    // Register with backend
+    await api.post('/api/push/register', {
+      token: JSON.stringify(subscription),
+      provider: 'web',
+    });
+
+    return subscription;
+  };
+
+  return { subscribe };
+}
+```
+
+## App Manifest
+
+```json
+{
+  "name": "My App",
+  "short_name": "MyApp",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#007aff",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+```
+
+## Template Options
+
+```bash
+mizu new ./my-app --template mobile/pwa \
+  --var name=my-app \
+  --var workbox=true \
+  --var ui=tailwind \
+  --var push=true
+```
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `name` | Project name | Directory name |
+| `workbox` | Use Workbox for service worker | `false` |
+| `ui` | UI framework: `css`, `tailwind` | `css` |
+| `push` | Enable push notifications | `true` |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Unity Game" href="/mobile/game" icon="gamepad">
+    Build games with Unity
+  </Card>
+  <Card title="Templates" href="/mobile/templates" icon="layer-group">
+    All mobile templates
+  </Card>
+</CardGroup>
