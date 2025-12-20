@@ -1,0 +1,9 @@
+{
+  "name": "frontend/spa/next",
+  "description": "Next.js SPA with App Router, TypeScript, Tailwind, and Mizu backend",
+  "tags": ["go", "mizu", "frontend", "spa", "next", "nextjs", "react", "typescript", "tailwind"],
+  "variables": {
+    "name": { "description": "Project name", "default": "" },
+    "module": { "description": "Go module path", "default": "" }
+  }
+}
