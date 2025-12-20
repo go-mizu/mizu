@@ -1,12 +1,74 @@
 ---
 title: "Preact"
-description: "Build lightweight Preact applications with Mizu."
+description: "Build lightweight, blazing-fast Preact applications with Mizu."
 icon: "code"
 ---
 
-Preact is a fast 3kB alternative to React with the same API. Use it when you want React's developer experience with a smaller bundle size.
+Preact is a fast 3kB alternative to React with the same modern API. It delivers the same component-based architecture and hooks as React, but with a significantly smaller footprint and better performance. When you want React's developer experience without the bundle size overhead, Preact is the perfect choice.
+
+## Why Preact?
+
+Preact brings all the power of modern React development with exceptional performance:
+
+**Tiny Bundle Size** - Only 3kB gzipped vs React's ~45kB. Perfect for mobile-first applications.
+
+**Blazing Fast** - Smaller runtime means faster parsing, faster execution, and better performance on low-end devices.
+
+**React Compatible** - Use `preact/compat` to run most React libraries unchanged. Same hooks API, same patterns.
+
+**Modern Features** - Hooks, fragments, context, concurrent rendering, and more.
+
+**Signals** - Unique fine-grained reactivity system that's even faster than hooks.
+
+**No Build Required** - Can run directly in browsers with ES modules (though bundling is recommended).
+
+### Preact vs React Comparison
+
+| Feature | Preact | React |
+|---------|--------|-------|
+| **Bundle Size** | 3kB | ~45kB |
+| **Runtime Speed** | ⚡ Faster | ⚡ Fast |
+| **API Compatibility** | ~95% with compat | 100% |
+| **Hooks** | ✅ Yes | ✅ Yes |
+| **Fragments** | ✅ Yes | ✅ Yes |
+| **Context** | ✅ Yes | ✅ Yes |
+| **Signals** | ✅ Unique feature | ❌ No |
+| **DevTools** | ✅ Yes | ✅ Yes |
+| **Ecosystem** | ⚠️ Smaller | ✅ Huge |
+| **Learning Curve** | ✅ Easy (if you know React) | ⚠️ Moderate |
+| **TypeScript** | ✅ Full support | ✅ Full support |
+| **Best for** | Performance-critical apps | Large ecosystems |
+
+### Bundle Size Comparison
+
+Real-world bundle sizes (production, gzipped):
+
+```
+Hello World App:
+├── Preact:        ~4 KB   (library + app code)
+├── React:         ~42 KB  (library + app code)
+└── Savings:       ~38 KB  (90% smaller!)
+
+Todo App:
+├── Preact:        ~8 KB
+├── React:         ~46 KB
+└── Savings:       ~38 KB  (82% smaller!)
+
+Full App (with routing):
+├── Preact:        ~15 KB
+├── React:         ~52 KB
+└── Savings:       ~37 KB  (71% smaller!)
+```
+
+**This means:**
+- Faster initial load (especially on slow connections)
+- Better performance on mobile devices
+- Lower bandwidth costs
+- Improved Core Web Vitals scores
 
 ## Quick Start
+
+Create a new Preact project with the CLI:
 
 ```bash
 mizu new ./my-preact-app --template frontend/preact
@@ -14,56 +76,331 @@ cd my-preact-app
 make dev
 ```
 
-## Why Preact?
+Visit `http://localhost:3000` to see your app!
 
-- **Tiny**: 3kB (React is ~45kB)
-- **Fast**: Faster than React
-- **Compatible**: Works with most React libraries
-- **Same API**: Familiar to React developers
+## Project Structure
 
-## Differences from React
-
-### Imports
-
-```jsx
-// React
-import { useState } from 'react'
-
-// Preact
-import { useState } from 'preact/hooks'
+```
+my-preact-app/
+├── cmd/
+│   └── server/
+│       └── main.go              # Go entry point
+├── app/
+│   └── server/
+│       ├── app.go               # Mizu app configuration
+│       ├── config.go            # Server configuration
+│       └── routes.go            # API routes (Go)
+├── client/                      # Preact application
+│   ├── src/
+│   │   ├── main.jsx            # App entry point
+│   │   ├── app.jsx             # Root component
+│   │   ├── components/
+│   │   │   ├── Header.jsx
+│   │   │   ├── Footer.jsx
+│   │   │   └── UserCard.jsx
+│   │   ├── pages/
+│   │   │   ├── Home.jsx
+│   │   │   ├── About.jsx
+│   │   │   └── Users.jsx
+│   │   ├── hooks/
+│   │   │   ├── useUsers.js
+│   │   │   └── useAuth.js
+│   │   ├── store/              # Signals store
+│   │   │   └── users.js
+│   │   └── styles/
+│   │       └── index.css
+│   ├── public/
+│   │   └── favicon.ico
+│   ├── index.html
+│   ├── package.json
+│   ├── vite.config.js
+│   └── tsconfig.json
+├── dist/                        # Built files
+└── Makefile
 ```
 
-### Aliasing
+## Configuration
 
-To use React libraries, add to `vite.config.ts`:
+### Vite Configuration
 
-```ts
-export default {
+Configure Vite for Preact with React compatibility:
+
+#### `client/vite.config.js`
+
+```js
+import { defineConfig } from 'vite'
+import preact from '@preact/preset-vite'
+
+export default defineConfig({
+  plugins: [preact()],
+
+  // React compatibility (optional)
   resolve: {
     alias: {
       'react': 'preact/compat',
-      'react-dom': 'preact/compat'
+      'react-dom': 'preact/compat',
+      'react/jsx-runtime': 'preact/jsx-runtime'
     }
+  },
+
+  server: {
+    port: 5173,
+    strictPort: true,
+    hmr: {
+      clientPort: 3000  // Mizu's port for HMR
+    }
+  },
+
+  build: {
+    outDir: '../dist',
+    emptyOutDir: true,
+
+    // Optimize for size
+    rollupOptions: {
+      output: {
+        manualChunks: undefined  // Keep bundle small
+      }
+    },
+
+    // Smaller chunk size limit
+    chunkSizeWarningLimit: 100
+  }
+})
+```
+
+**Why use aliases?**
+- Use existing React libraries without modification
+- Gradual migration from React to Preact
+- Access to React ecosystem (react-router, etc.)
+
+### Backend Configuration
+
+#### `app/server/app.go`
+
+```go
+package server
+
+import (
+    "embed"
+    "io/fs"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/frontend"
+)
+
+//go:embed all:../../dist
+var distFS embed.FS
+
+func New(cfg *Config) *mizu.App {
+    app := mizu.New()
+
+    // API routes
+    setupRoutes(app)
+
+    // Frontend middleware
+    dist, _ := fs.Sub(distFS, "dist")
+    app.Use(frontend.WithOptions(frontend.Options{
+        Mode:        frontend.ModeAuto,
+        FS:          dist,
+        Root:        "./dist",
+        DevServer:   "http://localhost:" + cfg.DevPort,
+        IgnorePaths: []string{"/api"},
+    }))
+
+    return app
+}
+```
+
+## Preact vs React: Key Differences
+
+While Preact is largely compatible with React, there are some differences:
+
+### 1. Import Paths
+
+```jsx
+// React
+import React from 'react'
+import { useState, useEffect } from 'react'
+import ReactDOM from 'react-dom'
+
+// Preact (native)
+import { h, render } from 'preact'
+import { useState, useEffect } from 'preact/hooks'
+
+// Preact (with compat - React-style imports)
+import React, { useState, useEffect } from 'react'
+import ReactDOM from 'react-dom'
+```
+
+### 2. JSX Pragma
+
+Preact uses `h` function instead of `React.createElement`:
+
+```jsx
+// React (implicit)
+<div>Hello</div>
+// Compiles to: React.createElement('div', null, 'Hello')
+
+// Preact (implicit with preset)
+<div>Hello</div>
+// Compiles to: h('div', null, 'Hello')
+
+// Preact (explicit pragma - not needed with preset)
+/** @jsx h */
+import { h } from 'preact'
+```
+
+With `@preact/preset-vite`, you don't need to import `h` manually.
+
+### 3. Event Naming
+
+Preact uses standard DOM event names:
+
+```jsx
+// React (camelCase)
+<button onClick={handleClick}>Click</button>
+<input onChange={handleChange} />
+
+// Preact (lowercase also works, but camelCase preferred)
+<button onClick={handleClick}>Click</button>
+<input onInput={handleInput} />  // Note: onInput instead of onChange
+```
+
+**Important:** Preact uses `onInput` for real-time updates, while React uses `onChange`.
+
+### 4. Class Names
+
+Both support `className`, but Preact also supports `class`:
+
+```jsx
+// React (only className)
+<div className="container">Content</div>
+
+// Preact (both work)
+<div className="container">Content</div>
+<div class="container">Content</div>
+```
+
+### 5. defaultValue vs value
+
+```jsx
+// React (controlled by default)
+<input value={value} onChange={onChange} />
+
+// Preact (more flexible)
+<input value={value} onInput={onInput} />
+<input defaultValue={value} />  // Uncontrolled
+```
+
+## Components
+
+### Function Components
+
+```jsx
+// Basic component
+function Welcome({ name }) {
+  return <h1>Hello, {name}!</h1>
+}
+
+// With destructuring and default props
+function Card({ title, content = 'No content' }) {
+  return (
+    <div class="card">
+      <h2>{title}</h2>
+      <p>{content}</p>
+    </div>
+  )
+}
+
+// With TypeScript
+interface UserProps {
+  user: {
+    id: number
+    name: string
+    email: string
+  }
+}
+
+function UserProfile({ user }: UserProps) {
+  return (
+    <div>
+      <h1>{user.name}</h1>
+      <p>{user.email}</p>
+    </div>
+  )
+}
+```
+
+### Class Components
+
+While hooks are preferred, class components work too:
+
+```jsx
+import { Component } from 'preact'
+
+class Counter extends Component {
+  state = { count: 0 }
+
+  increment = () => {
+    this.setState({ count: this.state.count + 1 })
+  }
+
+  render() {
+    return (
+      <div>
+        <p>Count: {this.state.count}</p>
+        <button onClick={this.increment}>+</button>
+      </div>
+    )
   }
 }
 ```
 
-Now React libraries work with Preact!
+## Hooks
 
-## Example Component
+Preact supports all React hooks:
+
+### useState
 
 ```jsx
-import { h } from 'preact'
-import { useState, useEffect } from 'preact/hooks'
+import { useState } from 'preact/hooks'
 
-export function Users() {
+function Counter() {
+  const [count, setCount] = useState(0)
+  const [name, setName] = useState('Guest')
+
+  return (
+    <div>
+      <p>{name}: {count}</p>
+      <button onClick={() => setCount(count + 1)}>+</button>
+      <input
+        value={name}
+        onInput={(e) => setName(e.target.value)}
+      />
+    </div>
+  )
+}
+```
+
+### useEffect
+
+```jsx
+import { useEffect, useState } from 'preact/hooks'
+
+function Users() {
   const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     fetch('/api/users')
       .then(res => res.json())
-      .then(setUsers)
-  }, [])
+      .then(data => {
+        setUsers(data)
+        setLoading(false)
+      })
+  }, [])  // Empty deps = run once on mount
+
+  if (loading) return <div>Loading...</div>
 
   return (
     <ul>
@@ -75,45 +412,1241 @@ export function Users() {
 }
 ```
 
+### useReducer
+
+```jsx
+import { useReducer } from 'preact/hooks'
+
+const initialState = { count: 0 }
+
+function reducer(state, action) {
+  switch (action.type) {
+    case 'increment':
+      return { count: state.count + 1 }
+    case 'decrement':
+      return { count: state.count - 1 }
+    case 'reset':
+      return initialState
+    default:
+      return state
+  }
+}
+
+function Counter() {
+  const [state, dispatch] = useReducer(reducer, initialState)
+
+  return (
+    <div>
+      <p>Count: {state.count}</p>
+      <button onClick={() => dispatch({ type: 'increment' })}>+</button>
+      <button onClick={() => dispatch({ type: 'decrement' })}>-</button>
+      <button onClick={() => dispatch({ type: 'reset' })}>Reset</button>
+    </div>
+  )
+}
+```
+
+### useContext
+
+```jsx
+import { createContext } from 'preact'
+import { useContext } from 'preact/hooks'
+
+const ThemeContext = createContext('light')
+
+function App() {
+  return (
+    <ThemeContext.Provider value="dark">
+      <ThemedButton />
+    </ThemeContext.Provider>
+  )
+}
+
+function ThemedButton() {
+  const theme = useContext(ThemeContext)
+
+  return (
+    <button class={`btn-${theme}`}>
+      Themed Button
+    </button>
+  )
+}
+```
+
+### useMemo and useCallback
+
+```jsx
+import { useMemo, useCallback, useState } from 'preact/hooks'
+
+function ExpensiveComponent({ items }) {
+  const [filter, setFilter] = useState('')
+
+  // Memoize expensive calculation
+  const filteredItems = useMemo(() => {
+    console.log('Filtering items...')
+    return items.filter(item =>
+      item.name.toLowerCase().includes(filter.toLowerCase())
+    )
+  }, [items, filter])
+
+  // Memoize callback
+  const handleFilter = useCallback((e) => {
+    setFilter(e.target.value)
+  }, [])
+
+  return (
+    <div>
+      <input value={filter} onInput={handleFilter} />
+      <ul>
+        {filteredItems.map(item => (
+          <li key={item.id}>{item.name}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+```
+
+### useRef
+
+```jsx
+import { useRef, useEffect } from 'preact/hooks'
+
+function AutoFocusInput() {
+  const inputRef = useRef(null)
+
+  useEffect(() => {
+    // Focus input on mount
+    inputRef.current?.focus()
+  }, [])
+
+  return <input ref={inputRef} placeholder="Auto-focused" />
+}
+```
+
+### Custom Hooks
+
+```jsx
+// hooks/useUsers.js
+import { useState, useEffect } from 'preact/hooks'
+
+export function useUsers() {
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    fetch('/api/users')
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to fetch')
+        return res.json()
+      })
+      .then(setUsers)
+      .catch(setError)
+      .finally(() => setLoading(false))
+  }, [])
+
+  const addUser = async (user) => {
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(user)
+    })
+    const newUser = await res.json()
+    setUsers([...users, newUser])
+  }
+
+  const deleteUser = async (id) => {
+    await fetch(`/api/users/${id}`, { method: 'DELETE' })
+    setUsers(users.filter(u => u.id !== id))
+  }
+
+  return { users, loading, error, addUser, deleteUser }
+}
+```
+
+Usage:
+
+```jsx
+import { useUsers } from './hooks/useUsers'
+
+function UserList() {
+  const { users, loading, error, deleteUser } = useUsers()
+
+  if (loading) return <div>Loading...</div>
+  if (error) return <div>Error: {error.message}</div>
+
+  return (
+    <ul>
+      {users.map(user => (
+        <li key={user.id}>
+          {user.name}
+          <button onClick={() => deleteUser(user.id)}>Delete</button>
+        </li>
+      ))}
+    </ul>
+  )
+}
+```
+
 ## Preact Signals
 
-Preact has its own reactivity system:
+Signals are Preact's unique fine-grained reactivity system. They're faster and simpler than hooks for state management.
+
+### What are Signals?
+
+Signals are reactive primitives that automatically update components when their value changes:
 
 ```jsx
 import { signal } from '@preact/signals'
 
+// Create a signal
+const count = signal(0)
+
+// Read value
+console.log(count.value)  // 0
+
+// Update value
+count.value++  // Components using count will auto-update!
+```
+
+### Why Signals?
+
+**Performance:**
+- No re-renders! Components only update the specific DOM nodes that changed
+- Skip Virtual DOM diffing
+- Faster than useState for frequently updating state
+
+**Simplicity:**
+- No dependency arrays
+- No useMemo/useCallback needed
+- Share state without Context API
+
+**Size:**
+- Signals add only ~1.6kB to your bundle
+
+### Basic Signals
+
+```jsx
+import { signal } from '@preact/signals'
+
+// Global signal (outside component)
 const count = signal(0)
 
 function Counter() {
+  // Signal value is accessed with .value
+  // But in JSX, you can use the signal directly!
   return (
     <div>
       <p>Count: {count}</p>
+      <button onClick={() => count.value++}>+</button>
+      <button onClick={() => count.value--}>-</button>
+    </div>
+  )
+}
+```
+
+**Key points:**
+- Access/update with `.value` in JavaScript
+- Use signal directly in JSX (no `.value` needed)
+- Changes trigger automatic, fine-grained updates
+
+### Computed Signals
+
+Derived values that automatically update:
+
+```jsx
+import { signal, computed } from '@preact/signals'
+
+const count = signal(0)
+const doubled = computed(() => count.value * 2)
+
+function App() {
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <p>Doubled: {doubled}</p>
       <button onClick={() => count.value++}>Increment</button>
     </div>
   )
 }
 ```
 
-## When to Use Preact
+Computed signals:
+- Only recalculate when dependencies change
+- Cached automatically
+- Can depend on other computed signals
 
-**Choose Preact when:**
-- Bundle size matters
-- You want React-like DX
-- Performance is critical
-- Mobile-first applications
+### Effect Signal
 
-**Choose React when:**
-- Using React-specific libraries
-- Team familiar with React
-- Ecosystem size matters
+Run side effects when signals change:
+
+```jsx
+import { signal, effect } from '@preact/signals'
+
+const count = signal(0)
+
+effect(() => {
+  console.log('Count changed to:', count.value)
+})
+
+// Now whenever count changes, the effect runs
+count.value = 5  // Logs: "Count changed to: 5"
+```
+
+### Signals for State Management
+
+Create a global store with signals:
+
+```jsx
+// store/users.js
+import { signal, computed } from '@preact/signals'
+
+export const users = signal([])
+export const filter = signal('')
+
+export const filteredUsers = computed(() => {
+  const f = filter.value.toLowerCase()
+  return users.value.filter(u =>
+    u.name.toLowerCase().includes(f)
+  )
+})
+
+export const userCount = computed(() => users.value.length)
+
+export async function fetchUsers() {
+  const res = await fetch('/api/users')
+  users.value = await res.json()
+}
+
+export function addUser(user) {
+  users.value = [...users.value, user]
+}
+
+export function deleteUser(id) {
+  users.value = users.value.filter(u => u.id !== id)
+}
+```
+
+Use in components:
+
+```jsx
+import { users, filteredUsers, filter, fetchUsers, deleteUser } from './store/users'
+import { useEffect } from 'preact/hooks'
+
+function UserList() {
+  useEffect(() => {
+    fetchUsers()
+  }, [])
+
+  return (
+    <div>
+      <input
+        value={filter}
+        onInput={(e) => filter.value = e.target.value}
+        placeholder="Filter users..."
+      />
+
+      <p>Total: {users.value.length}</p>
+
+      <ul>
+        {filteredUsers.value.map(user => (
+          <li key={user.id}>
+            {user.name}
+            <button onClick={() => deleteUser(user.id)}>×</button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+```
+
+### Signals vs Hooks
+
+| Feature | Signals | Hooks (useState) |
+|---------|---------|------------------|
+| **Bundle Size** | +1.6kB | Included |
+| **Performance** | ⚡ Fastest | ⚡ Fast |
+| **Re-renders** | ❌ No | ✅ Yes |
+| **Global State** | ✅ Easy | ⚠️ Needs Context |
+| **Computed Values** | ✅ Built-in | ⚠️ useMemo |
+| **Learning Curve** | ✅ Simple | ✅ Familiar |
+| **Best for** | Shared state, counters, filters | Local component state |
+
+**Rule of thumb:**
+- Use **Signals** for: Global state, frequently updated values, shared state
+- Use **Hooks** for: Local component state, one-time effects, familiar patterns
+
+## Routing
+
+Preact doesn't include routing, but you have options:
+
+### Option 1: preact-router (Recommended)
+
+Lightweight routing made for Preact:
+
+```bash
+npm install preact-router
+```
+
+```jsx
+import { Router, Route } from 'preact-router'
+import Home from './pages/Home'
+import About from './pages/About'
+import Users from './pages/Users'
+import User from './pages/User'
+
+function App() {
+  return (
+    <div>
+      <nav>
+        <a href="/">Home</a>
+        <a href="/about">About</a>
+        <a href="/users">Users</a>
+      </nav>
+
+      <Router>
+        <Route path="/" component={Home} />
+        <Route path="/about" component={About} />
+        <Route path="/users" component={Users} />
+        <Route path="/users/:id" component={User} />
+      </Router>
+    </div>
+  )
+}
+```
+
+Access route params:
+
+```jsx
+function User({ id }) {
+  return <h1>User {id}</h1>
+}
+```
+
+Programmatic navigation:
+
+```jsx
+import { route } from 'preact-router'
+
+function handleClick() {
+  route('/users')
+}
+```
+
+### Option 2: React Router (with compat)
+
+Use React Router with `preact/compat`:
+
+```bash
+npm install react-router-dom
+```
+
+```jsx
+import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
+import Home from './pages/Home'
+import About from './pages/About'
+
+function App() {
+  return (
+    <BrowserRouter>
+      <nav>
+        <Link to="/">Home</Link>
+        <Link to="/about">About</Link>
+      </nav>
+
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/about" element={<About />} />
+      </Routes>
+    </BrowserRouter>
+  )
+}
+```
+
+### Option 3: wouter (Minimalist)
+
+Tiny routing library:
+
+```bash
+npm install wouter wouter-preact
+```
+
+```jsx
+import { Route, Link } from 'wouter-preact'
+
+function App() {
+  return (
+    <div>
+      <Link href="/">Home</Link>
+      <Link href="/about">About</Link>
+
+      <Route path="/" component={Home} />
+      <Route path="/about" component={About} />
+    </div>
+  )
+}
+```
+
+## React Compatibility (preact/compat)
+
+Run most React libraries unchanged with `preact/compat`.
+
+### Setup
+
+Already configured in the Vite config above. Just install React libraries:
+
+```bash
+npm install react-router-dom
+npm install react-query
+npm install react-hook-form
+```
+
+Import as normal:
+
+```jsx
+import { useForm } from 'react-hook-form'
+import { useQuery } from 'react-query'
+
+function MyForm() {
+  const { register, handleSubmit } = useForm()
+
+  const { data } = useQuery('users', () =>
+    fetch('/api/users').then(r => r.json())
+  )
+
+  return <form onSubmit={handleSubmit}>...</form>
+}
+```
+
+### What Works
+
+Most React libraries work out of the box:
+
+✅ **Routing:** react-router-dom, wouter
+✅ **Forms:** react-hook-form, formik
+✅ **State:** zustand, jotai
+✅ **Data Fetching:** react-query, swr
+✅ **UI Libraries:** Many work (test first)
+✅ **Styling:** styled-components, emotion
+
+### What Doesn't Work
+
+❌ **React-specific internals:** Libraries using React internals
+❌ **React Native:** Web only
+❌ **Some UI libraries:** Material-UI, Chakra (use Preact alternatives)
+
+### Testing Compatibility
+
+To test if a library works:
+
+```jsx
+import { useState } from 'react'  // Uses preact/compat
+import SomeLibrary from 'some-library'
+
+function Test() {
+  return <SomeLibrary />
+}
+```
+
+If it renders without errors, it works!
+
+## Styling
+
+### CSS Modules
+
+```jsx
+import styles from './Button.module.css'
+
+function Button({ children }) {
+  return (
+    <button class={styles.button}>
+      {children}
+    </button>
+  )
+}
+```
+
+```css
+/* Button.module.css */
+.button {
+  background: #007bff;
+  color: white;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+}
+```
+
+### Tailwind CSS
+
+Install Tailwind:
+
+```bash
+npm install -D tailwindcss postcss autoprefixer
+npx tailwindcss init -p
+```
+
+Configure `tailwind.config.js`:
+
+```js
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,jsx,ts,tsx}",
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}
+```
+
+Use in components:
+
+```jsx
+function Button() {
+  return (
+    <button class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+      Click me
+    </button>
+  )
+}
+```
+
+### Styled Components
+
+```bash
+npm install styled-components
+```
+
+```jsx
+import styled from 'styled-components'
+
+const Button = styled.button`
+  background: #007bff;
+  color: white;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+
+  &:hover {
+    background: #0056b3;
+  }
+`
+
+function App() {
+  return <Button>Click me</Button>
+}
+```
+
+## Development Workflow
+
+### Starting Development
+
+```bash
+# Option 1: Makefile (recommended)
+make dev
+
+# Option 2: Manual (two terminals)
+# Terminal 1: Preact dev server
+cd client
+npm run dev
+
+# Terminal 2: Mizu server
+go run cmd/server/main.go
+```
+
+Visit `http://localhost:3000`
+
+### Hot Module Replacement
+
+Preact supports Fast Refresh:
+- Edit components → instant updates
+- State preserved during updates
+- No full page reload
+
+### DevTools
+
+Install Preact DevTools extension:
+- [Chrome Extension](https://chrome.google.com/webstore/detail/preact-developer-tools/ilcajpmogmhpliinlbcdebhbcanbghmd)
+- [Firefox Extension](https://addons.mozilla.org/en-US/firefox/addon/preact-devtools/)
+
+Features:
+- Inspect component tree
+- View props and state
+- Track re-renders
+- Performance profiling
+
+## Building for Production
+
+```bash
+make build
+```
+
+This:
+1. Builds Preact app (`npm run build`)
+2. Builds Go binary with embedded frontend
+
+### Build Optimizations
+
+The Preact template includes optimizations:
+
+**Code splitting:**
+```js
+// Lazy load routes
+import { lazy } from 'preact/compat'
+
+const About = lazy(() => import('./pages/About'))
+
+<Route path="/about" component={About} />
+```
+
+**Tree shaking:**
+```js
+// Import only what you need
+import { signal } from '@preact/signals'  // ✅
+import * as signals from '@preact/signals'  // ❌
+```
+
+**Bundle analysis:**
+```bash
+npm run build -- --mode analyze
+```
+
+### Production Checklist
+
+- [ ] Remove console.logs
+- [ ] Enable minification
+- [ ] Optimize images
+- [ ] Lazy load routes
+- [ ] Use Signals for global state
+- [ ] Check bundle size (aim for <15kB with routing)
+- [ ] Test on slow connections
+- [ ] Verify DevTools disabled in prod
+
+## TypeScript
+
+Preact has excellent TypeScript support:
+
+```tsx
+// Component with props
+interface ButtonProps {
+  onClick: () => void
+  children: preact.ComponentChildren
+  variant?: 'primary' | 'secondary'
+}
+
+function Button({ onClick, children, variant = 'primary' }: ButtonProps) {
+  return (
+    <button class={`btn-${variant}`} onClick={onClick}>
+      {children}
+    </button>
+  )
+}
+
+// With generic types
+interface ListProps<T> {
+  items: T[]
+  renderItem: (item: T) => preact.VNode
+}
+
+function List<T>({ items, renderItem }: ListProps<T>) {
+  return (
+    <ul>
+      {items.map((item, i) => (
+        <li key={i}>{renderItem(item)}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+### Typed Hooks
+
+```tsx
+import { useState } from 'preact/hooks'
+
+// Type inference
+const [count, setCount] = useState(0)  // number
+
+// Explicit types
+const [user, setUser] = useState<User | null>(null)
+
+// Typed ref
+const inputRef = useRef<HTMLInputElement>(null)
+```
+
+### Typed Signals
+
+```tsx
+import { signal, Signal } from '@preact/signals'
+
+// Type inference
+const count = signal(0)  // Signal<number>
+
+// Explicit type
+const user: Signal<User | null> = signal(null)
+```
+
+## Real-World Example: Todo App with Signals
+
+Complete todo app using Signals:
+
+### Backend
+
+```go
+// app/server/routes.go
+type Todo struct {
+    ID        int    `json:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
+}
+
+var todos = []Todo{
+    {ID: 1, Title: "Learn Preact", Completed: true},
+    {ID: 2, Title: "Build app", Completed: false},
+}
+
+func setupRoutes(app *mizu.App) {
+    app.Get("/api/todos", handleTodos)
+    app.Post("/api/todos", createTodo)
+    app.Put("/api/todos/{id}", updateTodo)
+    app.Delete("/api/todos/{id}", deleteTodo)
+}
+
+func handleTodos(c *mizu.Ctx) error {
+    return c.JSON(200, todos)
+}
+```
+
+### Store with Signals
+
+```jsx
+// store/todos.js
+import { signal, computed } from '@preact/signals'
+
+export const todos = signal([])
+export const filter = signal('all')  // 'all' | 'active' | 'completed'
+export const newTodoText = signal('')
+
+export const filteredTodos = computed(() => {
+  switch (filter.value) {
+    case 'active':
+      return todos.value.filter(t => !t.completed)
+    case 'completed':
+      return todos.value.filter(t => t.completed)
+    default:
+      return todos.value
+  }
+})
+
+export const activeCount = computed(() =>
+  todos.value.filter(t => !t.completed).length
+)
+
+export async function fetchTodos() {
+  const res = await fetch('/api/todos')
+  todos.value = await res.json()
+}
+
+export async function addTodo() {
+  if (!newTodoText.value.trim()) return
+
+  const res = await fetch('/api/todos', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: newTodoText.value, completed: false })
+  })
+
+  const todo = await res.json()
+  todos.value = [...todos.value, todo]
+  newTodoText.value = ''
+}
+
+export async function toggleTodo(id) {
+  const todo = todos.value.find(t => t.id === id)
+  if (!todo) return
+
+  await fetch(`/api/todos/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...todo, completed: !todo.completed })
+  })
+
+  todos.value = todos.value.map(t =>
+    t.id === id ? { ...t, completed: !t.completed } : t
+  )
+}
+
+export async function deleteTodo(id) {
+  await fetch(`/api/todos/${id}`, { method: 'DELETE' })
+  todos.value = todos.value.filter(t => t.id !== id)
+}
+```
+
+### Components
+
+```jsx
+// App.jsx
+import { useEffect } from 'preact/hooks'
+import { fetchTodos } from './store/todos'
+import TodoForm from './components/TodoForm'
+import TodoFilters from './components/TodoFilters'
+import TodoList from './components/TodoList'
+import './App.css'
+
+export function App() {
+  useEffect(() => {
+    fetchTodos()
+  }, [])
+
+  return (
+    <div class="app">
+      <h1>Todos</h1>
+      <TodoForm />
+      <TodoFilters />
+      <TodoList />
+    </div>
+  )
+}
+```
+
+```jsx
+// components/TodoForm.jsx
+import { newTodoText, addTodo } from '../store/todos'
+
+export default function TodoForm() {
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    addTodo()
+  }
+
+  return (
+    <form onSubmit={handleSubmit} class="todo-form">
+      <input
+        value={newTodoText}
+        onInput={(e) => newTodoText.value = e.target.value}
+        placeholder="What needs to be done?"
+        class="todo-input"
+      />
+      <button type="submit">Add</button>
+    </form>
+  )
+}
+```
+
+```jsx
+// components/TodoFilters.jsx
+import { filter, activeCount } from '../store/todos'
+
+export default function TodoFilters() {
+  return (
+    <div class="filters">
+      <button
+        class={filter.value === 'all' ? 'active' : ''}
+        onClick={() => filter.value = 'all'}
+      >
+        All
+      </button>
+      <button
+        class={filter.value === 'active' ? 'active' : ''}
+        onClick={() => filter.value = 'active'}
+      >
+        Active ({activeCount})
+      </button>
+      <button
+        class={filter.value === 'completed' ? 'active' : ''}
+        onClick={() => filter.value = 'completed'}
+      >
+        Completed
+      </button>
+    </div>
+  )
+}
+```
+
+```jsx
+// components/TodoList.jsx
+import { filteredTodos, toggleTodo, deleteTodo } from '../store/todos'
+
+export default function TodoList() {
+  if (filteredTodos.value.length === 0) {
+    return <p class="empty">No todos found</p>
+  }
+
+  return (
+    <ul class="todo-list">
+      {filteredTodos.value.map(todo => (
+        <li key={todo.id} class={todo.completed ? 'completed' : ''}>
+          <input
+            type="checkbox"
+            checked={todo.completed}
+            onChange={() => toggleTodo(todo.id)}
+          />
+          <span>{todo.title}</span>
+          <button onClick={() => deleteTodo(todo.id)}>×</button>
+        </li>
+      ))}
+    </ul>
+  )
+}
+```
+
+## Migration from React
+
+### Step 1: Install Preact
+
+```bash
+npm install preact
+npm install -D @preact/preset-vite
+```
+
+### Step 2: Update Vite Config
+
+```js
+import { defineConfig } from 'vite'
+import preact from '@preact/preset-vite'
+
+export default defineConfig({
+  plugins: [preact()],
+  resolve: {
+    alias: {
+      'react': 'preact/compat',
+      'react-dom': 'preact/compat',
+      'react/jsx-runtime': 'preact/jsx-runtime'
+    }
+  }
+})
+```
+
+### Step 3: Update Imports (Gradual)
+
+```jsx
+// Before (React)
+import React, { useState } from 'react'
+import ReactDOM from 'react-dom'
+
+// After (keep same - compat aliased)
+import React, { useState } from 'react'
+import ReactDOM from 'react-dom'
+
+// Or switch to Preact native (optional, over time)
+import { useState } from 'preact/hooks'
+import { render } from 'preact'
+```
+
+### Step 4: Test
+
+Run your app. Most things should work immediately!
+
+### Step 5: Optimize (Optional)
+
+Replace compat imports with Preact native:
+
+```jsx
+// From
+import { useState } from 'react'
+
+// To
+import { useState } from 'preact/hooks'
+```
+
+Replace React Router with preact-router:
+
+```jsx
+// From
+import { BrowserRouter, Route } from 'react-router-dom'
+
+// To
+import { Router, Route } from 'preact-router'
+```
+
+Consider using Signals for state management.
+
+## Performance Tips
+
+### 1. Use Signals for Shared State
+
+```jsx
+// ❌ Slower: Context + useState
+const [users, setUsers] = useState([])
+
+// ✅ Faster: Signals
+const users = signal([])
+```
+
+### 2. Lazy Load Routes
+
+```jsx
+import { lazy } from 'preact/compat'
+
+const About = lazy(() => import('./pages/About'))
+```
+
+### 3. Avoid Inline Functions
+
+```jsx
+// ❌ Creates new function on every render
+<button onClick={() => handleClick(id)}>Click</button>
+
+// ✅ Reuse function
+const onClick = () => handleClick(id)
+<button onClick={onClick}>Click</button>
+```
+
+### 4. Use Keys in Lists
+
+```jsx
+// ✅ Proper keys
+{items.map(item => <li key={item.id}>{item.name}</li>)}
+
+// ❌ Index as key (avoid if list changes)
+{items.map((item, i) => <li key={i}>{item.name}</li>)}
+```
+
+### 5. Measure Bundle Size
+
+```bash
+npm run build
+ls -lh dist/assets/*.js
+```
+
+Aim for:
+- Total JS: <20kB (with routing)
+- Main bundle: <15kB
+
+## Troubleshooting
+
+### `h` is not defined
+
+**Error:**
+```
+ReferenceError: h is not defined
+```
+
+**Cause:** Not using `@preact/preset-vite`
+
+**Solution:** Install preset:
+
+```bash
+npm install -D @preact/preset-vite
+```
+
+Update `vite.config.js`:
+
+```js
+import preact from '@preact/preset-vite'
+
+export default {
+  plugins: [preact()]
+}
+```
+
+---
+
+### React Library Doesn't Work
+
+**Symptom:** React library throws errors
+
+**Solution:** Check if compat is configured:
+
+```js
+// vite.config.js
+export default {
+  resolve: {
+    alias: {
+      'react': 'preact/compat',
+      'react-dom': 'preact/compat'
+    }
+  }
+}
+```
+
+If still broken, the library may use React internals. Find a Preact alternative.
+
+---
+
+### onChange Not Firing
+
+**Cause:** Preact uses `onInput` for real-time updates
+
+**Solution:**
+
+```jsx
+// React
+<input onChange={handleChange} />
+
+// Preact
+<input onInput={handleChange} />
+```
+
+---
+
+### DevTools Not Working
+
+**Solution:** Install Preact DevTools (not React DevTools):
+- [Chrome](https://chrome.google.com/webstore/detail/preact-developer-tools/ilcajpmogmhpliinlbcdebhbcanbghmd)
+- [Firefox](https://addons.mozilla.org/en-US/firefox/addon/preact-devtools/)
+
+---
+
+### Bundle Size Too Large
+
+**Check:**
+
+```bash
+npm run build
+ls -lh dist/assets/
+```
+
+**Solutions:**
+1. Remove unused dependencies
+2. Use dynamic imports for routes
+3. Check for duplicate React/Preact
+4. Use Signals instead of heavy state libraries
+
+## When to Choose Preact
+
+### Choose Preact When:
+
+✅ Bundle size is critical (mobile, emerging markets)
+✅ You want React DX with better performance
+✅ Building performance-critical applications
+✅ You need fine-grained reactivity (Signals)
+✅ Migrating from React but want smaller bundle
+✅ Every kilobyte counts
+✅ You value simplicity and speed
+
+### Choose React When:
+
+✅ You need the full React ecosystem
+✅ Using React-specific libraries
+✅ Team is deeply invested in React
+✅ Bundle size doesn't matter
+✅ Need bleeding-edge React features first
+
+### Choose Something Else When:
+
+- **Need SSR/SSG:** Use Next.js, Nuxt, or SvelteKit
+- **Want full framework:** Use Nuxt, Next.js, or Angular
+- **Hate JSX:** Use Vue or Svelte
+- **Want even smaller:** Use vanilla JS or Alpine.js
 
 ## Next Steps
 
 <CardGroup cols={2}>
   <Card title="React Guide" href="/frontend/react" icon="react">
-    Full React guide
+    Compare with full React setup
   </Card>
-  <Card title="Preact Docs" href="https://preactjs.com" icon="external-link">
-    Official Preact docs
+  <Card title="Signals Documentation" href="https://preactjs.com/guide/v10/signals" icon="external-link">
+    Deep dive into Signals
+  </Card>
+  <Card title="Preact Router" href="https://github.com/preactjs/preact-router" icon="external-link">
+    Routing documentation
+  </Card>
+  <Card title="preact/compat" href="https://preactjs.com/guide/v10/switching-to-preact#how-to-alias-preact-compat" icon="external-link">
+    React compatibility guide
   </Card>
 </CardGroup>
