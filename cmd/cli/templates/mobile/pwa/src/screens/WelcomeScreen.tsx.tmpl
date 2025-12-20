@@ -1,0 +1,50 @@
+import { useState } from 'react';
+import { MizuRuntime } from '../runtime/MizuRuntime';
+import { createAuthToken } from '../runtime/tokenStore';
+import './WelcomeScreen.css';
+
+export default function WelcomeScreen() {
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleGetStarted = async () => {
+    setIsLoading(true);
+    try {
+      // Demo: Set a test token
+      await MizuRuntime.shared.tokenStore.setToken(
+        createAuthToken({ accessToken: 'demo_token' })
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="welcome-container">
+      <div className="welcome-content">
+        <div className="welcome-spacer" />
+
+        <div className="welcome-header">
+          <div className="welcome-icon-container">
+            <span className="welcome-icon">&#9889;</span>
+          </div>
+          <h1 className="welcome-title">Welcome to {{.Name}}</h1>
+          <p className="welcome-subtitle">
+            A modern PWA powered by Mizu
+          </p>
+        </div>
+
+        <div className="welcome-spacer" />
+
+        <div className="welcome-footer">
+          {isLoading ? (
+            <div className="welcome-loading">Loading...</div>
+          ) : (
+            <button className="welcome-button" onClick={handleGetStarted}>
+              Get Started
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

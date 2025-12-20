@@ -1,0 +1,58 @@
+import { MizuRuntime } from '../runtime/MizuRuntime';
+import { createAuthToken } from '../runtime/tokenStore';
+import { AuthResponse, User, UserUpdate } from './types';
+
+/**
+ * Generated Mizu API client for {{.Name}}
+ */
+export class {{.Name}}Client {
+  private runtime: MizuRuntime;
+
+  constructor(runtime: MizuRuntime) {
+    this.runtime = runtime;
+  }
+
+  // MARK: - Auth
+
+  /** Sign in with credentials */
+  async signIn(email: string, password: string): Promise<AuthResponse> {
+    return this.runtime.post<AuthResponse>('/auth/signin', { email, password });
+  }
+
+  /** Sign up with credentials */
+  async signUp(email: string, password: string, name: string): Promise<AuthResponse> {
+    return this.runtime.post<AuthResponse>('/auth/signup', { email, password, name });
+  }
+
+  /** Sign out */
+  async signOut(): Promise<void> {
+    await this.runtime.delete<void>('/auth/signout');
+    await this.runtime.tokenStore.clearToken();
+  }
+
+  // MARK: - Users
+
+  /** Get current user profile */
+  async getCurrentUser(): Promise<User> {
+    return this.runtime.get<User>('/users/me');
+  }
+
+  /** Update current user profile */
+  async updateCurrentUser(update: UserUpdate): Promise<User> {
+    return this.runtime.put<User>('/users/me', update);
+  }
+
+  // MARK: - Token Storage
+
+  /** Store an auth response token */
+  async storeAuthToken(response: AuthResponse): Promise<void> {
+    const expiresAt = new Date(Date.now() + response.token.expiresIn * 1000);
+    await this.runtime.tokenStore.setToken(
+      createAuthToken({
+        accessToken: response.token.accessToken,
+        refreshToken: response.token.refreshToken,
+        expiresAt,
+      })
+    );
+  }
+}

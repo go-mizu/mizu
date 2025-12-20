@@ -1,0 +1,110 @@
+# {{.Name}}
+
+A Progressive Web Application (PWA) powered by Mizu.
+
+## Features
+
+- Offline-first architecture with Service Worker
+- Push notifications support
+- Installable on desktop and mobile
+- IndexedDB for local data storage
+- Background sync for queued requests
+- TypeScript + React + Vite
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- npm or yarn
+
+### Installation
+
+```bash
+npm install
+```
+
+### Development
+
+```bash
+npm run dev
+```
+
+The app will be available at http://localhost:3001
+
+### Build
+
+```bash
+npm run build
+```
+
+### Preview Production Build
+
+```bash
+npm run preview
+```
+
+## Project Structure
+
+```
+{{.Name}}/
+├── src/
+│   ├── main.tsx                 # App entry point
+│   ├── App.tsx                  # Main App component
+│   ├── config/                  # Configuration
+│   ├── runtime/                 # Mizu runtime
+│   ├── pwa/                     # PWA features (SW, push, install)
+│   ├── sdk/                     # Generated API client
+│   ├── store/                   # Zustand stores
+│   ├── screens/                 # Screen components
+│   ├── components/              # Reusable components
+│   └── hooks/                   # Custom hooks
+├── public/
+│   ├── manifest.json            # Web App Manifest
+│   ├── sw.js                    # Service Worker
+│   └── icons/                   # App icons
+├── __tests__/                   # Tests
+└── package.json
+```
+
+## PWA Features
+
+### Service Worker
+
+The service worker provides:
+- Static asset caching
+- API response caching
+- Offline fallback
+
+### Push Notifications
+
+Enable push notifications by setting `VITE_VAPID_PUBLIC_KEY` in your environment.
+
+### Install Prompt
+
+The app shows an install prompt when the browser supports PWA installation.
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `VITE_API_URL` | Backend API URL |
+| `VITE_VAPID_PUBLIC_KEY` | VAPID public key for push |
+| `VITE_APP_VERSION` | App version |
+| `VITE_APP_BUILD` | Build number |
+
+## Testing
+
+```bash
+npm run test
+```
+
+## Linting
+
+```bash
+npm run lint
+```
+
+## License
+
+MIT
