@@ -35,16 +35,22 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 	}
 
 	// Check for the nested react template
-	found := false
+	foundReact := false
+	foundVue := false
 	for _, tmpl := range templates {
 		if tmpl.Name == "frontend/spa/react" {
-			found = true
-			break
+			foundReact = true
+		}
+		if tmpl.Name == "frontend/spa/vue" {
+			foundVue = true
 		}
 	}
 
-	if !found {
+	if !foundReact {
 		t.Error("listTemplates() did not include nested template 'frontend/spa/react'")
+	}
+	if !foundVue {
+		t.Error("listTemplates() did not include nested template 'frontend/spa/vue'")
 	}
 }
 
@@ -57,6 +63,7 @@ func TestTemplateExistsNested(t *testing.T) {
 		{"api", true},
 		{"web", true},
 		{"frontend/spa/react", true},
+		{"frontend/spa/vue", true},
 		{"frontend/spa/nonexistent", false},
 		{"frontend/nonexistent", false},
 		{"nonexistent", false},
@@ -81,6 +88,7 @@ func TestLoadTemplateMeta(t *testing.T) {
 		{"minimal", "minimal", true},
 		{"api", "api", true},
 		{"frontend/spa/react", "frontend/spa/react", true},
+		{"frontend/spa/vue", "frontend/spa/vue", true},
 	}
 
 	for _, tt := range tests {
@@ -359,5 +367,208 @@ func TestNewTemplateVars(t *testing.T) {
 	}
 	if vars.Vars["port"] != "8080" {
 		t.Errorf("vars.Vars[port] = %q, want %q", vars.Vars["port"], "8080")
+	}
+}
+
+// Vue template tests
+
+func TestLoadTemplateFilesVue(t *testing.T) {
+	files, err := loadTemplateFiles("frontend/spa/vue")
+	if err != nil {
+		t.Fatalf("loadTemplateFiles() error: %v", err)
+	}
+
+	if len(files) == 0 {
+		t.Error("loadTemplateFiles() returned no files")
+	}
+
+	// Check for expected files
+	expectedFiles := []string{
+		".gitignore",             // from _common
+		"go.mod",                 // from _common
+		"cmd/server/main.go",     // template specific
+		"app/server/app.go",      // template specific
+		"app/server/config.go",   // template specific
+		"app/server/routes.go",   // template specific
+		"client/package.json",    // template specific
+		"client/vite.config.ts",  // template specific
+		"client/src/App.vue",     // template specific (Vue SFC)
+		"client/src/main.ts",     // template specific
+		"client/src/router/index.ts", // template specific
+		"Makefile",               // template specific
+	}
+
+	fileMap := make(map[string]bool)
+	for _, f := range files {
+		fileMap[f.path] = true
+	}
+
+	for _, expected := range expectedFiles {
+		if !fileMap[expected] {
+			t.Errorf("expected file %q not found in template files", expected)
+		}
+	}
+}
+
+func TestBuildPlanVueTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/vue", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if len(p.ops) == 0 {
+		t.Error("buildPlan() returned empty plan")
+	}
+
+	// Check for expected operations
+	hasWrite := false
+	hasMkdir := false
+	for _, op := range p.ops {
+		switch op.kind {
+		case opWrite:
+			hasWrite = true
+		case opMkdir:
+			hasMkdir = true
+		}
+	}
+
+	if !hasWrite {
+		t.Error("plan has no write operations")
+	}
+	if !hasMkdir {
+		t.Error("plan has no mkdir operations")
+	}
+}
+
+func TestApplyPlanVueTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/vue", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Verify key files exist
+	expectedFiles := []string{
+		"go.mod",
+		"cmd/server/main.go",
+		"app/server/app.go",
+		"app/server/config.go",
+		"app/server/routes.go",
+		"client/package.json",
+		"client/vite.config.ts",
+		"client/tsconfig.json",
+		"client/index.html",
+		"client/src/App.vue",
+		"client/src/main.ts",
+		"client/src/router/index.ts",
+		"client/src/components/Layout.vue",
+		"client/src/pages/Home.vue",
+		"client/src/pages/About.vue",
+		"Makefile",
+	}
+
+	for _, file := range expectedFiles {
+		path := filepath.Join(tmpDir, file)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("expected file %q does not exist", file)
+		}
+	}
+}
+
+func TestVueTemplateVariableSubstitution(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myvueapp", "github.com/user/myvueapp", "Apache-2.0", nil)
+
+	p, err := buildPlan("frontend/spa/vue", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check go.mod contains the module path
+	gomod, err := os.ReadFile(filepath.Join(tmpDir, "go.mod"))
+	if err != nil {
+		t.Fatalf("ReadFile(go.mod) error: %v", err)
+	}
+
+	if !strings.Contains(string(gomod), "github.com/user/myvueapp") {
+		t.Error("go.mod does not contain module path")
+	}
+
+	// Check package.json contains the project name
+	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "client/package.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(package.json) error: %v", err)
+	}
+
+	if !strings.Contains(string(pkgjson), "myvueapp-client") {
+		t.Error("package.json does not contain project name")
+	}
+
+	// Check that package.json has Vue dependencies
+	if !strings.Contains(string(pkgjson), `"vue"`) {
+		t.Error("package.json does not contain vue dependency")
+	}
+	if !strings.Contains(string(pkgjson), `"vue-router"`) {
+		t.Error("package.json does not contain vue-router dependency")
+	}
+}
+
+func TestVueTemplateHasVueSpecificContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/vue", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check App.vue contains Vue-specific content
+	appVue, err := os.ReadFile(filepath.Join(tmpDir, "client/src/App.vue"))
+	if err != nil {
+		t.Fatalf("ReadFile(App.vue) error: %v", err)
+	}
+
+	if !strings.Contains(string(appVue), "<script setup") {
+		t.Error("App.vue does not contain Vue <script setup> syntax")
+	}
+	if !strings.Contains(string(appVue), "<template>") {
+		t.Error("App.vue does not contain Vue <template> block")
+	}
+
+	// Check vite.config.ts uses Vue plugin
+	viteConfig, err := os.ReadFile(filepath.Join(tmpDir, "client/vite.config.ts"))
+	if err != nil {
+		t.Fatalf("ReadFile(vite.config.ts) error: %v", err)
+	}
+
+	if !strings.Contains(string(viteConfig), "@vitejs/plugin-vue") {
+		t.Error("vite.config.ts does not import Vue plugin")
+	}
+
+	// Check main.ts uses Vue createApp
+	mainTs, err := os.ReadFile(filepath.Join(tmpDir, "client/src/main.ts"))
+	if err != nil {
+		t.Fatalf("ReadFile(main.ts) error: %v", err)
+	}
+
+	if !strings.Contains(string(mainTs), "createApp") {
+		t.Error("main.ts does not contain Vue createApp")
 	}
 }

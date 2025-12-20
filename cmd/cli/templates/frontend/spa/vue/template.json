@@ -1,0 +1,9 @@
+{
+  "name": "frontend/spa/vue",
+  "description": "Vue SPA with Vite, TypeScript, and Mizu backend",
+  "tags": ["go", "mizu", "frontend", "spa", "vue", "vite", "typescript"],
+  "variables": {
+    "name": { "description": "Project name", "default": "" },
+    "module": { "description": "Go module path", "default": "" }
+  }
+}
