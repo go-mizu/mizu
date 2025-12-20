@@ -1,0 +1,27 @@
+package server
+
+import (
+	"io/fs"
+
+	"github.com/go-mizu/mizu"
+	"github.com/go-mizu/mizu/middlewares/frontend"
+	"{{.Module}}/dist"
+)
+
+func New(cfg *Config) *mizu.App {
+	app := mizu.New()
+
+	// API routes
+	setupRoutes(app)
+
+	// Frontend middleware (auto-detects dev/production mode)
+	distFS, _ := fs.Sub(dist.FS, ".")
+	app.Use(frontend.WithOptions(frontend.Options{
+		Mode:        frontend.ModeAuto,
+		FS:          distFS,
+		DevServer:   "http://localhost:" + cfg.DevPort,
+		IgnorePaths: []string{"/api"},
+	}))
+
+	return app
+}
