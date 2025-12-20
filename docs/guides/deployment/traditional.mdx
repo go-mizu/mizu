@@ -4,7 +4,11 @@ title: "Traditional Servers"
 description: "Deploy Mizu applications to VPS or bare metal servers with systemd and reverse proxy."
 ---
 
-Traditional server deployment gives you full control over your infrastructure. This guide covers deploying to Linux servers using systemd for process management and Nginx or Caddy as reverse proxies.
+**Traditional server deployment** means running your application directly on a Linux server (either a VPS you rent from providers like DigitalOcean/Linode, or a physical server you own). Unlike containers or serverless, you have full control over the operating system and everything installed on it.
+
+This approach requires more setup and maintenance than managed platforms, but it's often cheaper for consistent workloads and gives you complete control. It's also a great way to learn how web applications actually run in production.
+
+This guide covers deploying to Linux servers using **systemd** (the standard Linux service manager) and **reverse proxies** (Nginx or Caddy) for handling HTTPS and load balancing.
 
 ## Prerequisites
 
@@ -48,6 +52,8 @@ rsync -avz --progress myapp user@server:/tmp/myapp
 
 ## Setting Up the Service User
 
+Running your application as the root user is a security risk—if your app is compromised, the attacker has full system access. Instead, create a dedicated **service user** with minimal permissions. This user can only access what your application needs, limiting potential damage.
+
 Create a dedicated user for running the application:
 
 ```bash
@@ -62,9 +68,13 @@ sudo chown myapp:myapp /var/lib/myapp /var/log/myapp
 
 ## Systemd Service
 
+**Systemd** is the standard service manager on modern Linux distributions. It starts your application when the server boots, restarts it if it crashes, and provides tools for monitoring and managing the process.
+
+You define your service in a **unit file** that specifies what to run, which user to run as, and how to handle restarts and failures.
+
 ### Basic Service
 
-Create `/etc/systemd/system/myapp.service`:
+Create `/etc/systemd/system/myapp.service`. This basic configuration gets you started quickly:
 
 ```ini
 [Unit]
@@ -214,7 +224,14 @@ sudo journalctl -u myapp -n 100          # Last 100 lines
 
 ## Reverse Proxy with Caddy
 
-Caddy is the easiest option with automatic HTTPS.
+A **reverse proxy** sits in front of your application and handles incoming requests. It provides several benefits:
+
+- **HTTPS termination**: Manages SSL certificates so your app doesn't have to
+- **Load balancing**: Distributes traffic across multiple instances of your app
+- **Security**: Hides your app behind a hardened web server, adds security headers
+- **Static files**: Serves static assets more efficiently than your app
+
+**Caddy** is the easiest reverse proxy to configure. Its killer feature is **automatic HTTPS**—it obtains and renews SSL certificates from Let's Encrypt automatically with zero configuration.
 
 ### Install Caddy
 
@@ -285,6 +302,8 @@ sudo systemctl status caddy
 ```
 
 ## Reverse Proxy with Nginx
+
+**Nginx** is the most widely-used web server and reverse proxy. It's battle-tested, extremely performant, and has extensive documentation. Unlike Caddy, you need to configure HTTPS separately (usually with Certbot), but this gives you more control.
 
 ### Install Nginx
 
@@ -379,7 +398,11 @@ sudo systemctl status certbot.timer
 
 ## Firewall Configuration
 
+A **firewall** controls which network traffic can reach your server. Without a firewall, all ports are exposed to the internet—including ones you might accidentally leave open. A properly configured firewall allows only the traffic you explicitly need (typically SSH, HTTP, and HTTPS).
+
 ### UFW (Ubuntu)
+
+**UFW (Uncomplicated Firewall)** is Ubuntu's user-friendly interface to the Linux firewall. It's much easier to use than raw iptables:
 
 ```bash
 # Allow SSH

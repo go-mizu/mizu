@@ -4,11 +4,22 @@ title: "CI/CD Pipelines"
 description: "Automate testing, building, and deploying Mizu applications with GitHub Actions, GitLab CI, and other CI/CD platforms."
 ---
 
-Continuous Integration and Continuous Deployment (CI/CD) automates your build, test, and deployment processes. This guide covers setting up pipelines for Mizu applications.
+**CI/CD** stands for **Continuous Integration** and **Continuous Deployment**. These practices automate the tedious parts of software development:
+
+- **Continuous Integration (CI)**: Automatically runs tests and builds your code every time you push changes. Catches bugs early, before they reach production.
+- **Continuous Deployment (CD)**: Automatically deploys your code to staging or production after tests pass. No manual SSH or copy-paste deployments.
+
+Without CI/CD, deploying looks like: run tests locally, build the binary, copy it to the server, restart the service. With CI/CD, you just push to git—everything else happens automatically.
+
+This guide covers setting up pipelines for Mizu applications using popular CI/CD platforms.
 
 ## GitHub Actions
 
+**GitHub Actions** is GitHub's built-in CI/CD platform. It's free for public repositories and has generous free limits for private repos. You define workflows in YAML files in the `.github/workflows/` directory.
+
 ### Basic CI Pipeline
+
+This pipeline runs on every push and pull request. It tests your code, runs linting, and builds the binary to verify everything compiles:
 
 `.github/workflows/ci.yml`:
 
@@ -75,6 +86,10 @@ jobs:
 ```
 
 ### Complete CI/CD Pipeline
+
+This comprehensive pipeline demonstrates a full CI/CD setup: test, build a Docker image, push to a registry, and deploy to staging (on push to main) or production (on version tags).
+
+The `needs` keyword creates dependencies between jobs—build only runs after test passes, deploy only runs after build succeeds.
 
 `.github/workflows/deploy.yml`:
 
@@ -192,6 +207,8 @@ Build for both AMD64 and ARM64:
 ```
 
 ## GitLab CI/CD
+
+**GitLab CI/CD** is built into GitLab and uses a single `.gitlab-ci.yml` file at the repository root. It's similar to GitHub Actions but with different syntax. GitLab also includes a container registry, making it convenient for Docker-based workflows.
 
 ### Basic Pipeline
 
@@ -593,9 +610,13 @@ deploy-digitalocean:
 
 ## Secrets Management
 
+Your CI/CD pipelines need access to secrets like API keys, database passwords, and SSH keys for deployment. **Never commit secrets to your repository**—even in private repos, they can be exposed through logs, forks, or accidental public exposure.
+
+CI/CD platforms provide secure ways to store and access secrets. They're encrypted at rest and only exposed to your pipelines as environment variables.
+
 ### GitHub Actions Secrets
 
-Store secrets in repository settings:
+GitHub Secrets are stored encrypted and exposed only to workflows. Add them in your repository's Settings → Secrets and variables → Actions:
 
 ```yaml
 env:
@@ -866,7 +887,11 @@ test:
 
 ## Best Practices
 
+Following CI/CD best practices makes your pipelines faster, more reliable, and easier to maintain. Here are the most important ones:
+
 ### Cache Dependencies
+
+Downloading dependencies on every build is slow and wastes resources. Most CI platforms support caching, which stores your `go.mod` packages between runs:
 
 ```yaml
 - uses: actions/setup-go@v5
