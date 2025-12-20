@@ -28,78 +28,60 @@ func TestListTemplates(t *testing.T) {
 	}
 }
 
-func TestListTemplatesIncludesNested(t *testing.T) {
+func TestListTemplatesIncludesParentWithSubTemplates(t *testing.T) {
 	templates, err := listTemplates()
 	if err != nil {
 		t.Fatalf("listTemplates() error: %v", err)
 	}
 
-	// Check for the nested templates
-	foundReact := false
-	foundVue := false
-	foundSvelte := false
-	foundAngular := false
-	foundHtmx := false
-	foundNext := false
-	foundNuxt := false
-	foundPreact := false
-	foundSveltekit := false
-	for _, tmpl := range templates {
-		if tmpl.Name == "frontend/spa/react" {
-			foundReact = true
-		}
-		if tmpl.Name == "frontend/spa/vue" {
-			foundVue = true
-		}
-		if tmpl.Name == "frontend/spa/svelte" {
-			foundSvelte = true
-		}
-		if tmpl.Name == "frontend/spa/angular" {
-			foundAngular = true
-		}
-		if tmpl.Name == "frontend/spa/htmx" {
-			foundHtmx = true
-		}
-		if tmpl.Name == "frontend/spa/next" {
-			foundNext = true
-		}
-		if tmpl.Name == "frontend/spa/nuxt" {
-			foundNuxt = true
-		}
-		if tmpl.Name == "frontend/spa/preact" {
-			foundPreact = true
-		}
-		if tmpl.Name == "frontend/spa/sveltekit" {
-			foundSveltekit = true
+	// Check that frontend/spa is listed as a parent template with sub-templates
+	var frontendSPA *templateMeta
+	for i, tmpl := range templates {
+		if tmpl.Name == "frontend/spa" {
+			frontendSPA = &templates[i]
+			break
 		}
 	}
 
-	if !foundReact {
-		t.Error("listTemplates() did not include nested template 'frontend/spa/react'")
+	if frontendSPA == nil {
+		t.Fatal("listTemplates() did not include 'frontend/spa' template")
 	}
-	if !foundVue {
-		t.Error("listTemplates() did not include nested template 'frontend/spa/vue'")
+
+	// Verify it has sub-templates
+	if len(frontendSPA.SubTemplates) == 0 {
+		t.Error("frontend/spa template should have sub-templates")
 	}
-	if !foundSvelte {
-		t.Error("listTemplates() did not include nested template 'frontend/spa/svelte'")
+
+	// Expected sub-templates
+	expected := map[string]bool{
+		"react":     false,
+		"vue":       false,
+		"svelte":    false,
+		"sveltekit": false,
+		"angular":   false,
+		"preact":    false,
+		"next":      false,
+		"nuxt":      false,
+		"htmx":      false,
 	}
-	if !foundAngular {
-		t.Error("listTemplates() did not include nested template 'frontend/spa/angular'")
+
+	for _, st := range frontendSPA.SubTemplates {
+		if _, ok := expected[st.Name]; ok {
+			expected[st.Name] = true
+		}
 	}
-	if !foundHtmx {
-		t.Error("listTemplates() did not include nested template 'frontend/spa/htmx'")
+
+	for name, found := range expected {
+		if !found {
+			t.Errorf("frontend/spa should have sub-template %q", name)
+		}
 	}
-	if !foundNext {
-		t.Error("listTemplates() did not include nested template 'frontend/spa/next'")
-	}
-	if !foundNuxt {
-		t.Error("listTemplates() did not include nested template 'frontend/spa/nuxt'")
-	}
-	if !foundPreact {
-		t.Error("listTemplates() did not include nested template 'frontend/spa/preact'")
-	}
-	if !foundSveltekit {
-		t.Error("listTemplates() did not include nested template 'frontend/spa/sveltekit'")
+
+	// Verify that individual sub-templates are NOT listed separately
+	for _, tmpl := range templates {
+		if strings.HasPrefix(tmpl.Name, "frontend/spa/") {
+			t.Errorf("sub-template %q should not be listed separately", tmpl.Name)
+		}
 	}
 }
 
@@ -638,22 +620,36 @@ func TestVueTemplateHasVueSpecificContent(t *testing.T) {
 
 // Svelte template tests
 
-func TestListTemplatesIncludesSvelte(t *testing.T) {
+func TestSubTemplateIncludesSvelte(t *testing.T) {
 	templates, err := listTemplates()
 	if err != nil {
 		t.Fatalf("listTemplates() error: %v", err)
 	}
 
+	// Find frontend/spa parent template
+	var frontendSPA *templateMeta
+	for i, tmpl := range templates {
+		if tmpl.Name == "frontend/spa" {
+			frontendSPA = &templates[i]
+			break
+		}
+	}
+
+	if frontendSPA == nil {
+		t.Fatal("frontend/spa template not found")
+	}
+
+	// Check that svelte is listed as a sub-template
 	found := false
-	for _, tmpl := range templates {
-		if tmpl.Name == "frontend/spa/svelte" {
+	for _, st := range frontendSPA.SubTemplates {
+		if st.Name == "svelte" {
 			found = true
 			break
 		}
 	}
 
 	if !found {
-		t.Error("listTemplates() did not include nested template 'frontend/spa/svelte'")
+		t.Error("frontend/spa should include 'svelte' sub-template")
 	}
 }
 
@@ -882,22 +878,34 @@ func TestSvelteTemplateHasSvelteSpecificContent(t *testing.T) {
 
 // Angular template tests
 
-func TestListTemplatesIncludesAngular(t *testing.T) {
+func TestSubTemplateIncludesAngular(t *testing.T) {
 	templates, err := listTemplates()
 	if err != nil {
 		t.Fatalf("listTemplates() error: %v", err)
 	}
 
+	var frontendSPA *templateMeta
+	for i, tmpl := range templates {
+		if tmpl.Name == "frontend/spa" {
+			frontendSPA = &templates[i]
+			break
+		}
+	}
+
+	if frontendSPA == nil {
+		t.Fatal("frontend/spa template not found")
+	}
+
 	found := false
-	for _, tmpl := range templates {
-		if tmpl.Name == "frontend/spa/angular" {
+	for _, st := range frontendSPA.SubTemplates {
+		if st.Name == "angular" {
 			found = true
 			break
 		}
 	}
 
 	if !found {
-		t.Error("listTemplates() did not include nested template 'frontend/spa/angular'")
+		t.Error("frontend/spa should include 'angular' sub-template")
 	}
 }
 
@@ -1127,22 +1135,34 @@ func TestAngularTemplateHasAngularSpecificContent(t *testing.T) {
 
 // HTMX template tests
 
-func TestListTemplatesIncludesHtmx(t *testing.T) {
+func TestSubTemplateIncludesHtmx(t *testing.T) {
 	templates, err := listTemplates()
 	if err != nil {
 		t.Fatalf("listTemplates() error: %v", err)
 	}
 
+	var frontendSPA *templateMeta
+	for i, tmpl := range templates {
+		if tmpl.Name == "frontend/spa" {
+			frontendSPA = &templates[i]
+			break
+		}
+	}
+
+	if frontendSPA == nil {
+		t.Fatal("frontend/spa template not found")
+	}
+
 	found := false
-	for _, tmpl := range templates {
-		if tmpl.Name == "frontend/spa/htmx" {
+	for _, st := range frontendSPA.SubTemplates {
+		if st.Name == "htmx" {
 			found = true
 			break
 		}
 	}
 
 	if !found {
-		t.Error("listTemplates() did not include nested template 'frontend/spa/htmx'")
+		t.Error("frontend/spa should include 'htmx' sub-template")
 	}
 }
 
@@ -1443,22 +1463,34 @@ func TestHtmxTemplateMakefileNoBuildStep(t *testing.T) {
 
 // Next.js template tests
 
-func TestListTemplatesIncludesNext(t *testing.T) {
+func TestSubTemplateIncludesNext(t *testing.T) {
 	templates, err := listTemplates()
 	if err != nil {
 		t.Fatalf("listTemplates() error: %v", err)
 	}
 
+	var frontendSPA *templateMeta
+	for i, tmpl := range templates {
+		if tmpl.Name == "frontend/spa" {
+			frontendSPA = &templates[i]
+			break
+		}
+	}
+
+	if frontendSPA == nil {
+		t.Fatal("frontend/spa template not found")
+	}
+
 	found := false
-	for _, tmpl := range templates {
-		if tmpl.Name == "frontend/spa/next" {
+	for _, st := range frontendSPA.SubTemplates {
+		if st.Name == "next" {
 			found = true
 			break
 		}
 	}
 
 	if !found {
-		t.Error("listTemplates() did not include nested template 'frontend/spa/next'")
+		t.Error("frontend/spa should include 'next' sub-template")
 	}
 }
 
@@ -1745,22 +1777,34 @@ func TestNextTemplateMakefileHasNpmCommands(t *testing.T) {
 
 // Nuxt template tests
 
-func TestListTemplatesIncludesNuxt(t *testing.T) {
+func TestSubTemplateIncludesNuxt(t *testing.T) {
 	templates, err := listTemplates()
 	if err != nil {
 		t.Fatalf("listTemplates() error: %v", err)
 	}
 
+	var frontendSPA *templateMeta
+	for i, tmpl := range templates {
+		if tmpl.Name == "frontend/spa" {
+			frontendSPA = &templates[i]
+			break
+		}
+	}
+
+	if frontendSPA == nil {
+		t.Fatal("frontend/spa template not found")
+	}
+
 	found := false
-	for _, tmpl := range templates {
-		if tmpl.Name == "frontend/spa/nuxt" {
+	for _, st := range frontendSPA.SubTemplates {
+		if st.Name == "nuxt" {
 			found = true
 			break
 		}
 	}
 
 	if !found {
-		t.Error("listTemplates() did not include nested template 'frontend/spa/nuxt'")
+		t.Error("frontend/spa should include 'nuxt' sub-template")
 	}
 }
 
@@ -2062,22 +2106,34 @@ func TestNuxtTemplateMakefileHasNpmCommands(t *testing.T) {
 
 // Preact template tests
 
-func TestListTemplatesIncludesPreact(t *testing.T) {
+func TestSubTemplateIncludesPreact(t *testing.T) {
 	templates, err := listTemplates()
 	if err != nil {
 		t.Fatalf("listTemplates() error: %v", err)
 	}
 
+	var frontendSPA *templateMeta
+	for i, tmpl := range templates {
+		if tmpl.Name == "frontend/spa" {
+			frontendSPA = &templates[i]
+			break
+		}
+	}
+
+	if frontendSPA == nil {
+		t.Fatal("frontend/spa template not found")
+	}
+
 	found := false
-	for _, tmpl := range templates {
-		if tmpl.Name == "frontend/spa/preact" {
+	for _, st := range frontendSPA.SubTemplates {
+		if st.Name == "preact" {
 			found = true
 			break
 		}
 	}
 
 	if !found {
-		t.Error("listTemplates() did not include nested template 'frontend/spa/preact'")
+		t.Error("frontend/spa should include 'preact' sub-template")
 	}
 }
 
@@ -2367,22 +2423,34 @@ func TestPreactTemplateMakefileHasNpmCommands(t *testing.T) {
 
 // SvelteKit template tests
 
-func TestListTemplatesIncludesSvelteKit(t *testing.T) {
+func TestSubTemplateIncludesSvelteKit(t *testing.T) {
 	templates, err := listTemplates()
 	if err != nil {
 		t.Fatalf("listTemplates() error: %v", err)
 	}
 
+	var frontendSPA *templateMeta
+	for i, tmpl := range templates {
+		if tmpl.Name == "frontend/spa" {
+			frontendSPA = &templates[i]
+			break
+		}
+	}
+
+	if frontendSPA == nil {
+		t.Fatal("frontend/spa template not found")
+	}
+
 	found := false
-	for _, tmpl := range templates {
-		if tmpl.Name == "frontend/spa/sveltekit" {
+	for _, st := range frontendSPA.SubTemplates {
+		if st.Name == "sveltekit" {
 			found = true
 			break
 		}
 	}
 
 	if !found {
-		t.Error("listTemplates() did not include nested template 'frontend/spa/sveltekit'")
+		t.Error("frontend/spa should include 'sveltekit' sub-template")
 	}
 }
 

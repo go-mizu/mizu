@@ -1,0 +1,16 @@
+{
+  "name": "frontend/spa",
+  "description": "Single-page application with Mizu backend",
+  "tags": ["go", "mizu", "frontend", "spa"],
+  "subTemplates": [
+    { "name": "react", "description": "React with Vite and TypeScript" },
+    { "name": "vue", "description": "Vue with Vite and TypeScript" },
+    { "name": "svelte", "description": "Svelte with Vite and TypeScript" },
+    { "name": "sveltekit", "description": "SvelteKit with TypeScript and Tailwind" },
+    { "name": "angular", "description": "Angular with TypeScript" },
+    { "name": "preact", "description": "Preact with Vite and TypeScript" },
+    { "name": "next", "description": "Next.js with App Router and TypeScript" },
+    { "name": "nuxt", "description": "Nuxt with TypeScript and Tailwind" },
+    { "name": "htmx", "description": "HTMX with Go templates and Tailwind" }
+  ]
+}
