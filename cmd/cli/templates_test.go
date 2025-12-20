@@ -40,6 +40,7 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 	foundSvelte := false
 	foundAngular := false
 	foundHtmx := false
+	foundNext := false
 	for _, tmpl := range templates {
 		if tmpl.Name == "frontend/spa/react" {
 			foundReact = true
@@ -55,6 +56,9 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 		}
 		if tmpl.Name == "frontend/spa/htmx" {
 			foundHtmx = true
+		}
+		if tmpl.Name == "frontend/spa/next" {
+			foundNext = true
 		}
 	}
 
@@ -73,6 +77,9 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 	if !foundHtmx {
 		t.Error("listTemplates() did not include nested template 'frontend/spa/htmx'")
 	}
+	if !foundNext {
+		t.Error("listTemplates() did not include nested template 'frontend/spa/next'")
+	}
 }
 
 func TestTemplateExistsNested(t *testing.T) {
@@ -88,6 +95,7 @@ func TestTemplateExistsNested(t *testing.T) {
 		{"frontend/spa/svelte", true},
 		{"frontend/spa/angular", true},
 		{"frontend/spa/htmx", true},
+		{"frontend/spa/next", true},
 		{"frontend/spa/nonexistent", false},
 		{"frontend/nonexistent", false},
 		{"nonexistent", false},
@@ -116,6 +124,7 @@ func TestLoadTemplateMeta(t *testing.T) {
 		{"frontend/spa/svelte", "frontend/spa/svelte", true},
 		{"frontend/spa/angular", "frontend/spa/angular", true},
 		{"frontend/spa/htmx", "frontend/spa/htmx", true},
+		{"frontend/spa/next", "frontend/spa/next", true},
 	}
 
 	for _, tt := range tests {
@@ -1402,5 +1411,307 @@ func TestHtmxTemplateMakefileNoBuildStep(t *testing.T) {
 	}
 	if strings.Contains(string(makefile), "client") {
 		t.Error("HTMX Makefile should NOT reference client directory")
+	}
+}
+
+// Next.js template tests
+
+func TestListTemplatesIncludesNext(t *testing.T) {
+	templates, err := listTemplates()
+	if err != nil {
+		t.Fatalf("listTemplates() error: %v", err)
+	}
+
+	found := false
+	for _, tmpl := range templates {
+		if tmpl.Name == "frontend/spa/next" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("listTemplates() did not include nested template 'frontend/spa/next'")
+	}
+}
+
+func TestTemplateExistsNext(t *testing.T) {
+	if !templateExists("frontend/spa/next") {
+		t.Error("templateExists('frontend/spa/next') returned false")
+	}
+}
+
+func TestLoadTemplateFilesNext(t *testing.T) {
+	files, err := loadTemplateFiles("frontend/spa/next")
+	if err != nil {
+		t.Fatalf("loadTemplateFiles() error: %v", err)
+	}
+
+	if len(files) == 0 {
+		t.Error("loadTemplateFiles() returned no files")
+	}
+
+	// Check for expected files
+	expectedFiles := []string{
+		".gitignore",                       // from _common
+		"go.mod",                           // from _common
+		"cmd/server/main.go",               // template specific
+		"app/server/app.go",                // template specific
+		"app/server/config.go",             // template specific
+		"app/server/routes.go",             // template specific
+		"client/package.json",              // template specific
+		"client/next.config.ts",            // template specific (Next.js)
+		"client/src/app/layout.tsx",        // template specific (Next.js App Router)
+		"client/src/app/page.tsx",          // template specific
+		"Makefile",                         // template specific
+	}
+
+	fileMap := make(map[string]bool)
+	for _, f := range files {
+		fileMap[f.path] = true
+	}
+
+	for _, expected := range expectedFiles {
+		if !fileMap[expected] {
+			t.Errorf("expected file %q not found in template files", expected)
+		}
+	}
+}
+
+func TestBuildPlanNextTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/next", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if len(p.ops) == 0 {
+		t.Error("buildPlan() returned empty plan")
+	}
+
+	// Check for expected operations
+	hasWrite := false
+	hasMkdir := false
+	for _, op := range p.ops {
+		switch op.kind {
+		case opWrite:
+			hasWrite = true
+		case opMkdir:
+			hasMkdir = true
+		}
+	}
+
+	if !hasWrite {
+		t.Error("plan has no write operations")
+	}
+	if !hasMkdir {
+		t.Error("plan has no mkdir operations")
+	}
+}
+
+func TestApplyPlanNextTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/next", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Verify key files exist
+	expectedFiles := []string{
+		"go.mod",
+		"cmd/server/main.go",
+		"app/server/app.go",
+		"app/server/config.go",
+		"app/server/routes.go",
+		"client/package.json",
+		"client/next.config.ts",
+		"client/tsconfig.json",
+		"client/tailwind.config.ts",
+		"client/postcss.config.mjs",
+		"client/src/app/layout.tsx",
+		"client/src/app/page.tsx",
+		"client/src/app/about/page.tsx",
+		"client/src/components/Navigation.tsx",
+		"client/src/styles/globals.css",
+		"Makefile",
+	}
+
+	for _, file := range expectedFiles {
+		path := filepath.Join(tmpDir, file)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("expected file %q does not exist", file)
+		}
+	}
+}
+
+func TestNextTemplateVariableSubstitution(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("mynextapp", "github.com/user/mynextapp", "Apache-2.0", nil)
+
+	p, err := buildPlan("frontend/spa/next", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check go.mod contains the module path
+	gomod, err := os.ReadFile(filepath.Join(tmpDir, "go.mod"))
+	if err != nil {
+		t.Fatalf("ReadFile(go.mod) error: %v", err)
+	}
+
+	if !strings.Contains(string(gomod), "github.com/user/mynextapp") {
+		t.Error("go.mod does not contain module path")
+	}
+
+	// Check package.json contains the project name
+	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "client/package.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(package.json) error: %v", err)
+	}
+
+	if !strings.Contains(string(pkgjson), "mynextapp-client") {
+		t.Error("package.json does not contain project name")
+	}
+
+	// Check that package.json has Next.js dependencies
+	if !strings.Contains(string(pkgjson), `"next"`) {
+		t.Error("package.json does not contain next dependency")
+	}
+	if !strings.Contains(string(pkgjson), `"react"`) {
+		t.Error("package.json does not contain react dependency")
+	}
+}
+
+func TestNextTemplateHasNextSpecificContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/next", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check next.config.ts contains Next.js specific configuration
+	nextConfig, err := os.ReadFile(filepath.Join(tmpDir, "client/next.config.ts"))
+	if err != nil {
+		t.Fatalf("ReadFile(next.config.ts) error: %v", err)
+	}
+
+	if !strings.Contains(string(nextConfig), "output: 'export'") {
+		t.Error("next.config.ts does not contain output: 'export' for static export")
+	}
+	if !strings.Contains(string(nextConfig), "NextConfig") {
+		t.Error("next.config.ts does not contain NextConfig type")
+	}
+
+	// Check layout.tsx contains Next.js App Router patterns
+	layout, err := os.ReadFile(filepath.Join(tmpDir, "client/src/app/layout.tsx"))
+	if err != nil {
+		t.Fatalf("ReadFile(layout.tsx) error: %v", err)
+	}
+
+	if !strings.Contains(string(layout), "RootLayout") {
+		t.Error("layout.tsx does not contain RootLayout function")
+	}
+	if !strings.Contains(string(layout), "Metadata") {
+		t.Error("layout.tsx does not contain Metadata type")
+	}
+
+	// Check page.tsx uses 'use client' directive
+	page, err := os.ReadFile(filepath.Join(tmpDir, "client/src/app/page.tsx"))
+	if err != nil {
+		t.Fatalf("ReadFile(page.tsx) error: %v", err)
+	}
+
+	if !strings.Contains(string(page), "'use client'") {
+		t.Error("page.tsx does not contain 'use client' directive")
+	}
+	if !strings.Contains(string(page), "useState") {
+		t.Error("page.tsx does not use useState hook")
+	}
+
+	// Check Navigation.tsx uses Next.js navigation
+	navigation, err := os.ReadFile(filepath.Join(tmpDir, "client/src/components/Navigation.tsx"))
+	if err != nil {
+		t.Fatalf("ReadFile(Navigation.tsx) error: %v", err)
+	}
+
+	if !strings.Contains(string(navigation), "next/link") {
+		t.Error("Navigation.tsx does not import from next/link")
+	}
+	if !strings.Contains(string(navigation), "next/navigation") {
+		t.Error("Navigation.tsx does not import from next/navigation")
+	}
+	if !strings.Contains(string(navigation), "usePathname") {
+		t.Error("Navigation.tsx does not use usePathname hook")
+	}
+
+	// Check tailwind.config.ts exists
+	tailwindConfig, err := os.ReadFile(filepath.Join(tmpDir, "client/tailwind.config.ts"))
+	if err != nil {
+		t.Fatalf("ReadFile(tailwind.config.ts) error: %v", err)
+	}
+
+	if !strings.Contains(string(tailwindConfig), "tailwindcss") {
+		t.Error("tailwind.config.ts does not reference tailwindcss")
+	}
+
+	// Check app.go uses frontend middleware
+	appGo, err := os.ReadFile(filepath.Join(tmpDir, "app/server/app.go"))
+	if err != nil {
+		t.Fatalf("ReadFile(app.go) error: %v", err)
+	}
+
+	if !strings.Contains(string(appGo), "frontend.WithOptions") {
+		t.Error("app.go does not use frontend.WithOptions")
+	}
+	if !strings.Contains(string(appGo), "frontend.ModeAuto") {
+		t.Error("app.go does not use frontend.ModeAuto")
+	}
+}
+
+func TestNextTemplateMakefileHasNpmCommands(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/next", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check Makefile contains npm commands (unlike HTMX)
+	makefile, err := os.ReadFile(filepath.Join(tmpDir, "Makefile"))
+	if err != nil {
+		t.Fatalf("ReadFile(Makefile) error: %v", err)
+	}
+
+	if !strings.Contains(string(makefile), "npm run build") {
+		t.Error("Next.js Makefile should contain npm run build")
+	}
+	if !strings.Contains(string(makefile), "npm run dev") {
+		t.Error("Next.js Makefile should contain npm run dev")
+	}
+	if !strings.Contains(string(makefile), "client") {
+		t.Error("Next.js Makefile should reference client directory")
 	}
 }
