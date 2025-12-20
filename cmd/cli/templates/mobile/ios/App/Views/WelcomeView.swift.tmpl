@@ -1,0 +1,198 @@
+import SwiftUI
+
+struct WelcomeView: View {
+    @EnvironmentObject var runtime: MizuRuntime
+    @State private var email = ""
+    @State private var password = ""
+    @State private var isLoading = false
+    @State private var error: Error?
+    @State private var showSignUp = false
+
+    var body: some View {
+        VStack(spacing: 32) {
+            Spacer()
+
+            // Logo
+            Image(systemName: "wave.3.right.circle.fill")
+                .font(.system(size: 80))
+                .foregroundStyle(.blue)
+
+            // Title
+            VStack(spacing: 8) {
+                Text("Welcome to {{.Name}}")
+                    .font(.title)
+                    .fontWeight(.bold)
+
+                Text("Sign in to continue")
+                    .foregroundColor(.secondary)
+            }
+
+            // Form
+            VStack(spacing: 16) {
+                TextField("Email", text: $email)
+                    .textFieldStyle(.roundedBorder)
+                    .textContentType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.emailAddress)
+                    .disabled(isLoading)
+
+                SecureField("Password", text: $password)
+                    .textFieldStyle(.roundedBorder)
+                    .textContentType(.password)
+                    .disabled(isLoading)
+
+                Button(action: signIn) {
+                    if isLoading {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Text("Sign In")
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.blue)
+                .foregroundColor(.white)
+                .cornerRadius(10)
+                .disabled(isLoading || email.isEmpty || password.isEmpty)
+            }
+            .padding(.horizontal)
+
+            // Sign up link
+            Button(action: { showSignUp = true }) {
+                Text("Don't have an account? **Sign Up**")
+                    .foregroundColor(.secondary)
+            }
+            .disabled(isLoading)
+
+            Spacer()
+        }
+        .padding()
+        .sheet(isPresented: $showSignUp) {
+            SignUpView()
+        }
+        .alert("Error", isPresented: .constant(error != nil)) {
+            Button("OK") { error = nil }
+        } message: {
+            if let error = error {
+                Text(error.localizedDescription)
+            }
+        }
+    }
+
+    private func signIn() {
+        isLoading = true
+        error = nil
+
+        Task {
+            do {
+                let client = {{.Name}}Client()
+                let response = try await client.signIn(email: email, password: password)
+
+                // Store token
+                let token = AuthToken(
+                    accessToken: response.token.accessToken,
+                    refreshToken: response.token.refreshToken,
+                    expiresAt: Date().addingTimeInterval(TimeInterval(response.token.expiresIn))
+                )
+                try runtime.tokenStore.setToken(token)
+            } catch {
+                self.error = error
+            }
+
+            isLoading = false
+        }
+    }
+}
+
+struct SignUpView: View {
+    @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var runtime: MizuRuntime
+    @State private var name = ""
+    @State private var email = ""
+    @State private var password = ""
+    @State private var isLoading = false
+    @State private var error: Error?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Account Information") {
+                    TextField("Name", text: $name)
+                        .textContentType(.name)
+                        .disabled(isLoading)
+
+                    TextField("Email", text: $email)
+                        .textContentType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.emailAddress)
+                        .disabled(isLoading)
+
+                    SecureField("Password", text: $password)
+                        .textContentType(.newPassword)
+                        .disabled(isLoading)
+                }
+
+                Section {
+                    Button(action: signUp) {
+                        if isLoading {
+                            ProgressView()
+                        } else {
+                            Text("Create Account")
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .disabled(isLoading || name.isEmpty || email.isEmpty || password.isEmpty)
+                }
+            }
+            .navigationTitle("Sign Up")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .disabled(isLoading)
+                }
+            }
+            .alert("Error", isPresented: .constant(error != nil)) {
+                Button("OK") { error = nil }
+            } message: {
+                if let error = error {
+                    Text(error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    private func signUp() {
+        isLoading = true
+        error = nil
+
+        Task {
+            do {
+                let client = {{.Name}}Client()
+                let response = try await client.signUp(email: email, password: password, name: name)
+
+                // Store token
+                let token = AuthToken(
+                    accessToken: response.token.accessToken,
+                    refreshToken: response.token.refreshToken,
+                    expiresAt: Date().addingTimeInterval(TimeInterval(response.token.expiresIn))
+                )
+                try runtime.tokenStore.setToken(token)
+
+                dismiss()
+            } catch {
+                self.error = error
+            }
+
+            isLoading = false
+        }
+    }
+}
+
+#Preview {
+    WelcomeView()
+        .environmentObject(MizuRuntime.shared)
+}

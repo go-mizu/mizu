@@ -1,0 +1,98 @@
+import Foundation
+
+/// Generated Mizu API client for {{.Name}}
+@MainActor
+public final class {{.Name}}Client {
+    private let runtime: MizuRuntime
+
+    public init(runtime: MizuRuntime = .shared) {
+        self.runtime = runtime
+    }
+
+    // MARK: - Auth
+
+    /// Sign in with email and password
+    public func signIn(email: String, password: String) async throws -> AuthResponse {
+        try await runtime.post("/auth/signin", body: SignInRequest(email: email, password: password))
+    }
+
+    /// Sign up with email, password, and name
+    public func signUp(email: String, password: String, name: String) async throws -> AuthResponse {
+        try await runtime.post("/auth/signup", body: SignUpRequest(email: email, password: password, name: name))
+    }
+
+    /// Sign out the current user
+    public func signOut() async throws {
+        try await runtime.delete("/auth/signout")
+        try runtime.tokenStore.clearToken()
+    }
+
+    /// Refresh the authentication token
+    public func refreshToken() async throws -> TokenResponse {
+        guard let currentToken = runtime.tokenStore.getToken(),
+              let refreshToken = currentToken.refreshToken else {
+            throw MizuError.unauthorized
+        }
+
+        let response: TokenResponse = try await runtime.post(
+            "/auth/refresh",
+            body: RefreshTokenRequest(refreshToken: refreshToken)
+        )
+
+        // Update stored token
+        let newToken = AuthToken(
+            accessToken: response.accessToken,
+            refreshToken: response.refreshToken,
+            expiresAt: Date().addingTimeInterval(TimeInterval(response.expiresIn))
+        )
+        try runtime.tokenStore.setToken(newToken)
+
+        return response
+    }
+
+    // MARK: - Users
+
+    /// Get the current user's profile
+    public func getCurrentUser() async throws -> User {
+        try await runtime.get("/users/me")
+    }
+
+    /// Update the current user's profile
+    public func updateCurrentUser(_ update: UserUpdate) async throws -> User {
+        try await runtime.put("/users/me", body: update)
+    }
+
+    /// Delete the current user's account
+    public func deleteCurrentUser() async throws {
+        try await runtime.delete("/users/me")
+        try runtime.tokenStore.clearToken()
+    }
+
+    // MARK: - Health
+
+    /// Check if the API is healthy
+    public func healthCheck() async throws -> HealthResponse {
+        try await runtime.get("/health")
+    }
+}
+
+// MARK: - Request Types
+
+struct SignInRequest: Encodable {
+    let email: String
+    let password: String
+}
+
+struct SignUpRequest: Encodable {
+    let email: String
+    let password: String
+    let name: String
+}
+
+struct RefreshTokenRequest: Encodable {
+    let refreshToken: String
+
+    enum CodingKeys: String, CodingKey {
+        case refreshToken = "refresh_token"
+    }
+}

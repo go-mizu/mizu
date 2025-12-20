@@ -1,0 +1,111 @@
+import XCTest
+
+final class {{.Name}}UITests: XCTestCase {
+    var app: XCUIApplication!
+
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        app = XCUIApplication()
+        app.launchArguments = ["--uitesting"]
+        app.launch()
+    }
+
+    override func tearDownWithError() throws {
+        app = nil
+    }
+
+    // MARK: - Welcome Screen Tests
+
+    func testWelcomeScreenDisplayed() throws {
+        // Check that welcome screen elements are visible
+        let welcomeText = app.staticTexts["Welcome to {{.Name}}"]
+        XCTAssertTrue(welcomeText.waitForExistence(timeout: 5))
+    }
+
+    func testSignInButtonExists() throws {
+        let signInButton = app.buttons["Sign In"]
+        XCTAssertTrue(signInButton.waitForExistence(timeout: 5))
+    }
+
+    func testEmailFieldExists() throws {
+        let emailField = app.textFields["Email"]
+        XCTAssertTrue(emailField.waitForExistence(timeout: 5))
+    }
+
+    func testPasswordFieldExists() throws {
+        let passwordField = app.secureTextFields["Password"]
+        XCTAssertTrue(passwordField.waitForExistence(timeout: 5))
+    }
+
+    // MARK: - Form Interaction Tests
+
+    func testCanEnterEmail() throws {
+        let emailField = app.textFields["Email"]
+        XCTAssertTrue(emailField.waitForExistence(timeout: 5))
+
+        emailField.tap()
+        emailField.typeText("test@example.com")
+
+        XCTAssertEqual(emailField.value as? String, "test@example.com")
+    }
+
+    func testCanEnterPassword() throws {
+        let passwordField = app.secureTextFields["Password"]
+        XCTAssertTrue(passwordField.waitForExistence(timeout: 5))
+
+        passwordField.tap()
+        passwordField.typeText("password123")
+
+        // Secure fields don't expose their value
+        XCTAssertTrue(passwordField.exists)
+    }
+
+    func testSignInButtonDisabledWhenEmpty() throws {
+        let signInButton = app.buttons["Sign In"]
+        XCTAssertTrue(signInButton.waitForExistence(timeout: 5))
+        XCTAssertFalse(signInButton.isEnabled)
+    }
+
+    func testSignInButtonEnabledWithCredentials() throws {
+        let emailField = app.textFields["Email"]
+        let passwordField = app.secureTextFields["Password"]
+        let signInButton = app.buttons["Sign In"]
+
+        XCTAssertTrue(emailField.waitForExistence(timeout: 5))
+
+        emailField.tap()
+        emailField.typeText("test@example.com")
+
+        passwordField.tap()
+        passwordField.typeText("password123")
+
+        XCTAssertTrue(signInButton.isEnabled)
+    }
+
+    // MARK: - Navigation Tests
+
+    func testSignUpLinkExists() throws {
+        let signUpLink = app.buttons["Don't have an account? **Sign Up**"]
+        XCTAssertTrue(signUpLink.waitForExistence(timeout: 5))
+    }
+
+    func testSignUpSheetOpens() throws {
+        let signUpLink = app.buttons["Don't have an account? **Sign Up**"]
+        XCTAssertTrue(signUpLink.waitForExistence(timeout: 5))
+
+        signUpLink.tap()
+
+        let signUpTitle = app.navigationBars["Sign Up"]
+        XCTAssertTrue(signUpTitle.waitForExistence(timeout: 5))
+    }
+
+    // MARK: - Launch Performance
+
+    func testLaunchPerformance() throws {
+        if #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 7.0, *) {
+            measure(metrics: [XCTApplicationLaunchMetric()]) {
+                XCUIApplication().launch()
+            }
+        }
+    }
+}

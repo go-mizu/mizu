@@ -1,0 +1,11 @@
+{
+  "name": "mobile/ios",
+  "description": "iOS app with Swift, SwiftUI, and Mizu backend integration",
+  "tags": ["mizu", "mobile", "ios", "swift", "swiftui"],
+  "variables": {
+    "name": { "description": "Project name", "default": "" },
+    "bundleId": { "description": "Bundle identifier", "default": "com.example.{{.Name}}" },
+    "minIOS": { "description": "Minimum iOS version", "default": "16.0" },
+    "ui": { "description": "UI framework: swiftui, uikit, hybrid", "default": "swiftui" }
+  }
+}

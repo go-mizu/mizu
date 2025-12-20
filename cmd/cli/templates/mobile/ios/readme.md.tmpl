@@ -1,0 +1,165 @@
+# {{.Name}}
+
+An iOS application built with SwiftUI and Mizu backend integration.
+
+## Requirements
+
+- iOS 16.0+
+- Xcode 15.0+
+- Swift 5.9+
+
+## Getting Started
+
+### 1. Open the Project
+
+```bash
+open {{.Name}}.xcodeproj
+```
+
+Or open the project in Xcode using File > Open.
+
+### 2. Configure the Backend
+
+Update the API base URL in `App/Runtime/Config.swift` or set the environment variable:
+
+```bash
+MIZU_BASE_URL=https://your-api.example.com
+```
+
+For local development, the default is `http://localhost:3000`.
+
+### 3. Build and Run
+
+Select your target device or simulator and press Cmd+R to build and run.
+
+## Project Structure
+
+```
+{{.Name}}/
+├── App/
+│   ├── App/                    # App entry point and main views
+│   │   ├── App.swift           # @main entry point
+│   │   └── ContentView.swift   # Root view
+│   ├── Views/                  # UI views
+│   │   ├── HomeView.swift
+│   │   ├── WelcomeView.swift
+│   │   └── Components/         # Reusable components
+│   ├── Models/                 # Data models
+│   │   └── AppState.swift
+│   ├── Runtime/                # Mizu runtime
+│   │   ├── MizuRuntime.swift   # Core client
+│   │   ├── Transport.swift     # HTTP transport
+│   │   ├── TokenStore.swift    # Secure storage
+│   │   ├── Live.swift          # SSE streaming
+│   │   ├── DeviceInfo.swift    # Device utilities
+│   │   ├── Config.swift        # Configuration
+│   │   └── AnyCodable.swift    # Dynamic JSON
+│   ├── SDK/                    # Generated API client
+│   │   ├── Client.swift        # API methods
+│   │   ├── Types.swift         # Request/response types
+│   │   └── Extensions.swift    # Utilities
+│   └── Resources/              # Assets and config
+│       ├── Assets.xcassets/
+│       └── Info.plist
+├── Tests/                      # Unit tests
+└── UITests/                    # UI tests
+```
+
+## Features
+
+### Authentication
+
+The app includes built-in authentication with:
+- Sign in / Sign up flows
+- Secure token storage in Keychain
+- Automatic token refresh
+- Sign out functionality
+
+### API Integration
+
+The `MizuRuntime` provides:
+- Type-safe API calls with async/await
+- Automatic mobile headers (device ID, app version, etc.)
+- Error handling with structured API errors
+- SSE streaming support for real-time features
+
+### Example Usage
+
+```swift
+// Get the API client
+let client = {{.Name}}Client()
+
+// Make authenticated requests
+let user = try await client.getCurrentUser()
+
+// Update user profile
+let updated = try await client.updateCurrentUser(
+    UserUpdate(name: "New Name")
+)
+
+// Stream events
+for try await event in runtime.stream("/events") {
+    print("Received: \(event.data)")
+}
+```
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MIZU_BASE_URL` | API base URL | `http://localhost:3000` |
+| `MIZU_TIMEOUT` | Request timeout (seconds) | `30` |
+| `MIZU_DEBUG` | Enable debug logging | `false` |
+
+### Info.plist Keys
+
+| Key | Description |
+|-----|-------------|
+| `MizuBaseURL` | API base URL (alternative to env) |
+| `MizuTimeout` | Request timeout |
+| `MizuDebug` | Enable debug logging |
+
+## Testing
+
+### Run Unit Tests
+
+```bash
+xcodebuild test -scheme {{.Name}} -destination 'platform=iOS Simulator,name=iPhone 15'
+```
+
+Or press Cmd+U in Xcode.
+
+### Run UI Tests
+
+```bash
+xcodebuild test -scheme {{.Name}}UITests -destination 'platform=iOS Simulator,name=iPhone 15'
+```
+
+## Building for Release
+
+### Archive
+
+```bash
+xcodebuild archive -scheme {{.Name}} -archivePath {{.Name}}.xcarchive
+```
+
+### Export IPA
+
+```bash
+xcodebuild -exportArchive -archivePath {{.Name}}.xcarchive -exportPath . -exportOptionsPlist ExportOptions.plist
+```
+
+## Dependencies
+
+This project uses only Apple frameworks:
+- SwiftUI
+- Foundation
+- Security (Keychain)
+
+No external package dependencies required.
+
+## License
+
+{{.License}}

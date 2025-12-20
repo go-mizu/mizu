@@ -1,0 +1,160 @@
+import XCTest
+@testable import {{.Name}}
+
+final class RuntimeTests: XCTestCase {
+    var runtime: MizuRuntime!
+
+    override func setUp() async throws {
+        runtime = await MizuRuntime(
+            baseURL: URL(string: "http://localhost:3000")!,
+            tokenStore: InMemoryTokenStore()
+        )
+    }
+
+    override func tearDown() async throws {
+        runtime = nil
+    }
+
+    // MARK: - Device Info Tests
+
+    func testDeviceIDIsStable() {
+        let id1 = DeviceInfo.deviceID
+        let id2 = DeviceInfo.deviceID
+        XCTAssertEqual(id1, id2, "Device ID should be stable across calls")
+    }
+
+    func testDeviceIDIsUUID() {
+        let id = DeviceInfo.deviceID
+        XCTAssertNotNil(UUID(uuidString: id), "Device ID should be a valid UUID")
+    }
+
+    func testDeviceModel() {
+        let model = DeviceInfo.model
+        XCTAssertFalse(model.isEmpty, "Device model should not be empty")
+    }
+
+    func testOSVersion() {
+        let version = DeviceInfo.osVersion
+        XCTAssertFalse(version.isEmpty, "OS version should not be empty")
+    }
+
+    // MARK: - Token Store Tests
+
+    func testInMemoryTokenStore() async throws {
+        let store = InMemoryTokenStore()
+
+        // Initially no token
+        XCTAssertNil(store.getToken())
+
+        // Set token
+        let token = AuthToken(
+            accessToken: "test-access-token",
+            refreshToken: "test-refresh-token",
+            expiresAt: Date().addingTimeInterval(3600)
+        )
+        try store.setToken(token)
+
+        // Retrieve token
+        let retrieved = store.getToken()
+        XCTAssertNotNil(retrieved)
+        XCTAssertEqual(retrieved?.accessToken, "test-access-token")
+        XCTAssertEqual(retrieved?.refreshToken, "test-refresh-token")
+
+        // Clear token
+        try store.clearToken()
+        XCTAssertNil(store.getToken())
+    }
+
+    func testTokenExpiration() {
+        let expiredToken = AuthToken(
+            accessToken: "expired",
+            expiresAt: Date().addingTimeInterval(-60) // 1 minute ago
+        )
+        XCTAssertTrue(expiredToken.isExpired)
+
+        let validToken = AuthToken(
+            accessToken: "valid",
+            expiresAt: Date().addingTimeInterval(3600) // 1 hour from now
+        )
+        XCTAssertFalse(validToken.isExpired)
+
+        let noExpiryToken = AuthToken(
+            accessToken: "no-expiry"
+        )
+        XCTAssertFalse(noExpiryToken.isExpired)
+    }
+
+    func testTokenChangeCallback() async throws {
+        let store = InMemoryTokenStore()
+        let expectation = XCTestExpectation(description: "Token change callback")
+
+        var receivedToken: AuthToken?
+        store.onTokenChange { token in
+            receivedToken = token
+            expectation.fulfill()
+        }
+
+        let token = AuthToken(accessToken: "callback-test")
+        try store.setToken(token)
+
+        await fulfillment(of: [expectation], timeout: 1.0)
+        XCTAssertEqual(receivedToken?.accessToken, "callback-test")
+    }
+
+    // MARK: - Config Tests
+
+    func testDefaultConfig() {
+        let config = MizuConfig.default
+        XCTAssertEqual(config.baseURL.absoluteString, "http://localhost:3000")
+        XCTAssertEqual(config.timeout, 30)
+        XCTAssertFalse(config.debug)
+    }
+
+    func testCustomConfig() {
+        let config = MizuConfig(
+            baseURL: URL(string: "https://api.example.com")!,
+            timeout: 60,
+            debug: true,
+            headers: ["X-Custom": "value"]
+        )
+        XCTAssertEqual(config.baseURL.absoluteString, "https://api.example.com")
+        XCTAssertEqual(config.timeout, 60)
+        XCTAssertTrue(config.debug)
+        XCTAssertEqual(config.headers["X-Custom"], "value")
+    }
+
+    func testRetryConfig() {
+        let defaultRetry = RetryConfig.default
+        XCTAssertEqual(defaultRetry.maxRetries, 3)
+        XCTAssertEqual(defaultRetry.baseDelay, 1.0)
+        XCTAssertTrue(defaultRetry.retryableStatuses.contains(503))
+
+        let noRetry = RetryConfig.none
+        XCTAssertEqual(noRetry.maxRetries, 0)
+    }
+
+    // MARK: - AnyCodable Tests
+
+    func testAnyCodableEncoding() throws {
+        let value: AnyCodable = ["name": "test", "count": 42]
+        let data = try JSONEncoder().encode(value)
+        let decoded = try JSONDecoder().decode(AnyCodable.self, from: data)
+
+        XCTAssertEqual(decoded.dictionaryValue?["name"] as? String, "test")
+        XCTAssertEqual(decoded.dictionaryValue?["count"] as? Int, 42)
+    }
+
+    func testAnyCodableTypes() {
+        let boolValue: AnyCodable = true
+        XCTAssertEqual(boolValue.boolValue, true)
+
+        let intValue: AnyCodable = 42
+        XCTAssertEqual(intValue.intValue, 42)
+
+        let stringValue: AnyCodable = "hello"
+        XCTAssertEqual(stringValue.stringValue, "hello")
+
+        let nilValue: AnyCodable = nil
+        XCTAssertTrue(nilValue.isNil)
+    }
+}

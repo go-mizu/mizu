@@ -1,0 +1,8 @@
+{
+  "name": "mobile",
+  "description": "Mobile application with Mizu backend",
+  "tags": ["mizu", "mobile", "ios", "android", "flutter", "react-native"],
+  "subTemplates": [
+    { "name": "ios", "description": "iOS app with Swift and SwiftUI" }
+  ]
+}
