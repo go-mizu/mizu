@@ -6,6 +6,45 @@ icon: "vuejs"
 
 Vue is a progressive JavaScript framework for building user interfaces. This guide shows you how to build a Vue 3 application with Mizu as the backend.
 
+## Why Vue?
+
+Vue 3 is known for its gentle learning curve, excellent documentation, and progressive framework approach. You can adopt it incrementally - from a simple script tag to a full-featured SPA. The Composition API brings powerful reactivity and composability, while maintaining the simplicity of the Options API for smaller projects.
+
+**Key strengths:**
+- **Progressive framework**: Start small, scale as needed
+- **Excellent documentation**: Clear, comprehensive, well-organized
+- **Gentle learning curve**: Intuitive API, easy to get started
+- **Performance**: Fast virtual DOM with compiler optimizations
+- **Single File Components**: Template, script, and styles in one file
+- **Flexible**: Works with any backend, easy to integrate
+- **TypeScript support**: First-class TypeScript integration
+
+### Vue vs Other Frameworks
+
+| Feature | Vue 3 | React | Svelte | Angular |
+|---------|-------|-------|--------|---------|
+| **Bundle Size** | ~34 KB | ~44 KB | ~3 KB | ~167 KB |
+| **Learning Curve** | Gentle | Moderate | Gentle | Steep |
+| **Reactivity** | Fine-grained (Proxy) | Virtual DOM | Compiled | RxJS + Zones |
+| **TypeScript** | Excellent | Excellent | Good | Excellent |
+| **Ecosystem** | Large | Largest | Growing | Large |
+| **Component Style** | SFC (.vue) | JSX/TSX | SFC (.svelte) | TS + Templates |
+| **State Management** | Pinia | Redux/Zustand | Stores | NgRx/Services |
+| **CLI/Tooling** | Vite (fast) | CRA/Vite | Vite/SvelteKit | Angular CLI |
+| **Best For** | Progressive apps | Large apps | Small/fast apps | Enterprise |
+
+### Vue + Mizu vs Standalone Vue
+
+| Aspect | Vue + Mizu | Standalone Vue (SPA) |
+|--------|------------|----------------------|
+| **Backend** | Go (embedded FS) | Separate API server |
+| **Deployment** | Single binary | Frontend + backend separate |
+| **Development** | Mizu proxy + Vite HMR | Vite dev server only |
+| **API Calls** | Same origin (`/api/*`) | CORS required |
+| **Build** | `make build` (Go + Vue) | `npm run build` only |
+| **Production** | `./bin/server` | nginx/CDN + API server |
+| **Type Safety** | Go backend + TS frontend | TS frontend only |
+
 ## Quick Start
 
 Create a new Vue project with the CLI:
@@ -17,6 +56,66 @@ make dev
 ```
 
 Visit `http://localhost:3000` to see your app!
+
+## Architecture
+
+### Development Mode
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Browser                              │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  Vue App (HMR enabled)                                 │  │
+│  │  ┌─────────┐  ┌─────────┐  ┌──────────┐               │  │
+│  │  │ Router  │→ │ Pages   │→ │ API Call │               │  │
+│  │  └─────────┘  └─────────┘  └──────────┘               │  │
+│  └───────────────────────────────────────────────────────┘  │
+│         ↑ HMR WebSocket           ↓ /api/users              │
+└─────────┼──────────────────────────┼────────────────────────┘
+          │                          │
+┌─────────┼──────────────────────────┼────────────────────────┐
+│  Mizu Server (:3000)               │                         │
+│         │                          ↓                         │
+│    ┌────┴─────────┐        ┌────────────┐                   │
+│    │   Proxy to   │        │ API Routes │                   │
+│    │ Vite (:5173) │        │ (Go)       │                   │
+│    └──────────────┘        └────────────┘                   │
+│         ↑                                                    │
+└─────────┼────────────────────────────────────────────────────┘
+          │
+┌─────────┼────────────────────────────────────────────────────┐
+│  Vite Dev Server (:5173)                                     │
+│    ┌──────────────┐  ┌─────────────┐                        │
+│    │ Vue Compiler │  │ HMR Engine  │                        │
+│    └──────────────┘  └─────────────┘                        │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Production Mode
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Browser                              │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  Vue App (compiled, minified)                          │  │
+│  │  ┌─────────┐  ┌─────────┐  ┌──────────┐               │  │
+│  │  │ Router  │→ │ Pages   │→ │ API Call │               │  │
+│  │  └─────────┘  └─────────┘  └──────────┘               │  │
+│  └───────────────────────────────────────────────────────┘  │
+│         ↑ index.html + assets     ↓ /api/users              │
+└─────────┼──────────────────────────┼────────────────────────┘
+          │                          │
+┌─────────┼──────────────────────────┼────────────────────────┐
+│  Mizu Server (single binary)       │                         │
+│         │                          ↓                         │
+│    ┌────┴─────────┐        ┌────────────┐                   │
+│    │ Embedded FS  │        │ API Routes │                   │
+│    │ (dist/...)   │        │ (Go)       │                   │
+│    └──────────────┘        └────────────┘                   │
+│  ←────────────────────────────────────────────────────────  │
+│  Static files served from Go binary (//go:embed all:dist)   │
+└──────────────────────────────────────────────────────────────┘
+```
 
 ## Project Structure
 
@@ -41,6 +140,8 @@ my-vue-app/
 │   │   ├── pages/
 │   │   │   ├── Home.vue         # Home page
 │   │   │   └── About.vue        # About page
+│   │   ├── stores/              # Pinia stores
+│   │   ├── composables/         # Custom composables
 │   │   └── styles/
 │   │       └── index.css        # Global styles
 │   ├── public/
@@ -57,7 +158,7 @@ my-vue-app/
 
 ## Backend Setup
 
-The backend setup is identical to React. See `app/server/app.go`:
+The backend serves your Vue app and provides API endpoints. See `app/server/app.go`:
 
 ```go
 package server
@@ -89,6 +190,60 @@ func New(cfg *Config) *mizu.App {
     }))
 
     return app
+}
+```
+
+**How it works:**
+- `//go:embed all:../../dist` embeds the built Vue app into the Go binary
+- `frontend.ModeAuto` automatically switches between dev (proxy) and production (embedded FS)
+- `DevServer` proxies to Vite during development
+- `IgnorePaths: []string{"/api"}` ensures API routes aren't proxied
+
+### API Routes Example
+
+```go
+// app/server/routes.go
+package server
+
+import "github.com/go-mizu/mizu"
+
+type User struct {
+    ID    int    `json:"id"`
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+
+func setupRoutes(app *mizu.App) {
+    // GET /api/users
+    app.GET("/api/users", func(c *mizu.Ctx) error {
+        users := []User{
+            {ID: 1, Name: "Alice", Email: "alice@example.com"},
+            {ID: 2, Name: "Bob", Email: "bob@example.com"},
+        }
+        return c.JSON(users)
+    })
+
+    // POST /api/users
+    app.POST("/api/users", func(c *mizu.Ctx) error {
+        var user User
+        if err := c.BodyParser(&user); err != nil {
+            return err
+        }
+        user.ID = 3 // In real app, generate from DB
+        return c.Status(201).JSON(user)
+    })
+
+    // GET /api/users/:id
+    app.GET("/api/users/:id", func(c *mizu.Ctx) error {
+        id := c.Param("id")
+        user := User{ID: 1, Name: "Alice", Email: "alice@example.com"}
+        return c.JSON(user)
+    })
+
+    // DELETE /api/users/:id
+    app.DELETE("/api/users/:id", func(c *mizu.Ctx) error {
+        return c.Status(204).Send(nil)
+    })
 }
 ```
 
@@ -227,6 +382,584 @@ onMounted(async () => {
 </script>
 ```
 
+## Composition API vs Options API
+
+Vue 3 supports both the Composition API (recommended) and the Options API (Vue 2 style). The Composition API provides better TypeScript support, code organization, and reusability.
+
+### Options API
+
+```vue
+<template>
+  <div>
+    <p>Count: {{ count }}</p>
+    <button @click="increment">Increment</button>
+  </div>
+</template>
+
+<script lang="ts">
+import { defineComponent } from 'vue'
+
+export default defineComponent({
+  data() {
+    return {
+      count: 0
+    }
+  },
+  computed: {
+    doubled() {
+      return this.count * 2
+    }
+  },
+  methods: {
+    increment() {
+      this.count++
+    }
+  },
+  mounted() {
+    console.log('Component mounted')
+  }
+})
+</script>
+```
+
+**Characteristics:**
+- Properties organized by options (`data`, `computed`, `methods`)
+- Uses `this` to access properties
+- Familiar to Vue 2 developers
+- Works well for simple components
+
+### Composition API
+
+```vue
+<template>
+  <div>
+    <p>Count: {{ count }}</p>
+    <button @click="increment">Increment</button>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue'
+
+const count = ref(0)
+const doubled = computed(() => count.value * 2)
+
+function increment() {
+  count.value++
+}
+
+onMounted(() => {
+  console.log('Component mounted')
+})
+</script>
+```
+
+**Characteristics:**
+- Logic organized by feature (not by type)
+- No `this` keyword
+- Better TypeScript inference
+- Code is more reusable (extractable to composables)
+- `<script setup>` reduces boilerplate
+
+## Vue Reactivity System
+
+Vue 3's reactivity system is built on ES6 Proxies, providing fine-grained reactive tracking.
+
+### `ref()` - Reactive Primitives
+
+Use `ref()` for primitives (strings, numbers, booleans). Access/modify with `.value` in JavaScript, but not in templates.
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+
+const count = ref(0)
+const name = ref('Alice')
+const isActive = ref(true)
+
+// Access with .value in script
+console.log(count.value) // 0
+count.value++
+
+// Update
+function increment() {
+  count.value++
+}
+</script>
+
+<template>
+  <!-- No .value in template -->
+  <p>Count: {{ count }}</p>
+  <p>Name: {{ name }}</p>
+  <button @click="increment">+</button>
+</template>
+```
+
+### `reactive()` - Reactive Objects
+
+Use `reactive()` for objects and arrays. No `.value` needed.
+
+```vue
+<script setup lang="ts">
+import { reactive } from 'vue'
+
+interface User {
+  name: string
+  age: number
+  hobbies: string[]
+}
+
+const user = reactive<User>({
+  name: 'Alice',
+  age: 30,
+  hobbies: ['reading', 'coding']
+})
+
+// Access directly (no .value)
+console.log(user.name) // 'Alice'
+user.age++
+user.hobbies.push('gaming')
+</script>
+
+<template>
+  <div>
+    <p>{{ user.name }}, {{ user.age }}</p>
+    <ul>
+      <li v-for="hobby in user.hobbies" :key="hobby">{{ hobby }}</li>
+    </ul>
+  </div>
+</template>
+```
+
+**When to use `ref()` vs `reactive()`:**
+- Use `ref()` for primitives and when you need to reassign the entire value
+- Use `reactive()` for objects that you'll mutate properties of
+- `ref()` can hold any value type, `reactive()` only works with objects
+
+### `computed()` - Derived State
+
+Computed values are cached and only re-compute when dependencies change.
+
+```vue
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+
+const firstName = ref('John')
+const lastName = ref('Doe')
+
+// Cached, only recomputes when firstName or lastName change
+const fullName = computed(() => {
+  console.log('Computing full name')
+  return `${firstName.value} ${lastName.value}`
+})
+
+// Writable computed
+const fullNameWritable = computed({
+  get() {
+    return `${firstName.value} ${lastName.value}`
+  },
+  set(value: string) {
+    const parts = value.split(' ')
+    firstName.value = parts[0]
+    lastName.value = parts[1] || ''
+  }
+})
+</script>
+
+<template>
+  <div>
+    <p>{{ fullName }}</p>
+    <input v-model="firstName" />
+    <input v-model="lastName" />
+  </div>
+</template>
+```
+
+### `watch()` - Side Effects
+
+Watch reactive sources and perform side effects when they change.
+
+```vue
+<script setup lang="ts">
+import { ref, watch } from 'vue'
+
+const count = ref(0)
+const user = reactive({ name: 'Alice', age: 30 })
+
+// Watch a single ref
+watch(count, (newVal, oldVal) => {
+  console.log(`Count changed from ${oldVal} to ${newVal}`)
+})
+
+// Watch a getter function
+watch(
+  () => user.name,
+  (newName) => {
+    console.log(`Name changed to ${newName}`)
+  }
+)
+
+// Watch multiple sources
+watch([count, () => user.name], ([newCount, newName]) => {
+  console.log(`Count: ${newCount}, Name: ${newName}`)
+})
+
+// Deep watch for objects
+watch(
+  user,
+  (newUser) => {
+    console.log('User changed:', newUser)
+  },
+  { deep: true }
+)
+
+// Immediate execution
+watch(count, (val) => {
+  console.log('Count:', val)
+}, { immediate: true })
+</script>
+```
+
+### `watchEffect()` - Automatic Dependency Tracking
+
+Runs immediately and automatically tracks dependencies.
+
+```vue
+<script setup lang="ts">
+import { ref, watchEffect } from 'vue'
+
+const count = ref(0)
+const doubled = ref(0)
+
+// Automatically tracks count, runs immediately
+watchEffect(() => {
+  doubled.value = count.value * 2
+  console.log('Doubled:', doubled.value)
+})
+
+// With cleanup
+watchEffect((onCleanup) => {
+  const timer = setTimeout(() => {
+    console.log('Count:', count.value)
+  }, 1000)
+
+  onCleanup(() => {
+    clearTimeout(timer)
+  })
+})
+</script>
+```
+
+## Lifecycle Hooks
+
+Vue 3 Composition API lifecycle hooks:
+
+```vue
+<script setup lang="ts">
+import {
+  onBeforeMount,
+  onMounted,
+  onBeforeUpdate,
+  onUpdated,
+  onBeforeUnmount,
+  onUnmounted,
+  ref
+} from 'vue'
+
+const count = ref(0)
+
+onBeforeMount(() => {
+  console.log('Before mount: DOM not created yet')
+})
+
+onMounted(() => {
+  console.log('Mounted: Component is in DOM')
+  // Good for: API calls, DOM manipulation, timers
+  fetchData()
+})
+
+onBeforeUpdate(() => {
+  console.log('Before update: Before DOM re-render')
+})
+
+onUpdated(() => {
+  console.log('Updated: After DOM re-render')
+  // Be careful: can cause infinite loops
+})
+
+onBeforeUnmount(() => {
+  console.log('Before unmount: Cleanup starting')
+})
+
+onUnmounted(() => {
+  console.log('Unmounted: Component removed from DOM')
+  // Good for: Cleanup timers, subscriptions, listeners
+})
+
+async function fetchData() {
+  const res = await fetch('/api/data')
+  const data = await res.json()
+  console.log(data)
+}
+</script>
+```
+
+**Lifecycle order:**
+1. `setup()` / `<script setup>` - Component created
+2. `onBeforeMount()` - Before inserting into DOM
+3. `onMounted()` - After inserting into DOM
+4. `onBeforeUpdate()` - Before reactive data change causes re-render
+5. `onUpdated()` - After re-render
+6. `onBeforeUnmount()` - Before removing from DOM
+7. `onUnmounted()` - After removing from DOM
+
+## Vue Router
+
+### Basic Routing
+
+We've already seen basic routing. Let's expand with more patterns.
+
+### Dynamic Routes
+
+```ts
+// router/index.ts
+import { createRouter, createWebHistory } from 'vue-router'
+
+const router = createRouter({
+  history: createWebHistory(),
+  routes: [
+    {
+      path: '/users/:id',
+      component: () => import('@/pages/UserDetail.vue'),
+      props: true  // Pass :id as prop to component
+    },
+    {
+      path: '/posts/:id(\\d+)',  // Only match numeric IDs
+      component: () => import('@/pages/PostDetail.vue')
+    },
+    {
+      // Catch-all route for 404
+      path: '/:pathMatch(.*)*',
+      component: () => import('@/pages/NotFound.vue')
+    }
+  ]
+})
+
+export default router
+```
+
+```vue
+<!-- pages/UserDetail.vue -->
+<template>
+  <div>
+    <h1>User {{ id }}</h1>
+    <div v-if="loading">Loading...</div>
+    <div v-else-if="user">
+      <p>Name: {{ user.name }}</p>
+      <p>Email: {{ user.email }}</p>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
+
+// Option 1: Use props (requires props: true in route)
+const props = defineProps<{ id: string }>()
+
+// Option 2: Use useRoute()
+const route = useRoute()
+
+interface User {
+  name: string
+  email: string
+}
+
+const user = ref<User | null>(null)
+const loading = ref(true)
+
+async function fetchUser(id: string) {
+  loading.value = true
+  const res = await fetch(`/api/users/${id}`)
+  user.value = await res.json()
+  loading.value = false
+}
+
+onMounted(() => {
+  fetchUser(props.id)
+})
+
+// Re-fetch when ID changes (same component, different route)
+watch(() => props.id, (newId) => {
+  fetchUser(newId)
+})
+</script>
+```
+
+### Nested Routes
+
+```ts
+// router/index.ts
+const router = createRouter({
+  history: createWebHistory(),
+  routes: [
+    {
+      path: '/dashboard',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      children: [
+        {
+          path: '',  // /dashboard
+          component: () => import('@/pages/DashboardHome.vue')
+        },
+        {
+          path: 'settings',  // /dashboard/settings
+          component: () => import('@/pages/Settings.vue')
+        },
+        {
+          path: 'users',  // /dashboard/users
+          component: () => import('@/pages/Users.vue')
+        }
+      ]
+    }
+  ]
+})
+```
+
+```vue
+<!-- layouts/DashboardLayout.vue -->
+<template>
+  <div class="dashboard">
+    <aside>
+      <nav>
+        <router-link to="/dashboard">Home</router-link>
+        <router-link to="/dashboard/settings">Settings</router-link>
+        <router-link to="/dashboard/users">Users</router-link>
+      </nav>
+    </aside>
+
+    <main>
+      <!-- Child routes render here -->
+      <router-view />
+    </main>
+  </div>
+</template>
+```
+
+### Programmatic Navigation
+
+```vue
+<script setup lang="ts">
+import { useRouter, useRoute } from 'vue-router'
+
+const router = useRouter()
+const route = useRoute()
+
+function goToUser(id: number) {
+  // Navigate to route
+  router.push(`/users/${id}`)
+
+  // Or with object
+  router.push({ path: `/users/${id}` })
+
+  // Or with named route
+  router.push({ name: 'user', params: { id } })
+}
+
+function goBack() {
+  router.back()
+}
+
+function replaceRoute() {
+  // Replace current history entry (no back button)
+  router.replace('/home')
+}
+
+// Access current route
+console.log(route.params.id)
+console.log(route.query.search)
+console.log(route.path)
+</script>
+
+<template>
+  <button @click="goToUser(123)">View User 123</button>
+  <button @click="goBack">Go Back</button>
+</template>
+```
+
+### Route Guards
+
+```ts
+// router/index.ts
+const router = createRouter({
+  history: createWebHistory(),
+  routes: [
+    {
+      path: '/admin',
+      component: () => import('@/pages/Admin.vue'),
+      meta: { requiresAuth: true }
+    }
+  ]
+})
+
+// Global before guard
+router.beforeEach((to, from, next) => {
+  const isAuthenticated = localStorage.getItem('token')
+
+  if (to.meta.requiresAuth && !isAuthenticated) {
+    // Redirect to login
+    next('/login')
+  } else {
+    next()
+  }
+})
+
+// Global after guard
+router.afterEach((to, from) => {
+  // Update document title
+  document.title = to.meta.title as string || 'My App'
+})
+
+export default router
+```
+
+```ts
+// Per-route guard
+const routes = [
+  {
+    path: '/users/:id',
+    component: UserDetail,
+    beforeEnter: (to, from) => {
+      const id = parseInt(to.params.id as string)
+      if (isNaN(id)) {
+        return { path: '/404' }
+      }
+    }
+  }
+]
+```
+
+```vue
+<!-- In-component guard -->
+<script setup lang="ts">
+import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
+
+const hasUnsavedChanges = ref(false)
+
+onBeforeRouteLeave((to, from) => {
+  if (hasUnsavedChanges.value) {
+    const answer = window.confirm('You have unsaved changes. Leave anyway?')
+    if (!answer) return false
+  }
+})
+
+onBeforeRouteUpdate((to, from) => {
+  // Called when route changes but component is reused
+  console.log('Route updated:', to.params)
+})
+</script>
+```
+
 ## Vite Configuration
 
 ### `client/vite.config.ts`
@@ -242,6 +975,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@components': path.resolve(__dirname, './src/components'),
+      '@pages': path.resolve(__dirname, './src/pages'),
+      '@stores': path.resolve(__dirname, './src/stores'),
+      '@composables': path.resolve(__dirname, './src/composables'),
     },
   },
 
@@ -256,10 +993,12 @@ export default defineConfig({
   build: {
     outDir: '../dist',
     emptyOutDir: true,
+    sourcemap: false,
     rollupOptions: {
       output: {
         manualChunks: {
           'vue-vendor': ['vue', 'vue-router'],
+          'pinia': ['pinia'],
         },
       },
     },
@@ -267,27 +1006,47 @@ export default defineConfig({
 })
 ```
 
-## API Integration
+Update `tsconfig.json` to match aliases:
 
-### Composable for API Calls
+```json
+{
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"],
+      "@components/*": ["./src/components/*"],
+      "@pages/*": ["./src/pages/*"],
+      "@stores/*": ["./src/stores/*"],
+      "@composables/*": ["./src/composables/*"]
+    }
+  }
+}
+```
 
-Create a reusable composable:
+## Composables (Custom Hooks)
+
+Composables are reusable pieces of stateful logic. They follow the naming convention `use*`.
+
+### Data Fetching Composable
 
 ```ts
 // src/composables/useApi.ts
-import { ref } from 'vue'
+import { ref, unref, type Ref } from 'vue'
 
-export function useApi<T>(url: string) {
+interface UseApiOptions {
+  immediate?: boolean
+}
+
+export function useApi<T>(url: string | Ref<string>, options: UseApiOptions = {}) {
   const data = ref<T | null>(null)
   const loading = ref(false)
   const error = ref<Error | null>(null)
 
-  const fetch = async () => {
+  const execute = async () => {
     loading.value = true
     error.value = null
 
     try {
-      const response = await window.fetch(url)
+      const response = await fetch(unref(url))
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
       data.value = await response.json()
     } catch (err) {
@@ -297,15 +1056,17 @@ export function useApi<T>(url: string) {
     }
   }
 
-  return { data, loading, error, fetch }
+  if (options.immediate) {
+    execute()
+  }
+
+  return { data, loading, error, execute, refetch: execute }
 }
 ```
 
-Use in components:
-
 ```vue
+<!-- Usage -->
 <script setup lang="ts">
-import { onMounted } from 'vue'
 import { useApi } from '@/composables/useApi'
 
 interface User {
@@ -313,21 +1074,843 @@ interface User {
   name: string
 }
 
-const { data: users, loading, error, fetch } = useApi<User[]>('/api/users')
-
-onMounted(() => fetch())
+const { data: users, loading, error, refetch } = useApi<User[]>('/api/users', {
+  immediate: true
+})
 </script>
 
 <template>
-  <div v-if="loading">Loading...</div>
-  <div v-else-if="error">Error: {{ error.message }}</div>
-  <ul v-else>
-    <li v-for="user in users" :key="user.id">{{ user.name }}</li>
+  <div>
+    <button @click="refetch">Refresh</button>
+    <div v-if="loading">Loading...</div>
+    <div v-else-if="error">Error: {{ error.message }}</div>
+    <ul v-else>
+      <li v-for="user in users" :key="user.id">{{ user.name }}</li>
+    </ul>
+  </div>
+</template>
+```
+
+### Debounce Composable
+
+```ts
+// src/composables/useDebounce.ts
+import { ref, watch, unref, type Ref } from 'vue'
+
+export function useDebounce<T>(value: Ref<T>, delay = 300) {
+  const debouncedValue = ref(value.value) as Ref<T>
+
+  let timeout: ReturnType<typeof setTimeout> | null = null
+
+  watch(value, (newVal) => {
+    if (timeout) clearTimeout(timeout)
+
+    timeout = setTimeout(() => {
+      debouncedValue.value = newVal
+    }, delay)
+  })
+
+  return debouncedValue
+}
+```
+
+```vue
+<!-- Usage: Search with debouncing -->
+<script setup lang="ts">
+import { ref, watch } from 'vue'
+import { useDebounce } from '@/composables/useDebounce'
+
+const searchQuery = ref('')
+const debouncedQuery = useDebounce(searchQuery, 500)
+const results = ref([])
+
+watch(debouncedQuery, async (query) => {
+  if (!query) {
+    results.value = []
+    return
+  }
+
+  const res = await fetch(`/api/search?q=${query}`)
+  results.value = await res.json()
+})
+</script>
+
+<template>
+  <input v-model="searchQuery" placeholder="Search..." />
+  <!-- Results update 500ms after user stops typing -->
+  <ul>
+    <li v-for="result in results" :key="result.id">{{ result.name }}</li>
   </ul>
 </template>
 ```
 
-### Form Submission
+### LocalStorage Composable
+
+```ts
+// src/composables/useLocalStorage.ts
+import { ref, watch, type Ref } from 'vue'
+
+export function useLocalStorage<T>(key: string, defaultValue: T): Ref<T> {
+  const storedValue = localStorage.getItem(key)
+  const data = ref<T>(
+    storedValue ? JSON.parse(storedValue) : defaultValue
+  ) as Ref<T>
+
+  watch(
+    data,
+    (newValue) => {
+      localStorage.setItem(key, JSON.stringify(newValue))
+    },
+    { deep: true }
+  )
+
+  return data
+}
+```
+
+```vue
+<!-- Usage -->
+<script setup lang="ts">
+import { useLocalStorage } from '@/composables/useLocalStorage'
+
+// Automatically synced with localStorage
+const preferences = useLocalStorage('user-preferences', {
+  theme: 'light',
+  fontSize: 14
+})
+</script>
+
+<template>
+  <div>
+    <select v-model="preferences.theme">
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+    </select>
+    <input v-model.number="preferences.fontSize" type="number" />
+  </div>
+</template>
+```
+
+## State Management with Pinia
+
+Pinia is the official state management library for Vue 3, replacing Vuex.
+
+### Setup
+
+```bash
+cd client
+npm install pinia
+```
+
+```ts
+// src/main.ts
+import { createApp } from 'vue'
+import { createPinia } from 'pinia'
+import App from './App.vue'
+
+const pinia = createPinia()
+
+createApp(App)
+  .use(pinia)
+  .mount('#app')
+```
+
+### Creating a Store
+
+```ts
+// src/stores/user.ts
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+
+interface User {
+  id: number
+  name: string
+  email: string
+}
+
+// Setup syntax (recommended - like Composition API)
+export const useUserStore = defineStore('user', () => {
+  // State
+  const users = ref<User[]>([])
+  const loading = ref(false)
+  const error = ref<string | null>(null)
+
+  // Getters (computed)
+  const userCount = computed(() => users.value.length)
+  const userNames = computed(() => users.value.map(u => u.name))
+
+  // Actions
+  async function fetchUsers() {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await fetch('/api/users')
+      if (!response.ok) throw new Error('Failed to fetch users')
+      users.value = await response.json()
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Unknown error'
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function addUser(user: Omit<User, 'id'>) {
+    const response = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(user)
+    })
+    const newUser = await response.json()
+    users.value.push(newUser)
+  }
+
+  async function deleteUser(id: number) {
+    await fetch(`/api/users/${id}`, { method: 'DELETE' })
+    users.value = users.value.filter(u => u.id !== id)
+  }
+
+  function $reset() {
+    users.value = []
+    loading.value = false
+    error.value = null
+  }
+
+  return {
+    // State
+    users,
+    loading,
+    error,
+    // Getters
+    userCount,
+    userNames,
+    // Actions
+    fetchUsers,
+    addUser,
+    deleteUser,
+    $reset
+  }
+})
+```
+
+### Options API Style Store
+
+```ts
+// src/stores/counter.ts
+import { defineStore } from 'pinia'
+
+export const useCounterStore = defineStore('counter', {
+  state: () => ({
+    count: 0,
+    name: 'Counter'
+  }),
+
+  getters: {
+    doubleCount: (state) => state.count * 2,
+
+    // Access other getters
+    displayText(): string {
+      return `${this.name}: ${this.doubleCount}`
+    }
+  },
+
+  actions: {
+    increment() {
+      this.count++
+    },
+
+    async incrementAsync() {
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      this.count++
+    }
+  }
+})
+```
+
+### Using Stores in Components
+
+```vue
+<script setup lang="ts">
+import { onMounted } from 'vue'
+import { useUserStore } from '@/stores/user'
+import { storeToRefs } from 'pinia'
+
+const userStore = useUserStore()
+
+// Extract reactive state (use storeToRefs to maintain reactivity)
+const { users, loading, error, userCount } = storeToRefs(userStore)
+
+// Actions don't need storeToRefs
+const { fetchUsers, addUser, deleteUser } = userStore
+
+onMounted(() => {
+  fetchUsers()
+})
+
+async function handleAddUser() {
+  await addUser({ name: 'New User', email: 'new@example.com' })
+}
+</script>
+
+<template>
+  <div>
+    <h1>Users ({{ userCount }})</h1>
+
+    <button @click="handleAddUser">Add User</button>
+
+    <div v-if="loading">Loading...</div>
+    <div v-else-if="error">Error: {{ error }}</div>
+    <ul v-else>
+      <li v-for="user in users" :key="user.id">
+        {{ user.name }}
+        <button @click="deleteUser(user.id)">Delete</button>
+      </li>
+    </ul>
+  </div>
+</template>
+```
+
+### Store Composition
+
+Stores can use other stores:
+
+```ts
+// src/stores/auth.ts
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+import { useUserStore } from './user'
+
+export const useAuthStore = defineStore('auth', () => {
+  const token = ref<string | null>(localStorage.getItem('token'))
+  const isAuthenticated = computed(() => !!token.value)
+
+  // Use another store
+  const userStore = useUserStore()
+
+  async function login(email: string, password: string) {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    })
+    const data = await res.json()
+    token.value = data.token
+    localStorage.setItem('token', data.token)
+
+    // Fetch user data after login
+    await userStore.fetchUsers()
+  }
+
+  function logout() {
+    token.value = null
+    localStorage.removeItem('token')
+    userStore.$reset()
+  }
+
+  return { token, isAuthenticated, login, logout }
+})
+```
+
+## Component Patterns
+
+### Props and Emits with TypeScript
+
+```vue
+<!-- UserCard.vue -->
+<template>
+  <div class="user-card">
+    <h3>{{ user.name }}</h3>
+    <p>{{ user.email }}</p>
+    <button @click="handleEdit">Edit</button>
+    <button @click="handleDelete">Delete</button>
+  </div>
+</template>
+
+<script setup lang="ts">
+interface User {
+  id: number
+  name: string
+  email: string
+}
+
+// Define props with TypeScript
+interface Props {
+  user: User
+  editable?: boolean
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  editable: true
+})
+
+// Define emits with TypeScript
+const emit = defineEmits<{
+  edit: [user: User]
+  delete: [id: number]
+}>()
+
+function handleEdit() {
+  if (props.editable) {
+    emit('edit', props.user)
+  }
+}
+
+function handleDelete() {
+  emit('delete', props.user.id)
+}
+</script>
+```
+
+```vue
+<!-- Parent component -->
+<template>
+  <UserCard
+    :user="user"
+    :editable="true"
+    @edit="handleEdit"
+    @delete="handleDelete"
+  />
+</template>
+
+<script setup lang="ts">
+import UserCard from '@/components/UserCard.vue'
+
+function handleEdit(user: User) {
+  console.log('Editing user:', user)
+}
+
+function handleDelete(id: number) {
+  console.log('Deleting user:', id)
+}
+</script>
+```
+
+### Slots
+
+```vue
+<!-- Card.vue - Reusable card component -->
+<template>
+  <div class="card">
+    <header v-if="$slots.header" class="card-header">
+      <slot name="header" />
+    </header>
+
+    <div class="card-body">
+      <slot />  <!-- Default slot -->
+    </div>
+
+    <footer v-if="$slots.footer" class="card-footer">
+      <slot name="footer" />
+    </footer>
+  </div>
+</template>
+```
+
+```vue
+<!-- Usage -->
+<template>
+  <Card>
+    <template #header>
+      <h2>User Profile</h2>
+    </template>
+
+    <!-- Default slot content -->
+    <p>Name: {{ user.name }}</p>
+    <p>Email: {{ user.email }}</p>
+
+    <template #footer>
+      <button>Edit</button>
+      <button>Delete</button>
+    </template>
+  </Card>
+</template>
+```
+
+### Scoped Slots
+
+```vue
+<!-- List.vue - Generic list component -->
+<template>
+  <ul>
+    <li v-for="(item, index) in items" :key="index">
+      <!-- Expose item data to parent -->
+      <slot :item="item" :index="index" />
+    </li>
+  </ul>
+</template>
+
+<script setup lang="ts">
+interface Props<T> {
+  items: T[]
+}
+
+defineProps<Props<any>>()
+</script>
+```
+
+```vue
+<!-- Usage -->
+<template>
+  <List :items="users">
+    <template #default="{ item, index }">
+      <strong>{{ index + 1 }}.</strong> {{ item.name }} ({{ item.email }})
+    </template>
+  </List>
+</template>
+```
+
+### v-model
+
+```vue
+<!-- CustomInput.vue -->
+<template>
+  <input
+    :value="modelValue"
+    @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
+  />
+</template>
+
+<script setup lang="ts">
+defineProps<{
+  modelValue: string
+}>()
+
+defineEmits<{
+  'update:modelValue': [value: string]
+}>()
+</script>
+```
+
+```vue
+<!-- Usage (syntactic sugar for :modelValue + @update:modelValue) -->
+<template>
+  <CustomInput v-model="text" />
+  <p>{{ text }}</p>
+</template>
+
+<script setup lang="ts">
+const text = ref('')
+</script>
+```
+
+### Multiple v-models
+
+```vue
+<!-- UserForm.vue -->
+<template>
+  <div>
+    <input :value="name" @input="$emit('update:name', $event.target.value)" />
+    <input :value="email" @input="$emit('update:email', $event.target.value)" />
+  </div>
+</template>
+
+<script setup lang="ts">
+defineProps<{
+  name: string
+  email: string
+}>()
+
+defineEmits<{
+  'update:name': [value: string]
+  'update:email': [value: string]
+}>()
+</script>
+```
+
+```vue
+<!-- Usage -->
+<template>
+  <UserForm v-model:name="userName" v-model:email="userEmail" />
+</template>
+```
+
+## Directives
+
+### v-model Advanced
+
+```vue
+<template>
+  <!-- Text input -->
+  <input v-model="text" />
+
+  <!-- Checkbox -->
+  <input type="checkbox" v-model="checked" />
+
+  <!-- Multiple checkboxes (array) -->
+  <input type="checkbox" value="vue" v-model="frameworks" />
+  <input type="checkbox" value="react" v-model="frameworks" />
+
+  <!-- Radio -->
+  <input type="radio" value="yes" v-model="answer" />
+  <input type="radio" value="no" v-model="answer" />
+
+  <!-- Select -->
+  <select v-model="selected">
+    <option value="a">A</option>
+    <option value="b">B</option>
+  </select>
+
+  <!-- Modifiers -->
+  <input v-model.lazy="text" />       <!-- Update on change, not input -->
+  <input v-model.number="age" />      <!-- Cast to number -->
+  <input v-model.trim="name" />       <!-- Trim whitespace -->
+</template>
+
+<script setup lang="ts">
+const text = ref('')
+const checked = ref(false)
+const frameworks = ref<string[]>([])
+const answer = ref('')
+const selected = ref('')
+const age = ref(0)
+const name = ref('')
+</script>
+```
+
+### Custom Directives
+
+```ts
+// src/directives/focus.ts
+import type { Directive } from 'vue'
+
+export const vFocus: Directive = {
+  mounted(el) {
+    el.focus()
+  }
+}
+```
+
+```ts
+// src/main.ts
+import { vFocus } from './directives/focus'
+
+const app = createApp(App)
+app.directive('focus', vFocus)
+app.mount('#app')
+```
+
+```vue
+<!-- Usage -->
+<template>
+  <input v-focus />
+</template>
+```
+
+More complex directive:
+
+```ts
+// src/directives/clickOutside.ts
+import type { Directive } from 'vue'
+
+export const vClickOutside: Directive<HTMLElement, () => void> = {
+  mounted(el, binding) {
+    el._clickOutside = (event: Event) => {
+      if (!(el === event.target || el.contains(event.target as Node))) {
+        binding.value()
+      }
+    }
+    document.addEventListener('click', el._clickOutside)
+  },
+
+  unmounted(el) {
+    document.removeEventListener('click', el._clickOutside!)
+    delete el._clickOutside
+  }
+}
+
+declare module 'vue' {
+  interface HTMLElement {
+    _clickOutside?: (event: Event) => void
+  }
+}
+```
+
+```vue
+<!-- Usage: Close dropdown when clicking outside -->
+<template>
+  <div v-click-outside="closeDropdown" class="dropdown">
+    <button @click="isOpen = !isOpen">Toggle</button>
+    <div v-if="isOpen" class="menu">
+      <a href="#">Item 1</a>
+      <a href="#">Item 2</a>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+import { vClickOutside } from '@/directives/clickOutside'
+
+const isOpen = ref(false)
+
+function closeDropdown() {
+  isOpen.value = false
+}
+</script>
+```
+
+## Advanced Features
+
+### Teleport
+
+Render content outside the component's DOM hierarchy (useful for modals, notifications).
+
+```vue
+<template>
+  <button @click="showModal = true">Open Modal</button>
+
+  <!-- Renders to <body>, not here -->
+  <Teleport to="body">
+    <div v-if="showModal" class="modal-overlay" @click="showModal = false">
+      <div class="modal" @click.stop>
+        <h2>Modal Title</h2>
+        <p>Modal content goes here</p>
+        <button @click="showModal = false">Close</button>
+      </div>
+    </div>
+  </Teleport>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+
+const showModal = ref(false)
+</script>
+
+<style scoped>
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal {
+  background: white;
+  padding: 2rem;
+  border-radius: 8px;
+}
+</style>
+```
+
+### Suspense
+
+Handle async components with loading states.
+
+```vue
+<template>
+  <Suspense>
+    <!-- Component with async setup() -->
+    <template #default>
+      <AsyncUserList />
+    </template>
+
+    <!-- Loading fallback -->
+    <template #fallback>
+      <div>Loading users...</div>
+    </template>
+  </Suspense>
+</template>
+
+<script setup lang="ts">
+import AsyncUserList from '@/components/AsyncUserList.vue'
+</script>
+```
+
+```vue
+<!-- AsyncUserList.vue -->
+<template>
+  <ul>
+    <li v-for="user in users" :key="user.id">{{ user.name }}</li>
+  </ul>
+</template>
+
+<script setup lang="ts">
+// Top-level await in setup - makes component async
+const response = await fetch('/api/users')
+const users = await response.json()
+</script>
+```
+
+### KeepAlive
+
+Cache component instances to preserve state when switching routes/components.
+
+```vue
+<template>
+  <KeepAlive :max="10">
+    <component :is="currentTab" />
+  </KeepAlive>
+</template>
+```
+
+```vue
+<!-- In router -->
+<template>
+  <router-view v-slot="{ Component }">
+    <KeepAlive>
+      <component :is="Component" />
+    </KeepAlive>
+  </router-view>
+</template>
+```
+
+### Transitions
+
+```vue
+<template>
+  <button @click="show = !show">Toggle</button>
+
+  <Transition name="fade">
+    <p v-if="show">Hello Vue!</p>
+  </Transition>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+const show = ref(true)
+</script>
+
+<style>
+.fade-enter-active, .fade-leave-active {
+  transition: opacity 0.5s;
+}
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
+}
+</style>
+```
+
+List transitions:
+
+```vue
+<template>
+  <TransitionGroup name="list" tag="ul">
+    <li v-for="item in items" :key="item.id">
+      {{ item.text }}
+    </li>
+  </TransitionGroup>
+</template>
+
+<style>
+.list-enter-active, .list-leave-active {
+  transition: all 0.5s;
+}
+.list-enter-from {
+  opacity: 0;
+  transform: translateX(30px);
+}
+.list-leave-to {
+  opacity: 0;
+  transform: translateX(-30px);
+}
+</style>
+```
+
+## Form Handling
+
+### Basic Forms
 
 ```vue
 <template>
@@ -381,96 +1964,71 @@ const handleSubmit = async () => {
 </script>
 ```
 
-## State Management
-
-### Pinia (Recommended)
-
-Install Pinia:
+### Form Validation with VeeValidate
 
 ```bash
 cd client
-npm install pinia
+npm install vee-validate yup
 ```
-
-Setup in `main.ts`:
-
-```ts
-import { createApp } from 'vue'
-import { createPinia } from 'pinia'
-import App from './App.vue'
-import router from './router'
-
-const pinia = createPinia()
-
-createApp(App)
-  .use(pinia)
-  .use(router)
-  .mount('#app')
-```
-
-Create a store:
-
-```ts
-// src/stores/user.ts
-import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-
-interface User {
-  id: number
-  name: string
-  email: string
-}
-
-export const useUserStore = defineStore('user', () => {
-  const users = ref<User[]>([])
-  const loading = ref(false)
-
-  const userCount = computed(() => users.value.length)
-
-  async function fetchUsers() {
-    loading.value = true
-    try {
-      const response = await fetch('/api/users')
-      users.value = await response.json()
-    } finally {
-      loading.value = false
-    }
-  }
-
-  function addUser(user: User) {
-    users.value.push(user)
-  }
-
-  return { users, loading, userCount, fetchUsers, addUser }
-})
-```
-
-Use in components:
 
 ```vue
+<template>
+  <form @submit="onSubmit">
+    <div>
+      <input v-model="name" name="name" placeholder="Name" />
+      <span class="error">{{ errors.name }}</span>
+    </div>
+
+    <div>
+      <input v-model="email" name="email" type="email" placeholder="Email" />
+      <span class="error">{{ errors.email }}</span>
+    </div>
+
+    <div>
+      <input v-model="age" name="age" type="number" placeholder="Age" />
+      <span class="error">{{ errors.age }}</span>
+    </div>
+
+    <button type="submit" :disabled="!meta.valid">Submit</button>
+  </form>
+</template>
+
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import { useUserStore } from '@/stores/user'
+import { useForm, useField } from 'vee-validate'
+import * as yup from 'yup'
 
-const userStore = useUserStore()
+const schema = yup.object({
+  name: yup.string().required('Name is required').min(2, 'Name must be at least 2 characters'),
+  email: yup.string().required('Email is required').email('Must be a valid email'),
+  age: yup.number().required('Age is required').min(18, 'Must be 18 or older').max(120)
+})
 
-onMounted(() => {
-  userStore.fetchUsers()
+const { errors, meta, handleSubmit } = useForm({
+  validationSchema: schema
+})
+
+const { value: name } = useField<string>('name')
+const { value: email } = useField<string>('email')
+const { value: age } = useField<number>('age')
+
+const onSubmit = handleSubmit(async (values) => {
+  console.log('Form submitted:', values)
+  const res = await fetch('/api/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(values)
+  })
+  const data = await res.json()
+  console.log('Created:', data)
 })
 </script>
 
-<template>
-  <div>
-    <h1>Users ({{ userStore.userCount }})</h1>
-
-    <div v-if="userStore.loading">Loading...</div>
-    <ul v-else>
-      <li v-for="user in userStore.users" :key="user.id">
-        {{ user.name }}
-      </li>
-    </ul>
-  </div>
-</template>
+<style scoped>
+.error {
+  color: red;
+  font-size: 0.875rem;
+}
+</style>
 ```
 
 ## Styling Options
@@ -492,6 +2050,21 @@ Vue's scoped styles are built-in:
   border: none;
   border-radius: 4px;
 }
+
+/* Deep selector - style child components */
+:deep(.child-class) {
+  color: red;
+}
+
+/* Slotted selector - style slotted content */
+:slotted(p) {
+  margin: 0;
+}
+
+/* Global selector from scoped style */
+:global(.global-class) {
+  font-weight: bold;
+}
 </style>
 ```
 
@@ -500,12 +2073,21 @@ Vue's scoped styles are built-in:
 ```vue
 <template>
   <button :class="$style.button">Click me</button>
+  <p :class="[$style.text, $style.bold]">Multiple classes</p>
 </template>
 
 <style module>
 .button {
   background: #42b983;
   color: white;
+}
+
+.text {
+  color: #333;
+}
+
+.bold {
+  font-weight: bold;
 }
 </style>
 ```
@@ -529,9 +2111,27 @@ export default {
     "./src/**/*.{vue,js,ts,jsx,tsx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        primary: '#42b983',
+      },
+    },
   },
   plugins: [],
+}
+```
+
+Add to `src/styles/index.css`:
+
+```css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary text-white px-4 py-2 rounded hover:bg-green-600 transition;
+  }
 }
 ```
 
@@ -540,12 +2140,556 @@ Use in components:
 ```vue
 <template>
   <div class="container mx-auto px-4">
-    <h1 class="text-4xl font-bold text-green-600">Hello Vue!</h1>
-    <button class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+    <h1 class="text-4xl font-bold text-primary">Hello Vue!</h1>
+    <button class="btn-primary">
       Click me
     </button>
   </div>
 </template>
+```
+
+## Performance Optimization
+
+### v-once and v-memo
+
+```vue
+<template>
+  <!-- Render once, never update -->
+  <p v-once>{{ initialMessage }}</p>
+
+  <!-- Memoize based on dependencies (like React.memo) -->
+  <div v-memo="[user.id, user.name]">
+    <p>{{ user.name }}</p>
+    <p>{{ user.email }}</p>
+  </div>
+</template>
+```
+
+### Async Components
+
+```ts
+// Lazy load components
+const AdminPanel = defineAsyncComponent(() => import('./AdminPanel.vue'))
+```
+
+```vue
+<template>
+  <Suspense>
+    <AdminPanel v-if="isAdmin" />
+    <template #fallback>
+      <div>Loading admin panel...</div>
+    </template>
+  </Suspense>
+</template>
+```
+
+### Virtual Scrolling
+
+```bash
+cd client
+npm install vue-virtual-scroller
+```
+
+```vue
+<template>
+  <RecycleScroller
+    :items="items"
+    :item-size="50"
+    key-field="id"
+    v-slot="{ item }"
+  >
+    <div class="item">{{ item.name }}</div>
+  </RecycleScroller>
+</template>
+
+<script setup lang="ts">
+import { RecycleScroller } from 'vue-virtual-scroller'
+import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
+
+const items = ref(Array.from({ length: 10000 }, (_, i) => ({
+  id: i,
+  name: `Item ${i}`
+})))
+</script>
+```
+
+## Error Handling
+
+### Error Boundary (Composition)
+
+```vue
+<!-- ErrorBoundary.vue -->
+<template>
+  <div v-if="error" class="error-boundary">
+    <h2>Something went wrong</h2>
+    <p>{{ error.message }}</p>
+    <button @click="reset">Try again</button>
+  </div>
+  <slot v-else />
+</template>
+
+<script setup lang="ts">
+import { ref, onErrorCaptured } from 'vue'
+
+const error = ref<Error | null>(null)
+
+onErrorCaptured((err) => {
+  error.value = err
+  return false  // Prevent error from propagating
+})
+
+function reset() {
+  error.value = null
+}
+</script>
+```
+
+### Global Error Handler
+
+```ts
+// src/main.ts
+const app = createApp(App)
+
+app.config.errorHandler = (err, instance, info) => {
+  console.error('Global error:', err)
+  console.error('Component:', instance)
+  console.error('Info:', info)
+
+  // Send to error tracking service
+  // trackError(err)
+}
+
+app.mount('#app')
+```
+
+## Complete Real-World Example: Task Manager
+
+Let's build a complete task management application using Vue, Pinia, Vue Router, and Mizu backend.
+
+### Backend (Go)
+
+```go
+// app/server/routes.go
+package server
+
+import (
+	"sync"
+
+	"github.com/go-mizu/mizu"
+)
+
+type Task struct {
+	ID          int    `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Status      string `json:"status"` // "pending", "in-progress", "completed"
+	Priority    string `json:"priority"` // "low", "medium", "high"
+}
+
+var (
+	tasks   = []Task{}
+	nextID  = 1
+	tasksMu sync.RWMutex
+)
+
+func setupRoutes(app *mizu.App) {
+	// GET /api/tasks
+	app.GET("/api/tasks", func(c *mizu.Ctx) error {
+		tasksMu.RLock()
+		defer tasksMu.RUnlock()
+		return c.JSON(tasks)
+	})
+
+	// POST /api/tasks
+	app.POST("/api/tasks", func(c *mizu.Ctx) error {
+		var task Task
+		if err := c.BodyParser(&task); err != nil {
+			return c.Status(400).JSON(map[string]string{"error": "Invalid request"})
+		}
+
+		tasksMu.Lock()
+		task.ID = nextID
+		nextID++
+		tasks = append(tasks, task)
+		tasksMu.Unlock()
+
+		return c.Status(201).JSON(task)
+	})
+
+	// PUT /api/tasks/:id
+	app.PUT("/api/tasks/:id", func(c *mizu.Ctx) error {
+		id := c.ParamInt("id")
+		var updates Task
+		if err := c.BodyParser(&updates); err != nil {
+			return c.Status(400).JSON(map[string]string{"error": "Invalid request"})
+		}
+
+		tasksMu.Lock()
+		defer tasksMu.Unlock()
+
+		for i, task := range tasks {
+			if task.ID == id {
+				updates.ID = id
+				tasks[i] = updates
+				return c.JSON(updates)
+			}
+		}
+
+		return c.Status(404).JSON(map[string]string{"error": "Task not found"})
+	})
+
+	// DELETE /api/tasks/:id
+	app.DELETE("/api/tasks/:id", func(c *mizu.Ctx) error {
+		id := c.ParamInt("id")
+
+		tasksMu.Lock()
+		defer tasksMu.Unlock()
+
+		for i, task := range tasks {
+			if task.ID == id {
+				tasks = append(tasks[:i], tasks[i+1:]...)
+				return c.Status(204).Send(nil)
+			}
+		}
+
+		return c.Status(404).JSON(map[string]string{"error": "Task not found"})
+	})
+}
+```
+
+### Frontend - Store
+
+```ts
+// src/stores/tasks.ts
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+
+export interface Task {
+  id: number
+  title: string
+  description: string
+  status: 'pending' | 'in-progress' | 'completed'
+  priority: 'low' | 'medium' | 'high'
+}
+
+export type TaskFilter = 'all' | 'pending' | 'in-progress' | 'completed'
+
+export const useTaskStore = defineStore('tasks', () => {
+  const tasks = ref<Task[]>([])
+  const loading = ref(false)
+  const filter = ref<TaskFilter>('all')
+
+  const filteredTasks = computed(() => {
+    if (filter.value === 'all') return tasks.value
+    return tasks.value.filter(t => t.status === filter.value)
+  })
+
+  const tasksByPriority = computed(() => {
+    const high = tasks.value.filter(t => t.priority === 'high' && t.status !== 'completed')
+    const medium = tasks.value.filter(t => t.priority === 'medium' && t.status !== 'completed')
+    const low = tasks.value.filter(t => t.priority === 'low' && t.status !== 'completed')
+    return { high, medium, low }
+  })
+
+  async function fetchTasks() {
+    loading.value = true
+    try {
+      const res = await fetch('/api/tasks')
+      tasks.value = await res.json()
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function addTask(task: Omit<Task, 'id'>) {
+    const res = await fetch('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(task)
+    })
+    const newTask = await res.json()
+    tasks.value.push(newTask)
+  }
+
+  async function updateTask(id: number, updates: Partial<Task>) {
+    const task = tasks.value.find(t => t.id === id)
+    if (!task) return
+
+    const updated = { ...task, ...updates }
+    const res = await fetch(`/api/tasks/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated)
+    })
+    const newTask = await res.json()
+
+    const index = tasks.value.findIndex(t => t.id === id)
+    tasks.value[index] = newTask
+  }
+
+  async function deleteTask(id: number) {
+    await fetch(`/api/tasks/${id}`, { method: 'DELETE' })
+    tasks.value = tasks.value.filter(t => t.id !== id)
+  }
+
+  return {
+    tasks,
+    loading,
+    filter,
+    filteredTasks,
+    tasksByPriority,
+    fetchTasks,
+    addTask,
+    updateTask,
+    deleteTask
+  }
+})
+```
+
+### Frontend - Components
+
+```vue
+<!-- src/components/TaskForm.vue -->
+<template>
+  <form @submit.prevent="handleSubmit" class="task-form">
+    <input v-model="title" placeholder="Task title" required />
+
+    <textarea v-model="description" placeholder="Description" />
+
+    <select v-model="priority" required>
+      <option value="low">Low Priority</option>
+      <option value="medium">Medium Priority</option>
+      <option value="high">High Priority</option>
+    </select>
+
+    <button type="submit">Add Task</button>
+  </form>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+import { useTaskStore } from '@/stores/tasks'
+
+const taskStore = useTaskStore()
+
+const title = ref('')
+const description = ref('')
+const priority = ref<'low' | 'medium' | 'high'>('medium')
+
+async function handleSubmit() {
+  await taskStore.addTask({
+    title: title.value,
+    description: description.value,
+    status: 'pending',
+    priority: priority.value
+  })
+
+  title.value = ''
+  description.value = ''
+  priority.value = 'medium'
+}
+</script>
+
+<style scoped>
+.task-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  background: #f5f5f5;
+  border-radius: 8px;
+}
+
+input, textarea, select {
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+</style>
+```
+
+```vue
+<!-- src/components/TaskItem.vue -->
+<template>
+  <div class="task-item" :class="[task.priority, task.status]">
+    <div class="task-content">
+      <h3>{{ task.title }}</h3>
+      <p>{{ task.description }}</p>
+      <span class="priority-badge">{{ task.priority }}</span>
+    </div>
+
+    <div class="task-actions">
+      <select :value="task.status" @change="updateStatus">
+        <option value="pending">Pending</option>
+        <option value="in-progress">In Progress</option>
+        <option value="completed">Completed</option>
+      </select>
+
+      <button @click="deleteTask" class="delete-btn">Delete</button>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { useTaskStore, type Task } from '@/stores/tasks'
+
+const props = defineProps<{ task: Task }>()
+const taskStore = useTaskStore()
+
+function updateStatus(e: Event) {
+  const status = (e.target as HTMLSelectElement).value
+  taskStore.updateTask(props.task.id, { status })
+}
+
+function deleteTask() {
+  if (confirm('Delete this task?')) {
+    taskStore.deleteTask(props.task.id)
+  }
+}
+</script>
+
+<style scoped>
+.task-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.task-item.high {
+  border-left: 4px solid #ef4444;
+}
+
+.task-item.medium {
+  border-left: 4px solid #f59e0b;
+}
+
+.task-item.low {
+  border-left: 4px solid #10b981;
+}
+
+.task-item.completed {
+  opacity: 0.6;
+}
+
+.task-item.completed h3 {
+  text-decoration: line-through;
+}
+
+.priority-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  background: #e5e7eb;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.task-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.delete-btn {
+  background: #ef4444;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+</style>
+```
+
+```vue
+<!-- src/pages/Tasks.vue -->
+<template>
+  <div class="tasks-page">
+    <h1>Task Manager</h1>
+
+    <TaskForm />
+
+    <div class="filters">
+      <button
+        v-for="f in filters"
+        :key="f"
+        :class="{ active: filter === f }"
+        @click="filter = f"
+      >
+        {{ f }}
+      </button>
+    </div>
+
+    <div v-if="loading">Loading tasks...</div>
+
+    <div v-else-if="filteredTasks.length === 0" class="empty">
+      No tasks found
+    </div>
+
+    <div v-else class="task-list">
+      <TaskItem
+        v-for="task in filteredTasks"
+        :key="task.id"
+        :task="task"
+      />
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { onMounted } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useTaskStore } from '@/stores/tasks'
+import TaskForm from '@/components/TaskForm.vue'
+import TaskItem from '@/components/TaskItem.vue'
+
+const taskStore = useTaskStore()
+const { filteredTasks, loading, filter } = storeToRefs(taskStore)
+
+const filters = ['all', 'pending', 'in-progress', 'completed'] as const
+
+onMounted(() => {
+  taskStore.fetchTasks()
+})
+</script>
+
+<style scoped>
+.tasks-page {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.filters {
+  display: flex;
+  gap: 0.5rem;
+  margin: 2rem 0;
+}
+
+.filters button {
+  padding: 0.5rem 1rem;
+  border: 1px solid #ddd;
+  background: white;
+  border-radius: 4px;
+  cursor: pointer;
+  text-transform: capitalize;
+}
+
+.filters button.active {
+  background: #42b983;
+  color: white;
+  border-color: #42b983;
+}
+
+.empty {
+  text-align: center;
+  padding: 2rem;
+  color: #666;
+}
+</style>
 ```
 
 ## Building for Production
@@ -554,9 +2698,9 @@ Use in components:
 make build
 ```
 
-Runs:
-1. `cd client && npm run build` - Builds Vue app
-2. `go build` - Builds Go binary with embedded frontend
+This runs:
+1. `cd client && npm run build` - Builds Vue app to `dist/`
+2. `go build -o bin/server cmd/server/main.go` - Builds Go binary with embedded frontend
 
 Run in production:
 
@@ -564,96 +2708,131 @@ Run in production:
 MIZU_ENV=production ./bin/server
 ```
 
-## Advanced Features
+## Troubleshooting
 
-### Lazy Loading Routes
+### HMR Not Working
 
-```ts
-// router/index.ts
-import { createRouter, createWebHistory } from 'vue-router'
+**Problem**: Changes in Vue files don't hot-reload.
 
-const router = createRouter({
-  history: createWebHistory(),
-  routes: [
-    {
-      path: '/',
-      component: () => import('@/pages/Home.vue'),
-    },
-    {
-      path: '/about',
-      component: () => import('@/pages/About.vue'),
-    },
-  ],
-})
+**Solution**:
+- Check Vite dev server is running on port 5173
+- Verify `vite.config.ts` has correct HMR config:
+  ```ts
+  server: {
+    hmr: {
+      clientPort: 3000  // Must match Mizu port
+    }
+  }
+  ```
+- Check browser console for WebSocket errors
 
-export default router
+### Router 404 in Production
+
+**Problem**: Refreshing on `/about` gives 404 in production.
+
+**Solution**: The frontend middleware handles this automatically with SPA fallback. Verify `frontend.Options`:
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode: frontend.ModeAuto,
+    FS:   dist,
+    // ...
+}))
 ```
 
-### TypeScript Support
+### State Not Persisting
 
-Vue 3 has excellent TypeScript support. Define prop types:
+**Problem**: Pinia state resets on page refresh.
 
+**Solution**: Use `pinia-plugin-persistedstate`:
+```bash
+npm install pinia-plugin-persistedstate
+```
+
+```ts
+import { createPinia } from 'pinia'
+import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
+
+const pinia = createPinia()
+pinia.use(piniaPluginPersistedstate)
+```
+
+```ts
+// In store
+export const useUserStore = defineStore('user', () => {
+  // ...
+}, {
+  persist: true  // Enable persistence
+})
+```
+
+### TypeScript Errors with Refs
+
+**Problem**: TypeScript complains about `.value`.
+
+**Solution**: Ensure you're using `.value` in `<script>` but NOT in `<template>`:
 ```vue
 <script setup lang="ts">
-interface Props {
-  title: string
-  count?: number
-}
-
-const props = withDefaults(defineProps<Props>(), {
-  count: 0,
-})
-
-const emit = defineEmits<{
-  update: [value: number]
-}>()
+const count = ref(0)
+count.value++  // ✅ Correct
 </script>
 
 <template>
-  <div>
-    <h1>{{ title }}</h1>
-    <p>Count: {{ count }}</p>
-    <button @click="emit('update', count + 1)">Increment</button>
-  </div>
+  {{ count }}  <!-- ✅ Correct, no .value -->
+  {{ count.value }}  <!-- ❌ Wrong in template -->
 </template>
 ```
 
-### Provide/Inject
+### Props Not Reactive
 
-Share data across components:
+**Problem**: Mutating props doesn't update child component.
 
+**Solution**: Props are one-way. Use `emit` to notify parent, or use `v-model`:
 ```vue
-<!-- App.vue -->
+<!-- Child -->
 <script setup lang="ts">
-import { provide, ref } from 'vue'
+const props = defineProps<{ count: number }>()
+const emit = defineEmits<{ 'update:count': [value: number] }>()
 
-const apiUrl = ref('/api')
-provide('apiUrl', apiUrl)
+function increment() {
+  emit('update:count', props.count + 1)
+}
 </script>
+
+<!-- Parent -->
+<template>
+  <Child v-model:count="count" />
+</template>
 ```
 
-```vue
-<!-- Child component -->
-<script setup lang="ts">
-import { inject } from 'vue'
+## When to Choose Vue
 
-const apiUrl = inject<string>('apiUrl', '/api')
-</script>
-```
+**Choose Vue if:**
+- You want a gentle learning curve with great documentation
+- You prefer Single File Components (.vue files)
+- You need a progressive framework (start small, scale up)
+- You want official state management (Pinia) and routing (Vue Router)
+- You value developer experience and tooling (Vite, DevTools)
+- You're building apps of any size (Vue scales from simple to complex)
+
+**Consider alternatives if:**
+- **React**: You need the largest ecosystem or you're integrating with existing React code
+- **Svelte**: You want the smallest bundle size and compile-time optimizations
+- **Angular**: You need a full framework with everything included (batteries-included approach)
+- **HTMX/Alpine**: You want to enhance server-rendered HTML with minimal JavaScript
 
 ## Next Steps
 
 <CardGroup cols={2}>
-  <Card title="Svelte Guide" href="/frontend/svelte" icon="code">
-    Try Svelte for a compiler-based approach
-  </Card>
-  <Card title="API Integration" href="/frontend/api-integration" icon="plug">
-    Best practices for API communication
-  </Card>
-  <Card title="Deployment" href="/frontend/building" icon="rocket">
-    Build and deploy your app
+  <Card title="Nuxt Guide" href="/frontend/nuxt" icon="code">
+    Try Nuxt for SSR and static generation
   </Card>
   <Card title="Pinia Docs" href="https://pinia.vuejs.org" icon="external-link">
     Learn more about Vue state management
+  </Card>
+  <Card title="Vue Router Docs" href="https://router.vuejs.org" icon="external-link">
+    Deep dive into Vue Router
+  </Card>
+  <Card title="Deployment" href="/frontend/building" icon="rocket">
+    Build and deploy your app
   </Card>
 </CardGroup>
