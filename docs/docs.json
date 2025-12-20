@@ -39,77 +39,61 @@
         "tab": "Guides",
         "groups": [
           {
-            "group": "Introduction",
+            "group": "Getting Started",
             "pages": [
               "guides/welcome",
-              "guides/what-is-mizu",
-              "guides/installation"
+              "overview/why",
+              "guides/installation",
+              "guides/quick-start"
             ]
           },
           {
-            "group": "Building Blocks",
+            "group": "Core Concepts",
             "pages": [
-              "guides/core",
-              "guides/middlewares",
-              "guides/contract",
-              "guides/view",
-              "guides/frontend",
-              "guides/mobile",
-              "guides/cli"
+              "guides/concepts/overview",
+              "guides/concepts/app",
+              "guides/concepts/routing",
+              "guides/concepts/handler",
+              "guides/concepts/context",
+              "guides/concepts/request",
+              "guides/concepts/response",
+              "guides/concepts/middleware",
+              "guides/concepts/error",
+              "guides/concepts/logging",
+              "guides/concepts/static"
             ]
           },
           {
-            "group": "Tutorials",
+            "group": "Building Your App",
             "pages": [
               "guides/first-api",
               "guides/first-website",
-              "guides/first-fullstack"
+              "guides/first-fullstack",
+              "guides/project-structure",
+              "guides/testing"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "guides/deployment/overview",
+              "guides/deployment/docker",
+              "guides/deployment/kubernetes",
+              "guides/deployment/cloud",
+              "guides/deployment/serverless",
+              "guides/deployment/traditional",
+              "guides/deployment/cicd"
             ]
           },
           {
             "group": "Learn More",
             "pages": [
-              "guides/architecture",
-              "guides/faq",
-              "guides/community"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "Core",
-        "groups": [
-          {
-            "group": "Overview",
-            "pages": [
-              "overview/intro",
-              "overview/why",
               "overview/features",
               "overview/use-cases",
-              "overview/roadmap"
-            ]
-          },
-          {
-            "group": "Getting Started",
-            "pages": [
-              "get-started/quick-start",
-              "get-started/deployment"
-            ]
-          },
-          {
-            "group": "Concepts",
-            "pages": [
-              "concepts/overview",
-              "concepts/app",
-              "concepts/routing",
-              "concepts/handler",
-              "concepts/context",
-              "concepts/request",
-              "concepts/response",
-              "concepts/static",
-              "concepts/logging",
-              "concepts/error",
-              "concepts/middleware"
+              "guides/architecture",
+              "overview/roadmap",
+              "guides/faq",
+              "guides/community"
             ]
           }
         ]

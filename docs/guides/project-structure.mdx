@@ -1,0 +1,422 @@
+---
+icon: "sitemap"
+title: "Project Structure"
+description: "Organize your Mizu project for maintainability and scale."
+---
+
+This guide presents recommended patterns for structuring Mizu projects, from simple scripts to production applications.
+
+## Simple projects
+
+For small projects or prototypes, everything can live in a single file:
+
+```
+myapp/
+├── main.go
+├── go.mod
+└── go.sum
+```
+
+```go
+// main.go
+package main
+
+import "github.com/go-mizu/mizu"
+
+func main() {
+    app := mizu.New()
+
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{"status": "ok"})
+    })
+
+    app.Listen(":3000")
+}
+```
+
+This is fine for scripts, tools, and learning. No ceremony needed.
+
+## Standard layout
+
+For larger applications, separate concerns into packages:
+
+```
+myapp/
+├── main.go              # Entry point
+├── go.mod
+├── go.sum
+├── handlers/            # HTTP handlers
+│   ├── users.go
+│   └── posts.go
+├── services/            # Business logic
+│   ├── user_service.go
+│   └── post_service.go
+├── models/              # Data structures
+│   ├── user.go
+│   └── post.go
+├── middleware/          # Custom middleware
+│   └── auth.go
+└── config/              # Configuration
+    └── config.go
+```
+
+### main.go
+
+The entry point sets up the app and routes:
+
+```go
+package main
+
+import (
+    "myapp/config"
+    "myapp/handlers"
+    "myapp/middleware"
+
+    "github.com/go-mizu/mizu"
+)
+
+func main() {
+    cfg := config.Load()
+
+    app := mizu.New()
+
+    // Global middleware
+    app.Use(middleware.RequestID())
+
+    // Public routes
+    app.Get("/health", handlers.Health)
+
+    // API routes
+    api := app.Group("/api")
+    api.Get("/users", handlers.ListUsers)
+    api.Get("/users/{id}", handlers.GetUser)
+    api.Post("/users", handlers.CreateUser)
+
+    // Protected routes
+    protected := api.With(middleware.RequireAuth())
+    protected.Put("/users/{id}", handlers.UpdateUser)
+    protected.Delete("/users/{id}", handlers.DeleteUser)
+
+    app.Listen(":" + cfg.Port)
+}
+```
+
+### handlers/users.go
+
+Handlers focus on HTTP concerns:
+
+```go
+package handlers
+
+import (
+    "myapp/models"
+    "myapp/services"
+
+    "github.com/go-mizu/mizu"
+)
+
+func ListUsers(c *mizu.Ctx) error {
+    users, err := services.Users.List(c.Context())
+    if err != nil {
+        return err
+    }
+    return c.JSON(200, users)
+}
+
+func GetUser(c *mizu.Ctx) error {
+    id := c.Param("id")
+
+    user, err := services.Users.Get(c.Context(), id)
+    if err != nil {
+        return err
+    }
+
+    return c.JSON(200, user)
+}
+
+func CreateUser(c *mizu.Ctx) error {
+    var input models.CreateUserInput
+    if err := c.BindJSON(&input, 1<<20); err != nil {
+        return err
+    }
+
+    user, err := services.Users.Create(c.Context(), input)
+    if err != nil {
+        return err
+    }
+
+    return c.JSON(201, user)
+}
+```
+
+### services/user_service.go
+
+Services contain business logic:
+
+```go
+package services
+
+import (
+    "context"
+    "myapp/models"
+)
+
+var Users = &UserService{}
+
+type UserService struct {
+    // Add dependencies here (DB, cache, etc.)
+}
+
+func (s *UserService) List(ctx context.Context) ([]models.User, error) {
+    // Business logic here
+    return []models.User{}, nil
+}
+
+func (s *UserService) Get(ctx context.Context, id string) (*models.User, error) {
+    // Business logic here
+    return &models.User{ID: id}, nil
+}
+
+func (s *UserService) Create(ctx context.Context, input models.CreateUserInput) (*models.User, error) {
+    // Validation, database insert, etc.
+    return &models.User{ID: "new", Name: input.Name}, nil
+}
+```
+
+### models/user.go
+
+Models define data structures:
+
+```go
+package models
+
+import "time"
+
+type User struct {
+    ID        string    `json:"id"`
+    Name      string    `json:"name"`
+    Email     string    `json:"email"`
+    CreatedAt time.Time `json:"createdAt"`
+}
+
+type CreateUserInput struct {
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+```
+
+## Clean architecture
+
+For complex applications, use a layered architecture:
+
+```
+myapp/
+├── cmd/
+│   └── server/
+│       └── main.go          # Entry point
+├── internal/
+│   ├── app/
+│   │   └── app.go           # App setup
+│   ├── handler/             # HTTP handlers
+│   │   ├── handler.go
+│   │   └── user.go
+│   ├── service/             # Business logic
+│   │   └── user.go
+│   ├── repository/          # Data access
+│   │   └── user.go
+│   └── domain/              # Core types
+│       └── user.go
+├── pkg/                     # Public packages
+│   └── validate/
+│       └── validate.go
+└── go.mod
+```
+
+### Benefits
+
+| Layer | Responsibility | Dependencies |
+|-------|----------------|--------------|
+| **cmd** | Start the app | internal, pkg |
+| **handler** | HTTP request/response | service |
+| **service** | Business rules | repository, domain |
+| **repository** | Database operations | domain |
+| **domain** | Core types | none |
+
+### Dependency injection
+
+Pass dependencies explicitly:
+
+```go
+// internal/app/app.go
+package app
+
+import (
+    "database/sql"
+
+    "myapp/internal/handler"
+    "myapp/internal/repository"
+    "myapp/internal/service"
+
+    "github.com/go-mizu/mizu"
+)
+
+func New(db *sql.DB) *mizu.App {
+    // Build dependency graph
+    userRepo := repository.NewUserRepository(db)
+    userService := service.NewUserService(userRepo)
+    userHandler := handler.NewUserHandler(userService)
+
+    // Create app
+    app := mizu.New()
+
+    // Register routes
+    app.Get("/users", userHandler.List)
+    app.Get("/users/{id}", userHandler.Get)
+    app.Post("/users", userHandler.Create)
+
+    return app
+}
+```
+
+## Static files and templates
+
+Include static files and templates:
+
+```
+myapp/
+├── main.go
+├── static/              # Static assets
+│   ├── css/
+│   ├── js/
+│   └── images/
+├── templates/           # HTML templates
+│   ├── layout.html
+│   └── pages/
+│       ├── home.html
+│       └── about.html
+└── embed.go             # Embed directive
+```
+
+### embed.go
+
+```go
+package main
+
+import "embed"
+
+//go:embed static/*
+var StaticFS embed.FS
+
+//go:embed templates/*
+var TemplateFS embed.FS
+```
+
+### main.go
+
+```go
+package main
+
+import (
+    "io/fs"
+    "net/http"
+
+    "github.com/go-mizu/mizu"
+)
+
+func main() {
+    app := mizu.New()
+
+    // Serve static files
+    static, _ := fs.Sub(StaticFS, "static")
+    app.Static("/static/", http.FS(static))
+
+    // Your routes
+    app.Get("/", homeHandler)
+
+    app.Listen(":3000")
+}
+```
+
+## Configuration
+
+Use environment variables with sensible defaults:
+
+```go
+// config/config.go
+package config
+
+import "os"
+
+type Config struct {
+    Port        string
+    DatabaseURL string
+    Debug       bool
+}
+
+func Load() *Config {
+    return &Config{
+        Port:        getEnv("PORT", "3000"),
+        DatabaseURL: getEnv("DATABASE_URL", ""),
+        Debug:       getEnv("DEBUG", "false") == "true",
+    }
+}
+
+func getEnv(key, fallback string) string {
+    if value := os.Getenv(key); value != "" {
+        return value
+    }
+    return fallback
+}
+```
+
+## Testing
+
+Keep tests next to the code they test:
+
+```
+handlers/
+├── users.go
+├── users_test.go
+├── posts.go
+└── posts_test.go
+```
+
+Or use a separate test directory for integration tests:
+
+```
+myapp/
+├── handlers/
+├── services/
+└── tests/
+    ├── integration/
+    │   └── api_test.go
+    └── e2e/
+        └── full_flow_test.go
+```
+
+## Best practices
+
+1. **Keep main.go small** - Only setup and wiring
+2. **Handlers are thin** - Extract business logic to services
+3. **One package per concern** - Don't mix handlers with models
+4. **Use interfaces at boundaries** - Makes testing easier
+5. **Prefer explicit over implicit** - Pass dependencies, don't use globals
+6. **Group related routes** - Use `app.Group()` for organization
+
+## Anti-patterns to avoid
+
+- **God packages** - `utils`, `helpers`, `common`
+- **Circular imports** - Usually means wrong package boundaries
+- **Business logic in handlers** - Keep handlers focused on HTTP
+- **Global state** - Makes testing difficult
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Testing" icon="vial" href="/guides/testing">
+    Write tests for your handlers.
+  </Card>
+  <Card title="Deployment" icon="cloud" href="/guides/deployment">
+    Deploy to production.
+  </Card>
+</CardGroup>

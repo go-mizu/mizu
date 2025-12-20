@@ -1,0 +1,340 @@
+---
+icon: "cloud"
+title: "Overview"
+description: "Strategies and best practices for deploying Mizu applications to production."
+---
+
+This section covers everything you need to deploy Mizu applications to production. Whether you're deploying to a VPS, Kubernetes cluster, or serverless platform, you'll find detailed guides for your environment.
+
+## Building for Production
+
+Go compiles your application into a single binary with no external dependencies. This makes deployment simple.
+
+### Basic Build
+
+```bash
+go build -o app ./cmd/server
+```
+
+### Optimized Production Build
+
+```bash
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+  go build -ldflags="-s -w" -o app ./cmd/server
+```
+
+| Flag | Purpose |
+|------|---------|
+| `CGO_ENABLED=0` | Pure Go binary, no C dependencies |
+| `GOOS=linux` | Target operating system |
+| `GOARCH=amd64` | Target architecture (Intel/AMD 64-bit) |
+| `-ldflags="-s -w"` | Strip debug info (smaller binary) |
+
+### Common Architectures
+
+| Target | GOOS | GOARCH |
+|--------|------|--------|
+| Linux x86-64 | linux | amd64 |
+| Linux ARM64 (AWS Graviton, M1) | linux | arm64 |
+| macOS Intel | darwin | amd64 |
+| macOS Apple Silicon | darwin | arm64 |
+| Windows | windows | amd64 |
+
+## Deployment Decision Guide
+
+Choose your deployment method based on your needs:
+
+```
+                    ┌─────────────────┐
+                    │  Need container │
+                    │  orchestration? │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │ Yes          │ No           │
+              ▼              │              │
+    ┌─────────────────┐      │    ┌─────────────────┐
+    │   Kubernetes    │      │    │  Need auto-     │
+    │   deployment    │      │    │  scaling?       │
+    └─────────────────┘      │    └────────┬────────┘
+                             │             │
+                             │  ┌──────────┼──────────┐
+                             │  │ Yes      │ No       │
+                             │  ▼          │          │
+                             │ ┌───────────┴───┐      │
+                             │ │Cloud platform │      │
+                             │ │ (ECS, Cloud   │      │
+                             │ │  Run, etc.)   │      │
+                             │ └───────────────┘      │
+                             │                        │
+                             │           ┌────────────┴────────────┐
+                             │           │   Simple VPS or         │
+                             │           │   traditional server    │
+                             │           └─────────────────────────┘
+                             │
+              ┌──────────────┴──────────────┐
+              │  Want containers?           │
+              └──────────────┬──────────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │ Yes          │ No           │
+              ▼              ▼              │
+    ┌─────────────────┐ ┌─────────────────┐
+    │     Docker      │ │   Direct binary │
+    │   deployment    │ │   + systemd     │
+    └─────────────────┘ └─────────────────┘
+```
+
+| Method | Best For | Complexity |
+|--------|----------|------------|
+| [Docker](/guides/deployment/docker) | Consistent environments, easy scaling | Low |
+| [Kubernetes](/guides/deployment/kubernetes) | Large-scale, complex deployments | High |
+| [Cloud Platforms](/guides/deployment/cloud) | Managed infrastructure, auto-scaling | Medium |
+| [Serverless](/guides/deployment/serverless) | Event-driven, variable traffic | Low |
+| [Traditional](/guides/deployment/traditional) | Simple apps, full control | Low |
+
+## Essential Configuration
+
+### Environment Variables
+
+Read configuration from environment variables for flexibility:
+
+```go
+package main
+
+import (
+    "os"
+    "github.com/go-mizu/mizu"
+)
+
+func main() {
+    port := os.Getenv("PORT")
+    if port == "" {
+        port = "3000"
+    }
+
+    app := mizu.New()
+    // ... routes
+    app.Listen(":" + port)
+}
+```
+
+### Common Environment Variables
+
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `PORT` | HTTP listen port | `3000` |
+| `ENV` | Environment name | `production` |
+| `DATABASE_URL` | Database connection | `postgres://...` |
+| `LOG_LEVEL` | Logging verbosity | `info` |
+| `SHUTDOWN_TIMEOUT` | Graceful shutdown | `30s` |
+
+### Configuration Pattern
+
+```go
+type Config struct {
+    Port            string
+    Env             string
+    DatabaseURL     string
+    ShutdownTimeout time.Duration
+}
+
+func LoadConfig() *Config {
+    timeout, _ := time.ParseDuration(getEnv("SHUTDOWN_TIMEOUT", "15s"))
+
+    return &Config{
+        Port:            getEnv("PORT", "3000"),
+        Env:             getEnv("ENV", "development"),
+        DatabaseURL:     os.Getenv("DATABASE_URL"),
+        ShutdownTimeout: timeout,
+    }
+}
+
+func getEnv(key, fallback string) string {
+    if value := os.Getenv(key); value != "" {
+        return value
+    }
+    return fallback
+}
+```
+
+## Health Checks
+
+Mizu provides built-in health check handlers for load balancers and orchestrators.
+
+```go
+func main() {
+    app := mizu.New()
+
+    // Liveness: Is the process alive?
+    // Returns 200 OK always
+    http.Handle("/livez", app.LivezHandler())
+
+    // Readiness: Can it handle traffic?
+    // Returns 503 during graceful shutdown
+    http.Handle("/readyz", app.ReadyzHandler())
+
+    // Your routes
+    app.Get("/", handler)
+
+    app.Listen(":3000")
+}
+```
+
+| Endpoint | Normal | Shutting Down | Use |
+|----------|--------|---------------|-----|
+| `/livez` | 200 | 200 | Container restart decision |
+| `/readyz` | 200 | 503 | Load balancer routing |
+
+### Custom Health Checks
+
+```go
+func healthHandler(db *sql.DB) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        // Check database
+        ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+        defer cancel()
+
+        if err := db.PingContext(ctx); err != nil {
+            w.WriteHeader(http.StatusServiceUnavailable)
+            json.NewEncoder(w).Encode(map[string]string{
+                "status": "unhealthy",
+                "error":  "database unreachable",
+            })
+            return
+        }
+
+        w.WriteHeader(http.StatusOK)
+        json.NewEncoder(w).Encode(map[string]string{
+            "status": "healthy",
+        })
+    })
+}
+```
+
+## Graceful Shutdown
+
+Mizu handles graceful shutdown automatically. Configure the timeout:
+
+```go
+app := mizu.New()
+app.ShutdownTimeout = 30 * time.Second
+```
+
+### Shutdown Process
+
+1. Server receives SIGINT or SIGTERM
+2. `/readyz` starts returning 503
+3. Server stops accepting new connections
+4. Active requests complete (up to timeout)
+5. Server exits cleanly
+
+```
+SIGTERM received
+    │
+    ▼
+/readyz returns 503 ─────► Load balancer stops sending traffic
+    │
+    ▼
+Stop accepting new connections
+    │
+    ▼
+Wait for active requests ─────► Up to ShutdownTimeout
+    │
+    ▼
+Exit with code 0
+```
+
+## Logging in Production
+
+Configure structured JSON logging for production:
+
+```go
+app := mizu.New()
+
+if os.Getenv("ENV") == "production" {
+    app.Use(mizu.Logger(mizu.LoggerOptions{
+        Mode: mizu.Prod,  // JSON output
+    }))
+} else {
+    app.Use(mizu.Logger(mizu.LoggerOptions{
+        Mode:  mizu.Dev,  // Human-readable
+        Color: true,
+    }))
+}
+```
+
+### Log Aggregation
+
+In production, send logs to a centralized system:
+
+| Platform | How to Collect |
+|----------|----------------|
+| AWS CloudWatch | CloudWatch Logs agent |
+| Google Cloud | Automatic from stdout |
+| Datadog | Datadog agent |
+| Elastic | Filebeat or Fluentd |
+| Loki | Promtail |
+
+## Security Checklist
+
+Before deploying to production:
+
+- [ ] **HTTPS only** - Use TLS via reverse proxy or load balancer
+- [ ] **Security headers** - Use the helmet middleware
+- [ ] **Rate limiting** - Protect against abuse
+- [ ] **Input validation** - Validate all user input
+- [ ] **Secrets management** - Never commit secrets to git
+- [ ] **Minimal permissions** - Run as non-root user
+- [ ] **Dependencies** - Keep dependencies updated
+- [ ] **Error messages** - Don't expose internal errors to users
+
+### Security Middleware
+
+```go
+import "github.com/go-mizu/mizu/middlewares/helmet"
+
+app := mizu.New()
+app.Use(helmet.New())
+```
+
+## Monitoring
+
+### Prometheus Metrics
+
+```go
+import "github.com/go-mizu/mizu/middlewares/prometheus"
+
+app := mizu.New()
+app.Use(prometheus.New())
+
+// Expose metrics endpoint
+http.Handle("/metrics", promhttp.Handler())
+```
+
+### Key Metrics to Monitor
+
+| Metric | What to Watch |
+|--------|---------------|
+| Request rate | Unusual spikes or drops |
+| Error rate | Increase in 4xx/5xx |
+| Latency p50/p95/p99 | Slow requests |
+| CPU/Memory | Resource usage |
+| Active connections | Connection pool exhaustion |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Docker" icon="docker" href="/guides/deployment/docker">
+    Container deployment with Docker.
+  </Card>
+  <Card title="Kubernetes" icon="dharmachakra" href="/guides/deployment/kubernetes">
+    Orchestration with Kubernetes.
+  </Card>
+  <Card title="Cloud Platforms" icon="cloud-arrow-up" href="/guides/deployment/cloud">
+    AWS, GCP, DigitalOcean, and more.
+  </Card>
+  <Card title="Traditional" icon="server" href="/guides/deployment/traditional">
+    VPS with systemd and reverse proxy.
+  </Card>
+</CardGroup>

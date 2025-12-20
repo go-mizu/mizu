@@ -1,0 +1,327 @@
+---
+icon: "cloud"
+title: "Deployment"
+description: "How to deploy a Mizu app in a simple, reliable way."
+---
+
+Deploying a Mizu app is straightforward: build a single binary, upload it, and run it. This guide covers common deployment methods from simple server deployments to Docker containers.
+
+## Building for production
+
+Go compiles your entire application into a single binary with no external dependencies. This makes deployment simple.
+
+### Basic build
+
+```bash
+go build -o app
+```
+
+This creates an executable named `app` for your current operating system.
+
+### Cross-compile for Linux
+
+If you're building on macOS or Windows for a Linux server:
+
+```bash
+GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o app
+```
+
+| Flag | Purpose |
+|------|---------|
+| `GOOS=linux` | Target operating system |
+| `GOARCH=amd64` | Target architecture (64-bit Intel/AMD) |
+| `-ldflags="-s -w"` | Strip debug info (smaller binary) |
+| `-o app` | Output filename |
+
+For ARM servers (like AWS Graviton or Raspberry Pi):
+
+```bash
+GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o app
+```
+
+## Method 1: Direct server deployment
+
+The simplest approach—upload and run.
+
+### Upload the binary
+
+```bash
+# Create a directory on your server
+ssh user@yourserver "mkdir -p /opt/myapp"
+
+# Upload the binary
+scp app user@yourserver:/opt/myapp/app
+
+# Make it executable
+ssh user@yourserver "chmod +x /opt/myapp/app"
+```
+
+### Run with systemd (production)
+
+To keep your app running after logout and auto-restart on crashes, create a systemd service.
+
+Create `/etc/systemd/system/myapp.service`:
+
+```ini
+[Unit]
+Description=My Mizu Application
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/myapp
+ExecStart=/opt/myapp/app
+Restart=always
+RestartSec=5
+
+# Environment variables
+Environment=PORT=3000
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/myapp
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable myapp
+sudo systemctl start myapp
+```
+
+Common commands:
+
+```bash
+sudo systemctl status myapp    # Check status
+sudo systemctl restart myapp   # Restart after update
+sudo systemctl stop myapp      # Stop the service
+journalctl -u myapp -f         # View logs (follow mode)
+```
+
+## Method 2: Docker deployment
+
+Docker packages your app with its runtime environment for consistent deployments.
+
+### Dockerfile
+
+Create a `Dockerfile` in your project root:
+
+```dockerfile
+# Build stage
+FROM golang:1.23-alpine AS build
+WORKDIR /src
+
+# Download dependencies first (cached if go.mod unchanged)
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Build the app
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app
+
+# Runtime stage - minimal image
+FROM gcr.io/distroless/static-debian12
+COPY --from=build /app /app
+EXPOSE 3000
+USER nonroot:nonroot
+CMD ["/app"]
+```
+
+This creates a ~10MB image using distroless (no shell, minimal attack surface).
+
+### Build and run
+
+```bash
+# Build the image
+docker build -t myapp:latest .
+
+# Run the container
+docker run -d \
+  --name myapp \
+  -p 3000:3000 \
+  --restart unless-stopped \
+  myapp:latest
+
+# View logs
+docker logs -f myapp
+```
+
+### Docker Compose
+
+For apps with dependencies (databases, etc.), use `docker-compose.yml`:
+
+```yaml
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgres://user:pass@db:5432/mydb
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: mydb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
+```
+
+```bash
+docker compose up -d       # Start all services
+docker compose logs -f     # View logs
+docker compose down        # Stop and remove
+```
+
+## HTTPS with reverse proxy
+
+Don't expose your Go app directly to the internet. Use a reverse proxy for:
+- Automatic HTTPS certificates
+- Load balancing
+- Rate limiting
+- Static file serving
+
+### Caddy (easiest)
+
+Caddy automatically obtains and renews TLS certificates.
+
+Install Caddy, then create `/etc/caddy/Caddyfile`:
+
+```
+myapp.example.com {
+    reverse_proxy localhost:3000
+}
+```
+
+```bash
+sudo systemctl reload caddy
+```
+
+Your app is now available at `https://myapp.example.com`.
+
+### Nginx
+
+For more control, use Nginx with certbot for certificates.
+
+`/etc/nginx/sites-available/myapp`:
+
+```nginx
+server {
+    listen 80;
+    server_name myapp.example.com;
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name myapp.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/myapp.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/myapp.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+```bash
+sudo ln -s /etc/nginx/sites-available/myapp /etc/nginx/sites-enabled/
+sudo certbot --nginx -d myapp.example.com
+sudo systemctl reload nginx
+```
+
+## Health checks
+
+Mizu provides health check handlers for load balancers and orchestrators.
+
+```go
+func main() {
+    app := mizu.New()
+
+    // Register health endpoints on the default mux
+    http.Handle("/livez", app.LivezHandler())   // Returns 200 if process is alive
+    http.Handle("/readyz", app.ReadyzHandler()) // Returns 503 during shutdown
+
+    // Your routes
+    app.Get("/", handler)
+
+    app.Listen(":3000")
+}
+```
+
+Configure your load balancer to check `/readyz`. During graceful shutdown, it returns 503, allowing the load balancer to drain traffic before the server stops.
+
+## Environment variables
+
+Read configuration from environment variables:
+
+```go
+func main() {
+    port := os.Getenv("PORT")
+    if port == "" {
+        port = "3000"
+    }
+
+    app := mizu.New()
+    app.Listen(":" + port)
+}
+```
+
+Set environment variables in your deployment:
+
+```bash
+# systemd
+Environment=PORT=8080
+
+# Docker
+docker run -e PORT=8080 myapp
+
+# Shell
+PORT=8080 ./app
+```
+
+## Checklist
+
+Before deploying to production:
+
+- [ ] Build with `-ldflags="-s -w"` for smaller binary
+- [ ] Set up a reverse proxy (Caddy or Nginx) for HTTPS
+- [ ] Configure systemd or Docker for auto-restart
+- [ ] Set up health check endpoints
+- [ ] Configure graceful shutdown timeout
+- [ ] Set up log aggregation
+- [ ] Test graceful shutdown locally
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Project Structure" icon="sitemap" href="/guides/project-structure">
+    Organize code for production apps.
+  </Card>
+  <Card title="Testing" icon="vial" href="/guides/testing">
+    Write tests for your handlers.
+  </Card>
+</CardGroup>

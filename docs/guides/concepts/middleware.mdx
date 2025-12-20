@@ -1,0 +1,349 @@
+---
+icon: "layer-group"
+title: "Middleware"
+description: "Extend your application with reusable middleware components."
+---
+
+Middleware wraps handlers to add behavior before or after request processing. They're perfect for cross-cutting concerns like logging, authentication, and error recovery that apply to multiple routes.
+
+## What is middleware?
+
+Middleware sits between the incoming request and your handler. It can:
+
+- **Run code before** the handler (check auth, log start time)
+- **Run code after** the handler (log duration, add headers)
+- **Short-circuit** the request (reject unauthorized users)
+- **Modify** the request or response
+
+Think of middleware as layers of an onion. Each request passes through each layer going in, hits your handler, then passes through each layer coming out.
+
+## The middleware signature
+
+A middleware is a function that takes a handler and returns a new handler:
+
+```go
+type Middleware func(Handler) Handler
+```
+
+Here's a simple logging middleware:
+
+```go
+func timing() mizu.Middleware {
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            // BEFORE: runs before the handler
+            start := time.Now()
+
+            // Call the next handler in the chain
+            err := next(c)
+
+            // AFTER: runs after the handler
+            c.Logger().Info("request completed",
+                "path", c.Request().URL.Path,
+                "duration", time.Since(start),
+            )
+
+            return err
+        }
+    }
+}
+```
+
+## Applying middleware
+
+### Global middleware
+
+Apply to all routes with `app.Use()`:
+
+```go
+app := mizu.New()
+
+// These run for every request, in order
+app.Use(timing())
+app.Use(cors())
+
+app.Get("/", handler)
+app.Get("/users", listUsers)
+```
+
+### Scoped middleware
+
+Apply to specific routes with `app.With()`:
+
+```go
+app := mizu.New()
+
+// Create a router with auth middleware
+protected := app.With(requireAuth())
+
+// Only these routes require auth
+protected.Get("/profile", getProfile)
+protected.Post("/settings", updateSettings)
+
+// This route has no auth requirement
+app.Get("/public", publicHandler)
+```
+
+### Group middleware
+
+Apply to a group of routes:
+
+```go
+app.Group("/api", func(r *mizu.Router) {
+    // All routes in this group get this middleware
+    r.Use(apiKeyRequired())
+
+    r.Get("/users", listUsers)
+    r.Post("/users", createUser)
+})
+```
+
+## Execution order
+
+Middleware runs in the order you add them. For the chain `A → B → C → handler`:
+
+```go
+app.Use(A())  // First added
+app.Use(B())  // Second added
+app.Use(C())  // Third added
+app.Get("/", handler)
+```
+
+Request flow:
+1. `A` before → `B` before → `C` before → `handler`
+2. `handler` returns
+3. `C` after → `B` after → `A` after
+
+```
+Request  →  A  →  B  →  C  →  Handler
+                              ↓
+Response ←  A  ←  B  ←  C  ←  (result)
+```
+
+## Writing middleware
+
+### Authentication middleware
+
+```go
+func requireAuth() mizu.Middleware {
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            token := c.Request().Header.Get("Authorization")
+            if token == "" {
+                return c.JSON(401, map[string]string{
+                    "error": "missing authorization header",
+                })
+            }
+
+            // Validate token...
+            user, err := validateToken(token)
+            if err != nil {
+                return c.JSON(401, map[string]string{
+                    "error": "invalid token",
+                })
+            }
+
+            // Store user in context for handlers
+            ctx := context.WithValue(c.Context(), userKey{}, user)
+            c.SetContext(ctx)
+
+            return next(c)
+        }
+    }
+}
+```
+
+### CORS middleware
+
+```go
+func cors() mizu.Middleware {
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            c.Header().Set("Access-Control-Allow-Origin", "*")
+            c.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE")
+            c.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+            // Handle preflight requests
+            if c.Request().Method == "OPTIONS" {
+                return c.NoContent()
+            }
+
+            return next(c)
+        }
+    }
+}
+```
+
+### Recovery middleware
+
+```go
+func recover() mizu.Middleware {
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            defer func() {
+                if r := recover(); r != nil {
+                    c.Logger().Error("panic recovered", "error", r)
+                    c.JSON(500, map[string]string{"error": "internal server error"})
+                }
+            }()
+            return next(c)
+        }
+    }
+}
+```
+
+Note: Mizu has built-in panic recovery that passes panics to your error handler.
+
+## Middleware with configuration
+
+Use the options pattern for configurable middleware:
+
+```go
+type RateLimitOptions struct {
+    Requests int
+    Window   time.Duration
+    KeyFunc  func(*mizu.Ctx) string
+}
+
+func rateLimit(opts RateLimitOptions) mizu.Middleware {
+    // Set defaults
+    if opts.Requests == 0 {
+        opts.Requests = 100
+    }
+    if opts.Window == 0 {
+        opts.Window = time.Minute
+    }
+    if opts.KeyFunc == nil {
+        opts.KeyFunc = func(c *mizu.Ctx) string {
+            return c.Request().RemoteAddr
+        }
+    }
+
+    limiter := newLimiter(opts)
+
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            key := opts.KeyFunc(c)
+            if !limiter.Allow(key) {
+                return c.JSON(429, map[string]string{
+                    "error": "too many requests",
+                })
+            }
+            return next(c)
+        }
+    }
+}
+```
+
+Usage:
+
+```go
+app.Use(rateLimit(RateLimitOptions{
+    Requests: 60,
+    Window:   time.Minute,
+}))
+```
+
+## Passing data between middleware
+
+Use Go's context to pass data from middleware to handlers:
+
+```go
+// Define a unique key type
+type userKey struct{}
+
+// Middleware: store user in context
+func userLoader() mizu.Middleware {
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            user := loadUserFromToken(c)
+
+            ctx := context.WithValue(c.Context(), userKey{}, user)
+            c.SetContext(ctx)
+
+            return next(c)
+        }
+    }
+}
+
+// Helper: retrieve user from context
+func getUser(c *mizu.Ctx) *User {
+    user, _ := c.Context().Value(userKey{}).(*User)
+    return user
+}
+
+// Handler: use the user
+func profile(c *mizu.Ctx) error {
+    user := getUser(c)
+    return c.JSON(200, user)
+}
+```
+
+## Using net/http middleware
+
+Mizu can use standard `net/http` middleware via `Compat.Use()`:
+
+```go
+// Standard net/http middleware signature
+func standardMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        // ... your logic
+        next.ServeHTTP(w, r)
+    })
+}
+
+// Use it with Mizu
+app := mizu.New()
+app.Compat.Use(standardMiddleware)
+```
+
+This lets you use middleware from other Go libraries that follow the standard pattern.
+
+## Common patterns
+
+### Skip paths
+
+Don't run middleware on certain paths:
+
+```go
+func skipPaths(skip []string, mw mizu.Middleware) mizu.Middleware {
+    skipSet := make(map[string]bool)
+    for _, p := range skip {
+        skipSet[p] = true
+    }
+
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            if skipSet[c.Request().URL.Path] {
+                return next(c)  // Skip middleware
+            }
+            return mw(next)(c)  // Apply middleware
+        }
+    }
+}
+
+// Usage: skip auth for public paths
+app.Use(skipPaths([]string{"/health", "/public"}, requireAuth()))
+```
+
+## Summary
+
+| Concept | Description |
+|---------|-------------|
+| **Signature** | `func(Handler) Handler` |
+| **Global** | `app.Use(middleware)` |
+| **Scoped** | `app.With(middleware)` |
+| **Group** | Inside `app.Group()` callback |
+| **Order** | First added runs first |
+| **net/http compat** | `app.Compat.Use()` |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Error Handling" icon="bug" href="/guides/concepts/error">
+    Handle errors in middleware.
+  </Card>
+  <Card title="Logging" icon="scroll" href="/guides/concepts/logging">
+    Add logging middleware.
+  </Card>
+</CardGroup>

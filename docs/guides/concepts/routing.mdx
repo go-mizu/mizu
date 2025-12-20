@@ -1,0 +1,225 @@
+---
+icon: "route"
+title: "Routing"
+description: "Learn how to connect URLs to handlers."
+---
+
+Routing determines which handler runs for each incoming request. It matches the request's URL path and HTTP method to your registered routes.
+
+## How routing works
+
+When a request arrives at `/users/42`:
+
+1. Mizu checks registered routes for a match
+2. It finds `GET /users/{id}` if you registered it
+3. The matching handler runs with `id = "42"`
+
+Mizu uses Go 1.22's `ServeMux` internally, which means you get the same routing patterns from the standard library with cleaner syntax.
+
+## Defining routes
+
+Each route has three parts: an HTTP method, a path, and a handler.
+
+```go
+package main
+
+import "github.com/go-mizu/mizu"
+
+func main() {
+    app := mizu.New()
+
+    // Method + Path + Handler
+    app.Get("/", home)           // GET requests to /
+    app.Post("/users", create)   // POST requests to /users
+    app.Put("/users/{id}", update)
+    app.Delete("/users/{id}", remove)
+
+    app.Listen(":3000")
+}
+
+func home(c *mizu.Ctx) error {
+    return c.Text(200, "Home")
+}
+
+func create(c *mizu.Ctx) error {
+    return c.JSON(201, map[string]string{"created": "true"})
+}
+
+func update(c *mizu.Ctx) error {
+    id := c.Param("id")
+    return c.JSON(200, map[string]string{"updated": id})
+}
+
+func remove(c *mizu.Ctx) error {
+    return c.NoContent()
+}
+```
+
+### Available methods
+
+| Method | Usage |
+|--------|-------|
+| `app.Get(path, handler)` | Read resources |
+| `app.Post(path, handler)` | Create resources |
+| `app.Put(path, handler)` | Replace resources |
+| `app.Patch(path, handler)` | Update resources |
+| `app.Delete(path, handler)` | Remove resources |
+| `app.Head(path, handler)` | Like GET, headers only |
+| `app.Connect(path, handler)` | Establish tunnel |
+| `app.Trace(path, handler)` | Debugging |
+| `app.Handle(method, path, handler)` | Any method |
+
+### Use path parameters
+
+You can capture variable parts of a URL using braces `{}`.<br/>
+For example, `/users/{id}` matches `/users/42`.
+
+```go
+func showUser(c *mizu.Ctx) error {
+	id := c.Param("id")
+	return c.Text(200, "User ID: "+id)
+}
+
+func showMember(c *mizu.Ctx) error {
+	team := c.Param("team")
+	id := c.Param("id")
+	return c.Text(200, "Team "+team+" Member "+id)
+}
+
+func main() {
+	app := mizu.New()
+	app.Get("/users/{id}", showUser)
+	app.Get("/teams/{team}/members/{id}", showMember)
+	app.Listen(":3000")
+}
+```
+
+### Handle query strings
+
+When a URL includes a query string such as `/search?q=go`, you can read it with `c.Query()`.
+
+```go
+func search(c *mizu.Ctx) error {
+	q := c.Query("q")
+	return c.Text(200, "Search for "+q)
+}
+
+func main() {
+	app := mizu.New()
+	app.Get("/search", search)
+	app.Listen(":3000")
+}
+```
+
+You can also use `c.QueryValues()` to read multiple parameters at once.
+
+### Group related routes
+
+Groups help you organize routes with a common prefix, such as all `/api` endpoints.
+
+```go
+func status(c *mizu.Ctx) error {
+	return c.JSON(200, map[string]string{"status": "ok"})
+}
+
+func listUsers(c *mizu.Ctx) error {
+	return c.JSON(200, []string{"alice", "bob"})
+}
+
+func main() {
+	app := mizu.New()
+	app.Group("/api", func(g *mizu.Router) {
+		g.Get("/status", status)
+		g.Get("/users", listUsers)
+	})
+	app.Listen(":3000")
+}
+```
+
+This example creates `/api/status` and `/api/users`.
+
+### Mount other handlers
+
+You can use existing `http.Handler` objects with Mizu routes.
+
+```go
+package main
+
+import (
+	"net/http"
+	"github.com/go-mizu/mizu"
+)
+
+func main() {
+	app := mizu.New()
+	adminHandler := http.FileServer(http.Dir("admin"))
+	app.Mount("/admin", adminHandler)
+	app.Listen(":3000")
+}
+```
+
+You can also serve static files.
+
+```go
+app.Static("/assets/", http.Dir("public"))
+```
+
+Or serve embedded files using Go's `embed` package.
+
+```go
+//go:embed public/*
+var publicFS embed.FS
+
+func main() {
+	app := mizu.New()
+	app.Static("/assets/", http.FS(publicFS))
+	app.Listen(":3000")
+}
+```
+
+### Customize not found behavior
+
+If no route matches, Mizu uses a default 404 page.
+You can replace it with your own handler.
+
+```go
+func notFound(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "Page not found", http.StatusNotFound)
+}
+
+func main() {
+	app := mizu.New()
+	app.NotFound(http.HandlerFunc(notFound))
+	app.Listen(":3000")
+}
+```
+
+### Handle errors globally
+
+You can define a global error handler to catch returned errors or panics.
+
+```go
+func onError(c *mizu.Ctx, err error) {
+	c.Logger().Error("failed", "error", err)
+	_ = c.JSON(500, map[string]string{"error": "internal"})
+}
+
+func main() {
+	app := mizu.New()
+	app.ErrorHandler(onError)
+	app.Listen(":3000")
+}
+```
+
+This makes error handling consistent for all routes.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Handler" icon="code" href="/guides/concepts/handler">
+    Write request handling logic.
+  </Card>
+  <Card title="Context" icon="box" href="/guides/concepts/context">
+    Access request data and send responses.
+  </Card>
+</CardGroup>

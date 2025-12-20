@@ -1,0 +1,525 @@
+---
+icon: "bolt"
+title: "Serverless"
+description: "Deploy Mizu applications to serverless platforms like AWS Lambda and Google Cloud Functions."
+---
+
+Serverless platforms run your code on-demand without managing servers. This guide covers deploying Mizu applications to AWS Lambda, Google Cloud Functions, and other serverless environments.
+
+## Understanding Serverless with Go
+
+Serverless platforms have unique characteristics:
+
+| Aspect | Impact on Mizu Apps |
+|--------|---------------------|
+| **Cold starts** | First request may be slower |
+| **Stateless** | No in-memory state between requests |
+| **Timeout limits** | Usually 15-30 minutes max |
+| **Concurrency** | Each instance handles one request |
+
+Go's fast startup time (~50ms) makes it excellent for serverless.
+
+## AWS Lambda
+
+### Lambda with Function URLs
+
+The simplest approach - no API Gateway needed.
+
+**main.go:**
+
+```go
+package main
+
+import (
+    "context"
+    "net/http"
+
+    "github.com/aws/aws-lambda-go/events"
+    "github.com/aws/aws-lambda-go/lambda"
+    "github.com/go-mizu/mizu"
+)
+
+var app *mizu.App
+
+func init() {
+    // Initialize once, reuse across invocations
+    app = mizu.New()
+
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{"message": "Hello from Lambda!"})
+    })
+
+    app.Get("/users/{id}", func(c *mizu.Ctx) error {
+        id := c.Param("id")
+        return c.JSON(200, map[string]string{"id": id})
+    })
+}
+
+func handler(ctx context.Context, req events.LambdaFunctionURLRequest) (events.LambdaFunctionURLResponse, error) {
+    // Convert Lambda request to http.Request
+    httpReq, err := convertRequest(ctx, req)
+    if err != nil {
+        return events.LambdaFunctionURLResponse{StatusCode: 500}, err
+    }
+
+    // Create response recorder
+    recorder := &responseRecorder{
+        headers: make(http.Header),
+        body:    &bytes.Buffer{},
+    }
+
+    // Handle request
+    app.ServeHTTP(recorder, httpReq)
+
+    // Convert to Lambda response
+    return events.LambdaFunctionURLResponse{
+        StatusCode:      recorder.statusCode,
+        Headers:         flattenHeaders(recorder.headers),
+        Body:            recorder.body.String(),
+        IsBase64Encoded: false,
+    }, nil
+}
+
+func main() {
+    lambda.Start(handler)
+}
+
+// Helper types and functions...
+type responseRecorder struct {
+    statusCode int
+    headers    http.Header
+    body       *bytes.Buffer
+}
+
+func (r *responseRecorder) Header() http.Header         { return r.headers }
+func (r *responseRecorder) Write(b []byte) (int, error) { return r.body.Write(b) }
+func (r *responseRecorder) WriteHeader(code int)        { r.statusCode = code }
+
+func convertRequest(ctx context.Context, req events.LambdaFunctionURLRequest) (*http.Request, error) {
+    httpReq, err := http.NewRequestWithContext(ctx, req.RequestContext.HTTP.Method, req.RawPath, strings.NewReader(req.Body))
+    if err != nil {
+        return nil, err
+    }
+    httpReq.URL.RawQuery = req.RawQueryString
+    for k, v := range req.Headers {
+        httpReq.Header.Set(k, v)
+    }
+    return httpReq, nil
+}
+
+func flattenHeaders(h http.Header) map[string]string {
+    flat := make(map[string]string)
+    for k, v := range h {
+        flat[k] = strings.Join(v, ",")
+    }
+    return flat
+}
+```
+
+**Build and deploy:**
+
+```bash
+# Build for Lambda
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bootstrap main.go
+
+# Create zip
+zip function.zip bootstrap
+
+# Create function
+aws lambda create-function \
+    --function-name myapp \
+    --runtime provided.al2023 \
+    --handler bootstrap \
+    --zip-file fileb://function.zip \
+    --role arn:aws:iam::123456789:role/lambda-role
+
+# Create function URL
+aws lambda create-function-url-config \
+    --function-name myapp \
+    --auth-type NONE
+```
+
+### Lambda with API Gateway
+
+For more control over HTTP handling.
+
+**template.yaml (AWS SAM):**
+
+```yaml
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 256
+    Runtime: provided.al2023
+    Architectures:
+      - x86_64
+
+Resources:
+  MyAppFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: bootstrap
+      CodeUri: ./
+      Events:
+        CatchAll:
+          Type: HttpApi
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+      Environment:
+        Variables:
+          ENV: production
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway URL
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+```
+
+**Deploy with SAM:**
+
+```bash
+# Build
+sam build
+
+# Deploy
+sam deploy --guided
+```
+
+### Using aws-lambda-go-api-proxy
+
+A library that simplifies Lambda + Mizu integration:
+
+```go
+package main
+
+import (
+    "github.com/aws/aws-lambda-go/lambda"
+    "github.com/awslabs/aws-lambda-go-api-proxy/httpadapter"
+    "github.com/go-mizu/mizu"
+)
+
+var adapter *httpadapter.HandlerAdapter
+
+func init() {
+    app := mizu.New()
+
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{"status": "ok"})
+    })
+
+    app.Get("/users/{id}", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{"id": c.Param("id")})
+    })
+
+    adapter = httpadapter.New(app)
+}
+
+func main() {
+    lambda.Start(adapter.ProxyWithContext)
+}
+```
+
+## Google Cloud Functions
+
+### HTTP Function
+
+**function.go:**
+
+```go
+package function
+
+import (
+    "net/http"
+    "sync"
+
+    "github.com/go-mizu/mizu"
+)
+
+var (
+    app  *mizu.App
+    once sync.Once
+)
+
+func initApp() {
+    app = mizu.New()
+
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{"message": "Hello from Cloud Functions!"})
+    })
+
+    app.Get("/users/{id}", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{"id": c.Param("id")})
+    })
+}
+
+// MyFunction is the Cloud Functions entry point
+func MyFunction(w http.ResponseWriter, r *http.Request) {
+    once.Do(initApp)
+    app.ServeHTTP(w, r)
+}
+```
+
+**Deploy:**
+
+```bash
+gcloud functions deploy myapp \
+    --runtime go122 \
+    --trigger-http \
+    --allow-unauthenticated \
+    --entry-point MyFunction \
+    --memory 256MB \
+    --timeout 60s \
+    --region us-central1
+```
+
+### Cloud Functions Gen2 (Recommended)
+
+Based on Cloud Run, better performance.
+
+```bash
+gcloud functions deploy myapp \
+    --gen2 \
+    --runtime go122 \
+    --trigger-http \
+    --allow-unauthenticated \
+    --entry-point MyFunction \
+    --memory 256MB \
+    --timeout 60s \
+    --region us-central1 \
+    --min-instances 1  # Avoid cold starts
+```
+
+## Azure Functions
+
+**main.go:**
+
+```go
+package main
+
+import (
+    "log"
+    "net/http"
+    "os"
+
+    "github.com/go-mizu/mizu"
+)
+
+func main() {
+    app := mizu.New()
+
+    app.Get("/api/hello", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{"message": "Hello from Azure!"})
+    })
+
+    port := os.Getenv("FUNCTIONS_CUSTOMHANDLER_PORT")
+    if port == "" {
+        port = "8080"
+    }
+
+    log.Printf("Starting on port %s", port)
+    http.ListenAndServe(":"+port, app)
+}
+```
+
+**host.json:**
+
+```json
+{
+  "version": "2.0",
+  "customHandler": {
+    "description": {
+      "defaultExecutablePath": "myapp",
+      "workingDirectory": "",
+      "arguments": []
+    },
+    "enableForwardingHttpRequest": true
+  },
+  "extensionBundle": {
+    "id": "Microsoft.Azure.Functions.ExtensionBundle",
+    "version": "[4.*, 5.0.0)"
+  }
+}
+```
+
+**function.json:**
+
+```json
+{
+  "bindings": [
+    {
+      "type": "httpTrigger",
+      "direction": "in",
+      "name": "req",
+      "methods": ["get", "post", "put", "delete"],
+      "route": "{*route}"
+    },
+    {
+      "type": "http",
+      "direction": "out",
+      "name": "res"
+    }
+  ]
+}
+```
+
+## Vercel
+
+Vercel supports Go with their Serverless Functions.
+
+**api/index.go:**
+
+```go
+package handler
+
+import (
+    "net/http"
+    "sync"
+
+    "github.com/go-mizu/mizu"
+)
+
+var (
+    app  *mizu.App
+    once sync.Once
+)
+
+func init() {
+    once.Do(func() {
+        app = mizu.New()
+
+        app.Get("/api", func(c *mizu.Ctx) error {
+            return c.JSON(200, map[string]string{"status": "ok"})
+        })
+
+        app.Get("/api/users/{id}", func(c *mizu.Ctx) error {
+            return c.JSON(200, map[string]string{"id": c.Param("id")})
+        })
+    })
+}
+
+func Handler(w http.ResponseWriter, r *http.Request) {
+    app.ServeHTTP(w, r)
+}
+```
+
+**vercel.json:**
+
+```json
+{
+  "functions": {
+    "api/index.go": {
+      "runtime": "vercel-go@3.0.0"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    }
+  ]
+}
+```
+
+## Optimizing for Serverless
+
+### Reduce Cold Start Time
+
+```go
+var (
+    app *mizu.App
+    db  *sql.DB
+)
+
+func init() {
+    // Initialize during cold start, not per request
+    app = mizu.New()
+    setupRoutes(app)
+
+    // Lazy database connection
+    // Don't connect in init() - connect on first request
+}
+
+func setupRoutes(app *mizu.App) {
+    app.Get("/", handleHome)
+    app.Get("/users/{id}", handleGetUser)
+}
+
+func getDB() *sql.DB {
+    if db == nil {
+        var err error
+        db, err = sql.Open("postgres", os.Getenv("DATABASE_URL"))
+        if err != nil {
+            log.Fatal(err)
+        }
+    }
+    return db
+}
+```
+
+### Keep Connections Alive
+
+```go
+var httpClient = &http.Client{
+    Timeout: 10 * time.Second,
+    Transport: &http.Transport{
+        MaxIdleConns:        100,
+        MaxIdleConnsPerHost: 100,
+        IdleConnTimeout:     90 * time.Second,
+    },
+}
+
+func callExternalAPI(ctx context.Context) error {
+    req, _ := http.NewRequestWithContext(ctx, "GET", "https://api.example.com", nil)
+    resp, err := httpClient.Do(req)
+    // ...
+}
+```
+
+### Binary Size Optimization
+
+```bash
+# Minimal binary
+CGO_ENABLED=0 go build -ldflags="-s -w" -o bootstrap
+
+# Further compression with upx
+upx --best bootstrap
+```
+
+## Comparison
+
+| Platform | Cold Start | Max Timeout | Pricing |
+|----------|------------|-------------|---------|
+| **AWS Lambda** | 100-500ms | 15 min | Per invocation |
+| **Cloud Functions** | 100-500ms | 9 min (gen1), 60 min (gen2) | Per invocation |
+| **Azure Functions** | 100-500ms | 10 min | Per invocation |
+| **Vercel** | 100-300ms | 10 sec (hobby), 60 sec (pro) | Per invocation |
+| **Cloud Run** | 0ms (min instances) | 60 min | Per request |
+
+## When to Use Serverless
+
+**Good for:**
+- Variable/unpredictable traffic
+- Event-driven workloads
+- Cost optimization at low scale
+- APIs with bursty traffic
+
+**Avoid for:**
+- Long-running processes
+- WebSocket connections
+- High-volume, consistent traffic
+- Latency-sensitive applications
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Traditional Deployment" icon="server" href="/guides/deployment/traditional">
+    VPS with systemd and reverse proxy.
+  </Card>
+  <Card title="CI/CD" icon="arrows-rotate" href="/guides/deployment/cicd">
+    Automate serverless deployments.
+  </Card>
+</CardGroup>

@@ -1,0 +1,296 @@
+---
+icon: "bug"
+title: "Error Handling"
+description: "Handle errors in a clear and consistent way across your application."
+---
+
+Mizu simplifies error handling by letting you return errors directly from handlers. This keeps your code clean and ensures consistent error responses across your entire application.
+
+## Error Handling Philosophy
+
+In Mizu, error handling follows a simple principle: **handlers return errors, the framework handles them**. This means:
+
+1. Your handlers focus on business logic
+2. Errors flow up naturally through `return err`
+3. One central error handler formats all responses
+4. Panics are caught and treated like errors
+
+## Returning Errors from Handlers
+
+Any handler can return an error to indicate something went wrong:
+
+```go
+func getUser(c *mizu.Ctx) error {
+    id := c.Param("id")
+
+    user, err := findUser(id)
+    if err != nil {
+        // Just return the error - Mizu will handle it
+        return err
+    }
+
+    return c.JSON(200, user)
+}
+```
+
+### Default Behavior
+
+If you don't configure a custom error handler, Mizu will:
+
+1. Log the error with the request context
+2. Return a `500 Internal Server Error` to the client
+3. Include a generic error message (no sensitive details exposed)
+
+## The ErrorHandler
+
+Define a global error handler to customize how all errors are processed:
+
+```go
+func errorHandler(c *mizu.Ctx, err error) {
+    // Log the error
+    c.Logger().Error("request failed", "error", err)
+
+    // Send a response
+    _ = c.JSON(500, map[string]string{
+        "error": "internal server error",
+    })
+}
+
+func main() {
+    app := mizu.New()
+    app.ErrorHandler(errorHandler)
+
+    app.Get("/", handler)
+    app.Listen(":3000")
+}
+```
+
+<Note>
+The error handler should always send a response. If it doesn't, the client will receive an empty response.
+</Note>
+
+## Custom Error Types
+
+Create custom error types to carry additional information like HTTP status codes:
+
+```go
+// HTTPError carries an HTTP status code with the error
+type HTTPError struct {
+    Code    int
+    Message string
+    Err     error // Original error (optional)
+}
+
+func (e *HTTPError) Error() string {
+    if e.Err != nil {
+        return fmt.Sprintf("%s: %v", e.Message, e.Err)
+    }
+    return e.Message
+}
+
+func (e *HTTPError) Unwrap() error {
+    return e.Err
+}
+
+// Helper constructors
+func NotFound(message string) *HTTPError {
+    return &HTTPError{Code: 404, Message: message}
+}
+
+func BadRequest(message string) *HTTPError {
+    return &HTTPError{Code: 400, Message: message}
+}
+
+func Unauthorized(message string) *HTTPError {
+    return &HTTPError{Code: 401, Message: message}
+}
+```
+
+### Using Custom Errors in Handlers
+
+```go
+func getUser(c *mizu.Ctx) error {
+    id := c.Param("id")
+    if id == "" {
+        return BadRequest("user ID is required")
+    }
+
+    user, err := findUser(id)
+    if err != nil {
+        if errors.Is(err, sql.ErrNoRows) {
+            return NotFound("user not found")
+        }
+        return err
+    }
+
+    return c.JSON(200, user)
+}
+```
+
+### Handling Custom Errors
+
+```go
+func errorHandler(c *mizu.Ctx, err error) {
+    // Check for HTTPError
+    var httpErr *HTTPError
+    if errors.As(err, &httpErr) {
+        if httpErr.Code >= 500 {
+            c.Logger().Error("server error", "code", httpErr.Code, "error", err)
+        } else {
+            c.Logger().Warn("client error", "code", httpErr.Code, "error", err)
+        }
+
+        _ = c.JSON(httpErr.Code, map[string]string{
+            "error": httpErr.Message,
+        })
+        return
+    }
+
+    // Unknown error - treat as 500
+    c.Logger().Error("unexpected error", "error", err)
+    _ = c.JSON(500, map[string]string{
+        "error": "internal server error",
+    })
+}
+```
+
+## Error Wrapping with Context
+
+Use Go's error wrapping to add context as errors bubble up:
+
+```go
+func getUserOrders(c *mizu.Ctx) error {
+    userID := c.Param("id")
+
+    user, err := findUser(userID)
+    if err != nil {
+        return fmt.Errorf("fetching user %s: %w", userID, err)
+    }
+
+    orders, err := findOrders(user.ID)
+    if err != nil {
+        return fmt.Errorf("fetching orders for user %s: %w", userID, err)
+    }
+
+    return c.JSON(200, orders)
+}
+```
+
+### Unwrapping in Error Handler
+
+```go
+func errorHandler(c *mizu.Ctx, err error) {
+    // Log the full error chain
+    c.Logger().Error("request failed", "error", err)
+
+    // Check for specific errors
+    if errors.Is(err, sql.ErrNoRows) {
+        _ = c.JSON(404, map[string]string{"error": "not found"})
+        return
+    }
+
+    if errors.Is(err, context.DeadlineExceeded) {
+        _ = c.JSON(504, map[string]string{"error": "request timeout"})
+        return
+    }
+
+    _ = c.JSON(500, map[string]string{"error": "internal server error"})
+}
+```
+
+## Panic Recovery
+
+Mizu automatically recovers from panics and converts them to errors. This prevents your server from crashing:
+
+```go
+func riskyHandler(c *mizu.Ctx) error {
+    // If this panics, Mizu catches it
+    data := loadData()
+    result := data[0] // Panic if data is empty!
+    return c.JSON(200, result)
+}
+```
+
+Panics are wrapped in `*mizu.PanicError`:
+
+```go
+func errorHandler(c *mizu.Ctx, err error) {
+    var panicErr *mizu.PanicError
+    if errors.As(err, &panicErr) {
+        c.Logger().Error("panic recovered",
+            "value", panicErr.Value,
+            "stack", string(panicErr.Stack),
+        )
+        _ = c.JSON(500, map[string]string{"error": "internal server error"})
+        return
+    }
+
+    // Handle regular errors...
+}
+```
+
+<Warning>
+While Mizu recovers from panics, you should still write defensive code. Panics are expensive and should be exceptions, not the norm.
+</Warning>
+
+## Best Practices
+
+### Do
+
+```go
+// DO: Return errors, don't handle them inline
+func handler(c *mizu.Ctx) error {
+    data, err := fetchData()
+    if err != nil {
+        return err  // Let error handler deal with it
+    }
+    return c.JSON(200, data)
+}
+
+// DO: Use custom error types for client errors
+return NotFound("user not found")
+return BadRequest("invalid email format")
+
+// DO: Wrap errors with context
+return fmt.Errorf("fetching user %s: %w", id, err)
+
+// DO: Log with structured fields
+c.Logger().Error("failed", "error", err, "user_id", id)
+```
+
+### Don't
+
+```go
+// DON'T: Send response AND return error
+c.JSON(400, map[string]string{"error": "bad"})
+return errors.New("bad request")  // Response already sent!
+
+// DON'T: Expose internal errors to clients
+return c.JSON(500, map[string]string{
+    "error": err.Error(),  // May expose sensitive info!
+})
+
+// DON'T: Ignore errors
+data, _ := fetchData()  // What if this fails?
+```
+
+## Summary
+
+| Concept | Description |
+|---------|-------------|
+| Return errors | Handlers return `error`, Mizu handles them |
+| ErrorHandler | One global handler for all errors |
+| Custom errors | Create types with status codes |
+| Error wrapping | Use `%w` to add context |
+| Panic recovery | Automatic, converts to `PanicError` |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Middleware" icon="layer-group" href="/guides/concepts/middleware">
+    Error handling in middleware.
+  </Card>
+  <Card title="Logging" icon="scroll" href="/guides/concepts/logging">
+    Structured logging for errors.
+  </Card>
+</CardGroup>

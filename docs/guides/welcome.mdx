@@ -1,4 +1,5 @@
 ---
+icon: "house"
 title: "Welcome to Mizu"
 description: "A lightweight, composable web framework for Go"
 ---
@@ -14,23 +15,7 @@ description: "A lightweight, composable web framework for Go"
 
 Mizu is a lightweight, composable web framework for Go that builds on the standard library's `net/http` package. Like water (水, "mizu" in Japanese), it flows naturally with Go's conventions while adding just enough structure to make web development enjoyable.
 
-## Why Mizu?
-
-<CardGroup cols={3}>
-  <Card title="Built on net/http" icon="cube">
-    No magic, no reflection, no code generation. Mizu uses Go 1.22+ ServeMux patterns and standard interfaces.
-  </Card>
-  <Card title="Composable Middleware" icon="layer-group">
-    Over 70 production-ready middlewares for authentication, caching, rate limiting, and more.
-  </Card>
-  <Card title="Multi-Transport Contracts" icon="code">
-    Define your API once, serve via REST, JSON-RPC, or MCP. Generate SDKs for Go, Python, and TypeScript.
-  </Card>
-</CardGroup>
-
-## Quick Example
-
-Here's all you need to create a working API:
+## Get Started in 30 Seconds
 
 ```go
 package main
@@ -50,64 +35,57 @@ func main() {
 }
 ```
 
-Run it:
-
 ```bash
+go get github.com/go-mizu/mizu
 go run main.go
+# Visit http://localhost:3000
 ```
 
-Visit [http://localhost:3000](http://localhost:3000) to see your API in action.
+## Why Mizu?
+
+<CardGroup cols={3}>
+  <Card title="Built on net/http" icon="cube">
+    No magic, no reflection, no code generation. Mizu uses Go 1.22+ ServeMux patterns and standard interfaces.
+  </Card>
+  <Card title="Composable Middleware" icon="layer-group">
+    Production-ready middlewares for authentication, caching, rate limiting, and more.
+  </Card>
+  <Card title="Just Enough Structure" icon="code">
+    Thin abstractions over the standard library. Learn it once, use it everywhere.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/guides/installation">
+    Set up Mizu in your project.
+  </Card>
+  <Card title="Quick Start" icon="rocket" href="/guides/quick-start">
+    Build your first app in 5 minutes.
+  </Card>
+  <Card title="Core Concepts" icon="book-open" href="/guides/concepts/overview">
+    Learn how App, Router, Handler, and Context work together.
+  </Card>
+  <Card title="Tutorials" icon="code" href="/guides/first-api">
+    Step-by-step guides to build real applications.
+  </Card>
+</CardGroup>
 
 ## What Can You Build?
 
-<CardGroup cols={2}>
-  <Card title="REST APIs" icon="server" href="/overview/use-cases#rest-apis">
-    Build type-safe APIs with automatic validation and documentation.
-  </Card>
-  <Card title="Websites" icon="globe" href="/overview/use-cases#server-side-rendering">
-    Server-rendered pages with layouts, components, and partials.
-  </Card>
-  <Card title="Real-time Apps" icon="bolt" href="/overview/use-cases#real-time-updates">
-    WebSocket and SSE support for live updates.
-  </Card>
-  <Card title="Microservices" icon="diagram-project" href="/overview/use-cases#microservices">
-    Contract-based services with automatic client generation.
-  </Card>
-</CardGroup>
-
-## Get Started
-
-<CardGroup cols={3}>
-  <Card title="Quick Start" icon="rocket" href="/get-started/quick-start">
-    Build your first Mizu app in 5 minutes.
-  </Card>
-  <Card title="Core Concepts" icon="book" href="/concepts/overview">
-    Understand App, Router, Handler, and Context.
-  </Card>
-  <Card title="Building Blocks" icon="puzzle-piece" href="/guides/core">
-    Explore Mizu's component ecosystem.
-  </Card>
-</CardGroup>
-
-## The Mizu Ecosystem
-
-Mizu is more than just a web framework. It's a complete toolkit for building modern Go applications:
-
-| Component | Description | Learn More |
-|-----------|-------------|------------|
-| **Core** | The main framework with routing, handlers, and middleware | [Core →](/guides/core) |
-| **Middlewares** | 70+ production-ready middleware packages | [Middlewares →](/guides/middlewares) |
-| **Contract** | Transport-neutral API definitions with SDK generation | [Contract →](/guides/contract) |
-| **View** | Server-side templating with Live and Sync features | [View →](/guides/view) |
-| **Frontend** | Integration with React, Vue, Svelte, and more | [Frontend →](/guides/frontend) |
-| **Mobile** | Backend patterns for iOS, Android, Flutter apps | [Mobile →](/guides/mobile) |
-| **CLI** | Project scaffolding and development tools | [CLI →](/guides/cli) |
+| Use Case | Description |
+|----------|-------------|
+| **REST APIs** | Build type-safe APIs with automatic validation |
+| **Websites** | Server-rendered pages with templates and static files |
+| **Real-time Apps** | SSE support for live updates |
+| **Microservices** | Lightweight services with health checks |
+| **Full-Stack** | Go backend + React/Vue/Svelte frontend |
 
 ## Requirements
 
 - **Go 1.22** or later (for enhanced ServeMux patterns)
 - Any operating system (Linux, macOS, Windows)
-- Basic knowledge of Go
 
 ## Join the Community
 
@@ -119,9 +97,3 @@ Mizu is more than just a web framework. It's a complete toolkit for building mod
     Star the repo, report issues, contribute code.
   </Card>
 </CardGroup>
-
----
-
-<Tip>
-New to Mizu? Start with the [Quick Start](/get-started/quick-start) guide to build your first application, then explore the [Building Blocks](/guides/core) to understand the full ecosystem.
-</Tip>

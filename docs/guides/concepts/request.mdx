@@ -1,0 +1,173 @@
+---
+icon: "arrow-down-to-line"
+title: "Request"
+description: "Read incoming data from URL, query, headers, forms, and JSON bodies."
+---
+
+When a request comes in, your handler receives a `*mizu.Ctx` that provides access to everything sent by the client.
+You can read data from the URL, query string, headers, forms, cookies, or JSON body using clear helper methods.
+
+## Path parameters
+
+Use `{name}` in the route to mark a variable part of the path.
+Read it with `c.Param()`.
+
+```go
+func showUser(c *mizu.Ctx) error {
+	id := c.Param("id")
+	return c.Text(200, "User "+id)
+}
+
+func main() {
+	app := mizu.New()
+	app.Get("/users/{id}", showUser)
+	app.Listen(":3000")
+}
+```
+
+## Query parameters
+
+Query strings appear after a `?` in the URL, such as `/search?q=go`.
+Read them with `c.Query()`.
+
+```go
+func search(c *mizu.Ctx) error {
+	q := c.Query("q")
+	return c.Text(200, "Search for "+q)
+}
+
+func main() {
+	app := mizu.New()
+	app.Get("/search", search)
+	app.Listen(":3000")
+}
+```
+
+If you need multiple query values, use `c.QueryValues()`.
+
+```go
+params := c.QueryValues()
+page := params.Get("page")
+sort := params.Get("sort")
+```
+
+## Headers
+
+Request headers contain metadata such as content type or authorization.
+You can read them from the request object.
+
+```go
+ua := c.Request().Header.Get("User-Agent")
+auth := c.Request().Header.Get("Authorization")
+```
+
+## Forms
+
+When a request sends form data, you can read it using `c.Form()`.
+
+```go
+form, err := c.Form()
+if err != nil {
+	return c.Text(400, "Invalid form")
+}
+name := form.Get("name")
+email := form.Get("email")
+```
+
+## File uploads
+
+To receive uploaded files, use `c.MultipartForm()` for multipart data.
+
+```go
+form, cleanup, err := c.MultipartForm(32 << 20)
+if err != nil {
+	return c.Text(400, "Bad upload")
+}
+defer cleanup()
+
+file, hdr, err := c.Request().FormFile("upload")
+if err != nil {
+	return c.Text(400, "Missing file")
+}
+return c.Text(200, "Uploaded "+hdr.Filename)
+```
+
+## Cookies
+
+You can read and set cookies directly.
+
+```go
+ck, err := c.Cookie("session")
+if err == nil {
+	c.Logger().Info("session", "value", ck.Value)
+}
+
+c.SetCookie(&http.Cookie{
+	Name:  "lang",
+	Value: "en",
+	Path:  "/",
+})
+```
+
+## JSON body
+
+You can decode a JSON body into a struct with `BindJSON()`.
+It validates the data and rejects unknown fields.
+
+```go
+var input struct {
+	Name string `json:"name"`
+}
+if err := c.BindJSON(&input, 1<<20); err != nil {
+	return c.Text(400, err.Error())
+}
+return c.JSON(200, map[string]string{"hello": input.Name})
+```
+
+## Client IP
+
+Get the IP address of the client that sent the request.
+
+```go
+ip := c.ClientIP()
+c.Logger().Info("client", "ip", ip)
+```
+
+## Context
+
+Use the request context to detect cancellation or timeouts.
+
+```go
+select {
+case <-c.Context().Done():
+	return c.Context().Err()
+default:
+}
+```
+
+## Summary
+
+| Method | Purpose |
+|--------|---------|
+| `c.Param(name)` | Path parameter |
+| `c.Query(name)` | Query string value |
+| `c.QueryValues()` | All query parameters |
+| `c.Request().Header.Get(name)` | Request header |
+| `c.Form()` | Form data |
+| `c.MultipartForm(limit)` | Multipart form with files |
+| `c.Cookie(name)` | Read cookie |
+| `c.SetCookie(cookie)` | Set cookie |
+| `c.BindJSON(v, limit)` | Parse JSON body |
+| `c.ClientIP()` | Client IP address |
+| `c.Context()` | Request context |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Response" icon="arrow-up-from-line" href="/guides/concepts/response">
+    Learn how to send responses.
+  </Card>
+  <Card title="Context" icon="box" href="/guides/concepts/context">
+    Full context reference.
+  </Card>
+</CardGroup>

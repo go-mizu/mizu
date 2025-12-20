@@ -1,0 +1,249 @@
+---
+icon: "code"
+title: "Handler"
+description: "Write clear request handlers that connect routing, context, and responses."
+---
+
+A handler is a function that processes an HTTP request and produces a response. Every route in your Mizu app connects a URL pattern to a handler function.
+
+## The handler signature
+
+Every Mizu handler has the same signature:
+
+```go
+func(c *mizu.Ctx) error
+```
+
+| Part | Purpose |
+|------|---------|
+| `c *mizu.Ctx` | The context - contains request data and response helpers |
+| `error` | Return value - `nil` for success, an error to trigger error handling |
+
+This signature is Mizu's `Handler` type:
+
+```go
+type Handler func(*mizu.Ctx) error
+```
+
+## Writing handlers
+
+### Basic handler
+
+```go
+func home(c *mizu.Ctx) error {
+    return c.Text(200, "Hello, Mizu!")
+}
+
+func main() {
+    app := mizu.New()
+    app.Get("/", home)
+    app.Listen(":3000")
+}
+```
+
+The handler:
+1. Receives the context `c` with request info
+2. Returns `c.Text(200, "...")` which sends a response
+3. The `error` return is `nil` (success) because `c.Text` returns `nil` on success
+
+### Inline handlers
+
+For simple routes, define handlers inline:
+
+```go
+app.Get("/ping", func(c *mizu.Ctx) error {
+    return c.Text(200, "pong")
+})
+```
+
+### Reading request data
+
+Use context methods to read from the request:
+
+```go
+func getUser(c *mizu.Ctx) error {
+    // Path parameter: /users/{id}
+    id := c.Param("id")
+
+    // Query parameter: ?fields=name,email
+    fields := c.Query("fields")
+
+    // Header
+    auth := c.Request().Header.Get("Authorization")
+
+    return c.JSON(200, map[string]string{
+        "id":     id,
+        "fields": fields,
+    })
+}
+```
+
+### Processing JSON input
+
+```go
+func createUser(c *mizu.Ctx) error {
+    // Define the expected input structure
+    var input struct {
+        Name  string `json:"name"`
+        Email string `json:"email"`
+    }
+
+    // Parse JSON body (1MB limit)
+    if err := c.BindJSON(&input, 1<<20); err != nil {
+        return c.JSON(400, map[string]string{"error": err.Error()})
+    }
+
+    // Validate
+    if input.Name == "" {
+        return c.JSON(400, map[string]string{"error": "name is required"})
+    }
+
+    // Process and respond
+    user := User{ID: "123", Name: input.Name, Email: input.Email}
+    return c.JSON(201, user)
+}
+```
+
+## Returning errors
+
+Handlers can return errors to indicate failures:
+
+```go
+func getUser(c *mizu.Ctx) error {
+    id := c.Param("id")
+
+    user, err := database.FindUser(id)
+    if err != nil {
+        return err  // Passed to error handler
+    }
+
+    return c.JSON(200, user)
+}
+```
+
+When a handler returns a non-nil error:
+1. Mizu calls your `ErrorHandler` if you set one
+2. Otherwise, it logs the error and returns 500
+
+Set a global error handler:
+
+```go
+app.ErrorHandler(func(c *mizu.Ctx, err error) {
+    c.Logger().Error("request failed", "error", err)
+    c.JSON(500, map[string]string{"error": "internal error"})
+})
+```
+
+## Response methods
+
+Handlers send responses using context methods:
+
+```go
+// Plain text
+return c.Text(200, "OK")
+
+// JSON
+return c.JSON(200, user)
+
+// HTML
+return c.HTML(200, "<h1>Welcome</h1>")
+
+// Redirect
+return c.Redirect(302, "/login")
+
+// No content (204)
+return c.NoContent()
+
+// File
+return c.File(200, "./public/logo.png")
+
+// Download (forces browser download)
+return c.Download(200, "./report.csv", "report.csv")
+```
+
+## Handler patterns
+
+### Early returns for validation
+
+```go
+func createPost(c *mizu.Ctx) error {
+    var input PostInput
+    if err := c.BindJSON(&input, 1<<20); err != nil {
+        return c.JSON(400, map[string]string{"error": "invalid JSON"})
+    }
+
+    if input.Title == "" {
+        return c.JSON(400, map[string]string{"error": "title required"})
+    }
+
+    if len(input.Title) > 100 {
+        return c.JSON(400, map[string]string{"error": "title too long"})
+    }
+
+    // All validation passed - create the post
+    post := createPost(input)
+    return c.JSON(201, post)
+}
+```
+
+### Separating concerns
+
+Keep handlers thin by extracting business logic:
+
+```go
+// Handler: HTTP layer
+func createUser(c *mizu.Ctx) error {
+    var input CreateUserInput
+    if err := c.BindJSON(&input, 1<<20); err != nil {
+        return c.JSON(400, map[string]string{"error": err.Error()})
+    }
+
+    user, err := userService.Create(input)  // Business logic
+    if err != nil {
+        return err
+    }
+
+    return c.JSON(201, user)
+}
+```
+
+### Handler factories
+
+Create handlers that share configuration:
+
+```go
+func makeGreeter(greeting string) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        name := c.Param("name")
+        return c.Text(200, greeting + ", " + name + "!")
+    }
+}
+
+func main() {
+    app := mizu.New()
+    app.Get("/hello/{name}", makeGreeter("Hello"))
+    app.Get("/hi/{name}", makeGreeter("Hi"))
+    app.Listen(":3000")
+}
+```
+
+## Summary
+
+| Concept | Description |
+|---------|-------------|
+| **Signature** | `func(c *mizu.Ctx) error` |
+| **Context** | Request data and response helpers |
+| **Return nil** | Success - response already sent |
+| **Return error** | Triggers error handler |
+| **Response** | Use `c.Text()`, `c.JSON()`, etc. |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Context" icon="box" href="/guides/concepts/context">
+    Deeper dive into request/response context.
+  </Card>
+  <Card title="Response" icon="arrow-up-from-line" href="/guides/concepts/response">
+    All the ways to send responses.
+  </Card>
+</CardGroup>

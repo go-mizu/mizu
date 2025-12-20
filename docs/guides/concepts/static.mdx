@@ -1,0 +1,230 @@
+---
+icon: "folder-open"
+title: "Static Files"
+description: "Serve static files like images, CSS, and JavaScript directly from your app."
+---
+
+Mizu can serve static files such as images, CSS, JavaScript, and other assets. This is essential for web applications that need to deliver frontend resources alongside API responses.
+
+## Overview
+
+Static file serving in Mizu supports multiple file sources:
+
+| Source | Use Case | Method |
+|--------|----------|--------|
+| Local Directory | Development, user uploads | `http.Dir()` |
+| Embedded Files | Single binary deployment | `embed.FS` with `http.FS()` |
+| Memory | Generated content, testing | Custom `http.FileSystem` |
+
+## Serving from a Local Directory
+
+The simplest approach is serving files from a folder on disk:
+
+```go
+package main
+
+import (
+    "net/http"
+    "github.com/go-mizu/mizu"
+)
+
+func main() {
+    app := mizu.New()
+
+    // Serve files from the "public" folder at the "/assets/" URL path
+    app.Static("/assets/", http.Dir("public"))
+
+    app.Listen(":3000")
+}
+```
+
+With this configuration:
+
+| File on Disk | URL |
+|--------------|-----|
+| `public/logo.png` | `http://localhost:3000/assets/logo.png` |
+| `public/css/style.css` | `http://localhost:3000/assets/css/style.css` |
+| `public/js/app.js` | `http://localhost:3000/assets/js/app.js` |
+
+### Directory Structure Example
+
+```
+myapp/
+├── main.go
+├── public/
+│   ├── index.html
+│   ├── favicon.ico
+│   ├── css/
+│   │   └── style.css
+│   ├── js/
+│   │   └── app.js
+│   └── images/
+│       └── logo.png
+```
+
+## Serving Embedded Files
+
+For production deployments, embed static files directly into your Go binary using the `embed` package. This creates a single executable with no external file dependencies.
+
+```go
+package main
+
+import (
+    "embed"
+    "io/fs"
+    "net/http"
+
+    "github.com/go-mizu/mizu"
+)
+
+//go:embed public/*
+var publicFS embed.FS
+
+func main() {
+    app := mizu.New()
+
+    // Remove the "public" prefix from embedded paths
+    sub, err := fs.Sub(publicFS, "public")
+    if err != nil {
+        panic(err)
+    }
+
+    app.Static("/assets/", http.FS(sub))
+    app.Listen(":3000")
+}
+```
+
+### Understanding embed.FS
+
+The `//go:embed` directive includes files at compile time:
+
+```go
+//go:embed public/*           // All files in public/
+//go:embed public/**/*        // All files recursively
+//go:embed public/*.css       // Only CSS files
+//go:embed static images      // Multiple directories
+```
+
+<Note>
+The `embed` package preserves directory structure. Use `fs.Sub()` to remove the root directory prefix when serving.
+</Note>
+
+## SPA (Single Page Application) Support
+
+Single page applications require all routes to return `index.html` so the frontend router can handle navigation.
+
+```go
+//go:embed dist/*
+var distFS embed.FS
+
+func main() {
+    app := mizu.New()
+
+    // API routes first
+    api := app.Group("/api")
+    api.Get("/users", getUsers)
+
+    // SPA fallback handler
+    sub, _ := fs.Sub(distFS, "dist")
+    fileServer := http.FileServer(http.FS(sub))
+
+    app.Get("/{path...}", func(c *mizu.Ctx) error {
+        path := c.Param("path")
+
+        // Try to serve the actual file first
+        f, err := sub.Open(path)
+        if err == nil {
+            f.Close()
+            fileServer.ServeHTTP(c.Writer(), c.Request())
+            return nil
+        }
+
+        // Fall back to index.html for SPA routing
+        c.Request().URL.Path = "/"
+        fileServer.ServeHTTP(c.Writer(), c.Request())
+        return nil
+    })
+
+    app.Listen(":3000")
+}
+```
+
+## Caching
+
+Configure caching based on file types:
+
+```go
+func cacheMiddleware(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        path := c.Request().URL.Path
+
+        switch {
+        case strings.HasSuffix(path, ".html"):
+            // HTML: no cache (always fresh)
+            c.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+
+        case strings.HasSuffix(path, ".css"),
+             strings.HasSuffix(path, ".js"):
+            // CSS/JS: cache for 1 year (use versioning)
+            c.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+
+        case strings.HasSuffix(path, ".png"),
+             strings.HasSuffix(path, ".jpg"):
+            // Images: cache for 1 month
+            c.Header().Set("Cache-Control", "public, max-age=2592000")
+
+        default:
+            // Other files: cache for 1 day
+            c.Header().Set("Cache-Control", "public, max-age=86400")
+        }
+
+        return next(c)
+    }
+}
+```
+
+## Development vs Production
+
+```go
+func main() {
+    app := mizu.New()
+
+    if os.Getenv("ENV") == "development" {
+        // Serve from disk (hot reload)
+        app.Static("/assets/", http.Dir("public"))
+    } else {
+        // Serve from embedded (production)
+        sub, _ := fs.Sub(publicFS, "public")
+        app.Static("/assets/", http.FS(sub))
+    }
+
+    app.Listen(":3000")
+}
+```
+
+Benefits of embedding:
+- Single binary deployment
+- No missing file issues
+- Faster startup (files already in memory)
+- Immutable content (great for containers)
+
+## Summary
+
+| Method | Description |
+|--------|-------------|
+| `app.Static(prefix, fs)` | Serve files from filesystem |
+| `http.Dir(path)` | Create filesystem from local directory |
+| `http.FS(fs)` | Create filesystem from embed.FS |
+| `fs.Sub(fs, dir)` | Get subdirectory from filesystem |
+| `app.Mount(path, handler)` | Mount any http.Handler |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Frontend Integration" icon="window" href="/frontend/overview">
+    Serve React, Vue, and other SPAs.
+  </Card>
+  <Card title="Deployment" icon="cloud" href="/guides/deployment">
+    Production deployment strategies.
+  </Card>
+</CardGroup>
