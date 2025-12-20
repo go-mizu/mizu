@@ -1,0 +1,9 @@
+{
+  "name": "frontend/spa/alpine",
+  "description": "Alpine.js SPA with Vite and Mizu backend",
+  "tags": ["go", "mizu", "frontend", "spa", "alpine", "vite", "typescript"],
+  "variables": {
+    "name": { "description": "Project name", "default": "" },
+    "module": { "description": "Go module path", "default": "" }
+  }
+}

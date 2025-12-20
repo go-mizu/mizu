@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{.Name}}</title>
+  </head>
+  <body>
+    <div id="app" x-data="app" x-cloak>
+      <div class="app">
+        <header class="header">
+          <nav>
+            <a href="/" @click.prevent="navigate('/')">Home</a>
+            <a href="/about" @click.prevent="navigate('/about')">About</a>
+          </nav>
+        </header>
+        <main class="main">
+          <!-- Home Page -->
+          <template x-if="route === '/'">
+            <div class="page home">
+              <h1>Welcome</h1>
+              <template x-if="loading">
+                <p>Loading...</p>
+              </template>
+              <template x-if="!loading">
+                <p class="api-message" x-text="message"></p>
+              </template>
+            </div>
+          </template>
+
+          <!-- About Page -->
+          <template x-if="route === '/about'">
+            <div class="page about">
+              <h1>About</h1>
+              <p>
+                This is an Alpine.js SPA powered by Mizu, a lightweight Go web framework.
+              </p>
+              <ul>
+                <li>Alpine.js (~17kB minified, ~7kB gzipped)</li>
+                <li>Vite for fast development and optimized builds</li>
+                <li>Client-side routing with History API</li>
+                <li>Mizu backend with the frontend middleware</li>
+              </ul>
+            </div>
+          </template>
+        </main>
+        <footer class="footer">
+          <p>Built with Mizu + Alpine.js</p>
+        </footer>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

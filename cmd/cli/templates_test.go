@@ -59,6 +59,7 @@ func TestListTemplatesIncludesParentWithSubTemplates(t *testing.T) {
 		"svelte":    false,
 		"sveltekit": false,
 		"angular":   false,
+		"alpine":    false,
 		"preact":    false,
 		"next":      false,
 		"nuxt":      false,
@@ -97,6 +98,7 @@ func TestTemplateExistsNested(t *testing.T) {
 		{"frontend/spa/vue", true},
 		{"frontend/spa/svelte", true},
 		{"frontend/spa/angular", true},
+		{"frontend/spa/alpine", true},
 		{"frontend/spa/htmx", true},
 		{"frontend/spa/next", true},
 		{"frontend/spa/nuxt", true},
@@ -129,6 +131,7 @@ func TestLoadTemplateMeta(t *testing.T) {
 		{"frontend/spa/vue", "frontend/spa/vue", true},
 		{"frontend/spa/svelte", "frontend/spa/svelte", true},
 		{"frontend/spa/angular", "frontend/spa/angular", true},
+		{"frontend/spa/alpine", "frontend/spa/alpine", true},
 		{"frontend/spa/htmx", "frontend/spa/htmx", true},
 		{"frontend/spa/next", "frontend/spa/next", true},
 		{"frontend/spa/nuxt", "frontend/spa/nuxt", true},
@@ -2755,5 +2758,314 @@ func TestSvelteKitTemplateMakefileHasNpmCommands(t *testing.T) {
 	}
 	if !strings.Contains(string(makefile), ".svelte-kit") {
 		t.Error("SvelteKit Makefile should clean .svelte-kit directory")
+	}
+}
+
+// Alpine.js template tests
+
+func TestSubTemplateIncludesAlpine(t *testing.T) {
+	templates, err := listTemplates()
+	if err != nil {
+		t.Fatalf("listTemplates() error: %v", err)
+	}
+
+	var frontendSPA *templateMeta
+	for i, tmpl := range templates {
+		if tmpl.Name == "frontend/spa" {
+			frontendSPA = &templates[i]
+			break
+		}
+	}
+
+	if frontendSPA == nil {
+		t.Fatal("frontend/spa template not found")
+	}
+
+	found := false
+	for _, st := range frontendSPA.SubTemplates {
+		if st.Name == "alpine" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("frontend/spa should include 'alpine' sub-template")
+	}
+}
+
+func TestTemplateExistsAlpine(t *testing.T) {
+	if !templateExists("frontend/spa/alpine") {
+		t.Error("templateExists('frontend/spa/alpine') returned false")
+	}
+}
+
+func TestLoadTemplateFilesAlpine(t *testing.T) {
+	files, err := loadTemplateFiles("frontend/spa/alpine")
+	if err != nil {
+		t.Fatalf("loadTemplateFiles() error: %v", err)
+	}
+
+	if len(files) == 0 {
+		t.Error("loadTemplateFiles() returned no files")
+	}
+
+	// Check for expected files
+	expectedFiles := []string{
+		".gitignore",               // from _common
+		"go.mod",                   // from _common
+		"cmd/server/main.go",       // template specific
+		"app/server/app.go",        // template specific
+		"app/server/config.go",     // template specific
+		"app/server/routes.go",     // template specific
+		"client/package.json",      // template specific
+		"client/vite.config.ts",    // template specific
+		"client/index.html",        // template specific (Alpine uses HTML)
+		"client/src/main.ts",       // template specific
+		"client/src/app.ts",        // template specific (Alpine app data)
+		"Makefile",                 // template specific
+	}
+
+	fileMap := make(map[string]bool)
+	for _, f := range files {
+		fileMap[f.path] = true
+	}
+
+	for _, expected := range expectedFiles {
+		if !fileMap[expected] {
+			t.Errorf("expected file %q not found in template files", expected)
+		}
+	}
+}
+
+func TestBuildPlanAlpineTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/alpine", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if len(p.ops) == 0 {
+		t.Error("buildPlan() returned empty plan")
+	}
+
+	// Check for expected operations
+	hasWrite := false
+	hasMkdir := false
+	for _, op := range p.ops {
+		switch op.kind {
+		case opWrite:
+			hasWrite = true
+		case opMkdir:
+			hasMkdir = true
+		}
+	}
+
+	if !hasWrite {
+		t.Error("plan has no write operations")
+	}
+	if !hasMkdir {
+		t.Error("plan has no mkdir operations")
+	}
+}
+
+func TestApplyPlanAlpineTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/alpine", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Verify key files exist
+	expectedFiles := []string{
+		"go.mod",
+		"cmd/server/main.go",
+		"app/server/app.go",
+		"app/server/config.go",
+		"app/server/routes.go",
+		"client/package.json",
+		"client/vite.config.ts",
+		"client/tsconfig.json",
+		"client/index.html",
+		"client/src/main.ts",
+		"client/src/app.ts",
+		"client/src/styles/index.css",
+		"Makefile",
+	}
+
+	for _, file := range expectedFiles {
+		path := filepath.Join(tmpDir, file)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("expected file %q does not exist", file)
+		}
+	}
+}
+
+func TestAlpineTemplateVariableSubstitution(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myalpineapp", "github.com/user/myalpineapp", "Apache-2.0", nil)
+
+	p, err := buildPlan("frontend/spa/alpine", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check go.mod contains the module path
+	gomod, err := os.ReadFile(filepath.Join(tmpDir, "go.mod"))
+	if err != nil {
+		t.Fatalf("ReadFile(go.mod) error: %v", err)
+	}
+
+	if !strings.Contains(string(gomod), "github.com/user/myalpineapp") {
+		t.Error("go.mod does not contain module path")
+	}
+
+	// Check package.json contains the project name
+	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "client/package.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(package.json) error: %v", err)
+	}
+
+	if !strings.Contains(string(pkgjson), "myalpineapp-client") {
+		t.Error("package.json does not contain project name")
+	}
+
+	// Check that package.json has Alpine.js dependency
+	if !strings.Contains(string(pkgjson), `"alpinejs"`) {
+		t.Error("package.json does not contain alpinejs dependency")
+	}
+}
+
+func TestAlpineTemplateHasAlpineSpecificContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/alpine", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check index.html contains Alpine-specific directives
+	indexHtml, err := os.ReadFile(filepath.Join(tmpDir, "client/index.html"))
+	if err != nil {
+		t.Fatalf("ReadFile(index.html) error: %v", err)
+	}
+
+	alpineDirectives := []string{
+		"x-data",
+		"x-cloak",
+		"@click.prevent",
+		"x-if",
+		"x-text",
+	}
+
+	for _, directive := range alpineDirectives {
+		if !strings.Contains(string(indexHtml), directive) {
+			t.Errorf("index.html does not contain Alpine directive: %s", directive)
+		}
+	}
+
+	// Check main.ts imports and starts Alpine
+	mainTs, err := os.ReadFile(filepath.Join(tmpDir, "client/src/main.ts"))
+	if err != nil {
+		t.Fatalf("ReadFile(main.ts) error: %v", err)
+	}
+
+	if !strings.Contains(string(mainTs), "import Alpine from 'alpinejs'") {
+		t.Error("main.ts does not import Alpine")
+	}
+	if !strings.Contains(string(mainTs), "Alpine.start()") {
+		t.Error("main.ts does not call Alpine.start()")
+	}
+	if !strings.Contains(string(mainTs), "Alpine.data") {
+		t.Error("main.ts does not register Alpine data")
+	}
+
+	// Check app.ts contains the app data/methods
+	appTs, err := os.ReadFile(filepath.Join(tmpDir, "client/src/app.ts"))
+	if err != nil {
+		t.Fatalf("ReadFile(app.ts) error: %v", err)
+	}
+
+	if !strings.Contains(string(appTs), "createApp") {
+		t.Error("app.ts does not export createApp function")
+	}
+	if !strings.Contains(string(appTs), "navigate") {
+		t.Error("app.ts does not contain navigate method")
+	}
+	if !strings.Contains(string(appTs), "fetchMessage") {
+		t.Error("app.ts does not contain fetchMessage method")
+	}
+	if !strings.Contains(string(appTs), "/api/hello") {
+		t.Error("app.ts does not fetch from /api/hello")
+	}
+
+	// Check styles include x-cloak rule
+	indexCss, err := os.ReadFile(filepath.Join(tmpDir, "client/src/styles/index.css"))
+	if err != nil {
+		t.Fatalf("ReadFile(index.css) error: %v", err)
+	}
+
+	if !strings.Contains(string(indexCss), "[x-cloak]") {
+		t.Error("index.css does not contain x-cloak style rule")
+	}
+
+	// Check app.go uses frontend middleware
+	appGo, err := os.ReadFile(filepath.Join(tmpDir, "app/server/app.go"))
+	if err != nil {
+		t.Fatalf("ReadFile(app.go) error: %v", err)
+	}
+
+	if !strings.Contains(string(appGo), "frontend.WithOptions") {
+		t.Error("app.go does not use frontend.WithOptions")
+	}
+	if !strings.Contains(string(appGo), "frontend.ModeAuto") {
+		t.Error("app.go does not use frontend.ModeAuto")
+	}
+}
+
+func TestAlpineTemplateMakefileHasNpmCommands(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/alpine", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check Makefile contains npm commands
+	makefile, err := os.ReadFile(filepath.Join(tmpDir, "Makefile"))
+	if err != nil {
+		t.Fatalf("ReadFile(Makefile) error: %v", err)
+	}
+
+	if !strings.Contains(string(makefile), "npm run build") {
+		t.Error("Alpine Makefile should contain npm run build")
+	}
+	if !strings.Contains(string(makefile), "npm run dev") {
+		t.Error("Alpine Makefile should contain npm run dev")
+	}
+	if !strings.Contains(string(makefile), "client") {
+		t.Error("Alpine Makefile should reference client directory")
 	}
 }
