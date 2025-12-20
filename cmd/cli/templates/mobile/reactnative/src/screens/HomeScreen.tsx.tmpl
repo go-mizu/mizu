@@ -1,0 +1,94 @@
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+  SafeAreaView,
+} from 'react-native';
+import { useAuthStore } from '../store/authStore';
+
+export default function HomeScreen() {
+  const [isLoading, setIsLoading] = useState(false);
+  const signOut = useAuthStore((state) => state.signOut);
+
+  const handleSignOut = async () => {
+    setIsLoading(true);
+    try {
+      await signOut();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.content}>
+        <View style={styles.iconContainer}>
+          <Text style={styles.icon}>✓</Text>
+        </View>
+        <Text style={styles.title}>Welcome to {{.Name | pascal}}</Text>
+        <Text style={styles.subtitle}>Connected to Mizu backend</Text>
+
+        {isLoading ? (
+          <ActivityIndicator size="large" color="#6366F1" style={styles.button} />
+        ) : (
+          <TouchableOpacity style={styles.button} onPress={handleSignOut}>
+            <Text style={styles.buttonText}>Sign Out</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  content: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  iconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#EEF2FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  icon: {
+    fontSize: 32,
+    color: '#6366F1',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 32,
+  },
+  button: {
+    backgroundColor: '#EEF2FF',
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+  },
+  buttonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6366F1',
+  },
+});

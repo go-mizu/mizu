@@ -1,0 +1,11 @@
+{
+  "name": "mobile/reactnative",
+  "description": "React Native app with TypeScript, React Navigation, Zustand, and Mizu backend integration",
+  "tags": ["mizu", "mobile", "reactnative", "react-native", "typescript", "expo", "cross-platform"],
+  "variables": {
+    "name": { "description": "Project name", "default": "" },
+    "bundleId": { "description": "Bundle identifier", "default": "com.example.app" },
+    "platforms": { "description": "Target platforms (ios,android)", "default": "ios,android" },
+    "expo": { "description": "Use Expo managed workflow", "default": "true" }
+  }
+}
