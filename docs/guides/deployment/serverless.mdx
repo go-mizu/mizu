@@ -4,26 +4,34 @@ title: "Serverless"
 description: "Deploy Mizu applications to serverless platforms like AWS Lambda and Google Cloud Functions."
 ---
 
-Serverless platforms run your code on-demand without managing servers. This guide covers deploying Mizu applications to AWS Lambda, Google Cloud Functions, and other serverless environments.
+**Serverless computing** is a cloud model where you don't manage any servers at all. You upload your code, and the platform handles everything: provisioning machines, scaling up during traffic spikes, scaling down to zero when idle, and even patching security updates. You only pay for the actual compute time your code uses.
+
+The term "serverless" is a bit misleading—there are still servers, you just don't see or manage them. It's like electricity: you don't maintain a power plant, you just use what you need and pay for consumption.
+
+This guide covers deploying Mizu applications to AWS Lambda, Google Cloud Functions, and other serverless environments.
 
 ## Understanding Serverless with Go
 
-Serverless platforms have unique characteristics:
+Serverless platforms work differently from traditional servers. Understanding these characteristics helps you design better serverless applications:
 
 | Aspect | Impact on Mizu Apps |
 |--------|---------------------|
-| **Cold starts** | First request may be slower |
-| **Stateless** | No in-memory state between requests |
-| **Timeout limits** | Usually 15-30 minutes max |
-| **Concurrency** | Each instance handles one request |
+| **Cold starts** | When your function hasn't run recently, the platform needs to start a new instance. This "cold start" adds latency (100-500ms). Warm instances respond immediately |
+| **Stateless** | Each request might run on a different instance, so you can't store data in memory between requests. Use databases or caches instead |
+| **Timeout limits** | Functions have maximum execution times (15-30 minutes). Long-running tasks need different architectures |
+| **Concurrency** | Each instance typically handles one request at a time. High traffic means many parallel instances |
 
-Go's fast startup time (~50ms) makes it excellent for serverless.
+**Why Go is great for serverless:** Go's compiled binary starts in ~50ms (compared to 500ms+ for Java or 200ms+ for Node.js), making cold starts much less painful. Go also uses little memory, which reduces costs since you pay for memory usage.
 
 ## AWS Lambda
 
+**AWS Lambda** is the original and most popular serverless platform. You upload a function, and AWS runs it in response to events—HTTP requests, database changes, file uploads, or scheduled triggers.
+
+For web applications, you need a way to receive HTTP requests. AWS offers two options: **Function URLs** (simpler, direct HTTP access) or **API Gateway** (more features like rate limiting, API keys, and request transformation).
+
 ### Lambda with Function URLs
 
-The simplest approach - no API Gateway needed.
+Function URLs are the simplest way to invoke Lambda via HTTP. AWS gives you a URL like `https://xyz123.lambda-url.us-east-1.on.aws/` that directly invokes your function. No API Gateway setup required.
 
 **main.go:**
 
@@ -225,7 +233,11 @@ func main() {
 
 ## Google Cloud Functions
 
+**Google Cloud Functions** is Google's serverless platform. It's tightly integrated with other Google Cloud services and has a simpler deployment model than Lambda—you can deploy directly from source code without building a container.
+
 ### HTTP Function
+
+The simplest approach is an HTTP-triggered function. Your function receives standard `http.ResponseWriter` and `*http.Request` parameters, so Mizu works seamlessly:
 
 **function.go:**
 
@@ -426,7 +438,11 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 ## Optimizing for Serverless
 
+Serverless performance is all about reducing cold starts and minimizing execution time (since you pay per millisecond). These optimizations can significantly reduce costs and improve user experience.
+
 ### Reduce Cold Start Time
+
+Cold starts happen when there's no warm instance available to handle your request. The key insight is that **initialization code runs once per instance**, not once per request. Put expensive setup (like database connection pools) in `init()` so it only runs during cold starts:
 
 ```go
 var (

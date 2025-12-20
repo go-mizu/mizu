@@ -41,6 +41,7 @@
           {
             "group": "Overview",
             "pages": [
+              "guides/welcome",
               "overview/why",
               "overview/features",
               "overview/use-cases",
@@ -50,7 +51,6 @@
           {
             "group": "Getting Started",
             "pages": [
-              "guides/welcome",
               "guides/installation",
               "guides/quick-start"
             ]

@@ -4,11 +4,22 @@ title: "Kubernetes"
 description: "Deploy and orchestrate Mizu applications on Kubernetes."
 ---
 
-Kubernetes (K8s) provides container orchestration for production workloads. This guide covers deploying Mizu applications with proper health checks, scaling, and best practices.
+**Kubernetes** (often abbreviated as **K8s**) is an open-source platform for automating the deployment, scaling, and management of containerized applications. Think of it as a system that runs your Docker containers across multiple servers, automatically handling load balancing, restarts, and scaling.
+
+While Docker runs containers on a single machine, Kubernetes manages containers across a **cluster** of machines. If a server fails, Kubernetes automatically moves your containers to healthy servers. If traffic increases, it can spin up more copies of your app. This makes Kubernetes ideal for production workloads that need high availability.
+
+This guide covers deploying Mizu applications with proper health checks, scaling, and best practices.
 
 ## Basic Deployment
 
+In Kubernetes, you don't run containers directly. Instead, you describe what you want (e.g., "run 3 copies of my app") in YAML files, and Kubernetes makes it happen. The two most fundamental resources are:
+
+- **Deployment**: Defines your application—what container image to use, how many replicas to run, and how to update them
+- **Service**: Exposes your application to network traffic, load balancing across all replicas
+
 ### deployment.yaml
+
+A Deployment tells Kubernetes how to run your application. The `replicas: 3` means Kubernetes will always keep 3 copies running. If one crashes, it automatically starts a replacement.
 
 ```yaml
 apiVersion: apps/v1
@@ -46,6 +57,8 @@ spec:
 
 ### service.yaml
 
+A Service provides a stable network endpoint for your application. Since pods (the smallest deployable units in Kubernetes) can be created and destroyed dynamically, their IP addresses change. A Service gives you a fixed address that automatically routes to healthy pods.
+
 ```yaml
 apiVersion: v1
 kind: Service
@@ -73,7 +86,9 @@ kubectl get svc myapp
 
 ## Health Probes
 
-Kubernetes uses probes to determine container health. Mizu's built-in handlers work perfectly:
+Kubernetes uses **probes** to monitor your application's health and make intelligent decisions. Unlike Docker's simple health checks, Kubernetes has three distinct probe types, each serving a different purpose.
+
+Understanding probes is critical: misconfigured probes can cause your app to restart constantly or receive traffic before it's ready. Mizu's built-in health handlers (`/livez` and `/readyz`) work perfectly with Kubernetes:
 
 ```yaml
 apiVersion: apps/v1
@@ -140,9 +155,11 @@ spec:
 
 ## Configuration
 
+Kubernetes provides two resources for managing configuration separately from your container images. This separation is a best practice because it lets you use the same image in different environments (dev, staging, production) with different settings.
+
 ### ConfigMap
 
-For non-sensitive configuration:
+A **ConfigMap** stores non-sensitive configuration data as key-value pairs. Your application reads these as environment variables or mounted files. ConfigMaps are visible to anyone with cluster access, so never store passwords here:
 
 ```yaml
 apiVersion: v1
@@ -161,7 +178,7 @@ data:
 
 ### Secret
 
-For sensitive data:
+A **Secret** is like a ConfigMap but designed for sensitive data like passwords, API keys, and certificates. Kubernetes stores Secrets with base64 encoding and can integrate with external secret managers for encryption at rest. While Secrets aren't perfectly secure by default, they're treated with more care than ConfigMaps and can be restricted with RBAC policies:
 
 ```yaml
 apiVersion: v1
@@ -213,7 +230,9 @@ spec:
 
 ## Ingress
 
-Expose your application to the internet with Ingress:
+So far, your Service is only accessible inside the Kubernetes cluster. To expose your application to the internet, you need an **Ingress**. Think of Ingress as the front door to your cluster—it receives external traffic and routes it to the appropriate services based on the URL.
+
+Ingress also handles TLS/HTTPS termination, so you can configure SSL certificates in one place rather than in each service. You'll need an Ingress Controller (like nginx-ingress or Traefik) installed in your cluster for Ingress resources to work.
 
 ### Basic Ingress
 
@@ -268,9 +287,13 @@ spec:
 
 ## Auto-Scaling
 
+One of Kubernetes' most powerful features is **automatic scaling**. Instead of manually adding or removing instances based on traffic, Kubernetes can do this automatically based on metrics like CPU usage, memory, or even custom metrics like requests per second.
+
 ### Horizontal Pod Autoscaler
 
-Scale based on CPU/memory:
+A **Horizontal Pod Autoscaler (HPA)** watches your pods and adjusts the replica count based on observed metrics. For example, if CPU usage exceeds 70%, it adds more pods. When usage drops, it scales back down to save resources.
+
+The HPA continuously monitors metrics and makes smooth adjustments—it won't instantly scale from 2 to 100 pods, but will increase gradually to avoid thrashing:
 
 ```yaml
 apiVersion: autoscaling/v2
@@ -327,6 +350,10 @@ spec:
 
 ## Rolling Updates
 
+When you deploy a new version of your application, you don't want downtime. **Rolling updates** solve this by gradually replacing old pods with new ones. Kubernetes starts a new pod, waits for it to be healthy, then terminates an old pod. This continues until all pods are running the new version.
+
+If the new version has problems (failing health checks), Kubernetes stops the rollout and you can easily roll back to the previous version. This makes deployments much safer than traditional "stop everything, deploy, start everything" approaches.
+
 ### Deployment Strategy
 
 ```yaml
@@ -372,7 +399,13 @@ kubectl rollout undo deployment/myapp
 
 ## Resource Management
 
+In a shared cluster, you need to control how much CPU and memory each application can use. Without limits, one misbehaving app could consume all resources and crash other apps. Kubernetes uses **requests** and **limits** to manage resource allocation.
+
 ### Requests vs Limits
+
+**Requests** tell Kubernetes the minimum resources your app needs. The scheduler uses this to decide which node to place your pod on—it won't place a pod on a node that can't satisfy its requests.
+
+**Limits** are the maximum resources your app can use. If your app tries to exceed its memory limit, Kubernetes kills it (OOMKilled). If it exceeds CPU limit, it gets throttled (slowed down but not killed).
 
 ```yaml
 resources:
@@ -413,7 +446,9 @@ spec:
 
 ## Pod Disruption Budget
 
-Ensure availability during voluntary disruptions:
+Sometimes Kubernetes needs to evict pods for maintenance—node upgrades, cluster scaling, or rebalancing. A **Pod Disruption Budget (PDB)** tells Kubernetes the minimum number of pods that must stay running during these voluntary disruptions.
+
+For example, if you have 3 replicas and set `minAvailable: 2`, Kubernetes will only evict one pod at a time, ensuring at least 2 are always running. This prevents accidental outages during maintenance:
 
 ```yaml
 apiVersion: policy/v1
@@ -428,6 +463,10 @@ spec:
 ```
 
 ## Namespace Organization
+
+**Namespaces** are virtual clusters within your Kubernetes cluster. They let you divide resources between different teams, projects, or environments (dev, staging, production). Resources in different namespaces are isolated from each other, and you can apply different resource quotas and access controls to each namespace.
+
+A common pattern is to have separate namespaces for each environment:
 
 ```yaml
 apiVersion: v1

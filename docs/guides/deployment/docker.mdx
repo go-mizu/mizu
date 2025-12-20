@@ -4,11 +4,17 @@ title: "Docker"
 description: "Deploy Mizu applications using Docker containers."
 ---
 
-Docker packages your application with its runtime environment, ensuring consistent behavior across development, testing, and production. This guide covers everything from basic Dockerfiles to production-ready configurations.
+**Docker** is a platform that packages your application and all its dependencies into a standardized unit called a **container**. Think of a container as a lightweight, portable box that contains everything your app needs to run—the binary, configuration files, and even the operating system libraries.
+
+The biggest advantage of Docker is **consistency**: the same container that works on your laptop will work identically on any server. No more "it works on my machine" problems. Docker also makes scaling easy—you can run multiple copies of the same container to handle more traffic.
+
+This guide covers everything from basic Dockerfiles to production-ready configurations.
 
 ## Basic Dockerfile
 
-Start with a multi-stage build for small, secure images:
+A **Dockerfile** is a recipe that tells Docker how to build your container image. It contains step-by-step instructions: start with a base image, copy your code, compile it, and define how to run it.
+
+We'll use a **multi-stage build**, which is a technique that uses one container to build your app and a different, smaller container to run it. This keeps your final image small and secure—it only contains the compiled binary, not the Go compiler or source code.
 
 ```dockerfile
 # Build stage
@@ -33,19 +39,23 @@ CMD ["/app"]
 
 ### Build and Run
 
+Once you have a Dockerfile, you use the `docker build` command to create an image, and `docker run` to start a container from that image. Here are the essential commands you'll use daily:
+
 ```bash
-# Build the image
+# Build the image (the -t flag gives it a name and tag)
 docker build -t myapp:latest .
 
-# Run the container
+# Run the container (-d runs in background, -p maps port 3000)
 docker run -d --name myapp -p 3000:3000 myapp:latest
 
-# View logs
+# View logs (the -f flag follows new log entries)
 docker logs -f myapp
 
-# Stop and remove
+# Stop and remove the container
 docker stop myapp && docker rm myapp
 ```
+
+The `-p 3000:3000` flag is called **port mapping**. It connects port 3000 on your host machine to port 3000 inside the container. Without this, the container's port would be inaccessible from outside.
 
 ## Production Dockerfile
 
@@ -105,12 +115,16 @@ ENTRYPOINT ["/app"]
 
 ## Base Image Options
 
+The **base image** is the foundation your container is built on. Choosing the right base image affects security, size, and debugging capabilities. For Go applications, you have several excellent options:
+
 | Image | Size | Use Case |
 |-------|------|----------|
 | `gcr.io/distroless/static` | ~2MB | Pure Go binaries (recommended) |
 | `gcr.io/distroless/base` | ~20MB | When CGO is required |
 | `alpine:3.19` | ~7MB | When you need a shell for debugging |
 | `scratch` | 0MB | Minimal, but no CA certs or timezone |
+
+**Why does size matter?** Smaller images download faster (important for scaling), have fewer vulnerabilities (less code = fewer bugs), and use less storage. A 2MB distroless image is much more secure than a 1GB Ubuntu image.
 
 ### Distroless (Recommended)
 
@@ -140,7 +154,9 @@ CMD ["/app"]
 
 ## Multi-Architecture Builds
 
-Build for both AMD64 and ARM64 (for AWS Graviton, Apple Silicon):
+Different servers use different CPU architectures. Most cloud servers use **AMD64** (Intel/AMD processors), but newer options like AWS Graviton and Apple Silicon Macs use **ARM64**. Building for multiple architectures ensures your container works everywhere.
+
+Docker's **buildx** tool can create images that work on both architectures. When someone pulls your image, Docker automatically downloads the right version for their CPU.
 
 ```dockerfile
 FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS build
@@ -177,9 +193,13 @@ docker buildx build \
 
 ## Docker Compose
 
+**Docker Compose** is a tool for defining and running multi-container applications. Instead of manually starting each container with `docker run` commands, you describe your entire application stack in a YAML file—your app, database, cache, and any other services. Then one command (`docker compose up`) starts everything together.
+
+Compose is especially useful when your app depends on other services like PostgreSQL or Redis. It handles networking between containers automatically, so your app can connect to the database using a simple hostname like `db` instead of managing IP addresses.
+
 ### Development
 
-`docker-compose.yml` for local development:
+Here's a `docker-compose.yml` for local development. It runs your app alongside PostgreSQL and Redis, with hot-reload support:
 
 ```yaml
 version: '3.8'
@@ -305,7 +325,13 @@ docker compose -f docker-compose.prod.yml up -d --no-deps app
 
 ## Environment Variables and Secrets
 
+In production, you need to configure your application without hardcoding values like database passwords or API keys. **Environment variables** are the standard way to pass configuration to containers. They're set when the container starts and can be different for each environment (development, staging, production).
+
+**Secrets** are sensitive values like passwords and API keys that need special handling. Never store secrets in your Docker image or commit them to git—anyone with access to the image could extract them.
+
 ### Using .env Files
+
+For local development, you can store environment variables in a `.env` file. Docker Compose automatically loads this file:
 
 ```bash
 # .env file (never commit to git!)
@@ -360,6 +386,10 @@ func getSecret(name string) string {
 
 ## Container Health Checks
 
+Docker can monitor your container's health by periodically running a command or making an HTTP request. If the health check fails repeatedly, Docker marks the container as "unhealthy." Orchestration tools like Docker Compose and Kubernetes use this status to automatically restart failed containers or redirect traffic away from unhealthy ones.
+
+For web applications, health checks typically hit a `/readyz` or `/healthz` endpoint that returns 200 OK when the app is working properly.
+
 ### In Dockerfile
 
 ```dockerfile
@@ -403,6 +433,10 @@ func main() {
 
 ## Networking
 
+Docker creates isolated networks for your containers. By default, containers in the same Docker Compose file can communicate with each other using their service names as hostnames (e.g., your app can connect to `postgres://db:5432` where `db` is the service name).
+
+You can create multiple networks to control which containers can talk to each other. For example, you might want your app to reach both the database and the internet, but prevent the database from being accessed from outside.
+
 ### Container Networking
 
 ```yaml
@@ -445,9 +479,13 @@ services:
 
 ## Image Optimization
 
+A well-optimized Docker image builds faster, downloads faster, and uses less storage. The two main optimization techniques are **layer caching** and **minimizing image size**.
+
 ### Layer Caching
 
-Order instructions from least to most frequently changing:
+Docker builds images in layers, and it caches each layer. If a layer hasn't changed, Docker reuses the cached version instead of rebuilding it. The key insight is that **when one layer changes, all subsequent layers must be rebuilt**.
+
+This means you should order your Dockerfile instructions from least to most frequently changing. Dependencies change less often than your source code, so copy and install dependencies first:
 
 ```dockerfile
 # 1. Base image (rarely changes)
@@ -494,6 +532,12 @@ vendor/
 ```
 
 ## Private Registries
+
+A **container registry** is like GitHub for Docker images—a place to store and share your container images. When you run `docker pull nginx`, Docker downloads the image from Docker Hub, the default public registry.
+
+For your own applications, you'll use a private registry so only authorized users can access your images. All major cloud providers offer managed registries (AWS ECR, Google Container Registry, etc.), or you can use Docker Hub's private repositories.
+
+The workflow is: build your image locally, push it to the registry, then pull it on your production servers.
 
 ### Docker Hub
 

@@ -4,13 +4,23 @@ title: "Cloud Platforms"
 description: "Deploy Mizu applications to AWS, Google Cloud, DigitalOcean, and other cloud providers."
 ---
 
-This guide covers deploying Mizu applications to major cloud platforms using their managed services for containers and compute.
+**Cloud platforms** provide the infrastructure to run your applications without managing physical servers. Instead of buying and maintaining hardware, you rent computing resources on-demand and pay only for what you use.
+
+Each cloud provider offers various services with different trade-offs between simplicity and control. **Managed container services** (like AWS App Runner or Google Cloud Run) handle most infrastructure concerns automatically—you just provide a container image. **Compute services** (like EC2 or Compute Engine) give you full control but require more configuration.
+
+This guide covers deploying Mizu applications to major cloud platforms using their managed services.
 
 ## AWS
 
+Amazon Web Services (AWS) is the largest cloud provider, offering everything from simple container hosting to complex orchestration. For most Mizu applications, you'll choose between:
+
+- **App Runner**: Simplest option—give it a container, it handles everything else
+- **ECS Fargate**: More control over networking and scaling, still serverless
+- **EC2**: Full control over the server, you manage everything
+
 ### AWS App Runner
 
-The simplest way to deploy containers on AWS. No infrastructure management required.
+App Runner is the easiest way to deploy containers on AWS. You point it at your container image, and it handles load balancing, auto-scaling, and HTTPS automatically. There's no infrastructure to manage—it's perfect for getting started quickly.
 
 **1. Push image to ECR:**
 
@@ -63,7 +73,9 @@ aws apprunner create-service \
 
 ### Amazon ECS with Fargate
 
-Serverless containers with more control than App Runner.
+**ECS (Elastic Container Service)** with **Fargate** is a step up from App Runner. You get more control over networking, secrets, and scaling policies, but you don't manage servers—Fargate handles the underlying infrastructure.
+
+ECS is organized around **task definitions** (what to run) and **services** (how to run it). A task definition specifies your container, resources, and environment. A service maintains the desired number of tasks and integrates with load balancers.
 
 **task-definition.json:**
 
@@ -187,9 +199,13 @@ systemctl start myapp
 
 ## Google Cloud
 
+Google Cloud Platform (GCP) offers similar services to AWS with a developer-friendly experience. **Cloud Run** is GCP's standout service for containers—it's serverless, scales to zero (you only pay when handling requests), and has a generous free tier.
+
 ### Cloud Run
 
-Fully managed serverless containers.
+Cloud Run is one of the easiest ways to deploy containers anywhere. It automatically scales based on traffic, including scaling to zero when idle. You just deploy a container, and Cloud Run handles HTTPS, load balancing, and scaling.
+
+Cloud Run is built on Knative, an open-source Kubernetes-based platform, but you don't need to know anything about Kubernetes to use it.
 
 **Deploy directly from source:**
 
@@ -314,9 +330,13 @@ gcloud compute instances create myapp-vm \
 
 ## DigitalOcean
 
+DigitalOcean is known for simplicity and developer-friendly pricing. It's often the first cloud provider developers use because it's less overwhelming than AWS or GCP.
+
 ### App Platform
 
-DigitalOcean's managed container platform.
+**App Platform** is DigitalOcean's fully managed platform for deploying apps from source code or container images. It integrates directly with GitHub for automatic deployments—push to your main branch, and your app updates automatically.
+
+App Platform is simpler than AWS/GCP equivalents, with transparent pricing. The YAML configuration file below shows how to define your app:
 
 **app.yaml:**
 
@@ -376,7 +396,9 @@ ssh root@<ip> 'systemctl restart myapp'
 
 ## Fly.io
 
-Modern platform optimized for edge deployment.
+**Fly.io** is a modern platform designed for **edge deployment**—running your app in data centers around the world, close to your users. This reduces latency because requests don't have to travel across the globe.
+
+Unlike traditional clouds where you pick one region, Fly.io can run your app in multiple regions simultaneously. It also has excellent support for WebSockets and persistent connections.
 
 **fly.toml:**
 
@@ -438,7 +460,9 @@ fly secrets set DATABASE_URL=postgres://...
 
 ## Railway
 
-One-click deployments from GitHub.
+**Railway** focuses on developer experience above all else. It's designed to feel like deploying locally—connect your GitHub repo, and Railway figures out how to build and run your app automatically.
+
+Railway excels at provisioning databases alongside your app. Need PostgreSQL or Redis? Add it in one click. The connection strings are automatically injected as environment variables.
 
 **railway.json:**
 
@@ -473,7 +497,9 @@ railway up
 
 ## Render
 
-Simple deployments with free tier.
+**Render** is positioned as a simpler alternative to Heroku. It offers automatic deploys from Git, free SSL, and a generous free tier for testing. Like Railway, it aims to handle infrastructure complexity so you can focus on code.
+
+Render's **render.yaml** file (called a Blueprint) lets you define your entire infrastructure—web services, databases, and background workers—in a single file that stays in your repo:
 
 **render.yaml:**
 
