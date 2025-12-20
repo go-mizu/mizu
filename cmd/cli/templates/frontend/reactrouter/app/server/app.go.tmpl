@@ -1,0 +1,31 @@
+package server
+
+import (
+	"embed"
+	"io/fs"
+
+	"github.com/go-mizu/mizu"
+	"github.com/go-mizu/mizu/middlewares/frontend"
+)
+
+//go:embed all:../../dist
+var distFS embed.FS
+
+func New(cfg *Config) *mizu.App {
+	app := mizu.New()
+
+	// API routes come first (before frontend middleware)
+	setupRoutes(app)
+
+	// Frontend middleware handles all non-API routes
+	dist, _ := fs.Sub(distFS, "dist")
+	app.Use(frontend.WithOptions(frontend.Options{
+		Mode:        frontend.ModeAuto,       // Auto-detect dev/prod
+		FS:          dist,                     // Embedded build files
+		Root:        "./dist",                 // Fallback to filesystem in dev
+		DevServer:   "http://localhost:" + cfg.DevPort,  // Vite dev server
+		IgnorePaths: []string{"/api"},        // Don't proxy /api to Vite
+	}))
+
+	return app
+}

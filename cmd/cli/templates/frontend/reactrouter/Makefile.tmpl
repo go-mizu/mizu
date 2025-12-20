@@ -1,0 +1,38 @@
+.PHONY: dev build run clean install typecheck test
+
+# Development mode: run React Router dev server and Go server
+dev:
+	@echo "Starting development servers..."
+	@(cd client && npm run dev) & \
+	MIZU_ENV=development go run ./cmd/server
+
+# Build frontend for production (static export)
+build:
+	@echo "Building React Router app..."
+	cd client && npm run build
+	@echo "Build complete: dist/"
+
+# Run production server
+run: build
+	@echo "Starting production server..."
+	MIZU_ENV=production go run ./cmd/server
+
+# Clean build artifacts
+clean:
+	rm -rf dist
+	rm -rf client/node_modules
+	rm -rf client/build
+	rm -rf client/.react-router
+
+# Install dependencies
+install:
+	cd client && npm install
+	go mod tidy
+
+# Type check
+typecheck:
+	cd client && npm run typecheck
+
+# Run tests
+test:
+	go test ./...
