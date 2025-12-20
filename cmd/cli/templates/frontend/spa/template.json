@@ -8,6 +8,7 @@
     { "name": "svelte", "description": "Svelte with Vite and TypeScript" },
     { "name": "sveltekit", "description": "SvelteKit with TypeScript and Tailwind" },
     { "name": "angular", "description": "Angular with TypeScript" },
+    { "name": "alpine", "description": "Alpine.js with Vite" },
     { "name": "preact", "description": "Preact with Vite and TypeScript" },
     { "name": "next", "description": "Next.js with App Router and TypeScript" },
     { "name": "nuxt", "description": "Nuxt with TypeScript and Tailwind" },
