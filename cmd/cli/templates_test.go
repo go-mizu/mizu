@@ -42,6 +42,7 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 	foundHtmx := false
 	foundNext := false
 	foundNuxt := false
+	foundPreact := false
 	for _, tmpl := range templates {
 		if tmpl.Name == "frontend/spa/react" {
 			foundReact = true
@@ -63,6 +64,9 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 		}
 		if tmpl.Name == "frontend/spa/nuxt" {
 			foundNuxt = true
+		}
+		if tmpl.Name == "frontend/spa/preact" {
+			foundPreact = true
 		}
 	}
 
@@ -87,6 +91,9 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 	if !foundNuxt {
 		t.Error("listTemplates() did not include nested template 'frontend/spa/nuxt'")
 	}
+	if !foundPreact {
+		t.Error("listTemplates() did not include nested template 'frontend/spa/preact'")
+	}
 }
 
 func TestTemplateExistsNested(t *testing.T) {
@@ -104,6 +111,7 @@ func TestTemplateExistsNested(t *testing.T) {
 		{"frontend/spa/htmx", true},
 		{"frontend/spa/next", true},
 		{"frontend/spa/nuxt", true},
+		{"frontend/spa/preact", true},
 		{"frontend/spa/nonexistent", false},
 		{"frontend/nonexistent", false},
 		{"nonexistent", false},
@@ -134,6 +142,7 @@ func TestLoadTemplateMeta(t *testing.T) {
 		{"frontend/spa/htmx", "frontend/spa/htmx", true},
 		{"frontend/spa/next", "frontend/spa/next", true},
 		{"frontend/spa/nuxt", "frontend/spa/nuxt", true},
+		{"frontend/spa/preact", "frontend/spa/preact", true},
 	}
 
 	for _, tt := range tests {
@@ -2039,5 +2048,310 @@ func TestNuxtTemplateMakefileHasNpmCommands(t *testing.T) {
 	}
 	if !strings.Contains(string(makefile), ".nuxt") {
 		t.Error("Nuxt Makefile should clean .nuxt directory")
+	}
+}
+
+// Preact template tests
+
+func TestListTemplatesIncludesPreact(t *testing.T) {
+	templates, err := listTemplates()
+	if err != nil {
+		t.Fatalf("listTemplates() error: %v", err)
+	}
+
+	found := false
+	for _, tmpl := range templates {
+		if tmpl.Name == "frontend/spa/preact" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("listTemplates() did not include nested template 'frontend/spa/preact'")
+	}
+}
+
+func TestTemplateExistsPreact(t *testing.T) {
+	if !templateExists("frontend/spa/preact") {
+		t.Error("templateExists('frontend/spa/preact') returned false")
+	}
+}
+
+func TestLoadTemplateFilesPreact(t *testing.T) {
+	files, err := loadTemplateFiles("frontend/spa/preact")
+	if err != nil {
+		t.Fatalf("loadTemplateFiles() error: %v", err)
+	}
+
+	if len(files) == 0 {
+		t.Error("loadTemplateFiles() returned no files")
+	}
+
+	// Check for expected files
+	expectedFiles := []string{
+		".gitignore",            // from _common
+		"go.mod",                // from _common
+		"cmd/server/main.go",    // template specific
+		"app/server/app.go",     // template specific
+		"app/server/config.go",  // template specific
+		"app/server/routes.go",  // template specific
+		"client/package.json",   // template specific
+		"client/vite.config.ts", // template specific
+		"client/src/App.tsx",    // template specific (Preact)
+		"client/src/main.tsx",   // template specific
+		"Makefile",              // template specific
+	}
+
+	fileMap := make(map[string]bool)
+	for _, f := range files {
+		fileMap[f.path] = true
+	}
+
+	for _, expected := range expectedFiles {
+		if !fileMap[expected] {
+			t.Errorf("expected file %q not found in template files", expected)
+		}
+	}
+}
+
+func TestBuildPlanPreactTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/preact", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if len(p.ops) == 0 {
+		t.Error("buildPlan() returned empty plan")
+	}
+
+	// Check for expected operations
+	hasWrite := false
+	hasMkdir := false
+	for _, op := range p.ops {
+		switch op.kind {
+		case opWrite:
+			hasWrite = true
+		case opMkdir:
+			hasMkdir = true
+		}
+	}
+
+	if !hasWrite {
+		t.Error("plan has no write operations")
+	}
+	if !hasMkdir {
+		t.Error("plan has no mkdir operations")
+	}
+}
+
+func TestApplyPlanPreactTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/preact", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Verify key files exist
+	expectedFiles := []string{
+		"go.mod",
+		"cmd/server/main.go",
+		"app/server/app.go",
+		"app/server/config.go",
+		"app/server/routes.go",
+		"client/package.json",
+		"client/vite.config.ts",
+		"client/tsconfig.json",
+		"client/index.html",
+		"client/src/App.tsx",
+		"client/src/main.tsx",
+		"client/src/components/Layout.tsx",
+		"client/src/pages/Home.tsx",
+		"client/src/pages/About.tsx",
+		"Makefile",
+	}
+
+	for _, file := range expectedFiles {
+		path := filepath.Join(tmpDir, file)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("expected file %q does not exist", file)
+		}
+	}
+}
+
+func TestPreactTemplateVariableSubstitution(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("mypreactapp", "github.com/user/mypreactapp", "Apache-2.0", nil)
+
+	p, err := buildPlan("frontend/spa/preact", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check go.mod contains the module path
+	gomod, err := os.ReadFile(filepath.Join(tmpDir, "go.mod"))
+	if err != nil {
+		t.Fatalf("ReadFile(go.mod) error: %v", err)
+	}
+
+	if !strings.Contains(string(gomod), "github.com/user/mypreactapp") {
+		t.Error("go.mod does not contain module path")
+	}
+
+	// Check package.json contains the project name
+	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "client/package.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(package.json) error: %v", err)
+	}
+
+	if !strings.Contains(string(pkgjson), "mypreactapp-client") {
+		t.Error("package.json does not contain project name")
+	}
+
+	// Check that package.json has Preact dependencies
+	if !strings.Contains(string(pkgjson), `"preact"`) {
+		t.Error("package.json does not contain preact dependency")
+	}
+	if !strings.Contains(string(pkgjson), `"preact-router"`) {
+		t.Error("package.json does not contain preact-router dependency")
+	}
+}
+
+func TestPreactTemplateHasPreactSpecificContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/preact", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check App.tsx contains Preact-specific content
+	appTsx, err := os.ReadFile(filepath.Join(tmpDir, "client/src/App.tsx"))
+	if err != nil {
+		t.Fatalf("ReadFile(App.tsx) error: %v", err)
+	}
+
+	if !strings.Contains(string(appTsx), "preact-router") {
+		t.Error("App.tsx does not import from preact-router")
+	}
+	if !strings.Contains(string(appTsx), "Router") {
+		t.Error("App.tsx does not contain Router component")
+	}
+
+	// Check main.tsx uses Preact render
+	mainTsx, err := os.ReadFile(filepath.Join(tmpDir, "client/src/main.tsx"))
+	if err != nil {
+		t.Fatalf("ReadFile(main.tsx) error: %v", err)
+	}
+
+	if !strings.Contains(string(mainTsx), "import { render } from 'preact'") {
+		t.Error("main.tsx does not import render from preact")
+	}
+
+	// Check vite.config.ts uses Preact preset
+	viteConfig, err := os.ReadFile(filepath.Join(tmpDir, "client/vite.config.ts"))
+	if err != nil {
+		t.Fatalf("ReadFile(vite.config.ts) error: %v", err)
+	}
+
+	if !strings.Contains(string(viteConfig), "@preact/preset-vite") {
+		t.Error("vite.config.ts does not import @preact/preset-vite")
+	}
+
+	// Check Home.tsx uses preact/hooks
+	homeTsx, err := os.ReadFile(filepath.Join(tmpDir, "client/src/pages/Home.tsx"))
+	if err != nil {
+		t.Fatalf("ReadFile(Home.tsx) error: %v", err)
+	}
+
+	if !strings.Contains(string(homeTsx), "preact/hooks") {
+		t.Error("Home.tsx does not import from preact/hooks")
+	}
+	if !strings.Contains(string(homeTsx), "useState") {
+		t.Error("Home.tsx does not use useState hook")
+	}
+	if !strings.Contains(string(homeTsx), "useEffect") {
+		t.Error("Home.tsx does not use useEffect hook")
+	}
+
+	// Check Layout.tsx uses ComponentChildren from preact
+	layoutTsx, err := os.ReadFile(filepath.Join(tmpDir, "client/src/components/Layout.tsx"))
+	if err != nil {
+		t.Fatalf("ReadFile(Layout.tsx) error: %v", err)
+	}
+
+	if !strings.Contains(string(layoutTsx), "ComponentChildren") {
+		t.Error("Layout.tsx does not use ComponentChildren type from preact")
+	}
+
+	// Check tsconfig.json has Preact JSX configuration
+	tsconfig, err := os.ReadFile(filepath.Join(tmpDir, "client/tsconfig.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(tsconfig.json) error: %v", err)
+	}
+
+	if !strings.Contains(string(tsconfig), `"jsxImportSource": "preact"`) {
+		t.Error("tsconfig.json does not contain jsxImportSource: preact")
+	}
+
+	// Check app.go uses frontend middleware
+	appGo, err := os.ReadFile(filepath.Join(tmpDir, "app/server/app.go"))
+	if err != nil {
+		t.Fatalf("ReadFile(app.go) error: %v", err)
+	}
+
+	if !strings.Contains(string(appGo), "frontend.WithOptions") {
+		t.Error("app.go does not use frontend.WithOptions")
+	}
+	if !strings.Contains(string(appGo), "frontend.ModeAuto") {
+		t.Error("app.go does not use frontend.ModeAuto")
+	}
+}
+
+func TestPreactTemplateMakefileHasNpmCommands(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/preact", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check Makefile contains npm commands
+	makefile, err := os.ReadFile(filepath.Join(tmpDir, "Makefile"))
+	if err != nil {
+		t.Fatalf("ReadFile(Makefile) error: %v", err)
+	}
+
+	if !strings.Contains(string(makefile), "npm run build") {
+		t.Error("Preact Makefile should contain npm run build")
+	}
+	if !strings.Contains(string(makefile), "npm run dev") {
+		t.Error("Preact Makefile should contain npm run dev")
+	}
+	if !strings.Contains(string(makefile), "client") {
+		t.Error("Preact Makefile should reference client directory")
 	}
 }
