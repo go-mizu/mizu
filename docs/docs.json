@@ -39,10 +39,18 @@
         "tab": "Guides",
         "groups": [
           {
+            "group": "Overview",
+            "pages": [
+              "overview/why",
+              "overview/features",
+              "overview/use-cases",
+              "overview/roadmap"
+            ]
+          },
+          {
             "group": "Getting Started",
             "pages": [
               "guides/welcome",
-              "overview/why",
               "guides/installation",
               "guides/quick-start"
             ]
@@ -88,10 +96,7 @@
           {
             "group": "Learn More",
             "pages": [
-              "overview/features",
-              "overview/use-cases",
               "guides/architecture",
-              "overview/roadmap",
               "guides/faq",
               "guides/community"
             ]
