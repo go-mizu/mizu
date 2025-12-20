@@ -46,7 +46,7 @@ export default defineConfig({
 })
 ```
 
-### 3. Add Frontend Middleware
+### 3. Add Frontend Integration
 
 ```go
 // main.go or app.go
@@ -57,7 +57,7 @@ import (
     "io/fs"
 
     "github.com/go-mizu/mizu"
-    "github.com/go-mizu/mizu/middlewares/frontend"
+    "github.com/go-mizu/mizu/frontend"
 )
 
 //go:embed all:dist

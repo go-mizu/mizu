@@ -28,7 +28,7 @@ This maps `src/main.tsx` → `assets/main.abc123.js`.
 ## Configuration
 
 ```go
-import "github.com/go-mizu/mizu/middlewares/frontend"
+import "github.com/go-mizu/mizu/frontend"
 
 opts := frontend.Options{
     Root:     "./dist",
@@ -42,7 +42,7 @@ opts := frontend.Options{
 import (
     "embed"
     "io/fs"
-    "github.com/go-mizu/mizu/middlewares/frontend"
+    "github.com/go-mizu/mizu/frontend"
 )
 
 //go:embed all:dist
