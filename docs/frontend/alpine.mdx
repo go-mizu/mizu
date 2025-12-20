@@ -6,6 +6,22 @@ icon: "mountain"
 
 Alpine.js is a minimal JavaScript framework for adding interactivity to server-rendered HTML. Think of it as "jQuery for the modern web" or "Tailwind for JavaScript."
 
+## Comparison with Other Approaches
+
+| Feature | Alpine | HTMX | Vue 3 | React |
+|---------|--------|------|-------|-------|
+| **Bundle Size** | ~15 KB | ~14 KB | ~34 KB | ~44 KB |
+| **JavaScript Required** | Light | Minimal | Moderate | Heavy |
+| **Reactivity** | Proxy-based | None | Proxy-based | Virtual DOM |
+| **Build Step** | None | None | Optional | Required |
+| **Learning Curve** | Gentle | Gentle | Moderate | Steep |
+| **Server Dependency** | Medium | High | Low | Low |
+| **SEO** | Good | Excellent | Needs SSR | Needs SSR |
+| **Progressive Enhancement** | Good | Excellent | Poor | Poor |
+| **Best For** | Interactive widgets | CRUD apps | Interactive apps | Complex UIs |
+| **State Management** | Local + Stores | Server-side | Vuex/Pinia | Redux/Context |
+| **Syntax** | HTML attributes | HTML attributes | Template syntax | JSX |
+
 ## Quick Start
 
 ```bash
@@ -16,11 +32,53 @@ make dev
 
 ## Why Alpine.js?
 
-- **Tiny**: ~15kB minified
-- **No build step**: Include via CDN
-- **Declarative**: Like Vue/React but in HTML
-- **Progressive**: Add to existing HTML
-- **Great with HTMX**: Perfect combination
+### The Sweet Spot
+
+Alpine occupies the perfect middle ground between vanilla JavaScript and heavy frameworks. It gives you reactive components without the build step or complexity.
+
+**Vanilla JS:**
+```js
+document.getElementById('count').textContent = count++
+```
+
+**Alpine:**
+```html
+<div x-data="{ count: 0 }">
+  <span x-text="count"></span>
+  <button @click="count++">Increment</button>
+</div>
+```
+
+**React (requires build step):**
+```jsx
+const [count, setCount] = useState(0)
+return (
+  <div>
+    <span>{count}</span>
+    <button onClick={() => setCount(count + 1)}>Increment</button>
+  </div>
+)
+```
+
+### Key Benefits
+
+- **Tiny**: ~15kB minified and gzipped
+- **No Build Step**: Include via CDN and start using
+- **Declarative**: Write reactive code in HTML
+- **Progressive**: Add to existing HTML pages
+- **Familiar**: Syntax inspired by Vue and Angular
+- **Composable**: Works great with HTMX and other libraries
+- **Powerful**: Includes directives, magic properties, and plugins
+
+### When Alpine Shines
+
+Alpine is perfect when you want:
+- Interactive widgets without a build step
+- Dropdowns, modals, tabs, accordions
+- Form validation and dynamic inputs
+- Progressive enhancement of server-rendered pages
+- To complement HTMX for client-side interactivity
+- Rapid development with minimal JavaScript
 
 ## Installation
 
@@ -30,11 +88,21 @@ make dev
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 ```
 
+Or use a specific version:
+
+```html
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+```
+
+The `defer` attribute ensures Alpine loads after the DOM is ready.
+
 ### Via npm
 
 ```bash
 npm install alpinejs
 ```
+
+Then import and initialize:
 
 ```js
 import Alpine from 'alpinejs'
@@ -43,77 +111,345 @@ window.Alpine = Alpine
 Alpine.start()
 ```
 
-## Basic Usage
+### With a Bundler
 
-### Counter Example
+```js
+import Alpine from 'alpinejs'
+import collapse from '@alpinejs/collapse'
+import persist from '@alpinejs/persist'
 
-```html
-<div x-data="{ count: 0 }">
-    <p>Count: <span x-text="count"></span></p>
-    <button @click="count++">Increment</button>
-    <button @click="count--">Decrement</button>
-</div>
+// Register plugins
+Alpine.plugin(collapse)
+Alpine.plugin(persist)
+
+// Start Alpine
+window.Alpine = Alpine
+Alpine.start()
 ```
 
-### Toggle Example
+## Architecture
 
-```html
-<div x-data="{ open: false }">
-    <button @click="open = !open">Toggle</button>
+### Development Mode
 
-    <div x-show="open" x-transition>
-        <p>Content is visible!</p>
-    </div>
-</div>
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Browser (Port 3000)                     │
+│                                                               │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │              Server-Rendered HTML                       │ │
+│  │                                                          │ │
+│  │  <div x-data="{ count: 0 }">                           │ │
+│  │    <button @click="count++">Click</button>             │ │
+│  │  </div>                                                 │ │
+│  │                                                          │ │
+│  │  Alpine.js initializes and attaches reactivity         │ │
+│  └────────────────────────────────────────────────────────┘ │
+│                          ▲                                   │
+│                          │                                   │
+│                          │ Alpine.js (via CDN)              │
+│                          │                                   │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │                   Static Assets                         │ │
+│  │  CSS, Images, Alpine.js library                        │ │
+│  └────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  Mizu Backend (Go Server)                    │
+│                                                               │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │                      Router                             │ │
+│  │                                                          │ │
+│  │  GET  /              → Render full HTML page           │ │
+│  │  GET  /api/users     → Return JSON data                │ │
+│  │  POST /api/users     → Process + return JSON           │ │
+│  └────────────────────────────────────────────────────────┘ │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │                  View Engine                            │ │
+│  │                                                          │ │
+│  │  • Templates (Go html/template)                        │ │
+│  │  • Layouts (default.html)                              │ │
+│  │  • Pages with Alpine directives                        │ │
+│  │  • Hot reload in dev mode                              │ │
+│  └────────────────────────────────────────────────────────┘ │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │                 Business Logic                          │ │
+│  │                                                          │ │
+│  │  • API Handlers (JSON responses)                       │ │
+│  │  • Services (UserService, AuthService)                 │ │
+│  │  • Database access                                      │ │
+│  └────────────────────────────────────────────────────────┘ │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │                    Database                             │ │
+│  │  PostgreSQL, SQLite, etc.                              │ │
+│  └────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+
+Data Flow:
+1. Server renders initial HTML with Alpine directives
+2. Browser loads Alpine.js from CDN
+3. Alpine initializes components (x-data elements)
+4. User interactions trigger Alpine reactivity
+5. For server data, Alpine fetches JSON via fetch/axios
+6. Alpine updates DOM reactively based on state changes
 ```
 
-## Directives
+### Production Mode
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         CDN / Edge                           │
+│                                                               │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │              Static Assets (Cached)                     │ │
+│  │  • CSS, Images                                          │ │
+│  │  • Alpine.js library (cached at edge)                  │ │
+│  │  • Versioned and fingerprinted                         │ │
+│  └────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Load Balancer                             │
+└─────────────────────────────────────────────────────────────┘
+                          │
+          ┌───────────────┼───────────────┐
+          ▼               ▼               ▼
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│ Mizu Server 1│ │ Mizu Server 2│ │ Mizu Server 3│
+│              │ │              │ │              │
+│ Single Binary│ │ Single Binary│ │ Single Binary│
+│ • Templates  │ │ • Templates  │ │ • Templates  │
+│ • API Routes │ │ • API Routes │ │ • API Routes │
+│ • JSON       │ │ • JSON       │ │ • JSON       │
+└──────────────┘ └──────────────┘ └──────────────┘
+          │               │               │
+          └───────────────┼───────────────┘
+                          ▼
+                ┌──────────────────┐
+                │    Database      │
+                │  (with pooling)  │
+                └──────────────────┘
+```
+
+## Core Directives
 
 ### x-data
 
-Declares component state:
+Declares a new Alpine component with reactive state:
 
 ```html
-<div x-data="{ name: 'Alice', age: 25 }">
-    <p x-text="name"></p>
-    <p x-text="age"></p>
+<!-- Simple data -->
+<div x-data="{ open: false }">
+  <button @click="open = !open">Toggle</button>
+  <div x-show="open">Content</div>
+</div>
+
+<!-- Multiple properties -->
+<div x-data="{ name: 'Alice', age: 25, email: 'alice@example.com' }">
+  <p x-text="name"></p>
+  <p x-text="age"></p>
+  <p x-text="email"></p>
+</div>
+
+<!-- With methods -->
+<div x-data="{
+  count: 0,
+  increment() {
+    this.count++
+  },
+  decrement() {
+    this.count--
+  }
+}">
+  <button @click="decrement">-</button>
+  <span x-text="count"></span>
+  <button @click="increment">+</button>
+</div>
+
+<!-- With computed properties -->
+<div x-data="{
+  firstName: 'John',
+  lastName: 'Doe',
+  get fullName() {
+    return this.firstName + ' ' + this.lastName
+  }
+}">
+  <input x-model="firstName">
+  <input x-model="lastName">
+  <p x-text="fullName"></p>
 </div>
 ```
 
-### x-show / x-if
+### x-show
 
-Conditionally display elements:
+Toggle visibility with CSS `display`:
 
 ```html
-<!-- x-show: Toggles display CSS -->
-<div x-show="visible">I'm visible</div>
+<div x-data="{ visible: true }">
+  <button @click="visible = !visible">Toggle</button>
 
-<!-- x-if: Removes/adds from DOM -->
-<template x-if="visible">
-    <div>I'm visible</div>
-</template>
+  <!-- Element stays in DOM, display toggled -->
+  <div x-show="visible">
+    I'm visible!
+  </div>
+
+  <!-- With transition -->
+  <div x-show="visible" x-transition>
+    I fade in and out
+  </div>
+</div>
 ```
+
+### x-if
+
+Conditionally add/remove element from DOM:
+
+```html
+<div x-data="{ loggedIn: false }">
+  <button @click="loggedIn = !loggedIn">Toggle Login</button>
+
+  <!-- Element added/removed from DOM -->
+  <template x-if="loggedIn">
+    <div>Welcome back!</div>
+  </template>
+
+  <template x-if="!loggedIn">
+    <div>Please log in</div>
+  </template>
+</div>
+```
+
+**x-show vs x-if:**
+- `x-show`: Fast toggle, element stays in DOM, uses CSS `display`
+- `x-if`: Slower, removes from DOM, better for heavy components
 
 ### x-for
 
 Loop over arrays:
 
 ```html
-<div x-data="{ users: ['Alice', 'Bob', 'Charlie'] }">
-    <template x-for="user in users" :key="user">
-        <li x-text="user"></li>
-    </template>
+<div x-data="{
+  colors: ['red', 'green', 'blue']
+}">
+  <template x-for="color in colors" :key="color">
+    <div x-text="color"></div>
+  </template>
+</div>
+
+<!-- With index -->
+<div x-data="{
+  users: ['Alice', 'Bob', 'Charlie']
+}">
+  <template x-for="(user, index) in users" :key="index">
+    <div>
+      <span x-text="index + 1"></span>:
+      <span x-text="user"></span>
+    </div>
+  </template>
+</div>
+
+<!-- Loop over objects -->
+<div x-data="{
+  user: { name: 'Alice', age: 25, email: 'alice@example.com' }
+}">
+  <template x-for="(value, key) in user" :key="key">
+    <div>
+      <strong x-text="key"></strong>: <span x-text="value"></span>
+    </div>
+  </template>
+</div>
+
+<!-- Nested loops -->
+<div x-data="{
+  categories: [
+    { name: 'Fruits', items: ['Apple', 'Banana'] },
+    { name: 'Vegetables', items: ['Carrot', 'Lettuce'] }
+  ]
+}">
+  <template x-for="category in categories" :key="category.name">
+    <div>
+      <h3 x-text="category.name"></h3>
+      <template x-for="item in category.items" :key="item">
+        <div x-text="item"></div>
+      </template>
+    </div>
+  </template>
 </div>
 ```
 
 ### x-model
 
-Two-way binding:
+Two-way data binding:
 
 ```html
-<div x-data="{ search: '' }">
-    <input x-model="search" placeholder="Search...">
-    <p>Searching for: <span x-text="search"></span></p>
+<!-- Text input -->
+<div x-data="{ message: '' }">
+  <input x-model="message" placeholder="Type something">
+  <p>You typed: <span x-text="message"></span></p>
+</div>
+
+<!-- Number input -->
+<div x-data="{ age: 25 }">
+  <input type="number" x-model.number="age">
+  <p>Age: <span x-text="age"></span></p>
+</div>
+
+<!-- Checkbox -->
+<div x-data="{ agreed: false }">
+  <label>
+    <input type="checkbox" x-model="agreed">
+    I agree to terms
+  </label>
+  <p x-show="agreed">Thank you!</p>
+</div>
+
+<!-- Multiple checkboxes -->
+<div x-data="{ selected: [] }">
+  <label><input type="checkbox" value="apple" x-model="selected"> Apple</label>
+  <label><input type="checkbox" value="banana" x-model="selected"> Banana</label>
+  <label><input type="checkbox" value="cherry" x-model="selected"> Cherry</label>
+
+  <p>Selected: <span x-text="selected.join(', ')"></span></p>
+</div>
+
+<!-- Radio buttons -->
+<div x-data="{ color: 'blue' }">
+  <label><input type="radio" value="red" x-model="color"> Red</label>
+  <label><input type="radio" value="green" x-model="color"> Green</label>
+  <label><input type="radio" value="blue" x-model="color"> Blue</label>
+
+  <p>Selected: <span x-text="color"></span></p>
+</div>
+
+<!-- Select dropdown -->
+<div x-data="{ country: 'us' }">
+  <select x-model="country">
+    <option value="us">United States</option>
+    <option value="ca">Canada</option>
+    <option value="uk">United Kingdom</option>
+  </select>
+
+  <p>Country: <span x-text="country"></span></p>
+</div>
+
+<!-- Modifiers -->
+<div x-data="{ value: '' }">
+  <!-- .lazy: Update on change instead of input -->
+  <input x-model.lazy="value">
+
+  <!-- .debounce: Wait 500ms after typing -->
+  <input x-model.debounce.500ms="value">
+
+  <!-- .throttle: Max once per 1s -->
+  <input x-model.throttle.1s="value">
 </div>
 ```
 
@@ -122,16 +458,65 @@ Two-way binding:
 Event listeners:
 
 ```html
-<!-- Shorthand -->
-<button @click="count++">Click</button>
+<!-- Click event -->
+<button @click="count++">Click me</button>
 
 <!-- Full syntax -->
-<button x-on:click="count++">Click</button>
+<button x-on:click="count++">Click me</button>
 
-<!-- With modifiers -->
-<form @submit.prevent="handleSubmit">
+<!-- Multiple events -->
+<div @click="handleClick" @mouseover="handleHover">
+  Hover or click
+</div>
+
+<!-- Event modifiers -->
+<div x-data="{ count: 0 }">
+  <!-- .prevent: Prevent default -->
+  <form @submit.prevent="handleSubmit">
     <button type="submit">Submit</button>
-</form>
+  </form>
+
+  <!-- .stop: Stop propagation -->
+  <div @click="outer">
+    <button @click.stop="inner">Inner</button>
+  </div>
+
+  <!-- .outside: Trigger on clicks outside -->
+  <div @click.outside="open = false">
+    Click outside to close
+  </div>
+
+  <!-- .window: Listen on window -->
+  <div @keyup.escape.window="open = false">
+    Press ESC to close
+  </div>
+
+  <!-- .once: Only trigger once -->
+  <button @click.once="runOnce">Only once</button>
+
+  <!-- .debounce: Debounce event -->
+  <input @input.debounce.500ms="search">
+
+  <!-- .throttle: Throttle event -->
+  <div @scroll.throttle.100ms="handleScroll">
+    Scroll content
+  </div>
+
+  <!-- Key modifiers -->
+  <input @keyup.enter="submit">
+  <input @keyup.escape="cancel">
+  <input @keyup.ctrl.s.prevent="save">
+</div>
+
+<!-- Access event object -->
+<button @click="console.log($event)">
+  Log event
+</button>
+
+<!-- Pass parameters -->
+<button @click="handleClick('hello', 42)">
+  Click with args
+</button>
 ```
 
 ### x-bind (:)
@@ -139,157 +524,1009 @@ Event listeners:
 Bind attributes:
 
 ```html
-<div x-data="{ color: 'red' }">
-    <!-- Shorthand -->
-    <div :style="'background: ' + color">Colored</div>
+<div x-data="{ isActive: true, color: 'red' }">
+  <!-- Bind class -->
+  <div :class="isActive ? 'active' : 'inactive'">
+    Status
+  </div>
 
-    <!-- Full syntax -->
-    <div x-bind:class="{ 'active': isActive }">Item</div>
+  <!-- Bind multiple classes -->
+  <div :class="{
+    'active': isActive,
+    'highlighted': color === 'red'
+  }">
+    Multi-class
+  </div>
+
+  <!-- Bind style -->
+  <div :style="{
+    backgroundColor: color,
+    fontSize: '20px'
+  }">
+    Styled
+  </div>
+
+  <!-- Bind any attribute -->
+  <input :disabled="!isActive">
+  <img :src="imageUrl" :alt="imageAlt">
+  <a :href="linkUrl" :target="linkTarget">Link</a>
 </div>
 ```
 
-## With Mizu Backend
+### x-text
+
+Set text content:
+
+```html
+<div x-data="{ name: 'Alice' }">
+  <p x-text="name"></p>
+  <p x-text="'Hello, ' + name"></p>
+  <p x-text="`Hello, ${name}!`"></p>
+</div>
+```
+
+### x-html
+
+Set HTML content (use with caution):
+
+```html
+<div x-data="{
+  html: '<strong>Bold text</strong>'
+}">
+  <!-- Renders HTML -->
+  <div x-html="html"></div>
+</div>
+```
+
+**Warning**: Only use `x-html` with trusted content to avoid XSS attacks.
+
+### x-init
+
+Run code when component initializes:
+
+```html
+<div x-data="{ count: 0 }" x-init="console.log('Component initialized')">
+  <p x-text="count"></p>
+</div>
+
+<!-- Fetch data on init -->
+<div
+  x-data="{ users: [] }"
+  x-init="
+    fetch('/api/users')
+      .then(res => res.json())
+      .then(data => users = data)
+  "
+>
+  <template x-for="user in users" :key="user.id">
+    <div x-text="user.name"></div>
+  </template>
+</div>
+```
+
+### x-effect
+
+Re-run code when dependencies change:
+
+```html
+<div x-data="{
+  firstName: 'John',
+  lastName: 'Doe',
+  fullName: ''
+}" x-effect="fullName = firstName + ' ' + lastName">
+  <input x-model="firstName">
+  <input x-model="lastName">
+  <p x-text="fullName"></p>
+</div>
+```
+
+### x-cloak
+
+Hide element until Alpine initializes:
+
+```html
+<style>
+  [x-cloak] { display: none !important; }
+</style>
+
+<div x-data="{ message: 'Hello' }" x-cloak>
+  <p x-text="message"></p>
+</div>
+```
+
+Prevents flash of unstyled content (FOUC).
+
+### x-ignore
+
+Prevent Alpine from initializing:
+
+```html
+<div x-data="{ count: 0 }">
+  <p x-text="count"></p>
+
+  <!-- Alpine ignores this block -->
+  <div x-ignore>
+    <p x-text="count"></p> <!-- Won't work -->
+  </div>
+</div>
+```
+
+## Magic Properties
+
+### $el
+
+Reference the current element:
+
+```html
+<button @click="$el.innerHTML = 'Clicked!'">
+  Click me
+</button>
+
+<div x-data @click="console.log($el)">
+  Log this element
+</div>
+```
+
+### $refs
+
+Reference elements marked with `x-ref`:
+
+```html
+<div x-data>
+  <input x-ref="email" type="email">
+  <button @click="$refs.email.focus()">
+    Focus input
+  </button>
+</div>
+
+<!-- Multiple refs -->
+<div x-data>
+  <input x-ref="name" placeholder="Name">
+  <input x-ref="email" placeholder="Email">
+
+  <button @click="
+    $refs.name.value = 'John';
+    $refs.email.value = 'john@example.com'
+  ">
+    Fill form
+  </button>
+</div>
+```
+
+### $watch
+
+Watch for property changes:
+
+```html
+<div x-data="{
+  count: 0
+}" x-init="
+  $watch('count', value => {
+    console.log('Count changed to:', value)
+  })
+">
+  <button @click="count++">Increment</button>
+  <p x-text="count"></p>
+</div>
+
+<!-- Watch nested properties -->
+<div x-data="{
+  user: { name: 'Alice', age: 25 }
+}" x-init="
+  $watch('user.age', value => {
+    console.log('Age changed to:', value)
+  })
+">
+  <input x-model="user.age" type="number">
+</div>
+```
+
+### $dispatch
+
+Dispatch custom events:
+
+```html
+<!-- Dispatch event -->
+<div x-data @click="$dispatch('custom-event', { foo: 'bar' })">
+  Dispatch event
+</div>
+
+<!-- Listen for event -->
+<div @custom-event.window="console.log($event.detail)">
+  Listening...
+</div>
+
+<!-- Component communication -->
+<div x-data>
+  <button @click="$dispatch('notify', { message: 'Hello!' })">
+    Notify
+  </button>
+</div>
+
+<div x-data @notify.window="alert($event.detail.message)">
+  Listener
+</div>
+```
+
+### $nextTick
+
+Wait for DOM updates:
+
+```html
+<div x-data="{ show: false }">
+  <button @click="
+    show = true;
+    $nextTick(() => {
+      $refs.input.focus()
+    })
+  ">
+    Show input
+  </button>
+
+  <input x-show="show" x-ref="input">
+</div>
+```
+
+### $root
+
+Reference root element of component:
+
+```html
+<div x-data id="app">
+  <button @click="console.log($root)">
+    Log root
+  </button>
+
+  <div>
+    <button @click="console.log($root === document.getElementById('app'))">
+      Check root
+    </button>
+  </div>
+</div>
+```
+
+### $data
+
+Reference component data:
+
+```html
+<div x-data="{ name: 'Alice', age: 25 }">
+  <button @click="console.log($data)">
+    Log data: { name: 'Alice', age: 25 }
+  </button>
+</div>
+```
+
+### $id
+
+Generate unique IDs:
+
+```html
+<div x-data>
+  <input :id="$id('text-input')" type="text">
+  <label :for="$id('text-input')">Name</label>
+</div>
+```
+
+### $store
+
+Access global stores (covered in Stores section).
+
+## Advanced Patterns
+
+### Reusable Components
+
+Extract components into functions:
+
+```js
+document.addEventListener('alpine:init', () => {
+  Alpine.data('dropdown', () => ({
+    open: false,
+    toggle() {
+      this.open = !this.open
+    },
+    close() {
+      this.open = false
+    }
+  }))
+
+  Alpine.data('counter', (initial = 0) => ({
+    count: initial,
+    increment() {
+      this.count++
+    },
+    decrement() {
+      this.count--
+    }
+  }))
+})
+```
+
+Use in HTML:
+
+```html
+<!-- Dropdown -->
+<div x-data="dropdown" @click.outside="close">
+  <button @click="toggle">Menu</button>
+  <div x-show="open" x-transition>
+    <a href="/profile">Profile</a>
+    <a href="/settings">Settings</a>
+  </div>
+</div>
+
+<!-- Counter -->
+<div x-data="counter(10)">
+  <button @click="decrement">-</button>
+  <span x-text="count"></span>
+  <button @click="increment">+</button>
+</div>
+```
+
+### Stores (Global State)
+
+Create global reactive stores:
+
+```js
+document.addEventListener('alpine:init', () => {
+  Alpine.store('auth', {
+    user: null,
+    loggedIn: false,
+
+    login(user) {
+      this.user = user
+      this.loggedIn = true
+    },
+
+    logout() {
+      this.user = null
+      this.loggedIn = false
+    }
+  })
+
+  Alpine.store('cart', {
+    items: [],
+
+    add(item) {
+      this.items.push(item)
+    },
+
+    remove(index) {
+      this.items.splice(index, 1)
+    },
+
+    get total() {
+      return this.items.reduce((sum, item) => sum + item.price, 0)
+    }
+  })
+})
+```
+
+Access in components:
+
+```html
+<!-- Auth store -->
+<div x-data>
+  <template x-if="$store.auth.loggedIn">
+    <div>
+      <p>Welcome, <span x-text="$store.auth.user.name"></span>!</p>
+      <button @click="$store.auth.logout()">Logout</button>
+    </div>
+  </template>
+
+  <template x-if="!$store.auth.loggedIn">
+    <button @click="$store.auth.login({ name: 'Alice' })">
+      Login
+    </button>
+  </template>
+</div>
+
+<!-- Cart store -->
+<div x-data>
+  <p>Items: <span x-text="$store.cart.items.length"></span></p>
+  <p>Total: $<span x-text="$store.cart.total"></span></p>
+
+  <button @click="$store.cart.add({ name: 'Widget', price: 9.99 })">
+    Add to cart
+  </button>
+
+  <template x-for="(item, index) in $store.cart.items" :key="index">
+    <div>
+      <span x-text="item.name"></span> - $<span x-text="item.price"></span>
+      <button @click="$store.cart.remove(index)">Remove</button>
+    </div>
+  </template>
+</div>
+```
+
+### Transitions
+
+Built-in transition directives:
+
+```html
+<div x-data="{ open: false }">
+  <button @click="open = !open">Toggle</button>
+
+  <!-- Default transition -->
+  <div x-show="open" x-transition>
+    Fades in and out
+  </div>
+
+  <!-- Custom duration -->
+  <div x-show="open" x-transition.duration.500ms>
+    Slower fade
+  </div>
+
+  <!-- Different in/out -->
+  <div x-show="open"
+       x-transition:enter.duration.300ms
+       x-transition:leave.duration.500ms>
+    Fast in, slow out
+  </div>
+
+  <!-- Scale transition -->
+  <div x-show="open"
+       x-transition:enter="transition ease-out duration-300"
+       x-transition:enter-start="opacity-0 transform scale-90"
+       x-transition:enter-end="opacity-100 transform scale-100"
+       x-transition:leave="transition ease-in duration-200"
+       x-transition:leave-start="opacity-100 transform scale-100"
+       x-transition:leave-end="opacity-0 transform scale-90">
+    Scale transition
+  </div>
+</div>
+```
 
 ### Fetching Data
 
 ```html
-<div
-    x-data="{
-        users: [],
-        loading: false,
-        async fetchUsers() {
-            this.loading = true
-            const response = await fetch('/api/users')
-            this.users = await response.json()
-            this.loading = false
-        }
-    }"
-    x-init="fetchUsers()"
->
-    <div x-show="loading">Loading...</div>
+<div x-data="{
+  users: [],
+  loading: false,
+  error: null,
 
-    <ul x-show="!loading">
-        <template x-for="user in users" :key="user.id">
-            <li x-text="user.name"></li>
-        </template>
-    </ul>
+  async fetchUsers() {
+    this.loading = true
+    this.error = null
+
+    try {
+      const response = await fetch('/api/users')
+      if (!response.ok) throw new Error('Failed to fetch')
+      this.users = await response.json()
+    } catch (err) {
+      this.error = err.message
+    } finally {
+      this.loading = false
+    }
+  }
+}" x-init="fetchUsers()">
+
+  <!-- Loading state -->
+  <div x-show="loading">Loading...</div>
+
+  <!-- Error state -->
+  <div x-show="error" x-text="'Error: ' + error"></div>
+
+  <!-- Data -->
+  <div x-show="!loading && !error">
+    <template x-for="user in users" :key="user.id">
+      <div x-text="user.name"></div>
+    </template>
+  </div>
+
+  <button @click="fetchUsers">Refresh</button>
 </div>
 ```
 
-### Form Submission
+### Form Handling
 
 ```html
-<div
-    x-data="{
-        name: '',
-        email: '',
-        submitting: false,
-        success: false,
-        async submit() {
-            this.submitting = true
-            await fetch('/api/users', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name: this.name,
-                    email: this.email
-                })
-            })
-            this.success = true
-            this.submitting = false
-            this.name = ''
-            this.email = ''
-        }
-    }"
->
-    <form @submit.prevent="submit">
-        <input x-model="name" placeholder="Name" required>
-        <input x-model="email" type="email" placeholder="Email" required>
-        <button type="submit" :disabled="submitting">
-            <span x-text="submitting ? 'Creating...' : 'Create'"></span>
-        </button>
-    </form>
+<div x-data="{
+  form: {
+    name: '',
+    email: '',
+    message: ''
+  },
+  errors: {},
+  submitting: false,
+  success: false,
 
-    <p x-show="success" x-transition>User created!</p>
-</div>
-```
+  validate() {
+    this.errors = {}
 
-## With HTMX
+    if (!this.form.name) {
+      this.errors.name = 'Name is required'
+    }
 
-Alpine and HTMX work great together:
+    if (!this.form.email) {
+      this.errors.email = 'Email is required'
+    } else if (!this.form.email.includes('@')) {
+      this.errors.email = 'Invalid email'
+    }
 
-```html
-<div x-data="{ editing: false }">
-    <!-- View mode -->
-    <div x-show="!editing">
-        <span>Alice</span>
-        <button @click="editing = true">Edit</button>
+    if (!this.form.message) {
+      this.errors.message = 'Message is required'
+    }
+
+    return Object.keys(this.errors).length === 0
+  },
+
+  async submit() {
+    if (!this.validate()) return
+
+    this.submitting = true
+    this.success = false
+
+    try {
+      const response = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.form)
+      })
+
+      if (!response.ok) throw new Error('Failed to submit')
+
+      this.success = true
+      this.form = { name: '', email: '', message: '' }
+    } catch (err) {
+      this.errors.submit = err.message
+    } finally {
+      this.submitting = false
+    }
+  }
+}">
+  <form @submit.prevent="submit">
+    <div>
+      <label>Name</label>
+      <input x-model="form.name" @blur="validate">
+      <p x-show="errors.name" x-text="errors.name" class="error"></p>
     </div>
 
-    <!-- Edit mode with HTMX -->
-    <div x-show="editing">
-        <form
-            hx-put="/users/1"
-            hx-target="#user-1"
-            @htmx:after-request="editing = false"
-        >
-            <input name="name" value="Alice">
-            <button type="submit">Save</button>
-            <button type="button" @click="editing = false">Cancel</button>
-        </form>
+    <div>
+      <label>Email</label>
+      <input x-model="form.email" type="email" @blur="validate">
+      <p x-show="errors.email" x-text="errors.email" class="error"></p>
     </div>
-</div>
-```
 
-## Components
+    <div>
+      <label>Message</label>
+      <textarea x-model="form.message" @blur="validate"></textarea>
+      <p x-show="errors.message" x-text="errors.message" class="error"></p>
+    </div>
 
-### Dropdown
-
-```html
-<div x-data="{ open: false }" @click.away="open = false">
-    <button @click="open = !open">
-        Menu
+    <button type="submit" :disabled="submitting">
+      <span x-text="submitting ? 'Sending...' : 'Send'"></span>
     </button>
 
-    <div x-show="open" x-transition>
-        <a href="/profile">Profile</a>
-        <a href="/settings">Settings</a>
-        <a href="/logout">Logout</a>
-    </div>
+    <p x-show="success" class="success">Message sent!</p>
+    <p x-show="errors.submit" x-text="errors.submit" class="error"></p>
+  </form>
 </div>
 ```
 
-### Modal
+## Common Components
+
+### Dropdown Menu
+
+```html
+<div x-data="{ open: false }" @click.outside="open = false" class="relative">
+  <button @click="open = !open" class="btn">
+    Menu
+  </button>
+
+  <div
+    x-show="open"
+    x-transition
+    class="absolute mt-2 w-48 bg-white rounded shadow-lg"
+  >
+    <a href="/profile" class="block px-4 py-2 hover:bg-gray-100">Profile</a>
+    <a href="/settings" class="block px-4 py-2 hover:bg-gray-100">Settings</a>
+    <a href="/logout" class="block px-4 py-2 hover:bg-gray-100">Logout</a>
+  </div>
+</div>
+```
+
+### Modal Dialog
 
 ```html
 <div x-data="{ open: false }">
-    <button @click="open = true">Open Modal</button>
+  <button @click="open = true">Open Modal</button>
 
-    <div x-show="open" @click="open = false" class="modal-backdrop">
-        <div @click.stop class="modal">
-            <h2>Modal Title</h2>
-            <p>Modal content</p>
-            <button @click="open = false">Close</button>
-        </div>
+  <!-- Modal backdrop -->
+  <div
+    x-show="open"
+    @click="open = false"
+    x-transition:enter="transition ease-out duration-300"
+    x-transition:enter-start="opacity-0"
+    x-transition:enter-end="opacity-100"
+    x-transition:leave="transition ease-in duration-200"
+    x-transition:leave-start="opacity-100"
+    x-transition:leave-end="opacity-0"
+    class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
+  >
+    <!-- Modal content -->
+    <div
+      @click.stop
+      x-transition:enter="transition ease-out duration-300"
+      x-transition:enter-start="opacity-0 transform scale-90"
+      x-transition:enter-end="opacity-100 transform scale-100"
+      x-transition:leave="transition ease-in duration-200"
+      x-transition:leave-start="opacity-100 transform scale-100"
+      x-transition:leave-end="opacity-0 transform scale-90"
+      class="bg-white rounded-lg p-6 max-w-md w-full"
+    >
+      <h2 class="text-xl font-bold mb-4">Modal Title</h2>
+      <p class="mb-4">Modal content goes here.</p>
+      <button @click="open = false" class="btn">Close</button>
     </div>
+  </div>
 </div>
 ```
 
 ### Tabs
 
 ```html
-<div x-data="{ tab: 'tab1' }">
-    <div>
-        <button @click="tab = 'tab1'" :class="{ 'active': tab === 'tab1' }">
-            Tab 1
-        </button>
-        <button @click="tab = 'tab2'" :class="{ 'active': tab === 'tab2' }">
-            Tab 2
-        </button>
-    </div>
+<div x-data="{ activeTab: 'tab1' }">
+  <div class="border-b">
+    <button
+      @click="activeTab = 'tab1'"
+      :class="{ 'border-blue-500': activeTab === 'tab1' }"
+      class="px-4 py-2 border-b-2"
+    >
+      Tab 1
+    </button>
+    <button
+      @click="activeTab = 'tab2'"
+      :class="{ 'border-blue-500': activeTab === 'tab2' }"
+      class="px-4 py-2 border-b-2"
+    >
+      Tab 2
+    </button>
+    <button
+      @click="activeTab = 'tab3'"
+      :class="{ 'border-blue-500': activeTab === 'tab3' }"
+      class="px-4 py-2 border-b-2"
+    >
+      Tab 3
+    </button>
+  </div>
 
-    <div x-show="tab === 'tab1'">Tab 1 content</div>
-    <div x-show="tab === 'tab2'">Tab 2 content</div>
+  <div class="p-4">
+    <div x-show="activeTab === 'tab1'" x-transition>
+      Tab 1 content
+    </div>
+    <div x-show="activeTab === 'tab2'" x-transition>
+      Tab 2 content
+    </div>
+    <div x-show="activeTab === 'tab3'" x-transition>
+      Tab 3 content
+    </div>
+  </div>
+</div>
+```
+
+### Accordion
+
+```html
+<div x-data="{
+  openItems: []
+}">
+  <!-- Item 1 -->
+  <div class="border-b">
+    <button
+      @click="openItems.includes(1)
+        ? openItems = openItems.filter(i => i !== 1)
+        : openItems.push(1)"
+      class="w-full px-4 py-2 text-left flex justify-between items-center"
+    >
+      <span>Item 1</span>
+      <span x-text="openItems.includes(1) ? '-' : '+'"></span>
+    </button>
+    <div x-show="openItems.includes(1)" x-collapse>
+      <div class="p-4">Content for item 1</div>
+    </div>
+  </div>
+
+  <!-- Item 2 -->
+  <div class="border-b">
+    <button
+      @click="openItems.includes(2)
+        ? openItems = openItems.filter(i => i !== 2)
+        : openItems.push(2)"
+      class="w-full px-4 py-2 text-left flex justify-between items-center"
+    >
+      <span>Item 2</span>
+      <span x-text="openItems.includes(2) ? '-' : '+'"></span>
+    </button>
+    <div x-show="openItems.includes(2)" x-collapse>
+      <div class="p-4">Content for item 2</div>
+    </div>
+  </div>
+</div>
+```
+
+### Tooltip
+
+```html
+<div x-data="{ show: false }" class="relative inline-block">
+  <button
+    @mouseenter="show = true"
+    @mouseleave="show = false"
+  >
+    Hover me
+  </button>
+
+  <div
+    x-show="show"
+    x-transition
+    class="absolute bottom-full mb-2 px-2 py-1 bg-gray-800 text-white text-sm rounded"
+  >
+    Tooltip text
+  </div>
+</div>
+```
+
+### Notification Toast
+
+```html
+<div x-data="{
+  notifications: [],
+
+  notify(message, type = 'info') {
+    const id = Date.now()
+    this.notifications.push({ id, message, type })
+
+    setTimeout(() => {
+      this.notifications = this.notifications.filter(n => n.id !== id)
+    }, 5000)
+  }
+}">
+  <button @click="notify('Success message', 'success')">
+    Show notification
+  </button>
+
+  <!-- Notification container -->
+  <div class="fixed top-4 right-4 space-y-2">
+    <template x-for="notification in notifications" :key="notification.id">
+      <div
+        x-transition:enter="transition ease-out duration-300"
+        x-transition:enter-start="opacity-0 transform translate-x-8"
+        x-transition:enter-end="opacity-100 transform translate-x-0"
+        x-transition:leave="transition ease-in duration-200"
+        x-transition:leave-start="opacity-100"
+        x-transition:leave-end="opacity-0"
+        :class="{
+          'bg-blue-500': notification.type === 'info',
+          'bg-green-500': notification.type === 'success',
+          'bg-red-500': notification.type === 'error'
+        }"
+        class="px-4 py-2 rounded text-white shadow-lg"
+      >
+        <span x-text="notification.message"></span>
+      </div>
+    </template>
+  </div>
+</div>
+```
+
+### Autocomplete
+
+```html
+<div x-data="{
+  query: '',
+  suggestions: [],
+  showSuggestions: false,
+
+  async search() {
+    if (this.query.length < 2) {
+      this.suggestions = []
+      return
+    }
+
+    const response = await fetch(`/api/search?q=${this.query}`)
+    this.suggestions = await response.json()
+    this.showSuggestions = true
+  },
+
+  select(suggestion) {
+    this.query = suggestion
+    this.showSuggestions = false
+  }
+}" @click.outside="showSuggestions = false">
+  <div class="relative">
+    <input
+      x-model="query"
+      @input.debounce.300ms="search"
+      @focus="showSuggestions = true"
+      placeholder="Search..."
+      class="w-full px-4 py-2 border rounded"
+    >
+
+    <div
+      x-show="showSuggestions && suggestions.length > 0"
+      x-transition
+      class="absolute w-full mt-1 bg-white border rounded shadow-lg max-h-60 overflow-auto"
+    >
+      <template x-for="suggestion in suggestions" :key="suggestion">
+        <button
+          @click="select(suggestion)"
+          x-text="suggestion"
+          class="block w-full text-left px-4 py-2 hover:bg-gray-100"
+        ></button>
+      </template>
+    </div>
+  </div>
+</div>
+```
+
+## With Mizu Backend
+
+### API Integration
+
+Backend handler:
+
+```go
+func handleUsers(c *mizu.Ctx) error {
+    users := []map[string]any{
+        {"id": 1, "name": "Alice", "email": "alice@example.com"},
+        {"id": 2, "name": "Bob", "email": "bob@example.com"},
+    }
+    return c.JSON(200, users)
+}
+
+func handleCreateUser(c *mizu.Ctx) error {
+    var user struct {
+        Name  string `json:"name"`
+        Email string `json:"email"`
+    }
+
+    if err := c.BindJSON(&user); err != nil {
+        return c.JSON(400, map[string]string{"error": "Invalid request"})
+    }
+
+    // Validate
+    if user.Name == "" || user.Email == "" {
+        return c.JSON(400, map[string]string{"error": "Name and email required"})
+    }
+
+    // Create user...
+    newUser := map[string]any{
+        "id":    3,
+        "name":  user.Name,
+        "email": user.Email,
+    }
+
+    return c.JSON(201, newUser)
+}
+```
+
+Alpine frontend:
+
+```html
+<div x-data="{
+  users: [],
+  loading: false,
+  error: null,
+
+  form: {
+    name: '',
+    email: ''
+  },
+
+  async fetchUsers() {
+    this.loading = true
+    this.error = null
+
+    try {
+      const response = await fetch('/api/users')
+      if (!response.ok) throw new Error('Failed to fetch')
+      this.users = await response.json()
+    } catch (err) {
+      this.error = err.message
+    } finally {
+      this.loading = false
+    }
+  },
+
+  async createUser() {
+    this.loading = true
+    this.error = null
+
+    try {
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.form)
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to create')
+      }
+
+      const newUser = await response.json()
+      this.users.push(newUser)
+      this.form = { name: '', email: '' }
+    } catch (err) {
+      this.error = err.message
+    } finally {
+      this.loading = false
+    }
+  }
+}" x-init="fetchUsers()">
+
+  <!-- Create form -->
+  <form @submit.prevent="createUser" class="mb-4">
+    <input x-model="form.name" placeholder="Name" required>
+    <input x-model="form.email" type="email" placeholder="Email" required>
+    <button type="submit" :disabled="loading">Create</button>
+  </form>
+
+  <!-- Error message -->
+  <div x-show="error" x-text="error" class="error"></div>
+
+  <!-- Loading state -->
+  <div x-show="loading">Loading...</div>
+
+  <!-- User list -->
+  <div x-show="!loading">
+    <template x-for="user in users" :key="user.id">
+      <div>
+        <span x-text="user.name"></span> - <span x-text="user.email"></span>
+      </div>
+    </template>
+  </div>
+</div>
+```
+
+## With HTMX
+
+Alpine and HTMX work great together. Use HTMX for server interactions and Alpine for client-side UI state:
+
+```html
+<script src="https://unpkg.com/htmx.org@1.9.10"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+<!-- Alpine controls visibility, HTMX fetches data -->
+<div x-data="{ open: false }">
+  <button @click="open = !open">Toggle</button>
+
+  <div x-show="open" x-transition>
+    <div hx-get="/users" hx-trigger="revealed once">
+      Loading users...
+    </div>
+  </div>
+</div>
+
+<!-- Alpine for edit mode, HTMX for saving -->
+<div x-data="{ editing: false }">
+  <!-- View mode -->
+  <div x-show="!editing">
+    <span>Alice</span>
+    <button @click="editing = true">Edit</button>
+  </div>
+
+  <!-- Edit mode with HTMX -->
+  <div x-show="editing">
+    <form
+      hx-put="/users/1"
+      hx-target="#user-1"
+      @htmx:after-request="editing = false"
+    >
+      <input name="name" value="Alice">
+      <button type="submit">Save</button>
+      <button type="button" @click="editing = false">Cancel</button>
+    </form>
+  </div>
+</div>
+
+<!-- Alpine dropdown with HTMX actions -->
+<div x-data="{ open: false }" @click.away="open = false">
+  <button @click="open = !open">Actions</button>
+
+  <div x-show="open" x-transition>
+    <button hx-get="/edit" hx-target="#main">Edit</button>
+    <button hx-delete="/users/1" hx-confirm="Delete?">Delete</button>
+  </div>
 </div>
 ```
 
@@ -301,52 +1538,717 @@ Persist state to localStorage:
 
 ```html
 <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/persist@3.x.x/dist/cdn.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
-<div x-data="{ count: $persist(0) }">
-    <button @click="count++">Count: <span x-text="count"></span></button>
+<div x-data="{
+  count: $persist(0),
+  name: $persist('Guest').as('username')
+}">
+  <button @click="count++">Count: <span x-text="count"></span></button>
+  <input x-model="name">
+  <p>Hello, <span x-text="name"></span></p>
+</div>
+```
+
+Values persist across page reloads.
+
+### Collapse
+
+Smooth height transitions:
+
+```html
+<script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.x.x/dist/cdn.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+<div x-data="{ open: false }">
+  <button @click="open = !open">Toggle</button>
+
+  <!-- Animates height smoothly -->
+  <div x-show="open" x-collapse>
+    <p>Content that expands and collapses smoothly</p>
+  </div>
 </div>
 ```
 
 ### Focus
 
-Manage focus:
+Manage focus within elements:
 
 ```html
 <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/focus@3.x.x/dist/cdn.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
 <div x-data="{ open: false }" x-trap="open">
-    <button @click="open = true">Open</button>
-    <div x-show="open">
-        <input type="text">
-        <button @click="open = false">Close</button>
-    </div>
+  <button @click="open = true">Open Modal</button>
+
+  <div x-show="open">
+    <!-- Focus trapped within modal when open -->
+    <input type="text">
+    <button @click="open = false">Close</button>
+  </div>
 </div>
 ```
 
+### Intersect
+
+Trigger when element enters viewport:
+
+```html
+<script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/intersect@3.x.x/dist/cdn.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+<div x-data="{ shown: false }" x-intersect="shown = true">
+  <div x-show="shown" x-transition>
+    Appears when scrolled into view
+  </div>
+</div>
+
+<!-- Lazy load images -->
+<img
+  x-data
+  x-intersect.once="$el.src = '/image.jpg'"
+  src="/placeholder.jpg"
+>
+```
+
+### Morph
+
+Morph DOM elements (useful with HTMX):
+
+```html
+<script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/morph@3.x.x/dist/cdn.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+<div x-data="{ message: 'Hello' }">
+  <button @click="Alpine.morph($refs.message, '<p>Goodbye</p>')">
+    Morph
+  </button>
+
+  <div x-ref="message">
+    <p x-text="message"></p>
+  </div>
+</div>
+```
+
+## Complete Application Example
+
+Let's build a complete Todo app with Mizu backend and Alpine frontend.
+
+### Backend
+
+`app/server/handlers.go`:
+```go
+package server
+
+import (
+    "sync"
+    "time"
+
+    "github.com/go-mizu/mizu"
+)
+
+type Todo struct {
+    ID        int       `json:"id"`
+    Text      string    `json:"text"`
+    Completed bool      `json:"completed"`
+    CreatedAt time.Time `json:"created_at"`
+}
+
+type TodoService struct {
+    todos  []*Todo
+    nextID int
+    mu     sync.RWMutex
+}
+
+func NewTodoService() *TodoService {
+    return &TodoService{
+        todos:  []*Todo{},
+        nextID: 1,
+    }
+}
+
+func (s *TodoService) List(filter string) []*Todo {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
+    if filter == "" {
+        return s.todos
+    }
+
+    var result []*Todo
+    for _, todo := range s.todos {
+        if filter == "active" && !todo.Completed {
+            result = append(result, todo)
+        } else if filter == "completed" && todo.Completed {
+            result = append(result, todo)
+        }
+    }
+    return result
+}
+
+func (s *TodoService) Create(text string) *Todo {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    todo := &Todo{
+        ID:        s.nextID,
+        Text:      text,
+        Completed: false,
+        CreatedAt: time.Now(),
+    }
+
+    s.todos = append(s.todos, todo)
+    s.nextID++
+
+    return todo
+}
+
+func (s *TodoService) Toggle(id int) (*Todo, bool) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    for _, todo := range s.todos {
+        if todo.ID == id {
+            todo.Completed = !todo.Completed
+            return todo, true
+        }
+    }
+    return nil, false
+}
+
+func (s *TodoService) Delete(id int) bool {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    for i, todo := range s.todos {
+        if todo.ID == id {
+            s.todos = append(s.todos[:i], s.todos[i+1:]...)
+            return true
+        }
+    }
+    return false
+}
+
+func (h *Handlers) ListTodos(c *mizu.Ctx) error {
+    filter := c.Query("filter")
+    todos := h.todoService.List(filter)
+    return c.JSON(200, todos)
+}
+
+func (h *Handlers) CreateTodo(c *mizu.Ctx) error {
+    var req struct {
+        Text string `json:"text"`
+    }
+
+    if err := c.BindJSON(&req); err != nil {
+        return c.JSON(400, map[string]string{"error": "Invalid request"})
+    }
+
+    if req.Text == "" {
+        return c.JSON(400, map[string]string{"error": "Text is required"})
+    }
+
+    todo := h.todoService.Create(req.Text)
+    return c.JSON(201, todo)
+}
+
+func (h *Handlers) ToggleTodo(c *mizu.Ctx) error {
+    id := c.ParamInt("id")
+
+    todo, ok := h.todoService.Toggle(id)
+    if !ok {
+        return c.JSON(404, map[string]string{"error": "Todo not found"})
+    }
+
+    return c.JSON(200, todo)
+}
+
+func (h *Handlers) DeleteTodo(c *mizu.Ctx) error {
+    id := c.ParamInt("id")
+
+    if !h.todoService.Delete(id) {
+        return c.JSON(404, map[string]string{"error": "Todo not found"})
+    }
+
+    return c.HTML(204, "")
+}
+```
+
+`app/server/routes.go`:
+```go
+app.Get("/api/todos", h.ListTodos)
+app.Post("/api/todos", h.CreateTodo)
+app.Patch("/api/todos/{id}/toggle", h.ToggleTodo)
+app.Delete("/api/todos/{id}", h.DeleteTodo)
+```
+
+### Frontend
+
+`views/pages/home.html`:
+```html
+<div x-data="todoApp()" x-init="fetchTodos()" class="max-w-2xl mx-auto p-4">
+  <h1 class="text-3xl font-bold mb-6">Todo App</h1>
+
+  <!-- Create form -->
+  <form @submit.prevent="createTodo" class="mb-6">
+    <div class="flex gap-2">
+      <input
+        x-model="newTodo"
+        @keyup.escape="newTodo = ''"
+        placeholder="What needs to be done?"
+        class="flex-1 px-4 py-2 border rounded"
+      >
+      <button
+        type="submit"
+        :disabled="!newTodo.trim() || creating"
+        class="px-6 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
+      >
+        <span x-text="creating ? 'Adding...' : 'Add'"></span>
+      </button>
+    </div>
+    <p x-show="error" x-text="error" class="mt-2 text-red-600"></p>
+  </form>
+
+  <!-- Filters -->
+  <div class="flex gap-2 mb-4">
+    <button
+      @click="filter = 'all'; fetchTodos()"
+      :class="{ 'bg-blue-600 text-white': filter === 'all' }"
+      class="px-4 py-2 border rounded"
+    >
+      All (<span x-text="stats.total"></span>)
+    </button>
+    <button
+      @click="filter = 'active'; fetchTodos()"
+      :class="{ 'bg-blue-600 text-white': filter === 'active' }"
+      class="px-4 py-2 border rounded"
+    >
+      Active (<span x-text="stats.active"></span>)
+    </button>
+    <button
+      @click="filter = 'completed'; fetchTodos()"
+      :class="{ 'bg-blue-600 text-white': filter === 'completed' }"
+      class="px-4 py-2 border rounded"
+    >
+      Completed (<span x-text="stats.completed"></span>)
+    </button>
+  </div>
+
+  <!-- Loading state -->
+  <div x-show="loading" class="text-center py-8">
+    Loading todos...
+  </div>
+
+  <!-- Todo list -->
+  <div x-show="!loading">
+    <template x-if="todos.length === 0">
+      <p class="text-center py-8 text-gray-500">
+        No todos found. Add one above!
+      </p>
+    </template>
+
+    <ul class="space-y-2">
+      <template x-for="todo in todos" :key="todo.id">
+        <li
+          class="flex items-center gap-3 p-3 bg-white border rounded"
+          x-transition:enter="transition ease-out duration-300"
+          x-transition:enter-start="opacity-0 transform scale-95"
+          x-transition:enter-end="opacity-100 transform scale-100"
+        >
+          <input
+            type="checkbox"
+            :checked="todo.completed"
+            @change="toggleTodo(todo.id)"
+            class="w-5 h-5"
+          >
+          <span
+            :class="{ 'line-through text-gray-500': todo.completed }"
+            x-text="todo.text"
+            class="flex-1"
+          ></span>
+          <button
+            @click="deleteTodo(todo.id)"
+            class="text-red-600 hover:text-red-800"
+          >
+            Delete
+          </button>
+        </li>
+      </template>
+    </ul>
+  </div>
+</div>
+
+<script>
+function todoApp() {
+  return {
+    todos: [],
+    newTodo: '',
+    filter: 'all',
+    loading: false,
+    creating: false,
+    error: null,
+
+    get stats() {
+      return {
+        total: this.todos.length,
+        active: this.todos.filter(t => !t.completed).length,
+        completed: this.todos.filter(t => t.completed).length
+      }
+    },
+
+    async fetchTodos() {
+      this.loading = true
+      this.error = null
+
+      try {
+        const filterParam = this.filter === 'all' ? '' : `?filter=${this.filter}`
+        const response = await fetch(`/api/todos${filterParam}`)
+
+        if (!response.ok) throw new Error('Failed to fetch todos')
+
+        this.todos = await response.json()
+      } catch (err) {
+        this.error = err.message
+      } finally {
+        this.loading = false
+      }
+    },
+
+    async createTodo() {
+      if (!this.newTodo.trim()) return
+
+      this.creating = true
+      this.error = null
+
+      try {
+        const response = await fetch('/api/todos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: this.newTodo })
+        })
+
+        if (!response.ok) {
+          const data = await response.json()
+          throw new Error(data.error || 'Failed to create todo')
+        }
+
+        const todo = await response.json()
+        this.todos.unshift(todo)
+        this.newTodo = ''
+      } catch (err) {
+        this.error = err.message
+      } finally {
+        this.creating = false
+      }
+    },
+
+    async toggleTodo(id) {
+      try {
+        const response = await fetch(`/api/todos/${id}/toggle`, {
+          method: 'PATCH'
+        })
+
+        if (!response.ok) throw new Error('Failed to toggle todo')
+
+        const updated = await response.json()
+        const index = this.todos.findIndex(t => t.id === id)
+        if (index !== -1) {
+          this.todos[index] = updated
+        }
+      } catch (err) {
+        this.error = err.message
+      }
+    },
+
+    async deleteTodo(id) {
+      if (!confirm('Delete this todo?')) return
+
+      try {
+        const response = await fetch(`/api/todos/${id}`, {
+          method: 'DELETE'
+        })
+
+        if (!response.ok) throw new Error('Failed to delete todo')
+
+        this.todos = this.todos.filter(t => t.id !== id)
+      } catch (err) {
+        this.error = err.message
+      }
+    }
+  }
+}
+</script>
+```
+
+## Performance
+
+### Lazy Initialization
+
+Defer Alpine initialization for better initial load:
+
+```html
+<!-- Load Alpine deferred -->
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+<!-- Or manually control initialization -->
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<script>
+  // Do some work first
+
+  // Then start Alpine when ready
+  Alpine.start()
+</script>
+```
+
+### Debouncing and Throttling
+
+Reduce unnecessary updates:
+
+```html
+<!-- Debounce: Wait for user to stop typing -->
+<input x-model.debounce.500ms="search">
+
+<!-- Throttle: Max once per interval -->
+<div @scroll.throttle.100ms="handleScroll">
+  Scroll content
+</div>
+```
+
+### Virtual Scrolling
+
+For very long lists, use virtual scrolling (requires plugin or manual implementation).
+
+### Minimize Re-renders
+
+Use `x-show` instead of `x-if` when toggling frequently:
+
+```html
+<!-- Fast toggle, stays in DOM -->
+<div x-show="visible">Content</div>
+
+<!-- Slower, removed from DOM -->
+<template x-if="visible">
+  <div>Content</div>
+</template>
+```
+
+## Security
+
+### XSS Protection
+
+Never use `x-html` with user content:
+
+```html
+<!-- Safe: text is escaped -->
+<div x-text="userInput"></div>
+
+<!-- Dangerous: HTML is rendered -->
+<div x-html="userInput"></div>
+```
+
+### CSRF Protection
+
+Include CSRF tokens in requests:
+
+```html
+<div x-data="{
+  async submit() {
+    const token = document.querySelector('[name=csrf_token]').value
+
+    await fetch('/api/data', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': token
+      },
+      body: JSON.stringify(this.data)
+    })
+  }
+}">
+  <input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">
+  <button @click="submit">Submit</button>
+</div>
+```
+
+### Sanitize User Input
+
+Always validate and sanitize on the server:
+
+```go
+func handleCreate(c *mizu.Ctx) error {
+    var req struct {
+        Text string `json:"text"`
+    }
+
+    if err := c.BindJSON(&req); err != nil {
+        return c.JSON(400, map[string]string{"error": "Invalid request"})
+    }
+
+    // Validate
+    if req.Text == "" {
+        return c.JSON(400, map[string]string{"error": "Text required"})
+    }
+
+    // Sanitize
+    text := html.EscapeString(req.Text)
+
+    // Process...
+}
+```
+
+## Testing
+
+### Unit Tests
+
+```js
+import Alpine from 'alpinejs'
+import { expect, test } from 'vitest'
+
+test('counter increments', async () => {
+  document.body.innerHTML = `
+    <div x-data="{ count: 0 }">
+      <button @click="count++">Increment</button>
+      <span x-text="count"></span>
+    </div>
+  `
+
+  Alpine.start()
+
+  const button = document.querySelector('button')
+  const span = document.querySelector('span')
+
+  expect(span.textContent).toBe('0')
+
+  button.click()
+  await Alpine.nextTick()
+
+  expect(span.textContent).toBe('1')
+})
+```
+
+### E2E Tests
+
+```js
+test('todo app works', async ({ page }) => {
+  await page.goto('http://localhost:3000')
+
+  // Add todo
+  await page.fill('input[placeholder*="What needs"]', 'Buy milk')
+  await page.click('button:has-text("Add")')
+
+  // Check it appears
+  await expect(page.locator('text=Buy milk')).toBeVisible()
+
+  // Toggle completion
+  await page.click('input[type="checkbox"]')
+  await expect(page.locator('text=Buy milk')).toHaveClass(/line-through/)
+
+  // Delete
+  await page.click('button:has-text("Delete")')
+  await page.click('button:has-text("OK")') // Confirm
+  await expect(page.locator('text=Buy milk')).not.toBeVisible()
+})
+```
+
+## Troubleshooting
+
+### Alpine Not Working
+
+Check:
+1. Alpine script is loaded: `<script defer src="..."></script>`
+2. Using `defer` attribute
+3. No JavaScript errors in console
+4. `x-data` is on parent element
+
+### Data Not Updating
+
+Check:
+1. Data property is reactive (defined in `x-data`)
+2. Modifying data correctly (`this.count++` not `count++`)
+3. No typos in property names
+4. Using Alpine's reactivity (not vanilla JS)
+
+### Events Not Firing
+
+Check:
+1. Event name is correct (`@click` not `@onclick`)
+2. Element can receive events
+3. No `@click.stop` preventing propagation
+4. Handler function exists
+
+### Transitions Not Working
+
+Check:
+1. Element uses `x-show` not `x-if` (or use `x-transition` on template parent)
+2. Tailwind classes available
+3. No conflicting CSS
+
+### Debug Mode
+
+Enable Alpine devtools:
+
+```html
+<script>
+  window.Alpine = Alpine
+  Alpine.start()
+</script>
+```
+
+Then use browser devtools to inspect `window.Alpine`.
+
 ## When to Use Alpine
 
-**Perfect for:**
-- Progressive enhancement
-- Server-rendered apps
-- Small interactions
-- Dropdowns, modals, tabs
-- Works with HTMX
+### Perfect For
 
-**Not ideal for:**
-- Complex SPAs
-- Heavy client-side state
-- Large applications
+- **Interactive Widgets**: Dropdowns, modals, tabs, accordions
+- **Form Enhancement**: Validation, dynamic inputs, autocomplete
+- **Progressive Enhancement**: Add interactivity to server-rendered pages
+- **Prototypes**: Rapid development without build tools
+- **Small to Medium Apps**: Todo apps, dashboards, admin panels
+- **With HTMX**: Client-side UI state + server interactions
+
+### Not Ideal For
+
+- **Large SPAs**: Complex routing and state management
+- **Heavy Computation**: Better suited for backend or Web Workers
+- **Offline-First**: No built-in offline support
+- **Complex Data Flow**: Redux-like patterns harder to implement
+
+### Hybrid Approach
+
+Use Alpine for UI state, backend for business logic:
+
+```html
+<!-- Alpine for dropdown state -->
+<div x-data="{ open: false }" @click.away="open = false">
+  <button @click="open = !open">Menu</button>
+
+  <div x-show="open">
+    <!-- HTMX for server actions -->
+    <button hx-post="/action">Do something</button>
+  </div>
+</div>
+```
 
 ## Next Steps
 
 <CardGroup cols={2}>
   <Card title="HTMX Guide" href="/frontend/htmx" icon="bolt">
-    Combine with HTMX
+    Combine with HTMX for server interactions
   </Card>
   <Card title="View Engine" href="/view/overview" icon="file">
-    Server-rendered templates
+    Server-rendered templates with Mizu
   </Card>
   <Card title="Alpine Docs" href="https://alpinejs.dev" icon="external-link">
-    Official Alpine.js docs
+    Official Alpine.js documentation
+  </Card>
+  <Card title="Alpine Toolbox" href="https://www.alpinetoolbox.com" icon="toolbox">
+    Component library and examples
+  </Card>
+  <Card title="Alpine Examples" href="https://alpinejs.dev/examples" icon="code">
+    Official examples and patterns
+  </Card>
+  <Card title="Tailwind CSS" href="https://tailwindcss.com" icon="palette">
+    Perfect CSS companion for Alpine
   </Card>
 </CardGroup>
