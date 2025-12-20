@@ -1,0 +1,38 @@
+package server
+
+import (
+	"io/fs"
+
+	"github.com/go-mizu/mizu"
+	"github.com/go-mizu/mizu/view"
+
+	"{{.Module}}/static"
+	"{{.Module}}/views"
+)
+
+// New creates a new Mizu app configured for HTMX.
+func New(cfg *Config) *mizu.App {
+	app := mizu.New()
+
+	// Initialize view engine
+	viewsFS, _ := fs.Sub(views.FS, ".")
+	v := view.New(view.Config{
+		FS:            viewsFS,
+		Extension:     ".html",
+		DefaultLayout: "default",
+		Development:   cfg.Env == "development",
+	})
+	if err := v.Load(); err != nil {
+		panic("failed to load views: " + err.Error())
+	}
+	app.Use(v.Middleware())
+
+	// Serve static assets
+	staticFS, _ := fs.Sub(static.FS, ".")
+	app.Static("/static", staticFS)
+
+	// Setup routes
+	setupRoutes(app)
+
+	return app
+}

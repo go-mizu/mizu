@@ -1,0 +1,2 @@
+This directory is for partial templates.
+Add reusable HTML components here (e.g., header.html, footer.html, nav.html).

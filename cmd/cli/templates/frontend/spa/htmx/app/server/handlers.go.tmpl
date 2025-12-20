@@ -1,0 +1,50 @@
+package server
+
+import (
+	"strconv"
+	"time"
+
+	"github.com/go-mizu/mizu"
+	"github.com/go-mizu/mizu/view"
+)
+
+func homeHandler(c *mizu.Ctx) error {
+	return view.Render(c, "home", view.Data{
+		"title":   "Home",
+		"name":    "{{.Name}}",
+		"message": "Hello from {{.Name}}!",
+		"count":   0,
+	})
+}
+
+func aboutHandler(c *mizu.Ctx) error {
+	return view.Render(c, "about", view.Data{
+		"title": "About",
+		"name":  "{{.Name}}",
+	})
+}
+
+func healthHandler(c *mizu.Ctx) error {
+	return c.JSON(200, map[string]any{"status": "ok"})
+}
+
+func greetingHandler(c *mizu.Ctx) error {
+	return view.Render(c, "greeting", view.Data{
+		"message": "Hello from {{.Name}}!",
+		"time":    time.Now().Format("15:04:05"),
+	}, view.NoLayout())
+}
+
+func counterIncrementHandler(c *mizu.Ctx) error {
+	count, _ := strconv.Atoi(c.Query("count"))
+	return view.Render(c, "counter", view.Data{
+		"count": count + 1,
+	}, view.NoLayout())
+}
+
+func counterDecrementHandler(c *mizu.Ctx) error {
+	count, _ := strconv.Atoi(c.Query("count"))
+	return view.Render(c, "counter", view.Data{
+		"count": count - 1,
+	}, view.NoLayout())
+}
