@@ -1,0 +1,143 @@
+using System.Collections.Generic;
+using System.Threading;
+using Cysharp.Threading.Tasks;
+using UnityEngine;
+using {{.Name}}.Mizu;
+
+namespace {{.Name}}.Services
+{
+    /// <summary>
+    /// Analytics service for tracking game events
+    /// </summary>
+    public class AnalyticsService
+    {
+        private readonly MizuRuntime _runtime;
+        private readonly Queue<AnalyticsEvent> _eventQueue = new();
+        private readonly int _batchSize = 10;
+        private readonly float _flushInterval = 30f;
+        private float _lastFlushTime;
+
+        public AnalyticsService()
+        {
+            _runtime = MizuRuntime.Shared;
+        }
+
+        /// <summary>
+        /// Track a game event
+        /// </summary>
+        public void Track(string eventName, Dictionary<string, object> properties = null)
+        {
+            var analyticsEvent = new AnalyticsEvent
+            {
+                Name = eventName,
+                Properties = properties ?? new Dictionary<string, object>(),
+                Timestamp = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+            };
+
+            _eventQueue.Enqueue(analyticsEvent);
+
+            if (_eventQueue.Count >= _batchSize)
+            {
+                _ = FlushAsync();
+            }
+        }
+
+        /// <summary>
+        /// Track game start
+        /// </summary>
+        public void TrackGameStart()
+        {
+            Track("game_start", new Dictionary<string, object>
+            {
+                ["platform"] = Application.platform.ToString(),
+                ["device_model"] = SystemInfo.deviceModel,
+                ["os_version"] = SystemInfo.operatingSystem
+            });
+        }
+
+        /// <summary>
+        /// Track level start
+        /// </summary>
+        public void TrackLevelStart(string levelId, int levelNumber)
+        {
+            Track("level_start", new Dictionary<string, object>
+            {
+                ["level_id"] = levelId,
+                ["level_number"] = levelNumber
+            });
+        }
+
+        /// <summary>
+        /// Track level complete
+        /// </summary>
+        public void TrackLevelComplete(string levelId, int score, float duration)
+        {
+            Track("level_complete", new Dictionary<string, object>
+            {
+                ["level_id"] = levelId,
+                ["score"] = score,
+                ["duration_seconds"] = duration
+            });
+        }
+
+        /// <summary>
+        /// Track purchase
+        /// </summary>
+        public void TrackPurchase(string productId, decimal amount, string currency)
+        {
+            Track("purchase", new Dictionary<string, object>
+            {
+                ["product_id"] = productId,
+                ["amount"] = amount,
+                ["currency"] = currency
+            });
+        }
+
+        /// <summary>
+        /// Flush queued events
+        /// </summary>
+        public async UniTask FlushAsync(CancellationToken cancellationToken = default)
+        {
+            if (_eventQueue.Count == 0) return;
+
+            var events = new List<AnalyticsEvent>();
+            while (_eventQueue.Count > 0 && events.Count < _batchSize)
+            {
+                events.Add(_eventQueue.Dequeue());
+            }
+
+            try
+            {
+                await _runtime.PostAsync<object, AnalyticsBatch>(
+                    "/analytics/events",
+                    new AnalyticsBatch { Events = events },
+                    cancellationToken: cancellationToken);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[Analytics] Failed to flush events: {e.Message}");
+                // Re-queue events on failure
+                foreach (var evt in events)
+                {
+                    _eventQueue.Enqueue(evt);
+                }
+            }
+
+            _lastFlushTime = Time.time;
+        }
+    }
+
+    [System.Serializable]
+    public class AnalyticsEvent
+    {
+        public string Name { get; set; }
+        public Dictionary<string, object> Properties { get; set; }
+        public long Timestamp { get; set; }
+    }
+
+    [System.Serializable]
+    public class AnalyticsBatch
+    {
+        public List<AnalyticsEvent> Events { get; set; }
+    }
+}

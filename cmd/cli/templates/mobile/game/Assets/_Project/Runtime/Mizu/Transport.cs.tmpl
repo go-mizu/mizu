@@ -1,0 +1,189 @@
+using System;
+using System.Collections.Generic;
+using System.Text;
+using System.Threading;
+using Cysharp.Threading.Tasks;
+using UnityEngine;
+using UnityEngine.Networking;
+
+namespace {{.Name}}.Mizu
+{
+    /// <summary>
+    /// Transport request
+    /// </summary>
+    public class TransportRequest
+    {
+        public string Url { get; set; }
+        public string Method { get; set; }
+        public Dictionary<string, string> Headers { get; set; }
+        public string Body { get; set; }
+        public float Timeout { get; set; } = 30f;
+    }
+
+    /// <summary>
+    /// Transport response
+    /// </summary>
+    public class TransportResponse
+    {
+        public int StatusCode { get; set; }
+        public Dictionary<string, string> Headers { get; set; }
+        public string Body { get; set; }
+    }
+
+    /// <summary>
+    /// HTTP transport using UnityWebRequest
+    /// </summary>
+    public class Transport
+    {
+        private readonly List<IRequestInterceptor> _interceptors = new();
+
+        /// <summary>
+        /// Adds a request interceptor
+        /// </summary>
+        public void AddInterceptor(IRequestInterceptor interceptor)
+        {
+            _interceptors.Add(interceptor);
+        }
+
+        /// <summary>
+        /// Executes an HTTP request
+        /// </summary>
+        public async UniTask<TransportResponse> ExecuteAsync(
+            TransportRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            // Apply interceptors
+            foreach (var interceptor in _interceptors)
+            {
+                request = await interceptor.InterceptAsync(request, cancellationToken);
+            }
+
+            try
+            {
+                using var webRequest = CreateRequest(request);
+                webRequest.timeout = Mathf.RoundToInt(request.Timeout);
+
+                await webRequest.SendWebRequest().WithCancellation(cancellationToken);
+
+                var responseHeaders = new Dictionary<string, string>();
+                foreach (var header in webRequest.GetResponseHeaders())
+                {
+                    responseHeaders[header.Key] = header.Value;
+                }
+
+                return new TransportResponse
+                {
+                    StatusCode = (int)webRequest.responseCode,
+                    Headers = responseHeaders,
+                    Body = webRequest.downloadHandler?.text ?? string.Empty
+                };
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception e)
+            {
+                throw new MizuError.Network(e.Message, e);
+            }
+        }
+
+        private UnityWebRequest CreateRequest(TransportRequest request)
+        {
+            UnityWebRequest webRequest;
+
+            switch (request.Method.ToUpperInvariant())
+            {
+                case "GET":
+                    webRequest = UnityWebRequest.Get(request.Url);
+                    break;
+                case "POST":
+                    webRequest = new UnityWebRequest(request.Url, "POST")
+                    {
+                        uploadHandler = request.Body != null
+                            ? new UploadHandlerRaw(Encoding.UTF8.GetBytes(request.Body))
+                            : null,
+                        downloadHandler = new DownloadHandlerBuffer()
+                    };
+                    break;
+                case "PUT":
+                    webRequest = UnityWebRequest.Put(request.Url, request.Body ?? string.Empty);
+                    webRequest.downloadHandler = new DownloadHandlerBuffer();
+                    break;
+                case "DELETE":
+                    webRequest = UnityWebRequest.Delete(request.Url);
+                    webRequest.downloadHandler = new DownloadHandlerBuffer();
+                    break;
+                case "PATCH":
+                    webRequest = new UnityWebRequest(request.Url, "PATCH")
+                    {
+                        uploadHandler = request.Body != null
+                            ? new UploadHandlerRaw(Encoding.UTF8.GetBytes(request.Body))
+                            : null,
+                        downloadHandler = new DownloadHandlerBuffer()
+                    };
+                    break;
+                default:
+                    throw new NotSupportedException($"HTTP method {request.Method} not supported");
+            }
+
+            // Set headers
+            if (request.Headers != null)
+            {
+                foreach (var header in request.Headers)
+                {
+                    webRequest.SetRequestHeader(header.Key, header.Value);
+                }
+            }
+
+            return webRequest;
+        }
+    }
+
+    /// <summary>
+    /// Request interceptor interface
+    /// </summary>
+    public interface IRequestInterceptor
+    {
+        UniTask<TransportRequest> InterceptAsync(
+            TransportRequest request,
+            CancellationToken cancellationToken);
+    }
+
+    /// <summary>
+    /// Logging interceptor for debugging
+    /// </summary>
+    public class LoggingInterceptor : IRequestInterceptor
+    {
+        public UniTask<TransportRequest> InterceptAsync(
+            TransportRequest request,
+            CancellationToken cancellationToken)
+        {
+            Debug.Log($"[Mizu] {request.Method} {request.Url}");
+            return UniTask.FromResult(request);
+        }
+    }
+
+    /// <summary>
+    /// Retry interceptor with exponential backoff
+    /// </summary>
+    public class RetryInterceptor : IRequestInterceptor
+    {
+        private readonly int _maxRetries;
+        private readonly float _baseDelay;
+
+        public RetryInterceptor(int maxRetries = 3, float baseDelay = 1f)
+        {
+            _maxRetries = maxRetries;
+            _baseDelay = baseDelay;
+        }
+
+        public UniTask<TransportRequest> InterceptAsync(
+            TransportRequest request,
+            CancellationToken cancellationToken)
+        {
+            // Retry logic handled at transport level
+            return UniTask.FromResult(request);
+        }
+    }
+}

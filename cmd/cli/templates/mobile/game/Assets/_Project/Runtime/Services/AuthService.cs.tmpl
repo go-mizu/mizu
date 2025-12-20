@@ -1,0 +1,73 @@
+using System.Threading;
+using Cysharp.Threading.Tasks;
+using {{.Name}}.Mizu;
+using {{.Name}}.SDK;
+
+namespace {{.Name}}.Services
+{
+    /// <summary>
+    /// Authentication service
+    /// </summary>
+    public class AuthService
+    {
+        private readonly GameClient _client;
+
+        public AuthService(GameClient client)
+        {
+            _client = client;
+        }
+
+        /// <summary>
+        /// Sign in with credentials
+        /// </summary>
+        public async UniTask<AuthResponse> SignInAsync(
+            string email,
+            string password,
+            CancellationToken cancellationToken = default)
+        {
+            var response = await _client.SignInAsync(email, password, cancellationToken);
+            await _client.StoreAuthTokenAsync(response);
+            return response;
+        }
+
+        /// <summary>
+        /// Sign up with credentials
+        /// </summary>
+        public async UniTask<AuthResponse> SignUpAsync(
+            string email,
+            string password,
+            string username,
+            CancellationToken cancellationToken = default)
+        {
+            var response = await _client.SignUpAsync(email, password, username, cancellationToken);
+            await _client.StoreAuthTokenAsync(response);
+            return response;
+        }
+
+        /// <summary>
+        /// Sign in as guest
+        /// </summary>
+        public async UniTask<AuthResponse> SignInAsGuestAsync(
+            CancellationToken cancellationToken = default)
+        {
+            var deviceId = MizuRuntime.Shared.DeviceInfo.DeviceId;
+            var response = await _client.SignInAsGuestAsync(deviceId, cancellationToken);
+            await _client.StoreAuthTokenAsync(response);
+            return response;
+        }
+
+        /// <summary>
+        /// Sign out
+        /// </summary>
+        public async UniTask SignOutAsync(CancellationToken cancellationToken = default)
+        {
+            await _client.SignOutAsync(cancellationToken);
+            MizuRuntime.Shared.TokenStore.ClearToken();
+        }
+
+        /// <summary>
+        /// Check if user is authenticated
+        /// </summary>
+        public bool IsAuthenticated => MizuRuntime.Shared.IsAuthenticated;
+    }
+}

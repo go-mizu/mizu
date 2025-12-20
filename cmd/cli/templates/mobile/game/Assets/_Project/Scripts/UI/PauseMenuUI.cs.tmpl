@@ -1,0 +1,89 @@
+using Cysharp.Threading.Tasks;
+using UnityEngine;
+using UnityEngine.UI;
+using {{.Name}}.Game;
+
+namespace {{.Name}}.UI
+{
+    /// <summary>
+    /// Pause menu UI controller
+    /// </summary>
+    public class PauseMenuUI : MonoBehaviour
+    {
+        [Header("Buttons")]
+        [SerializeField] private Button _resumeButton;
+        [SerializeField] private Button _restartButton;
+        [SerializeField] private Button _settingsButton;
+        [SerializeField] private Button _mainMenuButton;
+
+        [Header("Panels")]
+        [SerializeField] private GameObject _pausePanel;
+        [SerializeField] private GameObject _settingsPanel;
+
+        private void Start()
+        {
+            _resumeButton.onClick.AddListener(OnResumeClicked);
+            _restartButton.onClick.AddListener(OnRestartClicked);
+            _settingsButton.onClick.AddListener(OnSettingsClicked);
+            _mainMenuButton.onClick.AddListener(OnMainMenuClicked);
+
+            GameManager.Instance.OnStateChanged += OnGameStateChanged;
+            gameObject.SetActive(false);
+        }
+
+        private void OnDestroy()
+        {
+            if (GameManager.Instance != null)
+            {
+                GameManager.Instance.OnStateChanged -= OnGameStateChanged;
+            }
+        }
+
+        private void OnGameStateChanged(GameState state)
+        {
+            gameObject.SetActive(state == GameState.Paused);
+            if (state == GameState.Paused)
+            {
+                ShowPausePanel();
+            }
+        }
+
+        private void OnResumeClicked()
+        {
+            GameManager.Instance.ResumeGame();
+        }
+
+        private void OnRestartClicked()
+        {
+            GameManager.Instance.ResumeGame();
+            SceneLoader.ReloadCurrentSceneAsync().Forget();
+        }
+
+        private void OnSettingsClicked()
+        {
+            ShowSettingsPanel();
+        }
+
+        private void OnMainMenuClicked()
+        {
+            GameManager.Instance.ReturnToMainMenuAsync().Forget();
+        }
+
+        private void ShowPausePanel()
+        {
+            _pausePanel.SetActive(true);
+            _settingsPanel.SetActive(false);
+        }
+
+        private void ShowSettingsPanel()
+        {
+            _pausePanel.SetActive(false);
+            _settingsPanel.SetActive(true);
+        }
+
+        public void OnBackClicked()
+        {
+            ShowPausePanel();
+        }
+    }
+}

@@ -1,0 +1,105 @@
+using System;
+using Newtonsoft.Json;
+
+namespace {{.Name}}.Mizu
+{
+    /// <summary>
+    /// API error response from server
+    /// </summary>
+    [Serializable]
+    public class ApiError
+    {
+        [JsonProperty("code")]
+        public string Code { get; set; }
+
+        [JsonProperty("message")]
+        public string Message { get; set; }
+
+        [JsonProperty("details")]
+        public System.Collections.Generic.Dictionary<string, string> Details { get; set; }
+
+        [JsonProperty("trace_id")]
+        public string TraceId { get; set; }
+    }
+
+    /// <summary>
+    /// Mizu client errors
+    /// </summary>
+    public abstract class MizuError : Exception
+    {
+        public string Type { get; }
+
+        protected MizuError(string type, string message, Exception innerException = null)
+            : base(message, innerException)
+        {
+            Type = type;
+        }
+
+        public bool IsInvalidResponse => Type == "invalid_response";
+        public bool IsHttp => Type == "http";
+        public bool IsApi => Type == "api";
+        public bool IsNetwork => Type == "network";
+        public bool IsUnauthorized => Type == "unauthorized";
+        public bool IsTokenExpired => Type == "token_expired";
+
+        public class InvalidResponse : MizuError
+        {
+            public InvalidResponse(string message = "Invalid server response")
+                : base("invalid_response", message) { }
+        }
+
+        public class Http : MizuError
+        {
+            public int StatusCode { get; }
+            public string Body { get; }
+
+            public Http(int statusCode, string body)
+                : base("http", $"HTTP error {statusCode}")
+            {
+                StatusCode = statusCode;
+                Body = body;
+            }
+        }
+
+        public class Api : MizuError
+        {
+            public ApiError Error { get; }
+
+            public Api(ApiError error)
+                : base("api", error.Message)
+            {
+                Error = error;
+            }
+        }
+
+        public class Network : MizuError
+        {
+            public Network(string message, Exception innerException = null)
+                : base("network", message, innerException) { }
+        }
+
+        public class Encoding : MizuError
+        {
+            public Encoding(string message, Exception innerException = null)
+                : base("encoding", message, innerException) { }
+        }
+
+        public class Decoding : MizuError
+        {
+            public Decoding(string message, Exception innerException = null)
+                : base("decoding", message, innerException) { }
+        }
+
+        public class Unauthorized : MizuError
+        {
+            public Unauthorized(string message = "Unauthorized")
+                : base("unauthorized", message) { }
+        }
+
+        public class TokenExpired : MizuError
+        {
+            public TokenExpired(string message = "Token expired")
+                : base("token_expired", message) { }
+        }
+    }
+}

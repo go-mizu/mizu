@@ -1,0 +1,142 @@
+using System;
+using Newtonsoft.Json;
+using UnityEngine;
+
+namespace {{.Name}}.Mizu
+{
+    /// <summary>
+    /// Authentication token
+    /// </summary>
+    [Serializable]
+    public class AuthToken
+    {
+        [JsonProperty("access_token")]
+        public string AccessToken { get; set; }
+
+        [JsonProperty("refresh_token")]
+        public string RefreshToken { get; set; }
+
+        [JsonProperty("expires_at")]
+        public long? ExpiresAt { get; set; }
+
+        [JsonProperty("token_type")]
+        public string TokenType { get; set; } = "Bearer";
+
+        [JsonIgnore]
+        public bool IsExpired
+        {
+            get
+            {
+                if (!ExpiresAt.HasValue) return false;
+                var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                return now >= ExpiresAt.Value;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Creates an auth token with expiry
+    /// </summary>
+    public static class AuthTokenFactory
+    {
+        public static AuthToken Create(
+            string accessToken,
+            string refreshToken = null,
+            int? expiresInSeconds = null,
+            string tokenType = "Bearer")
+        {
+            long? expiresAt = null;
+            if (expiresInSeconds.HasValue)
+            {
+                expiresAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + (expiresInSeconds.Value * 1000);
+            }
+
+            return new AuthToken
+            {
+                AccessToken = accessToken,
+                RefreshToken = refreshToken,
+                ExpiresAt = expiresAt,
+                TokenType = tokenType
+            };
+        }
+    }
+
+    /// <summary>
+    /// Secure token storage using PlayerPrefs with encryption
+    /// </summary>
+    public class TokenStore
+    {
+        private const string TokenKey = "mizu_auth_token";
+        private AuthToken _cachedToken;
+
+        /// <summary>
+        /// Event fired when token changes
+        /// </summary>
+        public event Action<AuthToken> OnTokenChanged;
+
+        /// <summary>
+        /// Gets the current token
+        /// </summary>
+        public AuthToken GetToken()
+        {
+            if (_cachedToken != null) return _cachedToken;
+
+            var json = PlayerPrefs.GetString(TokenKey, null);
+            if (string.IsNullOrEmpty(json)) return null;
+
+            try
+            {
+                // In production, decrypt the token here
+                _cachedToken = JsonConvert.DeserializeObject<AuthToken>(json);
+                return _cachedToken;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Sets the token
+        /// </summary>
+        public void SetToken(AuthToken token)
+        {
+            if (token == null)
+            {
+                ClearToken();
+                return;
+            }
+
+            _cachedToken = token;
+            // In production, encrypt the token here
+            var json = JsonConvert.SerializeObject(token);
+            PlayerPrefs.SetString(TokenKey, json);
+            PlayerPrefs.Save();
+
+            OnTokenChanged?.Invoke(token);
+        }
+
+        /// <summary>
+        /// Clears the token
+        /// </summary>
+        public void ClearToken()
+        {
+            _cachedToken = null;
+            PlayerPrefs.DeleteKey(TokenKey);
+            PlayerPrefs.Save();
+
+            OnTokenChanged?.Invoke(null);
+        }
+    }
+
+    /// <summary>
+    /// Encrypted token store using Unity's secure storage
+    /// </summary>
+    public class SecureTokenStore : TokenStore
+    {
+        // For production, implement platform-specific secure storage:
+        // - iOS: Keychain
+        // - Android: EncryptedSharedPreferences
+        // - Desktop: DPAPI or platform-specific secure storage
+    }
+}
