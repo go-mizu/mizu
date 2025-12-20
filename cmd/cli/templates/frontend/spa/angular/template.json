@@ -1,0 +1,9 @@
+{
+  "name": "frontend/spa/angular",
+  "description": "Angular SPA with TypeScript and Mizu backend",
+  "tags": ["go", "mizu", "frontend", "spa", "angular", "typescript"],
+  "variables": {
+    "name": { "description": "Project name", "default": "" },
+    "module": { "description": "Go module path", "default": "" }
+  }
+}

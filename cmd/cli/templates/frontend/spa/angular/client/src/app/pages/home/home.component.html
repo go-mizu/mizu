@@ -1,0 +1,8 @@
+<div class="page home">
+  <h1>Welcome</h1>
+  @if (loading()) {
+    <p>Loading...</p>
+  } @else {
+    <p class="api-message">{{"{{"}} message() {{"}}"}}</p>
+  }
+</div>
