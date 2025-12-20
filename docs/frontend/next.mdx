@@ -109,7 +109,7 @@ my-nextjs-app/
 │       ├── app.go               # Mizu app configuration
 │       ├── config.go            # Server configuration
 │       └── routes.go            # API routes (Go)
-├── client/                      # Next.js application
+├── frontend/                      # Next.js application
 │   ├── app/                     # App Router (Next.js 13+)
 │   │   ├── layout.tsx           # Root layout
 │   │   ├── page.tsx             # Home page (/)
@@ -138,7 +138,7 @@ my-nextjs-app/
 
 The key to using Next.js with Mizu is configuring static export:
 
-#### `client/next.config.mjs`
+#### `frontend/next.config.mjs`
 
 ```js
 /** @type {import('next').NextConfig} */
@@ -167,7 +167,7 @@ export default nextConfig
 **Configuration explained:**
 
 - **output: 'export'** - Tells Next.js to generate static HTML files instead of running a Node.js server
-- **distDir: '../build'** - Outputs files to `build/` (one level up from `client/`)
+- **distDir: '../build'** - Outputs files to `build/` (one level up from `frontend/`)
 - **images.unoptimized** - Disables Next.js Image Optimization API (requires Node.js server)
 
 ### Backend Configuration
@@ -298,7 +298,7 @@ app/
 
 The root layout wraps your entire application:
 
-#### `client/app/layout.tsx`
+#### `frontend/app/layout.tsx`
 
 ```tsx
 import type { Metadata } from 'next'
@@ -340,7 +340,7 @@ export default function RootLayout({
 
 Use brackets for dynamic segments:
 
-#### `client/app/users/[id]/page.tsx`
+#### `frontend/app/users/[id]/page.tsx`
 
 ```tsx
 'use client'
@@ -530,7 +530,7 @@ export default function Users() {
 Install React Query for better data fetching:
 
 ```bash
-cd client
+cd frontend
 npm install @tanstack/react-query
 ```
 
@@ -706,7 +706,7 @@ make dev
 # Option 2: Manual (two terminals)
 
 # Terminal 1: Next.js dev server
-cd client
+cd frontend
 npm run dev   # Starts on http://localhost:3001
 
 # Terminal 2: Mizu server
@@ -723,7 +723,7 @@ go run cmd/server/main.go  # Starts on http://localhost:3000
 ### Making Changes
 
 **Frontend changes:**
-- Edit any file in `client/`
+- Edit any file in `frontend/`
 - Next.js Fast Refresh updates browser instantly
 - No restart needed
 
@@ -749,7 +749,7 @@ make build
 ```
 
 This runs:
-1. `cd client && npm run build` - Next.js static export
+1. `cd frontend && npm run build` - Next.js static export
 2. `go build -o bin/server cmd/server/main.go` - Go binary with embedded frontend
 
 ### Build Output

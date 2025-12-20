@@ -90,7 +90,7 @@ my-preact-app/
 │       ├── app.go               # Mizu app configuration
 │       ├── config.go            # Server configuration
 │       └── routes.go            # API routes (Go)
-├── client/                      # Preact application
+├── frontend/                      # Preact application
 │   ├── src/
 │   │   ├── main.jsx            # App entry point
 │   │   ├── app.jsx             # Root component
@@ -125,7 +125,7 @@ my-preact-app/
 
 Configure Vite for Preact with React compatibility:
 
-#### `client/vite.config.js`
+#### `frontend/vite.config.js`
 
 ```js
 import { defineConfig } from 'vite'
@@ -1051,7 +1051,7 @@ make dev
 
 # Option 2: Manual (two terminals)
 # Terminal 1: Preact dev server
-cd client
+cd frontend
 npm run dev
 
 # Terminal 2: Mizu server

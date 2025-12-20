@@ -149,7 +149,7 @@ my-sveltekit-app/
 │   ├── app.go
 │   ├── config.go
 │   └── routes.go              # API routes
-├── client/                    # SvelteKit app
+├── frontend/                    # SvelteKit app
 │   ├── src/
 │   │   ├── routes/            # File-based routing
 │   │   │   ├── +layout.svelte # Root layout
@@ -177,7 +177,7 @@ my-sveltekit-app/
 
 ## SvelteKit Configuration
 
-### `client/svelte.config.js`
+### `frontend/svelte.config.js`
 
 ```js
 import adapter from '@sveltejs/adapter-static'
@@ -210,7 +210,7 @@ export default {
 - `fallback: 'index.html'`: SPA mode for client-side routing
 - `alias`: Custom path aliases (in addition to default `$lib`)
 
-### `client/vite.config.ts`
+### `frontend/vite.config.ts`
 
 ```ts
 import { sveltekit } from '@sveltejs/kit/vite'
@@ -1067,7 +1067,7 @@ func setupRoutes(app *mizu.App) {
 ### Frontend Structure
 
 ```
-client/src/routes/
+frontend/src/routes/
 ├── +layout.svelte
 ├── +page.svelte
 ├── about/
@@ -1380,7 +1380,7 @@ export async function load({ params, fetch }) {
 
 ```bash
 # Terminal 1: SvelteKit dev server
-cd client
+cd frontend
 npm run dev
 
 # Terminal 2: Mizu backend
@@ -1417,9 +1417,9 @@ MIZU_ENV=production ./bin/server
 
 **Problem**: Go can't find the `build/` directory.
 
-**Solution**: Make sure you've run `npm run build` in the `client/` directory first:
+**Solution**: Make sure you've run `npm run build` in the `frontend/` directory first:
 ```bash
-cd client
+cd frontend
 npm run build
 cd ..
 go build -o bin/server cmd/server/main.go

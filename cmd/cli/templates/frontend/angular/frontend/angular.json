@@ -3,7 +3,7 @@
   "version": 1,
   "newProjectRoot": "projects",
   "projects": {
-    "client": {
+    "frontend": {
       "projectType": "application",
       "root": "",
       "sourceRoot": "src",
@@ -49,10 +49,10 @@
           "builder": "@angular-devkit/build-angular:dev-server",
           "configurations": {
             "production": {
-              "buildTarget": "client:build:production"
+              "buildTarget": "frontend:build:production"
             },
             "development": {
-              "buildTarget": "client:build:development"
+              "buildTarget": "frontend:build:development"
             }
           },
           "defaultConfiguration": "development"

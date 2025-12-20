@@ -73,7 +73,7 @@ my-react-app/
 │       ├── app.go               # Mizu app configuration
 │       ├── config.go            # Server configuration
 │       └── routes.go            # API routes (Go)
-├── client/                      # React application
+├── frontend/                      # React application
 │   ├── src/
 │   │   ├── main.tsx            # React entry point
 │   │   ├── App.tsx             # Root component
@@ -255,7 +255,7 @@ func getUser(c *mizu.Ctx) error {
 
 ### Entry Point
 
-#### `client/src/main.tsx`
+#### `frontend/src/main.tsx`
 
 ```tsx
 import React from 'react'
@@ -278,7 +278,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 
 ### Root Component
 
-#### `client/src/App.tsx`
+#### `frontend/src/App.tsx`
 
 ```tsx
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
@@ -306,7 +306,7 @@ export default App
 
 ### Layout Component
 
-#### `client/src/components/Layout.tsx`
+#### `frontend/src/components/Layout.tsx`
 
 ```tsx
 import { Link, Outlet } from 'react-router-dom'
@@ -1526,7 +1526,7 @@ function Button({ variant, children, onClick }: ButtonProps) {
 Install:
 
 ```bash
-cd client
+cd frontend
 npm install -D tailwindcss postcss autoprefixer
 npx tailwindcss init -p
 ```
@@ -1640,7 +1640,7 @@ function MyComponent() {
 
 ## Vite Configuration
 
-### `client/vite.config.ts`
+### `frontend/vite.config.ts`
 
 ```ts
 import { defineConfig } from 'vite'
@@ -1753,7 +1753,7 @@ make dev
 
 # Or manually
 # Terminal 1: React dev server
-cd client && npm run dev
+cd frontend && npm run dev
 
 # Terminal 2: Mizu server
 go run cmd/server/main.go
@@ -1764,7 +1764,7 @@ Visit `http://localhost:3000`
 ### Making Changes
 
 **Frontend changes:**
-1. Edit any `.tsx` file in `client/src/`
+1. Edit any `.tsx` file in `frontend/src/`
 2. Save the file
 3. Browser updates instantly (HMR)
 4. State is preserved during updates
@@ -1802,7 +1802,7 @@ make build
 ```
 
 This:
-1. Runs `npm run build` in `client/`
+1. Runs `npm run build` in `frontend/`
 2. Builds Go binary with `go build`
 3. Embeds frontend in binary
 
@@ -1856,7 +1856,7 @@ import { FaUser, FaHome } from 'react-icons/fa'
 **Bundle analysis:**
 
 ```bash
-cd client
+cd frontend
 npm install -D rollup-plugin-visualizer
 ```
 

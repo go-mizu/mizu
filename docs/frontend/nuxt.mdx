@@ -121,7 +121,7 @@ my-nuxt-app/
 │       ├── app.go               # Mizu app configuration
 │       ├── config.go            # Server configuration
 │       └── routes.go            # API routes (Go)
-├── client/                      # Nuxt application
+├── frontend/                      # Nuxt application
 │   ├── pages/                   # File-based routes
 │   │   ├── index.vue           # Home page (/)
 │   │   ├── about.vue           # About page (/about)
@@ -162,7 +162,7 @@ my-nuxt-app/
 
 Configure Nuxt for SPA mode and Mizu integration:
 
-#### `client/nuxt.config.ts`
+#### `frontend/nuxt.config.ts`
 
 ```ts
 // https://nuxt.com/docs/api/configuration/nuxt-config
@@ -1178,7 +1178,7 @@ button.danger {
 For complex state, use Pinia:
 
 ```bash
-cd client
+cd frontend
 npm install pinia @pinia/nuxt
 ```
 
@@ -1371,7 +1371,7 @@ export default defineNuxtConfig({
 Install Tailwind module:
 
 ```bash
-cd client
+cd frontend
 npm install -D @nuxtjs/tailwindcss
 ```
 
@@ -1461,7 +1461,7 @@ make dev
 # Option 2: Manual (two terminals)
 
 # Terminal 1: Nuxt dev server
-cd client
+cd frontend
 npm run dev   # Starts on http://localhost:5173
 
 # Terminal 2: Mizu server
@@ -1478,7 +1478,7 @@ go run cmd/server/main.go  # Starts on http://localhost:3000
 ### Making Changes
 
 **Frontend changes:**
-- Edit files in `client/`
+- Edit files in `frontend/`
 - Nuxt HMR updates browser instantly
 - Components, pages, composables auto-reload
 
@@ -1501,7 +1501,7 @@ make build
 ```
 
 This runs:
-1. `cd client && npm run build` - Nuxt build
+1. `cd frontend && npm run build` - Nuxt build
 2. `go build` - Go binary with embedded frontend
 
 ### Build Output
@@ -1666,7 +1666,7 @@ npm run dev
 **Solution 3:** Check `.nuxt/` was generated:
 
 ```bash
-rm -rf client/.nuxt
+rm -rf frontend/.nuxt
 npm run dev
 ```
 

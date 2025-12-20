@@ -3,13 +3,13 @@
 # Development mode: run Next.js dev server and Go server concurrently
 dev:
 	@echo "Starting development servers..."
-	@(cd client && npm run dev) & \
+	@(cd frontend && npm run dev) & \
 	MIZU_ENV=development go run ./cmd/server
 
 # Build frontend for production
 build:
 	@echo "Building frontend..."
-	cd client && npm run build
+	cd frontend && npm run build
 	@echo "Build complete: dist/"
 
 # Run production server
@@ -20,10 +20,10 @@ run: build
 # Clean build artifacts
 clean:
 	rm -rf dist
-	rm -rf client/node_modules
-	rm -rf client/.next
+	rm -rf frontend/node_modules
+	rm -rf frontend/.next
 
 # Install dependencies
 install:
-	cd client && npm install
+	cd frontend && npm install
 	go mod tidy

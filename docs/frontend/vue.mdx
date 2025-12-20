@@ -129,7 +129,7 @@ my-vue-app/
 │       ├── app.go               # Mizu app setup
 │       ├── config.go            # Configuration
 │       └── routes.go            # API routes
-├── client/                      # Vue application
+├── frontend/                      # Vue application
 │   ├── src/
 │   │   ├── main.ts              # Vue entry point
 │   │   ├── App.vue              # Root component
@@ -249,7 +249,7 @@ func setupRoutes(app *mizu.App) {
 
 ## Frontend Setup
 
-### `client/src/main.ts`
+### `frontend/src/main.ts`
 
 ```ts
 import { createApp } from 'vue'
@@ -262,7 +262,7 @@ createApp(App)
   .mount('#app')
 ```
 
-### `client/src/App.vue`
+### `frontend/src/App.vue`
 
 ```vue
 <template>
@@ -274,7 +274,7 @@ createApp(App)
 </script>
 ```
 
-### `client/src/router/index.ts`
+### `frontend/src/router/index.ts`
 
 ```ts
 import { createRouter, createWebHistory } from 'vue-router'
@@ -299,7 +299,7 @@ const router = createRouter({
 export default router
 ```
 
-### `client/src/components/Layout.vue`
+### `frontend/src/components/Layout.vue`
 
 ```vue
 <template>
@@ -338,7 +338,7 @@ nav a.router-link-active {
 </style>
 ```
 
-### `client/src/pages/Home.vue`
+### `frontend/src/pages/Home.vue`
 
 ```vue
 <template>
@@ -962,7 +962,7 @@ onBeforeRouteUpdate((to, from) => {
 
 ## Vite Configuration
 
-### `client/vite.config.ts`
+### `frontend/vite.config.ts`
 
 ```ts
 import { defineConfig } from 'vite'
@@ -1198,7 +1198,7 @@ Pinia is the official state management library for Vue 3, replacing Vuex.
 ### Setup
 
 ```bash
-cd client
+cd frontend
 npm install pinia
 ```
 
@@ -1967,7 +1967,7 @@ const handleSubmit = async () => {
 ### Form Validation with VeeValidate
 
 ```bash
-cd client
+cd frontend
 npm install vee-validate yup
 ```
 
@@ -2097,7 +2097,7 @@ Vue's scoped styles are built-in:
 Install Tailwind:
 
 ```bash
-cd client
+cd frontend
 npm install -D tailwindcss postcss autoprefixer
 npx tailwindcss init -p
 ```
@@ -2186,7 +2186,7 @@ const AdminPanel = defineAsyncComponent(() => import('./AdminPanel.vue'))
 ### Virtual Scrolling
 
 ```bash
-cd client
+cd frontend
 npm install vue-virtual-scroller
 ```
 
@@ -2699,7 +2699,7 @@ make build
 ```
 
 This runs:
-1. `cd client && npm run build` - Builds Vue app to `dist/`
+1. `cd frontend && npm run build` - Builds Vue app to `dist/`
 2. `go build -o bin/server cmd/server/main.go` - Builds Go binary with embedded frontend
 
 Run in production:
