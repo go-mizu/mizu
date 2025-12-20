@@ -1,0 +1,390 @@
+---
+title: "CLI Tools"
+description: "Project scaffolding, development server, and contract operations"
+---
+
+The Mizu CLI provides tools for creating projects, running development servers, and managing contracts. It's the fastest way to start new Mizu projects.
+
+## What is the Mizu CLI?
+
+The CLI offers:
+
+- **`mizu new`**: Create new projects from templates
+- **`mizu dev`**: Run development server with hot reload
+- **`mizu contract`**: Generate SDKs and OpenAPI specs
+- **`mizu version`**: Show version information
+
+```bash
+# Create a new API project
+mizu new myapi --template api
+
+# Start development server
+cd myapi && mizu dev
+
+# Generate TypeScript SDK
+mizu contract sdk typescript --output ./sdk
+```
+
+## Installation
+
+### Using Go Install
+
+```bash
+go install github.com/go-mizu/mizu/cmd/mizu@latest
+```
+
+Ensure `$GOPATH/bin` is in your PATH:
+
+```bash
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
+
+### Verify Installation
+
+```bash
+mizu version
+# mizu version 1.x.x
+```
+
+## Creating Projects
+
+### Basic Usage
+
+```bash
+mizu new <project-name> --template <template>
+```
+
+### Available Templates
+
+| Template | Description | Use Case |
+|----------|-------------|----------|
+| `minimal` | Basic server with one route | Learning, simple services |
+| `api` | REST API with validation | APIs, microservices |
+| `contract` | Contract-based service | Multi-transport APIs |
+| `web` | Server-rendered website | Websites, blogs |
+| `live` | Real-time UI updates | Dashboards, chat |
+| `sync` | State synchronization | Collaborative apps |
+| `frontend:react` | React SPA with Go backend | Full-stack apps |
+| `frontend:vue` | Vue SPA with Go backend | Full-stack apps |
+| `frontend:svelte` | Svelte SPA with Go backend | Full-stack apps |
+| `mobile:flutter` | Flutter app backend | Mobile backends |
+| `mobile:reactnative` | React Native backend | Mobile backends |
+
+### Examples
+
+```bash
+# Minimal server
+mizu new hello --template minimal
+
+# REST API
+mizu new userapi --template api
+
+# Contract-based service
+mizu new payments --template contract
+
+# Full-stack with React
+mizu new dashboard --template frontend:react
+
+# Mobile backend for Flutter
+mizu new appbackend --template mobile:flutter
+```
+
+### Template Options
+
+```bash
+# Specify output directory
+mizu new myapp --template api --output /path/to/projects
+
+# With specific Go module name
+mizu new myapp --template api --module github.com/myorg/myapp
+
+# Skip git initialization
+mizu new myapp --template api --no-git
+```
+
+## Development Server
+
+### Basic Usage
+
+```bash
+mizu dev
+```
+
+This starts your app with:
+- Automatic recompilation on file changes
+- Fast restart
+- Preserved terminal output
+
+### Options
+
+```bash
+# Custom port
+mizu dev --port 8080
+
+# Custom entry point
+mizu dev --entry ./cmd/server
+
+# Verbose output
+mizu dev --verbose
+
+# With frontend proxy
+mizu dev --proxy http://localhost:5173
+```
+
+### With Frontend
+
+For full-stack projects, run both servers:
+
+```bash
+# Terminal 1: Frontend dev server
+cd web && npm run dev
+
+# Terminal 2: Go dev server with proxy
+mizu dev --proxy http://localhost:5173
+```
+
+Or use the Makefile:
+
+```bash
+make dev  # Runs both concurrently
+```
+
+## Contract Operations
+
+### Generate SDKs
+
+```bash
+# Generate Go SDK
+mizu contract sdk go --output ./sdk/go
+
+# Generate Python SDK
+mizu contract sdk python --output ./sdk/python
+
+# Generate TypeScript SDK
+mizu contract sdk typescript --output ./sdk/typescript
+
+# Generate Swift SDK (iOS)
+mizu contract sdk swift --output ./sdk/swift
+
+# Generate Kotlin SDK (Android)
+mizu contract sdk kotlin --output ./sdk/kotlin
+```
+
+### Generate OpenAPI Spec
+
+```bash
+mizu contract openapi --output ./openapi.json
+```
+
+### Contract Options
+
+```bash
+# Specify package/module name
+mizu contract sdk go --package github.com/myorg/client --output ./sdk
+
+# With custom server URL
+mizu contract openapi --server https://api.example.com --output ./openapi.json
+
+# From specific service
+mizu contract sdk go --service UserService --output ./sdk
+```
+
+## Project Structure by Template
+
+### Minimal Template
+
+```
+myapp/
+├── main.go
+├── go.mod
+└── go.sum
+```
+
+### API Template
+
+```
+myapp/
+├── cmd/
+│   └── server/
+│       └── main.go
+├── internal/
+│   ├── handlers/
+│   │   └── users.go
+│   ├── models/
+│   │   └── user.go
+│   └── middleware/
+│       └── auth.go
+├── go.mod
+├── go.sum
+├── Makefile
+└── README.md
+```
+
+### Contract Template
+
+```
+myapp/
+├── cmd/
+│   └── server/
+│       └── main.go
+├── internal/
+│   ├── services/
+│   │   └── user_service.go
+│   └── models/
+│       └── user.go
+├── api/
+│   └── openapi.json
+├── go.mod
+├── go.sum
+├── Makefile
+└── README.md
+```
+
+### Frontend Template (React)
+
+```
+myapp/
+├── cmd/
+│   └── server/
+│       └── main.go
+├── internal/
+│   └── handlers/
+│       └── api.go
+├── web/
+│   ├── src/
+│   │   ├── App.tsx
+│   │   └── main.tsx
+│   ├── index.html
+│   ├── package.json
+│   └── vite.config.ts
+├── go.mod
+├── go.sum
+├── Makefile
+└── README.md
+```
+
+## Global Flags
+
+Available for all commands:
+
+| Flag | Description |
+|------|-------------|
+| `--help, -h` | Show help |
+| `--version, -v` | Show version |
+| `--verbose` | Verbose output |
+| `--json` | Output as JSON |
+| `--no-color` | Disable colored output |
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | General error |
+| 2 | Invalid arguments |
+| 3 | File/directory error |
+| 4 | Network error |
+
+## Common Workflows
+
+### New API Project
+
+```bash
+# Create project
+mizu new myapi --template api
+
+# Enter directory
+cd myapi
+
+# Start development
+mizu dev
+
+# Test the API
+curl http://localhost:3000/api/health
+```
+
+### Full-Stack Project
+
+```bash
+# Create project
+mizu new myapp --template frontend:react
+
+# Install frontend dependencies
+cd myapp/web && npm install && cd ..
+
+# Start both servers
+make dev
+
+# Open in browser
+open http://localhost:3000
+```
+
+### Generate Client SDKs
+
+```bash
+# In your project directory
+mizu contract sdk typescript --output ../frontend/src/api
+
+# Use in frontend
+# import { APIClient } from './api';
+```
+
+### Production Build
+
+```bash
+# Build frontend
+cd web && npm run build && cd ..
+
+# Build Go binary with embedded frontend
+go build -o server ./cmd/server
+
+# Run in production
+./server
+```
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MIZU_PORT` | Default port | `3000` |
+| `MIZU_ENV` | Environment | `development` |
+| `MIZU_LOG_LEVEL` | Log level | `info` |
+
+### Config File
+
+Create `.mizu.yaml` in your project:
+
+```yaml
+dev:
+  port: 8080
+  entry: ./cmd/server
+  proxy: http://localhost:5173
+
+contract:
+  output: ./sdk
+  package: github.com/myorg/client
+```
+
+## Learn More
+
+<CardGroup cols={2}>
+  <Card title="CLI Documentation" icon="book" href="/cli/overview">
+    Complete CLI reference.
+  </Card>
+  <Card title="Templates" icon="layer-group" href="/cli/templates">
+    All available templates.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Build Your First API" icon="rocket" href="/guides/first-api">
+    Step-by-step tutorial.
+  </Card>
+  <Card title="Quick Start" icon="play" href="/get-started/quick-start">
+    Get started without CLI.
+  </Card>
+</CardGroup>

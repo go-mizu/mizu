@@ -1,0 +1,370 @@
+---
+title: "FAQ"
+description: "Frequently asked questions about Mizu"
+---
+
+Answers to common questions about Mizu, its features, and how to use it effectively.
+
+## General Questions
+
+### What Go version is required?
+
+**Go 1.22 or later**. Mizu uses Go 1.22's enhanced `ServeMux` patterns for route matching with path parameters.
+
+```go
+// This requires Go 1.22+
+app.Get("/users/{id}", getUser)
+```
+
+### Can I use Mizu with existing net/http code?
+
+Yes! Mizu is built on `net/http` and is fully compatible:
+
+```go
+// Use any http.Handler
+app.Mount("/legacy", existingHandler)
+
+// Use any http middleware
+app.Use(func(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        // Wrap existing middleware
+        existingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            next(&mizu.Ctx{...})
+        })).ServeHTTP(c.Writer(), c.Request())
+        return nil
+    }
+})
+
+// Access standard types
+func handler(c *mizu.Ctx) error {
+    r := c.Request()   // *http.Request
+    w := c.Writer()    // http.ResponseWriter
+    return nil
+}
+```
+
+### How does Mizu compare to Gin/Echo/Fiber?
+
+| Feature | Gin | Echo | Fiber | Mizu |
+|---------|-----|------|-------|------|
+| net/http based | Yes | Yes | No (fasthttp) | Yes |
+| Go 1.22 patterns | Partial | Partial | No | Yes |
+| Contract system | No | No | No | Yes |
+| SDK generation | No | No | No | Yes |
+| Frontend integration | No | No | No | Yes |
+| Middleware count | ~20 | ~20 | ~30 | 70+ |
+
+### Is Mizu production-ready?
+
+Yes. Mizu is designed for production use with:
+
+- Graceful shutdown
+- Panic recovery
+- Health check endpoints
+- Structured logging
+- Battle-tested middleware
+
+## Performance Questions
+
+### Is Mizu fast?
+
+Mizu is fast enough for most applications. Benchmarks show:
+
+- **~100k requests/second** for simple JSON responses
+- **~1μs overhead** per request vs raw `net/http`
+- **Minimal allocations** using Ctx pooling
+
+For most applications, the database or external services are the bottleneck, not the framework.
+
+### What about memory usage?
+
+Mizu has low memory overhead:
+
+- **~5MB** base memory for empty app
+- **~1KB** per active connection
+- Ctx objects are pooled and reused
+
+### How does Mizu handle concurrency?
+
+Each request runs in its own goroutine (standard Go behavior). Mizu doesn't add locks in the hot path:
+
+```go
+// Each request is independent
+func handler(c *mizu.Ctx) error {
+    // c is unique to this request
+    // Safe to use without locks
+    return c.JSON(200, data)
+}
+```
+
+## Feature Questions
+
+### Does Mizu support WebSockets?
+
+Yes, via the websocket middleware:
+
+```go
+import "github.com/go-mizu/mizu/middlewares/websocket"
+
+app.Get("/ws", websocket.New(func(c *websocket.Conn) {
+    for {
+        msg, _ := c.ReadMessage()
+        c.WriteMessage(msg)
+    }
+}))
+```
+
+### Does Mizu have database integration?
+
+Mizu doesn't include an ORM — use any Go database library:
+
+```go
+import "database/sql"
+import _ "github.com/lib/pq"
+
+func main() {
+    db, _ := sql.Open("postgres", "...")
+
+    app := mizu.New()
+    app.Get("/users", func(c *mizu.Ctx) error {
+        rows, _ := db.QueryContext(c.Context(), "SELECT ...")
+        // ...
+    })
+}
+```
+
+Popular choices:
+- **database/sql** - Standard library
+- **sqlx** - Enhanced SQL
+- **GORM** - Full ORM
+- **Ent** - Graph-based ORM
+- **sqlc** - SQL to Go code
+
+### What authentication options are available?
+
+Multiple authentication middlewares:
+
+| Method | Middleware |
+|--------|------------|
+| Basic Auth | `middlewares/basicauth` |
+| Bearer Token | `middlewares/bearerauth` |
+| API Keys | `middlewares/keyauth` |
+| JWT | `middlewares/jwt` |
+| OAuth 2.0 | `middlewares/oauth2` |
+| OpenID Connect | `middlewares/oidc` |
+
+```go
+import "github.com/go-mizu/mizu/middlewares/jwt"
+
+app.Use(jwt.New(jwt.Config{
+    Secret: []byte("your-secret"),
+}))
+```
+
+### Can I use GraphQL with Mizu?
+
+Yes, mount a GraphQL handler:
+
+```go
+import "github.com/99designs/gqlgen/graphql/handler"
+
+h := handler.NewDefaultServer(schema)
+app.Mount("/graphql", h)
+```
+
+## Development Questions
+
+### Is there hot reload?
+
+Yes, use `mizu dev`:
+
+```bash
+mizu dev
+```
+
+Or use external tools like `air`:
+
+```bash
+go install github.com/cosmtrek/air@latest
+air
+```
+
+### How do I test handlers?
+
+Use `httptest`:
+
+```go
+func TestHandler(t *testing.T) {
+    app := mizu.New()
+    app.Get("/users", listUsers)
+
+    req := httptest.NewRequest("GET", "/users", nil)
+    rec := httptest.NewRecorder()
+
+    app.ServeHTTP(rec, req)
+
+    if rec.Code != 200 {
+        t.Errorf("expected 200, got %d", rec.Code)
+    }
+}
+```
+
+### How do I debug requests?
+
+Enable debug logging:
+
+```go
+app := mizu.New()
+app.Use(logger.New(logger.Config{
+    Level: slog.LevelDebug,
+}))
+```
+
+Use request body dumping:
+
+```go
+import "github.com/go-mizu/mizu/middlewares/bodydump"
+
+app.Use(bodydump.New())
+```
+
+## Deployment Questions
+
+### How do I deploy with Docker?
+
+```dockerfile
+FROM golang:1.22 AS builder
+WORKDIR /app
+COPY go.* ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o server ./cmd/server
+
+FROM alpine:3.19
+COPY --from=builder /app/server /server
+EXPOSE 3000
+CMD ["/server"]
+```
+
+### What cloud platforms are supported?
+
+Any platform that runs Go binaries:
+
+- **AWS**: EC2, ECS, Lambda (with adapter)
+- **Google Cloud**: Cloud Run, GKE, Compute Engine
+- **Azure**: Container Apps, AKS
+- **Others**: DigitalOcean, Fly.io, Railway, Render
+
+### How do I run on Kubernetes?
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+      - name: myapp
+        image: myapp:latest
+        ports:
+        - containerPort: 3000
+        livenessProbe:
+          httpGet:
+            path: /livez
+            port: 3000
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 3000
+```
+
+## Troubleshooting
+
+### "pattern conflicts with existing pattern"
+
+Routes must be unique. Check for conflicts:
+
+```go
+// These conflict:
+app.Get("/users/{id}", getUser)
+app.Get("/users/{name}", getUserByName)  // Error!
+
+// Fix: Use different paths or query params
+app.Get("/users/{id}", getUser)
+app.Get("/users", func(c *mizu.Ctx) error {
+    if name := c.Query("name"); name != "" {
+        return getUserByName(c)
+    }
+    return listUsers(c)
+})
+```
+
+### "context canceled"
+
+The client disconnected before the response was sent. This is normal:
+
+```go
+func handler(c *mizu.Ctx) error {
+    ctx := c.Context()
+
+    result, err := longOperation(ctx)
+    if err != nil {
+        if errors.Is(err, context.Canceled) {
+            // Client disconnected - just return
+            return nil
+        }
+        return err
+    }
+    return c.JSON(200, result)
+}
+```
+
+### Middleware not running
+
+Check middleware order:
+
+```go
+// Middleware is applied to routes AFTER it's added
+app.Get("/public", publicHandler)  // No auth!
+
+app.Use(authMiddleware)
+
+app.Get("/private", privateHandler)  // Has auth
+```
+
+### Response already written
+
+Don't write multiple responses:
+
+```go
+// Wrong
+func handler(c *mizu.Ctx) error {
+    c.JSON(200, data1)
+    return c.JSON(200, data2)  // Error!
+}
+
+// Right
+func handler(c *mizu.Ctx) error {
+    return c.JSON(200, data)
+}
+```
+
+## Getting Help
+
+<CardGroup cols={2}>
+  <Card title="Discord" icon="discord" href="https://discord.gg/8QpMsNBB8n">
+    Chat with the community.
+  </Card>
+  <Card title="GitHub Issues" icon="github" href="https://github.com/go-mizu/mizu/issues">
+    Report bugs or request features.
+  </Card>
+</CardGroup>

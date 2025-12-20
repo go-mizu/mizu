@@ -1,0 +1,407 @@
+---
+title: "Architecture"
+description: "How Mizu is designed and why"
+---
+
+Understanding Mizu's architecture helps you make better decisions when building applications. This guide explains the design principles, component relationships, and extension points.
+
+## Design Principles
+
+### 1. Standard Library First
+
+Mizu is built on Go's `net/http` package:
+
+```go
+// Every Mizu app is an http.Handler
+app := mizu.New()
+http.ListenAndServe(":3000", app)  // Works!
+
+// Use any net/http middleware
+app.Mount("/", thirdPartyMiddleware)
+
+// Access standard types anytime
+func handler(c *mizu.Ctx) error {
+    r := c.Request()   // *http.Request
+    w := c.Writer()    // http.ResponseWriter
+    return nil
+}
+```
+
+### 2. Thin Abstractions
+
+Mizu adds minimal layers on top of the standard library:
+
+```
+Your Code
+    ↓
+mizu.Handler (func(*Ctx) error)
+    ↓
+mizu.Ctx (request/response wrapper)
+    ↓
+http.Handler interface
+    ↓
+net/http
+```
+
+### 3. Composition Over Inheritance
+
+Everything composes through functions:
+
+```go
+// Middleware composes
+app.Use(logger)
+app.Use(recover)
+app.Use(cors)
+
+// Routes compose
+api := app.Group("/api")
+api.Use(auth)
+api.Get("/users", listUsers)
+
+// Handlers compose
+func withTiming(h mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        start := time.Now()
+        err := h(c)
+        c.Logger().Info("timing", "duration", time.Since(start))
+        return err
+    }
+}
+```
+
+### 4. Explicit Over Magic
+
+No reflection-based routing, no DI containers, no hidden behavior:
+
+```go
+// Routes are explicit strings
+app.Get("/users/{id}", getUser)
+
+// Middleware order is explicit
+app.Use(first)   // Runs first
+app.Use(second)  // Runs second
+
+// Errors are explicit values
+if err != nil {
+    return err
+}
+```
+
+## Component Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                           Your App                               │
+├─────────────┬─────────────┬─────────────┬──────────┬────────────┤
+│   Core      │ Middlewares │  Contract   │   View   │  Frontend  │
+│             │             │             │          │            │
+│ • App       │ • Auth      │ • Service   │ • Engine │ • Proxy    │
+│ • Router    │ • CORS      │ • Register  │ • Live   │ • Embed    │
+│ • Handler   │ • Cache     │ • REST      │ • Sync   │ • Static   │
+│ • Ctx       │ • Logger    │ • JSON-RPC  │          │            │
+│             │ • ...70+    │ • OpenAPI   │          │            │
+├─────────────┴─────────────┴─────────────┴──────────┴────────────┤
+│                          net/http                                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Core
+
+The main `github.com/go-mizu/mizu` package:
+
+| Component | Responsibility |
+|-----------|----------------|
+| **App** | Server lifecycle, configuration |
+| **Router** | URL pattern matching |
+| **Handler** | Request processing signature |
+| **Ctx** | Request/response wrapper |
+
+### Middlewares
+
+Separate packages in `github.com/go-mizu/mizu/middlewares/*`:
+
+- Each middleware is independent
+- Install only what you need
+- Consistent configuration pattern
+
+### Contract
+
+Transport-neutral API definitions in `github.com/go-mizu/mizu/contract`:
+
+- Define services as Go structs
+- Generate handlers for REST, JSON-RPC, MCP
+- Generate client SDKs
+
+### View
+
+Server-side rendering in `github.com/go-mizu/mizu/view`:
+
+- Template engine with layouts
+- Live for real-time updates
+- Sync for state synchronization
+
+### Frontend
+
+SPA integration in `github.com/go-mizu/mizu/frontend`:
+
+- Development proxy
+- Asset embedding
+- SPA routing
+
+## Request Lifecycle
+
+```
+Client Request
+      │
+      ▼
+┌─────────────────┐
+│   net/http      │  1. Parse HTTP request
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   App.ServeHTTP │  2. Create Ctx
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   Middleware 1  │  3. Pre-processing
+│   (Logger)      │     (logging, auth, etc.)
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   Middleware 2  │
+│   (Auth)        │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   Router        │  4. Match URL pattern
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   Handler       │  5. Business logic
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   Ctx.JSON()    │  6. Write response
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   Middleware 2  │  7. Post-processing
+│   (timing, etc.)│
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   Middleware 1  │
+└────────┬────────┘
+         │
+         ▼
+    Response
+```
+
+### Detailed Flow
+
+1. **HTTP arrives**: Go's `net/http` parses the request
+2. **Ctx created**: Mizu wraps request/response in `Ctx`
+3. **Middleware chain**: Each middleware can:
+   - Modify the request
+   - Stop processing (return early)
+   - Modify the response
+   - Pass to next handler
+4. **Router matches**: URL pattern matched to handler
+5. **Handler executes**: Your business logic runs
+6. **Response written**: Via `Ctx` methods or raw `Writer()`
+7. **Middleware unwinds**: Post-processing in reverse order
+
+## Extension Points
+
+### Custom Middleware
+
+```go
+func myMiddleware(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        // Before handler
+        start := time.Now()
+
+        err := next(c)  // Call handler
+
+        // After handler
+        duration := time.Since(start)
+        c.Logger().Info("request", "duration", duration)
+
+        return err
+    }
+}
+```
+
+### Custom Error Handler
+
+```go
+app.ErrorHandler(func(c *mizu.Ctx, err error) {
+    // Log the error
+    c.Logger().Error("error", "err", err)
+
+    // Send custom response
+    var apiErr *APIError
+    if errors.As(err, &apiErr) {
+        c.JSON(apiErr.Code, apiErr)
+        return
+    }
+
+    c.JSON(500, map[string]string{"error": "internal"})
+})
+```
+
+### Custom Not Found
+
+```go
+app.NotFound(func(c *mizu.Ctx) error {
+    return c.JSON(404, map[string]string{
+        "error": "endpoint not found",
+        "path":  c.Request().URL.Path,
+    })
+})
+```
+
+### Custom Transports
+
+Implement the transport interface for Contract:
+
+```go
+type Transport interface {
+    Handler(contract *Contract) http.Handler
+}
+```
+
+### Custom SDK Generators
+
+Implement the generator interface:
+
+```go
+type Generator interface {
+    Generate(contract *Contract) ([]File, error)
+}
+```
+
+## Performance Characteristics
+
+### Memory
+
+- Ctx is pooled and reused
+- Minimal allocations per request
+- No reflection in hot paths
+
+### Latency
+
+- Router uses radix tree (O(n) where n = path length)
+- Middleware adds ~100ns per layer
+- No regex matching in routes
+
+### Concurrency
+
+- Each request runs in its own goroutine
+- No global locks in hot paths
+- Ctx is not safe for concurrent use
+
+## Comparison with Other Architectures
+
+### vs. MVC Frameworks
+
+| Aspect | MVC (Rails, Django) | Mizu |
+|--------|---------------------|------|
+| Structure | Opinionated | Flexible |
+| ORM | Included | Bring your own |
+| Views | Included | Optional (View package) |
+| Learning curve | Steeper | Gentler |
+
+### vs. Microframeworks
+
+| Aspect | Microframeworks (Flask, Sinatra) | Mizu |
+|--------|----------------------------------|------|
+| Core size | Similar | Similar |
+| Ecosystem | External | Integrated |
+| Type safety | Dynamic | Static |
+
+### vs. Enterprise Frameworks
+
+| Aspect | Enterprise (Spring, ASP.NET) | Mizu |
+|--------|------------------------------|------|
+| DI container | Yes | No |
+| Configuration | Heavy | Minimal |
+| Startup time | Slower | Fast |
+| Memory | More | Less |
+
+## Best Practices
+
+### Project Structure
+
+```
+myapp/
+├── cmd/
+│   └── server/
+│       └── main.go      # Entry point
+├── internal/
+│   ├── handlers/        # HTTP handlers
+│   ├── services/        # Business logic
+│   ├── models/          # Data models
+│   └── middleware/      # Custom middleware
+├── pkg/                 # Public packages
+├── go.mod
+└── go.sum
+```
+
+### Handler Organization
+
+```go
+// Group by domain
+type UserHandler struct {
+    service *UserService
+}
+
+func (h *UserHandler) List(c *mizu.Ctx) error { ... }
+func (h *UserHandler) Get(c *mizu.Ctx) error { ... }
+func (h *UserHandler) Create(c *mizu.Ctx) error { ... }
+
+// Register routes
+func (h *UserHandler) Register(r *mizu.Router) {
+    r.Get("/users", h.List)
+    r.Get("/users/{id}", h.Get)
+    r.Post("/users", h.Create)
+}
+```
+
+### Dependency Injection
+
+```go
+// Constructor injection (preferred)
+func NewUserHandler(svc *UserService) *UserHandler {
+    return &UserHandler{service: svc}
+}
+
+func main() {
+    db := connectDB()
+    userSvc := NewUserService(db)
+    userHandler := NewUserHandler(userSvc)
+
+    app := mizu.New()
+    userHandler.Register(app)
+    app.Listen(":3000")
+}
+```
+
+## Learn More
+
+<CardGroup cols={2}>
+  <Card title="Core Concepts" icon="book" href="/concepts/overview">
+    Detailed concept documentation.
+  </Card>
+  <Card title="Contributing" icon="code-pull-request" href="/guides/community">
+    Contribute to Mizu.
+  </Card>
+</CardGroup>

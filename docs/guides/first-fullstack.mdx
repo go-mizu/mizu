@@ -1,0 +1,639 @@
+---
+title: "Build Your First Full-Stack App"
+description: "Build a complete full-stack application with Go backend and React frontend"
+---
+
+In this tutorial, you'll build a full-stack task manager with a Go API backend, React frontend, and real-time updates — all served from a single binary.
+
+## What We'll Build
+
+A task manager with:
+- Go API backend
+- React frontend with TypeScript
+- Real-time task updates via SSE
+- Production build embedded in Go binary
+
+## Prerequisites
+
+- Go 1.22 or later
+- Node.js 18 or later
+- Completed previous tutorials (helpful but not required)
+
+## Step 1: Create the Project
+
+```bash
+# Create project structure
+mkdir taskmanager && cd taskmanager
+go mod init taskmanager
+go get github.com/go-mizu/mizu
+
+# Create frontend with Vite
+npm create vite@latest web -- --template react-ts
+cd web && npm install && cd ..
+```
+
+Project structure:
+
+```
+taskmanager/
+├── main.go           # Go backend
+├── go.mod
+├── web/              # React frontend
+│   ├── src/
+│   ├── package.json
+│   └── vite.config.ts
+```
+
+## Step 2: Create the Backend API
+
+Create `main.go`:
+
+```go
+package main
+
+import (
+    "embed"
+    "encoding/json"
+    "fmt"
+    "io/fs"
+    "net/http"
+    "os"
+    "sync"
+    "time"
+
+    "github.com/go-mizu/mizu"
+)
+
+//go:embed web/dist/*
+var frontendFS embed.FS
+
+// Task model
+type Task struct {
+    ID        string    `json:"id"`
+    Title     string    `json:"title"`
+    Completed bool      `json:"completed"`
+    CreatedAt time.Time `json:"createdAt"`
+}
+
+// Storage
+var (
+    tasks      = make(map[string]*Task)
+    tasksMu    sync.RWMutex
+    nextID     = 1
+    subscribers = make(map[chan *Task]bool)
+    subMu      sync.RWMutex
+)
+
+// Handlers
+func listTasks(c *mizu.Ctx) error {
+    tasksMu.RLock()
+    defer tasksMu.RUnlock()
+
+    result := make([]*Task, 0, len(tasks))
+    for _, t := range tasks {
+        result = append(result, t)
+    }
+    return c.JSON(200, result)
+}
+
+func createTask(c *mizu.Ctx) error {
+    var input struct {
+        Title string `json:"title"`
+    }
+    if err := c.BindJSON(&input); err != nil || input.Title == "" {
+        return c.JSON(400, map[string]string{"error": "title required"})
+    }
+
+    tasksMu.Lock()
+    id := fmt.Sprintf("%d", nextID)
+    nextID++
+    task := &Task{
+        ID:        id,
+        Title:     input.Title,
+        CreatedAt: time.Now(),
+    }
+    tasks[id] = task
+    tasksMu.Unlock()
+
+    // Notify subscribers
+    broadcast(task)
+
+    return c.JSON(201, task)
+}
+
+func toggleTask(c *mizu.Ctx) error {
+    id := c.Param("id")
+
+    tasksMu.Lock()
+    defer tasksMu.Unlock()
+
+    task, ok := tasks[id]
+    if !ok {
+        return c.JSON(404, map[string]string{"error": "not found"})
+    }
+
+    task.Completed = !task.Completed
+    broadcast(task)
+
+    return c.JSON(200, task)
+}
+
+func deleteTask(c *mizu.Ctx) error {
+    id := c.Param("id")
+
+    tasksMu.Lock()
+    defer tasksMu.Unlock()
+
+    if _, ok := tasks[id]; !ok {
+        return c.JSON(404, map[string]string{"error": "not found"})
+    }
+
+    delete(tasks, id)
+    return c.NoContent(204)
+}
+
+// SSE for real-time updates
+func subscribe(c *mizu.Ctx) error {
+    c.Header().Set("Content-Type", "text/event-stream")
+    c.Header().Set("Cache-Control", "no-cache")
+    c.Header().Set("Connection", "keep-alive")
+
+    ch := make(chan *Task, 10)
+
+    subMu.Lock()
+    subscribers[ch] = true
+    subMu.Unlock()
+
+    defer func() {
+        subMu.Lock()
+        delete(subscribers, ch)
+        subMu.Unlock()
+        close(ch)
+    }()
+
+    ctx := c.Context()
+    for {
+        select {
+        case <-ctx.Done():
+            return nil
+        case task := <-ch:
+            data, _ := json.Marshal(task)
+            fmt.Fprintf(c.Writer(), "data: %s\n\n", data)
+            c.Writer().(http.Flusher).Flush()
+        }
+    }
+}
+
+func broadcast(task *Task) {
+    subMu.RLock()
+    defer subMu.RUnlock()
+
+    for ch := range subscribers {
+        select {
+        case ch <- task:
+        default:
+        }
+    }
+}
+
+func main() {
+    app := mizu.New()
+
+    // API routes
+    api := app.Group("/api")
+    api.Get("/tasks", listTasks)
+    api.Post("/tasks", createTask)
+    api.Put("/tasks/{id}/toggle", toggleTask)
+    api.Delete("/tasks/{id}", deleteTask)
+    api.Get("/events", subscribe)
+
+    // Serve frontend
+    if os.Getenv("ENV") == "development" {
+        // Proxy to Vite dev server
+        fmt.Println("Running in development mode")
+        fmt.Println("Start Vite: cd web && npm run dev")
+    } else {
+        // Serve embedded files
+        sub, _ := fs.Sub(frontendFS, "web/dist")
+        fileServer := http.FileServer(http.FS(sub))
+
+        app.Get("/{path...}", func(c *mizu.Ctx) error {
+            // Try to serve file, fallback to index.html
+            path := c.Param("path")
+            if path == "" {
+                path = "index.html"
+            }
+
+            if _, err := fs.Stat(sub, path); err != nil {
+                path = "index.html"
+            }
+
+            c.Request().URL.Path = "/" + path
+            fileServer.ServeHTTP(c.Writer(), c.Request())
+            return nil
+        })
+    }
+
+    fmt.Println("Server running at http://localhost:3000")
+    app.Listen(":3000")
+}
+```
+
+## Step 3: Configure Vite Proxy
+
+Update `web/vite.config.ts`:
+
+```typescript
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: 5173,
+    proxy: {
+      '/api': 'http://localhost:3000',
+    },
+  },
+})
+```
+
+## Step 4: Create the React Frontend
+
+Replace `web/src/App.tsx`:
+
+```tsx
+import { useState, useEffect } from 'react'
+import './App.css'
+
+interface Task {
+  id: string
+  title: string
+  completed: boolean
+  createdAt: string
+}
+
+function App() {
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [newTitle, setNewTitle] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  // Fetch initial tasks
+  useEffect(() => {
+    fetch('/api/tasks')
+      .then(res => res.json())
+      .then(data => {
+        setTasks(data)
+        setLoading(false)
+      })
+  }, [])
+
+  // Subscribe to real-time updates
+  useEffect(() => {
+    const eventSource = new EventSource('/api/events')
+
+    eventSource.onmessage = (event) => {
+      const updatedTask: Task = JSON.parse(event.data)
+      setTasks(prev => {
+        const index = prev.findIndex(t => t.id === updatedTask.id)
+        if (index >= 0) {
+          const newTasks = [...prev]
+          newTasks[index] = updatedTask
+          return newTasks
+        }
+        return [...prev, updatedTask]
+      })
+    }
+
+    return () => eventSource.close()
+  }, [])
+
+  const addTask = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newTitle.trim()) return
+
+    const res = await fetch('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: newTitle }),
+    })
+
+    if (res.ok) {
+      setNewTitle('')
+      // Task will be added via SSE
+    }
+  }
+
+  const toggleTask = async (id: string) => {
+    await fetch(`/api/tasks/${id}/toggle`, { method: 'PUT' })
+    // Update will come via SSE
+  }
+
+  const deleteTask = async (id: string) => {
+    await fetch(`/api/tasks/${id}`, { method: 'DELETE' })
+    setTasks(prev => prev.filter(t => t.id !== id))
+  }
+
+  if (loading) {
+    return <div className="loading">Loading...</div>
+  }
+
+  return (
+    <div className="app">
+      <header>
+        <h1>Task Manager</h1>
+        <p>Built with Mizu + React</p>
+      </header>
+
+      <form onSubmit={addTask} className="add-form">
+        <input
+          type="text"
+          value={newTitle}
+          onChange={e => setNewTitle(e.target.value)}
+          placeholder="What needs to be done?"
+        />
+        <button type="submit">Add</button>
+      </form>
+
+      <ul className="task-list">
+        {tasks.map(task => (
+          <li key={task.id} className={task.completed ? 'completed' : ''}>
+            <label>
+              <input
+                type="checkbox"
+                checked={task.completed}
+                onChange={() => toggleTask(task.id)}
+              />
+              <span>{task.title}</span>
+            </label>
+            <button onClick={() => deleteTask(task.id)} className="delete">
+              ×
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      {tasks.length === 0 && (
+        <p className="empty">No tasks yet. Add one above!</p>
+      )}
+
+      <footer>
+        {tasks.filter(t => !t.completed).length} tasks remaining
+      </footer>
+    </div>
+  )
+}
+
+export default App
+```
+
+Replace `web/src/App.css`:
+
+```css
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+  padding: 2rem;
+}
+
+.app {
+  max-width: 500px;
+  margin: 0 auto;
+  background: white;
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+
+header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+header h1 {
+  color: #333;
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+header p {
+  color: #666;
+}
+
+.add-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.add-form input {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border: 2px solid #eee;
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: border-color 0.2s;
+}
+
+.add-form input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.add-form button {
+  padding: 0.75rem 1.5rem;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.add-form button:hover {
+  background: #5a6fd6;
+}
+
+.task-list {
+  list-style: none;
+}
+
+.task-list li {
+  display: flex;
+  align-items: center;
+  padding: 1rem;
+  border-bottom: 1px solid #eee;
+  transition: background 0.2s;
+}
+
+.task-list li:hover {
+  background: #f9f9f9;
+}
+
+.task-list li.completed span {
+  text-decoration: line-through;
+  color: #999;
+}
+
+.task-list label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+}
+
+.task-list input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.task-list .delete {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: #ccc;
+  cursor: pointer;
+  padding: 0 0.5rem;
+  transition: color 0.2s;
+}
+
+.task-list .delete:hover {
+  color: #e74c3c;
+}
+
+.empty {
+  text-align: center;
+  color: #999;
+  padding: 2rem;
+}
+
+footer {
+  text-align: center;
+  color: #666;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #eee;
+}
+
+.loading {
+  text-align: center;
+  padding: 4rem;
+  color: white;
+  font-size: 1.5rem;
+}
+```
+
+Update `web/src/index.css` (remove default Vite styles):
+
+```css
+:root {
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+```
+
+## Step 5: Development Mode
+
+Run both servers:
+
+```bash
+# Terminal 1: Start Go backend
+go run main.go
+
+# Terminal 2: Start Vite dev server
+cd web && npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173) (Vite will proxy API calls to Go).
+
+## Step 6: Production Build
+
+Build everything:
+
+```bash
+# Build frontend
+cd web && npm run build && cd ..
+
+# Build Go binary with embedded frontend
+go build -o taskmanager .
+```
+
+Run the production build:
+
+```bash
+./taskmanager
+```
+
+Open [http://localhost:3000](http://localhost:3000) — everything served from one binary!
+
+## Step 7: Create a Makefile
+
+Create `Makefile`:
+
+```makefile
+.PHONY: dev build clean
+
+dev:
+	@echo "Starting development servers..."
+	@echo "Backend: http://localhost:3000"
+	@echo "Frontend: http://localhost:5173"
+	@cd web && npm run dev &
+	@ENV=development go run main.go
+
+build:
+	cd web && npm run build
+	go build -o taskmanager .
+
+clean:
+	rm -f taskmanager
+	rm -rf web/dist
+```
+
+## What You Learned
+
+- Combining Go backend with React frontend
+- Development proxy with Vite
+- Embedding frontend in Go binary
+- Real-time updates with SSE
+- Single-binary deployment
+
+## Project Structure
+
+```
+taskmanager/
+├── main.go
+├── go.mod
+├── go.sum
+├── Makefile
+└── web/
+    ├── src/
+    │   ├── App.tsx
+    │   ├── App.css
+    │   └── main.tsx
+    ├── index.html
+    ├── package.json
+    ├── tsconfig.json
+    └── vite.config.ts
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Add Authentication" icon="lock" href="/middlewares/jwt">
+    Secure your API with JWT.
+  </Card>
+  <Card title="Deploy to Production" icon="cloud" href="/get-started/deployment">
+    Docker, Kubernetes, cloud platforms.
+  </Card>
+</CardGroup>
