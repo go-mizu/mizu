@@ -6,6 +6,46 @@ icon: "code"
 
 SvelteKit is the official full-stack framework for Svelte, providing file-based routing, server-side rendering, and more. When using SvelteKit with Mizu, you'll typically use SvelteKit's **static adapter** to generate a static site that Mizu serves.
 
+## Why SvelteKit?
+
+SvelteKit is Svelte's answer to Next.js (React) and Nuxt (Vue). It provides a batteries-included framework with file-based routing, layouts, data loading, and more—all built on top of Svelte's compiler magic.
+
+**Key benefits:**
+- **File-based routing**: Routes are automatically created from your file structure
+- **Nested layouts**: Share UI and logic across routes
+- **Code splitting**: Automatic code splitting per route
+- **Data loading**: Load data before rendering pages
+- **TypeScript-first**: Excellent TypeScript support out of the box
+- **Build optimizations**: Smart bundling and preloading
+- **Developer experience**: Hot Module Replacement, error overlays, and more
+
+### SvelteKit vs Other Meta-Frameworks
+
+| Feature | SvelteKit | Next.js | Nuxt | Remix |
+|---------|-----------|---------|------|-------|
+| **Framework** | Svelte | React | Vue | React |
+| **Routing** | File-based | File-based | File-based | File-based |
+| **SSR** | Yes | Yes | Yes | Yes |
+| **SSG** | Yes | Yes | Yes | Limited |
+| **Bundle Size** | ~30 KB | ~85 KB | ~50 KB | ~80 KB |
+| **Learning Curve** | Gentle | Moderate | Gentle | Moderate |
+| **Data Loading** | load() | getServerSideProps | useAsyncData | loader() |
+| **Forms** | Actions | API routes | API routes | Actions |
+| **TypeScript** | Excellent | Excellent | Excellent | Excellent |
+| **Image Optimization** | Manual | Built-in | Built-in | Manual |
+
+### SvelteKit with Mizu vs Standalone SvelteKit
+
+| Aspect | SvelteKit + Mizu | Standalone SvelteKit |
+|--------|------------------|----------------------|
+| **Backend** | Go (Mizu) | Node.js (adapter) |
+| **API Routes** | Go handlers | SvelteKit endpoints |
+| **Database** | Go libs (pgx, sqlc) | Node libs (Prisma, Drizzle) |
+| **Deployment** | Single binary | Adapter-specific |
+| **Rendering** | Static (SPA mode) | SSR + SSG |
+| **Build Output** | `build/` → embedded | Depends on adapter |
+| **Best For** | Go backends | Full Node.js stack |
+
 ## Quick Start
 
 Create a new SvelteKit project:
@@ -16,6 +56,69 @@ cd my-sveltekit-app
 make dev
 ```
 
+Visit `http://localhost:3000` to see your app!
+
+## Architecture
+
+### Development Mode
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Browser                              │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  SvelteKit App (HMR, file-based routing)               │  │
+│  │  ┌─────────┐  ┌─────────┐  ┌──────────┐               │  │
+│  │  │ Router  │→ │ +page   │→ │ API Call │               │  │
+│  │  └─────────┘  └─────────┘  └──────────┘               │  │
+│  └───────────────────────────────────────────────────────┘  │
+│         ↑ HMR WebSocket           ↓ /api/*                  │
+└─────────┼──────────────────────────┼────────────────────────┘
+          │                          │
+┌─────────┼──────────────────────────┼────────────────────────┐
+│  Mizu Server (:3000)               │                         │
+│         │                          ↓                         │
+│    ┌────┴─────────┐        ┌────────────┐                   │
+│    │   Proxy to   │        │ API Routes │                   │
+│    │ Vite (:5173) │        │ (Go)       │                   │
+│    └──────────────┘        └────────────┘                   │
+│         ↑                                                    │
+└─────────┼────────────────────────────────────────────────────┘
+          │
+┌─────────┼────────────────────────────────────────────────────┐
+│  SvelteKit Dev Server (:5173)                                │
+│    ┌──────────────┐  ┌─────────────┐  ┌──────────────┐     │
+│    │ Svelte       │  │ Vite        │  │ File watcher │     │
+│    │ Compiler     │  │ HMR         │  │ (routes)     │     │
+│    └──────────────┘  └─────────────┘  └──────────────┘     │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Production Mode
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Browser                              │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  SvelteKit App (static, prerendered)                   │  │
+│  │  ┌─────────┐  ┌─────────┐  ┌──────────┐               │  │
+│  │  │ Router  │→ │ Pages   │→ │ API Call │               │  │
+│  │  └─────────┘  └─────────┘  └──────────┘               │  │
+│  └───────────────────────────────────────────────────────┘  │
+│         ↑ HTML + assets           ↓ /api/*                  │
+└─────────┼──────────────────────────┼────────────────────────┘
+          │                          │
+┌─────────┼──────────────────────────┼────────────────────────┐
+│  Mizu Server (single binary)       │                         │
+│         │                          ↓                         │
+│    ┌────┴─────────┐        ┌────────────┐                   │
+│    │ Embedded FS  │        │ API Routes │                   │
+│    │ (build/...)  │        │ (Go)       │                   │
+│    └──────────────┘        └────────────┘                   │
+│  ←────────────────────────────────────────────────────────  │
+│  Static files served from Go binary (//go:embed all:build)  │
+└──────────────────────────────────────────────────────────────┘
+```
+
 ## Why SvelteKit with Mizu?
 
 SvelteKit can run as a full-stack framework with its own server, but with Mizu you use it as a **static site generator**:
@@ -23,15 +126,18 @@ SvelteKit can run as a full-stack framework with its own server, but with Mizu y
 **SvelteKit provides:**
 - File-based routing (`src/routes/+page.svelte`)
 - Layouts and nested routes
-- Data loading (`+page.ts`, `+page.server.ts`)
+- Data loading (`+page.ts`)
 - Static site generation
+- Code splitting per route
+- Built-in transitions
 
 **Mizu provides:**
 - Go-based API backend
-- Database access
-- Business logic
-- Authentication
-- Deployment
+- Database access with Go libraries
+- Type-safe business logic
+- Authentication and authorization
+- Easy deployment (single binary)
+- Performance (Go runtime)
 
 ## Project Structure
 
@@ -41,20 +147,31 @@ my-sveltekit-app/
 │   └── main.go
 ├── app/server/
 │   ├── app.go
+│   ├── config.go
 │   └── routes.go              # API routes
 ├── client/                    # SvelteKit app
 │   ├── src/
 │   │   ├── routes/            # File-based routing
-│   │   │   ├── +layout.svelte
+│   │   │   ├── +layout.svelte # Root layout
 │   │   │   ├── +page.svelte   # / route
-│   │   │   └── about/
-│   │   │       └── +page.svelte # /about route
-│   │   └── lib/               # Shared code
+│   │   │   ├── about/
+│   │   │   │   └── +page.svelte # /about route
+│   │   │   └── blog/
+│   │   │       ├── +page.svelte # /blog route
+│   │   │       ├── +page.ts     # /blog data loading
+│   │   │       └── [slug]/
+│   │   │           ├── +page.svelte # /blog/:slug
+│   │   │           └── +page.ts     # Data loading
+│   │   ├── lib/               # Shared code
+│   │   │   ├── components/
+│   │   │   ├── stores/
+│   │   │   └── utils/
+│   │   └── app.html           # HTML template
 │   ├── static/                # Public files
 │   ├── svelte.config.js
 │   ├── vite.config.ts
 │   └── package.json
-├── build/                     # Built output (SvelteKit uses 'build')
+├── build/                     # Built output (static HTML/CSS/JS)
 └── Makefile
 ```
 
@@ -73,10 +190,16 @@ export default {
     adapter: adapter({
       pages: '../build',
       assets: '../build',
-      fallback: 'index.html',  // SPA mode
+      fallback: 'index.html',  // SPA mode (client-side routing)
       precompress: false,
       strict: true
-    })
+    }),
+
+    alias: {
+      $components: 'src/lib/components',
+      $stores: 'src/lib/stores',
+      $utils: 'src/lib/utils'
+    }
   }
 }
 ```
@@ -85,6 +208,26 @@ export default {
 - `adapter-static`: Generates static HTML/CSS/JS
 - `pages/assets`: Output directory (`build` instead of `dist`)
 - `fallback: 'index.html'`: SPA mode for client-side routing
+- `alias`: Custom path aliases (in addition to default `$lib`)
+
+### `client/vite.config.ts`
+
+```ts
+import { sveltekit } from '@sveltejs/kit/vite'
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  plugins: [sveltekit()],
+
+  server: {
+    port: 5173,
+    strictPort: true,
+    hmr: {
+      clientPort: 3000,  // Mizu's port for HMR
+    },
+  },
+})
+```
 
 ## Backend Configuration
 
@@ -108,7 +251,7 @@ func New(cfg *Config) *mizu.App {
     app := mizu.New()
 
     // API routes
-    app.Get("/api/users", handleUsers)
+    setupRoutes(app)
 
     // Frontend (note: 'build' instead of 'dist')
     build, _ := fs.Sub(buildFS, "build")
@@ -124,120 +267,1111 @@ func New(cfg *Config) *mizu.App {
 }
 ```
 
+**Important:** SvelteKit outputs to `build/` by default, not `dist/`.
+
+### API Routes Example
+
+```go
+// app/server/routes.go
+package server
+
+import "github.com/go-mizu/mizu"
+
+type Post struct {
+    ID      int    `json:"id"`
+    Title   string `json:"title"`
+    Slug    string `json:"slug"`
+    Content string `json:"content"`
+}
+
+func setupRoutes(app *mizu.App) {
+    // GET /api/posts
+    app.GET("/api/posts", func(c *mizu.Ctx) error {
+        posts := []Post{
+            {ID: 1, Title: "First Post", Slug: "first-post", Content: "Hello world"},
+            {ID: 2, Title: "Second Post", Slug: "second-post", Content: "More content"},
+        }
+        return c.JSON(posts)
+    })
+
+    // GET /api/posts/:slug
+    app.GET("/api/posts/:slug", func(c *mizu.Ctx) error {
+        slug := c.Param("slug")
+        post := Post{
+            ID:      1,
+            Title:   "First Post",
+            Slug:    slug,
+            Content: "Hello world",
+        }
+        return c.JSON(post)
+    })
+}
+```
+
 ## File-Based Routing
 
-SvelteKit uses file-based routing:
+SvelteKit uses file-based routing where the structure of your `src/routes` directory defines your app's routes.
+
+### Basic Routes
 
 ```
 src/routes/
-├── +layout.svelte           # Root layout
-├── +page.svelte             # / route
+├── +page.svelte           → /
 ├── about/
-│   └── +page.svelte         # /about route
-├── blog/
-│   ├── +page.svelte         # /blog route
-│   └── [slug]/
-│       └── +page.svelte     # /blog/:slug route
-└── users/
-    ├── +page.svelte         # /users route
-    └── [id]/
-        └── +page.svelte     # /users/:id route
+│   └── +page.svelte       → /about
+├── contact/
+│   └── +page.svelte       → /contact
+└── pricing/
+    └── +page.svelte       → /pricing
 ```
 
-### `src/routes/+layout.svelte`
+### Dynamic Routes
+
+Use `[param]` for dynamic segments:
+
+```
+src/routes/
+├── blog/
+│   ├── +page.svelte       → /blog
+│   └── [slug]/
+│       └── +page.svelte   → /blog/:slug
+└── users/
+    └── [id]/
+        └── +page.svelte   → /users/:id
+```
+
+Access params in your page:
 
 ```svelte
-<script>
+<!-- src/routes/blog/[slug]/+page.svelte -->
+<script lang="ts">
+  import { page } from '$app/stores'
+
+  $: slug = $page.params.slug
+</script>
+
+<h1>Blog Post: {slug}</h1>
+```
+
+### Optional Parameters
+
+Use `[[param]]` for optional parameters:
+
+```
+src/routes/
+└── archive/
+    └── [[year]]/
+        └── +page.svelte   → /archive or /archive/2024
+```
+
+```svelte
+<!-- src/routes/archive/[[year]]/+page.svelte -->
+<script lang="ts">
+  import { page } from '$app/stores'
+
+  $: year = $page.params.year || new Date().getFullYear()
+</script>
+
+<h1>Archive for {year}</h1>
+```
+
+### Rest Parameters
+
+Use `[...rest]` to match multiple segments:
+
+```
+src/routes/
+└── docs/
+    └── [...path]/
+        └── +page.svelte   → /docs/a, /docs/a/b, /docs/a/b/c
+```
+
+```svelte
+<!-- src/routes/docs/[...path]/+page.svelte -->
+<script lang="ts">
+  import { page } from '$app/stores'
+
+  $: path = $page.params.path  // "a/b/c"
+  $: segments = path.split('/')
+</script>
+
+<h1>Docs: {path}</h1>
+```
+
+### Route Groups
+
+Group routes without affecting the URL with `(group)`:
+
+```
+src/routes/
+├── (marketing)/
+│   ├── +layout.svelte     # Shared layout for marketing pages
+│   ├── about/
+│   │   └── +page.svelte   → /about
+│   └── pricing/
+│       └── +page.svelte   → /pricing
+└── (app)/
+    ├── +layout.svelte     # Shared layout for app pages
+    ├── dashboard/
+    │   └── +page.svelte   → /dashboard
+    └── settings/
+        └── +page.svelte   → /settings
+```
+
+## Layouts
+
+Layouts wrap pages and can be nested. They persist across route changes.
+
+### Root Layout
+
+```svelte
+<!-- src/routes/+layout.svelte -->
+<script lang="ts">
   import './styles.css'
 </script>
 
 <nav>
   <a href="/">Home</a>
   <a href="/about">About</a>
-  <a href="/users">Users</a>
+  <a href="/blog">Blog</a>
 </nav>
 
 <main>
-  <slot />
+  <slot />  <!-- Page content renders here -->
 </main>
+
+<footer>
+  <p>&copy; 2024 My App</p>
+</footer>
+
+<style>
+  nav {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem;
+    background: #f5f5f5;
+  }
+
+  main {
+    padding: 2rem;
+    min-height: calc(100vh - 200px);
+  }
+</style>
 ```
 
-### `src/routes/+page.svelte`
+### Nested Layouts
+
+```
+src/routes/
+├── +layout.svelte         # Root layout
+├── +page.svelte
+└── blog/
+    ├── +layout.svelte     # Blog layout (inherits root)
+    ├── +page.svelte
+    └── [slug]/
+        └── +page.svelte
+```
 
 ```svelte
-<script lang="ts">
-  import { onMount } from 'svelte'
+<!-- src/routes/blog/+layout.svelte -->
+<aside>
+  <h2>Categories</h2>
+  <ul>
+    <li><a href="/blog?category=tech">Tech</a></li>
+    <li><a href="/blog?category=design">Design</a></li>
+  </ul>
+</aside>
 
-  let users = []
+<div class="blog-content">
+  <slot />  <!-- Blog pages render here -->
+</div>
 
-  onMount(async () => {
-    const response = await fetch('/api/users')
-    users = await response.json()
-  })
-</script>
+<style>
+  aside {
+    float: left;
+    width: 200px;
+  }
 
-<h1>Welcome</h1>
-
-<ul>
-  {#each users as user}
-    <li>{user.name}</li>
-  {/each}
-</ul>
+  .blog-content {
+    margin-left: 220px;
+  }
+</style>
 ```
 
-### `src/routes/users/[id]/+page.svelte`
+### Layout Data
 
-```svelte
-<script lang="ts">
-  import { page } from '$app/stores'
-  import { onMount } from 'svelte'
-
-  let user = null
-
-  onMount(async () => {
-    const id = $page.params.id
-    const response = await fetch(`/api/users/${id}`)
-    user = await response.json()
-  })
-</script>
-
-{#if user}
-  <h1>{user.name}</h1>
-  <p>{user.email}</p>
-{/if}
-```
-
-## Data Loading
-
-SvelteKit's load functions work in static mode:
-
-### `src/routes/users/+page.ts`
+Load data in layouts:
 
 ```ts
+// src/routes/blog/+layout.ts
 export async function load({ fetch }) {
-  const response = await fetch('/api/users')
-  const users = await response.json()
+  const res = await fetch('/api/categories')
+  const categories = await res.json()
 
   return {
-    users
+    categories
   }
 }
 ```
 
-### `src/routes/users/+page.svelte`
-
 ```svelte
+<!-- src/routes/blog/+layout.svelte -->
 <script lang="ts">
   export let data
 </script>
 
-<h1>Users</h1>
+<aside>
+  <h2>Categories</h2>
+  <ul>
+    {#each data.categories as category}
+      <li><a href="/blog?category={category.slug}">{category.name}</a></li>
+    {/each}
+  </ul>
+</aside>
+
+<slot />
+```
+
+### Resetting Layouts
+
+Break out of parent layouts with `+layout@.svelte`:
+
+```
+src/routes/
+├── +layout.svelte         # Root layout
+├── admin/
+│   ├── +layout.svelte     # Admin layout
+│   └── login/
+│       └── +layout@.svelte  # Skips admin layout, uses root
+```
+
+Or skip all layouts with `+layout@[id].svelte`:
+
+```svelte
+<!-- src/routes/print/+layout@.svelte -->
+<!-- This page has no layout, just the page content -->
+<slot />
+```
+
+## Data Loading
+
+SvelteKit's `load` functions fetch data before rendering pages.
+
+### Basic Load Function
+
+```ts
+// src/routes/blog/+page.ts
+export async function load({ fetch }) {
+  const response = await fetch('/api/posts')
+  const posts = await response.json()
+
+  return {
+    posts
+  }
+}
+```
+
+```svelte
+<!-- src/routes/blog/+page.svelte -->
+<script lang="ts">
+  export let data
+</script>
+
+<h1>Blog</h1>
 
 <ul>
-  {#each data.users as user}
-    <li>{user.name}</li>
+  {#each data.posts as post}
+    <li>
+      <a href="/blog/{post.slug}">{post.title}</a>
+    </li>
   {/each}
 </ul>
+```
+
+### Load Function with Params
+
+```ts
+// src/routes/blog/[slug]/+page.ts
+export async function load({ params, fetch }) {
+  const response = await fetch(`/api/posts/${params.slug}`)
+
+  if (!response.ok) {
+    return {
+      status: 404,
+      error: new Error('Post not found')
+    }
+  }
+
+  const post = await response.json()
+
+  return {
+    post
+  }
+}
+```
+
+### Parallel Loading
+
+Load multiple resources in parallel:
+
+```ts
+// src/routes/dashboard/+page.ts
+export async function load({ fetch }) {
+  const [usersRes, statsRes, postsRes] = await Promise.all([
+    fetch('/api/users'),
+    fetch('/api/stats'),
+    fetch('/api/posts')
+  ])
+
+  const [users, stats, posts] = await Promise.all([
+    usersRes.json(),
+    statsRes.json(),
+    postsRes.json()
+  ])
+
+  return {
+    users,
+    stats,
+    posts
+  }
+}
+```
+
+### Dependent Loads
+
+When data depends on other data:
+
+```ts
+// src/routes/user/[id]/+page.ts
+export async function load({ params, fetch }) {
+  // First, fetch the user
+  const userRes = await fetch(`/api/users/${params.id}`)
+  const user = await userRes.json()
+
+  // Then, fetch posts by this user
+  const postsRes = await fetch(`/api/posts?authorId=${user.id}`)
+  const posts = await postsRes.json()
+
+  return {
+    user,
+    posts
+  }
+}
+```
+
+### Streaming with Promises
+
+Return promises to stream data:
+
+```ts
+// src/routes/dashboard/+page.ts
+export async function load({ fetch }) {
+  return {
+    // This loads immediately
+    user: await fetch('/api/user').then(r => r.json()),
+
+    // These stream in when ready
+    stats: fetch('/api/stats').then(r => r.json()),
+    posts: fetch('/api/posts').then(r => r.json())
+  }
+}
+```
+
+```svelte
+<!-- src/routes/dashboard/+page.svelte -->
+<script lang="ts">
+  export let data
+</script>
+
+<h1>Welcome {data.user.name}</h1>
+
+{#await data.stats}
+  <p>Loading stats...</p>
+{:then stats}
+  <div>
+    <p>Posts: {stats.postCount}</p>
+    <p>Views: {stats.viewCount}</p>
+  </div>
+{/await}
+
+{#await data.posts}
+  <p>Loading posts...</p>
+{:then posts}
+  <ul>
+    {#each posts as post}
+      <li>{post.title}</li>
+    {/each}
+  </ul>
+{/await}
+```
+
+## Navigation
+
+SvelteKit provides programmatic navigation and lifecycle hooks.
+
+### Using `goto`
+
+```svelte
+<script lang="ts">
+  import { goto } from '$app/navigation'
+
+  function navigateToAbout() {
+    goto('/about')
+  }
+
+  function navigateWithOptions() {
+    goto('/blog', {
+      replaceState: true,      // Replace history instead of push
+      noScroll: true,          // Don't scroll to top
+      keepFocus: true,         // Keep focus on current element
+      invalidateAll: true      // Reload all data
+    })
+  }
+</script>
+
+<button on:click={navigateToAbout}>Go to About</button>
+```
+
+### Navigation Lifecycle
+
+```svelte
+<script lang="ts">
+  import { beforeNavigate, afterNavigate } from '$app/navigation'
+  import { page } from '$app/stores'
+
+  let hasUnsavedChanges = false
+
+  beforeNavigate(({ from, to, cancel }) => {
+    if (hasUnsavedChanges) {
+      if (!confirm('You have unsaved changes. Leave anyway?')) {
+        cancel()
+      }
+    }
+  })
+
+  afterNavigate(({ from, to, type }) => {
+    console.log('Navigated from', from?.url)
+    console.log('Navigated to', to?.url)
+    console.log('Navigation type', type) // 'link', 'popstate', 'goto'
+  })
+</script>
+```
+
+### Prefetching
+
+SvelteKit can prefetch data before navigation:
+
+```svelte
+<!-- Prefetch on hover (default) -->
+<a href="/blog" data-sveltekit-preload-data="hover">Blog</a>
+
+<!-- Prefetch on tap (mobile-friendly) -->
+<a href="/blog" data-sveltekit-preload-data="tap">Blog</a>
+
+<!-- Disable prefetching -->
+<a href="/blog" data-sveltekit-preload-data="off">Blog</a>
+
+<!-- Prefetch immediately -->
+<a href="/blog" data-sveltekit-preload-data>Blog</a>
+```
+
+### Disabling Client-Side Routing
+
+For external links or special cases:
+
+```svelte
+<!-- Force full page reload -->
+<a href="/admin" data-sveltekit-reload>Admin</a>
+
+<!-- Disable client-side routing for this link -->
+<a href="/legacy" data-sveltekit-noscroll>Legacy Page</a>
+```
+
+## Page Options
+
+Configure page behavior with `+page.ts`:
+
+```ts
+// src/routes/blog/+page.ts
+export const prerender = true  // Prerender at build time
+export const ssr = false       // Disable server-side rendering
+export const csr = true        // Enable client-side rendering
+export const trailingSlash = 'always'  // or 'never' or 'ignore'
+
+export async function load({ fetch }) {
+  // ...
+}
+```
+
+**Options:**
+- `prerender`: Generate static HTML at build time
+- `ssr`: Server-side rendering (not applicable with static adapter)
+- `csr`: Client-side rendering
+- `trailingSlash`: URL trailing slash handling
+
+## SvelteKit Stores
+
+SvelteKit provides built-in stores for navigation state.
+
+### `$app/stores`
+
+```svelte
+<script lang="ts">
+  import { page, navigating, updated } from '$app/stores'
+
+  // Page store - current page state
+  $: console.log('Current route:', $page.url.pathname)
+  $: console.log('Route params:', $page.params)
+  $: console.log('Query params:', $page.url.searchParams.get('q'))
+  $: console.log('Page data:', $page.data)
+
+  // Navigating store - navigation in progress
+  $: if ($navigating) {
+    console.log('Navigating from', $navigating.from?.url)
+    console.log('Navigating to', $navigating.to?.url)
+  }
+
+  // Updated store - new version deployed
+  $: if ($updated) {
+    // New version available, reload page
+    location.reload()
+  }
+</script>
+
+{#if $navigating}
+  <div class="loading-bar">Loading...</div>
+{/if}
+
+<p>Current page: {$page.url.pathname}</p>
+```
+
+## Forms and Actions
+
+In static mode, SvelteKit form actions don't work. Use client-side forms instead.
+
+### Client-Side Form Handling
+
+```svelte
+<!-- src/routes/contact/+page.svelte -->
+<script lang="ts">
+  let name = ''
+  let email = ''
+  let message = ''
+  let submitting = false
+  let success = false
+  let error: string | null = null
+
+  async function handleSubmit() {
+    submitting = true
+    success = false
+    error = null
+
+    try {
+      const response = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, message })
+      })
+
+      if (!response.ok) throw new Error('Failed to send message')
+
+      success = true
+      name = ''
+      email = ''
+      message = ''
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Unknown error'
+    } finally {
+      submitting = false
+    }
+  }
+</script>
+
+<form on:submit|preventDefault={handleSubmit}>
+  <input bind:value={name} placeholder="Name" required />
+  <input bind:value={email} type="email" placeholder="Email" required />
+  <textarea bind:value={message} placeholder="Message" required />
+
+  <button type="submit" disabled={submitting}>
+    {submitting ? 'Sending...' : 'Send Message'}
+  </button>
+</form>
+
+{#if success}
+  <p class="success">Message sent successfully!</p>
+{/if}
+
+{#if error}
+  <p class="error">{error}</p>
+{/if}
+```
+
+## Error Handling
+
+Handle errors with `+error.svelte` pages.
+
+### Error Page
+
+```svelte
+<!-- src/routes/+error.svelte -->
+<script lang="ts">
+  import { page } from '$app/stores'
+</script>
+
+<div class="error-page">
+  <h1>{$page.status}: {$page.error?.message}</h1>
+
+  {#if $page.status === 404}
+    <p>Page not found</p>
+    <a href="/">Go home</a>
+  {:else}
+    <p>Something went wrong</p>
+    <button on:click={() => location.reload()}>Reload</button>
+  {/if}
+</div>
+
+<style>
+  .error-page {
+    text-align: center;
+    padding: 4rem 2rem;
+  }
+
+  h1 {
+    color: #e63900;
+  }
+</style>
+```
+
+### Throwing Errors in Load Functions
+
+```ts
+// src/routes/blog/[slug]/+page.ts
+import { error } from '@sveltejs/kit'
+
+export async function load({ params, fetch }) {
+  const response = await fetch(`/api/posts/${params.slug}`)
+
+  if (!response.ok) {
+    throw error(404, {
+      message: 'Post not found'
+    })
+  }
+
+  const post = await response.json()
+  return { post }
+}
+```
+
+## Environment Variables
+
+Access environment variables safely.
+
+### Public Variables
+
+```ts
+// src/routes/+page.ts
+import { PUBLIC_API_URL } from '$env/static/public'
+
+export async function load({ fetch }) {
+  const response = await fetch(`${PUBLIC_API_URL}/posts`)
+  const posts = await response.json()
+  return { posts }
+}
+```
+
+```bash
+# .env
+PUBLIC_API_URL=https://api.example.com
+```
+
+**Important:** `PUBLIC_*` variables are embedded in client-side code.
+
+### Private Variables (Build-time only)
+
+```ts
+// src/routes/+page.ts (or server-side code)
+import { SECRET_KEY } from '$env/static/private'
+
+// Only available during build, not in client bundle
+```
+
+## Complete Real-World Example: Blog
+
+Let's build a complete blog with routing, layouts, and data loading.
+
+### Backend (Go)
+
+```go
+// app/server/routes.go
+package server
+
+import (
+	"time"
+
+	"github.com/go-mizu/mizu"
+)
+
+type Post struct {
+	ID        int       `json:"id"`
+	Title     string    `json:"title"`
+	Slug      string    `json:"slug"`
+	Excerpt   string    `json:"excerpt"`
+	Content   string    `json:"content"`
+	Author    string    `json:"author"`
+	Tags      []string  `json:"tags"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+var posts = []Post{
+	{
+		ID:        1,
+		Title:     "Getting Started with SvelteKit",
+		Slug:      "getting-started",
+		Excerpt:   "Learn the basics of SvelteKit",
+		Content:   "SvelteKit is amazing...",
+		Author:    "Alice",
+		Tags:      []string{"sveltekit", "tutorial"},
+		CreatedAt: time.Now().AddDate(0, 0, -5),
+	},
+	{
+		ID:        2,
+		Title:     "Building with Mizu",
+		Slug:      "building-with-mizu",
+		Excerpt:   "Create backends with Go and Mizu",
+		Content:   "Mizu makes it easy...",
+		Author:    "Bob",
+		Tags:      []string{"mizu", "go"},
+		CreatedAt: time.Now().AddDate(0, 0, -2),
+	},
+}
+
+func setupRoutes(app *mizu.App) {
+	// GET /api/posts
+	app.GET("/api/posts", func(c *mizu.Ctx) error {
+		return c.JSON(posts)
+	})
+
+	// GET /api/posts/:slug
+	app.GET("/api/posts/:slug", func(c *mizu.Ctx) error {
+		slug := c.Param("slug")
+		for _, post := range posts {
+			if post.Slug == slug {
+				return c.JSON(post)
+			}
+		}
+		return c.Status(404).JSON(map[string]string{"error": "Post not found"})
+	})
+}
+```
+
+### Frontend Structure
+
+```
+client/src/routes/
+├── +layout.svelte
+├── +page.svelte
+├── about/
+│   └── +page.svelte
+└── blog/
+    ├── +layout.svelte
+    ├── +page.svelte
+    ├── +page.ts
+    └── [slug]/
+        ├── +page.svelte
+        └── +page.ts
+```
+
+### Root Layout
+
+```svelte
+<!-- src/routes/+layout.svelte -->
+<script lang="ts">
+  import './global.css'
+</script>
+
+<div class="app">
+  <header>
+    <nav>
+      <a href="/" class="logo">MyBlog</a>
+      <div class="links">
+        <a href="/blog">Blog</a>
+        <a href="/about">About</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <slot />
+  </main>
+
+  <footer>
+    <p>&copy; 2024 MyBlog. Built with SvelteKit and Mizu.</p>
+  </footer>
+</div>
+
+<style>
+  .app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    background: #ff3e00;
+    color: white;
+  }
+
+  nav {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .logo {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: white;
+    text-decoration: none;
+  }
+
+  .links {
+    display: flex;
+    gap: 2rem;
+  }
+
+  .links a {
+    color: white;
+    text-decoration: none;
+  }
+
+  .links a:hover {
+    text-decoration: underline;
+  }
+
+  main {
+    flex: 1;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+    width: 100%;
+  }
+
+  footer {
+    background: #f5f5f5;
+    text-align: center;
+    padding: 2rem;
+    color: #666;
+  }
+</style>
+```
+
+### Blog List Page
+
+```ts
+// src/routes/blog/+page.ts
+export async function load({ fetch }) {
+  const response = await fetch('/api/posts')
+  const posts = await response.json()
+
+  return {
+    posts
+  }
+}
+```
+
+```svelte
+<!-- src/routes/blog/+page.svelte -->
+<script lang="ts">
+  export let data
+</script>
+
+<svelte:head>
+  <title>Blog - MyBlog</title>
+  <meta name="description" content="Read our latest blog posts" />
+</svelte:head>
+
+<h1>Blog</h1>
+
+<div class="posts">
+  {#each data.posts as post}
+    <article class="post-card">
+      <h2>
+        <a href="/blog/{post.slug}">{post.title}</a>
+      </h2>
+      <p class="meta">
+        By {post.author} • {new Date(post.createdAt).toLocaleDateString()}
+      </p>
+      <p class="excerpt">{post.excerpt}</p>
+      <div class="tags">
+        {#each post.tags as tag}
+          <span class="tag">{tag}</span>
+        {/each}
+      </div>
+    </article>
+  {/each}
+</div>
+
+<style>
+  h1 {
+    margin-bottom: 2rem;
+  }
+
+  .posts {
+    display: grid;
+    gap: 2rem;
+  }
+
+  .post-card {
+    padding: 1.5rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+  }
+
+  .post-card h2 {
+    margin: 0 0 0.5rem;
+  }
+
+  .post-card a {
+    color: #ff3e00;
+    text-decoration: none;
+  }
+
+  .post-card a:hover {
+    text-decoration: underline;
+  }
+
+  .meta {
+    color: #666;
+    font-size: 0.875rem;
+    margin-bottom: 1rem;
+  }
+
+  .excerpt {
+    margin-bottom: 1rem;
+  }
+
+  .tags {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .tag {
+    background: #f5f5f5;
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.875rem;
+  }
+</style>
+```
+
+### Blog Post Page
+
+```ts
+// src/routes/blog/[slug]/+page.ts
+import { error } from '@sveltejs/kit'
+
+export async function load({ params, fetch }) {
+  const response = await fetch(`/api/posts/${params.slug}`)
+
+  if (!response.ok) {
+    throw error(404, {
+      message: 'Post not found'
+    })
+  }
+
+  const post = await response.json()
+
+  return {
+    post
+  }
+}
+```
+
+```svelte
+<!-- src/routes/blog/[slug]/+page.svelte -->
+<script lang="ts">
+  export let data
+
+  $: post = data.post
+</script>
+
+<svelte:head>
+  <title>{post.title} - MyBlog</title>
+  <meta name="description" content={post.excerpt} />
+</svelte:head>
+
+<article class="post">
+  <header>
+    <h1>{post.title}</h1>
+    <p class="meta">
+      By {post.author} • {new Date(post.createdAt).toLocaleDateString()}
+    </p>
+    <div class="tags">
+      {#each post.tags as tag}
+        <span class="tag">{tag}</span>
+      {/each}
+    </div>
+  </header>
+
+  <div class="content">
+    {@html post.content}
+  </div>
+
+  <footer>
+    <a href="/blog">← Back to blog</a>
+  </footer>
+</article>
+
+<style>
+  .post {
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  header {
+    margin-bottom: 2rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  h1 {
+    margin-bottom: 0.5rem;
+  }
+
+  .meta {
+    color: #666;
+    margin-bottom: 1rem;
+  }
+
+  .tags {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .tag {
+    background: #f5f5f5;
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.875rem;
+  }
+
+  .content {
+    line-height: 1.8;
+    margin-bottom: 3rem;
+  }
+
+  footer a {
+    color: #ff3e00;
+    text-decoration: none;
+  }
+
+  footer a:hover {
+    text-decoration: underline;
+  }
+</style>
 ```
 
 ## Development Workflow
@@ -259,6 +1393,8 @@ Or use the Makefile:
 make dev
 ```
 
+The Makefile typically runs both servers concurrently.
+
 ## Building for Production
 
 ```bash
@@ -275,39 +1411,69 @@ Run:
 MIZU_ENV=production ./bin/server
 ```
 
-## SvelteKit Features
+## Troubleshooting
 
-### Navigation
+### Build Directory Not Found
 
-```svelte
-<script>
-  import { goto } from '$app/navigation'
+**Problem**: Go can't find the `build/` directory.
 
-  function navigate() {
-    goto('/users')
+**Solution**: Make sure you've run `npm run build` in the `client/` directory first:
+```bash
+cd client
+npm run build
+cd ..
+go build -o bin/server cmd/server/main.go
+```
+
+### HMR Not Working
+
+**Problem**: Changes don't hot-reload.
+
+**Solution**: Verify `vite.config.ts`:
+```ts
+server: {
+  hmr: {
+    clientPort: 3000  // Must match Mizu port
   }
-</script>
-
-<button on:click={navigate}>Go to Users</button>
+}
 ```
 
-### Page Store
+### 404 on Page Refresh
 
-```svelte
-<script>
-  import { page } from '$app/stores'
+**Problem**: Refreshing on `/blog` gives 404 in production.
 
-  // Access current route
-  $: console.log($page.url.pathname)
-  $: console.log($page.params)
-  $: console.log($page.data)
-</script>
+**Solution**: Ensure `fallback: 'index.html'` is set in `svelte.config.js`:
+```js
+adapter: adapter({
+  fallback: 'index.html'  // Enable SPA mode
+})
 ```
 
-### Prefetching
+### Data Not Loading
 
-```svelte
-<a href="/users" data-sveltekit-preload-data>Users</a>
+**Problem**: `load` functions don't fetch data.
+
+**Solution**: Make sure you're using `fetch` from the load context:
+```ts
+// ❌ Wrong
+export async function load() {
+  const res = await fetch('/api/posts')  // Uses global fetch
+}
+
+// ✅ Correct
+export async function load({ fetch }) {
+  const res = await fetch('/api/posts')  // Uses SvelteKit's fetch
+}
+```
+
+### Route Params Not Working
+
+**Problem**: `$page.params` is empty.
+
+**Solution**: Make sure you're accessing params in a component under the dynamic route:
+```
+src/routes/blog/[slug]/+page.svelte  ✅ Has access to $page.params.slug
+src/routes/blog/+page.svelte         ❌ No params here
 ```
 
 ## Limitations with Static Adapter
@@ -319,25 +1485,42 @@ When using the static adapter with Mizu:
 - Data loading from APIs ✅
 - Forms (client-side) ✅
 - Stores and state ✅
+- Layouts and nested routes ✅
+- Dynamic routes with params ✅
+- Prefetching ✅
 
 **Doesn't work:**
-- Server-side rendering ❌ (use `adapter-static`)
-- SvelteKit API routes ❌ (use Mizu API routes instead)
-- `+page.server.ts` ❌ (use `+page.ts` with fetch)
-- Form actions ❌ (use client-side forms)
+- Server-side rendering (SSR) ❌
+- SvelteKit API routes (`+server.ts`) ❌
+- Server-only load functions (`+page.server.ts`) ❌
+- Form actions (`+page.server.ts`) ❌
+- Hooks (`hooks.server.ts`) ❌
 
-## When to Use SvelteKit with Mizu
+**Workarounds:**
+- Use Mizu API routes instead of SvelteKit endpoints
+- Use `+page.ts` (client) instead of `+page.server.ts` (server)
+- Handle forms client-side with `fetch()`
 
-**Use SvelteKit when you want:**
-- File-based routing
-- Nested layouts
-- Built-in code splitting
-- Better DX than vanilla Svelte
+## When to Choose SvelteKit
 
-**Use vanilla Svelte when:**
-- You prefer manual routing
-- Simpler setup
-- Smaller learning curve
+**Choose SvelteKit + Mizu if:**
+- You want file-based routing with Svelte
+- You like nested layouts
+- You want automatic code splitting per route
+- You're comfortable with Go for your backend
+- You prefer static site generation
+
+**Choose vanilla Svelte + Mizu if:**
+- You prefer manual routing (simpler)
+- You don't need nested layouts
+- Smaller learning curve is important
+- You want minimal framework overhead
+
+**Choose full SvelteKit (without Mizu) if:**
+- You need SSR (server-side rendering)
+- You want Node.js for your backend
+- You need SvelteKit API routes and actions
+- You want to use `+page.server.ts` files
 
 ## Next Steps
 
@@ -345,13 +1528,13 @@ When using the static adapter with Mizu:
   <Card title="Svelte Guide" href="/frontend/svelte" icon="code">
     Learn vanilla Svelte
   </Card>
-  <Card title="API Integration" href="/frontend/api-integration" icon="plug">
-    Best practices for API calls
+  <Card title="SvelteKit Docs" href="https://kit.svelte.dev" icon="external-link">
+    Official SvelteKit documentation
   </Card>
   <Card title="Next.js" href="/frontend/nextjs" icon="code">
     Similar approach with React
   </Card>
-  <Card title="SvelteKit Docs" href="https://kit.svelte.dev" icon="external-link">
-    Official SvelteKit documentation
+  <Card title="Deployment" href="/frontend/building" icon="rocket">
+    Build and deploy your app
   </Card>
 </CardGroup>
