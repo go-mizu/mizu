@@ -1,0 +1,111 @@
+# {{.Name | pascal}}
+
+A React Native application powered by [Mizu](https://github.com/go-mizu/mizu).
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- npm or yarn
+- Expo CLI (`npm install -g expo-cli`)
+- iOS Simulator (macOS) or Android Emulator
+
+### Installation
+
+```bash
+# Install dependencies
+npm install
+
+# Start the development server
+npm start
+
+# Run on iOS
+npm run ios
+
+# Run on Android
+npm run android
+```
+
+## Project Structure
+
+```
+src/
+├── App.tsx                 # App entry point
+├── config/
+│   └── config.ts           # App configuration
+├── runtime/
+│   ├── MizuRuntime.ts      # Core runtime
+│   ├── transport.ts        # HTTP transport
+│   ├── tokenStore.ts       # Secure token storage
+│   ├── live.ts             # SSE streaming
+│   ├── deviceInfo.ts       # Device information
+│   └── errors.ts           # Error types
+├── sdk/
+│   ├── client.ts           # Generated API client
+│   ├── types.ts            # Generated types
+│   └── extensions.ts       # Convenience extensions
+├── store/
+│   └── authStore.ts        # Zustand auth store
+├── screens/
+│   ├── HomeScreen.tsx
+│   └── WelcomeScreen.tsx
+├── components/
+│   ├── LoadingView.tsx
+│   └── ErrorView.tsx
+└── navigation/
+    └── AppNavigator.tsx    # Navigation configuration
+```
+
+## Configuration
+
+### Development
+
+The app connects to `http://localhost:3000` (iOS) or `http://10.0.2.2:3000` (Android emulator) in development mode.
+
+### Production
+
+Update the base URL in `src/config/config.ts`:
+
+```typescript
+return 'https://api.yourapp.com';
+```
+
+## Testing
+
+```bash
+# Run unit tests
+npm test
+
+# Run with coverage
+npm test -- --coverage
+```
+
+## Building for Production
+
+### iOS
+
+```bash
+expo build:ios
+# or
+eas build --platform ios
+```
+
+### Android
+
+```bash
+expo build:android
+# or
+eas build --platform android
+```
+
+## Dependencies
+
+- [Expo](https://expo.dev/) - React Native development framework
+- [React Navigation](https://reactnavigation.org/) - Navigation library
+- [Zustand](https://github.com/pmndrs/zustand) - State management
+- [expo-secure-store](https://docs.expo.dev/versions/latest/sdk/securestore/) - Secure token storage
+
+## License
+
+MIT

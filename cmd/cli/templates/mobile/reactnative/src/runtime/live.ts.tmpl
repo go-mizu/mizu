@@ -1,0 +1,221 @@
+import { MizuRuntime } from './MizuRuntime';
+import { MizuError } from './errors';
+
+export interface ServerEvent {
+  id?: string;
+  event?: string;
+  data: string;
+  retry?: number;
+}
+
+export function decodeServerEvent<T>(event: ServerEvent): T {
+  return JSON.parse(event.data) as T;
+}
+
+/**
+ * Live connection manager for SSE
+ */
+export class LiveConnection {
+  private runtime: MizuRuntime;
+  private activeConnections: Map<string, AbortController> = new Map();
+
+  constructor(runtime: MizuRuntime) {
+    this.runtime = runtime;
+  }
+
+  /**
+   * Connects to an SSE endpoint and returns subscription methods
+   */
+  connect(
+    path: string,
+    headers?: Record<string, string>
+  ): {
+    subscribe: (
+      onEvent: (event: ServerEvent) => void,
+      onError?: (error: Error) => void
+    ) => () => void;
+  } {
+    return {
+      subscribe: (onEvent, onError) => {
+        const controller = new AbortController();
+
+        // Cancel any existing connection to this path
+        const existing = this.activeConnections.get(path);
+        if (existing) {
+          existing.abort();
+        }
+        this.activeConnections.set(path, controller);
+
+        this._connect(path, headers, controller.signal, onEvent, onError);
+
+        return () => {
+          controller.abort();
+          this.activeConnections.delete(path);
+        };
+      },
+    };
+  }
+
+  private async _connect(
+    path: string,
+    headers: Record<string, string> | undefined,
+    signal: AbortSignal,
+    onEvent: (event: ServerEvent) => void,
+    onError?: (error: Error) => void
+  ): Promise<void> {
+    const url = this._buildUrl(path);
+    const allHeaders = await this._buildHeaders(headers);
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          ...allHeaders,
+          Accept: 'text/event-stream',
+          'Cache-Control': 'no-cache',
+        },
+        signal,
+      });
+
+      if (!response.ok) {
+        throw MizuError.http(response.status, 'SSE connection failed');
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw MizuError.network(new Error('Response body is not readable'));
+      }
+
+      const decoder = new TextDecoder();
+      const eventBuilder = new SSEEventBuilder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const text = decoder.decode(value, { stream: true });
+        const lines = text.split('\n');
+
+        for (const line of lines) {
+          const event = eventBuilder.processLine(line);
+          if (event) {
+            onEvent(event);
+          }
+        }
+      }
+    } catch (error) {
+      if (signal.aborted) return;
+      if (onError) {
+        onError(error instanceof Error ? error : new Error(String(error)));
+      }
+    } finally {
+      this.activeConnections.delete(path);
+    }
+  }
+
+  /** Disconnects from a specific path */
+  disconnect(path: string): void {
+    const controller = this.activeConnections.get(path);
+    if (controller) {
+      controller.abort();
+      this.activeConnections.delete(path);
+    }
+  }
+
+  /** Disconnects all active connections */
+  disconnectAll(): void {
+    this.activeConnections.forEach((controller) => controller.abort());
+    this.activeConnections.clear();
+  }
+
+  private _buildUrl(path: string): string {
+    const base = this.runtime.baseURL.endsWith('/')
+      ? this.runtime.baseURL.slice(0, -1)
+      : this.runtime.baseURL;
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    return `${base}${cleanPath}`;
+  }
+
+  private async _buildHeaders(custom?: Record<string, string>): Promise<Record<string, string>> {
+    const headers: Record<string, string> = {};
+    Object.assign(headers, this.runtime.defaultHeaders);
+    if (custom) {
+      Object.assign(headers, custom);
+    }
+
+    const token = await this.runtime.tokenStore.getToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token.accessToken}`;
+    }
+
+    return headers;
+  }
+}
+
+/**
+ * SSE event parser
+ */
+class SSEEventBuilder {
+  private id?: string;
+  private event?: string;
+  private data: string[] = [];
+  private retry?: number;
+
+  processLine(line: string): ServerEvent | null {
+    if (line === '') {
+      // Empty line means end of event
+      if (this.data.length === 0) return null;
+
+      const event: ServerEvent = {
+        id: this.id,
+        event: this.event,
+        data: this.data.join('\n'),
+        retry: this.retry,
+      };
+
+      // Reset for next event (keep id for Last-Event-ID)
+      this.event = undefined;
+      this.data = [];
+      this.retry = undefined;
+
+      return event;
+    }
+
+    if (line.startsWith(':')) {
+      // Comment, ignore
+      return null;
+    }
+
+    const colonIndex = line.indexOf(':');
+    if (colonIndex === -1) {
+      // Field with no value
+      return null;
+    }
+
+    const field = line.substring(0, colonIndex);
+    let value = line.substring(colonIndex + 1);
+    if (value.startsWith(' ')) {
+      value = value.substring(1);
+    }
+
+    switch (field) {
+      case 'id':
+        this.id = value;
+        break;
+      case 'event':
+        this.event = value;
+        break;
+      case 'data':
+        this.data.push(value);
+        break;
+      case 'retry':
+        const parsed = parseInt(value, 10);
+        if (!isNaN(parsed)) {
+          this.retry = parsed;
+        }
+        break;
+    }
+
+    return null;
+  }
+}

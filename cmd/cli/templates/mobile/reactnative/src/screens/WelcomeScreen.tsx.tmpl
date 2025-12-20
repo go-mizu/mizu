@@ -1,0 +1,112 @@
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+  SafeAreaView,
+} from 'react-native';
+import { MizuRuntime } from '../runtime/MizuRuntime';
+import { createAuthToken } from '../runtime/tokenStore';
+
+export default function WelcomeScreen() {
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleGetStarted = async () => {
+    setIsLoading(true);
+    try {
+      // Demo: Set a test token
+      await MizuRuntime.shared.tokenStore.setToken(
+        createAuthToken({ accessToken: 'demo_token' })
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.content}>
+        <View style={styles.spacer} />
+
+        <View style={styles.header}>
+          <View style={styles.iconContainer}>
+            <Text style={styles.icon}>⚛</Text>
+          </View>
+          <Text style={styles.title}>Welcome to {{.Name | pascal}}</Text>
+          <Text style={styles.subtitle}>
+            A modern React Native app powered by Mizu
+          </Text>
+        </View>
+
+        <View style={styles.spacer} />
+
+        <View style={styles.footer}>
+          {isLoading ? (
+            <ActivityIndicator size="large" color="#FFFFFF" style={styles.button} />
+          ) : (
+            <TouchableOpacity style={styles.button} onPress={handleGetStarted}>
+              <Text style={styles.buttonText}>Get Started</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  content: {
+    flex: 1,
+    padding: 24,
+  },
+  spacer: {
+    flex: 1,
+  },
+  header: {
+    alignItems: 'center',
+  },
+  iconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#EEF2FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  icon: {
+    fontSize: 40,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  footer: {
+    paddingBottom: 24,
+  },
+  button: {
+    backgroundColor: '#6366F1',
+    paddingVertical: 18,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  buttonText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+});
