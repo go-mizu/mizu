@@ -1,0 +1,497 @@
+---
+title: "Contract System"
+description: "Transport-neutral API definitions with SDK generation"
+---
+
+The Contract system lets you define your API once and serve it via multiple transports (REST, JSON-RPC, MCP). It also generates type-safe SDKs for Go, Python, and TypeScript.
+
+## What is a Contract?
+
+A Contract is a Go struct that defines your service's methods. Mizu extracts method signatures via reflection and generates handlers, OpenAPI specs, and client SDKs automatically.
+
+```go
+// Define your service as a Go struct
+type UserService struct {
+    db *sql.DB
+}
+
+// Each method becomes an API endpoint
+func (s *UserService) GetUser(ctx context.Context, id string) (*User, error) {
+    return s.db.FindUser(ctx, id)
+}
+
+func (s *UserService) CreateUser(ctx context.Context, input CreateUserInput) (*User, error) {
+    return s.db.CreateUser(ctx, input)
+}
+```
+
+## Why Use Contracts?
+
+### Type Safety Across Boundaries
+
+Your API types are defined once in Go and shared with all clients:
+
+```go
+// Server (Go)
+type User struct {
+    ID    string `json:"id"`
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+
+// Generated Python SDK
+class User:
+    id: str
+    name: str
+    email: str
+
+// Generated TypeScript SDK
+interface User {
+    id: string;
+    name: string;
+    email: string;
+}
+```
+
+### Multiple Transports from One Definition
+
+```go
+service := &UserService{db: db}
+contract := contract.New(service)
+
+// Serve as REST
+app.Mount("/api", rest.Handler(contract))
+
+// Serve as JSON-RPC
+app.Mount("/rpc", jsonrpc.Handler(contract))
+
+// Serve as MCP (for AI tools)
+app.Mount("/mcp", mcp.Handler(contract))
+
+// Generate OpenAPI spec
+spec := openapi.Generate(contract)
+```
+
+### Automatic Client Generation
+
+```bash
+# Generate Go SDK
+mizu contract sdk go --output ./sdk/go
+
+# Generate Python SDK
+mizu contract sdk python --output ./sdk/python
+
+# Generate TypeScript SDK
+mizu contract sdk typescript --output ./sdk/typescript
+```
+
+## Quick Example
+
+### 1. Define the Service
+
+```go
+package main
+
+import (
+    "context"
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/contract/rest"
+)
+
+// User model
+type User struct {
+    ID    string `json:"id"`
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+
+// Input for creating users
+type CreateUserInput struct {
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+
+// Service definition
+type UserService struct{}
+
+func (s *UserService) GetUser(ctx context.Context, id string) (*User, error) {
+    return &User{ID: id, Name: "Alice", Email: "alice@example.com"}, nil
+}
+
+func (s *UserService) ListUsers(ctx context.Context) ([]*User, error) {
+    return []*User{
+        {ID: "1", Name: "Alice", Email: "alice@example.com"},
+        {ID: "2", Name: "Bob", Email: "bob@example.com"},
+    }, nil
+}
+
+func (s *UserService) CreateUser(ctx context.Context, input CreateUserInput) (*User, error) {
+    return &User{
+        ID:    "new-id",
+        Name:  input.Name,
+        Email: input.Email,
+    }, nil
+}
+```
+
+### 2. Register and Serve
+
+```go
+func main() {
+    app := mizu.New()
+
+    service := &UserService{}
+    contract := contract.Register(service)
+
+    // Mount as REST API
+    app.Mount("/api", rest.Handler(contract))
+
+    app.Listen(":3000")
+}
+```
+
+### 3. Use the API
+
+```bash
+# Get a user
+curl http://localhost:3000/api/users/1
+
+# List users
+curl http://localhost:3000/api/users
+
+# Create a user
+curl -X POST http://localhost:3000/api/users \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Charlie", "email": "charlie@example.com"}'
+```
+
+## Supported Transports
+
+### REST (HTTP/JSON)
+
+The most common transport, using standard HTTP methods:
+
+```go
+import "github.com/go-mizu/mizu/contract/rest"
+
+app.Mount("/api", rest.Handler(contract))
+```
+
+| Method Prefix | HTTP Method | Example |
+|---------------|-------------|---------|
+| `Get*` | GET | `GetUser` → `GET /users/{id}` |
+| `List*` | GET | `ListUsers` → `GET /users` |
+| `Create*` | POST | `CreateUser` → `POST /users` |
+| `Update*` | PUT | `UpdateUser` → `PUT /users/{id}` |
+| `Delete*` | DELETE | `DeleteUser` → `DELETE /users/{id}` |
+
+### JSON-RPC
+
+For RPC-style APIs:
+
+```go
+import "github.com/go-mizu/mizu/contract/jsonrpc"
+
+app.Mount("/rpc", jsonrpc.Handler(contract))
+```
+
+```bash
+curl -X POST http://localhost:3000/rpc \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"UserService.GetUser","params":["1"],"id":1}'
+```
+
+### MCP (Model Context Protocol)
+
+For AI tool integration (Claude, etc.):
+
+```go
+import "github.com/go-mizu/mizu/contract/mcp"
+
+app.Mount("/mcp", mcp.Handler(contract))
+```
+
+This allows AI models to call your API methods as tools.
+
+### OpenAPI
+
+Generate OpenAPI 3.0 specifications:
+
+```go
+import "github.com/go-mizu/mizu/contract/openapi"
+
+spec := openapi.Generate(contract)
+app.Get("/openapi.json", func(c *mizu.Ctx) error {
+    return c.JSON(200, spec)
+})
+```
+
+## SDK Generation
+
+Generate type-safe clients for multiple languages:
+
+### Go SDK
+
+```bash
+mizu contract sdk go --output ./sdk/go
+```
+
+```go
+// Using generated Go SDK
+client := usersdk.New("http://localhost:3000/api")
+user, err := client.GetUser(ctx, "1")
+```
+
+### Python SDK
+
+```bash
+mizu contract sdk python --output ./sdk/python
+```
+
+```python
+# Using generated Python SDK
+from usersdk import UserClient
+
+client = UserClient("http://localhost:3000/api")
+user = client.get_user("1")
+```
+
+### TypeScript SDK
+
+```bash
+mizu contract sdk typescript --output ./sdk/typescript
+```
+
+```typescript
+// Using generated TypeScript SDK
+import { UserClient } from './usersdk';
+
+const client = new UserClient('http://localhost:3000/api');
+const user = await client.getUser('1');
+```
+
+## Comparison with Alternatives
+
+### vs. gRPC
+
+| Aspect | gRPC | Mizu Contract |
+|--------|------|---------------|
+| Schema | .proto files | Go structs |
+| Protocol | HTTP/2 + Protobuf | HTTP/1.1 + JSON (or HTTP/2) |
+| Browser support | Needs proxy | Native |
+| Transports | One (gRPC) | Multiple (REST, JSON-RPC, MCP) |
+| Learning curve | Steeper | Gentler |
+| Performance | Faster | Fast enough for most |
+
+### vs. OpenAPI-First
+
+| Aspect | OpenAPI-First | Mizu Contract |
+|--------|---------------|---------------|
+| Source of truth | YAML/JSON spec | Go code |
+| Type safety | Generated | Native |
+| Refactoring | Manual sync | Automatic |
+| Tooling | External | Built-in |
+
+### vs. GraphQL
+
+| Aspect | GraphQL | Mizu Contract |
+|--------|---------|---------------|
+| Query flexibility | High | Fixed endpoints |
+| Complexity | Higher | Lower |
+| Caching | Harder | Standard HTTP |
+| Client generation | External | Built-in |
+
+## Method Conventions
+
+### Naming
+
+Method names determine HTTP methods and routes:
+
+```go
+// GET /users/{id}
+func (s *UserService) GetUser(ctx context.Context, id string) (*User, error)
+
+// GET /users
+func (s *UserService) ListUsers(ctx context.Context) ([]*User, error)
+
+// POST /users
+func (s *UserService) CreateUser(ctx context.Context, input CreateInput) (*User, error)
+
+// PUT /users/{id}
+func (s *UserService) UpdateUser(ctx context.Context, id string, input UpdateInput) (*User, error)
+
+// DELETE /users/{id}
+func (s *UserService) DeleteUser(ctx context.Context, id string) error
+```
+
+### Parameters
+
+| Parameter Type | Mapping |
+|----------------|---------|
+| `ctx context.Context` | Request context (required first) |
+| `string`, `int`, etc. | Path parameters |
+| Struct | Request body (JSON) |
+
+### Return Values
+
+| Return Type | Mapping |
+|-------------|---------|
+| `error` | Error response |
+| `(*T, error)` | JSON response |
+| `([]*T, error)` | JSON array response |
+
+## Error Handling
+
+Return errors to send error responses:
+
+```go
+import "github.com/go-mizu/mizu/contract"
+
+func (s *UserService) GetUser(ctx context.Context, id string) (*User, error) {
+    user, err := s.db.FindUser(ctx, id)
+    if err != nil {
+        if errors.Is(err, sql.ErrNoRows) {
+            // Returns 404 Not Found
+            return nil, contract.NotFound("user not found")
+        }
+        // Returns 500 Internal Server Error
+        return nil, err
+    }
+    return user, nil
+}
+```
+
+Built-in error types:
+- `contract.NotFound(msg)` → 404
+- `contract.BadRequest(msg)` → 400
+- `contract.Unauthorized(msg)` → 401
+- `contract.Forbidden(msg)` → 403
+
+## Complete Example
+
+```go
+package main
+
+import (
+    "context"
+    "errors"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/contract"
+    "github.com/go-mizu/mizu/contract/rest"
+    "github.com/go-mizu/mizu/contract/openapi"
+)
+
+// Models
+type Task struct {
+    ID        string `json:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
+}
+
+type CreateTaskInput struct {
+    Title string `json:"title"`
+}
+
+type UpdateTaskInput struct {
+    Title     *string `json:"title,omitempty"`
+    Completed *bool   `json:"completed,omitempty"`
+}
+
+// Service
+type TaskService struct {
+    tasks map[string]*Task
+}
+
+func (s *TaskService) ListTasks(ctx context.Context) ([]*Task, error) {
+    result := make([]*Task, 0, len(s.tasks))
+    for _, t := range s.tasks {
+        result = append(result, t)
+    }
+    return result, nil
+}
+
+func (s *TaskService) GetTask(ctx context.Context, id string) (*Task, error) {
+    task, ok := s.tasks[id]
+    if !ok {
+        return nil, contract.NotFound("task not found")
+    }
+    return task, nil
+}
+
+func (s *TaskService) CreateTask(ctx context.Context, input CreateTaskInput) (*Task, error) {
+    if input.Title == "" {
+        return nil, contract.BadRequest("title is required")
+    }
+    task := &Task{
+        ID:    generateID(),
+        Title: input.Title,
+    }
+    s.tasks[task.ID] = task
+    return task, nil
+}
+
+func (s *TaskService) UpdateTask(ctx context.Context, id string, input UpdateTaskInput) (*Task, error) {
+    task, ok := s.tasks[id]
+    if !ok {
+        return nil, contract.NotFound("task not found")
+    }
+    if input.Title != nil {
+        task.Title = *input.Title
+    }
+    if input.Completed != nil {
+        task.Completed = *input.Completed
+    }
+    return task, nil
+}
+
+func (s *TaskService) DeleteTask(ctx context.Context, id string) error {
+    if _, ok := s.tasks[id]; !ok {
+        return contract.NotFound("task not found")
+    }
+    delete(s.tasks, id)
+    return nil
+}
+
+func main() {
+    app := mizu.New()
+
+    service := &TaskService{tasks: make(map[string]*Task)}
+    c := contract.Register(service)
+
+    // REST API
+    app.Mount("/api", rest.Handler(c))
+
+    // OpenAPI spec
+    spec := openapi.Generate(c)
+    app.Get("/openapi.json", func(ctx *mizu.Ctx) error {
+        return ctx.JSON(200, spec)
+    })
+
+    app.Listen(":3000")
+}
+
+func generateID() string { return "task-1" }
+```
+
+## Learn More
+
+<CardGroup cols={2}>
+  <Card title="Contract Documentation" icon="book" href="/contract/overview">
+    Complete contract system reference.
+  </Card>
+  <Card title="SDK Generation" icon="code" href="/contract/sdk-overview">
+    Generate clients for any language.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="View Engine" icon="window" href="/guides/view">
+    Server-side rendering with templates.
+  </Card>
+  <Card title="Frontend Integration" icon="react" href="/guides/frontend">
+    Integrate with React, Vue, and more.
+  </Card>
+</CardGroup>

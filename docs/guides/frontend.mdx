@@ -1,0 +1,462 @@
+---
+title: "Frontend Integration"
+description: "Integrate React, Vue, Svelte, and other frontend frameworks with Mizu"
+---
+
+Mizu provides seamless integration with popular frontend frameworks. Serve your SPA from the same Go binary, with hot reload in development and embedded assets in production.
+
+## What is Frontend Integration?
+
+Frontend integration lets you:
+
+- **Develop**: Proxy to Vite/webpack dev server with hot reload
+- **Build**: Compile your frontend with your Go app
+- **Deploy**: Embed frontend assets in a single Go binary
+- **Serve**: Serve SPA with proper routing and caching
+
+```go
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/frontend"
+)
+
+func main() {
+    app := mizu.New()
+
+    // API routes
+    app.Get("/api/users", listUsers)
+
+    // Frontend (React, Vue, etc.)
+    app.Use(frontend.New(frontend.Config{
+        Directory: "web/dist",
+    }))
+
+    app.Listen(":3000")
+}
+```
+
+## Supported Frameworks
+
+| Framework | Template | Dev Server |
+|-----------|----------|------------|
+| React | `frontend:react` | Vite |
+| React Router | `frontend:reactrouter` | Vite |
+| Vue | `frontend:vue` | Vite |
+| Svelte | `frontend:svelte` | Vite |
+| SvelteKit | `frontend:sveltekit` | Vite |
+| Angular | `frontend:angular` | Angular CLI |
+| HTMX | `frontend:htmx` | Vite |
+| Next.js | `frontend:next` | Next.js |
+| Nuxt | `frontend:nuxt` | Nuxt |
+| Preact | `frontend:preact` | Vite |
+| Alpine.js | `frontend:alpine` | Vite |
+
+## Quick Start
+
+### 1. Create a Project
+
+```bash
+# React frontend
+mizu new myapp --template frontend:react
+
+# Or Vue
+mizu new myapp --template frontend:vue
+
+# Or Svelte
+mizu new myapp --template frontend:svelte
+```
+
+### 2. Project Structure
+
+```
+myapp/
+├── cmd/
+│   └── server/
+│       └── main.go         # Go backend
+├── web/                     # Frontend app
+│   ├── src/
+│   │   ├── App.tsx
+│   │   └── main.tsx
+│   ├── index.html
+│   ├── package.json
+│   └── vite.config.ts
+├── go.mod
+└── Makefile
+```
+
+### 3. Development Mode
+
+```bash
+# Terminal 1: Start frontend dev server
+cd web && npm run dev
+
+# Terminal 2: Start Go server with proxy
+mizu dev
+```
+
+Or use the combined command:
+
+```bash
+make dev  # Runs both concurrently
+```
+
+### 4. Production Build
+
+```bash
+# Build frontend
+cd web && npm run build
+
+# Build Go with embedded frontend
+go build -o server ./cmd/server
+```
+
+## Development Workflow
+
+### Proxy to Dev Server
+
+In development, Mizu proxies frontend requests to Vite:
+
+```go
+import "github.com/go-mizu/mizu/frontend"
+
+func main() {
+    app := mizu.New()
+
+    // API routes handled by Go
+    api := app.Group("/api")
+    api.Get("/users", listUsers)
+
+    // Everything else proxied to Vite
+    if os.Getenv("ENV") == "development" {
+        app.Use(frontend.DevProxy("http://localhost:5173"))
+    } else {
+        app.Use(frontend.Static(frontend.Config{
+            Directory: "web/dist",
+        }))
+    }
+
+    app.Listen(":3000")
+}
+```
+
+### Hot Module Replacement
+
+With the proxy, you get full HMR support:
+
+1. Edit React/Vue/Svelte components
+2. Browser updates instantly
+3. No page refresh needed
+4. State preserved
+
+## Production Deployment
+
+### Embedding Assets
+
+Embed frontend assets in your Go binary:
+
+```go
+import "embed"
+
+//go:embed web/dist/*
+var frontendFS embed.FS
+
+func main() {
+    app := mizu.New()
+
+    // API routes
+    app.Get("/api/users", listUsers)
+
+    // Embedded frontend
+    app.Use(frontend.Embed(frontendFS, "web/dist"))
+
+    app.Listen(":3000")
+}
+```
+
+### Build Script
+
+```makefile
+# Makefile
+build:
+    cd web && npm run build
+    go build -o server ./cmd/server
+
+docker:
+    docker build -t myapp .
+```
+
+### Dockerfile
+
+```dockerfile
+# Build frontend
+FROM node:20 AS frontend
+WORKDIR /app/web
+COPY web/package*.json ./
+RUN npm install
+COPY web/ ./
+RUN npm run build
+
+# Build Go app
+FROM golang:1.22 AS backend
+WORKDIR /app
+COPY go.* ./
+RUN go mod download
+COPY . .
+COPY --from=frontend /app/web/dist ./web/dist
+RUN CGO_ENABLED=0 go build -o server ./cmd/server
+
+# Final image
+FROM alpine:3.19
+COPY --from=backend /app/server /server
+EXPOSE 3000
+CMD ["/server"]
+```
+
+## Framework Examples
+
+### React
+
+```tsx
+// web/src/App.tsx
+import { useState, useEffect } from 'react';
+
+interface User {
+  id: string;
+  name: string;
+}
+
+function App() {
+  const [users, setUsers] = useState<User[]>([]);
+
+  useEffect(() => {
+    fetch('/api/users')
+      .then(res => res.json())
+      .then(setUsers);
+  }, []);
+
+  return (
+    <div>
+      <h1>Users</h1>
+      <ul>
+        {users.map(user => (
+          <li key={user.id}>{user.name}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```
+
+### Vue
+
+```vue
+<!-- web/src/App.vue -->
+<script setup lang="ts">
+import { ref, onMounted } from 'vue';
+
+interface User {
+  id: string;
+  name: string;
+}
+
+const users = ref<User[]>([]);
+
+onMounted(async () => {
+  const res = await fetch('/api/users');
+  users.value = await res.json();
+});
+</script>
+
+<template>
+  <h1>Users</h1>
+  <ul>
+    <li v-for="user in users" :key="user.id">
+      {{ user.name }}
+    </li>
+  </ul>
+</template>
+```
+
+### Svelte
+
+```svelte
+<!-- web/src/App.svelte -->
+<script lang="ts">
+  import { onMount } from 'svelte';
+
+  interface User {
+    id: string;
+    name: string;
+  }
+
+  let users: User[] = [];
+
+  onMount(async () => {
+    const res = await fetch('/api/users');
+    users = await res.json();
+  });
+</script>
+
+<h1>Users</h1>
+<ul>
+  {#each users as user}
+    <li>{user.name}</li>
+  {/each}
+</ul>
+```
+
+## Configuration
+
+### Frontend Config
+
+```go
+frontend.New(frontend.Config{
+    // Static file directory
+    Directory: "web/dist",
+
+    // Index file for SPA routing
+    Index: "index.html",
+
+    // Cache control
+    CacheControl: "public, max-age=31536000",
+
+    // Compression
+    Compress: true,
+
+    // Custom headers
+    Headers: map[string]string{
+        "X-Frame-Options": "DENY",
+    },
+})
+```
+
+### Vite Config
+
+```typescript
+// web/vite.config.ts
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: 5173,
+    proxy: {
+      '/api': 'http://localhost:3000',
+    },
+  },
+  build: {
+    outDir: 'dist',
+  },
+});
+```
+
+## Environment Variables
+
+Inject environment variables at runtime:
+
+```go
+app.Get("/env.js", func(c *mizu.Ctx) error {
+    c.Header().Set("Content-Type", "application/javascript")
+    return c.Text(200, fmt.Sprintf(`
+        window.ENV = {
+            API_URL: "%s",
+            VERSION: "%s"
+        };
+    `, os.Getenv("API_URL"), version))
+})
+```
+
+```html
+<!-- index.html -->
+<script src="/env.js"></script>
+```
+
+```typescript
+// In your app
+const apiUrl = window.ENV?.API_URL || '/api';
+```
+
+## SPA Routing
+
+Handle client-side routing:
+
+```go
+app.Use(frontend.New(frontend.Config{
+    Directory: "web/dist",
+    Index:     "index.html",
+    // Returns index.html for all non-file requests
+    SPAMode:   true,
+}))
+```
+
+This ensures routes like `/users/123` return `index.html` so React Router/Vue Router can handle them.
+
+## Caching Strategies
+
+### Immutable Assets
+
+```go
+// Assets with hashes get long cache
+app.Get("/assets/*", func(c *mizu.Ctx) error {
+    c.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+    return next(c)
+})
+```
+
+### HTML Files
+
+```go
+// HTML files should never be cached
+app.Get("/", func(c *mizu.Ctx) error {
+    c.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+    return serveIndex(c)
+})
+```
+
+## Security
+
+### Content Security Policy
+
+```go
+app.Use(func(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        c.Header().Set("Content-Security-Policy",
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'")
+        return next(c)
+    }
+})
+```
+
+### CORS for API
+
+```go
+import "github.com/go-mizu/mizu/middlewares/cors"
+
+api := app.Group("/api")
+api.Use(cors.New(cors.Config{
+    AllowOrigins: []string{"http://localhost:5173"},  // Dev
+}))
+```
+
+## Learn More
+
+<CardGroup cols={2}>
+  <Card title="Frontend Documentation" icon="book" href="/frontend/overview">
+    Complete frontend integration guide.
+  </Card>
+  <Card title="Framework Guides" icon="react" href="/frontend/react">
+    Detailed guides for each framework.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Mobile Support" icon="mobile" href="/guides/mobile">
+    Build backends for mobile apps.
+  </Card>
+  <Card title="CLI Tools" icon="terminal" href="/guides/cli">
+    Project scaffolding and dev tools.
+  </Card>
+</CardGroup>

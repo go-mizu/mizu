@@ -1,0 +1,524 @@
+---
+title: "View Engine"
+description: "Server-side rendering with templates, Live updates, and Sync state"
+---
+
+The View engine provides server-side rendering with Go templates, plus Live (real-time UI updates) and Sync (state synchronization) features for building interactive applications without heavy JavaScript.
+
+## What is the View Engine?
+
+The View engine renders HTML on the server using Go templates. It supports:
+
+- **Templates**: Standard Go templates with layouts and partials
+- **Live**: Real-time UI updates via WebSocket (like Phoenix LiveView)
+- **Sync**: State synchronization between server and clients
+
+```go
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/view"
+)
+
+func main() {
+    app := mizu.New()
+
+    // Create view engine
+    v := view.New(view.Config{
+        Directory: "templates",
+    })
+
+    app.Get("/", func(c *mizu.Ctx) error {
+        return v.Render(c, "home", view.Data{
+            "title": "Welcome",
+            "user":  user,
+        })
+    })
+
+    app.Listen(":3000")
+}
+```
+
+## Template System
+
+### Basic Templates
+
+Create templates in your templates directory:
+
+```html
+<!-- templates/home.html -->
+<html>
+<head>
+    <title>{{.title}}</title>
+</head>
+<body>
+    <h1>Hello, {{.user.Name}}!</h1>
+</body>
+</html>
+```
+
+Render from a handler:
+
+```go
+app.Get("/", func(c *mizu.Ctx) error {
+    return v.Render(c, "home", view.Data{
+        "title": "Welcome",
+        "user":  User{Name: "Alice"},
+    })
+})
+```
+
+### Layouts
+
+Define a base layout:
+
+```html
+<!-- templates/layouts/main.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{.title}} | My App</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <nav><!-- navigation --></nav>
+
+    <main>
+        {{template "content" .}}
+    </main>
+
+    <footer><!-- footer --></footer>
+</body>
+</html>
+```
+
+Use in pages:
+
+```html
+<!-- templates/home.html -->
+{{define "content"}}
+<h1>Welcome, {{.user.Name}}!</h1>
+<p>This is the home page.</p>
+{{end}}
+```
+
+```go
+v := view.New(view.Config{
+    Directory: "templates",
+    Layout:    "layouts/main",
+})
+```
+
+### Components
+
+Create reusable components:
+
+```html
+<!-- templates/components/button.html -->
+{{define "button"}}
+<button class="btn {{.class}}" {{if .disabled}}disabled{{end}}>
+    {{.text}}
+</button>
+{{end}}
+```
+
+Use in templates:
+
+```html
+{{template "button" (dict "text" "Submit" "class" "primary")}}
+{{template "button" (dict "text" "Cancel" "class" "secondary")}}
+```
+
+### Partials
+
+Include partial templates:
+
+```html
+<!-- templates/partials/user-card.html -->
+{{define "user-card"}}
+<div class="user-card">
+    <img src="{{.user.Avatar}}" alt="{{.user.Name}}">
+    <h3>{{.user.Name}}</h3>
+    <p>{{.user.Email}}</p>
+</div>
+{{end}}
+```
+
+```html
+<!-- In a page -->
+{{range .users}}
+    {{template "user-card" (dict "user" .)}}
+{{end}}
+```
+
+### Template Functions
+
+Built-in template functions:
+
+```html
+<!-- Date formatting -->
+{{formatDate .createdAt "Jan 2, 2006"}}
+
+<!-- JSON encoding -->
+<script>const data = {{json .data}};</script>
+
+<!-- Safe HTML -->
+{{safeHTML .htmlContent}}
+
+<!-- URL encoding -->
+<a href="/search?q={{urlEncode .query}}">Search</a>
+
+<!-- Dictionary creation -->
+{{template "card" (dict "title" .title "body" .content)}}
+```
+
+Add custom functions:
+
+```go
+v := view.New(view.Config{
+    Directory: "templates",
+    Functions: template.FuncMap{
+        "uppercase": strings.ToUpper,
+        "truncate": func(s string, n int) string {
+            if len(s) <= n {
+                return s
+            }
+            return s[:n] + "..."
+        },
+    },
+})
+```
+
+## Live (Real-time UI)
+
+Live enables server-driven UI updates without page reloads. Changes are pushed over WebSocket.
+
+### How Live Works
+
+1. Client connects via WebSocket
+2. Server maintains session state
+3. User events sent to server
+4. Server updates state and sends HTML diffs
+5. Client patches the DOM
+
+### Basic Live Component
+
+```go
+import "github.com/go-mizu/mizu/view/live"
+
+type Counter struct {
+    live.Base
+    Count int
+}
+
+func (c *Counter) Mount(ctx context.Context, params live.Params) error {
+    c.Count = 0
+    return nil
+}
+
+func (c *Counter) HandleEvent(ctx context.Context, event string, data map[string]any) error {
+    switch event {
+    case "increment":
+        c.Count++
+    case "decrement":
+        c.Count--
+    }
+    return nil
+}
+
+func (c *Counter) Render() string {
+    return `
+        <div>
+            <h1>Count: {{.Count}}</h1>
+            <button live-click="increment">+</button>
+            <button live-click="decrement">-</button>
+        </div>
+    `
+}
+```
+
+Register and use:
+
+```go
+app.Get("/counter", live.Handler(&Counter{}))
+```
+
+### Live Events
+
+Handle user interactions:
+
+```html
+<!-- Click events -->
+<button live-click="save">Save</button>
+
+<!-- Form submission -->
+<form live-submit="create">
+    <input name="title" type="text">
+    <button type="submit">Create</button>
+</form>
+
+<!-- Input changes (debounced) -->
+<input live-change="search" live-debounce="300">
+
+<!-- Key events -->
+<input live-keydown="navigate" live-key="Enter">
+```
+
+```go
+func (c *MyComponent) HandleEvent(ctx context.Context, event string, data map[string]any) error {
+    switch event {
+    case "save":
+        return c.save(ctx)
+    case "create":
+        title := data["title"].(string)
+        return c.create(ctx, title)
+    case "search":
+        query := data["value"].(string)
+        return c.search(ctx, query)
+    }
+    return nil
+}
+```
+
+### Live Example: Todo List
+
+```go
+type TodoList struct {
+    live.Base
+    Todos []Todo
+}
+
+type Todo struct {
+    ID        string
+    Title     string
+    Completed bool
+}
+
+func (t *TodoList) Mount(ctx context.Context, params live.Params) error {
+    t.Todos = loadTodos()
+    return nil
+}
+
+func (t *TodoList) HandleEvent(ctx context.Context, event string, data map[string]any) error {
+    switch event {
+    case "add":
+        title := data["title"].(string)
+        t.Todos = append(t.Todos, Todo{
+            ID:    generateID(),
+            Title: title,
+        })
+    case "toggle":
+        id := data["id"].(string)
+        for i := range t.Todos {
+            if t.Todos[i].ID == id {
+                t.Todos[i].Completed = !t.Todos[i].Completed
+            }
+        }
+    case "delete":
+        id := data["id"].(string)
+        t.Todos = filter(t.Todos, func(todo Todo) bool {
+            return todo.ID != id
+        })
+    }
+    return nil
+}
+
+func (t *TodoList) Render() string {
+    return `
+        <div class="todo-list">
+            <form live-submit="add">
+                <input name="title" placeholder="Add todo..." required>
+                <button type="submit">Add</button>
+            </form>
+
+            <ul>
+            {{range .Todos}}
+                <li class="{{if .Completed}}completed{{end}}">
+                    <input type="checkbox"
+                           {{if .Completed}}checked{{end}}
+                           live-click="toggle"
+                           live-value-id="{{.ID}}">
+                    <span>{{.Title}}</span>
+                    <button live-click="delete" live-value-id="{{.ID}}">×</button>
+                </li>
+            {{end}}
+            </ul>
+        </div>
+    `
+}
+```
+
+## Sync (State Synchronization)
+
+Sync provides reactive data binding between server and clients. When data changes, all connected clients update automatically.
+
+### How Sync Works
+
+1. Server maintains shared state
+2. Clients subscribe to state paths
+3. Server pushes changes in real-time
+4. Client-side library updates the DOM
+
+### Basic Sync Usage
+
+```go
+import "github.com/go-mizu/mizu/view/sync"
+
+type Dashboard struct {
+    sync.Base
+    Stats Stats
+    Users []User
+}
+
+func (d *Dashboard) Mount(ctx context.Context) error {
+    d.Stats = loadStats()
+    d.Users = loadUsers()
+
+    // Subscribe to external updates
+    go d.watchStats(ctx)
+
+    return nil
+}
+
+func (d *Dashboard) watchStats(ctx context.Context) {
+    for stats := range statsChannel {
+        d.Update(func() {
+            d.Stats = stats
+        })
+    }
+}
+```
+
+### Client-Side Binding
+
+```html
+<div sync-bind="stats">
+    <p>Active Users: <span sync-text="stats.activeUsers"></span></p>
+    <p>Total Sales: <span sync-text="stats.totalSales"></span></p>
+</div>
+
+<ul sync-list="users">
+    <template>
+        <li>
+            <span sync-text="name"></span>
+            <span sync-text="email"></span>
+        </li>
+    </template>
+</ul>
+```
+
+### Reactive Collections
+
+```go
+type UserList struct {
+    sync.Base
+    Users sync.Collection[User]
+}
+
+func (u *UserList) AddUser(user User) {
+    u.Users.Add(user)  // Automatically syncs to all clients
+}
+
+func (u *UserList) RemoveUser(id string) {
+    u.Users.Remove(id)  // Automatically syncs
+}
+
+func (u *UserList) UpdateUser(id string, updates map[string]any) {
+    u.Users.Update(id, updates)  // Partial update syncs
+}
+```
+
+## Comparison with Other Approaches
+
+### vs. React/Vue/Svelte
+
+| Aspect | Frontend Frameworks | Mizu View |
+|--------|---------------------|-----------|
+| Rendering | Client-side | Server-side |
+| State | Client-side | Server-side |
+| JavaScript | Required | Minimal |
+| SEO | Needs SSR | Native |
+| Complexity | Higher | Lower |
+| Real-time | Manual | Built-in |
+
+### vs. HTMX
+
+| Aspect | HTMX | Mizu Live |
+|--------|------|-----------|
+| Communication | HTTP requests | WebSocket |
+| State | Stateless | Stateful |
+| Updates | Full HTML | DOM patches |
+| Offline | Limited | Can handle |
+
+### vs. Phoenix LiveView
+
+| Aspect | LiveView | Mizu Live |
+|--------|----------|-----------|
+| Language | Elixir | Go |
+| Philosophy | Similar | Similar |
+| Ecosystem | Phoenix | Mizu |
+
+## When to Use What
+
+| Scenario | Recommendation |
+|----------|----------------|
+| Static pages | Templates |
+| Forms with validation | Live |
+| Dashboards | Sync |
+| Chat/notifications | Live or Sync |
+| Complex interactivity | Frontend framework |
+
+## Complete Example
+
+```go
+package main
+
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/view"
+    "github.com/go-mizu/mizu/view/live"
+)
+
+func main() {
+    app := mizu.New()
+
+    // View engine for static pages
+    v := view.New(view.Config{
+        Directory: "templates",
+        Layout:    "layouts/main",
+    })
+
+    // Static pages
+    app.Get("/", func(c *mizu.Ctx) error {
+        return v.Render(c, "home", view.Data{
+            "title": "Welcome",
+        })
+    })
+
+    // Live component
+    app.Get("/counter", live.Handler(&Counter{}))
+
+    app.Listen(":3000")
+}
+```
+
+## Learn More
+
+<CardGroup cols={2}>
+  <Card title="View Documentation" icon="book" href="/view/overview">
+    Complete view engine reference.
+  </Card>
+  <Card title="Live Documentation" icon="bolt" href="/view/live-overview">
+    Real-time UI updates guide.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Frontend Integration" icon="react" href="/guides/frontend">
+    Use React, Vue, or Svelte with Mizu.
+  </Card>
+  <Card title="Mobile Support" icon="mobile" href="/guides/mobile">
+    Build backends for mobile apps.
+  </Card>
+</CardGroup>

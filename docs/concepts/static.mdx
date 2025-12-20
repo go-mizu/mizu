@@ -1,63 +1,657 @@
 ---
-title: "Static"
+title: "Static Files"
 description: "Serve static files like images, CSS, and JavaScript directly from your app."
 ---
 
-Mizu can serve static files such as images, CSS, and JavaScript using the `Static` method on the router.<br/>
-You can serve files from a local directory or from Go's embedded filesystem.
+Mizu can serve static files such as images, CSS, JavaScript, and other assets. This is essential for web applications that need to deliver frontend resources alongside API responses.
 
-### Serve files from a local directory
+## Overview
 
-If you have a `public/` folder containing assets:
+Static file serving in Mizu supports multiple file sources:
+
+| Source | Use Case | Method |
+|--------|----------|--------|
+| Local Directory | Development, user uploads | `http.Dir()` |
+| Embedded Files | Single binary deployment | `embed.FS` with `http.FS()` |
+| Memory | Generated content, testing | Custom `http.FileSystem` |
+
+## Serving from a Local Directory
+
+The simplest approach is serving files from a folder on disk:
+
+```go
+package main
+
+import (
+    "net/http"
+    "github.com/go-mizu/mizu"
+)
+
+func main() {
+    app := mizu.New()
+
+    // Serve files from the "public" folder at the "/assets/" URL path
+    app.Static("/assets/", http.Dir("public"))
+
+    app.Listen(":3000")
+}
+```
+
+With this configuration:
+
+| File on Disk | URL |
+|--------------|-----|
+| `public/logo.png` | `http://localhost:3000/assets/logo.png` |
+| `public/css/style.css` | `http://localhost:3000/assets/css/style.css` |
+| `public/js/app.js` | `http://localhost:3000/assets/js/app.js` |
+
+### Directory Structure Example
+
+```
+myapp/
+├── main.go
+├── public/
+│   ├── index.html
+│   ├── favicon.ico
+│   ├── css/
+│   │   └── style.css
+│   ├── js/
+│   │   └── app.js
+│   └── images/
+│       └── logo.png
+```
+
+### Multiple Static Directories
+
+You can serve files from multiple directories:
 
 ```go
 app := mizu.New()
+
+// Public assets
 app.Static("/assets/", http.Dir("public"))
+
+// User uploads
+app.Static("/uploads/", http.Dir("uploads"))
+
+// Documentation
+app.Static("/docs/", http.Dir("documentation"))
+
 app.Listen(":3000")
 ```
 
-This makes `public/logo.png` available at `http://localhost:3000/assets/logo.png`.
-You do not have to include the trailing slash in the prefix — Mizu automatically adds it internally.
+## Serving Embedded Files
 
-### Serve embedded files
+For production deployments, embed static files directly into your Go binary using the `embed` package. This creates a single executable with no external file dependencies.
 
-You can include static files directly in your Go binary using the `embed` package.
-To serve files correctly, use `fs.Sub` to remove the folder prefix.
+### Basic Embedded Files
 
 ```go
+package main
+
 import (
-	"embed"
-	"io/fs"
-	"net/http"
-	"github.com/go-mizu/mizu"
+    "embed"
+    "io/fs"
+    "net/http"
+
+    "github.com/go-mizu/mizu"
 )
 
 //go:embed public/*
 var publicFS embed.FS
 
 func main() {
-	app := mizu.New()
+    app := mizu.New()
 
-	sub, err := fs.Sub(publicFS, "public")
-	if err != nil {
-		panic(err)
-	}
+    // Remove the "public" prefix from embedded paths
+    sub, err := fs.Sub(publicFS, "public")
+    if err != nil {
+        panic(err)
+    }
 
-	app.Static("/assets/", http.FS(sub))
-	app.Listen(":3000")
+    app.Static("/assets/", http.FS(sub))
+    app.Listen(":3000")
 }
 ```
 
-This serves `/assets/logo.png` from the embedded file `public/logo.png`.
+### Understanding embed.FS
 
-### Mount external handlers
-
-You can mount any standard `http.Handler` at a specific path.
-This works well with `http.FileServer` or other middleware built for `net/http`.
+The `//go:embed` directive includes files at compile time:
 
 ```go
-fs := http.FileServer(http.Dir("uploads"))
-app.Mount("/files", http.StripPrefix("/files", fs))
+//go:embed public/*           // All files in public/
+//go:embed public/**/*        // All files recursively
+//go:embed public/*.css       // Only CSS files
+//go:embed static images      // Multiple directories
 ```
 
-Mizu's `Static` method works the same way internally, using `http.FileServer` and `http.StripPrefix` to ensure correct path handling.
+<Note>
+The `embed` package preserves directory structure. Use `fs.Sub()` to remove the root directory prefix when serving.
+</Note>
+
+### Multiple Embedded Directories
+
+```go
+//go:embed static/*
+var staticFS embed.FS
+
+//go:embed templates/*
+var templateFS embed.FS
+
+func main() {
+    app := mizu.New()
+
+    staticSub, _ := fs.Sub(staticFS, "static")
+    app.Static("/static/", http.FS(staticSub))
+
+    // Templates can be used with the view engine
+    // ...
+
+    app.Listen(":3000")
+}
+```
+
+## SPA (Single Page Application) Support
+
+Single page applications require all routes to return `index.html` so the frontend router can handle navigation.
+
+### SPA with Fallback
+
+```go
+package main
+
+import (
+    "embed"
+    "io/fs"
+    "net/http"
+    "os"
+    "path/filepath"
+
+    "github.com/go-mizu/mizu"
+)
+
+//go:embed dist/*
+var distFS embed.FS
+
+func main() {
+    app := mizu.New()
+
+    // API routes first
+    api := app.Group("/api")
+    api.Get("/users", getUsers)
+    api.Get("/posts", getPosts)
+
+    // SPA fallback handler
+    sub, _ := fs.Sub(distFS, "dist")
+    fileServer := http.FileServer(http.FS(sub))
+
+    app.Get("/{path...}", func(c *mizu.Ctx) error {
+        path := c.Param("path")
+
+        // Try to serve the actual file first
+        f, err := sub.Open(path)
+        if err == nil {
+            f.Close()
+            fileServer.ServeHTTP(c.Writer(), c.Request())
+            return nil
+        }
+
+        // Fall back to index.html for SPA routing
+        c.Request().URL.Path = "/"
+        fileServer.ServeHTTP(c.Writer(), c.Request())
+        return nil
+    })
+
+    app.Listen(":3000")
+}
+```
+
+### Using the SPA Middleware
+
+Mizu provides a dedicated SPA middleware for simpler setup:
+
+```go
+import "github.com/go-mizu/mizu/middlewares/spa"
+
+//go:embed dist/*
+var distFS embed.FS
+
+func main() {
+    app := mizu.New()
+
+    // API routes
+    api := app.Group("/api")
+    api.Get("/users", getUsers)
+
+    // SPA middleware handles everything else
+    sub, _ := fs.Sub(distFS, "dist")
+    app.Use(spa.New(spa.Config{
+        Root:       http.FS(sub),
+        Index:      "index.html",
+        Browse:     false,
+    }))
+
+    app.Listen(":3000")
+}
+```
+
+## Caching and Cache Busting
+
+### Setting Cache Headers
+
+Configure caching based on file types:
+
+```go
+func cacheMiddleware(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        path := c.Request().URL.Path
+
+        switch {
+        case strings.HasSuffix(path, ".html"):
+            // HTML: no cache (always fresh)
+            c.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+
+        case strings.HasSuffix(path, ".css"),
+             strings.HasSuffix(path, ".js"):
+            // CSS/JS: cache for 1 year (use versioning)
+            c.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+
+        case strings.HasSuffix(path, ".png"),
+             strings.HasSuffix(path, ".jpg"),
+             strings.HasSuffix(path, ".webp"):
+            // Images: cache for 1 month
+            c.Header().Set("Cache-Control", "public, max-age=2592000")
+
+        default:
+            // Other files: cache for 1 day
+            c.Header().Set("Cache-Control", "public, max-age=86400")
+        }
+
+        return next(c)
+    }
+}
+
+func main() {
+    app := mizu.New()
+
+    // Apply caching to static routes
+    staticGroup := app.Group("/assets")
+    staticGroup.Use(cacheMiddleware)
+    // Note: You'll need to set up file serving within the group
+}
+```
+
+### Cache Busting with Hashes
+
+Include content hashes in filenames for cache busting:
+
+```
+// Before: style.css
+// After: style.a1b2c3d4.css
+```
+
+Your build tool (Vite, webpack, etc.) typically handles this. The long cache time combined with unique filenames ensures browsers always get the latest version when files change.
+
+## Compression
+
+Enable compression for static files to reduce transfer size:
+
+```go
+import "github.com/go-mizu/mizu/middlewares/compress"
+
+func main() {
+    app := mizu.New()
+
+    // Apply compression middleware
+    app.Use(compress.New(compress.Config{
+        Level: compress.LevelDefault,
+    }))
+
+    app.Static("/assets/", http.Dir("public"))
+    app.Listen(":3000")
+}
+```
+
+### Pre-compressed Files
+
+For better performance, serve pre-compressed files:
+
+```go
+// Check for .gz version first
+func compressedStatic(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        // Check if client accepts gzip
+        if !strings.Contains(c.Request().Header.Get("Accept-Encoding"), "gzip") {
+            return next(c)
+        }
+
+        path := c.Request().URL.Path
+        gzPath := path + ".gz"
+
+        // Check if compressed version exists
+        if _, err := os.Stat("public" + gzPath); err == nil {
+            c.Header().Set("Content-Encoding", "gzip")
+            c.Request().URL.Path = gzPath
+        }
+
+        return next(c)
+    }
+}
+```
+
+## Security Considerations
+
+### Path Traversal Prevention
+
+Mizu's static file serving uses Go's `http.FileServer` which automatically prevents path traversal attacks:
+
+```go
+// These attempts are blocked:
+// /assets/../../../etc/passwd
+// /assets/..%2F..%2Fetc/passwd
+```
+
+### Hiding Sensitive Files
+
+Prevent access to sensitive files:
+
+```go
+func securityMiddleware(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        path := c.Request().URL.Path
+
+        // Block hidden files (starting with .)
+        if strings.Contains(path, "/.") {
+            return c.Text(404, "Not Found")
+        }
+
+        // Block specific files
+        blocked := []string{".env", ".git", ".htaccess", "config.json"}
+        for _, b := range blocked {
+            if strings.HasSuffix(path, b) {
+                return c.Text(404, "Not Found")
+            }
+        }
+
+        return next(c)
+    }
+}
+```
+
+### Content Security
+
+Set appropriate content type headers:
+
+```go
+func contentTypeMiddleware(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        path := c.Request().URL.Path
+
+        // Prevent MIME type sniffing
+        c.Header().Set("X-Content-Type-Options", "nosniff")
+
+        // Set correct content types
+        switch {
+        case strings.HasSuffix(path, ".svg"):
+            c.Header().Set("Content-Type", "image/svg+xml")
+        case strings.HasSuffix(path, ".json"):
+            c.Header().Set("Content-Type", "application/json")
+        case strings.HasSuffix(path, ".wasm"):
+            c.Header().Set("Content-Type", "application/wasm")
+        }
+
+        return next(c)
+    }
+}
+```
+
+## Custom File Handlers
+
+For more control, create custom handlers:
+
+### Serving Single Files
+
+```go
+func main() {
+    app := mizu.New()
+
+    // Serve favicon at root
+    app.Get("/favicon.ico", func(c *mizu.Ctx) error {
+        return c.SendFile("public/favicon.ico")
+    })
+
+    // Serve robots.txt
+    app.Get("/robots.txt", func(c *mizu.Ctx) error {
+        c.Header().Set("Content-Type", "text/plain")
+        return c.SendFile("public/robots.txt")
+    })
+
+    app.Listen(":3000")
+}
+```
+
+### File Downloads
+
+Force file download instead of displaying:
+
+```go
+func downloadFile(c *mizu.Ctx) error {
+    filename := c.Param("name")
+    filepath := "downloads/" + filename
+
+    // Set download headers
+    c.Header().Set("Content-Disposition",
+        fmt.Sprintf(`attachment; filename="%s"`, filename))
+    c.Header().Set("Content-Type", "application/octet-stream")
+
+    return c.SendFile(filepath)
+}
+
+app.Get("/download/{name}", downloadFile)
+```
+
+### Serving Generated Content
+
+```go
+func dynamicImage(c *mizu.Ctx) error {
+    width := c.QueryInt("w", 100)
+    height := c.QueryInt("h", 100)
+
+    // Generate image (placeholder example)
+    img := generatePlaceholder(width, height)
+
+    c.Header().Set("Content-Type", "image/png")
+    c.Header().Set("Cache-Control", "public, max-age=86400")
+
+    return png.Encode(c.Writer(), img)
+}
+
+app.Get("/placeholder", dynamicImage)
+```
+
+## Development vs Production
+
+### Development: Hot Reload
+
+In development, serve from disk for instant updates:
+
+```go
+func main() {
+    app := mizu.New()
+
+    if os.Getenv("ENV") == "development" {
+        // Serve from disk (hot reload)
+        app.Static("/assets/", http.Dir("public"))
+    } else {
+        // Serve from embedded (production)
+        sub, _ := fs.Sub(publicFS, "public")
+        app.Static("/assets/", http.FS(sub))
+    }
+
+    app.Listen(":3000")
+}
+```
+
+### Production: Embedded Files
+
+Benefits of embedding:
+- Single binary deployment
+- No missing file issues
+- Faster startup (files already in memory)
+- Immutable content (great for containers)
+
+## Mounting External Handlers
+
+Mount any `http.Handler` at a specific path:
+
+```go
+// Using http.FileServer directly
+fs := http.FileServer(http.Dir("uploads"))
+app.Mount("/files", http.StripPrefix("/files", fs))
+
+// Using third-party file servers
+customServer := thirdparty.NewFileServer(config)
+app.Mount("/media", customServer)
+```
+
+<Note>
+Mizu's `Static` method uses `http.FileServer` and `http.StripPrefix` internally, ensuring correct path handling.
+</Note>
+
+## Performance Optimization
+
+### Memory-Mapped Files
+
+For high-traffic sites, consider memory-mapped files:
+
+```go
+import "golang.org/x/exp/mmap"
+
+// Pre-load frequently accessed files
+var indexHTML []byte
+
+func init() {
+    data, err := os.ReadFile("public/index.html")
+    if err != nil {
+        panic(err)
+    }
+    indexHTML = data
+}
+
+func serveIndex(c *mizu.Ctx) error {
+    c.Header().Set("Content-Type", "text/html")
+    return c.Blob(200, indexHTML)
+}
+```
+
+### CDN Integration
+
+For production, consider using a CDN:
+
+```go
+func main() {
+    app := mizu.New()
+
+    // In production, redirect to CDN
+    if os.Getenv("CDN_URL") != "" {
+        app.Get("/assets/{path...}", func(c *mizu.Ctx) error {
+            cdnURL := os.Getenv("CDN_URL")
+            path := c.Param("path")
+            return c.Redirect(302, cdnURL+"/"+path)
+        })
+    } else {
+        // Local development
+        app.Static("/assets/", http.Dir("public"))
+    }
+
+    app.Listen(":3000")
+}
+```
+
+## Complete Example
+
+Here's a complete example showing various static file patterns:
+
+```go
+package main
+
+import (
+    "embed"
+    "io/fs"
+    "net/http"
+    "os"
+    "strings"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/compress"
+)
+
+//go:embed public/*
+var publicFS embed.FS
+
+func main() {
+    app := mizu.New()
+
+    // Compression for all responses
+    app.Use(compress.New())
+
+    // API routes
+    api := app.Group("/api")
+    api.Get("/health", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{"status": "ok"})
+    })
+
+    // Static files with caching
+    var fileSystem http.FileSystem
+    if os.Getenv("ENV") == "development" {
+        fileSystem = http.Dir("public")
+    } else {
+        sub, _ := fs.Sub(publicFS, "public")
+        fileSystem = http.FS(sub)
+    }
+
+    // Custom static handler with caching
+    fileServer := http.FileServer(fileSystem)
+    app.Get("/assets/{path...}", func(c *mizu.Ctx) error {
+        path := c.Param("path")
+
+        // Set cache headers based on file type
+        if strings.HasSuffix(path, ".html") {
+            c.Header().Set("Cache-Control", "no-cache")
+        } else {
+            c.Header().Set("Cache-Control", "public, max-age=31536000")
+        }
+
+        c.Request().URL.Path = "/" + path
+        fileServer.ServeHTTP(c.Writer(), c.Request())
+        return nil
+    })
+
+    // SPA fallback for frontend routes
+    app.Get("/{path...}", func(c *mizu.Ctx) error {
+        c.Header().Set("Cache-Control", "no-cache")
+        c.Request().URL.Path = "/index.html"
+        fileServer.ServeHTTP(c.Writer(), c.Request())
+        return nil
+    })
+
+    app.Listen(":3000")
+}
+```
+
+## Summary
+
+| Method | Description |
+|--------|-------------|
+| `app.Static(prefix, fs)` | Serve files from filesystem |
+| `http.Dir(path)` | Create filesystem from local directory |
+| `http.FS(fs)` | Create filesystem from embed.FS |
+| `fs.Sub(fs, dir)` | Get subdirectory from filesystem |
+| `app.Mount(path, handler)` | Mount any http.Handler |
+
+## What's Next
+
+- [Frontend Integration](/frontend/overview) - Serve React, Vue, and other SPAs
+- [Middleware](/concepts/middleware) - Add caching and compression
+- [Response](/concepts/response) - More response methods
+- [Deployment](/get-started/deployment) - Production deployment strategies

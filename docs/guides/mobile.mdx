@@ -1,0 +1,420 @@
+---
+title: "Mobile Support"
+description: "Build Go backends for iOS, Android, and cross-platform mobile apps"
+---
+
+Mizu provides specialized features for mobile app backends: device detection, API versioning, push notifications, deep linking, and SDK generation for native and cross-platform frameworks.
+
+## What is Mobile Support?
+
+Mobile support includes:
+
+- **Device Detection**: Identify iOS, Android, and app versions
+- **API Versioning**: Manage multiple API versions for app updates
+- **Push Notifications**: Send to APNs and FCM
+- **Deep Links**: Handle universal links and app links
+- **SDK Generation**: Create type-safe clients for Swift, Kotlin, Flutter
+
+```go
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/mobile"
+)
+
+func main() {
+    app := mizu.New()
+
+    // Mobile middleware
+    app.Use(mobile.Device())
+
+    app.Get("/api/profile", func(c *mizu.Ctx) error {
+        device := mobile.GetDevice(c)
+
+        // Customize response for platform
+        if device.Platform == mobile.IOS {
+            // iOS-specific response
+        }
+
+        return c.JSON(200, profile)
+    })
+
+    app.Listen(":3000")
+}
+```
+
+## Device Detection
+
+Identify the requesting device:
+
+```go
+import "github.com/go-mizu/mizu/mobile"
+
+app.Use(mobile.Device())
+
+app.Get("/api/data", func(c *mizu.Ctx) error {
+    device := mobile.GetDevice(c)
+
+    // Device information
+    device.Platform    // "ios", "android", "web"
+    device.AppVersion  // "2.1.0"
+    device.OSVersion   // "17.0"
+    device.Model       // "iPhone15,2"
+    device.Locale      // "en-US"
+
+    return c.JSON(200, data)
+})
+```
+
+### Custom Headers
+
+Mobile apps send device info via headers:
+
+```
+X-Platform: ios
+X-App-Version: 2.1.0
+X-OS-Version: 17.0
+X-Device-Model: iPhone15,2
+X-Locale: en-US
+```
+
+## API Versioning
+
+Manage breaking changes across app versions:
+
+```go
+import "github.com/go-mizu/mizu/mobile"
+
+// Version-based routing
+v1 := app.Group("/api/v1")
+v1.Get("/users", listUsersV1)
+
+v2 := app.Group("/api/v2")
+v2.Get("/users", listUsersV2)
+
+// Or header-based versioning
+app.Get("/api/users", func(c *mizu.Ctx) error {
+    version := mobile.GetDevice(c).AppVersion
+
+    if semver.Compare(version, "2.0.0") < 0 {
+        return listUsersV1(c)
+    }
+    return listUsersV2(c)
+})
+```
+
+### Deprecation Warnings
+
+```go
+func deprecationMiddleware(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        device := mobile.GetDevice(c)
+
+        if semver.Compare(device.AppVersion, "1.5.0") < 0 {
+            c.Header().Set("X-Deprecated", "true")
+            c.Header().Set("X-Min-Version", "2.0.0")
+        }
+
+        return next(c)
+    }
+}
+```
+
+## Error Handling
+
+Mobile-friendly error responses:
+
+```go
+type MobileError struct {
+    Code    string `json:"code"`
+    Message string `json:"message"`
+    Action  string `json:"action,omitempty"`  // "update", "login", "retry"
+}
+
+func errorHandler(c *mizu.Ctx, err error) {
+    var mobileErr MobileError
+
+    switch {
+    case errors.Is(err, ErrUnauthorized):
+        mobileErr = MobileError{
+            Code:    "AUTH_REQUIRED",
+            Message: "Please log in again",
+            Action:  "login",
+        }
+        _ = c.JSON(401, mobileErr)
+
+    case errors.Is(err, ErrUpdateRequired):
+        mobileErr = MobileError{
+            Code:    "UPDATE_REQUIRED",
+            Message: "Please update the app",
+            Action:  "update",
+        }
+        _ = c.JSON(426, mobileErr)
+
+    default:
+        mobileErr = MobileError{
+            Code:    "INTERNAL_ERROR",
+            Message: "Something went wrong",
+            Action:  "retry",
+        }
+        _ = c.JSON(500, mobileErr)
+    }
+}
+```
+
+## Pagination
+
+Cursor-based pagination for mobile:
+
+```go
+type PageResponse[T any] struct {
+    Data       []T    `json:"data"`
+    NextCursor string `json:"next_cursor,omitempty"`
+    HasMore    bool   `json:"has_more"`
+}
+
+func listPosts(c *mizu.Ctx) error {
+    cursor := c.Query("cursor")
+    limit := c.QueryInt("limit", 20)
+
+    posts, nextCursor, hasMore := db.GetPosts(cursor, limit)
+
+    return c.JSON(200, PageResponse[Post]{
+        Data:       posts,
+        NextCursor: nextCursor,
+        HasMore:    hasMore,
+    })
+}
+```
+
+## Push Notifications
+
+### APNs (iOS)
+
+```go
+import "github.com/go-mizu/mizu/mobile/push"
+
+apns := push.NewAPNs(push.APNsConfig{
+    KeyID:      "ABC123",
+    TeamID:     "DEF456",
+    BundleID:   "com.example.app",
+    PrivateKey: privateKey,
+})
+
+// Send notification
+err := apns.Send(ctx, push.Notification{
+    DeviceToken: "device-token",
+    Title:       "New Message",
+    Body:        "You have a new message",
+    Badge:       1,
+    Data: map[string]any{
+        "message_id": "123",
+    },
+})
+```
+
+### FCM (Android)
+
+```go
+import "github.com/go-mizu/mizu/mobile/push"
+
+fcm := push.NewFCM(push.FCMConfig{
+    ProjectID:      "my-project",
+    CredentialsJSON: credJSON,
+})
+
+err := fcm.Send(ctx, push.Notification{
+    DeviceToken: "fcm-token",
+    Title:       "New Message",
+    Body:        "You have a new message",
+    Data: map[string]any{
+        "message_id": "123",
+    },
+})
+```
+
+### Unified Interface
+
+```go
+// Send to both platforms
+pusher := push.NewMulti(apns, fcm)
+
+err := pusher.Send(ctx, []push.Notification{
+    {DeviceToken: "apns-token", Platform: "ios", ...},
+    {DeviceToken: "fcm-token", Platform: "android", ...},
+})
+```
+
+## Deep Links
+
+### Universal Links (iOS)
+
+```go
+// Serve apple-app-site-association
+app.Get("/.well-known/apple-app-site-association", func(c *mizu.Ctx) error {
+    return c.JSON(200, map[string]any{
+        "applinks": map[string]any{
+            "apps": []string{},
+            "details": []map[string]any{
+                {
+                    "appID": "TEAM123.com.example.app",
+                    "paths": []string{"/post/*", "/user/*"},
+                },
+            },
+        },
+    })
+})
+```
+
+### App Links (Android)
+
+```go
+// Serve assetlinks.json
+app.Get("/.well-known/assetlinks.json", func(c *mizu.Ctx) error {
+    return c.JSON(200, []map[string]any{
+        {
+            "relation": []string{"delegate_permission/common.handle_all_urls"},
+            "target": map[string]any{
+                "namespace":         "android_app",
+                "package_name":      "com.example.app",
+                "sha256_cert_fingerprints": []string{"SHA256:..."},
+            },
+        },
+    })
+})
+```
+
+## SDK Generation
+
+Generate type-safe mobile SDKs from your contracts:
+
+### Swift (iOS)
+
+```bash
+mizu contract sdk swift --output ./sdk/ios
+```
+
+```swift
+// Generated Swift SDK
+let client = APIClient(baseURL: "https://api.example.com")
+
+let user = try await client.getUser(id: "123")
+print(user.name)
+```
+
+### Kotlin (Android)
+
+```bash
+mizu contract sdk kotlin --output ./sdk/android
+```
+
+```kotlin
+// Generated Kotlin SDK
+val client = APIClient("https://api.example.com")
+
+val user = client.getUser("123")
+println(user.name)
+```
+
+### Flutter (Dart)
+
+```bash
+mizu contract sdk dart --output ./sdk/flutter
+```
+
+```dart
+// Generated Dart SDK
+final client = APIClient('https://api.example.com');
+
+final user = await client.getUser('123');
+print(user.name);
+```
+
+## Supported Platforms
+
+| Platform | SDK | Features |
+|----------|-----|----------|
+| **iOS** | Swift | Type-safe, async/await, Codable |
+| **Android** | Kotlin | Coroutines, Serialization |
+| **Flutter** | Dart | Null-safe, json_serializable |
+| **React Native** | TypeScript | Same as web SDK |
+| **Kotlin Multiplatform** | Kotlin | Shared code for iOS/Android |
+| **.NET MAUI** | C# | Cross-platform .NET |
+| **PWA** | TypeScript | Web with offline support |
+| **Game Engines** | Various | Unity C#, Godot GDScript |
+
+## Complete Example
+
+```go
+package main
+
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/mobile"
+    "github.com/go-mizu/mizu/mobile/push"
+)
+
+func main() {
+    app := mizu.New()
+
+    // Device detection
+    app.Use(mobile.Device())
+
+    // Version check
+    app.Use(mobile.MinVersion("1.0.0"))
+
+    // API
+    api := app.Group("/api")
+
+    // User endpoints
+    api.Get("/profile", getProfile)
+    api.Put("/profile", updateProfile)
+
+    // Push token registration
+    api.Post("/push/register", registerPushToken)
+
+    // Deep link handlers
+    api.Get("/post/{id}", getPost)
+    api.Get("/user/{id}", getUser)
+
+    // Well-known files for deep links
+    app.Get("/.well-known/apple-app-site-association", serveAASA)
+    app.Get("/.well-known/assetlinks.json", serveAssetLinks)
+
+    app.Listen(":3000")
+}
+
+func getProfile(c *mizu.Ctx) error {
+    device := mobile.GetDevice(c)
+
+    profile := getProfileFromDB()
+
+    // Platform-specific formatting
+    if device.Platform == mobile.IOS {
+        profile.DateFormat = "short"
+    }
+
+    return c.JSON(200, profile)
+}
+```
+
+## Learn More
+
+<CardGroup cols={2}>
+  <Card title="Mobile Documentation" icon="book" href="/mobile/overview">
+    Complete mobile integration guide.
+  </Card>
+  <Card title="SDK Generation" icon="code" href="/contract/sdk-overview">
+    Generate mobile SDKs from contracts.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="CLI Tools" icon="terminal" href="/guides/cli">
+    Project scaffolding and development.
+  </Card>
+  <Card title="Tutorials" icon="graduation-cap" href="/guides/first-api">
+    Build your first mobile backend.
+  </Card>
+</CardGroup>

@@ -1,0 +1,542 @@
+---
+title: "Build Your First Website"
+description: "Step-by-step tutorial to build a server-rendered website with Mizu"
+---
+
+In this tutorial, you'll build a blog website with server-rendered pages, layouts, forms, and static assets.
+
+## What We'll Build
+
+A blog website with:
+- Homepage listing posts
+- Individual post pages
+- Create post form
+- Shared layout and navigation
+- CSS styling
+
+## Prerequisites
+
+- Go 1.22 or later
+- Basic HTML/CSS knowledge
+- Completed the [First API](/guides/first-api) tutorial (helpful but not required)
+
+## Step 1: Create the Project
+
+```bash
+mkdir blog && cd blog
+go mod init blog
+go get github.com/go-mizu/mizu
+```
+
+Create the directory structure:
+
+```bash
+mkdir -p templates/{layouts,partials}
+mkdir -p static/css
+```
+
+## Step 2: Create the Layout
+
+Create `templates/layouts/main.html`:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}} | My Blog</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav>
+        <div class="container">
+            <a href="/" class="logo">My Blog</a>
+            <div class="nav-links">
+                <a href="/">Home</a>
+                <a href="/posts/new">New Post</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container">
+        {{template "content" .}}
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 My Blog. Built with Mizu.</p>
+        </div>
+    </footer>
+</body>
+</html>
+```
+
+## Step 3: Create Page Templates
+
+Create `templates/home.html`:
+
+```html
+{{define "content"}}
+<h1>Welcome to My Blog</h1>
+
+{{if .Posts}}
+<div class="posts">
+    {{range .Posts}}
+    <article class="post-card">
+        <h2><a href="/posts/{{.ID}}">{{.Title}}</a></h2>
+        <p class="meta">{{.CreatedAt.Format "January 2, 2006"}}</p>
+        <p>{{.Excerpt}}</p>
+        <a href="/posts/{{.ID}}" class="read-more">Read more →</a>
+    </article>
+    {{end}}
+</div>
+{{else}}
+<p>No posts yet. <a href="/posts/new">Create your first post!</a></p>
+{{end}}
+{{end}}
+```
+
+Create `templates/post.html`:
+
+```html
+{{define "content"}}
+<article class="post">
+    <h1>{{.Post.Title}}</h1>
+    <p class="meta">{{.Post.CreatedAt.Format "January 2, 2006"}}</p>
+    <div class="content">
+        {{.Post.Content}}
+    </div>
+    <a href="/" class="back">← Back to posts</a>
+</article>
+{{end}}
+```
+
+Create `templates/new-post.html`:
+
+```html
+{{define "content"}}
+<h1>Create New Post</h1>
+
+{{if .Error}}
+<div class="error">{{.Error}}</div>
+{{end}}
+
+<form method="POST" action="/posts" class="post-form">
+    <div class="form-group">
+        <label for="title">Title</label>
+        <input type="text" id="title" name="title" value="{{.Title}}" required>
+    </div>
+
+    <div class="form-group">
+        <label for="content">Content</label>
+        <textarea id="content" name="content" rows="10" required>{{.Content}}</textarea>
+    </div>
+
+    <button type="submit">Publish Post</button>
+</form>
+{{end}}
+```
+
+## Step 4: Add CSS
+
+Create `static/css/style.css`:
+
+```css
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    line-height: 1.6;
+    color: #333;
+    background: #f5f5f5;
+}
+
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+/* Navigation */
+nav {
+    background: #2c3e50;
+    padding: 1rem 0;
+}
+
+nav .container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+nav .logo {
+    color: white;
+    font-size: 1.5rem;
+    font-weight: bold;
+    text-decoration: none;
+}
+
+nav .nav-links a {
+    color: #ecf0f1;
+    text-decoration: none;
+    margin-left: 20px;
+}
+
+nav .nav-links a:hover {
+    color: #3498db;
+}
+
+/* Main content */
+main {
+    padding: 2rem 0;
+    min-height: calc(100vh - 150px);
+}
+
+h1 {
+    margin-bottom: 1.5rem;
+    color: #2c3e50;
+}
+
+/* Post cards */
+.posts {
+    display: grid;
+    gap: 1.5rem;
+}
+
+.post-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.post-card h2 {
+    margin-bottom: 0.5rem;
+}
+
+.post-card h2 a {
+    color: #2c3e50;
+    text-decoration: none;
+}
+
+.post-card h2 a:hover {
+    color: #3498db;
+}
+
+.meta {
+    color: #7f8c8d;
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+}
+
+.read-more {
+    color: #3498db;
+    text-decoration: none;
+}
+
+/* Single post */
+.post {
+    background: white;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.post .content {
+    margin: 1.5rem 0;
+    white-space: pre-wrap;
+}
+
+.back {
+    color: #3498db;
+    text-decoration: none;
+}
+
+/* Form */
+.post-form {
+    background: white;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+.form-group input,
+.form-group textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 1rem;
+}
+
+.form-group textarea {
+    resize: vertical;
+}
+
+button {
+    background: #3498db;
+    color: white;
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #2980b9;
+}
+
+.error {
+    background: #fee;
+    color: #c00;
+    padding: 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+}
+
+/* Footer */
+footer {
+    background: #2c3e50;
+    color: #ecf0f1;
+    padding: 1rem 0;
+    text-align: center;
+}
+```
+
+## Step 5: Create the Server
+
+Create `main.go`:
+
+```go
+package main
+
+import (
+    "fmt"
+    "html/template"
+    "net/http"
+    "sync"
+    "time"
+
+    "github.com/go-mizu/mizu"
+)
+
+// Post model
+type Post struct {
+    ID        string
+    Title     string
+    Content   string
+    Excerpt   string
+    CreatedAt time.Time
+}
+
+// Storage
+var (
+    posts   = make(map[string]*Post)
+    postsMu sync.RWMutex
+    nextID  = 1
+)
+
+// Templates
+var templates *template.Template
+
+func init() {
+    templates = template.Must(template.ParseGlob("templates/*.html"))
+    template.Must(templates.ParseGlob("templates/layouts/*.html"))
+}
+
+// Render helper
+func render(c *mizu.Ctx, name string, data map[string]any) error {
+    c.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+    // Clone template to add layout
+    t := template.Must(templates.Clone())
+    template.Must(t.ParseFiles("templates/layouts/main.html"))
+
+    return t.ExecuteTemplate(c.Writer(), "main.html", data)
+}
+
+// Handlers
+func homePage(c *mizu.Ctx) error {
+    postsMu.RLock()
+    defer postsMu.RUnlock()
+
+    list := make([]*Post, 0, len(posts))
+    for _, p := range posts {
+        list = append(list, p)
+    }
+
+    return render(c, "home", map[string]any{
+        "Title": "Home",
+        "Posts": list,
+    })
+}
+
+func showPost(c *mizu.Ctx) error {
+    id := c.Param("id")
+
+    postsMu.RLock()
+    post, ok := posts[id]
+    postsMu.RUnlock()
+
+    if !ok {
+        return c.Text(404, "Post not found")
+    }
+
+    return render(c, "post", map[string]any{
+        "Title": post.Title,
+        "Post":  post,
+    })
+}
+
+func newPostForm(c *mizu.Ctx) error {
+    return render(c, "new-post", map[string]any{
+        "Title": "New Post",
+    })
+}
+
+func createPost(c *mizu.Ctx) error {
+    title := c.FormValue("title")
+    content := c.FormValue("content")
+
+    if title == "" || content == "" {
+        return render(c, "new-post", map[string]any{
+            "Title":   "New Post",
+            "Error":   "Title and content are required",
+            "Title":   title,
+            "Content": content,
+        })
+    }
+
+    postsMu.Lock()
+    id := fmt.Sprintf("%d", nextID)
+    nextID++
+
+    excerpt := content
+    if len(excerpt) > 150 {
+        excerpt = excerpt[:150] + "..."
+    }
+
+    post := &Post{
+        ID:        id,
+        Title:     title,
+        Content:   content,
+        Excerpt:   excerpt,
+        CreatedAt: time.Now(),
+    }
+    posts[id] = post
+    postsMu.Unlock()
+
+    return c.Redirect(302, "/posts/"+id)
+}
+
+func main() {
+    app := mizu.New()
+
+    // Static files
+    app.Static("/static/", http.Dir("static"))
+
+    // Routes
+    app.Get("/", homePage)
+    app.Get("/posts/new", newPostForm)
+    app.Post("/posts", createPost)
+    app.Get("/posts/{id}", showPost)
+
+    fmt.Println("Server running at http://localhost:3000")
+    app.Listen(":3000")
+}
+```
+
+## Step 6: Run and Test
+
+```bash
+go run main.go
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+Try:
+1. Click "New Post" to create a post
+2. Fill in the form and submit
+3. View the post
+4. Go back to see it on the homepage
+
+## Step 7: Add Sample Data
+
+Add some initial posts in `main()`:
+
+```go
+func main() {
+    // Add sample posts
+    posts["1"] = &Post{
+        ID:        "1",
+        Title:     "Getting Started with Mizu",
+        Content:   "Mizu is a lightweight web framework for Go...",
+        Excerpt:   "Mizu is a lightweight web framework for Go...",
+        CreatedAt: time.Now().Add(-24 * time.Hour),
+    }
+    posts["2"] = &Post{
+        ID:        "2",
+        Title:     "Building APIs with Go",
+        Content:   "Learn how to build REST APIs using Go and Mizu...",
+        Excerpt:   "Learn how to build REST APIs using Go and Mizu...",
+        CreatedAt: time.Now().Add(-48 * time.Hour),
+    }
+    nextID = 3
+
+    app := mizu.New()
+    // ... rest of setup
+}
+```
+
+## What You Learned
+
+- Using Go templates with layouts
+- Serving static files (CSS, images)
+- Handling form submissions
+- Redirecting after form submission
+- Template composition
+
+## Project Structure
+
+```
+blog/
+├── main.go
+├── go.mod
+├── go.sum
+├── templates/
+│   ├── layouts/
+│   │   └── main.html
+│   ├── home.html
+│   ├── post.html
+│   └── new-post.html
+└── static/
+    └── css/
+        └── style.css
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Build Full-Stack App" icon="layer-group" href="/guides/first-fullstack">
+    Add a React frontend.
+  </Card>
+  <Card title="View Engine" icon="window" href="/guides/view">
+    Advanced template features.
+  </Card>
+</CardGroup>

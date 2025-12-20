@@ -1,0 +1,708 @@
+---
+title: "Build Your First API"
+description: "Step-by-step tutorial to build a complete REST API with Mizu"
+---
+
+In this tutorial, you'll build a complete task management API with CRUD operations, validation, error handling, and authentication.
+
+## What We'll Build
+
+A REST API with:
+- List, create, read, update, delete tasks
+- Input validation
+- Error handling
+- Basic authentication
+- Request logging
+
+**Final API:**
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/tasks` | GET | List all tasks |
+| `/api/tasks` | POST | Create a task |
+| `/api/tasks/{id}` | GET | Get a task |
+| `/api/tasks/{id}` | PUT | Update a task |
+| `/api/tasks/{id}` | DELETE | Delete a task |
+
+## Prerequisites
+
+- Go 1.22 or later
+- Basic Go knowledge
+- A terminal and text editor
+
+## Step 1: Create the Project
+
+```bash
+# Create project directory
+mkdir taskapi && cd taskapi
+
+# Initialize Go module
+go mod init taskapi
+
+# Get Mizu
+go get github.com/go-mizu/mizu
+```
+
+## Step 2: Create the Basic Server
+
+Create `main.go`:
+
+```go
+package main
+
+import (
+    "github.com/go-mizu/mizu"
+)
+
+func main() {
+    app := mizu.New()
+
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{
+            "message": "Task API",
+            "version": "1.0.0",
+        })
+    })
+
+    app.Listen(":3000")
+}
+```
+
+Run it:
+
+```bash
+go run main.go
+```
+
+Test:
+
+```bash
+curl http://localhost:3000
+# {"message":"Task API","version":"1.0.0"}
+```
+
+## Step 3: Define the Task Model
+
+Add the Task struct above `main()`:
+
+```go
+package main
+
+import (
+    "sync"
+    "time"
+    "github.com/go-mizu/mizu"
+)
+
+// Task represents a todo item
+type Task struct {
+    ID          string    `json:"id"`
+    Title       string    `json:"title"`
+    Description string    `json:"description,omitempty"`
+    Completed   bool      `json:"completed"`
+    CreatedAt   time.Time `json:"created_at"`
+}
+
+// In-memory storage
+var (
+    tasks   = make(map[string]*Task)
+    tasksMu sync.RWMutex
+    nextID  = 1
+)
+
+func main() {
+    // ... existing code
+}
+```
+
+## Step 4: Create CRUD Handlers
+
+Add these handler functions:
+
+```go
+// List all tasks
+func listTasks(c *mizu.Ctx) error {
+    tasksMu.RLock()
+    defer tasksMu.RUnlock()
+
+    result := make([]*Task, 0, len(tasks))
+    for _, task := range tasks {
+        result = append(result, task)
+    }
+
+    return c.JSON(200, result)
+}
+
+// Get a single task
+func getTask(c *mizu.Ctx) error {
+    id := c.Param("id")
+
+    tasksMu.RLock()
+    task, ok := tasks[id]
+    tasksMu.RUnlock()
+
+    if !ok {
+        return c.JSON(404, map[string]string{
+            "error": "task not found",
+        })
+    }
+
+    return c.JSON(200, task)
+}
+
+// Create a new task
+func createTask(c *mizu.Ctx) error {
+    var input struct {
+        Title       string `json:"title"`
+        Description string `json:"description"`
+    }
+
+    if err := c.BindJSON(&input); err != nil {
+        return c.JSON(400, map[string]string{
+            "error": "invalid JSON",
+        })
+    }
+
+    if input.Title == "" {
+        return c.JSON(400, map[string]string{
+            "error": "title is required",
+        })
+    }
+
+    tasksMu.Lock()
+    id := fmt.Sprintf("%d", nextID)
+    nextID++
+
+    task := &Task{
+        ID:          id,
+        Title:       input.Title,
+        Description: input.Description,
+        Completed:   false,
+        CreatedAt:   time.Now(),
+    }
+    tasks[id] = task
+    tasksMu.Unlock()
+
+    return c.JSON(201, task)
+}
+
+// Update a task
+func updateTask(c *mizu.Ctx) error {
+    id := c.Param("id")
+
+    var input struct {
+        Title       *string `json:"title"`
+        Description *string `json:"description"`
+        Completed   *bool   `json:"completed"`
+    }
+
+    if err := c.BindJSON(&input); err != nil {
+        return c.JSON(400, map[string]string{
+            "error": "invalid JSON",
+        })
+    }
+
+    tasksMu.Lock()
+    defer tasksMu.Unlock()
+
+    task, ok := tasks[id]
+    if !ok {
+        return c.JSON(404, map[string]string{
+            "error": "task not found",
+        })
+    }
+
+    if input.Title != nil {
+        task.Title = *input.Title
+    }
+    if input.Description != nil {
+        task.Description = *input.Description
+    }
+    if input.Completed != nil {
+        task.Completed = *input.Completed
+    }
+
+    return c.JSON(200, task)
+}
+
+// Delete a task
+func deleteTask(c *mizu.Ctx) error {
+    id := c.Param("id")
+
+    tasksMu.Lock()
+    defer tasksMu.Unlock()
+
+    if _, ok := tasks[id]; !ok {
+        return c.JSON(404, map[string]string{
+            "error": "task not found",
+        })
+    }
+
+    delete(tasks, id)
+    return c.NoContent(204)
+}
+```
+
+Update `main()` to register routes:
+
+```go
+func main() {
+    app := mizu.New()
+
+    // API info
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{
+            "message": "Task API",
+            "version": "1.0.0",
+        })
+    })
+
+    // Task routes
+    app.Get("/api/tasks", listTasks)
+    app.Post("/api/tasks", createTask)
+    app.Get("/api/tasks/{id}", getTask)
+    app.Put("/api/tasks/{id}", updateTask)
+    app.Delete("/api/tasks/{id}", deleteTask)
+
+    app.Listen(":3000")
+}
+```
+
+Add the missing import:
+
+```go
+import (
+    "fmt"
+    "sync"
+    "time"
+    "github.com/go-mizu/mizu"
+)
+```
+
+## Step 5: Test the API
+
+```bash
+# Run the server
+go run main.go
+```
+
+```bash
+# Create a task
+curl -X POST http://localhost:3000/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Learn Mizu", "description": "Build an API"}'
+
+# List tasks
+curl http://localhost:3000/api/tasks
+
+# Get a task
+curl http://localhost:3000/api/tasks/1
+
+# Update a task
+curl -X PUT http://localhost:3000/api/tasks/1 \
+  -H "Content-Type: application/json" \
+  -d '{"completed": true}'
+
+# Delete a task
+curl -X DELETE http://localhost:3000/api/tasks/1
+```
+
+## Step 6: Add Logging Middleware
+
+```go
+func loggingMiddleware(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        start := time.Now()
+
+        err := next(c)
+
+        c.Logger().Info("request",
+            "method", c.Request().Method,
+            "path", c.Request().URL.Path,
+            "duration", time.Since(start),
+        )
+
+        return err
+    }
+}
+
+func main() {
+    app := mizu.New()
+
+    // Add logging middleware
+    app.Use(loggingMiddleware)
+
+    // ... routes
+}
+```
+
+## Step 7: Add Error Handling
+
+Create a custom error handler:
+
+```go
+type APIError struct {
+    Code    int    `json:"-"`
+    Message string `json:"error"`
+}
+
+func (e *APIError) Error() string {
+    return e.Message
+}
+
+func NotFound(msg string) *APIError {
+    return &APIError{Code: 404, Message: msg}
+}
+
+func BadRequest(msg string) *APIError {
+    return &APIError{Code: 400, Message: msg}
+}
+
+func errorHandler(c *mizu.Ctx, err error) {
+    if apiErr, ok := err.(*APIError); ok {
+        _ = c.JSON(apiErr.Code, apiErr)
+        return
+    }
+
+    c.Logger().Error("internal error", "error", err)
+    _ = c.JSON(500, map[string]string{
+        "error": "internal server error",
+    })
+}
+```
+
+Update handlers to use custom errors:
+
+```go
+func getTask(c *mizu.Ctx) error {
+    id := c.Param("id")
+
+    tasksMu.RLock()
+    task, ok := tasks[id]
+    tasksMu.RUnlock()
+
+    if !ok {
+        return NotFound("task not found")
+    }
+
+    return c.JSON(200, task)
+}
+
+func createTask(c *mizu.Ctx) error {
+    var input struct {
+        Title       string `json:"title"`
+        Description string `json:"description"`
+    }
+
+    if err := c.BindJSON(&input); err != nil {
+        return BadRequest("invalid JSON")
+    }
+
+    if input.Title == "" {
+        return BadRequest("title is required")
+    }
+
+    // ... rest of handler
+}
+```
+
+Register the error handler:
+
+```go
+func main() {
+    app := mizu.New()
+
+    app.ErrorHandler(errorHandler)
+
+    // ... rest of setup
+}
+```
+
+## Step 8: Add Authentication
+
+Create an auth middleware:
+
+```go
+func authMiddleware(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        token := c.Request().Header.Get("Authorization")
+
+        if token == "" {
+            return c.JSON(401, map[string]string{
+                "error": "missing authorization header",
+            })
+        }
+
+        // Simple token validation (use JWT in production)
+        if token != "Bearer secret-token" {
+            return c.JSON(401, map[string]string{
+                "error": "invalid token",
+            })
+        }
+
+        return next(c)
+    }
+}
+```
+
+Apply to protected routes:
+
+```go
+func main() {
+    app := mizu.New()
+
+    app.ErrorHandler(errorHandler)
+    app.Use(loggingMiddleware)
+
+    // Public routes
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{
+            "message": "Task API",
+        })
+    })
+
+    // Protected routes
+    api := app.Group("/api")
+    api.Use(authMiddleware)
+
+    api.Get("/tasks", listTasks)
+    api.Post("/tasks", createTask)
+    api.Get("/tasks/{id}", getTask)
+    api.Put("/tasks/{id}", updateTask)
+    api.Delete("/tasks/{id}", deleteTask)
+
+    app.Listen(":3000")
+}
+```
+
+Test with auth:
+
+```bash
+# Without token (should fail)
+curl http://localhost:3000/api/tasks
+# {"error":"missing authorization header"}
+
+# With token (should work)
+curl http://localhost:3000/api/tasks \
+  -H "Authorization: Bearer secret-token"
+```
+
+## Complete Code
+
+Here's the final `main.go`:
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+    "time"
+
+    "github.com/go-mizu/mizu"
+)
+
+// Task model
+type Task struct {
+    ID          string    `json:"id"`
+    Title       string    `json:"title"`
+    Description string    `json:"description,omitempty"`
+    Completed   bool      `json:"completed"`
+    CreatedAt   time.Time `json:"created_at"`
+}
+
+// Storage
+var (
+    tasks   = make(map[string]*Task)
+    tasksMu sync.RWMutex
+    nextID  = 1
+)
+
+// Custom errors
+type APIError struct {
+    Code    int    `json:"-"`
+    Message string `json:"error"`
+}
+
+func (e *APIError) Error() string { return e.Message }
+
+func NotFound(msg string) *APIError  { return &APIError{Code: 404, Message: msg} }
+func BadRequest(msg string) *APIError { return &APIError{Code: 400, Message: msg} }
+
+// Handlers
+func listTasks(c *mizu.Ctx) error {
+    tasksMu.RLock()
+    defer tasksMu.RUnlock()
+
+    result := make([]*Task, 0, len(tasks))
+    for _, task := range tasks {
+        result = append(result, task)
+    }
+    return c.JSON(200, result)
+}
+
+func getTask(c *mizu.Ctx) error {
+    id := c.Param("id")
+
+    tasksMu.RLock()
+    task, ok := tasks[id]
+    tasksMu.RUnlock()
+
+    if !ok {
+        return NotFound("task not found")
+    }
+    return c.JSON(200, task)
+}
+
+func createTask(c *mizu.Ctx) error {
+    var input struct {
+        Title       string `json:"title"`
+        Description string `json:"description"`
+    }
+
+    if err := c.BindJSON(&input); err != nil {
+        return BadRequest("invalid JSON")
+    }
+    if input.Title == "" {
+        return BadRequest("title is required")
+    }
+
+    tasksMu.Lock()
+    id := fmt.Sprintf("%d", nextID)
+    nextID++
+    task := &Task{
+        ID:          id,
+        Title:       input.Title,
+        Description: input.Description,
+        CreatedAt:   time.Now(),
+    }
+    tasks[id] = task
+    tasksMu.Unlock()
+
+    return c.JSON(201, task)
+}
+
+func updateTask(c *mizu.Ctx) error {
+    id := c.Param("id")
+
+    var input struct {
+        Title       *string `json:"title"`
+        Description *string `json:"description"`
+        Completed   *bool   `json:"completed"`
+    }
+
+    if err := c.BindJSON(&input); err != nil {
+        return BadRequest("invalid JSON")
+    }
+
+    tasksMu.Lock()
+    defer tasksMu.Unlock()
+
+    task, ok := tasks[id]
+    if !ok {
+        return NotFound("task not found")
+    }
+
+    if input.Title != nil {
+        task.Title = *input.Title
+    }
+    if input.Description != nil {
+        task.Description = *input.Description
+    }
+    if input.Completed != nil {
+        task.Completed = *input.Completed
+    }
+
+    return c.JSON(200, task)
+}
+
+func deleteTask(c *mizu.Ctx) error {
+    id := c.Param("id")
+
+    tasksMu.Lock()
+    defer tasksMu.Unlock()
+
+    if _, ok := tasks[id]; !ok {
+        return NotFound("task not found")
+    }
+
+    delete(tasks, id)
+    return c.NoContent(204)
+}
+
+// Middleware
+func loggingMiddleware(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        start := time.Now()
+        err := next(c)
+        c.Logger().Info("request",
+            "method", c.Request().Method,
+            "path", c.Request().URL.Path,
+            "duration", time.Since(start),
+        )
+        return err
+    }
+}
+
+func authMiddleware(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        token := c.Request().Header.Get("Authorization")
+        if token != "Bearer secret-token" {
+            return c.JSON(401, map[string]string{"error": "unauthorized"})
+        }
+        return next(c)
+    }
+}
+
+func errorHandler(c *mizu.Ctx, err error) {
+    if apiErr, ok := err.(*APIError); ok {
+        _ = c.JSON(apiErr.Code, apiErr)
+        return
+    }
+    c.Logger().Error("error", "err", err)
+    _ = c.JSON(500, map[string]string{"error": "internal error"})
+}
+
+func main() {
+    app := mizu.New()
+
+    app.ErrorHandler(errorHandler)
+    app.Use(loggingMiddleware)
+
+    // Public
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{"message": "Task API"})
+    })
+
+    // Protected
+    api := app.Group("/api")
+    api.Use(authMiddleware)
+    api.Get("/tasks", listTasks)
+    api.Post("/tasks", createTask)
+    api.Get("/tasks/{id}", getTask)
+    api.Put("/tasks/{id}", updateTask)
+    api.Delete("/tasks/{id}", deleteTask)
+
+    app.Listen(":3000")
+}
+```
+
+## What You Learned
+
+- Creating a Mizu application
+- Defining routes with path parameters
+- Reading and writing JSON
+- Using middleware for logging and auth
+- Custom error handling
+- Route grouping
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Build a Website" icon="globe" href="/guides/first-website">
+    Server-rendered pages with templates.
+  </Card>
+  <Card title="Add a Database" icon="database" href="/get-started/quick-start">
+    Connect to PostgreSQL or SQLite.
+  </Card>
+</CardGroup>

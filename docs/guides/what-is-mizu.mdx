@@ -1,0 +1,255 @@
+---
+title: "What is Mizu?"
+description: "Understanding Mizu's design philosophy and capabilities"
+---
+
+Mizu is a lightweight, composable web framework for Go designed to enhance the standard library without replacing it. The name comes from the Japanese word for water (水), reflecting how Mizu flows naturally with Go's conventions.
+
+## The Mizu Philosophy
+
+### 1. Enhance, Don't Replace
+
+Unlike frameworks that create their own world, Mizu builds directly on Go's `net/http` package:
+
+```go
+// Mizu handlers are just slightly enhanced http.Handlers
+func myHandler(c *mizu.Ctx) error {
+    // Access standard library types anytime
+    r := c.Request()      // *http.Request
+    w := c.Writer()       // http.ResponseWriter
+
+    return c.Text(200, "Hello!")
+}
+```
+
+Every Mizu app is also a valid `http.Handler`:
+
+```go
+app := mizu.New()
+http.ListenAndServe(":3000", app)  // Works perfectly
+```
+
+### 2. Explicit Over Magic
+
+No hidden behavior, no reflection-based routing, no magic:
+
+```go
+// Routes are explicit and readable
+app.Get("/users/{id}", getUser)
+app.Post("/users", createUser)
+
+// Middleware is applied explicitly
+app.Use(logger.New())          // Global
+app.With(auth.New()).Get(...)  // Per-route
+
+// Errors are returned, not thrown
+func handler(c *mizu.Ctx) error {
+    if err := validate(); err != nil {
+        return err  // Framework handles it
+    }
+    return c.JSON(200, data)
+}
+```
+
+### 3. Composable Over Monolithic
+
+Mizu is a set of small, focused packages:
+
+```go
+import (
+    "github.com/go-mizu/mizu"                   // Core framework
+    "github.com/go-mizu/mizu/middlewares/cors"  // Just CORS
+    "github.com/go-mizu/mizu/middlewares/jwt"   // Just JWT
+)
+
+// Use only what you need
+app.Use(cors.New())
+app.Use(jwt.New(jwt.Config{Secret: "..."}))
+```
+
+### 4. Transport-Neutral Contracts
+
+Define your API once, serve it anywhere:
+
+```go
+// Define the service contract
+type UserService struct{}
+
+func (s *UserService) GetUser(ctx context.Context, id string) (*User, error) {
+    return &User{ID: id, Name: "Alice"}, nil
+}
+
+// Serve via multiple transports
+app.Mount("/api", rest.Handler(contract))      // REST API
+app.Mount("/rpc", jsonrpc.Handler(contract))   // JSON-RPC
+app.Mount("/mcp", mcp.Handler(contract))       // MCP for AI
+```
+
+## What Problems Does Mizu Solve?
+
+### Problem 1: Framework Lock-in
+
+Many frameworks create their own ecosystem that doesn't play well with standard Go code.
+
+**Mizu's Solution:** Standard library compatibility. Use any `net/http` middleware, any database library, any tool that works with Go.
+
+### Problem 2: Hidden Complexity
+
+Magic routing with reflection, automatic dependency injection, and implicit behaviors make debugging difficult.
+
+**Mizu's Solution:** Everything is explicit. Routes are strings, handlers are functions, middleware chains are visible.
+
+### Problem 3: All or Nothing
+
+Traditional frameworks require adopting their entire stack or none of it.
+
+**Mizu's Solution:** Modular design. Use only the core, or add middlewares, or use contracts. Each piece is optional.
+
+### Problem 4: Frontend Disconnect
+
+Backend frameworks often ignore the frontend, making full-stack development painful.
+
+**Mizu's Solution:** Built-in frontend integration for React, Vue, Svelte, and more. Embed assets, proxy in development, serve from a single binary.
+
+## Feature Comparison
+
+| Feature | net/http | Mizu | Other Frameworks |
+|---------|----------|------|------------------|
+| Standard library based | Yes | Yes | Sometimes |
+| Error handling | Manual | Built-in | Varies |
+| Middleware | Manual | Composable | Framework-specific |
+| Path parameters | No | Yes | Yes |
+| Request binding | No | Yes | Yes |
+| Response helpers | No | Yes | Yes |
+| Contracts/RPC | No | Yes | Rare |
+| SDK generation | No | Yes | Rare |
+| Frontend integration | No | Yes | Rare |
+
+## When to Use Mizu
+
+<CardGroup cols={2}>
+  <Card title="Good Fit" icon="check" color="green">
+    - REST APIs
+    - Microservices
+    - Websites with Go templates
+    - Real-time applications
+    - Full-stack Go apps
+    - Contract-based services
+    - Mobile app backends
+  </Card>
+  <Card title="Consider Alternatives" icon="xmark" color="red">
+    - When you need GraphQL (use gqlgen)
+    - Heavy ORM integration (use Gorm + net/http)
+    - When team is unfamiliar with Go
+    - When you need something like Rails/Django
+  </Card>
+</CardGroup>
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                      Your App                           │
+├─────────────┬─────────────┬─────────────┬──────────────┤
+│   Core      │ Middlewares │  Contract   │    View      │
+│ (Routing,   │ (Auth, Rate │ (REST, RPC, │ (Templates,  │
+│  Handler,   │  Limiting,  │  OpenAPI,   │  Live,       │
+│  Context)   │  Caching)   │  SDKs)      │  Sync)       │
+├─────────────┴─────────────┴─────────────┴──────────────┤
+│                     net/http                            │
+└─────────────────────────────────────────────────────────┘
+```
+
+## How Mizu Compares
+
+### vs. Standard Library
+
+The standard library is excellent but requires boilerplate:
+
+```go
+// Standard library
+http.HandleFunc("/users/", func(w http.ResponseWriter, r *http.Request) {
+    if r.Method != "GET" {
+        http.Error(w, "Method not allowed", 405)
+        return
+    }
+    id := strings.TrimPrefix(r.URL.Path, "/users/")
+    user, err := getUser(id)
+    if err != nil {
+        http.Error(w, err.Error(), 500)
+        return
+    }
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(user)
+})
+
+// Mizu
+app.Get("/users/{id}", func(c *mizu.Ctx) error {
+    user, err := getUser(c.Param("id"))
+    if err != nil {
+        return err
+    }
+    return c.JSON(200, user)
+})
+```
+
+### vs. Gin/Echo/Fiber
+
+Popular frameworks that inspired parts of Mizu:
+
+| Aspect | Gin/Echo | Fiber | Mizu |
+|--------|----------|-------|------|
+| net/http compatible | Yes | No (fasthttp) | Yes |
+| Go 1.22 patterns | Partial | No | Yes |
+| Middleware system | Custom | Custom | Standard + Custom |
+| Contract support | No | No | Yes |
+| SDK generation | No | No | Yes |
+| Frontend integration | No | No | Yes |
+
+### vs. gRPC
+
+gRPC is excellent for internal services:
+
+| Aspect | gRPC | Mizu Contract |
+|--------|------|---------------|
+| Protocol | HTTP/2 + Protobuf | HTTP/1.1 + JSON or HTTP/2 |
+| Schema | .proto files | Go structs |
+| Browser support | Needs proxy | Native |
+| Transports | One (gRPC) | Multiple (REST, JSON-RPC, MCP) |
+| Learning curve | Steeper | Gentler |
+
+## The Component Ecosystem
+
+Mizu is organized into focused packages:
+
+```
+github.com/go-mizu/mizu          # Core framework
+├── middlewares/                  # 70+ middleware packages
+│   ├── auth/
+│   ├── cache/
+│   ├── cors/
+│   └── ...
+├── contract/                     # Contract definitions
+│   ├── rest/                     # REST transport
+│   ├── jsonrpc/                  # JSON-RPC transport
+│   ├── mcp/                      # MCP transport
+│   └── sdk/                      # SDK generators
+├── view/                         # Template engine
+│   ├── live/                     # Real-time updates
+│   └── sync/                     # State synchronization
+└── frontend/                     # SPA integration
+```
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Install Mizu" icon="download" href="/guides/installation">
+    Set up your development environment.
+  </Card>
+  <Card title="Quick Start" icon="rocket" href="/get-started/quick-start">
+    Build your first application.
+  </Card>
+  <Card title="Explore Components" icon="puzzle-piece" href="/guides/core">
+    Learn about each building block.
+  </Card>
+</CardGroup>

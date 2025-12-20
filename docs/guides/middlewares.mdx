@@ -1,0 +1,418 @@
+---
+title: "Middlewares"
+description: "Production-ready middleware ecosystem for Mizu"
+---
+
+Mizu includes over 70 production-ready middlewares for authentication, security, caching, logging, and more. Each middleware is a separate package that you can add as needed.
+
+## What are Middlewares?
+
+Middlewares are functions that wrap your handlers to add functionality. They execute in a chain, processing requests before and after your handlers:
+
+```go
+func myMiddleware(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        // Before handler
+        start := time.Now()
+
+        err := next(c)  // Call the handler
+
+        // After handler
+        c.Logger().Info("completed", "duration", time.Since(start))
+        return err
+    }
+}
+```
+
+## Using Middlewares
+
+### Global Middleware
+
+Apply to all routes:
+
+```go
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/logger"
+    "github.com/go-mizu/mizu/middlewares/recover"
+)
+
+app := mizu.New()
+
+// Applied to every request
+app.Use(recover.New())  // Panic recovery first
+app.Use(logger.New())   // Then logging
+```
+
+### Scoped Middleware
+
+Apply to specific routes:
+
+```go
+import "github.com/go-mizu/mizu/middlewares/jwt"
+
+// Only these routes require auth
+authMiddleware := jwt.New(jwt.Config{Secret: "..."})
+
+app.With(authMiddleware).Get("/admin", adminHandler)
+app.With(authMiddleware).Get("/dashboard", dashboardHandler)
+
+// Public routes - no auth required
+app.Get("/", homeHandler)
+app.Get("/login", loginHandler)
+```
+
+### Group Middleware
+
+Apply to route groups:
+
+```go
+// All /api routes get auth
+api := app.Group("/api")
+api.Use(authMiddleware)
+api.Get("/users", listUsers)
+api.Get("/posts", listPosts)
+
+// Public routes
+app.Get("/", homeHandler)
+```
+
+## Middleware Categories
+
+### Authentication
+
+Secure your API with various authentication methods:
+
+| Middleware | Description | Install |
+|------------|-------------|---------|
+| **basicauth** | HTTP Basic Authentication | `go get .../middlewares/basicauth` |
+| **bearerauth** | Bearer token validation | `go get .../middlewares/bearerauth` |
+| **keyauth** | API key authentication | `go get .../middlewares/keyauth` |
+| **jwt** | JSON Web Token validation | `go get .../middlewares/jwt` |
+| **oauth2** | OAuth 2.0 integration | `go get .../middlewares/oauth2` |
+| **oidc** | OpenID Connect | `go get .../middlewares/oidc` |
+| **csrf** | CSRF protection | `go get .../middlewares/csrf` |
+
+```go
+import "github.com/go-mizu/mizu/middlewares/jwt"
+
+app.Use(jwt.New(jwt.Config{
+    Secret: []byte("your-secret-key"),
+    Skip: func(c *mizu.Ctx) bool {
+        return c.Request().URL.Path == "/login"
+    },
+}))
+```
+
+<Card title="See All Auth Middlewares" icon="lock" href="/middlewares/overview#authentication">
+  Detailed documentation for each authentication middleware
+</Card>
+
+### Security
+
+Protect your application from common attacks:
+
+| Middleware | Description |
+|------------|-------------|
+| **cors** | Cross-Origin Resource Sharing |
+| **helmet** | Security headers (XSS, clickjacking, etc.) |
+| **secure** | HTTPS enforcement |
+| **ratelimit** | Rate limiting |
+| **ipfilter** | IP allow/block lists |
+| **rbac** | Role-based access control |
+
+```go
+import (
+    "github.com/go-mizu/mizu/middlewares/cors"
+    "github.com/go-mizu/mizu/middlewares/helmet"
+    "github.com/go-mizu/mizu/middlewares/ratelimit"
+)
+
+// CORS for API access
+app.Use(cors.New(cors.Config{
+    AllowOrigins: []string{"https://myapp.com"},
+    AllowMethods: []string{"GET", "POST", "PUT", "DELETE"},
+}))
+
+// Security headers
+app.Use(helmet.New())
+
+// Rate limiting (100 requests per minute)
+app.Use(ratelimit.New(ratelimit.Config{
+    Max:      100,
+    Duration: time.Minute,
+}))
+```
+
+<Card title="See All Security Middlewares" icon="shield" href="/middlewares/overview#security">
+  Detailed documentation for each security middleware
+</Card>
+
+### Request Processing
+
+Validate and transform incoming requests:
+
+| Middleware | Description |
+|------------|-------------|
+| **bodylimit** | Limit request body size |
+| **validator** | Request validation |
+| **contenttype** | Content-Type enforcement |
+| **timeout** | Request timeouts |
+| **requestid** | Add request IDs |
+
+```go
+import (
+    "github.com/go-mizu/mizu/middlewares/bodylimit"
+    "github.com/go-mizu/mizu/middlewares/timeout"
+    "github.com/go-mizu/mizu/middlewares/requestid"
+)
+
+// Limit body to 1MB
+app.Use(bodylimit.New(1 * 1024 * 1024))
+
+// 30 second timeout
+app.Use(timeout.New(30 * time.Second))
+
+// Add X-Request-ID header
+app.Use(requestid.New())
+```
+
+### Response Processing
+
+Transform and optimize responses:
+
+| Middleware | Description |
+|------------|-------------|
+| **compress** | Gzip/Brotli compression |
+| **cache** | Response caching |
+| **etag** | ETag generation |
+| **nocache** | Disable caching |
+
+```go
+import (
+    "github.com/go-mizu/mizu/middlewares/compress"
+    "github.com/go-mizu/mizu/middlewares/cache"
+)
+
+// Compress responses
+app.Use(compress.New())
+
+// Cache GET responses for 5 minutes
+app.Use(cache.New(cache.Config{
+    Expiration: 5 * time.Minute,
+}))
+```
+
+### Observability
+
+Monitor and debug your application:
+
+| Middleware | Description |
+|------------|-------------|
+| **logger** | Request logging |
+| **metrics** | Prometheus metrics |
+| **otel** | OpenTelemetry tracing |
+| **sentry** | Error tracking |
+| **pprof** | Profiling endpoints |
+
+```go
+import (
+    "github.com/go-mizu/mizu/middlewares/logger"
+    "github.com/go-mizu/mizu/middlewares/prometheus"
+)
+
+// Request logging
+app.Use(logger.New())
+
+// Prometheus metrics at /metrics
+app.Use(prometheus.New())
+```
+
+### Real-time
+
+Enable WebSocket and Server-Sent Events:
+
+| Middleware | Description |
+|------------|-------------|
+| **websocket** | WebSocket connections |
+| **sse** | Server-Sent Events |
+
+```go
+import "github.com/go-mizu/mizu/middlewares/websocket"
+
+app.Get("/ws", websocket.New(func(c *websocket.Conn) {
+    for {
+        msg, _ := c.ReadMessage()
+        c.WriteMessage(msg)
+    }
+}))
+```
+
+## Building a Secure API
+
+Here's a complete example combining multiple middlewares:
+
+```go
+package main
+
+import (
+    "time"
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/cors"
+    "github.com/go-mizu/mizu/middlewares/helmet"
+    "github.com/go-mizu/mizu/middlewares/logger"
+    "github.com/go-mizu/mizu/middlewares/recover"
+    "github.com/go-mizu/mizu/middlewares/ratelimit"
+    "github.com/go-mizu/mizu/middlewares/requestid"
+    "github.com/go-mizu/mizu/middlewares/jwt"
+    "github.com/go-mizu/mizu/middlewares/compress"
+)
+
+func main() {
+    app := mizu.New()
+
+    // Recovery first (catches panics)
+    app.Use(recover.New())
+
+    // Request tracking
+    app.Use(requestid.New())
+    app.Use(logger.New())
+
+    // Security
+    app.Use(helmet.New())
+    app.Use(cors.New(cors.Config{
+        AllowOrigins: []string{"https://app.example.com"},
+    }))
+    app.Use(ratelimit.New(ratelimit.Config{
+        Max:      100,
+        Duration: time.Minute,
+    }))
+
+    // Response optimization
+    app.Use(compress.New())
+
+    // Public routes
+    app.Post("/login", loginHandler)
+    app.Get("/health", healthHandler)
+
+    // Protected routes
+    protected := app.Group("/api")
+    protected.Use(jwt.New(jwt.Config{
+        Secret: []byte("your-secret"),
+    }))
+    protected.Get("/users", listUsers)
+    protected.Get("/profile", getProfile)
+
+    app.Listen(":3000")
+}
+```
+
+## Middleware Execution Order
+
+Middlewares execute in the order they're added:
+
+```
+Request → Recover → RequestID → Logger → Helmet → CORS → Handler
+Response ← Recover ← RequestID ← Logger ← Helmet ← CORS ← Handler
+```
+
+<Note>
+Always put `recover` first so it can catch panics from all other middlewares.
+</Note>
+
+## Writing Custom Middleware
+
+Create your own middleware:
+
+```go
+func authMiddleware(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        token := c.Request().Header.Get("Authorization")
+        if token == "" {
+            return c.JSON(401, map[string]string{
+                "error": "missing token",
+            })
+        }
+
+        user, err := validateToken(token)
+        if err != nil {
+            return c.JSON(401, map[string]string{
+                "error": "invalid token",
+            })
+        }
+
+        // Store user in context for handlers
+        ctx := context.WithValue(c.Context(), "user", user)
+        c.SetContext(ctx)
+
+        return next(c)
+    }
+}
+```
+
+### Middleware with Configuration
+
+```go
+type AuthConfig struct {
+    Secret string
+    Skip   func(*mizu.Ctx) bool
+}
+
+func Auth(config AuthConfig) mizu.Middleware {
+    return func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            if config.Skip != nil && config.Skip(c) {
+                return next(c)
+            }
+
+            // Validate using config.Secret
+            // ...
+
+            return next(c)
+        }
+    }
+}
+
+// Usage
+app.Use(Auth(AuthConfig{
+    Secret: "my-secret",
+    Skip: func(c *mizu.Ctx) bool {
+        return c.Request().URL.Path == "/health"
+    },
+}))
+```
+
+## Complete Middleware List
+
+| Category | Middlewares |
+|----------|-------------|
+| **Authentication** | basicauth, bearerauth, keyauth, csrf, jwt, oauth2, oidc |
+| **Security** | helmet, secure, ipfilter, honeypot, captcha, cors, rbac, signature |
+| **Rate Limiting** | ratelimit, circuitbreaker, bulkhead, throttle, concurrency, adaptive |
+| **Request** | bodylimit, contenttype, validator, header, methodoverride, sanitizer |
+| **Response** | compress, envelope, etag, nocache, vary |
+| **Caching** | cache, lastmodified |
+| **URL** | redirect, slash, rewrite |
+| **Proxy** | proxy, forwarded, realip, h2c |
+| **Context** | requestid, timeout, recover, timing, trace |
+| **Real-time** | websocket, sse |
+| **Static** | static, spa, favicon, embed |
+| **Monitoring** | logger, metrics, prometheus, pprof, healthcheck |
+| **Advanced** | feature, multitenancy, chaos, mirror, canary, idempotency |
+| **Protocol** | msgpack, jsonrpc, graphql, xml |
+| **I18n** | language, timezone |
+
+<Card title="Browse All Middlewares" icon="list" href="/middlewares/overview">
+  Complete middleware reference with examples
+</Card>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Contract System" icon="code" href="/guides/contract">
+    Build transport-neutral APIs with SDK generation.
+  </Card>
+  <Card title="Middleware Reference" icon="book" href="/middlewares/overview">
+    Detailed documentation for each middleware.
+  </Card>
+</CardGroup>

@@ -1,0 +1,367 @@
+---
+title: "Core Framework"
+description: "The foundation of every Mizu application"
+---
+
+The Core framework is the foundation of Mizu. It provides routing, request handling, middleware support, and server lifecycle management — everything you need to build web applications and APIs.
+
+## What is the Core Framework?
+
+The Core framework (`github.com/go-mizu/mizu`) is a thin layer on top of Go's `net/http` package that adds:
+
+- **App**: Server lifecycle and configuration
+- **Router**: URL pattern matching with Go 1.22+ patterns
+- **Handler**: Request processing functions that return errors
+- **Context (Ctx)**: Request/response wrapper with helpers
+- **Middleware**: Composable request processing pipeline
+
+```go
+package main
+
+import "github.com/go-mizu/mizu"
+
+func main() {
+    // App: manages server lifecycle
+    app := mizu.New()
+
+    // Middleware: processes every request
+    app.Use(func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            c.Logger().Info("request received")
+            return next(c)
+        }
+    })
+
+    // Router: maps URLs to handlers
+    app.Get("/users/{id}", func(c *mizu.Ctx) error {
+        // Ctx: access request data
+        id := c.Param("id")
+
+        // Handler: process and respond
+        return c.JSON(200, map[string]string{"id": id})
+    })
+
+    // App: start the server
+    app.Listen(":3000")
+}
+```
+
+## How Components Work Together
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Client Request                       │
+│                    GET /users/123                            │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                            App                               │
+│  • Manages HTTP server                                       │
+│  • Handles graceful shutdown                                 │
+│  • Provides health endpoints                                 │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                         Middleware                           │
+│  Logger → Auth → CORS → Recovery → ...                       │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                          Router                              │
+│  Pattern: GET /users/{id}                                    │
+│  Match: /users/123 → handler                                 │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                          Handler                             │
+│  func(c *mizu.Ctx) error                                     │
+│  • Reads request via Ctx                                     │
+│  • Processes business logic                                  │
+│  • Returns response or error                                 │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                           Ctx                                │
+│  • c.Param("id") → "123"                                     │
+│  • c.JSON(200, data) → response                              │
+│  • c.Logger() → structured logging                           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Key Concepts
+
+### App
+
+The App is your server. It starts up, manages connections, and shuts down gracefully:
+
+```go
+app := mizu.New()
+
+// Configure
+app.ErrorHandler(myErrorHandler)
+
+// Define routes
+app.Get("/", homeHandler)
+app.Post("/users", createUserHandler)
+
+// Start (blocks until shutdown)
+app.Listen(":3000")
+```
+
+Key App features:
+- Graceful shutdown on SIGINT/SIGTERM
+- Built-in health check endpoints (`/livez`, `/readyz`)
+- Access to underlying `*http.Server`
+
+<Card title="Learn More" icon="book" href="/concepts/app">
+  Full App documentation with configuration options
+</Card>
+
+### Routing
+
+Routes map URL patterns to handlers using Go 1.22+ patterns:
+
+```go
+// Basic routes
+app.Get("/users", listUsers)
+app.Post("/users", createUser)
+app.Put("/users/{id}", updateUser)
+app.Delete("/users/{id}", deleteUser)
+
+// Path parameters
+app.Get("/users/{id}", func(c *mizu.Ctx) error {
+    id := c.Param("id")  // Extract from URL
+    return c.Text(200, "User: "+id)
+})
+
+// Catch-all routes
+app.Get("/files/{path...}", serveFiles)
+
+// Route groups
+api := app.Group("/api/v1")
+api.Get("/users", listUsers)
+api.Get("/posts", listPosts)
+```
+
+<Card title="Learn More" icon="book" href="/concepts/routing">
+  Full Routing documentation with advanced patterns
+</Card>
+
+### Handler
+
+Handlers are functions that process requests and return errors:
+
+```go
+// Handler signature
+func(c *mizu.Ctx) error
+
+// Example handler
+func getUser(c *mizu.Ctx) error {
+    id := c.Param("id")
+
+    user, err := findUser(id)
+    if err != nil {
+        return err  // Error handler will process this
+    }
+
+    return c.JSON(200, user)
+}
+```
+
+Key Handler patterns:
+- Return `nil` on success, `error` on failure
+- Use Ctx helpers for reading/writing
+- Let the error handler deal with errors
+
+<Card title="Learn More" icon="book" href="/concepts/handler">
+  Full Handler documentation with patterns
+</Card>
+
+### Context (Ctx)
+
+Ctx wraps the request and response, providing convenient helpers:
+
+```go
+func handler(c *mizu.Ctx) error {
+    // Read request data
+    id := c.Param("id")           // URL parameter
+    page := c.Query("page")       // Query string
+    token := c.Header("Authorization")
+
+    // Read JSON body
+    var input CreateUserInput
+    if err := c.BindJSON(&input); err != nil {
+        return err
+    }
+
+    // Write responses
+    return c.JSON(200, user)        // JSON
+    return c.Text(200, "Hello")     // Plain text
+    return c.HTML(200, "<h1>Hi</h1>") // HTML
+    return c.Redirect(302, "/new")   // Redirect
+
+    // Access standard library
+    req := c.Request()    // *http.Request
+    w := c.Writer()       // http.ResponseWriter
+}
+```
+
+<Card title="Learn More" icon="book" href="/concepts/context">
+  Full Context documentation with all methods
+</Card>
+
+### Middleware
+
+Middleware wraps handlers to add functionality:
+
+```go
+// Middleware signature
+func(next mizu.Handler) mizu.Handler
+
+// Example: timing middleware
+func timingMiddleware(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        start := time.Now()
+        err := next(c)  // Call the next handler
+        duration := time.Since(start)
+        c.Logger().Info("request completed", "duration", duration)
+        return err
+    }
+}
+
+// Apply globally
+app.Use(timingMiddleware)
+
+// Apply to specific routes
+app.With(authMiddleware).Get("/admin", adminHandler)
+```
+
+<Card title="Learn More" icon="book" href="/concepts/middleware">
+  Full Middleware documentation with patterns
+</Card>
+
+## Complete Example
+
+Here's a complete API using all Core concepts:
+
+```go
+package main
+
+import (
+    "time"
+    "github.com/go-mizu/mizu"
+)
+
+// User model
+type User struct {
+    ID   string `json:"id"`
+    Name string `json:"name"`
+}
+
+// In-memory storage
+var users = map[string]User{
+    "1": {ID: "1", Name: "Alice"},
+    "2": {ID: "2", Name: "Bob"},
+}
+
+// Handlers
+func listUsers(c *mizu.Ctx) error {
+    list := make([]User, 0, len(users))
+    for _, u := range users {
+        list = append(list, u)
+    }
+    return c.JSON(200, list)
+}
+
+func getUser(c *mizu.Ctx) error {
+    id := c.Param("id")
+    user, ok := users[id]
+    if !ok {
+        return c.JSON(404, map[string]string{"error": "not found"})
+    }
+    return c.JSON(200, user)
+}
+
+func createUser(c *mizu.Ctx) error {
+    var user User
+    if err := c.BindJSON(&user); err != nil {
+        return c.JSON(400, map[string]string{"error": "invalid json"})
+    }
+    users[user.ID] = user
+    return c.JSON(201, user)
+}
+
+// Middleware
+func loggingMiddleware(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        start := time.Now()
+        err := next(c)
+        c.Logger().Info("request",
+            "method", c.Request().Method,
+            "path", c.Request().URL.Path,
+            "duration", time.Since(start),
+        )
+        return err
+    }
+}
+
+func main() {
+    app := mizu.New()
+
+    // Global middleware
+    app.Use(loggingMiddleware)
+
+    // Routes
+    app.Get("/users", listUsers)
+    app.Get("/users/{id}", getUser)
+    app.Post("/users", createUser)
+
+    app.Listen(":3000")
+}
+```
+
+Test it:
+
+```bash
+# List users
+curl http://localhost:3000/users
+
+# Get user
+curl http://localhost:3000/users/1
+
+# Create user
+curl -X POST http://localhost:3000/users \
+  -H "Content-Type: application/json" \
+  -d '{"id":"3","name":"Charlie"}'
+```
+
+## Detailed Documentation
+
+| Concept | Description | Link |
+|---------|-------------|------|
+| **App** | Server lifecycle, shutdown, health checks | [App →](/concepts/app) |
+| **Routing** | URL patterns, groups, path parameters | [Routing →](/concepts/routing) |
+| **Handler** | Request processing, return values | [Handler →](/concepts/handler) |
+| **Context** | Request/response helpers | [Context →](/concepts/context) |
+| **Request** | Reading path, query, body, headers | [Request →](/concepts/request) |
+| **Response** | JSON, HTML, redirect, streaming | [Response →](/concepts/response) |
+| **Static** | Serving files and embedded assets | [Static →](/concepts/static) |
+| **Logging** | Structured logging with slog | [Logging →](/concepts/logging) |
+| **Error** | Error handling and recovery | [Error →](/concepts/error) |
+| **Middleware** | Building request pipelines | [Middleware →](/concepts/middleware) |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start Tutorial" icon="rocket" href="/get-started/quick-start">
+    Build a complete app step by step.
+  </Card>
+  <Card title="Explore Middlewares" icon="layer-group" href="/guides/middlewares">
+    Add authentication, caching, and more.
+  </Card>
+</CardGroup>

@@ -39,6 +39,47 @@
         "tab": "Guides",
         "groups": [
           {
+            "group": "Introduction",
+            "pages": [
+              "guides/welcome",
+              "guides/what-is-mizu",
+              "guides/installation"
+            ]
+          },
+          {
+            "group": "Building Blocks",
+            "pages": [
+              "guides/core",
+              "guides/middlewares",
+              "guides/contract",
+              "guides/view",
+              "guides/frontend",
+              "guides/mobile",
+              "guides/cli"
+            ]
+          },
+          {
+            "group": "Tutorials",
+            "pages": [
+              "guides/first-api",
+              "guides/first-website",
+              "guides/first-fullstack"
+            ]
+          },
+          {
+            "group": "Learn More",
+            "pages": [
+              "guides/architecture",
+              "guides/faq",
+              "guides/community"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Core",
+        "groups": [
+          {
             "group": "Overview",
             "pages": [
               "overview/intro",
@@ -69,63 +110,6 @@
               "concepts/logging",
               "concepts/error",
               "concepts/middleware"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "Contracts",
-        "groups": [
-          {
-            "group": "Getting Started",
-            "pages": [
-              "contract/overview",
-              "contract/quick-start",
-              "contract/architecture"
-            ]
-          },
-          {
-            "group": "Core Concepts",
-            "pages": [
-              "contract/service",
-              "contract/register",
-              "contract/types",
-              "contract/invoker",
-              "contract/errors"
-            ]
-          },
-          {
-            "group": "Transports",
-            "pages": [
-              "contract/transports-overview",
-              "contract/rest",
-              "contract/jsonrpc",
-              "contract/mcp",
-              "contract/openapi"
-            ]
-          },
-          {
-            "group": "SDKs",
-            "pages": [
-              "contract/sdk-overview",
-              "contract/sdk-go",
-              "contract/sdk-python",
-              "contract/sdk-typescript"
-            ]
-          },
-          {
-            "group": "Advanced",
-            "pages": [
-              "contract/middleware",
-              "contract/testing",
-              "contract/client-generation"
-            ]
-          },
-          {
-            "group": "Reference",
-            "pages": [
-              "contract/api-reference",
-              "contract/error-codes"
             ]
           }
         ]
@@ -327,84 +311,99 @@
         ]
       },
       {
-        "tab": "CLI",
+        "tab": "Contract",
         "groups": [
           {
             "group": "Getting Started",
             "pages": [
-              "cli/overview",
-              "cli/installation"
+              "contract/overview",
+              "contract/quick-start",
+              "contract/architecture"
             ]
           },
           {
-            "group": "Commands",
+            "group": "Core Concepts",
             "pages": [
-              "cli/new",
-              "cli/dev",
-              "cli/contract",
-              "cli/version"
+              "contract/service",
+              "contract/register",
+              "contract/types",
+              "contract/invoker",
+              "contract/errors"
             ]
           },
           {
-            "group": "Templates Overview",
+            "group": "Transports",
             "pages": [
-              "cli/templates"
+              "contract/transports-overview",
+              "contract/rest",
+              "contract/jsonrpc",
+              "contract/mcp",
+              "contract/openapi"
             ]
           },
           {
-            "group": "Minimal Template",
+            "group": "SDKs",
             "pages": [
-              "cli/minimal/overview",
-              "cli/minimal/structure",
-              "cli/minimal/tutorial"
+              "contract/sdk-overview",
+              "contract/sdk-go",
+              "contract/sdk-python",
+              "contract/sdk-typescript"
             ]
           },
           {
-            "group": "API Template",
+            "group": "Advanced",
             "pages": [
-              "cli/api/overview",
-              "cli/api/structure",
-              "cli/api/tutorial"
-            ]
-          },
-          {
-            "group": "Contract Template",
-            "pages": [
-              "cli/contract-template/overview",
-              "cli/contract-template/structure",
-              "cli/contract-template/tutorial"
-            ]
-          },
-          {
-            "group": "Web Template",
-            "pages": [
-              "cli/web/overview",
-              "cli/web/structure",
-              "cli/web/tutorial"
-            ]
-          },
-          {
-            "group": "Live Template",
-            "pages": [
-              "cli/live/overview",
-              "cli/live/structure",
-              "cli/live/tutorial"
-            ]
-          },
-          {
-            "group": "Sync Template",
-            "pages": [
-              "cli/sync/overview",
-              "cli/sync/structure",
-              "cli/sync/tutorial"
+              "contract/middleware",
+              "contract/testing",
+              "contract/client-generation"
             ]
           },
           {
             "group": "Reference",
             "pages": [
-              "cli/global-flags",
-              "cli/exit-codes",
-              "cli/json-output"
+              "contract/api-reference",
+              "contract/error-codes"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "View",
+        "groups": [
+          {
+            "group": "View Engine",
+            "pages": [
+              "view/overview",
+              "view/quick-start",
+              "view/engine",
+              "view/templates",
+              "view/layouts",
+              "view/components",
+              "view/partials",
+              "view/functions",
+              "view/production"
+            ]
+          },
+          {
+            "group": "Live (Realtime)",
+            "pages": [
+              "view/live-overview",
+              "view/live-quick-start",
+              "view/live-server",
+              "view/live-sessions",
+              "view/live-pubsub"
+            ]
+          },
+          {
+            "group": "Sync (State)",
+            "pages": [
+              "view/sync-overview",
+              "view/sync-quick-start",
+              "view/sync-server",
+              "view/sync-client",
+              "view/sync-reactive",
+              "view/sync-collections",
+              "view/sync-integration"
             ]
           }
         ]
@@ -567,42 +566,84 @@
         ]
       },
       {
-        "tab": "Views",
+        "tab": "CLI",
         "groups": [
           {
-            "group": "View Engine",
+            "group": "Getting Started",
             "pages": [
-              "view/overview",
-              "view/quick-start",
-              "view/engine",
-              "view/templates",
-              "view/layouts",
-              "view/components",
-              "view/partials",
-              "view/functions",
-              "view/production"
+              "cli/overview",
+              "cli/installation"
             ]
           },
           {
-            "group": "Live (Realtime)",
+            "group": "Commands",
             "pages": [
-              "view/live-overview",
-              "view/live-quick-start",
-              "view/live-server",
-              "view/live-sessions",
-              "view/live-pubsub"
+              "cli/new",
+              "cli/dev",
+              "cli/contract",
+              "cli/version"
             ]
           },
           {
-            "group": "Sync (State)",
+            "group": "Templates Overview",
             "pages": [
-              "view/sync-overview",
-              "view/sync-quick-start",
-              "view/sync-server",
-              "view/sync-client",
-              "view/sync-reactive",
-              "view/sync-collections",
-              "view/sync-integration"
+              "cli/templates"
+            ]
+          },
+          {
+            "group": "Minimal Template",
+            "pages": [
+              "cli/minimal/overview",
+              "cli/minimal/structure",
+              "cli/minimal/tutorial"
+            ]
+          },
+          {
+            "group": "API Template",
+            "pages": [
+              "cli/api/overview",
+              "cli/api/structure",
+              "cli/api/tutorial"
+            ]
+          },
+          {
+            "group": "Contract Template",
+            "pages": [
+              "cli/contract-template/overview",
+              "cli/contract-template/structure",
+              "cli/contract-template/tutorial"
+            ]
+          },
+          {
+            "group": "Web Template",
+            "pages": [
+              "cli/web/overview",
+              "cli/web/structure",
+              "cli/web/tutorial"
+            ]
+          },
+          {
+            "group": "Live Template",
+            "pages": [
+              "cli/live/overview",
+              "cli/live/structure",
+              "cli/live/tutorial"
+            ]
+          },
+          {
+            "group": "Sync Template",
+            "pages": [
+              "cli/sync/overview",
+              "cli/sync/structure",
+              "cli/sync/tutorial"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "cli/global-flags",
+              "cli/exit-codes",
+              "cli/json-output"
             ]
           }
         ]

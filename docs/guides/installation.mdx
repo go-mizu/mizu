@@ -1,0 +1,378 @@
+---
+title: "Installation"
+description: "Get started with Mizu in your Go project"
+---
+
+This guide covers all the ways to install and set up Mizu for your projects.
+
+## Requirements
+
+Before installing Mizu, ensure you have:
+
+| Requirement | Version | Notes |
+|-------------|---------|-------|
+| **Go** | 1.22+ | Required for enhanced ServeMux patterns |
+| **Operating System** | Any | Linux, macOS, Windows all supported |
+
+### Checking Your Go Version
+
+```bash
+go version
+# Should output: go version go1.22.x (or higher)
+```
+
+If you need to install or upgrade Go, visit [go.dev/dl](https://go.dev/dl/).
+
+## Installation Methods
+
+### Method 1: As a Library (Recommended)
+
+Add Mizu to your existing Go project:
+
+```bash
+go get github.com/go-mizu/mizu
+```
+
+Create a simple `main.go`:
+
+```go
+package main
+
+import "github.com/go-mizu/mizu"
+
+func main() {
+    app := mizu.New()
+
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.Text(200, "Hello, Mizu!")
+    })
+
+    app.Listen(":3000")
+}
+```
+
+Run your application:
+
+```bash
+go run main.go
+```
+
+Visit [http://localhost:3000](http://localhost:3000) to see your app.
+
+### Method 2: Using the CLI
+
+The Mizu CLI provides project scaffolding and development tools.
+
+#### Install the CLI
+
+```bash
+go install github.com/go-mizu/mizu/cmd/mizu@latest
+```
+
+Make sure `$GOPATH/bin` (or `$HOME/go/bin`) is in your PATH:
+
+```bash
+# Add to ~/.bashrc, ~/.zshrc, or equivalent
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
+
+#### Verify Installation
+
+```bash
+mizu version
+```
+
+#### Create a New Project
+
+```bash
+# Create a minimal project
+mizu new myapp --template minimal
+
+# Or an API project
+mizu new myapi --template api
+
+# Or a full web application
+mizu new myweb --template web
+```
+
+#### Run in Development Mode
+
+```bash
+cd myapp
+mizu dev
+```
+
+This starts your app with hot reload enabled.
+
+### Method 3: Using Templates
+
+Start with a pre-configured project structure:
+
+```bash
+# Minimal - Basic server setup
+mizu new myapp --template minimal
+
+# API - REST API with validation
+mizu new myapp --template api
+
+# Contract - Contract-based services
+mizu new myapp --template contract
+
+# Web - Server-rendered website
+mizu new myapp --template web
+
+# Live - Real-time features
+mizu new myapp --template live
+
+# Sync - State synchronization
+mizu new myapp --template sync
+```
+
+## Your First Program
+
+Here's a complete "Hello World" example:
+
+```go
+package main
+
+import (
+    "log"
+    "github.com/go-mizu/mizu"
+)
+
+func main() {
+    // Create a new Mizu app
+    app := mizu.New()
+
+    // Define a route
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{
+            "message": "Hello, Mizu!",
+            "status":  "running",
+        })
+    })
+
+    // Start the server
+    log.Println("Server starting on http://localhost:3000")
+    if err := app.Listen(":3000"); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+### Running the Program
+
+```bash
+# Initialize go module (if new project)
+go mod init myapp
+
+# Download dependencies
+go mod tidy
+
+# Run the application
+go run main.go
+```
+
+### Testing the API
+
+```bash
+curl http://localhost:3000
+# {"message":"Hello, Mizu!","status":"running"}
+```
+
+## IDE Setup
+
+### VS Code
+
+1. Install the [Go extension](https://marketplace.visualstudio.com/items?itemName=golang.go)
+2. Open your project folder
+3. VS Code will prompt to install Go tools - accept all
+
+Recommended settings (`.vscode/settings.json`):
+
+```json
+{
+    "go.useLanguageServer": true,
+    "go.formatTool": "goimports",
+    "editor.formatOnSave": true,
+    "[go]": {
+        "editor.defaultFormatter": "golang.go"
+    }
+}
+```
+
+### GoLand
+
+1. Open your project as a Go project
+2. GoLand automatically detects go.mod
+3. Wait for indexing to complete
+
+Recommended settings:
+- Enable "Format on Save"
+- Enable "Optimize imports on Save"
+
+### Other Editors
+
+For Vim/Neovim, use [gopls](https://github.com/golang/tools/tree/master/gopls) with your preferred LSP client.
+
+For Emacs, use [lsp-mode](https://emacs-lsp.github.io/lsp-mode/) with gopls.
+
+## Adding Middlewares
+
+Middlewares are installed as separate packages:
+
+```bash
+# Add specific middlewares
+go get github.com/go-mizu/mizu/middlewares/cors
+go get github.com/go-mizu/mizu/middlewares/logger
+go get github.com/go-mizu/mizu/middlewares/recover
+```
+
+Use them in your app:
+
+```go
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/cors"
+    "github.com/go-mizu/mizu/middlewares/logger"
+    "github.com/go-mizu/mizu/middlewares/recover"
+)
+
+func main() {
+    app := mizu.New()
+
+    // Add middlewares
+    app.Use(recover.New())  // Panic recovery
+    app.Use(logger.New())   // Request logging
+    app.Use(cors.New())     // CORS support
+
+    app.Get("/", handler)
+    app.Listen(":3000")
+}
+```
+
+## Project Structure
+
+Recommended structure for larger applications:
+
+```
+myapp/
+├── cmd/
+│   └── server/
+│       └── main.go          # Entry point
+├── internal/
+│   ├── handlers/            # HTTP handlers
+│   │   ├── users.go
+│   │   └── posts.go
+│   ├── middleware/          # Custom middleware
+│   │   └── auth.go
+│   ├── models/              # Data models
+│   │   └── user.go
+│   └── services/            # Business logic
+│       └── user_service.go
+├── pkg/                     # Public packages
+├── go.mod
+├── go.sum
+└── README.md
+```
+
+## Verifying Installation
+
+Run these checks to ensure everything is set up correctly:
+
+### 1. Check Go Version
+
+```bash
+go version
+# go version go1.22.x ...
+```
+
+### 2. Check Mizu Import
+
+```bash
+go list -m github.com/go-mizu/mizu
+# github.com/go-mizu/mizu v1.x.x
+```
+
+### 3. Run a Test Server
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/go-mizu/mizu"
+)
+
+func main() {
+    app := mizu.New()
+
+    app.Get("/health", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{
+            "status": "healthy",
+            "framework": "mizu",
+        })
+    })
+
+    fmt.Println("Test server running on :3000")
+    app.Listen(":3000")
+}
+```
+
+```bash
+# In another terminal
+curl http://localhost:3000/health
+# {"framework":"mizu","status":"healthy"}
+```
+
+## Troubleshooting
+
+### "go: module not found"
+
+Ensure you have Go 1.22+ and run:
+
+```bash
+go mod tidy
+```
+
+### "command not found: mizu"
+
+Add Go's bin directory to your PATH:
+
+```bash
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
+
+### Port Already in Use
+
+Change the port in your app:
+
+```go
+app.Listen(":8080")  // Use a different port
+```
+
+Or find and kill the process using port 3000:
+
+```bash
+# On macOS/Linux
+lsof -i :3000
+kill -9 <PID>
+
+# On Windows
+netstat -ano | findstr :3000
+taskkill /PID <PID> /F
+```
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Quick Start" icon="rocket" href="/get-started/quick-start">
+    Build your first complete application.
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/concepts/overview">
+    Learn about App, Router, Handler, and Context.
+  </Card>
+  <Card title="Building Blocks" icon="puzzle-piece" href="/guides/core">
+    Explore the Mizu component ecosystem.
+  </Card>
+</CardGroup>

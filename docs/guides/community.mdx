@@ -1,0 +1,202 @@
+---
+title: "Community"
+description: "Connect with the Mizu community and learn how to contribute"
+---
+
+Mizu is an open-source project with an active community. Whether you're looking for help, want to contribute, or just want to connect with other developers, you're welcome here.
+
+## Connect With Us
+
+<CardGroup cols={2}>
+  <Card title="Discord" icon="discord" href="https://discord.gg/8QpMsNBB8n">
+    **Real-time chat** - Ask questions, share projects, get help from the community and maintainers.
+  </Card>
+  <Card title="GitHub" icon="github" href="https://github.com/go-mizu/mizu">
+    **Source code** - Star the repo, report issues, browse code, submit pull requests.
+  </Card>
+</CardGroup>
+
+## Getting Help
+
+### Discord
+
+The fastest way to get help:
+
+1. Join the [Mizu Discord](https://discord.gg/8QpMsNBB8n)
+2. Introduce yourself in `#introductions`
+3. Ask questions in `#help`
+4. Share what you're building in `#showcase`
+
+**Channels:**
+- `#general` - General discussion
+- `#help` - Get help with issues
+- `#showcase` - Share your projects
+- `#announcements` - Release news
+- `#contributing` - Contribution discussion
+
+### GitHub Issues
+
+For bugs and feature requests:
+
+1. Search [existing issues](https://github.com/go-mizu/mizu/issues)
+2. If not found, [create a new issue](https://github.com/go-mizu/mizu/issues/new)
+3. Use issue templates when available
+4. Include reproduction steps for bugs
+
+### GitHub Discussions
+
+For questions and ideas:
+
+1. Visit [GitHub Discussions](https://github.com/go-mizu/mizu/discussions)
+2. Search for existing discussions
+3. Start a new discussion if needed
+
+## Contributing
+
+We welcome contributions of all kinds!
+
+### Ways to Contribute
+
+| Type | Description |
+|------|-------------|
+| **Code** | Bug fixes, new features, improvements |
+| **Documentation** | Fix typos, improve clarity, add examples |
+| **Examples** | Create example projects and tutorials |
+| **Bug Reports** | Report issues with clear reproduction steps |
+| **Feature Requests** | Suggest new features or improvements |
+| **Answering Questions** | Help others on Discord or GitHub |
+
+### Getting Started
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run tests: `make test`
+5. Submit a pull request
+
+```bash
+# Clone your fork
+git clone https://github.com/YOUR_USERNAME/mizu.git
+cd mizu
+
+# Create a branch
+git checkout -b feature/my-feature
+
+# Make changes and test
+make test
+
+# Commit and push
+git add .
+git commit -m "Add my feature"
+git push origin feature/my-feature
+
+# Open a PR on GitHub
+```
+
+### Code Guidelines
+
+- Follow Go conventions (`gofmt`, `go vet`)
+- Add tests for new functionality
+- Update documentation as needed
+- Keep commits focused and atomic
+- Write clear commit messages
+
+### Pull Request Process
+
+1. Create PR against `main` branch
+2. Fill out the PR template
+3. Wait for CI checks to pass
+4. Address review feedback
+5. Maintainer will merge when ready
+
+## Project Structure
+
+```
+github.com/go-mizu/mizu/
+├── app.go              # App type
+├── router.go           # Router
+├── context.go          # Ctx type
+├── handler.go          # Handler type
+├── middlewares/        # Middleware packages
+│   ├── cors/
+│   ├── jwt/
+│   └── ...
+├── contract/           # Contract system
+│   ├── rest/
+│   ├── jsonrpc/
+│   └── sdk/
+├── view/               # View engine
+├── frontend/           # Frontend integration
+├── cmd/                # CLI
+└── docs/               # Documentation
+```
+
+## Showcase
+
+Projects built with Mizu:
+
+<CardGroup cols={2}>
+  <Card title="Your Project Here" icon="plus">
+    Share what you've built with Mizu! Post in `#showcase` on Discord or add to the README.
+  </Card>
+</CardGroup>
+
+## Resources
+
+### Official Resources
+
+- [Documentation](https://docs.go-mizu.dev)
+- [GitHub Repository](https://github.com/go-mizu/mizu)
+- [Go Package](https://pkg.go.dev/github.com/go-mizu/mizu)
+
+### Learning Resources
+
+- [Quick Start Tutorial](/get-started/quick-start)
+- [Build Your First API](/guides/first-api)
+- [Build Your First Website](/guides/first-website)
+- [Example Projects](/examples/overview)
+
+## Code of Conduct
+
+We are committed to providing a welcoming and inclusive environment. All participants are expected to:
+
+- Be respectful and considerate
+- Avoid harassment and discrimination
+- Focus on constructive feedback
+- Help create a positive community
+
+See our full [Code of Conduct](https://github.com/go-mizu/mizu/blob/main/CODE_OF_CONDUCT.md).
+
+## Maintainers
+
+The Mizu project is maintained by contributors who review PRs, triage issues, and guide the project direction.
+
+### Becoming a Maintainer
+
+Active contributors may be invited to become maintainers. This typically involves:
+
+- Consistent, quality contributions
+- Helping others in the community
+- Understanding of the project goals
+- Good communication skills
+
+## Sponsorship
+
+If Mizu is useful to you or your company, consider sponsoring:
+
+- Help fund development time
+- Support infrastructure costs
+- Ensure long-term sustainability
+
+Contact the maintainers on Discord for sponsorship options.
+
+## Stay Updated
+
+- **Star the repo** - Get notified of releases
+- **Watch the repo** - Get all updates
+- **Join Discord** - Real-time announcements
+- **Follow on Twitter/X** - Project updates
+
+<Tip>
+The best way to learn Mizu is to build something! Start with the [Quick Start](/get-started/quick-start) and join us on [Discord](https://discord.gg/8QpMsNBB8n) to share what you create.
+</Tip>
