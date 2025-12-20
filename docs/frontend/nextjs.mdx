@@ -4,9 +4,90 @@ description: "Build Next.js applications with static export and Mizu backend."
 icon: "code"
 ---
 
-Next.js is a React framework with server-side rendering, static generation, and more. With Mizu, you'll use Next.js's **static export** mode to generate a static site.
+Next.js is a powerful React framework that offers server-side rendering, static site generation, file-based routing, and an exceptional developer experience. When using Next.js with Mizu, you'll leverage Next.js's **static export** mode to generate a fully static site, while Mizu handles your backend API and serves the static files.
+
+## Why Next.js with Mizu?
+
+Next.js brings several advantages to your Mizu applications:
+
+**File-based routing** - Define routes by creating files in the `app/` directory. No need to configure a router manually.
+
+**React Server Components** - Write components that run during build time, reducing client-side JavaScript.
+
+**App Router** - Modern routing with layouts, loading states, error boundaries, and parallel routes.
+
+**Developer Experience** - Fast Refresh, TypeScript support, and excellent error messages out of the box.
+
+**Optimizations** - Automatic code splitting, image optimization (with configuration), and font optimization.
+
+### Next.js with Mizu vs Standalone Next.js
+
+| Feature | Next.js + Mizu | Standalone Next.js |
+|---------|---------------|-------------------|
+| **Hosting** | Single Go binary | Node.js server or Vercel |
+| **Backend** | Go handlers | Next.js API routes |
+| **Deployment** | Any server with Go | Node.js required |
+| **SSR** | ❌ No (static export) | ✅ Yes |
+| **Static Export** | ✅ Yes | ✅ Yes |
+| **API Routes** | Go backend | JavaScript |
+| **Performance** | ⚡ Very fast (Go) | ⚡ Fast (Node.js) |
+| **Type Safety** | Backend: Go, Frontend: TS | Full-stack TypeScript |
+
+**When to use Next.js with Mizu:**
+- You want Next.js features (App Router, RSC, file-based routing)
+- You prefer Go for backend APIs
+- You want a single binary deployment
+- You're building a static-exportable site
+
+**When to use standalone Next.js:**
+- You need full SSR (server-side rendering at request time)
+- You want Next.js API routes
+- You prefer Node.js for everything
+- Your team is all JavaScript/TypeScript
+
+## How Static Export Works
+
+Next.js's static export generates HTML files at build time:
+
+```
+Build Process
+    ↓
+┌─────────────────────────────┐
+│ Next.js analyzes routes     │
+└─────────────┬───────────────┘
+              ↓
+┌─────────────────────────────┐
+│ Renders pages to HTML       │
+│ - Server Components run     │
+│ - Client Components bundle  │
+└─────────────┬───────────────┘
+              ↓
+┌─────────────────────────────┐
+│ Outputs static files        │
+│ - build/                    │
+│   ├── index.html           │
+│   ├── about.html           │
+│   └── _next/               │
+└─────────────────────────────┘
+```
+
+**What happens at build time:**
+1. Next.js crawls all routes starting from page files
+2. Server Components execute and generate HTML
+3. Client Components are bundled into JavaScript
+4. Static HTML files are created for each route
+5. Assets are optimized and fingerprinted
+
+**What happens at runtime:**
+1. Mizu serves the pre-built HTML files
+2. Browser loads HTML + JavaScript
+3. React hydrates the page
+4. Client-side navigation takes over
+5. API calls go to Mizu backend (Go)
 
 ## Quick Start
+
+Create a new Next.js project with the CLI:
 
 ```bash
 mizu new ./my-nextjs-app --template frontend/next
@@ -14,64 +95,220 @@ cd my-nextjs-app
 make dev
 ```
 
+Visit `http://localhost:3000` to see your app!
+
+## Project Structure
+
+```
+my-nextjs-app/
+├── cmd/
+│   └── server/
+│       └── main.go              # Go entry point
+├── app/
+│   └── server/
+│       ├── app.go               # Mizu app configuration
+│       ├── config.go            # Server configuration
+│       └── routes.go            # API routes (Go)
+├── client/                      # Next.js application
+│   ├── app/                     # App Router (Next.js 13+)
+│   │   ├── layout.tsx           # Root layout
+│   │   ├── page.tsx             # Home page (/)
+│   │   ├── about/
+│   │   │   └── page.tsx         # About page (/about)
+│   │   └── users/
+│   │       ├── page.tsx         # Users list (/users)
+│   │       └── [id]/
+│   │           └── page.tsx     # User detail (/users/123)
+│   ├── components/
+│   │   ├── Header.tsx
+│   │   └── Footer.tsx
+│   ├── public/                  # Static assets
+│   │   └── images/
+│   ├── next.config.mjs          # Next.js configuration
+│   ├── package.json
+│   └── tsconfig.json
+├── build/                       # Built files (after npm run build)
+├── go.mod
+└── Makefile
+```
+
 ## Configuration
 
-### `client/next.config.mjs`
+### Next.js Configuration
+
+The key to using Next.js with Mizu is configuring static export:
+
+#### `client/next.config.mjs`
 
 ```js
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',  // Static export mode
+  // Enable static export - this is crucial!
+  output: 'export',
+
+  // Output to 'build' directory (must match Mizu config)
   distDir: '../build',
+
+  // Disable image optimization for static export
   images: {
-    unoptimized: true  // Required for static export
-  }
+    unoptimized: true
+  },
+
+  // Optional: set base path if serving from subdirectory
+  // basePath: '/app',
+
+  // Optional: trailing slash behavior
+  // trailingSlash: true,
 }
 
 export default nextConfig
 ```
 
-## Backend Setup
+**Configuration explained:**
+
+- **output: 'export'** - Tells Next.js to generate static HTML files instead of running a Node.js server
+- **distDir: '../build'** - Outputs files to `build/` (one level up from `client/`)
+- **images.unoptimized** - Disables Next.js Image Optimization API (requires Node.js server)
+
+### Backend Configuration
+
+#### `app/server/app.go`
 
 ```go
+package server
+
+import (
+    "embed"
+    "io/fs"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/frontend"
+)
+
+// Embed the Next.js build output
 //go:embed all:../../build
 var buildFS embed.FS
 
 func New(cfg *Config) *mizu.App {
     app := mizu.New()
 
+    // API routes come first
     app.Get("/api/users", handleUsers)
+    app.Post("/api/users", createUser)
+    app.Get("/api/users/{id}", getUser)
 
+    // Extract 'build' subdirectory from embedded FS
     build, _ := fs.Sub(buildFS, "build")
+
+    // Frontend middleware (handles all non-API routes)
     app.Use(frontend.WithOptions(frontend.Options{
-        Mode:        frontend.ModeAuto,
-        FS:          build,
-        Root:        "./build",
-        DevServer:   "http://localhost:" + cfg.DevPort,
-        IgnorePaths: []string{"/api"},
+        Mode:        frontend.ModeAuto,       // Auto-detect dev/prod
+        FS:          build,                    // Embedded build files
+        Root:        "./build",                // Fallback to filesystem
+        DevServer:   "http://localhost:" + cfg.DevPort,  // Next.js dev server
+        IgnorePaths: []string{"/api"},        // Don't proxy /api to Next.js
     }))
 
     return app
 }
 ```
 
+#### `app/server/routes.go`
+
+```go
+package server
+
+import "github.com/go-mizu/mizu"
+
+func setupRoutes(app *mizu.App) {
+    // User API
+    app.Get("/api/users", handleUsers)
+    app.Post("/api/users", createUser)
+    app.Get("/api/users/{id}", getUser)
+    app.Put("/api/users/{id}", updateUser)
+    app.Delete("/api/users/{id}", deleteUser)
+}
+
+func handleUsers(c *mizu.Ctx) error {
+    users := []map[string]any{
+        {"id": 1, "name": "Alice", "email": "alice@example.com"},
+        {"id": 2, "name": "Bob", "email": "bob@example.com"},
+        {"id": 3, "name": "Charlie", "email": "charlie@example.com"},
+    }
+    return c.JSON(200, users)
+}
+
+func createUser(c *mizu.Ctx) error {
+    var user map[string]any
+    if err := c.BodyJSON(&user); err != nil {
+        return c.JSON(400, map[string]string{"error": "Invalid JSON"})
+    }
+
+    // Add ID (in real app, use database)
+    user["id"] = 4
+
+    return c.JSON(201, user)
+}
+
+func getUser(c *mizu.Ctx) error {
+    id := c.Param("id")
+    user := map[string]any{
+        "id":    id,
+        "name":  "User " + id,
+        "email": "user" + id + "@example.com",
+    }
+    return c.JSON(200, user)
+}
+```
+
 ## File-Based Routing
 
+Next.js uses file-based routing in the `app/` directory. Each folder represents a route segment, and special files define the UI.
+
+### Route Files
+
+| File | Purpose | Required |
+|------|---------|----------|
+| `layout.tsx` | Shared UI for a segment and its children | Yes (root) |
+| `page.tsx` | Unique UI for a route, makes it publicly accessible | Yes |
+| `loading.tsx` | Loading UI (Suspense boundary) | No |
+| `error.tsx` | Error UI (Error boundary) | No |
+| `not-found.tsx` | 404 UI | No |
+
+### Example Routes
+
 ```
-client/app/
-├── layout.tsx           # Root layout
-├── page.tsx             # / route
+app/
+├── layout.tsx           → Root layout (wraps everything)
+├── page.tsx             → Home page: /
 ├── about/
-│   └── page.tsx         # /about route
+│   └── page.tsx         → About: /about
+├── blog/
+│   ├── layout.tsx       → Blog layout (wraps all blog pages)
+│   ├── page.tsx         → Blog home: /blog
+│   └── [slug]/
+│       └── page.tsx     → Blog post: /blog/hello-world
 └── users/
-    ├── page.tsx         # /users route
+    ├── page.tsx         → Users list: /users
     └── [id]/
-        └── page.tsx     # /users/:id route
+        └── page.tsx     → User detail: /users/123
 ```
 
-### `client/app/layout.tsx`
+### Root Layout
+
+The root layout wraps your entire application:
+
+#### `client/app/layout.tsx`
 
 ```tsx
+import type { Metadata } from 'next'
+import './globals.css'
+
+export const metadata: Metadata = {
+  title: 'My Mizu App',
+  description: 'Built with Next.js and Mizu',
+}
+
 export default function RootLayout({
   children,
 }: {
@@ -80,101 +317,764 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <nav>
+        <nav className="navbar">
           <a href="/">Home</a>
           <a href="/about">About</a>
+          <a href="/users">Users</a>
         </nav>
-        <main>{children}</main>
+
+        <main className="container">
+          {children}
+        </main>
+
+        <footer className="footer">
+          <p>© 2025 My Mizu App</p>
+        </footer>
       </body>
     </html>
   )
 }
 ```
 
-### `client/app/page.tsx`
+### Dynamic Routes
+
+Use brackets for dynamic segments:
+
+#### `client/app/users/[id]/page.tsx`
 
 ```tsx
 'use client'
 
 import { useEffect, useState } from 'react'
 
-export default function Home() {
-  const [users, setUsers] = useState([])
+interface User {
+  id: string
+  name: string
+  email: string
+}
+
+export default function UserPage({ params }: { params: { id: string } }) {
+  const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('/api/users')
-      .then(res => res.json())
-      .then(setUsers)
-  }, [])
+    fetch(`/api/users/${params.id}`)
+      .then(res => {
+        if (!res.ok) throw new Error('User not found')
+        return res.json()
+      })
+      .then(setUser)
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [params.id])
+
+  if (loading) return <div>Loading user...</div>
+  if (error) return <div className="error">Error: {error}</div>
+  if (!user) return <div>User not found</div>
 
   return (
     <div>
-      <h1>Users</h1>
-      <ul>
-        {users.map((user: any) => (
-          <li key={user.id}>{user.name}</li>
-        ))}
-      </ul>
+      <h1>{user.name}</h1>
+      <p>Email: {user.email}</p>
+      <p>ID: {user.id}</p>
     </div>
   )
 }
 ```
 
-## Limitations with Static Export
+## Server Components vs Client Components
 
-**Works:**
-- Client-side routing ✅
-- API calls to Mizu backend ✅
-- React Server Components (RSC) ✅
-- Client components ✅
+Next.js 13+ introduces React Server Components (RSC). Understanding the difference is crucial.
 
-**Doesn't work:**
-- Server-side rendering ❌
-- Next.js API routes ❌ (use Mizu routes)
-- Image optimization ❌ (set `unoptimized: true`)
-- Middleware ❌
-- `revalidate` ❌
+### Server Components (Default)
 
-## Development
+Components are Server Components by default. They run **at build time** (in static export mode):
 
-```bash
-# Terminal 1: Next.js
-cd client
-npm run dev  # Port 3001
+```tsx
+// app/page.tsx - Server Component (no 'use client')
 
-# Terminal 2: Mizu
-go run cmd/server/main.go  # Port 3000
+export default function Home() {
+  // This runs at BUILD time
+  const buildTime = new Date().toISOString()
+
+  return (
+    <div>
+      <h1>Welcome</h1>
+      <p>Built at: {buildTime}</p>
+    </div>
+  )
+}
 ```
 
-## Building
+**Server Component benefits:**
+- Zero JavaScript sent to browser for the component logic
+- Can read files, query databases (at build time)
+- Better performance - less client-side JavaScript
+
+**Server Component limitations:**
+- Cannot use hooks (useState, useEffect, etc.)
+- Cannot use browser APIs
+- Cannot handle user interactions directly
+
+### Client Components
+
+Add `'use client'` directive for interactive components:
+
+```tsx
+'use client'
+
+import { useState } from 'react'
+
+export default function Counter() {
+  // This runs in the BROWSER
+  const [count, setCount] = useState(0)
+
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={() => setCount(count + 1)}>
+        Increment
+      </button>
+    </div>
+  )
+}
+```
+
+**Client Component benefits:**
+- Can use hooks and state
+- Can handle user interactions
+- Can use browser APIs
+- Can use useEffect for side effects
+
+**Client Component limitations:**
+- JavaScript bundle sent to browser
+- Cannot use server-only features (fs, database)
+
+### Composition Pattern
+
+Compose Server and Client Components:
+
+```tsx
+// app/page.tsx - Server Component
+import Counter from './Counter'  // Client Component
+
+export default function Home() {
+  const data = { message: "Hello from server" }
+
+  return (
+    <div>
+      <h1>Home Page</h1>
+      <p>{data.message}</p>
+      {/* Client component nested in server component */}
+      <Counter />
+    </div>
+  )
+}
+```
+
+```tsx
+// app/Counter.tsx - Client Component
+'use client'
+
+import { useState } from 'react'
+
+export default function Counter() {
+  const [count, setCount] = useState(0)
+  return <button onClick={() => setCount(count + 1)}>Count: {count}</button>
+}
+```
+
+## Data Fetching
+
+### Fetching in Client Components
+
+Use `useEffect` and `fetch`:
+
+```tsx
+'use client'
+
+import { useEffect, useState } from 'react'
+
+interface User {
+  id: number
+  name: string
+  email: string
+}
+
+export default function Users() {
+  const [users, setUsers] = useState<User[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/users')
+      .then(res => res.json())
+      .then(setUsers)
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div>Loading...</div>
+
+  return (
+    <ul>
+      {users.map(user => (
+        <li key={user.id}>{user.name}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+### Using React Query
+
+Install React Query for better data fetching:
+
+```bash
+cd client
+npm install @tanstack/react-query
+```
+
+Setup provider:
+
+```tsx
+// app/providers.tsx
+'use client'
+
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useState } from 'react'
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient())
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      {children}
+    </QueryClientProvider>
+  )
+}
+```
+
+```tsx
+// app/layout.tsx
+import { Providers } from './providers'
+
+export default function RootLayout({ children }) {
+  return (
+    <html>
+      <body>
+        <Providers>
+          {children}
+        </Providers>
+      </body>
+    </html>
+  )
+}
+```
+
+Use in components:
+
+```tsx
+'use client'
+
+import { useQuery } from '@tanstack/react-query'
+
+export default function Users() {
+  const { data: users, isLoading, error } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => fetch('/api/users').then(res => res.json())
+  })
+
+  if (isLoading) return <div>Loading...</div>
+  if (error) return <div>Error: {error.message}</div>
+
+  return (
+    <ul>
+      {users.map(user => <li key={user.id}>{user.name}</li>)}
+    </ul>
+  )
+}
+```
+
+## Metadata and SEO
+
+Next.js makes SEO easy with metadata:
+
+### Static Metadata
+
+```tsx
+// app/page.tsx
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Home - My App',
+  description: 'Welcome to my app built with Mizu and Next.js',
+  keywords: ['Next.js', 'Mizu', 'Go', 'React'],
+  openGraph: {
+    title: 'Home - My App',
+    description: 'Welcome to my app',
+    images: ['/og-image.png'],
+  },
+}
+
+export default function Home() {
+  return <h1>Home</h1>
+}
+```
+
+### Dynamic Metadata
+
+```tsx
+// app/users/[id]/page.tsx
+import type { Metadata } from 'next'
+
+export async function generateMetadata({ params }): Promise<Metadata> {
+  return {
+    title: `User ${params.id} - My App`,
+    description: `Profile page for user ${params.id}`,
+  }
+}
+
+export default function UserPage({ params }) {
+  return <h1>User {params.id}</h1>
+}
+```
+
+## Image Optimization
+
+Next.js's Image component requires a Node.js server for optimization. In static export mode, you have options:
+
+### Option 1: Use Regular `<img>` Tags
+
+```tsx
+export default function Logo() {
+  return <img src="/logo.png" alt="Logo" width={200} height={100} />
+}
+```
+
+### Option 2: Use `next-image-export-optimizer`
+
+This package optimizes images at build time:
+
+```bash
+npm install next-image-export-optimizer
+```
+
+```js
+// next.config.mjs
+const nextConfig = {
+  output: 'export',
+  images: {
+    loader: 'custom',
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
+  },
+  env: {
+    nextImageExportOptimizer_imageFolderPath: "public/images",
+    nextImageExportOptimizer_exportFolderPath: "build",
+    nextImageExportOptimizer_quality: "75",
+  },
+}
+```
+
+```tsx
+import ExportedImage from 'next-image-export-optimizer'
+
+export default function Logo() {
+  return (
+    <ExportedImage
+      src="/images/logo.png"
+      alt="Logo"
+      width={200}
+      height={100}
+    />
+  )
+}
+```
+
+### Option 3: Optimize Manually
+
+Use tools like `sharp` or ImageMagick to pre-optimize images before adding them to `public/`.
+
+## Development Workflow
+
+### Starting Development
+
+```bash
+# Option 1: Use Makefile (recommended)
+make dev
+
+# Option 2: Manual (two terminals)
+
+# Terminal 1: Next.js dev server
+cd client
+npm run dev   # Starts on http://localhost:3001
+
+# Terminal 2: Mizu server
+go run cmd/server/main.go  # Starts on http://localhost:3000
+```
+
+**How it works in development:**
+1. Next.js runs its dev server on port 3001
+2. Mizu runs on port 3000
+3. Requests to Mizu's port 3000 get proxied to Next.js (except `/api`)
+4. You visit `http://localhost:3000` in your browser
+5. Hot reload works through Mizu's proxy
+
+### Making Changes
+
+**Frontend changes:**
+- Edit any file in `client/`
+- Next.js Fast Refresh updates browser instantly
+- No restart needed
+
+**Backend changes:**
+- Edit Go files
+- Restart Mizu server
+- Or use `air` for auto-reload:
+
+```bash
+# Install air
+go install github.com/cosmtrek/air@latest
+
+# Run with auto-reload
+air
+```
+
+## Building for Production
+
+Build the complete application:
 
 ```bash
 make build
 ```
 
-Runs:
-1. `cd client && npm run build` → generates `build/`
-2. `go build` → embeds `build/` into binary
+This runs:
+1. `cd client && npm run build` - Next.js static export
+2. `go build -o bin/server cmd/server/main.go` - Go binary with embedded frontend
 
-## When to Use
+### Build Output
 
-**Use Next.js when:**
-- You want App Router and RSC
-- File-based routing
-- Image optimization (configure properly)
+```
+build/
+├── index.html              # Home page
+├── about.html              # About page
+├── users.html              # Users list
+├── users/
+│   └── 123.html           # Example user page
+├── _next/
+│   ├── static/
+│   │   └── chunks/        # JavaScript bundles
+│   └── ...
+└── images/                # Static assets
+```
 
-**Use React when:**
-- Simpler setup
-- Don't need Next.js features
-- Want more control
+### Running in Production
+
+```bash
+MIZU_ENV=production ./bin/server
+```
+
+The binary contains:
+- Mizu web server
+- Your Go API handlers
+- Entire Next.js build embedded
+
+## Limitations with Static Export
+
+When using `output: 'export'`, some Next.js features are unavailable:
+
+| Feature | Available | Notes |
+|---------|-----------|-------|
+| File-based routing | ✅ Yes | Works perfectly |
+| Server Components | ✅ Yes | Run at build time |
+| Client Components | ✅ Yes | Full support |
+| Dynamic routes | ✅ Yes | Using [brackets] |
+| Layouts | ✅ Yes | Full support |
+| Loading UI | ✅ Yes | Full support |
+| Error boundaries | ✅ Yes | Full support |
+| API Routes | ❌ No | Use Mizu Go handlers instead |
+| Server-Side Rendering | ❌ No | Only static export |
+| `getServerSideProps` | ❌ No | Use client-side fetching |
+| `revalidate` | ❌ No | No ISR in static export |
+| Image Optimization API | ❌ No | Use alternatives |
+| Middleware | ❌ No | Use Mizu middleware |
+| Server Actions | ❌ No | Use Mizu API routes |
+
+### Working Around Limitations
+
+**Instead of API Routes:**
+```tsx
+// ❌ app/api/users/route.ts - Doesn't work in static export
+export async function GET() {
+  return Response.json([])
+}
+
+// ✅ Use Mizu Go handlers instead
+// app/server/routes.go
+func handleUsers(c *mizu.Ctx) error {
+    return c.JSON(200, users)
+}
+```
+
+**Instead of SSR:**
+```tsx
+// ❌ Using getServerSideProps - Doesn't work
+export async function getServerSideProps() {
+  const data = await fetch('...')
+  return { props: { data } }
+}
+
+// ✅ Client-side fetching instead
+'use client'
+export default function Page() {
+  const [data, setData] = useState(null)
+  useEffect(() => {
+    fetch('/api/data').then(r => r.json()).then(setData)
+  }, [])
+}
+```
+
+## Troubleshooting
+
+### Build Errors: "output: export" Issues
+
+**Error:**
+```
+Error: Page "/api/users" is incompatible with "output: export"
+```
+
+**Cause:** You have API routes in `app/api/`
+
+**Solution:** Remove `app/api/` directory. Use Mizu Go handlers instead.
+
+---
+
+### Hydration Mismatch Errors
+
+**Error:**
+```
+Warning: Text content did not match. Server: "..." Client: "..."
+```
+
+**Cause:** Server-rendered HTML doesn't match client-rendered HTML
+
+**Solution:** Ensure Server Components don't use time-dependent values:
+
+```tsx
+// ❌ Bad - time changes between build and runtime
+export default function Page() {
+  return <p>{new Date().toString()}</p>
+}
+
+// ✅ Good - use client component for dynamic content
+'use client'
+export default function Page() {
+  const [time, setTime] = useState(new Date())
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  return <p>{time.toString()}</p>
+}
+```
+
+---
+
+### Images Not Loading
+
+**Error:** Images show broken icon
+
+**Cause:** Next.js Image component requires server
+
+**Solution:** Use one of the image optimization alternatives mentioned above.
+
+---
+
+### Can't Find Module
+
+**Error:**
+```
+Module not found: Can't resolve '@/components/Header'
+```
+
+**Cause:** Path alias not configured
+
+**Solution:** Check `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./app/*"]
+    }
+  }
+}
+```
+
+## Real-World Example: Blog with Comments
+
+Here's a complete example showing Server Components, Client Components, and API integration:
+
+### Backend
+
+```go
+// app/server/routes.go
+func setupRoutes(app *mizu.App) {
+    app.Get("/api/posts", handlePosts)
+    app.Get("/api/posts/{id}", getPost)
+    app.Get("/api/posts/{id}/comments", getComments)
+    app.Post("/api/posts/{id}/comments", createComment)
+}
+
+func handlePosts(c *mizu.Ctx) error {
+    posts := []map[string]any{
+        {"id": 1, "title": "First Post", "slug": "first-post"},
+        {"id": 2, "title": "Second Post", "slug": "second-post"},
+    }
+    return c.JSON(200, posts)
+}
+
+func getPost(c *mizu.Ctx) error {
+    id := c.Param("id")
+    post := map[string]any{
+        "id":      id,
+        "title":   "Post " + id,
+        "content": "This is the content of post " + id,
+    }
+    return c.JSON(200, post)
+}
+
+func getComments(c *mizu.Ctx) error {
+    // Return comments for post
+    comments := []map[string]any{
+        {"id": 1, "author": "Alice", "text": "Great post!"},
+        {"id": 2, "author": "Bob", "text": "Thanks for sharing"},
+    }
+    return c.JSON(200, comments)
+}
+```
+
+### Frontend
+
+```tsx
+// app/blog/[slug]/page.tsx
+import Comments from './Comments'
+
+export default function BlogPost({ params }: { params: { slug: string } }) {
+  // Server Component - runs at build time
+
+  return (
+    <article>
+      <h1>Post: {params.slug}</h1>
+      <p>This is a blog post about {params.slug}</p>
+
+      {/* Client Component for interactivity */}
+      <Comments slug={params.slug} />
+    </article>
+  )
+}
+```
+
+```tsx
+// app/blog/[slug]/Comments.tsx
+'use client'
+
+import { useState, useEffect } from 'react'
+
+export default function Comments({ slug }: { slug: string }) {
+  const [comments, setComments] = useState([])
+  const [newComment, setNewComment] = useState('')
+  const [author, setAuthor] = useState('')
+
+  useEffect(() => {
+    fetch(`/api/posts/${slug}/comments`)
+      .then(r => r.json())
+      .then(setComments)
+  }, [slug])
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+
+    const response = await fetch(`/api/posts/${slug}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ author, text: newComment }),
+    })
+
+    if (response.ok) {
+      const comment = await response.json()
+      setComments([...comments, comment])
+      setNewComment('')
+      setAuthor('')
+    }
+  }
+
+  return (
+    <div>
+      <h2>Comments</h2>
+
+      <ul>
+        {comments.map((c: any) => (
+          <li key={c.id}>
+            <strong>{c.author}:</strong> {c.text}
+          </li>
+        ))}
+      </ul>
+
+      <form onSubmit={handleSubmit}>
+        <input
+          value={author}
+          onChange={e => setAuthor(e.target.value)}
+          placeholder="Your name"
+          required
+        />
+        <textarea
+          value={newComment}
+          onChange={e => setNewComment(e.target.value)}
+          placeholder="Your comment"
+          required
+        />
+        <button type="submit">Post Comment</button>
+      </form>
+    </div>
+  )
+}
+```
+
+## When to Choose Next.js
+
+### Choose Next.js When:
+
+✅ You want file-based routing without manual configuration
+✅ You're building a primarily static site (blog, marketing site, docs)
+✅ You want to use React Server Components
+✅ Your team knows React and wants enhanced DX
+✅ You want automatic code splitting and optimizations
+✅ You need good SEO with metadata support
+
+### Choose Vanilla React When:
+
+✅ You want complete control over the setup
+✅ You don't need file-based routing
+✅ You prefer a simpler build process
+✅ Your app is highly dynamic (not suitable for static export)
+✅ Bundle size needs to be minimal
+✅ You don't need Server Components
 
 ## Next Steps
 
 <CardGroup cols={2}>
   <Card title="React Guide" href="/frontend/react" icon="react">
-    Vanilla React with Vite
+    Compare with vanilla React + Vite approach
   </Card>
   <Card title="Nuxt Guide" href="/frontend/nuxt" icon="code">
     Vue equivalent of Next.js
+  </Card>
+  <Card title="API Integration" href="/frontend/api-integration" icon="plug">
+    Best practices for API communication
+  </Card>
+  <Card title="Next.js Docs" href="https://nextjs.org/docs" icon="external-link">
+    Official Next.js documentation
   </Card>
 </CardGroup>
