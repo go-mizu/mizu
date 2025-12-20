@@ -41,6 +41,7 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 	foundAngular := false
 	foundHtmx := false
 	foundNext := false
+	foundNuxt := false
 	for _, tmpl := range templates {
 		if tmpl.Name == "frontend/spa/react" {
 			foundReact = true
@@ -59,6 +60,9 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 		}
 		if tmpl.Name == "frontend/spa/next" {
 			foundNext = true
+		}
+		if tmpl.Name == "frontend/spa/nuxt" {
+			foundNuxt = true
 		}
 	}
 
@@ -80,6 +84,9 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 	if !foundNext {
 		t.Error("listTemplates() did not include nested template 'frontend/spa/next'")
 	}
+	if !foundNuxt {
+		t.Error("listTemplates() did not include nested template 'frontend/spa/nuxt'")
+	}
 }
 
 func TestTemplateExistsNested(t *testing.T) {
@@ -96,6 +103,7 @@ func TestTemplateExistsNested(t *testing.T) {
 		{"frontend/spa/angular", true},
 		{"frontend/spa/htmx", true},
 		{"frontend/spa/next", true},
+		{"frontend/spa/nuxt", true},
 		{"frontend/spa/nonexistent", false},
 		{"frontend/nonexistent", false},
 		{"nonexistent", false},
@@ -125,6 +133,7 @@ func TestLoadTemplateMeta(t *testing.T) {
 		{"frontend/spa/angular", "frontend/spa/angular", true},
 		{"frontend/spa/htmx", "frontend/spa/htmx", true},
 		{"frontend/spa/next", "frontend/spa/next", true},
+		{"frontend/spa/nuxt", "frontend/spa/nuxt", true},
 	}
 
 	for _, tt := range tests {
@@ -1713,5 +1722,322 @@ func TestNextTemplateMakefileHasNpmCommands(t *testing.T) {
 	}
 	if !strings.Contains(string(makefile), "client") {
 		t.Error("Next.js Makefile should reference client directory")
+	}
+}
+
+// Nuxt template tests
+
+func TestListTemplatesIncludesNuxt(t *testing.T) {
+	templates, err := listTemplates()
+	if err != nil {
+		t.Fatalf("listTemplates() error: %v", err)
+	}
+
+	found := false
+	for _, tmpl := range templates {
+		if tmpl.Name == "frontend/spa/nuxt" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("listTemplates() did not include nested template 'frontend/spa/nuxt'")
+	}
+}
+
+func TestTemplateExistsNuxt(t *testing.T) {
+	if !templateExists("frontend/spa/nuxt") {
+		t.Error("templateExists('frontend/spa/nuxt') returned false")
+	}
+}
+
+func TestLoadTemplateFilesNuxt(t *testing.T) {
+	files, err := loadTemplateFiles("frontend/spa/nuxt")
+	if err != nil {
+		t.Fatalf("loadTemplateFiles() error: %v", err)
+	}
+
+	if len(files) == 0 {
+		t.Error("loadTemplateFiles() returned no files")
+	}
+
+	// Check for expected files
+	expectedFiles := []string{
+		".gitignore",                         // from _common
+		"go.mod",                             // from _common
+		"cmd/server/main.go",                 // template specific
+		"app/server/app.go",                  // template specific
+		"app/server/config.go",               // template specific
+		"app/server/routes.go",               // template specific
+		"client/package.json",                // template specific
+		"client/nuxt.config.ts",              // template specific (Nuxt)
+		"client/app.vue",                     // template specific (Nuxt)
+		"client/pages/index.vue",             // template specific (Nuxt pages)
+		"client/pages/about.vue",             // template specific
+		"client/layouts/default.vue",         // template specific (Nuxt layouts)
+		"client/components/AppNavigation.vue", // template specific
+		"Makefile",                           // template specific
+	}
+
+	fileMap := make(map[string]bool)
+	for _, f := range files {
+		fileMap[f.path] = true
+	}
+
+	for _, expected := range expectedFiles {
+		if !fileMap[expected] {
+			t.Errorf("expected file %q not found in template files", expected)
+		}
+	}
+}
+
+func TestBuildPlanNuxtTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/nuxt", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if len(p.ops) == 0 {
+		t.Error("buildPlan() returned empty plan")
+	}
+
+	// Check for expected operations
+	hasWrite := false
+	hasMkdir := false
+	for _, op := range p.ops {
+		switch op.kind {
+		case opWrite:
+			hasWrite = true
+		case opMkdir:
+			hasMkdir = true
+		}
+	}
+
+	if !hasWrite {
+		t.Error("plan has no write operations")
+	}
+	if !hasMkdir {
+		t.Error("plan has no mkdir operations")
+	}
+}
+
+func TestApplyPlanNuxtTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/nuxt", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Verify key files exist
+	expectedFiles := []string{
+		"go.mod",
+		"cmd/server/main.go",
+		"app/server/app.go",
+		"app/server/config.go",
+		"app/server/routes.go",
+		"client/package.json",
+		"client/nuxt.config.ts",
+		"client/tsconfig.json",
+		"client/tailwind.config.ts",
+		"client/app.vue",
+		"client/pages/index.vue",
+		"client/pages/about.vue",
+		"client/layouts/default.vue",
+		"client/components/AppNavigation.vue",
+		"client/assets/css/main.css",
+		"Makefile",
+	}
+
+	for _, file := range expectedFiles {
+		path := filepath.Join(tmpDir, file)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("expected file %q does not exist", file)
+		}
+	}
+}
+
+func TestNuxtTemplateVariableSubstitution(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("mynuxtapp", "github.com/user/mynuxtapp", "Apache-2.0", nil)
+
+	p, err := buildPlan("frontend/spa/nuxt", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check go.mod contains the module path
+	gomod, err := os.ReadFile(filepath.Join(tmpDir, "go.mod"))
+	if err != nil {
+		t.Fatalf("ReadFile(go.mod) error: %v", err)
+	}
+
+	if !strings.Contains(string(gomod), "github.com/user/mynuxtapp") {
+		t.Error("go.mod does not contain module path")
+	}
+
+	// Check package.json contains the project name
+	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "client/package.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(package.json) error: %v", err)
+	}
+
+	if !strings.Contains(string(pkgjson), "mynuxtapp-client") {
+		t.Error("package.json does not contain project name")
+	}
+
+	// Check that package.json has Nuxt dependencies
+	if !strings.Contains(string(pkgjson), `"nuxt"`) {
+		t.Error("package.json does not contain nuxt dependency")
+	}
+	if !strings.Contains(string(pkgjson), `"vue"`) {
+		t.Error("package.json does not contain vue dependency")
+	}
+}
+
+func TestNuxtTemplateHasNuxtSpecificContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/nuxt", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check nuxt.config.ts contains Nuxt specific configuration
+	nuxtConfig, err := os.ReadFile(filepath.Join(tmpDir, "client/nuxt.config.ts"))
+	if err != nil {
+		t.Fatalf("ReadFile(nuxt.config.ts) error: %v", err)
+	}
+
+	if !strings.Contains(string(nuxtConfig), "ssr: false") {
+		t.Error("nuxt.config.ts does not contain ssr: false for SPA mode")
+	}
+	if !strings.Contains(string(nuxtConfig), "defineNuxtConfig") {
+		t.Error("nuxt.config.ts does not contain defineNuxtConfig")
+	}
+	if !strings.Contains(string(nuxtConfig), "@nuxtjs/tailwindcss") {
+		t.Error("nuxt.config.ts does not contain @nuxtjs/tailwindcss module")
+	}
+
+	// Check app.vue uses Nuxt components
+	appVue, err := os.ReadFile(filepath.Join(tmpDir, "client/app.vue"))
+	if err != nil {
+		t.Fatalf("ReadFile(app.vue) error: %v", err)
+	}
+
+	if !strings.Contains(string(appVue), "<NuxtLayout>") {
+		t.Error("app.vue does not contain NuxtLayout component")
+	}
+	if !strings.Contains(string(appVue), "<NuxtPage />") {
+		t.Error("app.vue does not contain NuxtPage component")
+	}
+
+	// Check default.vue layout
+	layout, err := os.ReadFile(filepath.Join(tmpDir, "client/layouts/default.vue"))
+	if err != nil {
+		t.Fatalf("ReadFile(default.vue) error: %v", err)
+	}
+
+	if !strings.Contains(string(layout), "<slot />") {
+		t.Error("default.vue layout does not contain slot")
+	}
+	if !strings.Contains(string(layout), "<AppNavigation />") {
+		t.Error("default.vue layout does not contain AppNavigation component")
+	}
+
+	// Check index.vue uses Nuxt auto-imports
+	indexVue, err := os.ReadFile(filepath.Join(tmpDir, "client/pages/index.vue"))
+	if err != nil {
+		t.Fatalf("ReadFile(index.vue) error: %v", err)
+	}
+
+	if !strings.Contains(string(indexVue), "ref(") {
+		t.Error("index.vue does not use ref (auto-imported)")
+	}
+	if !strings.Contains(string(indexVue), "onMounted") {
+		t.Error("index.vue does not use onMounted (auto-imported)")
+	}
+	if !strings.Contains(string(indexVue), "$fetch") {
+		t.Error("index.vue does not use $fetch (Nuxt composable)")
+	}
+	if !strings.Contains(string(indexVue), "useHead") {
+		t.Error("index.vue does not use useHead (Nuxt composable)")
+	}
+
+	// Check AppNavigation.vue uses NuxtLink
+	navigation, err := os.ReadFile(filepath.Join(tmpDir, "client/components/AppNavigation.vue"))
+	if err != nil {
+		t.Fatalf("ReadFile(AppNavigation.vue) error: %v", err)
+	}
+
+	if !strings.Contains(string(navigation), "<NuxtLink") {
+		t.Error("AppNavigation.vue does not use NuxtLink component")
+	}
+	if !strings.Contains(string(navigation), "useRoute") {
+		t.Error("AppNavigation.vue does not use useRoute composable")
+	}
+
+	// Check app.go uses frontend middleware
+	appGo, err := os.ReadFile(filepath.Join(tmpDir, "app/server/app.go"))
+	if err != nil {
+		t.Fatalf("ReadFile(app.go) error: %v", err)
+	}
+
+	if !strings.Contains(string(appGo), "frontend.WithOptions") {
+		t.Error("app.go does not use frontend.WithOptions")
+	}
+	if !strings.Contains(string(appGo), "frontend.ModeAuto") {
+		t.Error("app.go does not use frontend.ModeAuto")
+	}
+}
+
+func TestNuxtTemplateMakefileHasNpmCommands(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/nuxt", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check Makefile contains npm commands
+	makefile, err := os.ReadFile(filepath.Join(tmpDir, "Makefile"))
+	if err != nil {
+		t.Fatalf("ReadFile(Makefile) error: %v", err)
+	}
+
+	if !strings.Contains(string(makefile), "npm run build") {
+		t.Error("Nuxt Makefile should contain npm run build")
+	}
+	if !strings.Contains(string(makefile), "npm run dev") {
+		t.Error("Nuxt Makefile should contain npm run dev")
+	}
+	if !strings.Contains(string(makefile), "client") {
+		t.Error("Nuxt Makefile should reference client directory")
+	}
+	if !strings.Contains(string(makefile), ".nuxt") {
+		t.Error("Nuxt Makefile should clean .nuxt directory")
 	}
 }
