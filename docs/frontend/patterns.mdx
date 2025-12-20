@@ -1,0 +1,481 @@
+---
+title: "Common Patterns"
+description: "Common patterns and recipes for frontend development with Mizu."
+icon: "lightbulb"
+---
+
+This guide covers common patterns and real-world examples for building frontend applications with Mizu.
+
+## Authentication
+
+### JWT Token Flow
+
+**Frontend:**
+
+```tsx
+// Login
+async function login(email: string, password: string) {
+  const response = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  })
+
+  const { token } = await response.json()
+  localStorage.setItem('auth_token', token)
+  return token
+}
+
+// Protected requests
+async function fetchProtected(url: string) {
+  const token = localStorage.getItem('auth_token')
+
+  return fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  })
+}
+
+// Logout
+function logout() {
+  localStorage.removeItem('auth_token')
+  window.location.href = '/login'
+}
+```
+
+**Backend:**
+
+```go
+import "github.com/go-mizu/mizu/middlewares/jwt"
+
+// Login endpoint
+app.Post("/api/login", func(c *mizu.Ctx) error {
+    var req struct {
+        Email    string `json:"email"`
+        Password string `json:"password"`
+    }
+    c.BindJSON(&req)
+
+    // Verify credentials...
+    token := generateJWT(user.ID)
+
+    return c.JSON(200, map[string]string{"token": token})
+})
+
+// Protected routes
+protected := app.Group("/api")
+protected.Use(jwt.New([]byte("secret")))
+protected.Get("/profile", handleProfile)
+```
+
+## Form Handling
+
+### With Validation
+
+**Frontend:**
+
+```tsx
+function CreateUserForm() {
+  const [formData, setFormData] = useState({ name: '', email: '' })
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [submitting, setSubmitting] = useState(false)
+
+  const validate = () => {
+    const errors: Record<string, string> = {}
+
+    if (!formData.name) errors.name = 'Name is required'
+    if (!formData.email) errors.email = 'Email is required'
+    else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      errors.email = 'Invalid email'
+    }
+
+    return errors
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    const validationErrors = validate()
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors)
+      return
+    }
+
+    setSubmitting(true)
+    setErrors({})
+
+    try {
+      await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      })
+
+      setFormData({ name: '', email: '' })
+      alert('User created!')
+    } catch (error) {
+      setErrors({ submit: 'Failed to create user' })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <div>
+        <input
+          value={formData.name}
+          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+          placeholder="Name"
+        />
+        {errors.name && <span className="error">{errors.name}</span>}
+      </div>
+
+      <div>
+        <input
+          value={formData.email}
+          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+          type="email"
+          placeholder="Email"
+        />
+        {errors.email && <span className="error">{errors.email}</span>}
+      </div>
+
+      {errors.submit && <div className="error">{errors.submit}</div>}
+
+      <button type="submit" disabled={submitting}>
+        {submitting ? 'Creating...' : 'Create User'}
+      </button>
+    </form>
+  )
+}
+```
+
+**Backend:**
+
+```go
+app.Post("/api/users", func(c *mizu.Ctx) error {
+    var user struct {
+        Name  string `json:"name"`
+        Email string `json:"email"`
+    }
+
+    if err := c.BindJSON(&user); err != nil {
+        return c.JSON(400, map[string]string{"error": "invalid request"})
+    }
+
+    // Validate
+    if user.Name == "" {
+        return c.JSON(400, map[string]string{"error": "name required"})
+    }
+
+    if !isValidEmail(user.Email) {
+        return c.JSON(400, map[string]string{"error": "invalid email"})
+    }
+
+    // Create user...
+    return c.JSON(201, user)
+})
+```
+
+## Pagination
+
+**Frontend:**
+
+```tsx
+function UserList() {
+  const [users, setUsers] = useState<User[]>([])
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const limit = 20
+
+  useEffect(() => {
+    fetch(`/api/users?page=${page}&limit=${limit}`)
+      .then(r => r.json())
+      .then(data => {
+        setUsers(data.users)
+        setTotal(data.total)
+      })
+  }, [page])
+
+  const totalPages = Math.ceil(total / limit)
+
+  return (
+    <div>
+      <ul>
+        {users.map(user => (
+          <li key={user.id}>{user.name}</li>
+        ))}
+      </ul>
+
+      <div className="pagination">
+        <button
+          onClick={() => setPage(p => Math.max(1, p - 1))}
+          disabled={page === 1}
+        >
+          Previous
+        </button>
+
+        <span>Page {page} of {totalPages}</span>
+
+        <button
+          onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+          disabled={page === totalPages}
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  )
+}
+```
+
+**Backend:**
+
+```go
+app.Get("/api/users", func(c *mizu.Ctx) error {
+    page := c.QueryInt("page", 1)
+    limit := c.QueryInt("limit", 20)
+    offset := (page - 1) * limit
+
+    users, total := db.GetUsers(offset, limit)
+
+    return c.JSON(200, map[string]any{
+        "users": users,
+        "page":  page,
+        "limit": limit,
+        "total": total,
+    })
+})
+```
+
+## Real-Time Updates
+
+### Server-Sent Events (SSE)
+
+**Backend:**
+
+```go
+import "github.com/go-mizu/mizu/middlewares/sse"
+
+app.Get("/api/events", sse.Handler(func(c *mizu.Ctx) error {
+    ticker := time.NewTicker(1 * time.Second)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ticker.C:
+            data := map[string]any{"time": time.Now()}
+            if err := sse.Send(c, data); err != nil {
+                return err
+            }
+        case <-c.Request().Context().Done():
+            return nil
+        }
+    }
+}))
+```
+
+**Frontend:**
+
+```tsx
+useEffect(() => {
+  const eventSource = new EventSource('/api/events')
+
+  eventSource.onmessage = (event) => {
+    const data = JSON.parse(event.data)
+    console.log('Received:', data)
+  }
+
+  return () => eventSource.close()
+}, [])
+```
+
+## File Upload
+
+**Frontend:**
+
+```tsx
+function FileUpload() {
+  const [file, setFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState(0)
+
+  const handleUpload = async () => {
+    if (!file) return
+
+    setUploading(true)
+
+    const formData = new FormData()
+    formData.append('file', file)
+
+    try {
+      const xhr = new XMLHttpRequest()
+
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          setProgress((e.loaded / e.total) * 100)
+        }
+      })
+
+      xhr.open('POST', '/api/upload')
+
+      await new Promise((resolve, reject) => {
+        xhr.onload = () => resolve(xhr.response)
+        xhr.onerror = reject
+        xhr.send(formData)
+      })
+
+      alert('Upload complete!')
+    } finally {
+      setUploading(false)
+      setProgress(0)
+    }
+  }
+
+  return (
+    <div>
+      <input
+        type="file"
+        onChange={(e) => setFile(e.target.files?.[0] || null)}
+      />
+
+      <button onClick={handleUpload} disabled={!file || uploading}>
+        {uploading ? `Uploading... ${progress.toFixed(0)}%` : 'Upload'}
+      </button>
+    </div>
+  )
+}
+```
+
+**Backend:**
+
+```go
+app.Post("/api/upload", func(c *mizu.Ctx) error {
+    file, header, err := c.Request().FormFile("file")
+    if err != nil {
+        return c.JSON(400, map[string]string{"error": "no file"})
+    }
+    defer file.Close()
+
+    // Save file...
+    dst, _ := os.Create("./uploads/" + header.Filename)
+    defer dst.Close()
+    io.Copy(dst, file)
+
+    return c.JSON(200, map[string]string{
+        "filename": header.Filename,
+    })
+})
+```
+
+## Search with Debouncing
+
+**Frontend:**
+
+```tsx
+function Search() {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<any[]>([])
+
+  // Debounce search
+  useEffect(() => {
+    if (!query) {
+      setResults([])
+      return
+    }
+
+    const timer = setTimeout(() => {
+      fetch(`/api/search?q=${encodeURIComponent(query)}`)
+        .then(r => r.json())
+        .then(setResults)
+    }, 300)  // Wait 300ms after user stops typing
+
+    return () => clearTimeout(timer)
+  }, [query])
+
+  return (
+    <div>
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search..."
+      />
+
+      <ul>
+        {results.map(result => (
+          <li key={result.id}>{result.name}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+```
+
+## Infinite Scroll
+
+**Frontend:**
+
+```tsx
+function InfiniteList() {
+  const [items, setItems] = useState<any[]>([])
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(true)
+  const [loading, setLoading] = useState(false)
+
+  const loadMore = async () => {
+    if (loading || !hasMore) return
+
+    setLoading(true)
+
+    const response = await fetch(`/api/items?page=${page}`)
+    const data = await response.json()
+
+    setItems(prev => [...prev, ...data.items])
+    setHasMore(data.hasMore)
+    setPage(p => p + 1)
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    loadMore()
+  }, [])
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 500) {
+        loadMore()
+      }
+    }
+
+    window.addEventListener('scroll', handleScroll)
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [loading, hasMore])
+
+  return (
+    <div>
+      {items.map(item => (
+        <div key={item.id}>{item.name}</div>
+      ))}
+
+      {loading && <div>Loading...</div>}
+      {!hasMore && <div>No more items</div>}
+    </div>
+  )
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Troubleshooting" href="/frontend/troubleshooting" icon="wrench">
+    Fix common issues
+  </Card>
+  <Card title="API Integration" href="/frontend/api-integration" icon="plug">
+    API best practices
+  </Card>
+  <Card title="Security" href="/frontend/security" icon="shield">
+    Security patterns
+  </Card>
+</CardGroup>

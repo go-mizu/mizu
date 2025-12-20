@@ -1,0 +1,227 @@
+---
+title: "Static Hosting"
+description: "Deploy frontend to CDN and backend separately."
+icon: "cloud"
+---
+
+For high-traffic applications, you can deploy your frontend to a CDN and backend separately.
+
+## Architecture
+
+```
+User Request
+     ↓
+   CDN (Frontend)
+     ↓ (API calls)
+   Mizu Backend
+```
+
+**Frontend:** Served from CDN (CloudFlare, Vercel, Netlify)
+**Backend:** Runs on server (handles APIs only)
+
+## Benefits
+
+- **Faster delivery**: CDN edge locations worldwide
+- **Lower backend load**: Backend only handles APIs
+- **Scalability**: CDN handles millions of requests
+- **Cost effective**: CDN bandwidth cheaper than server
+
+## Setup
+
+### 1. Build Frontend
+
+```bash
+cd client
+npm run build
+```
+
+### 2. Deploy Frontend to CDN
+
+**Vercel:**
+```bash
+cd client
+vercel deploy --prod
+```
+
+**Netlify:**
+```bash
+cd client
+netlify deploy --prod --dir=dist
+```
+
+**CloudFlare Pages:**
+```bash
+# Via dashboard or CLI
+wrangler pages publish dist
+```
+
+### 3. Configure API URL
+
+```bash
+# .env.production
+VITE_API_URL=https://api.yourdomain.com
+```
+
+```ts
+const apiUrl = import.meta.env.VITE_API_URL
+```
+
+### 4. Deploy Backend
+
+Deploy Mizu backend to server (DigitalOcean, AWS, etc.):
+
+```go
+func New() *mizu.App {
+    app := mizu.New()
+
+    // Only API routes (no frontend middleware)
+    app.Get("/api/users", handleUsers)
+
+    return app
+}
+```
+
+## CORS Configuration
+
+Backend must allow requests from CDN:
+
+```go
+import "github.com/go-mizu/mizu/middlewares/cors"
+
+app.Use(cors.WithOptions(cors.Options{
+    AllowedOrigins: []string{
+        "https://yourdomain.com",      # Production
+        "https://staging.yourdomain.com",  # Staging
+    },
+    AllowedMethods: []string{"GET", "POST", "PUT", "DELETE"},
+    AllowedHeaders: []string{"Content-Type", "Authorization"},
+    AllowCredentials: true,  # If using cookies
+}))
+```
+
+## Environment Configuration
+
+### Development
+
+```
+Frontend: http://localhost:5173
+Backend:  http://localhost:3000
+```
+
+### Staging
+
+```
+Frontend: https://staging.yourdomain.com (Vercel)
+Backend:  https://api-staging.yourdomain.com
+```
+
+### Production
+
+```
+Frontend: https://yourdomain.com (Vercel)
+Backend:  https://api.yourdomain.com
+```
+
+## CDN Configuration
+
+### Vercel
+
+```json
+// vercel.json
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://api.yourdomain.com/api/:path*"
+    }
+  ]
+}
+```
+
+### Netlify
+
+```toml
+# netlify.toml
+[[redirects]]
+  from = "/api/*"
+  to = "https://api.yourdomain.com/api/:splat"
+  status = 200
+  force = true
+```
+
+### CloudFlare
+
+Use CloudFlare Workers for API proxying.
+
+## Cache Headers
+
+CDN respects your cache headers:
+
+```go
+// Mizu automatically sets these
+Cache-Control: public, max-age=31536000, immutable  # Hashed assets
+Cache-Control: no-cache                              # API responses
+```
+
+## Deployment Workflow
+
+```bash
+# 1. Build frontend
+cd client
+npm run build
+
+# 2. Deploy frontend to CDN
+vercel deploy --prod
+
+# 3. Build backend
+cd ..
+go build -o server cmd/server/main.go
+
+# 4. Deploy backend
+scp server user@server:/app/
+ssh user@server 'systemctl restart myapp'
+```
+
+## Trade-offs
+
+### Pros
+
+- ✅ Very fast global delivery
+- ✅ Unlimited scalability
+- ✅ Lower backend costs
+- ✅ DDoS protection (CDN)
+
+### Cons
+
+- ❌ More complex setup
+- ❌ Two deployments
+- ❌ CORS configuration needed
+- ❌ Additional CDN costs
+
+## When to Use
+
+**Use CDN hosting when:**
+- High traffic expected
+- Global audience
+- Cost optimization needed
+- Want best performance
+
+**Use embedded when:**
+- Simple deployment preferred
+- Lower traffic
+- Single region
+- Want version consistency
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Embedded FS" href="/frontend/embed" icon="box">
+    Alternative: single binary
+  </Card>
+  <Card title="Building" href="/frontend/building" icon="hammer">
+    Build and optimization
+  </Card>
+  <Card title="CORS" href="/middlewares/cors" icon="globe">
+    CORS configuration
+  </Card>
+</CardGroup>

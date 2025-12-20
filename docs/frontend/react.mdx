@@ -1,0 +1,738 @@
+---
+title: "React"
+description: "Build React applications with Mizu, Vite, and TypeScript."
+icon: "react"
+---
+
+React is the most popular JavaScript library for building user interfaces. This guide shows you how to build a React SPA with Mizu as the backend.
+
+## Quick Start
+
+Create a new React project with the CLI:
+
+```bash
+mizu new ./my-react-app --template frontend/react
+cd my-react-app
+make dev
+```
+
+Visit `http://localhost:3000` to see your app!
+
+## Project Structure
+
+```
+my-react-app/
+├── cmd/
+│   └── server/
+│       └── main.go              # Entry point
+├── app/
+│   └── server/
+│       ├── app.go               # Mizu app setup
+│       ├── config.go            # Configuration
+│       └── routes.go            # API routes
+├── client/                      # React application
+│   ├── src/
+│   │   ├── main.tsx             # React entry point
+│   │   ├── App.tsx              # Root component
+│   │   ├── components/
+│   │   │   └── Layout.tsx       # Layout component
+│   │   ├── pages/
+│   │   │   ├── Home.tsx         # Home page
+│   │   │   └── About.tsx        # About page
+│   │   └── styles/
+│   │       └── index.css        # Global styles
+│   ├── public/
+│   │   └── vite.svg             # Public assets
+│   ├── index.html               # HTML template
+│   ├── package.json             # npm dependencies
+│   ├── vite.config.ts           # Vite configuration
+│   ├── tsconfig.json            # TypeScript config
+│   └── tsconfig.node.json       # TypeScript config for Vite
+├── dist/                        # Built files (after build)
+├── go.mod
+├── go.sum
+└── Makefile
+```
+
+## Backend Setup
+
+### `app/server/app.go`
+
+```go
+package server
+
+import (
+    "embed"
+    "io/fs"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/frontend"
+)
+
+//go:embed all:../../dist
+var distFS embed.FS
+
+func New(cfg *Config) *mizu.App {
+    app := mizu.New()
+
+    // API routes
+    setupRoutes(app)
+
+    // Frontend middleware
+    dist, _ := fs.Sub(distFS, "dist")
+    app.Use(frontend.WithOptions(frontend.Options{
+        Mode:        frontend.ModeAuto,
+        FS:          dist,
+        DevServer:   "http://localhost:" + cfg.DevPort,
+        IgnorePaths: []string{"/api"},
+    }))
+
+    return app
+}
+```
+
+### `app/server/routes.go`
+
+```go
+package server
+
+import "github.com/go-mizu/mizu"
+
+func setupRoutes(app *mizu.App) {
+    // Example API endpoint
+    app.Get("/api/hello", handleHello)
+    app.Get("/api/users", handleUsers)
+}
+
+func handleHello(c *mizu.Ctx) error {
+    return c.JSON(200, map[string]string{
+        "message": "Hello from Mizu!",
+    })
+}
+
+func handleUsers(c *mizu.Ctx) error {
+    users := []map[string]any{
+        {"id": 1, "name": "Alice", "email": "alice@example.com"},
+        {"id": 2, "name": "Bob", "email": "bob@example.com"},
+    }
+    return c.JSON(200, users)
+}
+```
+
+## Frontend Setup
+
+### `client/src/main.tsx`
+
+```tsx
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.tsx'
+import './styles/index.css'
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)
+```
+
+### `client/src/App.tsx`
+
+```tsx
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import Layout from './components/Layout'
+import Home from './pages/Home'
+import About from './pages/About'
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Layout />}>
+          <Route index element={<Home />} />
+          <Route path="about" element={<About />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  )
+}
+
+export default App
+```
+
+### `client/src/components/Layout.tsx`
+
+```tsx
+import { Link, Outlet } from 'react-router-dom'
+
+export default function Layout() {
+  return (
+    <div className="app">
+      <nav>
+        <Link to="/">Home</Link>
+        <Link to="/about">About</Link>
+      </nav>
+
+      <main>
+        <Outlet />
+      </main>
+
+      <footer>
+        <p>Built with Mizu and React</p>
+      </footer>
+    </div>
+  )
+}
+```
+
+### `client/src/pages/Home.tsx`
+
+```tsx
+import { useState, useEffect } from 'react'
+
+interface User {
+  id: number
+  name: string
+  email: string
+}
+
+export default function Home() {
+  const [users, setUsers] = useState<User[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/users')
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to fetch users')
+        return res.json()
+      })
+      .then(data => {
+        setUsers(data)
+        setLoading(false)
+      })
+      .catch(err => {
+        setError(err.message)
+        setLoading(false)
+      })
+  }, [])
+
+  if (loading) return <div>Loading...</div>
+  if (error) return <div>Error: {error}</div>
+
+  return (
+    <div>
+      <h1>Users</h1>
+      <ul>
+        {users.map(user => (
+          <li key={user.id}>
+            {user.name} ({user.email})
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+```
+
+## Vite Configuration
+
+### `client/vite.config.ts`
+
+```ts
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+
+  // Development server
+  server: {
+    port: 5173,
+    strictPort: true,
+    hmr: {
+      clientPort: 3000,  // Mizu's port for HMR WebSocket
+    },
+  },
+
+  // Production build
+  build: {
+    outDir: '../dist',
+    emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+        },
+      },
+    },
+  },
+})
+```
+
+**Key settings:**
+- **server.port**: Dev server port (must match backend config)
+- **server.hmr.clientPort**: Mizu's port for WebSocket (enables HMR through proxy)
+- **build.outDir**: Output directory (must match backend Root option)
+- **build.rollupOptions.manualChunks**: Code splitting for better caching
+
+## Development Workflow
+
+### Start Development
+
+```bash
+# Using Makefile (recommended)
+make dev
+
+# Or manually
+# Terminal 1
+cd client && npm run dev
+
+# Terminal 2
+go run cmd/server/main.go
+```
+
+### Making Changes
+
+**Frontend changes:**
+1. Edit any `.tsx` file in `client/src/`
+2. Save the file
+3. Browser updates instantly (HMR)
+
+**Backend changes:**
+1. Edit `.go` files
+2. Stop server (Ctrl+C)
+3. Restart with `go run cmd/server/main.go`
+
+Or use [air](https://github.com/cosmtrek/air) for auto-reload:
+
+```bash
+air
+```
+
+## API Integration
+
+### Fetching Data
+
+Using `fetch`:
+
+```tsx
+const [data, setData] = useState(null)
+
+useEffect(() => {
+  fetch('/api/users')
+    .then(res => res.json())
+    .then(setData)
+}, [])
+```
+
+### Using React Query
+
+Install React Query:
+
+```bash
+cd client
+npm install @tanstack/react-query
+```
+
+Setup:
+
+```tsx
+// main.tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+const queryClient = new QueryClient()
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <QueryClientProvider client={queryClient}>
+    <App />
+  </QueryClientProvider>
+)
+```
+
+Use in components:
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+function Users() {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => fetch('/api/users').then(res => res.json())
+  })
+
+  if (isLoading) return <div>Loading...</div>
+  if (error) return <div>Error: {error.message}</div>
+
+  return (
+    <ul>
+      {data.map(user => (
+        <li key={user.id}>{user.name}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+### Form Submission
+
+```tsx
+function CreateUser() {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    const response = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email }),
+    })
+
+    if (response.ok) {
+      const user = await response.json()
+      console.log('Created user:', user)
+      setName('')
+      setEmail('')
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input
+        value={name}
+        onChange={e => setName(e.target.value)}
+        placeholder="Name"
+      />
+      <input
+        value={email}
+        onChange={e => setEmail(e.target.value)}
+        placeholder="Email"
+      />
+      <button type="submit">Create User</button>
+    </form>
+  )
+}
+```
+
+## State Management
+
+### Context API (Built-in)
+
+```tsx
+// contexts/AuthContext.tsx
+import { createContext, useContext, useState, ReactNode } from 'react'
+
+interface User {
+  id: number
+  name: string
+}
+
+interface AuthContextType {
+  user: User | null
+  login: (user: User) => void
+  logout: () => void
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined)
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null)
+
+  const login = (user: User) => setUser(user)
+  const logout = () => setUser(null)
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  )
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext)
+  if (!context) throw new Error('useAuth must be used within AuthProvider')
+  return context
+}
+```
+
+Use in app:
+
+```tsx
+// App.tsx
+import { AuthProvider } from './contexts/AuthContext'
+
+function App() {
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        {/* routes */}
+      </BrowserRouter>
+    </AuthProvider>
+  )
+}
+```
+
+```tsx
+// In components
+import { useAuth } from '../contexts/AuthContext'
+
+function UserProfile() {
+  const { user, logout } = useAuth()
+
+  if (!user) return <div>Please log in</div>
+
+  return (
+    <div>
+      <p>Welcome, {user.name}!</p>
+      <button onClick={logout}>Logout</button>
+    </div>
+  )
+}
+```
+
+### Zustand (Simple State Management)
+
+Install:
+
+```bash
+npm install zustand
+```
+
+Create store:
+
+```ts
+// stores/userStore.ts
+import { create } from 'zustand'
+
+interface User {
+  id: number
+  name: string
+}
+
+interface UserStore {
+  users: User[]
+  loading: boolean
+  fetchUsers: () => Promise<void>
+  addUser: (user: User) => void
+}
+
+export const useUserStore = create<UserStore>((set) => ({
+  users: [],
+  loading: false,
+
+  fetchUsers: async () => {
+    set({ loading: true })
+    const response = await fetch('/api/users')
+    const users = await response.json()
+    set({ users, loading: false })
+  },
+
+  addUser: (user) => set((state) => ({
+    users: [...state.users, user]
+  })),
+}))
+```
+
+Use in components:
+
+```tsx
+import { useUserStore } from '../stores/userStore'
+
+function Users() {
+  const { users, loading, fetchUsers } = useUserStore()
+
+  useEffect(() => {
+    fetchUsers()
+  }, [])
+
+  if (loading) return <div>Loading...</div>
+
+  return (
+    <ul>
+      {users.map(user => (
+        <li key={user.id}>{user.name}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+## Styling Options
+
+### CSS Modules
+
+Built into Vite:
+
+```tsx
+// Button.module.css
+.button {
+  background: blue;
+  color: white;
+  padding: 8px 16px;
+}
+```
+
+```tsx
+// Button.tsx
+import styles from './Button.module.css'
+
+export function Button({ children }) {
+  return <button className={styles.button}>{children}</button>
+}
+```
+
+### Tailwind CSS
+
+Install:
+
+```bash
+cd client
+npm install -D tailwindcss postcss autoprefixer
+npx tailwindcss init -p
+```
+
+Configure `tailwind.config.js`:
+
+```js
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}
+```
+
+Add to `src/styles/index.css`:
+
+```css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+```
+
+Use in components:
+
+```tsx
+export default function Home() {
+  return (
+    <div className="container mx-auto px-4">
+      <h1 className="text-4xl font-bold">Hello!</h1>
+      <button className="bg-blue-500 text-white px-4 py-2 rounded">
+        Click me
+      </button>
+    </div>
+  )
+}
+```
+
+## Building for Production
+
+Build the complete app:
+
+```bash
+make build
+```
+
+This:
+1. Builds the React app (`npm run build`)
+2. Builds the Go binary
+3. Embeds the frontend into the binary
+
+Output: `./bin/server`
+
+Run in production:
+
+```bash
+MIZU_ENV=production ./bin/server
+```
+
+## Advanced Topics
+
+### Code Splitting
+
+Lazy load routes:
+
+```tsx
+import { lazy, Suspense } from 'react'
+
+const About = lazy(() => import('./pages/About'))
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/about" element={
+          <Suspense fallback={<div>Loading...</div>}>
+            <About />
+          </Suspense>
+        } />
+      </Routes>
+    </BrowserRouter>
+  )
+}
+```
+
+### Environment Variables
+
+In Vite, use `import.meta.env`:
+
+```tsx
+const apiUrl = import.meta.env.VITE_API_URL || '/api'
+```
+
+Or use Mizu's env injection:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    InjectEnv: []string{"API_URL"},
+}))
+```
+
+```tsx
+const apiUrl = (window as any).__ENV__?.API_URL || '/api'
+```
+
+### TypeScript Types for API
+
+Share types between backend and frontend:
+
+```ts
+// types/user.ts
+export interface User {
+  id: number
+  name: string
+  email: string
+}
+```
+
+Use in frontend:
+
+```tsx
+import type { User } from '../types/user'
+
+const [users, setUsers] = useState<User[]>([])
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="API Integration" href="/frontend/api-integration" icon="plug">
+    Best practices for API communication
+  </Card>
+  <Card title="Deployment" href="/frontend/building" icon="rocket">
+    Build and deploy your app
+  </Card>
+  <Card title="Vue Guide" href="/frontend/vue" icon="vuejs">
+    Try Vue instead of React
+  </Card>
+  <Card title="HTMX Guide" href="/frontend/htmx" icon="bolt">
+    Try server-rendered approach
+  </Card>
+</CardGroup>

@@ -1,0 +1,119 @@
+---
+title: "Preact"
+description: "Build lightweight Preact applications with Mizu."
+icon: "code"
+---
+
+Preact is a fast 3kB alternative to React with the same API. Use it when you want React's developer experience with a smaller bundle size.
+
+## Quick Start
+
+```bash
+mizu new ./my-preact-app --template frontend/preact
+cd my-preact-app
+make dev
+```
+
+## Why Preact?
+
+- **Tiny**: 3kB (React is ~45kB)
+- **Fast**: Faster than React
+- **Compatible**: Works with most React libraries
+- **Same API**: Familiar to React developers
+
+## Differences from React
+
+### Imports
+
+```jsx
+// React
+import { useState } from 'react'
+
+// Preact
+import { useState } from 'preact/hooks'
+```
+
+### Aliasing
+
+To use React libraries, add to `vite.config.ts`:
+
+```ts
+export default {
+  resolve: {
+    alias: {
+      'react': 'preact/compat',
+      'react-dom': 'preact/compat'
+    }
+  }
+}
+```
+
+Now React libraries work with Preact!
+
+## Example Component
+
+```jsx
+import { h } from 'preact'
+import { useState, useEffect } from 'preact/hooks'
+
+export function Users() {
+  const [users, setUsers] = useState([])
+
+  useEffect(() => {
+    fetch('/api/users')
+      .then(res => res.json())
+      .then(setUsers)
+  }, [])
+
+  return (
+    <ul>
+      {users.map(user => (
+        <li key={user.id}>{user.name}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+## Preact Signals
+
+Preact has its own reactivity system:
+
+```jsx
+import { signal } from '@preact/signals'
+
+const count = signal(0)
+
+function Counter() {
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={() => count.value++}>Increment</button>
+    </div>
+  )
+}
+```
+
+## When to Use Preact
+
+**Choose Preact when:**
+- Bundle size matters
+- You want React-like DX
+- Performance is critical
+- Mobile-first applications
+
+**Choose React when:**
+- Using React-specific libraries
+- Team familiar with React
+- Ecosystem size matters
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="React Guide" href="/frontend/react" icon="react">
+    Full React guide
+  </Card>
+  <Card title="Preact Docs" href="https://preactjs.com" icon="external-link">
+    Official Preact docs
+  </Card>
+</CardGroup>

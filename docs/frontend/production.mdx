@@ -1,0 +1,606 @@
+---
+title: "Production"
+description: "Optimized static file serving for production deployments."
+icon: "rocket"
+---
+
+Production mode is optimized for performance, security, and reliability. When you deploy your Mizu app, it serves pre-built static files with intelligent caching, compression, and security headers.
+
+## How Production Mode Works
+
+In production, Mizu serves static files directly from the filesystem or embedded FS:
+
+```
+Browser Request
+      ↓
+   Mizu Server
+      ↓
+  Is it /api/* ?
+    ↙     ↘
+  Yes      No
+   ↓        ↓
+Go API   Static File Server
+Handler      ↓
+         Is file found?
+            ↙     ↘
+          Yes      No
+           ↓        ↓
+      Serve File  Serve index.html
+      (with cache) (SPA fallback)
+```
+
+**The flow:**
+1. Browser requests a path
+2. Mizu checks if it's an API route
+3. If no, check if a static file exists at that path
+4. If file exists → serve it with appropriate cache headers
+5. If not → serve `index.html` for SPA routing
+
+## Enabling Production Mode
+
+### Automatic Detection
+
+Use auto-detection based on environment:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode:        frontend.ModeAuto,    // Auto-detect
+    Root:        "./dist",              // Build directory
+    DevServer:   "http://localhost:5173",
+}))
+```
+
+Set environment to production:
+
+```bash
+MIZU_ENV=production ./server
+```
+
+### Explicit Production Mode
+
+Force production mode:
+
+```go
+app.Use(frontend.New("./dist"))
+```
+
+Or with options:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode: frontend.ModeProduction,
+    Root: "./dist",
+}))
+```
+
+## Building Your Frontend
+
+Before deploying, build your frontend:
+
+### Vite (React/Vue/Svelte)
+
+```bash
+cd client
+npm run build
+```
+
+Creates optimized files in `dist/`:
+- Minified JavaScript
+- Minified CSS
+- Optimized images
+- Asset fingerprinting (e.g., `main.abc123.js`)
+
+### Angular
+
+```bash
+cd client
+ng build --configuration=production
+```
+
+Creates files in `dist/my-app/browser/`.
+
+### Next.js / Nuxt
+
+```bash
+cd client
+npm run build
+npm run export  # Creates static export
+```
+
+## Build Output Structure
+
+A typical Vite build creates:
+
+```
+dist/
+├── index.html                 # Entry point
+├── assets/
+│   ├── main.abc123.js        # Hashed JS (fingerprinted)
+│   ├── main.def456.css       # Hashed CSS (fingerprinted)
+│   ├── logo.svg              # Unhashed asset
+│   └── logo.abc789.svg       # Hashed copy (if imported)
+└── .vite/
+    └── manifest.json         # Build manifest
+```
+
+**Key points:**
+- **Hashed files** (`main.abc123.js`) can be cached forever
+- **index.html** should never be cached (cache: no-cache)
+- **Manifest** maps source files to output files
+
+## SPA Fallback Routing
+
+For Single Page Applications, all routes should serve `index.html` to let the frontend router handle navigation.
+
+```go
+app.Use(frontend.New("./dist"))
+```
+
+**Automatic fallback:**
+- `/` → `dist/index.html`
+- `/about` → `dist/index.html` (file doesn't exist)
+- `/users/123` → `dist/index.html` (file doesn't exist)
+- `/assets/main.js` → `dist/assets/main.js` (file exists)
+- `/api/users` → Go handler (ignored path)
+
+The frontend router (React Router, Vue Router, etc.) then handles the routing.
+
+## Caching Strategy
+
+Mizu applies intelligent caching based on file type and fingerprinting.
+
+### Default Cache Durations
+
+| Asset Type | Cache-Control | Duration |
+|------------|---------------|----------|
+| Hashed files (`main.abc123.js`) | `public, max-age=31536000, immutable` | 1 year |
+| Unhashed files (`logo.png`) | `public, max-age=604800` | 1 week |
+| HTML files | `no-cache, no-store, must-revalidate` | None |
+| Source maps (`.map`) | `no-cache` | None |
+
+### How Hashing Works
+
+**Hashed filename** (content hash in name):
+```
+main.abc123.js   ← Hash of file contents
+```
+
+If the file content changes, the hash changes:
+```
+main.xyz789.js   ← New hash = new filename
+```
+
+**Benefits:**
+- Old version stays cached (doesn't break users on old version)
+- New version has new filename (forces fresh download)
+- Can cache aggressively with `immutable` directive
+
+### Custom Cache Configuration
+
+Override default cache durations:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode: frontend.ModeProduction,
+    Root: "./dist",
+    CacheControl: frontend.CacheConfig{
+        HashedAssets:   365 * 24 * time.Hour,  // 1 year (default)
+        UnhashedAssets: 7 * 24 * time.Hour,    // 1 week (default)
+        HTML:           0,                      // No cache (default)
+    },
+}))
+```
+
+### Custom Pattern-Based Caching
+
+Cache specific file types differently:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode: frontend.ModeProduction,
+    Root: "./dist",
+    CacheControl: frontend.CacheConfig{
+        HashedAssets: 365 * 24 * time.Hour,
+        Patterns: map[string]time.Duration{
+            "*.woff2": 30 * 24 * time.Hour,   // Fonts: 30 days
+            "*.png":   14 * 24 * time.Hour,   // Images: 14 days
+            "*.svg":   14 * 24 * time.Hour,   // SVGs: 14 days
+        },
+    },
+}))
+```
+
+**Cache logic:**
+1. Check custom patterns first
+2. If no match, check if filename has hash
+3. If hashed → use `HashedAssets` duration
+4. If unhashed → use `UnhashedAssets` duration
+5. If HTML → use `HTML` duration (or no-cache)
+
+## Security Headers
+
+Mizu automatically adds security headers in production:
+
+```
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+X-XSS-Protection: 1; mode=block
+Referrer-Policy: strict-origin-when-cross-origin
+```
+
+These protect against:
+- **MIME sniffing attacks** (`nosniff`)
+- **Clickjacking** (`SAMEORIGIN`)
+- **XSS attacks** (legacy protection)
+- **Referrer leaking** (privacy)
+
+### Disable Security Headers
+
+If you're using the [helmet middleware](/middlewares/helmet):
+
+```go
+app.Use(helmet.Default())  // Apply helmet headers
+
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode:            frontend.ModeProduction,
+    Root:            "./dist",
+    SecurityHeaders: false,  // Disable built-in headers
+}))
+```
+
+This avoids duplicate headers.
+
+## Source Maps
+
+Source maps help debug production errors by mapping minified code back to source code.
+
+### Default Behavior
+
+Source maps (`.js.map`, `.css.map`) are **blocked** in production for security:
+
+```
+GET /assets/main.js.map → 404 Not Found
+```
+
+**Why block them?**
+- Exposes source code structure
+- Larger file sizes
+- Not needed by end users
+
+### Enable Source Maps
+
+For internal or staging environments:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode:       frontend.ModeProduction,
+    Root:       "./dist",
+    SourceMaps: true,  // Allow .map files
+}))
+```
+
+### Conditional Source Maps
+
+Enable only for specific environments:
+
+```go
+isStaging := os.Getenv("ENV") == "staging"
+
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode:       frontend.ModeProduction,
+    Root:       "./dist",
+    SourceMaps: isStaging,  // Only in staging
+}))
+```
+
+## Embedded Filesystems
+
+For single-binary deployment, embed your frontend into the Go binary:
+
+```go
+package server
+
+import (
+    "embed"
+    "io/fs"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/frontend"
+)
+
+//go:embed all:../../dist
+var distFS embed.FS
+
+func New() *mizu.App {
+    app := mizu.New()
+
+    // Extract dist subdirectory
+    dist, _ := fs.Sub(distFS, "dist")
+
+    app.Use(frontend.WithFS(dist))
+
+    return app
+}
+```
+
+**Benefits:**
+- Single binary contains both backend and frontend
+- No need to deploy `dist/` folder separately
+- Simpler deployment
+- Faster startup (no disk reads)
+
+**Trade-offs:**
+- Larger binary size
+- Can't update frontend without rebuilding
+- Need to rebuild for frontend changes
+
+See [Embedded Filesystems](/frontend/embed) for details.
+
+## URL Prefix
+
+Serve frontend from a subdirectory:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode:   frontend.ModeProduction,
+    Root:   "./dist",
+    Prefix: "/app",  // Serve from /app/*
+}))
+```
+
+**Routing:**
+- `/` → Go handler (not fronted)
+- `/app` → `dist/index.html`
+- `/app/about` → `dist/index.html` (SPA fallback)
+- `/app/assets/main.js` → `dist/assets/main.js`
+
+**Frontend router config:**
+
+```tsx
+// React Router
+<BrowserRouter basename="/app">
+  <Routes>
+    <Route path="/" element={<Home />} />
+    <Route path="/about" element={<About />} />
+  </Routes>
+</BrowserRouter>
+```
+
+```ts
+// Vite config
+export default {
+    base: '/app/',  // Set base URL
+}
+```
+
+## Custom Index File
+
+Use a different entry point:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode:  frontend.ModeProduction,
+    Root:  "./dist",
+    Index: "app.html",  // Default: "index.html"
+}))
+```
+
+## Error Handling
+
+### Custom Not Found Handler
+
+Run custom logic before SPA fallback:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode: frontend.ModeProduction,
+    Root: "./dist",
+    NotFoundHandler: func(c *mizu.Ctx) error {
+        // Log 404s
+        c.Logger().Warn("file not found", "path", c.Request().URL.Path)
+
+        // Return nil to continue to SPA fallback
+        return nil
+
+        // Or return error to skip fallback
+        // return c.JSON(404, map[string]string{"error": "not found"})
+    },
+}))
+```
+
+### Custom Error Handler
+
+Handle all errors:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode: frontend.ModeProduction,
+    Root: "./dist",
+    ErrorHandler: func(c *mizu.Ctx, err error) error {
+        c.Logger().Error("frontend error", "error", err)
+        return c.Text(500, "Internal Server Error")
+    },
+}))
+```
+
+## Compression
+
+For better performance, use the [compress middleware](/middlewares/compress):
+
+```go
+import "github.com/go-mizu/mizu/middlewares/compress"
+
+// Apply compression before frontend
+app.Use(compress.Default())
+app.Use(frontend.New("./dist"))
+```
+
+This compresses responses with gzip or brotli, reducing transfer size by 60-80% for text files.
+
+## Complete Production Example
+
+Here's a production-ready setup:
+
+```go
+package server
+
+import (
+    "embed"
+    "io/fs"
+    "time"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/compress"
+    "github.com/go-mizu/mizu/middlewares/frontend"
+    "github.com/go-mizu/mizu/middlewares/helmet"
+    "github.com/go-mizu/mizu/middlewares/recover"
+)
+
+//go:embed all:../../dist
+var distFS embed.FS
+
+func New() *mizu.App {
+    app := mizu.New()
+
+    // Essential middleware
+    app.Use(recover.New())
+    app.Use(helmet.Default())
+    app.Use(compress.Default())
+
+    // API routes
+    app.Get("/api/users", handleUsers)
+
+    // Frontend (embedded, optimized)
+    dist, _ := fs.Sub(distFS, "dist")
+    app.Use(frontend.WithOptions(frontend.Options{
+        Mode:            frontend.ModeProduction,
+        FS:              dist,
+        IgnorePaths:     []string{"/api"},
+        SecurityHeaders: false,  // helmet already set headers
+        SourceMaps:      false,  // Block in production
+        CacheControl: frontend.CacheConfig{
+            HashedAssets:   365 * 24 * time.Hour,
+            UnhashedAssets: 7 * 24 * time.Hour,
+            Patterns: map[string]time.Duration{
+                "*.woff2": 30 * 24 * time.Hour,
+            },
+        },
+    }))
+
+    return app
+}
+```
+
+## Performance Optimization
+
+### 1. Asset Fingerprinting
+
+Ensure your build tool fingerprints assets:
+
+```ts
+// vite.config.ts
+export default {
+    build: {
+        rollupOptions: {
+            output: {
+                entryFileNames: 'assets/[name].[hash].js',
+                chunkFileNames: 'assets/[name].[hash].js',
+                assetFileNames: 'assets/[name].[hash].[ext]'
+            }
+        }
+    }
+}
+```
+
+### 2. Code Splitting
+
+Split code into smaller chunks:
+
+```tsx
+// React lazy loading
+const About = lazy(() => import('./pages/About'));
+
+<Suspense fallback={<div>Loading...</div>}>
+  <Route path="/about" element={<About />} />
+</Suspense>
+```
+
+### 3. Tree Shaking
+
+Import only what you need:
+
+```ts
+// ❌ Imports entire library
+import _ from 'lodash';
+
+// ✅ Imports only debounce
+import debounce from 'lodash/debounce';
+```
+
+### 4. Image Optimization
+
+Optimize images before bundling:
+- Use WebP format for images
+- Compress with tools like `imagemin`
+- Use responsive images (`srcset`)
+- Lazy load images below the fold
+
+### 5. CSS Optimization
+
+- Remove unused CSS (PurgeCSS, built into Tailwind)
+- Minify CSS in build
+- Inline critical CSS for faster first paint
+
+## Monitoring Production
+
+### Access Logs
+
+Use the [logger middleware](/middlewares/logger):
+
+```go
+import "github.com/go-mizu/mizu/middlewares/logger"
+
+app.Use(logger.New())
+```
+
+Logs show all requests:
+
+```
+GET  /                    200 (12ms)
+GET  /assets/main.js      200 (2ms)
+GET  /api/users           200 (45ms)
+GET  /about               200 (3ms)
+```
+
+### Metrics
+
+Use [Prometheus](/middlewares/prometheus) or custom [metrics](/middlewares/metrics):
+
+```go
+import "github.com/go-mizu/mizu/middlewares/prometheus"
+
+app.Use(prometheus.New())
+```
+
+Track:
+- Request count
+- Response times
+- Error rates
+- Cache hit rates
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" href="/frontend/configuration" icon="sliders">
+    Explore all configuration options
+  </Card>
+  <Card title="Caching" href="/frontend/caching" icon="database">
+    Deep dive into caching strategies
+  </Card>
+  <Card title="Security" href="/frontend/security" icon="shield">
+    Security best practices
+  </Card>
+  <Card title="Deployment" href="/frontend/building" icon="rocket">
+    Build and deployment guide
+  </Card>
+</CardGroup>

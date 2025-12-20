@@ -1,0 +1,623 @@
+---
+title: "HTMX"
+description: "Build hypermedia-driven applications with HTMX and server-rendered HTML."
+icon: "bolt"
+---
+
+HTMX is a different approach to building web applications. Instead of SPAs with heavy JavaScript, HTMX lets you build dynamic applications with HTML and minimal JavaScript by extending HTML with custom attributes.
+
+## Quick Start
+
+Create a new HTMX project with the CLI:
+
+```bash
+mizu new ./my-htmx-app --template frontend/htmx
+cd my-htmx-app
+make dev
+```
+
+Visit `http://localhost:3000` to see your app!
+
+## Project Structure
+
+```
+my-htmx-app/
+├── cmd/
+│   └── server/
+│       └── main.go              # Entry point
+├── app/
+│   └── server/
+│       ├── app.go               # Mizu app setup
+│       ├── config.go            # Configuration
+│       ├── routes.go            # Routes
+│       └── handlers.go          # Request handlers
+├── views/                       # HTML templates
+│   ├── embed.go                 # Embed directive
+│   ├── layouts/
+│   │   └── default.html         # Base layout
+│   ├── pages/
+│   │   ├── home.html            # Home page
+│   │   └── about.html           # About page
+│   └── partials/                # Reusable components
+├── static/                      # CSS, JS, images
+│   ├── embed.go
+│   ├── css/
+│   │   └── app.css
+│   └── js/
+│       └── app.js
+├── go.mod
+└── Makefile
+```
+
+## Backend Setup
+
+### `app/server/app.go`
+
+```go
+package server
+
+import (
+    "io/fs"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/view"
+
+    "yourmodule/static"
+    "yourmodule/views"
+)
+
+func New(cfg *Config) *mizu.App {
+    app := mizu.New()
+
+    // Initialize view engine
+    viewsFS, _ := fs.Sub(views.FS, ".")
+    v := view.New(view.Config{
+        FS:            viewsFS,
+        Extension:     ".html",
+        DefaultLayout: "default",
+        Development:   cfg.Env == "development",
+    })
+    if err := v.Load(); err != nil {
+        panic("failed to load views: " + err.Error())
+    }
+    app.Use(v.Middleware())
+
+    // Serve static assets
+    staticFS, _ := fs.Sub(static.FS, ".")
+    app.Static("/static", staticFS)
+
+    // Setup routes
+    setupRoutes(app)
+
+    return app
+}
+```
+
+### `app/server/handlers.go`
+
+```go
+package server
+
+import "github.com/go-mizu/mizu"
+
+func handleHome(c *mizu.Ctx) error {
+    data := map[string]any{
+        "Title": "Home",
+    }
+    return c.Render("pages/home", data)
+}
+
+func handleAbout(c *mizu.Ctx) error {
+    data := map[string]any{
+        "Title": "About",
+    }
+    return c.Render("pages/about", data)
+}
+
+// HTMX handler - returns HTML fragment
+func handleUsers(c *mizu.Ctx) error {
+    users := []map[string]any{
+        {"ID": 1, "Name": "Alice", "Email": "alice@example.com"},
+        {"ID": 2, "Name": "Bob", "Email": "bob@example.com"},
+    }
+
+    // Check if this is an HTMX request
+    if c.Request().Header.Get("HX-Request") == "true" {
+        // Return just the HTML fragment for HTMX
+        return c.Render("partials/user-list", map[string]any{
+            "Users": users,
+        })
+    }
+
+    // Return full page for direct navigation
+    return c.Render("pages/users", map[string]any{
+        "Title": "Users",
+        "Users": users,
+    })
+}
+
+func handleCreateUser(c *mizu.Ctx) error {
+    // Parse form data
+    name := c.FormValue("name")
+    email := c.FormValue("email")
+
+    // Create user (simplified)
+    user := map[string]any{
+        "ID":    3,
+        "Name":  name,
+        "Email": email,
+    }
+
+    // Return HTML for the new user row
+    return c.Render("partials/user-row", user)
+}
+```
+
+### `app/server/routes.go`
+
+```go
+package server
+
+import "github.com/go-mizu/mizu"
+
+func setupRoutes(app *mizu.App) {
+    // Page routes
+    app.Get("/", handleHome)
+    app.Get("/about", handleAbout)
+    app.Get("/users", handleUsers)
+
+    // HTMX endpoints
+    app.Post("/users", handleCreateUser)
+    app.Delete("/users/{id}", handleDeleteUser)
+}
+```
+
+## HTML Templates
+
+### `views/layouts/default.html`
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ .Title }} - My App</title>
+    <link rel="stylesheet" href="/static/css/app.css">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="/static/js/app.js" defer></script>
+</head>
+<body>
+    <nav>
+        <a href="/">Home</a>
+        <a href="/about">About</a>
+        <a href="/users">Users</a>
+    </nav>
+
+    <main>
+        {{ embed }}
+    </main>
+
+    <footer>
+        <p>Built with Mizu and HTMX</p>
+    </footer>
+</body>
+</html>
+```
+
+### `views/pages/home.html`
+
+```html
+<h1>Welcome</h1>
+
+<div id="user-list">
+    <button
+        hx-get="/users"
+        hx-target="#user-list"
+        hx-swap="outerHTML"
+    >
+        Load Users
+    </button>
+</div>
+
+<div id="create-user" class="card">
+    <h2>Create User</h2>
+    <form
+        hx-post="/users"
+        hx-target="#user-table tbody"
+        hx-swap="beforeend"
+        hx-on::after-request="this.reset()"
+    >
+        <input type="text" name="name" placeholder="Name" required>
+        <input type="email" name="email" placeholder="Email" required>
+        <button type="submit">Create</button>
+    </form>
+</div>
+```
+
+### `views/partials/user-list.html`
+
+```html
+<div id="user-list">
+    <h2>Users</h2>
+    <table id="user-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{ range .Users }}
+                {{ template "partials/user-row" . }}
+            {{ end }}
+        </tbody>
+    </table>
+</div>
+```
+
+### `views/partials/user-row.html`
+
+```html
+<tr>
+    <td>{{ .Name }}</td>
+    <td>{{ .Email }}</td>
+    <td>
+        <button
+            hx-delete="/users/{{ .ID }}"
+            hx-target="closest tr"
+            hx-swap="outerHTML swap:1s"
+            hx-confirm="Are you sure?"
+        >
+            Delete
+        </button>
+    </td>
+</tr>
+```
+
+## HTMX Attributes
+
+HTMX extends HTML with attributes for dynamic behavior:
+
+### Core Attributes
+
+| Attribute | Purpose | Example |
+|-----------|---------|---------|
+| `hx-get` | GET request | `hx-get="/users"` |
+| `hx-post` | POST request | `hx-post="/users"` |
+| `hx-put` | PUT request | `hx-put="/users/1"` |
+| `hx-delete` | DELETE request | `hx-delete="/users/1"` |
+| `hx-target` | Where to put response | `hx-target="#results"` |
+| `hx-swap` | How to swap content | `hx-swap="innerHTML"` |
+| `hx-trigger` | What triggers request | `hx-trigger="click, keyup delay:500ms"` |
+
+### Swap Strategies
+
+```html
+<!-- Replace inner HTML (default) -->
+<div hx-get="/users" hx-swap="innerHTML">Content</div>
+
+<!-- Replace entire element -->
+<div hx-get="/users" hx-swap="outerHTML">Content</div>
+
+<!-- Insert before/after -->
+<div hx-get="/users" hx-swap="beforebegin">Content</div>
+<div hx-get="/users" hx-swap="afterend">Content</div>
+
+<!-- Insert at start/end of children -->
+<ul hx-get="/users" hx-swap="afterbegin">...</ul>
+<ul hx-get="/users" hx-swap="beforeend">...</ul>
+
+<!-- Delete the element -->
+<div hx-delete="/users/1" hx-swap="delete">Delete Me</div>
+```
+
+## Common Patterns
+
+### Click to Load
+
+```html
+<button hx-get="/data" hx-target="#result">
+    Load Data
+</button>
+<div id="result"></div>
+```
+
+### Click to Edit
+
+```html
+<div id="user-1">
+    <span>Alice</span>
+    <button hx-get="/users/1/edit" hx-target="#user-1">Edit</button>
+</div>
+```
+
+Server returns:
+
+```html
+<div id="user-1">
+    <form hx-put="/users/1" hx-target="#user-1">
+        <input name="name" value="Alice">
+        <button type="submit">Save</button>
+    </form>
+</div>
+```
+
+### Infinite Scroll
+
+```html
+<div id="posts">
+    {{ range .Posts }}
+        <div class="post">{{ .Title }}</div>
+    {{ end }}
+
+    {{ if .HasMore }}
+        <div
+            hx-get="/posts?page={{ .NextPage }}"
+            hx-trigger="revealed"
+            hx-target="#posts"
+            hx-swap="beforeend"
+        >
+            Loading more...
+        </div>
+    {{ end }}
+</div>
+```
+
+### Active Search
+
+```html
+<input
+    type="search"
+    name="q"
+    hx-get="/search"
+    hx-trigger="keyup changed delay:500ms"
+    hx-target="#search-results"
+    placeholder="Search..."
+>
+<div id="search-results"></div>
+```
+
+### Form Validation
+
+```go
+func handleCreateUser(c *mizu.Ctx) error {
+    name := c.FormValue("name")
+    email := c.FormValue("email")
+
+    // Validation
+    if name == "" {
+        c.Writer().Header().Set("HX-Retarget", "#error")
+        c.Writer().Header().Set("HX-Reswap", "innerHTML")
+        return c.HTML(400, `<div class="error">Name is required</div>`)
+    }
+
+    // Create user...
+    return c.Render("partials/user-row", user)
+}
+```
+
+```html
+<form hx-post="/users" hx-target="#user-list" hx-swap="beforeend">
+    <div id="error"></div>
+    <input name="name" placeholder="Name">
+    <input name="email" type="email" placeholder="Email">
+    <button type="submit">Create</button>
+</form>
+```
+
+### Polling
+
+```html
+<div hx-get="/stats" hx-trigger="every 2s" hx-swap="innerHTML">
+    Loading stats...
+</div>
+```
+
+### Optimistic UI
+
+```html
+<button
+    hx-post="/like"
+    hx-swap="outerHTML"
+    hx-target="this"
+>
+    ♡ Like (123)
+</button>
+```
+
+Server responds immediately with updated button:
+
+```html
+<button
+    hx-post="/unlike"
+    hx-swap="outerHTML"
+    hx-target="this"
+>
+    ♥ Liked (124)
+</button>
+```
+
+## Combining with Alpine.js
+
+Alpine.js adds client-side reactivity:
+
+```html
+<script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+
+<div x-data="{ open: false }">
+    <button @click="open = !open">Toggle</button>
+
+    <div x-show="open" x-transition>
+        <p>Content here</p>
+
+        <!-- HTMX works inside Alpine -->
+        <button hx-get="/data" hx-target="#result">
+            Load Data
+        </button>
+        <div id="result"></div>
+    </div>
+</div>
+```
+
+### Dropdown with HTMX
+
+```html
+<div x-data="{ open: false }" @click.away="open = false">
+    <button @click="open = !open">Menu</button>
+
+    <div x-show="open" x-transition>
+        <a href="#" hx-get="/profile" hx-target="#main">Profile</a>
+        <a href="#" hx-get="/settings" hx-target="#main">Settings</a>
+        <a href="#" hx-post="/logout">Logout</a>
+    </div>
+</div>
+```
+
+## Request Headers
+
+HTMX sends special headers:
+
+```go
+func handler(c *mizu.Ctx) error {
+    // Check if HTMX request
+    if c.Request().Header.Get("HX-Request") == "true" {
+        // Return fragment
+        return c.Render("partials/content", data)
+    }
+
+    // Return full page
+    return c.Render("pages/content", data)
+}
+```
+
+**Common HTMX headers:**
+- `HX-Request`: true if HTMX request
+- `HX-Target`: ID of target element
+- `HX-Trigger-Name`: Name of triggered element
+- `HX-Current-URL`: Current URL
+
+**Response headers:**
+- `HX-Redirect`: Client-side redirect
+- `HX-Refresh`: Refresh the page
+- `HX-Retarget`: Change target selector
+- `HX-Reswap`: Change swap strategy
+
+## Development Workflow
+
+### Start Development
+
+```bash
+make dev
+```
+
+Or:
+
+```bash
+go run cmd/server/main.go
+```
+
+### Making Changes
+
+**Template changes:**
+1. Edit HTML in `views/`
+2. Refresh browser
+3. See changes (templates reload in dev mode)
+
+**Backend changes:**
+1. Edit Go files
+2. Restart server
+3. Refresh browser
+
+**CSS/JS changes:**
+1. Edit files in `static/`
+2. Refresh browser
+
+## Styling
+
+HTMX works great with any CSS framework:
+
+### Tailwind CSS
+
+```html
+<button
+    class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+    hx-get="/data"
+    hx-target="#result"
+>
+    Load Data
+</button>
+```
+
+### DaisyUI (Tailwind components)
+
+```html
+<button class="btn btn-primary" hx-get="/data">
+    Load Data
+</button>
+```
+
+## Building for Production
+
+```bash
+make build
+```
+
+Creates a single binary with embedded views and static files.
+
+Run:
+
+```bash
+MIZU_ENV=production ./bin/server
+```
+
+## Why Choose HTMX?
+
+**Pros:**
+- Minimal JavaScript
+- Server renders everything
+- Works without JavaScript enabled
+- SEO-friendly
+- Simpler mental model
+- Small learning curve
+- Great for server-side developers
+
+**Cons:**
+- Less suitable for complex UIs
+- Requires server round-trips
+- No offline support
+- Less rich interactions than SPAs
+
+## When to Use HTMX
+
+**Perfect for:**
+- CRUD applications
+- Admin dashboards
+- Content-heavy sites
+- Forms and validation
+- Teams comfortable with server-side rendering
+- Progressive enhancement
+
+**Not ideal for:**
+- Desktop-like applications
+- Real-time collaboration
+- Offline-first apps
+- Complex client-side state
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Alpine.js" href="/frontend/alpine" icon="code">
+    Add client-side reactivity with Alpine.js
+  </Card>
+  <Card title="View Engine" href="/view/overview" icon="file">
+    Learn more about Mizu's template engine
+  </Card>
+  <Card title="React Guide" href="/frontend/react" icon="react">
+    Compare with SPA approach
+  </Card>
+  <Card title="HTMX Docs" href="https://htmx.org" icon="external-link">
+    Official HTMX documentation
+  </Card>
+</CardGroup>

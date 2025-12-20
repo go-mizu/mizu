@@ -1,0 +1,492 @@
+---
+title: "Angular"
+description: "Build Angular applications with Mizu and TypeScript."
+icon: "angular"
+---
+
+Angular is a comprehensive framework from Google for building web applications. This guide shows you how to integrate Angular with Mizu as the backend.
+
+## Quick Start
+
+```bash
+mizu new ./my-angular-app --template frontend/angular
+cd my-angular-app
+make dev
+```
+
+## Project Structure
+
+```
+my-angular-app/
+├── cmd/server/
+├── app/server/
+│   ├── app.go
+│   └── routes.go
+├── client/                    # Angular app
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── app.component.ts
+│   │   │   ├── app.config.ts
+│   │   │   ├── app.routes.ts
+│   │   │   ├── components/
+│   │   │   ├── pages/
+│   │   │   └── services/
+│   │   ├── index.html
+│   │   ├── main.ts
+│   │   └── styles.css
+│   ├── angular.json
+│   ├── package.json
+│   └── tsconfig.json
+├── dist/my-app/browser/      # Build output
+└── Makefile
+```
+
+## Backend Setup
+
+```go
+package server
+
+import (
+    "embed"
+    "io/fs"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/frontend"
+)
+
+//go:embed all:../../dist/my-app/browser
+var distFS embed.FS
+
+func New(cfg *Config) *mizu.App {
+    app := mizu.New()
+
+    app.Get("/api/users", handleUsers)
+
+    // Angular outputs to dist/my-app/browser
+    dist, _ := fs.Sub(distFS, "dist/my-app/browser")
+    app.Use(frontend.WithOptions(frontend.Options{
+        Mode:        frontend.ModeAuto,
+        FS:          dist,
+        Root:        "./dist/my-app/browser",
+        DevServer:   "http://localhost:" + cfg.DevPort,
+        IgnorePaths: []string{"/api"},
+    }))
+
+    return app
+}
+```
+
+## Angular Configuration
+
+### `client/angular.json`
+
+```json
+{
+  "projects": {
+    "my-app": {
+      "architect": {
+        "build": {
+          "options": {
+            "outputPath": "../dist/my-app",
+            "index": "src/index.html",
+            "browser": "src/main.ts"
+          }
+        },
+        "serve": {
+          "options": {
+            "port": 4200,
+            "proxyConfig": "proxy.conf.json"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+### `client/proxy.conf.json`
+
+```json
+{
+  "/api": {
+    "target": "http://localhost:3000",
+    "secure": false,
+    "changeOrigin": true
+  }
+}
+```
+
+This proxies `/api/*` requests to the Mizu backend during development.
+
+## Frontend Setup
+
+### `client/src/app/app.routes.ts`
+
+```ts
+import { Routes } from '@angular/router'
+import { HomeComponent } from './pages/home/home.component'
+import { AboutComponent } from './pages/about/about.component'
+
+export const routes: Routes = [
+  { path: '', component: HomeComponent },
+  { path: 'about', component: AboutComponent },
+]
+```
+
+### `client/src/app/app.component.ts`
+
+```ts
+import { Component } from '@angular/core'
+import { RouterOutlet, RouterLink } from '@angular/router'
+
+@Component({
+  selector: 'app-root',
+  standalone: true,
+  imports: [RouterOutlet, RouterLink],
+  template: `
+    <nav>
+      <a routerLink="/">Home</a>
+      <a routerLink="/about">About</a>
+    </nav>
+    <main>
+      <router-outlet></router-outlet>
+    </main>
+  `,
+  styles: [`
+    nav {
+      display: flex;
+      gap: 1rem;
+      padding: 1rem;
+      background: #f5f5f5;
+    }
+  `]
+})
+export class AppComponent {}
+```
+
+### `client/src/app/pages/home/home.component.ts`
+
+```ts
+import { Component, OnInit } from '@angular/core'
+import { CommonModule } from '@angular/common'
+import { HttpClient } from '@angular/common/http'
+
+interface User {
+  id: number
+  name: string
+  email: string
+}
+
+@Component({
+  selector: 'app-home',
+  standalone: true,
+  imports: [CommonModule],
+  template: `
+    <h1>Users</h1>
+
+    <div *ngIf="loading">Loading...</div>
+    <div *ngIf="error">Error: {{ error }}</div>
+
+    <ul *ngIf="!loading && !error">
+      <li *ngFor="let user of users">
+        {{ user.name }} ({{ user.email }})
+      </li>
+    </ul>
+  `
+})
+export class HomeComponent implements OnInit {
+  users: User[] = []
+  loading = true
+  error: string | null = null
+
+  constructor(private http: HttpClient) {}
+
+  ngOnInit() {
+    this.http.get<User[]>('/api/users')
+      .subscribe({
+        next: (data) => {
+          this.users = data
+          this.loading = false
+        },
+        error: (err) => {
+          this.error = err.message
+          this.loading = false
+        }
+      })
+  }
+}
+```
+
+## Services
+
+Create reusable services:
+
+### `client/src/app/services/user.service.ts`
+
+```ts
+import { Injectable } from '@angular/core'
+import { HttpClient } from '@angular/common/http'
+import { Observable } from 'rxjs'
+
+export interface User {
+  id: number
+  name: string
+  email: string
+}
+
+@Injectable({
+  providedIn: 'root'
+})
+export class UserService {
+  private apiUrl = '/api/users'
+
+  constructor(private http: HttpClient) {}
+
+  getUsers(): Observable<User[]> {
+    return this.http.get<User[]>(this.apiUrl)
+  }
+
+  getUser(id: number): Observable<User> {
+    return this.http.get<User>(`${this.apiUrl}/${id}`)
+  }
+
+  createUser(user: Omit<User, 'id'>): Observable<User> {
+    return this.http.post<User>(this.apiUrl, user)
+  }
+
+  deleteUser(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.apiUrl}/${id}`)
+  }
+}
+```
+
+Use in components:
+
+```ts
+import { Component, OnInit } from '@angular/core'
+import { UserService, User } from '../../services/user.service'
+
+@Component({
+  selector: 'app-users',
+  template: `
+    <ul>
+      <li *ngFor="let user of users">{{ user.name }}</li>
+    </ul>
+  `
+})
+export class UsersComponent implements OnInit {
+  users: User[] = []
+
+  constructor(private userService: UserService) {}
+
+  ngOnInit() {
+    this.userService.getUsers()
+      .subscribe(users => this.users = users)
+  }
+}
+```
+
+## Forms
+
+### Template-driven Forms
+
+```ts
+import { Component } from '@angular/core'
+import { FormsModule } from '@angular/forms'
+import { UserService } from '../../services/user.service'
+
+@Component({
+  selector: 'app-create-user',
+  standalone: true,
+  imports: [FormsModule],
+  template: `
+    <form (ngSubmit)="onSubmit()" #userForm="ngForm">
+      <input
+        [(ngModel)]="name"
+        name="name"
+        placeholder="Name"
+        required
+      >
+      <input
+        [(ngModel)]="email"
+        name="email"
+        type="email"
+        placeholder="Email"
+        required
+      >
+      <button
+        type="submit"
+        [disabled]="!userForm.valid || submitting"
+      >
+        {{ submitting ? 'Creating...' : 'Create User' }}
+      </button>
+    </form>
+
+    <p *ngIf="success" class="success">User created!</p>
+    <p *ngIf="error" class="error">{{ error }}</p>
+  `
+})
+export class CreateUserComponent {
+  name = ''
+  email = ''
+  submitting = false
+  success = false
+  error: string | null = null
+
+  constructor(private userService: UserService) {}
+
+  onSubmit() {
+    this.submitting = true
+    this.success = false
+    this.error = null
+
+    this.userService.createUser({ name: this.name, email: this.email })
+      .subscribe({
+        next: () => {
+          this.success = true
+          this.name = ''
+          this.email = ''
+          this.submitting = false
+        },
+        error: (err) => {
+          this.error = err.message
+          this.submitting = false
+        }
+      })
+  }
+}
+```
+
+## Development Workflow
+
+```bash
+# Terminal 1: Angular dev server
+cd client
+npm start  # Runs on port 4200
+
+# Terminal 2: Mizu backend
+go run cmd/server/main.go  # Runs on port 3000
+```
+
+Or:
+
+```bash
+make dev  # Runs both in parallel
+```
+
+Visit `http://localhost:4200` during development.
+
+## Building for Production
+
+```bash
+make build
+```
+
+This:
+1. Builds Angular (`ng build --configuration=production`)
+2. Builds Go binary with embedded frontend
+
+Run:
+
+```bash
+MIZU_ENV=production ./bin/server
+```
+
+## Angular Features
+
+### Dependency Injection
+
+```ts
+@Injectable({
+  providedIn: 'root'
+})
+export class ApiService {
+  constructor(private http: HttpClient) {}
+
+  get<T>(url: string): Observable<T> {
+    return this.http.get<T>(`/api${url}`)
+  }
+}
+```
+
+### Interceptors
+
+Add auth tokens to requests:
+
+```ts
+import { HttpInterceptorFn } from '@angular/common/http'
+
+export const authInterceptor: HttpInterceptorFn = (req, next) => {
+  const token = localStorage.getItem('auth_token')
+
+  if (token) {
+    req = req.clone({
+      setHeaders: {
+        Authorization: `Bearer ${token}`
+      }
+    })
+  }
+
+  return next(req)
+}
+```
+
+Register in config:
+
+```ts
+// app.config.ts
+export const appConfig: ApplicationConfig = {
+  providers: [
+    provideHttpClient(withInterceptors([authInterceptor]))
+  ]
+}
+```
+
+### Guards
+
+Protect routes:
+
+```ts
+import { inject } from '@angular/core'
+import { Router } from '@angular/router'
+
+export const authGuard = () => {
+  const router = inject(Router)
+  const isAuthenticated = !!localStorage.getItem('auth_token')
+
+  if (!isAuthenticated) {
+    router.navigate(['/login'])
+    return false
+  }
+
+  return true
+}
+```
+
+```ts
+// routes.ts
+export const routes: Routes = [
+  {
+    path: 'admin',
+    component: AdminComponent,
+    canActivate: [authGuard]
+  }
+]
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="React Guide" href="/frontend/react" icon="react">
+    Try React instead
+  </Card>
+  <Card title="API Integration" href="/frontend/api-integration" icon="plug">
+    Best practices for APIs
+  </Card>
+  <Card title="Deployment" href="/frontend/building" icon="rocket">
+    Build and deploy
+  </Card>
+  <Card title="Angular Docs" href="https://angular.dev" icon="external-link">
+    Official Angular documentation
+  </Card>
+</CardGroup>

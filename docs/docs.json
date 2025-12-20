@@ -410,6 +410,87 @@
         ]
       },
       {
+        "tab": "Frontend",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "frontend/overview",
+              "frontend/quick-start"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "frontend/development",
+              "frontend/production",
+              "frontend/configuration"
+            ]
+          },
+          {
+            "group": "Framework Integration",
+            "pages": [
+              "frontend/react",
+              "frontend/vue",
+              "frontend/svelte",
+              "frontend/sveltekit",
+              "frontend/angular",
+              "frontend/htmx",
+              "frontend/nextjs",
+              "frontend/nuxt",
+              "frontend/preact",
+              "frontend/alpine"
+            ]
+          },
+          {
+            "group": "Advanced Features",
+            "pages": [
+              "frontend/caching",
+              "frontend/env-injection",
+              "frontend/manifest",
+              "frontend/security",
+              "frontend/service-workers"
+            ]
+          },
+          {
+            "group": "Working with APIs",
+            "pages": [
+              "frontend/api-integration",
+              "frontend/ssr-vs-spa"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "frontend/building",
+              "frontend/embed",
+              "frontend/static-hosting"
+            ]
+          },
+          {
+            "group": "Templates",
+            "pages": [
+              "frontend/templates",
+              "frontend/minimal-setup"
+            ]
+          },
+          {
+            "group": "Recipes & Examples",
+            "pages": [
+              "frontend/patterns",
+              "frontend/troubleshooting"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "frontend/api-reference",
+              "frontend/adapters"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "Views",
         "groups": [
           {

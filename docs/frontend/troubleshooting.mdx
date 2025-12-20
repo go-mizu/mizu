@@ -1,0 +1,379 @@
+---
+title: "Troubleshooting"
+description: "Common issues and solutions for frontend development with Mizu."
+icon: "wrench"
+---
+
+This guide helps you solve common issues when developing frontend applications with Mizu.
+
+## Dev Server Issues
+
+### Can't Connect to Dev Server
+
+**Error:** `Unable to connect to dev server http://localhost:5173`
+
+**Solutions:**
+
+1. **Check dev server is running:**
+   ```bash
+   cd client
+   npm run dev
+   ```
+
+2. **Check port matches:**
+   ```go
+   // Backend
+   DevServer: "http://localhost:5173",
+   ```
+   ```ts
+   // Frontend vite.config.ts
+   server: { port: 5173 }
+   ```
+
+3. **Check firewall:**
+   ```bash
+   # macOS
+   sudo pfctl -d
+   ```
+
+### HMR Not Working
+
+**Problem:** Changes don't appear in browser
+
+**Solutions:**
+
+1. **Configure HMR port:**
+   ```ts
+   // vite.config.ts
+   server: {
+     hmr: {
+       clientPort: 3000,  // Mizu server port
+     },
+   }
+   ```
+
+2. **Check WebSocket connection:**
+   - Open browser DevTools → Network → WS
+   - Should see WebSocket connection to `ws://localhost:3000`
+
+3. **Clear browser cache:**
+   - Hard refresh: `Cmd/Ctrl + Shift + R`
+
+### Port Already in Use
+
+**Error:** `Port 3000 is already in use`
+
+**Solutions:**
+
+1. **Kill process:**
+   ```bash
+   # macOS/Linux
+   lsof -ti:3000 | xargs kill -9
+
+   # Windows
+   netstat -ano | findstr :3000
+   taskkill /PID <PID> /F
+   ```
+
+2. **Change port:**
+   ```go
+   // config.go
+   Port: "3001",
+   ```
+
+## Build Issues
+
+### Build Fails
+
+**Error:** `Build failed with errors`
+
+**Solutions:**
+
+1. **Clear cache:**
+   ```bash
+   rm -rf node_modules package-lock.json
+   npm install
+   ```
+
+2. **Clear Vite cache:**
+   ```bash
+   rm -rf node_modules/.vite
+   ```
+
+3. **Check Node version:**
+   ```bash
+   node --version  # Should be 18+
+   ```
+
+### Assets Not Found After Build
+
+**Problem:** 404 errors for assets in production
+
+**Solutions:**
+
+1. **Check embed path:**
+   ```go
+   //go:embed all:dist  # Must match build outDir
+   var distFS embed.FS
+
+   dist, _ := fs.Sub(distFS, "dist")  # Must match embed path
+   ```
+
+2. **Check Vite base:**
+   ```ts
+   // vite.config.ts
+   export default {
+     base: '/',  # Or '/app/' if using prefix
+   }
+   ```
+
+3. **Rebuild:**
+   ```bash
+   cd client && npm run build
+   go build
+   ```
+
+## Routing Issues
+
+### 404 on Page Refresh
+
+**Problem:** Direct navigation works, refresh gives 404
+
+**Solution:** This is expected for SPAs. Mizu serves `index.html` for all routes (SPA fallback).
+
+If it's not working:
+
+```go
+// Check IgnorePaths doesn't block your routes
+app.Use(frontend.WithOptions(frontend.Options{
+    IgnorePaths: []string{"/api"},  // Only API, not frontend routes
+}))
+```
+
+### API Routes Return HTML
+
+**Problem:** `/api/users` returns HTML instead of JSON
+
+**Solutions:**
+
+1. **Define API routes before frontend middleware:**
+   ```go
+   // ✅ Correct order
+   app.Get("/api/users", handleUsers)  // First
+   app.Use(frontend.New("./dist"))     // After
+
+   // ❌ Wrong order
+   app.Use(frontend.New("./dist"))     // Frontend catches everything
+   app.Get("/api/users", handleUsers)  // Never reached
+   ```
+
+2. **Check IgnorePaths:**
+   ```go
+   app.Use(frontend.WithOptions(frontend.Options{
+       IgnorePaths: []string{"/api"},  // API routes bypass frontend
+   }))
+   ```
+
+## CORS Issues
+
+### CORS Errors in Development
+
+**Error:** `Access to fetch at 'http://localhost:3000/api/users' from origin 'http://localhost:5173' has been blocked by CORS`
+
+**Solution:**
+
+Mizu adds CORS headers automatically in dev mode, but ensure:
+
+1. **Dev server is proxying correctly:**
+   ```ts
+   // vite.config.ts
+   server: {
+     proxy: {
+       '/api': 'http://localhost:3000',
+     },
+   }
+   ```
+
+2. **Or use Mizu's proxy:**
+   Don't configure Vite proxy, let Mizu handle it:
+   ```go
+   app.Use(frontend.Dev("http://localhost:5173"))
+   ```
+
+### CORS Errors in Production
+
+**Solution:** Configure CORS middleware:
+
+```go
+import "github.com/go-mizu/mizu/middlewares/cors"
+
+app.Use(cors.WithOptions(cors.Options{
+    AllowedOrigins: []string{"https://yourdomain.com"},
+    AllowedMethods: []string{"GET", "POST", "PUT", "DELETE"},
+    AllowedHeaders: []string{"Content-Type", "Authorization"},
+}))
+```
+
+## TypeScript Issues
+
+### Module Not Found
+
+**Error:** `Cannot find module './Component'`
+
+**Solutions:**
+
+1. **Check import path:**
+   ```tsx
+   // ❌ Wrong
+   import Component from './Component'
+
+   // ✅ Correct (include extension)
+   import Component from './Component.tsx'
+   ```
+
+2. **Configure path aliases:**
+   ```ts
+   // vite.config.ts
+   export default {
+     resolve: {
+       alias: {
+         '@': path.resolve(__dirname, './src'),
+       },
+     },
+   }
+   ```
+
+   ```json
+   // tsconfig.json
+   {
+     "compilerOptions": {
+       "paths": {
+         "@/*": ["./src/*"]
+       }
+     }
+   }
+   ```
+
+## Performance Issues
+
+### Slow Initial Load
+
+**Solutions:**
+
+1. **Enable code splitting:**
+   ```tsx
+   const About = lazy(() => import('./pages/About'))
+   ```
+
+2. **Analyze bundle:**
+   ```bash
+   npm run build
+   # Check bundle sizes in output
+   ```
+
+3. **Reduce dependencies:**
+   ```bash
+   # Remove unused packages
+   npm prune
+   ```
+
+### Slow HMR
+
+**Solutions:**
+
+1. **Optimize Vite config:**
+   ```ts
+   export default {
+     optimizeDeps: {
+       include: ['react', 'react-dom'],  // Pre-bundle deps
+     },
+   }
+   ```
+
+2. **Reduce file watchers:**
+   - Close unused files in editor
+   - Exclude `node_modules` from watchers
+
+## Environment Issues
+
+### Environment Variables Not Working
+
+**Problem:** `import.meta.env.VITE_API_URL` is undefined
+
+**Solutions:**
+
+1. **Check prefix:**
+   ```bash
+   # ❌ Won't work
+   API_URL=http://localhost:3000
+
+   # ✅ Must have VITE_ prefix
+   VITE_API_URL=http://localhost:3000
+   ```
+
+2. **Restart dev server:**
+   Environment variables are loaded at startup
+
+3. **Check file name:**
+   ```
+   .env                 # All modes
+   .env.local           # Local overrides (gitignored)
+   .env.development     # Development only
+   .env.production      # Production only
+   ```
+
+## Debugging Tips
+
+### Enable Debug Logging
+
+```go
+import "github.com/go-mizu/mizu/middlewares/logger"
+
+app.Use(logger.New())  // Logs all requests
+app.Use(frontend.Dev("http://localhost:5173"))
+```
+
+### Check Network Tab
+
+Browser DevTools → Network:
+- Filter by XHR to see API calls
+- Check request/response
+- Verify status codes
+
+### Check Console
+
+Browser DevTools → Console:
+- Look for JavaScript errors
+- Check for failed requests
+- Verify HMR messages
+
+### Verify Build Output
+
+```bash
+cd dist
+ls -lh  # Check files exist
+file index.html  # Should be HTML
+cat index.html  # Check content
+```
+
+## Getting Help
+
+If you're still stuck:
+
+1. Check [GitHub Issues](https://github.com/go-mizu/mizu/issues)
+2. Ask in [Discord](https://discord.gg/8QpMsNBB8n)
+3. Review [examples](/examples/overview)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Common Patterns" href="/frontend/patterns" icon="lightbulb">
+    Working code examples
+  </Card>
+  <Card title="Development" href="/frontend/development" icon="code">
+    Development guide
+  </Card>
+  <Card title="Production" href="/frontend/production" icon="rocket">
+    Production optimization
+  </Card>
+</CardGroup>

@@ -1,0 +1,349 @@
+---
+title: "Environment Injection"
+description: "Inject server-side environment variables into your frontend."
+icon: "code"
+---
+
+Environment injection allows you to pass server-side environment variables to your frontend at runtime, perfect for configuration that changes between environments.
+
+## Basic Usage
+
+### Backend Configuration
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode: frontend.ModeProduction,
+    Root: "./dist",
+    InjectEnv: []string{"API_URL", "ANALYTICS_ID", "FEATURE_FLAGS"},
+}))
+```
+
+### Frontend Access
+
+Variables are available as `window.__ENV__`:
+
+```tsx
+// TypeScript
+declare global {
+  interface Window {
+    __ENV__?: Record<string, string>
+  }
+}
+
+const apiUrl = window.__ENV__?.API_URL || 'http://localhost:3000/api'
+const analyticsId = window.__ENV__?.ANALYTICS_ID
+```
+
+```jsx
+// JavaScript
+const apiUrl = window.__ENV__?.API_URL || '/api'
+```
+
+## How It Works
+
+The middleware injects a script tag into your HTML:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My App</title>
+    <script>window.__ENV__={"API_URL":"https://api.production.com","ANALYTICS_ID":"GA-123"};</script>
+</head>
+<body>
+    <!-- Your app -->
+</body>
+</html>
+```
+
+The script is injected before `</head>`, making variables available before your app loads.
+
+## Use Cases
+
+### API URLs
+
+```go
+InjectEnv: []string{"API_URL"}
+```
+
+```tsx
+const API_URL = window.__ENV__?.API_URL || '/api'
+
+export const fetchUsers = () =>
+  fetch(`${API_URL}/users`).then(r => r.json())
+```
+
+### Analytics
+
+```go
+InjectEnv: []string{"ANALYTICS_ID", "SENTRY_DSN"}
+```
+
+```tsx
+import { init } from '@sentry/react'
+
+if (window.__ENV__?.SENTRY_DSN) {
+  init({ dsn: window.__ENV__.SENTRY_DSN })
+}
+```
+
+### Feature Flags
+
+```go
+InjectEnv: []string{"FEATURES"}
+```
+
+```tsx
+const features = JSON.parse(window.__ENV__?.FEATURES || '{}')
+
+function App() {
+  return (
+    <div>
+      {features.newUI && <NewUI />}
+      {!features.newUI && <OldUI />}
+    </div>
+  )
+}
+```
+
+### Multi-Environment Setup
+
+```go
+func getEnvVars(env string) []string {
+    vars := []string{"API_URL"}
+
+    if env == "production" {
+        vars = append(vars, "ANALYTICS_ID", "SENTRY_DSN")
+    }
+
+    if env == "development" {
+        vars = append(vars, "DEBUG", "MOCK_API")
+    }
+
+    return vars
+}
+
+app.Use(frontend.WithOptions(frontend.Options{
+    InjectEnv: getEnvVars(os.Getenv("ENV")),
+}))
+```
+
+## Security Considerations
+
+### Never Inject Secrets
+
+```go
+// ❌ DON'T inject sensitive data
+InjectEnv: []string{
+    "DATABASE_PASSWORD",  // Visible to users!
+    "SECRET_KEY",         // Visible to users!
+    "PRIVATE_API_KEY",    // Visible to users!
+}
+```
+
+**Why:** All injected variables are visible in the HTML source and browser console.
+
+### Only Inject Public Configuration
+
+```go
+// ✅ DO inject public config
+InjectEnv: []string{
+    "API_URL",           // Public endpoint
+    "ANALYTICS_ID",      // Public tracking ID
+    "APP_VERSION",       // Public version
+    "ENVIRONMENT",       // Public environment name
+}
+```
+
+### Prefixing Convention
+
+Follow the convention of prefixing public variables:
+
+```bash
+# .env file
+VITE_API_URL=https://api.example.com    # Public (VITE_ prefix)
+VITE_ANALYTICS_ID=GA-123                # Public
+
+DATABASE_URL=postgresql://...            # Private (no prefix)
+SECRET_KEY=abc123                        # Private (no prefix)
+```
+
+```go
+// Only inject VITE_ prefixed vars
+InjectEnv: getPublicEnvVars(),
+```
+
+```go
+func getPublicEnvVars() []string {
+    var publicVars []string
+
+    for _, env := range os.Environ() {
+        if strings.HasPrefix(env, "VITE_") {
+            key := strings.Split(env, "=")[0]
+            publicVars = append(publicVars, key)
+        }
+    }
+
+    return publicVars
+}
+```
+
+## Build-Time vs Runtime
+
+### Build-Time (Vite/Webpack)
+
+```js
+// Build-time replacement
+const apiUrl = import.meta.env.VITE_API_URL
+```
+
+**Pros:**
+- Type-safe (TypeScript)
+- Tree-shaking works
+- Optimizations apply
+
+**Cons:**
+- Must rebuild for each environment
+- Can't change without rebuild
+
+### Runtime (Mizu Injection)
+
+```js
+// Runtime injection
+const apiUrl = window.__ENV__?.API_URL
+```
+
+**Pros:**
+- Single build for all environments
+- Change without rebuild
+- Dynamic configuration
+
+**Cons:**
+- Not type-safe by default
+- Available after page load
+- Requires fallbacks
+
+### Hybrid Approach
+
+Best of both worlds:
+
+```ts
+// Use build-time for development, runtime for production
+const apiUrl =
+  window.__ENV__?.API_URL ||           // Runtime (production)
+  import.meta.env.VITE_API_URL ||      // Build-time (development)
+  'http://localhost:3000/api'          // Fallback
+```
+
+## TypeScript Support
+
+Create type definitions:
+
+```ts
+// src/env.d.ts
+interface ImportMetaEnv {
+  readonly VITE_API_URL: string
+  readonly VITE_ANALYTICS_ID: string
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv
+}
+
+// Runtime env
+declare global {
+  interface Window {
+    __ENV__?: {
+      API_URL?: string
+      ANALYTICS_ID?: string
+      SENTRY_DSN?: string
+    }
+  }
+}
+
+export {}
+```
+
+Use safely:
+
+```ts
+const config = {
+  apiUrl: window.__ENV__?.API_URL || '/api',
+  analyticsId: window.__ENV__?.ANALYTICS_ID,
+}
+
+// Type-safe
+const url: string = config.apiUrl
+```
+
+## Testing
+
+### Mock in Tests
+
+```tsx
+// test-utils.tsx
+beforeEach(() => {
+  window.__ENV__ = {
+    API_URL: 'http://localhost:3001/api',
+    ANALYTICS_ID: 'test-analytics',
+  }
+})
+
+afterEach(() => {
+  delete window.__ENV__
+})
+```
+
+### Environment-Specific Tests
+
+```tsx
+describe('Production config', () => {
+  beforeEach(() => {
+    window.__ENV__ = {
+      API_URL: 'https://api.production.com',
+    }
+  })
+
+  it('uses production API', () => {
+    expect(getApiUrl()).toBe('https://api.production.com')
+  })
+})
+```
+
+## Alternative: Meta Tags
+
+You can also inject config via meta tags:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    InjectMeta: map[string]string{
+        "api-url":      os.Getenv("API_URL"),
+        "analytics-id": os.Getenv("ANALYTICS_ID"),
+    },
+}))
+```
+
+Read in frontend:
+
+```ts
+const apiUrl = document.querySelector('meta[name="api-url"]')?.getAttribute('content')
+```
+
+**When to use:**
+- SEO-relevant config
+- Prefer meta tags over script tags
+- Framework requires meta tags
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" href="/frontend/configuration" icon="sliders">
+    All configuration options
+  </Card>
+  <Card title="Security" href="/frontend/security" icon="shield">
+    Security best practices
+  </Card>
+  <Card title="Deployment" href="/frontend/building" icon="rocket">
+    Build and deployment guide
+  </Card>
+</CardGroup>

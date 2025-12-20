@@ -1,0 +1,708 @@
+---
+title: "Svelte"
+description: "Build Svelte applications with Mizu, Vite, and TypeScript."
+icon: "code"
+---
+
+Svelte is a radical new approach to building user interfaces. Instead of using a runtime library, Svelte is a compiler that converts your components into efficient JavaScript at build time.
+
+## Quick Start
+
+Create a new Svelte project with the CLI:
+
+```bash
+mizu new ./my-svelte-app --template frontend/svelte
+cd my-svelte-app
+make dev
+```
+
+Visit `http://localhost:3000` to see your app!
+
+## Project Structure
+
+```
+my-svelte-app/
+├── cmd/
+│   └── server/
+│       └── main.go              # Entry point
+├── app/
+│   └── server/
+│       ├── app.go               # Mizu app setup
+│       ├── config.go            # Configuration
+│       └── routes.go            # API routes
+├── client/                      # Svelte application
+│   ├── src/
+│   │   ├── main.ts              # App entry point
+│   │   ├── App.svelte           # Root component
+│   │   ├── components/
+│   │   │   └── Layout.svelte    # Layout component
+│   │   ├── pages/
+│   │   │   ├── Home.svelte      # Home page
+│   │   │   └── About.svelte     # About page
+│   │   └── styles/
+│   │       └── index.css        # Global styles
+│   ├── public/
+│   ├── index.html
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── svelte.config.js
+│   └── tsconfig.json
+├── dist/
+└── Makefile
+```
+
+## Backend Setup
+
+Standard Mizu setup with auto-detection:
+
+```go
+package server
+
+import (
+    "embed"
+    "io/fs"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/frontend"
+)
+
+//go:embed all:../../dist
+var distFS embed.FS
+
+func New(cfg *Config) *mizu.App {
+    app := mizu.New()
+
+    // API routes
+    setupRoutes(app)
+
+    // Frontend middleware
+    dist, _ := fs.Sub(distFS, "dist")
+    app.Use(frontend.WithOptions(frontend.Options{
+        Mode:        frontend.ModeAuto,
+        FS:          dist,
+        DevServer:   "http://localhost:" + cfg.DevPort,
+        IgnorePaths: []string{"/api"},
+    }))
+
+    return app
+}
+```
+
+## Frontend Setup
+
+### `client/src/main.ts`
+
+```ts
+import App from './App.svelte'
+import './styles/index.css'
+
+const app = new App({
+  target: document.getElementById('app')!,
+})
+
+export default app
+```
+
+### `client/src/App.svelte`
+
+```svelte
+<script lang="ts">
+  import Layout from './components/Layout.svelte'
+  import Home from './pages/Home.svelte'
+  import About from './pages/About.svelte'
+
+  let currentPage = 'home'
+
+  function navigate(page: string) {
+    currentPage = page
+    window.history.pushState({}, '', `/${page === 'home' ? '' : page}`)
+  }
+
+  // Handle browser back/forward
+  window.addEventListener('popstate', () => {
+    const path = window.location.pathname.slice(1) || 'home'
+    currentPage = path
+  })
+</script>
+
+<Layout>
+  {#if currentPage === 'home'}
+    <Home on:navigate={(e) => navigate(e.detail)} />
+  {:else if currentPage === 'about'}
+    <About on:navigate={(e) => navigate(e.detail)} />
+  {/if}
+</Layout>
+```
+
+### `client/src/components/Layout.svelte`
+
+```svelte
+<script lang="ts">
+  import { createEventDispatcher } from 'svelte'
+
+  const dispatch = createEventDispatcher()
+
+  function navigate(page: string) {
+    dispatch('navigate', page)
+  }
+</script>
+
+<div class="app">
+  <nav>
+    <a href="/" on:click|preventDefault={() => navigate('home')}>Home</a>
+    <a href="/about" on:click|preventDefault={() => navigate('about')}>About</a>
+  </nav>
+
+  <main>
+    <slot />
+  </main>
+
+  <footer>
+    <p>Built with Mizu and Svelte</p>
+  </footer>
+</div>
+
+<style>
+  nav {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem;
+    background: #f5f5f5;
+  }
+
+  nav a {
+    color: #ff3e00;
+    text-decoration: none;
+  }
+
+  nav a:hover {
+    text-decoration: underline;
+  }
+
+  main {
+    padding: 2rem;
+  }
+
+  footer {
+    margin-top: 4rem;
+    text-align: center;
+    color: #666;
+  }
+</style>
+```
+
+### `client/src/pages/Home.svelte`
+
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte'
+
+  interface User {
+    id: number
+    name: string
+    email: string
+  }
+
+  let users: User[] = []
+  let loading = true
+  let error: string | null = null
+
+  onMount(async () => {
+    try {
+      const response = await fetch('/api/users')
+      if (!response.ok) throw new Error('Failed to fetch users')
+      users = await response.json()
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Unknown error'
+    } finally {
+      loading = false
+    }
+  })
+</script>
+
+<div>
+  <h1>Users</h1>
+
+  {#if loading}
+    <p>Loading...</p>
+  {:else if error}
+    <p class="error">Error: {error}</p>
+  {:else}
+    <ul>
+      {#each users as user (user.id)}
+        <li>{user.name} ({user.email})</li>
+      {/each}
+    </ul>
+  {/if}
+</div>
+
+<style>
+  .error {
+    color: red;
+  }
+
+  ul {
+    list-style: none;
+    padding: 0;
+  }
+
+  li {
+    padding: 0.5rem;
+    border-bottom: 1px solid #eee;
+  }
+</style>
+```
+
+## Routing
+
+Svelte doesn't include routing by default. Here are your options:
+
+### Simple Client-Side Routing
+
+Use a simple router like in the example above, or install a library:
+
+```bash
+npm install svelte-spa-router
+```
+
+```svelte
+<script>
+  import Router from 'svelte-spa-router'
+  import Home from './pages/Home.svelte'
+  import About from './pages/About.svelte'
+
+  const routes = {
+    '/': Home,
+    '/about': About,
+  }
+</script>
+
+<Router {routes} />
+```
+
+### SvelteKit
+
+For full-featured routing, use [SvelteKit](/frontend/sveltekit) instead. It provides:
+- File-based routing
+- Server-side rendering
+- Static site generation
+- API routes
+
+## Reactivity
+
+Svelte's reactivity is built into the language:
+
+### Reactive Declarations
+
+```svelte
+<script lang="ts">
+  let count = 0
+
+  // Automatically updates when count changes
+  $: doubled = count * 2
+
+  // Reactive statement
+  $: if (count > 10) {
+    console.log('Count is getting high!')
+  }
+</script>
+
+<p>Count: {count}</p>
+<p>Doubled: {doubled}</p>
+<button on:click={() => count++}>Increment</button>
+```
+
+### Stores
+
+For shared state across components:
+
+```ts
+// stores/user.ts
+import { writable, derived } from 'svelte/store'
+
+interface User {
+  id: number
+  name: string
+}
+
+export const users = writable<User[]>([])
+export const userCount = derived(users, $users => $users.length)
+
+export async function fetchUsers() {
+  const response = await fetch('/api/users')
+  const data = await response.json()
+  users.set(data)
+}
+```
+
+Use in components:
+
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte'
+  import { users, userCount, fetchUsers } from './stores/user'
+
+  onMount(() => {
+    fetchUsers()
+  })
+</script>
+
+<h1>Users ({$userCount})</h1>
+
+<ul>
+  {#each $users as user}
+    <li>{user.name}</li>
+  {/each}
+</ul>
+```
+
+The `$` prefix automatically subscribes to stores.
+
+## API Integration
+
+### Fetch in Components
+
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte'
+
+  let data = null
+  let loading = true
+
+  onMount(async () => {
+    const response = await fetch('/api/data')
+    data = await response.json()
+    loading = false
+  })
+</script>
+
+{#if loading}
+  <p>Loading...</p>
+{:else}
+  <pre>{JSON.stringify(data, null, 2)}</pre>
+{/if}
+```
+
+### Form Submission
+
+```svelte
+<script lang="ts">
+  let name = ''
+  let email = ''
+  let submitting = false
+  let success = false
+  let error: string | null = null
+
+  async function handleSubmit() {
+    submitting = true
+    success = false
+    error = null
+
+    try {
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email }),
+      })
+
+      if (!response.ok) throw new Error('Failed to create user')
+
+      success = true
+      name = ''
+      email = ''
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Unknown error'
+    } finally {
+      submitting = false
+    }
+  }
+</script>
+
+<form on:submit|preventDefault={handleSubmit}>
+  <input bind:value={name} placeholder="Name" required />
+  <input bind:value={email} type="email" placeholder="Email" required />
+  <button type="submit" disabled={submitting}>
+    {submitting ? 'Creating...' : 'Create User'}
+  </button>
+</form>
+
+{#if success}
+  <p class="success">User created successfully!</p>
+{/if}
+
+{#if error}
+  <p class="error">{error}</p>
+{/if}
+```
+
+## Styling
+
+### Component Styles
+
+Styles are scoped by default:
+
+```svelte
+<div class="card">
+  <h2>Title</h2>
+  <p>Content</p>
+</div>
+
+<style>
+  .card {
+    border: 1px solid #ddd;
+    padding: 1rem;
+    border-radius: 8px;
+  }
+
+  /* Only affects this component */
+  h2 {
+    color: #ff3e00;
+  }
+</style>
+```
+
+### Global Styles
+
+Use `:global()` modifier:
+
+```svelte
+<style>
+  :global(body) {
+    margin: 0;
+    font-family: sans-serif;
+  }
+
+  .container :global(p) {
+    /* Targets all <p> inside .container */
+    margin: 1rem 0;
+  }
+</style>
+```
+
+### Tailwind CSS
+
+Install Tailwind:
+
+```bash
+cd client
+npm install -D tailwindcss postcss autoprefixer
+npx tailwindcss init -p
+```
+
+Configure `tailwind.config.js`:
+
+```js
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{svelte,js,ts}",
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}
+```
+
+Use in components:
+
+```svelte
+<div class="container mx-auto px-4">
+  <h1 class="text-4xl font-bold text-orange-600">Hello Svelte!</h1>
+  <button class="bg-orange-500 text-white px-4 py-2 rounded hover:bg-orange-600">
+    Click me
+  </button>
+</div>
+```
+
+## Vite Configuration
+
+### `client/vite.config.ts`
+
+```ts
+import { defineConfig } from 'vite'
+import { svelte } from '@sveltejs/vite-plugin-svelte'
+
+export default defineConfig({
+  plugins: [svelte()],
+
+  server: {
+    port: 5173,
+    strictPort: true,
+    hmr: {
+      clientPort: 3000,
+    },
+  },
+
+  build: {
+    outDir: '../dist',
+    emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'svelte-vendor': ['svelte'],
+        },
+      },
+    },
+  },
+})
+```
+
+### `client/svelte.config.js`
+
+```js
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte'
+
+export default {
+  preprocess: vitePreprocess(),
+}
+```
+
+## TypeScript Support
+
+Svelte has excellent TypeScript support:
+
+```svelte
+<script lang="ts">
+  interface Props {
+    title: string
+    count?: number
+  }
+
+  export let title: Props['title']
+  export let count: Props['count'] = 0
+
+  function increment() {
+    count++
+  }
+</script>
+
+<div>
+  <h1>{title}</h1>
+  <p>Count: {count}</p>
+  <button on:click={increment}>Increment</button>
+</div>
+```
+
+## Building for Production
+
+```bash
+make build
+```
+
+Produces a single binary with embedded frontend.
+
+Run:
+
+```bash
+MIZU_ENV=production ./bin/server
+```
+
+## Advanced Features
+
+### Transitions
+
+Svelte has built-in transitions:
+
+```svelte
+<script>
+  import { fade, fly } from 'svelte/transition'
+
+  let visible = true
+</script>
+
+<button on:click={() => visible = !visible}>Toggle</button>
+
+{#if visible}
+  <div transition:fade>Fades in and out</div>
+  <div in:fly={{ y: 200 }} out:fade>Flies in, fades out</div>
+{/if}
+```
+
+### Animations
+
+```svelte
+<script>
+  import { flip } from 'svelte/animate'
+  import { fade } from 'svelte/transition'
+
+  let items = [1, 2, 3, 4, 5]
+
+  function shuffle() {
+    items = items.sort(() => Math.random() - 0.5)
+  }
+</script>
+
+<button on:click={shuffle}>Shuffle</button>
+
+{#each items as item (item)}
+  <div animate:flip={{ duration: 300 }} transition:fade>
+    Item {item}
+  </div>
+{/each}
+```
+
+### Actions
+
+Reusable DOM behavior:
+
+```svelte
+<script lang="ts">
+  function clickOutside(node: HTMLElement) {
+    const handleClick = (event: MouseEvent) => {
+      if (!node.contains(event.target as Node)) {
+        node.dispatchEvent(new CustomEvent('outclick'))
+      }
+    }
+
+    document.addEventListener('click', handleClick, true)
+
+    return {
+      destroy() {
+        document.removeEventListener('click', handleClick, true)
+      }
+    }
+  }
+
+  let open = false
+</script>
+
+<div use:clickOutside on:outclick={() => open = false}>
+  {#if open}
+    <div class="dropdown">Dropdown content</div>
+  {/if}
+</div>
+```
+
+## Why Choose Svelte?
+
+**Pros:**
+- Minimal runtime (compiled away)
+- True reactivity (no virtual DOM)
+- Less boilerplate than React/Vue
+- Excellent performance
+- Built-in transitions and animations
+- Small bundle sizes
+
+**Cons:**
+- Smaller ecosystem than React/Vue
+- Fewer third-party components
+- Less corporate backing
+- May need SvelteKit for full features
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="SvelteKit" href="/frontend/sveltekit" icon="code">
+    Full-featured Svelte framework with routing
+  </Card>
+  <Card title="API Integration" href="/frontend/api-integration" icon="plug">
+    Best practices for backend communication
+  </Card>
+  <Card title="Angular Guide" href="/frontend/angular" icon="code">
+    Try Angular for enterprise applications
+  </Card>
+  <Card title="Svelte Tutorial" href="https://svelte.dev/tutorial" icon="external-link">
+    Official interactive Svelte tutorial
+  </Card>
+</CardGroup>

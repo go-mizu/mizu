@@ -1,0 +1,204 @@
+---
+title: "Templates"
+description: "Available frontend templates and how to use them."
+icon: "layer-group"
+---
+
+Mizu provides ready-to-use templates for popular frontend frameworks, making it easy to start new projects.
+
+## Available Templates
+
+```bash
+# List all frontend templates
+mizu new --list-templates frontend
+```
+
+| Template | Framework | Description |
+|----------|-----------|-------------|
+| `frontend/react` | React + Vite | React SPA with TypeScript |
+| `frontend/vue` | Vue 3 + Vite | Vue SPA with TypeScript |
+| `frontend/svelte` | Svelte + Vite | Svelte SPA with TypeScript |
+| `frontend/sveltekit` | SvelteKit | Full-stack Svelte framework |
+| `frontend/angular` | Angular | Angular with TypeScript |
+| `frontend/htmx` | HTMX | Server-rendered with HTMX |
+| `frontend/next` | Next.js | React framework (static export) |
+| `frontend/nuxt` | Nuxt | Vue framework (static generation) |
+| `frontend/preact` | Preact | Lightweight React alternative |
+| `frontend/alpine` | Alpine.js | Minimal JavaScript framework |
+
+## Using Templates
+
+### Create New Project
+
+```bash
+mizu new ./my-app --template frontend/react
+```
+
+### What's Included
+
+Each template includes:
+- **Backend**: Complete Mizu server setup
+- **Frontend**: Pre-configured framework
+- **Build config**: Vite/webpack/Angular CLI configured
+- **Development setup**: Hot reload ready
+- **Production build**: Embedded filesystem
+- **Makefile**: Common commands
+- **Example code**: Working examples
+
+## Template Structure
+
+### SPA Templates (React/Vue/Svelte)
+
+```
+my-app/
+├── cmd/server/
+│   └── main.go              # Entry point
+├── app/server/
+│   ├── app.go               # App setup with frontend middleware
+│   ├── config.go            # Configuration
+│   └── routes.go            # API routes
+├── client/                  # Frontend application
+│   ├── src/                 # Source code
+│   ├── public/              # Static assets
+│   ├── package.json
+│   └── vite.config.ts       # Build configuration
+├── dist/                    # Build output
+├── go.mod
+└── Makefile
+```
+
+### HTMX Template
+
+```
+my-app/
+├── cmd/server/
+├── app/server/
+│   ├── app.go               # App with view engine
+│   ├── routes.go
+│   └── handlers.go          # HTML handlers
+├── views/                   # HTML templates
+│   ├── layouts/
+│   ├── pages/
+│   └── partials/
+├── static/                  # CSS, JS, images
+│   ├── css/
+│   └── js/
+└── Makefile
+```
+
+## Customizing Templates
+
+### Modify Build Output
+
+```go
+// Change from dist to build
+//go:embed all:../../build
+var buildFS embed.FS
+
+app.Use(frontend.WithOptions(frontend.Options{
+    Root: "./build",
+}))
+```
+
+Update frontend build config:
+
+```ts
+// vite.config.ts
+export default {
+  build: {
+    outDir: '../build',  // Changed from dist
+  },
+}
+```
+
+### Add Dependencies
+
+```bash
+cd client
+npm install axios react-query
+```
+
+### Change Dev Port
+
+```go
+// app/server/config.go
+type Config struct {
+    Port    string  // Backend port
+    DevPort string  // Frontend dev server port
+}
+
+func LoadConfig() *Config {
+    return &Config{
+        Port:    getEnv("PORT", "3000"),
+        DevPort: getEnv("DEV_PORT", "5174"),  // Changed from 5173
+    }
+}
+```
+
+```ts
+// vite.config.ts
+export default {
+  server: {
+    port: 5174,  // Must match DevPort
+  },
+}
+```
+
+## Template Features
+
+### All Templates Include
+
+- ✅ TypeScript support (SPA templates)
+- ✅ Hot Module Replacement
+- ✅ Production build optimization
+- ✅ Auto-detect dev/prod mode
+- ✅ API route examples
+- ✅ Embedded filesystem setup
+- ✅ Makefile with common commands
+
+### Template-Specific Features
+
+**React:**
+- React Router
+- TypeScript
+- CSS Modules
+
+**Vue:**
+- Vue Router
+- Composition API
+- TypeScript
+
+**Svelte:**
+- SvelteKit routing
+- TypeScript
+- Scoped styles
+
+**HTMX:**
+- Go templates
+- HTMX examples
+- Alpine.js integration
+
+## Makefile Commands
+
+All templates include these commands:
+
+```bash
+make dev        # Start development (both frontend and backend)
+make build      # Build for production
+make clean      # Clean build artifacts
+make install    # Install dependencies
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" href="/frontend/quick-start" icon="rocket">
+    Get started with a template
+  </Card>
+  <Card title="Minimal Setup" href="/frontend/minimal-setup" icon="code">
+    Manual setup without templates
+  </Card>
+  <Card title="CLI" href="/cli/new" icon="terminal">
+    CLI documentation
+  </Card>
+</CardGroup>

@@ -1,0 +1,347 @@
+---
+title: "Minimal Setup"
+description: "Manually set up frontend integration without using templates."
+icon: "code"
+---
+
+This guide shows you how to manually integrate a frontend framework with Mizu without using the CLI templates.
+
+## Prerequisites
+
+- Go 1.22+
+- Node.js 18+
+- Existing Mizu project or create new one
+
+## React + Vite Setup
+
+### 1. Create Vite Project
+
+```bash
+npm create vite@latest client -- --template react-ts
+cd client
+npm install
+```
+
+### 2. Configure Vite
+
+```ts
+// client/vite.config.ts
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+
+  server: {
+    port: 5173,
+    hmr: {
+      clientPort: 3000,  // Your Mizu server port
+    },
+  },
+
+  build: {
+    outDir: '../dist',
+    emptyOutDir: true,
+  },
+})
+```
+
+### 3. Add Frontend Middleware
+
+```go
+// main.go or app.go
+package main
+
+import (
+    "embed"
+    "io/fs"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/frontend"
+)
+
+//go:embed all:dist
+var distFS embed.FS
+
+func main() {
+    app := mizu.New()
+
+    // API routes
+    app.Get("/api/hello", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{"message": "Hello!"})
+    })
+
+    // Frontend middleware
+    dist, _ := fs.Sub(distFS, "dist")
+    app.Use(frontend.WithOptions(frontend.Options{
+        Mode:        frontend.ModeAuto,
+        FS:          dist,
+        Root:        "./dist",
+        DevServer:   "http://localhost:5173",
+        IgnorePaths: []string{"/api"},
+    }))
+
+    app.Listen(":3000")
+}
+```
+
+### 4. Update package.json
+
+```json
+{
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  }
+}
+```
+
+### 5. Create Makefile (Optional)
+
+```makefile
+.PHONY: dev build clean
+
+dev:
+	@echo "Starting development servers..."
+	@(cd client && npm run dev) & \
+	go run main.go
+
+build:
+	@echo "Building frontend..."
+	cd client && npm run build
+	@echo "Building backend..."
+	go build -o ./bin/server
+
+clean:
+	rm -rf dist client/node_modules ./bin
+```
+
+## Vue + Vite Setup
+
+Follow same steps as React, but:
+
+```bash
+# Step 1: Create Vue project
+npm create vite@latest client -- --template vue-ts
+```
+
+Same Vite config, same backend setup.
+
+## HTMX Setup
+
+### 1. Create Directory Structure
+
+```bash
+mkdir -p views/{layouts,pages,partials}
+mkdir -p static/{css,js}
+```
+
+### 2. Create Go Embed Files
+
+```go
+// views/embed.go
+package views
+
+import "embed"
+
+//go:embed layouts/* pages/* partials/*
+var FS embed.FS
+```
+
+```go
+// static/embed.go
+package static
+
+import "embed"
+
+//go:embed css/* js/*
+var FS embed.FS
+```
+
+### 3. Setup App
+
+```go
+package main
+
+import (
+    "io/fs"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/view"
+
+    "yourmodule/static"
+    "yourmodule/views"
+)
+
+func main() {
+    app := mizu.New()
+
+    // View engine
+    viewsFS, _ := fs.Sub(views.FS, ".")
+    v := view.New(view.Config{
+        FS:            viewsFS,
+        Extension:     ".html",
+        DefaultLayout: "default",
+    })
+    app.Use(v.Middleware())
+
+    // Static files
+    staticFS, _ := fs.Sub(static.FS, ".")
+    app.Static("/static", staticFS)
+
+    // Routes
+    app.Get("/", func(c *mizu.Ctx) error {
+        return c.Render("pages/home", nil)
+    })
+
+    app.Listen(":3000")
+}
+```
+
+### 4. Create Templates
+
+```html
+<!-- views/layouts/default.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My App</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+    {{ embed }}
+</body>
+</html>
+```
+
+```html
+<!-- views/pages/home.html -->
+<h1>Welcome</h1>
+<div hx-get="/api/data" hx-trigger="load">
+    Loading...
+</div>
+```
+
+## Next.js Setup
+
+### 1. Create Next.js App
+
+```bash
+npx create-next-app@latest client
+cd client
+```
+
+### 2. Configure for Static Export
+
+```js
+// next.config.mjs
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  output: 'export',
+  distDir: '../build',
+  images: {
+    unoptimized: true,
+  },
+}
+
+export default nextConfig
+```
+
+### 3. Backend Setup
+
+```go
+//go:embed all:build
+var buildFS embed.FS
+
+func main() {
+    app := mizu.New()
+
+    app.Get("/api/hello", handleHello)
+
+    build, _ := fs.Sub(buildFS, "build")
+    app.Use(frontend.WithFS(build))
+
+    app.Listen(":3000")
+}
+```
+
+## Common Additions
+
+### Add Router
+
+```bash
+# React
+npm install react-router-dom
+
+# Vue
+npm install vue-router
+```
+
+### Add State Management
+
+```bash
+# React
+npm install zustand
+
+# Vue
+npm install pinia
+```
+
+### Add UI Library
+
+```bash
+# Any framework
+npm install -D tailwindcss postcss autoprefixer
+npx tailwindcss init -p
+```
+
+## Troubleshooting
+
+### HMR Not Working
+
+Add to Vite config:
+
+```ts
+server: {
+  hmr: {
+    clientPort: 3000,  // Your Mizu port
+    host: 'localhost',
+  },
+}
+```
+
+### Assets Not Loading
+
+Ensure base URL is correct:
+
+```ts
+// vite.config.ts
+export default {
+  base: '/',  // Or '/app/' if using prefix
+}
+```
+
+### Build Not Found
+
+Check embed path matches build output:
+
+```go
+//go:embed all:dist  // Must match vite outDir
+var distFS embed.FS
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Templates" href="/frontend/templates" icon="layer-group">
+    Use ready-made templates instead
+  </Card>
+  <Card title="Configuration" href="/frontend/configuration" icon="sliders">
+    All configuration options
+  </Card>
+  <Card title="Development" href="/frontend/development" icon="code">
+    Development workflow
+  </Card>
+</CardGroup>
