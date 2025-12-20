@@ -39,6 +39,7 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 	foundVue := false
 	foundSvelte := false
 	foundAngular := false
+	foundHtmx := false
 	for _, tmpl := range templates {
 		if tmpl.Name == "frontend/spa/react" {
 			foundReact = true
@@ -51,6 +52,9 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 		}
 		if tmpl.Name == "frontend/spa/angular" {
 			foundAngular = true
+		}
+		if tmpl.Name == "frontend/spa/htmx" {
+			foundHtmx = true
 		}
 	}
 
@@ -66,6 +70,9 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 	if !foundAngular {
 		t.Error("listTemplates() did not include nested template 'frontend/spa/angular'")
 	}
+	if !foundHtmx {
+		t.Error("listTemplates() did not include nested template 'frontend/spa/htmx'")
+	}
 }
 
 func TestTemplateExistsNested(t *testing.T) {
@@ -80,6 +87,7 @@ func TestTemplateExistsNested(t *testing.T) {
 		{"frontend/spa/vue", true},
 		{"frontend/spa/svelte", true},
 		{"frontend/spa/angular", true},
+		{"frontend/spa/htmx", true},
 		{"frontend/spa/nonexistent", false},
 		{"frontend/nonexistent", false},
 		{"nonexistent", false},
@@ -107,6 +115,7 @@ func TestLoadTemplateMeta(t *testing.T) {
 		{"frontend/spa/vue", "frontend/spa/vue", true},
 		{"frontend/spa/svelte", "frontend/spa/svelte", true},
 		{"frontend/spa/angular", "frontend/spa/angular", true},
+		{"frontend/spa/htmx", "frontend/spa/htmx", true},
 	}
 
 	for _, tt := range tests {
@@ -1077,5 +1086,321 @@ func TestAngularTemplateHasAngularSpecificContent(t *testing.T) {
 	}
 	if !strings.Contains(string(homeComponent), "HttpClient") {
 		t.Error("home.component.ts does not contain HttpClient")
+	}
+}
+
+// HTMX template tests
+
+func TestListTemplatesIncludesHtmx(t *testing.T) {
+	templates, err := listTemplates()
+	if err != nil {
+		t.Fatalf("listTemplates() error: %v", err)
+	}
+
+	found := false
+	for _, tmpl := range templates {
+		if tmpl.Name == "frontend/spa/htmx" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("listTemplates() did not include nested template 'frontend/spa/htmx'")
+	}
+}
+
+func TestTemplateExistsHtmx(t *testing.T) {
+	if !templateExists("frontend/spa/htmx") {
+		t.Error("templateExists('frontend/spa/htmx') returned false")
+	}
+}
+
+func TestLoadTemplateFilesHtmx(t *testing.T) {
+	files, err := loadTemplateFiles("frontend/spa/htmx")
+	if err != nil {
+		t.Fatalf("loadTemplateFiles() error: %v", err)
+	}
+
+	if len(files) == 0 {
+		t.Error("loadTemplateFiles() returned no files")
+	}
+
+	// Check for expected files
+	expectedFiles := []string{
+		".gitignore",                      // from _common
+		"go.mod",                          // from _common
+		"cmd/server/main.go",              // template specific
+		"app/server/app.go",               // template specific
+		"app/server/config.go",            // template specific
+		"app/server/routes.go",            // template specific
+		"app/server/handlers.go",          // template specific (HTMX)
+		"views/embed.go",                  // template specific (HTMX)
+		"views/layouts/default.html",      // template specific (HTMX)
+		"views/pages/home.html",           // template specific (HTMX)
+		"views/pages/about.html",          // template specific (HTMX)
+		"views/components/greeting.html",  // template specific (HTMX)
+		"views/components/counter.html",   // template specific (HTMX)
+		"static/embed.go",                 // template specific (HTMX)
+		"static/css/app.css",              // template specific (HTMX)
+		"static/js/app.js",                // template specific (HTMX)
+		"Makefile",                        // template specific
+	}
+
+	fileMap := make(map[string]bool)
+	for _, f := range files {
+		fileMap[f.path] = true
+	}
+
+	for _, expected := range expectedFiles {
+		if !fileMap[expected] {
+			t.Errorf("expected file %q not found in template files", expected)
+		}
+	}
+}
+
+func TestBuildPlanHtmxTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/htmx", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if len(p.ops) == 0 {
+		t.Error("buildPlan() returned empty plan")
+	}
+
+	// Check for expected operations
+	hasWrite := false
+	hasMkdir := false
+	for _, op := range p.ops {
+		switch op.kind {
+		case opWrite:
+			hasWrite = true
+		case opMkdir:
+			hasMkdir = true
+		}
+	}
+
+	if !hasWrite {
+		t.Error("plan has no write operations")
+	}
+	if !hasMkdir {
+		t.Error("plan has no mkdir operations")
+	}
+}
+
+func TestApplyPlanHtmxTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/htmx", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Verify key files exist
+	expectedFiles := []string{
+		"go.mod",
+		"cmd/server/main.go",
+		"app/server/app.go",
+		"app/server/config.go",
+		"app/server/routes.go",
+		"app/server/handlers.go",
+		"views/embed.go",
+		"views/layouts/default.html",
+		"views/pages/home.html",
+		"views/pages/about.html",
+		"views/components/greeting.html",
+		"views/components/counter.html",
+		"static/embed.go",
+		"static/css/app.css",
+		"static/js/app.js",
+		"Makefile",
+	}
+
+	for _, file := range expectedFiles {
+		path := filepath.Join(tmpDir, file)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("expected file %q does not exist", file)
+		}
+	}
+
+	// Verify NO client/package.json (HTMX doesn't use npm)
+	clientPkg := filepath.Join(tmpDir, "client/package.json")
+	if _, err := os.Stat(clientPkg); err == nil {
+		t.Error("HTMX template should NOT have client/package.json")
+	}
+}
+
+func TestHtmxTemplateVariableSubstitution(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myhtmxapp", "github.com/user/myhtmxapp", "Apache-2.0", nil)
+
+	p, err := buildPlan("frontend/spa/htmx", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check go.mod contains the module path
+	gomod, err := os.ReadFile(filepath.Join(tmpDir, "go.mod"))
+	if err != nil {
+		t.Fatalf("ReadFile(go.mod) error: %v", err)
+	}
+
+	if !strings.Contains(string(gomod), "github.com/user/myhtmxapp") {
+		t.Error("go.mod does not contain module path")
+	}
+
+	// Check handlers.go contains the project name
+	handlers, err := os.ReadFile(filepath.Join(tmpDir, "app/server/handlers.go"))
+	if err != nil {
+		t.Fatalf("ReadFile(handlers.go) error: %v", err)
+	}
+
+	if !strings.Contains(string(handlers), "myhtmxapp") {
+		t.Error("handlers.go does not contain project name")
+	}
+}
+
+func TestHtmxTemplateHasHtmxSpecificContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/htmx", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check default.html layout contains HTMX script
+	layout, err := os.ReadFile(filepath.Join(tmpDir, "views/layouts/default.html"))
+	if err != nil {
+		t.Fatalf("ReadFile(default.html) error: %v", err)
+	}
+
+	if !strings.Contains(string(layout), "htmx.org") {
+		t.Error("default.html does not include HTMX script")
+	}
+	if !strings.Contains(string(layout), "alpinejs") {
+		t.Error("default.html does not include Alpine.js script")
+	}
+	if !strings.Contains(string(layout), "tailwindcss") {
+		t.Error("default.html does not include Tailwind CSS")
+	}
+
+	// Check home.html contains HTMX attributes
+	home, err := os.ReadFile(filepath.Join(tmpDir, "views/pages/home.html"))
+	if err != nil {
+		t.Fatalf("ReadFile(home.html) error: %v", err)
+	}
+
+	if !strings.Contains(string(home), "hx-get") {
+		t.Error("home.html does not contain hx-get attribute")
+	}
+	if !strings.Contains(string(home), "hx-post") {
+		t.Error("home.html does not contain hx-post attribute")
+	}
+	if !strings.Contains(string(home), "hx-target") {
+		t.Error("home.html does not contain hx-target attribute")
+	}
+	if !strings.Contains(string(home), "x-data") {
+		t.Error("home.html does not contain Alpine.js x-data attribute")
+	}
+
+	// Check counter.html contains HTMX attributes
+	counter, err := os.ReadFile(filepath.Join(tmpDir, "views/components/counter.html"))
+	if err != nil {
+		t.Fatalf("ReadFile(counter.html) error: %v", err)
+	}
+
+	if !strings.Contains(string(counter), "hx-post") {
+		t.Error("counter.html does not contain hx-post attribute")
+	}
+
+	// Check app.js contains HTMX event handlers
+	appJs, err := os.ReadFile(filepath.Join(tmpDir, "static/js/app.js"))
+	if err != nil {
+		t.Fatalf("ReadFile(app.js) error: %v", err)
+	}
+
+	if !strings.Contains(string(appJs), "htmx:") {
+		t.Error("app.js does not contain HTMX event handlers")
+	}
+
+	// Check app.css contains HTMX-related styles
+	appCss, err := os.ReadFile(filepath.Join(tmpDir, "static/css/app.css"))
+	if err != nil {
+		t.Fatalf("ReadFile(app.css) error: %v", err)
+	}
+
+	if !strings.Contains(string(appCss), "htmx-request") {
+		t.Error("app.css does not contain htmx-request styles")
+	}
+
+	// Check app.go uses view package (not frontend middleware)
+	appGo, err := os.ReadFile(filepath.Join(tmpDir, "app/server/app.go"))
+	if err != nil {
+		t.Fatalf("ReadFile(app.go) error: %v", err)
+	}
+
+	if !strings.Contains(string(appGo), "github.com/go-mizu/mizu/view") {
+		t.Error("app.go does not import view package")
+	}
+	if strings.Contains(string(appGo), "frontend.WithOptions") {
+		t.Error("app.go should NOT use frontend middleware (HTMX uses server-side rendering)")
+	}
+
+	// Check handlers.go uses view.Render
+	handlersGo, err := os.ReadFile(filepath.Join(tmpDir, "app/server/handlers.go"))
+	if err != nil {
+		t.Fatalf("ReadFile(handlers.go) error: %v", err)
+	}
+
+	if !strings.Contains(string(handlersGo), "view.Render") {
+		t.Error("handlers.go does not use view.Render")
+	}
+	if !strings.Contains(string(handlersGo), "view.NoLayout()") {
+		t.Error("handlers.go does not use view.NoLayout() for partials")
+	}
+}
+
+func TestHtmxTemplateMakefileNoBuildStep(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/htmx", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check Makefile does NOT contain npm commands
+	makefile, err := os.ReadFile(filepath.Join(tmpDir, "Makefile"))
+	if err != nil {
+		t.Fatalf("ReadFile(Makefile) error: %v", err)
+	}
+
+	if strings.Contains(string(makefile), "npm") {
+		t.Error("HTMX Makefile should NOT contain npm commands")
+	}
+	if strings.Contains(string(makefile), "client") {
+		t.Error("HTMX Makefile should NOT reference client directory")
 	}
 }

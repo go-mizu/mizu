@@ -1,0 +1,16 @@
+package server
+
+import "github.com/go-mizu/mizu"
+
+func setupRoutes(app *mizu.App) {
+	// Pages (full page renders)
+	app.Get("/", homeHandler)
+	app.Get("/about", aboutHandler)
+
+	// API/HTMX endpoints (partial renders)
+	api := app.Prefix("/api")
+	api.Get("/health", healthHandler)
+	api.Get("/greeting", greetingHandler)
+	api.Post("/counter/increment", counterIncrementHandler)
+	api.Post("/counter/decrement", counterDecrementHandler)
+}

@@ -1,0 +1,60 @@
+<div class="max-w-2xl mx-auto space-y-8">
+    <section class="text-center">
+        <h1 class="text-4xl font-bold text-gray-900 mb-4">Welcome to {{ "{{" }}.Data.name{{ "}}" }}</h1>
+        <p class="text-lg text-gray-600">A hypermedia-driven application built with HTMX</p>
+    </section>
+
+    <!-- Dynamic greeting section -->
+    <section class="bg-white rounded-lg shadow p-6">
+        <h2 class="text-xl font-semibold mb-4">Server Message</h2>
+        <div id="greeting" class="p-4 bg-blue-50 rounded text-blue-800">
+            <p class="font-medium">{{ "{{" }}.Data.message{{ "}}" }}</p>
+        </div>
+        <button hx-get="/api/greeting"
+                hx-target="#greeting"
+                hx-swap="innerHTML"
+                class="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors">
+            Refresh Message
+        </button>
+    </section>
+
+    <!-- Interactive counter (HTMX) -->
+    <section class="bg-white rounded-lg shadow p-6">
+        <h2 class="text-xl font-semibold mb-4">HTMX Counter</h2>
+        <div id="counter">
+            <div class="flex items-center gap-4">
+                <button hx-post="/api/counter/decrement?count={{ "{{" }}.Data.count{{ "}}" }}"
+                        hx-target="#counter"
+                        hx-swap="innerHTML"
+                        class="px-4 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors">
+                    -
+                </button>
+                <span class="text-2xl font-bold w-16 text-center">{{ "{{" }}.Data.count{{ "}}" }}</span>
+                <button hx-post="/api/counter/increment?count={{ "{{" }}.Data.count{{ "}}" }}"
+                        hx-target="#counter"
+                        hx-swap="innerHTML"
+                        class="px-4 py-2 bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors">
+                    +
+                </button>
+            </div>
+            <p class="mt-2 text-sm text-gray-500">This counter uses HTMX (server requests)</p>
+        </div>
+    </section>
+
+    <!-- Alpine.js counter (client-side) -->
+    <section class="bg-white rounded-lg shadow p-6">
+        <h2 class="text-xl font-semibold mb-4">Alpine.js Counter (Client-side)</h2>
+        <div x-data="{ count: 0 }" class="flex items-center gap-4">
+            <button @click="count--"
+                    class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 transition-colors">
+                -
+            </button>
+            <span x-text="count" class="text-2xl font-bold w-16 text-center"></span>
+            <button @click="count++"
+                    class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 transition-colors">
+                +
+            </button>
+        </div>
+        <p class="mt-2 text-sm text-gray-500">This counter uses Alpine.js (no server requests)</p>
+    </section>
+</div>

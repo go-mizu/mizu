@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ "{{" }}.Data.title{{ "}}" }} - {{ "{{" }}.Data.name{{ "}}" }}</title>
+
+    <!-- Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous"></script>
+
+    <!-- Alpine.js (optional, for client-side state) -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <!-- App styles -->
+    <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="min-h-screen bg-gray-50 text-gray-900 flex flex-col">
+    <header class="bg-white shadow-sm">
+        <nav class="container mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <a href="/" class="text-xl font-bold text-blue-600">{{ "{{" }}.Data.name{{ "}}" }}</a>
+                <div class="flex gap-6">
+                    <a href="/" class="text-gray-600 hover:text-blue-600 transition-colors">Home</a>
+                    <a href="/about" class="text-gray-600 hover:text-blue-600 transition-colors">About</a>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main class="container mx-auto px-4 py-8 flex-1">
+        {{ "{{" }}.Content{{ "}}" }}
+    </main>
+
+    <footer class="bg-white border-t border-gray-200">
+        <div class="container mx-auto px-4 py-6 text-center text-gray-500">
+            <p>Built with <a href="https://github.com/go-mizu/mizu" class="text-blue-600 hover:underline">Mizu</a> + <a href="https://htmx.org" class="text-blue-600 hover:underline">HTMX</a></p>
+        </div>
+    </footer>
+
+    <!-- App scripts -->
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

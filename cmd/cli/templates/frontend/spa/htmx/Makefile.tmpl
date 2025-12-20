@@ -1,0 +1,25 @@
+.PHONY: dev build run clean
+
+# Development mode
+dev:
+	@echo "Starting development server..."
+	MIZU_ENV=development go run ./cmd/server
+
+# Build production binary
+build:
+	@echo "Building..."
+	go build -o bin/server ./cmd/server
+	@echo "Build complete: bin/server"
+
+# Run production server
+run: build
+	@echo "Starting production server..."
+	MIZU_ENV=production ./bin/server
+
+# Clean build artifacts
+clean:
+	rm -rf bin/
+
+# Install dependencies
+install:
+	go mod tidy
