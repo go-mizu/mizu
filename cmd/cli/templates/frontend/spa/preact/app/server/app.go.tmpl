@@ -1,0 +1,31 @@
+package server
+
+import (
+	"embed"
+	"io/fs"
+
+	"github.com/go-mizu/mizu"
+	"github.com/go-mizu/mizu/middlewares/frontend"
+)
+
+//go:embed all:../../dist
+var distFS embed.FS
+
+// New creates a new Mizu app configured for the Preact SPA.
+func New(cfg *Config) *mizu.App {
+	app := mizu.New()
+
+	// API routes
+	setupRoutes(app)
+
+	// Frontend middleware (auto-detects dev/production mode)
+	dist, _ := fs.Sub(distFS, "dist")
+	app.Use(frontend.WithOptions(frontend.Options{
+		Mode:        frontend.ModeAuto,
+		FS:          dist,
+		DevServer:   "http://localhost:" + cfg.DevPort,
+		IgnorePaths: []string{"/api"},
+	}))
+
+	return app
+}
