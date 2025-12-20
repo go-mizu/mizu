@@ -1,0 +1,91 @@
+package {{.Package}}
+
+import {{.Package}}.runtime.*
+import org.junit.Test
+import org.junit.Assert.*
+
+class RuntimeTest {
+    @Test
+    fun testDeviceInfo() {
+        assertNotNull(DeviceInfo.model)
+        assertNotNull(DeviceInfo.osVersion)
+        assertTrue(DeviceInfo.sdkVersion > 0)
+    }
+
+    @Test
+    fun testInMemoryTokenStore() {
+        val store = InMemoryTokenStore()
+
+        assertNull(store.getToken())
+
+        val token = AuthToken(accessToken = "test123", refreshToken = "refresh456")
+        store.setToken(token)
+
+        val retrieved = store.getToken()
+        assertEquals("test123", retrieved?.accessToken)
+
+        store.clearToken()
+        assertNull(store.getToken())
+    }
+
+    @Test
+    fun testAuthTokenExpiration() {
+        val expiredToken = AuthToken(
+            accessToken = "test",
+            expiresAt = System.currentTimeMillis() - 1000
+        )
+        assertTrue(expiredToken.isExpired)
+
+        val validToken = AuthToken(
+            accessToken = "test",
+            expiresAt = System.currentTimeMillis() + 60000
+        )
+        assertFalse(validToken.isExpired)
+    }
+
+    @Test
+    fun testAuthTokenNoExpiration() {
+        val token = AuthToken(accessToken = "test")
+        assertFalse(token.isExpired)
+    }
+
+    @Test
+    fun testTokenStoreObserver() {
+        val store = InMemoryTokenStore()
+        var observedToken: AuthToken? = null
+        var callCount = 0
+
+        store.onTokenChange { token ->
+            observedToken = token
+            callCount++
+        }
+
+        val token = AuthToken(accessToken = "test123")
+        store.setToken(token)
+
+        assertEquals("test123", observedToken?.accessToken)
+        assertEquals(1, callCount)
+
+        store.clearToken()
+        assertNull(observedToken)
+        assertEquals(2, callCount)
+    }
+
+    @Test
+    fun testMizuConfig() {
+        val config = MizuConfig()
+        assertEquals("http://10.0.2.2:3000", config.baseURL)
+        assertEquals(30_000L, config.timeout)
+        assertFalse(config.debug)
+    }
+
+    @Test
+    fun testRetryConfig() {
+        val defaultConfig = RetryConfig.DEFAULT
+        assertEquals(3, defaultConfig.maxRetries)
+        assertEquals(1_000L, defaultConfig.baseDelayMs)
+
+        val noneConfig = RetryConfig.NONE
+        assertEquals(0, noneConfig.maxRetries)
+    }
+}

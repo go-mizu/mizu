@@ -1,0 +1,21 @@
+package {{.Package}}
+
+import android.app.Application
+import {{.Package}}.runtime.MizuConfig
+import {{.Package}}.runtime.MizuRuntime
+import {{.Package}}.runtime.LoggingInterceptor
+import {{.Package}}.runtime.OkHttpTransport
+
+class {{.Name}}Application : Application() {
+    override fun onCreate() {
+        super.onCreate()
+
+        // Initialize Mizu runtime
+        val config = MizuConfig.fromContext(this)
+        val runtime = MizuRuntime.initialize(this, config)
+
+        if (config.debug) {
+            (runtime.transport as? OkHttpTransport)?.addInterceptor(LoggingInterceptor())
+        }
+    }
+}

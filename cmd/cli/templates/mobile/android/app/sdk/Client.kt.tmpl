@@ -1,0 +1,35 @@
+package {{.Package}}.sdk
+
+import {{.Package}}.runtime.MizuRuntime
+
+/**
+ * Generated Mizu API client for {{.Name}}
+ */
+class {{.Name}}Client(
+    private val runtime: MizuRuntime
+) {
+    // MARK: - Auth
+
+    /** Sign in with credentials */
+    suspend fun signIn(email: String, password: String): AuthResponse =
+        runtime.post("/auth/signin", SignInRequest(email, password))
+
+    /** Sign up with credentials */
+    suspend fun signUp(email: String, password: String, name: String): AuthResponse =
+        runtime.post("/auth/signup", SignUpRequest(email, password, name))
+
+    /** Sign out */
+    suspend fun signOut() {
+        runtime.deleteNoContent("/auth/signout")
+        runtime.tokenStore.clearToken()
+    }
+
+    // MARK: - Users
+
+    /** Get current user profile */
+    suspend fun getCurrentUser(): User = runtime.get("/users/me")
+
+    /** Update current user profile */
+    suspend fun updateCurrentUser(update: UserUpdate): User =
+        runtime.put("/users/me", update)
+}

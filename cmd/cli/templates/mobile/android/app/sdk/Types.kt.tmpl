@@ -1,0 +1,89 @@
+package {{.Package}}.sdk
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
+// MARK: - Auth Types
+
+@Serializable
+data class SignInRequest(
+    val email: String,
+    val password: String
+)
+
+@Serializable
+data class SignUpRequest(
+    val email: String,
+    val password: String,
+    val name: String
+)
+
+@Serializable
+data class AuthResponse(
+    val user: User,
+    val token: TokenResponse
+)
+
+@Serializable
+data class TokenResponse(
+    @SerialName("access_token")
+    val accessToken: String,
+    @SerialName("refresh_token")
+    val refreshToken: String? = null,
+    @SerialName("expires_in")
+    val expiresIn: Int
+)
+
+// MARK: - User Types
+
+@Serializable
+data class User(
+    val id: String,
+    val email: String,
+    val name: String,
+    @SerialName("avatar_url")
+    val avatarUrl: String? = null,
+    @SerialName("created_at")
+    val createdAt: String,
+    @SerialName("updated_at")
+    val updatedAt: String
+)
+
+@Serializable
+data class UserUpdate(
+    val name: String? = null,
+    @SerialName("avatar_url")
+    val avatarUrl: String? = null
+)
+
+// MARK: - Pagination Types
+
+@Serializable
+data class Page<T>(
+    val data: List<T>,
+    val page: Int? = null,
+    @SerialName("per_page")
+    val perPage: Int? = null,
+    val total: Int? = null,
+    @SerialName("total_pages")
+    val totalPages: Int? = null,
+    @SerialName("has_more")
+    val hasMore: Boolean,
+    @SerialName("next_cursor")
+    val nextCursor: String? = null,
+    @SerialName("prev_cursor")
+    val prevCursor: String? = null
+)
+
+// MARK: - Error Types
+
+@Serializable
+data class ErrorResponse(
+    val code: String,
+    val message: String,
+    val details: Map<String, kotlinx.serialization.json.JsonElement>? = null,
+    @SerialName("trace_id")
+    val traceId: String? = null,
+    @SerialName("doc_url")
+    val docUrl: String? = null
+)

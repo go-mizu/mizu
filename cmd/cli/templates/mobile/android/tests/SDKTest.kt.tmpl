@@ -1,0 +1,102 @@
+package {{.Package}}
+
+import {{.Package}}.sdk.*
+import kotlinx.serialization.json.Json
+import org.junit.Test
+import org.junit.Assert.*
+
+class SDKTest {
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+    }
+
+    @Test
+    fun testSignInRequestSerialization() {
+        val request = SignInRequest(
+            email = "test@example.com",
+            password = "password123"
+        )
+
+        val serialized = json.encodeToString(SignInRequest.serializer(), request)
+        assertTrue(serialized.contains("test@example.com"))
+        assertTrue(serialized.contains("password123"))
+    }
+
+    @Test
+    fun testUserDeserialization() {
+        val userJson = """
+            {
+                "id": "123",
+                "email": "test@example.com",
+                "name": "Test User",
+                "avatar_url": null,
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z"
+            }
+        """.trimIndent()
+
+        val user = json.decodeFromString<User>(userJson)
+        assertEquals("123", user.id)
+        assertEquals("test@example.com", user.email)
+        assertEquals("Test User", user.name)
+        assertNull(user.avatarUrl)
+    }
+
+    @Test
+    fun testAuthResponseDeserialization() {
+        val responseJson = """
+            {
+                "user": {
+                    "id": "123",
+                    "email": "test@example.com",
+                    "name": "Test User",
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "updated_at": "2024-01-01T00:00:00Z"
+                },
+                "token": {
+                    "access_token": "abc123",
+                    "refresh_token": "refresh456",
+                    "expires_in": 3600
+                }
+            }
+        """.trimIndent()
+
+        val response = json.decodeFromString<AuthResponse>(responseJson)
+        assertEquals("123", response.user.id)
+        assertEquals("abc123", response.token.accessToken)
+        assertEquals("refresh456", response.token.refreshToken)
+        assertEquals(3600, response.token.expiresIn)
+    }
+
+    @Test
+    fun testUserUpdateSerialization() {
+        val update = UserUpdate(name = "New Name")
+        val serialized = json.encodeToString(UserUpdate.serializer(), update)
+        assertTrue(serialized.contains("New Name"))
+    }
+
+    @Test
+    fun testPageDeserialization() {
+        val pageJson = """
+            {
+                "data": [
+                    {
+                        "id": "1",
+                        "email": "user1@example.com",
+                        "name": "User 1",
+                        "created_at": "2024-01-01T00:00:00Z",
+                        "updated_at": "2024-01-01T00:00:00Z"
+                    }
+                ],
+                "has_more": true,
+                "next_cursor": "cursor123"
+            }
+        """.trimIndent()
+
+        val page = json.decodeFromString<Page<User>>(pageJson)
+        assertEquals(1, page.data.size)
+        assertTrue(page.hasMore)
+        assertEquals("cursor123", page.nextCursor)
+    }
+}

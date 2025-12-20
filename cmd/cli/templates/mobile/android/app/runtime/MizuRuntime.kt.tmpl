@@ -1,0 +1,259 @@
+package {{.Package}}.runtime
+
+import android.content.Context
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.serializer
+
+/**
+ * MizuRuntime is the core client for communicating with a Mizu backend.
+ */
+class MizuRuntime private constructor(
+    private val context: Context,
+    config: MizuConfig = MizuConfig()
+) {
+    /** Base URL for all API requests */
+    var baseURL: String = config.baseURL
+
+    /** HTTP transport layer */
+    val transport: Transport = OkHttpTransport(config)
+
+    /** Secure token storage */
+    val tokenStore: TokenStore = EncryptedTokenStore(context)
+
+    /** Live connection manager */
+    val live: LiveConnection by lazy { LiveConnection(this) }
+
+    /** Request timeout in milliseconds */
+    var timeout: Long = config.timeout
+
+    /** Default headers added to all requests */
+    val defaultHeaders: MutableMap<String, String> = mutableMapOf()
+
+    private val _isAuthenticated = MutableStateFlow(false)
+    /** Current authentication state */
+    val isAuthenticated: StateFlow<Boolean> = _isAuthenticated.asStateFlow()
+
+    /** JSON serializer */
+    internal val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        encodeDefaults = true
+        coerceInputValues = true
+    }
+
+    init {
+        // Observe token changes
+        tokenStore.onTokenChange { token ->
+            _isAuthenticated.value = token != null
+        }
+        // Check initial auth state
+        _isAuthenticated.value = tokenStore.getToken() != null
+    }
+
+    // MARK: - HTTP Methods
+
+    /** Performs a GET request */
+    suspend inline fun <reified T> get(
+        path: String,
+        query: Map<String, String>? = null,
+        headers: Map<String, String>? = null
+    ): T = request(HttpMethod.GET, path, query = query, headers = headers)
+
+    /** Performs a POST request */
+    suspend inline fun <reified T, reified B> post(
+        path: String,
+        body: B,
+        headers: Map<String, String>? = null
+    ): T = request(HttpMethod.POST, path, body = body, headers = headers)
+
+    /** Performs a PUT request */
+    suspend inline fun <reified T, reified B> put(
+        path: String,
+        body: B,
+        headers: Map<String, String>? = null
+    ): T = request(HttpMethod.PUT, path, body = body, headers = headers)
+
+    /** Performs a DELETE request */
+    suspend inline fun <reified T> delete(
+        path: String,
+        headers: Map<String, String>? = null
+    ): T = request(HttpMethod.DELETE, path, headers = headers)
+
+    /** Performs a DELETE request with no response body */
+    suspend fun deleteNoContent(
+        path: String,
+        headers: Map<String, String>? = null
+    ) {
+        request<Unit>(HttpMethod.DELETE, path, headers = headers)
+    }
+
+    /** Performs a PATCH request */
+    suspend inline fun <reified T, reified B> patch(
+        path: String,
+        body: B,
+        headers: Map<String, String>? = null
+    ): T = request(HttpMethod.PATCH, path, body = body, headers = headers)
+
+    // MARK: - Streaming
+
+    /** Opens a streaming connection for SSE */
+    fun stream(
+        path: String,
+        headers: Map<String, String>? = null
+    ): Flow<ServerEvent> = live.connect(path, headers)
+
+    // MARK: - Internal
+
+    @PublishedApi
+    internal suspend inline fun <reified T, reified B> request(
+        method: HttpMethod,
+        path: String,
+        query: Map<String, String>? = null,
+        body: B? = null,
+        headers: Map<String, String>? = null
+    ): T {
+        val url = buildUrl(path, query)
+        val allHeaders = buildHeaders(headers)
+        val bodyJson = body?.let { json.encodeToString(serializer<B>(), it) }
+
+        val response = transport.execute(
+            TransportRequest(
+                url = url,
+                method = method,
+                headers = allHeaders,
+                body = bodyJson,
+                timeout = timeout
+            )
+        )
+
+        if (response.statusCode >= 400) {
+            throw parseError(response)
+        }
+
+        return when {
+            T::class == Unit::class -> {
+                @Suppress("UNCHECKED_CAST")
+                Unit as T
+            }
+            response.body.isBlank() -> {
+                @Suppress("UNCHECKED_CAST")
+                Unit as T
+            }
+            else -> json.decodeFromString(serializer<T>(), response.body)
+        }
+    }
+
+    @PublishedApi
+    internal suspend inline fun <reified T> request(
+        method: HttpMethod,
+        path: String,
+        query: Map<String, String>? = null,
+        headers: Map<String, String>? = null
+    ): T = request<T, Unit>(method, path, query, null, headers)
+
+    private fun buildUrl(path: String, query: Map<String, String>?): String {
+        val base = baseURL.trimEnd('/')
+        val cleanPath = if (path.startsWith("/")) path else "/$path"
+        val url = StringBuilder("$base$cleanPath")
+
+        if (!query.isNullOrEmpty()) {
+            url.append("?")
+            url.append(query.entries.joinToString("&") { (k, v) ->
+                "${java.net.URLEncoder.encode(k, "UTF-8")}=${java.net.URLEncoder.encode(v, "UTF-8")}"
+            })
+        }
+
+        return url.toString()
+    }
+
+    private fun buildHeaders(custom: Map<String, String>?): Map<String, String> {
+        val headers = mutableMapOf<String, String>()
+        headers.putAll(defaultHeaders)
+        headers.putAll(mobileHeaders())
+        custom?.let { headers.putAll(it) }
+
+        // Add auth token
+        tokenStore.getToken()?.let { token ->
+            headers["Authorization"] = "Bearer ${token.accessToken}"
+        }
+
+        return headers
+    }
+
+    private fun mobileHeaders(): Map<String, String> = mapOf(
+        "X-Device-ID" to DeviceInfo.getDeviceId(context),
+        "X-App-Version" to DeviceInfo.getAppVersion(context),
+        "X-App-Build" to DeviceInfo.getAppBuild(context),
+        "X-Device-Model" to DeviceInfo.model,
+        "X-Platform" to "android",
+        "X-OS-Version" to DeviceInfo.osVersion,
+        "X-Timezone" to java.util.TimeZone.getDefault().id,
+        "X-Locale" to java.util.Locale.getDefault().toLanguageTag()
+    )
+
+    private fun parseError(response: TransportResponse): MizuError {
+        return try {
+            val apiError = json.decodeFromString<APIError>(response.body)
+            MizuError.Api(apiError)
+        } catch (_: Exception) {
+            MizuError.Http(response.statusCode, response.body)
+        }
+    }
+
+    companion object {
+        @Volatile
+        private var instance: MizuRuntime? = null
+
+        /** Gets the shared singleton instance */
+        fun getInstance(context: Context): MizuRuntime {
+            return instance ?: synchronized(this) {
+                instance ?: MizuRuntime(context.applicationContext).also { instance = it }
+            }
+        }
+
+        /** Initializes with custom configuration */
+        fun initialize(context: Context, config: MizuConfig): MizuRuntime {
+            return synchronized(this) {
+                MizuRuntime(context.applicationContext, config).also { instance = it }
+            }
+        }
+    }
+}
+
+/** HTTP methods */
+enum class HttpMethod(val value: String) {
+    GET("GET"),
+    POST("POST"),
+    PUT("PUT"),
+    DELETE("DELETE"),
+    PATCH("PATCH")
+}
+
+/** API error response from server */
+@kotlinx.serialization.Serializable
+data class APIError(
+    val code: String,
+    val message: String,
+    val details: Map<String, kotlinx.serialization.json.JsonElement>? = null,
+    @kotlinx.serialization.SerialName("trace_id")
+    val traceId: String? = null
+)
+
+/** Mizu client errors */
+sealed class MizuError : Exception() {
+    data object InvalidResponse : MizuError()
+    data class Http(val statusCode: Int, val body: String) : MizuError()
+    data class Api(val error: APIError) : MizuError() {
+        override val message: String get() = error.message
+    }
+    data class Network(override val cause: Throwable) : MizuError()
+    data class Encoding(override val cause: Throwable) : MizuError()
+    data class Decoding(override val cause: Throwable) : MizuError()
+    data object Unauthorized : MizuError()
+    data object TokenExpired : MizuError()
+}

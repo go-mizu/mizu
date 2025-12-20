@@ -1,0 +1,50 @@
+package {{.Package}}.sdk
+
+import {{.Package}}.runtime.AuthToken
+import {{.Package}}.runtime.MizuRuntime
+
+/** Convenience extension to store auth response token */
+fun MizuRuntime.storeAuthToken(response: AuthResponse) {
+    val expiresAt = System.currentTimeMillis() + (response.token.expiresIn * 1000L)
+    tokenStore.setToken(
+        AuthToken(
+            accessToken = response.token.accessToken,
+            refreshToken = response.token.refreshToken,
+            expiresAt = expiresAt
+        )
+    )
+}
+
+/** Convenience extension to check if user is authenticated */
+val MizuRuntime.hasValidToken: Boolean
+    get() {
+        val token = tokenStore.getToken() ?: return false
+        return !token.isExpired
+    }
+
+/** Convenience extension to get current access token */
+val MizuRuntime.accessToken: String?
+    get() = tokenStore.getToken()?.accessToken
+
+/** Convenience extension to refresh token if needed */
+suspend fun MizuRuntime.refreshTokenIfNeeded(
+    refreshPath: String = "/auth/refresh",
+    beforeExpiry: Long = 60_000
+): Boolean {
+    val token = tokenStore.getToken() ?: return false
+    val expiresAt = token.expiresAt ?: return true
+
+    if (System.currentTimeMillis() + beforeExpiry < expiresAt) {
+        return true // Token still valid
+    }
+
+    val refreshToken = token.refreshToken ?: return false
+
+    return try {
+        val response: AuthResponse = post(refreshPath, mapOf("refresh_token" to refreshToken))
+        storeAuthToken(response)
+        true
+    } catch (_: Exception) {
+        false
+    }
+}
