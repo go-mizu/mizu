@@ -6,6 +6,22 @@ icon: "bolt"
 
 HTMX is a different approach to building web applications. Instead of SPAs with heavy JavaScript, HTMX lets you build dynamic applications with HTML and minimal JavaScript by extending HTML with custom attributes.
 
+## Comparison with Other Approaches
+
+| Feature | HTMX | React | Vue 3 | Alpine.js |
+|---------|------|-------|-------|-----------|
+| **Bundle Size** | ~14 KB | ~44 KB | ~34 KB | ~15 KB |
+| **JavaScript Required** | Minimal | Heavy | Moderate | Light |
+| **Server Round-trips** | Yes | No (SPA) | No (SPA) | No |
+| **SEO** | Excellent | Needs SSR | Needs SSR | Good |
+| **Learning Curve** | Gentle | Steep | Moderate | Gentle |
+| **Build Step** | Optional | Required | Required | None |
+| **Offline Support** | Limited | Excellent | Excellent | Limited |
+| **Server Dependency** | High | Low | Low | Medium |
+| **Best For** | CRUD apps, forms | Complex UIs | Interactive apps | Progressive enhancement |
+| **Backend Integration** | Seamless | API-based | API-based | API-based |
+| **Progressive Enhancement** | Excellent | Poor | Poor | Good |
+
 ## Quick Start
 
 Create a new HTMX project with the CLI:
@@ -17,6 +33,187 @@ make dev
 ```
 
 Visit `http://localhost:3000` to see your app!
+
+## Why HTMX?
+
+### The Hypermedia Approach
+
+HTMX embraces the original web model: server-rendered HTML with progressive enhancement. Instead of sending JSON over the wire and building UI in JavaScript, HTMX sends ready-to-render HTML fragments.
+
+**Traditional SPA approach:**
+```
+Client Request → JSON Response → JavaScript Renders UI
+```
+
+**HTMX approach:**
+```
+Client Request → HTML Response → Browser Renders UI
+```
+
+### Key Benefits
+
+- **Tiny**: ~14kB minified and gzipped
+- **No Build Step**: Include via CDN or npm
+- **Server-First**: All logic on the server
+- **Progressive**: Works without JavaScript
+- **Accessible**: Built on web standards
+- **Simple**: Extends HTML with attributes
+- **SEO-Friendly**: Real HTML from server
+- **Fast Development**: No client/server coordination
+
+### When HTMX Shines
+
+HTMX is perfect when you want:
+- Server-side rendering with dynamic interactions
+- Simple mental model (HTML in, HTML out)
+- No build toolchain
+- Progressive enhancement
+- Great SEO out of the box
+- Rapid development with familiar tools
+
+## Installation
+
+### Via CDN
+
+```html
+<script src="https://unpkg.com/htmx.org@1.9.10"></script>
+```
+
+Or use a specific version:
+
+```html
+<script src="https://unpkg.com/htmx.org@1.9.10/dist/htmx.min.js"></script>
+```
+
+### Via npm
+
+```bash
+npm install htmx.org
+```
+
+Then import in your JavaScript:
+
+```js
+import 'htmx.org'
+```
+
+Or with a bundler:
+
+```js
+import htmx from 'htmx.org'
+window.htmx = htmx
+```
+
+## Architecture
+
+### Development Mode
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Browser (Port 3000)                     │
+│                                                               │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │                   HTML + HTMX                           │ │
+│  │                                                          │ │
+│  │  <button hx-get="/users" hx-target="#list">Load</button>│ │
+│  │                                                          │ │
+│  │  User clicks → HTMX sends GET /users                   │ │
+│  │  Server responds with HTML fragment                     │ │
+│  │  HTMX swaps content into #list                         │ │
+│  └────────────────────────────────────────────────────────┘ │
+│                          ▲                                   │
+│                          │ HTTP Request                     │
+│                          │ (AJAX with HX-Request header)    │
+│                          ▼                                   │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │                   Static Assets                         │ │
+│  │  CSS, Images, HTMX library                             │ │
+│  └────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  Mizu Backend (Go Server)                    │
+│                                                               │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │                      Router                             │ │
+│  │                                                          │ │
+│  │  GET  /              → Render full page                │ │
+│  │  GET  /users         → Render HTML fragment            │ │
+│  │  POST /users         → Process + return HTML           │ │
+│  │  PUT  /users/{id}    → Update + return HTML            │ │
+│  │  DELETE /users/{id}  → Remove + return empty           │ │
+│  └────────────────────────────────────────────────────────┘ │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │                  View Engine                            │ │
+│  │                                                          │ │
+│  │  • Templates (Go html/template)                        │ │
+│  │  • Layouts (default.html)                              │ │
+│  │  • Pages (home.html, users.html)                       │ │
+│  │  • Partials (user-list.html, user-row.html)           │ │
+│  │  • Hot reload in dev mode                              │ │
+│  └────────────────────────────────────────────────────────┘ │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │                 Business Logic                          │ │
+│  │                                                          │ │
+│  │  • Handlers (handleUsers, handleCreateUser)            │ │
+│  │  • Services (UserService, AuthService)                 │ │
+│  │  • Validation                                           │ │
+│  │  • Database access                                      │ │
+│  └────────────────────────────────────────────────────────┘ │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │                    Database                             │ │
+│  │  PostgreSQL, SQLite, etc.                              │ │
+│  └────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Production Mode
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         CDN / Edge                           │
+│                                                               │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │              Static Assets (Cached)                     │ │
+│  │  • CSS, Images                                          │ │
+│  │  • HTMX library                                         │ │
+│  │  • Versioned and fingerprinted                         │ │
+│  └────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Load Balancer                             │
+└─────────────────────────────────────────────────────────────┘
+                          │
+          ┌───────────────┼───────────────┐
+          ▼               ▼               ▼
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│ Mizu Server 1│ │ Mizu Server 2│ │ Mizu Server 3│
+│              │ │              │ │              │
+│ Single Binary│ │ Single Binary│ │ Single Binary│
+│ • Embedded   │ │ • Embedded   │ │ • Embedded   │
+│   Templates  │ │   Templates  │ │   Templates  │
+│ • Embedded   │ │ • Embedded   │ │ • Embedded   │
+│   Assets     │ │   Assets     │ │   Assets     │
+│ • Handlers   │ │ • Handlers   │ │ • Handlers   │
+│ • Middleware │ │ • Middleware │ │ • Middleware │
+└──────────────┘ └──────────────┘ └──────────────┘
+          │               │               │
+          └───────────────┼───────────────┘
+                          ▼
+                ┌──────────────────┐
+                │    Database      │
+                │  (with pooling)  │
+                └──────────────────┘
+```
 
 ## Project Structure
 
@@ -39,6 +236,8 @@ my-htmx-app/
 │   │   ├── home.html            # Home page
 │   │   └── about.html           # About page
 │   └── partials/                # Reusable components
+│       ├── user-list.html       # User list fragment
+│       └── user-row.html        # Single user row
 ├── static/                      # CSS, JS, images
 │   ├── embed.go
 │   ├── css/
@@ -49,10 +248,1161 @@ my-htmx-app/
 └── Makefile
 ```
 
-## Backend Setup
+## Core Concepts
 
-### `app/server/app.go`
+### HTMX Attributes
 
+HTMX extends HTML with attributes that enable AJAX, WebSockets, and Server-Sent Events directly in your markup.
+
+#### HTTP Methods
+
+```html
+<!-- GET request -->
+<button hx-get="/users">Load Users</button>
+
+<!-- POST request -->
+<form hx-post="/users">
+  <input name="name">
+  <button type="submit">Create</button>
+</form>
+
+<!-- PUT request -->
+<button hx-put="/users/1">Update</button>
+
+<!-- PATCH request -->
+<button hx-patch="/users/1">Patch</button>
+
+<!-- DELETE request -->
+<button hx-delete="/users/1">Delete</button>
+```
+
+#### Targeting
+
+Control where the response gets inserted:
+
+```html
+<!-- Target by ID -->
+<button hx-get="/users" hx-target="#user-list">Load</button>
+<div id="user-list"></div>
+
+<!-- Target closest parent -->
+<tr>
+  <td>Alice</td>
+  <td>
+    <button hx-delete="/users/1" hx-target="closest tr">Delete</button>
+  </td>
+</tr>
+
+<!-- Target this element -->
+<div hx-get="/refresh" hx-target="this">Refresh</div>
+
+<!-- Target next sibling -->
+<button hx-get="/more" hx-target="next .content">Load More</button>
+<div class="content"></div>
+
+<!-- Target previous sibling -->
+<button hx-get="/prev" hx-target="previous .content">Load Previous</button>
+```
+
+#### Swap Strategies
+
+Control how content is swapped:
+
+```html
+<!-- Replace inner HTML (default) -->
+<div hx-get="/users" hx-swap="innerHTML">Content</div>
+
+<!-- Replace entire element -->
+<div hx-get="/users" hx-swap="outerHTML">Content</div>
+
+<!-- Insert before element -->
+<div hx-get="/users" hx-swap="beforebegin">Content</div>
+
+<!-- Insert after element -->
+<div hx-get="/users" hx-swap="afterend">Content</div>
+
+<!-- Insert at start of children -->
+<ul hx-get="/users" hx-swap="afterbegin">...</ul>
+
+<!-- Insert at end of children -->
+<ul hx-get="/users" hx-swap="beforeend">...</ul>
+
+<!-- Delete the element -->
+<div hx-delete="/users/1" hx-swap="delete">Delete Me</div>
+
+<!-- Don't swap (useful for side effects) -->
+<button hx-post="/track" hx-swap="none">Track</button>
+```
+
+#### Swap Modifiers
+
+Fine-tune swap behavior:
+
+```html
+<!-- Scroll to top after swap -->
+<div hx-get="/users" hx-swap="innerHTML scroll:top">Content</div>
+
+<!-- Scroll to bottom -->
+<div hx-get="/messages" hx-swap="beforeend scroll:bottom">Messages</div>
+
+<!-- Show for 1 second then swap -->
+<div hx-get="/users" hx-swap="innerHTML show:top">Content</div>
+
+<!-- Swap after delay -->
+<div hx-get="/users" hx-swap="innerHTML swap:1s">Content</div>
+
+<!-- Settle after delay -->
+<div hx-get="/users" hx-swap="innerHTML settle:2s">Content</div>
+
+<!-- Ignore title in response -->
+<div hx-get="/users" hx-swap="innerHTML ignoreTitle:true">Content</div>
+
+<!-- Focus on element after swap -->
+<div hx-get="/form" hx-swap="innerHTML focus-scroll:true">Content</div>
+```
+
+#### Triggers
+
+Control what triggers the request:
+
+```html
+<!-- Click (default for buttons) -->
+<button hx-get="/users" hx-trigger="click">Load</button>
+
+<!-- Multiple events -->
+<input hx-get="/search" hx-trigger="keyup, change">
+
+<!-- Delay -->
+<input hx-get="/search" hx-trigger="keyup delay:500ms">
+
+<!-- Throttle (max once per interval) -->
+<input hx-get="/search" hx-trigger="keyup throttle:1s">
+
+<!-- Changed (only if value changed) -->
+<input hx-get="/search" hx-trigger="keyup changed">
+
+<!-- From another element -->
+<input type="text" id="search">
+<div hx-get="/results" hx-trigger="keyup from:#search">Results</div>
+
+<!-- On load -->
+<div hx-get="/news" hx-trigger="load">Loading...</div>
+
+<!-- On reveal (when scrolled into view) -->
+<div hx-get="/more" hx-trigger="revealed">Load more...</div>
+
+<!-- Every N seconds (polling) -->
+<div hx-get="/status" hx-trigger="every 2s">Checking...</div>
+
+<!-- Intersection observer -->
+<div hx-get="/lazy" hx-trigger="intersect once">Load when visible</div>
+
+<!-- Consume event (prevent default) -->
+<form hx-post="/users" hx-trigger="submit consume">
+  <button type="submit">Submit</button>
+</form>
+```
+
+#### Trigger Filters
+
+Add conditions to triggers:
+
+```html
+<!-- Only trigger if Ctrl key is pressed -->
+<div hx-get="/users" hx-trigger="click[ctrlKey]">Ctrl+Click to load</div>
+
+<!-- Only if shift key -->
+<div hx-get="/users" hx-trigger="click[shiftKey]">Shift+Click to load</div>
+
+<!-- Only if specific mouse button -->
+<div hx-get="/users" hx-trigger="click[button==0]">Left-click only</div>
+
+<!-- Check input value -->
+<input hx-get="/search" hx-trigger="keyup[target.value.length > 3]">
+
+<!-- Multiple conditions -->
+<button hx-get="/users" hx-trigger="click[ctrlKey && shiftKey]">
+  Ctrl+Shift+Click
+</button>
+```
+
+### Headers
+
+#### Request Headers
+
+HTMX automatically sends these headers:
+
+```go
+func handler(c *mizu.Ctx) error {
+    // Check if this is an HTMX request
+    isHTMX := c.Request().Header.Get("HX-Request") == "true"
+
+    // Get the ID of the target element
+    target := c.Request().Header.Get("HX-Target")
+
+    // Get the ID of the triggered element
+    trigger := c.Request().Header.Get("HX-Trigger")
+
+    // Get the name attribute of the triggered element
+    triggerName := c.Request().Header.Get("HX-Trigger-Name")
+
+    // Get the current URL
+    currentURL := c.Request().Header.Get("HX-Current-URL")
+
+    // Check if this is a history restore request
+    isHistory := c.Request().Header.Get("HX-History-Restore-Request") == "true"
+
+    // Get the user response to hx-prompt
+    prompt := c.Request().Header.Get("HX-Prompt")
+
+    if isHTMX {
+        // Return HTML fragment for HTMX requests
+        return c.Render("partials/users", data)
+    }
+
+    // Return full page for direct navigation
+    return c.Render("pages/users", data)
+}
+```
+
+#### Response Headers
+
+Control HTMX behavior from the server:
+
+```go
+func handler(c *mizu.Ctx) error {
+    // Trigger a client-side redirect
+    c.Writer().Header().Set("HX-Redirect", "/login")
+
+    // Refresh the page
+    c.Writer().Header().Set("HX-Refresh", "true")
+
+    // Replace the URL in browser history
+    c.Writer().Header().Set("HX-Replace-Url", "/users/page/2")
+
+    // Push new URL to history
+    c.Writer().Header().Set("HX-Push-Url", "/users/123")
+
+    // Re-target the response
+    c.Writer().Header().Set("HX-Retarget", "#different-element")
+
+    // Change swap strategy
+    c.Writer().Header().Set("HX-Reswap", "outerHTML")
+
+    // Trigger client-side events
+    c.Writer().Header().Set("HX-Trigger", "userCreated")
+
+    // Trigger after swap
+    c.Writer().Header().Set("HX-Trigger-After-Swap", "updateStats")
+
+    // Trigger after settle
+    c.Writer().Header().Set("HX-Trigger-After-Settle", "focusInput")
+
+    // Trigger with JSON payload
+    c.Writer().Header().Set("HX-Trigger", `{"showMessage": {"level": "info", "text": "User created"}}`)
+
+    return c.Render("partials/user", user)
+}
+```
+
+### Indicators
+
+Show loading states:
+
+```html
+<!-- Default indicator -->
+<button hx-get="/users">
+  <span class="htmx-indicator">Loading...</span>
+  Load Users
+</button>
+
+<!-- External indicator -->
+<div id="spinner" class="htmx-indicator">
+  <img src="/spinner.gif" alt="Loading...">
+</div>
+<button hx-get="/users" hx-indicator="#spinner">Load</button>
+
+<!-- CSS-based indicator -->
+<style>
+  .htmx-request .htmx-indicator {
+    display: inline;
+  }
+  .htmx-indicator {
+    display: none;
+  }
+</style>
+
+<button hx-get="/users">
+  <span class="htmx-indicator">⏳</span>
+  Load Users
+</button>
+```
+
+### Validation
+
+Client-side validation still works:
+
+```html
+<form hx-post="/users" hx-target="#result">
+  <input
+    type="text"
+    name="email"
+    required
+    pattern="[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$"
+  >
+  <button type="submit">Submit</button>
+</form>
+<div id="result"></div>
+```
+
+Server-side validation:
+
+```go
+func handleCreateUser(c *mizu.Ctx) error {
+    email := c.FormValue("email")
+
+    // Validate
+    if email == "" {
+        c.Writer().Header().Set("HX-Retarget", "#error")
+        c.Writer().Header().Set("HX-Reswap", "innerHTML")
+        return c.HTML(400, `<div class="error">Email is required</div>`)
+    }
+
+    if !isValidEmail(email) {
+        c.Writer().Header().Set("HX-Retarget", "#error")
+        return c.HTML(400, `<div class="error">Invalid email format</div>`)
+    }
+
+    // Create user...
+    return c.Render("partials/user-row", user)
+}
+```
+
+```html
+<form hx-post="/users" hx-target="#user-list" hx-swap="beforeend">
+  <div id="error"></div>
+  <input name="email" type="email" placeholder="Email">
+  <button type="submit">Create</button>
+</form>
+```
+
+## Advanced Features
+
+### Out-of-Band Swaps
+
+Update multiple parts of the page from a single response:
+
+```html
+<!-- Main target -->
+<div id="user-list"></div>
+
+<!-- Also update this -->
+<div id="notification"></div>
+
+<button hx-get="/users" hx-target="#user-list">Load Users</button>
+```
+
+Server response:
+
+```html
+<!-- Main content (goes to hx-target) -->
+<div id="user-list">
+  <div>Alice</div>
+  <div>Bob</div>
+</div>
+
+<!-- Out-of-band swap (goes to #notification) -->
+<div id="notification" hx-swap-oob="true">
+  Loaded 2 users
+</div>
+```
+
+Multiple out-of-band swaps:
+
+```html
+<div id="users">...</div>
+<div id="stats" hx-swap-oob="true">Users: 2</div>
+<div id="notification" hx-swap-oob="beforeend">
+  <div class="toast">Users loaded</div>
+</div>
+```
+
+### History and Navigation
+
+Control browser history:
+
+```html
+<!-- Push URL to history (default for links) -->
+<a hx-get="/users/1" hx-push-url="true">View User</a>
+
+<!-- Push different URL -->
+<button hx-get="/users/1" hx-push-url="/users/alice">View</button>
+
+<!-- Replace current URL (no new history entry) -->
+<button hx-get="/users/1" hx-replace-url="true">View</button>
+
+<!-- Disable history -->
+<button hx-get="/users" hx-push-url="false">View</button>
+```
+
+Handle history restoration:
+
+```go
+func handleUsers(c *mizu.Ctx) error {
+    // Check if this is a history restore
+    if c.Request().Header.Get("HX-History-Restore-Request") == "true" {
+        // Return full page state
+        return c.Render("pages/users", data)
+    }
+
+    // Normal HTMX request
+    return c.Render("partials/user-list", data)
+}
+```
+
+### Synchronization
+
+Prevent concurrent requests:
+
+```html
+<!-- Queue requests to this element -->
+<button hx-get="/slow-endpoint" hx-sync="this:queue">Load</button>
+
+<!-- Drop new requests while one is in flight -->
+<button hx-get="/endpoint" hx-sync="this:drop">Load</button>
+
+<!-- Abort current request and make new one -->
+<button hx-get="/endpoint" hx-sync="this:abort">Load</button>
+
+<!-- Replace current request -->
+<button hx-get="/endpoint" hx-sync="this:replace">Load</button>
+
+<!-- Sync with another element -->
+<input hx-get="/search" hx-sync="#search-form:abort">
+```
+
+### Confirmation
+
+Prompt before request:
+
+```html
+<!-- Simple confirmation -->
+<button
+  hx-delete="/users/1"
+  hx-confirm="Are you sure you want to delete this user?"
+>
+  Delete
+</button>
+
+<!-- Access prompt value on server -->
+<button
+  hx-delete="/users/1"
+  hx-prompt="Enter your password to confirm"
+>
+  Delete
+</button>
+```
+
+```go
+func handleDelete(c *mizu.Ctx) error {
+    // Get prompt response
+    password := c.Request().Header.Get("HX-Prompt")
+
+    if password != "admin" {
+        return c.HTML(403, `<div>Invalid password</div>`)
+    }
+
+    // Delete user...
+    return c.HTML(200, "")
+}
+```
+
+### Boosting
+
+Progressively enhance regular links and forms:
+
+```html
+<!-- Boost all links in this div -->
+<div hx-boost="true">
+  <a href="/about">About</a>
+  <a href="/contact">Contact</a>
+</div>
+
+<!-- Boost a form -->
+<form action="/users" method="post" hx-boost="true">
+  <input name="name">
+  <button type="submit">Create</button>
+</form>
+```
+
+With boost:
+- Links become AJAX requests that target `body`
+- Forms submit via AJAX
+- URLs are pushed to history
+- Works without JavaScript (progressive enhancement)
+
+### Preserving Content
+
+Preserve elements during swaps:
+
+```html
+<!-- This element won't be replaced during swaps -->
+<div hx-preserve="true" id="video-player">
+  <video src="/video.mp4" controls></video>
+</div>
+
+<div hx-get="/content" hx-target="body">
+  <!-- Video player will be preserved -->
+</div>
+```
+
+### Disable During Request
+
+Disable elements while request is in flight:
+
+```html
+<!-- Disable this button -->
+<button hx-post="/users" hx-disable>Create User</button>
+
+<!-- Disable other elements -->
+<form hx-post="/users">
+  <input name="name" hx-disable-elt="find button">
+  <button type="submit">Create</button>
+</form>
+
+<!-- Disable multiple elements -->
+<form hx-post="/users" hx-disable-elt="find input, find button">
+  <input name="name">
+  <input name="email">
+  <button type="submit">Create</button>
+</form>
+```
+
+### Request Parameters
+
+Include additional parameters:
+
+```html
+<!-- Include specific values -->
+<button
+  hx-get="/users"
+  hx-vals='{"page": 1, "sort": "name"}'
+>
+  Load Users
+</button>
+
+<!-- Include from JavaScript -->
+<button
+  hx-get="/users"
+  hx-vals="js:{token: getAuthToken()}"
+>
+  Load Users
+</button>
+
+<!-- Include nearby inputs -->
+<input type="text" name="search" value="alice">
+<button hx-get="/users" hx-include="[name='search']">Search</button>
+
+<!-- Include form -->
+<form id="filters">
+  <input name="status" value="active">
+  <input name="role" value="admin">
+</form>
+<button hx-get="/users" hx-include="#filters">Filter</button>
+```
+
+### Encoding
+
+Control request encoding:
+
+```html
+<!-- URL-encoded (default for forms) -->
+<form hx-post="/users" hx-encoding="application/x-www-form-urlencoded">
+  <input name="name">
+  <button type="submit">Create</button>
+</form>
+
+<!-- Multipart (for file uploads) -->
+<form hx-post="/upload" hx-encoding="multipart/form-data">
+  <input type="file" name="file">
+  <button type="submit">Upload</button>
+</form>
+```
+
+## Common Patterns
+
+### Click to Load
+
+```html
+<button hx-get="/data" hx-target="#result">
+  Load Data
+</button>
+<div id="result"></div>
+```
+
+### Click to Edit
+
+View mode:
+```html
+<div id="user-1">
+  <span>Alice</span>
+  <button hx-get="/users/1/edit" hx-target="#user-1">Edit</button>
+</div>
+```
+
+Server returns edit form:
+```html
+<div id="user-1">
+  <form hx-put="/users/1" hx-target="#user-1">
+    <input name="name" value="Alice">
+    <button type="submit">Save</button>
+    <button hx-get="/users/1" hx-target="#user-1">Cancel</button>
+  </form>
+</div>
+```
+
+After save, server returns view mode again.
+
+### Inline Delete
+
+```html
+<tr>
+  <td>Alice</td>
+  <td>alice@example.com</td>
+  <td>
+    <button
+      hx-delete="/users/1"
+      hx-target="closest tr"
+      hx-swap="outerHTML swap:1s"
+      hx-confirm="Delete Alice?"
+    >
+      Delete
+    </button>
+  </td>
+</tr>
+```
+
+Server returns empty response, HTMX removes the row.
+
+### Active Search
+
+```html
+<input
+  type="search"
+  name="q"
+  hx-get="/search"
+  hx-trigger="keyup changed delay:500ms"
+  hx-target="#search-results"
+  hx-indicator="#search-spinner"
+  placeholder="Search..."
+>
+<span id="search-spinner" class="htmx-indicator">Searching...</span>
+<div id="search-results"></div>
+```
+
+Backend:
+```go
+func handleSearch(c *mizu.Ctx) error {
+    query := c.Query("q")
+
+    results := searchUsers(query)
+
+    return c.Render("partials/search-results", map[string]any{
+        "Results": results,
+        "Query":   query,
+    })
+}
+```
+
+### Infinite Scroll
+
+```html
+<div id="posts">
+  {{ range .Posts }}
+    <div class="post">{{ .Title }}</div>
+  {{ end }}
+
+  {{ if .HasMore }}
+    <div
+      hx-get="/posts?page={{ .NextPage }}"
+      hx-trigger="revealed"
+      hx-target="#posts"
+      hx-swap="beforeend"
+    >
+      <div class="htmx-indicator">Loading more...</div>
+    </div>
+  {{ end }}
+</div>
+```
+
+Backend:
+```go
+func handlePosts(c *mizu.Ctx) error {
+    page := c.QueryInt("page", 1)
+    limit := 10
+
+    posts, total := getPosts(page, limit)
+    hasMore := (page * limit) < total
+
+    return c.Render("partials/posts", map[string]any{
+        "Posts":    posts,
+        "HasMore":  hasMore,
+        "NextPage": page + 1,
+    })
+}
+```
+
+### Lazy Loading
+
+Load content when it becomes visible:
+
+```html
+<div
+  hx-get="/lazy-content"
+  hx-trigger="intersect once"
+  hx-swap="outerHTML"
+>
+  <div class="skeleton">Loading...</div>
+</div>
+```
+
+### Polling
+
+Auto-refresh content:
+
+```html
+<!-- Poll every 2 seconds -->
+<div hx-get="/stats" hx-trigger="every 2s" hx-swap="innerHTML">
+  Loading stats...
+</div>
+
+<!-- Stop polling when visible -->
+<div
+  hx-get="/stats"
+  hx-trigger="every 2s [document.hidden == false]"
+>
+  Loading stats...
+</div>
+
+<!-- Start/stop polling -->
+<div id="stats" hx-get="/stats" hx-trigger="load, poll from:#poll-btn">
+  Stats here
+</div>
+<button id="poll-btn" hx-trigger="click">Start Polling</button>
+```
+
+### Progress Bar
+
+```html
+<div hx-get="/job/status" hx-trigger="load, every 1s" hx-swap="outerHTML">
+  <progress value="0" max="100"></progress>
+</div>
+```
+
+Backend:
+```go
+func handleJobStatus(c *mizu.Ctx) error {
+    job := getJob()
+
+    if job.Progress >= 100 {
+        // Job complete, return final content
+        return c.Render("partials/job-complete", job)
+    }
+
+    // Still in progress, return progress bar
+    return c.Render("partials/job-progress", job)
+}
+```
+
+Template:
+```html
+<div hx-get="/job/status" hx-trigger="every 1s" hx-swap="outerHTML">
+  <progress value="{{ .Progress }}" max="100"></progress>
+  <span>{{ .Progress }}% complete</span>
+</div>
+```
+
+### Bulk Operations
+
+```html
+<form id="bulk-form">
+  <table>
+    {{ range .Users }}
+    <tr>
+      <td><input type="checkbox" name="ids" value="{{ .ID }}"></td>
+      <td>{{ .Name }}</td>
+      <td>{{ .Email }}</td>
+    </tr>
+    {{ end }}
+  </table>
+
+  <button
+    hx-delete="/users/bulk"
+    hx-include="#bulk-form"
+    hx-confirm="Delete selected users?"
+    hx-target="body"
+  >
+    Delete Selected
+  </button>
+</form>
+```
+
+Backend:
+```go
+func handleBulkDelete(c *mizu.Ctx) error {
+    ids := c.Request().Form["ids"]
+
+    for _, id := range ids {
+        deleteUser(id)
+    }
+
+    // Return updated page
+    users := getUsers()
+    return c.Render("pages/users", map[string]any{
+        "Users": users,
+    })
+}
+```
+
+### Dependent Selects
+
+```html
+<select
+  name="country"
+  hx-get="/states"
+  hx-target="#state-select"
+  hx-trigger="change"
+>
+  <option value="">Select Country</option>
+  <option value="us">United States</option>
+  <option value="ca">Canada</option>
+</select>
+
+<div id="state-select">
+  <select name="state" disabled>
+    <option>Select country first</option>
+  </select>
+</div>
+```
+
+Backend:
+```go
+func handleStates(c *mizu.Ctx) error {
+    country := c.Query("country")
+    states := getStatesForCountry(country)
+
+    return c.Render("partials/state-select", map[string]any{
+        "States": states,
+    })
+}
+```
+
+### Typeahead / Autocomplete
+
+```html
+<div>
+  <input
+    type="search"
+    name="q"
+    hx-get="/autocomplete"
+    hx-trigger="keyup changed delay:300ms"
+    hx-target="#suggestions"
+    placeholder="Search users..."
+  >
+  <div id="suggestions"></div>
+</div>
+```
+
+Backend:
+```go
+func handleAutocomplete(c *mizu.Ctx) error {
+    query := c.Query("q")
+
+    if query == "" {
+        return c.HTML(200, "")
+    }
+
+    suggestions := searchUsers(query, 5)
+
+    return c.Render("partials/suggestions", map[string]any{
+        "Suggestions": suggestions,
+    })
+}
+```
+
+Template:
+```html
+{{ if .Suggestions }}
+<ul class="suggestions">
+  {{ range .Suggestions }}
+  <li>
+    <a href="/users/{{ .ID }}">{{ .Name }} ({{ .Email }})</a>
+  </li>
+  {{ end }}
+</ul>
+{{ end }}
+```
+
+### File Upload with Progress
+
+```html
+<form
+  hx-post="/upload"
+  hx-encoding="multipart/form-data"
+  hx-target="#result"
+>
+  <input type="file" name="file">
+  <button type="submit">Upload</button>
+  <progress id="upload-progress" value="0" max="100" style="display:none"></progress>
+</form>
+<div id="result"></div>
+
+<script>
+htmx.on('#upload-form', 'htmx:xhr:progress', function(evt) {
+  const progress = document.getElementById('upload-progress')
+  progress.style.display = 'block'
+  progress.setAttribute('value', evt.detail.loaded / evt.detail.total * 100)
+})
+</script>
+```
+
+### Modal Dialogs
+
+```html
+<button hx-get="/users/1/delete-confirm" hx-target="#modal">
+  Delete User
+</button>
+
+<div id="modal"></div>
+```
+
+Backend returns:
+```html
+<div class="modal-backdrop" onclick="this.remove()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h2>Confirm Delete</h2>
+    <p>Are you sure you want to delete this user?</p>
+    <button
+      hx-delete="/users/1"
+      hx-target="#user-1"
+      hx-swap="outerHTML"
+      onclick="document.querySelector('.modal-backdrop').remove()"
+    >
+      Yes, Delete
+    </button>
+    <button onclick="document.querySelector('.modal-backdrop').remove()">
+      Cancel
+    </button>
+  </div>
+</div>
+```
+
+### Optimistic UI
+
+Show immediate feedback before server response:
+
+```html
+<button
+  hx-post="/like"
+  hx-swap="outerHTML"
+  onclick="this.innerHTML='♥ Liked (124)'"
+>
+  ♡ Like (123)
+</button>
+```
+
+If server request fails, HTMX will restore the original content.
+
+### Pagination
+
+```html
+<div id="users">
+  <table>
+    {{ range .Users }}
+    <tr><td>{{ .Name }}</td></tr>
+    {{ end }}
+  </table>
+
+  <nav>
+    {{ if .HasPrev }}
+    <button hx-get="/users?page={{ .PrevPage }}" hx-target="#users">
+      Previous
+    </button>
+    {{ end }}
+
+    <span>Page {{ .CurrentPage }} of {{ .TotalPages }}</span>
+
+    {{ if .HasNext }}
+    <button hx-get="/users?page={{ .NextPage }}" hx-target="#users">
+      Next
+    </button>
+    {{ end }}
+  </nav>
+</div>
+```
+
+### Tabs
+
+```html
+<div>
+  <nav>
+    <button
+      hx-get="/tabs/profile"
+      hx-target="#tab-content"
+      class="active"
+    >
+      Profile
+    </button>
+    <button
+      hx-get="/tabs/settings"
+      hx-target="#tab-content"
+    >
+      Settings
+    </button>
+    <button
+      hx-get="/tabs/activity"
+      hx-target="#tab-content"
+    >
+      Activity
+    </button>
+  </nav>
+
+  <div id="tab-content" hx-get="/tabs/profile" hx-trigger="load">
+    Loading...
+  </div>
+</div>
+```
+
+## HTMX Extensions
+
+### Server-Sent Events (SSE)
+
+Real-time updates from server:
+
+```html
+<script src="https://unpkg.com/htmx.org/dist/ext/sse.js"></script>
+
+<div hx-ext="sse" sse-connect="/events">
+  <div sse-swap="message" hx-swap="beforeend">
+    <!-- Messages appear here -->
+  </div>
+</div>
+```
+
+Backend (Go):
+```go
+func handleEvents(c *mizu.Ctx) error {
+    c.Writer().Header().Set("Content-Type", "text/event-stream")
+    c.Writer().Header().Set("Cache-Control", "no-cache")
+    c.Writer().Header().Set("Connection", "keep-alive")
+
+    flusher, ok := c.Writer().(http.Flusher)
+    if !ok {
+        return fmt.Errorf("streaming not supported")
+    }
+
+    for {
+        select {
+        case msg := <-messageChan:
+            fmt.Fprintf(c.Writer(), "event: message\n")
+            fmt.Fprintf(c.Writer(), "data: <div>%s</div>\n\n", msg)
+            flusher.Flush()
+        case <-c.Request().Context().Done():
+            return nil
+        }
+    }
+}
+```
+
+### WebSockets
+
+```html
+<script src="https://unpkg.com/htmx.org/dist/ext/ws.js"></script>
+
+<div hx-ext="ws" ws-connect="/chat">
+  <div id="messages"></div>
+
+  <form ws-send>
+    <input name="message">
+    <button type="submit">Send</button>
+  </form>
+</div>
+```
+
+### Preload
+
+Preload content on hover:
+
+```html
+<script src="https://unpkg.com/htmx.org/dist/ext/preload.js"></script>
+
+<a
+  href="/users/1"
+  hx-get="/users/1"
+  hx-target="#main"
+  preload="mousedown"
+>
+  View User
+</a>
+```
+
+### Loading States
+
+```html
+<script src="https://unpkg.com/htmx.org/dist/ext/loading-states.js"></script>
+
+<button hx-get="/slow" data-loading-disable>
+  <span data-loading-class="hidden">Load Data</span>
+  <span data-loading-class-remove="hidden" class="hidden">Loading...</span>
+</button>
+```
+
+### Response Targets
+
+Target based on HTTP status:
+
+```html
+<script src="https://unpkg.com/htmx.org/dist/ext/response-targets.js"></script>
+
+<form
+  hx-post="/users"
+  hx-target="#success"
+  hx-target-error="#error"
+  hx-target-4*="#validation-error"
+  hx-target-5*="#server-error"
+>
+  <input name="email">
+  <button type="submit">Create</button>
+</form>
+
+<div id="success"></div>
+<div id="error" class="error"></div>
+<div id="validation-error" class="error"></div>
+<div id="server-error" class="error"></div>
+```
+
+### Class Tools
+
+Manipulate classes:
+
+```html
+<script src="https://unpkg.com/htmx.org/dist/ext/class-tools.js"></script>
+
+<div
+  hx-get="/data"
+  classes="add loading:1s, remove loading:1s"
+>
+  Content
+</div>
+```
+
+## Complete Application Example
+
+Let's build a complete Task Manager with Mizu backend and HTMX frontend.
+
+### Backend Structure
+
+`app/server/app.go`:
 ```go
 package server
 
@@ -62,8 +1412,8 @@ import (
     "github.com/go-mizu/mizu"
     "github.com/go-mizu/mizu/view"
 
-    "yourmodule/static"
-    "yourmodule/views"
+    "taskmanager/static"
+    "taskmanager/views"
 )
 
 func New(cfg *Config) *mizu.App {
@@ -86,524 +1436,1020 @@ func New(cfg *Config) *mizu.App {
     staticFS, _ := fs.Sub(static.FS, ".")
     app.Static("/static", staticFS)
 
+    // Initialize services
+    taskService := NewTaskService()
+
     // Setup routes
-    setupRoutes(app)
+    setupRoutes(app, taskService)
 
     return app
 }
 ```
 
-### `app/server/handlers.go`
-
+`app/server/task_service.go`:
 ```go
 package server
 
-import "github.com/go-mizu/mizu"
+import (
+    "sync"
+    "time"
+)
 
-func handleHome(c *mizu.Ctx) error {
-    data := map[string]any{
-        "Title": "Home",
-    }
-    return c.Render("pages/home", data)
+type Task struct {
+    ID          int       `json:"id"`
+    Title       string    `json:"title"`
+    Description string    `json:"description"`
+    Status      string    `json:"status"` // pending, in_progress, completed
+    Priority    string    `json:"priority"` // low, medium, high
+    CreatedAt   time.Time `json:"created_at"`
+    UpdatedAt   time.Time `json:"updated_at"`
 }
 
-func handleAbout(c *mizu.Ctx) error {
-    data := map[string]any{
-        "Title": "About",
-    }
-    return c.Render("pages/about", data)
+type TaskService struct {
+    tasks  map[int]*Task
+    nextID int
+    mu     sync.RWMutex
 }
 
-// HTMX handler - returns HTML fragment
-func handleUsers(c *mizu.Ctx) error {
-    users := []map[string]any{
-        {"ID": 1, "Name": "Alice", "Email": "alice@example.com"},
-        {"ID": 2, "Name": "Bob", "Email": "bob@example.com"},
+func NewTaskService() *TaskService {
+    return &TaskService{
+        tasks:  make(map[int]*Task),
+        nextID: 1,
+    }
+}
+
+func (s *TaskService) List(filter string) []*Task {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
+    var result []*Task
+    for _, task := range s.tasks {
+        if filter == "" || task.Status == filter {
+            result = append(result, task)
+        }
+    }
+    return result
+}
+
+func (s *TaskService) Get(id int) (*Task, bool) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
+    task, ok := s.tasks[id]
+    return task, ok
+}
+
+func (s *TaskService) Create(title, description, status, priority string) *Task {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    task := &Task{
+        ID:          s.nextID,
+        Title:       title,
+        Description: description,
+        Status:      status,
+        Priority:    priority,
+        CreatedAt:   time.Now(),
+        UpdatedAt:   time.Now(),
     }
 
-    // Check if this is an HTMX request
-    if c.Request().Header.Get("HX-Request") == "true" {
-        // Return just the HTML fragment for HTMX
-        return c.Render("partials/user-list", map[string]any{
-            "Users": users,
-        })
+    s.tasks[s.nextID] = task
+    s.nextID++
+
+    return task
+}
+
+func (s *TaskService) Update(id int, title, description, status, priority string) (*Task, bool) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    task, ok := s.tasks[id]
+    if !ok {
+        return nil, false
     }
 
-    // Return full page for direct navigation
-    return c.Render("pages/users", map[string]any{
-        "Title": "Users",
-        "Users": users,
+    task.Title = title
+    task.Description = description
+    task.Status = status
+    task.Priority = priority
+    task.UpdatedAt = time.Now()
+
+    return task, true
+}
+
+func (s *TaskService) Delete(id int) bool {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    if _, ok := s.tasks[id]; !ok {
+        return false
+    }
+
+    delete(s.tasks, id)
+    return true
+}
+
+func (s *TaskService) Stats() map[string]int {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
+    stats := map[string]int{
+        "total":       len(s.tasks),
+        "pending":     0,
+        "in_progress": 0,
+        "completed":   0,
+    }
+
+    for _, task := range s.tasks {
+        stats[task.Status]++
+    }
+
+    return stats
+}
+```
+
+`app/server/handlers.go`:
+```go
+package server
+
+import (
+    "github.com/go-mizu/mizu"
+)
+
+type Handlers struct {
+    taskService *TaskService
+}
+
+func NewHandlers(taskService *TaskService) *Handlers {
+    return &Handlers{
+        taskService: taskService,
+    }
+}
+
+func (h *Handlers) Home(c *mizu.Ctx) error {
+    return c.Render("pages/home", map[string]any{
+        "Title": "Task Manager",
     })
 }
 
-func handleCreateUser(c *mizu.Ctx) error {
-    // Parse form data
-    name := c.FormValue("name")
-    email := c.FormValue("email")
+func (h *Handlers) ListTasks(c *mizu.Ctx) error {
+    filter := c.Query("status")
+    tasks := h.taskService.List(filter)
 
-    // Create user (simplified)
-    user := map[string]any{
-        "ID":    3,
-        "Name":  name,
-        "Email": email,
+    // Check if HTMX request
+    if c.Request().Header.Get("HX-Request") == "true" {
+        return c.Render("partials/task-list", map[string]any{
+            "Tasks":  tasks,
+            "Filter": filter,
+        })
     }
 
-    // Return HTML for the new user row
-    return c.Render("partials/user-row", user)
+    // Full page
+    return c.Render("pages/tasks", map[string]any{
+        "Title":  "Tasks",
+        "Tasks":  tasks,
+        "Filter": filter,
+    })
+}
+
+func (h *Handlers) CreateTask(c *mizu.Ctx) error {
+    title := c.FormValue("title")
+    description := c.FormValue("description")
+    status := c.FormValue("status")
+    priority := c.FormValue("priority")
+
+    // Validation
+    if title == "" {
+        c.Writer().Header().Set("HX-Retarget", "#error")
+        c.Writer().Header().Set("HX-Reswap", "innerHTML")
+        return c.HTML(400, `<div class="error">Title is required</div>`)
+    }
+
+    task := h.taskService.Create(title, description, status, priority)
+
+    // Trigger stats update
+    c.Writer().Header().Set("HX-Trigger", "taskCreated")
+
+    return c.Render("partials/task-row", map[string]any{
+        "Task": task,
+    })
+}
+
+func (h *Handlers) EditTask(c *mizu.Ctx) error {
+    id := c.ParamInt("id")
+
+    task, ok := h.taskService.Get(id)
+    if !ok {
+        return c.HTML(404, "Task not found")
+    }
+
+    return c.Render("partials/task-edit", map[string]any{
+        "Task": task,
+    })
+}
+
+func (h *Handlers) UpdateTask(c *mizu.Ctx) error {
+    id := c.ParamInt("id")
+
+    title := c.FormValue("title")
+    description := c.FormValue("description")
+    status := c.FormValue("status")
+    priority := c.FormValue("priority")
+
+    task, ok := h.taskService.Update(id, title, description, status, priority)
+    if !ok {
+        return c.HTML(404, "Task not found")
+    }
+
+    // Trigger stats update
+    c.Writer().Header().Set("HX-Trigger", "taskUpdated")
+
+    return c.Render("partials/task-row", map[string]any{
+        "Task": task,
+    })
+}
+
+func (h *Handlers) DeleteTask(c *mizu.Ctx) error {
+    id := c.ParamInt("id")
+
+    if !h.taskService.Delete(id) {
+        return c.HTML(404, "Task not found")
+    }
+
+    // Trigger stats update
+    c.Writer().Header().Set("HX-Trigger", "taskDeleted")
+
+    // Return empty response (element will be removed)
+    return c.HTML(200, "")
+}
+
+func (h *Handlers) Stats(c *mizu.Ctx) error {
+    stats := h.taskService.Stats()
+
+    return c.Render("partials/stats", map[string]any{
+        "Stats": stats,
+    })
 }
 ```
 
-### `app/server/routes.go`
-
+`app/server/routes.go`:
 ```go
 package server
 
-import "github.com/go-mizu/mizu"
+import (
+    "github.com/go-mizu/mizu"
+)
 
-func setupRoutes(app *mizu.App) {
-    // Page routes
-    app.Get("/", handleHome)
-    app.Get("/about", handleAbout)
-    app.Get("/users", handleUsers)
+func setupRoutes(app *mizu.App, taskService *TaskService) {
+    h := NewHandlers(taskService)
 
-    // HTMX endpoints
-    app.Post("/users", handleCreateUser)
-    app.Delete("/users/{id}", handleDeleteUser)
+    // Pages
+    app.Get("/", h.Home)
+    app.Get("/tasks", h.ListTasks)
+
+    // Task operations
+    app.Post("/tasks", h.CreateTask)
+    app.Get("/tasks/{id}/edit", h.EditTask)
+    app.Put("/tasks/{id}", h.UpdateTask)
+    app.Delete("/tasks/{id}", h.DeleteTask)
+
+    // Stats
+    app.Get("/stats", h.Stats)
 }
 ```
 
-## HTML Templates
+### Frontend Templates
 
-### `views/layouts/default.html`
-
+`views/layouts/default.html`:
 ```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ .Title }} - My App</title>
-    <link rel="stylesheet" href="/static/css/app.css">
+    <title>{{ .Title }} - Task Manager</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <script src="/static/js/app.js" defer></script>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-    <nav>
-        <a href="/">Home</a>
-        <a href="/about">About</a>
-        <a href="/users">Users</a>
+<body class="bg-gray-50">
+    <nav class="bg-white shadow">
+        <div class="max-w-7xl mx-auto px-4 py-4">
+            <div class="flex justify-between items-center">
+                <h1 class="text-2xl font-bold text-gray-900">Task Manager</h1>
+                <div
+                    id="stats"
+                    hx-get="/stats"
+                    hx-trigger="load, taskCreated from:body, taskUpdated from:body, taskDeleted from:body"
+                    class="flex gap-4"
+                >
+                    Loading stats...
+                </div>
+            </div>
+        </div>
     </nav>
 
-    <main>
+    <main class="max-w-7xl mx-auto px-4 py-8">
         {{ embed }}
     </main>
-
-    <footer>
-        <p>Built with Mizu and HTMX</p>
-    </footer>
 </body>
 </html>
 ```
 
-### `views/pages/home.html`
-
+`views/pages/home.html`:
 ```html
-<h1>Welcome</h1>
+<div class="space-y-6">
+    <!-- Create Task Form -->
+    <div class="bg-white rounded-lg shadow p-6">
+        <h2 class="text-xl font-semibold mb-4">Create New Task</h2>
 
-<div id="user-list">
-    <button
-        hx-get="/users"
-        hx-target="#user-list"
-        hx-swap="outerHTML"
-    >
-        Load Users
-    </button>
-</div>
+        <form
+            hx-post="/tasks"
+            hx-target="#task-list tbody"
+            hx-swap="afterbegin"
+            hx-on::after-request="this.reset()"
+            class="space-y-4"
+        >
+            <div id="error" class="text-red-600"></div>
 
-<div id="create-user" class="card">
-    <h2>Create User</h2>
-    <form
-        hx-post="/users"
-        hx-target="#user-table tbody"
-        hx-swap="beforeend"
-        hx-on::after-request="this.reset()"
-    >
-        <input type="text" name="name" placeholder="Name" required>
-        <input type="email" name="email" placeholder="Email" required>
-        <button type="submit">Create</button>
-    </form>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Title
+                </label>
+                <input
+                    type="text"
+                    name="title"
+                    required
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    placeholder="Task title"
+                >
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Description
+                </label>
+                <textarea
+                    name="description"
+                    rows="3"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    placeholder="Task description"
+                ></textarea>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Status
+                    </label>
+                    <select
+                        name="status"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    >
+                        <option value="pending">Pending</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Priority
+                    </label>
+                    <select
+                        name="priority"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    >
+                        <option value="low">Low</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High</option>
+                    </select>
+                </div>
+            </div>
+
+            <button
+                type="submit"
+                class="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+            >
+                Create Task
+            </button>
+        </form>
+    </div>
+
+    <!-- Filters -->
+    <div class="bg-white rounded-lg shadow p-4">
+        <div class="flex gap-2">
+            <button
+                hx-get="/tasks"
+                hx-target="#task-list-container"
+                class="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300"
+            >
+                All
+            </button>
+            <button
+                hx-get="/tasks?status=pending"
+                hx-target="#task-list-container"
+                class="px-4 py-2 rounded bg-yellow-200 hover:bg-yellow-300"
+            >
+                Pending
+            </button>
+            <button
+                hx-get="/tasks?status=in_progress"
+                hx-target="#task-list-container"
+                class="px-4 py-2 rounded bg-blue-200 hover:bg-blue-300"
+            >
+                In Progress
+            </button>
+            <button
+                hx-get="/tasks?status=completed"
+                hx-target="#task-list-container"
+                class="px-4 py-2 rounded bg-green-200 hover:bg-green-300"
+            >
+                Completed
+            </button>
+        </div>
+    </div>
+
+    <!-- Task List -->
+    <div id="task-list-container" hx-get="/tasks" hx-trigger="load">
+        <div class="bg-white rounded-lg shadow p-6">
+            <div class="htmx-indicator">Loading tasks...</div>
+        </div>
+    </div>
 </div>
 ```
 
-### `views/partials/user-list.html`
-
+`views/partials/task-list.html`:
 ```html
-<div id="user-list">
-    <h2>Users</h2>
-    <table id="user-table">
-        <thead>
+<div class="bg-white rounded-lg shadow">
+    <table id="task-list" class="w-full">
+        <thead class="bg-gray-50">
             <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Actions</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Title
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Status
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Priority
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Actions
+                </th>
             </tr>
         </thead>
-        <tbody>
-            {{ range .Users }}
-                {{ template "partials/user-row" . }}
+        <tbody class="divide-y divide-gray-200">
+            {{ range .Tasks }}
+                {{ template "partials/task-row" (dict "Task" .) }}
+            {{ else }}
+                <tr>
+                    <td colspan="4" class="px-6 py-4 text-center text-gray-500">
+                        No tasks found
+                    </td>
+                </tr>
             {{ end }}
         </tbody>
     </table>
 </div>
 ```
 
-### `views/partials/user-row.html`
-
+`views/partials/task-row.html`:
 ```html
-<tr>
-    <td>{{ .Name }}</td>
-    <td>{{ .Email }}</td>
-    <td>
-        <button
-            hx-delete="/users/{{ .ID }}"
-            hx-target="closest tr"
-            hx-swap="outerHTML swap:1s"
-            hx-confirm="Are you sure?"
-        >
-            Delete
-        </button>
+<tr id="task-{{ .Task.ID }}">
+    <td class="px-6 py-4">
+        <div class="text-sm font-medium text-gray-900">
+            {{ .Task.Title }}
+        </div>
+        {{ if .Task.Description }}
+        <div class="text-sm text-gray-500">
+            {{ .Task.Description }}
+        </div>
+        {{ end }}
+    </td>
+    <td class="px-6 py-4">
+        {{ if eq .Task.Status "pending" }}
+        <span class="px-2 py-1 text-xs font-semibold rounded bg-yellow-100 text-yellow-800">
+            Pending
+        </span>
+        {{ else if eq .Task.Status "in_progress" }}
+        <span class="px-2 py-1 text-xs font-semibold rounded bg-blue-100 text-blue-800">
+            In Progress
+        </span>
+        {{ else }}
+        <span class="px-2 py-1 text-xs font-semibold rounded bg-green-100 text-green-800">
+            Completed
+        </span>
+        {{ end }}
+    </td>
+    <td class="px-6 py-4">
+        {{ if eq .Task.Priority "low" }}
+        <span class="text-sm text-gray-600">Low</span>
+        {{ else if eq .Task.Priority "medium" }}
+        <span class="text-sm text-blue-600">Medium</span>
+        {{ else }}
+        <span class="text-sm text-red-600">High</span>
+        {{ end }}
+    </td>
+    <td class="px-6 py-4">
+        <div class="flex gap-2">
+            <button
+                hx-get="/tasks/{{ .Task.ID }}/edit"
+                hx-target="#task-{{ .Task.ID }}"
+                hx-swap="outerHTML"
+                class="text-blue-600 hover:text-blue-800"
+            >
+                Edit
+            </button>
+            <button
+                hx-delete="/tasks/{{ .Task.ID }}"
+                hx-target="#task-{{ .Task.ID }}"
+                hx-swap="outerHTML swap:1s"
+                hx-confirm="Are you sure you want to delete this task?"
+                class="text-red-600 hover:text-red-800"
+            >
+                Delete
+            </button>
+        </div>
     </td>
 </tr>
 ```
 
-## HTMX Attributes
-
-HTMX extends HTML with attributes for dynamic behavior:
-
-### Core Attributes
-
-| Attribute | Purpose | Example |
-|-----------|---------|---------|
-| `hx-get` | GET request | `hx-get="/users"` |
-| `hx-post` | POST request | `hx-post="/users"` |
-| `hx-put` | PUT request | `hx-put="/users/1"` |
-| `hx-delete` | DELETE request | `hx-delete="/users/1"` |
-| `hx-target` | Where to put response | `hx-target="#results"` |
-| `hx-swap` | How to swap content | `hx-swap="innerHTML"` |
-| `hx-trigger` | What triggers request | `hx-trigger="click, keyup delay:500ms"` |
-
-### Swap Strategies
-
+`views/partials/task-edit.html`:
 ```html
-<!-- Replace inner HTML (default) -->
-<div hx-get="/users" hx-swap="innerHTML">Content</div>
-
-<!-- Replace entire element -->
-<div hx-get="/users" hx-swap="outerHTML">Content</div>
-
-<!-- Insert before/after -->
-<div hx-get="/users" hx-swap="beforebegin">Content</div>
-<div hx-get="/users" hx-swap="afterend">Content</div>
-
-<!-- Insert at start/end of children -->
-<ul hx-get="/users" hx-swap="afterbegin">...</ul>
-<ul hx-get="/users" hx-swap="beforeend">...</ul>
-
-<!-- Delete the element -->
-<div hx-delete="/users/1" hx-swap="delete">Delete Me</div>
-```
-
-## Common Patterns
-
-### Click to Load
-
-```html
-<button hx-get="/data" hx-target="#result">
-    Load Data
-</button>
-<div id="result"></div>
-```
-
-### Click to Edit
-
-```html
-<div id="user-1">
-    <span>Alice</span>
-    <button hx-get="/users/1/edit" hx-target="#user-1">Edit</button>
-</div>
-```
-
-Server returns:
-
-```html
-<div id="user-1">
-    <form hx-put="/users/1" hx-target="#user-1">
-        <input name="name" value="Alice">
-        <button type="submit">Save</button>
-    </form>
-</div>
-```
-
-### Infinite Scroll
-
-```html
-<div id="posts">
-    {{ range .Posts }}
-        <div class="post">{{ .Title }}</div>
-    {{ end }}
-
-    {{ if .HasMore }}
-        <div
-            hx-get="/posts?page={{ .NextPage }}"
-            hx-trigger="revealed"
-            hx-target="#posts"
-            hx-swap="beforeend"
+<tr id="task-{{ .Task.ID }}">
+    <td colspan="4" class="px-6 py-4">
+        <form
+            hx-put="/tasks/{{ .Task.ID }}"
+            hx-target="#task-{{ .Task.ID }}"
+            hx-swap="outerHTML"
+            class="space-y-4"
         >
-            Loading more...
-        </div>
-    {{ end }}
-</div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Title
+                </label>
+                <input
+                    type="text"
+                    name="title"
+                    value="{{ .Task.Title }}"
+                    required
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md"
+                >
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Description
+                </label>
+                <textarea
+                    name="description"
+                    rows="2"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md"
+                >{{ .Task.Description }}</textarea>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Status
+                    </label>
+                    <select
+                        name="status"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    >
+                        <option value="pending" {{ if eq .Task.Status "pending" }}selected{{ end }}>
+                            Pending
+                        </option>
+                        <option value="in_progress" {{ if eq .Task.Status "in_progress" }}selected{{ end }}>
+                            In Progress
+                        </option>
+                        <option value="completed" {{ if eq .Task.Status "completed" }}selected{{ end }}>
+                            Completed
+                        </option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Priority
+                    </label>
+                    <select
+                        name="priority"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    >
+                        <option value="low" {{ if eq .Task.Priority "low" }}selected{{ end }}>
+                            Low
+                        </option>
+                        <option value="medium" {{ if eq .Task.Priority "medium" }}selected{{ end }}>
+                            Medium
+                        </option>
+                        <option value="high" {{ if eq .Task.Priority "high" }}selected{{ end }}>
+                            High
+                        </option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex gap-2">
+                <button
+                    type="submit"
+                    class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                    Save
+                </button>
+                <button
+                    type="button"
+                    hx-get="/tasks/{{ .Task.ID }}"
+                    hx-target="#task-{{ .Task.ID }}"
+                    hx-swap="outerHTML"
+                    class="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+                >
+                    Cancel
+                </button>
+            </div>
+        </form>
+    </td>
+</tr>
 ```
 
-### Active Search
-
-```html
-<input
-    type="search"
-    name="q"
-    hx-get="/search"
-    hx-trigger="keyup changed delay:500ms"
-    hx-target="#search-results"
-    placeholder="Search..."
->
-<div id="search-results"></div>
-```
-
-### Form Validation
+Note: The template needs a helper function for single task rendering. Add this to your handlers:
 
 ```go
-func handleCreateUser(c *mizu.Ctx) error {
-    name := c.FormValue("name")
-    email := c.FormValue("email")
+func (h *Handlers) GetTask(c *mizu.Ctx) error {
+    id := c.ParamInt("id")
 
-    // Validation
-    if name == "" {
-        c.Writer().Header().Set("HX-Retarget", "#error")
-        c.Writer().Header().Set("HX-Reswap", "innerHTML")
-        return c.HTML(400, `<div class="error">Name is required</div>`)
+    task, ok := h.taskService.Get(id)
+    if !ok {
+        return c.HTML(404, "Task not found")
     }
 
-    // Create user...
-    return c.Render("partials/user-row", user)
+    return c.Render("partials/task-row", map[string]any{
+        "Task": task,
+    })
 }
 ```
 
-```html
-<form hx-post="/users" hx-target="#user-list" hx-swap="beforeend">
-    <div id="error"></div>
-    <input name="name" placeholder="Name">
-    <input name="email" type="email" placeholder="Email">
-    <button type="submit">Create</button>
-</form>
+And add the route:
+```go
+app.Get("/tasks/{id}", h.GetTask)
 ```
 
-### Polling
-
+`views/partials/stats.html`:
 ```html
-<div hx-get="/stats" hx-trigger="every 2s" hx-swap="innerHTML">
-    Loading stats...
+<div class="flex gap-4 text-sm">
+    <div class="flex items-center gap-2">
+        <span class="text-gray-600">Total:</span>
+        <span class="font-semibold">{{ .Stats.total }}</span>
+    </div>
+    <div class="flex items-center gap-2">
+        <span class="w-3 h-3 rounded-full bg-yellow-400"></span>
+        <span>{{ .Stats.pending }}</span>
+    </div>
+    <div class="flex items-center gap-2">
+        <span class="w-3 h-3 rounded-full bg-blue-400"></span>
+        <span>{{ .Stats.in_progress }}</span>
+    </div>
+    <div class="flex items-center gap-2">
+        <span class="w-3 h-3 rounded-full bg-green-400"></span>
+        <span>{{ .Stats.completed }}</span>
+    </div>
 </div>
 ```
 
-### Optimistic UI
+## Error Handling
+
+### Client-Side Errors
 
 ```html
-<button
-    hx-post="/like"
-    hx-swap="outerHTML"
-    hx-target="this"
->
-    ♡ Like (123)
-</button>
+<form hx-post="/users">
+  <input name="email" type="email" required>
+  <button type="submit">Create</button>
+</form>
 ```
 
-Server responds immediately with updated button:
+HTML5 validation runs before HTMX submits the form.
+
+### Server-Side Errors
+
+Return appropriate HTTP status codes:
+
+```go
+func handleCreate(c *mizu.Ctx) error {
+    email := c.FormValue("email")
+
+    // Validation error (400)
+    if !isValidEmail(email) {
+        return c.HTML(400, `<div class="error">Invalid email</div>`)
+    }
+
+    // Not found (404)
+    if !userExists(email) {
+        return c.HTML(404, `<div class="error">User not found</div>`)
+    }
+
+    // Server error (500)
+    if err := createUser(email); err != nil {
+        return c.HTML(500, `<div class="error">Server error</div>`)
+    }
+
+    // Success (200)
+    return c.Render("partials/user", user)
+}
+```
+
+### Global Error Handling
 
 ```html
-<button
-    hx-post="/unlike"
-    hx-swap="outerHTML"
-    hx-target="this"
+<script>
+document.body.addEventListener('htmx:responseError', function(evt) {
+  console.error('Request failed:', evt.detail.xhr.status)
+  alert('Something went wrong. Please try again.')
+})
+
+document.body.addEventListener('htmx:sendError', function(evt) {
+  console.error('Network error:', evt.detail.error)
+  alert('Network error. Please check your connection.')
+})
+</script>
+```
+
+## Security
+
+### CSRF Protection
+
+Use CSRF middleware:
+
+```go
+import "github.com/go-mizu/mizu/middlewares/csrf"
+
+app.Use(csrf.New())
+```
+
+Include token in forms:
+
+```html
+<form hx-post="/users">
+  <input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">
+  <input name="email">
+  <button type="submit">Create</button>
+</form>
+```
+
+### XSS Protection
+
+Always escape user content in templates. Go's `html/template` does this automatically:
+
+```html
+<!-- Safe: automatically escaped -->
+<div>{{ .UserInput }}</div>
+
+<!-- Unsafe: skip this unless you control the content -->
+<div>{{ .TrustedHTML | safe }}</div>
+```
+
+### SQL Injection
+
+Use parameterized queries:
+
+```go
+// Good: parameterized
+db.Query("SELECT * FROM users WHERE email = ?", email)
+
+// Bad: string concatenation
+db.Query("SELECT * FROM users WHERE email = '" + email + "'")
+```
+
+### Rate Limiting
+
+```go
+import "github.com/go-mizu/mizu/middlewares/ratelimit"
+
+app.Use(ratelimit.New(ratelimit.Config{
+    Max:      100,
+    Duration: time.Minute,
+}))
+```
+
+## Performance
+
+### Caching
+
+Cache responses:
+
+```go
+import "github.com/go-mizu/mizu/middlewares/cache"
+
+app.Use(cache.New(cache.Config{
+    TTL: 5 * time.Minute,
+}))
+```
+
+Or use HTTP headers:
+
+```go
+func handler(c *mizu.Ctx) error {
+    c.Writer().Header().Set("Cache-Control", "max-age=300")
+    return c.Render("partials/data", data)
+}
+```
+
+### Compression
+
+```go
+import "github.com/go-mizu/mizu/middlewares/compress"
+
+app.Use(compress.New())
+```
+
+### Lazy Loading
+
+Load content only when needed:
+
+```html
+<div hx-get="/heavy-content" hx-trigger="intersect once">
+  Loading...
+</div>
+```
+
+### Debouncing
+
+Reduce server requests:
+
+```html
+<input
+  hx-get="/search"
+  hx-trigger="keyup changed delay:500ms"
+  hx-target="#results"
 >
-    ♥ Liked (124)
-</button>
+```
+
+## Testing
+
+### Backend Tests
+
+```go
+func TestHandlers(t *testing.T) {
+    app := setupTestApp()
+
+    // Test GET
+    req := httptest.NewRequest("GET", "/tasks", nil)
+    req.Header.Set("HX-Request", "true")
+    rec := httptest.NewRecorder()
+
+    app.ServeHTTP(rec, req)
+
+    assert.Equal(t, 200, rec.Code)
+    assert.Contains(t, rec.Body.String(), "task-list")
+
+    // Test POST
+    form := url.Values{}
+    form.Add("title", "Test Task")
+    form.Add("status", "pending")
+
+    req = httptest.NewRequest("POST", "/tasks", strings.NewReader(form.Encode()))
+    req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+    req.Header.Set("HX-Request", "true")
+    rec = httptest.NewRecorder()
+
+    app.ServeHTTP(rec, req)
+
+    assert.Equal(t, 200, rec.Code)
+    assert.Contains(t, rec.Body.String(), "Test Task")
+}
+```
+
+### Frontend Tests
+
+Use tools like Playwright or Cypress:
+
+```js
+test('create task', async ({ page }) => {
+  await page.goto('http://localhost:3000')
+
+  await page.fill('[name="title"]', 'Test Task')
+  await page.selectOption('[name="status"]', 'pending')
+  await page.click('button[type="submit"]')
+
+  // Wait for HTMX to complete
+  await page.waitForSelector('text=Test Task')
+
+  expect(await page.textContent('tbody')).toContain('Test Task')
+})
+```
+
+## Troubleshooting
+
+### HTMX Not Working
+
+Check:
+1. HTMX library is loaded: `<script src="https://unpkg.com/htmx.org@1.9.10"></script>`
+2. Check browser console for errors
+3. Verify server is returning HTML (not JSON)
+4. Check `HX-Request` header is sent
+
+### Content Not Updating
+
+Check:
+1. `hx-target` points to existing element
+2. `hx-swap` strategy is correct
+3. Server response contains expected HTML
+4. No JavaScript errors preventing swap
+
+### Form Not Submitting
+
+Check:
+1. Form has `hx-post` or similar attribute
+2. Input fields have `name` attributes
+3. Server endpoint exists and accepts POST
+4. No validation errors preventing submit
+
+### History Not Working
+
+Check:
+1. Using `hx-push-url` or `hx-replace-url`
+2. Handling history restore requests
+3. URLs are valid
+
+### Debug Mode
+
+Enable HTMX logging:
+
+```html
+<script>
+htmx.logAll()
+</script>
 ```
 
 ## Combining with Alpine.js
 
-Alpine.js adds client-side reactivity:
+Alpine.js adds client-side reactivity to complement HTMX:
 
 ```html
+<script src="https://unpkg.com/htmx.org@1.9.10"></script>
 <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
 
 <div x-data="{ open: false }">
-    <button @click="open = !open">Toggle</button>
+  <!-- Alpine for UI state -->
+  <button @click="open = !open">Toggle</button>
 
-    <div x-show="open" x-transition>
-        <p>Content here</p>
-
-        <!-- HTMX works inside Alpine -->
-        <button hx-get="/data" hx-target="#result">
-            Load Data
-        </button>
-        <div id="result"></div>
+  <div x-show="open" x-transition>
+    <!-- HTMX for data fetching -->
+    <div hx-get="/data" hx-trigger="revealed once" hx-swap="innerHTML">
+      Loading...
     </div>
+  </div>
 </div>
 ```
 
-### Dropdown with HTMX
+Example: Dropdown with HTMX actions:
 
 ```html
 <div x-data="{ open: false }" @click.away="open = false">
-    <button @click="open = !open">Menu</button>
+  <button @click="open = !open" class="btn">
+    Actions
+  </button>
 
-    <div x-show="open" x-transition>
-        <a href="#" hx-get="/profile" hx-target="#main">Profile</a>
-        <a href="#" hx-get="/settings" hx-target="#main">Settings</a>
-        <a href="#" hx-post="/logout">Logout</a>
-    </div>
+  <div x-show="open" x-transition class="dropdown">
+    <a href="#" hx-get="/edit" hx-target="#main">Edit</a>
+    <a href="#" hx-delete="/delete" hx-confirm="Delete?">Delete</a>
+  </div>
 </div>
 ```
 
-## Request Headers
-
-HTMX sends special headers:
-
-```go
-func handler(c *mizu.Ctx) error {
-    // Check if HTMX request
-    if c.Request().Header.Get("HX-Request") == "true" {
-        // Return fragment
-        return c.Render("partials/content", data)
-    }
-
-    // Return full page
-    return c.Render("pages/content", data)
-}
-```
-
-**Common HTMX headers:**
-- `HX-Request`: true if HTMX request
-- `HX-Target`: ID of target element
-- `HX-Trigger-Name`: Name of triggered element
-- `HX-Current-URL`: Current URL
-
-**Response headers:**
-- `HX-Redirect`: Client-side redirect
-- `HX-Refresh`: Refresh the page
-- `HX-Retarget`: Change target selector
-- `HX-Reswap`: Change swap strategy
-
-## Development Workflow
-
-### Start Development
-
-```bash
-make dev
-```
-
-Or:
-
-```bash
-go run cmd/server/main.go
-```
-
-### Making Changes
-
-**Template changes:**
-1. Edit HTML in `views/`
-2. Refresh browser
-3. See changes (templates reload in dev mode)
-
-**Backend changes:**
-1. Edit Go files
-2. Restart server
-3. Refresh browser
-
-**CSS/JS changes:**
-1. Edit files in `static/`
-2. Refresh browser
-
-## Styling
-
-HTMX works great with any CSS framework:
-
-### Tailwind CSS
-
-```html
-<button
-    class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-    hx-get="/data"
-    hx-target="#result"
->
-    Load Data
-</button>
-```
-
-### DaisyUI (Tailwind components)
-
-```html
-<button class="btn btn-primary" hx-get="/data">
-    Load Data
-</button>
-```
-
-## Building for Production
-
-```bash
-make build
-```
-
-Creates a single binary with embedded views and static files.
-
-Run:
-
-```bash
-MIZU_ENV=production ./bin/server
-```
-
-## Why Choose HTMX?
-
-**Pros:**
-- Minimal JavaScript
-- Server renders everything
-- Works without JavaScript enabled
-- SEO-friendly
-- Simpler mental model
-- Small learning curve
-- Great for server-side developers
-
-**Cons:**
-- Less suitable for complex UIs
-- Requires server round-trips
-- No offline support
-- Less rich interactions than SPAs
-
 ## When to Use HTMX
 
-**Perfect for:**
-- CRUD applications
-- Admin dashboards
-- Content-heavy sites
-- Forms and validation
-- Teams comfortable with server-side rendering
-- Progressive enhancement
+### Perfect For
 
-**Not ideal for:**
-- Desktop-like applications
-- Real-time collaboration
-- Offline-first apps
-- Complex client-side state
+- **CRUD Applications**: Forms, lists, updates
+- **Admin Dashboards**: Data tables, filters, actions
+- **Content Sites**: Blogs, documentation, marketing
+- **Progressive Enhancement**: Start with plain HTML, add interactivity
+- **Server-Side Teams**: Developers comfortable with backend rendering
+- **SEO-Critical Apps**: Need server-rendered HTML
+- **Rapid Prototyping**: Quick feedback loop
+
+### Not Ideal For
+
+- **Desktop-Like Apps**: Complex client-side state
+- **Real-Time Collaboration**: Multiple users editing simultaneously
+- **Offline-First**: Apps that work without network
+- **Heavy Client Logic**: Complex calculations or data processing
+- **Mobile Apps**: Need native feel with offline support
+
+### Hybrid Approach
+
+Use HTMX for most of the app, add JavaScript where needed:
+
+```html
+<!-- HTMX for CRUD -->
+<div hx-get="/users" hx-target="#list">Load Users</div>
+
+<!-- JavaScript for rich interactions -->
+<canvas id="chart"></canvas>
+<script>
+  renderChart(document.getElementById('chart'), data)
+</script>
+```
 
 ## Next Steps
 
@@ -619,5 +2465,11 @@ MIZU_ENV=production ./bin/server
   </Card>
   <Card title="HTMX Docs" href="https://htmx.org" icon="external-link">
     Official HTMX documentation
+  </Card>
+  <Card title="HTMX Examples" href="https://htmx.org/examples/" icon="code">
+    More patterns and examples
+  </Card>
+  <Card title="Hypermedia Systems" href="https://hypermedia.systems" icon="book">
+    Book on hypermedia-driven applications
   </Card>
 </CardGroup>
