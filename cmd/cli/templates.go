@@ -129,11 +129,10 @@ func loadTemplateMeta(name string) (templateMeta, error) {
 }
 
 // loadTemplateFiles loads all files for a template.
-// For nested templates (e.g., "frontend/spa/react"), it loads files from:
+// For nested templates (e.g., "frontend/react"), it loads files from:
 // 1. templates/_common/ (root common files)
 // 2. templates/frontend/_common/ (category common files)
-// 3. templates/frontend/spa/_common/ (subcategory common files)
-// 4. templates/frontend/spa/react/ (template-specific files)
+// 3. templates/frontend/react/ (template-specific files)
 // Each level overrides files from the previous level.
 func loadTemplateFiles(name string) ([]templateFile, error) {
 	fileMap := make(map[string]templateFile)
@@ -147,9 +146,8 @@ func loadTemplateFiles(name string) ([]templateFile, error) {
 	}
 
 	// For nested templates, load each level's _common directory
-	// e.g., for "frontend/spa/react":
+	// e.g., for "frontend/react":
 	//   - templates/frontend/_common
-	//   - templates/frontend/spa/_common
 	parts := strings.Split(name, "/")
 	for i := 1; i < len(parts); i++ {
 		commonPath := path.Join("templates", path.Join(parts[:i]...), "_common")
@@ -290,7 +288,7 @@ func mapOutputFilename(name string) string {
 }
 
 // templateExists checks if a template exists.
-// For nested templates (e.g., "frontend/spa/react"), it checks
+// For nested templates (e.g., "frontend/react"), it checks
 // for the presence of template.json in the nested path.
 func templateExists(name string) bool {
 	templatePath := path.Join("templates", name)

@@ -1,5 +1,5 @@
 {
-  "name": "frontend/spa/angular",
+  "name": "frontend/angular",
   "description": "Angular SPA with TypeScript and Mizu backend",
   "tags": ["go", "mizu", "frontend", "spa", "angular", "typescript"],
   "variables": {

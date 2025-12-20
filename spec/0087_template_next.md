@@ -15,7 +15,7 @@ This specification describes the implementation of a Next.js SPA template for th
 ## Template Hierarchy
 
 ```
-cmd/cli/templates/frontend/spa/next/
+cmd/cli/templates/frontend/next/
 ├── template.json              # Template metadata
 ├── Makefile.tmpl              # Build/dev commands
 ├── cmd/
@@ -55,7 +55,7 @@ cmd/cli/templates/frontend/spa/next/
 
 ```json
 {
-  "name": "frontend/spa/next",
+  "name": "frontend/next",
   "description": "Next.js SPA with App Router, TypeScript, Tailwind, and Mizu backend",
   "tags": ["go", "mizu", "frontend", "spa", "next", "nextjs", "react", "typescript", "tailwind"],
   "variables": {
@@ -504,13 +504,13 @@ Run 'make build' or 'cd client && npm run build' to generate them.
 
 ```bash
 # Create a new Next.js SPA project
-mizu new ./myapp --template frontend/spa/next
+mizu new ./myapp --template frontend/next
 
 # With custom module path
-mizu new ./myapp --template frontend/spa/next --module github.com/user/myapp
+mizu new ./myapp --template frontend/next --module github.com/user/myapp
 
 # Preview the generated files
-mizu new ./myapp --template frontend/spa/next --dry-run
+mizu new ./myapp --template frontend/next --dry-run
 ```
 
 ## Key Differences from Other SPA Templates
@@ -529,13 +529,13 @@ mizu new ./myapp --template frontend/spa/next --dry-run
 
 ```go
 func TestNextTemplateExists(t *testing.T) {
-    if !templateExists("frontend/spa/next") {
-        t.Error("templateExists('frontend/spa/next') returned false")
+    if !templateExists("frontend/next") {
+        t.Error("templateExists('frontend/next') returned false")
     }
 }
 
 func TestLoadTemplateFilesNext(t *testing.T) {
-    files, err := loadTemplateFiles("frontend/spa/next")
+    files, err := loadTemplateFiles("frontend/next")
     require.NoError(t, err)
 
     expectedFiles := []string{

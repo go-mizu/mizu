@@ -2,11 +2,11 @@
 
 ## Overview
 
-This specification describes the implementation of a nested template system for frontend SPA frameworks, starting with React. The template system will support the hierarchy `frontend/spa/{framework}` where framework can be `react`, `vue`, `solid`, `angular`, etc.
+This specification describes the implementation of a nested template system for frontend SPA frameworks, starting with React. The template system will support the hierarchy `frontend/{framework}` where framework can be `react`, `vue`, `solid`, `angular`, etc.
 
 ## Goals
 
-1. **Nested Template Support**: Extend the existing template system to support hierarchical template paths (e.g., `frontend/spa/react`)
+1. **Nested Template Support**: Extend the existing template system to support hierarchical template paths (e.g., `frontend/react`)
 2. **Modern React Setup**: Provide a production-ready React + Vite template with TypeScript support
 3. **Mizu Integration**: Seamless integration with the `frontend` middleware for dev/production serving
 4. **Best Practices**: Include modern patterns like React Router, proper project structure, and build tooling
@@ -60,12 +60,12 @@ cmd/cli/templates/
 
 ## Template Resolution Algorithm
 
-When loading a nested template like `frontend/spa/react`, the system will:
+When loading a nested template like `frontend/react`, the system will:
 
 1. Load files from `_common/` (root level)
 2. Load files from `frontend/_common/` (category level)
-3. Load files from `frontend/spa/_common/` (subcategory level)
-4. Load files from `frontend/spa/react/` (template level)
+3. Load files from `frontend/_common/` (subcategory level)
+4. Load files from `frontend/react/` (template level)
 
 Each level overrides files from the previous level with the same relative path.
 
@@ -83,9 +83,9 @@ func loadTemplateFiles(name string) ([]templateFile, error) {
     parts := strings.Split(name, "/")
 
     // Load each level's _common directory
-    // e.g., for "frontend/spa/react":
+    // e.g., for "frontend/react":
     //   - templates/frontend/_common
-    //   - templates/frontend/spa/_common
+    //   - templates/frontend/_common
     for i := 1; i <= len(parts); i++ {
         commonPath := path.Join("templates", path.Join(parts[:i]...), "_common")
         loadFilesInto(fileMap, commonPath)
@@ -105,7 +105,7 @@ func loadTemplateFiles(name string) ([]templateFile, error) {
 
 ```json
 {
-  "name": "frontend/spa/react",
+  "name": "frontend/react",
   "description": "React SPA with Vite, TypeScript, and Mizu backend",
   "tags": ["go", "mizu", "frontend", "spa", "react", "vite", "typescript"],
   "category": "frontend",
@@ -613,16 +613,16 @@ var FS embed.FS
 
 ```bash
 # Create a new React SPA project
-mizu new ./myapp --template frontend/spa/react
+mizu new ./myapp --template frontend/react
 
 # With custom variables
-mizu new ./myapp --template frontend/spa/react --var port=8080 --var devPort=3000
+mizu new ./myapp --template frontend/react --var port=8080 --var devPort=3000
 
 # List all templates (including nested)
 mizu new --list
 
 # Preview the generated files
-mizu new ./myapp --template frontend/spa/react --dry-run
+mizu new ./myapp --template frontend/react --dry-run
 ```
 
 ## Template Listing Enhancement
@@ -634,7 +634,7 @@ Template              Purpose
 ────────────────────────────────────────────────────────────
 api                   JSON API service with a recommended layout
 contract              Code-first API contract with mizu integration
-frontend/spa/react    React SPA with Vite, TypeScript, and Mizu backend
+frontend/react    React SPA with Vite, TypeScript, and Mizu backend
 live                  Real-time interactive app with live views
 minimal               Smallest runnable Mizu project
 sync                  Offline-first app with sync and reactive state
@@ -649,7 +649,7 @@ web                   Full-stack web app with views and static assets
 // templates_test.go
 
 func TestNestedTemplateLoading(t *testing.T) {
-    files, err := loadTemplateFiles("frontend/spa/react")
+    files, err := loadTemplateFiles("frontend/react")
     require.NoError(t, err)
 
     // Verify common files are loaded
@@ -664,10 +664,10 @@ func TestNestedTemplateLoading(t *testing.T) {
 
 func TestTemplateHierarchyOverride(t *testing.T) {
     // Test that template-specific files override common files
-    files, err := loadTemplateFiles("frontend/spa/react")
+    files, err := loadTemplateFiles("frontend/react")
     require.NoError(t, err)
 
-    // The Makefile from frontend/spa/react should override
+    // The Makefile from frontend/react should override
     // any Makefile from _common directories
     makefile := findFile(files, "Makefile")
     require.NotNil(t, makefile)
@@ -675,8 +675,8 @@ func TestTemplateHierarchyOverride(t *testing.T) {
 }
 
 func TestNestedTemplateExists(t *testing.T) {
-    require.True(t, templateExists("frontend/spa/react"))
-    require.False(t, templateExists("frontend/spa/nonexistent"))
+    require.True(t, templateExists("frontend/react"))
+    require.False(t, templateExists("frontend/nonexistent"))
 }
 ```
 
@@ -687,7 +687,7 @@ func TestReactTemplateGeneration(t *testing.T) {
     tmpDir := t.TempDir()
 
     vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
-    p, err := buildPlan("frontend/spa/react", tmpDir, vars)
+    p, err := buildPlan("frontend/react", tmpDir, vars)
     require.NoError(t, err)
 
     err = p.apply(false)
@@ -716,7 +716,7 @@ func TestReactTemplateBuildable(t *testing.T) {
 
     tmpDir := t.TempDir()
     vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
-    p, _ := buildPlan("frontend/spa/react", tmpDir, vars)
+    p, _ := buildPlan("frontend/react", tmpDir, vars)
     p.apply(false)
 
     // Verify Go code compiles
@@ -738,7 +738,7 @@ func TestReactTemplateBuildable(t *testing.T) {
 
 ### Phase 2: React Template Creation
 
-1. Create directory structure `templates/frontend/spa/react/`
+1. Create directory structure `templates/frontend/react/`
 2. Create `template.json` metadata
 3. Create Go backend files (cmd/server, app/server)
 4. Create React frontend files (client/*)
@@ -759,14 +759,14 @@ func TestReactTemplateBuildable(t *testing.T) {
 
 The same structure supports additional frameworks:
 
-- **frontend/spa/vue**: Vue 3 + Vite + TypeScript
-- **frontend/spa/solid**: SolidJS + Vite + TypeScript
-- **frontend/spa/angular**: Angular 17+ standalone components
-- **frontend/spa/svelte**: SvelteKit or Svelte + Vite
+- **frontend/vue**: Vue 3 + Vite + TypeScript
+- **frontend/solid**: SolidJS + Vite + TypeScript
+- **frontend/angular**: Angular 17+ standalone components
+- **frontend/svelte**: SvelteKit or Svelte + Vite
 - **frontend/ssr/react**: React with SSR support
 - **frontend/ssr/vue**: Nuxt.js integration
 
 Each framework template will:
-1. Share common Go backend code via `frontend/_common` and `frontend/spa/_common`
+1. Share common Go backend code via `frontend/_common` and `frontend/_common`
 2. Have framework-specific client code
 3. Integrate with the Mizu frontend middleware

@@ -1,5 +1,5 @@
 {
-  "name": "frontend/spa/preact",
+  "name": "frontend/preact",
   "description": "Preact SPA with Vite, TypeScript, and Mizu backend",
   "tags": ["go", "mizu", "frontend", "spa", "preact", "vite", "typescript"],
   "variables": {

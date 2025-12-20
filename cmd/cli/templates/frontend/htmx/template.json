@@ -1,5 +1,5 @@
 {
-  "name": "frontend/spa/htmx",
+  "name": "frontend/htmx",
   "description": "HTMX hypermedia app with Go templates and Tailwind CSS",
   "tags": ["go", "mizu", "frontend", "spa", "htmx", "tailwind", "alpine"],
   "variables": {

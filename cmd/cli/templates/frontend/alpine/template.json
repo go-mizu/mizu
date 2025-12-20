@@ -1,5 +1,5 @@
 {
-  "name": "frontend/spa/alpine",
+  "name": "frontend/alpine",
   "description": "Alpine.js SPA with Vite and Mizu backend",
   "tags": ["go", "mizu", "frontend", "spa", "alpine", "vite", "typescript"],
   "variables": {

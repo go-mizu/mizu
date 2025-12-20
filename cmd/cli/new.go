@@ -33,8 +33,8 @@ If no path is specified, the current directory is used.`,
   # Create API project in new directory
   mizu new ./myapp --template api
 
-  # Create React SPA project using sub-template
-  mizu new ./myapp --template frontend/spa --sub react
+  # Create React project using sub-template
+  mizu new ./myapp --template frontend --sub react
 
   # Preview what would be created
   mizu new ./myapp --template api --dry-run

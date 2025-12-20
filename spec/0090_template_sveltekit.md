@@ -15,7 +15,7 @@ This specification describes the implementation of a SvelteKit SPA template for 
 ## Template Hierarchy
 
 ```
-cmd/cli/templates/frontend/spa/sveltekit/
+cmd/cli/templates/frontend/sveltekit/
 ├── template.json              # Template metadata
 ├── Makefile.tmpl              # Build/dev commands
 ├── cmd/
@@ -57,7 +57,7 @@ cmd/cli/templates/frontend/spa/sveltekit/
 
 ```json
 {
-  "name": "frontend/spa/sveltekit",
+  "name": "frontend/sveltekit",
   "description": "SvelteKit SPA with TypeScript, Tailwind, and Mizu backend",
   "tags": ["go", "mizu", "frontend", "spa", "sveltekit", "svelte", "typescript", "tailwind"],
   "variables": {
@@ -524,13 +524,13 @@ Run 'make build' or 'cd client && npm run build' to generate them.
 
 ```bash
 # Create a new SvelteKit SPA project
-mizu new ./myapp --template frontend/spa/sveltekit
+mizu new ./myapp --template frontend/sveltekit
 
 # With custom module path
-mizu new ./myapp --template frontend/spa/sveltekit --module github.com/user/myapp
+mizu new ./myapp --template frontend/sveltekit --module github.com/user/myapp
 
 # Preview the generated files
-mizu new ./myapp --template frontend/spa/sveltekit --dry-run
+mizu new ./myapp --template frontend/sveltekit --dry-run
 ```
 
 ## Key Differences from Other SPA Templates
@@ -580,13 +580,13 @@ mizu new ./myapp --template frontend/spa/sveltekit --dry-run
 
 ```go
 func TestSvelteKitTemplateExists(t *testing.T) {
-    if !templateExists("frontend/spa/sveltekit") {
-        t.Error("templateExists('frontend/spa/sveltekit') returned false")
+    if !templateExists("frontend/sveltekit") {
+        t.Error("templateExists('frontend/sveltekit') returned false")
     }
 }
 
 func TestLoadTemplateFilesSvelteKit(t *testing.T) {
-    files, err := loadTemplateFiles("frontend/spa/sveltekit")
+    files, err := loadTemplateFiles("frontend/sveltekit")
     require.NoError(t, err)
 
     expectedFiles := []string{
@@ -615,7 +615,7 @@ func TestLoadTemplateFilesSvelteKit(t *testing.T) {
 }
 
 func TestSvelteKitTemplateHasSvelteKitSpecificContent(t *testing.T) {
-    files, err := loadTemplateFiles("frontend/spa/sveltekit")
+    files, err := loadTemplateFiles("frontend/sveltekit")
     require.NoError(t, err)
 
     fileMap := make(map[string]templateFile)
@@ -649,7 +649,7 @@ func TestApplyPlanSvelteKitTemplate(t *testing.T) {
     tmpDir := t.TempDir()
     vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-    p, err := buildPlan("frontend/spa/sveltekit", tmpDir, vars)
+    p, err := buildPlan("frontend/sveltekit", tmpDir, vars)
     require.NoError(t, err)
 
     if err := p.apply(false); err != nil {
