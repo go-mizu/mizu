@@ -1,0 +1,118 @@
+import SwiftUI
+
+struct HomeView: View {
+    @EnvironmentObject var runtime: MizuRuntime
+    @EnvironmentObject var appState: AppState
+    @State private var user: User?
+    @State private var isLoading = true
+    @State private var error: Error?
+
+    var body: some View {
+        Group {
+            if isLoading {
+                ProgressView("Loading...")
+            } else if let user = user {
+                VStack(spacing: 24) {
+                    // User avatar
+                    Image(systemName: "person.circle.fill")
+                        .font(.system(size: 80))
+                        .foregroundStyle(.blue)
+
+                    // User info
+                    VStack(spacing: 8) {
+                        Text(user.name)
+                            .font(.title2)
+                            .fontWeight(.semibold)
+
+                        Text(user.email)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    // App info
+                    VStack(spacing: 4) {
+                        Text("{{.Name}}")
+                            .font(.headline)
+                        Text("v\(Bundle.main.appVersion)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    // Sign out button
+                    Button(role: .destructive, action: signOut) {
+                        Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding()
+            } else {
+                ContentUnavailableView(
+                    "Unable to Load",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text(error?.localizedDescription ?? "Unknown error")
+                )
+            }
+        }
+        .navigationTitle("Home")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: loadUser) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .disabled(isLoading)
+            }
+        }
+        .refreshable {
+            await loadUserAsync()
+        }
+        .task {
+            await loadUserAsync()
+        }
+        .alert("Error", isPresented: .constant(error != nil)) {
+            Button("OK") { error = nil }
+            Button("Retry") { loadUser() }
+        } message: {
+            if let error = error {
+                Text(error.localizedDescription)
+            }
+        }
+    }
+
+    private func loadUser() {
+        Task {
+            await loadUserAsync()
+        }
+    }
+
+    private func loadUserAsync() async {
+        isLoading = true
+        error = nil
+
+        do {
+            let client = {{.Name}}Client()
+            user = try await client.getCurrentUser()
+        } catch {
+            self.error = error
+        }
+
+        isLoading = false
+    }
+
+    private func signOut() {
+        do {
+            try runtime.tokenStore.clearToken()
+        } catch {
+            self.error = error
+        }
+    }
+}
+
+#Preview {
+    NavigationStack {
+        HomeView()
+            .environmentObject(MizuRuntime.shared)
+            .environmentObject(AppState())
+    }
+}

@@ -1,0 +1,26 @@
+import SwiftUI
+
+@main
+struct {{.Name}}App: App {
+    @StateObject private var appState = AppState()
+
+    init() {
+        // Configure Mizu runtime
+        let config = MizuConfig.fromEnvironment()
+        MizuRuntime.shared.baseURL = config.baseURL
+        MizuRuntime.shared.timeoutInterval = config.timeout
+
+        if config.debug {
+            (MizuRuntime.shared.transport as? URLSessionTransport)?
+                .addInterceptor(LoggingInterceptor())
+        }
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environmentObject(appState)
+                .environmentObject(MizuRuntime.shared)
+        }
+    }
+}

@@ -1,0 +1,148 @@
+import Foundation
+
+// MARK: - Auth Types
+
+/// Authentication response containing user and token
+public struct AuthResponse: Decodable {
+    public let user: User
+    public let token: TokenResponse
+}
+
+/// Token response from authentication endpoints
+public struct TokenResponse: Decodable {
+    public let accessToken: String
+    public let refreshToken: String?
+    public let expiresIn: Int
+    public let tokenType: String
+
+    enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case refreshToken = "refresh_token"
+        case expiresIn = "expires_in"
+        case tokenType = "token_type"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        accessToken = try container.decode(String.self, forKey: .accessToken)
+        refreshToken = try container.decodeIfPresent(String.self, forKey: .refreshToken)
+        expiresIn = try container.decodeIfPresent(Int.self, forKey: .expiresIn) ?? 3600
+        tokenType = try container.decodeIfPresent(String.self, forKey: .tokenType) ?? "Bearer"
+    }
+}
+
+// MARK: - User Types
+
+/// User model
+public struct User: Codable, Identifiable, Sendable {
+    public let id: String
+    public let email: String
+    public let name: String
+    public let avatarURL: String?
+    public let createdAt: Date
+    public let updatedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, email, name
+        case avatarURL = "avatar_url"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+}
+
+/// User update request
+public struct UserUpdate: Encodable {
+    public var name: String?
+    public var avatarURL: String?
+
+    public init(name: String? = nil, avatarURL: String? = nil) {
+        self.name = name
+        self.avatarURL = avatarURL
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case avatarURL = "avatar_url"
+    }
+}
+
+// MARK: - Health Types
+
+/// Health check response
+public struct HealthResponse: Decodable {
+    public let status: String
+    public let version: String?
+    public let timestamp: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case status, version, timestamp
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        status = try container.decode(String.self, forKey: .status)
+        version = try container.decodeIfPresent(String.self, forKey: .version)
+        timestamp = try container.decodeIfPresent(Date.self, forKey: .timestamp)
+    }
+}
+
+// MARK: - Pagination Types
+
+/// Paginated response wrapper
+public struct Page<T: Decodable>: Decodable {
+    public let data: [T]
+    public let page: Int?
+    public let perPage: Int?
+    public let total: Int?
+    public let totalPages: Int?
+    public let hasMore: Bool
+    public let nextCursor: String?
+    public let prevCursor: String?
+
+    enum CodingKeys: String, CodingKey {
+        case data, page, total
+        case perPage = "per_page"
+        case totalPages = "total_pages"
+        case hasMore = "has_more"
+        case nextCursor = "next_cursor"
+        case prevCursor = "prev_cursor"
+    }
+}
+
+/// Pagination request parameters
+public struct PageRequest {
+    public var page: Int
+    public var perPage: Int
+    public var cursor: String?
+
+    public init(page: Int = 1, perPage: Int = 20, cursor: String? = nil) {
+        self.page = page
+        self.perPage = perPage
+        self.cursor = cursor
+    }
+
+    public var queryItems: [String: String] {
+        var items: [String: String] = [
+            "page": String(page),
+            "per_page": String(perPage)
+        ]
+        if let cursor = cursor {
+            items["cursor"] = cursor
+        }
+        return items
+    }
+}
+
+// MARK: - Error Types
+
+/// Validation error detail
+public struct ValidationError: Decodable {
+    public let field: String
+    public let message: String
+    public let code: String?
+}
+
+/// Validation errors response
+public struct ValidationErrors: Decodable {
+    public let errors: [ValidationError]
+}

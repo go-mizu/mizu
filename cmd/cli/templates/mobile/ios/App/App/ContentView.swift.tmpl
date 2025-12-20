@@ -1,0 +1,22 @@
+import SwiftUI
+
+struct ContentView: View {
+    @EnvironmentObject var runtime: MizuRuntime
+    @EnvironmentObject var appState: AppState
+
+    var body: some View {
+        NavigationStack {
+            if runtime.isAuthenticated {
+                HomeView()
+            } else {
+                WelcomeView()
+            }
+        }
+    }
+}
+
+#Preview {
+    ContentView()
+        .environmentObject(AppState())
+        .environmentObject(MizuRuntime.shared)
+}

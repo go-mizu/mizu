@@ -1,0 +1,167 @@
+import XCTest
+@testable import {{.Name}}
+
+final class SDKTests: XCTestCase {
+
+    // MARK: - User Tests
+
+    func testUserDecoding() throws {
+        let json = """
+        {
+            "id": "user-123",
+            "email": "test@example.com",
+            "name": "Test User",
+            "avatar_url": "https://example.com/avatar.png",
+            "created_at": "2024-01-15T10:30:00Z",
+            "updated_at": "2024-01-15T10:30:00Z"
+        }
+        """.data(using: .utf8)!
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let user = try decoder.decode(User.self, from: json)
+
+        XCTAssertEqual(user.id, "user-123")
+        XCTAssertEqual(user.email, "test@example.com")
+        XCTAssertEqual(user.name, "Test User")
+        XCTAssertEqual(user.avatarURL, "https://example.com/avatar.png")
+    }
+
+    func testUserDecodingWithoutOptionals() throws {
+        let json = """
+        {
+            "id": "user-456",
+            "email": "minimal@example.com",
+            "name": "Minimal User",
+            "created_at": "2024-01-15T10:30:00Z",
+            "updated_at": "2024-01-15T10:30:00Z"
+        }
+        """.data(using: .utf8)!
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let user = try decoder.decode(User.self, from: json)
+
+        XCTAssertEqual(user.id, "user-456")
+        XCTAssertNil(user.avatarURL)
+    }
+
+    // MARK: - Auth Response Tests
+
+    func testAuthResponseDecoding() throws {
+        let json = """
+        {
+            "user": {
+                "id": "user-789",
+                "email": "auth@example.com",
+                "name": "Auth User",
+                "created_at": "2024-01-15T10:30:00Z",
+                "updated_at": "2024-01-15T10:30:00Z"
+            },
+            "token": {
+                "access_token": "eyJhbGciOiJIUzI1NiIs...",
+                "refresh_token": "refresh-token-123",
+                "expires_in": 3600,
+                "token_type": "Bearer"
+            }
+        }
+        """.data(using: .utf8)!
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let response = try decoder.decode(AuthResponse.self, from: json)
+
+        XCTAssertEqual(response.user.id, "user-789")
+        XCTAssertEqual(response.token.accessToken, "eyJhbGciOiJIUzI1NiIs...")
+        XCTAssertEqual(response.token.refreshToken, "refresh-token-123")
+        XCTAssertEqual(response.token.expiresIn, 3600)
+        XCTAssertEqual(response.token.tokenType, "Bearer")
+    }
+
+    // MARK: - Pagination Tests
+
+    func testPageDecoding() throws {
+        let json = """
+        {
+            "data": [
+                {
+                    "id": "user-1",
+                    "email": "user1@example.com",
+                    "name": "User 1",
+                    "created_at": "2024-01-15T10:30:00Z",
+                    "updated_at": "2024-01-15T10:30:00Z"
+                }
+            ],
+            "page": 1,
+            "per_page": 20,
+            "total": 100,
+            "total_pages": 5,
+            "has_more": true,
+            "next_cursor": "cursor-abc"
+        }
+        """.data(using: .utf8)!
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let page = try decoder.decode(Page<User>.self, from: json)
+
+        XCTAssertEqual(page.data.count, 1)
+        XCTAssertEqual(page.data.first?.name, "User 1")
+        XCTAssertEqual(page.page, 1)
+        XCTAssertEqual(page.perPage, 20)
+        XCTAssertEqual(page.total, 100)
+        XCTAssertEqual(page.totalPages, 5)
+        XCTAssertTrue(page.hasMore)
+        XCTAssertEqual(page.nextCursor, "cursor-abc")
+    }
+
+    func testPageRequest() {
+        let request = PageRequest(page: 2, perPage: 50, cursor: "abc123")
+
+        XCTAssertEqual(request.queryItems["page"], "2")
+        XCTAssertEqual(request.queryItems["per_page"], "50")
+        XCTAssertEqual(request.queryItems["cursor"], "abc123")
+    }
+
+    // MARK: - Error Decoding Tests
+
+    func testAPIErrorDecoding() throws {
+        let json = """
+        {
+            "code": "validation_error",
+            "message": "Invalid email format",
+            "details": {
+                "field": "email"
+            },
+            "trace_id": "trace-123"
+        }
+        """.data(using: .utf8)!
+
+        let error = try JSONDecoder().decode(APIError.self, from: json)
+
+        XCTAssertEqual(error.code, "validation_error")
+        XCTAssertEqual(error.message, "Invalid email format")
+        XCTAssertEqual(error.traceID, "trace-123")
+        XCTAssertEqual(error.details?["field"]?.stringValue, "email")
+    }
+
+    // MARK: - UserUpdate Tests
+
+    func testUserUpdateEncoding() throws {
+        let update = UserUpdate(name: "New Name", avatarURL: "https://example.com/new.png")
+        let data = try JSONEncoder().encode(update)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+
+        XCTAssertEqual(json?["name"] as? String, "New Name")
+        XCTAssertEqual(json?["avatar_url"] as? String, "https://example.com/new.png")
+    }
+
+    func testUserUpdatePartialEncoding() throws {
+        let update = UserUpdate(name: "Only Name")
+        let data = try JSONEncoder().encode(update)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+
+        XCTAssertEqual(json?["name"] as? String, "Only Name")
+        // avatar_url should not be present or should be null
+    }
+}
