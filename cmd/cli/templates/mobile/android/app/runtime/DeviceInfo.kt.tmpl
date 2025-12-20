@@ -1,0 +1,88 @@
+package {{.Package}}.runtime
+
+import android.annotation.SuppressLint
+import android.content.Context
+import android.os.Build
+import android.provider.Settings
+import java.util.UUID
+
+/** Device information utilities */
+object DeviceInfo {
+    /** Device model identifier (e.g., "Pixel 8 Pro") */
+    val model: String = Build.MODEL
+
+    /** Device manufacturer */
+    val manufacturer: String = Build.MANUFACTURER
+
+    /** OS version string */
+    val osVersion: String = Build.VERSION.RELEASE
+
+    /** SDK version */
+    val sdkVersion: Int = Build.VERSION.SDK_INT
+
+    /** Is running on emulator */
+    val isEmulator: Boolean
+        get() = (Build.FINGERPRINT.startsWith("generic")
+                || Build.FINGERPRINT.startsWith("unknown")
+                || Build.MODEL.contains("google_sdk")
+                || Build.MODEL.contains("Emulator")
+                || Build.MODEL.contains("Android SDK built for x86")
+                || Build.MANUFACTURER.contains("Genymotion")
+                || Build.BRAND.startsWith("generic")
+                || Build.DEVICE.startsWith("generic"))
+
+    /** Gets unique device identifier (persisted in SharedPreferences) */
+    @SuppressLint("HardwareIds")
+    fun getDeviceId(context: Context): String {
+        val prefs = context.getSharedPreferences("mizu_device", Context.MODE_PRIVATE)
+        var deviceId = prefs.getString("device_id", null)
+
+        if (deviceId == null) {
+            // Try to get Android ID first
+            deviceId = Settings.Secure.getString(
+                context.contentResolver,
+                Settings.Secure.ANDROID_ID
+            )
+
+            // Fallback to UUID if Android ID is null or default
+            if (deviceId.isNullOrBlank() || deviceId == "9774d56d682e549c") {
+                deviceId = UUID.randomUUID().toString()
+            }
+
+            prefs.edit().putString("device_id", deviceId).apply()
+        }
+
+        return deviceId
+    }
+
+    /** Gets app version name */
+    fun getAppVersion(context: Context): String {
+        return try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
+        } catch (_: Exception) {
+            "0.0.0"
+        }
+    }
+
+    /** Gets app version code */
+    fun getAppBuild(context: Context): String {
+        return try {
+            val info = context.packageManager.getPackageInfo(context.packageName, 0)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                info.longVersionCode.toString()
+            } else {
+                @Suppress("DEPRECATION")
+                info.versionCode.toString()
+            }
+        } catch (_: Exception) {
+            "0"
+        }
+    }
+
+    /** Gets app package name */
+    fun getPackageName(context: Context): String = context.packageName
+
+    /** Gets device display name */
+    val displayName: String
+        get() = "$manufacturer $model"
+}

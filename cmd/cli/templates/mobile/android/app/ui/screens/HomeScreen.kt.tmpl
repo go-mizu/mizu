@@ -1,0 +1,77 @@
+package {{.Package}}.ui.screens
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import {{.Package}}.runtime.MizuRuntime
+
+@Composable
+fun HomeScreen() {
+    val context = LocalContext.current
+    val runtime = remember { MizuRuntime.getInstance(context) }
+    var isLoading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Filled.CheckCircle,
+            contentDescription = "Success",
+            modifier = Modifier.size(64.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = "Welcome to {{.Name}}",
+            style = MaterialTheme.typography.headlineMedium
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = "Connected to Mizu backend",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        if (isLoading) {
+            CircularProgressIndicator()
+        }
+
+        Button(
+            onClick = {
+                runtime.tokenStore.clearToken()
+            }
+        ) {
+            Text("Sign Out")
+        }
+    }
+
+    error?.let { message ->
+        AlertDialog(
+            onDismissRequest = { error = null },
+            title = { Text("Error") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { error = null }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+}

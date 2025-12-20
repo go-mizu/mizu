@@ -1,0 +1,108 @@
+package {{.Package}}.runtime
+
+import android.content.Context
+import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+
+/** Stored authentication token */
+@Serializable
+data class AuthToken(
+    val accessToken: String,
+    val refreshToken: String? = null,
+    val expiresAt: Long? = null, // Unix timestamp in milliseconds
+    val tokenType: String = "Bearer"
+) {
+    val isExpired: Boolean
+        get() = expiresAt?.let { System.currentTimeMillis() >= it } ?: false
+}
+
+/** Token storage protocol */
+interface TokenStore {
+    fun getToken(): AuthToken?
+    fun setToken(token: AuthToken)
+    fun clearToken()
+    fun onTokenChange(callback: (AuthToken?) -> Unit)
+}
+
+/** Encrypted SharedPreferences-backed token storage */
+class EncryptedTokenStore(context: Context) : TokenStore {
+    private val prefs: SharedPreferences
+    private val json = Json { ignoreUnknownKeys = true }
+    private val observers = mutableListOf<(AuthToken?) -> Unit>()
+
+    init {
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+
+        prefs = EncryptedSharedPreferences.create(
+            context,
+            "mizu_secure_prefs",
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
+
+    override fun getToken(): AuthToken? {
+        val tokenJson = prefs.getString(KEY_AUTH_TOKEN, null) ?: return null
+        return try {
+            json.decodeFromString<AuthToken>(tokenJson)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    override fun setToken(token: AuthToken) {
+        val tokenJson = json.encodeToString(token)
+        prefs.edit().putString(KEY_AUTH_TOKEN, tokenJson).apply()
+        notifyObservers(token)
+    }
+
+    override fun clearToken() {
+        prefs.edit().remove(KEY_AUTH_TOKEN).apply()
+        notifyObservers(null)
+    }
+
+    override fun onTokenChange(callback: (AuthToken?) -> Unit) {
+        observers.add(callback)
+    }
+
+    private fun notifyObservers(token: AuthToken?) {
+        observers.forEach { it(token) }
+    }
+
+    companion object {
+        private const val KEY_AUTH_TOKEN = "auth_token"
+    }
+}
+
+/** In-memory token store for testing */
+class InMemoryTokenStore : TokenStore {
+    private var token: AuthToken? = null
+    private val observers = mutableListOf<(AuthToken?) -> Unit>()
+
+    override fun getToken(): AuthToken? = token
+
+    override fun setToken(token: AuthToken) {
+        this.token = token
+        notifyObservers(token)
+    }
+
+    override fun clearToken() {
+        this.token = null
+        notifyObservers(null)
+    }
+
+    override fun onTokenChange(callback: (AuthToken?) -> Unit) {
+        observers.add(callback)
+    }
+
+    private fun notifyObservers(token: AuthToken?) {
+        observers.forEach { it(token) }
+    }
+}

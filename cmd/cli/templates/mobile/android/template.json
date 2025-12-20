@@ -1,0 +1,11 @@
+{
+  "name": "mobile/android",
+  "description": "Android app with Kotlin, Jetpack Compose, and Mizu backend integration",
+  "tags": ["mizu", "mobile", "android", "kotlin", "compose"],
+  "variables": {
+    "name": { "description": "Project name", "default": "" },
+    "package": { "description": "Package name", "default": "com.example.{{.Name | lower}}" },
+    "minSdk": { "description": "Minimum SDK version", "default": "26" },
+    "ui": { "description": "UI framework: compose, views, hybrid", "default": "compose" }
+  }
+}

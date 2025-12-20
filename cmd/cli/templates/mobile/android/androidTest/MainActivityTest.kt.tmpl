@@ -1,0 +1,55 @@
+package {{.Package}}
+
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import org.junit.Rule
+import org.junit.Test
+
+class MainActivityTest {
+    @get:Rule
+    val composeTestRule = createAndroidComposeRule<MainActivity>()
+
+    @Test
+    fun welcomeScreenIsDisplayed() {
+        composeTestRule
+            .onNodeWithText("Welcome to {{.Name}}")
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun getStartedButtonExists() {
+        composeTestRule
+            .onNodeWithText("Get Started")
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun clickGetStartedNavigatesToHome() {
+        composeTestRule
+            .onNodeWithText("Get Started")
+            .performClick()
+
+        // After clicking, should navigate to home screen
+        composeTestRule
+            .onNodeWithText("Connected to Mizu backend")
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun signOutReturnsToWelcome() {
+        // First get authenticated
+        composeTestRule
+            .onNodeWithText("Get Started")
+            .performClick()
+
+        // Now sign out
+        composeTestRule
+            .onNodeWithText("Sign Out")
+            .performClick()
+
+        // Should be back on welcome screen
+        composeTestRule
+            .onNodeWithText("Welcome to {{.Name}}")
+            .assertIsDisplayed()
+    }
+}

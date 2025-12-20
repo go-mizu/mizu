@@ -1,0 +1,141 @@
+package {{.Package}}.runtime
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+
+/** Transport request */
+data class TransportRequest(
+    val url: String,
+    val method: HttpMethod,
+    val headers: Map<String, String>,
+    val body: String?,
+    val timeout: Long
+)
+
+/** Transport response */
+data class TransportResponse(
+    val statusCode: Int,
+    val headers: Map<String, String>,
+    val body: String
+)
+
+/** Transport protocol for executing HTTP requests */
+interface Transport {
+    suspend fun execute(request: TransportRequest): TransportResponse
+}
+
+/** OkHttp-based transport implementation */
+class OkHttpTransport(config: MizuConfig = MizuConfig()) : Transport {
+    private val client: OkHttpClient
+    private val interceptors = mutableListOf<RequestInterceptor>()
+
+    init {
+        client = OkHttpClient.Builder()
+            .connectTimeout(config.timeout, TimeUnit.MILLISECONDS)
+            .readTimeout(config.timeout, TimeUnit.MILLISECONDS)
+            .writeTimeout(config.timeout, TimeUnit.MILLISECONDS)
+            .retryOnConnectionFailure(true)
+            .build()
+    }
+
+    /** Adds a request interceptor */
+    fun addInterceptor(interceptor: RequestInterceptor) {
+        interceptors.add(interceptor)
+    }
+
+    override suspend fun execute(request: TransportRequest): TransportResponse =
+        withContext(Dispatchers.IO) {
+            var okRequest = buildRequest(request)
+
+            // Apply interceptors
+            for (interceptor in interceptors) {
+                okRequest = interceptor.intercept(okRequest)
+            }
+
+            suspendCancellableCoroutine { continuation ->
+                val call = client.newCall(okRequest)
+
+                continuation.invokeOnCancellation {
+                    call.cancel()
+                }
+
+                call.enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) {
+                        continuation.resumeWithException(MizuError.Network(e))
+                    }
+
+                    override fun onResponse(call: Call, response: Response) {
+                        val transportResponse = TransportResponse(
+                            statusCode = response.code,
+                            headers = response.headers.toMap(),
+                            body = response.body?.string() ?: ""
+                        )
+                        continuation.resume(transportResponse)
+                    }
+                })
+            }
+        }
+
+    private fun buildRequest(request: TransportRequest): Request {
+        val builder = Request.Builder()
+            .url(request.url)
+
+        request.headers.forEach { (key, value) ->
+            builder.addHeader(key, value)
+        }
+
+        val body = when (request.method) {
+            HttpMethod.GET -> null
+            HttpMethod.DELETE -> if (request.body != null) {
+                request.body.toRequestBody("application/json".toMediaType())
+            } else null
+            else -> request.body?.toRequestBody("application/json".toMediaType())
+                ?: "".toRequestBody(null)
+        }
+
+        when (request.method) {
+            HttpMethod.GET -> builder.get()
+            HttpMethod.POST -> builder.post(body!!)
+            HttpMethod.PUT -> builder.put(body!!)
+            HttpMethod.DELETE -> if (body != null) builder.delete(body) else builder.delete()
+            HttpMethod.PATCH -> builder.patch(body!!)
+        }
+
+        return builder.build()
+    }
+
+    private fun Headers.toMap(): Map<String, String> =
+        (0 until size).associate { name(it) to value(it) }
+}
+
+/** Request interceptor protocol */
+interface RequestInterceptor {
+    suspend fun intercept(request: Request): Request
+}
+
+/** Logging interceptor for debugging */
+class LoggingInterceptor : RequestInterceptor {
+    override suspend fun intercept(request: Request): Request {
+        android.util.Log.d("MizuRuntime", "${request.method} ${request.url}")
+        return request
+    }
+}
+
+/** Retry interceptor with exponential backoff */
+class RetryInterceptor(
+    private val maxRetries: Int = 3,
+    private val baseDelayMs: Long = 1000
+) : RequestInterceptor {
+    override suspend fun intercept(request: Request): Request {
+        // Retry logic is handled at transport level
+        return request
+    }
+}

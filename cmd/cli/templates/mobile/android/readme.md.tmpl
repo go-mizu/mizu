@@ -1,0 +1,190 @@
+# {{.Name}}
+
+An Android application built with Kotlin, Jetpack Compose, and Mizu backend integration.
+
+## Requirements
+
+- Android SDK 26+ (Android 8.0 Oreo)
+- Android Studio Ladybug (2024.2) or later
+- Kotlin 2.1+
+- Java 17+
+
+## Getting Started
+
+### 1. Open the Project
+
+Open the project in Android Studio:
+
+```bash
+open -a "Android Studio" .
+```
+
+Or use File > Open in Android Studio.
+
+### 2. Configure the Backend
+
+Update the API base URL in `app/build.gradle.kts`:
+
+```kotlin
+buildTypes {
+    debug {
+        resValue("string", "mizu_base_url", "http://10.0.2.2:3000")
+    }
+    release {
+        resValue("string", "mizu_base_url", "https://your-api.example.com")
+    }
+}
+```
+
+For local development with Android Emulator, `10.0.2.2` maps to `localhost` on your host machine.
+
+### 3. Build and Run
+
+Select your target device or emulator and click Run (Shift+F10).
+
+## Project Structure
+
+```
+{{.Name}}/
+├── app/
+│   ├── src/
+│   │   ├── main/
+│   │   │   ├── kotlin/{{.PackagePath}}/
+│   │   │   │   ├── MainActivity.kt       # Entry point
+│   │   │   │   ├── {{.Name}}Application.kt # Application class
+│   │   │   │   ├── runtime/              # Mizu runtime
+│   │   │   │   │   ├── MizuRuntime.kt    # Core client
+│   │   │   │   │   ├── Transport.kt      # HTTP transport
+│   │   │   │   │   ├── TokenStore.kt     # Secure storage
+│   │   │   │   │   ├── Live.kt           # SSE streaming
+│   │   │   │   │   ├── DeviceInfo.kt     # Device utilities
+│   │   │   │   │   └── Config.kt         # Configuration
+│   │   │   │   ├── sdk/                  # Generated API client
+│   │   │   │   │   ├── Client.kt         # API methods
+│   │   │   │   │   ├── Types.kt          # Request/response types
+│   │   │   │   │   └── Extensions.kt     # Utilities
+│   │   │   │   ├── ui/
+│   │   │   │   │   ├── theme/            # Material 3 theme
+│   │   │   │   │   ├── screens/          # Screen composables
+│   │   │   │   │   └── components/       # Reusable components
+│   │   │   │   └── models/               # Data models
+│   │   │   ├── res/                      # Resources
+│   │   │   └── AndroidManifest.xml
+│   │   ├── test/                         # Unit tests
+│   │   └── androidTest/                  # Instrumentation tests
+│   └── build.gradle.kts
+├── gradle/
+│   └── libs.versions.toml                # Version catalog
+├── build.gradle.kts
+└── settings.gradle.kts
+```
+
+## Features
+
+### Authentication
+
+The app includes built-in authentication with:
+- Sign in / Sign up flows
+- Secure token storage using EncryptedSharedPreferences
+- Automatic token refresh
+- Sign out functionality
+
+### API Integration
+
+The `MizuRuntime` provides:
+- Type-safe API calls with Kotlin coroutines
+- Automatic mobile headers (device ID, app version, etc.)
+- Error handling with structured API errors
+- SSE streaming support for real-time features
+
+### Example Usage
+
+```kotlin
+// Get the runtime
+val runtime = MizuRuntime.getInstance(context)
+
+// Create the API client
+val client = {{.Name}}Client(runtime)
+
+// Make authenticated requests
+val user = client.getCurrentUser()
+
+// Update user profile
+val updated = client.updateCurrentUser(
+    UserUpdate(name = "New Name")
+)
+
+// Stream events
+runtime.stream("/events").collect { event ->
+    println("Received: ${event.data}")
+}
+```
+
+## Configuration
+
+### Build Variants
+
+| Variant | Base URL | Debug |
+|---------|----------|-------|
+| `debug` | `http://10.0.2.2:3000` | `true` |
+| `release` | `https://api.example.com` | `false` |
+
+### Resource Values
+
+| Resource | Description |
+|----------|-------------|
+| `mizu_base_url` | API base URL |
+| `mizu_debug` | Enable debug logging |
+
+## Testing
+
+### Run Unit Tests
+
+```bash
+./gradlew test
+```
+
+Or press Ctrl+Shift+F10 in Android Studio.
+
+### Run Instrumentation Tests
+
+```bash
+./gradlew connectedAndroidTest
+```
+
+## Building for Release
+
+### Generate Signed APK
+
+1. Build > Generate Signed Bundle / APK
+2. Select APK
+3. Create or select keystore
+4. Select release build variant
+5. Build
+
+### Generate Signed AAB (for Play Store)
+
+```bash
+./gradlew bundleRelease
+```
+
+## Dependencies
+
+This project uses:
+- **Jetpack Compose** - Modern declarative UI
+- **Material 3** - Material Design components
+- **OkHttp** - HTTP client with SSE support
+- **Kotlin Serialization** - JSON serialization
+- **Security Crypto** - Encrypted storage
+- **Kotlin Coroutines** - Asynchronous programming
+
+## Architecture
+
+The app follows Android recommended architecture:
+- **UI Layer**: Jetpack Compose with Kotlin state flows
+- **Data Layer**: MizuRuntime for API communication
+- **Security**: EncryptedSharedPreferences for token storage
+
+## License
+
+{{.License}}

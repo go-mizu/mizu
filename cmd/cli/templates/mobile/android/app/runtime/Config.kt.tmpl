@@ -1,0 +1,88 @@
+package {{.Package}}.runtime
+
+import android.content.Context
+
+/** Mizu runtime configuration */
+data class MizuConfig(
+    /** Base URL for API requests */
+    val baseURL: String = "http://10.0.2.2:3000", // Android emulator localhost
+
+    /** Request timeout in milliseconds */
+    val timeout: Long = 30_000,
+
+    /** Enable debug logging */
+    val debug: Boolean = false,
+
+    /** Custom headers to include in all requests */
+    val headers: Map<String, String> = emptyMap(),
+
+    /** Token refresh configuration */
+    val tokenRefresh: TokenRefreshConfig? = null,
+
+    /** Retry configuration */
+    val retry: RetryConfig = RetryConfig.DEFAULT
+) {
+    companion object {
+        /** Load configuration from BuildConfig or resources */
+        fun fromContext(context: Context): MizuConfig {
+            val resources = context.resources
+            val packageName = context.packageName
+
+            val baseURL = try {
+                val resId = resources.getIdentifier("mizu_base_url", "string", packageName)
+                if (resId != 0) resources.getString(resId) else null
+            } catch (_: Exception) {
+                null
+            }
+
+            val timeout = try {
+                val resId = resources.getIdentifier("mizu_timeout", "integer", packageName)
+                if (resId != 0) resources.getInteger(resId).toLong() else null
+            } catch (_: Exception) {
+                null
+            }
+
+            val debug = try {
+                val resId = resources.getIdentifier("mizu_debug", "bool", packageName)
+                if (resId != 0) resources.getBoolean(resId) else null
+            } catch (_: Exception) {
+                null
+            }
+
+            return MizuConfig(
+                baseURL = baseURL ?: "http://10.0.2.2:3000",
+                timeout = timeout ?: 30_000,
+                debug = debug ?: false
+            )
+        }
+    }
+}
+
+/** Token refresh configuration */
+data class TokenRefreshConfig(
+    /** Path for token refresh endpoint */
+    val refreshPath: String = "/auth/refresh",
+
+    /** Refresh token before expiration (milliseconds) */
+    val refreshBeforeExpiry: Long = 60_000
+)
+
+/** Retry configuration */
+data class RetryConfig(
+    /** Maximum number of retries */
+    val maxRetries: Int = 3,
+
+    /** Base delay between retries (exponential backoff) */
+    val baseDelayMs: Long = 1_000,
+
+    /** Maximum delay between retries */
+    val maxDelayMs: Long = 30_000,
+
+    /** HTTP status codes that should trigger a retry */
+    val retryableStatuses: Set<Int> = setOf(408, 429, 500, 502, 503, 504)
+) {
+    companion object {
+        val DEFAULT = RetryConfig()
+        val NONE = RetryConfig(maxRetries = 0)
+    }
+}
