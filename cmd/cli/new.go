@@ -33,8 +33,14 @@ If no path is specified, the current directory is used.`,
   # Create API project in new directory
   mizu new ./myapp --template api
 
-  # Create React project using sub-template
-  mizu new ./myapp --template frontend --sub react
+  # Create React frontend project
+  mizu new ./myapp --template frontend:react
+
+  # Create Vue frontend project
+  mizu new ./myapp --template frontend:vue
+
+  # Show available frontend sub-templates
+  mizu new ./myapp --template frontend
 
   # Preview what would be created
   mizu new ./myapp --template api --dry-run
@@ -46,8 +52,8 @@ If no path is specified, the current directory is used.`,
 }
 
 func init() {
-	newCmd.Flags().StringVarP(&newFlags.template, "template", "t", "", "Template to render")
-	newCmd.Flags().StringVarP(&newFlags.sub, "sub", "s", "", "Sub-template to use (e.g., react, vue)")
+	newCmd.Flags().StringVarP(&newFlags.template, "template", "t", "", "Template to render (use name:variant for sub-templates, e.g., frontend:react)")
+	newCmd.Flags().StringVarP(&newFlags.sub, "sub", "s", "", "Sub-template variant (deprecated: use --template name:variant instead)")
 	newCmd.Flags().BoolVar(&newFlags.list, "list", false, "List available templates")
 	newCmd.Flags().BoolVar(&newFlags.force, "force", false, "Overwrite existing files")
 	newCmd.Flags().BoolVar(&newFlags.dryRun, "dry-run", false, "Print plan without writing")
@@ -76,9 +82,21 @@ func runNewCmd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("template is required")
 	}
 
-	// Resolve template name with sub-template
+	// Parse template name for colon syntax (e.g., frontend:react)
 	templateName := newFlags.template
-	if err := resolveSubTemplate(&templateName, newFlags.sub, out); err != nil {
+	sub := newFlags.sub
+
+	// Support frontend:react syntax
+	if strings.Contains(templateName, ":") {
+		parts := strings.SplitN(templateName, ":", 2)
+		templateName = parts[0]
+		if sub == "" {
+			sub = parts[1]
+		}
+	}
+
+	// Resolve template name with sub-template
+	if err := resolveSubTemplate(&templateName, sub, out); err != nil {
 		return err
 	}
 
@@ -213,28 +231,54 @@ func listTemplatesCommand(out *Output) error {
 		return err
 	}
 
+	// Expand templates with sub-templates
+	expanded := expandTemplates(templates)
+
 	if Flags.JSON {
-		out.WriteJSON(map[string]any{"templates": templates})
+		out.WriteJSON(map[string]any{"templates": expanded})
 		return nil
 	}
 
 	// Human output
-	tbl := newTable("Template", "Purpose")
-	for _, t := range templates {
-		desc := t.Description
-		if len(t.SubTemplates) > 0 {
-			// Add sub-template names to description
-			var names []string
-			for _, st := range t.SubTemplates {
-				names = append(names, st.Name)
-			}
-			desc += " (--sub: " + strings.Join(names, ", ") + ")"
-		}
-		tbl.addRow(t.Name, desc)
+	tbl := newTable("Template", "Description")
+	for _, t := range expanded {
+		tbl.addRow(t.Name, t.Description)
 	}
 	tbl.write(out.Stdout)
 
 	return nil
+}
+
+// expandedTemplate represents a template in the expanded list
+type expandedTemplate struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// expandTemplates expands templates with sub-templates into individual entries.
+// For example, "frontend" with sub-templates becomes "frontend:react", "frontend:vue", etc.
+func expandTemplates(templates []templateMeta) []expandedTemplate {
+	var result []expandedTemplate
+
+	for _, t := range templates {
+		if len(t.SubTemplates) > 0 {
+			// Expand sub-templates
+			for _, st := range t.SubTemplates {
+				result = append(result, expandedTemplate{
+					Name:        t.Name + ":" + st.Name,
+					Description: st.Description,
+				})
+			}
+		} else {
+			// No sub-templates, add as-is
+			result = append(result, expandedTemplate{
+				Name:        t.Name,
+				Description: t.Description,
+			})
+		}
+	}
+
+	return result
 }
 
 // buildPlan creates a template plan (forwarded to existing implementation).
@@ -289,8 +333,8 @@ func buildPlan(templateName, root string, vars templateVars) (*plan, error) {
 }
 
 // resolveSubTemplate checks if a template requires a sub-template and validates the selection.
-// If --sub is provided, it appends the sub-template to the template name.
-// If the template has subTemplates but --sub is not provided, it returns an error.
+// If sub is provided, it appends the sub-template to the template name.
+// If the template has subTemplates but sub is not provided, it shows available options and exits.
 func resolveSubTemplate(templateName *string, sub string, out *Output) error {
 	meta, err := loadTemplateMeta(*templateName)
 	if err != nil {
@@ -302,14 +346,26 @@ func resolveSubTemplate(templateName *string, sub string, out *Output) error {
 		if sub == "" {
 			// No sub-template provided, show available options
 			if Flags.JSON {
-				out.WriteJSONError("missing_sub", fmt.Sprintf("template %q requires --sub flag", *templateName))
-			} else {
-				out.PrintError("template %q requires --sub flag", *templateName)
-				out.Print("Available sub-templates:\n")
-				for _, st := range meta.SubTemplates {
-					out.Print("  %s - %s\n", st.Name, st.Description)
+				subTemplates := make([]map[string]string, len(meta.SubTemplates))
+				for i, st := range meta.SubTemplates {
+					subTemplates[i] = map[string]string{
+						"name":        st.Name,
+						"description": st.Description,
+						"template":    *templateName + ":" + st.Name,
+					}
 				}
-				out.Print("\nExample: mizu new ./myapp --template %s --sub %s\n", *templateName, meta.SubTemplates[0].Name)
+				out.WriteJSON(map[string]any{
+					"template":     *templateName,
+					"subTemplates": subTemplates,
+				})
+			} else {
+				out.Print("Available %s templates:\n\n", meta.Name)
+				tbl := newTable("Template", "Description")
+				for _, st := range meta.SubTemplates {
+					tbl.addRow(*templateName+":"+st.Name, st.Description)
+				}
+				tbl.write(out.Stdout)
+				out.Print("\nExample: mizu new ./myapp --template %s:%s\n", *templateName, meta.SubTemplates[0].Name)
 			}
 			return fmt.Errorf("missing sub-template")
 		}
