@@ -1,0 +1,183 @@
+---
+icon: "scroll"
+title: "Logging"
+description: "Use structured logging for requests, errors, and custom messages."
+---
+
+Mizu uses Go's `slog` package for structured logging. Every request gets logged automatically, and you can add custom log messages anywhere in your handlers.
+
+## What is structured logging?
+
+Traditional logging writes plain text:
+
+```
+2024-01-15 10:30:45 User 123 logged in from 192.168.1.1
+```
+
+Structured logging writes key-value pairs:
+
+```json
+{"time":"2024-01-15T10:30:45Z","level":"INFO","msg":"user logged in","user_id":123,"ip":"192.168.1.1"}
+```
+
+Structured logs are easier to search, filter, and analyze with tools like Elasticsearch, Loki, or CloudWatch.
+
+## Built-in request logging
+
+When you create a Mizu app, request logging is enabled by default:
+
+```go
+app := mizu.New()  // Logger middleware included
+```
+
+Each request produces a log entry like:
+
+```
+INFO request status=200 method=GET path=/users duration_ms=12 remote_ip=127.0.0.1
+```
+
+## Logging in handlers
+
+Access the logger from the context to add your own log messages:
+
+```go
+func getUser(c *mizu.Ctx) error {
+    id := c.Param("id")
+
+    c.Logger().Info("fetching user", "user_id", id)
+
+    user, err := database.FindUser(id)
+    if err != nil {
+        c.Logger().Error("database error", "error", err, "user_id", id)
+        return err
+    }
+
+    c.Logger().Debug("user found", "user_id", id, "name", user.Name)
+    return c.JSON(200, user)
+}
+```
+
+### Log levels
+
+| Level | Method | When to use |
+|-------|--------|-------------|
+| Debug | `c.Logger().Debug()` | Detailed info for debugging |
+| Info | `c.Logger().Info()` | Normal operations |
+| Warn | `c.Logger().Warn()` | Something unexpected but recoverable |
+| Error | `c.Logger().Error()` | Something failed |
+
+```go
+c.Logger().Debug("checking cache", "key", cacheKey)
+c.Logger().Info("user logged in", "user_id", userID)
+c.Logger().Warn("cache miss", "key", cacheKey)
+c.Logger().Error("payment failed", "error", err, "order_id", orderID)
+```
+
+## Configuring the logger
+
+### Logger middleware options
+
+Configure the built-in request logger:
+
+```go
+app.Use(mizu.Logger(mizu.LoggerOptions{
+    Mode:            mizu.Dev,          // Output format
+    Color:           true,              // Colored output
+    Logger:          customLogger,      // Custom slog.Logger
+    RequestIDHeader: "X-Request-Id",    // Header name for request ID
+    UserAgent:       true,              // Include User-Agent in logs
+    Output:          os.Stderr,         // Where to write logs
+}))
+```
+
+### Log modes
+
+| Mode | Output | Use case |
+|------|--------|----------|
+| `mizu.Auto` | Text for terminals, JSON otherwise | Default - adapts automatically |
+| `mizu.Dev` | Human-readable text | Local development |
+| `mizu.Prod` | JSON | Production log aggregators |
+
+```go
+// Development: colored text output
+app.Use(mizu.Logger(mizu.LoggerOptions{
+    Mode:  mizu.Dev,
+    Color: true,
+}))
+
+// Production: JSON for log aggregators
+app.Use(mizu.Logger(mizu.LoggerOptions{
+    Mode: mizu.Prod,
+}))
+```
+
+### Custom logger
+
+Replace the default logger with your own:
+
+```go
+import "log/slog"
+
+// Create a custom logger
+logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+    Level: slog.LevelDebug,
+}))
+
+// Set it on the app
+app.SetLogger(logger)
+```
+
+All handlers and middleware will use this logger via `c.Logger()`.
+
+## Request ID tracking
+
+The logger middleware automatically generates or propagates a request ID for each request. This helps trace requests across services.
+
+```go
+app.Use(mizu.Logger(mizu.LoggerOptions{
+    RequestIDHeader: "X-Request-Id",  // Use this header
+}))
+```
+
+The request ID is:
+1. Read from the incoming request header (if present)
+2. Generated automatically (if not present)
+3. Added to the response headers
+4. Included in all log entries
+
+## Example output
+
+### Development mode (text)
+
+```
+10:30:45 INFO request status=200 method=GET path=/users duration_ms=12 request_id=abc123
+10:30:45 INFO fetching user user_id=42
+10:30:45 INFO request status=200 method=GET path=/users/42 duration_ms=8 request_id=def456
+```
+
+### Production mode (JSON)
+
+```json
+{"time":"2024-01-15T10:30:45Z","level":"INFO","msg":"request","status":200,"method":"GET","path":"/users","duration_ms":12,"request_id":"abc123"}
+```
+
+## Summary
+
+| Feature | How |
+|---------|-----|
+| Log in handler | `c.Logger().Info("message", "key", value)` |
+| Log levels | `Debug`, `Info`, `Warn`, `Error` |
+| Configure format | `mizu.Logger(mizu.LoggerOptions{Mode: mizu.Prod})` |
+| Custom logger | `app.SetLogger(myLogger)` |
+| Request ID | Automatic with `RequestIDHeader` option |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Error Handling" icon="bug" href="/guides/concepts/error">
+    Handle and log errors effectively.
+  </Card>
+  <Card title="Middleware" icon="layer-group" href="/guides/concepts/middleware">
+    Add cross-cutting logging behavior.
+  </Card>
+</CardGroup>

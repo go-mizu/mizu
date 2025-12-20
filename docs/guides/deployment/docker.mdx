@@ -1,0 +1,607 @@
+---
+icon: "docker"
+title: "Docker"
+description: "Deploy Mizu applications using Docker containers."
+---
+
+Docker packages your application with its runtime environment, ensuring consistent behavior across development, testing, and production. This guide covers everything from basic Dockerfiles to production-ready configurations.
+
+## Basic Dockerfile
+
+Start with a multi-stage build for small, secure images:
+
+```dockerfile
+# Build stage
+FROM golang:1.23-alpine AS build
+WORKDIR /src
+
+# Download dependencies first (cached if go.mod unchanged)
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Build the application
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app ./cmd/server
+
+# Runtime stage
+FROM gcr.io/distroless/static-debian12
+COPY --from=build /app /app
+EXPOSE 3000
+USER nonroot:nonroot
+CMD ["/app"]
+```
+
+### Build and Run
+
+```bash
+# Build the image
+docker build -t myapp:latest .
+
+# Run the container
+docker run -d --name myapp -p 3000:3000 myapp:latest
+
+# View logs
+docker logs -f myapp
+
+# Stop and remove
+docker stop myapp && docker rm myapp
+```
+
+## Production Dockerfile
+
+A complete production Dockerfile with all best practices:
+
+```dockerfile
+# syntax=docker/dockerfile:1
+
+# Build stage
+FROM golang:1.23-alpine AS build
+
+# Install git for private dependencies (if needed)
+RUN apk add --no-cache git ca-certificates tzdata
+
+WORKDIR /src
+
+# Download dependencies (cached layer)
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+# Copy source code
+COPY . .
+
+# Build with optimizations
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -ldflags="-s -w -X main.version=$(git describe --tags --always)" \
+    -o /app ./cmd/server
+
+# Runtime stage - distroless for security
+FROM gcr.io/distroless/static-debian12
+
+# Copy timezone data for time operations
+COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
+
+# Copy CA certificates for HTTPS
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+# Copy the binary
+COPY --from=build /app /app
+
+# Expose port
+EXPOSE 3000
+
+# Run as non-root
+USER nonroot:nonroot
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["/app", "-health-check"] || exit 1
+
+# Start the application
+ENTRYPOINT ["/app"]
+```
+
+## Base Image Options
+
+| Image | Size | Use Case |
+|-------|------|----------|
+| `gcr.io/distroless/static` | ~2MB | Pure Go binaries (recommended) |
+| `gcr.io/distroless/base` | ~20MB | When CGO is required |
+| `alpine:3.19` | ~7MB | When you need a shell for debugging |
+| `scratch` | 0MB | Minimal, but no CA certs or timezone |
+
+### Distroless (Recommended)
+
+```dockerfile
+FROM gcr.io/distroless/static-debian12
+COPY --from=build /app /app
+USER nonroot:nonroot
+CMD ["/app"]
+```
+
+**Pros**: Minimal attack surface, no shell, no package manager
+**Cons**: No debugging tools inside container
+
+### Alpine (When Shell Needed)
+
+```dockerfile
+FROM alpine:3.19
+RUN apk add --no-cache ca-certificates tzdata
+COPY --from=build /app /app
+RUN adduser -D -u 1000 appuser
+USER appuser
+CMD ["/app"]
+```
+
+**Pros**: Shell available, small size, package manager
+**Cons**: Larger attack surface
+
+## Multi-Architecture Builds
+
+Build for both AMD64 and ARM64 (for AWS Graviton, Apple Silicon):
+
+```dockerfile
+FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS build
+ARG TARGETPLATFORM
+ARG TARGETOS
+ARG TARGETARCH
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -ldflags="-s -w" -o /app ./cmd/server
+
+FROM gcr.io/distroless/static-debian12
+COPY --from=build /app /app
+USER nonroot:nonroot
+CMD ["/app"]
+```
+
+### Build Multi-Arch Images
+
+```bash
+# Create and use a buildx builder
+docker buildx create --name multiarch --use
+
+# Build and push for multiple platforms
+docker buildx build \
+    --platform linux/amd64,linux/arm64 \
+    -t myregistry/myapp:latest \
+    --push .
+```
+
+## Docker Compose
+
+### Development
+
+`docker-compose.yml` for local development:
+
+```yaml
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - ENV=development
+      - DATABASE_URL=postgres://user:pass@db:5432/myapp?sslmode=disable
+      - LOG_LEVEL=debug
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - .:/src  # Mount source for hot reload (dev only)
+    command: go run ./cmd/server  # Override for development
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: myapp
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d myapp"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  pgdata:
+```
+
+### Production
+
+`docker-compose.prod.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  app:
+    image: myregistry/myapp:${VERSION:-latest}
+    ports:
+      - "3000:3000"
+    environment:
+      - ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - LOG_LEVEL=info
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/readyz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+volumes:
+  pgdata:
+    driver: local
+```
+
+### Running in Production
+
+```bash
+# Start with production config
+docker compose -f docker-compose.prod.yml up -d
+
+# View logs
+docker compose -f docker-compose.prod.yml logs -f app
+
+# Scale the application
+docker compose -f docker-compose.prod.yml up -d --scale app=3
+
+# Rolling update
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d --no-deps app
+```
+
+## Environment Variables and Secrets
+
+### Using .env Files
+
+```bash
+# .env file (never commit to git!)
+DATABASE_URL=postgres://user:pass@localhost:5432/myapp
+SECRET_KEY=your-secret-key
+```
+
+```yaml
+# docker-compose.yml
+services:
+  app:
+    env_file:
+      - .env
+```
+
+### Docker Secrets (Swarm Mode)
+
+```yaml
+version: '3.8'
+
+services:
+  app:
+    image: myapp:latest
+    secrets:
+      - db_password
+      - api_key
+    environment:
+      - DB_PASSWORD_FILE=/run/secrets/db_password
+
+secrets:
+  db_password:
+    external: true
+  api_key:
+    file: ./secrets/api_key.txt
+```
+
+Read secrets in your application:
+
+```go
+func getSecret(name string) string {
+    // Try file-based secret first (Docker secrets)
+    path := fmt.Sprintf("/run/secrets/%s", name)
+    if data, err := os.ReadFile(path); err == nil {
+        return strings.TrimSpace(string(data))
+    }
+
+    // Fall back to environment variable
+    envName := strings.ToUpper(name)
+    return os.Getenv(envName)
+}
+```
+
+## Container Health Checks
+
+### In Dockerfile
+
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget -q --spider http://localhost:3000/readyz || exit 1
+```
+
+### In Docker Compose
+
+```yaml
+services:
+  app:
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/readyz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+```
+
+### Custom Health Check Binary
+
+Add a lightweight health check to your binary:
+
+```go
+// cmd/server/main.go
+func main() {
+    if len(os.Args) > 1 && os.Args[1] == "-health-check" {
+        resp, err := http.Get("http://localhost:3000/readyz")
+        if err != nil || resp.StatusCode != 200 {
+            os.Exit(1)
+        }
+        os.Exit(0)
+    }
+
+    // Normal application startup
+    app := mizu.New()
+    // ...
+}
+```
+
+## Networking
+
+### Container Networking
+
+```yaml
+version: '3.8'
+
+services:
+  app:
+    networks:
+      - frontend
+      - backend
+
+  db:
+    networks:
+      - backend
+
+  nginx:
+    networks:
+      - frontend
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true  # No external access
+```
+
+### Exposing Ports
+
+```yaml
+services:
+  app:
+    ports:
+      - "3000:3000"          # Map host:container
+      - "127.0.0.1:3000:3000" # Only localhost
+      - "3000"               # Random host port
+    expose:
+      - "3000"               # Only to other containers
+```
+
+## Image Optimization
+
+### Layer Caching
+
+Order instructions from least to most frequently changing:
+
+```dockerfile
+# 1. Base image (rarely changes)
+FROM golang:1.23-alpine AS build
+
+# 2. Dependencies (changes occasionally)
+COPY go.mod go.sum ./
+RUN go mod download
+
+# 3. Source code (changes frequently)
+COPY . .
+RUN go build -o /app
+```
+
+### Reduce Image Size
+
+```bash
+# Check image size
+docker images myapp
+
+# Analyze layers
+docker history myapp:latest
+
+# Use dive for detailed analysis
+dive myapp:latest
+```
+
+### .dockerignore
+
+Create `.dockerignore` to exclude unnecessary files:
+
+```
+.git
+.github
+.vscode
+*.md
+!README.md
+Makefile
+docker-compose*.yml
+.env*
+tmp/
+vendor/
+*_test.go
+```
+
+## Private Registries
+
+### Docker Hub
+
+```bash
+# Login
+docker login
+
+# Tag and push
+docker tag myapp:latest username/myapp:latest
+docker push username/myapp:latest
+```
+
+### AWS ECR
+
+```bash
+# Login to ECR
+aws ecr get-login-password --region us-east-1 | \
+    docker login --username AWS --password-stdin 123456789.dkr.ecr.us-east-1.amazonaws.com
+
+# Tag and push
+docker tag myapp:latest 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:latest
+docker push 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:latest
+```
+
+### Google Container Registry
+
+```bash
+# Configure Docker for GCR
+gcloud auth configure-docker
+
+# Tag and push
+docker tag myapp:latest gcr.io/my-project/myapp:latest
+docker push gcr.io/my-project/myapp:latest
+```
+
+## Troubleshooting
+
+### Container Won't Start
+
+```bash
+# Check container logs
+docker logs myapp
+
+# Run interactively (if Alpine-based)
+docker run -it myapp:latest /bin/sh
+
+# Check container status
+docker inspect myapp
+```
+
+### Health Check Failing
+
+```bash
+# Test health check manually
+docker exec myapp wget -q --spider http://localhost:3000/readyz
+
+# Check health status
+docker inspect --format='{{.State.Health.Status}}' myapp
+```
+
+### Performance Issues
+
+```bash
+# Check resource usage
+docker stats myapp
+
+# Set resource limits
+docker run -d --memory=512m --cpus=1 myapp:latest
+```
+
+## Complete Example
+
+Here's a production-ready setup:
+
+```
+myapp/
+├── cmd/
+│   └── server/
+│       └── main.go
+├── internal/
+│   └── ...
+├── Dockerfile
+├── docker-compose.yml
+├── docker-compose.prod.yml
+├── .dockerignore
+└── .env.example
+```
+
+Build and deploy:
+
+```bash
+# Build
+docker build -t myapp:v1.0.0 .
+
+# Test locally
+docker compose up
+
+# Deploy to production
+docker compose -f docker-compose.prod.yml up -d
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Kubernetes" icon="dharmachakra" href="/guides/deployment/kubernetes">
+    Deploy containers at scale with Kubernetes.
+  </Card>
+  <Card title="CI/CD" icon="arrows-rotate" href="/guides/deployment/cicd">
+    Automate Docker builds in CI/CD pipelines.
+  </Card>
+</CardGroup>

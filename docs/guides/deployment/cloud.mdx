@@ -1,0 +1,561 @@
+---
+icon: "cloud-arrow-up"
+title: "Cloud Platforms"
+description: "Deploy Mizu applications to AWS, Google Cloud, DigitalOcean, and other cloud providers."
+---
+
+This guide covers deploying Mizu applications to major cloud platforms using their managed services for containers and compute.
+
+## AWS
+
+### AWS App Runner
+
+The simplest way to deploy containers on AWS. No infrastructure management required.
+
+**1. Push image to ECR:**
+
+```bash
+# Create repository
+aws ecr create-repository --repository-name myapp
+
+# Login to ECR
+aws ecr get-login-password --region us-east-1 | \
+    docker login --username AWS --password-stdin \
+    123456789.dkr.ecr.us-east-1.amazonaws.com
+
+# Build and push
+docker build -t myapp .
+docker tag myapp:latest 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:latest
+docker push 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:latest
+```
+
+**2. Create App Runner service:**
+
+```bash
+aws apprunner create-service \
+    --service-name myapp \
+    --source-configuration '{
+        "ImageRepository": {
+            "ImageIdentifier": "123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:latest",
+            "ImageRepositoryType": "ECR",
+            "ImageConfiguration": {
+                "Port": "3000",
+                "RuntimeEnvironmentVariables": {
+                    "ENV": "production"
+                }
+            }
+        },
+        "AutoDeploymentsEnabled": true
+    }' \
+    --instance-configuration '{
+        "Cpu": "1 vCPU",
+        "Memory": "2 GB"
+    }' \
+    --health-check-configuration '{
+        "Protocol": "HTTP",
+        "Path": "/readyz",
+        "Interval": 10,
+        "Timeout": 5,
+        "HealthyThreshold": 1,
+        "UnhealthyThreshold": 5
+    }'
+```
+
+### Amazon ECS with Fargate
+
+Serverless containers with more control than App Runner.
+
+**task-definition.json:**
+
+```json
+{
+  "family": "myapp",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::123456789:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "myapp",
+      "image": "123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:latest",
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {"name": "ENV", "value": "production"}
+      ],
+      "secrets": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:123456789:secret:myapp/db-url"
+        }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "wget -q --spider http://localhost:3000/readyz || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 10
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/myapp",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
+```
+
+**Deploy:**
+
+```bash
+# Register task definition
+aws ecs register-task-definition --cli-input-json file://task-definition.json
+
+# Create service
+aws ecs create-service \
+    --cluster myapp-cluster \
+    --service-name myapp \
+    --task-definition myapp \
+    --desired-count 2 \
+    --launch-type FARGATE \
+    --network-configuration '{
+        "awsvpcConfiguration": {
+            "subnets": ["subnet-xxx", "subnet-yyy"],
+            "securityGroups": ["sg-xxx"],
+            "assignPublicIp": "ENABLED"
+        }
+    }' \
+    --load-balancers '[
+        {
+            "targetGroupArn": "arn:aws:elasticloadbalancing:...",
+            "containerName": "myapp",
+            "containerPort": 3000
+        }
+    ]'
+```
+
+### Amazon EC2
+
+Direct deployment to EC2 instances.
+
+**User data script for Amazon Linux 2023:**
+
+```bash
+#!/bin/bash
+yum update -y
+
+# Download and install binary
+aws s3 cp s3://myapp-releases/myapp /usr/local/bin/myapp
+chmod +x /usr/local/bin/myapp
+
+# Create service user
+useradd -r -s /bin/false myapp
+
+# Create systemd service
+cat > /etc/systemd/system/myapp.service << 'EOF'
+[Unit]
+Description=My Mizu Application
+After=network.target
+
+[Service]
+Type=simple
+User=myapp
+ExecStart=/usr/local/bin/myapp
+Restart=always
+RestartSec=5
+Environment=ENV=production
+Environment=PORT=3000
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Start service
+systemctl daemon-reload
+systemctl enable myapp
+systemctl start myapp
+```
+
+## Google Cloud
+
+### Cloud Run
+
+Fully managed serverless containers.
+
+**Deploy directly from source:**
+
+```bash
+# Deploy from source (Cloud Build + Cloud Run)
+gcloud run deploy myapp \
+    --source . \
+    --region us-central1 \
+    --platform managed \
+    --allow-unauthenticated \
+    --port 3000 \
+    --memory 512Mi \
+    --cpu 1 \
+    --min-instances 0 \
+    --max-instances 10 \
+    --set-env-vars "ENV=production"
+```
+
+**Deploy from container registry:**
+
+```bash
+# Build and push to GCR
+gcloud builds submit --tag gcr.io/my-project/myapp
+
+# Deploy
+gcloud run deploy myapp \
+    --image gcr.io/my-project/myapp \
+    --region us-central1 \
+    --platform managed \
+    --allow-unauthenticated \
+    --port 3000
+```
+
+**service.yaml for Cloud Run:**
+
+```yaml
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: myapp
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "10"
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      containers:
+        - image: gcr.io/my-project/myapp:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: ENV
+              value: production
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: 3000
+            initialDelaySeconds: 0
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: 3000
+            periodSeconds: 10
+```
+
+### Google Compute Engine
+
+**Startup script:**
+
+```bash
+#!/bin/bash
+apt-get update
+apt-get install -y wget
+
+# Download binary
+gsutil cp gs://myapp-releases/myapp /usr/local/bin/myapp
+chmod +x /usr/local/bin/myapp
+
+# Create service
+cat > /etc/systemd/system/myapp.service << 'EOF'
+[Unit]
+Description=My Mizu Application
+After=network.target
+
+[Service]
+Type=simple
+User=nobody
+ExecStart=/usr/local/bin/myapp
+Restart=always
+Environment=ENV=production
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable myapp
+systemctl start myapp
+```
+
+**Create instance:**
+
+```bash
+gcloud compute instances create myapp-vm \
+    --zone us-central1-a \
+    --machine-type e2-small \
+    --image-family debian-12 \
+    --image-project debian-cloud \
+    --metadata-from-file startup-script=startup.sh \
+    --tags http-server \
+    --scopes storage-ro
+```
+
+## DigitalOcean
+
+### App Platform
+
+DigitalOcean's managed container platform.
+
+**app.yaml:**
+
+```yaml
+name: myapp
+region: nyc
+services:
+  - name: api
+    github:
+      repo: myorg/myapp
+      branch: main
+      deploy_on_push: true
+    dockerfile_path: Dockerfile
+    http_port: 3000
+    instance_size_slug: basic-xxs
+    instance_count: 2
+    health_check:
+      http_path: /readyz
+      initial_delay_seconds: 10
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+    envs:
+      - key: ENV
+        value: production
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+```
+
+**Deploy:**
+
+```bash
+doctl apps create --spec app.yaml
+```
+
+### Droplets
+
+Direct deployment to DigitalOcean VMs.
+
+```bash
+# Create droplet
+doctl compute droplet create myapp \
+    --region nyc1 \
+    --size s-1vcpu-1gb \
+    --image ubuntu-22-04-x64 \
+    --ssh-keys $(doctl compute ssh-key list --format ID --no-header)
+
+# Get IP
+doctl compute droplet get myapp --format PublicIPv4 --no-header
+
+# Deploy
+scp myapp root@<ip>:/usr/local/bin/
+ssh root@<ip> 'systemctl restart myapp'
+```
+
+## Fly.io
+
+Modern platform optimized for edge deployment.
+
+**fly.toml:**
+
+```toml
+app = "myapp"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  ENV = "production"
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 100
+    soft_limit = 80
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "30s"
+  method = "GET"
+  path = "/readyz"
+  protocol = "http"
+  timeout = "5s"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256
+```
+
+**Deploy:**
+
+```bash
+# Launch new app
+fly launch
+
+# Deploy updates
+fly deploy
+
+# View logs
+fly logs
+
+# Scale
+fly scale count 3
+
+# Set secrets
+fly secrets set DATABASE_URL=postgres://...
+```
+
+## Railway
+
+One-click deployments from GitHub.
+
+**railway.json:**
+
+```json
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile"
+  },
+  "deploy": {
+    "numReplicas": 1,
+    "healthcheckPath": "/readyz",
+    "healthcheckTimeout": 100,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
+  }
+}
+```
+
+**Deploy:**
+
+```bash
+# Install CLI
+npm install -g @railway/cli
+
+# Login and deploy
+railway login
+railway init
+railway up
+```
+
+## Render
+
+Simple deployments with free tier.
+
+**render.yaml:**
+
+```yaml
+services:
+  - type: web
+    name: myapp
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    region: oregon
+    plan: starter
+    healthCheckPath: /readyz
+    envVars:
+      - key: ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: myapp-db
+          property: connectionString
+
+databases:
+  - name: myapp-db
+    databaseName: myapp
+    plan: starter
+```
+
+## Comparison
+
+| Platform | Pros | Cons | Best For |
+|----------|------|------|----------|
+| **AWS App Runner** | Simple, auto-scaling | Limited config | Small apps |
+| **AWS ECS Fargate** | Full control, scales well | Complex setup | Production workloads |
+| **Cloud Run** | Generous free tier, fast deploys | Cold starts | Variable traffic |
+| **DigitalOcean App** | Simple pricing, GitHub integration | Limited regions | Side projects |
+| **Fly.io** | Edge deployment, fast | Learning curve | Global apps |
+| **Railway** | Developer friendly | Limited scale | Prototypes |
+| **Render** | Free tier, simple | Cold starts on free | Learning |
+
+## Best Practices
+
+### Use Health Checks
+
+All platforms support health checks. Always configure them:
+
+```go
+http.Handle("/readyz", app.ReadyzHandler())
+http.Handle("/livez", app.LivezHandler())
+```
+
+### Environment-Based Configuration
+
+```go
+func main() {
+    cfg := LoadConfig()
+
+    app := mizu.New()
+
+    if cfg.Env == "production" {
+        app.Use(mizu.Logger(mizu.LoggerOptions{Mode: mizu.Prod}))
+    }
+
+    app.Listen(":" + cfg.Port)
+}
+```
+
+### Graceful Shutdown
+
+Cloud platforms send SIGTERM before stopping containers. Mizu handles this automatically, but configure appropriate timeouts:
+
+```go
+app := mizu.New()
+app.ShutdownTimeout = 25 * time.Second // Less than platform timeout
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Serverless" icon="bolt" href="/guides/deployment/serverless">
+    AWS Lambda, Cloud Functions, and more.
+  </Card>
+  <Card title="CI/CD" icon="arrows-rotate" href="/guides/deployment/cicd">
+    Automate deployments to cloud platforms.
+  </Card>
+</CardGroup>

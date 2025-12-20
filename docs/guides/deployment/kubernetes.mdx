@@ -1,0 +1,666 @@
+---
+icon: "dharmachakra"
+title: "Kubernetes"
+description: "Deploy and orchestrate Mizu applications on Kubernetes."
+---
+
+Kubernetes (K8s) provides container orchestration for production workloads. This guide covers deploying Mizu applications with proper health checks, scaling, and best practices.
+
+## Basic Deployment
+
+### deployment.yaml
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+  labels:
+    app: myapp
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+        - name: myapp
+          image: myregistry/myapp:v1.0.0
+          ports:
+            - containerPort: 3000
+          env:
+            - name: ENV
+              value: "production"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+```
+
+### service.yaml
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: myapp
+spec:
+  selector:
+    app: myapp
+  ports:
+    - port: 80
+      targetPort: 3000
+  type: ClusterIP
+```
+
+### Apply to Cluster
+
+```bash
+kubectl apply -f deployment.yaml
+kubectl apply -f service.yaml
+
+# Check status
+kubectl get pods -l app=myapp
+kubectl get svc myapp
+```
+
+## Health Probes
+
+Kubernetes uses probes to determine container health. Mizu's built-in handlers work perfectly:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+        - name: myapp
+          image: myregistry/myapp:v1.0.0
+          ports:
+            - containerPort: 3000
+
+          # Liveness: Is the container running?
+          # Failure triggers container restart
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          # Readiness: Can it handle traffic?
+          # Failure removes pod from service endpoints
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          # Startup: Has the app finished starting?
+          # Disables liveness/readiness until success
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: 3000
+            initialDelaySeconds: 0
+            periodSeconds: 2
+            timeoutSeconds: 3
+            failureThreshold: 30  # 30 * 2s = 60s max startup
+```
+
+### Probe Types
+
+| Probe | Purpose | On Failure |
+|-------|---------|------------|
+| **Liveness** | Is the container alive? | Restart container |
+| **Readiness** | Can it handle traffic? | Remove from service |
+| **Startup** | Has it finished starting? | Keep checking |
+
+## Configuration
+
+### ConfigMap
+
+For non-sensitive configuration:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: myapp-config
+data:
+  LOG_LEVEL: "info"
+  CACHE_TTL: "300"
+  FEATURE_FLAGS: |
+    {
+      "new_dashboard": true,
+      "beta_api": false
+    }
+```
+
+### Secret
+
+For sensitive data:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: myapp-secrets
+type: Opaque
+stringData:
+  DATABASE_URL: "postgres://user:pass@db:5432/myapp"
+  API_KEY: "sk-secret-key"
+```
+
+<Warning>
+Never commit secrets to git. Use sealed-secrets, external-secrets, or your cloud provider's secret manager.
+</Warning>
+
+### Using in Deployment
+
+```yaml
+spec:
+  containers:
+    - name: myapp
+      image: myregistry/myapp:v1.0.0
+
+      # Environment from ConfigMap
+      envFrom:
+        - configMapRef:
+            name: myapp-config
+
+      # Individual secret references
+      env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: myapp-secrets
+              key: DATABASE_URL
+
+      # Mount ConfigMap as file
+      volumeMounts:
+        - name: config
+          mountPath: /etc/myapp
+          readOnly: true
+
+  volumes:
+    - name: config
+      configMap:
+        name: myapp-config
+```
+
+## Ingress
+
+Expose your application to the internet with Ingress:
+
+### Basic Ingress
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: myapp
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  rules:
+    - host: myapp.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: myapp
+                port:
+                  number: 80
+```
+
+### Ingress with TLS
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: myapp
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+    - hosts:
+        - myapp.example.com
+      secretName: myapp-tls
+  rules:
+    - host: myapp.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: myapp
+                port:
+                  number: 80
+```
+
+## Auto-Scaling
+
+### Horizontal Pod Autoscaler
+
+Scale based on CPU/memory:
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: myapp
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: myapp
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+```
+
+### Custom Metrics
+
+Scale based on request rate (requires metrics-server and prometheus-adapter):
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: myapp
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: myapp
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Pods
+      pods:
+        metric:
+          name: http_requests_per_second
+        target:
+          type: AverageValue
+          averageValue: "100"
+```
+
+## Rolling Updates
+
+### Deployment Strategy
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # Allow 1 extra pod during update
+      maxUnavailable: 0  # Never have less than replicas
+  template:
+    spec:
+      containers:
+        - name: myapp
+          image: myregistry/myapp:v1.0.0
+
+          # Graceful shutdown
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]
+
+      # Wait for pod to be ready before continuing rollout
+      terminationGracePeriodSeconds: 30
+```
+
+### Perform Rolling Update
+
+```bash
+# Update image
+kubectl set image deployment/myapp myapp=myregistry/myapp:v1.1.0
+
+# Watch rollout
+kubectl rollout status deployment/myapp
+
+# Rollback if needed
+kubectl rollout undo deployment/myapp
+```
+
+## Resource Management
+
+### Requests vs Limits
+
+```yaml
+resources:
+  # Guaranteed resources (for scheduling)
+  requests:
+    memory: "128Mi"
+    cpu: "100m"
+
+  # Maximum resources (for throttling)
+  limits:
+    memory: "256Mi"
+    cpu: "500m"
+```
+
+| Resource | Request | Limit |
+|----------|---------|-------|
+| **CPU** | Guaranteed share | Throttled if exceeded |
+| **Memory** | Guaranteed amount | OOMKilled if exceeded |
+
+### Resource Quotas
+
+Limit resources per namespace:
+
+```yaml
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: myapp-quota
+  namespace: myapp
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: "8Gi"
+    limits.cpu: "8"
+    limits.memory: "16Gi"
+    pods: "20"
+```
+
+## Pod Disruption Budget
+
+Ensure availability during voluntary disruptions:
+
+```yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: myapp
+spec:
+  minAvailable: 2  # Or use maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: myapp
+```
+
+## Namespace Organization
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: myapp-prod
+  labels:
+    env: production
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: myapp-staging
+  labels:
+    env: staging
+```
+
+Deploy to namespace:
+
+```bash
+kubectl apply -f deployment.yaml -n myapp-prod
+```
+
+## Complete Production Manifest
+
+`k8s/production.yaml`:
+
+```yaml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: myapp
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: myapp-config
+  namespace: myapp
+data:
+  LOG_LEVEL: "info"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: myapp-secrets
+  namespace: myapp
+type: Opaque
+stringData:
+  DATABASE_URL: "postgres://user:pass@db:5432/myapp"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+  namespace: myapp
+  labels:
+    app: myapp
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: myapp
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      serviceAccountName: myapp
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+      containers:
+        - name: myapp
+          image: myregistry/myapp:v1.0.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: myapp-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: myapp-secrets
+                  key: DATABASE_URL
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: 3000
+            failureThreshold: 30
+            periodSeconds: 2
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: myapp
+  namespace: myapp
+spec:
+  selector:
+    app: myapp
+  ports:
+    - port: 80
+      targetPort: 3000
+      name: http
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: myapp
+  namespace: myapp
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+    - hosts:
+        - myapp.example.com
+      secretName: myapp-tls
+  rules:
+    - host: myapp.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: myapp
+                port:
+                  number: 80
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: myapp
+  namespace: myapp
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: myapp
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: myapp
+  namespace: myapp
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: myapp
+```
+
+## Useful Commands
+
+```bash
+# View pods
+kubectl get pods -n myapp -o wide
+
+# View logs
+kubectl logs -f deployment/myapp -n myapp
+
+# Execute in pod
+kubectl exec -it deployment/myapp -n myapp -- /bin/sh
+
+# Describe pod (troubleshooting)
+kubectl describe pod <pod-name> -n myapp
+
+# Port forward for local testing
+kubectl port-forward svc/myapp 3000:80 -n myapp
+
+# View events
+kubectl get events -n myapp --sort-by='.lastTimestamp'
+
+# Scale manually
+kubectl scale deployment/myapp --replicas=5 -n myapp
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Cloud Platforms" icon="cloud-arrow-up" href="/guides/deployment/cloud">
+    Managed Kubernetes on AWS, GCP, Azure.
+  </Card>
+  <Card title="CI/CD" icon="arrows-rotate" href="/guides/deployment/cicd">
+    Automate deployments to Kubernetes.
+  </Card>
+</CardGroup>

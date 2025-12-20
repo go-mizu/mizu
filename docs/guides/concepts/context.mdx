@@ -1,0 +1,343 @@
+---
+icon: "box"
+title: "Context"
+description: "Use Ctx to access the request, response, and logger inside a handler."
+---
+
+Every handler in Mizu receives a `*mizu.Ctx` - short for *context*. This is your primary interface for working with HTTP requests and responses. Understanding `Ctx` is essential for building any Mizu application.
+
+## What is Context?
+
+In web development, **context** refers to all the information associated with a single HTTP request. When a user visits your website:
+
+1. Their browser sends a **request** (URL, headers, body)
+2. Your server processes it and creates a **response** (status, headers, body)
+3. Various **metadata** is tracked (timing, request ID, user info)
+
+Mizu wraps all of this into a single `Ctx` object, giving you easy access to everything you need.
+
+<Note>
+The `Ctx` type is a thin wrapper around Go's standard `http.Request` and `http.ResponseWriter`. It adds convenience methods while maintaining full compatibility with the standard library.
+</Note>
+
+## The Mizu Ctx Wrapper
+
+When a request arrives, Mizu creates a `Ctx` that contains:
+
+| Component | Description | Access Method |
+|-----------|-------------|---------------|
+| Request | The incoming HTTP request | `c.Request()` |
+| Response Writer | Interface to send the response | `c.Writer()` |
+| Logger | Request-scoped structured logger | `c.Logger()` |
+| Context | Go's context.Context for cancellation | `c.Context()` |
+| Path Parameters | URL path variables | `c.Param(name)` |
+
+### Creating Your First Handler with Context
+
+```go
+package main
+
+import (
+    "github.com/go-mizu/mizu"
+)
+
+func hello(c *mizu.Ctx) error {
+    // c gives you access to everything about this request
+    name := c.Query("name")
+    if name == "" {
+        name = "World"
+    }
+    return c.Text(200, "Hello, "+name+"!")
+}
+
+func main() {
+    app := mizu.New()
+    app.Get("/hello", hello)
+    app.Listen(":3000")
+}
+```
+
+Visit `http://localhost:3000/hello?name=Mizu` and you'll see "Hello, Mizu!".
+
+## Accessing the Request
+
+The request contains everything the client sent. Use `c.Request()` to access the underlying `*http.Request`:
+
+```go
+func showRequest(c *mizu.Ctx) error {
+    req := c.Request()
+
+    // Method: GET, POST, PUT, DELETE, etc.
+    method := req.Method
+
+    // Full URL path
+    path := req.URL.Path
+
+    // Query string (everything after ?)
+    query := req.URL.RawQuery
+
+    // Client's IP address
+    remoteAddr := req.RemoteAddr
+
+    // HTTP protocol version
+    proto := req.Proto
+
+    c.Logger().Info("request details",
+        "method", method,
+        "path", path,
+        "query", query,
+        "remote", remoteAddr,
+        "proto", proto,
+    )
+
+    return c.Text(200, "Request logged!")
+}
+```
+
+### Common Request Properties
+
+| Property | Description | Example |
+|----------|-------------|---------|
+| `req.Method` | HTTP method | `"GET"`, `"POST"` |
+| `req.URL.Path` | Request path | `"/users/123"` |
+| `req.URL.RawQuery` | Query string | `"page=1&limit=10"` |
+| `req.Host` | Host header | `"localhost:3000"` |
+| `req.RemoteAddr` | Client address | `"192.168.1.1:54321"` |
+| `req.Header` | All headers | `http.Header` map |
+| `req.Body` | Request body | `io.ReadCloser` |
+| `req.ContentLength` | Body size | `1024` (bytes) |
+
+## Writing Responses
+
+The response writer is how you send data back to the client. While Mizu provides convenient helper methods, you can also access the raw writer:
+
+```go
+func rawResponse(c *mizu.Ctx) error {
+    w := c.Writer()
+
+    // Set status code
+    w.WriteHeader(http.StatusOK)
+
+    // Write response body
+    w.Write([]byte("Hello from raw writer!"))
+
+    return nil
+}
+```
+
+<Warning>
+Once you call `w.WriteHeader()` or `w.Write()`, headers are sent to the client and cannot be modified. Always set headers before writing the body.
+</Warning>
+
+### Using Helper Methods (Recommended)
+
+Mizu provides helper methods that handle common response patterns:
+
+```go
+func responses(c *mizu.Ctx) error {
+    // Plain text
+    return c.Text(200, "Hello, World!")
+
+    // JSON
+    return c.JSON(200, map[string]string{"message": "Hello"})
+
+    // HTML
+    return c.HTML(200, "<h1>Hello</h1>")
+
+    // No content
+    return c.NoContent(204)
+
+    // Redirect
+    return c.Redirect(302, "/new-location")
+}
+```
+
+## The Request Logger
+
+Each request has its own logger that automatically includes request context:
+
+```go
+func logging(c *mizu.Ctx) error {
+    logger := c.Logger()
+
+    // Different log levels
+    logger.Debug("detailed debugging info")
+    logger.Info("general information")
+    logger.Warn("warning message")
+    logger.Error("error occurred", "error", err)
+
+    // Add custom fields
+    logger.Info("user action",
+        "user_id", 123,
+        "action", "login",
+        "ip", c.Request().RemoteAddr,
+    )
+
+    return c.Text(200, "Logged!")
+}
+```
+
+## Working with Go's context.Context
+
+Every request includes a `context.Context` that signals when the request should stop. This is essential for:
+
+- **Timeouts**: Stop processing if it takes too long
+- **Cancellation**: Stop if the client disconnects
+- **Value Passing**: Store request-scoped data
+
+### Checking for Cancellation
+
+```go
+func longOperation(c *mizu.Ctx) error {
+    ctx := c.Context()
+
+    // Simulate a long operation
+    for i := 0; i < 100; i++ {
+        select {
+        case <-ctx.Done():
+            // Client disconnected or timeout
+            c.Logger().Info("request cancelled", "reason", ctx.Err())
+            return ctx.Err()
+        default:
+            // Continue processing
+            time.Sleep(100 * time.Millisecond)
+        }
+    }
+
+    return c.Text(200, "Completed!")
+}
+```
+
+### Passing Context to Database Calls
+
+Always pass the request context to database and external service calls:
+
+```go
+func getUser(c *mizu.Ctx) error {
+    ctx := c.Context()
+    id := c.Param("id")
+
+    // The context will cancel the query if the request is cancelled
+    user, err := db.GetUserByID(ctx, id)
+    if err != nil {
+        return err
+    }
+
+    return c.JSON(200, user)
+}
+```
+
+## Working with Headers
+
+Headers provide metadata about requests and responses:
+
+### Reading Request Headers
+
+```go
+func readHeaders(c *mizu.Ctx) error {
+    req := c.Request()
+
+    // Get a single header
+    contentType := req.Header.Get("Content-Type")
+    userAgent := req.Header.Get("User-Agent")
+    auth := req.Header.Get("Authorization")
+
+    // Get all values for a header (some headers can appear multiple times)
+    acceptLanguages := req.Header.Values("Accept-Language")
+
+    // Check if header exists
+    if contentType == "" {
+        return c.Text(400, "Content-Type header required")
+    }
+
+    return c.JSON(200, map[string]any{
+        "content_type": contentType,
+        "user_agent":   userAgent,
+        "languages":    acceptLanguages,
+    })
+}
+```
+
+### Setting Response Headers
+
+```go
+func setHeaders(c *mizu.Ctx) error {
+    // Use c.Header() to set response headers
+    c.Header().Set("X-Custom-Header", "custom-value")
+    c.Header().Set("Cache-Control", "max-age=3600")
+    c.Header().Add("Set-Cookie", "session=abc123")
+
+    // IMPORTANT: Set headers BEFORE writing the response body
+    return c.Text(200, "Headers set!")
+}
+```
+
+## Storing Values in Context
+
+Sometimes you need to pass data between middleware and handlers. Use context values:
+
+### Setting Values in Middleware
+
+```go
+type contextKey string
+
+const userKey contextKey = "user"
+
+func authMiddleware(next mizu.Handler) mizu.Handler {
+    return func(c *mizu.Ctx) error {
+        // Validate token and get user
+        token := c.Request().Header.Get("Authorization")
+        user, err := validateToken(token)
+        if err != nil {
+            return c.JSON(401, map[string]string{"error": "unauthorized"})
+        }
+
+        // Store user in context
+        ctx := context.WithValue(c.Context(), userKey, user)
+        c.SetContext(ctx)
+
+        return next(c)
+    }
+}
+```
+
+### Reading Values in Handlers
+
+```go
+func protectedHandler(c *mizu.Ctx) error {
+    // Retrieve user from context
+    user, ok := c.Context().Value(userKey).(*User)
+    if !ok {
+        return c.JSON(401, map[string]string{"error": "not authenticated"})
+    }
+
+    return c.JSON(200, map[string]any{
+        "message": "Hello, " + user.Name,
+        "user_id": user.ID,
+    })
+}
+```
+
+## Summary
+
+| Method | Description |
+|--------|-------------|
+| `c.Request()` | Get the `*http.Request` |
+| `c.Writer()` | Get the `http.ResponseWriter` |
+| `c.Logger()` | Get the request-scoped logger |
+| `c.Context()` | Get the `context.Context` |
+| `c.SetContext(ctx)` | Replace the context (for middleware) |
+| `c.Header()` | Get response headers for modification |
+| `c.Param(name)` | Get URL path parameter |
+| `c.Query(name)` | Get query string parameter |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Request" icon="arrow-down-to-line" href="/guides/concepts/request">
+    Learn more about reading request data.
+  </Card>
+  <Card title="Response" icon="arrow-up-from-line" href="/guides/concepts/response">
+    All the ways to send responses.
+  </Card>
+</CardGroup>

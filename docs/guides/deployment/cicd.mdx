@@ -1,0 +1,1021 @@
+---
+icon: "arrows-rotate"
+title: "CI/CD Pipelines"
+description: "Automate testing, building, and deploying Mizu applications with GitHub Actions, GitLab CI, and other CI/CD platforms."
+---
+
+Continuous Integration and Continuous Deployment (CI/CD) automates your build, test, and deployment processes. This guide covers setting up pipelines for Mizu applications.
+
+## GitHub Actions
+
+### Basic CI Pipeline
+
+`.github/workflows/ci.yml`:
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.out
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build
+        run: |
+          CGO_ENABLED=0 go build -ldflags="-s -w" -o myapp ./cmd/server
+```
+
+### Complete CI/CD Pipeline
+
+`.github/workflows/deploy.yml`:
+
+```yaml
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Test
+        run: go test -v -race ./...
+
+  build-and-push:
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    environment: staging
+    steps:
+      - name: Deploy to staging
+        run: |
+          # Deploy using your preferred method
+          echo "Deploying to staging..."
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment: production
+    steps:
+      - name: Deploy to production
+        run: |
+          echo "Deploying to production..."
+```
+
+### Multi-Architecture Builds
+
+Build for both AMD64 and ARM64:
+
+```yaml
+- name: Set up QEMU
+  uses: docker/setup-qemu-action@v3
+
+- name: Set up Docker Buildx
+  uses: docker/setup-buildx-action@v3
+
+- name: Build and push
+  uses: docker/build-push-action@v5
+  with:
+    context: .
+    push: true
+    tags: ${{ steps.meta.outputs.tags }}
+    platforms: linux/amd64,linux/arm64
+    cache-from: type=gha
+    cache-to: type=gha,mode=max
+```
+
+## GitLab CI/CD
+
+### Basic Pipeline
+
+`.gitlab-ci.yml`:
+
+```yaml
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  GO_VERSION: "1.22"
+
+default:
+  image: golang:${GO_VERSION}
+
+test:
+  stage: test
+  script:
+    - go mod download
+    - go test -v -race -coverprofile=coverage.out ./...
+  coverage: '/coverage: \d+.\d+% of statements/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+
+lint:
+  stage: test
+  image: golangci/golangci-lint:latest
+  script:
+    - golangci-lint run
+
+build:
+  stage: build
+  script:
+    - CGO_ENABLED=0 go build -ldflags="-s -w" -o myapp ./cmd/server
+  artifacts:
+    paths:
+      - myapp
+    expire_in: 1 week
+
+build-docker:
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA .
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+    - |
+      if [ "$CI_COMMIT_BRANCH" == "main" ]; then
+        docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE:latest
+        docker push $CI_REGISTRY_IMAGE:latest
+      fi
+
+deploy-staging:
+  stage: deploy
+  environment:
+    name: staging
+    url: https://staging.example.com
+  script:
+    - echo "Deploying to staging..."
+  only:
+    - main
+
+deploy-production:
+  stage: deploy
+  environment:
+    name: production
+    url: https://example.com
+  script:
+    - echo "Deploying to production..."
+  only:
+    - tags
+  when: manual
+```
+
+### Kaniko for Docker Builds
+
+Build without Docker-in-Docker (more secure):
+
+```yaml
+build-docker:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:v1.21.0-debug
+    entrypoint: [""]
+  script:
+    - |
+      /kaniko/executor \
+        --context $CI_PROJECT_DIR \
+        --dockerfile $CI_PROJECT_DIR/Dockerfile \
+        --destination $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA \
+        --destination $CI_REGISTRY_IMAGE:latest \
+        --cache=true
+```
+
+## Deploying to Servers via SSH
+
+### GitHub Actions
+
+```yaml
+deploy:
+  runs-on: ubuntu-latest
+  needs: build
+  steps:
+    - uses: actions/checkout@v4
+
+    - name: Build binary
+      run: |
+        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+          go build -ldflags="-s -w" -o myapp ./cmd/server
+
+    - name: Deploy to server
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.SSH_HOST }}
+        username: ${{ secrets.SSH_USER }}
+        key: ${{ secrets.SSH_KEY }}
+        source: myapp
+        target: /tmp/
+
+    - name: Restart service
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.SSH_HOST }}
+        username: ${{ secrets.SSH_USER }}
+        key: ${{ secrets.SSH_KEY }}
+        script: |
+          sudo systemctl stop myapp
+          sudo mv /tmp/myapp /usr/local/bin/myapp
+          sudo chmod +x /usr/local/bin/myapp
+          sudo systemctl start myapp
+
+          # Wait for health check
+          sleep 5
+          curl -sf http://localhost:3000/readyz || exit 1
+```
+
+### GitLab CI
+
+```yaml
+deploy:
+  stage: deploy
+  before_script:
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+    - chmod 600 ~/.ssh/id_ed25519
+    - ssh-keyscan -H $SSH_HOST >> ~/.ssh/known_hosts
+  script:
+    - scp myapp $SSH_USER@$SSH_HOST:/tmp/myapp
+    - |
+      ssh $SSH_USER@$SSH_HOST << 'EOF'
+        sudo systemctl stop myapp
+        sudo mv /tmp/myapp /usr/local/bin/myapp
+        sudo chmod +x /usr/local/bin/myapp
+        sudo systemctl start myapp
+      EOF
+```
+
+## Deploying to Kubernetes
+
+### GitHub Actions with kubectl
+
+```yaml
+deploy-kubernetes:
+  runs-on: ubuntu-latest
+  needs: build-and-push
+  steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+
+    - name: Configure kubectl
+      run: |
+        echo "${{ secrets.KUBECONFIG }}" | base64 -d > kubeconfig
+        echo "KUBECONFIG=$PWD/kubeconfig" >> $GITHUB_ENV
+
+    - name: Deploy
+      run: |
+        # Update image tag
+        kubectl set image deployment/myapp \
+          myapp=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+          -n myapp
+
+        # Wait for rollout
+        kubectl rollout status deployment/myapp -n myapp --timeout=300s
+```
+
+### Using Kustomize
+
+`k8s/base/kustomization.yaml`:
+
+```yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+```
+
+`k8s/overlays/production/kustomization.yaml`:
+
+```yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: myapp-prod
+resources:
+  - ../../base
+images:
+  - name: myapp
+    newName: ghcr.io/myorg/myapp
+    newTag: latest
+replicas:
+  - name: myapp
+    count: 3
+```
+
+GitHub Actions:
+
+```yaml
+deploy:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+
+    - name: Deploy with Kustomize
+      run: |
+        cd k8s/overlays/production
+        kustomize edit set image myapp=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        kubectl apply -k .
+```
+
+### Using Helm
+
+```yaml
+deploy:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Helm
+      uses: azure/setup-helm@v3
+
+    - name: Deploy with Helm
+      run: |
+        helm upgrade --install myapp ./charts/myapp \
+          --namespace myapp \
+          --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} \
+          --set image.tag=${{ github.sha }} \
+          --wait --timeout 5m
+```
+
+## Deploying to Cloud Platforms
+
+### AWS App Runner
+
+```yaml
+deploy-app-runner:
+  runs-on: ubuntu-latest
+  needs: build-and-push
+  steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Deploy to App Runner
+      run: |
+        aws apprunner start-deployment \
+          --service-arn ${{ secrets.APP_RUNNER_SERVICE_ARN }}
+```
+
+### AWS ECS
+
+```yaml
+deploy-ecs:
+  runs-on: ubuntu-latest
+  needs: build-and-push
+  steps:
+    - uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Login to ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Update task definition
+      id: task-def
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: ecs/task-definition.json
+        container-name: myapp
+        image: ${{ steps.login-ecr.outputs.registry }}/myapp:${{ github.sha }}
+
+    - name: Deploy to ECS
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+        task-definition: ${{ steps.task-def.outputs.task-definition }}
+        service: myapp
+        cluster: myapp-cluster
+        wait-for-service-stability: true
+```
+
+### Google Cloud Run
+
+```yaml
+deploy-cloud-run:
+  runs-on: ubuntu-latest
+  needs: build-and-push
+  steps:
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Deploy to Cloud Run
+      run: |
+        gcloud run deploy myapp \
+          --image gcr.io/${{ secrets.GCP_PROJECT }}/myapp:${{ github.sha }} \
+          --region us-central1 \
+          --platform managed \
+          --allow-unauthenticated
+```
+
+### Fly.io
+
+```yaml
+deploy-fly:
+  runs-on: ubuntu-latest
+  needs: test
+  steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Fly
+      uses: superfly/flyctl-actions/setup-flyctl@master
+
+    - name: Deploy to Fly
+      run: flyctl deploy --remote-only
+      env:
+        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+```
+
+### Railway
+
+```yaml
+deploy-railway:
+  runs-on: ubuntu-latest
+  needs: test
+  steps:
+    - uses: actions/checkout@v4
+
+    - name: Deploy to Railway
+      uses: bervProject/railway-deploy@main
+      with:
+        railway_token: ${{ secrets.RAILWAY_TOKEN }}
+        service: myapp
+```
+
+### DigitalOcean App Platform
+
+```yaml
+deploy-digitalocean:
+  runs-on: ubuntu-latest
+  needs: build-and-push
+  steps:
+    - name: Install doctl
+      uses: digitalocean/action-doctl@v2
+      with:
+        token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+    - name: Deploy to App Platform
+      run: |
+        doctl apps create-deployment ${{ secrets.APP_ID }}
+```
+
+## Secrets Management
+
+### GitHub Actions Secrets
+
+Store secrets in repository settings:
+
+```yaml
+env:
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  API_KEY: ${{ secrets.API_KEY }}
+```
+
+### Using Environment Files
+
+For multiple environment variables:
+
+```yaml
+- name: Create env file
+  run: |
+    cat > .env << EOF
+    DATABASE_URL=${{ secrets.DATABASE_URL }}
+    API_KEY=${{ secrets.API_KEY }}
+    REDIS_URL=${{ secrets.REDIS_URL }}
+    EOF
+
+- name: Deploy with env
+  run: |
+    scp .env $SSH_USER@$SSH_HOST:/etc/myapp/env
+```
+
+### HashiCorp Vault
+
+```yaml
+- name: Import secrets from Vault
+  uses: hashicorp/vault-action@v2
+  with:
+    url: https://vault.example.com
+    token: ${{ secrets.VAULT_TOKEN }}
+    secrets: |
+      secret/data/myapp DATABASE_URL | DATABASE_URL ;
+      secret/data/myapp API_KEY | API_KEY
+
+- name: Use secrets
+  run: |
+    echo "Database: $DATABASE_URL"
+```
+
+### AWS Secrets Manager
+
+```yaml
+- name: Get secrets from AWS
+  uses: aws-actions/aws-secretsmanager-get-secrets@v1
+  with:
+    secret-ids: |
+      myapp/production
+    parse-json-secrets: true
+
+- name: Use secrets
+  run: |
+    echo "Using $MYAPP_PRODUCTION_DATABASE_URL"
+```
+
+## Release Automation
+
+### Semantic Versioning with Release Please
+
+`.github/workflows/release.yml`:
+
+```yaml
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: google-github-actions/release-please-action@v4
+        id: release
+        with:
+          release-type: go
+
+  build-release:
+    needs: release
+    if: ${{ needs.release.outputs.release_created }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          CGO_ENABLED=0 go build -ldflags="-s -w" \
+            -o myapp-${{ matrix.goos }}-${{ matrix.goarch }} \
+            ./cmd/server
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.release.outputs.tag_name }}
+          files: myapp-*
+```
+
+### Using GoReleaser
+
+`.goreleaser.yml`:
+
+```yaml
+version: 2
+
+builds:
+  - main: ./cmd/server
+    binary: myapp
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+
+dockers:
+  - image_templates:
+      - "ghcr.io/myorg/myapp:{{ .Tag }}"
+      - "ghcr.io/myorg/myapp:latest"
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/amd64"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+```
+
+GitHub Actions:
+
+```yaml
+release:
+  runs-on: ubuntu-latest
+  if: startsWith(github.ref, 'refs/tags/')
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+
+    - name: Run GoReleaser
+      uses: goreleaser/goreleaser-action@v5
+      with:
+        version: latest
+        args: release --clean
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+## Testing Strategies
+
+### Matrix Testing
+
+Test across Go versions:
+
+```yaml
+test:
+  runs-on: ubuntu-latest
+  strategy:
+    matrix:
+      go-version: ['1.21', '1.22', '1.23']
+  steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go ${{ matrix.go-version }}
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Test
+      run: go test -v ./...
+```
+
+### Integration Tests with Services
+
+```yaml
+test:
+  runs-on: ubuntu-latest
+  services:
+    postgres:
+      image: postgres:16
+      env:
+        POSTGRES_PASSWORD: postgres
+        POSTGRES_DB: test
+      ports:
+        - 5432:5432
+      options: >-
+        --health-cmd pg_isready
+        --health-interval 10s
+        --health-timeout 5s
+        --health-retries 5
+
+    redis:
+      image: redis:7
+      ports:
+        - 6379:6379
+      options: >-
+        --health-cmd "redis-cli ping"
+        --health-interval 10s
+        --health-timeout 5s
+        --health-retries 5
+
+  steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+
+    - name: Run tests
+      env:
+        DATABASE_URL: postgres://postgres:postgres@localhost:5432/test?sslmode=disable
+        REDIS_URL: redis://localhost:6379
+      run: go test -v -tags=integration ./...
+```
+
+## Best Practices
+
+### Cache Dependencies
+
+```yaml
+- uses: actions/setup-go@v5
+  with:
+    go-version: '1.22'
+    cache: true  # Caches Go modules automatically
+```
+
+### Parallel Jobs
+
+Run independent jobs in parallel:
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # ...
+
+  lint:
+    runs-on: ubuntu-latest
+    # ...
+
+  security:
+    runs-on: ubuntu-latest
+    # ...
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [test, lint, security]  # Waits for all to complete
+```
+
+### Environment Protection
+
+Use GitHub environments for production:
+
+```yaml
+deploy-production:
+  runs-on: ubuntu-latest
+  environment:
+    name: production
+    url: https://myapp.example.com
+  # Requires approval before running
+```
+
+### Status Badges
+
+Add to your README:
+
+```markdown
+![CI](https://github.com/myorg/myapp/actions/workflows/ci.yml/badge.svg)
+![Deploy](https://github.com/myorg/myapp/actions/workflows/deploy.yml/badge.svg)
+```
+
+## Complete Example
+
+`.github/workflows/main.yml`:
+
+```yaml
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - run: go test -v -race -coverprofile=coverage.out ./...
+      - uses: codecov/codecov-action@v4
+        with:
+          files: coverage.out
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - uses: golangci/golangci-lint-action@v4
+
+  build-and-push:
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha
+      - uses: docker/build-push-action@v5
+        with:
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    environment: staging
+    steps:
+      - name: Deploy
+        run: echo "Deploying to staging..."
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment: production
+    steps:
+      - name: Deploy
+        run: echo "Deploying to production..."
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Docker" icon="docker" href="/guides/deployment/docker">
+    Containerize your application.
+  </Card>
+  <Card title="Kubernetes" icon="dharmachakra" href="/guides/deployment/kubernetes">
+    Deploy to Kubernetes clusters.
+  </Card>
+</CardGroup>

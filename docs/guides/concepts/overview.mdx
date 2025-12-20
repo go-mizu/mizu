@@ -1,0 +1,124 @@
+---
+icon: "book-open"
+title: "Overview"
+description: "A tour of Mizu's main concepts and how they fit together."
+---
+
+Mizu is built to feel like Go itself: clear, small, and easy to understand.
+It adds only the essential tools needed to build real web applications while keeping everything familiar.
+You still use standard library types and patterns, but with a simpler structure for routing, context, and middleware.
+
+## The Request Lifecycle
+
+When a request arrives at your Mizu application, it flows through these components:
+
+```
+Request → App → Middleware → Router → Handler → Response
+                    ↑                    ↓
+                    ←───────────────────←
+```
+
+Each component has a specific role:
+
+| Component | Description |
+|-----------|-------------|
+| **App** | Owns the HTTP server, manages startup and shutdown |
+| **Middleware** | Pre/post-processing for requests (logging, auth, etc.) |
+| **Router** | Matches URL patterns to handlers |
+| **Handler** | Your code that processes requests |
+| **Context (Ctx)** | Wraps request/response with helpers |
+
+## Core Components
+
+<CardGroup cols={2}>
+  <Card title="App" icon="server" href="/guides/concepts/app">
+    Server lifecycle, configuration, and health checks.
+  </Card>
+  <Card title="Routing" icon="route" href="/guides/concepts/routing">
+    URL patterns, path parameters, and route groups.
+  </Card>
+  <Card title="Handler" icon="code" href="/guides/concepts/handler">
+    Functions that process requests and return responses.
+  </Card>
+  <Card title="Context" icon="box" href="/guides/concepts/context">
+    Request/response wrapper with helper methods.
+  </Card>
+</CardGroup>
+
+## Data Flow
+
+<CardGroup cols={2}>
+  <Card title="Request" icon="arrow-down-to-line" href="/guides/concepts/request">
+    Reading path params, query strings, headers, and body.
+  </Card>
+  <Card title="Response" icon="arrow-up-from-line" href="/guides/concepts/response">
+    Sending JSON, HTML, files, and streaming data.
+  </Card>
+</CardGroup>
+
+## Cross-Cutting Concerns
+
+<CardGroup cols={2}>
+  <Card title="Middleware" icon="layer-group" href="/guides/concepts/middleware">
+    Composable request processing pipelines.
+  </Card>
+  <Card title="Error Handling" icon="bug" href="/guides/concepts/error">
+    Centralized error handling and panic recovery.
+  </Card>
+  <Card title="Logging" icon="scroll" href="/guides/concepts/logging">
+    Structured logging with Go's slog package.
+  </Card>
+  <Card title="Static Files" icon="folder-open" href="/guides/concepts/static">
+    Serving images, CSS, JavaScript, and embedded files.
+  </Card>
+</CardGroup>
+
+## How They Work Together
+
+Here's a minimal example showing all core concepts:
+
+```go
+package main
+
+import (
+    "time"
+    "github.com/go-mizu/mizu"
+)
+
+func main() {
+    // App: manages server lifecycle
+    app := mizu.New()
+
+    // Middleware: processes every request
+    app.Use(func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            start := time.Now()
+            err := next(c)
+            c.Logger().Info("request", "duration", time.Since(start))
+            return err
+        }
+    })
+
+    // Router + Handler: maps URL to your code
+    app.Get("/users/{id}", func(c *mizu.Ctx) error {
+        // Context: access request data and send response
+        id := c.Param("id")
+        return c.JSON(200, map[string]string{"id": id})
+    })
+
+    // App: start the server
+    app.Listen(":3000")
+}
+```
+
+## Learning Path
+
+For the best learning experience, follow this order:
+
+1. **[App](/guides/concepts/app)** - Understand the server lifecycle
+2. **[Routing](/guides/concepts/routing)** - Learn URL pattern matching
+3. **[Handler](/guides/concepts/handler)** - Write request processing logic
+4. **[Context](/guides/concepts/context)** - Master the request/response wrapper
+5. **[Request](/guides/concepts/request)** and **[Response](/guides/concepts/response)** - Data in and out
+6. **[Middleware](/guides/concepts/middleware)** - Add cross-cutting behavior
+7. **[Error](/guides/concepts/error)** and **[Logging](/guides/concepts/logging)** - Handle problems gracefully

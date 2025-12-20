@@ -1,0 +1,568 @@
+---
+icon: "server"
+title: "Traditional Servers"
+description: "Deploy Mizu applications to VPS or bare metal servers with systemd and reverse proxy."
+---
+
+Traditional server deployment gives you full control over your infrastructure. This guide covers deploying to Linux servers using systemd for process management and Nginx or Caddy as reverse proxies.
+
+## Prerequisites
+
+- A Linux server (Ubuntu 22.04, Debian 12, or similar)
+- SSH access with sudo privileges
+- A domain name pointing to your server's IP
+
+## Building the Binary
+
+Build your application for the target server:
+
+```bash
+# For Linux AMD64 (most VPS)
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
+    go build -ldflags="-s -w" -o myapp ./cmd/server
+
+# For Linux ARM64 (Raspberry Pi, AWS Graviton)
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
+    go build -ldflags="-s -w" -o myapp ./cmd/server
+```
+
+## Uploading to Server
+
+### Using SCP
+
+```bash
+# Upload binary
+scp myapp user@server:/tmp/myapp
+
+# Upload on server
+ssh user@server
+sudo mv /tmp/myapp /usr/local/bin/myapp
+sudo chmod +x /usr/local/bin/myapp
+```
+
+### Using rsync (Recommended)
+
+```bash
+rsync -avz --progress myapp user@server:/tmp/myapp
+```
+
+## Setting Up the Service User
+
+Create a dedicated user for running the application:
+
+```bash
+# Create service user (no login, no home directory)
+sudo useradd --system --no-create-home --shell /bin/false myapp
+
+# Create directories
+sudo mkdir -p /var/lib/myapp
+sudo mkdir -p /var/log/myapp
+sudo chown myapp:myapp /var/lib/myapp /var/log/myapp
+```
+
+## Systemd Service
+
+### Basic Service
+
+Create `/etc/systemd/system/myapp.service`:
+
+```ini
+[Unit]
+Description=My Mizu Application
+After=network.target
+
+[Service]
+Type=simple
+User=myapp
+Group=myapp
+WorkingDirectory=/var/lib/myapp
+ExecStart=/usr/local/bin/myapp
+Restart=always
+RestartSec=5
+
+# Environment
+Environment=ENV=production
+Environment=PORT=3000
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### Production Service (Recommended)
+
+Create `/etc/systemd/system/myapp.service`:
+
+```ini
+[Unit]
+Description=My Mizu Application
+Documentation=https://github.com/myorg/myapp
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=myapp
+Group=myapp
+WorkingDirectory=/var/lib/myapp
+
+# Binary and arguments
+ExecStart=/usr/local/bin/myapp
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Stop gracefully (SIGTERM), then force (SIGKILL)
+TimeoutStopSec=30
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Environment
+Environment=ENV=production
+Environment=PORT=3000
+EnvironmentFile=-/etc/myapp/env
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=myapp
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+RemoveIPC=true
+
+# Allow binding to privileged ports (optional)
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+# Read-write paths
+ReadWritePaths=/var/lib/myapp /var/log/myapp
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### Environment File
+
+Create `/etc/myapp/env`:
+
+```bash
+# Database
+DATABASE_URL=postgres://user:pass@localhost:5432/myapp
+
+# Secrets (use a secrets manager in production)
+API_KEY=your-api-key
+
+# Application
+LOG_LEVEL=info
+```
+
+Set permissions:
+
+```bash
+sudo mkdir -p /etc/myapp
+sudo chmod 600 /etc/myapp/env
+sudo chown root:myapp /etc/myapp/env
+```
+
+### Enable and Start
+
+```bash
+# Reload systemd
+sudo systemctl daemon-reload
+
+# Enable on boot
+sudo systemctl enable myapp
+
+# Start the service
+sudo systemctl start myapp
+
+# Check status
+sudo systemctl status myapp
+
+# View logs
+sudo journalctl -u myapp -f
+```
+
+### Common Commands
+
+```bash
+# Start/stop/restart
+sudo systemctl start myapp
+sudo systemctl stop myapp
+sudo systemctl restart myapp
+
+# Reload without restart (if supported)
+sudo systemctl reload myapp
+
+# View logs
+sudo journalctl -u myapp -f              # Follow logs
+sudo journalctl -u myapp --since today   # Today's logs
+sudo journalctl -u myapp -n 100          # Last 100 lines
+```
+
+## Reverse Proxy with Caddy
+
+Caddy is the easiest option with automatic HTTPS.
+
+### Install Caddy
+
+```bash
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update
+sudo apt install caddy
+```
+
+### Configure Caddy
+
+Edit `/etc/caddy/Caddyfile`:
+
+```
+myapp.example.com {
+    reverse_proxy localhost:3000
+
+    # Logging
+    log {
+        output file /var/log/caddy/myapp.log
+        format json
+    }
+
+    # Security headers
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+
+    # Compression
+    encode gzip zstd
+}
+```
+
+### Multiple Apps
+
+```
+# Main app
+myapp.example.com {
+    reverse_proxy localhost:3000
+}
+
+# API
+api.example.com {
+    reverse_proxy localhost:3001
+}
+
+# Admin
+admin.example.com {
+    reverse_proxy localhost:3002
+
+    # Basic auth for admin
+    basicauth {
+        admin $2a$14$... # bcrypt hash
+    }
+}
+```
+
+### Start Caddy
+
+```bash
+sudo systemctl enable caddy
+sudo systemctl start caddy
+sudo systemctl status caddy
+```
+
+## Reverse Proxy with Nginx
+
+### Install Nginx
+
+```bash
+sudo apt update
+sudo apt install nginx
+```
+
+### Configure Nginx
+
+Create `/etc/nginx/sites-available/myapp`:
+
+```nginx
+upstream myapp {
+    server 127.0.0.1:3000;
+    keepalive 32;
+}
+
+server {
+    listen 80;
+    server_name myapp.example.com;
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name myapp.example.com;
+
+    # SSL (managed by certbot)
+    ssl_certificate /etc/letsencrypt/live/myapp.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/myapp.example.com/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # Security headers
+    add_header X-Content-Type-Options nosniff;
+    add_header X-Frame-Options DENY;
+    add_header X-XSS-Protection "1; mode=block";
+
+    # Logging
+    access_log /var/log/nginx/myapp.access.log;
+    error_log /var/log/nginx/myapp.error.log;
+
+    # Proxy settings
+    location / {
+        proxy_pass http://myapp;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket support (if needed)
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # Health check endpoint (don't log)
+    location /readyz {
+        proxy_pass http://myapp;
+        access_log off;
+    }
+}
+```
+
+### Enable Site
+
+```bash
+sudo ln -s /etc/nginx/sites-available/myapp /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### SSL with Certbot
+
+```bash
+# Install certbot
+sudo apt install certbot python3-certbot-nginx
+
+# Get certificate
+sudo certbot --nginx -d myapp.example.com
+
+# Auto-renewal is set up automatically
+sudo systemctl status certbot.timer
+```
+
+## Firewall Configuration
+
+### UFW (Ubuntu)
+
+```bash
+# Allow SSH
+sudo ufw allow ssh
+
+# Allow HTTP and HTTPS
+sudo ufw allow 'Nginx Full'
+# or for Caddy
+sudo ufw allow 80
+sudo ufw allow 443
+
+# Enable firewall
+sudo ufw enable
+sudo ufw status
+```
+
+### iptables
+
+```bash
+# Allow established connections
+sudo iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+# Allow SSH
+sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+
+# Allow HTTP/HTTPS
+sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+sudo iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+
+# Drop everything else
+sudo iptables -A INPUT -j DROP
+
+# Save rules
+sudo apt install iptables-persistent
+sudo netfilter-persistent save
+```
+
+## Log Rotation
+
+### Using logrotate
+
+Create `/etc/logrotate.d/myapp`:
+
+```
+/var/log/myapp/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 myapp myapp
+    postrotate
+        systemctl reload myapp > /dev/null 2>&1 || true
+    endscript
+}
+```
+
+### Using journald
+
+Logs are managed by journald automatically. Configure limits in `/etc/systemd/journald.conf`:
+
+```ini
+[Journal]
+SystemMaxUse=500M
+MaxRetentionSec=1month
+```
+
+## Zero-Downtime Deployments
+
+### Blue-Green Deployment
+
+Run two instances and switch traffic:
+
+```bash
+# Start new version on different port
+PORT=3001 /usr/local/bin/myapp-new &
+
+# Test new version
+curl localhost:3001/readyz
+
+# Update Caddy/Nginx to point to new port
+sudo systemctl reload caddy
+
+# Stop old version
+sudo systemctl stop myapp
+```
+
+### Rolling Restart Script
+
+`/usr/local/bin/deploy-myapp.sh`:
+
+```bash
+#!/bin/bash
+set -e
+
+NEW_BINARY=$1
+if [ -z "$NEW_BINARY" ]; then
+    echo "Usage: $0 <new-binary-path>"
+    exit 1
+fi
+
+# Backup current binary
+cp /usr/local/bin/myapp /usr/local/bin/myapp.bak
+
+# Replace binary
+cp "$NEW_BINARY" /usr/local/bin/myapp
+chmod +x /usr/local/bin/myapp
+
+# Restart service
+sudo systemctl restart myapp
+
+# Wait for health check
+sleep 5
+if curl -sf http://localhost:3000/readyz > /dev/null; then
+    echo "Deployment successful!"
+    rm /usr/local/bin/myapp.bak
+else
+    echo "Health check failed, rolling back..."
+    cp /usr/local/bin/myapp.bak /usr/local/bin/myapp
+    sudo systemctl restart myapp
+    exit 1
+fi
+```
+
+## Monitoring
+
+### Basic Monitoring with systemd
+
+```bash
+# Set up email alerts
+sudo apt install mailutils
+
+# Create alert script
+cat > /usr/local/bin/myapp-alert.sh << 'EOF'
+#!/bin/bash
+echo "myapp service failed on $(hostname)" | mail -s "Service Alert" admin@example.com
+EOF
+chmod +x /usr/local/bin/myapp-alert.sh
+
+# Add to service file
+# OnFailure=myapp-alert@%n.service
+```
+
+### Process Monitoring with monit
+
+```bash
+sudo apt install monit
+```
+
+Create `/etc/monit/conf.d/myapp`:
+
+```
+check process myapp with pidfile /run/myapp.pid
+    start program = "/usr/bin/systemctl start myapp"
+    stop program = "/usr/bin/systemctl stop myapp"
+    if failed host 127.0.0.1 port 3000 protocol http
+        request "/readyz"
+        for 3 cycles then restart
+    if 5 restarts within 5 cycles then alert
+```
+
+## Complete Deployment Checklist
+
+- [ ] Build binary for target architecture
+- [ ] Upload binary to server
+- [ ] Create service user
+- [ ] Create systemd service file
+- [ ] Create environment file with secrets
+- [ ] Configure reverse proxy (Caddy/Nginx)
+- [ ] Set up SSL certificates
+- [ ] Configure firewall
+- [ ] Set up log rotation
+- [ ] Test health endpoints
+- [ ] Set up monitoring/alerting
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="CI/CD" icon="arrows-rotate" href="/guides/deployment/cicd">
+    Automate deployments with GitHub Actions.
+  </Card>
+  <Card title="Docker" icon="docker" href="/guides/deployment/docker">
+    Containerize for easier deployment.
+  </Card>
+</CardGroup>

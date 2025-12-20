@@ -1,0 +1,451 @@
+---
+icon: "vial"
+title: "Testing"
+description: "Write effective tests for your Mizu handlers and middleware."
+---
+
+Go's standard `testing` package and `net/http/httptest` work seamlessly with Mizu. This guide shows patterns for testing handlers, middleware, and complete applications.
+
+## Testing handlers
+
+### Basic handler test
+
+```go
+package handlers_test
+
+import (
+    "net/http/httptest"
+    "testing"
+
+    "github.com/go-mizu/mizu"
+)
+
+func TestHelloHandler(t *testing.T) {
+    // Create app with handler
+    app := mizu.New()
+    app.Get("/hello", func(c *mizu.Ctx) error {
+        return c.Text(200, "Hello, World!")
+    })
+
+    // Create test request
+    req := httptest.NewRequest("GET", "/hello", nil)
+    rec := httptest.NewRecorder()
+
+    // Execute request
+    app.ServeHTTP(rec, req)
+
+    // Assert response
+    if rec.Code != 200 {
+        t.Errorf("expected status 200, got %d", rec.Code)
+    }
+
+    if rec.Body.String() != "Hello, World!" {
+        t.Errorf("unexpected body: %s", rec.Body.String())
+    }
+}
+```
+
+### Testing JSON responses
+
+```go
+func TestGetUser(t *testing.T) {
+    app := mizu.New()
+    app.Get("/users/{id}", func(c *mizu.Ctx) error {
+        id := c.Param("id")
+        return c.JSON(200, map[string]string{
+            "id":   id,
+            "name": "Test User",
+        })
+    })
+
+    req := httptest.NewRequest("GET", "/users/123", nil)
+    rec := httptest.NewRecorder()
+
+    app.ServeHTTP(rec, req)
+
+    if rec.Code != 200 {
+        t.Fatalf("expected 200, got %d", rec.Code)
+    }
+
+    // Parse JSON response
+    var response map[string]string
+    if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+        t.Fatalf("failed to parse JSON: %v", err)
+    }
+
+    if response["id"] != "123" {
+        t.Errorf("expected id=123, got %s", response["id"])
+    }
+}
+```
+
+### Testing POST requests with JSON body
+
+```go
+func TestCreateUser(t *testing.T) {
+    app := mizu.New()
+    app.Post("/users", func(c *mizu.Ctx) error {
+        var input struct {
+            Name  string `json:"name"`
+            Email string `json:"email"`
+        }
+        if err := c.BindJSON(&input, 1<<20); err != nil {
+            return c.JSON(400, map[string]string{"error": err.Error()})
+        }
+        return c.JSON(201, map[string]string{
+            "id":    "new-id",
+            "name":  input.Name,
+            "email": input.Email,
+        })
+    })
+
+    // Create request with JSON body
+    body := strings.NewReader(`{"name": "Alice", "email": "alice@example.com"}`)
+    req := httptest.NewRequest("POST", "/users", body)
+    req.Header.Set("Content-Type", "application/json")
+    rec := httptest.NewRecorder()
+
+    app.ServeHTTP(rec, req)
+
+    if rec.Code != 201 {
+        t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+    }
+}
+```
+
+## Table-driven tests
+
+Use table-driven tests for thorough coverage:
+
+```go
+func TestUserEndpoints(t *testing.T) {
+    app := setupTestApp()
+
+    tests := []struct {
+        name       string
+        method     string
+        path       string
+        body       string
+        wantStatus int
+        wantBody   string
+    }{
+        {
+            name:       "get existing user",
+            method:     "GET",
+            path:       "/users/1",
+            wantStatus: 200,
+            wantBody:   `"id":"1"`,
+        },
+        {
+            name:       "get non-existent user",
+            method:     "GET",
+            path:       "/users/999",
+            wantStatus: 404,
+            wantBody:   `"error"`,
+        },
+        {
+            name:       "create user with valid data",
+            method:     "POST",
+            path:       "/users",
+            body:       `{"name":"Bob","email":"bob@test.com"}`,
+            wantStatus: 201,
+        },
+        {
+            name:       "create user with missing name",
+            method:     "POST",
+            path:       "/users",
+            body:       `{"email":"test@test.com"}`,
+            wantStatus: 400,
+            wantBody:   `"error"`,
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            var body io.Reader
+            if tt.body != "" {
+                body = strings.NewReader(tt.body)
+            }
+
+            req := httptest.NewRequest(tt.method, tt.path, body)
+            if tt.body != "" {
+                req.Header.Set("Content-Type", "application/json")
+            }
+            rec := httptest.NewRecorder()
+
+            app.ServeHTTP(rec, req)
+
+            if rec.Code != tt.wantStatus {
+                t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
+            }
+
+            if tt.wantBody != "" && !strings.Contains(rec.Body.String(), tt.wantBody) {
+                t.Errorf("body = %s, want to contain %s", rec.Body.String(), tt.wantBody)
+            }
+        })
+    }
+}
+```
+
+## Testing middleware
+
+### Test middleware in isolation
+
+```go
+func TestAuthMiddleware(t *testing.T) {
+    authMiddleware := func(next mizu.Handler) mizu.Handler {
+        return func(c *mizu.Ctx) error {
+            token := c.Request().Header.Get("Authorization")
+            if token == "" {
+                return c.JSON(401, map[string]string{"error": "unauthorized"})
+            }
+            return next(c)
+        }
+    }
+
+    tests := []struct {
+        name       string
+        authHeader string
+        wantStatus int
+    }{
+        {"with valid token", "Bearer token123", 200},
+        {"without token", "", 401},
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            app := mizu.New()
+            app.Use(authMiddleware)
+            app.Get("/protected", func(c *mizu.Ctx) error {
+                return c.Text(200, "OK")
+            })
+
+            req := httptest.NewRequest("GET", "/protected", nil)
+            if tt.authHeader != "" {
+                req.Header.Set("Authorization", tt.authHeader)
+            }
+            rec := httptest.NewRecorder()
+
+            app.ServeHTTP(rec, req)
+
+            if rec.Code != tt.wantStatus {
+                t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
+            }
+        })
+    }
+}
+```
+
+## Testing with dependencies
+
+### Use interfaces for mocking
+
+```go
+// Define interface
+type UserRepository interface {
+    Get(ctx context.Context, id string) (*User, error)
+    Create(ctx context.Context, user *User) error
+}
+
+// Handler with dependency
+type UserHandler struct {
+    repo UserRepository
+}
+
+func (h *UserHandler) GetUser(c *mizu.Ctx) error {
+    user, err := h.repo.Get(c.Context(), c.Param("id"))
+    if err != nil {
+        return err
+    }
+    return c.JSON(200, user)
+}
+
+// Mock for testing
+type mockUserRepo struct {
+    users map[string]*User
+}
+
+func (m *mockUserRepo) Get(ctx context.Context, id string) (*User, error) {
+    if user, ok := m.users[id]; ok {
+        return user, nil
+    }
+    return nil, errors.New("not found")
+}
+
+func (m *mockUserRepo) Create(ctx context.Context, user *User) error {
+    m.users[user.ID] = user
+    return nil
+}
+
+// Test with mock
+func TestGetUserWithMock(t *testing.T) {
+    repo := &mockUserRepo{
+        users: map[string]*User{
+            "1": {ID: "1", Name: "Alice"},
+        },
+    }
+    handler := &UserHandler{repo: repo}
+
+    app := mizu.New()
+    app.Get("/users/{id}", handler.GetUser)
+
+    req := httptest.NewRequest("GET", "/users/1", nil)
+    rec := httptest.NewRecorder()
+
+    app.ServeHTTP(rec, req)
+
+    if rec.Code != 200 {
+        t.Errorf("expected 200, got %d", rec.Code)
+    }
+}
+```
+
+## Testing error handling
+
+```go
+func TestErrorHandler(t *testing.T) {
+    app := mizu.New()
+
+    // Custom error handler
+    app.ErrorHandler(func(c *mizu.Ctx, err error) {
+        var httpErr *HTTPError
+        if errors.As(err, &httpErr) {
+            c.JSON(httpErr.Code, map[string]string{"error": httpErr.Message})
+        } else {
+            c.JSON(500, map[string]string{"error": "internal error"})
+        }
+    })
+
+    // Handler that returns error
+    app.Get("/fail", func(c *mizu.Ctx) error {
+        return &HTTPError{Code: 400, Message: "bad request"}
+    })
+
+    req := httptest.NewRequest("GET", "/fail", nil)
+    rec := httptest.NewRecorder()
+
+    app.ServeHTTP(rec, req)
+
+    if rec.Code != 400 {
+        t.Errorf("expected 400, got %d", rec.Code)
+    }
+
+    if !strings.Contains(rec.Body.String(), "bad request") {
+        t.Errorf("expected error message in body: %s", rec.Body.String())
+    }
+}
+```
+
+## Test helpers
+
+Create reusable test helpers:
+
+```go
+// testutil/testutil.go
+package testutil
+
+import (
+    "encoding/json"
+    "net/http/httptest"
+    "strings"
+    "testing"
+
+    "github.com/go-mizu/mizu"
+)
+
+type TestClient struct {
+    app *mizu.App
+    t   *testing.T
+}
+
+func NewClient(t *testing.T, app *mizu.App) *TestClient {
+    return &TestClient{app: app, t: t}
+}
+
+func (c *TestClient) Get(path string) *httptest.ResponseRecorder {
+    req := httptest.NewRequest("GET", path, nil)
+    rec := httptest.NewRecorder()
+    c.app.ServeHTTP(rec, req)
+    return rec
+}
+
+func (c *TestClient) PostJSON(path string, body any) *httptest.ResponseRecorder {
+    data, _ := json.Marshal(body)
+    req := httptest.NewRequest("POST", path, strings.NewReader(string(data)))
+    req.Header.Set("Content-Type", "application/json")
+    rec := httptest.NewRecorder()
+    c.app.ServeHTTP(rec, req)
+    return rec
+}
+
+func (c *TestClient) AssertStatus(rec *httptest.ResponseRecorder, want int) {
+    if rec.Code != want {
+        c.t.Errorf("status = %d, want %d", rec.Code, want)
+    }
+}
+
+func (c *TestClient) ParseJSON(rec *httptest.ResponseRecorder, v any) {
+    if err := json.Unmarshal(rec.Body.Bytes(), v); err != nil {
+        c.t.Fatalf("failed to parse JSON: %v", err)
+    }
+}
+```
+
+Usage:
+
+```go
+func TestWithHelper(t *testing.T) {
+    app := setupApp()
+    client := testutil.NewClient(t, app)
+
+    rec := client.Get("/users/1")
+    client.AssertStatus(rec, 200)
+
+    var user User
+    client.ParseJSON(rec, &user)
+
+    if user.ID != "1" {
+        t.Errorf("expected id=1, got %s", user.ID)
+    }
+}
+```
+
+## Running tests
+
+```bash
+# Run all tests
+go test ./...
+
+# Run with verbose output
+go test -v ./...
+
+# Run specific test
+go test -v -run TestGetUser ./handlers
+
+# Run with coverage
+go test -cover ./...
+
+# Generate coverage report
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
+```
+
+## Best practices
+
+1. **Test behavior, not implementation** - Focus on what the handler does
+2. **Use table-driven tests** - Cover edge cases systematically
+3. **Keep tests isolated** - Each test creates its own app instance
+4. **Use interfaces for dependencies** - Makes mocking easy
+5. **Test error paths** - Ensure proper error responses
+6. **Use meaningful test names** - Describe what's being tested
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Deployment" icon="cloud" href="/guides/deployment">
+    Deploy your tested app.
+  </Card>
+  <Card title="Project Structure" icon="sitemap" href="/guides/project-structure">
+    Organize code for testability.
+  </Card>
+</CardGroup>
