@@ -2,7 +2,7 @@ package adapters
 
 import (
 	"github.com/go-mizu/mizu"
-	"github.com/go-mizu/mizu/middlewares/frontend"
+	"github.com/go-mizu/mizu/frontend"
 )
 
 // AngularOptions extends frontend.Options with Angular-specific settings.

@@ -22,7 +22,7 @@
 package adapters
 
 import (
-	"github.com/go-mizu/mizu/middlewares/frontend"
+	"github.com/go-mizu/mizu/frontend"
 )
 
 // applyCommonDefaults applies defaults common to all frameworks.

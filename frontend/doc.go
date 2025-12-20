@@ -105,7 +105,7 @@
 //
 // Framework-specific adapters apply optimal defaults:
 //
-//	import "github.com/go-mizu/mizu/middlewares/frontend/adapters"
+//	import "github.com/go-mizu/mizu/frontend/adapters"
 //
 //	// React (Vite)
 //	app.Use(adapters.React(frontend.Options{Root: "./dist"}))

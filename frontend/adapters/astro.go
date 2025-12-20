@@ -2,7 +2,7 @@ package adapters
 
 import (
 	"github.com/go-mizu/mizu"
-	"github.com/go-mizu/mizu/middlewares/frontend"
+	"github.com/go-mizu/mizu/frontend"
 )
 
 // AstroOptions extends frontend.Options with Astro-specific settings.

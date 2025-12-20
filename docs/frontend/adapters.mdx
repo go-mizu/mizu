@@ -11,7 +11,7 @@ Framework adapters provide framework-specific defaults and optimizations for com
 Adapters are convenience wrappers that apply framework-specific best practices:
 
 ```go
-import "github.com/go-mizu/mizu/middlewares/frontend/adapters"
+import "github.com/go-mizu/mizu/frontend/adapters"
 
 // Instead of manual configuration
 app.Use(adapters.React(frontend.Options{
@@ -35,7 +35,7 @@ Optimized for React applications with Vite.
 
 **Example:**
 ```go
-import "github.com/go-mizu/mizu/middlewares/frontend/adapters"
+import "github.com/go-mizu/mizu/frontend/adapters"
 
 app.Use(adapters.React(frontend.Options{
     Root: "./dist",
@@ -165,8 +165,8 @@ package server
 
 import (
     "github.com/go-mizu/mizu"
-    "github.com/go-mizu/mizu/middlewares/frontend"
-    "github.com/go-mizu/mizu/middlewares/frontend/adapters"
+    "github.com/go-mizu/mizu/frontend"
+    "github.com/go-mizu/mizu/frontend/adapters"
 )
 
 func New() *mizu.App {
@@ -244,7 +244,7 @@ package myadapters
 
 import (
     "github.com/go-mizu/mizu"
-    "github.com/go-mizu/mizu/middlewares/frontend"
+    "github.com/go-mizu/mizu/frontend"
 )
 
 func Qwik(opts frontend.Options) mizu.Middleware {
