@@ -6,6 +6,48 @@ icon: "angular"
 
 Angular is a comprehensive framework from Google for building web applications. This guide shows you how to integrate Angular with Mizu as the backend.
 
+## Why Angular?
+
+Angular is a full-featured, opinionated framework that provides everything you need to build large-scale applications. Unlike libraries like React or Vue, Angular is a complete platform with a rich ecosystem of official tools and patterns.
+
+**Key strengths:**
+- **Complete platform**: Router, HTTP, Forms, Testing all included
+- **TypeScript-first**: Built with and for TypeScript
+- **Dependency Injection**: Enterprise-grade DI system
+- **RxJS**: Powerful reactive programming
+- **Signals**: New reactive primitives (Angular 16+)
+- **CLI**: World-class tooling and scaffolding
+- **Consistency**: Strong opinions lead to consistent code
+- **Enterprise-ready**: Battle-tested at Google scale
+
+### Angular vs Other Frameworks
+
+| Feature | Angular | React | Vue 3 | Svelte |
+|---------|---------|-------|-------|--------|
+| **Bundle Size** | ~167 KB | ~44 KB | ~34 KB | ~3 KB |
+| **Learning Curve** | Steep | Moderate | Gentle | Gentle |
+| **Language** | TypeScript | JSX/TSX | SFC | SFC |
+| **Reactivity** | Zone.js + Signals | Virtual DOM | Proxy | Compiled |
+| **State Mgmt** | Services/NgRx/Signals | Redux/Zustand | Pinia | Stores |
+| **Forms** | Reactive/Template | Libraries | v-model | bind: |
+| **Routing** | Built-in | React Router | Vue Router | Libraries |
+| **HTTP** | Built-in (HttpClient) | fetch/axios | fetch/axios | fetch |
+| **CLI** | Angular CLI | CRA/Vite | Vite | Vite/SvelteKit |
+| **DI** | Built-in | Manual | Manual | Manual |
+| **Testing** | Jasmine/Karma | Jest/RTL | Vitest | Vitest |
+| **Best For** | Enterprise apps | Any size | Progressive apps | Small/fast apps |
+
+### Angular + Mizu vs Standalone Angular
+
+| Aspect | Angular + Mizu | Standalone Angular |
+|--------|----------------|-------------------|
+| **Backend** | Go (Mizu) | Node.js/Java/.NET |
+| **API** | Go handlers | Express/NestJS |
+| **Database** | Go libs | TypeORM/Prisma |
+| **Deployment** | Single binary | Separate frontend + backend |
+| **Type Safety** | TS frontend + Go backend | Full TypeScript stack |
+| **SSR** | No (SPA) | Angular Universal |
+
 ## Quick Start
 
 ```bash
@@ -14,14 +56,80 @@ cd my-angular-app
 make dev
 ```
 
+Visit `http://localhost:4200` to see your app!
+
+## Architecture
+
+### Development Mode
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Browser                              │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  Angular App (HMR enabled)                             │  │
+│  │  ┌─────────┐  ┌─────────┐  ┌──────────┐               │  │
+│  │  │ Router  │→ │ Pages   │→ │ HTTP Call│               │  │
+│  │  └─────────┘  └─────────┘  └──────────┘               │  │
+│  └───────────────────────────────────────────────────────┘  │
+│         ↑ HMR WebSocket           ↓ /api/users              │
+└─────────┼──────────────────────────┼────────────────────────┘
+          │                          │
+┌─────────┼──────────────────────────┼────────────────────────┐
+│  Angular Dev Server (:4200)        │                         │
+│         │                          ↓ (proxied)              │
+│    ┌────┴─────────┐        ┌──────────────┐                │
+│    │ Webpack Dev  │        │ Proxy to     │                │
+│    │ Server + HMR │        │ :3000        │                │
+│    └──────────────┘        └──────────────┘                │
+│         ↑                          ↓                         │
+└─────────┼──────────────────────────┼────────────────────────┘
+          │                          │
+┌─────────┼──────────────────────────┼────────────────────────┐
+│  Mizu Server (:3000)               │                         │
+│                                    ↓                         │
+│                            ┌────────────┐                   │
+│                            │ API Routes │                   │
+│                            │ (Go)       │                   │
+│                            └────────────┘                   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Production Mode
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Browser                              │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  Angular App (compiled, minified, AOT)                 │  │
+│  │  ┌─────────┐  ┌─────────┐  ┌──────────┐               │  │
+│  │  │ Router  │→ │ Pages   │→ │ HTTP Call│               │  │
+│  │  └─────────┘  └─────────┘  └──────────┘               │  │
+│  └───────────────────────────────────────────────────────┘  │
+│         ↑ index.html + bundles    ↓ /api/users              │
+└─────────┼──────────────────────────┼────────────────────────┘
+          │                          │
+┌─────────┼──────────────────────────┼────────────────────────┐
+│  Mizu Server (single binary)       │                         │
+│         │                          ↓                         │
+│    ┌────┴─────────┐        ┌────────────┐                   │
+│    │ Embedded FS  │        │ API Routes │                   │
+│    │ (dist/...)   │        │ (Go)       │                   │
+│    └──────────────┘        └────────────┘                   │
+│  ←────────────────────────────────────────────────────────  │
+│  Static files served from Go binary (//go:embed)             │
+└──────────────────────────────────────────────────────────────┘
+```
+
 ## Project Structure
 
 ```
 my-angular-app/
 ├── cmd/server/
+│   └── main.go
 ├── app/server/
 │   ├── app.go
-│   └── routes.go
+│   ├── config.go
+│   └── routes.go              # API routes
 ├── client/                    # Angular app
 │   ├── src/
 │   │   ├── app/
@@ -30,14 +138,19 @@ my-angular-app/
 │   │   │   ├── app.routes.ts
 │   │   │   ├── components/
 │   │   │   ├── pages/
-│   │   │   └── services/
+│   │   │   ├── services/
+│   │   │   ├── guards/
+│   │   │   ├── interceptors/
+│   │   │   ├── pipes/
+│   │   │   └── directives/
 │   │   ├── index.html
 │   │   ├── main.ts
 │   │   └── styles.css
 │   ├── angular.json
 │   ├── package.json
-│   └── tsconfig.json
-├── dist/my-app/browser/      # Build output
+│   ├── tsconfig.json
+│   └── proxy.conf.json        # Dev proxy config
+├── dist/my-app/browser/       # Build output
 └── Makefile
 ```
 
@@ -60,7 +173,8 @@ var distFS embed.FS
 func New(cfg *Config) *mizu.App {
     app := mizu.New()
 
-    app.Get("/api/users", handleUsers)
+    // API routes
+    setupRoutes(app)
 
     // Angular outputs to dist/my-app/browser
     dist, _ := fs.Sub(distFS, "dist/my-app/browser")
@@ -73,6 +187,56 @@ func New(cfg *Config) *mizu.App {
     }))
 
     return app
+}
+```
+
+**Important:** Angular's output path includes the project name: `dist/my-app/browser/`
+
+### API Routes Example
+
+```go
+// app/server/routes.go
+package server
+
+import "github.com/go-mizu/mizu"
+
+type User struct {
+    ID    int    `json:"id"`
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+
+func setupRoutes(app *mizu.App) {
+    // GET /api/users
+    app.GET("/api/users", func(c *mizu.Ctx) error {
+        users := []User{
+            {ID: 1, Name: "Alice", Email: "alice@example.com"},
+            {ID: 2, Name: "Bob", Email: "bob@example.com"},
+        }
+        return c.JSON(users)
+    })
+
+    // POST /api/users
+    app.POST("/api/users", func(c *mizu.Ctx) error {
+        var user User
+        if err := c.BodyParser(&user); err != nil {
+            return err
+        }
+        user.ID = 3 // In real app, generate from DB
+        return c.Status(201).JSON(user)
+    })
+
+    // GET /api/users/:id
+    app.GET("/api/users/:id", func(c *mizu.Ctx) error {
+        id := c.Param("id")
+        user := User{ID: 1, Name: "Alice", Email: "alice@example.com"}
+        return c.JSON(user)
+    })
+
+    // DELETE /api/users/:id
+    app.DELETE("/api/users/:id", func(c *mizu.Ctx) error {
+        return c.Status(204).Send(nil)
+    })
 }
 ```
 
@@ -89,7 +253,26 @@ func New(cfg *Config) *mizu.App {
           "options": {
             "outputPath": "../dist/my-app",
             "index": "src/index.html",
-            "browser": "src/main.ts"
+            "browser": "src/main.ts",
+            "polyfills": [
+              "zone.js"
+            ]
+          },
+          "configurations": {
+            "production": {
+              "optimization": true,
+              "outputHashing": "all",
+              "sourceMap": false,
+              "namedChunks": false,
+              "extractLicenses": true,
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "500kb",
+                  "maximumError": "1mb"
+                }
+              ]
+            }
           }
         },
         "serve": {
@@ -133,6 +316,22 @@ export const routes: Routes = [
 ]
 ```
 
+### `client/src/app/app.config.ts`
+
+```ts
+import { ApplicationConfig } from '@angular/core'
+import { provideRouter } from '@angular/router'
+import { provideHttpClient, withInterceptors } from '@angular/common/http'
+import { routes } from './app.routes'
+
+export const appConfig: ApplicationConfig = {
+  providers: [
+    provideRouter(routes),
+    provideHttpClient(),
+  ]
+}
+```
+
 ### `client/src/app/app.component.ts`
 
 ```ts
@@ -158,6 +357,19 @@ import { RouterOutlet, RouterLink } from '@angular/router'
       gap: 1rem;
       padding: 1rem;
       background: #f5f5f5;
+    }
+
+    nav a {
+      color: #dd0031;
+      text-decoration: none;
+    }
+
+    nav a:hover {
+      text-decoration: underline;
+    }
+
+    main {
+      padding: 2rem;
     }
   `]
 })
@@ -217,13 +429,95 @@ export class HomeComponent implements OnInit {
 }
 ```
 
-## Services
+## Standalone Components
 
-Create reusable services:
+Angular 14+ introduced standalone components, eliminating the need for NgModules for most apps.
 
-### `client/src/app/services/user.service.ts`
+### Creating Standalone Components
 
 ```ts
+import { Component } from '@angular/core'
+import { CommonModule } from '@angular/common'
+
+@Component({
+  selector: 'app-user-card',
+  standalone: true,  // Mark as standalone
+  imports: [CommonModule],  // Import dependencies directly
+  template: `
+    <div class="card">
+      <h3>{{ user.name }}</h3>
+      <p>{{ user.email }}</p>
+    </div>
+  `,
+  styles: [`
+    .card {
+      border: 1px solid #ddd;
+      padding: 1rem;
+      border-radius: 8px;
+    }
+  `]
+})
+export class UserCardComponent {
+  @Input() user!: User
+}
+```
+
+### Component Communication
+
+```ts
+// Parent component
+import { Component } from '@angular/core'
+import { UserCardComponent } from './user-card/user-card.component'
+
+@Component({
+  selector: 'app-users',
+  standalone: true,
+  imports: [UserCardComponent],
+  template: `
+    <app-user-card
+      *ngFor="let user of users"
+      [user]="user"
+      (delete)="onDelete($event)"
+    />
+  `
+})
+export class UsersComponent {
+  users = [
+    { id: 1, name: 'Alice', email: 'alice@example.com' },
+    { id: 2, name: 'Bob', email: 'bob@example.com' }
+  ]
+
+  onDelete(userId: number) {
+    this.users = this.users.filter(u => u.id !== userId)
+  }
+}
+
+// Child component
+@Component({
+  selector: 'app-user-card',
+  standalone: true,
+  template: `
+    <div class="card">
+      <h3>{{ user.name }}</h3>
+      <p>{{ user.email }}</p>
+      <button (click)="delete.emit(user.id)">Delete</button>
+    </div>
+  `
+})
+export class UserCardComponent {
+  @Input() user!: User
+  @Output() delete = new EventEmitter<number>()
+}
+```
+
+## Services and Dependency Injection
+
+Angular's DI system is one of its most powerful features.
+
+### Creating a Service
+
+```ts
+// services/user.service.ts
 import { Injectable } from '@angular/core'
 import { HttpClient } from '@angular/common/http'
 import { Observable } from 'rxjs'
@@ -235,7 +529,7 @@ export interface User {
 }
 
 @Injectable({
-  providedIn: 'root'
+  providedIn: 'root'  // Singleton across the app
 })
 export class UserService {
   private apiUrl = '/api/users'
@@ -254,13 +548,17 @@ export class UserService {
     return this.http.post<User>(this.apiUrl, user)
   }
 
+  updateUser(id: number, user: Partial<User>): Observable<User> {
+    return this.http.patch<User>(`${this.apiUrl}/${id}`, user)
+  }
+
   deleteUser(id: number): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/${id}`)
   }
 }
 ```
 
-Use in components:
+### Using Services in Components
 
 ```ts
 import { Component, OnInit } from '@angular/core'
@@ -269,9 +567,16 @@ import { UserService, User } from '../../services/user.service'
 @Component({
   selector: 'app-users',
   template: `
+    <h1>Users</h1>
+
     <ul>
-      <li *ngFor="let user of users">{{ user.name }}</li>
+      <li *ngFor="let user of users">
+        {{ user.name }}
+        <button (click)="deleteUser(user.id)">Delete</button>
+      </li>
     </ul>
+
+    <button (click)="addUser()">Add User</button>
   `
 })
 export class UsersComponent implements OnInit {
@@ -280,80 +585,1402 @@ export class UsersComponent implements OnInit {
   constructor(private userService: UserService) {}
 
   ngOnInit() {
+    this.loadUsers()
+  }
+
+  loadUsers() {
     this.userService.getUsers()
       .subscribe(users => this.users = users)
+  }
+
+  deleteUser(id: number) {
+    this.userService.deleteUser(id)
+      .subscribe(() => {
+        this.users = this.users.filter(u => u.id !== id)
+      })
+  }
+
+  addUser() {
+    this.userService.createUser({ name: 'New User', email: 'new@example.com' })
+      .subscribe(user => {
+        this.users.push(user)
+      })
   }
 }
 ```
 
-## Forms
+### Service Scopes
 
-### Template-driven Forms
+```ts
+// Singleton (app-wide)
+@Injectable({
+  providedIn: 'root'
+})
+export class SingletonService {}
+
+// Provided in specific component tree
+@Injectable()
+export class ScopedService {}
+
+// Use in component
+@Component({
+  selector: 'app-feature',
+  providers: [ScopedService]  // New instance for this component and its children
+})
+export class FeatureComponent {}
+```
+
+## Signals (Angular 16+)
+
+Signals are Angular's new reactive primitives for fine-grained reactivity.
+
+### Basic Signals
+
+```ts
+import { Component, signal, computed, effect } from '@angular/core'
+
+@Component({
+  selector: 'app-counter',
+  standalone: true,
+  template: `
+    <p>Count: {{ count() }}</p>
+    <p>Doubled: {{ doubled() }}</p>
+    <button (click)="increment()">+</button>
+    <button (click)="decrement()">-</button>
+  `
+})
+export class CounterComponent {
+  // Writable signal
+  count = signal(0)
+
+  // Computed signal (automatically updates)
+  doubled = computed(() => this.count() * 2)
+
+  // Effect (runs when dependencies change)
+  constructor() {
+    effect(() => {
+      console.log('Count changed to:', this.count())
+    })
+  }
+
+  increment() {
+    this.count.update(n => n + 1)
+    // Or: this.count.set(this.count() + 1)
+  }
+
+  decrement() {
+    this.count.update(n => n - 1)
+  }
+}
+```
+
+### Signals in Services
+
+```ts
+import { Injectable, signal, computed } from '@angular/core'
+import { HttpClient } from '@angular/common/http'
+
+@Injectable({
+  providedIn: 'root'
+})
+export class TodoService {
+  // State as signals
+  private todosSignal = signal<Todo[]>([])
+  private loadingSignal = signal(false)
+
+  // Public readonly signals
+  todos = this.todosSignal.asReadonly()
+  loading = this.loadingSignal.asReadonly()
+
+  // Computed signals
+  completedCount = computed(() =>
+    this.todosSignal().filter(t => t.done).length
+  )
+
+  pendingCount = computed(() =>
+    this.todosSignal().filter(t => !t.done).length
+  )
+
+  constructor(private http: HttpClient) {}
+
+  loadTodos() {
+    this.loadingSignal.set(true)
+    this.http.get<Todo[]>('/api/todos')
+      .subscribe(todos => {
+        this.todosSignal.set(todos)
+        this.loadingSignal.set(false)
+      })
+  }
+
+  addTodo(title: string) {
+    const todo: Todo = { id: Date.now(), title, done: false }
+    this.todosSignal.update(todos => [...todos, todo])
+
+    this.http.post('/api/todos', todo).subscribe()
+  }
+
+  toggleTodo(id: number) {
+    this.todosSignal.update(todos =>
+      todos.map(t => t.id === id ? { ...t, done: !t.done } : t)
+    )
+  }
+}
+```
+
+## RxJS and Observables
+
+Angular uses RxJS extensively for async operations.
+
+### Common RxJS Operators
+
+```ts
+import { Component, OnInit } from '@angular/core'
+import { HttpClient } from '@angular/common/http'
+import { map, filter, catchError, retry, debounceTime, switchMap } from 'rxjs/operators'
+import { of, Subject } from 'rxjs'
+
+@Component({
+  selector: 'app-search',
+  template: `
+    <input
+      type="text"
+      (input)="search$.next($any($event.target).value)"
+      placeholder="Search users..."
+    />
+
+    <ul>
+      <li *ngFor="let user of users">{{ user.name }}</li>
+    </ul>
+  `
+})
+export class SearchComponent implements OnInit {
+  search$ = new Subject<string>()
+  users: User[] = []
+
+  constructor(private http: HttpClient) {}
+
+  ngOnInit() {
+    // Debounce search input, switch to new search, handle errors
+    this.search$.pipe(
+      debounceTime(300),  // Wait 300ms after typing stops
+      filter(query => query.length > 2),  // Only search if 3+ chars
+      switchMap(query =>  // Cancel previous search, start new one
+        this.http.get<User[]>(`/api/users?q=${query}`).pipe(
+          retry(2),  // Retry failed requests twice
+          catchError(() => of([]))  // Return empty array on error
+        )
+      )
+    ).subscribe(users => {
+      this.users = users
+    })
+  }
+}
+```
+
+### Common Patterns
+
+```ts
+// Map data
+this.http.get<User[]>('/api/users').pipe(
+  map(users => users.map(u => ({ ...u, displayName: `${u.name} (${u.email})` })))
+)
+
+// Combine multiple requests
+import { forkJoin } from 'rxjs'
+
+forkJoin({
+  users: this.http.get<User[]>('/api/users'),
+  posts: this.http.get<Post[]>('/api/posts'),
+  stats: this.http.get<Stats>('/api/stats')
+}).subscribe(({ users, posts, stats }) => {
+  // All requests completed
+})
+
+// Sequential requests
+this.http.get<User>('/api/user/1').pipe(
+  switchMap(user => this.http.get<Post[]>(`/api/posts?userId=${user.id}`))
+).subscribe(posts => {
+  // Posts for user 1
+})
+```
+
+## Reactive Forms
+
+Angular's reactive forms provide fine-grained control over form state and validation.
+
+### Basic Reactive Form
 
 ```ts
 import { Component } from '@angular/core'
-import { FormsModule } from '@angular/forms'
-import { UserService } from '../../services/user.service'
+import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms'
+import { CommonModule } from '@angular/common'
 
 @Component({
-  selector: 'app-create-user',
+  selector: 'app-user-form',
   standalone: true,
-  imports: [FormsModule],
+  imports: [CommonModule, ReactiveFormsModule],
   template: `
-    <form (ngSubmit)="onSubmit()" #userForm="ngForm">
-      <input
-        [(ngModel)]="name"
-        name="name"
-        placeholder="Name"
-        required
-      >
-      <input
-        [(ngModel)]="email"
-        name="email"
-        type="email"
-        placeholder="Email"
-        required
-      >
-      <button
-        type="submit"
-        [disabled]="!userForm.valid || submitting"
-      >
-        {{ submitting ? 'Creating...' : 'Create User' }}
-      </button>
+    <form [formGroup]="userForm" (ngSubmit)="onSubmit()">
+      <div>
+        <input formControlName="name" placeholder="Name" />
+        <div *ngIf="userForm.get('name')?.invalid && userForm.get('name')?.touched" class="error">
+          Name is required and must be at least 2 characters
+        </div>
+      </div>
+
+      <div>
+        <input formControlName="email" type="email" placeholder="Email" />
+        <div *ngIf="userForm.get('email')?.invalid && userForm.get('email')?.touched" class="error">
+          Valid email is required
+        </div>
+      </div>
+
+      <div>
+        <input formControlName="age" type="number" placeholder="Age" />
+        <div *ngIf="userForm.get('age')?.invalid && userForm.get('age')?.touched" class="error">
+          Age must be between 18 and 120
+        </div>
+      </div>
+
+      <button type="submit" [disabled]="userForm.invalid">Submit</button>
     </form>
+  `,
+  styles: [`
+    .error {
+      color: red;
+      font-size: 0.875rem;
+    }
 
-    <p *ngIf="success" class="success">User created!</p>
-    <p *ngIf="error" class="error">{{ error }}</p>
-  `
+    form > div {
+      margin-bottom: 1rem;
+    }
+  `]
 })
-export class CreateUserComponent {
-  name = ''
-  email = ''
-  submitting = false
-  success = false
-  error: string | null = null
+export class UserFormComponent {
+  userForm: FormGroup
 
-  constructor(private userService: UserService) {}
+  constructor(private fb: FormBuilder) {
+    this.userForm = this.fb.group({
+      name: ['', [Validators.required, Validators.minLength(2)]],
+      email: ['', [Validators.required, Validators.email]],
+      age: ['', [Validators.required, Validators.min(18), Validators.max(120)]]
+    })
+  }
 
   onSubmit() {
-    this.submitting = true
-    this.success = false
-    this.error = null
+    if (this.userForm.valid) {
+      console.log('Form data:', this.userForm.value)
+    }
+  }
+}
+```
 
-    this.userService.createUser({ name: this.name, email: this.email })
-      .subscribe({
-        next: () => {
-          this.success = true
-          this.name = ''
-          this.email = ''
-          this.submitting = false
-        },
-        error: (err) => {
-          this.error = err.message
-          this.submitting = false
-        }
+### Advanced Forms with FormArray
+
+```ts
+import { Component } from '@angular/core'
+import { FormBuilder, FormArray, Validators } from '@angular/forms'
+
+@Component({
+  selector: 'app-dynamic-form',
+  template: `
+    <form [formGroup]="form" (ngSubmit)="onSubmit()">
+      <div formArrayName="items">
+        <div *ngFor="let item of items.controls; let i = index" [formGroupName]="i">
+          <input formControlName="name" placeholder="Name" />
+          <input formControlName="quantity" type="number" placeholder="Qty" />
+          <button type="button" (click)="removeItem(i)">Remove</button>
+        </div>
+      </div>
+
+      <button type="button" (click)="addItem()">Add Item</button>
+      <button type="submit" [disabled]="form.invalid">Submit</button>
+    </form>
+  `
+})
+export class DynamicFormComponent {
+  form = this.fb.group({
+    items: this.fb.array([])
+  })
+
+  constructor(private fb: FormBuilder) {
+    this.addItem()
+  }
+
+  get items() {
+    return this.form.get('items') as FormArray
+  }
+
+  addItem() {
+    this.items.push(this.fb.group({
+      name: ['', Validators.required],
+      quantity: [1, [Validators.required, Validators.min(1)]]
+    }))
+  }
+
+  removeItem(index: number) {
+    this.items.removeAt(index)
+  }
+
+  onSubmit() {
+    console.log(this.form.value)
+  }
+}
+```
+
+### Custom Validators
+
+```ts
+import { AbstractControl, ValidationErrors, ValidatorFn } from '@angular/forms'
+
+// Synchronous validator
+export function forbiddenNameValidator(nameRe: RegExp): ValidatorFn {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const forbidden = nameRe.test(control.value)
+    return forbidden ? { forbiddenName: { value: control.value } } : null
+  }
+}
+
+// Async validator
+export function uniqueEmailValidator(userService: UserService): AsyncValidatorFn {
+  return (control: AbstractControl): Observable<ValidationErrors | null> => {
+    return userService.checkEmailExists(control.value).pipe(
+      map(exists => exists ? { emailTaken: true } : null)
+    )
+  }
+}
+
+// Usage
+this.userForm = this.fb.group({
+  name: ['', [Validators.required, forbiddenNameValidator(/admin/i)]],
+  email: ['', [Validators.required, Validators.email], [uniqueEmailValidator(this.userService)]]
+})
+```
+
+## Routing
+
+Angular Router provides powerful routing capabilities.
+
+### Nested Routes
+
+```ts
+// app.routes.ts
+import { Routes } from '@angular/router'
+
+export const routes: Routes = [
+  { path: '', component: HomeComponent },
+  {
+    path: 'dashboard',
+    component: DashboardLayoutComponent,
+    children: [
+      { path: '', component: DashboardHomeComponent },
+      { path: 'users', component: UsersComponent },
+      { path: 'users/:id', component: UserDetailComponent },
+      { path: 'settings', component: SettingsComponent }
+    ]
+  },
+  { path: '**', component: NotFoundComponent }  // 404
+]
+```
+
+```ts
+// DashboardLayoutComponent
+@Component({
+  selector: 'app-dashboard-layout',
+  template: `
+    <div class="dashboard">
+      <aside>
+        <a routerLink="/dashboard">Home</a>
+        <a routerLink="/dashboard/users">Users</a>
+        <a routerLink="/dashboard/settings">Settings</a>
+      </aside>
+
+      <main>
+        <router-outlet></router-outlet>
+      </main>
+    </div>
+  `
+})
+export class DashboardLayoutComponent {}
+```
+
+### Route Parameters
+
+```ts
+import { Component, OnInit } from '@angular/core'
+import { ActivatedRoute } from '@angular/router'
+
+@Component({
+  selector: 'app-user-detail',
+  template: `
+    <div *ngIf="user">
+      <h1>{{ user.name }}</h1>
+      <p>{{ user.email }}</p>
+    </div>
+  `
+})
+export class UserDetailComponent implements OnInit {
+  user: User | null = null
+
+  constructor(
+    private route: ActivatedRoute,
+    private userService: UserService
+  ) {}
+
+  ngOnInit() {
+    // Get route parameter
+    const id = Number(this.route.snapshot.paramMap.get('id'))
+
+    // Or subscribe to params (for when route changes but component is reused)
+    this.route.paramMap.subscribe(params => {
+      const id = Number(params.get('id'))
+      this.loadUser(id)
+    })
+  }
+
+  loadUser(id: number) {
+    this.userService.getUser(id).subscribe(user => {
+      this.user = user
+    })
+  }
+}
+```
+
+### Programmatic Navigation
+
+```ts
+import { Component } from '@angular/core'
+import { Router } from '@angular/router'
+
+@Component({
+  selector: 'app-example',
+  template: `
+    <button (click)="goToUser(123)">View User 123</button>
+    <button (click)="goBack()">Go Back</button>
+  `
+})
+export class ExampleComponent {
+  constructor(private router: Router) {}
+
+  goToUser(id: number) {
+    // Navigate to route
+    this.router.navigate(['/users', id])
+
+    // Or with query params
+    this.router.navigate(['/users'], {
+      queryParams: { search: 'alice' }
+    })
+  }
+
+  goBack() {
+    window.history.back()
+  }
+}
+```
+
+### Route Guards
+
+```ts
+// guards/auth.guard.ts
+import { inject } from '@angular/core'
+import { Router } from '@angular/router'
+import { AuthService } from '../services/auth.service'
+
+export const authGuard = () => {
+  const authService = inject(AuthService)
+  const router = inject(Router)
+
+  if (authService.isAuthenticated()) {
+    return true
+  }
+
+  router.navigate(['/login'])
+  return false
+}
+```
+
+```ts
+// routes.ts
+export const routes: Routes = [
+  { path: 'login', component: LoginComponent },
+  {
+    path: 'admin',
+    component: AdminComponent,
+    canActivate: [authGuard]  // Protect route
+  }
+]
+```
+
+### Route Resolvers
+
+```ts
+// resolvers/user.resolver.ts
+import { inject } from '@angular/core'
+import { ActivatedRouteSnapshot } from '@angular/router'
+import { UserService } from '../services/user.service'
+
+export const userResolver = (route: ActivatedRouteSnapshot) => {
+  const userService = inject(UserService)
+  const id = Number(route.paramMap.get('id'))
+  return userService.getUser(id)
+}
+```
+
+```ts
+// routes.ts
+export const routes: Routes = [
+  {
+    path: 'users/:id',
+    component: UserDetailComponent,
+    resolve: { user: userResolver }  // Data loaded before component renders
+  }
+]
+```
+
+```ts
+// UserDetailComponent
+ngOnInit() {
+  // Data already loaded
+  this.user = this.route.snapshot.data['user']
+}
+```
+
+## Pipes
+
+Pipes transform data in templates.
+
+### Built-in Pipes
+
+```ts
+@Component({
+  template: `
+    <!-- Date pipe -->
+    <p>{{ today | date:'fullDate' }}</p>
+
+    <!-- Currency pipe -->
+    <p>{{ price | currency:'USD':'symbol':'1.2-2' }}</p>
+
+    <!-- Uppercase/Lowercase -->
+    <p>{{ name | uppercase }}</p>
+
+    <!-- JSON pipe (for debugging) -->
+    <pre>{{ user | json }}</pre>
+
+    <!-- Async pipe (unwraps observables) -->
+    <p *ngIf="user$ | async as user">{{ user.name }}</p>
+
+    <!-- Slice pipe -->
+    <li *ngFor="let item of items | slice:0:5">{{ item }}</li>
+  `
+})
+export class ExampleComponent {
+  today = new Date()
+  price = 1234.56
+  name = 'Alice'
+  user = { name: 'Bob', email: 'bob@example.com' }
+  user$ = this.http.get<User>('/api/user/1')
+  items = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+}
+```
+
+### Custom Pipes
+
+```ts
+import { Pipe, PipeTransform } from '@angular/core'
+
+@Pipe({
+  name: 'timeAgo',
+  standalone: true
+})
+export class TimeAgoPipe implements PipeTransform {
+  transform(value: Date): string {
+    const now = new Date()
+    const diff = now.getTime() - value.getTime()
+
+    const seconds = Math.floor(diff / 1000)
+    const minutes = Math.floor(seconds / 60)
+    const hours = Math.floor(minutes / 60)
+    const days = Math.floor(hours / 24)
+
+    if (days > 0) return `${days}d ago`
+    if (hours > 0) return `${hours}h ago`
+    if (minutes > 0) return `${minutes}m ago`
+    return `${seconds}s ago`
+  }
+}
+```
+
+```ts
+// Usage
+@Component({
+  imports: [TimeAgoPipe],
+  template: `
+    <p>Posted {{ post.createdAt | timeAgo }}</p>
+  `
+})
+```
+
+## Directives
+
+Directives modify element behavior.
+
+### Structural Directives
+
+```ts
+// Custom structural directive
+import { Directive, Input, TemplateRef, ViewContainerRef } from '@angular/core'
+
+@Directive({
+  selector: '[appRepeat]',
+  standalone: true
+})
+export class RepeatDirective {
+  constructor(
+    private templateRef: TemplateRef<any>,
+    private viewContainer: ViewContainerRef
+  ) {}
+
+  @Input() set appRepeat(times: number) {
+    this.viewContainer.clear()
+    for (let i = 0; i < times; i++) {
+      this.viewContainer.createEmbeddedView(this.templateRef, { $implicit: i })
+    }
+  }
+}
+```
+
+```ts
+// Usage
+@Component({
+  imports: [RepeatDirective],
+  template: `
+    <div *appRepeat="5; let i">
+      Item {{ i }}
+    </div>
+  `
+})
+```
+
+### Attribute Directives
+
+```ts
+import { Directive, ElementRef, HostListener, Input } from '@angular/core'
+
+@Directive({
+  selector: '[appHighlight]',
+  standalone: true
+})
+export class HighlightDirective {
+  @Input() appHighlight = 'yellow'
+
+  constructor(private el: ElementRef) {}
+
+  @HostListener('mouseenter') onMouseEnter() {
+    this.highlight(this.appHighlight)
+  }
+
+  @HostListener('mouseleave') onMouseLeave() {
+    this.highlight('')
+  }
+
+  private highlight(color: string) {
+    this.el.nativeElement.style.backgroundColor = color
+  }
+}
+```
+
+```ts
+// Usage
+@Component({
+  imports: [HighlightDirective],
+  template: `
+    <p appHighlight="lightblue">Hover over me!</p>
+  `
+})
+```
+
+## HTTP Interceptors
+
+Interceptors modify HTTP requests and responses globally.
+
+```ts
+// interceptors/auth.interceptor.ts
+import { HttpInterceptorFn } from '@angular/common/http'
+
+export const authInterceptor: HttpInterceptorFn = (req, next) => {
+  const token = localStorage.getItem('auth_token')
+
+  if (token) {
+    // Clone and modify request
+    req = req.clone({
+      setHeaders: {
+        Authorization: `Bearer ${token}`
+      }
+    })
+  }
+
+  return next(req)
+}
+```
+
+```ts
+// interceptors/error.interceptor.ts
+import { HttpInterceptorFn, HttpErrorResponse } from '@angular/common/http'
+import { catchError, throwError } from 'rxjs'
+import { inject } from '@angular/core'
+import { Router } from '@angular/router'
+
+export const errorInterceptor: HttpInterceptorFn = (req, next) => {
+  const router = inject(Router)
+
+  return next(req).pipe(
+    catchError((error: HttpErrorResponse) => {
+      if (error.status === 401) {
+        // Redirect to login on 401
+        router.navigate(['/login'])
+      }
+
+      return throwError(() => error)
+    })
+  )
+}
+```
+
+```ts
+// app.config.ts
+export const appConfig: ApplicationConfig = {
+  providers: [
+    provideHttpClient(
+      withInterceptors([authInterceptor, errorInterceptor])
+    )
+  ]
+}
+```
+
+## Lifecycle Hooks
+
+Angular components have a rich lifecycle.
+
+```ts
+import {
+  Component,
+  OnInit,
+  OnChanges,
+  DoCheck,
+  AfterContentInit,
+  AfterContentChecked,
+  AfterViewInit,
+  AfterViewChecked,
+  OnDestroy,
+  SimpleChanges
+} from '@angular/core'
+
+@Component({
+  selector: 'app-lifecycle',
+  template: `<p>Lifecycle example</p>`
+})
+export class LifecycleComponent implements
+  OnChanges,
+  OnInit,
+  DoCheck,
+  AfterContentInit,
+  AfterContentChecked,
+  AfterViewInit,
+  AfterViewChecked,
+  OnDestroy {
+
+  ngOnChanges(changes: SimpleChanges) {
+    // Called before ngOnInit and when input properties change
+    console.log('ngOnChanges', changes)
+  }
+
+  ngOnInit() {
+    // Called once after first ngOnChanges
+    // Good for: API calls, initialization
+    console.log('ngOnInit')
+  }
+
+  ngDoCheck() {
+    // Called during every change detection run
+    // Use sparingly - performance impact
+    console.log('ngDoCheck')
+  }
+
+  ngAfterContentInit() {
+    // Called once after content (ng-content) initialized
+    console.log('ngAfterContentInit')
+  }
+
+  ngAfterContentChecked() {
+    // Called after content checked during change detection
+    console.log('ngAfterContentChecked')
+  }
+
+  ngAfterViewInit() {
+    // Called once after view initialized
+    // Good for: DOM manipulation, accessing ViewChild
+    console.log('ngAfterViewInit')
+  }
+
+  ngAfterViewChecked() {
+    // Called after view checked during change detection
+    console.log('ngAfterViewChecked')
+  }
+
+  ngOnDestroy() {
+    // Called before component is destroyed
+    // Good for: Cleanup, unsubscribe
+    console.log('ngOnDestroy')
+  }
+}
+```
+
+**Lifecycle order:**
+1. `ngOnChanges()` - Input changes
+2. `ngOnInit()` - Component initialized
+3. `ngDoCheck()` - Change detection
+4. `ngAfterContentInit()` - Content initialized
+5. `ngAfterContentChecked()` - Content checked
+6. `ngAfterViewInit()` - View initialized
+7. `ngAfterViewChecked()` - View checked
+8. `ngOnDestroy()` - Before destruction
+
+## ViewChild and ContentChild
+
+Access child components and DOM elements.
+
+```ts
+import { Component, ViewChild, ElementRef, AfterViewInit } from '@angular/core'
+
+@Component({
+  selector: 'app-parent',
+  template: `
+    <input #searchInput type="text" />
+    <button (click)="focusInput()">Focus Input</button>
+
+    <app-child #childComponent></app-child>
+    <button (click)="callChild()">Call Child Method</button>
+  `
+})
+export class ParentComponent implements AfterViewInit {
+  @ViewChild('searchInput') searchInput!: ElementRef<HTMLInputElement>
+  @ViewChild('childComponent') childComponent!: ChildComponent
+
+  ngAfterViewInit() {
+    // ViewChild available after view init
+    console.log(this.searchInput.nativeElement.value)
+  }
+
+  focusInput() {
+    this.searchInput.nativeElement.focus()
+  }
+
+  callChild() {
+    this.childComponent.someMethod()
+  }
+}
+```
+
+## Lazy Loading
+
+Load feature modules on demand to reduce initial bundle size.
+
+```ts
+// app.routes.ts
+export const routes: Routes = [
+  { path: '', component: HomeComponent },
+  {
+    path: 'admin',
+    loadComponent: () =>
+      import('./pages/admin/admin.component').then(m => m.AdminComponent)
+  },
+  {
+    path: 'dashboard',
+    loadChildren: () =>
+      import('./features/dashboard/dashboard.routes').then(m => m.DASHBOARD_ROUTES)
+  }
+]
+```
+
+```ts
+// features/dashboard/dashboard.routes.ts
+import { Routes } from '@angular/router'
+
+export const DASHBOARD_ROUTES: Routes = [
+  { path: '', component: DashboardHomeComponent },
+  { path: 'users', component: DashboardUsersComponent }
+]
+```
+
+## Complete Real-World Example: Task Manager
+
+Let's build a complete task management application.
+
+### Backend (Go)
+
+```go
+// app/server/routes.go
+package server
+
+import (
+	"sync"
+	"time"
+
+	"github.com/go-mizu/mizu"
+)
+
+type Task struct {
+	ID          int       `json:"id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	Status      string    `json:"status"`
+	Priority    string    `json:"priority"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+var (
+	tasks   = []Task{}
+	nextID  = 1
+	tasksMu sync.RWMutex
+)
+
+func setupRoutes(app *mizu.App) {
+	app.GET("/api/tasks", func(c *mizu.Ctx) error {
+		tasksMu.RLock()
+		defer tasksMu.RUnlock()
+		return c.JSON(tasks)
+	})
+
+	app.POST("/api/tasks", func(c *mizu.Ctx) error {
+		var task Task
+		if err := c.BodyParser(&task); err != nil {
+			return c.Status(400).JSON(map[string]string{"error": "Invalid request"})
+		}
+
+		tasksMu.Lock()
+		task.ID = nextID
+		task.CreatedAt = time.Now()
+		nextID++
+		tasks = append(tasks, task)
+		tasksMu.Unlock()
+
+		return c.Status(201).JSON(task)
+	})
+
+	app.PUT("/api/tasks/:id", func(c *mizu.Ctx) error {
+		id := c.ParamInt("id")
+		var updates Task
+		if err := c.BodyParser(&updates); err != nil {
+			return c.Status(400).JSON(map[string]string{"error": "Invalid request"})
+		}
+
+		tasksMu.Lock()
+		defer tasksMu.Unlock()
+
+		for i, task := range tasks {
+			if task.ID == id {
+				updates.ID = id
+				updates.CreatedAt = task.CreatedAt
+				tasks[i] = updates
+				return c.JSON(updates)
+			}
+		}
+
+		return c.Status(404).JSON(map[string]string{"error": "Task not found"})
+	})
+
+	app.DELETE("/api/tasks/:id", func(c *mizu.Ctx) error {
+		id := c.ParamInt("id")
+
+		tasksMu.Lock()
+		defer tasksMu.Unlock()
+
+		for i, task := range tasks {
+			if task.ID == id {
+				tasks = append(tasks[:i], tasks[i+1:]...)
+				return c.Status(204).Send(nil)
+			}
+		}
+
+		return c.Status(404).JSON(map[string]string{"error": "Task not found"})
+	})
+}
+```
+
+### Frontend - Service
+
+```ts
+// services/task.service.ts
+import { Injectable, signal, computed } from '@angular/core'
+import { HttpClient } from '@angular/common/http'
+
+export interface Task {
+  id: number
+  title: string
+  description: string
+  status: 'pending' | 'in-progress' | 'completed'
+  priority: 'low' | 'medium' | 'high'
+  createdAt: Date
+}
+
+@Injectable({
+  providedIn: 'root'
+})
+export class TaskService {
+  private tasksSignal = signal<Task[]>([])
+  private loadingSignal = signal(false)
+  private filterSignal = signal<string>('all')
+
+  tasks = this.tasksSignal.asReadonly()
+  loading = this.loadingSignal.asReadonly()
+  filter = this.filterSignal
+
+  filteredTasks = computed(() => {
+    const filter = this.filterSignal()
+    const tasks = this.tasksSignal()
+
+    if (filter === 'all') return tasks
+    return tasks.filter(t => t.status === filter)
+  })
+
+  constructor(private http: HttpClient) {
+    this.loadTasks()
+  }
+
+  loadTasks() {
+    this.loadingSignal.set(true)
+    this.http.get<Task[]>('/api/tasks')
+      .subscribe(tasks => {
+        this.tasksSignal.set(tasks)
+        this.loadingSignal.set(false)
       })
   }
+
+  addTask(task: Omit<Task, 'id' | 'createdAt'>) {
+    this.http.post<Task>('/api/tasks', task)
+      .subscribe(newTask => {
+        this.tasksSignal.update(tasks => [...tasks, newTask])
+      })
+  }
+
+  updateTask(id: number, updates: Partial<Task>) {
+    const task = this.tasksSignal().find(t => t.id === id)
+    if (!task) return
+
+    const updated = { ...task, ...updates }
+    this.http.put<Task>(`/api/tasks/${id}`, updated)
+      .subscribe(newTask => {
+        this.tasksSignal.update(tasks =>
+          tasks.map(t => t.id === id ? newTask : t)
+        )
+      })
+  }
+
+  deleteTask(id: number) {
+    this.http.delete(`/api/tasks/${id}`)
+      .subscribe(() => {
+        this.tasksSignal.update(tasks => tasks.filter(t => t.id !== id))
+      })
+  }
+
+  setFilter(filter: string) {
+    this.filterSignal.set(filter)
+  }
+}
+```
+
+### Frontend - Components
+
+```ts
+// components/task-form/task-form.component.ts
+import { Component } from '@angular/core'
+import { FormBuilder, Validators, ReactiveFormsModule } from '@angular/forms'
+import { TaskService } from '../../services/task.service'
+import { CommonModule } from '@angular/common'
+
+@Component({
+  selector: 'app-task-form',
+  standalone: true,
+  imports: [CommonModule, ReactiveFormsModule],
+  template: `
+    <form [formGroup]="taskForm" (ngSubmit)="onSubmit()" class="task-form">
+      <input formControlName="title" placeholder="Task title" />
+      <textarea formControlName="description" placeholder="Description"></textarea>
+
+      <select formControlName="priority">
+        <option value="low">Low Priority</option>
+        <option value="medium">Medium Priority</option>
+        <option value="high">High Priority</option>
+      </select>
+
+      <button type="submit" [disabled]="taskForm.invalid">Add Task</button>
+    </form>
+  `,
+  styles: [`
+    .task-form {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      padding: 1rem;
+      background: #f5f5f5;
+      border-radius: 8px;
+      margin-bottom: 2rem;
+    }
+
+    input, textarea, select {
+      padding: 0.5rem;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+
+    textarea {
+      min-height: 80px;
+    }
+
+    button {
+      background: #dd0031;
+      color: white;
+      padding: 0.75rem;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    button:hover:not(:disabled) {
+      background: #c5002a;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  `]
+})
+export class TaskFormComponent {
+  taskForm = this.fb.group({
+    title: ['', Validators.required],
+    description: [''],
+    priority: ['medium' as const]
+  })
+
+  constructor(
+    private fb: FormBuilder,
+    private taskService: TaskService
+  ) {}
+
+  onSubmit() {
+    if (this.taskForm.valid) {
+      const task = {
+        ...this.taskForm.value,
+        status: 'pending' as const
+      }
+      this.taskService.addTask(task as any)
+      this.taskForm.reset({ priority: 'medium' })
+    }
+  }
+}
+```
+
+```ts
+// components/task-item/task-item.component.ts
+import { Component, Input } from '@angular/core'
+import { CommonModule } from '@angular/common'
+import { Task, TaskService } from '../../services/task.service'
+
+@Component({
+  selector: 'app-task-item',
+  standalone: true,
+  imports: [CommonModule],
+  template: `
+    <div class="task-item" [class]="task.priority + ' ' + task.status">
+      <div class="task-content">
+        <h3>{{ task.title }}</h3>
+        <p>{{ task.description }}</p>
+        <span class="priority-badge">{{ task.priority }}</span>
+      </div>
+
+      <div class="task-actions">
+        <select [value]="task.status" (change)="onStatusChange($event)">
+          <option value="pending">Pending</option>
+          <option value="in-progress">In Progress</option>
+          <option value="completed">Completed</option>
+        </select>
+
+        <button (click)="onDelete()" class="delete-btn">Delete</button>
+      </div>
+    </div>
+  `,
+  styles: [`
+    .task-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 1rem;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+    }
+
+    .task-item.high {
+      border-left: 4px solid #ef4444;
+    }
+
+    .task-item.medium {
+      border-left: 4px solid #f59e0b;
+    }
+
+    .task-item.low {
+      border-left: 4px solid #10b981;
+    }
+
+    .task-item.completed {
+      opacity: 0.6;
+    }
+
+    .task-item.completed h3 {
+      text-decoration: line-through;
+    }
+
+    .priority-badge {
+      display: inline-block;
+      padding: 0.25rem 0.5rem;
+      background: #e5e7eb;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+    }
+
+    .task-actions {
+      display: flex;
+      gap: 0.5rem;
+      align-items: flex-start;
+    }
+
+    select {
+      padding: 0.5rem;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+
+    .delete-btn {
+      background: #ef4444;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .delete-btn:hover {
+      background: #dc2626;
+    }
+  `]
+})
+export class TaskItemComponent {
+  @Input() task!: Task
+
+  constructor(private taskService: TaskService) {}
+
+  onStatusChange(event: Event) {
+    const status = (event.target as HTMLSelectElement).value
+    this.taskService.updateTask(this.task.id, { status: status as any })
+  }
+
+  onDelete() {
+    if (confirm('Delete this task?')) {
+      this.taskService.deleteTask(this.task.id)
+    }
+  }
+}
+```
+
+```ts
+// pages/tasks/tasks.component.ts
+import { Component } from '@angular/core'
+import { CommonModule } from '@angular/common'
+import { TaskService } from '../../services/task.service'
+import { TaskFormComponent } from '../../components/task-form/task-form.component'
+import { TaskItemComponent } from '../../components/task-item/task-item.component'
+
+@Component({
+  selector: 'app-tasks',
+  standalone: true,
+  imports: [CommonModule, TaskFormComponent, TaskItemComponent],
+  template: `
+    <div class="tasks-page">
+      <h1>Task Manager</h1>
+
+      <app-task-form />
+
+      <div class="filters">
+        <button
+          *ngFor="let f of filters"
+          [class.active]="taskService.filter() === f"
+          (click)="taskService.setFilter(f)"
+        >
+          {{ f }}
+        </button>
+      </div>
+
+      <div *ngIf="taskService.loading()" class="loading">
+        Loading tasks...
+      </div>
+
+      <div *ngIf="!taskService.loading() && taskService.filteredTasks().length === 0" class="empty">
+        No tasks found
+      </div>
+
+      <div *ngIf="!taskService.loading()" class="task-list">
+        <app-task-item
+          *ngFor="let task of taskService.filteredTasks()"
+          [task]="task"
+        />
+      </div>
+    </div>
+  `,
+  styles: [`
+    .tasks-page {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    h1 {
+      color: #dd0031;
+      margin-bottom: 2rem;
+    }
+
+    .filters {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .filters button {
+      padding: 0.5rem 1rem;
+      border: 1px solid #ddd;
+      background: white;
+      border-radius: 4px;
+      cursor: pointer;
+      text-transform: capitalize;
+    }
+
+    .filters button.active {
+      background: #dd0031;
+      color: white;
+      border-color: #dd0031;
+    }
+
+    .loading, .empty {
+      text-align: center;
+      padding: 2rem;
+      color: #666;
+    }
+  `]
+})
+export class TasksComponent {
+  filters = ['all', 'pending', 'in-progress', 'completed']
+
+  constructor(public taskService: TaskService) {}
 }
 ```
 
@@ -392,87 +2019,72 @@ Run:
 MIZU_ENV=production ./bin/server
 ```
 
-## Angular Features
+## Troubleshooting
 
-### Dependency Injection
+### Build Path Issues
 
-```ts
-@Injectable({
-  providedIn: 'root'
-})
-export class ApiService {
-  constructor(private http: HttpClient) {}
+**Problem**: Go can't find the Angular dist folder.
 
-  get<T>(url: string): Observable<T> {
-    return this.http.get<T>(`/api${url}`)
+**Solution**: Angular outputs to `dist/my-app/browser` (project name included):
+```go
+//go:embed all:../../dist/my-app/browser
+```
+
+### Proxy Not Working
+
+**Problem**: API calls fail in development.
+
+**Solution**: Check `proxy.conf.json` is configured and referenced in `angular.json`:
+```json
+{
+  "serve": {
+    "options": {
+      "proxyConfig": "proxy.conf.json"
+    }
   }
 }
 ```
 
-### Interceptors
+### Zone.js Errors
 
-Add auth tokens to requests:
+**Problem**: "Zone is not defined" error.
 
-```ts
-import { HttpInterceptorFn } from '@angular/common/http'
-
-export const authInterceptor: HttpInterceptorFn = (req, next) => {
-  const token = localStorage.getItem('auth_token')
-
-  if (token) {
-    req = req.clone({
-      setHeaders: {
-        Authorization: `Bearer ${token}`
-      }
-    })
-  }
-
-  return next(req)
+**Solution**: Ensure `zone.js` is in polyfills:
+```json
+{
+  "polyfills": ["zone.js"]
 }
 ```
 
-Register in config:
+### Signal Not Updating
 
+**Problem**: Signal changes don't trigger updates.
+
+**Solution**: Use `.set()` or `.update()`, not direct assignment:
 ```ts
-// app.config.ts
-export const appConfig: ApplicationConfig = {
-  providers: [
-    provideHttpClient(withInterceptors([authInterceptor]))
-  ]
-}
+// ❌ Wrong
+mySignal() = newValue
+
+// ✅ Correct
+mySignal.set(newValue)
+mySignal.update(old => old + 1)
 ```
 
-### Guards
+## When to Choose Angular
 
-Protect routes:
+**Choose Angular if:**
+- You're building enterprise-scale applications
+- You want a complete, opinionated framework
+- You value TypeScript and strong typing
+- You need powerful dependency injection
+- Your team prefers structure and conventions
+- You want official solutions for common problems
 
-```ts
-import { inject } from '@angular/core'
-import { Router } from '@angular/router'
-
-export const authGuard = () => {
-  const router = inject(Router)
-  const isAuthenticated = !!localStorage.getItem('auth_token')
-
-  if (!isAuthenticated) {
-    router.navigate(['/login'])
-    return false
-  }
-
-  return true
-}
-```
-
-```ts
-// routes.ts
-export const routes: Routes = [
-  {
-    path: 'admin',
-    component: AdminComponent,
-    canActivate: [authGuard]
-  }
-]
-```
+**Consider alternatives if:**
+- **React**: You need maximum flexibility or have a React ecosystem requirement
+- **Vue**: You want easier learning curve with similar features
+- **Svelte**: You need smallest bundle size and compile-time optimization
+- **HTMX/Alpine**: You prefer server-rendered HTML with minimal JavaScript
 
 ## Next Steps
 
@@ -480,13 +2092,13 @@ export const routes: Routes = [
   <Card title="React Guide" href="/frontend/react" icon="react">
     Try React instead
   </Card>
+  <Card title="Angular Docs" href="https://angular.dev" icon="external-link">
+    Official Angular documentation
+  </Card>
   <Card title="API Integration" href="/frontend/api-integration" icon="plug">
     Best practices for APIs
   </Card>
   <Card title="Deployment" href="/frontend/building" icon="rocket">
     Build and deploy
-  </Card>
-  <Card title="Angular Docs" href="https://angular.dev" icon="external-link">
-    Official Angular documentation
   </Card>
 </CardGroup>
