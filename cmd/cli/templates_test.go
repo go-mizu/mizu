@@ -34,22 +34,22 @@ func TestListTemplatesIncludesParentWithSubTemplates(t *testing.T) {
 		t.Fatalf("listTemplates() error: %v", err)
 	}
 
-	// Check that frontend/spa is listed as a parent template with sub-templates
+	// Check that frontend is listed as a parent template with sub-templates
 	var frontendSPA *templateMeta
 	for i, tmpl := range templates {
-		if tmpl.Name == "frontend/spa" {
+		if tmpl.Name == "frontend" {
 			frontendSPA = &templates[i]
 			break
 		}
 	}
 
 	if frontendSPA == nil {
-		t.Fatal("listTemplates() did not include 'frontend/spa' template")
+		t.Fatal("listTemplates() did not include 'frontend' template")
 	}
 
 	// Verify it has sub-templates
 	if len(frontendSPA.SubTemplates) == 0 {
-		t.Error("frontend/spa template should have sub-templates")
+		t.Error("frontend template should have sub-templates")
 	}
 
 	// Expected sub-templates
@@ -74,13 +74,13 @@ func TestListTemplatesIncludesParentWithSubTemplates(t *testing.T) {
 
 	for name, found := range expected {
 		if !found {
-			t.Errorf("frontend/spa should have sub-template %q", name)
+			t.Errorf("frontend should have sub-template %q", name)
 		}
 	}
 
 	// Verify that individual sub-templates are NOT listed separately
 	for _, tmpl := range templates {
-		if strings.HasPrefix(tmpl.Name, "frontend/spa/") {
+		if strings.HasPrefix(tmpl.Name, "frontend/") {
 			t.Errorf("sub-template %q should not be listed separately", tmpl.Name)
 		}
 	}
@@ -94,17 +94,17 @@ func TestTemplateExistsNested(t *testing.T) {
 		{"minimal", true},
 		{"api", true},
 		{"web", true},
-		{"frontend/spa/react", true},
-		{"frontend/spa/vue", true},
-		{"frontend/spa/svelte", true},
-		{"frontend/spa/angular", true},
-		{"frontend/spa/alpine", true},
-		{"frontend/spa/htmx", true},
-		{"frontend/spa/next", true},
-		{"frontend/spa/nuxt", true},
-		{"frontend/spa/preact", true},
-		{"frontend/spa/sveltekit", true},
-		{"frontend/spa/nonexistent", false},
+		{"frontend/react", true},
+		{"frontend/vue", true},
+		{"frontend/svelte", true},
+		{"frontend/angular", true},
+		{"frontend/alpine", true},
+		{"frontend/htmx", true},
+		{"frontend/next", true},
+		{"frontend/nuxt", true},
+		{"frontend/preact", true},
+		{"frontend/sveltekit", true},
+		{"frontend/nonexistent", false},
 		{"frontend/nonexistent", false},
 		{"nonexistent", false},
 	}
@@ -127,16 +127,16 @@ func TestLoadTemplateMeta(t *testing.T) {
 	}{
 		{"minimal", "minimal", true},
 		{"api", "api", true},
-		{"frontend/spa/react", "frontend/spa/react", true},
-		{"frontend/spa/vue", "frontend/spa/vue", true},
-		{"frontend/spa/svelte", "frontend/spa/svelte", true},
-		{"frontend/spa/angular", "frontend/spa/angular", true},
-		{"frontend/spa/alpine", "frontend/spa/alpine", true},
-		{"frontend/spa/htmx", "frontend/spa/htmx", true},
-		{"frontend/spa/next", "frontend/spa/next", true},
-		{"frontend/spa/nuxt", "frontend/spa/nuxt", true},
-		{"frontend/spa/preact", "frontend/spa/preact", true},
-		{"frontend/spa/sveltekit", "frontend/spa/sveltekit", true},
+		{"frontend/react", "frontend/react", true},
+		{"frontend/vue", "frontend/vue", true},
+		{"frontend/svelte", "frontend/svelte", true},
+		{"frontend/angular", "frontend/angular", true},
+		{"frontend/alpine", "frontend/alpine", true},
+		{"frontend/htmx", "frontend/htmx", true},
+		{"frontend/next", "frontend/next", true},
+		{"frontend/nuxt", "frontend/nuxt", true},
+		{"frontend/preact", "frontend/preact", true},
+		{"frontend/sveltekit", "frontend/sveltekit", true},
 	}
 
 	for _, tt := range tests {
@@ -158,7 +158,7 @@ func TestLoadTemplateMeta(t *testing.T) {
 }
 
 func TestLoadTemplateFilesNested(t *testing.T) {
-	files, err := loadTemplateFiles("frontend/spa/react")
+	files, err := loadTemplateFiles("frontend/react")
 	if err != nil {
 		t.Fatalf("loadTemplateFiles() error: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestLoadTemplateFilesNested(t *testing.T) {
 
 func TestLoadTemplateFilesHierarchy(t *testing.T) {
 	// Test that nested common directories override properly
-	files, err := loadTemplateFiles("frontend/spa/react")
+	files, err := loadTemplateFiles("frontend/react")
 	if err != nil {
 		t.Fatalf("loadTemplateFiles() error: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestBuildPlanReactTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/react", tmpDir, vars)
+	p, err := buildPlan("frontend/react", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestApplyPlanReactTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/react", tmpDir, vars)
+	p, err := buildPlan("frontend/react", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -344,7 +344,7 @@ func TestTemplateVariableSubstitution(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myproject", "github.com/user/myproject", "Apache-2.0", nil)
 
-	p, err := buildPlan("frontend/spa/react", tmpDir, vars)
+	p, err := buildPlan("frontend/react", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -421,7 +421,7 @@ func TestNewTemplateVars(t *testing.T) {
 // Vue template tests
 
 func TestLoadTemplateFilesVue(t *testing.T) {
-	files, err := loadTemplateFiles("frontend/spa/vue")
+	files, err := loadTemplateFiles("frontend/vue")
 	if err != nil {
 		t.Fatalf("loadTemplateFiles() error: %v", err)
 	}
@@ -462,7 +462,7 @@ func TestBuildPlanVueTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/vue", tmpDir, vars)
+	p, err := buildPlan("frontend/vue", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -495,7 +495,7 @@ func TestApplyPlanVueTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/vue", tmpDir, vars)
+	p, err := buildPlan("frontend/vue", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -536,7 +536,7 @@ func TestVueTemplateVariableSubstitution(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myvueapp", "github.com/user/myvueapp", "Apache-2.0", nil)
 
-	p, err := buildPlan("frontend/spa/vue", tmpDir, vars)
+	p, err := buildPlan("frontend/vue", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -578,7 +578,7 @@ func TestVueTemplateHasVueSpecificContent(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/vue", tmpDir, vars)
+	p, err := buildPlan("frontend/vue", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -629,17 +629,17 @@ func TestSubTemplateIncludesSvelte(t *testing.T) {
 		t.Fatalf("listTemplates() error: %v", err)
 	}
 
-	// Find frontend/spa parent template
+	// Find frontend parent template
 	var frontendSPA *templateMeta
 	for i, tmpl := range templates {
-		if tmpl.Name == "frontend/spa" {
+		if tmpl.Name == "frontend" {
 			frontendSPA = &templates[i]
 			break
 		}
 	}
 
 	if frontendSPA == nil {
-		t.Fatal("frontend/spa template not found")
+		t.Fatal("frontend template not found")
 	}
 
 	// Check that svelte is listed as a sub-template
@@ -652,18 +652,18 @@ func TestSubTemplateIncludesSvelte(t *testing.T) {
 	}
 
 	if !found {
-		t.Error("frontend/spa should include 'svelte' sub-template")
+		t.Error("frontend should include 'svelte' sub-template")
 	}
 }
 
 func TestTemplateExistsSvelte(t *testing.T) {
-	if !templateExists("frontend/spa/svelte") {
-		t.Error("templateExists('frontend/spa/svelte') returned false")
+	if !templateExists("frontend/svelte") {
+		t.Error("templateExists('frontend/svelte') returned false")
 	}
 }
 
 func TestLoadTemplateFilesSvelte(t *testing.T) {
-	files, err := loadTemplateFiles("frontend/spa/svelte")
+	files, err := loadTemplateFiles("frontend/svelte")
 	if err != nil {
 		t.Fatalf("loadTemplateFiles() error: %v", err)
 	}
@@ -704,7 +704,7 @@ func TestBuildPlanSvelteTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/svelte", tmpDir, vars)
+	p, err := buildPlan("frontend/svelte", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -737,7 +737,7 @@ func TestApplyPlanSvelteTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/svelte", tmpDir, vars)
+	p, err := buildPlan("frontend/svelte", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -778,7 +778,7 @@ func TestSvelteTemplateVariableSubstitution(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("mysvelteapp", "github.com/user/mysvelteapp", "Apache-2.0", nil)
 
-	p, err := buildPlan("frontend/spa/svelte", tmpDir, vars)
+	p, err := buildPlan("frontend/svelte", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -820,7 +820,7 @@ func TestSvelteTemplateHasSvelteSpecificContent(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/svelte", tmpDir, vars)
+	p, err := buildPlan("frontend/svelte", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -889,14 +889,14 @@ func TestSubTemplateIncludesAngular(t *testing.T) {
 
 	var frontendSPA *templateMeta
 	for i, tmpl := range templates {
-		if tmpl.Name == "frontend/spa" {
+		if tmpl.Name == "frontend" {
 			frontendSPA = &templates[i]
 			break
 		}
 	}
 
 	if frontendSPA == nil {
-		t.Fatal("frontend/spa template not found")
+		t.Fatal("frontend template not found")
 	}
 
 	found := false
@@ -908,18 +908,18 @@ func TestSubTemplateIncludesAngular(t *testing.T) {
 	}
 
 	if !found {
-		t.Error("frontend/spa should include 'angular' sub-template")
+		t.Error("frontend should include 'angular' sub-template")
 	}
 }
 
 func TestTemplateExistsAngular(t *testing.T) {
-	if !templateExists("frontend/spa/angular") {
-		t.Error("templateExists('frontend/spa/angular') returned false")
+	if !templateExists("frontend/angular") {
+		t.Error("templateExists('frontend/angular') returned false")
 	}
 }
 
 func TestLoadTemplateFilesAngular(t *testing.T) {
-	files, err := loadTemplateFiles("frontend/spa/angular")
+	files, err := loadTemplateFiles("frontend/angular")
 	if err != nil {
 		t.Fatalf("loadTemplateFiles() error: %v", err)
 	}
@@ -960,7 +960,7 @@ func TestBuildPlanAngularTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/angular", tmpDir, vars)
+	p, err := buildPlan("frontend/angular", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -993,7 +993,7 @@ func TestApplyPlanAngularTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/angular", tmpDir, vars)
+	p, err := buildPlan("frontend/angular", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -1035,7 +1035,7 @@ func TestAngularTemplateVariableSubstitution(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myangularapp", "github.com/user/myangularapp", "Apache-2.0", nil)
 
-	p, err := buildPlan("frontend/spa/angular", tmpDir, vars)
+	p, err := buildPlan("frontend/angular", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -1077,7 +1077,7 @@ func TestAngularTemplateHasAngularSpecificContent(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/angular", tmpDir, vars)
+	p, err := buildPlan("frontend/angular", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -1146,14 +1146,14 @@ func TestSubTemplateIncludesHtmx(t *testing.T) {
 
 	var frontendSPA *templateMeta
 	for i, tmpl := range templates {
-		if tmpl.Name == "frontend/spa" {
+		if tmpl.Name == "frontend" {
 			frontendSPA = &templates[i]
 			break
 		}
 	}
 
 	if frontendSPA == nil {
-		t.Fatal("frontend/spa template not found")
+		t.Fatal("frontend template not found")
 	}
 
 	found := false
@@ -1165,18 +1165,18 @@ func TestSubTemplateIncludesHtmx(t *testing.T) {
 	}
 
 	if !found {
-		t.Error("frontend/spa should include 'htmx' sub-template")
+		t.Error("frontend should include 'htmx' sub-template")
 	}
 }
 
 func TestTemplateExistsHtmx(t *testing.T) {
-	if !templateExists("frontend/spa/htmx") {
-		t.Error("templateExists('frontend/spa/htmx') returned false")
+	if !templateExists("frontend/htmx") {
+		t.Error("templateExists('frontend/htmx') returned false")
 	}
 }
 
 func TestLoadTemplateFilesHtmx(t *testing.T) {
-	files, err := loadTemplateFiles("frontend/spa/htmx")
+	files, err := loadTemplateFiles("frontend/htmx")
 	if err != nil {
 		t.Fatalf("loadTemplateFiles() error: %v", err)
 	}
@@ -1222,7 +1222,7 @@ func TestBuildPlanHtmxTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/htmx", tmpDir, vars)
+	p, err := buildPlan("frontend/htmx", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -1255,7 +1255,7 @@ func TestApplyPlanHtmxTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/htmx", tmpDir, vars)
+	p, err := buildPlan("frontend/htmx", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -1302,7 +1302,7 @@ func TestHtmxTemplateVariableSubstitution(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myhtmxapp", "github.com/user/myhtmxapp", "Apache-2.0", nil)
 
-	p, err := buildPlan("frontend/spa/htmx", tmpDir, vars)
+	p, err := buildPlan("frontend/htmx", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -1336,7 +1336,7 @@ func TestHtmxTemplateHasHtmxSpecificContent(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/htmx", tmpDir, vars)
+	p, err := buildPlan("frontend/htmx", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -1441,7 +1441,7 @@ func TestHtmxTemplateMakefileNoBuildStep(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/htmx", tmpDir, vars)
+	p, err := buildPlan("frontend/htmx", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -1474,14 +1474,14 @@ func TestSubTemplateIncludesNext(t *testing.T) {
 
 	var frontendSPA *templateMeta
 	for i, tmpl := range templates {
-		if tmpl.Name == "frontend/spa" {
+		if tmpl.Name == "frontend" {
 			frontendSPA = &templates[i]
 			break
 		}
 	}
 
 	if frontendSPA == nil {
-		t.Fatal("frontend/spa template not found")
+		t.Fatal("frontend template not found")
 	}
 
 	found := false
@@ -1493,18 +1493,18 @@ func TestSubTemplateIncludesNext(t *testing.T) {
 	}
 
 	if !found {
-		t.Error("frontend/spa should include 'next' sub-template")
+		t.Error("frontend should include 'next' sub-template")
 	}
 }
 
 func TestTemplateExistsNext(t *testing.T) {
-	if !templateExists("frontend/spa/next") {
-		t.Error("templateExists('frontend/spa/next') returned false")
+	if !templateExists("frontend/next") {
+		t.Error("templateExists('frontend/next') returned false")
 	}
 }
 
 func TestLoadTemplateFilesNext(t *testing.T) {
-	files, err := loadTemplateFiles("frontend/spa/next")
+	files, err := loadTemplateFiles("frontend/next")
 	if err != nil {
 		t.Fatalf("loadTemplateFiles() error: %v", err)
 	}
@@ -1544,7 +1544,7 @@ func TestBuildPlanNextTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/next", tmpDir, vars)
+	p, err := buildPlan("frontend/next", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -1577,7 +1577,7 @@ func TestApplyPlanNextTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/next", tmpDir, vars)
+	p, err := buildPlan("frontend/next", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -1618,7 +1618,7 @@ func TestNextTemplateVariableSubstitution(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("mynextapp", "github.com/user/mynextapp", "Apache-2.0", nil)
 
-	p, err := buildPlan("frontend/spa/next", tmpDir, vars)
+	p, err := buildPlan("frontend/next", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -1660,7 +1660,7 @@ func TestNextTemplateHasNextSpecificContent(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/next", tmpDir, vars)
+	p, err := buildPlan("frontend/next", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -1752,7 +1752,7 @@ func TestNextTemplateMakefileHasNpmCommands(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/next", tmpDir, vars)
+	p, err := buildPlan("frontend/next", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -1788,14 +1788,14 @@ func TestSubTemplateIncludesNuxt(t *testing.T) {
 
 	var frontendSPA *templateMeta
 	for i, tmpl := range templates {
-		if tmpl.Name == "frontend/spa" {
+		if tmpl.Name == "frontend" {
 			frontendSPA = &templates[i]
 			break
 		}
 	}
 
 	if frontendSPA == nil {
-		t.Fatal("frontend/spa template not found")
+		t.Fatal("frontend template not found")
 	}
 
 	found := false
@@ -1807,18 +1807,18 @@ func TestSubTemplateIncludesNuxt(t *testing.T) {
 	}
 
 	if !found {
-		t.Error("frontend/spa should include 'nuxt' sub-template")
+		t.Error("frontend should include 'nuxt' sub-template")
 	}
 }
 
 func TestTemplateExistsNuxt(t *testing.T) {
-	if !templateExists("frontend/spa/nuxt") {
-		t.Error("templateExists('frontend/spa/nuxt') returned false")
+	if !templateExists("frontend/nuxt") {
+		t.Error("templateExists('frontend/nuxt') returned false")
 	}
 }
 
 func TestLoadTemplateFilesNuxt(t *testing.T) {
-	files, err := loadTemplateFiles("frontend/spa/nuxt")
+	files, err := loadTemplateFiles("frontend/nuxt")
 	if err != nil {
 		t.Fatalf("loadTemplateFiles() error: %v", err)
 	}
@@ -1861,7 +1861,7 @@ func TestBuildPlanNuxtTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/nuxt", tmpDir, vars)
+	p, err := buildPlan("frontend/nuxt", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -1894,7 +1894,7 @@ func TestApplyPlanNuxtTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/nuxt", tmpDir, vars)
+	p, err := buildPlan("frontend/nuxt", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -1935,7 +1935,7 @@ func TestNuxtTemplateVariableSubstitution(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("mynuxtapp", "github.com/user/mynuxtapp", "Apache-2.0", nil)
 
-	p, err := buildPlan("frontend/spa/nuxt", tmpDir, vars)
+	p, err := buildPlan("frontend/nuxt", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -1977,7 +1977,7 @@ func TestNuxtTemplateHasNuxtSpecificContent(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/nuxt", tmpDir, vars)
+	p, err := buildPlan("frontend/nuxt", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -2078,7 +2078,7 @@ func TestNuxtTemplateMakefileHasNpmCommands(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/nuxt", tmpDir, vars)
+	p, err := buildPlan("frontend/nuxt", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -2117,14 +2117,14 @@ func TestSubTemplateIncludesPreact(t *testing.T) {
 
 	var frontendSPA *templateMeta
 	for i, tmpl := range templates {
-		if tmpl.Name == "frontend/spa" {
+		if tmpl.Name == "frontend" {
 			frontendSPA = &templates[i]
 			break
 		}
 	}
 
 	if frontendSPA == nil {
-		t.Fatal("frontend/spa template not found")
+		t.Fatal("frontend template not found")
 	}
 
 	found := false
@@ -2136,18 +2136,18 @@ func TestSubTemplateIncludesPreact(t *testing.T) {
 	}
 
 	if !found {
-		t.Error("frontend/spa should include 'preact' sub-template")
+		t.Error("frontend should include 'preact' sub-template")
 	}
 }
 
 func TestTemplateExistsPreact(t *testing.T) {
-	if !templateExists("frontend/spa/preact") {
-		t.Error("templateExists('frontend/spa/preact') returned false")
+	if !templateExists("frontend/preact") {
+		t.Error("templateExists('frontend/preact') returned false")
 	}
 }
 
 func TestLoadTemplateFilesPreact(t *testing.T) {
-	files, err := loadTemplateFiles("frontend/spa/preact")
+	files, err := loadTemplateFiles("frontend/preact")
 	if err != nil {
 		t.Fatalf("loadTemplateFiles() error: %v", err)
 	}
@@ -2187,7 +2187,7 @@ func TestBuildPlanPreactTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/preact", tmpDir, vars)
+	p, err := buildPlan("frontend/preact", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -2220,7 +2220,7 @@ func TestApplyPlanPreactTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/preact", tmpDir, vars)
+	p, err := buildPlan("frontend/preact", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -2260,7 +2260,7 @@ func TestPreactTemplateVariableSubstitution(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("mypreactapp", "github.com/user/mypreactapp", "Apache-2.0", nil)
 
-	p, err := buildPlan("frontend/spa/preact", tmpDir, vars)
+	p, err := buildPlan("frontend/preact", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -2302,7 +2302,7 @@ func TestPreactTemplateHasPreactSpecificContent(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/preact", tmpDir, vars)
+	p, err := buildPlan("frontend/preact", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -2398,7 +2398,7 @@ func TestPreactTemplateMakefileHasNpmCommands(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/preact", tmpDir, vars)
+	p, err := buildPlan("frontend/preact", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -2434,14 +2434,14 @@ func TestSubTemplateIncludesSvelteKit(t *testing.T) {
 
 	var frontendSPA *templateMeta
 	for i, tmpl := range templates {
-		if tmpl.Name == "frontend/spa" {
+		if tmpl.Name == "frontend" {
 			frontendSPA = &templates[i]
 			break
 		}
 	}
 
 	if frontendSPA == nil {
-		t.Fatal("frontend/spa template not found")
+		t.Fatal("frontend template not found")
 	}
 
 	found := false
@@ -2453,18 +2453,18 @@ func TestSubTemplateIncludesSvelteKit(t *testing.T) {
 	}
 
 	if !found {
-		t.Error("frontend/spa should include 'sveltekit' sub-template")
+		t.Error("frontend should include 'sveltekit' sub-template")
 	}
 }
 
 func TestTemplateExistsSvelteKit(t *testing.T) {
-	if !templateExists("frontend/spa/sveltekit") {
-		t.Error("templateExists('frontend/spa/sveltekit') returned false")
+	if !templateExists("frontend/sveltekit") {
+		t.Error("templateExists('frontend/sveltekit') returned false")
 	}
 }
 
 func TestLoadTemplateFilesSvelteKit(t *testing.T) {
-	files, err := loadTemplateFiles("frontend/spa/sveltekit")
+	files, err := loadTemplateFiles("frontend/sveltekit")
 	if err != nil {
 		t.Fatalf("loadTemplateFiles() error: %v", err)
 	}
@@ -2506,7 +2506,7 @@ func TestBuildPlanSvelteKitTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/sveltekit", tmpDir, vars)
+	p, err := buildPlan("frontend/sveltekit", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -2539,7 +2539,7 @@ func TestApplyPlanSvelteKitTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/sveltekit", tmpDir, vars)
+	p, err := buildPlan("frontend/sveltekit", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -2582,7 +2582,7 @@ func TestSvelteKitTemplateVariableSubstitution(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("mysveltekitapp", "github.com/user/mysveltekitapp", "Apache-2.0", nil)
 
-	p, err := buildPlan("frontend/spa/sveltekit", tmpDir, vars)
+	p, err := buildPlan("frontend/sveltekit", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -2627,7 +2627,7 @@ func TestSvelteKitTemplateHasSvelteKitSpecificContent(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/sveltekit", tmpDir, vars)
+	p, err := buildPlan("frontend/sveltekit", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -2732,7 +2732,7 @@ func TestSvelteKitTemplateMakefileHasNpmCommands(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/sveltekit", tmpDir, vars)
+	p, err := buildPlan("frontend/sveltekit", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -2771,14 +2771,14 @@ func TestSubTemplateIncludesAlpine(t *testing.T) {
 
 	var frontendSPA *templateMeta
 	for i, tmpl := range templates {
-		if tmpl.Name == "frontend/spa" {
+		if tmpl.Name == "frontend" {
 			frontendSPA = &templates[i]
 			break
 		}
 	}
 
 	if frontendSPA == nil {
-		t.Fatal("frontend/spa template not found")
+		t.Fatal("frontend template not found")
 	}
 
 	found := false
@@ -2790,18 +2790,18 @@ func TestSubTemplateIncludesAlpine(t *testing.T) {
 	}
 
 	if !found {
-		t.Error("frontend/spa should include 'alpine' sub-template")
+		t.Error("frontend should include 'alpine' sub-template")
 	}
 }
 
 func TestTemplateExistsAlpine(t *testing.T) {
-	if !templateExists("frontend/spa/alpine") {
-		t.Error("templateExists('frontend/spa/alpine') returned false")
+	if !templateExists("frontend/alpine") {
+		t.Error("templateExists('frontend/alpine') returned false")
 	}
 }
 
 func TestLoadTemplateFilesAlpine(t *testing.T) {
-	files, err := loadTemplateFiles("frontend/spa/alpine")
+	files, err := loadTemplateFiles("frontend/alpine")
 	if err != nil {
 		t.Fatalf("loadTemplateFiles() error: %v", err)
 	}
@@ -2842,7 +2842,7 @@ func TestBuildPlanAlpineTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/alpine", tmpDir, vars)
+	p, err := buildPlan("frontend/alpine", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -2875,7 +2875,7 @@ func TestApplyPlanAlpineTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/alpine", tmpDir, vars)
+	p, err := buildPlan("frontend/alpine", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -2913,7 +2913,7 @@ func TestAlpineTemplateVariableSubstitution(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("myalpineapp", "github.com/user/myalpineapp", "Apache-2.0", nil)
 
-	p, err := buildPlan("frontend/spa/alpine", tmpDir, vars)
+	p, err := buildPlan("frontend/alpine", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -2952,7 +2952,7 @@ func TestAlpineTemplateHasAlpineSpecificContent(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/alpine", tmpDir, vars)
+	p, err := buildPlan("frontend/alpine", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}
@@ -3044,7 +3044,7 @@ func TestAlpineTemplateMakefileHasNpmCommands(t *testing.T) {
 	tmpDir := t.TempDir()
 	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
 
-	p, err := buildPlan("frontend/spa/alpine", tmpDir, vars)
+	p, err := buildPlan("frontend/alpine", tmpDir, vars)
 	if err != nil {
 		t.Fatalf("buildPlan() error: %v", err)
 	}

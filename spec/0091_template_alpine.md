@@ -16,7 +16,7 @@ This specification describes the implementation of the Alpine.js SPA template fo
 ## Template Location
 
 ```
-cmd/cli/templates/frontend/spa/alpine/
+cmd/cli/templates/frontend/alpine/
 ├── template.json              # Template metadata
 ├── Makefile.tmpl              # Build and development commands
 ├── cmd/server/
@@ -49,7 +49,7 @@ cmd/cli/templates/frontend/spa/alpine/
 
 ```json
 {
-  "name": "frontend/spa/alpine",
+  "name": "frontend/alpine",
   "description": "Alpine.js SPA with Vite and Mizu backend",
   "tags": ["go", "mizu", "frontend", "spa", "alpine", "vite", "typescript"],
   "variables": {
@@ -560,13 +560,13 @@ install:
 
 ```bash
 # Create a new Alpine.js SPA project
-mizu new ./myapp --template frontend/spa --sub alpine
+mizu new ./myapp --template frontend --sub alpine
 
 # List all templates (shows Alpine.js alongside React and Vue)
 mizu new --list
 
 # Preview the generated files
-mizu new ./myapp --template frontend/spa --sub alpine --dry-run
+mizu new ./myapp --template frontend --sub alpine --dry-run
 ```
 
 ## Testing Strategy
@@ -582,17 +582,17 @@ func TestListTemplatesIncludesAlpine(t *testing.T) {
         t.Fatalf("listTemplates() error: %v", err)
     }
 
-    // Alpine should be in frontend/spa sub-templates
+    // Alpine should be in frontend sub-templates
     var frontendSPA *templateMeta
     for i, tmpl := range templates {
-        if tmpl.Name == "frontend/spa" {
+        if tmpl.Name == "frontend" {
             frontendSPA = &templates[i]
             break
         }
     }
 
     if frontendSPA == nil {
-        t.Fatal("frontend/spa template not found")
+        t.Fatal("frontend template not found")
     }
 
     found := false
@@ -604,18 +604,18 @@ func TestListTemplatesIncludesAlpine(t *testing.T) {
     }
 
     if !found {
-        t.Error("frontend/spa should have alpine sub-template")
+        t.Error("frontend should have alpine sub-template")
     }
 }
 
 func TestTemplateExistsAlpine(t *testing.T) {
-    if !templateExists("frontend/spa/alpine") {
-        t.Error("templateExists('frontend/spa/alpine') returned false")
+    if !templateExists("frontend/alpine") {
+        t.Error("templateExists('frontend/alpine') returned false")
     }
 }
 
 func TestLoadTemplateFilesAlpine(t *testing.T) {
-    files, err := loadTemplateFiles("frontend/spa/alpine")
+    files, err := loadTemplateFiles("frontend/alpine")
     if err != nil {
         t.Fatalf("loadTemplateFiles() error: %v", err)
     }
@@ -649,7 +649,7 @@ func TestBuildPlanAlpineTemplate(t *testing.T) {
     tmpDir := t.TempDir()
     vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-    p, err := buildPlan("frontend/spa/alpine", tmpDir, vars)
+    p, err := buildPlan("frontend/alpine", tmpDir, vars)
     if err != nil {
         t.Fatalf("buildPlan() error: %v", err)
     }
@@ -663,7 +663,7 @@ func TestApplyPlanAlpineTemplate(t *testing.T) {
     tmpDir := t.TempDir()
     vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-    p, err := buildPlan("frontend/spa/alpine", tmpDir, vars)
+    p, err := buildPlan("frontend/alpine", tmpDir, vars)
     if err != nil {
         t.Fatalf("buildPlan() error: %v", err)
     }
@@ -697,7 +697,7 @@ func TestAlpineTemplateVariableSubstitution(t *testing.T) {
     tmpDir := t.TempDir()
     vars := newTemplateVars("myalpine", "example.com/myalpine", "MIT", nil)
 
-    p, err := buildPlan("frontend/spa/alpine", tmpDir, vars)
+    p, err := buildPlan("frontend/alpine", tmpDir, vars)
     if err != nil {
         t.Fatalf("buildPlan() error: %v", err)
     }
@@ -733,7 +733,7 @@ func TestAlpineTemplateHasAlpineSpecificContent(t *testing.T) {
     tmpDir := t.TempDir()
     vars := newTemplateVars("myalpine", "example.com/myalpine", "MIT", nil)
 
-    p, err := buildPlan("frontend/spa/alpine", tmpDir, vars)
+    p, err := buildPlan("frontend/alpine", tmpDir, vars)
     if err != nil {
         t.Fatalf("buildPlan() error: %v", err)
     }

@@ -1,5 +1,5 @@
 {
-  "name": "frontend/spa/svelte",
+  "name": "frontend/svelte",
   "description": "Svelte SPA with Vite, TypeScript, and Mizu backend",
   "tags": ["go", "mizu", "frontend", "spa", "svelte", "vite", "typescript"],
   "variables": {

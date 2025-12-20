@@ -1,6 +1,6 @@
 {
-  "name": "frontend/spa",
-  "description": "Single-page application with Mizu backend",
+  "name": "frontend",
+  "description": "Frontend application with Mizu backend",
   "tags": ["go", "mizu", "frontend", "spa"],
   "subTemplates": [
     { "name": "react", "description": "React with Vite and TypeScript" },

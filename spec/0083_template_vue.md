@@ -2,7 +2,7 @@
 
 ## Overview
 
-This specification describes the implementation of the Vue.js SPA template for the Mizu CLI. The template follows the same structure as the React template (`frontend/spa/react`) but uses Vue 3 with Composition API, TypeScript, and Vue Router.
+This specification describes the implementation of the Vue.js SPA template for the Mizu CLI. The template follows the same structure as the React template (`frontend/react`) but uses Vue 3 with Composition API, TypeScript, and Vue Router.
 
 ## Goals
 
@@ -15,7 +15,7 @@ This specification describes the implementation of the Vue.js SPA template for t
 ## Template Location
 
 ```
-cmd/cli/templates/frontend/spa/vue/
+cmd/cli/templates/frontend/vue/
 ├── template.json              # Template metadata
 ├── Makefile.tmpl              # Build and development commands
 ├── cmd/server/
@@ -55,7 +55,7 @@ cmd/cli/templates/frontend/spa/vue/
 
 ```json
 {
-  "name": "frontend/spa/vue",
+  "name": "frontend/vue",
   "description": "Vue SPA with Vite, TypeScript, and Mizu backend",
   "tags": ["go", "mizu", "frontend", "spa", "vue", "vite", "typescript"],
   "variables": {
@@ -562,13 +562,13 @@ install:
 
 ```bash
 # Create a new Vue SPA project
-mizu new ./myapp --template frontend/spa/vue
+mizu new ./myapp --template frontend/vue
 
 # List all templates (shows Vue alongside React)
 mizu new --list
 
 # Preview the generated files
-mizu new ./myapp --template frontend/spa/vue --dry-run
+mizu new ./myapp --template frontend/vue --dry-run
 ```
 
 ## Testing Strategy
@@ -586,25 +586,25 @@ func TestListTemplatesIncludesVue(t *testing.T) {
 
     found := false
     for _, tmpl := range templates {
-        if tmpl.Name == "frontend/spa/vue" {
+        if tmpl.Name == "frontend/vue" {
             found = true
             break
         }
     }
 
     if !found {
-        t.Error("listTemplates() did not include nested template 'frontend/spa/vue'")
+        t.Error("listTemplates() did not include nested template 'frontend/vue'")
     }
 }
 
 func TestTemplateExistsVue(t *testing.T) {
-    if !templateExists("frontend/spa/vue") {
-        t.Error("templateExists('frontend/spa/vue') returned false")
+    if !templateExists("frontend/vue") {
+        t.Error("templateExists('frontend/vue') returned false")
     }
 }
 
 func TestLoadTemplateFilesVue(t *testing.T) {
-    files, err := loadTemplateFiles("frontend/spa/vue")
+    files, err := loadTemplateFiles("frontend/vue")
     if err != nil {
         t.Fatalf("loadTemplateFiles() error: %v", err)
     }
@@ -637,7 +637,7 @@ func TestApplyPlanVueTemplate(t *testing.T) {
     tmpDir := t.TempDir()
     vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-    p, err := buildPlan("frontend/spa/vue", tmpDir, vars)
+    p, err := buildPlan("frontend/vue", tmpDir, vars)
     if err != nil {
         t.Fatalf("buildPlan() error: %v", err)
     }

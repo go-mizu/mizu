@@ -16,7 +16,7 @@ This specification describes the implementation of the Preact SPA template for t
 ## Template Location
 
 ```
-cmd/cli/templates/frontend/spa/preact/
+cmd/cli/templates/frontend/preact/
 ├── template.json              # Template metadata
 ├── Makefile.tmpl              # Build and development commands
 ├── cmd/server/
@@ -54,7 +54,7 @@ cmd/cli/templates/frontend/spa/preact/
 
 ```json
 {
-  "name": "frontend/spa/preact",
+  "name": "frontend/preact",
   "description": "Preact SPA with Vite, TypeScript, and Mizu backend",
   "tags": ["go", "mizu", "frontend", "spa", "preact", "vite", "typescript"],
   "variables": {
@@ -574,13 +574,13 @@ install:
 
 ```bash
 # Create a new Preact SPA project
-mizu new ./myapp --template frontend/spa/preact
+mizu new ./myapp --template frontend/preact
 
 # List all templates (shows Preact alongside React and Vue)
 mizu new --list
 
 # Preview the generated files
-mizu new ./myapp --template frontend/spa/preact --dry-run
+mizu new ./myapp --template frontend/preact --dry-run
 ```
 
 ## Testing Strategy
@@ -598,25 +598,25 @@ func TestListTemplatesIncludesPreact(t *testing.T) {
 
     found := false
     for _, tmpl := range templates {
-        if tmpl.Name == "frontend/spa/preact" {
+        if tmpl.Name == "frontend/preact" {
             found = true
             break
         }
     }
 
     if !found {
-        t.Error("listTemplates() did not include nested template 'frontend/spa/preact'")
+        t.Error("listTemplates() did not include nested template 'frontend/preact'")
     }
 }
 
 func TestTemplateExistsPreact(t *testing.T) {
-    if !templateExists("frontend/spa/preact") {
-        t.Error("templateExists('frontend/spa/preact') returned false")
+    if !templateExists("frontend/preact") {
+        t.Error("templateExists('frontend/preact') returned false")
     }
 }
 
 func TestLoadTemplateFilesPreact(t *testing.T) {
-    files, err := loadTemplateFiles("frontend/spa/preact")
+    files, err := loadTemplateFiles("frontend/preact")
     if err != nil {
         t.Fatalf("loadTemplateFiles() error: %v", err)
     }
@@ -649,7 +649,7 @@ func TestBuildPlanPreactTemplate(t *testing.T) {
     tmpDir := t.TempDir()
     vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-    p, err := buildPlan("frontend/spa/preact", tmpDir, vars)
+    p, err := buildPlan("frontend/preact", tmpDir, vars)
     if err != nil {
         t.Fatalf("buildPlan() error: %v", err)
     }
@@ -663,7 +663,7 @@ func TestApplyPlanPreactTemplate(t *testing.T) {
     tmpDir := t.TempDir()
     vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-    p, err := buildPlan("frontend/spa/preact", tmpDir, vars)
+    p, err := buildPlan("frontend/preact", tmpDir, vars)
     if err != nil {
         t.Fatalf("buildPlan() error: %v", err)
     }
@@ -696,7 +696,7 @@ func TestPreactTemplateVariableSubstitution(t *testing.T) {
     tmpDir := t.TempDir()
     vars := newTemplateVars("mypreact", "example.com/mypreact", "MIT", nil)
 
-    p, err := buildPlan("frontend/spa/preact", tmpDir, vars)
+    p, err := buildPlan("frontend/preact", tmpDir, vars)
     if err != nil {
         t.Fatalf("buildPlan() error: %v", err)
     }
@@ -732,7 +732,7 @@ func TestPreactTemplateHasPreactSpecificContent(t *testing.T) {
     tmpDir := t.TempDir()
     vars := newTemplateVars("mypreact", "example.com/mypreact", "MIT", nil)
 
-    p, err := buildPlan("frontend/spa/preact", tmpDir, vars)
+    p, err := buildPlan("frontend/preact", tmpDir, vars)
     if err != nil {
         t.Fatalf("buildPlan() error: %v", err)
     }

@@ -1,5 +1,5 @@
 {
-  "name": "frontend/spa/nuxt",
+  "name": "frontend/nuxt",
   "description": "Nuxt SPA with TypeScript, Tailwind, and Mizu backend",
   "tags": ["go", "mizu", "frontend", "spa", "nuxt", "vue", "typescript", "tailwind"],
   "variables": {

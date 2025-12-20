@@ -15,7 +15,7 @@ This specification describes the implementation of a Nuxt SPA template for the M
 ## Template Hierarchy
 
 ```
-cmd/cli/templates/frontend/spa/nuxt/
+cmd/cli/templates/frontend/nuxt/
 ├── template.json              # Template metadata
 ├── Makefile.tmpl              # Build/dev commands
 ├── cmd/
@@ -55,7 +55,7 @@ cmd/cli/templates/frontend/spa/nuxt/
 
 ```json
 {
-  "name": "frontend/spa/nuxt",
+  "name": "frontend/nuxt",
   "description": "Nuxt SPA with TypeScript, Tailwind, and Mizu backend",
   "tags": ["go", "mizu", "frontend", "spa", "nuxt", "vue", "typescript", "tailwind"],
   "variables": {
@@ -455,13 +455,13 @@ Run 'make build' or 'cd client && npm run build' to generate them.
 
 ```bash
 # Create a new Nuxt SPA project
-mizu new ./myapp --template frontend/spa/nuxt
+mizu new ./myapp --template frontend/nuxt
 
 # With custom module path
-mizu new ./myapp --template frontend/spa/nuxt --module github.com/user/myapp
+mizu new ./myapp --template frontend/nuxt --module github.com/user/myapp
 
 # Preview the generated files
-mizu new ./myapp --template frontend/spa/nuxt --dry-run
+mizu new ./myapp --template frontend/nuxt --dry-run
 ```
 
 ## Key Differences from Other SPA Templates
@@ -494,13 +494,13 @@ mizu new ./myapp --template frontend/spa/nuxt --dry-run
 
 ```go
 func TestNuxtTemplateExists(t *testing.T) {
-    if !templateExists("frontend/spa/nuxt") {
-        t.Error("templateExists('frontend/spa/nuxt') returned false")
+    if !templateExists("frontend/nuxt") {
+        t.Error("templateExists('frontend/nuxt') returned false")
     }
 }
 
 func TestLoadTemplateFilesNuxt(t *testing.T) {
-    files, err := loadTemplateFiles("frontend/spa/nuxt")
+    files, err := loadTemplateFiles("frontend/nuxt")
     require.NoError(t, err)
 
     expectedFiles := []string{
@@ -527,7 +527,7 @@ func TestLoadTemplateFilesNuxt(t *testing.T) {
 }
 
 func TestNuxtTemplateHasNuxtSpecificContent(t *testing.T) {
-    files, err := loadTemplateFiles("frontend/spa/nuxt")
+    files, err := loadTemplateFiles("frontend/nuxt")
     require.NoError(t, err)
 
     fileMap := make(map[string]templateFile)
@@ -561,7 +561,7 @@ func TestApplyPlanNuxtTemplate(t *testing.T) {
     tmpDir := t.TempDir()
     vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-    p, err := buildPlan("frontend/spa/nuxt", tmpDir, vars)
+    p, err := buildPlan("frontend/nuxt", tmpDir, vars)
     require.NoError(t, err)
 
     if err := p.apply(false); err != nil {

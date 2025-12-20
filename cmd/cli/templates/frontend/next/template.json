@@ -1,5 +1,5 @@
 {
-  "name": "frontend/spa/next",
+  "name": "frontend/next",
   "description": "Next.js SPA with App Router, TypeScript, Tailwind, and Mizu backend",
   "tags": ["go", "mizu", "frontend", "spa", "next", "nextjs", "react", "typescript", "tailwind"],
   "variables": {

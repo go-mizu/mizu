@@ -16,7 +16,7 @@ This specification describes the implementation of the Svelte SPA template for t
 ## Template Location
 
 ```
-cmd/cli/templates/frontend/spa/svelte/
+cmd/cli/templates/frontend/svelte/
 ├── template.json              # Template metadata
 ├── Makefile.tmpl              # Build and development commands
 ├── cmd/server/
@@ -55,7 +55,7 @@ cmd/cli/templates/frontend/spa/svelte/
 
 ```json
 {
-  "name": "frontend/spa/svelte",
+  "name": "frontend/svelte",
   "description": "Svelte SPA with Vite, TypeScript, and Mizu backend",
   "tags": ["go", "mizu", "frontend", "spa", "svelte", "vite", "typescript"],
   "variables": {
@@ -555,13 +555,13 @@ install:
 
 ```bash
 # Create a new Svelte SPA project
-mizu new ./myapp --template frontend/spa/svelte
+mizu new ./myapp --template frontend/svelte
 
 # List all templates (shows Svelte alongside React and Vue)
 mizu new --list
 
 # Preview the generated files
-mizu new ./myapp --template frontend/spa/svelte --dry-run
+mizu new ./myapp --template frontend/svelte --dry-run
 ```
 
 ## Testing Strategy
@@ -579,25 +579,25 @@ func TestListTemplatesIncludesSvelte(t *testing.T) {
 
     found := false
     for _, tmpl := range templates {
-        if tmpl.Name == "frontend/spa/svelte" {
+        if tmpl.Name == "frontend/svelte" {
             found = true
             break
         }
     }
 
     if !found {
-        t.Error("listTemplates() did not include nested template 'frontend/spa/svelte'")
+        t.Error("listTemplates() did not include nested template 'frontend/svelte'")
     }
 }
 
 func TestTemplateExistsSvelte(t *testing.T) {
-    if !templateExists("frontend/spa/svelte") {
-        t.Error("templateExists('frontend/spa/svelte') returned false")
+    if !templateExists("frontend/svelte") {
+        t.Error("templateExists('frontend/svelte') returned false")
     }
 }
 
 func TestLoadTemplateFilesSvelte(t *testing.T) {
-    files, err := loadTemplateFiles("frontend/spa/svelte")
+    files, err := loadTemplateFiles("frontend/svelte")
     if err != nil {
         t.Fatalf("loadTemplateFiles() error: %v", err)
     }
@@ -631,7 +631,7 @@ func TestBuildPlanSvelteTemplate(t *testing.T) {
     tmpDir := t.TempDir()
     vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-    p, err := buildPlan("frontend/spa/svelte", tmpDir, vars)
+    p, err := buildPlan("frontend/svelte", tmpDir, vars)
     if err != nil {
         t.Fatalf("buildPlan() error: %v", err)
     }
@@ -645,7 +645,7 @@ func TestApplyPlanSvelteTemplate(t *testing.T) {
     tmpDir := t.TempDir()
     vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-    p, err := buildPlan("frontend/spa/svelte", tmpDir, vars)
+    p, err := buildPlan("frontend/svelte", tmpDir, vars)
     if err != nil {
         t.Fatalf("buildPlan() error: %v", err)
     }
@@ -679,7 +679,7 @@ func TestSvelteTemplateVariableSubstitution(t *testing.T) {
     tmpDir := t.TempDir()
     vars := newTemplateVars("mysvelte", "example.com/mysvelte", "MIT", nil)
 
-    p, err := buildPlan("frontend/spa/svelte", tmpDir, vars)
+    p, err := buildPlan("frontend/svelte", tmpDir, vars)
     if err != nil {
         t.Fatalf("buildPlan() error: %v", err)
     }
@@ -715,7 +715,7 @@ func TestSvelteTemplateHasSvelteSpecificContent(t *testing.T) {
     tmpDir := t.TempDir()
     vars := newTemplateVars("mysvelte", "example.com/mysvelte", "MIT", nil)
 
-    p, err := buildPlan("frontend/spa/svelte", tmpDir, vars)
+    p, err := buildPlan("frontend/svelte", tmpDir, vars)
     if err != nil {
         t.Fatalf("buildPlan() error: %v", err)
     }

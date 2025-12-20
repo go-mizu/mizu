@@ -16,7 +16,7 @@ This specification describes the implementation of the Angular SPA template for 
 ## Template Location
 
 ```
-cmd/cli/templates/frontend/spa/angular/
+cmd/cli/templates/frontend/angular/
 ├── template.json              # Template metadata
 ├── Makefile.tmpl              # Build and development commands
 ├── cmd/server/
@@ -66,7 +66,7 @@ cmd/cli/templates/frontend/spa/angular/
 
 ```json
 {
-  "name": "frontend/spa/angular",
+  "name": "frontend/angular",
   "description": "Angular SPA with TypeScript and Mizu backend",
   "tags": ["go", "mizu", "frontend", "spa", "angular", "typescript"],
   "variables": {
@@ -725,13 +725,13 @@ install:
 
 ```bash
 # Create a new Angular SPA project
-mizu new ./myapp --template frontend/spa/angular
+mizu new ./myapp --template frontend/angular
 
 # List all templates (shows Angular alongside React, Vue, and Svelte)
 mizu new --list
 
 # Preview the generated files
-mizu new ./myapp --template frontend/spa/angular --dry-run
+mizu new ./myapp --template frontend/angular --dry-run
 ```
 
 ## Testing Strategy
@@ -749,25 +749,25 @@ func TestListTemplatesIncludesAngular(t *testing.T) {
 
     found := false
     for _, tmpl := range templates {
-        if tmpl.Name == "frontend/spa/angular" {
+        if tmpl.Name == "frontend/angular" {
             found = true
             break
         }
     }
 
     if !found {
-        t.Error("listTemplates() did not include nested template 'frontend/spa/angular'")
+        t.Error("listTemplates() did not include nested template 'frontend/angular'")
     }
 }
 
 func TestTemplateExistsAngular(t *testing.T) {
-    if !templateExists("frontend/spa/angular") {
-        t.Error("templateExists('frontend/spa/angular') returned false")
+    if !templateExists("frontend/angular") {
+        t.Error("templateExists('frontend/angular') returned false")
     }
 }
 
 func TestLoadTemplateFilesAngular(t *testing.T) {
-    files, err := loadTemplateFiles("frontend/spa/angular")
+    files, err := loadTemplateFiles("frontend/angular")
     if err != nil {
         t.Fatalf("loadTemplateFiles() error: %v", err)
     }
@@ -801,7 +801,7 @@ func TestBuildPlanAngularTemplate(t *testing.T) {
     tmpDir := t.TempDir()
     vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-    p, err := buildPlan("frontend/spa/angular", tmpDir, vars)
+    p, err := buildPlan("frontend/angular", tmpDir, vars)
     if err != nil {
         t.Fatalf("buildPlan() error: %v", err)
     }
@@ -815,7 +815,7 @@ func TestApplyPlanAngularTemplate(t *testing.T) {
     tmpDir := t.TempDir()
     vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
 
-    p, err := buildPlan("frontend/spa/angular", tmpDir, vars)
+    p, err := buildPlan("frontend/angular", tmpDir, vars)
     if err != nil {
         t.Fatalf("buildPlan() error: %v", err)
     }
@@ -848,7 +848,7 @@ func TestAngularTemplateVariableSubstitution(t *testing.T) {
     tmpDir := t.TempDir()
     vars := newTemplateVars("myangular", "example.com/myangular", "MIT", nil)
 
-    p, err := buildPlan("frontend/spa/angular", tmpDir, vars)
+    p, err := buildPlan("frontend/angular", tmpDir, vars)
     if err != nil {
         t.Fatalf("buildPlan() error: %v", err)
     }
@@ -884,7 +884,7 @@ func TestAngularTemplateHasAngularSpecificContent(t *testing.T) {
     tmpDir := t.TempDir()
     vars := newTemplateVars("myangular", "example.com/myangular", "MIT", nil)
 
-    p, err := buildPlan("frontend/spa/angular", tmpDir, vars)
+    p, err := buildPlan("frontend/angular", tmpDir, vars)
     if err != nil {
         t.Fatalf("buildPlan() error: %v", err)
     }

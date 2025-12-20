@@ -2,7 +2,7 @@
 
 ## Overview
 
-This specification describes the implementation of an HTMX template for the `frontend/spa/htmx` path. Unlike other SPA templates (React, Vue, etc.), HTMX uses a hypermedia-driven approach with server-side rendering, eliminating the need for Node.js build tools.
+This specification describes the implementation of an HTMX template for the `frontend/htmx` path. Unlike other SPA templates (React, Vue, etc.), HTMX uses a hypermedia-driven approach with server-side rendering, eliminating the need for Node.js build tools.
 
 ## Goals
 
@@ -27,7 +27,7 @@ HTMX represents the "hypermedia" approach to web development:
 ## Template Structure
 
 ```
-cmd/cli/templates/frontend/spa/htmx/
+cmd/cli/templates/frontend/htmx/
 ├── template.json
 ├── Makefile.tmpl
 ├── cmd/server/main.go.tmpl
@@ -139,7 +139,7 @@ app.Get("/", homeHandler)
 
 ```json
 {
-  "name": "frontend/spa/htmx",
+  "name": "frontend/htmx",
   "description": "HTMX hypermedia app with Go templates and Tailwind CSS",
   "tags": ["go", "mizu", "frontend", "spa", "htmx", "tailwind", "alpine"],
   "variables": {
@@ -620,7 +620,7 @@ In the HTMX template, assets are served directly from static/ and views/.
 
 ```bash
 # Create new project
-mizu new ./myapp --template frontend/spa/htmx
+mizu new ./myapp --template frontend/htmx
 
 # Start development server
 cd myapp
@@ -677,7 +677,7 @@ func TestHTMXTemplateGeneration(t *testing.T) {
     tmpDir := t.TempDir()
 
     vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
-    p, err := buildPlan("frontend/spa/htmx", tmpDir, vars)
+    p, err := buildPlan("frontend/htmx", tmpDir, vars)
     require.NoError(t, err)
 
     err = p.apply(false)
@@ -705,7 +705,7 @@ func TestHTMXTemplateBuildable(t *testing.T) {
 
     tmpDir := t.TempDir()
     vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
-    p, _ := buildPlan("frontend/spa/htmx", tmpDir, vars)
+    p, _ := buildPlan("frontend/htmx", tmpDir, vars)
     p.apply(false)
 
     // Verify Go code compiles
@@ -718,7 +718,7 @@ func TestHTMXTemplateBuildable(t *testing.T) {
 func TestHTMXTemplateVariableSubstitution(t *testing.T) {
     tmpDir := t.TempDir()
     vars := newTemplateVars("myhtmxapp", "github.com/user/myhtmxapp", "MIT", nil)
-    p, _ := buildPlan("frontend/spa/htmx", tmpDir, vars)
+    p, _ := buildPlan("frontend/htmx", tmpDir, vars)
     p.apply(false)
 
     // Check module path in go.mod
@@ -741,7 +741,7 @@ func TestHTMXTemplateServer(t *testing.T) {
 
     tmpDir := t.TempDir()
     vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
-    p, _ := buildPlan("frontend/spa/htmx", tmpDir, vars)
+    p, _ := buildPlan("frontend/htmx", tmpDir, vars)
     p.apply(false)
 
     // Build and run
@@ -757,7 +757,7 @@ func TestHTMXTemplateServer(t *testing.T) {
 ## Implementation Plan
 
 ### Phase 1: Template Structure
-1. Create `templates/frontend/spa/htmx/` directory
+1. Create `templates/frontend/htmx/` directory
 2. Create `template.json` metadata
 3. Create placeholder files
 

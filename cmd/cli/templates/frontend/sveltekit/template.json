@@ -1,5 +1,5 @@
 {
-  "name": "frontend/spa/sveltekit",
+  "name": "frontend/sveltekit",
   "description": "SvelteKit SPA with TypeScript, Tailwind, and Mizu backend",
   "tags": ["go", "mizu", "frontend", "spa", "sveltekit", "svelte", "typescript", "tailwind"],
   "variables": {
