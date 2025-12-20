@@ -1,0 +1,142 @@
+using System;
+using System.IO;
+using System.Threading;
+using Cysharp.Threading.Tasks;
+using Newtonsoft.Json;
+using UnityEngine;
+
+namespace {{.Name}}.Game
+{
+    /// <summary>
+    /// Save/Load system for game data
+    /// </summary>
+    public class SaveManager
+    {
+        private const string SaveFileName = "save.json";
+        private static string SavePath => Path.Combine(Application.persistentDataPath, SaveFileName);
+
+        private GameSaveData _currentSave;
+        private bool _isDirty;
+
+        /// <summary>
+        /// Current save data
+        /// </summary>
+        public GameSaveData CurrentSave => _currentSave;
+
+        /// <summary>
+        /// Event fired when save data changes
+        /// </summary>
+        public event Action<GameSaveData> OnSaveDataChanged;
+
+        /// <summary>
+        /// Load save data
+        /// </summary>
+        public async UniTask<GameSaveData> LoadAsync(CancellationToken cancellationToken = default)
+        {
+            if (!File.Exists(SavePath))
+            {
+                _currentSave = new GameSaveData();
+                return _currentSave;
+            }
+
+            try
+            {
+                var json = await File.ReadAllTextAsync(SavePath, cancellationToken);
+                _currentSave = JsonConvert.DeserializeObject<GameSaveData>(json);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"Failed to load save: {e.Message}");
+                _currentSave = new GameSaveData();
+            }
+
+            return _currentSave;
+        }
+
+        /// <summary>
+        /// Save current data
+        /// </summary>
+        public async UniTask SaveAsync(CancellationToken cancellationToken = default)
+        {
+            if (_currentSave == null)
+            {
+                _currentSave = new GameSaveData();
+            }
+
+            _currentSave.LastSaved = DateTime.UtcNow;
+
+            try
+            {
+                var json = JsonConvert.SerializeObject(_currentSave, Formatting.Indented);
+                await File.WriteAllTextAsync(SavePath, json, cancellationToken);
+                _isDirty = false;
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Failed to save: {e.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Update save data
+        /// </summary>
+        public void Update(Action<GameSaveData> updateAction)
+        {
+            if (_currentSave == null)
+            {
+                _currentSave = new GameSaveData();
+            }
+
+            updateAction(_currentSave);
+            _isDirty = true;
+            OnSaveDataChanged?.Invoke(_currentSave);
+        }
+
+        /// <summary>
+        /// Delete save data
+        /// </summary>
+        public void DeleteSave()
+        {
+            if (File.Exists(SavePath))
+            {
+                File.Delete(SavePath);
+            }
+            _currentSave = new GameSaveData();
+            OnSaveDataChanged?.Invoke(_currentSave);
+        }
+
+        /// <summary>
+        /// Check if save data is dirty
+        /// </summary>
+        public bool IsDirty => _isDirty;
+    }
+
+    /// <summary>
+    /// Game save data structure
+    /// </summary>
+    [Serializable]
+    public class GameSaveData
+    {
+        public int HighScore { get; set; }
+        public int TotalCoins { get; set; }
+        public int CurrentLevel { get; set; } = 1;
+        public string[] UnlockedAchievements { get; set; } = Array.Empty<string>();
+        public GameSettings Settings { get; set; } = new();
+        public DateTime LastSaved { get; set; }
+        public string PlayerId { get; set; }
+    }
+
+    /// <summary>
+    /// Game settings
+    /// </summary>
+    [Serializable]
+    public class GameSettings
+    {
+        public float MusicVolume { get; set; } = 1f;
+        public float SfxVolume { get; set; } = 1f;
+        public bool Vibration { get; set; } = true;
+        public bool Notifications { get; set; } = true;
+        public string Language { get; set; } = "en";
+    }
+}

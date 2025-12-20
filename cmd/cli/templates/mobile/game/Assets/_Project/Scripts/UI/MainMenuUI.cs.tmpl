@@ -1,0 +1,84 @@
+using Cysharp.Threading.Tasks;
+using UnityEngine;
+using UnityEngine.UI;
+using {{.Name}}.Game;
+
+namespace {{.Name}}.UI
+{
+    /// <summary>
+    /// Main menu UI controller
+    /// </summary>
+    public class MainMenuUI : MonoBehaviour
+    {
+        [Header("Buttons")]
+        [SerializeField] private Button _playButton;
+        [SerializeField] private Button _leaderboardButton;
+        [SerializeField] private Button _settingsButton;
+        [SerializeField] private Button _quitButton;
+
+        [Header("Panels")]
+        [SerializeField] private GameObject _mainPanel;
+        [SerializeField] private GameObject _leaderboardPanel;
+        [SerializeField] private GameObject _settingsPanel;
+
+        private void Start()
+        {
+            _playButton.onClick.AddListener(OnPlayClicked);
+            _leaderboardButton.onClick.AddListener(OnLeaderboardClicked);
+            _settingsButton.onClick.AddListener(OnSettingsClicked);
+            _quitButton.onClick.AddListener(OnQuitClicked);
+
+            ShowMainPanel();
+        }
+
+        private void OnPlayClicked()
+        {
+            GameManager.Instance.StartGameAsync().Forget();
+        }
+
+        private void OnLeaderboardClicked()
+        {
+            ShowLeaderboardPanel();
+        }
+
+        private void OnSettingsClicked()
+        {
+            ShowSettingsPanel();
+        }
+
+        private void OnQuitClicked()
+        {
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#else
+            Application.Quit();
+#endif
+        }
+
+        private void ShowMainPanel()
+        {
+            _mainPanel.SetActive(true);
+            _leaderboardPanel.SetActive(false);
+            _settingsPanel.SetActive(false);
+        }
+
+        private void ShowLeaderboardPanel()
+        {
+            _mainPanel.SetActive(false);
+            _leaderboardPanel.SetActive(true);
+            _settingsPanel.SetActive(false);
+        }
+
+        private void ShowSettingsPanel()
+        {
+            _mainPanel.SetActive(false);
+            _leaderboardPanel.SetActive(false);
+            _settingsPanel.SetActive(true);
+        }
+
+        public void OnBackClicked()
+        {
+            ShowMainPanel();
+        }
+    }
+}

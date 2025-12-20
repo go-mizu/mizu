@@ -1,0 +1,65 @@
+using System.Collections.Generic;
+using System.Threading;
+using Cysharp.Threading.Tasks;
+using {{.Name}}.SDK;
+
+namespace {{.Name}}.Services
+{
+    /// <summary>
+    /// Leaderboard service
+    /// </summary>
+    public class LeaderboardService
+    {
+        private readonly GameClient _client;
+
+        public LeaderboardService(GameClient client)
+        {
+            _client = client;
+        }
+
+        /// <summary>
+        /// Submit a score
+        /// </summary>
+        public async UniTask<LeaderboardEntry> SubmitScoreAsync(
+            string leaderboardId,
+            int score,
+            Dictionary<string, object> metadata = null,
+            CancellationToken cancellationToken = default)
+        {
+            return await _client.SubmitScoreAsync(leaderboardId, score, metadata, cancellationToken);
+        }
+
+        /// <summary>
+        /// Get top scores
+        /// </summary>
+        public async UniTask<List<LeaderboardEntry>> GetTopScoresAsync(
+            string leaderboardId,
+            int limit = 10,
+            CancellationToken cancellationToken = default)
+        {
+            return await _client.GetLeaderboardAsync(leaderboardId, limit, 0, cancellationToken);
+        }
+
+        /// <summary>
+        /// Get scores around player
+        /// </summary>
+        public async UniTask<List<LeaderboardEntry>> GetScoresAroundPlayerAsync(
+            string leaderboardId,
+            int limit = 10,
+            CancellationToken cancellationToken = default)
+        {
+            return await _client.GetLeaderboardAroundPlayerAsync(leaderboardId, limit, cancellationToken);
+        }
+
+        /// <summary>
+        /// Get player's rank
+        /// </summary>
+        public async UniTask<int> GetPlayerRankAsync(
+            string leaderboardId,
+            CancellationToken cancellationToken = default)
+        {
+            var entry = await _client.GetPlayerLeaderboardEntryAsync(leaderboardId, cancellationToken);
+            return entry?.Rank ?? -1;
+        }
+    }
+}

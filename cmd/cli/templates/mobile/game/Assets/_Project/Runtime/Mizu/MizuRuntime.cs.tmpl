@@ -1,0 +1,335 @@
+using System;
+using System.Collections.Generic;
+using System.Text;
+using System.Threading;
+using Cysharp.Threading.Tasks;
+using Newtonsoft.Json;
+using UnityEngine;
+using UnityEngine.Networking;
+
+namespace {{.Name}}.Mizu
+{
+    /// <summary>
+    /// MizuRuntime is the core client for communicating with a Mizu backend.
+    /// </summary>
+    public class MizuRuntime : MonoBehaviour
+    {
+        private static MizuRuntime _instance;
+
+        /// <summary>
+        /// Shared singleton instance
+        /// </summary>
+        public static MizuRuntime Shared
+        {
+            get
+            {
+                if (_instance == null)
+                {
+                    var go = new GameObject("[MizuRuntime]");
+                    _instance = go.AddComponent<MizuRuntime>();
+                    DontDestroyOnLoad(go);
+                }
+                return _instance;
+            }
+        }
+
+        [Header("Configuration")]
+        [SerializeField] private string _baseUrl = "http://localhost:3000";
+        [SerializeField] private float _timeout = 30f;
+
+        /// <summary>
+        /// Base URL for all API requests
+        /// </summary>
+        public string BaseUrl
+        {
+            get => _baseUrl;
+            set => _baseUrl = value;
+        }
+
+        /// <summary>
+        /// Request timeout in seconds
+        /// </summary>
+        public float Timeout
+        {
+            get => _timeout;
+            set => _timeout = value;
+        }
+
+        /// <summary>
+        /// HTTP transport layer
+        /// </summary>
+        public Transport Transport { get; private set; }
+
+        /// <summary>
+        /// Secure token storage
+        /// </summary>
+        public TokenStore TokenStore { get; private set; }
+
+        /// <summary>
+        /// Live connection manager
+        /// </summary>
+        public LiveConnection Live { get; private set; }
+
+        /// <summary>
+        /// Device info provider
+        /// </summary>
+        public DeviceInfo DeviceInfo { get; private set; }
+
+        /// <summary>
+        /// Default headers added to all requests
+        /// </summary>
+        public Dictionary<string, string> DefaultHeaders { get; } = new();
+
+        /// <summary>
+        /// Current authentication state
+        /// </summary>
+        public bool IsAuthenticated => TokenStore?.GetToken() != null;
+
+        /// <summary>
+        /// Event fired when authentication state changes
+        /// </summary>
+        public event Action<bool> OnAuthStateChanged;
+
+        private JsonSerializerSettings _jsonSettings;
+
+        private void Awake()
+        {
+            if (_instance != null && _instance != this)
+            {
+                Destroy(gameObject);
+                return;
+            }
+
+            _instance = this;
+            DontDestroyOnLoad(gameObject);
+            Initialize();
+        }
+
+        /// <summary>
+        /// Initialize the runtime with configuration
+        /// </summary>
+        public void Initialize(string baseUrl = null, float? timeout = null)
+        {
+            if (baseUrl != null) _baseUrl = baseUrl;
+            if (timeout.HasValue) _timeout = timeout.Value;
+
+            _jsonSettings = new JsonSerializerSettings
+            {
+                NullValueHandling = NullValueHandling.Ignore,
+                MissingMemberHandling = MissingMemberHandling.Ignore
+            };
+
+            Transport = new Transport();
+            TokenStore = new TokenStore();
+            Live = new LiveConnection(this);
+            DeviceInfo = new DeviceInfo();
+
+            TokenStore.OnTokenChanged += (token) =>
+            {
+                OnAuthStateChanged?.Invoke(token != null);
+            };
+        }
+
+        #region HTTP Methods
+
+        /// <summary>
+        /// Performs a GET request
+        /// </summary>
+        public async UniTask<T> GetAsync<T>(
+            string path,
+            Dictionary<string, string> query = null,
+            Dictionary<string, string> headers = null,
+            CancellationToken cancellationToken = default)
+        {
+            return await RequestAsync<T, object>(
+                UnityWebRequest.kHttpVerbGET,
+                path,
+                query: query,
+                headers: headers,
+                cancellationToken: cancellationToken);
+        }
+
+        /// <summary>
+        /// Performs a POST request
+        /// </summary>
+        public async UniTask<T> PostAsync<T, TBody>(
+            string path,
+            TBody body = default,
+            Dictionary<string, string> headers = null,
+            CancellationToken cancellationToken = default)
+        {
+            return await RequestAsync<T, TBody>(
+                UnityWebRequest.kHttpVerbPOST,
+                path,
+                body: body,
+                headers: headers,
+                cancellationToken: cancellationToken);
+        }
+
+        /// <summary>
+        /// Performs a PUT request
+        /// </summary>
+        public async UniTask<T> PutAsync<T, TBody>(
+            string path,
+            TBody body = default,
+            Dictionary<string, string> headers = null,
+            CancellationToken cancellationToken = default)
+        {
+            return await RequestAsync<T, TBody>(
+                UnityWebRequest.kHttpVerbPUT,
+                path,
+                body: body,
+                headers: headers,
+                cancellationToken: cancellationToken);
+        }
+
+        /// <summary>
+        /// Performs a DELETE request
+        /// </summary>
+        public async UniTask<T> DeleteAsync<T>(
+            string path,
+            Dictionary<string, string> headers = null,
+            CancellationToken cancellationToken = default)
+        {
+            return await RequestAsync<T, object>(
+                UnityWebRequest.kHttpVerbDELETE,
+                path,
+                headers: headers,
+                cancellationToken: cancellationToken);
+        }
+
+        /// <summary>
+        /// Performs a PATCH request
+        /// </summary>
+        public async UniTask<T> PatchAsync<T, TBody>(
+            string path,
+            TBody body = default,
+            Dictionary<string, string> headers = null,
+            CancellationToken cancellationToken = default)
+        {
+            return await RequestAsync<T, TBody>(
+                "PATCH",
+                path,
+                body: body,
+                headers: headers,
+                cancellationToken: cancellationToken);
+        }
+
+        #endregion
+
+        #region Private Methods
+
+        private async UniTask<T> RequestAsync<T, TBody>(
+            string method,
+            string path,
+            Dictionary<string, string> query = null,
+            TBody body = default,
+            Dictionary<string, string> headers = null,
+            CancellationToken cancellationToken = default)
+        {
+            var url = BuildUrl(path, query);
+            var allHeaders = await BuildHeaders(headers);
+
+            string bodyJson = null;
+            if (body != null && !EqualityComparer<TBody>.Default.Equals(body, default))
+            {
+                bodyJson = JsonConvert.SerializeObject(body, _jsonSettings);
+                allHeaders["Content-Type"] = "application/json";
+            }
+
+            var request = new TransportRequest
+            {
+                Url = url,
+                Method = method,
+                Headers = allHeaders,
+                Body = bodyJson,
+                Timeout = _timeout
+            };
+
+            var response = await Transport.ExecuteAsync(request, cancellationToken);
+
+            if (response.StatusCode >= 400)
+            {
+                throw ParseError(response);
+            }
+
+            if (typeof(T) == typeof(object) || string.IsNullOrEmpty(response.Body))
+            {
+                return default;
+            }
+
+            return JsonConvert.DeserializeObject<T>(response.Body, _jsonSettings);
+        }
+
+        private string BuildUrl(string path, Dictionary<string, string> query)
+        {
+            var baseUrl = _baseUrl.TrimEnd('/');
+            var cleanPath = path.StartsWith("/") ? path : $"/{path}";
+            var url = new StringBuilder($"{baseUrl}{cleanPath}");
+
+            if (query != null && query.Count > 0)
+            {
+                url.Append("?");
+                var first = true;
+                foreach (var kvp in query)
+                {
+                    if (!first) url.Append("&");
+                    url.Append($"{UnityWebRequest.EscapeURL(kvp.Key)}={UnityWebRequest.EscapeURL(kvp.Value)}");
+                    first = false;
+                }
+            }
+
+            return url.ToString();
+        }
+
+        private async UniTask<Dictionary<string, string>> BuildHeaders(Dictionary<string, string> custom)
+        {
+            var headers = new Dictionary<string, string>(DefaultHeaders);
+
+            // Add device headers
+            var info = DeviceInfo;
+            headers["X-Device-ID"] = info.DeviceId;
+            headers["X-App-Version"] = info.AppVersion;
+            headers["X-App-Build"] = info.AppBuild;
+            headers["X-Device-Model"] = info.Model;
+            headers["X-Platform"] = info.Platform;
+            headers["X-OS-Version"] = info.OsVersion;
+            headers["X-Timezone"] = info.Timezone;
+            headers["X-Locale"] = info.Locale;
+
+            // Add custom headers
+            if (custom != null)
+            {
+                foreach (var kvp in custom)
+                {
+                    headers[kvp.Key] = kvp.Value;
+                }
+            }
+
+            // Add auth token
+            var token = TokenStore.GetToken();
+            if (token != null)
+            {
+                headers["Authorization"] = $"Bearer {token.AccessToken}";
+            }
+
+            await UniTask.CompletedTask;
+            return headers;
+        }
+
+        private MizuError ParseError(TransportResponse response)
+        {
+            try
+            {
+                var apiError = JsonConvert.DeserializeObject<ApiError>(response.Body, _jsonSettings);
+                return new MizuError.Api(apiError);
+            }
+            catch
+            {
+                return new MizuError.Http(response.StatusCode, response.Body);
+            }
+        }
+
+        #endregion
+    }
+}

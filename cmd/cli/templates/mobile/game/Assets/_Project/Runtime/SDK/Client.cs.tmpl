@@ -1,0 +1,234 @@
+using System.Collections.Generic;
+using System.Threading;
+using Cysharp.Threading.Tasks;
+using {{.Name}}.Mizu;
+
+namespace {{.Name}}.SDK
+{
+    /// <summary>
+    /// Generated Mizu game client
+    /// </summary>
+    public class GameClient
+    {
+        private readonly MizuRuntime _runtime;
+
+        public GameClient(MizuRuntime runtime)
+        {
+            _runtime = runtime;
+        }
+
+        #region Auth
+
+        /// <summary>
+        /// Sign in with credentials
+        /// </summary>
+        public async UniTask<AuthResponse> SignInAsync(
+            string email,
+            string password,
+            CancellationToken cancellationToken = default)
+        {
+            return await _runtime.PostAsync<AuthResponse, SignInRequest>(
+                "/auth/signin",
+                new SignInRequest { Email = email, Password = password },
+                cancellationToken: cancellationToken);
+        }
+
+        /// <summary>
+        /// Sign up with credentials
+        /// </summary>
+        public async UniTask<AuthResponse> SignUpAsync(
+            string email,
+            string password,
+            string username,
+            CancellationToken cancellationToken = default)
+        {
+            return await _runtime.PostAsync<AuthResponse, SignUpRequest>(
+                "/auth/signup",
+                new SignUpRequest { Email = email, Password = password, Username = username },
+                cancellationToken: cancellationToken);
+        }
+
+        /// <summary>
+        /// Sign in as guest
+        /// </summary>
+        public async UniTask<AuthResponse> SignInAsGuestAsync(
+            string deviceId,
+            CancellationToken cancellationToken = default)
+        {
+            return await _runtime.PostAsync<AuthResponse, GuestSignInRequest>(
+                "/auth/guest",
+                new GuestSignInRequest { DeviceId = deviceId },
+                cancellationToken: cancellationToken);
+        }
+
+        /// <summary>
+        /// Sign out
+        /// </summary>
+        public async UniTask SignOutAsync(CancellationToken cancellationToken = default)
+        {
+            await _runtime.DeleteAsync<object>("/auth/signout", cancellationToken: cancellationToken);
+        }
+
+        /// <summary>
+        /// Store auth token
+        /// </summary>
+        public UniTask StoreAuthTokenAsync(AuthResponse response)
+        {
+            var token = AuthTokenFactory.Create(
+                response.Token.AccessToken,
+                response.Token.RefreshToken,
+                response.Token.ExpiresIn);
+            _runtime.TokenStore.SetToken(token);
+            return UniTask.CompletedTask;
+        }
+
+        #endregion
+
+        #region Users
+
+        /// <summary>
+        /// Get current user profile
+        /// </summary>
+        public async UniTask<User> GetCurrentUserAsync(CancellationToken cancellationToken = default)
+        {
+            return await _runtime.GetAsync<User>("/users/me", cancellationToken: cancellationToken);
+        }
+
+        /// <summary>
+        /// Update current user profile
+        /// </summary>
+        public async UniTask<User> UpdateCurrentUserAsync(
+            UserUpdate update,
+            CancellationToken cancellationToken = default)
+        {
+            return await _runtime.PutAsync<User, UserUpdate>(
+                "/users/me",
+                update,
+                cancellationToken: cancellationToken);
+        }
+
+        #endregion
+
+        #region Leaderboards
+
+        /// <summary>
+        /// Submit a score
+        /// </summary>
+        public async UniTask<LeaderboardEntry> SubmitScoreAsync(
+            string leaderboardId,
+            int score,
+            Dictionary<string, object> metadata = null,
+            CancellationToken cancellationToken = default)
+        {
+            return await _runtime.PostAsync<LeaderboardEntry, ScoreSubmission>(
+                $"/leaderboards/{leaderboardId}/scores",
+                new ScoreSubmission { Score = score, Metadata = metadata },
+                cancellationToken: cancellationToken);
+        }
+
+        /// <summary>
+        /// Get leaderboard
+        /// </summary>
+        public async UniTask<List<LeaderboardEntry>> GetLeaderboardAsync(
+            string leaderboardId,
+            int limit = 10,
+            int offset = 0,
+            CancellationToken cancellationToken = default)
+        {
+            var query = new Dictionary<string, string>
+            {
+                ["limit"] = limit.ToString(),
+                ["offset"] = offset.ToString()
+            };
+            return await _runtime.GetAsync<List<LeaderboardEntry>>(
+                $"/leaderboards/{leaderboardId}",
+                query: query,
+                cancellationToken: cancellationToken);
+        }
+
+        /// <summary>
+        /// Get leaderboard around player
+        /// </summary>
+        public async UniTask<List<LeaderboardEntry>> GetLeaderboardAroundPlayerAsync(
+            string leaderboardId,
+            int limit = 10,
+            CancellationToken cancellationToken = default)
+        {
+            var query = new Dictionary<string, string>
+            {
+                ["limit"] = limit.ToString(),
+                ["around"] = "me"
+            };
+            return await _runtime.GetAsync<List<LeaderboardEntry>>(
+                $"/leaderboards/{leaderboardId}",
+                query: query,
+                cancellationToken: cancellationToken);
+        }
+
+        /// <summary>
+        /// Get player's leaderboard entry
+        /// </summary>
+        public async UniTask<LeaderboardEntry> GetPlayerLeaderboardEntryAsync(
+            string leaderboardId,
+            CancellationToken cancellationToken = default)
+        {
+            return await _runtime.GetAsync<LeaderboardEntry>(
+                $"/leaderboards/{leaderboardId}/me",
+                cancellationToken: cancellationToken);
+        }
+
+        #endregion
+
+        #region Achievements
+
+        /// <summary>
+        /// Get all achievements
+        /// </summary>
+        public async UniTask<List<Achievement>> GetAchievementsAsync(
+            CancellationToken cancellationToken = default)
+        {
+            return await _runtime.GetAsync<List<Achievement>>(
+                "/achievements",
+                cancellationToken: cancellationToken);
+        }
+
+        /// <summary>
+        /// Unlock an achievement
+        /// </summary>
+        public async UniTask<Achievement> UnlockAchievementAsync(
+            string achievementId,
+            CancellationToken cancellationToken = default)
+        {
+            return await _runtime.PostAsync<Achievement, object>(
+                $"/achievements/{achievementId}/unlock",
+                cancellationToken: cancellationToken);
+        }
+
+        /// <summary>
+        /// Update achievement progress
+        /// </summary>
+        public async UniTask<Achievement> UpdateAchievementProgressAsync(
+            string achievementId,
+            int progress,
+            CancellationToken cancellationToken = default)
+        {
+            return await _runtime.PutAsync<Achievement, AchievementProgress>(
+                $"/achievements/{achievementId}/progress",
+                new AchievementProgress { Progress = progress },
+                cancellationToken: cancellationToken);
+        }
+
+        /// <summary>
+        /// Get unlocked achievements
+        /// </summary>
+        public async UniTask<List<Achievement>> GetUnlockedAchievementsAsync(
+            CancellationToken cancellationToken = default)
+        {
+            return await _runtime.GetAsync<List<Achievement>>(
+                "/achievements/unlocked",
+                cancellationToken: cancellationToken);
+        }
+
+        #endregion
+    }
+}

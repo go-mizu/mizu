@@ -1,0 +1,112 @@
+# {{.Name}}
+
+A Unity game powered by Mizu backend.
+
+## Requirements
+
+- Unity 2022.3 LTS or later
+- .NET Framework 4.7.1 or later
+- Mizu backend server
+
+## Getting Started
+
+1. Open the project in Unity Hub
+2. Open the `Bootstrap` scene from `Assets/_Project/Scenes/`
+3. Configure your Mizu backend URL in the GameManager
+4. Press Play to run the game
+
+## Project Structure
+
+```
+Assets/
+├── _Project/
+│   ├── Runtime/
+│   │   ├── Mizu/          # Mizu SDK integration
+│   │   ├── SDK/           # Generated API client
+│   │   ├── Services/      # Game services
+│   │   └── Game/          # Core game logic
+│   ├── Scripts/
+│   │   └── UI/            # UI controllers
+│   ├── Scenes/            # Game scenes
+│   ├── Prefabs/           # Reusable prefabs
+│   └── Resources/         # Runtime resources
+├── Plugins/               # Third-party plugins
+└── Editor/                # Editor scripts
+```
+
+## Features
+
+- **Mizu Integration**: Full backend connectivity with authentication, leaderboards, and achievements
+- **UniTask**: Modern async/await support for Unity
+- **Scene Management**: Async scene loading with progress
+- **Analytics**: Event tracking and batching
+- **Save System**: Local save/load with JSON serialization
+
+## Configuration
+
+### Mizu Backend
+
+Update the `baseUrl` in `GameManager.cs`:
+
+```csharp
+[SerializeField] private string _baseUrl = "https://your-api.example.com";
+```
+
+### Build Settings
+
+Use the Build menu to build for different platforms:
+- Build > Build Android
+- Build > Build iOS
+- Build > Build WebGL
+- Build > Build Windows
+- Build > Build macOS
+
+## API Reference
+
+### GameManager
+
+```csharp
+// Start the game
+await GameManager.Instance.StartGameAsync();
+
+// Pause/Resume
+GameManager.Instance.PauseGame();
+GameManager.Instance.ResumeGame();
+
+// End game with score
+await GameManager.Instance.EndGameAsync(1000);
+```
+
+### Leaderboards
+
+```csharp
+// Submit score
+await GameManager.Instance.Leaderboards.SubmitScoreAsync("main", 1000);
+
+// Get top scores
+var scores = await GameManager.Instance.Leaderboards.GetTopScoresAsync("main", 10);
+```
+
+### Achievements
+
+```csharp
+// Unlock achievement
+await GameManager.Instance.Achievements.UnlockAsync("first_win");
+
+// Update progress
+await GameManager.Instance.Achievements.UpdateProgressAsync("play_10_games", 5);
+```
+
+### Analytics
+
+```csharp
+// Track custom event
+GameManager.Instance.Analytics.Track("level_start", new Dictionary<string, object>
+{
+    ["level_id"] = "level_1"
+});
+```
+
+## License
+
+MIT

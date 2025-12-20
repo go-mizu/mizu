@@ -1,0 +1,180 @@
+using System;
+using System.Collections.Generic;
+using Newtonsoft.Json;
+
+namespace {{.Name}}.SDK
+{
+    #region Auth Types
+
+    [Serializable]
+    public class SignInRequest
+    {
+        [JsonProperty("email")]
+        public string Email { get; set; }
+
+        [JsonProperty("password")]
+        public string Password { get; set; }
+    }
+
+    [Serializable]
+    public class SignUpRequest
+    {
+        [JsonProperty("email")]
+        public string Email { get; set; }
+
+        [JsonProperty("password")]
+        public string Password { get; set; }
+
+        [JsonProperty("username")]
+        public string Username { get; set; }
+    }
+
+    [Serializable]
+    public class GuestSignInRequest
+    {
+        [JsonProperty("device_id")]
+        public string DeviceId { get; set; }
+    }
+
+    [Serializable]
+    public class AuthResponse
+    {
+        [JsonProperty("user")]
+        public User User { get; set; }
+
+        [JsonProperty("token")]
+        public TokenResponse Token { get; set; }
+    }
+
+    [Serializable]
+    public class TokenResponse
+    {
+        [JsonProperty("access_token")]
+        public string AccessToken { get; set; }
+
+        [JsonProperty("refresh_token")]
+        public string RefreshToken { get; set; }
+
+        [JsonProperty("expires_in")]
+        public int ExpiresIn { get; set; }
+    }
+
+    #endregion
+
+    #region User Types
+
+    [Serializable]
+    public class User
+    {
+        [JsonProperty("id")]
+        public string Id { get; set; }
+
+        [JsonProperty("email")]
+        public string Email { get; set; }
+
+        [JsonProperty("username")]
+        public string Username { get; set; }
+
+        [JsonProperty("avatar_url")]
+        public string AvatarUrl { get; set; }
+
+        [JsonProperty("created_at")]
+        public string CreatedAt { get; set; }
+
+        [JsonProperty("updated_at")]
+        public string UpdatedAt { get; set; }
+    }
+
+    [Serializable]
+    public class UserUpdate
+    {
+        [JsonProperty("username")]
+        public string Username { get; set; }
+
+        [JsonProperty("avatar_url")]
+        public string AvatarUrl { get; set; }
+    }
+
+    #endregion
+
+    #region Leaderboard Types
+
+    [Serializable]
+    public class LeaderboardEntry
+    {
+        [JsonProperty("id")]
+        public string Id { get; set; }
+
+        [JsonProperty("user_id")]
+        public string UserId { get; set; }
+
+        [JsonProperty("username")]
+        public string Username { get; set; }
+
+        [JsonProperty("score")]
+        public int Score { get; set; }
+
+        [JsonProperty("rank")]
+        public int Rank { get; set; }
+
+        [JsonProperty("metadata")]
+        public Dictionary<string, object> Metadata { get; set; }
+
+        [JsonProperty("created_at")]
+        public string CreatedAt { get; set; }
+    }
+
+    [Serializable]
+    public class ScoreSubmission
+    {
+        [JsonProperty("score")]
+        public int Score { get; set; }
+
+        [JsonProperty("metadata")]
+        public Dictionary<string, object> Metadata { get; set; }
+    }
+
+    #endregion
+
+    #region Achievement Types
+
+    [Serializable]
+    public class Achievement
+    {
+        [JsonProperty("id")]
+        public string Id { get; set; }
+
+        [JsonProperty("name")]
+        public string Name { get; set; }
+
+        [JsonProperty("description")]
+        public string Description { get; set; }
+
+        [JsonProperty("icon_url")]
+        public string IconUrl { get; set; }
+
+        [JsonProperty("points")]
+        public int Points { get; set; }
+
+        [JsonProperty("progress")]
+        public int Progress { get; set; }
+
+        [JsonProperty("target")]
+        public int Target { get; set; }
+
+        [JsonProperty("unlocked")]
+        public bool Unlocked { get; set; }
+
+        [JsonProperty("unlocked_at")]
+        public string UnlockedAt { get; set; }
+    }
+
+    [Serializable]
+    public class AchievementProgress
+    {
+        [JsonProperty("progress")]
+        public int Progress { get; set; }
+    }
+
+    #endregion
+}

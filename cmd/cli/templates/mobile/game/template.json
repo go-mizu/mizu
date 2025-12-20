@@ -1,0 +1,12 @@
+{
+  "name": "mobile/game",
+  "description": "Unity game with C#, UniTask, and Mizu backend integration",
+  "tags": ["mizu", "mobile", "game", "unity", "csharp", "cross-platform"],
+  "variables": {
+    "name": { "description": "Project name", "default": "" },
+    "mode": { "description": "Game mode: 2d, 3d", "default": "2d" },
+    "platforms": { "description": "Target platforms (ios,android,webgl,windows,macos,linux)", "default": "ios,android" },
+    "multiplayer": { "description": "Enable multiplayer support", "default": "false" },
+    "analytics": { "description": "Enable analytics integration", "default": "true" }
+  }
+}

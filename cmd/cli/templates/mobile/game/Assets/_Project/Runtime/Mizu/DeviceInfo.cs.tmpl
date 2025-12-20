@@ -1,0 +1,79 @@
+using System;
+using System.Globalization;
+using UnityEngine;
+
+namespace {{.Name}}.Mizu
+{
+    /// <summary>
+    /// Device information for mobile headers
+    /// </summary>
+    public class DeviceInfo
+    {
+        private string _deviceId;
+
+        /// <summary>
+        /// Unique device identifier
+        /// </summary>
+        public string DeviceId
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(_deviceId))
+                {
+                    _deviceId = SystemInfo.deviceUniqueIdentifier;
+                }
+                return _deviceId;
+            }
+        }
+
+        /// <summary>
+        /// Application version
+        /// </summary>
+        public string AppVersion => Application.version;
+
+        /// <summary>
+        /// Application build number
+        /// </summary>
+        public string AppBuild => Application.version; // Use build number if available
+
+        /// <summary>
+        /// Device model
+        /// </summary>
+        public string Model => SystemInfo.deviceModel;
+
+        /// <summary>
+        /// Platform name
+        /// </summary>
+        public string Platform
+        {
+            get
+            {
+                return Application.platform switch
+                {
+                    RuntimePlatform.Android => "android",
+                    RuntimePlatform.IPhonePlayer => "ios",
+                    RuntimePlatform.OSXPlayer or RuntimePlatform.OSXEditor => "macos",
+                    RuntimePlatform.WindowsPlayer or RuntimePlatform.WindowsEditor => "windows",
+                    RuntimePlatform.LinuxPlayer or RuntimePlatform.LinuxEditor => "linux",
+                    RuntimePlatform.WebGLPlayer => "webgl",
+                    _ => "unknown"
+                };
+            }
+        }
+
+        /// <summary>
+        /// Operating system version
+        /// </summary>
+        public string OsVersion => SystemInfo.operatingSystem;
+
+        /// <summary>
+        /// Current timezone
+        /// </summary>
+        public string Timezone => TimeZoneInfo.Local.Id;
+
+        /// <summary>
+        /// Current locale
+        /// </summary>
+        public string Locale => CultureInfo.CurrentCulture.Name;
+    }
+}

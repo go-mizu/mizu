@@ -1,0 +1,211 @@
+using System;
+using Cysharp.Threading.Tasks;
+using UnityEngine;
+using {{.Name}}.Mizu;
+using {{.Name}}.SDK;
+using {{.Name}}.Services;
+
+namespace {{.Name}}.Game
+{
+    /// <summary>
+    /// Main game manager singleton
+    /// </summary>
+    public class GameManager : MonoBehaviour
+    {
+        public static GameManager Instance { get; private set; }
+
+        [Header("Configuration")]
+        [SerializeField] private bool _autoInitialize = true;
+        [SerializeField] private string _baseUrl = "http://localhost:3000";
+
+        /// <summary>
+        /// Mizu runtime
+        /// </summary>
+        public MizuRuntime Runtime { get; private set; }
+
+        /// <summary>
+        /// Game client
+        /// </summary>
+        public GameClient Client { get; private set; }
+
+        /// <summary>
+        /// Authentication service
+        /// </summary>
+        public AuthService Auth { get; private set; }
+
+        /// <summary>
+        /// Leaderboard service
+        /// </summary>
+        public LeaderboardService Leaderboards { get; private set; }
+
+        /// <summary>
+        /// Achievement service
+        /// </summary>
+        public AchievementService Achievements { get; private set; }
+
+        /// <summary>
+        /// Analytics service
+        /// </summary>
+        public AnalyticsService Analytics { get; private set; }
+
+        /// <summary>
+        /// Current game state
+        /// </summary>
+        public GameState State { get; private set; } = GameState.Loading;
+
+        /// <summary>
+        /// Event fired when game state changes
+        /// </summary>
+        public event Action<GameState> OnStateChanged;
+
+        private void Awake()
+        {
+            if (Instance != null && Instance != this)
+            {
+                Destroy(gameObject);
+                return;
+            }
+
+            Instance = this;
+            DontDestroyOnLoad(gameObject);
+
+            if (_autoInitialize)
+            {
+                Initialize();
+            }
+        }
+
+        /// <summary>
+        /// Initialize the game manager
+        /// </summary>
+        public void Initialize()
+        {
+            // Initialize Mizu runtime
+            Runtime = MizuRuntime.Shared;
+            Runtime.Initialize(_baseUrl);
+
+            // Initialize services
+            Client = new GameClient(Runtime);
+            Auth = new AuthService(Client);
+            Leaderboards = new LeaderboardService(Client);
+            Achievements = new AchievementService(Client);
+            Analytics = new AnalyticsService();
+
+            // Track game start
+            Analytics.TrackGameStart();
+
+            // Subscribe to auth changes
+            Runtime.OnAuthStateChanged += OnAuthStateChanged;
+
+            SetState(GameState.MainMenu);
+        }
+
+        private void OnAuthStateChanged(bool isAuthenticated)
+        {
+            Debug.Log($"[GameManager] Auth state changed: {isAuthenticated}");
+        }
+
+        /// <summary>
+        /// Set the current game state
+        /// </summary>
+        public void SetState(GameState state)
+        {
+            if (State == state) return;
+            State = state;
+            OnStateChanged?.Invoke(state);
+        }
+
+        /// <summary>
+        /// Start the game
+        /// </summary>
+        public async UniTask StartGameAsync()
+        {
+            SetState(GameState.Loading);
+
+            // Load game scene
+            await SceneLoader.LoadSceneAsync("Game");
+
+            SetState(GameState.Playing);
+        }
+
+        /// <summary>
+        /// Pause the game
+        /// </summary>
+        public void PauseGame()
+        {
+            if (State != GameState.Playing) return;
+            Time.timeScale = 0f;
+            SetState(GameState.Paused);
+        }
+
+        /// <summary>
+        /// Resume the game
+        /// </summary>
+        public void ResumeGame()
+        {
+            if (State != GameState.Paused) return;
+            Time.timeScale = 1f;
+            SetState(GameState.Playing);
+        }
+
+        /// <summary>
+        /// End the game
+        /// </summary>
+        public async UniTask EndGameAsync(int score)
+        {
+            SetState(GameState.GameOver);
+
+            // Submit score
+            try
+            {
+                await Leaderboards.SubmitScoreAsync("main", score);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"Failed to submit score: {e.Message}");
+            }
+
+            // Track analytics
+            Analytics.Track("game_over", new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["score"] = score
+            });
+        }
+
+        /// <summary>
+        /// Return to main menu
+        /// </summary>
+        public async UniTask ReturnToMainMenuAsync()
+        {
+            Time.timeScale = 1f;
+            SetState(GameState.Loading);
+            await SceneLoader.LoadSceneAsync("MainMenu");
+            SetState(GameState.MainMenu);
+        }
+
+        private void OnApplicationPause(bool pauseStatus)
+        {
+            if (pauseStatus && State == GameState.Playing)
+            {
+                PauseGame();
+            }
+        }
+
+        private void OnApplicationQuit()
+        {
+            Analytics.FlushAsync().Forget();
+        }
+    }
+
+    /// <summary>
+    /// Game state enum
+    /// </summary>
+    public enum GameState
+    {
+        Loading,
+        MainMenu,
+        Playing,
+        Paused,
+        GameOver
+    }
+}

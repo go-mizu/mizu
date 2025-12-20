@@ -1,0 +1,79 @@
+using System;
+using Cysharp.Threading.Tasks;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+
+namespace {{.Name}}.Game
+{
+    /// <summary>
+    /// Scene loading utilities
+    /// </summary>
+    public static class SceneLoader
+    {
+        /// <summary>
+        /// Event fired when scene loading starts
+        /// </summary>
+        public static event Action<string> OnSceneLoadStarted;
+
+        /// <summary>
+        /// Event fired when scene loading progress updates
+        /// </summary>
+        public static event Action<float> OnSceneLoadProgress;
+
+        /// <summary>
+        /// Event fired when scene loading completes
+        /// </summary>
+        public static event Action<string> OnSceneLoadCompleted;
+
+        /// <summary>
+        /// Load a scene asynchronously
+        /// </summary>
+        public static async UniTask LoadSceneAsync(
+            string sceneName,
+            LoadSceneMode mode = LoadSceneMode.Single,
+            bool showLoading = true)
+        {
+            OnSceneLoadStarted?.Invoke(sceneName);
+
+            if (showLoading)
+            {
+                // Load loading scene first
+                await SceneManager.LoadSceneAsync("Loading", LoadSceneMode.Additive);
+            }
+
+            var operation = SceneManager.LoadSceneAsync(sceneName, mode);
+            operation.allowSceneActivation = false;
+
+            while (operation.progress < 0.9f)
+            {
+                OnSceneLoadProgress?.Invoke(operation.progress);
+                await UniTask.Yield();
+            }
+
+            OnSceneLoadProgress?.Invoke(1f);
+
+            // Wait a moment before activating
+            await UniTask.Delay(500);
+
+            operation.allowSceneActivation = true;
+            await UniTask.WaitUntil(() => operation.isDone);
+
+            if (showLoading)
+            {
+                // Unload loading scene
+                await SceneManager.UnloadSceneAsync("Loading");
+            }
+
+            OnSceneLoadCompleted?.Invoke(sceneName);
+        }
+
+        /// <summary>
+        /// Reload the current scene
+        /// </summary>
+        public static async UniTask ReloadCurrentSceneAsync()
+        {
+            var currentScene = SceneManager.GetActiveScene().name;
+            await LoadSceneAsync(currentScene);
+        }
+    }
+}

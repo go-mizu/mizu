@@ -1,0 +1,219 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Net.Http;
+using System.Threading;
+using Cysharp.Threading.Tasks;
+using UnityEngine;
+
+namespace {{.Name}}.Mizu
+{
+    /// <summary>
+    /// Server-sent event
+    /// </summary>
+    public class ServerEvent
+    {
+        public string Id { get; set; }
+        public string Event { get; set; }
+        public string Data { get; set; }
+        public int? Retry { get; set; }
+
+        /// <summary>
+        /// Decodes the event data as JSON
+        /// </summary>
+        public T Decode<T>()
+        {
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<T>(Data);
+        }
+    }
+
+    /// <summary>
+    /// Live connection manager for SSE
+    /// </summary>
+    public class LiveConnection
+    {
+        private readonly MizuRuntime _runtime;
+        private readonly Dictionary<string, CancellationTokenSource> _activeConnections = new();
+        private HttpClient _httpClient;
+
+        public LiveConnection(MizuRuntime runtime)
+        {
+            _runtime = runtime;
+            _httpClient = new HttpClient { Timeout = TimeSpan.FromMilliseconds(Timeout.Infinite) };
+        }
+
+        /// <summary>
+        /// Connects to an SSE endpoint
+        /// </summary>
+        public async IAsyncEnumerable<ServerEvent> ConnectAsync(
+            string path,
+            Dictionary<string, string> headers = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _activeConnections[path] = cts;
+
+            var url = BuildUrl(path);
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+
+            // Add headers
+            foreach (var header in _runtime.DefaultHeaders)
+            {
+                request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+
+            var token = _runtime.TokenStore.GetToken();
+            if (token != null)
+            {
+                request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {token.AccessToken}");
+            }
+
+            if (headers != null)
+            {
+                foreach (var header in headers)
+                {
+                    request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                }
+            }
+
+            request.Headers.TryAddWithoutValidation("Accept", "text/event-stream");
+            request.Headers.TryAddWithoutValidation("Cache-Control", "no-cache");
+
+            HttpResponseMessage response = null;
+            Stream stream = null;
+            StreamReader reader = null;
+
+            try
+            {
+                response = await _httpClient.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    cts.Token);
+
+                response.EnsureSuccessStatusCode();
+                stream = await response.Content.ReadAsStreamAsync();
+                reader = new StreamReader(stream);
+
+                var eventBuilder = new SSEEventBuilder();
+
+                while (!cts.Token.IsCancellationRequested && !reader.EndOfStream)
+                {
+                    var line = await reader.ReadLineAsync();
+                    if (line == null) break;
+
+                    var serverEvent = eventBuilder.ProcessLine(line);
+                    if (serverEvent != null)
+                    {
+                        yield return serverEvent;
+                    }
+                }
+            }
+            finally
+            {
+                _activeConnections.Remove(path);
+                reader?.Dispose();
+                stream?.Dispose();
+                response?.Dispose();
+                cts.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Disconnects from a specific path
+        /// </summary>
+        public void Disconnect(string path)
+        {
+            if (_activeConnections.TryGetValue(path, out var cts))
+            {
+                cts.Cancel();
+                _activeConnections.Remove(path);
+            }
+        }
+
+        /// <summary>
+        /// Disconnects all active connections
+        /// </summary>
+        public void DisconnectAll()
+        {
+            foreach (var cts in _activeConnections.Values)
+            {
+                cts.Cancel();
+            }
+            _activeConnections.Clear();
+        }
+
+        private string BuildUrl(string path)
+        {
+            var baseUrl = _runtime.BaseUrl.TrimEnd('/');
+            var cleanPath = path.StartsWith("/") ? path : $"/{path}";
+            return $"{baseUrl}{cleanPath}";
+        }
+    }
+
+    /// <summary>
+    /// SSE event parser
+    /// </summary>
+    internal class SSEEventBuilder
+    {
+        private string _id;
+        private string _event;
+        private List<string> _data = new();
+        private int? _retry;
+
+        public ServerEvent ProcessLine(string line)
+        {
+            if (string.IsNullOrEmpty(line))
+            {
+                // Empty line means end of event
+                if (_data.Count == 0) return null;
+
+                var serverEvent = new ServerEvent
+                {
+                    Id = _id,
+                    Event = _event,
+                    Data = string.Join("\n", _data),
+                    Retry = _retry
+                };
+
+                // Reset for next event (keep id for Last-Event-ID)
+                _event = null;
+                _data.Clear();
+                _retry = null;
+
+                return serverEvent;
+            }
+
+            if (line.StartsWith(":"))
+            {
+                // Comment, ignore
+                return null;
+            }
+
+            var colonIndex = line.IndexOf(':');
+            if (colonIndex == -1) return null;
+
+            var field = line.Substring(0, colonIndex);
+            var value = colonIndex + 1 < line.Length ? line.Substring(colonIndex + 1) : string.Empty;
+            if (value.StartsWith(" ")) value = value.Substring(1);
+
+            switch (field)
+            {
+                case "id":
+                    _id = value;
+                    break;
+                case "event":
+                    _event = value;
+                    break;
+                case "data":
+                    _data.Add(value);
+                    break;
+                case "retry":
+                    if (int.TryParse(value, out var retry))
+                        _retry = retry;
+                    break;
+            }
+
+            return null;
+        }
+    }
+}

@@ -1,0 +1,70 @@
+using System.Collections.Generic;
+using System.Threading;
+using Cysharp.Threading.Tasks;
+using {{.Name}}.SDK;
+
+namespace {{.Name}}.Services
+{
+    /// <summary>
+    /// Achievement service
+    /// </summary>
+    public class AchievementService
+    {
+        private readonly GameClient _client;
+        private readonly Dictionary<string, Achievement> _cachedAchievements = new();
+
+        public AchievementService(GameClient client)
+        {
+            _client = client;
+        }
+
+        /// <summary>
+        /// Get all achievements
+        /// </summary>
+        public async UniTask<List<Achievement>> GetAchievementsAsync(
+            CancellationToken cancellationToken = default)
+        {
+            var achievements = await _client.GetAchievementsAsync(cancellationToken);
+            foreach (var achievement in achievements)
+            {
+                _cachedAchievements[achievement.Id] = achievement;
+            }
+            return achievements;
+        }
+
+        /// <summary>
+        /// Unlock an achievement
+        /// </summary>
+        public async UniTask<Achievement> UnlockAsync(
+            string achievementId,
+            CancellationToken cancellationToken = default)
+        {
+            var achievement = await _client.UnlockAchievementAsync(achievementId, cancellationToken);
+            _cachedAchievements[achievement.Id] = achievement;
+            return achievement;
+        }
+
+        /// <summary>
+        /// Update achievement progress
+        /// </summary>
+        public async UniTask<Achievement> UpdateProgressAsync(
+            string achievementId,
+            int progress,
+            CancellationToken cancellationToken = default)
+        {
+            var achievement = await _client.UpdateAchievementProgressAsync(
+                achievementId, progress, cancellationToken);
+            _cachedAchievements[achievement.Id] = achievement;
+            return achievement;
+        }
+
+        /// <summary>
+        /// Get player's unlocked achievements
+        /// </summary>
+        public async UniTask<List<Achievement>> GetUnlockedAsync(
+            CancellationToken cancellationToken = default)
+        {
+            return await _client.GetUnlockedAchievementsAsync(cancellationToken);
+        }
+    }
+}
