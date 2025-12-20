@@ -1,0 +1,31 @@
+package {{.Package}}.runtime
+
+import platform.Foundation.*
+import platform.UIKit.*
+
+actual fun currentTimeMillis(): Long =
+    (NSDate().timeIntervalSince1970 * 1000).toLong()
+
+actual class PlatformDeviceInfo : DeviceInfo {
+    override val deviceId: String by lazy {
+        UIDevice.currentDevice.identifierForVendor?.UUIDString ?: ""
+    }
+
+    override val appVersion: String by lazy {
+        NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String ?: "1.0.0"
+    }
+
+    override val appBuild: String by lazy {
+        NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleVersion") as? String ?: "1"
+    }
+
+    override val model: String = UIDevice.currentDevice.model
+
+    override val platform: String = "ios"
+
+    override val osVersion: String = UIDevice.currentDevice.systemVersion
+
+    override val timezone: String = NSTimeZone.localTimeZone.name
+
+    override val locale: String = NSLocale.currentLocale.localeIdentifier
+}

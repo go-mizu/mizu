@@ -1,0 +1,45 @@
+import SwiftUI
+import shared
+
+struct HomeScreen: View {
+    @ObservedObject var viewModel: AppViewModel
+    @State private var isLoading = false
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer()
+
+            Circle()
+                .fill(Color.indigo.opacity(0.1))
+                .frame(width: 64, height: 64)
+                .overlay(
+                    Text("✓")
+                        .font(.largeTitle)
+                        .foregroundColor(.indigo)
+                )
+
+            Text("Welcome to {{.Name}}")
+                .font(.title)
+                .fontWeight(.bold)
+
+            Text("Connected to Mizu backend")
+                .foregroundColor(.secondary)
+
+            Spacer()
+
+            if isLoading {
+                ProgressView()
+            } else {
+                Button("Sign Out") {
+                    Task {
+                        isLoading = true
+                        defer { isLoading = false }
+                        await viewModel.signOut()
+                    }
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding()
+    }
+}

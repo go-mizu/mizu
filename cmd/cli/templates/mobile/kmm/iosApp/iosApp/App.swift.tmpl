@@ -1,0 +1,30 @@
+import SwiftUI
+import shared
+
+@main
+struct {{.Name}}iOSApp: App {
+    init() {
+        // Initialize Mizu runtime
+        #if DEBUG
+        MizuRuntime.companion.initialize(
+            baseUrl: "http://localhost:3000",
+            timeout: 30_000,
+            tokenStore: IOSTokenStore(),
+            deviceInfo: PlatformDeviceInfo()
+        )
+        #else
+        MizuRuntime.companion.initialize(
+            baseUrl: "https://api.example.com",
+            timeout: 30_000,
+            tokenStore: IOSTokenStore(),
+            deviceInfo: PlatformDeviceInfo()
+        )
+        #endif
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}

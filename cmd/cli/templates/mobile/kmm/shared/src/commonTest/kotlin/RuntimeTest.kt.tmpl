@@ -1,0 +1,76 @@
+package {{.Package}}
+
+import {{.Package}}.runtime.*
+import kotlin.test.*
+
+class RuntimeTest {
+    @Test
+    fun inMemoryTokenStore_returnsNullWhenNoTokenStored() {
+        val store = InMemoryTokenStore()
+        assertNull(store.getToken())
+    }
+
+    @Test
+    fun inMemoryTokenStore_storesAndRetrievesToken() = runBlocking {
+        val store = InMemoryTokenStore()
+        val token = AuthToken(
+            accessToken = "test123",
+            refreshToken = "refresh456"
+        )
+
+        store.setToken(token)
+        val retrieved = store.getToken()
+
+        assertNotNull(retrieved)
+        assertEquals("test123", retrieved.accessToken)
+        assertEquals("refresh456", retrieved.refreshToken)
+    }
+
+    @Test
+    fun inMemoryTokenStore_clearsToken() = runBlocking {
+        val store = InMemoryTokenStore()
+        val token = AuthToken(accessToken = "test123")
+
+        store.setToken(token)
+        store.clearToken()
+
+        assertNull(store.getToken())
+    }
+
+    @Test
+    fun inMemoryTokenStore_notifiesObserversOnTokenChange() = runBlocking {
+        val store = InMemoryTokenStore()
+        var notifiedToken: AuthToken? = null
+        store.addObserver { token -> notifiedToken = token }
+
+        val token = AuthToken(accessToken = "test123")
+        store.setToken(token)
+
+        assertNotNull(notifiedToken)
+        assertEquals("test123", notifiedToken?.accessToken)
+    }
+
+    @Test
+    fun authToken_isExpiredReturnsFalseWhenNoExpiry() {
+        val token = AuthToken(accessToken = "test")
+        assertFalse(token.isExpired)
+    }
+
+    @Test
+    fun mizuError_createsNetworkError() {
+        val error = MizuError.Network("Connection failed")
+        assertTrue(error.isNetwork)
+        assertEquals("Connection failed", error.message)
+    }
+
+    @Test
+    fun mizuError_createsApiError() {
+        val apiError = ApiError(code = "test_error", message = "Test message")
+        val error = MizuError.Api(apiError)
+        assertTrue(error.isApi)
+        assertEquals("test_error", (error as MizuError.Api).error.code)
+    }
+}
+
+// Simple runBlocking for tests
+expect fun <T> runBlocking(block: suspend () -> T): T

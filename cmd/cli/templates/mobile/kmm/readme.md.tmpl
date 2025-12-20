@@ -1,0 +1,125 @@
+# {{.Name}}
+
+A Kotlin Multiplatform Mobile application with Mizu backend integration.
+
+## Project Structure
+
+```
+{{.Name}}/
+├── shared/                    # Shared Kotlin Multiplatform code
+│   └── src/
+│       ├── commonMain/        # Common code for all platforms
+│       ├── androidMain/       # Android-specific implementations
+│       └── iosMain/           # iOS-specific implementations
+├── androidApp/                # Android application (Jetpack Compose)
+└── iosApp/                    # iOS application (SwiftUI)
+```
+
+## Prerequisites
+
+- JDK 17+
+- Android Studio Hedgehog (2023.1.1) or later
+- Xcode 15+ (for iOS development)
+- CocoaPods (for iOS dependencies)
+
+## Getting Started
+
+### Android
+
+1. Open the project in Android Studio
+2. Select the `androidApp` configuration
+3. Run on an emulator or device
+
+```bash
+./gradlew :androidApp:assembleDebug
+```
+
+### iOS
+
+1. Build the shared framework:
+   ```bash
+   ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64
+   ```
+
+2. Open `iosApp/iosApp.xcodeproj` in Xcode
+
+3. Run on a simulator or device
+
+## Shared Code
+
+The `shared` module contains:
+
+- **runtime/** - MizuRuntime for API communication
+  - `MizuRuntime.kt` - Core HTTP client
+  - `TokenStore.kt` - Secure token storage interface
+  - `DeviceInfo.kt` - Device information interface
+  - `MizuError.kt` - Error types
+  - `LiveConnection.kt` - SSE streaming
+
+- **sdk/** - Generated API client
+  - `Client.kt` - Type-safe API methods
+  - `Types.kt` - Request/response models
+
+## Platform Implementations
+
+### Android (`shared/src/androidMain/`)
+- `AndroidTokenStore.kt` - EncryptedSharedPreferences
+- `AndroidDeviceInfo.kt` - Android device information
+
+### iOS (`shared/src/iosMain/`)
+- `IOSTokenStore.kt` - Keychain storage
+- `Platform.ios.kt` - iOS device information
+
+## Dependencies
+
+- **Ktor** - HTTP client
+- **Kotlin Serialization** - JSON serialization
+- **Kotlin Coroutines** - Async programming
+- **Jetpack Compose** - Android UI (Material 3)
+- **SwiftUI** - iOS UI
+
+## Configuration
+
+### API Base URL
+
+Update the base URL in:
+- Android: `androidApp/.../App.kt`
+- iOS: `iosApp/.../App.swift`
+
+```kotlin
+// Android (Debug)
+MizuRuntime.initialize(
+    baseUrl = "http://10.0.2.2:3000"  // Localhost from emulator
+)
+
+// Android (Release)
+MizuRuntime.initialize(
+    baseUrl = "https://api.example.com"
+)
+```
+
+## Build Commands
+
+```bash
+# Build Android APK
+./gradlew :androidApp:assembleDebug
+
+# Build shared framework for iOS Simulator
+./gradlew :shared:linkDebugFrameworkIosSimulatorArm64
+
+# Build shared framework for iOS Device
+./gradlew :shared:linkDebugFrameworkIosArm64
+
+# Run all tests
+./gradlew test
+
+# Clean build
+./gradlew clean
+```
+
+## Resources
+
+- [Kotlin Multiplatform](https://kotlinlang.org/docs/multiplatform.html)
+- [Ktor Client](https://ktor.io/docs/getting-started-ktor-client.html)
+- [Jetpack Compose](https://developer.android.com/jetpack/compose)
+- [SwiftUI](https://developer.apple.com/documentation/swiftui/)

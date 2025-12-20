@@ -1,0 +1,21 @@
+import SwiftUI
+import shared
+
+struct ContentView: View {
+    @StateObject private var viewModel = AppViewModel()
+
+    var body: some View {
+        Group {
+            if viewModel.isAuthenticated {
+                HomeScreen(viewModel: viewModel)
+            } else {
+                WelcomeScreen(viewModel: viewModel)
+            }
+        }
+        .animation(.easeInOut, value: viewModel.isAuthenticated)
+    }
+}
+
+#Preview {
+    ContentView()
+}

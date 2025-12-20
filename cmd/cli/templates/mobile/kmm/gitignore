@@ -1,0 +1,66 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+*.ipr
+*.iws
+local.properties
+
+# Kotlin
+*.class
+*.log
+*.ctxt
+.mtj.tmp/
+
+# Android
+*.apk
+*.ap_
+*.aab
+*.dex
+/captures
+*.externalNativeBuild
+.cxx/
+
+# iOS
+iosApp/Pods/
+iosApp/.symlinks/
+iosApp/build/
+*.xcuserdata
+*.xcworkspace
+!*.xcworkspace/contents.xcworkspacedata
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# macOS
+.DS_Store
+*.swp
+*~.nib
+
+# Xcode
+DerivedData/
+*.moved-aside
+*.xccheckout
+*.xcscmblueprint
+
+# Dependencies
+node_modules/
+
+# Build outputs
+/out/
+
+# Environment
+.env
+.env.local
+.env.*.local

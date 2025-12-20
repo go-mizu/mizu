@@ -1,0 +1,87 @@
+package {{.Package}}.runtime
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Stored authentication token
+ */
+@Serializable
+data class AuthToken(
+    val accessToken: String,
+    val refreshToken: String? = null,
+    val expiresAt: Long? = null,
+    val tokenType: String = "Bearer"
+) {
+    val isExpired: Boolean
+        get() = expiresAt?.let { currentTimeMillis() >= it } ?: false
+}
+
+/**
+ * Creates an auth token
+ */
+fun createAuthToken(
+    accessToken: String,
+    refreshToken: String? = null,
+    expiresInSeconds: Long? = null,
+    tokenType: String = "Bearer"
+): AuthToken {
+    val expiresAt = expiresInSeconds?.let { currentTimeMillis() + (it * 1000) }
+    return AuthToken(accessToken, refreshToken, expiresAt, tokenType)
+}
+
+typealias TokenObserver = (AuthToken?) -> Unit
+
+/**
+ * Token storage interface
+ */
+interface TokenStore {
+    /** Gets the current token */
+    fun getToken(): AuthToken?
+
+    /** Sets the token */
+    suspend fun setToken(token: AuthToken)
+
+    /** Clears the token */
+    suspend fun clearToken()
+
+    /** Adds an observer for token changes */
+    fun addObserver(observer: TokenObserver)
+
+    /** Removes an observer */
+    fun removeObserver(observer: TokenObserver)
+}
+
+/**
+ * In-memory token store for testing
+ */
+class InMemoryTokenStore : TokenStore {
+    private var token: AuthToken? = null
+    private val observers = mutableListOf<TokenObserver>()
+
+    override fun getToken(): AuthToken? = token
+
+    override suspend fun setToken(token: AuthToken) {
+        this.token = token
+        notifyObservers(token)
+    }
+
+    override suspend fun clearToken() {
+        token = null
+        notifyObservers(null)
+    }
+
+    override fun addObserver(observer: TokenObserver) {
+        observers.add(observer)
+    }
+
+    override fun removeObserver(observer: TokenObserver) {
+        observers.remove(observer)
+    }
+
+    private fun notifyObservers(token: AuthToken?) {
+        observers.forEach { it(token) }
+    }
+}
+
+// Expect/actual for platform-specific time
+expect fun currentTimeMillis(): Long

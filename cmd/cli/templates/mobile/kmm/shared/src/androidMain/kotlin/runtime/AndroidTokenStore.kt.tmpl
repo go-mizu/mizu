@@ -1,0 +1,73 @@
+package {{.Package}}.runtime
+
+import android.content.Context
+import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+
+/**
+ * Android secure storage-backed token storage
+ */
+class AndroidTokenStore(context: Context) : TokenStore {
+    private val masterKey = MasterKey.Builder(context)
+        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+        .build()
+
+    private val prefs: SharedPreferences = EncryptedSharedPreferences.create(
+        context,
+        "mizu_secure_prefs",
+        masterKey,
+        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+    )
+
+    private val observers = mutableListOf<TokenObserver>()
+    private val json = Json { ignoreUnknownKeys = true }
+
+    override fun getToken(): AuthToken? {
+        val tokenJson = prefs.getString(TOKEN_KEY, null) ?: return null
+        return try {
+            json.decodeFromString(tokenJson)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    override suspend fun setToken(token: AuthToken) {
+        withContext(Dispatchers.IO) {
+            prefs.edit()
+                .putString(TOKEN_KEY, json.encodeToString(token))
+                .apply()
+        }
+        notifyObservers(token)
+    }
+
+    override suspend fun clearToken() {
+        withContext(Dispatchers.IO) {
+            prefs.edit()
+                .remove(TOKEN_KEY)
+                .apply()
+        }
+        notifyObservers(null)
+    }
+
+    override fun addObserver(observer: TokenObserver) {
+        observers.add(observer)
+    }
+
+    override fun removeObserver(observer: TokenObserver) {
+        observers.remove(observer)
+    }
+
+    private fun notifyObservers(token: AuthToken?) {
+        observers.forEach { it(token) }
+    }
+
+    companion object {
+        private const val TOKEN_KEY = "mizu_auth_token"
+    }
+}

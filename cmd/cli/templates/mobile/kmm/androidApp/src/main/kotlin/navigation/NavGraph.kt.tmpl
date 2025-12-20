@@ -1,0 +1,46 @@
+package {{.Package}}.android.navigation
+
+import androidx.compose.runtime.*
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import {{.Package}}.android.screens.HomeScreen
+import {{.Package}}.android.screens.WelcomeScreen
+import {{.Package}}.runtime.MizuRuntime
+
+sealed class Screen(val route: String) {
+    object Welcome : Screen("welcome")
+    object Home : Screen("home")
+}
+
+@Composable
+fun NavGraph() {
+    val navController = rememberNavController()
+    val isAuthenticated by MizuRuntime.shared.isAuthenticated.collectAsState()
+
+    val startDestination = if (isAuthenticated) Screen.Home.route else Screen.Welcome.route
+
+    NavHost(
+        navController = navController,
+        startDestination = startDestination
+    ) {
+        composable(Screen.Welcome.route) {
+            WelcomeScreen(
+                onNavigateToHome = {
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo(Screen.Welcome.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+        composable(Screen.Home.route) {
+            HomeScreen(
+                onNavigateToWelcome = {
+                    navController.navigate(Screen.Welcome.route) {
+                        popUpTo(Screen.Home.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+    }
+}

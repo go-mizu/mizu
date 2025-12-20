@@ -1,0 +1,36 @@
+package {{.Package}}.android
+
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import {{.Package}}.android.navigation.NavGraph
+import {{.Package}}.android.theme.{{.Name}}Theme
+import {{.Package}}.runtime.AndroidDeviceInfo
+import {{.Package}}.runtime.AndroidTokenStore
+import {{.Package}}.runtime.MizuRuntime
+
+@Composable
+fun {{.Name}}App() {
+    val context = LocalContext.current
+
+    // Initialize runtime
+    LaunchedEffect(Unit) {
+        MizuRuntime.initialize(
+            baseUrl = if (BuildConfig.DEBUG) "http://10.0.2.2:3000" else "https://api.example.com",
+            tokenStore = AndroidTokenStore(context),
+            deviceInfo = AndroidDeviceInfo(context)
+        )
+    }
+
+    {{.Name}}Theme {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            NavGraph()
+        }
+    }
+}
