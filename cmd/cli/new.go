@@ -10,6 +10,7 @@ import (
 
 var newFlags struct {
 	template string
+	sub      string
 	list     bool
 	force    bool
 	dryRun   bool
@@ -32,6 +33,9 @@ If no path is specified, the current directory is used.`,
   # Create API project in new directory
   mizu new ./myapp --template api
 
+  # Create React SPA project using sub-template
+  mizu new ./myapp --template frontend/spa --sub react
+
   # Preview what would be created
   mizu new ./myapp --template api --dry-run
 
@@ -43,6 +47,7 @@ If no path is specified, the current directory is used.`,
 
 func init() {
 	newCmd.Flags().StringVarP(&newFlags.template, "template", "t", "", "Template to render")
+	newCmd.Flags().StringVarP(&newFlags.sub, "sub", "s", "", "Sub-template to use (e.g., react, vue)")
 	newCmd.Flags().BoolVar(&newFlags.list, "list", false, "List available templates")
 	newCmd.Flags().BoolVar(&newFlags.force, "force", false, "Overwrite existing files")
 	newCmd.Flags().BoolVar(&newFlags.dryRun, "dry-run", false, "Print plan without writing")
@@ -71,15 +76,21 @@ func runNewCmd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("template is required")
 	}
 
+	// Resolve template name with sub-template
+	templateName := newFlags.template
+	if err := resolveSubTemplate(&templateName, newFlags.sub, out); err != nil {
+		return err
+	}
+
 	// Check template exists
-	if !templateExists(newFlags.template) {
+	if !templateExists(templateName) {
 		if Flags.JSON {
-			out.WriteJSONError("unknown_template", fmt.Sprintf("unknown template: %s", newFlags.template))
+			out.WriteJSONError("unknown_template", fmt.Sprintf("unknown template: %s", templateName))
 		} else {
-			out.PrintError("unknown template %q", newFlags.template)
+			out.PrintError("unknown template %q", templateName)
 			out.Print("Run 'mizu new --list' to see available templates.\n")
 		}
-		return fmt.Errorf("unknown template: %s", newFlags.template)
+		return fmt.Errorf("unknown template: %s", templateName)
 	}
 
 	// Get target path (positional argument or current dir)
@@ -123,7 +134,7 @@ func runNewCmd(cmd *cobra.Command, args []string) error {
 	vars := newTemplateVars(projectName, modulePath, newFlags.license, customVars)
 
 	// Build plan
-	p, err := buildPlan(newFlags.template, absPath, vars)
+	p, err := buildPlan(templateName, absPath, vars)
 	if err != nil {
 		if Flags.JSON {
 			out.WriteJSONError("plan_error", err.Error())
@@ -177,7 +188,7 @@ func runNewCmd(cmd *cobra.Command, args []string) error {
 	if Flags.JSON {
 		out.WriteJSON(p.toJSON())
 	} else {
-		out.Print("Created %s from template %s\n", out.Cyan(targetPath), out.Bold(newFlags.template))
+		out.Print("Created %s from template %s\n", out.Cyan(targetPath), out.Bold(templateName))
 		out.Print("  %d %s, %d %s\n",
 			mkdir, pluralize(mkdir, "directory", "directories"),
 			write, pluralize(write, "file", "files"))
@@ -210,7 +221,16 @@ func listTemplatesCommand(out *Output) error {
 	// Human output
 	tbl := newTable("Template", "Purpose")
 	for _, t := range templates {
-		tbl.addRow(t.Name, t.Description)
+		desc := t.Description
+		if len(t.SubTemplates) > 0 {
+			// Add sub-template names to description
+			var names []string
+			for _, st := range t.SubTemplates {
+				names = append(names, st.Name)
+			}
+			desc += " (--sub: " + strings.Join(names, ", ") + ")"
+		}
+		tbl.addRow(t.Name, desc)
 	}
 	tbl.write(out.Stdout)
 
@@ -266,4 +286,66 @@ func buildPlan(templateName, root string, vars templateVars) (*plan, error) {
 
 	p.sort()
 	return p, nil
+}
+
+// resolveSubTemplate checks if a template requires a sub-template and validates the selection.
+// If --sub is provided, it appends the sub-template to the template name.
+// If the template has subTemplates but --sub is not provided, it returns an error.
+func resolveSubTemplate(templateName *string, sub string, out *Output) error {
+	meta, err := loadTemplateMeta(*templateName)
+	if err != nil {
+		return nil // Let templateExists handle this
+	}
+
+	// If template has sub-templates
+	if len(meta.SubTemplates) > 0 {
+		if sub == "" {
+			// No sub-template provided, show available options
+			if Flags.JSON {
+				out.WriteJSONError("missing_sub", fmt.Sprintf("template %q requires --sub flag", *templateName))
+			} else {
+				out.PrintError("template %q requires --sub flag", *templateName)
+				out.Print("Available sub-templates:\n")
+				for _, st := range meta.SubTemplates {
+					out.Print("  %s - %s\n", st.Name, st.Description)
+				}
+				out.Print("\nExample: mizu new ./myapp --template %s --sub %s\n", *templateName, meta.SubTemplates[0].Name)
+			}
+			return fmt.Errorf("missing sub-template")
+		}
+
+		// Validate the sub-template exists
+		valid := false
+		for _, st := range meta.SubTemplates {
+			if st.Name == sub {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			if Flags.JSON {
+				out.WriteJSONError("invalid_sub", fmt.Sprintf("invalid sub-template %q for %s", sub, *templateName))
+			} else {
+				out.PrintError("invalid sub-template %q for %s", sub, *templateName)
+				out.Print("Available sub-templates:\n")
+				for _, st := range meta.SubTemplates {
+					out.Print("  %s - %s\n", st.Name, st.Description)
+				}
+			}
+			return fmt.Errorf("invalid sub-template: %s", sub)
+		}
+
+		// Append sub-template to template name
+		*templateName = *templateName + "/" + sub
+	} else if sub != "" {
+		// --sub provided but template doesn't have sub-templates
+		if Flags.JSON {
+			out.WriteJSONError("invalid_sub", fmt.Sprintf("template %q does not support sub-templates", *templateName))
+		} else {
+			out.PrintError("template %q does not support sub-templates", *templateName)
+		}
+		return fmt.Errorf("template does not support sub-templates")
+	}
+
+	return nil
 }

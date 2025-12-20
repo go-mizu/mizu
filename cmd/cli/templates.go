@@ -18,9 +18,16 @@ var templatesFS embed.FS
 
 // templateMeta holds template metadata.
 type templateMeta struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Tags        []string `json:"tags"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	Tags        []string      `json:"tags"`
+	SubTemplates []subTemplate `json:"subTemplates,omitempty"`
+}
+
+// subTemplate describes a sub-template option within a parent template.
+type subTemplate struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 // templateVars holds variables available to templates.
@@ -54,6 +61,7 @@ func listTemplates() ([]templateMeta, error) {
 
 // listTemplatesRecursive recursively finds all templates in a directory.
 // It identifies templates by the presence of template.json files.
+// When a template has subTemplates defined, its sub-directories are not listed separately.
 func listTemplatesRecursive(basePath, prefix string, templates *[]templateMeta) error {
 	entries, err := fs.ReadDir(templatesFS, basePath)
 	if err != nil {
@@ -79,6 +87,10 @@ func listTemplatesRecursive(basePath, prefix string, templates *[]templateMeta) 
 			meta, err := loadTemplateMeta(templateName)
 			if err == nil {
 				*templates = append(*templates, meta)
+				// If this template has subTemplates, don't list them separately
+				if len(meta.SubTemplates) > 0 {
+					continue
+				}
 			}
 		}
 
