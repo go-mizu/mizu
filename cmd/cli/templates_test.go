@@ -34,15 +34,19 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 		t.Fatalf("listTemplates() error: %v", err)
 	}
 
-	// Check for the nested react template
+	// Check for the nested templates
 	foundReact := false
 	foundVue := false
+	foundSvelte := false
 	for _, tmpl := range templates {
 		if tmpl.Name == "frontend/spa/react" {
 			foundReact = true
 		}
 		if tmpl.Name == "frontend/spa/vue" {
 			foundVue = true
+		}
+		if tmpl.Name == "frontend/spa/svelte" {
+			foundSvelte = true
 		}
 	}
 
@@ -51,6 +55,9 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 	}
 	if !foundVue {
 		t.Error("listTemplates() did not include nested template 'frontend/spa/vue'")
+	}
+	if !foundSvelte {
+		t.Error("listTemplates() did not include nested template 'frontend/spa/svelte'")
 	}
 }
 
@@ -64,6 +71,7 @@ func TestTemplateExistsNested(t *testing.T) {
 		{"web", true},
 		{"frontend/spa/react", true},
 		{"frontend/spa/vue", true},
+		{"frontend/spa/svelte", true},
 		{"frontend/spa/nonexistent", false},
 		{"frontend/nonexistent", false},
 		{"nonexistent", false},
@@ -89,6 +97,7 @@ func TestLoadTemplateMeta(t *testing.T) {
 		{"api", "api", true},
 		{"frontend/spa/react", "frontend/spa/react", true},
 		{"frontend/spa/vue", "frontend/spa/vue", true},
+		{"frontend/spa/svelte", "frontend/spa/svelte", true},
 	}
 
 	for _, tt := range tests {
@@ -570,5 +579,249 @@ func TestVueTemplateHasVueSpecificContent(t *testing.T) {
 
 	if !strings.Contains(string(mainTs), "createApp") {
 		t.Error("main.ts does not contain Vue createApp")
+	}
+}
+
+// Svelte template tests
+
+func TestListTemplatesIncludesSvelte(t *testing.T) {
+	templates, err := listTemplates()
+	if err != nil {
+		t.Fatalf("listTemplates() error: %v", err)
+	}
+
+	found := false
+	for _, tmpl := range templates {
+		if tmpl.Name == "frontend/spa/svelte" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("listTemplates() did not include nested template 'frontend/spa/svelte'")
+	}
+}
+
+func TestTemplateExistsSvelte(t *testing.T) {
+	if !templateExists("frontend/spa/svelte") {
+		t.Error("templateExists('frontend/spa/svelte') returned false")
+	}
+}
+
+func TestLoadTemplateFilesSvelte(t *testing.T) {
+	files, err := loadTemplateFiles("frontend/spa/svelte")
+	if err != nil {
+		t.Fatalf("loadTemplateFiles() error: %v", err)
+	}
+
+	if len(files) == 0 {
+		t.Error("loadTemplateFiles() returned no files")
+	}
+
+	// Check for expected files
+	expectedFiles := []string{
+		".gitignore",               // from _common
+		"go.mod",                   // from _common
+		"cmd/server/main.go",       // template specific
+		"app/server/app.go",        // template specific
+		"app/server/config.go",     // template specific
+		"app/server/routes.go",     // template specific
+		"client/package.json",      // template specific
+		"client/vite.config.ts",    // template specific
+		"client/svelte.config.js",  // template specific (Svelte)
+		"client/src/App.svelte",    // template specific (Svelte SFC)
+		"client/src/main.ts",       // template specific
+		"Makefile",                 // template specific
+	}
+
+	fileMap := make(map[string]bool)
+	for _, f := range files {
+		fileMap[f.path] = true
+	}
+
+	for _, expected := range expectedFiles {
+		if !fileMap[expected] {
+			t.Errorf("expected file %q not found in template files", expected)
+		}
+	}
+}
+
+func TestBuildPlanSvelteTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/svelte", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if len(p.ops) == 0 {
+		t.Error("buildPlan() returned empty plan")
+	}
+
+	// Check for expected operations
+	hasWrite := false
+	hasMkdir := false
+	for _, op := range p.ops {
+		switch op.kind {
+		case opWrite:
+			hasWrite = true
+		case opMkdir:
+			hasMkdir = true
+		}
+	}
+
+	if !hasWrite {
+		t.Error("plan has no write operations")
+	}
+	if !hasMkdir {
+		t.Error("plan has no mkdir operations")
+	}
+}
+
+func TestApplyPlanSvelteTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/svelte", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Verify key files exist
+	expectedFiles := []string{
+		"go.mod",
+		"cmd/server/main.go",
+		"app/server/app.go",
+		"app/server/config.go",
+		"app/server/routes.go",
+		"client/package.json",
+		"client/vite.config.ts",
+		"client/tsconfig.json",
+		"client/svelte.config.js",
+		"client/index.html",
+		"client/src/App.svelte",
+		"client/src/main.ts",
+		"client/src/components/Layout.svelte",
+		"client/src/pages/Home.svelte",
+		"client/src/pages/About.svelte",
+		"Makefile",
+	}
+
+	for _, file := range expectedFiles {
+		path := filepath.Join(tmpDir, file)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("expected file %q does not exist", file)
+		}
+	}
+}
+
+func TestSvelteTemplateVariableSubstitution(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("mysvelteapp", "github.com/user/mysvelteapp", "Apache-2.0", nil)
+
+	p, err := buildPlan("frontend/spa/svelte", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check go.mod contains the module path
+	gomod, err := os.ReadFile(filepath.Join(tmpDir, "go.mod"))
+	if err != nil {
+		t.Fatalf("ReadFile(go.mod) error: %v", err)
+	}
+
+	if !strings.Contains(string(gomod), "github.com/user/mysvelteapp") {
+		t.Error("go.mod does not contain module path")
+	}
+
+	// Check package.json contains the project name
+	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "client/package.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(package.json) error: %v", err)
+	}
+
+	if !strings.Contains(string(pkgjson), "mysvelteapp-client") {
+		t.Error("package.json does not contain project name")
+	}
+
+	// Check that package.json has Svelte dependencies
+	if !strings.Contains(string(pkgjson), `"svelte"`) {
+		t.Error("package.json does not contain svelte dependency")
+	}
+	if !strings.Contains(string(pkgjson), `"svelte-routing"`) {
+		t.Error("package.json does not contain svelte-routing dependency")
+	}
+}
+
+func TestSvelteTemplateHasSvelteSpecificContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/svelte", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check App.svelte contains Svelte-specific content
+	appSvelte, err := os.ReadFile(filepath.Join(tmpDir, "client/src/App.svelte"))
+	if err != nil {
+		t.Fatalf("ReadFile(App.svelte) error: %v", err)
+	}
+
+	if !strings.Contains(string(appSvelte), "<script lang=\"ts\">") {
+		t.Error("App.svelte does not contain Svelte <script lang=\"ts\"> syntax")
+	}
+	if !strings.Contains(string(appSvelte), "import { Router }") {
+		t.Error("App.svelte does not import Router from svelte-routing")
+	}
+	if !strings.Contains(string(appSvelte), "svelte-routing") {
+		t.Error("App.svelte does not reference svelte-routing")
+	}
+
+	// Check vite.config.ts uses Svelte plugin
+	viteConfig, err := os.ReadFile(filepath.Join(tmpDir, "client/vite.config.ts"))
+	if err != nil {
+		t.Fatalf("ReadFile(vite.config.ts) error: %v", err)
+	}
+
+	if !strings.Contains(string(viteConfig), "@sveltejs/vite-plugin-svelte") {
+		t.Error("vite.config.ts does not import Svelte plugin")
+	}
+
+	// Check svelte.config.js exists and contains vitePreprocess
+	svelteConfig, err := os.ReadFile(filepath.Join(tmpDir, "client/svelte.config.js"))
+	if err != nil {
+		t.Fatalf("ReadFile(svelte.config.js) error: %v", err)
+	}
+
+	if !strings.Contains(string(svelteConfig), "vitePreprocess") {
+		t.Error("svelte.config.js does not contain vitePreprocess")
+	}
+
+	// Check Home.svelte uses Svelte 5 runes syntax
+	homeSvelte, err := os.ReadFile(filepath.Join(tmpDir, "client/src/pages/Home.svelte"))
+	if err != nil {
+		t.Fatalf("ReadFile(Home.svelte) error: %v", err)
+	}
+
+	if !strings.Contains(string(homeSvelte), "$state") {
+		t.Error("Home.svelte does not contain Svelte 5 $state rune")
+	}
+	if !strings.Contains(string(homeSvelte), "onMount") {
+		t.Error("Home.svelte does not contain onMount lifecycle function")
 	}
 }
