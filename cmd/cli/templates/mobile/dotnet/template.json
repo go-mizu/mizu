@@ -1,0 +1,13 @@
+{
+  "name": "mobile/dotnet",
+  "description": ".NET MAUI app with C#, MVVM, and Mizu backend integration",
+  "tags": ["mizu", "mobile", "dotnet", "maui", "csharp", "mvvm", "cross-platform"],
+  "variables": {
+    "name": { "description": "Project name", "default": "" },
+    "namespace": { "description": "C# namespace", "default": "" },
+    "bundleId": { "description": "Bundle identifier", "default": "com.example.app" },
+    "platforms": { "description": "Target platforms (ios,android,windows,maccatalyst)", "default": "ios,android" },
+    "nav": { "description": "Navigation type: shell, plain", "default": "shell" },
+    "mvvm": { "description": "MVVM framework: default, toolkit", "default": "default" }
+  }
+}

@@ -1,0 +1,93 @@
+using System.Globalization;
+
+namespace {{.Namespace}}.Runtime;
+
+/// <summary>
+/// Device information container
+/// </summary>
+public class DeviceInfoData
+{
+    public required string DeviceId { get; init; }
+    public required string AppVersion { get; init; }
+    public required string AppBuild { get; init; }
+    public required string Model { get; init; }
+    public required string Platform { get; init; }
+    public required string OsVersion { get; init; }
+    public required string Timezone { get; init; }
+    public required string Locale { get; init; }
+}
+
+/// <summary>
+/// Device information utilities
+/// </summary>
+public static class DeviceInfo
+{
+    private const string DeviceIdKey = "mizu_device_id";
+    private static DeviceInfoData? _cachedInfo;
+
+    /// <summary>
+    /// Collects device information
+    /// </summary>
+    public static DeviceInfoData Collect()
+    {
+        if (_cachedInfo != null)
+            return _cachedInfo;
+
+        var deviceId = GetOrCreateDeviceId();
+
+        string platform;
+        string model;
+        string osVersion;
+
+#if ANDROID
+        platform = "android";
+        model = Android.OS.Build.Model ?? "Unknown";
+        osVersion = Android.OS.Build.VERSION.Release ?? "Unknown";
+#elif IOS || MACCATALYST
+        platform = Microsoft.Maui.Devices.DeviceInfo.Current.Idiom == DeviceIdiom.Phone ? "ios" : "macos";
+        model = Microsoft.Maui.Devices.DeviceInfo.Current.Model;
+        osVersion = Microsoft.Maui.Devices.DeviceInfo.Current.VersionString;
+#elif WINDOWS
+        platform = "windows";
+        model = Microsoft.Maui.Devices.DeviceInfo.Current.Model;
+        osVersion = Microsoft.Maui.Devices.DeviceInfo.Current.VersionString;
+#else
+        platform = "unknown";
+        model = "Unknown";
+        osVersion = "Unknown";
+#endif
+
+        _cachedInfo = new DeviceInfoData
+        {
+            DeviceId = deviceId,
+            AppVersion = AppInfo.Current.VersionString,
+            AppBuild = AppInfo.Current.BuildString,
+            Model = model,
+            Platform = platform,
+            OsVersion = osVersion,
+            Timezone = TimeZoneInfo.Local.Id,
+            Locale = CultureInfo.CurrentCulture.Name
+        };
+
+        return _cachedInfo;
+    }
+
+    private static string GetOrCreateDeviceId()
+    {
+        var deviceId = Preferences.Default.Get<string?>(DeviceIdKey, null);
+        if (string.IsNullOrEmpty(deviceId))
+        {
+            deviceId = Guid.NewGuid().ToString();
+            Preferences.Default.Set(DeviceIdKey, deviceId);
+        }
+        return deviceId;
+    }
+
+    /// <summary>
+    /// Clears cached info (useful for testing)
+    /// </summary>
+    public static void ClearCache()
+    {
+        _cachedInfo = null;
+    }
+}

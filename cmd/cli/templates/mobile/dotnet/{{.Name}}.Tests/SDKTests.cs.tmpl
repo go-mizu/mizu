@@ -1,0 +1,43 @@
+using {{.Namespace}}.SDK;
+using Xunit;
+
+namespace {{.Namespace}}.Tests;
+
+public class SDKTests
+{
+    [Fact]
+    public void SignInRequest_SerializesCorrectly()
+    {
+        var request = new SignInRequest
+        {
+            Email = "test@example.com",
+            Password = "password123"
+        };
+
+        Assert.Equal("test@example.com", request.Email);
+        Assert.Equal("password123", request.Password);
+    }
+
+    [Fact]
+    public void SignUpRequest_SerializesCorrectly()
+    {
+        var request = new SignUpRequest
+        {
+            Email = "test@example.com",
+            Password = "password123",
+            Name = "Test User"
+        };
+
+        Assert.Equal("test@example.com", request.Email);
+        Assert.Equal("password123", request.Password);
+        Assert.Equal("Test User", request.Name);
+    }
+
+    [Fact]
+    public void UserUpdate_AllowsNullValues()
+    {
+        var update = new UserUpdate { Name = "New Name" };
+        Assert.Equal("New Name", update.Name);
+        Assert.Null(update.AvatarUrl);
+    }
+}

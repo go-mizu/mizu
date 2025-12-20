@@ -1,0 +1,369 @@
+using System.ComponentModel;
+using System.Net.Http;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace {{.Namespace}}.Runtime;
+
+/// <summary>
+/// MizuRuntime is the core client for communicating with a Mizu backend.
+/// </summary>
+public sealed class MizuRuntime : INotifyPropertyChanged, IDisposable
+{
+    private static readonly Lazy<MizuRuntime> _instance = new(() => new MizuRuntime());
+
+    /// <summary>
+    /// Shared singleton instance
+    /// </summary>
+    public static MizuRuntime Shared => _instance.Value;
+
+    /// <summary>
+    /// Base URL for all API requests
+    /// </summary>
+    public Uri BaseUrl { get; set; }
+
+    /// <summary>
+    /// HTTP transport layer
+    /// </summary>
+    public ITransport Transport { get; }
+
+    /// <summary>
+    /// Secure token storage
+    /// </summary>
+    public ITokenStore TokenStore { get; }
+
+    /// <summary>
+    /// Live connection manager
+    /// </summary>
+    public LiveConnection Live { get; }
+
+    /// <summary>
+    /// Request timeout
+    /// </summary>
+    public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Default headers added to all requests
+    /// </summary>
+    public Dictionary<string, string> DefaultHeaders { get; } = new();
+
+    private bool _isAuthenticated;
+    /// <summary>
+    /// Current authentication state
+    /// </summary>
+    public bool IsAuthenticated
+    {
+        get => _isAuthenticated;
+        private set
+        {
+            if (_isAuthenticated != value)
+            {
+                _isAuthenticated = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        PropertyNameCaseInsensitive = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
+    public MizuRuntime(
+        Uri? baseUrl = null,
+        ITransport? transport = null,
+        ITokenStore? tokenStore = null)
+    {
+        BaseUrl = baseUrl ?? new Uri("http://localhost:3000");
+        Transport = transport ?? new HttpTransport();
+        TokenStore = tokenStore ?? new SecureTokenStore();
+        Live = new LiveConnection(this);
+
+        // Observe token changes
+        TokenStore.TokenChanged += (_, e) =>
+        {
+            IsAuthenticated = e.Token != null;
+        };
+
+        // Check initial auth state
+        Task.Run(async () =>
+        {
+            var token = await TokenStore.GetTokenAsync();
+            IsAuthenticated = token != null;
+        });
+    }
+
+    /// <summary>
+    /// Initializes the runtime with configuration
+    /// </summary>
+    public static async Task<MizuRuntime> InitializeAsync(
+        Uri baseUrl,
+        TimeSpan? timeout = null)
+    {
+        Shared.BaseUrl = baseUrl;
+        if (timeout.HasValue)
+            Shared.Timeout = timeout.Value;
+
+        var token = await Shared.TokenStore.GetTokenAsync();
+        Shared.IsAuthenticated = token != null;
+
+        return Shared;
+    }
+
+    // MARK: - HTTP Methods
+
+    /// <summary>
+    /// Performs a GET request
+    /// </summary>
+    public async Task<T> GetAsync<T>(
+        string path,
+        Dictionary<string, string>? query = null,
+        Dictionary<string, string>? headers = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await RequestAsync<T, object>(
+            HttpMethod.Get, path, query: query, headers: headers,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Performs a POST request
+    /// </summary>
+    public async Task<T> PostAsync<T, TBody>(
+        string path,
+        TBody body,
+        Dictionary<string, string>? headers = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await RequestAsync<T, TBody>(
+            HttpMethod.Post, path, body: body, headers: headers,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Performs a POST request with no response body
+    /// </summary>
+    public async Task PostAsync<TBody>(
+        string path,
+        TBody body,
+        Dictionary<string, string>? headers = null,
+        CancellationToken cancellationToken = default)
+    {
+        await RequestAsync<object, TBody>(
+            HttpMethod.Post, path, body: body, headers: headers,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Performs a PUT request
+    /// </summary>
+    public async Task<T> PutAsync<T, TBody>(
+        string path,
+        TBody body,
+        Dictionary<string, string>? headers = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await RequestAsync<T, TBody>(
+            HttpMethod.Put, path, body: body, headers: headers,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Performs a DELETE request
+    /// </summary>
+    public async Task<T> DeleteAsync<T>(
+        string path,
+        Dictionary<string, string>? headers = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await RequestAsync<T, object>(
+            HttpMethod.Delete, path, headers: headers,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Performs a DELETE request with no response body
+    /// </summary>
+    public async Task DeleteAsync(
+        string path,
+        Dictionary<string, string>? headers = null,
+        CancellationToken cancellationToken = default)
+    {
+        await RequestAsync<object, object>(
+            HttpMethod.Delete, path, headers: headers,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Performs a PATCH request
+    /// </summary>
+    public async Task<T> PatchAsync<T, TBody>(
+        string path,
+        TBody body,
+        Dictionary<string, string>? headers = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await RequestAsync<T, TBody>(
+            HttpMethod.Patch, path, body: body, headers: headers,
+            cancellationToken: cancellationToken);
+    }
+
+    // MARK: - Streaming
+
+    /// <summary>
+    /// Opens a streaming connection for SSE
+    /// </summary>
+    public IAsyncEnumerable<ServerEvent> StreamAsync(
+        string path,
+        Dictionary<string, string>? headers = null,
+        CancellationToken cancellationToken = default)
+    {
+        return Live.ConnectAsync(path, headers, cancellationToken);
+    }
+
+    // MARK: - Private
+
+    private async Task<T> RequestAsync<T, TBody>(
+        HttpMethod method,
+        string path,
+        Dictionary<string, string>? query = null,
+        TBody? body = default,
+        Dictionary<string, string>? headers = null,
+        CancellationToken cancellationToken = default)
+    {
+        // Build URL
+        var url = BuildUrl(path, query);
+
+        // Build headers
+        var allHeaders = await BuildHeadersAsync(headers);
+
+        // Encode body
+        string? bodyJson = null;
+        if (body != null)
+        {
+            bodyJson = JsonSerializer.Serialize(body, _jsonOptions);
+            allHeaders["Content-Type"] = "application/json";
+        }
+
+        // Execute request
+        var response = await Transport.ExecuteAsync(new TransportRequest
+        {
+            Url = url,
+            Method = method,
+            Headers = allHeaders,
+            Body = bodyJson,
+            Timeout = Timeout
+        }, cancellationToken);
+
+        // Handle errors
+        if ((int)response.StatusCode >= 400)
+        {
+            throw ParseError(response);
+        }
+
+        // Handle empty response
+        if (typeof(T) == typeof(object) || string.IsNullOrEmpty(response.Body))
+        {
+            return default!;
+        }
+
+        // Decode response
+        return JsonSerializer.Deserialize<T>(response.Body, _jsonOptions)!;
+    }
+
+    private Uri BuildUrl(string path, Dictionary<string, string>? query)
+    {
+        var baseUrl = BaseUrl.ToString().TrimEnd('/');
+        var cleanPath = path.StartsWith('/') ? path : $"/{path}";
+        var url = $"{baseUrl}{cleanPath}";
+
+        if (query != null && query.Count > 0)
+        {
+            var queryString = string.Join("&",
+                query.Select(kvp => $"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value)}"));
+            url = $"{url}?{queryString}";
+        }
+
+        return new Uri(url);
+    }
+
+    private async Task<Dictionary<string, string>> BuildHeadersAsync(Dictionary<string, string>? custom)
+    {
+        var headers = new Dictionary<string, string>(DefaultHeaders);
+
+        // Add mobile headers
+        foreach (var kvp in GetMobileHeaders())
+        {
+            headers[kvp.Key] = kvp.Value;
+        }
+
+        // Add custom headers
+        if (custom != null)
+        {
+            foreach (var kvp in custom)
+            {
+                headers[kvp.Key] = kvp.Value;
+            }
+        }
+
+        // Add auth token
+        var token = await TokenStore.GetTokenAsync();
+        if (token != null)
+        {
+            headers["Authorization"] = $"Bearer {token.AccessToken}";
+        }
+
+        return headers;
+    }
+
+    private Dictionary<string, string> GetMobileHeaders()
+    {
+        var info = DeviceInfo.Collect();
+        return new Dictionary<string, string>
+        {
+            ["X-Device-ID"] = info.DeviceId,
+            ["X-App-Version"] = info.AppVersion,
+            ["X-App-Build"] = info.AppBuild,
+            ["X-Device-Model"] = info.Model,
+            ["X-Platform"] = info.Platform,
+            ["X-OS-Version"] = info.OsVersion,
+            ["X-Timezone"] = info.Timezone,
+            ["X-Locale"] = info.Locale
+        };
+    }
+
+    private MizuException ParseError(TransportResponse response)
+    {
+        try
+        {
+            var apiError = JsonSerializer.Deserialize<ApiError>(response.Body, _jsonOptions);
+            if (apiError != null)
+            {
+                return new MizuException(MizuErrorType.Api, apiError.Message, apiError);
+            }
+        }
+        catch
+        {
+            // Ignore JSON parse errors
+        }
+
+        return new MizuException(MizuErrorType.Http,
+            $"HTTP error {(int)response.StatusCode}",
+            statusCode: (int)response.StatusCode);
+    }
+
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+
+    public void Dispose()
+    {
+        (Transport as IDisposable)?.Dispose();
+    }
+}

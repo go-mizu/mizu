@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:{{.Namespace}}.ViewModels"
+             x:Class="{{.Namespace}}.Views.WelcomePage"
+             x:DataType="vm:WelcomeViewModel"
+             Title="{Binding Title}">
+
+    <Grid RowDefinitions="*,Auto,*">
+
+        <VerticalStackLayout
+            Grid.Row="1"
+            Padding="24"
+            Spacing="16">
+
+            <Image
+                Source="dotnet_bot.png"
+                HeightRequest="120"
+                WidthRequest="120"
+                HorizontalOptions="Center" />
+
+            <Label
+                Text="Welcome to {{.Name}}"
+                Style="{StaticResource Headline}"
+                HorizontalOptions="Center" />
+
+            <Label
+                Text="A modern .NET MAUI app powered by Mizu"
+                Style="{StaticResource SubHeadline}"
+                HorizontalOptions="Center" />
+
+        </VerticalStackLayout>
+
+        <VerticalStackLayout
+            Grid.Row="2"
+            Padding="24"
+            VerticalOptions="End">
+
+            <Button
+                Text="Get Started"
+                Command="{Binding GetStartedCommand}"
+                Style="{StaticResource PrimaryButton}" />
+
+        </VerticalStackLayout>
+
+    </Grid>
+
+</ContentPage>

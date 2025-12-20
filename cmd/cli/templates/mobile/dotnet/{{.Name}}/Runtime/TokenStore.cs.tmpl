@@ -1,0 +1,107 @@
+using System.Text.Json;
+
+namespace {{.Namespace}}.Runtime;
+
+/// <summary>
+/// Stored authentication token
+/// </summary>
+public class AuthToken
+{
+    public required string AccessToken { get; init; }
+    public string? RefreshToken { get; init; }
+    public DateTime? ExpiresAt { get; init; }
+    public string TokenType { get; init; } = "Bearer";
+
+    public bool IsExpired => ExpiresAt.HasValue && DateTime.UtcNow >= ExpiresAt.Value;
+}
+
+/// <summary>
+/// Token change event args
+/// </summary>
+public class TokenChangedEventArgs : EventArgs
+{
+    public AuthToken? Token { get; }
+
+    public TokenChangedEventArgs(AuthToken? token) => Token = token;
+}
+
+/// <summary>
+/// Token storage interface
+/// </summary>
+public interface ITokenStore
+{
+    Task<AuthToken?> GetTokenAsync();
+    Task SetTokenAsync(AuthToken token);
+    Task ClearTokenAsync();
+    event EventHandler<TokenChangedEventArgs>? TokenChanged;
+}
+
+/// <summary>
+/// Secure storage-backed token storage using MAUI SecureStorage
+/// </summary>
+public class SecureTokenStore : ITokenStore
+{
+    private const string TokenKey = "mizu_auth_token";
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+    };
+
+    public event EventHandler<TokenChangedEventArgs>? TokenChanged;
+
+    public async Task<AuthToken?> GetTokenAsync()
+    {
+        try
+        {
+            var json = await SecureStorage.Default.GetAsync(TokenKey);
+            if (string.IsNullOrEmpty(json))
+                return null;
+
+            return JsonSerializer.Deserialize<AuthToken>(json, JsonOptions);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task SetTokenAsync(AuthToken token)
+    {
+        var json = JsonSerializer.Serialize(token, JsonOptions);
+        await SecureStorage.Default.SetAsync(TokenKey, json);
+        TokenChanged?.Invoke(this, new TokenChangedEventArgs(token));
+    }
+
+    public Task ClearTokenAsync()
+    {
+        SecureStorage.Default.Remove(TokenKey);
+        TokenChanged?.Invoke(this, new TokenChangedEventArgs(null));
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>
+/// In-memory token store for testing
+/// </summary>
+public class InMemoryTokenStore : ITokenStore
+{
+    private AuthToken? _token;
+
+    public event EventHandler<TokenChangedEventArgs>? TokenChanged;
+
+    public Task<AuthToken?> GetTokenAsync() => Task.FromResult(_token);
+
+    public Task SetTokenAsync(AuthToken token)
+    {
+        _token = token;
+        TokenChanged?.Invoke(this, new TokenChangedEventArgs(token));
+        return Task.CompletedTask;
+    }
+
+    public Task ClearTokenAsync()
+    {
+        _token = null;
+        TokenChanged?.Invoke(this, new TokenChangedEventArgs(null));
+        return Task.CompletedTask;
+    }
+}

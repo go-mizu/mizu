@@ -1,0 +1,23 @@
+using {{.Namespace}}.Runtime;
+
+namespace {{.Namespace}}.SDK;
+
+/// <summary>
+/// Convenience extensions for working with the SDK
+/// </summary>
+public static class ClientExtensions
+{
+    /// <summary>
+    /// Store an auth response token
+    /// </summary>
+    public static async Task StoreAuthTokenAsync(this {{.Name}}Client client, AuthResponse response, MizuRuntime runtime)
+    {
+        var expiresAt = DateTime.UtcNow.AddSeconds(response.Token.ExpiresIn);
+        await runtime.TokenStore.SetTokenAsync(new AuthToken
+        {
+            AccessToken = response.Token.AccessToken,
+            RefreshToken = response.Token.RefreshToken,
+            ExpiresAt = expiresAt
+        });
+    }
+}

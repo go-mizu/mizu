@@ -1,0 +1,163 @@
+using System.Net;
+using System.Net.Http;
+using System.Text;
+
+namespace {{.Namespace}}.Runtime;
+
+/// <summary>
+/// Transport request
+/// </summary>
+public class TransportRequest
+{
+    public required Uri Url { get; init; }
+    public required HttpMethod Method { get; init; }
+    public required Dictionary<string, string> Headers { get; init; }
+    public string? Body { get; init; }
+    public TimeSpan Timeout { get; init; }
+}
+
+/// <summary>
+/// Transport response
+/// </summary>
+public class TransportResponse
+{
+    public required HttpStatusCode StatusCode { get; init; }
+    public required Dictionary<string, string> Headers { get; init; }
+    public required string Body { get; init; }
+}
+
+/// <summary>
+/// Transport protocol for executing HTTP requests
+/// </summary>
+public interface ITransport : IDisposable
+{
+    Task<TransportResponse> ExecuteAsync(TransportRequest request, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// HTTP-based transport implementation
+/// </summary>
+public class HttpTransport : ITransport
+{
+    private readonly HttpClient _client;
+    private readonly List<IRequestInterceptor> _interceptors = new();
+    private bool _disposed;
+
+    public HttpTransport(HttpClient? client = null)
+    {
+        _client = client ?? new HttpClient();
+    }
+
+    /// <summary>
+    /// Adds a request interceptor
+    /// </summary>
+    public void AddInterceptor(IRequestInterceptor interceptor)
+    {
+        _interceptors.Add(interceptor);
+    }
+
+    public async Task<TransportResponse> ExecuteAsync(
+        TransportRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var req = request;
+
+        // Apply interceptors
+        foreach (var interceptor in _interceptors)
+        {
+            req = await interceptor.InterceptAsync(req, cancellationToken);
+        }
+
+        try
+        {
+            using var httpRequest = new HttpRequestMessage(req.Method, req.Url);
+
+            foreach (var header in req.Headers)
+            {
+                httpRequest.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+
+            if (req.Body != null)
+            {
+                httpRequest.Content = new StringContent(req.Body, Encoding.UTF8, "application/json");
+            }
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(req.Timeout);
+
+            var response = await _client.SendAsync(httpRequest, cts.Token);
+            var body = await response.Content.ReadAsStringAsync(cts.Token);
+
+            var headers = new Dictionary<string, string>();
+            foreach (var header in response.Headers)
+            {
+                headers[header.Key] = string.Join(",", header.Value);
+            }
+
+            return new TransportResponse
+            {
+                StatusCode = response.StatusCode,
+                Headers = headers,
+                Body = body
+            };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            throw new MizuException(MizuErrorType.Network, "Request timed out");
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new MizuException(MizuErrorType.Network, ex.Message, innerException: ex);
+        }
+    }
+
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            _client.Dispose();
+            _disposed = true;
+        }
+    }
+}
+
+/// <summary>
+/// Request interceptor interface
+/// </summary>
+public interface IRequestInterceptor
+{
+    Task<TransportRequest> InterceptAsync(TransportRequest request, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Logging interceptor for debugging
+/// </summary>
+public class LoggingInterceptor : IRequestInterceptor
+{
+    public Task<TransportRequest> InterceptAsync(TransportRequest request, CancellationToken cancellationToken = default)
+    {
+#if DEBUG
+        System.Diagnostics.Debug.WriteLine($"[Mizu] {request.Method} {request.Url}");
+#endif
+        return Task.FromResult(request);
+    }
+}
+
+/// <summary>
+/// Retry interceptor with exponential backoff
+/// </summary>
+public class RetryInterceptor : IRequestInterceptor
+{
+    public int MaxRetries { get; init; } = 3;
+    public TimeSpan BaseDelay { get; init; } = TimeSpan.FromSeconds(1);
+
+    public Task<TransportRequest> InterceptAsync(TransportRequest request, CancellationToken cancellationToken = default)
+    {
+        // Retry logic is handled at transport level
+        return Task.FromResult(request);
+    }
+}

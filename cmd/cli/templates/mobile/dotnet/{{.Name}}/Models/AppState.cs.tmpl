@@ -1,0 +1,56 @@
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+
+namespace {{.Namespace}}.Models;
+
+public class AppState : INotifyPropertyChanged
+{
+    private bool _isOnboarded;
+    public bool IsOnboarded
+    {
+        get => _isOnboarded;
+        set => SetProperty(ref _isOnboarded, value);
+    }
+
+    private AppTab _selectedTab = AppTab.Home;
+    public AppTab SelectedTab
+    {
+        get => _selectedTab;
+        set => SetProperty(ref _selectedTab, value);
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    protected bool SetProperty<T>(ref T storage, T value, [CallerMemberName] string? propertyName = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(storage, value))
+            return false;
+
+        storage = value;
+        OnPropertyChanged(propertyName);
+        return true;
+    }
+
+    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+
+    public void CompleteOnboarding()
+    {
+        IsOnboarded = true;
+        Preferences.Default.Set("isOnboarded", true);
+    }
+
+    public void LoadFromPreferences()
+    {
+        IsOnboarded = Preferences.Default.Get("isOnboarded", false);
+    }
+}
+
+public enum AppTab
+{
+    Home,
+    Profile,
+    Settings
+}

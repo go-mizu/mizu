@@ -1,0 +1,32 @@
+using System.Windows.Input;
+using {{.Namespace}}.Runtime;
+
+namespace {{.Namespace}}.ViewModels;
+
+public class WelcomeViewModel : BaseViewModel
+{
+    private readonly MizuRuntime _runtime;
+
+    public ICommand GetStartedCommand { get; }
+
+    public WelcomeViewModel(MizuRuntime runtime)
+    {
+        _runtime = runtime;
+        Title = "Welcome";
+        GetStartedCommand = new Command(async () => await GetStartedAsync());
+    }
+
+    private async Task GetStartedAsync()
+    {
+        await ExecuteAsync(async () =>
+        {
+            // Demo: Set a test token
+            await _runtime.TokenStore.SetTokenAsync(new AuthToken
+            {
+                AccessToken = "demo_token"
+            });
+
+            await Shell.Current.GoToAsync("//home");
+        });
+    }
+}

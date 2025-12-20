@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:{{.Namespace}}.ViewModels"
+             x:Class="{{.Namespace}}.Views.HomePage"
+             x:DataType="vm:HomeViewModel"
+             Title="{Binding Title}">
+
+    <VerticalStackLayout
+        Padding="24"
+        Spacing="20"
+        VerticalOptions="Center">
+
+        <Image
+            Source="dotnet_bot.png"
+            HeightRequest="100"
+            WidthRequest="100"
+            HorizontalOptions="Center" />
+
+        <Label
+            Text="Welcome to {{.Name}}"
+            Style="{StaticResource Headline}"
+            HorizontalOptions="Center" />
+
+        <Label
+            Text="Connected to Mizu backend"
+            Style="{StaticResource SubHeadline}"
+            HorizontalOptions="Center" />
+
+        <ActivityIndicator
+            IsRunning="{Binding IsBusy}"
+            IsVisible="{Binding IsBusy}"
+            HorizontalOptions="Center" />
+
+        <Button
+            Text="Sign Out"
+            Command="{Binding SignOutCommand}"
+            Style="{StaticResource SecondaryButton}" />
+
+    </VerticalStackLayout>
+
+</ContentPage>

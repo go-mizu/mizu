@@ -1,0 +1,58 @@
+using Microsoft.Extensions.Logging;
+using {{.Namespace}}.Runtime;
+using {{.Namespace}}.ViewModels;
+using {{.Namespace}}.Views;
+
+namespace {{.Namespace}};
+
+public static class MauiProgram
+{
+    public static MauiApp CreateMauiApp()
+    {
+        var builder = MauiApp.CreateBuilder();
+        builder
+            .UseMauiApp<App>()
+            .ConfigureFonts(fonts =>
+            {
+                fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
+                fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
+            });
+
+        // Register services
+        builder.Services.AddSingleton(MizuRuntime.Shared);
+        builder.Services.AddSingleton<ITokenStore>(MizuRuntime.Shared.TokenStore);
+
+        // Register ViewModels
+        builder.Services.AddTransient<HomeViewModel>();
+        builder.Services.AddTransient<WelcomeViewModel>();
+
+        // Register Pages
+        builder.Services.AddTransient<HomePage>();
+        builder.Services.AddTransient<WelcomePage>();
+
+#if DEBUG
+        builder.Logging.AddDebug();
+
+        // Add logging interceptor in debug mode
+        if (MizuRuntime.Shared.Transport is HttpTransport httpTransport)
+        {
+            httpTransport.AddInterceptor(new LoggingInterceptor());
+        }
+#endif
+
+        // Configure Mizu runtime
+        var baseUrl = new Uri(
+#if DEBUG
+            Microsoft.Maui.Devices.DeviceInfo.Platform == DevicePlatform.Android
+                ? "http://10.0.2.2:3000"
+                : "http://localhost:3000"
+#else
+            "https://api.example.com"
+#endif
+        );
+
+        MizuRuntime.Shared.BaseUrl = baseUrl;
+
+        return builder.Build();
+    }
+}

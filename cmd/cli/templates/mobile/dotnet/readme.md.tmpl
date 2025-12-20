@@ -1,0 +1,99 @@
+# {{.Name}}
+
+A modern .NET MAUI application powered by [Mizu](https://github.com/go-mizu/mizu).
+
+## Prerequisites
+
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- For iOS development: macOS with Xcode
+- For Android development: Android SDK
+
+## Getting Started
+
+### Running the App
+
+```bash
+# iOS Simulator
+dotnet build -t:Run -f net8.0-ios
+
+# Android Emulator
+dotnet build -t:Run -f net8.0-android
+
+# macOS
+dotnet build -t:Run -f net8.0-maccatalyst
+
+# Windows
+dotnet build -t:Run -f net8.0-windows10.0.19041.0
+```
+
+### Running Tests
+
+```bash
+dotnet test
+```
+
+### Building for Release
+
+```bash
+# iOS
+dotnet publish -f net8.0-ios -c Release
+
+# Android
+dotnet publish -f net8.0-android -c Release
+
+# Windows
+dotnet publish -f net8.0-windows10.0.19041.0 -c Release
+```
+
+## Project Structure
+
+```
+{{.Name}}/
+├── Runtime/          # Mizu runtime (HTTP client, token storage, SSE)
+├── SDK/              # Generated API client
+├── Models/           # Data models
+├── ViewModels/       # MVVM ViewModels
+├── Views/            # XAML pages
+├── Controls/         # Reusable UI controls
+├── Services/         # Application services
+├── Resources/        # Styles, images, fonts
+└── Platforms/        # Platform-specific code
+```
+
+## Configuration
+
+### API Base URL
+
+The API base URL is configured in `MauiProgram.cs`:
+
+```csharp
+// Debug mode (uses localhost)
+#if DEBUG
+    Microsoft.Maui.Devices.DeviceInfo.Platform == DevicePlatform.Android
+        ? "http://10.0.2.2:3000"  // Android emulator
+        : "http://localhost:3000" // iOS simulator
+#else
+    "https://api.example.com"    // Production
+#endif
+```
+
+## Architecture
+
+This app follows the MVVM (Model-View-ViewModel) pattern:
+
+- **Models**: Data classes representing business entities
+- **Views**: XAML pages defining the UI
+- **ViewModels**: Classes containing presentation logic and state
+
+### Mizu Runtime
+
+The `MizuRuntime` class provides:
+
+- HTTP client with automatic token handling
+- Secure token storage using MAUI SecureStorage
+- SSE (Server-Sent Events) streaming
+- Device information for mobile headers
+
+## License
+
+MIT
