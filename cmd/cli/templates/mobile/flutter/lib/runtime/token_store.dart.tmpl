@@ -1,0 +1,129 @@
+import 'dart:convert';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+/// Stored authentication token
+class AuthToken {
+  final String accessToken;
+  final String? refreshToken;
+  final DateTime? expiresAt;
+  final String tokenType;
+
+  const AuthToken({
+    required this.accessToken,
+    this.refreshToken,
+    this.expiresAt,
+    this.tokenType = 'Bearer',
+  });
+
+  bool get isExpired {
+    if (expiresAt == null) return false;
+    return DateTime.now().isAfter(expiresAt!);
+  }
+
+  Map<String, dynamic> toJson() => {
+        'access_token': accessToken,
+        'refresh_token': refreshToken,
+        'expires_at': expiresAt?.toIso8601String(),
+        'token_type': tokenType,
+      };
+
+  factory AuthToken.fromJson(Map<String, dynamic> json) => AuthToken(
+        accessToken: json['access_token'] as String,
+        refreshToken: json['refresh_token'] as String?,
+        expiresAt: json['expires_at'] != null
+            ? DateTime.parse(json['expires_at'] as String)
+            : null,
+        tokenType: json['token_type'] as String? ?? 'Bearer',
+      );
+}
+
+/// Token change callback type
+typedef TokenChangeCallback = void Function(AuthToken? token);
+
+/// Token storage protocol
+abstract class TokenStore {
+  Future<AuthToken?> getToken();
+  Future<void> setToken(AuthToken token);
+  Future<void> clearToken();
+  void onTokenChange(TokenChangeCallback callback);
+}
+
+/// Secure storage-backed token storage
+class SecureTokenStore implements TokenStore {
+  static const _key = 'mizu_auth_token';
+  final FlutterSecureStorage _storage;
+  final List<TokenChangeCallback> _observers = [];
+
+  SecureTokenStore({FlutterSecureStorage? storage})
+      : _storage = storage ??
+            const FlutterSecureStorage(
+              aOptions: AndroidOptions(encryptedSharedPreferences: true),
+              iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
+            );
+
+  @override
+  Future<AuthToken?> getToken() async {
+    final json = await _storage.read(key: _key);
+    if (json == null) return null;
+    try {
+      return AuthToken.fromJson(jsonDecode(json) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Future<void> setToken(AuthToken token) async {
+    await _storage.write(key: _key, value: jsonEncode(token.toJson()));
+    _notifyObservers(token);
+  }
+
+  @override
+  Future<void> clearToken() async {
+    await _storage.delete(key: _key);
+    _notifyObservers(null);
+  }
+
+  @override
+  void onTokenChange(TokenChangeCallback callback) {
+    _observers.add(callback);
+  }
+
+  void _notifyObservers(AuthToken? token) {
+    for (final observer in _observers) {
+      observer(token);
+    }
+  }
+}
+
+/// In-memory token store for testing
+class InMemoryTokenStore implements TokenStore {
+  AuthToken? _token;
+  final List<TokenChangeCallback> _observers = [];
+
+  @override
+  Future<AuthToken?> getToken() async => _token;
+
+  @override
+  Future<void> setToken(AuthToken token) async {
+    _token = token;
+    _notifyObservers(token);
+  }
+
+  @override
+  Future<void> clearToken() async {
+    _token = null;
+    _notifyObservers(null);
+  }
+
+  @override
+  void onTokenChange(TokenChangeCallback callback) {
+    _observers.add(callback);
+  }
+
+  void _notifyObservers(AuthToken? token) {
+    for (final observer in _observers) {
+      observer(token);
+    }
+  }
+}

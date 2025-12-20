@@ -1,0 +1,199 @@
+import 'dart:async';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'mizu_runtime.dart';
+import 'exceptions.dart';
+
+/// Server-sent event
+class ServerEvent {
+  final String? id;
+  final String? event;
+  final String data;
+  final int? retry;
+
+  const ServerEvent({
+    this.id,
+    this.event,
+    required this.data,
+    this.retry,
+  });
+
+  /// Decodes the event data as JSON
+  T decode<T>(T Function(Map<String, dynamic>) fromJson) {
+    return fromJson(jsonDecode(data) as Map<String, dynamic>);
+  }
+
+  /// Decodes the event data as a raw map
+  Map<String, dynamic> decodeJson() {
+    return jsonDecode(data) as Map<String, dynamic>;
+  }
+}
+
+/// Live connection manager for SSE
+class LiveConnection {
+  final MizuRuntime _runtime;
+  final Map<String, StreamSubscription<String>> _activeConnections = {};
+
+  LiveConnection(this._runtime);
+
+  /// Connects to an SSE endpoint and returns a stream of events
+  Stream<ServerEvent> connect({
+    required String path,
+    Map<String, String>? headers,
+  }) {
+    final controller = StreamController<ServerEvent>.broadcast();
+
+    _connectInternal(path, headers, controller);
+
+    return controller.stream;
+  }
+
+  Future<void> _connectInternal(
+    String path,
+    Map<String, String>? headers,
+    StreamController<ServerEvent> controller,
+  ) async {
+    final url = _buildUrl(path);
+    final allHeaders = await _buildHeaders(headers);
+
+    final request = http.Request('GET', Uri.parse(url));
+    request.headers.addAll(allHeaders);
+    request.headers['Accept'] = 'text/event-stream';
+    request.headers['Cache-Control'] = 'no-cache';
+
+    try {
+      final client = http.Client();
+      final response = await client.send(request);
+
+      if (response.statusCode != 200) {
+        controller.addError(MizuError.http(response.statusCode, 'SSE connection failed'));
+        return;
+      }
+
+      final eventBuilder = _SSEEventBuilder();
+      final subscription = response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen(
+        (line) {
+          final event = eventBuilder.processLine(line);
+          if (event != null) {
+            controller.add(event);
+          }
+        },
+        onError: (Object error) {
+          controller.addError(MizuError.network(error));
+        },
+        onDone: () {
+          controller.close();
+          _activeConnections.remove(path);
+        },
+        cancelOnError: false,
+      );
+
+      _activeConnections[path] = subscription;
+    } catch (e) {
+      controller.addError(MizuError.network(e));
+    }
+  }
+
+  /// Disconnects from a specific path
+  void disconnect(String path) {
+    _activeConnections[path]?.cancel();
+    _activeConnections.remove(path);
+  }
+
+  /// Disconnects all active connections
+  void disconnectAll() {
+    for (final subscription in _activeConnections.values) {
+      subscription.cancel();
+    }
+    _activeConnections.clear();
+  }
+
+  String _buildUrl(String path) {
+    final base = _runtime.baseURL.endsWith('/')
+        ? _runtime.baseURL.substring(0, _runtime.baseURL.length - 1)
+        : _runtime.baseURL;
+    final cleanPath = path.startsWith('/') ? path : '/$path';
+    return '$base$cleanPath';
+  }
+
+  Future<Map<String, String>> _buildHeaders(Map<String, String>? custom) async {
+    final headers = <String, String>{};
+    headers.addAll(_runtime.defaultHeaders);
+    if (custom != null) {
+      headers.addAll(custom);
+    }
+
+    final token = await _runtime.tokenStore.getToken();
+    if (token != null) {
+      headers['Authorization'] = 'Bearer ${token.accessToken}';
+    }
+
+    return headers;
+  }
+}
+
+/// SSE event parser
+class _SSEEventBuilder {
+  String? _id;
+  String? _event;
+  final List<String> _data = [];
+  int? _retry;
+
+  ServerEvent? processLine(String line) {
+    if (line.isEmpty) {
+      // Empty line means end of event
+      if (_data.isEmpty) return null;
+
+      final event = ServerEvent(
+        id: _id,
+        event: _event,
+        data: _data.join('\n'),
+        retry: _retry,
+      );
+
+      // Reset for next event (keep id for Last-Event-ID)
+      _event = null;
+      _data.clear();
+      _retry = null;
+
+      return event;
+    }
+
+    if (line.startsWith(':')) {
+      // Comment, ignore
+      return null;
+    }
+
+    final colonIndex = line.indexOf(':');
+    if (colonIndex == -1) {
+      // Field with no value
+      return null;
+    }
+
+    final field = line.substring(0, colonIndex);
+    var value = line.substring(colonIndex + 1);
+    if (value.startsWith(' ')) {
+      value = value.substring(1);
+    }
+
+    switch (field) {
+      case 'id':
+        _id = value;
+        break;
+      case 'event':
+        _event = value;
+        break;
+      case 'data':
+        _data.add(value);
+        break;
+      case 'retry':
+        _retry = int.tryParse(value);
+        break;
+    }
+
+    return null;
+  }
+}

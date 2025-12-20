@@ -1,0 +1,11 @@
+{
+  "name": "mobile/flutter",
+  "description": "Flutter app with Dart, Riverpod, and Mizu backend integration",
+  "tags": ["mizu", "mobile", "flutter", "dart", "riverpod", "cross-platform"],
+  "variables": {
+    "name": { "description": "Project name", "default": "" },
+    "org": { "description": "Organization identifier", "default": "com.example" },
+    "platforms": { "description": "Target platforms (ios,android,web,macos,windows,linux)", "default": "ios,android" },
+    "ui": { "description": "UI framework: material, cupertino", "default": "material" }
+  }
+}

@@ -1,0 +1,135 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:{{.Name | lower | replace " " "_" | replace "-" "_"}}/sdk/types.dart';
+
+void main() {
+  group('User', () {
+    test('deserializes from JSON', () {
+      final json = {
+        'id': 'user123',
+        'email': 'test@example.com',
+        'name': 'Test User',
+        'avatar_url': 'https://example.com/avatar.jpg',
+        'created_at': '2024-01-01T00:00:00.000Z',
+        'updated_at': '2024-01-02T00:00:00.000Z',
+      };
+      final user = User.fromJson(json);
+
+      expect(user.id, equals('user123'));
+      expect(user.email, equals('test@example.com'));
+      expect(user.name, equals('Test User'));
+      expect(user.avatarUrl, equals('https://example.com/avatar.jpg'));
+    });
+
+    test('serializes to JSON', () {
+      final user = User(
+        id: 'user123',
+        email: 'test@example.com',
+        name: 'Test User',
+        createdAt: DateTime.parse('2024-01-01T00:00:00.000Z'),
+        updatedAt: DateTime.parse('2024-01-02T00:00:00.000Z'),
+      );
+      final json = user.toJson();
+
+      expect(json['id'], equals('user123'));
+      expect(json['email'], equals('test@example.com'));
+      expect(json['name'], equals('Test User'));
+    });
+  });
+
+  group('UserUpdate', () {
+    test('toJson only includes non-null fields', () {
+      const update = UserUpdate(name: 'New Name');
+      final json = update.toJson();
+
+      expect(json['name'], equals('New Name'));
+      expect(json.containsKey('avatar_url'), isFalse);
+    });
+
+    test('toJson includes all provided fields', () {
+      const update = UserUpdate(
+        name: 'New Name',
+        avatarUrl: 'https://example.com/new-avatar.jpg',
+      );
+      final json = update.toJson();
+
+      expect(json['name'], equals('New Name'));
+      expect(json['avatar_url'], equals('https://example.com/new-avatar.jpg'));
+    });
+  });
+
+  group('TokenResponse', () {
+    test('deserializes from JSON', () {
+      final json = {
+        'access_token': 'token123',
+        'refresh_token': 'refresh456',
+        'expires_in': 3600,
+      };
+      final response = TokenResponse.fromJson(json);
+
+      expect(response.accessToken, equals('token123'));
+      expect(response.refreshToken, equals('refresh456'));
+      expect(response.expiresIn, equals(3600));
+    });
+
+    test('handles missing refresh token', () {
+      final json = {
+        'access_token': 'token123',
+        'expires_in': 3600,
+      };
+      final response = TokenResponse.fromJson(json);
+
+      expect(response.accessToken, equals('token123'));
+      expect(response.refreshToken, isNull);
+    });
+  });
+
+  group('AuthResponse', () {
+    test('deserializes from JSON', () {
+      final json = {
+        'user': {
+          'id': 'user123',
+          'email': 'test@example.com',
+          'name': 'Test User',
+          'created_at': '2024-01-01T00:00:00.000Z',
+          'updated_at': '2024-01-02T00:00:00.000Z',
+        },
+        'token': {
+          'access_token': 'token123',
+          'expires_in': 3600,
+        },
+      };
+      final response = AuthResponse.fromJson(json);
+
+      expect(response.user.id, equals('user123'));
+      expect(response.token.accessToken, equals('token123'));
+    });
+  });
+
+  group('SignInRequest', () {
+    test('toJson creates correct structure', () {
+      const request = SignInRequest(
+        email: 'test@example.com',
+        password: 'password123',
+      );
+      final json = request.toJson();
+
+      expect(json['email'], equals('test@example.com'));
+      expect(json['password'], equals('password123'));
+    });
+  });
+
+  group('SignUpRequest', () {
+    test('toJson creates correct structure', () {
+      const request = SignUpRequest(
+        email: 'test@example.com',
+        password: 'password123',
+        name: 'Test User',
+      );
+      final json = request.toJson();
+
+      expect(json['email'], equals('test@example.com'));
+      expect(json['password'], equals('password123'));
+      expect(json['name'], equals('Test User'));
+    });
+  });
+}

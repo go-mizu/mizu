@@ -1,0 +1,110 @@
+// MARK: - Auth Types
+
+class SignInRequest {
+  final String email;
+  final String password;
+
+  const SignInRequest({required this.email, required this.password});
+
+  Map<String, dynamic> toJson() => {'email': email, 'password': password};
+}
+
+class SignUpRequest {
+  final String email;
+  final String password;
+  final String name;
+
+  const SignUpRequest({
+    required this.email,
+    required this.password,
+    required this.name,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'email': email,
+        'password': password,
+        'name': name,
+      };
+}
+
+class AuthResponse {
+  final User user;
+  final TokenResponse token;
+
+  const AuthResponse({required this.user, required this.token});
+
+  factory AuthResponse.fromJson(Map<String, dynamic> json) => AuthResponse(
+        user: User.fromJson(json['user'] as Map<String, dynamic>),
+        token: TokenResponse.fromJson(json['token'] as Map<String, dynamic>),
+      );
+}
+
+class TokenResponse {
+  final String accessToken;
+  final String? refreshToken;
+  final int expiresIn;
+
+  const TokenResponse({
+    required this.accessToken,
+    this.refreshToken,
+    required this.expiresIn,
+  });
+
+  factory TokenResponse.fromJson(Map<String, dynamic> json) => TokenResponse(
+        accessToken: json['access_token'] as String,
+        refreshToken: json['refresh_token'] as String?,
+        expiresIn: json['expires_in'] as int,
+      );
+}
+
+// MARK: - User Types
+
+class User {
+  final String id;
+  final String email;
+  final String name;
+  final String? avatarUrl;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  const User({
+    required this.id,
+    required this.email,
+    required this.name,
+    this.avatarUrl,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  factory User.fromJson(Map<String, dynamic> json) => User(
+        id: json['id'] as String,
+        email: json['email'] as String,
+        name: json['name'] as String,
+        avatarUrl: json['avatar_url'] as String?,
+        createdAt: DateTime.parse(json['created_at'] as String),
+        updatedAt: DateTime.parse(json['updated_at'] as String),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'email': email,
+        'name': name,
+        'avatar_url': avatarUrl,
+        'created_at': createdAt.toIso8601String(),
+        'updated_at': updatedAt.toIso8601String(),
+      };
+}
+
+class UserUpdate {
+  final String? name;
+  final String? avatarUrl;
+
+  const UserUpdate({this.name, this.avatarUrl});
+
+  Map<String, dynamic> toJson() {
+    final map = <String, dynamic>{};
+    if (name != null) map['name'] = name;
+    if (avatarUrl != null) map['avatar_url'] = avatarUrl;
+    return map;
+  }
+}

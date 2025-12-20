@@ -1,0 +1,27 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../runtime/mizu_runtime.dart';
+import '../runtime/token_store.dart';
+import '../sdk/client.dart';
+
+/// Mizu runtime provider
+final mizuRuntimeProvider = Provider<MizuRuntime>((ref) {
+  return MizuRuntime.shared;
+});
+
+/// Authentication state provider
+final isAuthenticatedProvider = Provider<bool>((ref) {
+  final runtime = ref.watch(mizuRuntimeProvider);
+  return runtime.isAuthenticated;
+});
+
+/// SDK client provider
+final clientProvider = Provider<{{.Name | pascal}}Client>((ref) {
+  final runtime = ref.watch(mizuRuntimeProvider);
+  return {{.Name | pascal}}Client(runtime);
+});
+
+/// Auth token provider
+final authTokenProvider = FutureProvider<AuthToken?>((ref) async {
+  final runtime = ref.watch(mizuRuntimeProvider);
+  return runtime.tokenStore.getToken();
+});

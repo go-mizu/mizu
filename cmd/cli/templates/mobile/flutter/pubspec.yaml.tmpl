@@ -1,0 +1,28 @@
+name: {{.Name | lower | replace " " "_" | replace "-" "_"}}
+description: A Flutter app powered by Mizu
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.4.9
+  http: ^1.1.2
+  flutter_secure_storage: ^9.0.0
+  device_info_plus: ^10.1.0
+  package_info_plus: ^5.0.1
+  uuid: ^4.2.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+  integration_test:
+    sdk: flutter
+  mocktail: ^1.0.1
+
+flutter:
+  uses-material-design: true
