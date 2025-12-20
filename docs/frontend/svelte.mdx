@@ -131,7 +131,7 @@ my-svelte-app/
 │       ├── app.go               # Mizu app setup
 │       ├── config.go            # Configuration
 │       └── routes.go            # API routes
-├── client/                      # Svelte application
+├── frontend/                      # Svelte application
 │   ├── src/
 │   │   ├── main.ts              # App entry point
 │   │   ├── App.svelte           # Root component
@@ -239,7 +239,7 @@ func setupRoutes(app *mizu.App) {
 
 ## Frontend Setup
 
-### `client/src/main.ts`
+### `frontend/src/main.ts`
 
 ```ts
 import App from './App.svelte'
@@ -252,7 +252,7 @@ const app = new App({
 export default app
 ```
 
-### `client/src/App.svelte`
+### `frontend/src/App.svelte`
 
 ```svelte
 <script lang="ts">
@@ -283,7 +283,7 @@ export default app
 </Layout>
 ```
 
-### `client/src/components/Layout.svelte`
+### `frontend/src/components/Layout.svelte`
 
 ```svelte
 <script lang="ts">
@@ -340,7 +340,7 @@ export default app
 </style>
 ```
 
-### `client/src/pages/Home.svelte`
+### `frontend/src/pages/Home.svelte`
 
 ```svelte
 <script lang="ts">
@@ -971,7 +971,7 @@ We've seen this in the App.svelte example above.
 ### Option 2: svelte-spa-router
 
 ```bash
-cd client
+cd frontend
 npm install svelte-spa-router
 ```
 
@@ -1770,7 +1770,7 @@ Reusable DOM manipulation functions.
 
 ## Vite Configuration
 
-### `client/vite.config.ts`
+### `frontend/vite.config.ts`
 
 ```ts
 import { defineConfig } from 'vite'
@@ -1812,7 +1812,7 @@ export default defineConfig({
 })
 ```
 
-### `client/svelte.config.js`
+### `frontend/svelte.config.js`
 
 ```js
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte'
@@ -1902,7 +1902,7 @@ Use `:global()` modifier:
 Install Tailwind:
 
 ```bash
-cd client
+cd frontend
 npm install -D tailwindcss postcss autoprefixer
 npx tailwindcss init -p
 ```

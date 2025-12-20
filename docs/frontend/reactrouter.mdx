@@ -79,7 +79,7 @@ my-app/
 │       ├── app.go                     # Mizu app configuration
 │       ├── config.go                  # Server configuration
 │       └── routes.go                  # API routes (Go)
-├── client/                            # React Router v7 application
+├── frontend/                            # React Router v7 application
 │   ├── app/
 │   │   ├── root.tsx                   # Root layout
 │   │   ├── routes.ts                  # Route definitions
@@ -669,7 +669,7 @@ export default {
   // Static export mode (no SSR)
   ssr: false,
 
-  // Build output (relative to client/)
+  // Build output (relative to frontend/)
   buildDirectory: "../dist",
 
   // Server build file
@@ -718,7 +718,7 @@ make dev
 
 # Or manually
 # Terminal 1: React Router dev
-cd client && npm run dev
+cd frontend && npm run dev
 
 # Terminal 2: Mizu server
 go run cmd/server/main.go
@@ -747,7 +747,7 @@ Or use [air](https://github.com/cosmtrek/air) for auto-reload.
 make typecheck
 
 # Or manually
-cd client && npm run typecheck
+cd frontend && npm run typecheck
 ```
 
 This:
@@ -764,7 +764,7 @@ make build
 ```
 
 This:
-1. Runs `react-router build` in client/
+1. Runs `react-router build` in frontend/
 2. Generates static HTML for all routes
 3. Outputs to `dist/` directory
 4. Ready to embed in Go binary
@@ -797,7 +797,7 @@ Options:
 **Bundle analysis:**
 
 ```bash
-cd client
+cd frontend
 npm run build -- --profile
 ```
 
@@ -1041,7 +1041,7 @@ export default function Dashboard() {
 
 **Solution:**
 ```bash
-cd client
+cd frontend
 npm run typecheck
 ```
 
@@ -1128,9 +1128,9 @@ MIZU_ENV=production ./bin/server
 # Build stage
 FROM node:20 AS frontend
 WORKDIR /app
-COPY client/package*.json ./
+COPY frontend/package*.json ./
 RUN npm install
-COPY client/ ./
+COPY frontend/ ./
 RUN npm run build
 
 # Go build stage

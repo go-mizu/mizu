@@ -175,10 +175,10 @@ func TestLoadTemplateFilesNested(t *testing.T) {
 		"app/server/app.go",         // template specific
 		"app/server/config.go",      // template specific
 		"app/server/routes.go",      // template specific
-		"client/package.json",       // template specific
-		"client/vite.config.ts",     // template specific
-		"client/src/App.tsx",        // template specific
-		"client/src/main.tsx",       // template specific
+		"frontend/package.json",       // template specific
+		"frontend/vite.config.ts",     // template specific
+		"frontend/src/App.tsx",        // template specific
+		"frontend/src/main.tsx",       // template specific
 		"Makefile",                  // template specific
 	}
 
@@ -323,12 +323,12 @@ func TestApplyPlanReactTemplate(t *testing.T) {
 		"app/server/app.go",
 		"app/server/config.go",
 		"app/server/routes.go",
-		"client/package.json",
-		"client/vite.config.ts",
-		"client/tsconfig.json",
-		"client/index.html",
-		"client/src/App.tsx",
-		"client/src/main.tsx",
+		"frontend/package.json",
+		"frontend/vite.config.ts",
+		"frontend/tsconfig.json",
+		"frontend/index.html",
+		"frontend/src/App.tsx",
+		"frontend/src/main.tsx",
 		"Makefile",
 	}
 
@@ -364,7 +364,7 @@ func TestTemplateVariableSubstitution(t *testing.T) {
 	}
 
 	// Check package.json contains the project name
-	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "client/package.json"))
+	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "frontend/package.json"))
 	if err != nil {
 		t.Fatalf("ReadFile(package.json) error: %v", err)
 	}
@@ -438,11 +438,11 @@ func TestLoadTemplateFilesVue(t *testing.T) {
 		"app/server/app.go",      // template specific
 		"app/server/config.go",   // template specific
 		"app/server/routes.go",   // template specific
-		"client/package.json",    // template specific
-		"client/vite.config.ts",  // template specific
-		"client/src/App.vue",     // template specific (Vue SFC)
-		"client/src/main.ts",     // template specific
-		"client/src/router/index.ts", // template specific
+		"frontend/package.json",    // template specific
+		"frontend/vite.config.ts",  // template specific
+		"frontend/src/App.vue",     // template specific (Vue SFC)
+		"frontend/src/main.ts",     // template specific
+		"frontend/src/router/index.ts", // template specific
 		"Makefile",               // template specific
 	}
 
@@ -511,16 +511,16 @@ func TestApplyPlanVueTemplate(t *testing.T) {
 		"app/server/app.go",
 		"app/server/config.go",
 		"app/server/routes.go",
-		"client/package.json",
-		"client/vite.config.ts",
-		"client/tsconfig.json",
-		"client/index.html",
-		"client/src/App.vue",
-		"client/src/main.ts",
-		"client/src/router/index.ts",
-		"client/src/components/Layout.vue",
-		"client/src/pages/Home.vue",
-		"client/src/pages/About.vue",
+		"frontend/package.json",
+		"frontend/vite.config.ts",
+		"frontend/tsconfig.json",
+		"frontend/index.html",
+		"frontend/src/App.vue",
+		"frontend/src/main.ts",
+		"frontend/src/router/index.ts",
+		"frontend/src/components/Layout.vue",
+		"frontend/src/pages/Home.vue",
+		"frontend/src/pages/About.vue",
 		"Makefile",
 	}
 
@@ -556,7 +556,7 @@ func TestVueTemplateVariableSubstitution(t *testing.T) {
 	}
 
 	// Check package.json contains the project name
-	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "client/package.json"))
+	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "frontend/package.json"))
 	if err != nil {
 		t.Fatalf("ReadFile(package.json) error: %v", err)
 	}
@@ -588,7 +588,7 @@ func TestVueTemplateHasVueSpecificContent(t *testing.T) {
 	}
 
 	// Check App.vue contains Vue-specific content
-	appVue, err := os.ReadFile(filepath.Join(tmpDir, "client/src/App.vue"))
+	appVue, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/App.vue"))
 	if err != nil {
 		t.Fatalf("ReadFile(App.vue) error: %v", err)
 	}
@@ -601,7 +601,7 @@ func TestVueTemplateHasVueSpecificContent(t *testing.T) {
 	}
 
 	// Check vite.config.ts uses Vue plugin
-	viteConfig, err := os.ReadFile(filepath.Join(tmpDir, "client/vite.config.ts"))
+	viteConfig, err := os.ReadFile(filepath.Join(tmpDir, "frontend/vite.config.ts"))
 	if err != nil {
 		t.Fatalf("ReadFile(vite.config.ts) error: %v", err)
 	}
@@ -611,7 +611,7 @@ func TestVueTemplateHasVueSpecificContent(t *testing.T) {
 	}
 
 	// Check main.ts uses Vue createApp
-	mainTs, err := os.ReadFile(filepath.Join(tmpDir, "client/src/main.ts"))
+	mainTs, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/main.ts"))
 	if err != nil {
 		t.Fatalf("ReadFile(main.ts) error: %v", err)
 	}
@@ -680,11 +680,11 @@ func TestLoadTemplateFilesSvelte(t *testing.T) {
 		"app/server/app.go",        // template specific
 		"app/server/config.go",     // template specific
 		"app/server/routes.go",     // template specific
-		"client/package.json",      // template specific
-		"client/vite.config.ts",    // template specific
-		"client/svelte.config.js",  // template specific (Svelte)
-		"client/src/App.svelte",    // template specific (Svelte SFC)
-		"client/src/main.ts",       // template specific
+		"frontend/package.json",      // template specific
+		"frontend/vite.config.ts",    // template specific
+		"frontend/svelte.config.js",  // template specific (Svelte)
+		"frontend/src/App.svelte",    // template specific (Svelte SFC)
+		"frontend/src/main.ts",       // template specific
 		"Makefile",                 // template specific
 	}
 
@@ -753,16 +753,16 @@ func TestApplyPlanSvelteTemplate(t *testing.T) {
 		"app/server/app.go",
 		"app/server/config.go",
 		"app/server/routes.go",
-		"client/package.json",
-		"client/vite.config.ts",
-		"client/tsconfig.json",
-		"client/svelte.config.js",
-		"client/index.html",
-		"client/src/App.svelte",
-		"client/src/main.ts",
-		"client/src/components/Layout.svelte",
-		"client/src/pages/Home.svelte",
-		"client/src/pages/About.svelte",
+		"frontend/package.json",
+		"frontend/vite.config.ts",
+		"frontend/tsconfig.json",
+		"frontend/svelte.config.js",
+		"frontend/index.html",
+		"frontend/src/App.svelte",
+		"frontend/src/main.ts",
+		"frontend/src/components/Layout.svelte",
+		"frontend/src/pages/Home.svelte",
+		"frontend/src/pages/About.svelte",
 		"Makefile",
 	}
 
@@ -798,7 +798,7 @@ func TestSvelteTemplateVariableSubstitution(t *testing.T) {
 	}
 
 	// Check package.json contains the project name
-	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "client/package.json"))
+	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "frontend/package.json"))
 	if err != nil {
 		t.Fatalf("ReadFile(package.json) error: %v", err)
 	}
@@ -830,7 +830,7 @@ func TestSvelteTemplateHasSvelteSpecificContent(t *testing.T) {
 	}
 
 	// Check App.svelte contains Svelte-specific content
-	appSvelte, err := os.ReadFile(filepath.Join(tmpDir, "client/src/App.svelte"))
+	appSvelte, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/App.svelte"))
 	if err != nil {
 		t.Fatalf("ReadFile(App.svelte) error: %v", err)
 	}
@@ -846,7 +846,7 @@ func TestSvelteTemplateHasSvelteSpecificContent(t *testing.T) {
 	}
 
 	// Check vite.config.ts uses Svelte plugin
-	viteConfig, err := os.ReadFile(filepath.Join(tmpDir, "client/vite.config.ts"))
+	viteConfig, err := os.ReadFile(filepath.Join(tmpDir, "frontend/vite.config.ts"))
 	if err != nil {
 		t.Fatalf("ReadFile(vite.config.ts) error: %v", err)
 	}
@@ -856,7 +856,7 @@ func TestSvelteTemplateHasSvelteSpecificContent(t *testing.T) {
 	}
 
 	// Check svelte.config.js exists and contains vitePreprocess
-	svelteConfig, err := os.ReadFile(filepath.Join(tmpDir, "client/svelte.config.js"))
+	svelteConfig, err := os.ReadFile(filepath.Join(tmpDir, "frontend/svelte.config.js"))
 	if err != nil {
 		t.Fatalf("ReadFile(svelte.config.js) error: %v", err)
 	}
@@ -866,7 +866,7 @@ func TestSvelteTemplateHasSvelteSpecificContent(t *testing.T) {
 	}
 
 	// Check Home.svelte uses Svelte 5 runes syntax
-	homeSvelte, err := os.ReadFile(filepath.Join(tmpDir, "client/src/pages/Home.svelte"))
+	homeSvelte, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/pages/Home.svelte"))
 	if err != nil {
 		t.Fatalf("ReadFile(Home.svelte) error: %v", err)
 	}
@@ -936,11 +936,11 @@ func TestLoadTemplateFilesAngular(t *testing.T) {
 		"app/server/app.go",                               // template specific
 		"app/server/config.go",                            // template specific
 		"app/server/routes.go",                            // template specific
-		"client/package.json",                             // template specific
-		"client/angular.json",                             // template specific (Angular)
-		"client/src/main.ts",                              // template specific
-		"client/src/app/app.component.ts",                 // template specific (Angular)
-		"client/src/app/app.routes.ts",                    // template specific (Angular)
+		"frontend/package.json",                             // template specific
+		"frontend/angular.json",                             // template specific (Angular)
+		"frontend/src/main.ts",                              // template specific
+		"frontend/src/app/app.component.ts",                 // template specific (Angular)
+		"frontend/src/app/app.routes.ts",                    // template specific (Angular)
 		"Makefile",                                        // template specific
 	}
 
@@ -1009,17 +1009,17 @@ func TestApplyPlanAngularTemplate(t *testing.T) {
 		"app/server/app.go",
 		"app/server/config.go",
 		"app/server/routes.go",
-		"client/package.json",
-		"client/angular.json",
-		"client/tsconfig.json",
-		"client/src/index.html",
-		"client/src/main.ts",
-		"client/src/app/app.component.ts",
-		"client/src/app/app.routes.ts",
-		"client/src/app/app.config.ts",
-		"client/src/app/components/layout/layout.component.ts",
-		"client/src/app/pages/home/home.component.ts",
-		"client/src/app/pages/about/about.component.ts",
+		"frontend/package.json",
+		"frontend/angular.json",
+		"frontend/tsconfig.json",
+		"frontend/src/index.html",
+		"frontend/src/main.ts",
+		"frontend/src/app/app.component.ts",
+		"frontend/src/app/app.routes.ts",
+		"frontend/src/app/app.config.ts",
+		"frontend/src/app/components/layout/layout.component.ts",
+		"frontend/src/app/pages/home/home.component.ts",
+		"frontend/src/app/pages/about/about.component.ts",
 		"Makefile",
 	}
 
@@ -1055,7 +1055,7 @@ func TestAngularTemplateVariableSubstitution(t *testing.T) {
 	}
 
 	// Check package.json contains the project name
-	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "client/package.json"))
+	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "frontend/package.json"))
 	if err != nil {
 		t.Fatalf("ReadFile(package.json) error: %v", err)
 	}
@@ -1087,7 +1087,7 @@ func TestAngularTemplateHasAngularSpecificContent(t *testing.T) {
 	}
 
 	// Check app.component.ts contains Angular-specific content
-	appComponent, err := os.ReadFile(filepath.Join(tmpDir, "client/src/app/app.component.ts"))
+	appComponent, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/app/app.component.ts"))
 	if err != nil {
 		t.Fatalf("ReadFile(app.component.ts) error: %v", err)
 	}
@@ -1103,7 +1103,7 @@ func TestAngularTemplateHasAngularSpecificContent(t *testing.T) {
 	}
 
 	// Check angular.json exists and contains proper configuration
-	angularJson, err := os.ReadFile(filepath.Join(tmpDir, "client/angular.json"))
+	angularJson, err := os.ReadFile(filepath.Join(tmpDir, "frontend/angular.json"))
 	if err != nil {
 		t.Fatalf("ReadFile(angular.json) error: %v", err)
 	}
@@ -1113,7 +1113,7 @@ func TestAngularTemplateHasAngularSpecificContent(t *testing.T) {
 	}
 
 	// Check main.ts uses Angular bootstrapApplication
-	mainTs, err := os.ReadFile(filepath.Join(tmpDir, "client/src/main.ts"))
+	mainTs, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/main.ts"))
 	if err != nil {
 		t.Fatalf("ReadFile(main.ts) error: %v", err)
 	}
@@ -1123,7 +1123,7 @@ func TestAngularTemplateHasAngularSpecificContent(t *testing.T) {
 	}
 
 	// Check home.component.ts uses Angular signals
-	homeComponent, err := os.ReadFile(filepath.Join(tmpDir, "client/src/app/pages/home/home.component.ts"))
+	homeComponent, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/app/pages/home/home.component.ts"))
 	if err != nil {
 		t.Fatalf("ReadFile(home.component.ts) error: %v", err)
 	}
@@ -1292,7 +1292,7 @@ func TestApplyPlanHtmxTemplate(t *testing.T) {
 	}
 
 	// Verify NO client/package.json (HTMX doesn't use npm)
-	clientPkg := filepath.Join(tmpDir, "client/package.json")
+	clientPkg := filepath.Join(tmpDir, "frontend/package.json")
 	if _, err := os.Stat(clientPkg); err == nil {
 		t.Error("HTMX template should NOT have client/package.json")
 	}
@@ -1459,8 +1459,8 @@ func TestHtmxTemplateMakefileNoBuildStep(t *testing.T) {
 	if strings.Contains(string(makefile), "npm") {
 		t.Error("HTMX Makefile should NOT contain npm commands")
 	}
-	if strings.Contains(string(makefile), "client") {
-		t.Error("HTMX Makefile should NOT reference client directory")
+	if strings.Contains(string(makefile), "frontend") {
+		t.Error("HTMX Makefile should NOT reference frontend directory")
 	}
 }
 
@@ -1521,10 +1521,10 @@ func TestLoadTemplateFilesNext(t *testing.T) {
 		"app/server/app.go",                // template specific
 		"app/server/config.go",             // template specific
 		"app/server/routes.go",             // template specific
-		"client/package.json",              // template specific
-		"client/next.config.ts",            // template specific (Next.js)
-		"client/src/app/layout.tsx",        // template specific (Next.js App Router)
-		"client/src/app/page.tsx",          // template specific
+		"frontend/package.json",              // template specific
+		"frontend/next.config.ts",            // template specific (Next.js)
+		"frontend/src/app/layout.tsx",        // template specific (Next.js App Router)
+		"frontend/src/app/page.tsx",          // template specific
 		"Makefile",                         // template specific
 	}
 
@@ -1593,16 +1593,16 @@ func TestApplyPlanNextTemplate(t *testing.T) {
 		"app/server/app.go",
 		"app/server/config.go",
 		"app/server/routes.go",
-		"client/package.json",
-		"client/next.config.ts",
-		"client/tsconfig.json",
-		"client/tailwind.config.ts",
-		"client/postcss.config.mjs",
-		"client/src/app/layout.tsx",
-		"client/src/app/page.tsx",
-		"client/src/app/about/page.tsx",
-		"client/src/components/Navigation.tsx",
-		"client/src/styles/globals.css",
+		"frontend/package.json",
+		"frontend/next.config.ts",
+		"frontend/tsconfig.json",
+		"frontend/tailwind.config.ts",
+		"frontend/postcss.config.mjs",
+		"frontend/src/app/layout.tsx",
+		"frontend/src/app/page.tsx",
+		"frontend/src/app/about/page.tsx",
+		"frontend/src/components/Navigation.tsx",
+		"frontend/src/styles/globals.css",
 		"Makefile",
 	}
 
@@ -1638,7 +1638,7 @@ func TestNextTemplateVariableSubstitution(t *testing.T) {
 	}
 
 	// Check package.json contains the project name
-	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "client/package.json"))
+	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "frontend/package.json"))
 	if err != nil {
 		t.Fatalf("ReadFile(package.json) error: %v", err)
 	}
@@ -1670,7 +1670,7 @@ func TestNextTemplateHasNextSpecificContent(t *testing.T) {
 	}
 
 	// Check next.config.ts contains Next.js specific configuration
-	nextConfig, err := os.ReadFile(filepath.Join(tmpDir, "client/next.config.ts"))
+	nextConfig, err := os.ReadFile(filepath.Join(tmpDir, "frontend/next.config.ts"))
 	if err != nil {
 		t.Fatalf("ReadFile(next.config.ts) error: %v", err)
 	}
@@ -1683,7 +1683,7 @@ func TestNextTemplateHasNextSpecificContent(t *testing.T) {
 	}
 
 	// Check layout.tsx contains Next.js App Router patterns
-	layout, err := os.ReadFile(filepath.Join(tmpDir, "client/src/app/layout.tsx"))
+	layout, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/app/layout.tsx"))
 	if err != nil {
 		t.Fatalf("ReadFile(layout.tsx) error: %v", err)
 	}
@@ -1696,7 +1696,7 @@ func TestNextTemplateHasNextSpecificContent(t *testing.T) {
 	}
 
 	// Check page.tsx uses 'use client' directive
-	page, err := os.ReadFile(filepath.Join(tmpDir, "client/src/app/page.tsx"))
+	page, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/app/page.tsx"))
 	if err != nil {
 		t.Fatalf("ReadFile(page.tsx) error: %v", err)
 	}
@@ -1709,7 +1709,7 @@ func TestNextTemplateHasNextSpecificContent(t *testing.T) {
 	}
 
 	// Check Navigation.tsx uses Next.js navigation
-	navigation, err := os.ReadFile(filepath.Join(tmpDir, "client/src/components/Navigation.tsx"))
+	navigation, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/components/Navigation.tsx"))
 	if err != nil {
 		t.Fatalf("ReadFile(Navigation.tsx) error: %v", err)
 	}
@@ -1725,7 +1725,7 @@ func TestNextTemplateHasNextSpecificContent(t *testing.T) {
 	}
 
 	// Check tailwind.config.ts exists
-	tailwindConfig, err := os.ReadFile(filepath.Join(tmpDir, "client/tailwind.config.ts"))
+	tailwindConfig, err := os.ReadFile(filepath.Join(tmpDir, "frontend/tailwind.config.ts"))
 	if err != nil {
 		t.Fatalf("ReadFile(tailwind.config.ts) error: %v", err)
 	}
@@ -1773,8 +1773,8 @@ func TestNextTemplateMakefileHasNpmCommands(t *testing.T) {
 	if !strings.Contains(string(makefile), "npm run dev") {
 		t.Error("Next.js Makefile should contain npm run dev")
 	}
-	if !strings.Contains(string(makefile), "client") {
-		t.Error("Next.js Makefile should reference client directory")
+	if !strings.Contains(string(makefile), "frontend") {
+		t.Error("Next.js Makefile should reference frontend directory")
 	}
 }
 
@@ -1835,13 +1835,13 @@ func TestLoadTemplateFilesNuxt(t *testing.T) {
 		"app/server/app.go",                  // template specific
 		"app/server/config.go",               // template specific
 		"app/server/routes.go",               // template specific
-		"client/package.json",                // template specific
-		"client/nuxt.config.ts",              // template specific (Nuxt)
-		"client/app.vue",                     // template specific (Nuxt)
-		"client/pages/index.vue",             // template specific (Nuxt pages)
-		"client/pages/about.vue",             // template specific
-		"client/layouts/default.vue",         // template specific (Nuxt layouts)
-		"client/components/AppNavigation.vue", // template specific
+		"frontend/package.json",                // template specific
+		"frontend/nuxt.config.ts",              // template specific (Nuxt)
+		"frontend/app.vue",                     // template specific (Nuxt)
+		"frontend/pages/index.vue",             // template specific (Nuxt pages)
+		"frontend/pages/about.vue",             // template specific
+		"frontend/layouts/default.vue",         // template specific (Nuxt layouts)
+		"frontend/components/AppNavigation.vue", // template specific
 		"Makefile",                           // template specific
 	}
 
@@ -1910,16 +1910,16 @@ func TestApplyPlanNuxtTemplate(t *testing.T) {
 		"app/server/app.go",
 		"app/server/config.go",
 		"app/server/routes.go",
-		"client/package.json",
-		"client/nuxt.config.ts",
-		"client/tsconfig.json",
-		"client/tailwind.config.ts",
-		"client/app.vue",
-		"client/pages/index.vue",
-		"client/pages/about.vue",
-		"client/layouts/default.vue",
-		"client/components/AppNavigation.vue",
-		"client/assets/css/main.css",
+		"frontend/package.json",
+		"frontend/nuxt.config.ts",
+		"frontend/tsconfig.json",
+		"frontend/tailwind.config.ts",
+		"frontend/app.vue",
+		"frontend/pages/index.vue",
+		"frontend/pages/about.vue",
+		"frontend/layouts/default.vue",
+		"frontend/components/AppNavigation.vue",
+		"frontend/assets/css/main.css",
 		"Makefile",
 	}
 
@@ -1955,7 +1955,7 @@ func TestNuxtTemplateVariableSubstitution(t *testing.T) {
 	}
 
 	// Check package.json contains the project name
-	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "client/package.json"))
+	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "frontend/package.json"))
 	if err != nil {
 		t.Fatalf("ReadFile(package.json) error: %v", err)
 	}
@@ -1987,7 +1987,7 @@ func TestNuxtTemplateHasNuxtSpecificContent(t *testing.T) {
 	}
 
 	// Check nuxt.config.ts contains Nuxt specific configuration
-	nuxtConfig, err := os.ReadFile(filepath.Join(tmpDir, "client/nuxt.config.ts"))
+	nuxtConfig, err := os.ReadFile(filepath.Join(tmpDir, "frontend/nuxt.config.ts"))
 	if err != nil {
 		t.Fatalf("ReadFile(nuxt.config.ts) error: %v", err)
 	}
@@ -2003,7 +2003,7 @@ func TestNuxtTemplateHasNuxtSpecificContent(t *testing.T) {
 	}
 
 	// Check app.vue uses Nuxt components
-	appVue, err := os.ReadFile(filepath.Join(tmpDir, "client/app.vue"))
+	appVue, err := os.ReadFile(filepath.Join(tmpDir, "frontend/app.vue"))
 	if err != nil {
 		t.Fatalf("ReadFile(app.vue) error: %v", err)
 	}
@@ -2016,7 +2016,7 @@ func TestNuxtTemplateHasNuxtSpecificContent(t *testing.T) {
 	}
 
 	// Check default.vue layout
-	layout, err := os.ReadFile(filepath.Join(tmpDir, "client/layouts/default.vue"))
+	layout, err := os.ReadFile(filepath.Join(tmpDir, "frontend/layouts/default.vue"))
 	if err != nil {
 		t.Fatalf("ReadFile(default.vue) error: %v", err)
 	}
@@ -2029,7 +2029,7 @@ func TestNuxtTemplateHasNuxtSpecificContent(t *testing.T) {
 	}
 
 	// Check index.vue uses Nuxt auto-imports
-	indexVue, err := os.ReadFile(filepath.Join(tmpDir, "client/pages/index.vue"))
+	indexVue, err := os.ReadFile(filepath.Join(tmpDir, "frontend/pages/index.vue"))
 	if err != nil {
 		t.Fatalf("ReadFile(index.vue) error: %v", err)
 	}
@@ -2048,7 +2048,7 @@ func TestNuxtTemplateHasNuxtSpecificContent(t *testing.T) {
 	}
 
 	// Check AppNavigation.vue uses NuxtLink
-	navigation, err := os.ReadFile(filepath.Join(tmpDir, "client/components/AppNavigation.vue"))
+	navigation, err := os.ReadFile(filepath.Join(tmpDir, "frontend/components/AppNavigation.vue"))
 	if err != nil {
 		t.Fatalf("ReadFile(AppNavigation.vue) error: %v", err)
 	}
@@ -2099,8 +2099,8 @@ func TestNuxtTemplateMakefileHasNpmCommands(t *testing.T) {
 	if !strings.Contains(string(makefile), "npm run dev") {
 		t.Error("Nuxt Makefile should contain npm run dev")
 	}
-	if !strings.Contains(string(makefile), "client") {
-		t.Error("Nuxt Makefile should reference client directory")
+	if !strings.Contains(string(makefile), "frontend") {
+		t.Error("Nuxt Makefile should reference frontend directory")
 	}
 	if !strings.Contains(string(makefile), ".nuxt") {
 		t.Error("Nuxt Makefile should clean .nuxt directory")
@@ -2164,10 +2164,10 @@ func TestLoadTemplateFilesPreact(t *testing.T) {
 		"app/server/app.go",     // template specific
 		"app/server/config.go",  // template specific
 		"app/server/routes.go",  // template specific
-		"client/package.json",   // template specific
-		"client/vite.config.ts", // template specific
-		"client/src/App.tsx",    // template specific (Preact)
-		"client/src/main.tsx",   // template specific
+		"frontend/package.json",   // template specific
+		"frontend/vite.config.ts", // template specific
+		"frontend/src/App.tsx",    // template specific (Preact)
+		"frontend/src/main.tsx",   // template specific
 		"Makefile",              // template specific
 	}
 
@@ -2236,15 +2236,15 @@ func TestApplyPlanPreactTemplate(t *testing.T) {
 		"app/server/app.go",
 		"app/server/config.go",
 		"app/server/routes.go",
-		"client/package.json",
-		"client/vite.config.ts",
-		"client/tsconfig.json",
-		"client/index.html",
-		"client/src/App.tsx",
-		"client/src/main.tsx",
-		"client/src/components/Layout.tsx",
-		"client/src/pages/Home.tsx",
-		"client/src/pages/About.tsx",
+		"frontend/package.json",
+		"frontend/vite.config.ts",
+		"frontend/tsconfig.json",
+		"frontend/index.html",
+		"frontend/src/App.tsx",
+		"frontend/src/main.tsx",
+		"frontend/src/components/Layout.tsx",
+		"frontend/src/pages/Home.tsx",
+		"frontend/src/pages/About.tsx",
 		"Makefile",
 	}
 
@@ -2280,7 +2280,7 @@ func TestPreactTemplateVariableSubstitution(t *testing.T) {
 	}
 
 	// Check package.json contains the project name
-	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "client/package.json"))
+	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "frontend/package.json"))
 	if err != nil {
 		t.Fatalf("ReadFile(package.json) error: %v", err)
 	}
@@ -2312,7 +2312,7 @@ func TestPreactTemplateHasPreactSpecificContent(t *testing.T) {
 	}
 
 	// Check App.tsx contains Preact-specific content
-	appTsx, err := os.ReadFile(filepath.Join(tmpDir, "client/src/App.tsx"))
+	appTsx, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/App.tsx"))
 	if err != nil {
 		t.Fatalf("ReadFile(App.tsx) error: %v", err)
 	}
@@ -2325,7 +2325,7 @@ func TestPreactTemplateHasPreactSpecificContent(t *testing.T) {
 	}
 
 	// Check main.tsx uses Preact render
-	mainTsx, err := os.ReadFile(filepath.Join(tmpDir, "client/src/main.tsx"))
+	mainTsx, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/main.tsx"))
 	if err != nil {
 		t.Fatalf("ReadFile(main.tsx) error: %v", err)
 	}
@@ -2335,7 +2335,7 @@ func TestPreactTemplateHasPreactSpecificContent(t *testing.T) {
 	}
 
 	// Check vite.config.ts uses Preact preset
-	viteConfig, err := os.ReadFile(filepath.Join(tmpDir, "client/vite.config.ts"))
+	viteConfig, err := os.ReadFile(filepath.Join(tmpDir, "frontend/vite.config.ts"))
 	if err != nil {
 		t.Fatalf("ReadFile(vite.config.ts) error: %v", err)
 	}
@@ -2345,7 +2345,7 @@ func TestPreactTemplateHasPreactSpecificContent(t *testing.T) {
 	}
 
 	// Check Home.tsx uses preact/hooks
-	homeTsx, err := os.ReadFile(filepath.Join(tmpDir, "client/src/pages/Home.tsx"))
+	homeTsx, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/pages/Home.tsx"))
 	if err != nil {
 		t.Fatalf("ReadFile(Home.tsx) error: %v", err)
 	}
@@ -2361,7 +2361,7 @@ func TestPreactTemplateHasPreactSpecificContent(t *testing.T) {
 	}
 
 	// Check Layout.tsx uses ComponentChildren from preact
-	layoutTsx, err := os.ReadFile(filepath.Join(tmpDir, "client/src/components/Layout.tsx"))
+	layoutTsx, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/components/Layout.tsx"))
 	if err != nil {
 		t.Fatalf("ReadFile(Layout.tsx) error: %v", err)
 	}
@@ -2371,7 +2371,7 @@ func TestPreactTemplateHasPreactSpecificContent(t *testing.T) {
 	}
 
 	// Check tsconfig.json has Preact JSX configuration
-	tsconfig, err := os.ReadFile(filepath.Join(tmpDir, "client/tsconfig.json"))
+	tsconfig, err := os.ReadFile(filepath.Join(tmpDir, "frontend/tsconfig.json"))
 	if err != nil {
 		t.Fatalf("ReadFile(tsconfig.json) error: %v", err)
 	}
@@ -2419,8 +2419,8 @@ func TestPreactTemplateMakefileHasNpmCommands(t *testing.T) {
 	if !strings.Contains(string(makefile), "npm run dev") {
 		t.Error("Preact Makefile should contain npm run dev")
 	}
-	if !strings.Contains(string(makefile), "client") {
-		t.Error("Preact Makefile should reference client directory")
+	if !strings.Contains(string(makefile), "frontend") {
+		t.Error("Preact Makefile should reference frontend directory")
 	}
 }
 
@@ -2481,12 +2481,12 @@ func TestLoadTemplateFilesSvelteKit(t *testing.T) {
 		"app/server/app.go",                   // template specific
 		"app/server/config.go",                // template specific
 		"app/server/routes.go",                // template specific
-		"client/package.json",                 // template specific
-		"client/svelte.config.js",             // template specific (SvelteKit)
-		"client/vite.config.ts",               // template specific
-		"client/src/app.html",                 // template specific (SvelteKit)
-		"client/src/routes/+layout.svelte",    // template specific (SvelteKit routing)
-		"client/src/routes/+page.svelte",      // template specific
+		"frontend/package.json",                 // template specific
+		"frontend/svelte.config.js",             // template specific (SvelteKit)
+		"frontend/vite.config.ts",               // template specific
+		"frontend/src/app.html",                 // template specific (SvelteKit)
+		"frontend/src/routes/+layout.svelte",    // template specific (SvelteKit routing)
+		"frontend/src/routes/+page.svelte",      // template specific
 		"Makefile",                            // template specific
 	}
 
@@ -2555,18 +2555,18 @@ func TestApplyPlanSvelteKitTemplate(t *testing.T) {
 		"app/server/app.go",
 		"app/server/config.go",
 		"app/server/routes.go",
-		"client/package.json",
-		"client/svelte.config.js",
-		"client/vite.config.ts",
-		"client/tsconfig.json",
-		"client/tailwind.config.ts",
-		"client/postcss.config.js",
-		"client/src/app.html",
-		"client/src/app.css",
-		"client/src/app.d.ts",
-		"client/src/routes/+layout.svelte",
-		"client/src/routes/+page.svelte",
-		"client/src/routes/about/+page.svelte",
+		"frontend/package.json",
+		"frontend/svelte.config.js",
+		"frontend/vite.config.ts",
+		"frontend/tsconfig.json",
+		"frontend/tailwind.config.ts",
+		"frontend/postcss.config.js",
+		"frontend/src/app.html",
+		"frontend/src/app.css",
+		"frontend/src/app.d.ts",
+		"frontend/src/routes/+layout.svelte",
+		"frontend/src/routes/+page.svelte",
+		"frontend/src/routes/about/+page.svelte",
 		"Makefile",
 	}
 
@@ -2602,7 +2602,7 @@ func TestSvelteKitTemplateVariableSubstitution(t *testing.T) {
 	}
 
 	// Check package.json contains the project name
-	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "client/package.json"))
+	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "frontend/package.json"))
 	if err != nil {
 		t.Fatalf("ReadFile(package.json) error: %v", err)
 	}
@@ -2637,7 +2637,7 @@ func TestSvelteKitTemplateHasSvelteKitSpecificContent(t *testing.T) {
 	}
 
 	// Check svelte.config.js contains adapter-static
-	svelteConfig, err := os.ReadFile(filepath.Join(tmpDir, "client/svelte.config.js"))
+	svelteConfig, err := os.ReadFile(filepath.Join(tmpDir, "frontend/svelte.config.js"))
 	if err != nil {
 		t.Fatalf("ReadFile(svelte.config.js) error: %v", err)
 	}
@@ -2650,7 +2650,7 @@ func TestSvelteKitTemplateHasSvelteKitSpecificContent(t *testing.T) {
 	}
 
 	// Check +layout.svelte uses Svelte 5 syntax
-	layout, err := os.ReadFile(filepath.Join(tmpDir, "client/src/routes/+layout.svelte"))
+	layout, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/routes/+layout.svelte"))
 	if err != nil {
 		t.Fatalf("ReadFile(+layout.svelte) error: %v", err)
 	}
@@ -2666,7 +2666,7 @@ func TestSvelteKitTemplateHasSvelteKitSpecificContent(t *testing.T) {
 	}
 
 	// Check +page.svelte uses Svelte 5 runes
-	page, err := os.ReadFile(filepath.Join(tmpDir, "client/src/routes/+page.svelte"))
+	page, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/routes/+page.svelte"))
 	if err != nil {
 		t.Fatalf("ReadFile(+page.svelte) error: %v", err)
 	}
@@ -2679,7 +2679,7 @@ func TestSvelteKitTemplateHasSvelteKitSpecificContent(t *testing.T) {
 	}
 
 	// Check vite.config.ts uses SvelteKit plugin
-	viteConfig, err := os.ReadFile(filepath.Join(tmpDir, "client/vite.config.ts"))
+	viteConfig, err := os.ReadFile(filepath.Join(tmpDir, "frontend/vite.config.ts"))
 	if err != nil {
 		t.Fatalf("ReadFile(vite.config.ts) error: %v", err)
 	}
@@ -2692,7 +2692,7 @@ func TestSvelteKitTemplateHasSvelteKitSpecificContent(t *testing.T) {
 	}
 
 	// Check app.html contains SvelteKit placeholders
-	appHtml, err := os.ReadFile(filepath.Join(tmpDir, "client/src/app.html"))
+	appHtml, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/app.html"))
 	if err != nil {
 		t.Fatalf("ReadFile(app.html) error: %v", err)
 	}
@@ -2705,7 +2705,7 @@ func TestSvelteKitTemplateHasSvelteKitSpecificContent(t *testing.T) {
 	}
 
 	// Check app.css imports Tailwind
-	appCss, err := os.ReadFile(filepath.Join(tmpDir, "client/src/app.css"))
+	appCss, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/app.css"))
 	if err != nil {
 		t.Fatalf("ReadFile(app.css) error: %v", err)
 	}
@@ -2753,8 +2753,8 @@ func TestSvelteKitTemplateMakefileHasNpmCommands(t *testing.T) {
 	if !strings.Contains(string(makefile), "npm run dev") {
 		t.Error("SvelteKit Makefile should contain npm run dev")
 	}
-	if !strings.Contains(string(makefile), "client") {
-		t.Error("SvelteKit Makefile should reference client directory")
+	if !strings.Contains(string(makefile), "frontend") {
+		t.Error("SvelteKit Makefile should reference frontend directory")
 	}
 	if !strings.Contains(string(makefile), ".svelte-kit") {
 		t.Error("SvelteKit Makefile should clean .svelte-kit directory")
@@ -2818,11 +2818,11 @@ func TestLoadTemplateFilesAlpine(t *testing.T) {
 		"app/server/app.go",        // template specific
 		"app/server/config.go",     // template specific
 		"app/server/routes.go",     // template specific
-		"client/package.json",      // template specific
-		"client/vite.config.ts",    // template specific
-		"client/index.html",        // template specific (Alpine uses HTML)
-		"client/src/main.ts",       // template specific
-		"client/src/app.ts",        // template specific (Alpine app data)
+		"frontend/package.json",      // template specific
+		"frontend/vite.config.ts",    // template specific
+		"frontend/index.html",        // template specific (Alpine uses HTML)
+		"frontend/src/main.ts",       // template specific
+		"frontend/src/app.ts",        // template specific (Alpine app data)
 		"Makefile",                 // template specific
 	}
 
@@ -2891,13 +2891,13 @@ func TestApplyPlanAlpineTemplate(t *testing.T) {
 		"app/server/app.go",
 		"app/server/config.go",
 		"app/server/routes.go",
-		"client/package.json",
-		"client/vite.config.ts",
-		"client/tsconfig.json",
-		"client/index.html",
-		"client/src/main.ts",
-		"client/src/app.ts",
-		"client/src/styles/index.css",
+		"frontend/package.json",
+		"frontend/vite.config.ts",
+		"frontend/tsconfig.json",
+		"frontend/index.html",
+		"frontend/src/main.ts",
+		"frontend/src/app.ts",
+		"frontend/src/styles/index.css",
 		"Makefile",
 	}
 
@@ -2933,7 +2933,7 @@ func TestAlpineTemplateVariableSubstitution(t *testing.T) {
 	}
 
 	// Check package.json contains the project name
-	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "client/package.json"))
+	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "frontend/package.json"))
 	if err != nil {
 		t.Fatalf("ReadFile(package.json) error: %v", err)
 	}
@@ -2962,7 +2962,7 @@ func TestAlpineTemplateHasAlpineSpecificContent(t *testing.T) {
 	}
 
 	// Check index.html contains Alpine-specific directives
-	indexHtml, err := os.ReadFile(filepath.Join(tmpDir, "client/index.html"))
+	indexHtml, err := os.ReadFile(filepath.Join(tmpDir, "frontend/index.html"))
 	if err != nil {
 		t.Fatalf("ReadFile(index.html) error: %v", err)
 	}
@@ -2982,7 +2982,7 @@ func TestAlpineTemplateHasAlpineSpecificContent(t *testing.T) {
 	}
 
 	// Check main.ts imports and starts Alpine
-	mainTs, err := os.ReadFile(filepath.Join(tmpDir, "client/src/main.ts"))
+	mainTs, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/main.ts"))
 	if err != nil {
 		t.Fatalf("ReadFile(main.ts) error: %v", err)
 	}
@@ -2998,7 +2998,7 @@ func TestAlpineTemplateHasAlpineSpecificContent(t *testing.T) {
 	}
 
 	// Check app.ts contains the app data/methods
-	appTs, err := os.ReadFile(filepath.Join(tmpDir, "client/src/app.ts"))
+	appTs, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/app.ts"))
 	if err != nil {
 		t.Fatalf("ReadFile(app.ts) error: %v", err)
 	}
@@ -3017,7 +3017,7 @@ func TestAlpineTemplateHasAlpineSpecificContent(t *testing.T) {
 	}
 
 	// Check styles include x-cloak rule
-	indexCss, err := os.ReadFile(filepath.Join(tmpDir, "client/src/styles/index.css"))
+	indexCss, err := os.ReadFile(filepath.Join(tmpDir, "frontend/src/styles/index.css"))
 	if err != nil {
 		t.Fatalf("ReadFile(index.css) error: %v", err)
 	}
@@ -3065,7 +3065,7 @@ func TestAlpineTemplateMakefileHasNpmCommands(t *testing.T) {
 	if !strings.Contains(string(makefile), "npm run dev") {
 		t.Error("Alpine Makefile should contain npm run dev")
 	}
-	if !strings.Contains(string(makefile), "client") {
-		t.Error("Alpine Makefile should reference client directory")
+	if !strings.Contains(string(makefile), "frontend") {
+		t.Error("Alpine Makefile should reference frontend directory")
 	}
 }

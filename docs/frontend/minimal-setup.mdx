@@ -17,15 +17,15 @@ This guide shows you how to manually integrate a frontend framework with Mizu wi
 ### 1. Create Vite Project
 
 ```bash
-npm create vite@latest client -- --template react-ts
-cd client
+npm create vite@latest frontend -- --template react-ts
+cd frontend
 npm install
 ```
 
 ### 2. Configure Vite
 
 ```ts
-// client/vite.config.ts
+// frontend/vite.config.ts
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -104,17 +104,17 @@ func main() {
 
 dev:
 	@echo "Starting development servers..."
-	@(cd client && npm run dev) & \
+	@(cd frontend && npm run dev) & \
 	go run main.go
 
 build:
 	@echo "Building frontend..."
-	cd client && npm run build
+	cd frontend && npm run build
 	@echo "Building backend..."
 	go build -o ./bin/server
 
 clean:
-	rm -rf dist client/node_modules ./bin
+	rm -rf dist frontend/node_modules ./bin
 ```
 
 ## Vue + Vite Setup
@@ -123,7 +123,7 @@ Follow same steps as React, but:
 
 ```bash
 # Step 1: Create Vue project
-npm create vite@latest client -- --template vue-ts
+npm create vite@latest frontend -- --template vue-ts
 ```
 
 Same Vite config, same backend setup.
@@ -229,8 +229,8 @@ func main() {
 ### 1. Create Next.js App
 
 ```bash
-npx create-next-app@latest client
-cd client
+npx create-next-app@latest frontend
+cd frontend
 ```
 
 ### 2. Configure for Static Export

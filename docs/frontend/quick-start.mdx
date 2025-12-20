@@ -83,7 +83,7 @@ my-app/
 │       ├── app.go           # Mizu app setup
 │       ├── config.go        # Configuration
 │       └── routes.go        # API routes
-├── client/                  # Frontend code
+├── frontend/                  # Frontend code
 │   ├── src/
 │   │   ├── main.tsx         # Entry point
 │   │   ├── App.tsx          # Root component
@@ -148,7 +148,7 @@ You can also run the servers separately:
 
 ```bash
 # Terminal 1: Start frontend dev server
-cd client
+cd frontend
 npm run dev
 
 # Terminal 2: Start Go backend
@@ -231,7 +231,7 @@ func setupRoutes(app *mizu.App) {
 
 These routes are always handled by Go, never proxied to the frontend.
 
-### Frontend: `client/src/App.tsx` (React example)
+### Frontend: `frontend/src/App.tsx` (React example)
 
 ```tsx
 function App() {
@@ -258,7 +258,7 @@ The frontend calls the Go backend API and displays the response.
 
 ### Frontend Changes (React/Vue/Svelte)
 
-1. Edit any file in `client/src/`
+1. Edit any file in `frontend/src/`
 2. Save the file
 3. See changes instantly in your browser (HMR)
 
@@ -357,7 +357,7 @@ useEffect(() => {
 ### Install a new npm package
 
 ```bash
-cd client
+cd frontend
 npm install <package-name>
 ```
 
@@ -377,7 +377,7 @@ make clean
 
 ```bash
 # Frontend tests
-cd client
+cd frontend
 npm test
 
 # Backend tests
@@ -402,7 +402,7 @@ type Config struct {
 
 1. Make sure the frontend dev server is running:
    ```bash
-   cd client
+   cd frontend
    npm run dev
    ```
 
@@ -416,7 +416,7 @@ type Config struct {
 ### Changes not appearing
 
 **Frontend changes:**
-- Make sure you're editing files in `client/src/`
+- Make sure you're editing files in `frontend/src/`
 - Check the browser console for errors
 - Try a hard refresh (Ctrl+Shift+R or Cmd+Shift+R)
 

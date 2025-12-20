@@ -15,14 +15,14 @@ make build
 ```
 
 This runs:
-1. `cd client && npm run build` - Builds frontend
+1. `cd frontend && npm run build` - Builds frontend
 2. `go build -o ./bin/server cmd/server/main.go` - Builds Go binary with embedded frontend
 
 ### Manual Build
 
 ```bash
 # Build frontend
-cd client
+cd frontend
 npm run build
 
 # Build Go binary
@@ -264,10 +264,10 @@ jobs:
           go-version: '1.22'
 
       - name: Install dependencies
-        run: cd client && npm ci
+        run: cd frontend && npm ci
 
       - name: Build frontend
-        run: cd client && npm run build
+        run: cd frontend && npm run build
 
       - name: Build server
         run: go build -o ./bin/server cmd/server/main.go

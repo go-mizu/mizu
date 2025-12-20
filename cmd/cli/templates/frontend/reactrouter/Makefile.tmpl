@@ -3,13 +3,13 @@
 # Development mode: run React Router dev server and Go server
 dev:
 	@echo "Starting development servers..."
-	@(cd client && npm run dev) & \
+	@(cd frontend && npm run dev) & \
 	MIZU_ENV=development go run ./cmd/server
 
 # Build frontend for production (static export)
 build:
 	@echo "Building React Router app..."
-	cd client && npm run build
+	cd frontend && npm run build
 	@echo "Build complete: dist/"
 
 # Run production server
@@ -20,18 +20,18 @@ run: build
 # Clean build artifacts
 clean:
 	rm -rf dist
-	rm -rf client/node_modules
-	rm -rf client/build
-	rm -rf client/.react-router
+	rm -rf frontend/node_modules
+	rm -rf frontend/build
+	rm -rf frontend/.react-router
 
 # Install dependencies
 install:
-	cd client && npm install
+	cd frontend && npm install
 	go mod tidy
 
 # Type check
 typecheck:
-	cd client && npm run typecheck
+	cd frontend && npm run typecheck
 
 # Run tests
 test:
