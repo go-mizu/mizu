@@ -6,6 +6,46 @@ icon: "code"
 
 Svelte is a radical new approach to building user interfaces. Instead of using a runtime library, Svelte is a compiler that converts your components into efficient JavaScript at build time.
 
+## Why Svelte?
+
+Svelte takes a fundamentally different approach from React and Vue. Instead of shipping a framework to the browser, Svelte compiles your components into highly optimized vanilla JavaScript at build time. This results in incredibly small bundle sizes and blazing-fast performance.
+
+**Key strengths:**
+- **No virtual DOM**: Direct DOM manipulation, faster updates
+- **Truly reactive**: Assignments trigger updates automatically
+- **Compile-time framework**: Most work done at build time, not runtime
+- **Minimal boilerplate**: Less code to write than React/Vue
+- **Built-in animations**: Transitions and animations included
+- **Smallest bundles**: Often 70-90% smaller than React equivalents
+- **Great DX**: Intuitive syntax, excellent error messages
+
+### Svelte vs Other Frameworks
+
+| Feature | Svelte | React | Vue 3 | Angular |
+|---------|--------|-------|-------|---------|
+| **Bundle Size** | ~3 KB | ~44 KB | ~34 KB | ~167 KB |
+| **Runtime** | None (compiled) | Virtual DOM | Virtual DOM | Zone.js + RxJS |
+| **Reactivity** | Compile-time | Hooks | Proxy-based | RxJS Observables |
+| **Boilerplate** | Minimal | Moderate | Moderate | High |
+| **Learning Curve** | Gentle | Moderate | Gentle | Steep |
+| **TypeScript** | Excellent | Excellent | Excellent | Built-in |
+| **Animations** | Built-in | Third-party | Third-party | Built-in |
+| **SEO/SSR** | SvelteKit | Next.js | Nuxt | Universal |
+| **Ecosystem** | Growing | Largest | Large | Large |
+| **Best For** | Fast, small apps | Large ecosystems | Progressive apps | Enterprise |
+
+### Svelte + Mizu vs Standalone Svelte
+
+| Aspect | Svelte + Mizu | Standalone Svelte (SPA) |
+|--------|---------------|-------------------------|
+| **Backend** | Go (embedded FS) | Separate API server |
+| **Deployment** | Single binary | Frontend + backend separate |
+| **Development** | Mizu proxy + Vite HMR | Vite dev server only |
+| **API Calls** | Same origin (`/api/*`) | CORS required |
+| **Build** | `make build` (Go + Svelte) | `npm run build` only |
+| **Production** | `./bin/server` | nginx/CDN + API server |
+| **Type Safety** | Go backend + TS frontend | TS frontend only |
+
 ## Quick Start
 
 Create a new Svelte project with the CLI:
@@ -17,6 +57,67 @@ make dev
 ```
 
 Visit `http://localhost:3000` to see your app!
+
+## Architecture
+
+### Development Mode
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Browser                              │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  Svelte App (HMR enabled, compiled components)         │  │
+│  │  ┌─────────┐  ┌─────────┐  ┌──────────┐               │  │
+│  │  │ Router  │→ │ Pages   │→ │ API Call │               │  │
+│  │  └─────────┘  └─────────┘  └──────────┘               │  │
+│  └───────────────────────────────────────────────────────┘  │
+│         ↑ HMR WebSocket           ↓ /api/tasks              │
+└─────────┼──────────────────────────┼────────────────────────┘
+          │                          │
+┌─────────┼──────────────────────────┼────────────────────────┐
+│  Mizu Server (:3000)               │                         │
+│         │                          ↓                         │
+│    ┌────┴─────────┐        ┌────────────┐                   │
+│    │   Proxy to   │        │ API Routes │                   │
+│    │ Vite (:5173) │        │ (Go)       │                   │
+│    └──────────────┘        └────────────┘                   │
+│         ↑                                                    │
+└─────────┼────────────────────────────────────────────────────┘
+          │
+┌─────────┼────────────────────────────────────────────────────┐
+│  Vite Dev Server (:5173)                                     │
+│    ┌──────────────┐  ┌─────────────┐                        │
+│    │ Svelte       │  │ HMR Engine  │                        │
+│    │ Compiler     │  │             │                        │
+│    └──────────────┘  └─────────────┘                        │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Production Mode
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Browser                              │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  Svelte App (compiled to vanilla JS, minified)         │  │
+│  │  ┌─────────┐  ┌─────────┐  ┌──────────┐               │  │
+│  │  │ Router  │→ │ Pages   │→ │ API Call │               │  │
+│  │  └─────────┘  └─────────┘  └──────────┘               │  │
+│  └───────────────────────────────────────────────────────┘  │
+│         ↑ index.html + assets     ↓ /api/tasks              │
+└─────────┼──────────────────────────┼────────────────────────┘
+          │                          │
+┌─────────┼──────────────────────────┼────────────────────────┐
+│  Mizu Server (single binary)       │                         │
+│         │                          ↓                         │
+│    ┌────┴─────────┐        ┌────────────┐                   │
+│    │ Embedded FS  │        │ API Routes │                   │
+│    │ (dist/...)   │        │ (Go)       │                   │
+│    └──────────────┘        └────────────┘                   │
+│  ←────────────────────────────────────────────────────────  │
+│  Static files served from Go binary (//go:embed all:dist)   │
+└──────────────────────────────────────────────────────────────┘
+```
 
 ## Project Structure
 
@@ -39,6 +140,7 @@ my-svelte-app/
 │   │   ├── pages/
 │   │   │   ├── Home.svelte      # Home page
 │   │   │   └── About.svelte     # About page
+│   │   ├── stores/              # Svelte stores
 │   │   └── styles/
 │   │       └── index.css        # Global styles
 │   ├── public/
@@ -47,7 +149,7 @@ my-svelte-app/
 │   ├── vite.config.ts
 │   ├── svelte.config.js
 │   └── tsconfig.json
-├── dist/
+├── dist/                        # Built files
 └── Makefile
 ```
 
@@ -85,6 +187,53 @@ func New(cfg *Config) *mizu.App {
     }))
 
     return app
+}
+```
+
+**How it works:**
+- `//go:embed all:../../dist` embeds the compiled Svelte app into the Go binary
+- `frontend.ModeAuto` switches between dev (proxy) and production (embedded FS)
+- `DevServer` proxies to Vite during development
+- Svelte compiles to vanilla JS, so bundle is tiny
+
+### API Routes Example
+
+```go
+// app/server/routes.go
+package server
+
+import "github.com/go-mizu/mizu"
+
+type Task struct {
+    ID     int    `json:"id"`
+    Title  string `json:"title"`
+    Done   bool   `json:"done"`
+}
+
+func setupRoutes(app *mizu.App) {
+    // GET /api/tasks
+    app.GET("/api/tasks", func(c *mizu.Ctx) error {
+        tasks := []Task{
+            {ID: 1, Title: "Learn Svelte", Done: true},
+            {ID: 2, Title: "Build app with Mizu", Done: false},
+        }
+        return c.JSON(tasks)
+    })
+
+    // POST /api/tasks
+    app.POST("/api/tasks", func(c *mizu.Ctx) error {
+        var task Task
+        if err := c.BodyParser(&task); err != nil {
+            return err
+        }
+        task.ID = 3 // In real app, generate from DB
+        return c.Status(201).JSON(task)
+    })
+
+    // DELETE /api/tasks/:id
+    app.DELETE("/api/tasks/:id", func(c *mizu.Ctx) error {
+        return c.Status(204).Send(nil)
+    })
 }
 ```
 
@@ -253,57 +402,48 @@ export default app
 </style>
 ```
 
-## Routing
+## Svelte Reactivity
 
-Svelte doesn't include routing by default. Here are your options:
+Svelte's reactivity is built into the language itself. Assignments are reactive.
 
-### Simple Client-Side Routing
-
-Use a simple router like in the example above, or install a library:
-
-```bash
-npm install svelte-spa-router
-```
-
-```svelte
-<script>
-  import Router from 'svelte-spa-router'
-  import Home from './pages/Home.svelte'
-  import About from './pages/About.svelte'
-
-  const routes = {
-    '/': Home,
-    '/about': About,
-  }
-</script>
-
-<Router {routes} />
-```
-
-### SvelteKit
-
-For full-featured routing, use [SvelteKit](/frontend/sveltekit) instead. It provides:
-- File-based routing
-- Server-side rendering
-- Static site generation
-- API routes
-
-## Reactivity
-
-Svelte's reactivity is built into the language:
-
-### Reactive Declarations
+### Basic Reactivity
 
 ```svelte
 <script lang="ts">
   let count = 0
 
-  // Automatically updates when count changes
+  // Assignment triggers update
+  function increment() {
+    count = count + 1  // or count++
+  }
+</script>
+
+<p>{count}</p>
+<button on:click={increment}>Increment</button>
+```
+
+**How it works:** Svelte's compiler analyzes your code and inserts update calls wherever variables are reassigned.
+
+### Reactive Declarations ($:)
+
+Use `$:` to create reactive statements that automatically re-run when dependencies change.
+
+```svelte
+<script lang="ts">
+  let count = 0
+
+  // Reactive declaration - updates when count changes
   $: doubled = count * 2
 
-  // Reactive statement
+  // Reactive statement - runs when count changes
   $: if (count > 10) {
     console.log('Count is getting high!')
+  }
+
+  // Reactive block - multiple statements
+  $: {
+    console.log('Count changed to', count)
+    console.log('Doubled is', doubled)
   }
 </script>
 
@@ -312,9 +452,374 @@ Svelte's reactivity is built into the language:
 <button on:click={() => count++}>Increment</button>
 ```
 
-### Stores
+### Reactive Dependencies
 
-For shared state across components:
+Svelte automatically tracks dependencies:
+
+```svelte
+<script lang="ts">
+  let firstName = 'John'
+  let lastName = 'Doe'
+
+  // Automatically re-runs when firstName or lastName change
+  $: fullName = `${firstName} ${lastName}`
+
+  // Multiple dependencies
+  $: initials = `${firstName[0]}${lastName[0]}`
+</script>
+
+<input bind:value={firstName} />
+<input bind:value={lastName} />
+<p>Full name: {fullName}</p>
+<p>Initials: {initials}</p>
+```
+
+### Array and Object Reactivity
+
+**Important:** Assignments trigger updates, but mutating methods (push, pop, etc.) don't.
+
+```svelte
+<script lang="ts">
+  let numbers = [1, 2, 3]
+
+  // ❌ Does NOT trigger update
+  function addWrong() {
+    numbers.push(4)
+  }
+
+  // ✅ Triggers update (assignment)
+  function addCorrect() {
+    numbers = [...numbers, 4]
+  }
+
+  // ✅ Alternative with assignment
+  function addAlternative() {
+    numbers.push(4)
+    numbers = numbers  // Trigger update
+  }
+
+  // Objects work the same way
+  let user = { name: 'Alice', age: 30 }
+
+  // ❌ Does NOT trigger update
+  function updateAgeWrong() {
+    user.age = 31
+  }
+
+  // ✅ Triggers update
+  function updateAgeCorrect() {
+    user = { ...user, age: 31 }
+  }
+</script>
+
+<p>Numbers: {numbers.join(', ')}</p>
+<button on:click={addCorrect}>Add Number</button>
+```
+
+## Component Communication
+
+### Props
+
+Pass data from parent to child using `export let`.
+
+```svelte
+<!-- UserCard.svelte -->
+<script lang="ts">
+  interface User {
+    id: number
+    name: string
+    email: string
+  }
+
+  // Exported variables become props
+  export let user: User
+  export let showEmail = true  // Default value
+</script>
+
+<div class="card">
+  <h3>{user.name}</h3>
+  {#if showEmail}
+    <p>{user.email}</p>
+  {/if}
+</div>
+
+<style>
+  .card {
+    padding: 1rem;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+  }
+</style>
+```
+
+```svelte
+<!-- Parent.svelte -->
+<script lang="ts">
+  import UserCard from './UserCard.svelte'
+
+  const user = { id: 1, name: 'Alice', email: 'alice@example.com' }
+</script>
+
+<UserCard {user} showEmail={true} />
+<!-- Shorthand when variable name matches prop name: -->
+<UserCard {user} />
+```
+
+### Events
+
+Use `createEventDispatcher` to communicate from child to parent.
+
+```svelte
+<!-- Counter.svelte -->
+<script lang="ts">
+  import { createEventDispatcher } from 'svelte'
+
+  export let count = 0
+
+  const dispatch = createEventDispatcher<{
+    increment: number
+    decrement: number
+  }>()
+
+  function handleIncrement() {
+    count++
+    dispatch('increment', count)
+  }
+
+  function handleDecrement() {
+    count--
+    dispatch('decrement', count)
+  }
+</script>
+
+<div>
+  <p>Count: {count}</p>
+  <button on:click={handleIncrement}>+</button>
+  <button on:click={handleDecrement}>-</button>
+</div>
+```
+
+```svelte
+<!-- Parent.svelte -->
+<script lang="ts">
+  import Counter from './Counter.svelte'
+
+  function handleIncrement(event: CustomEvent<number>) {
+    console.log('Count incremented to', event.detail)
+  }
+</script>
+
+<Counter on:increment={handleIncrement} on:decrement={(e) => console.log(e.detail)} />
+```
+
+### Event Forwarding
+
+Forward events from child components:
+
+```svelte
+<!-- Button.svelte -->
+<button on:click>
+  <slot />
+</button>
+```
+
+```svelte
+<!-- Parent.svelte -->
+<script lang="ts">
+  import Button from './Button.svelte'
+</script>
+
+<!-- Event automatically forwarded -->
+<Button on:click={() => console.log('Clicked!')}>
+  Click me
+</Button>
+```
+
+### Context API
+
+Share data between components without prop drilling.
+
+```svelte
+<!-- Parent.svelte -->
+<script lang="ts">
+  import { setContext } from 'svelte'
+  import Child from './Child.svelte'
+
+  const theme = {
+    primary: '#ff3e00',
+    background: '#ffffff'
+  }
+
+  setContext('theme', theme)
+</script>
+
+<Child />
+```
+
+```svelte
+<!-- Child.svelte (deeply nested) -->
+<script lang="ts">
+  import { getContext } from 'svelte'
+
+  interface Theme {
+    primary: string
+    background: string
+  }
+
+  const theme = getContext<Theme>('theme')
+</script>
+
+<div style="color: {theme.primary}; background: {theme.background}">
+  Themed content
+</div>
+```
+
+### Slots
+
+Pass markup from parent to child.
+
+```svelte
+<!-- Card.svelte -->
+<div class="card">
+  <header>
+    <slot name="header">
+      <h2>Default Header</h2>
+    </slot>
+  </header>
+
+  <main>
+    <slot />  <!-- Default slot -->
+  </main>
+
+  <footer>
+    <slot name="footer" />
+  </footer>
+</div>
+```
+
+```svelte
+<!-- Parent.svelte -->
+<script lang="ts">
+  import Card from './Card.svelte'
+</script>
+
+<Card>
+  <h2 slot="header">Custom Header</h2>
+
+  <!-- Default slot content -->
+  <p>This is the card body</p>
+
+  <div slot="footer">
+    <button>OK</button>
+    <button>Cancel</button>
+  </div>
+</Card>
+```
+
+### Slot Props
+
+Pass data from child to parent through slots:
+
+```svelte
+<!-- List.svelte -->
+<script lang="ts">
+  export let items: any[]
+</script>
+
+<ul>
+  {#each items as item, index (item.id)}
+    <li>
+      <!-- Expose item and index to parent -->
+      <slot {item} {index} />
+    </li>
+  {/each}
+</ul>
+```
+
+```svelte
+<!-- Parent.svelte -->
+<script lang="ts">
+  import List from './List.svelte'
+
+  const users = [
+    { id: 1, name: 'Alice' },
+    { id: 2, name: 'Bob' }
+  ]
+</script>
+
+<List items={users} let:item let:index>
+  <strong>{index + 1}.</strong> {item.name}
+</List>
+```
+
+## Svelte Stores
+
+Stores provide a way to share state across components.
+
+### Writable Stores
+
+```ts
+// stores/counter.ts
+import { writable } from 'svelte/store'
+
+export const count = writable(0)
+
+// Methods
+export function increment() {
+  count.update(n => n + 1)
+}
+
+export function decrement() {
+  count.update(n => n - 1)
+}
+
+export function reset() {
+  count.set(0)
+}
+```
+
+```svelte
+<!-- Component.svelte -->
+<script lang="ts">
+  import { count, increment, decrement, reset } from './stores/counter'
+</script>
+
+<!-- $ prefix auto-subscribes -->
+<p>Count: {$count}</p>
+<button on:click={increment}>+</button>
+<button on:click={decrement}>-</button>
+<button on:click={reset}>Reset</button>
+```
+
+### Readable Stores
+
+For read-only values (e.g., time, mouse position):
+
+```ts
+// stores/time.ts
+import { readable } from 'svelte/store'
+
+export const time = readable(new Date(), (set) => {
+  const interval = setInterval(() => {
+    set(new Date())
+  }, 1000)
+
+  // Cleanup function
+  return () => clearInterval(interval)
+})
+```
+
+```svelte
+<script lang="ts">
+  import { time } from './stores/time'
+</script>
+
+<p>Current time: {$time.toLocaleTimeString()}</p>
+```
+
+### Derived Stores
+
+Create stores derived from other stores:
 
 ```ts
 // stores/user.ts
@@ -323,121 +828,1034 @@ import { writable, derived } from 'svelte/store'
 interface User {
   id: number
   name: string
+  email: string
 }
 
 export const users = writable<User[]>([])
+
+// Derived from users store
 export const userCount = derived(users, $users => $users.length)
 
-export async function fetchUsers() {
-  const response = await fetch('/api/users')
-  const data = await response.json()
-  users.set(data)
+export const userNames = derived(users, $users => $users.map(u => u.name))
+
+// Derived from multiple stores
+import { count } from './counter'
+export const info = derived(
+  [users, count],
+  ([$users, $count]) => `${$users.length} users, count: ${$count}`
+)
+```
+
+```svelte
+<script lang="ts">
+  import { users, userCount, userNames } from './stores/user'
+</script>
+
+<p>Total users: {$userCount}</p>
+<p>Names: {$userNames.join(', ')}</p>
+```
+
+### Custom Stores
+
+Create stores with custom methods:
+
+```ts
+// stores/tasks.ts
+import { writable } from 'svelte/store'
+
+interface Task {
+  id: number
+  title: string
+  done: boolean
 }
-```
 
-Use in components:
+function createTaskStore() {
+  const { subscribe, set, update } = writable<Task[]>([])
+
+  return {
+    subscribe,
+    add: (title: string) => update(tasks => {
+      const newTask = {
+        id: Date.now(),
+        title,
+        done: false
+      }
+      return [...tasks, newTask]
+    }),
+    toggle: (id: number) => update(tasks =>
+      tasks.map(task =>
+        task.id === id ? { ...task, done: !task.done } : task
+      )
+    ),
+    remove: (id: number) => update(tasks =>
+      tasks.filter(task => task.id !== id)
+    ),
+    reset: () => set([])
+  }
+}
+
+export const tasks = createTaskStore()
+```
 
 ```svelte
 <script lang="ts">
-  import { onMount } from 'svelte'
-  import { users, userCount, fetchUsers } from './stores/user'
+  import { tasks } from './stores/tasks'
 
-  onMount(() => {
-    fetchUsers()
-  })
-</script>
+  let newTaskTitle = ''
 
-<h1>Users ({$userCount})</h1>
-
-<ul>
-  {#each $users as user}
-    <li>{user.name}</li>
-  {/each}
-</ul>
-```
-
-The `$` prefix automatically subscribes to stores.
-
-## API Integration
-
-### Fetch in Components
-
-```svelte
-<script lang="ts">
-  import { onMount } from 'svelte'
-
-  let data = null
-  let loading = true
-
-  onMount(async () => {
-    const response = await fetch('/api/data')
-    data = await response.json()
-    loading = false
-  })
-</script>
-
-{#if loading}
-  <p>Loading...</p>
-{:else}
-  <pre>{JSON.stringify(data, null, 2)}</pre>
-{/if}
-```
-
-### Form Submission
-
-```svelte
-<script lang="ts">
-  let name = ''
-  let email = ''
-  let submitting = false
-  let success = false
-  let error: string | null = null
-
-  async function handleSubmit() {
-    submitting = true
-    success = false
-    error = null
-
-    try {
-      const response = await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email }),
-      })
-
-      if (!response.ok) throw new Error('Failed to create user')
-
-      success = true
-      name = ''
-      email = ''
-    } catch (err) {
-      error = err instanceof Error ? err.message : 'Unknown error'
-    } finally {
-      submitting = false
+  function addTask() {
+    if (newTaskTitle.trim()) {
+      tasks.add(newTaskTitle)
+      newTaskTitle = ''
     }
   }
 </script>
 
-<form on:submit|preventDefault={handleSubmit}>
-  <input bind:value={name} placeholder="Name" required />
-  <input bind:value={email} type="email" placeholder="Email" required />
-  <button type="submit" disabled={submitting}>
-    {submitting ? 'Creating...' : 'Create User'}
-  </button>
-</form>
+<input bind:value={newTaskTitle} on:keydown={(e) => e.key === 'Enter' && addTask()} />
+<button on:click={addTask}>Add Task</button>
 
-{#if success}
-  <p class="success">User created successfully!</p>
-{/if}
+<ul>
+  {#each $tasks as task (task.id)}
+    <li>
+      <input type="checkbox" checked={task.done} on:change={() => tasks.toggle(task.id)} />
+      <span class:done={task.done}>{task.title}</span>
+      <button on:click={() => tasks.remove(task.id)}>Delete</button>
+    </li>
+  {/each}
+</ul>
 
-{#if error}
-  <p class="error">{error}</p>
+<style>
+  .done {
+    text-decoration: line-through;
+    opacity: 0.6;
+  }
+</style>
+```
+
+### Store Contracts
+
+Type-safe store subscription:
+
+```ts
+import type { Writable } from 'svelte/store'
+import { writable } from 'svelte/store'
+
+interface UserStore extends Writable<User[]> {
+  fetchUsers: () => Promise<void>
+}
+
+export const users: UserStore = (() => {
+  const { subscribe, set, update } = writable<User[]>([])
+
+  return {
+    subscribe,
+    set,
+    update,
+    fetchUsers: async () => {
+      const res = await fetch('/api/users')
+      const data = await res.json()
+      set(data)
+    }
+  }
+})()
+```
+
+## Routing
+
+Svelte doesn't include routing by default. Here are your options:
+
+### Option 1: Simple Routing (Manual)
+
+We've seen this in the App.svelte example above.
+
+### Option 2: svelte-spa-router
+
+```bash
+cd client
+npm install svelte-spa-router
+```
+
+Basic usage:
+
+```svelte
+<!-- App.svelte -->
+<script lang="ts">
+  import Router from 'svelte-spa-router'
+  import Home from './pages/Home.svelte'
+  import About from './pages/About.svelte'
+  import UserDetail from './pages/UserDetail.svelte'
+  import NotFound from './pages/NotFound.svelte'
+
+  const routes = {
+    '/': Home,
+    '/about': About,
+    '/users/:id': UserDetail,
+    '*': NotFound,  // 404 catch-all
+  }
+</script>
+
+<Router {routes} />
+```
+
+### Dynamic Routes with Params
+
+```svelte
+<!-- pages/UserDetail.svelte -->
+<script lang="ts">
+  export let params: { id: string }
+
+  let user = null
+  let loading = true
+
+  $: if (params?.id) {
+    fetchUser(params.id)
+  }
+
+  async function fetchUser(id: string) {
+    loading = true
+    const res = await fetch(`/api/users/${id}`)
+    user = await res.json()
+    loading = false
+  }
+</script>
+
+<div>
+  {#if loading}
+    <p>Loading user...</p>
+  {:else if user}
+    <h1>{user.name}</h1>
+    <p>{user.email}</p>
+  {:else}
+    <p>User not found</p>
+  {/if}
+</div>
+```
+
+### Programmatic Navigation
+
+```svelte
+<script lang="ts">
+  import { push, pop, replace } from 'svelte-spa-router'
+
+  function goToUser(id: number) {
+    push(`/users/${id}`)
+  }
+
+  function goBack() {
+    pop()
+  }
+
+  function replaceRoute() {
+    replace('/home')
+  }
+</script>
+
+<button on:click={() => goToUser(123)}>View User 123</button>
+<button on:click={goBack}>Go Back</button>
+```
+
+### Route Guards
+
+```svelte
+<script lang="ts">
+  import Router from 'svelte-spa-router'
+  import { wrap } from 'svelte-spa-router/wrap'
+
+  function authGuard(detail) {
+    const token = localStorage.getItem('token')
+    if (!token) {
+      return false  // Prevent navigation
+    }
+    return true
+  }
+
+  const routes = {
+    '/': Home,
+    '/login': Login,
+    '/dashboard': wrap({
+      component: Dashboard,
+      conditions: [authGuard]
+    })
+  }
+</script>
+
+<Router {routes} />
+```
+
+### Option 3: SvelteKit
+
+For full-featured routing with SSR, use [SvelteKit](/frontend/sveltekit):
+- File-based routing
+- Server-side rendering
+- Static site generation
+- API routes
+- Advanced features
+
+## Lifecycle Hooks
+
+Svelte provides lifecycle functions from the `svelte` package.
+
+```svelte
+<script lang="ts">
+  import { onMount, onDestroy, beforeUpdate, afterUpdate, tick } from 'svelte'
+
+  let count = 0
+
+  // Runs after component is first rendered to DOM
+  onMount(() => {
+    console.log('Component mounted')
+
+    // Return cleanup function
+    return () => {
+      console.log('Cleanup on unmount')
+    }
+  })
+
+  // Runs before component is destroyed
+  onDestroy(() => {
+    console.log('Component will be destroyed')
+  })
+
+  // Runs before DOM is updated
+  beforeUpdate(() => {
+    console.log('About to update DOM')
+  })
+
+  // Runs after DOM is updated
+  afterUpdate(() => {
+    console.log('DOM updated')
+  })
+
+  async function incrementAndLog() {
+    count++
+    // Wait for DOM to update
+    await tick()
+    console.log('DOM has updated with new count')
+  }
+</script>
+
+<p>{count}</p>
+<button on:click={incrementAndLog}>Increment</button>
+```
+
+**Lifecycle order:**
+1. Component created
+2. `onMount()` - After initial render
+3. `beforeUpdate()` - Before each update
+4. `afterUpdate()` - After each update
+5. `onDestroy()` - Before removal
+
+## Bindings
+
+Svelte provides powerful two-way bindings.
+
+### Input Bindings
+
+```svelte
+<script lang="ts">
+  let text = ''
+  let number = 0
+  let checked = false
+  let group: string[] = []
+  let radio = ''
+  let selected = ''
+  let files: FileList
+</script>
+
+<!-- Text input -->
+<input bind:value={text} />
+
+<!-- Number input -->
+<input type="number" bind:value={number} />
+
+<!-- Checkbox -->
+<input type="checkbox" bind:checked />
+
+<!-- Checkbox group (array) -->
+<input type="checkbox" value="a" bind:group />
+<input type="checkbox" value="b" bind:group />
+
+<!-- Radio buttons -->
+<input type="radio" value="yes" bind:group={radio} />
+<input type="radio" value="no" bind:group={radio} />
+
+<!-- Select -->
+<select bind:value={selected}>
+  <option value="a">A</option>
+  <option value="b">B</option>
+</select>
+
+<!-- File input -->
+<input type="file" bind:files />
+```
+
+### Element Bindings (bind:this)
+
+Get a reference to a DOM element:
+
+```svelte
+<script lang="ts">
+  let canvas: HTMLCanvasElement
+
+  function draw() {
+    const ctx = canvas.getContext('2d')
+    if (ctx) {
+      ctx.fillRect(0, 0, 100, 100)
+    }
+  }
+</script>
+
+<canvas bind:this={canvas} width="200" height="200"></canvas>
+<button on:click={draw}>Draw</button>
+```
+
+### Component Bindings
+
+Bind to component props:
+
+```svelte
+<!-- Input.svelte -->
+<script lang="ts">
+  export let value = ''
+</script>
+
+<input bind:value />
+```
+
+```svelte
+<!-- Parent.svelte -->
+<script lang="ts">
+  import Input from './Input.svelte'
+
+  let text = 'Hello'
+</script>
+
+<!-- Two-way binding to child component -->
+<Input bind:value={text} />
+<p>Text: {text}</p>
+```
+
+### Dimensions and Scroll
+
+```svelte
+<script lang="ts">
+  let clientWidth: number
+  let scrollY: number
+</script>
+
+<div bind:clientWidth>
+  Width: {clientWidth}px
+</div>
+
+<svelte:window bind:scrollY />
+<p>Scrolled: {scrollY}px</p>
+```
+
+## Logic Blocks
+
+### {#if} blocks
+
+```svelte
+<script lang="ts">
+  let count = 0
+</script>
+
+{#if count === 0}
+  <p>Count is zero</p>
+{:else if count < 5}
+  <p>Count is less than 5</p>
+{:else}
+  <p>Count is {count}</p>
 {/if}
+```
+
+### {#each} blocks
+
+```svelte
+<script lang="ts">
+  let items = [
+    { id: 1, name: 'Apple' },
+    { id: 2, name: 'Banana' },
+    { id: 3, name: 'Cherry' }
+  ]
+</script>
+
+<!-- With key for efficient updates -->
+{#each items as item (item.id)}
+  <p>{item.name}</p>
+{/each}
+
+<!-- With index -->
+{#each items as item, index (item.id)}
+  <p>{index + 1}. {item.name}</p>
+{/each}
+
+<!-- Empty state -->
+{#each items as item}
+  <p>{item.name}</p>
+{:else}
+  <p>No items found</p>
+{/each}
+```
+
+### {#await} blocks
+
+Handle promises declaratively:
+
+```svelte
+<script lang="ts">
+  async function fetchUser(id: number) {
+    const res = await fetch(`/api/users/${id}`)
+    return res.json()
+  }
+
+  let promise = fetchUser(1)
+</script>
+
+{#await promise}
+  <p>Loading...</p>
+{:then user}
+  <p>{user.name}</p>
+{:catch error}
+  <p class="error">{error.message}</p>
+{/await}
+
+<!-- Or just handle then/catch -->
+{#await promise then user}
+  <p>{user.name}</p>
+{/await}
+```
+
+### {#key} blocks
+
+Re-render when value changes:
+
+```svelte
+<script lang="ts">
+  let value = 0
+</script>
+
+<!-- Component re-mounts when value changes -->
+{#key value}
+  <div transition:fade>
+    Value: {value}
+  </div>
+{/key}
+
+<button on:click={() => value++}>Change</button>
+```
+
+## Special Elements
+
+### `<svelte:self>`
+
+Recursively render a component:
+
+```svelte
+<!-- Tree.svelte -->
+<script lang="ts">
+  export let node: { name: string, children?: any[] }
+</script>
+
+<li>
+  {node.name}
+  {#if node.children}
+    <ul>
+      {#each node.children as child}
+        <svelte:self node={child} />
+      {/each}
+    </ul>
+  {/if}
+</li>
+```
+
+### `<svelte:component>`
+
+Dynamically render different components:
+
+```svelte
+<script lang="ts">
+  import ComponentA from './ComponentA.svelte'
+  import ComponentB from './ComponentB.svelte'
+
+  let selected = 'A'
+
+  $: component = selected === 'A' ? ComponentA : ComponentB
+</script>
+
+<select bind:value={selected}>
+  <option value="A">Component A</option>
+  <option value="B">Component B</option>
+</select>
+
+<svelte:component this={component} />
+```
+
+### `<svelte:window>`
+
+Bind to window events and properties:
+
+```svelte
+<script lang="ts">
+  let scrollY: number
+  let innerWidth: number
+
+  function handleKeydown(event: KeyboardEvent) {
+    console.log('Key pressed:', event.key)
+  }
+</script>
+
+<svelte:window
+  bind:scrollY
+  bind:innerWidth
+  on:keydown={handleKeydown}
+/>
+
+<p>Scroll: {scrollY}px, Width: {innerWidth}px</p>
+```
+
+### `<svelte:body>`
+
+Bind to document.body events:
+
+```svelte
+<script lang="ts">
+  function handleClick(event: MouseEvent) {
+    console.log('Clicked at', event.clientX, event.clientY)
+  }
+</script>
+
+<svelte:body on:click={handleClick} />
+```
+
+### `<svelte:head>`
+
+Add elements to document.head:
+
+```svelte
+<svelte:head>
+  <title>My Page Title</title>
+  <meta name="description" content="Page description" />
+  <link rel="stylesheet" href="/custom.css" />
+</svelte:head>
+```
+
+## Transitions and Animations
+
+Svelte has built-in transitions and animations.
+
+### Built-in Transitions
+
+```svelte
+<script lang="ts">
+  import { fade, fly, slide, scale, blur } from 'svelte/transition'
+
+  let visible = true
+</script>
+
+<button on:click={() => visible = !visible}>Toggle</button>
+
+{#if visible}
+  <div transition:fade>Fades in and out</div>
+
+  <div transition:fly={{ y: 200, duration: 300 }}>
+    Flies in and out
+  </div>
+
+  <div transition:slide>Slides in and out</div>
+
+  <div transition:scale={{ start: 0.5 }}>Scales in and out</div>
+
+  <div transition:blur>Blurs in and out</div>
+{/if}
+```
+
+### Separate In/Out Transitions
+
+```svelte
+<script lang="ts">
+  import { fade, fly } from 'svelte/transition'
+
+  let visible = true
+</script>
+
+{#if visible}
+  <div in:fly={{ y: 200 }} out:fade>
+    Flies in, fades out
+  </div>
+{/if}
+```
+
+### Custom Transitions
+
+```svelte
+<script lang="ts">
+  import { cubicOut } from 'svelte/easing'
+
+  function spin(node: Element, { duration = 400 }) {
+    return {
+      duration,
+      css: (t: number) => {
+        const eased = cubicOut(t)
+        return `
+          transform: rotate(${eased * 360}deg);
+          opacity: ${t};
+        `
+      }
+    }
+  }
+
+  let visible = true
+</script>
+
+{#if visible}
+  <div transition:spin={{ duration: 600 }}>
+    Spins in and out
+  </div>
+{/if}
+```
+
+### Transition Events
+
+```svelte
+<script lang="ts">
+  import { fade } from 'svelte/transition'
+
+  function handleIntroStart() {
+    console.log('Transition started')
+  }
+
+  function handleIntroEnd() {
+    console.log('Transition ended')
+  }
+</script>
+
+<div
+  transition:fade
+  on:introstart={handleIntroStart}
+  on:introend={handleIntroEnd}
+  on:outrostart={() => console.log('Outro started')}
+  on:outroend={() => console.log('Outro ended')}
+>
+  Content
+</div>
+```
+
+### Animations (flip)
+
+Animate element positions in lists:
+
+```svelte
+<script lang="ts">
+  import { flip } from 'svelte/animate'
+  import { fade } from 'svelte/transition'
+
+  let items = [1, 2, 3, 4, 5]
+
+  function shuffle() {
+    items = items.sort(() => Math.random() - 0.5)
+  }
+</script>
+
+<button on:click={shuffle}>Shuffle</button>
+
+{#each items as item (item)}
+  <div animate:flip={{ duration: 300 }} transition:fade>
+    Item {item}
+  </div>
+{/each}
+```
+
+## Motion (Tweened and Spring)
+
+Animate values over time.
+
+### Tweened
+
+```svelte
+<script lang="ts">
+  import { tweened } from 'svelte/motion'
+  import { cubicOut } from 'svelte/easing'
+
+  const progress = tweened(0, {
+    duration: 400,
+    easing: cubicOut
+  })
+
+  function reset() {
+    progress.set(0)
+  }
+
+  function fill() {
+    progress.set(100)
+  }
+</script>
+
+<progress value={$progress / 100}></progress>
+<p>{$progress.toFixed(0)}%</p>
+
+<button on:click={reset}>Reset</button>
+<button on:click={fill}>Fill</button>
+```
+
+### Spring
+
+Physics-based animation:
+
+```svelte
+<script lang="ts">
+  import { spring } from 'svelte/motion'
+
+  const coords = spring({ x: 50, y: 50 }, {
+    stiffness: 0.1,
+    damping: 0.25
+  })
+
+  function handleMousemove(event: MouseEvent) {
+    coords.set({ x: event.clientX, y: event.clientY })
+  }
+</script>
+
+<svelte:window on:mousemove={handleMousemove} />
+
+<div
+  style="
+    position: absolute;
+    left: {$coords.x}px;
+    top: {$coords.y}px;
+    width: 20px;
+    height: 20px;
+    background: #ff3e00;
+    border-radius: 50%;
+  "
+/>
+```
+
+## Actions
+
+Reusable DOM manipulation functions.
+
+### Basic Action
+
+```svelte
+<script lang="ts">
+  function tooltip(node: HTMLElement, text: string) {
+    const tooltip = document.createElement('div')
+    tooltip.textContent = text
+    tooltip.style.cssText = `
+      position: absolute;
+      background: black;
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      display: none;
+    `
+    document.body.appendChild(tooltip)
+
+    function handleMouseenter() {
+      tooltip.style.display = 'block'
+      const rect = node.getBoundingClientRect()
+      tooltip.style.left = `${rect.left}px`
+      tooltip.style.top = `${rect.bottom + 5}px`
+    }
+
+    function handleMouseleave() {
+      tooltip.style.display = 'none'
+    }
+
+    node.addEventListener('mouseenter', handleMouseenter)
+    node.addEventListener('mouseleave', handleMouseleave)
+
+    return {
+      destroy() {
+        tooltip.remove()
+        node.removeEventListener('mouseenter', handleMouseenter)
+        node.removeEventListener('mouseleave', handleMouseleave)
+      }
+    }
+  }
+</script>
+
+<button use:tooltip="This is a tooltip">
+  Hover me
+</button>
+```
+
+### Action with Parameters
+
+```svelte
+<script lang="ts">
+  function longpress(node: HTMLElement, duration = 500) {
+    let timer: ReturnType<typeof setTimeout>
+
+    function handleMousedown() {
+      timer = setTimeout(() => {
+        node.dispatchEvent(new CustomEvent('longpress'))
+      }, duration)
+    }
+
+    function handleMouseup() {
+      clearTimeout(timer)
+    }
+
+    node.addEventListener('mousedown', handleMousedown)
+    node.addEventListener('mouseup', handleMouseup)
+
+    return {
+      update(newDuration: number) {
+        duration = newDuration
+      },
+      destroy() {
+        clearTimeout(timer)
+        node.removeEventListener('mousedown', handleMousedown)
+        node.removeEventListener('mouseup', handleMouseup)
+      }
+    }
+  }
+</script>
+
+<button use:longpress={1000} on:longpress={() => alert('Long pressed!')}>
+  Press and hold
+</button>
+```
+
+## Class and Style Directives
+
+### Class Directive
+
+```svelte
+<script lang="ts">
+  let active = false
+  let error = false
+</script>
+
+<!-- class:name={condition} -->
+<button class:active class:error>
+  Button
+</button>
+
+<!-- Shorthand when variable name matches class name -->
+<button class:active={active}>Button</button>
+
+<style>
+  .active {
+    background: blue;
+  }
+
+  .error {
+    border: 2px solid red;
+  }
+</style>
+```
+
+### Style Directive
+
+```svelte
+<script lang="ts">
+  let color = '#ff3e00'
+  let size = 16
+</script>
+
+<!-- style:property={value} -->
+<p style:color style:font-size="{size}px">
+  Styled text
+</p>
+
+<!-- Shorthand -->
+<p style:color={color}>Text</p>
+
+<!-- With important -->
+<p style:color|important={color}>Text</p>
+```
+
+## Vite Configuration
+
+### `client/vite.config.ts`
+
+```ts
+import { defineConfig } from 'vite'
+import { svelte } from '@sveltejs/vite-plugin-svelte'
+import path from 'path'
+
+export default defineConfig({
+  plugins: [svelte()],
+
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+      '@components': path.resolve(__dirname, './src/components'),
+      '@pages': path.resolve(__dirname, './src/pages'),
+      '@stores': path.resolve(__dirname, './src/stores'),
+    },
+  },
+
+  server: {
+    port: 5173,
+    strictPort: true,
+    hmr: {
+      clientPort: 3000,  // Mizu's port for HMR
+    },
+  },
+
+  build: {
+    outDir: '../dist',
+    emptyOutDir: true,
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'svelte-vendor': ['svelte'],
+        },
+      },
+    },
+  },
+})
+```
+
+### `client/svelte.config.js`
+
+```js
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte'
+
+export default {
+  preprocess: vitePreprocess(),
+
+  compilerOptions: {
+    // Enable CSS hash for production
+    cssHash: ({ hash, css }) => `svelte-${hash(css)}`
+  }
+}
+```
+
+## Performance Optimization
+
+### Immutable Data
+
+Tell Svelte your data is immutable for performance:
+
+```svelte
+<svelte:options immutable={true} />
+
+<script lang="ts">
+  export let data: any[]
+
+  // Svelte will use reference equality (===) instead of deep comparison
+</script>
+```
+
+### Component Options
+
+```svelte
+<svelte:options
+  immutable={true}
+  accessors={false}
+  namespace="svg"
+/>
 ```
 
 ## Styling
 
-### Component Styles
+### Component Styles (Scoped)
 
 Styles are scoped by default:
 
@@ -498,9 +1916,27 @@ export default {
     "./src/**/*.{svelte,js,ts}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        primary: '#ff3e00',
+      },
+    },
   },
   plugins: [],
+}
+```
+
+Add to `src/styles/index.css`:
+
+```css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary text-white px-4 py-2 rounded hover:bg-orange-600 transition;
+  }
 }
 ```
 
@@ -508,80 +1944,456 @@ Use in components:
 
 ```svelte
 <div class="container mx-auto px-4">
-  <h1 class="text-4xl font-bold text-orange-600">Hello Svelte!</h1>
-  <button class="bg-orange-500 text-white px-4 py-2 rounded hover:bg-orange-600">
+  <h1 class="text-4xl font-bold text-primary">Hello Svelte!</h1>
+  <button class="btn-primary">
     Click me
   </button>
 </div>
 ```
 
-## Vite Configuration
+## Complete Real-World Example: Task Manager
 
-### `client/vite.config.ts`
+Let's build a complete task management app with Svelte stores and routing.
 
-```ts
-import { defineConfig } from 'vite'
-import { svelte } from '@sveltejs/vite-plugin-svelte'
+### Backend (Go)
 
-export default defineConfig({
-  plugins: [svelte()],
+```go
+// app/server/routes.go
+package server
 
-  server: {
-    port: 5173,
-    strictPort: true,
-    hmr: {
-      clientPort: 3000,
-    },
-  },
+import (
+	"sync"
 
-  build: {
-    outDir: '../dist',
-    emptyOutDir: true,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'svelte-vendor': ['svelte'],
-        },
-      },
-    },
-  },
-})
-```
+	"github.com/go-mizu/mizu"
+)
 
-### `client/svelte.config.js`
+type Task struct {
+	ID          int    `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Status      string `json:"status"` // "pending", "in-progress", "completed"
+	Priority    string `json:"priority"` // "low", "medium", "high"
+}
 
-```js
-import { vitePreprocess } from '@sveltejs/vite-plugin-svelte'
+var (
+	tasks   = []Task{}
+	nextID  = 1
+	tasksMu sync.RWMutex
+)
 
-export default {
-  preprocess: vitePreprocess(),
+func setupRoutes(app *mizu.App) {
+	// GET /api/tasks
+	app.GET("/api/tasks", func(c *mizu.Ctx) error {
+		tasksMu.RLock()
+		defer tasksMu.RUnlock()
+		return c.JSON(tasks)
+	})
+
+	// POST /api/tasks
+	app.POST("/api/tasks", func(c *mizu.Ctx) error {
+		var task Task
+		if err := c.BodyParser(&task); err != nil {
+			return c.Status(400).JSON(map[string]string{"error": "Invalid request"})
+		}
+
+		tasksMu.Lock()
+		task.ID = nextID
+		nextID++
+		tasks = append(tasks, task)
+		tasksMu.Unlock()
+
+		return c.Status(201).JSON(task)
+	})
+
+	// PUT /api/tasks/:id
+	app.PUT("/api/tasks/:id", func(c *mizu.Ctx) error {
+		id := c.ParamInt("id")
+		var updates Task
+		if err := c.BodyParser(&updates); err != nil {
+			return c.Status(400).JSON(map[string]string{"error": "Invalid request"})
+		}
+
+		tasksMu.Lock()
+		defer tasksMu.Unlock()
+
+		for i, task := range tasks {
+			if task.ID == id {
+				updates.ID = id
+				tasks[i] = updates
+				return c.JSON(updates)
+			}
+		}
+
+		return c.Status(404).JSON(map[string]string{"error": "Task not found"})
+	})
+
+	// DELETE /api/tasks/:id
+	app.DELETE("/api/tasks/:id", func(c *mizu.Ctx) error {
+		id := c.ParamInt("id")
+
+		tasksMu.Lock()
+		defer tasksMu.Unlock()
+
+		for i, task := range tasks {
+			if task.ID == id {
+				tasks = append(tasks[:i], tasks[i+1:]...)
+				return c.Status(204).Send(nil)
+			}
+		}
+
+		return c.Status(404).JSON(map[string]string{"error": "Task not found"})
+	})
 }
 ```
 
-## TypeScript Support
+### Frontend - Store
 
-Svelte has excellent TypeScript support:
+```ts
+// src/stores/tasks.ts
+import { writable, derived } from 'svelte/store'
+
+export interface Task {
+  id: number
+  title: string
+  description: string
+  status: 'pending' | 'in-progress' | 'completed'
+  priority: 'low' | 'medium' | 'high'
+}
+
+export type TaskFilter = 'all' | 'pending' | 'in-progress' | 'completed'
+
+function createTaskStore() {
+  const { subscribe, set, update } = writable<Task[]>([])
+  const filter = writable<TaskFilter>('all')
+  const loading = writable(false)
+
+  return {
+    subscribe,
+    filter,
+    loading,
+
+    filteredTasks: derived(
+      [{ subscribe }, filter],
+      ([$tasks, $filter]) => {
+        if ($filter === 'all') return $tasks
+        return $tasks.filter(t => t.status === $filter)
+      }
+    ),
+
+    async fetchTasks() {
+      loading.set(true)
+      try {
+        const res = await fetch('/api/tasks')
+        const data = await res.json()
+        set(data)
+      } finally {
+        loading.set(false)
+      }
+    },
+
+    async addTask(task: Omit<Task, 'id'>) {
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(task)
+      })
+      const newTask = await res.json()
+      update(tasks => [...tasks, newTask])
+    },
+
+    async updateTask(id: number, updates: Partial<Task>) {
+      let taskToUpdate: Task | undefined
+      update(tasks => {
+        taskToUpdate = tasks.find(t => t.id === id)
+        return tasks
+      })
+
+      if (!taskToUpdate) return
+
+      const updated = { ...taskToUpdate, ...updates }
+      const res = await fetch(`/api/tasks/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      })
+      const newTask = await res.json()
+
+      update(tasks =>
+        tasks.map(t => t.id === id ? newTask : t)
+      )
+    },
+
+    async deleteTask(id: number) {
+      await fetch(`/api/tasks/${id}`, { method: 'DELETE' })
+      update(tasks => tasks.filter(t => t.id !== id))
+    }
+  }
+}
+
+export const taskStore = createTaskStore()
+```
+
+### Frontend - Components
 
 ```svelte
+<!-- src/components/TaskForm.svelte -->
 <script lang="ts">
-  interface Props {
-    title: string
-    count?: number
-  }
+  import { taskStore } from '../stores/tasks'
 
-  export let title: Props['title']
-  export let count: Props['count'] = 0
+  let title = ''
+  let description = ''
+  let priority: 'low' | 'medium' | 'high' = 'medium'
 
-  function increment() {
-    count++
+  async function handleSubmit() {
+    await taskStore.addTask({
+      title,
+      description,
+      status: 'pending',
+      priority
+    })
+
+    title = ''
+    description = ''
+    priority = 'medium'
   }
 </script>
 
-<div>
-  <h1>{title}</h1>
-  <p>Count: {count}</p>
-  <button on:click={increment}>Increment</button>
+<form on:submit|preventDefault={handleSubmit} class="task-form">
+  <input bind:value={title} placeholder="Task title" required />
+
+  <textarea bind:value={description} placeholder="Description" />
+
+  <select bind:value={priority} required>
+    <option value="low">Low Priority</option>
+    <option value="medium">Medium Priority</option>
+    <option value="high">High Priority</option>
+  </select>
+
+  <button type="submit">Add Task</button>
+</form>
+
+<style>
+  .task-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem;
+    background: #f5f5f5;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+  }
+
+  input, textarea, select {
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+  }
+
+  textarea {
+    min-height: 80px;
+  }
+
+  button {
+    background: #ff3e00;
+    color: white;
+    padding: 0.75rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  button:hover {
+    background: #e63900;
+  }
+</style>
+```
+
+```svelte
+<!-- src/components/TaskItem.svelte -->
+<script lang="ts">
+  import { taskStore, type Task } from '../stores/tasks'
+
+  export let task: Task
+
+  function updateStatus(e: Event) {
+    const status = (e.target as HTMLSelectElement).value
+    taskStore.updateTask(task.id, { status })
+  }
+
+  function deleteTask() {
+    if (confirm('Delete this task?')) {
+      taskStore.deleteTask(task.id)
+    }
+  }
+</script>
+
+<div class="task-item {task.priority} {task.status}">
+  <div class="task-content">
+    <h3>{task.title}</h3>
+    <p>{task.description}</p>
+    <span class="priority-badge">{task.priority}</span>
+  </div>
+
+  <div class="task-actions">
+    <select value={task.status} on:change={updateStatus}>
+      <option value="pending">Pending</option>
+      <option value="in-progress">In Progress</option>
+      <option value="completed">Completed</option>
+    </select>
+
+    <button on:click={deleteTask} class="delete-btn">Delete</button>
+  </div>
 </div>
+
+<style>
+  .task-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 1rem;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+  }
+
+  .task-item.high {
+    border-left: 4px solid #ef4444;
+  }
+
+  .task-item.medium {
+    border-left: 4px solid #f59e0b;
+  }
+
+  .task-item.low {
+    border-left: 4px solid #10b981;
+  }
+
+  .task-item.completed {
+    opacity: 0.6;
+  }
+
+  .task-item.completed h3 {
+    text-decoration: line-through;
+  }
+
+  .priority-badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    background: #e5e7eb;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+  }
+
+  .task-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+  }
+
+  select {
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+  }
+
+  .delete-btn {
+    background: #ef4444;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .delete-btn:hover {
+    background: #dc2626;
+  }
+</style>
+```
+
+```svelte
+<!-- src/pages/Tasks.svelte -->
+<script lang="ts">
+  import { onMount } from 'svelte'
+  import { taskStore, type TaskFilter } from '../stores/tasks'
+  import TaskForm from '../components/TaskForm.svelte'
+  import TaskItem from '../components/TaskItem.svelte'
+
+  const filters: TaskFilter[] = ['all', 'pending', 'in-progress', 'completed']
+
+  onMount(() => {
+    taskStore.fetchTasks()
+  })
+</script>
+
+<div class="tasks-page">
+  <h1>Task Manager</h1>
+
+  <TaskForm />
+
+  <div class="filters">
+    {#each filters as f}
+      <button
+        class:active={$taskStore.filter === f}
+        on:click={() => taskStore.filter.set(f)}
+      >
+        {f}
+      </button>
+    {/each}
+  </div>
+
+  {#if $taskStore.loading}
+    <div class="loading">Loading tasks...</div>
+  {:else if $taskStore.filteredTasks.length === 0}
+    <div class="empty">No tasks found</div>
+  {:else}
+    <div class="task-list">
+      {#each $taskStore.filteredTasks as task (task.id)}
+        <TaskItem {task} />
+      {/each}
+    </div>
+  {/if}
+</div>
+
+<style>
+  .tasks-page {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem;
+  }
+
+  h1 {
+    color: #ff3e00;
+    margin-bottom: 2rem;
+  }
+
+  .filters {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+  }
+
+  .filters button {
+    padding: 0.5rem 1rem;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    text-transform: capitalize;
+  }
+
+  .filters button.active {
+    background: #ff3e00;
+    color: white;
+    border-color: #ff3e00;
+  }
+
+  .loading, .empty {
+    text-align: center;
+    padding: 2rem;
+    color: #666;
+  }
+</style>
 ```
 
 ## Building for Production
@@ -592,117 +2404,127 @@ make build
 
 Produces a single binary with embedded frontend.
 
-Run:
+Run in production:
 
 ```bash
 MIZU_ENV=production ./bin/server
 ```
 
-## Advanced Features
+## Troubleshooting
 
-### Transitions
+### HMR Not Working
 
-Svelte has built-in transitions:
+**Problem**: Changes don't hot-reload.
 
-```svelte
-<script>
-  import { fade, fly } from 'svelte/transition'
-
-  let visible = true
-</script>
-
-<button on:click={() => visible = !visible}>Toggle</button>
-
-{#if visible}
-  <div transition:fade>Fades in and out</div>
-  <div in:fly={{ y: 200 }} out:fade>Flies in, fades out</div>
-{/if}
-```
-
-### Animations
-
-```svelte
-<script>
-  import { flip } from 'svelte/animate'
-  import { fade } from 'svelte/transition'
-
-  let items = [1, 2, 3, 4, 5]
-
-  function shuffle() {
-    items = items.sort(() => Math.random() - 0.5)
-  }
-</script>
-
-<button on:click={shuffle}>Shuffle</button>
-
-{#each items as item (item)}
-  <div animate:flip={{ duration: 300 }} transition:fade>
-    Item {item}
-  </div>
-{/each}
-```
-
-### Actions
-
-Reusable DOM behavior:
-
-```svelte
-<script lang="ts">
-  function clickOutside(node: HTMLElement) {
-    const handleClick = (event: MouseEvent) => {
-      if (!node.contains(event.target as Node)) {
-        node.dispatchEvent(new CustomEvent('outclick'))
-      }
-    }
-
-    document.addEventListener('click', handleClick, true)
-
-    return {
-      destroy() {
-        document.removeEventListener('click', handleClick, true)
-      }
+**Solution**:
+- Check Vite dev server is running on port 5173
+- Verify `vite.config.ts` HMR config:
+  ```ts
+  server: {
+    hmr: {
+      clientPort: 3000  // Must match Mizu port
     }
   }
+  ```
 
-  let open = false
+### Reactivity Not Working
+
+**Problem**: Component doesn't update when data changes.
+
+**Solution**: Use assignments, not mutations:
+```svelte
+<script>
+  let items = [1, 2, 3]
+
+  // ❌ Doesn't work
+  items.push(4)
+
+  // ✅ Works
+  items = [...items, 4]
 </script>
-
-<div use:clickOutside on:outclick={() => open = false}>
-  {#if open}
-    <div class="dropdown">Dropdown content</div>
-  {/if}
-</div>
 ```
 
-## Why Choose Svelte?
+### Store Not Updating
 
-**Pros:**
-- Minimal runtime (compiled away)
-- True reactivity (no virtual DOM)
-- Less boilerplate than React/Vue
-- Excellent performance
-- Built-in transitions and animations
-- Small bundle sizes
+**Problem**: Store value changes but component doesn't update.
 
-**Cons:**
-- Smaller ecosystem than React/Vue
-- Fewer third-party components
-- Less corporate backing
-- May need SvelteKit for full features
+**Solution**: Make sure you're using the `$` prefix:
+```svelte
+<script>
+  import { count } from './stores/counter'
+</script>
+
+<!-- ❌ Wrong -->
+<p>{count}</p>
+
+<!-- ✅ Correct -->
+<p>{$count}</p>
+```
+
+### TypeScript Errors with Stores
+
+**Problem**: Type errors when using stores.
+
+**Solution**: Properly type your stores:
+```ts
+import { writable, type Writable } from 'svelte/store'
+
+interface User {
+  name: string
+  email: string
+}
+
+export const user: Writable<User> = writable({ name: '', email: '' })
+```
+
+### Component Props Not Updating
+
+**Problem**: Props don't reflect parent changes.
+
+**Solution**: Make sure you're not reassigning props directly:
+```svelte
+<script>
+  export let value: number
+
+  // ❌ Don't do this
+  value = 123
+
+  // ✅ Use an event to notify parent
+  import { createEventDispatcher } from 'svelte'
+  const dispatch = createEventDispatcher()
+  dispatch('change', 123)
+</script>
+```
+
+## When to Choose Svelte
+
+**Choose Svelte if:**
+- You want the smallest possible bundle size
+- You value minimal boilerplate and clean syntax
+- You need excellent performance out of the box
+- You're building a new project (not integrating with existing React/Vue)
+- You want built-in transitions and animations
+- You prefer compile-time over runtime approaches
+
+**Consider alternatives if:**
+- **React**: You need the largest ecosystem, mature libraries, or are integrating with existing React code
+- **Vue**: You want a larger community, more third-party components, or progressive adoption
+- **SvelteKit**: You need SSR, static generation, or file-based routing (Svelte's official framework)
+- **Angular**: You need a full enterprise framework with everything included
 
 ## Next Steps
 
 <CardGroup cols={2}>
   <Card title="SvelteKit" href="/frontend/sveltekit" icon="code">
-    Full-featured Svelte framework with routing
-  </Card>
-  <Card title="API Integration" href="/frontend/api-integration" icon="plug">
-    Best practices for backend communication
-  </Card>
-  <Card title="Angular Guide" href="/frontend/angular" icon="code">
-    Try Angular for enterprise applications
+    Full-featured Svelte framework with routing and SSR
   </Card>
   <Card title="Svelte Tutorial" href="https://svelte.dev/tutorial" icon="external-link">
     Official interactive Svelte tutorial
+  </Card>
+  <Card title="Svelte Examples" href="https://svelte.dev/examples" icon="external-link">
+    Official Svelte code examples
+  </Card>
+  <Card title="Deployment" href="/frontend/building" icon="rocket">
+    Build and deploy your app
   </Card>
 </CardGroup>
