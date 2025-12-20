@@ -38,26 +38,11 @@ type templateFile struct {
 	content []byte // raw template content
 }
 
-// listTemplates returns all available templates.
+// listTemplates returns all available templates, including nested templates.
 func listTemplates() ([]templateMeta, error) {
-	entries, err := fs.ReadDir(templatesFS, "templates")
-	if err != nil {
-		return nil, fmt.Errorf("read templates directory: %w", err)
-	}
-
 	var templates []templateMeta
-	for _, entry := range entries {
-		// Skip non-directories, underscore-prefixed, and the common directory
-		if !entry.IsDir() || strings.HasPrefix(entry.Name(), "_") || entry.Name() == "common" {
-			continue
-		}
-
-		meta, err := loadTemplateMeta(entry.Name())
-		if err != nil {
-			// Skip templates without metadata
-			continue
-		}
-		templates = append(templates, meta)
+	if err := listTemplatesRecursive("templates", "", &templates); err != nil {
+		return nil, err
 	}
 
 	sort.Slice(templates, func(i, j int) bool {
@@ -65,6 +50,46 @@ func listTemplates() ([]templateMeta, error) {
 	})
 
 	return templates, nil
+}
+
+// listTemplatesRecursive recursively finds all templates in a directory.
+// It identifies templates by the presence of template.json files.
+func listTemplatesRecursive(basePath, prefix string, templates *[]templateMeta) error {
+	entries, err := fs.ReadDir(templatesFS, basePath)
+	if err != nil {
+		return fmt.Errorf("read directory %s: %w", basePath, err)
+	}
+
+	for _, entry := range entries {
+		// Skip non-directories and underscore-prefixed directories
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), "_") || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+
+		dirName := entry.Name()
+		templateName := dirName
+		if prefix != "" {
+			templateName = prefix + "/" + dirName
+		}
+		dirPath := path.Join(basePath, dirName)
+
+		// Check if this directory has a template.json (it's a template)
+		metaPath := path.Join(dirPath, "template.json")
+		if _, err := templatesFS.ReadFile(metaPath); err == nil {
+			meta, err := loadTemplateMeta(templateName)
+			if err == nil {
+				*templates = append(*templates, meta)
+			}
+		}
+
+		// Recursively check subdirectories for nested templates
+		if err := listTemplatesRecursive(dirPath, templateName, templates); err != nil {
+			// Ignore errors from subdirectories
+			continue
+		}
+	}
+
+	return nil
 }
 
 // loadTemplateMeta loads metadata for a template.
@@ -92,15 +117,35 @@ func loadTemplateMeta(name string) (templateMeta, error) {
 }
 
 // loadTemplateFiles loads all files for a template.
-// Template-specific files override common files with the same path.
+// For nested templates (e.g., "frontend/spa/react"), it loads files from:
+// 1. templates/_common/ (root common files)
+// 2. templates/frontend/_common/ (category common files)
+// 3. templates/frontend/spa/_common/ (subcategory common files)
+// 4. templates/frontend/spa/react/ (template-specific files)
+// Each level overrides files from the previous level.
 func loadTemplateFiles(name string) ([]templateFile, error) {
 	fileMap := make(map[string]templateFile)
 
-	// Load common files first
+	// Load root common files first
 	commonFiles, err := loadFilesFromDir("templates/_common")
 	if err == nil {
 		for _, f := range commonFiles {
 			fileMap[f.path] = f
+		}
+	}
+
+	// For nested templates, load each level's _common directory
+	// e.g., for "frontend/spa/react":
+	//   - templates/frontend/_common
+	//   - templates/frontend/spa/_common
+	parts := strings.Split(name, "/")
+	for i := 1; i < len(parts); i++ {
+		commonPath := path.Join("templates", path.Join(parts[:i]...), "_common")
+		files, err := loadFilesFromDir(commonPath)
+		if err == nil {
+			for _, f := range files {
+				fileMap[f.path] = f
+			}
 		}
 	}
 
@@ -233,16 +278,31 @@ func mapOutputFilename(name string) string {
 }
 
 // templateExists checks if a template exists.
+// For nested templates (e.g., "frontend/spa/react"), it checks
+// for the presence of template.json in the nested path.
 func templateExists(name string) bool {
-	_, err := templatesFS.ReadFile(path.Join("templates", name, "template.json"))
+	templatePath := path.Join("templates", name)
+
+	// Check if template.json exists (preferred way to identify templates)
+	_, err := templatesFS.ReadFile(path.Join(templatePath, "template.json"))
 	if err == nil {
 		return true
 	}
 
-	// Also check if directory exists even without metadata
-	entries, err := fs.ReadDir(templatesFS, path.Join("templates", name))
+	// Also check if directory exists with actual template files (not just _common)
+	entries, err := fs.ReadDir(templatesFS, templatePath)
 	if err != nil {
 		return false
 	}
-	return len(entries) > 0
+
+	// Must have at least one non-hidden, non-metadata file or directory
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == "template.json" || strings.HasPrefix(name, "_") || strings.HasPrefix(name, ".") {
+			continue
+		}
+		return true
+	}
+
+	return false
 }
