@@ -1,0 +1,180 @@
+---
+title: "Next.js"
+description: "Build Next.js applications with static export and Mizu backend."
+icon: "code"
+---
+
+Next.js is a React framework with server-side rendering, static generation, and more. With Mizu, you'll use Next.js's **static export** mode to generate a static site.
+
+## Quick Start
+
+```bash
+mizu new ./my-nextjs-app --template frontend/next
+cd my-nextjs-app
+make dev
+```
+
+## Configuration
+
+### `client/next.config.mjs`
+
+```js
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  output: 'export',  // Static export mode
+  distDir: '../build',
+  images: {
+    unoptimized: true  // Required for static export
+  }
+}
+
+export default nextConfig
+```
+
+## Backend Setup
+
+```go
+//go:embed all:../../build
+var buildFS embed.FS
+
+func New(cfg *Config) *mizu.App {
+    app := mizu.New()
+
+    app.Get("/api/users", handleUsers)
+
+    build, _ := fs.Sub(buildFS, "build")
+    app.Use(frontend.WithOptions(frontend.Options{
+        Mode:        frontend.ModeAuto,
+        FS:          build,
+        Root:        "./build",
+        DevServer:   "http://localhost:" + cfg.DevPort,
+        IgnorePaths: []string{"/api"},
+    }))
+
+    return app
+}
+```
+
+## File-Based Routing
+
+```
+client/app/
+├── layout.tsx           # Root layout
+├── page.tsx             # / route
+├── about/
+│   └── page.tsx         # /about route
+└── users/
+    ├── page.tsx         # /users route
+    └── [id]/
+        └── page.tsx     # /users/:id route
+```
+
+### `client/app/layout.tsx`
+
+```tsx
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <html lang="en">
+      <body>
+        <nav>
+          <a href="/">Home</a>
+          <a href="/about">About</a>
+        </nav>
+        <main>{children}</main>
+      </body>
+    </html>
+  )
+}
+```
+
+### `client/app/page.tsx`
+
+```tsx
+'use client'
+
+import { useEffect, useState } from 'react'
+
+export default function Home() {
+  const [users, setUsers] = useState([])
+
+  useEffect(() => {
+    fetch('/api/users')
+      .then(res => res.json())
+      .then(setUsers)
+  }, [])
+
+  return (
+    <div>
+      <h1>Users</h1>
+      <ul>
+        {users.map((user: any) => (
+          <li key={user.id}>{user.name}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+```
+
+## Limitations with Static Export
+
+**Works:**
+- Client-side routing ✅
+- API calls to Mizu backend ✅
+- React Server Components (RSC) ✅
+- Client components ✅
+
+**Doesn't work:**
+- Server-side rendering ❌
+- Next.js API routes ❌ (use Mizu routes)
+- Image optimization ❌ (set `unoptimized: true`)
+- Middleware ❌
+- `revalidate` ❌
+
+## Development
+
+```bash
+# Terminal 1: Next.js
+cd client
+npm run dev  # Port 3001
+
+# Terminal 2: Mizu
+go run cmd/server/main.go  # Port 3000
+```
+
+## Building
+
+```bash
+make build
+```
+
+Runs:
+1. `cd client && npm run build` → generates `build/`
+2. `go build` → embeds `build/` into binary
+
+## When to Use
+
+**Use Next.js when:**
+- You want App Router and RSC
+- File-based routing
+- Image optimization (configure properly)
+
+**Use React when:**
+- Simpler setup
+- Don't need Next.js features
+- Want more control
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="React Guide" href="/frontend/react" icon="react">
+    Vanilla React with Vite
+  </Card>
+  <Card title="Nuxt Guide" href="/frontend/nuxt" icon="code">
+    Vue equivalent of Next.js
+  </Card>
+</CardGroup>

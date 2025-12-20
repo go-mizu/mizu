@@ -1,0 +1,324 @@
+---
+title: "Building"
+description: "Build and optimize your frontend for production deployment."
+icon: "hammer"
+---
+
+Building your frontend creates optimized, production-ready files that Mizu serves efficiently.
+
+## Build Process
+
+### Using Makefile
+
+```bash
+make build
+```
+
+This runs:
+1. `cd client && npm run build` - Builds frontend
+2. `go build -o ./bin/server cmd/server/main.go` - Builds Go binary with embedded frontend
+
+### Manual Build
+
+```bash
+# Build frontend
+cd client
+npm run build
+
+# Build Go binary
+cd ..
+go build -o ./bin/server cmd/server/main.go
+```
+
+## What Happens During Build
+
+### 1. Frontend Build (Vite)
+
+```bash
+npm run build
+```
+
+**Process:**
+- Transpiles TypeScript to JavaScript
+- Bundles modules together
+- Minifies JavaScript and CSS
+- Optimizes images
+- Adds content hashes to filenames
+- Generates source maps
+- Creates build manifest
+
+**Output:**
+```
+dist/
+├── index.html
+├── assets/
+│   ├── main.abc123.js       # Minified, hashed
+│   ├── main.def456.css      # Minified, hashed
+│   └── vendor.xyz789.js     # Code-split chunk
+└── .vite/
+    └── manifest.json        # Build manifest
+```
+
+### 2. Go Build with Embed
+
+```go
+//go:embed all:../../dist
+var distFS embed.FS
+```
+
+The Go compiler:
+- Embeds `dist/` into the binary
+- Creates self-contained executable
+- No external dependencies needed
+
+## Build Configuration
+
+### Vite Configuration
+
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  build: {
+    outDir: '../dist',              // Output directory
+    emptyOutDir: true,              // Clean before build
+    sourcemap: false,               // Disable source maps in production
+    minify: 'esbuild',              // Minification method
+    target: 'es2015',               // Browser target
+
+    rollupOptions: {
+      output: {
+        // Code splitting
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom'],
+          'router': ['react-router-dom'],
+        },
+
+        // Asset naming with hashes
+        entryFileNames: 'assets/[name].[hash].js',
+        chunkFileNames: 'assets/[name].[hash].js',
+        assetFileNames: 'assets/[name].[hash].[ext]',
+      },
+    },
+
+    // Size warning threshold
+    chunkSizeWarningLimit: 1000,    // 1000 KB
+  },
+})
+```
+
+### Environment Variables
+
+```bash
+# .env.production
+VITE_API_URL=https://api.production.com
+VITE_ANALYTICS_ID=GA-123456
+```
+
+```ts
+const apiUrl = import.meta.env.VITE_API_URL
+```
+
+## Build Optimization
+
+### 1. Code Splitting
+
+Split code into smaller chunks:
+
+```ts
+// React
+const About = lazy(() => import('./pages/About'))
+
+// Vue
+const About = defineAsyncComponent(() => import('./pages/About.vue'))
+```
+
+### 2. Tree Shaking
+
+Import only what you need:
+
+```ts
+// ❌ Imports entire library
+import _ from 'lodash'
+
+// ✅ Imports only what's used
+import { debounce } from 'lodash-es'
+```
+
+### 3. Minification
+
+Vite minifies automatically:
+
+```js
+// Before
+function calculateTotal(items) {
+  return items.reduce((sum, item) => sum + item.price, 0)
+}
+
+// After
+const calculateTotal=e=>e.reduce((e,t)=>e+t.price,0)
+```
+
+### 4. Asset Optimization
+
+```bash
+# Install image optimizer
+npm install -D vite-plugin-imagemin
+
+# Add to vite.config.ts
+import viteImagemin from 'vite-plugin-imagemin'
+
+export default {
+  plugins: [
+    viteImagemin({
+      gifsicle: { optimizationLevel: 7 },
+      optipng: { optimizationLevel: 7 },
+      mozjpeg: { quality: 80 },
+      svgo: { plugins: [{ removeViewBox: false }] },
+      webp: { quality: 80 },
+    }),
+  ],
+}
+```
+
+## Multi-Environment Builds
+
+### Environment Files
+
+```
+.env                 # All environments
+.env.development     # Development only
+.env.production      # Production only
+.env.staging         # Staging only
+```
+
+### Build Scripts
+
+```json
+{
+  "scripts": {
+    "build": "vite build",
+    "build:staging": "vite build --mode staging",
+    "build:production": "vite build --mode production"
+  }
+}
+```
+
+## Build Analysis
+
+### Bundle Size
+
+```bash
+npm run build
+
+# Output shows sizes
+dist/assets/main.abc123.js        245.67 kB
+dist/assets/vendor.xyz789.js      156.32 kB
+```
+
+### Visualize Bundle
+
+```bash
+npm install -D rollup-plugin-visualizer
+```
+
+```ts
+import { visualizer } from 'rollup-plugin-visualizer'
+
+export default {
+  plugins: [
+    visualizer({ filename: 'stats.html' })
+  ]
+}
+```
+
+Run build and open `stats.html` to see bundle composition.
+
+## CI/CD Integration
+
+### GitHub Actions
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+
+      - name: Install dependencies
+        run: cd client && npm ci
+
+      - name: Build frontend
+        run: cd client && npm run build
+
+      - name: Build server
+        run: go build -o ./bin/server cmd/server/main.go
+
+      - name: Deploy
+        run: ./deploy.sh
+```
+
+## Troubleshooting
+
+### Build Fails
+
+```bash
+# Clear cache and reinstall
+rm -rf node_modules package-lock.json
+npm install
+
+# Clear Vite cache
+rm -rf node_modules/.vite
+```
+
+### Large Bundle Size
+
+1. Check bundle analysis
+2. Enable code splitting
+3. Use dynamic imports
+4. Remove unused dependencies
+
+### Missing Assets
+
+Ensure assets are in `public/` or imported in code:
+
+```ts
+// ❌ Won't be included
+// <img src="/logo.png">
+
+// ✅ Will be included
+import logo from './logo.png'
+// <img src={logo}>
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deployment" href="/frontend/embed" icon="cloud">
+    Deploy your application
+  </Card>
+  <Card title="Production" href="/frontend/production" icon="rocket">
+    Production optimization
+  </Card>
+  <Card title="Caching" href="/frontend/caching" icon="database">
+    Caching strategies
+  </Card>
+</CardGroup>

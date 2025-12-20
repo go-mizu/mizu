@@ -1,0 +1,207 @@
+---
+title: "Overview"
+description: "Build modern web applications with Mizu's comprehensive frontend integration."
+icon: "browser"
+---
+
+Mizu provides powerful frontend integration that works with any modern JavaScript framework or server-rendered approach. Whether you're building a React SPA, a Vue application, or using HTMX for server-rendered HTML, Mizu has you covered.
+
+## What is the Frontend Middleware?
+
+The frontend middleware handles the complete lifecycle of serving frontend applications:
+
+**In Development:**
+- Proxies requests to your dev server (Vite, webpack, etc.)
+- Enables Hot Module Replacement (HMR) for instant updates
+- Proxies WebSocket connections for real-time development features
+- Shows helpful error pages when the dev server is down
+
+**In Production:**
+- Serves optimized static files with intelligent caching
+- Supports embedded filesystems for single-binary deployment
+- Adds security headers automatically
+- Implements SPA fallback routing for client-side navigation
+- Handles asset fingerprinting and cache busting
+
+## Supported Approaches
+
+Mizu supports two main approaches to building frontends:
+
+### Single Page Applications (SPAs)
+
+SPAs are JavaScript-heavy applications that render in the browser. The server sends a minimal HTML page, and JavaScript handles routing and rendering.
+
+**Popular SPA Frameworks:**
+- **React** - The most popular UI library with a massive ecosystem
+- **Vue** - Progressive framework with excellent developer experience
+- **Svelte** - Compiler-based framework with minimal runtime
+- **Angular** - Full-featured framework from Google
+- **Preact** - Lightweight React alternative
+
+**When to use SPAs:**
+- Rich, interactive user interfaces
+- Desktop-like web applications
+- Apps that work well offline
+- Applications with complex client-side state
+
+### Server-Rendered Applications
+
+Server-rendered apps generate HTML on the server and send it to the browser. JavaScript is used sparingly for interactivity.
+
+**Popular Server-Rendering Approaches:**
+- **HTMX** - Hypermedia-driven approach with minimal JavaScript
+- **Alpine.js** - Lightweight JavaScript for progressive enhancement
+- **Go Templates** - Pure server-side rendering
+
+**When to use server-rendering:**
+- Content-heavy websites
+- SEO-critical applications
+- Apps that need to work without JavaScript
+- Simpler applications with less interactivity
+- Teams that prefer server-side logic
+
+### Hybrid Frameworks
+
+Some frameworks support both approaches:
+
+- **Next.js** (React) - Server-Side Rendering, Static Generation, or SPA
+- **Nuxt** (Vue) - Server-Side Rendering, Static Generation, or SPA
+- **SvelteKit** (Svelte) - Server-Side Rendering or Static Generation
+
+With Mizu, these frameworks typically use their **static generation** mode, where the frontend is pre-built and Mizu serves the static files.
+
+## How It Works
+
+### Development Mode
+
+When you run your app in development:
+
+```
+Your Browser → Mizu Server → Frontend Dev Server (Vite)
+               ↑                      ↓
+               └──── Proxies ─────────┘
+```
+
+1. You make a request to `http://localhost:3000`
+2. Mizu checks if it's an API route (e.g., `/api/*`)
+3. If not, Mizu proxies the request to your frontend dev server
+4. The dev server responds with the latest code
+5. HMR WebSocket connections are also proxied for live reload
+
+### Production Mode
+
+When you deploy your app:
+
+```
+Your Browser → Mizu Server → Static Files (dist/)
+                           → API Handlers
+```
+
+1. You build your frontend (e.g., `npm run build`)
+2. Mizu serves the built files from the `dist` folder
+3. API routes are handled by your Go handlers
+4. Frontend routes fall back to `index.html` for SPA routing
+5. Assets are cached aggressively based on their fingerprint
+
+## Auto-Detection
+
+Mizu can automatically detect whether to run in development or production mode based on environment variables:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode:      frontend.ModeAuto,        // Auto-detect
+    Root:      "./dist",                  // Production files
+    DevServer: "http://localhost:5173",   // Dev server URL
+}))
+```
+
+The mode is determined by the `MIZU_ENV`, `GO_ENV`, or `ENV` environment variable:
+- `production` or `prod` → Production mode
+- Anything else → Development mode
+
+## Choosing an Approach
+
+Not sure which approach to use? Here's a decision guide:
+
+| Question | SPA | Server-Rendered |
+|----------|-----|----------------|
+| Need rich interactivity? | ✅ Yes | ⚠️ Limited |
+| SEO is critical? | ⚠️ Requires SSR | ✅ Yes |
+| Team knows JavaScript frameworks? | ✅ Yes | ⚠️ Maybe |
+| Simple CRUD app? | ⚠️ Overkill | ✅ Perfect |
+| Offline support needed? | ✅ Yes | ❌ No |
+| Fast initial page load? | ⚠️ Slower | ✅ Faster |
+| Large team? | ✅ Good | ⚠️ Depends |
+
+**General guidance:**
+- **Start simple**: If you're unsure, start with HTMX or Alpine.js
+- **Go SPA**: If you need a desktop-like experience or complex state
+- **Hybrid approach**: Use HTMX for most pages, React for complex features
+
+## Quick Comparison
+
+### HTMX Example
+
+```go
+// Server sends complete HTML fragments
+app.Get("/users", func(c *mizu.Ctx) error {
+    users := getUsers()
+    return c.Render("users.html", users)
+})
+```
+
+```html
+<!-- Clicking loads HTML from server -->
+<button hx-get="/users" hx-target="#user-list">
+    Load Users
+</button>
+<div id="user-list"></div>
+```
+
+### React Example
+
+```go
+// Server provides JSON API
+app.Get("/api/users", func(c *mizu.Ctx) error {
+    users := getUsers()
+    return c.JSON(200, users)
+})
+```
+
+```jsx
+// React fetches and renders client-side
+function UserList() {
+    const [users, setUsers] = useState([]);
+
+    useEffect(() => {
+        fetch('/api/users')
+            .then(r => r.json())
+            .then(setUsers);
+    }, []);
+
+    return <div>{users.map(u => <User key={u.id} {...u} />)}</div>;
+}
+```
+
+Notice the difference:
+- **HTMX**: Server sends HTML, minimal JavaScript
+- **React**: Server sends JSON, React renders HTML
+
+## What's Next?
+
+Ready to build your first frontend application with Mizu?
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" href="/frontend/quick-start" icon="rocket">
+    Create your first frontend app in minutes
+  </Card>
+  <Card title="Development Mode" href="/frontend/development" icon="code">
+    Learn how dev mode and HMR work
+  </Card>
+  <Card title="React Guide" href="/frontend/react" icon="react">
+    Build a React SPA with Mizu
+  </Card>
+  <Card title="HTMX Guide" href="/frontend/htmx" icon="bolt">
+    Build with HTMX and server-rendered HTML
+  </Card>
+</CardGroup>

@@ -1,0 +1,412 @@
+---
+title: "API Integration"
+description: "Best practices for integrating frontend with Mizu backend APIs."
+icon: "plug"
+---
+
+Integrating your frontend with Mizu's backend is straightforward. This guide covers patterns, best practices, and common scenarios.
+
+## Basic API Call
+
+### Frontend
+
+```tsx
+async function fetchUsers() {
+  const response = await fetch('/api/users')
+  const users = await response.json()
+  return users
+}
+```
+
+### Backend
+
+```go
+app.Get("/api/users", func(c *mizu.Ctx) error {
+    users := []map[string]any{
+        {"id": 1, "name": "Alice"},
+        {"id": 2, "name": "Bob"},
+    }
+    return c.JSON(200, users)
+})
+```
+
+## Request Methods
+
+### GET
+
+```tsx
+const users = await fetch('/api/users')
+  .then(r => r.json())
+```
+
+```go
+app.Get("/api/users", handleGetUsers)
+```
+
+### POST
+
+```tsx
+await fetch('/api/users', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ name: 'Alice', email: 'alice@example.com' })
+})
+```
+
+```go
+app.Post("/api/users", func(c *mizu.Ctx) error {
+    var user struct {
+        Name  string `json:"name"`
+        Email string `json:"email"`
+    }
+    if err := c.BindJSON(&user); err != nil {
+        return c.JSON(400, map[string]string{"error": "invalid request"})
+    }
+    // Create user...
+    return c.JSON(201, user)
+})
+```
+
+### PUT/DELETE
+
+```tsx
+// PUT
+await fetch(`/api/users/${id}`, {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(updates)
+})
+
+// DELETE
+await fetch(`/api/users/${id}`, {
+  method: 'DELETE'
+})
+```
+
+## Error Handling
+
+### Frontend
+
+```tsx
+async function fetchUsers() {
+  try {
+    const response = await fetch('/api/users')
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || 'Request failed')
+    }
+
+    return await response.json()
+  } catch (error) {
+    console.error('API error:', error)
+    throw error
+  }
+}
+```
+
+### Backend
+
+```go
+app.Get("/api/users", func(c *mizu.Ctx) error {
+    users, err := db.GetUsers()
+    if err != nil {
+        return c.JSON(500, map[string]string{
+            "error": "failed to fetch users",
+        })
+    }
+    return c.JSON(200, users)
+})
+```
+
+## Authentication
+
+### JWT Token
+
+```tsx
+// Store token
+localStorage.setItem('auth_token', token)
+
+// Send with requests
+const response = await fetch('/api/protected', {
+  headers: {
+    'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+  }
+})
+```
+
+```go
+app.Get("/api/protected", func(c *mizu.Ctx) error {
+    token := c.Request().Header.Get("Authorization")
+    if token == "" {
+        return c.JSON(401, map[string]string{"error": "unauthorized"})
+    }
+
+    // Verify token...
+    return c.JSON(200, data)
+})
+```
+
+Or use the JWT middleware:
+
+```go
+import "github.com/go-mizu/mizu/middlewares/jwt"
+
+app.Use(jwt.WithOptions(jwt.Options{
+    Secret:      []byte("your-secret"),
+    TokenLookup: "header:Authorization",
+}))
+```
+
+### HTTP-Only Cookies
+
+```go
+app.Post("/api/login", func(c *mizu.Ctx) error {
+    // Verify credentials...
+
+    http.SetCookie(c.Writer(), &http.Cookie{
+        Name:     "auth_token",
+        Value:    token,
+        HttpOnly: true,
+        Secure:   true,
+        SameSite: http.SameSiteStrictMode,
+    })
+
+    return c.JSON(200, map[string]string{"message": "logged in"})
+})
+```
+
+Frontend doesn't need to handle the cookie - it's sent automatically.
+
+## CORS in Development
+
+Mizu adds CORS headers automatically in dev mode:
+
+```
+Access-Control-Allow-Origin: *
+```
+
+For production, use the CORS middleware:
+
+```go
+import "github.com/go-mizu/mizu/middlewares/cors"
+
+app.Use(cors.WithOptions(cors.Options{
+    AllowedOrigins: []string{"https://yourdomain.com"},
+    AllowedMethods: []string{"GET", "POST", "PUT", "DELETE"},
+    AllowedHeaders: []string{"Content-Type", "Authorization"},
+}))
+```
+
+## TypeScript Types
+
+Share types between frontend and backend:
+
+```ts
+// shared/types.ts
+export interface User {
+  id: number
+  name: string
+  email: string
+}
+
+export interface CreateUserRequest {
+  name: string
+  email: string
+}
+```
+
+Frontend:
+
+```tsx
+import type { User, CreateUserRequest } from './shared/types'
+
+const users = await fetch('/api/users')
+  .then(r => r.json()) as User[]
+
+const create = async (req: CreateUserRequest) => {
+  return await fetch('/api/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req)
+  }).then(r => r.json()) as User
+}
+```
+
+## API Client
+
+Create a reusable API client:
+
+```ts
+class API {
+  private baseURL: string
+
+  constructor(baseURL = '/api') {
+    this.baseURL = baseURL
+  }
+
+  private async request<T>(
+    endpoint: string,
+    options?: RequestInit
+  ): Promise<T> {
+    const response = await fetch(`${this.baseURL}${endpoint}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers,
+      },
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message)
+    }
+
+    return response.json()
+  }
+
+  get<T>(endpoint: string) {
+    return this.request<T>(endpoint)
+  }
+
+  post<T>(endpoint: string, data: any) {
+    return this.request<T>(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  put<T>(endpoint: string, data: any) {
+    return this.request<T>(endpoint, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  delete<T>(endpoint: string) {
+    return this.request<T>(endpoint, {
+      method: 'DELETE',
+    })
+  }
+}
+
+export const api = new API()
+```
+
+Use:
+
+```tsx
+import { api } from './api'
+
+const users = await api.get<User[]>('/users')
+const user = await api.post<User>('/users', { name: 'Alice', email: 'alice@example.com' })
+```
+
+## Loading States
+
+```tsx
+function Users() {
+  const [users, setUsers] = useState<User[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    api.get<User[]>('/users')
+      .then(setUsers)
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div>Loading...</div>
+  if (error) return <div>Error: {error}</div>
+
+  return (
+    <ul>
+      {users.map(user => (
+        <li key={user.id}>{user.name}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+## Pagination
+
+### Backend
+
+```go
+app.Get("/api/users", func(c *mizu.Ctx) error {
+    page := c.QueryInt("page", 1)
+    limit := c.QueryInt("limit", 20)
+
+    users, total := db.GetUsers(page, limit)
+
+    return c.JSON(200, map[string]any{
+        "data":  users,
+        "page":  page,
+        "limit": limit,
+        "total": total,
+    })
+})
+```
+
+### Frontend
+
+```tsx
+const [page, setPage] = useState(1)
+const limit = 20
+
+const { data, total } = await api.get(`/users?page=${page}&limit=${limit}`)
+```
+
+## File Upload
+
+### Frontend
+
+```tsx
+async function uploadFile(file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const response = await fetch('/api/upload', {
+    method: 'POST',
+    body: formData,  // Don't set Content-Type header
+  })
+
+  return response.json()
+}
+```
+
+### Backend
+
+```go
+app.Post("/api/upload", func(c *mizu.Ctx) error {
+    file, header, err := c.Request().FormFile("file")
+    if err != nil {
+        return c.JSON(400, map[string]string{"error": "no file"})
+    }
+    defer file.Close()
+
+    // Save file...
+    return c.JSON(200, map[string]string{
+        "filename": header.Filename,
+    })
+})
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="SSR vs SPA" href="/frontend/ssr-vs-spa" icon="code">
+    Architecture decisions
+  </Card>
+  <Card title="Security" href="/frontend/security" icon="shield">
+    API security best practices
+  </Card>
+  <Card title="CORS Middleware" href="/middlewares/cors" icon="globe">
+    CORS configuration
+  </Card>
+  <Card title="JWT Middleware" href="/middlewares/jwt" icon="key">
+    JWT authentication
+  </Card>
+</CardGroup>

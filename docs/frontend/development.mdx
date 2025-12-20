@@ -1,0 +1,421 @@
+---
+title: "Development"
+description: "How development mode works with hot reload and proxying."
+icon: "code"
+---
+
+Development mode is designed to give you the best developer experience with instant feedback and minimal configuration. When you run your Mizu app in development, it acts as a reverse proxy to your frontend dev server.
+
+## How Development Mode Works
+
+In development, Mizu proxies requests to your frontend dev server (usually Vite, webpack-dev-server, or similar):
+
+```
+Browser Request
+      ↓
+   Mizu Server (http://localhost:3000)
+      ↓
+  Is it /api/* ?
+    ↙     ↘
+  Yes      No
+   ↓        ↓
+Go API   Proxy to Dev Server
+Handler  (http://localhost:5173)
+```
+
+**The flow:**
+1. Browser requests `http://localhost:3000/`
+2. Mizu checks if the path starts with `/api` (or other ignore paths)
+3. If yes → Handle with Go API routes
+4. If no → Proxy to the frontend dev server
+5. Frontend dev server responds with the latest code
+
+## Enabling Development Mode
+
+### Automatic Detection
+
+The simplest way is to use auto-detection:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode:      frontend.ModeAuto,          // Auto-detect mode
+    Root:      "./dist",                    // Production build folder
+    DevServer: "http://localhost:5173",     // Dev server URL
+}))
+```
+
+Set the environment variable to enable development:
+
+```bash
+# Development (default)
+MIZU_ENV=development go run cmd/server/main.go
+
+# Or don't set it at all - defaults to dev
+go run cmd/server/main.go
+```
+
+### Explicit Development Mode
+
+You can explicitly set development mode:
+
+```go
+app.Use(frontend.Dev("http://localhost:5173"))
+```
+
+Or with options:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode:      frontend.ModeDev,
+    DevServer: "http://localhost:5173",
+}))
+```
+
+## Hot Module Replacement (HMR)
+
+HMR is what makes modern frontend development so fast. When you save a file, the changes appear instantly in your browser without a full page reload.
+
+### How HMR Works
+
+1. You edit a React component
+2. Vite detects the file change
+3. Vite sends an update via WebSocket
+4. The browser receives the update
+5. Only the changed component re-renders
+6. Your app state is preserved
+
+**Mizu's role:**
+- Proxies the WebSocket connection between browser and Vite
+- Preserves all HMR functionality
+- No configuration needed!
+
+### What Gets Proxied
+
+Mizu proxies both HTTP and WebSocket connections:
+
+**HTTP Requests:**
+- `GET /` → Proxied to dev server
+- `GET /assets/main.js` → Proxied to dev server
+- `GET /src/App.tsx` → Proxied to dev server (during HMR)
+
+**WebSocket Connections:**
+- `ws://localhost:3000/` → Proxied to `ws://localhost:5173/`
+- Used for HMR updates
+- Vite's HMR protocol passes through unchanged
+
+## Dev Server Configuration
+
+### Default Ports
+
+Different dev servers use different default ports:
+
+| Framework | Tool | Default Port |
+|-----------|------|--------------|
+| React | Vite | 5173 |
+| Vue | Vite | 5173 |
+| Svelte | Vite | 5173 |
+| Angular | Angular CLI | 4200 |
+| Next.js | Next.js | 3000 (conflicts!) |
+
+**Important:** If your frontend dev server runs on port 3000, change either the Mizu port or the frontend port to avoid conflicts.
+
+### Configuring Dev Server URL
+
+Match your frontend dev server port:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode:      frontend.ModeAuto,
+    DevServer: "http://localhost:4200",  // Angular dev server
+}))
+```
+
+### Custom Dev Server Timeout
+
+If your dev server is slow to respond:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode:             frontend.ModeDev,
+    DevServer:        "http://localhost:5173",
+    DevServerTimeout: 60 * time.Second,  // Default: 30s
+}))
+```
+
+### Disabling WebSocket Proxying
+
+If you don't need HMR (unusual):
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode:           frontend.ModeDev,
+    DevServer:      "http://localhost:5173",
+    ProxyWebSocket: false,  // Disable WebSocket proxy
+}))
+```
+
+## Ignore Paths
+
+By default, these paths bypass the proxy and go to your Go handlers:
+
+- `/api` - API routes
+- `/health` - Health check
+- `/metrics` - Metrics endpoint
+
+```go
+app.Get("/api/users", handleUsers)      // Handled by Go
+app.Get("/health", handleHealth)        // Handled by Go
+app.Get("/", ...)                       // Proxied to dev server
+app.Get("/about", ...)                  // Proxied to dev server
+```
+
+### Custom Ignore Paths
+
+Add your own paths:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode:        frontend.ModeDev,
+    DevServer:   "http://localhost:5173",
+    IgnorePaths: []string{"/api", "/auth", "/webhooks"},
+}))
+```
+
+Now `/auth` and `/webhooks` are handled by Go, not proxied.
+
+### Disable Ignore Paths
+
+If you want to proxy everything except explicit routes:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode:        frontend.ModeDev,
+    DevServer:   "http://localhost:5173",
+    IgnorePaths: []string{},  // No automatic ignores
+}))
+
+// Define API routes BEFORE the frontend middleware
+app.Get("/api/users", handleUsers)
+
+// Frontend middleware comes after
+app.Use(frontend.Dev("http://localhost:5173"))
+```
+
+Remember: middleware order matters! Routes defined before the frontend middleware take precedence.
+
+## CORS in Development
+
+Mizu automatically adds CORS headers in development mode:
+
+```
+Access-Control-Allow-Origin: *
+```
+
+This allows your frontend dev server to make requests to the Mizu API without CORS issues.
+
+**In production**, these permissive CORS headers are NOT added. Use the [CORS middleware](/middlewares/cors) for production CORS configuration.
+
+## Error Handling
+
+When the dev server is not running or unreachable, Mizu shows a helpful error page:
+
+```
+┌─────────────────────────────────────────┐
+│  🚨 Unable to connect to dev server     │
+│                                         │
+│  http://localhost:5173                  │
+│                                         │
+│  Make sure your frontend dev server     │
+│  is running:                            │
+│                                         │
+│  For Vite: npm run dev                  │
+│  For Next.js: npm run dev               │
+│                                         │
+│  [Auto-retrying in 2s...]              │
+└─────────────────────────────────────────┘
+```
+
+The page automatically retries every 2 seconds, so once you start your dev server, the page loads.
+
+## Complete Development Setup
+
+Here's a complete example:
+
+### `app/server/app.go`
+
+```go
+package server
+
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/frontend"
+)
+
+func New(cfg *Config) *mizu.App {
+    app := mizu.New()
+
+    // Add API routes BEFORE frontend middleware
+    app.Get("/api/users", handleUsers)
+    app.Post("/api/users", createUser)
+
+    // Frontend middleware (auto-detects mode)
+    app.Use(frontend.WithOptions(frontend.Options{
+        Mode:        frontend.ModeAuto,
+        Root:        "./dist",
+        DevServer:   "http://localhost:" + cfg.DevPort,
+        IgnorePaths: []string{"/api"},
+    }))
+
+    return app
+}
+```
+
+### `app/server/config.go`
+
+```go
+package server
+
+import "os"
+
+type Config struct {
+    Port    string
+    DevPort string
+    Env     string
+}
+
+func LoadConfig() *Config {
+    return &Config{
+        Port:    getEnv("PORT", "3000"),
+        DevPort: getEnv("DEV_PORT", "5173"),
+        Env:     getEnv("MIZU_ENV", "development"),
+    }
+}
+
+func getEnv(key, fallback string) string {
+    if value := os.Getenv(key); value != "" {
+        return value
+    }
+    return fallback
+}
+```
+
+### Running Development
+
+```bash
+# Terminal 1: Start frontend dev server
+cd client
+npm run dev
+
+# Terminal 2: Start Mizu server
+go run cmd/server/main.go
+```
+
+Or use the Makefile:
+
+```bash
+make dev  # Runs both servers in parallel
+```
+
+## Development Workflow
+
+A typical development session:
+
+1. **Start both servers**
+   ```bash
+   make dev
+   ```
+
+2. **Open browser**
+   ```
+   http://localhost:3000
+   ```
+
+3. **Make frontend changes**
+   - Edit React/Vue/Svelte components
+   - Changes appear instantly (HMR)
+   - No refresh needed!
+
+4. **Make backend changes**
+   - Edit Go files
+   - Stop server (Ctrl+C)
+   - Restart server
+   - Or use `air` for auto-reload
+
+5. **Test API integration**
+   - Call APIs from frontend
+   - Check browser Network tab
+   - Check server logs
+
+## Debugging Tips
+
+### Check Dev Server is Running
+
+```bash
+# Should respond with HTML
+curl http://localhost:5173
+```
+
+### Check Mizu is Proxying
+
+```bash
+# Should show the same HTML as above
+curl http://localhost:3000
+```
+
+### Enable Debug Logging
+
+Add the logger middleware to see all requests:
+
+```go
+import "github.com/go-mizu/mizu/middlewares/logger"
+
+app.Use(logger.New())
+app.Use(frontend.Dev("http://localhost:5173"))
+```
+
+You'll see logs like:
+
+```
+GET  /              → 200 (12.3ms) [proxied]
+GET  /api/users    → 200 (2.1ms)  [handler]
+GET  /assets/main.js → 200 (5.2ms) [proxied]
+```
+
+### HMR Not Working
+
+1. **Check WebSocket is connected**
+   - Open browser DevTools
+   - Go to Network tab → WS (WebSockets)
+   - Should see a connection to `ws://localhost:3000`
+
+2. **Check Vite config allows external connections**
+   ```ts
+   // vite.config.ts
+   export default {
+       server: {
+           hmr: {
+               clientPort: 3000,  // Mizu's port
+           }
+       }
+   }
+   ```
+
+3. **Check CORS headers**
+   - Network tab should show `Access-Control-Allow-Origin: *`
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Production Mode" href="/frontend/production" icon="rocket">
+    Learn how production mode optimizes performance
+  </Card>
+  <Card title="Configuration" href="/frontend/configuration" icon="sliders">
+    Explore all configuration options
+  </Card>
+  <Card title="Troubleshooting" href="/frontend/troubleshooting" icon="wrench">
+    Fix common development issues
+  </Card>
+  <Card title="API Integration" href="/frontend/api-integration" icon="plug">
+    Best practices for calling backend APIs
+  </Card>
+</CardGroup>

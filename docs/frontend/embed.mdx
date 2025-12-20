@@ -1,0 +1,305 @@
+---
+title: "Embedded Filesystems"
+description: "Deploy single-binary applications with embedded frontend files."
+icon: "box"
+---
+
+Embedding your frontend into the Go binary creates a single executable with no external dependencies.
+
+## How It Works
+
+The `//go:embed` directive bundles files into the compiled binary:
+
+```go
+package server
+
+import (
+    "embed"
+    "io/fs"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/frontend"
+)
+
+//go:embed all:../../dist
+var distFS embed.FS
+
+func New() *mizu.App {
+    app := mizu.New()
+
+    // Extract 'dist' subdirectory
+    dist, _ := fs.Sub(distFS, "dist")
+
+    app.Use(frontend.WithFS(dist))
+
+    return app
+}
+```
+
+## Benefits
+
+### 1. Single Binary Deployment
+
+One file contains everything:
+
+```bash
+# Before (multiple files)
+myapp/
+├── server
+├── dist/
+│   ├── index.html
+│   └── assets/
+│       └── ...
+
+# After (single file)
+server  # Contains everything!
+```
+
+### 2. No External Dependencies
+
+```bash
+# Just copy the binary
+scp ./bin/server user@server:/usr/local/bin/
+
+# Run it
+./server
+```
+
+### 3. Simpler Deployment
+
+```dockerfile
+# Dockerfile
+FROM scratch
+COPY server /server
+CMD ["/server"]
+```
+
+Single layer, minimal size.
+
+### 4. Immutable Deployments
+
+Frontend and backend versions always match.
+
+## Directory Structure
+
+### Before Embed
+
+```
+my-app/
+├── cmd/
+│   └── server/
+│       └── main.go
+├── app/
+│   └── server/
+│       └── app.go          ← Embed directive here
+├── dist/                   ← Built frontend
+│   ├── index.html
+│   └── assets/
+└── go.mod
+```
+
+### Embed Directive Location
+
+```go
+// app/server/app.go
+package server
+
+//go:embed all:../../dist    ← Relative to this file
+var distFS embed.FS
+```
+
+The path is relative to the `.go` file containing the directive.
+
+## Why Use fs.Sub?
+
+The embed directive includes the directory name:
+
+```go
+//go:embed all:../../dist
+var distFS embed.FS
+
+// distFS contains:
+//   dist/
+//     index.html
+//     assets/
+```
+
+Use `fs.Sub` to remove the prefix:
+
+```go
+dist, _ := fs.Sub(distFS, "dist")
+
+// dist contains:
+//   index.html
+//   assets/
+```
+
+Now `index.html` is at the root, as expected.
+
+## Complete Example
+
+```go
+package server
+
+import (
+    "embed"
+    "io/fs"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/frontend"
+)
+
+//go:embed all:../../dist
+var distFS embed.FS
+
+func New() *mizu.App {
+    app := mizu.New()
+
+    // API routes
+    app.Get("/api/users", handleUsers)
+
+    // Embedded frontend
+    dist, err := fs.Sub(distFS, "dist")
+    if err != nil {
+        panic("failed to load embedded frontend: " + err.Error())
+    }
+
+    app.Use(frontend.WithFS(dist))
+
+    return app
+}
+```
+
+## Build Process
+
+```bash
+# 1. Build frontend
+cd client
+npm run build  # Creates dist/
+
+# 2. Build Go binary (embeds dist/)
+cd ..
+go build -o ./bin/server cmd/server/main.go
+
+# 3. Deploy single binary
+scp ./bin/server user@server:/app/server
+```
+
+## Binary Size
+
+Embedding increases binary size:
+
+```bash
+# Without embed
+server: 8 MB
+
+# With embed (typical React app)
+server: 12 MB  # +4 MB for frontend
+
+# With large frontend
+server: 20 MB  # +12 MB
+```
+
+**Tips to reduce size:**
+- Minify frontend
+- Compress assets
+- Remove unused code
+- Use code splitting
+
+## Trade-offs
+
+### Pros
+
+- ✅ Single file deployment
+- ✅ No file serving issues
+- ✅ Faster startup (no disk I/O)
+- ✅ Simpler Docker images
+- ✅ Version consistency
+
+### Cons
+
+- ❌ Larger binary size
+- ❌ Must rebuild for frontend changes
+- ❌ Can't update frontend independently
+- ❌ Slower build times
+
+## When to Use
+
+**Use embedded FS when:**
+- Deploying to production
+- Want simple deployment
+- Frontend changes infrequently
+- Binary size acceptable
+
+**Use file system when:**
+- Frequent frontend updates
+- Want to update without rebuild
+- Very large frontends
+- Need separate frontend deployment
+
+## Hybrid Approach
+
+Use environment variable to switch:
+
+```go
+func getFrontendFS() fs.FS {
+    // Development: use file system
+    if os.Getenv("MIZU_ENV") != "production" {
+        return os.DirFS("./dist")
+    }
+
+    // Production: use embedded FS
+    dist, _ := fs.Sub(distFS, "dist")
+    return dist
+}
+
+app.Use(frontend.WithFS(getFrontendFS()))
+```
+
+## Multiple Embedded Directories
+
+Embed views and static separately:
+
+```go
+//go:embed all:../../dist
+var distFS embed.FS
+
+//go:embed all:../../views
+var viewsFS embed.FS
+
+//go:embed all:../../static
+var staticFS embed.FS
+
+func New() *mizu.App {
+    app := mizu.New()
+
+    // Views
+    views, _ := fs.Sub(viewsFS, "views")
+    v := view.New(view.Config{FS: views})
+    app.Use(v.Middleware())
+
+    // Static assets
+    static, _ := fs.Sub(staticFS, "static")
+    app.Static("/static", static)
+
+    // Frontend SPA
+    dist, _ := fs.Sub(distFS, "dist")
+    app.Use(frontend.WithFS(dist))
+
+    return app
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Building" href="/frontend/building" icon="hammer">
+    Build process and optimization
+  </Card>
+  <Card title="Static Hosting" href="/frontend/static-hosting" icon="cloud">
+    Alternative deployment options
+  </Card>
+  <Card title="Production" href="/frontend/production" icon="rocket">
+    Production best practices
+  </Card>
+</CardGroup>

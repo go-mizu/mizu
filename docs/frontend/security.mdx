@@ -1,0 +1,257 @@
+---
+title: "Security"
+description: "Security headers and best practices for frontend applications."
+icon: "shield"
+---
+
+Mizu automatically applies security headers to protect your frontend from common web vulnerabilities.
+
+## Default Security Headers
+
+The frontend middleware adds these headers:
+
+```
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+X-XSS-Protection: 1; mode=block
+Referrer-Policy: strict-origin-when-cross-origin
+```
+
+### X-Content-Type-Options
+
+**Purpose:** Prevents MIME-sniffing attacks
+
+```
+X-Content-Type-Options: nosniff
+```
+
+Browsers won't try to guess content types, preventing attacks where malicious files are disguised as images.
+
+### X-Frame-Options
+
+**Purpose:** Prevents clickjacking
+
+```
+X-Frame-Options: SAMEORIGIN
+```
+
+Your site can only be embedded in iframes from the same origin, blocking clickjacking attacks.
+
+### X-XSS-Protection
+
+**Purpose:** Legacy XSS protection
+
+```
+X-XSS-Protection: 1; mode=block
+```
+
+Enables browser's built-in XSS filter (legacy browsers).
+
+### Referrer-Policy
+
+**Purpose:** Controls referrer information
+
+```
+Referrer-Policy: strict-origin-when-cross-origin
+```
+
+Sends full URL to same-origin requests, only origin to cross-origin.
+
+## Disabling Security Headers
+
+If using the helmet middleware:
+
+```go
+import "github.com/go-mizu/mizu/middlewares/helmet"
+
+app.Use(helmet.Default())
+
+app.Use(frontend.WithOptions(frontend.Options{
+    SecurityHeaders: false,  // Avoid duplicates
+}))
+```
+
+## Content Security Policy (CSP)
+
+Use the helmet middleware for CSP:
+
+```go
+app.Use(helmet.WithOptions(helmet.Options{
+    ContentSecurityPolicy: &helmet.CSPOptions{
+        Directives: map[string][]string{
+            "default-src": {"'self'"},
+            "script-src":  {"'self'", "'unsafe-inline'"},  // Vite needs unsafe-inline in dev
+            "style-src":   {"'self'", "'unsafe-inline'"},
+            "img-src":     {"'self'", "data:", "https:"},
+            "font-src":    {"'self'"},
+        },
+    },
+}))
+```
+
+### CSP with Vite
+
+Vite uses inline scripts in development. Production build should work without `unsafe-inline`:
+
+```go
+func getCSP(env string) *helmet.CSPOptions {
+    directives := map[string][]string{
+        "default-src": {"'self'"},
+        "script-src":  {"'self'"},
+        "style-src":   {"'self'"},
+    }
+
+    if env != "production" {
+        directives["script-src"] = append(directives["script-src"], "'unsafe-inline'")
+        directives["style-src"] = append(directives["style-src"], "'unsafe-inline'")
+    }
+
+    return &helmet.CSPOptions{Directives: directives}
+}
+```
+
+## HTTPS Enforcement
+
+Use the secure middleware:
+
+```go
+import "github.com/go-mizu/mizu/middlewares/secure"
+
+app.Use(secure.WithOptions(secure.Options{
+    SSLRedirect: true,  // Redirect HTTP to HTTPS
+}))
+```
+
+## CORS Configuration
+
+For API endpoints:
+
+```go
+import "github.com/go-mizu/mizu/middlewares/cors"
+
+app.Use(cors.WithOptions(cors.Options{
+    AllowedOrigins: []string{"https://yourdomain.com"},
+    AllowedMethods: []string{"GET", "POST", "PUT", "DELETE"},
+    AllowedHeaders: []string{"Content-Type", "Authorization"},
+}))
+```
+
+## Source Map Protection
+
+Block source maps in production:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    SourceMaps: false,  // Default in production
+}))
+```
+
+Source maps expose your source code. Only enable in staging/development.
+
+## Best Practices
+
+### 1. Use HTTPS
+
+Always use HTTPS in production:
+
+```go
+app.Use(secure.Default())
+```
+
+### 2. Set CSP
+
+Implement Content Security Policy:
+
+```go
+app.Use(helmet.Default())
+```
+
+### 3. Sanitize User Input
+
+In Go handlers:
+
+```go
+import "html"
+
+func handleComment(c *mizu.Ctx) error {
+    comment := c.FormValue("comment")
+    sanitized := html.EscapeString(comment)  // Escape HTML
+    // Save sanitized...
+}
+```
+
+In frontend:
+
+```tsx
+// React escapes by default
+<div>{userInput}</div>  // Safe
+
+// Dangerous:
+<div dangerouslySetInnerHTML={{__html: userInput}} />  // Unsafe!
+```
+
+### 4. Validate on Server
+
+Never trust client-side validation:
+
+```go
+func createUser(c *mizu.Ctx) error {
+    email := c.FormValue("email")
+
+    // Validate server-side
+    if !isValidEmail(email) {
+        return c.JSON(400, map[string]string{"error": "invalid email"})
+    }
+
+    // Create user...
+}
+```
+
+### 5. Use HTTP-Only Cookies
+
+For authentication tokens:
+
+```go
+http.SetCookie(c.Writer(), &http.Cookie{
+    Name:     "auth_token",
+    Value:    token,
+    HttpOnly: true,   // Not accessible via JavaScript
+    Secure:   true,   // HTTPS only
+    SameSite: http.SameSiteStrictMode,
+})
+```
+
+### 6. Rate Limit API Endpoints
+
+```go
+import "github.com/go-mizu/mizu/middlewares/ratelimit"
+
+app.Use(ratelimit.PerMinute(100))
+```
+
+## Security Checklist
+
+- [ ] HTTPS enabled in production
+- [ ] Security headers configured
+- [ ] CSP implemented
+- [ ] CORS properly configured
+- [ ] Source maps disabled in production
+- [ ] User input sanitized
+- [ ] Server-side validation
+- [ ] HTTP-only cookies for auth
+- [ ] Rate limiting on APIs
+- [ ] Dependencies regularly updated
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Helmet Middleware" href="/middlewares/helmet" icon="shield">
+    Comprehensive security headers
+  </Card>
+  <Card title="CORS Middleware" href="/middlewares/cors" icon="globe">
+    Cross-origin resource sharing
+  </Card>
+  <Card title="Rate Limiting" href="/middlewares/ratelimit" icon="gauge">
+    Protect against abuse
+  </Card>
+</CardGroup>

@@ -1,0 +1,397 @@
+---
+title: "Caching"
+description: "Comprehensive caching strategies for optimal performance."
+icon: "database"
+---
+
+Proper caching is crucial for frontend performance. Mizu implements intelligent caching based on asset types, content fingerprinting, and best practices.
+
+## Overview
+
+The frontend middleware automatically applies caching based on three factors:
+
+1. **File type** (HTML, JS, CSS, images, etc.)
+2. **Content fingerprinting** (hash in filename)
+3. **Custom patterns** (your configuration)
+
+## Default Caching Strategy
+
+| Asset Type | Pattern | Cache Duration | Cache-Control |
+|------------|---------|----------------|---------------|
+| Hashed assets | `*.abc123.js` | 1 year | `public, max-age=31536000, immutable` |
+| Unhashed assets | `logo.png` | 1 week | `public, max-age=604800` |
+| HTML files | `*.html` | None | `no-cache, no-store, must-revalidate` |
+| Source maps | `*.map` | None | `no-cache` |
+
+## How Content Hashing Works
+
+### Build Tools Generate Hashes
+
+When you build your frontend, tools like Vite add content hashes to filenames:
+
+```
+Before build:
+  main.js
+  styles.css
+
+After build:
+  main.a1b2c3d4.js      ← Hash added
+  styles.e5f6g7h8.css   ← Hash added
+```
+
+The hash is based on file contents. If the file changes, the hash changes:
+
+```
+main.a1b2c3d4.js  →  main.x9y8z7w6.js
+```
+
+### Why This Matters
+
+**Old approach (without hashing):**
+```html
+<script src="/main.js"></script>
+```
+
+Problem: Browsers cache `main.js`. When you update it, users might still see the old cached version.
+
+**New approach (with hashing):**
+```html
+<script src="/main.a1b2c3d4.js"></script>
+```
+
+Benefit: When you update the file, the filename changes:
+```html
+<script src="/main.x9y8z7w6.js"></script>
+```
+
+Browsers see a new filename and fetch the new file. The old file stays cached harmlessly.
+
+## Asset Classification
+
+Mizu automatically classifies assets:
+
+```go
+// Hashed assets (detected by pattern)
+app.a1b2c3.js         → 1 year cache, immutable
+vendor.xyz789.css     → 1 year cache, immutable
+logo.abc123.png       → 1 year cache, immutable
+
+// Unhashed assets
+logo.png              → 1 week cache
+favicon.ico           → 1 week cache
+
+// HTML files
+index.html            → no-cache
+about.html            → no-cache
+
+// Source maps
+app.js.map            → no-cache (blocked by default)
+```
+
+### Hash Detection Pattern
+
+Mizu looks for this pattern in filenames:
+
+```
+[._-][a-fA-F0-9]{6,}$
+```
+
+Examples that match:
+- `main.a1b2c3.js` ✅
+- `vendor-xyz789.css` ✅
+- `chunk.ABC123DEF.js` ✅
+- `logo_12ab34cd.png` ✅
+
+Examples that don't match:
+- `main.js` ❌ (no hash)
+- `version-1.2.3.js` ❌ (not a hex hash)
+- `user-123.png` ❌ (too short)
+
+## Custom Cache Configuration
+
+### Override Defaults
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode: frontend.ModeProduction,
+    Root: "./dist",
+    CacheControl: frontend.CacheConfig{
+        HashedAssets:   180 * 24 * time.Hour,  // 6 months instead of 1 year
+        UnhashedAssets: 24 * time.Hour,         // 1 day instead of 1 week
+        HTML:           0,                      // no-cache (default)
+    },
+}))
+```
+
+### Pattern-Based Caching
+
+Cache specific file types differently:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode: frontend.ModeProduction,
+    Root: "./dist",
+    CacheControl: frontend.CacheConfig{
+        Patterns: map[string]time.Duration{
+            // Fonts: cache for 30 days
+            "*.woff2": 30 * 24 * time.Hour,
+            "*.woff":  30 * 24 * time.Hour,
+            "*.ttf":   30 * 24 * time.Hour,
+
+            // Images: cache for 14 days
+            "*.jpg":  14 * 24 * time.Hour,
+            "*.jpeg": 14 * 24 * time.Hour,
+            "*.png":  14 * 24 * time.Hour,
+            "*.svg":  14 * 24 * time.Hour,
+            "*.webp": 14 * 24 * time.Hour,
+
+            // Manifests and configs: no cache
+            "manifest.json":    0,
+            "robots.txt":       0,
+            "sitemap.xml":      0,
+        },
+    },
+}))
+```
+
+**Pattern matching order:**
+1. Check custom patterns first
+2. If no match, check if file has hash
+3. If hashed → use `HashedAssets` duration
+4. If unhashed → use `UnhashedAssets` duration
+5. If HTML → use `HTML` duration
+
+### Environment-Specific Caching
+
+```go
+func getCacheConfig(env string) frontend.CacheConfig {
+    if env == "production" {
+        return frontend.CacheConfig{
+            HashedAssets:   365 * 24 * time.Hour,
+            UnhashedAssets: 7 * 24 * time.Hour,
+        }
+    }
+
+    // Shorter cache for staging
+    return frontend.CacheConfig{
+        HashedAssets:   24 * time.Hour,
+        UnhashedAssets: 1 * time.Hour,
+    }
+}
+
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode:         frontend.ModeProduction,
+    Root:         "./dist",
+    CacheControl: getCacheConfig(os.Getenv("ENV")),
+}))
+```
+
+## Cache-Control Directives
+
+### immutable
+
+Hashed assets get the `immutable` directive:
+
+```
+Cache-Control: public, max-age=31536000, immutable
+```
+
+**What it means:**
+- `public`: Can be cached by browsers and CDNs
+- `max-age=31536000`: Cache for 1 year (in seconds)
+- `immutable`: File will never change (safe to cache forever)
+
+Modern browsers skip revalidation for immutable resources.
+
+### no-cache vs no-store
+
+HTML files get aggressive no-cache headers:
+
+```
+Cache-Control: no-cache, no-store, must-revalidate
+Pragma: no-cache
+Expires: 0
+```
+
+**What each means:**
+- `no-cache`: Revalidate before using cached copy
+- `no-store`: Don't cache at all
+- `must-revalidate`: Obey the rules strictly
+- `Pragma: no-cache`: HTTP/1.0 compatibility
+- `Expires: 0`: Old-style expiration
+
+## CDN Caching
+
+When using a CDN (CloudFlare, Fastly, etc.):
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode: frontend.ModeProduction,
+    Root: "./dist",
+    CacheControl: frontend.CacheConfig{
+        // Aggressive caching for CDN
+        HashedAssets:   365 * 24 * time.Hour,
+        UnhashedAssets: 7 * 24 * time.Hour,
+
+        Patterns: map[string]time.Duration{
+            // Cache fonts for a very long time
+            "*.woff2": 365 * 24 * time.Hour,
+        },
+    },
+}))
+```
+
+**CDN benefits:**
+- Files cached at edge locations
+- Faster delivery to users
+- Reduced origin server load
+- Mizu's cache headers work automatically
+
+## Best Practices
+
+### 1. Always Use Asset Fingerprinting
+
+Ensure your build tool fingerprints assets:
+
+**Vite:**
+```ts
+// vite.config.ts
+export default {
+  build: {
+    rollupOptions: {
+      output: {
+        entryFileNames: 'assets/[name].[hash].js',
+        chunkFileNames: 'assets/[name].[hash].js',
+        assetFileNames: 'assets/[name].[hash].[ext]'
+      }
+    }
+  }
+}
+```
+
+**Angular:**
+```json
+{
+  "architect": {
+    "build": {
+      "configurations": {
+        "production": {
+          "outputHashing": "all"
+        }
+      }
+    }
+  }
+}
+```
+
+### 2. Never Cache HTML Files
+
+Always set HTML caching to 0:
+
+```go
+CacheControl: frontend.CacheConfig{
+    HTML: 0,  // Critical!
+}
+```
+
+**Why:** HTML files reference the hashed assets. If HTML is cached, users might request old asset filenames that no longer exist.
+
+### 3. Use Longer Cache for Fonts
+
+Fonts rarely change:
+
+```go
+Patterns: map[string]time.Duration{
+    "*.woff2": 30 * 24 * time.Hour,  // 30 days
+}
+```
+
+### 4. Test Cache Headers
+
+Check headers with curl:
+
+```bash
+curl -I https://yourdomain.com/assets/main.abc123.js
+```
+
+Should show:
+
+```
+HTTP/2 200
+cache-control: public, max-age=31536000, immutable
+```
+
+### 5. Monitor Cache Hit Rates
+
+Use CDN analytics to track:
+- Cache hit rate (aim for >90%)
+- Bandwidth saved
+- Origin requests (should be minimal)
+
+## Debugging Cache Issues
+
+### Clear Browser Cache
+
+**Chrome:**
+```
+Cmd/Ctrl + Shift + R  (hard refresh)
+```
+
+**Programmatically:**
+```js
+// In browser console
+caches.keys().then(names => {
+    names.forEach(name => caches.delete(name))
+})
+```
+
+### Verify Cache Headers
+
+```bash
+# Check a hashed asset
+curl -I localhost:3000/assets/main.abc123.js
+
+# Should show long cache
+cache-control: public, max-age=31536000, immutable
+```
+
+```bash
+# Check HTML
+curl -I localhost:3000/
+
+# Should show no-cache
+cache-control: no-cache, no-store, must-revalidate
+```
+
+### Common Issues
+
+**Problem:** Users see old version after deployment
+
+**Solution:** Check that:
+1. HTML files have `cache-control: no-cache`
+2. Asset filenames include content hash
+3. Build generated new hashes
+
+**Problem:** Assets not caching
+
+**Solution:** Check that:
+1. Filenames include hash pattern
+2. Server is returning cache headers
+3. HTTPS is enabled (required for some cache APIs)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Production Mode" href="/frontend/production" icon="rocket">
+    Production optimization guide
+  </Card>
+  <Card title="Security" href="/frontend/security" icon="shield">
+    Security headers and best practices
+  </Card>
+  <Card title="Manifest" href="/frontend/manifest" icon="file">
+    Build manifest integration
+  </Card>
+  <Card title="Static Hosting" href="/frontend/static-hosting" icon="cloud">
+    Deploy to CDN
+  </Card>
+</CardGroup>

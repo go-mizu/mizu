@@ -1,0 +1,430 @@
+---
+title: "API Reference"
+description: "Complete API reference for the frontend middleware."
+icon: "book"
+---
+
+Complete reference for the frontend middleware API.
+
+## Functions
+
+### New
+
+Creates frontend middleware with default options.
+
+```go
+func New(root string) mizu.Middleware
+```
+
+**Parameters:**
+- `root` (string): Directory containing built frontend files
+
+**Returns:** `mizu.Middleware`
+
+**Example:**
+```go
+app.Use(frontend.New("./dist"))
+```
+
+### Dev
+
+Creates development-only middleware that proxies to dev server.
+
+```go
+func Dev(devServerURL string) mizu.Middleware
+```
+
+**Parameters:**
+- `devServerURL` (string): URL of frontend dev server
+
+**Returns:** `mizu.Middleware`
+
+**Example:**
+```go
+app.Use(frontend.Dev("http://localhost:5173"))
+```
+
+### WithFS
+
+Creates production middleware with embedded filesystem.
+
+```go
+func WithFS(fsys fs.FS) mizu.Middleware
+```
+
+**Parameters:**
+- `fsys` (fs.FS): Embedded filesystem containing frontend files
+
+**Returns:** `mizu.Middleware`
+
+**Example:**
+```go
+//go:embed all:dist
+var distFS embed.FS
+
+dist, _ := fs.Sub(distFS, "dist")
+app.Use(frontend.WithFS(dist))
+```
+
+### WithOptions
+
+Creates middleware with full configuration.
+
+```go
+func WithOptions(opts Options) mizu.Middleware
+```
+
+**Parameters:**
+- `opts` (Options): Configuration options
+
+**Returns:** `mizu.Middleware`
+
+**Example:**
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode:        frontend.ModeAuto,
+    Root:        "./dist",
+    DevServer:   "http://localhost:5173",
+    IgnorePaths: []string{"/api"},
+}))
+```
+
+## Types
+
+### Options
+
+Configuration for the frontend middleware.
+
+```go
+type Options struct {
+    // Mode determines serving behavior
+    Mode Mode
+
+    // Production options
+    Root  string
+    FS    fs.FS
+    Index string
+    Prefix string
+    IgnorePaths []string
+    CacheControl CacheConfig
+
+    // Development options
+    DevServer        string
+    DevServerTimeout time.Duration
+    ProxyWebSocket   bool
+
+    // Advanced options
+    Manifest string
+    InjectEnv []string
+    InjectMeta map[string]string
+    SecurityHeaders bool
+    SourceMaps bool
+    ServiceWorker string
+    ErrorHandler func(*mizu.Ctx, error) error
+    NotFoundHandler func(*mizu.Ctx) error
+}
+```
+
+**Fields:**
+
+**Mode:**
+- Type: `Mode`
+- Default: `ModeAuto`
+- Description: Controls how middleware operates
+
+**Root:**
+- Type: `string`
+- Default: `"dist"`
+- Description: Directory containing built frontend files
+
+**FS:**
+- Type: `fs.FS`
+- Default: `nil`
+- Description: Embedded filesystem (takes precedence over Root)
+
+**Index:**
+- Type: `string`
+- Default: `"index.html"`
+- Description: Fallback file for SPA routing
+
+**Prefix:**
+- Type: `string`
+- Default: `""`
+- Description: URL prefix for serving frontend
+
+**IgnorePaths:**
+- Type: `[]string`
+- Default: `[]string{"/api", "/health", "/metrics"}`
+- Description: Paths that bypass frontend middleware
+
+**CacheControl:**
+- Type: `CacheConfig`
+- Default: See CacheConfig defaults
+- Description: Caching behavior configuration
+
+**DevServer:**
+- Type: `string`
+- Default: `"http://localhost:5173"`
+- Description: URL of frontend dev server
+
+**DevServerTimeout:**
+- Type: `time.Duration`
+- Default: `30 * time.Second`
+- Description: Timeout for dev server requests
+
+**ProxyWebSocket:**
+- Type: `bool`
+- Default: `true`
+- Description: Enable WebSocket proxying for HMR
+
+**Manifest:**
+- Type: `string`
+- Default: `""`
+- Description: Path to build manifest file
+
+**InjectEnv:**
+- Type: `[]string`
+- Default: `nil`
+- Description: Environment variables to inject into HTML
+
+**InjectMeta:**
+- Type: `map[string]string`
+- Default: `nil`
+- Description: Meta tags to inject into HTML
+
+**SecurityHeaders:**
+- Type: `bool`
+- Default: `true`
+- Description: Enable default security headers
+
+**SourceMaps:**
+- Type: `bool`
+- Default: `false`
+- Description: Allow serving source map files
+
+**ServiceWorker:**
+- Type: `string`
+- Default: `""`
+- Description: Path to service worker file
+
+**ErrorHandler:**
+- Type: `func(*mizu.Ctx, error) error`
+- Default: `nil`
+- Description: Custom error handler
+
+**NotFoundHandler:**
+- Type: `func(*mizu.Ctx) error`
+- Default: `nil`
+- Description: Handler called before SPA fallback
+
+### Mode
+
+Operating mode for the middleware.
+
+```go
+type Mode string
+
+const (
+    ModeDev        Mode = "dev"
+    ModeProduction Mode = "production"
+    ModeAuto       Mode = "auto"
+)
+```
+
+**Values:**
+- `ModeDev`: Always proxy to dev server
+- `ModeProduction`: Always serve static files
+- `ModeAuto`: Auto-detect based on environment
+
+### CacheConfig
+
+Caching behavior configuration.
+
+```go
+type CacheConfig struct {
+    HashedAssets   time.Duration
+    UnhashedAssets time.Duration
+    HTML           time.Duration
+    Patterns       map[string]time.Duration
+}
+```
+
+**Fields:**
+
+**HashedAssets:**
+- Type: `time.Duration`
+- Default: `365 * 24 * time.Hour` (1 year)
+- Description: Cache duration for files with content hash
+
+**UnhashedAssets:**
+- Type: `time.Duration`
+- Default: `7 * 24 * time.Hour` (1 week)
+- Description: Cache duration for files without hash
+
+**HTML:**
+- Type: `time.Duration`
+- Default: `0` (no-cache)
+- Description: Cache duration for HTML files
+
+**Patterns:**
+- Type: `map[string]time.Duration`
+- Default: `nil`
+- Description: Custom cache durations for file patterns
+
+**Example:**
+```go
+CacheConfig{
+    HashedAssets:   365 * 24 * time.Hour,
+    UnhashedAssets: 7 * 24 * time.Hour,
+    HTML:           0,
+    Patterns: map[string]time.Duration{
+        "*.woff2": 30 * 24 * time.Hour,
+        "*.png":   14 * 24 * time.Hour,
+    },
+}
+```
+
+## Manifest API
+
+### LoadManifest
+
+Loads a build manifest from filesystem.
+
+```go
+func LoadManifest(fsys fs.FS, path string) (*Manifest, error)
+```
+
+**Parameters:**
+- `fsys` (fs.FS): Filesystem containing manifest
+- `path` (string): Path to manifest file
+
+**Returns:**
+- `*Manifest`: Loaded manifest
+- `error`: Error if loading fails
+
+**Example:**
+```go
+manifest, err := frontend.LoadManifest(distFS, ".vite/manifest.json")
+```
+
+### Manifest Methods
+
+```go
+// Get output file for entry point
+func (m *Manifest) Entry(name string) string
+
+// Get URL for asset
+func (m *Manifest) Asset(path string) string
+
+// Get module preload paths
+func (m *Manifest) Preloads(entry string) []string
+
+// Get CSS files for entry
+func (m *Manifest) CSS(entry string) []string
+
+// Generate script tag
+func (m *Manifest) ScriptTag(entry string) template.HTML
+
+// Generate CSS tags
+func (m *Manifest) CSSTags(entry string) template.HTML
+
+// Generate preload tags
+func (m *Manifest) PreloadTags(entry string) template.HTML
+
+// Generate all tags (CSS + preloads + script)
+func (m *Manifest) EntryTags(entry string) template.HTML
+
+// Get template helper functions
+func (m *Manifest) ViewHelpers() template.FuncMap
+```
+
+## Injection Functions
+
+### InjectEnv
+
+Injects environment variables into HTML.
+
+```go
+func InjectEnv(html []byte, vars []string) []byte
+```
+
+**Parameters:**
+- `html` ([]byte): HTML content
+- `vars` ([]string): Environment variable names to inject
+
+**Returns:** Modified HTML with injected script
+
+### InjectMeta
+
+Injects meta tags into HTML.
+
+```go
+func InjectMeta(html []byte, meta map[string]string) []byte
+```
+
+**Parameters:**
+- `html` ([]byte): HTML content
+- `meta` (map[string]string): Meta tags (name → content)
+
+**Returns:** Modified HTML with injected meta tags
+
+### InjectPreload
+
+Injects preload link tags into HTML.
+
+```go
+func InjectPreload(html []byte, assets []PreloadAsset) []byte
+```
+
+**Parameters:**
+- `html` ([]byte): HTML content
+- `assets` ([]PreloadAsset): Assets to preload
+
+**Returns:** Modified HTML with preload tags
+
+## Constants
+
+### Default Values
+
+```go
+const (
+    DefaultRoot           = "dist"
+    DefaultIndex          = "index.html"
+    DefaultDevServer      = "http://localhost:5173"
+    DefaultDevTimeout     = 30 * time.Second
+    DefaultHashedCache    = 365 * 24 * time.Hour  // 1 year
+    DefaultUnhashedCache  = 7 * 24 * time.Hour    // 1 week
+    DefaultHTMLCache      = 0                      // no-cache
+)
+```
+
+### Default Ignore Paths
+
+```go
+var DefaultIgnorePaths = []string{"/api", "/health", "/metrics"}
+```
+
+### Default Security Headers
+
+```go
+var DefaultSecurityHeaders = map[string]string{
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options":        "SAMEORIGIN",
+    "X-XSS-Protection":       "1; mode=block",
+    "Referrer-Policy":        "strict-origin-when-cross-origin",
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" href="/frontend/configuration" icon="sliders">
+    Configuration guide
+  </Card>
+  <Card title="Adapters" href="/frontend/adapters" icon="puzzle">
+    Framework adapters
+  </Card>
+  <Card title="Examples" href="/examples/overview" icon="code">
+    Code examples
+  </Card>
+</CardGroup>

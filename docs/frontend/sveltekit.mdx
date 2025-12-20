@@ -1,0 +1,357 @@
+---
+title: "SvelteKit"
+description: "Build full-stack applications with SvelteKit and Mizu."
+icon: "code"
+---
+
+SvelteKit is the official full-stack framework for Svelte, providing file-based routing, server-side rendering, and more. When using SvelteKit with Mizu, you'll typically use SvelteKit's **static adapter** to generate a static site that Mizu serves.
+
+## Quick Start
+
+Create a new SvelteKit project:
+
+```bash
+mizu new ./my-sveltekit-app --template frontend/sveltekit
+cd my-sveltekit-app
+make dev
+```
+
+## Why SvelteKit with Mizu?
+
+SvelteKit can run as a full-stack framework with its own server, but with Mizu you use it as a **static site generator**:
+
+**SvelteKit provides:**
+- File-based routing (`src/routes/+page.svelte`)
+- Layouts and nested routes
+- Data loading (`+page.ts`, `+page.server.ts`)
+- Static site generation
+
+**Mizu provides:**
+- Go-based API backend
+- Database access
+- Business logic
+- Authentication
+- Deployment
+
+## Project Structure
+
+```
+my-sveltekit-app/
+├── cmd/server/
+│   └── main.go
+├── app/server/
+│   ├── app.go
+│   └── routes.go              # API routes
+├── client/                    # SvelteKit app
+│   ├── src/
+│   │   ├── routes/            # File-based routing
+│   │   │   ├── +layout.svelte
+│   │   │   ├── +page.svelte   # / route
+│   │   │   └── about/
+│   │   │       └── +page.svelte # /about route
+│   │   └── lib/               # Shared code
+│   ├── static/                # Public files
+│   ├── svelte.config.js
+│   ├── vite.config.ts
+│   └── package.json
+├── build/                     # Built output (SvelteKit uses 'build')
+└── Makefile
+```
+
+## SvelteKit Configuration
+
+### `client/svelte.config.js`
+
+```js
+import adapter from '@sveltejs/adapter-static'
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte'
+
+export default {
+  preprocess: vitePreprocess(),
+
+  kit: {
+    adapter: adapter({
+      pages: '../build',
+      assets: '../build',
+      fallback: 'index.html',  // SPA mode
+      precompress: false,
+      strict: true
+    })
+  }
+}
+```
+
+**Key settings:**
+- `adapter-static`: Generates static HTML/CSS/JS
+- `pages/assets`: Output directory (`build` instead of `dist`)
+- `fallback: 'index.html'`: SPA mode for client-side routing
+
+## Backend Configuration
+
+### `app/server/app.go`
+
+```go
+package server
+
+import (
+    "embed"
+    "io/fs"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/frontend"
+)
+
+//go:embed all:../../build
+var buildFS embed.FS
+
+func New(cfg *Config) *mizu.App {
+    app := mizu.New()
+
+    // API routes
+    app.Get("/api/users", handleUsers)
+
+    // Frontend (note: 'build' instead of 'dist')
+    build, _ := fs.Sub(buildFS, "build")
+    app.Use(frontend.WithOptions(frontend.Options{
+        Mode:        frontend.ModeAuto,
+        FS:          build,
+        Root:        "./build",  // SvelteKit output dir
+        DevServer:   "http://localhost:" + cfg.DevPort,
+        IgnorePaths: []string{"/api"},
+    }))
+
+    return app
+}
+```
+
+## File-Based Routing
+
+SvelteKit uses file-based routing:
+
+```
+src/routes/
+├── +layout.svelte           # Root layout
+├── +page.svelte             # / route
+├── about/
+│   └── +page.svelte         # /about route
+├── blog/
+│   ├── +page.svelte         # /blog route
+│   └── [slug]/
+│       └── +page.svelte     # /blog/:slug route
+└── users/
+    ├── +page.svelte         # /users route
+    └── [id]/
+        └── +page.svelte     # /users/:id route
+```
+
+### `src/routes/+layout.svelte`
+
+```svelte
+<script>
+  import './styles.css'
+</script>
+
+<nav>
+  <a href="/">Home</a>
+  <a href="/about">About</a>
+  <a href="/users">Users</a>
+</nav>
+
+<main>
+  <slot />
+</main>
+```
+
+### `src/routes/+page.svelte`
+
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte'
+
+  let users = []
+
+  onMount(async () => {
+    const response = await fetch('/api/users')
+    users = await response.json()
+  })
+</script>
+
+<h1>Welcome</h1>
+
+<ul>
+  {#each users as user}
+    <li>{user.name}</li>
+  {/each}
+</ul>
+```
+
+### `src/routes/users/[id]/+page.svelte`
+
+```svelte
+<script lang="ts">
+  import { page } from '$app/stores'
+  import { onMount } from 'svelte'
+
+  let user = null
+
+  onMount(async () => {
+    const id = $page.params.id
+    const response = await fetch(`/api/users/${id}`)
+    user = await response.json()
+  })
+</script>
+
+{#if user}
+  <h1>{user.name}</h1>
+  <p>{user.email}</p>
+{/if}
+```
+
+## Data Loading
+
+SvelteKit's load functions work in static mode:
+
+### `src/routes/users/+page.ts`
+
+```ts
+export async function load({ fetch }) {
+  const response = await fetch('/api/users')
+  const users = await response.json()
+
+  return {
+    users
+  }
+}
+```
+
+### `src/routes/users/+page.svelte`
+
+```svelte
+<script lang="ts">
+  export let data
+</script>
+
+<h1>Users</h1>
+
+<ul>
+  {#each data.users as user}
+    <li>{user.name}</li>
+  {/each}
+</ul>
+```
+
+## Development Workflow
+
+### Start Development
+
+```bash
+# Terminal 1: SvelteKit dev server
+cd client
+npm run dev
+
+# Terminal 2: Mizu backend
+go run cmd/server/main.go
+```
+
+Or use the Makefile:
+
+```bash
+make dev
+```
+
+## Building for Production
+
+```bash
+make build
+```
+
+This:
+1. Builds SvelteKit (`npm run build` → creates `build/`)
+2. Builds Go binary with embedded `build/`
+
+Run:
+
+```bash
+MIZU_ENV=production ./bin/server
+```
+
+## SvelteKit Features
+
+### Navigation
+
+```svelte
+<script>
+  import { goto } from '$app/navigation'
+
+  function navigate() {
+    goto('/users')
+  }
+</script>
+
+<button on:click={navigate}>Go to Users</button>
+```
+
+### Page Store
+
+```svelte
+<script>
+  import { page } from '$app/stores'
+
+  // Access current route
+  $: console.log($page.url.pathname)
+  $: console.log($page.params)
+  $: console.log($page.data)
+</script>
+```
+
+### Prefetching
+
+```svelte
+<a href="/users" data-sveltekit-preload-data>Users</a>
+```
+
+## Limitations with Static Adapter
+
+When using the static adapter with Mizu:
+
+**Works:**
+- Client-side routing ✅
+- Data loading from APIs ✅
+- Forms (client-side) ✅
+- Stores and state ✅
+
+**Doesn't work:**
+- Server-side rendering ❌ (use `adapter-static`)
+- SvelteKit API routes ❌ (use Mizu API routes instead)
+- `+page.server.ts` ❌ (use `+page.ts` with fetch)
+- Form actions ❌ (use client-side forms)
+
+## When to Use SvelteKit with Mizu
+
+**Use SvelteKit when you want:**
+- File-based routing
+- Nested layouts
+- Built-in code splitting
+- Better DX than vanilla Svelte
+
+**Use vanilla Svelte when:**
+- You prefer manual routing
+- Simpler setup
+- Smaller learning curve
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Svelte Guide" href="/frontend/svelte" icon="code">
+    Learn vanilla Svelte
+  </Card>
+  <Card title="API Integration" href="/frontend/api-integration" icon="plug">
+    Best practices for API calls
+  </Card>
+  <Card title="Next.js" href="/frontend/nextjs" icon="code">
+    Similar approach with React
+  </Card>
+  <Card title="SvelteKit Docs" href="https://kit.svelte.dev" icon="external-link">
+    Official SvelteKit documentation
+  </Card>
+</CardGroup>

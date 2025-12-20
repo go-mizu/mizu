@@ -1,0 +1,352 @@
+---
+title: "Alpine.js"
+description: "Add lightweight interactivity with Alpine.js and server-rendered HTML."
+icon: "mountain"
+---
+
+Alpine.js is a minimal JavaScript framework for adding interactivity to server-rendered HTML. Think of it as "jQuery for the modern web" or "Tailwind for JavaScript."
+
+## Quick Start
+
+```bash
+mizu new ./my-alpine-app --template frontend/alpine
+cd my-alpine-app
+make dev
+```
+
+## Why Alpine.js?
+
+- **Tiny**: ~15kB minified
+- **No build step**: Include via CDN
+- **Declarative**: Like Vue/React but in HTML
+- **Progressive**: Add to existing HTML
+- **Great with HTMX**: Perfect combination
+
+## Installation
+
+### Via CDN
+
+```html
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+```
+
+### Via npm
+
+```bash
+npm install alpinejs
+```
+
+```js
+import Alpine from 'alpinejs'
+
+window.Alpine = Alpine
+Alpine.start()
+```
+
+## Basic Usage
+
+### Counter Example
+
+```html
+<div x-data="{ count: 0 }">
+    <p>Count: <span x-text="count"></span></p>
+    <button @click="count++">Increment</button>
+    <button @click="count--">Decrement</button>
+</div>
+```
+
+### Toggle Example
+
+```html
+<div x-data="{ open: false }">
+    <button @click="open = !open">Toggle</button>
+
+    <div x-show="open" x-transition>
+        <p>Content is visible!</p>
+    </div>
+</div>
+```
+
+## Directives
+
+### x-data
+
+Declares component state:
+
+```html
+<div x-data="{ name: 'Alice', age: 25 }">
+    <p x-text="name"></p>
+    <p x-text="age"></p>
+</div>
+```
+
+### x-show / x-if
+
+Conditionally display elements:
+
+```html
+<!-- x-show: Toggles display CSS -->
+<div x-show="visible">I'm visible</div>
+
+<!-- x-if: Removes/adds from DOM -->
+<template x-if="visible">
+    <div>I'm visible</div>
+</template>
+```
+
+### x-for
+
+Loop over arrays:
+
+```html
+<div x-data="{ users: ['Alice', 'Bob', 'Charlie'] }">
+    <template x-for="user in users" :key="user">
+        <li x-text="user"></li>
+    </template>
+</div>
+```
+
+### x-model
+
+Two-way binding:
+
+```html
+<div x-data="{ search: '' }">
+    <input x-model="search" placeholder="Search...">
+    <p>Searching for: <span x-text="search"></span></p>
+</div>
+```
+
+### x-on (@)
+
+Event listeners:
+
+```html
+<!-- Shorthand -->
+<button @click="count++">Click</button>
+
+<!-- Full syntax -->
+<button x-on:click="count++">Click</button>
+
+<!-- With modifiers -->
+<form @submit.prevent="handleSubmit">
+    <button type="submit">Submit</button>
+</form>
+```
+
+### x-bind (:)
+
+Bind attributes:
+
+```html
+<div x-data="{ color: 'red' }">
+    <!-- Shorthand -->
+    <div :style="'background: ' + color">Colored</div>
+
+    <!-- Full syntax -->
+    <div x-bind:class="{ 'active': isActive }">Item</div>
+</div>
+```
+
+## With Mizu Backend
+
+### Fetching Data
+
+```html
+<div
+    x-data="{
+        users: [],
+        loading: false,
+        async fetchUsers() {
+            this.loading = true
+            const response = await fetch('/api/users')
+            this.users = await response.json()
+            this.loading = false
+        }
+    }"
+    x-init="fetchUsers()"
+>
+    <div x-show="loading">Loading...</div>
+
+    <ul x-show="!loading">
+        <template x-for="user in users" :key="user.id">
+            <li x-text="user.name"></li>
+        </template>
+    </ul>
+</div>
+```
+
+### Form Submission
+
+```html
+<div
+    x-data="{
+        name: '',
+        email: '',
+        submitting: false,
+        success: false,
+        async submit() {
+            this.submitting = true
+            await fetch('/api/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: this.name,
+                    email: this.email
+                })
+            })
+            this.success = true
+            this.submitting = false
+            this.name = ''
+            this.email = ''
+        }
+    }"
+>
+    <form @submit.prevent="submit">
+        <input x-model="name" placeholder="Name" required>
+        <input x-model="email" type="email" placeholder="Email" required>
+        <button type="submit" :disabled="submitting">
+            <span x-text="submitting ? 'Creating...' : 'Create'"></span>
+        </button>
+    </form>
+
+    <p x-show="success" x-transition>User created!</p>
+</div>
+```
+
+## With HTMX
+
+Alpine and HTMX work great together:
+
+```html
+<div x-data="{ editing: false }">
+    <!-- View mode -->
+    <div x-show="!editing">
+        <span>Alice</span>
+        <button @click="editing = true">Edit</button>
+    </div>
+
+    <!-- Edit mode with HTMX -->
+    <div x-show="editing">
+        <form
+            hx-put="/users/1"
+            hx-target="#user-1"
+            @htmx:after-request="editing = false"
+        >
+            <input name="name" value="Alice">
+            <button type="submit">Save</button>
+            <button type="button" @click="editing = false">Cancel</button>
+        </form>
+    </div>
+</div>
+```
+
+## Components
+
+### Dropdown
+
+```html
+<div x-data="{ open: false }" @click.away="open = false">
+    <button @click="open = !open">
+        Menu
+    </button>
+
+    <div x-show="open" x-transition>
+        <a href="/profile">Profile</a>
+        <a href="/settings">Settings</a>
+        <a href="/logout">Logout</a>
+    </div>
+</div>
+```
+
+### Modal
+
+```html
+<div x-data="{ open: false }">
+    <button @click="open = true">Open Modal</button>
+
+    <div x-show="open" @click="open = false" class="modal-backdrop">
+        <div @click.stop class="modal">
+            <h2>Modal Title</h2>
+            <p>Modal content</p>
+            <button @click="open = false">Close</button>
+        </div>
+    </div>
+</div>
+```
+
+### Tabs
+
+```html
+<div x-data="{ tab: 'tab1' }">
+    <div>
+        <button @click="tab = 'tab1'" :class="{ 'active': tab === 'tab1' }">
+            Tab 1
+        </button>
+        <button @click="tab = 'tab2'" :class="{ 'active': tab === 'tab2' }">
+            Tab 2
+        </button>
+    </div>
+
+    <div x-show="tab === 'tab1'">Tab 1 content</div>
+    <div x-show="tab === 'tab2'">Tab 2 content</div>
+</div>
+```
+
+## Alpine Plugins
+
+### Persist
+
+Persist state to localStorage:
+
+```html
+<script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/persist@3.x.x/dist/cdn.min.js"></script>
+
+<div x-data="{ count: $persist(0) }">
+    <button @click="count++">Count: <span x-text="count"></span></button>
+</div>
+```
+
+### Focus
+
+Manage focus:
+
+```html
+<script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/focus@3.x.x/dist/cdn.min.js"></script>
+
+<div x-data="{ open: false }" x-trap="open">
+    <button @click="open = true">Open</button>
+    <div x-show="open">
+        <input type="text">
+        <button @click="open = false">Close</button>
+    </div>
+</div>
+```
+
+## When to Use Alpine
+
+**Perfect for:**
+- Progressive enhancement
+- Server-rendered apps
+- Small interactions
+- Dropdowns, modals, tabs
+- Works with HTMX
+
+**Not ideal for:**
+- Complex SPAs
+- Heavy client-side state
+- Large applications
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="HTMX Guide" href="/frontend/htmx" icon="bolt">
+    Combine with HTMX
+  </Card>
+  <Card title="View Engine" href="/view/overview" icon="file">
+    Server-rendered templates
+  </Card>
+  <Card title="Alpine Docs" href="https://alpinejs.dev" icon="external-link">
+    Official Alpine.js docs
+  </Card>
+</CardGroup>

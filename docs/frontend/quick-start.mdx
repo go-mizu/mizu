@@ -1,0 +1,444 @@
+---
+title: "Quick Start"
+description: "Create your first frontend application with Mizu in minutes."
+icon: "rocket"
+---
+
+This guide walks you through creating a frontend application with Mizu using the CLI. You'll have a working app with hot reload in under 5 minutes.
+
+## Prerequisites
+
+Before starting, make sure you have:
+
+- **Go 1.22 or later** - [Download Go](https://go.dev/dl/)
+- **Node.js 18 or later** - [Download Node.js](https://nodejs.org/) (for SPA frameworks)
+- **Mizu CLI** - Install with `go install github.com/go-mizu/mizu/cmd/cli@latest`
+
+Verify your installation:
+
+```bash
+go version    # Should show 1.22 or later
+node --version # Should show 18 or later
+mizu version   # Should show the installed Mizu CLI version
+```
+
+## Create Your First App
+
+The fastest way to get started is using the Mizu CLI to scaffold a new project.
+
+### Step 1: List Available Templates
+
+See all available frontend templates:
+
+```bash
+mizu new --list-templates frontend
+```
+
+You'll see templates for:
+- `frontend/react` - React with Vite and TypeScript
+- `frontend/vue` - Vue 3 with Vite and TypeScript
+- `frontend/svelte` - Svelte with Vite and TypeScript
+- `frontend/htmx` - HTMX with Go templates
+- And more...
+
+### Step 2: Create a New Project
+
+Let's create a React application:
+
+```bash
+mizu new ./my-app --template frontend/react
+```
+
+Or create an HTMX application:
+
+```bash
+mizu new ./my-app --template frontend/htmx
+```
+
+The CLI will:
+1. Create the project directory structure
+2. Generate both Go backend and frontend code
+3. Initialize Go modules
+4. Install npm dependencies (for SPA frameworks)
+
+### Step 3: Navigate to Your Project
+
+```bash
+cd my-app
+```
+
+## Project Structure
+
+Your new project has a clear structure:
+
+### React/Vue/Svelte Projects
+
+```
+my-app/
+├── cmd/
+│   └── server/
+│       └── main.go          # Entry point
+├── app/
+│   └── server/
+│       ├── app.go           # Mizu app setup
+│       ├── config.go        # Configuration
+│       └── routes.go        # API routes
+├── client/                  # Frontend code
+│   ├── src/
+│   │   ├── main.tsx         # Entry point
+│   │   ├── App.tsx          # Root component
+│   │   └── ...
+│   ├── package.json
+│   └── vite.config.ts       # Vite configuration
+├── dist/                    # Built frontend (after build)
+├── go.mod
+└── Makefile                 # Common commands
+```
+
+### HTMX Projects
+
+```
+my-app/
+├── cmd/
+│   └── server/
+│       └── main.go          # Entry point
+├── app/
+│   └── server/
+│       ├── app.go           # Mizu app setup
+│       ├── config.go        # Configuration
+│       ├── routes.go        # Routes
+│       └── handlers.go      # Request handlers
+├── views/                   # HTML templates
+│   ├── layouts/
+│   │   └── default.html
+│   └── pages/
+│       ├── home.html
+│       └── about.html
+├── static/                  # CSS, JS, images
+│   ├── css/
+│   └── js/
+├── go.mod
+└── Makefile
+```
+
+## Running in Development
+
+### For SPA Projects (React/Vue/Svelte)
+
+The easiest way is using the Makefile:
+
+```bash
+make dev
+```
+
+This command:
+1. Starts the Go backend server on port 3000
+2. Starts the frontend dev server (Vite) on port 5173
+3. Proxies requests through the Go server
+
+**What's happening:**
+- Visit `http://localhost:3000` to see your app
+- The Go server proxies frontend requests to Vite
+- Changes to frontend code hot-reload instantly
+- Changes to Go code require restarting the server
+
+### Manual Development
+
+You can also run the servers separately:
+
+```bash
+# Terminal 1: Start frontend dev server
+cd client
+npm run dev
+
+# Terminal 2: Start Go backend
+go run cmd/server/main.go
+```
+
+### For HTMX Projects
+
+HTMX projects don't need a separate dev server:
+
+```bash
+make dev
+```
+
+Or:
+
+```bash
+go run cmd/server/main.go
+```
+
+Visit `http://localhost:3000` and you're ready to go!
+
+## Understanding the Code
+
+Let's look at the key files:
+
+### Backend: `app/server/app.go`
+
+```go
+package server
+
+import (
+    "embed"
+    "io/fs"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/frontend"
+)
+
+//go:embed all:../../dist
+var distFS embed.FS
+
+func New(cfg *Config) *mizu.App {
+    app := mizu.New()
+
+    // Your API routes
+    setupRoutes(app)
+
+    // Frontend middleware (auto-detects dev/prod)
+    dist, _ := fs.Sub(distFS, "dist")
+    app.Use(frontend.WithOptions(frontend.Options{
+        Mode:        frontend.ModeAuto,           // Auto-detect
+        FS:          dist,                         // Embedded production files
+        DevServer:   "http://localhost:" + cfg.DevPort, // Dev server
+        IgnorePaths: []string{"/api"},            // Don't proxy API routes
+    }))
+
+    return app
+}
+```
+
+**Key points:**
+- `frontend.ModeAuto` automatically switches between dev and production
+- In development, requests proxy to the dev server
+- In production, files are served from the embedded `dist` folder
+- API routes (starting with `/api`) bypass the frontend middleware
+
+### API Routes: `app/server/routes.go`
+
+```go
+func setupRoutes(app *mizu.App) {
+    // Example API endpoint
+    app.Get("/api/hello", func(c *mizu.Ctx) error {
+        return c.JSON(200, map[string]string{
+            "message": "Hello from Mizu!",
+        })
+    })
+}
+```
+
+These routes are always handled by Go, never proxied to the frontend.
+
+### Frontend: `client/src/App.tsx` (React example)
+
+```tsx
+function App() {
+    const [message, setMessage] = useState('');
+
+    useEffect(() => {
+        // Call the Go backend API
+        fetch('/api/hello')
+            .then(res => res.json())
+            .then(data => setMessage(data.message));
+    }, []);
+
+    return (
+        <div>
+            <h1>{message}</h1>
+        </div>
+    );
+}
+```
+
+The frontend calls the Go backend API and displays the response.
+
+## Making Changes
+
+### Frontend Changes (React/Vue/Svelte)
+
+1. Edit any file in `client/src/`
+2. Save the file
+3. See changes instantly in your browser (HMR)
+
+No rebuild or refresh needed!
+
+### Backend Changes
+
+1. Edit any `.go` file
+2. Stop the server (Ctrl+C)
+3. Restart with `make dev` or `go run cmd/server/main.go`
+
+**Tip:** Use [air](https://github.com/cosmtrek/air) for auto-reload:
+
+```bash
+# Install air
+go install github.com/cosmtrek/air@latest
+
+# Run with auto-reload
+air
+```
+
+## Building for Production
+
+Build your complete application:
+
+```bash
+make build
+```
+
+This will:
+1. Build the frontend (`npm run build`)
+2. Build the Go binary
+3. Embed the frontend into the Go binary
+
+The output is a single executable in `./bin/server`.
+
+### Running Production Build
+
+```bash
+# Set production mode
+export MIZU_ENV=production
+
+# Run the server
+./bin/server
+```
+
+Or:
+
+```bash
+MIZU_ENV=production ./bin/server
+```
+
+The server now serves the embedded frontend files instead of proxying.
+
+## Adding API Endpoints
+
+Let's add a new API endpoint to list users:
+
+### 1. Update `routes.go`
+
+```go
+func setupRoutes(app *mizu.App) {
+    app.Get("/api/hello", handleHello)
+    app.Get("/api/users", handleUsers)  // New endpoint
+}
+
+func handleUsers(c *mizu.Ctx) error {
+    users := []map[string]any{
+        {"id": 1, "name": "Alice"},
+        {"id": 2, "name": "Bob"},
+    }
+    return c.JSON(200, users)
+}
+```
+
+### 2. Call from Frontend
+
+```tsx
+// In your React component
+useEffect(() => {
+    fetch('/api/users')
+        .then(res => res.json())
+        .then(data => setUsers(data));
+}, []);
+```
+
+### 3. Test
+
+1. Save both files
+2. Frontend auto-reloads
+3. Restart Go server
+4. Visit your app and see the users!
+
+## Common Tasks
+
+### Install a new npm package
+
+```bash
+cd client
+npm install <package-name>
+```
+
+### Install a new Go package
+
+```bash
+go get <package-name>
+```
+
+### Clear the build
+
+```bash
+make clean
+```
+
+### Run tests
+
+```bash
+# Frontend tests
+cd client
+npm test
+
+# Backend tests
+go test ./...
+```
+
+## Troubleshooting
+
+### Port already in use
+
+If port 3000 is taken, change it in `app/server/config.go`:
+
+```go
+type Config struct {
+    Port    string  // Change to "3001"
+    DevPort string
+    Env     string
+}
+```
+
+### Dev server won't connect
+
+1. Make sure the frontend dev server is running:
+   ```bash
+   cd client
+   npm run dev
+   ```
+
+2. Check the dev server port matches in `config.go`:
+   ```go
+   DevPort: "5173"  // Should match Vite's port
+   ```
+
+3. Check the console for errors
+
+### Changes not appearing
+
+**Frontend changes:**
+- Make sure you're editing files in `client/src/`
+- Check the browser console for errors
+- Try a hard refresh (Ctrl+Shift+R or Cmd+Shift+R)
+
+**Backend changes:**
+- Make sure you restarted the Go server
+- Check the terminal for compilation errors
+
+## Next Steps
+
+You've created your first Mizu frontend application! Here's what to explore next:
+
+<CardGroup cols={2}>
+  <Card title="Development Mode" href="/frontend/development" icon="code">
+    Deep dive into how dev mode works
+  </Card>
+  <Card title="Production Mode" href="/frontend/production" icon="rocket">
+    Learn about optimization and deployment
+  </Card>
+  <Card title="Framework Guides" href="/frontend/react" icon="book">
+    Detailed guides for each framework
+  </Card>
+  <Card title="API Integration" href="/frontend/api-integration" icon="plug">
+    Best practices for frontend-backend communication
+  </Card>
+</CardGroup>

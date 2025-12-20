@@ -1,0 +1,253 @@
+---
+title: "Build Manifest"
+description: "Use build manifests for asset fingerprinting and module preloading."
+icon: "file"
+---
+
+Build manifests map source files to their output files with content hashes. They enable proper asset loading, module preloading, and template integration.
+
+## What is a Build Manifest?
+
+When Vite or Webpack builds your app, it creates a manifest file:
+
+```json
+{
+  "src/main.tsx": {
+    "file": "assets/main.abc123.js",
+    "css": ["assets/main.def456.css"],
+    "imports": ["assets/vendor.xyz789.js"]
+  },
+  "src/App.tsx": {
+    "file": "assets/App.ghi012.js"
+  }
+}
+```
+
+This maps `src/main.tsx` → `assets/main.abc123.js`.
+
+## Configuration
+
+```go
+import "github.com/go-mizu/mizu/middlewares/frontend"
+
+opts := frontend.Options{
+    Root:     "./dist",
+    Manifest: ".vite/manifest.json",  // Path to manifest
+}
+```
+
+## Loading a Manifest
+
+```go
+import (
+    "embed"
+    "io/fs"
+    "github.com/go-mizu/mizu/middlewares/frontend"
+)
+
+//go:embed all:dist
+var distFS embed.FS
+
+func setup() {
+    dist, _ := fs.Sub(distFS, "dist")
+
+    // Load manifest
+    manifest, err := frontend.LoadManifest(dist, ".vite/manifest.json")
+    if err != nil {
+        panic(err)
+    }
+
+    // Use in templates
+    viewHelpers := manifest.ViewHelpers()
+    // Register helpers with your view engine
+}
+```
+
+## Manifest API
+
+### Entry Points
+
+Get the output file for an entry:
+
+```go
+outputFile := manifest.Entry("src/main.tsx")
+// Returns: "assets/main.abc123.js"
+```
+
+### Assets
+
+Get the URL for an asset:
+
+```go
+assetURL := manifest.Asset("logo.png")
+// Returns: "/assets/logo.abc123.png"
+```
+
+### CSS Files
+
+Get CSS files for an entry:
+
+```go
+cssFiles := manifest.CSS("src/main.tsx")
+// Returns: ["assets/main.def456.css"]
+```
+
+### Preloads
+
+Get module preloads:
+
+```go
+preloads := manifest.Preloads("src/main.tsx")
+// Returns: ["assets/vendor.xyz789.js", "assets/chunk.abc123.js"]
+```
+
+## Template Integration
+
+### View Helpers
+
+```go
+helpers := manifest.ViewHelpers()
+
+// Available functions:
+// - vite_entry: Complete tags (CSS + preloads + script)
+// - vite_asset: Asset URL
+// - vite_script: Script tag only
+// - vite_css: CSS tags only
+// - vite_preload: Preload tags only
+```
+
+### In Go Templates
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <!-- Load all assets for main entry -->
+    {{ vite_entry "src/main.tsx" }}
+</head>
+<body>
+    <div id="root"></div>
+
+    <!-- Custom asset URL -->
+    <img src="{{ vite_asset "logo.png" }}">
+</body>
+</html>
+```
+
+Outputs:
+
+```html
+<link rel="stylesheet" href="/assets/main.def456.css">
+<link rel="modulepreload" href="/assets/vendor.xyz789.js">
+<script type="module" src="/assets/main.abc123.js"></script>
+
+<img src="/assets/logo.abc123.png">
+```
+
+## Manual Tag Generation
+
+### Script Tag
+
+```go
+scriptTag := manifest.ScriptTag("src/main.tsx")
+// Returns: <script type="module" src="/assets/main.abc123.js"></script>
+```
+
+### CSS Tags
+
+```go
+cssTags := manifest.CSSTags("src/main.tsx")
+// Returns: <link rel="stylesheet" href="/assets/main.def456.css">
+```
+
+### Preload Tags
+
+```go
+preloadTags := manifest.PreloadTags("src/main.tsx")
+// Returns: <link rel="modulepreload" href="/assets/vendor.xyz789.js">
+```
+
+### Entry Tags (All in One)
+
+```go
+allTags := manifest.EntryTags("src/main.tsx")
+// Returns: CSS + preloads + script in correct order
+```
+
+## Vite Manifest Format
+
+Vite creates `.vite/manifest.json`:
+
+```json
+{
+  "src/main.tsx": {
+    "file": "assets/main.abc123.js",
+    "src": "src/main.tsx",
+    "isEntry": true,
+    "css": ["assets/main.def456.css"],
+    "imports": ["_vendor.xyz789.js"]
+  },
+  "_vendor.xyz789.js": {
+    "file": "assets/vendor.xyz789.js"
+  }
+}
+```
+
+## Webpack Manifest Format
+
+Webpack creates a simpler manifest:
+
+```json
+{
+  "main.js": "assets/main.abc123.js",
+  "main.css": "assets/main.def456.css",
+  "logo.png": "assets/logo.abc123.png"
+}
+```
+
+Both formats work with Mizu's manifest loader.
+
+## Benefits
+
+### 1. Correct Asset Loading
+
+Always load the correct hashed file:
+
+```html
+<!-- ❌ Without manifest - breaks on rebuild -->
+<script src="/assets/main.abc123.js"></script>
+
+<!-- ✅ With manifest - always correct -->
+{{ vite_entry "src/main.tsx" }}
+```
+
+### 2. Module Preloading
+
+Improve performance by preloading dependencies:
+
+```html
+<link rel="modulepreload" href="/assets/vendor.xyz789.js">
+<link rel="modulepreload" href="/assets/chunk.abc123.js">
+<script type="module" src="/assets/main.abc123.js"></script>
+```
+
+Browser loads dependencies in parallel.
+
+### 3. CSS Extraction
+
+Automatically include CSS:
+
+```html
+<link rel="stylesheet" href="/assets/main.def456.css">
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Caching" href="/frontend/caching" icon="database">
+    Caching strategies
+  </Card>
+  <Card title="Production" href="/frontend/production" icon="rocket">
+    Production optimization
+  </Card>
+</CardGroup>

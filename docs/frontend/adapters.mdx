@@ -1,0 +1,300 @@
+---
+title: "Framework Adapters"
+description: "Framework-specific adapters with optimized defaults."
+icon: "puzzle"
+---
+
+Framework adapters provide framework-specific defaults and optimizations for common frontend frameworks.
+
+## Overview
+
+Adapters are convenience wrappers that apply framework-specific best practices:
+
+```go
+import "github.com/go-mizu/mizu/middlewares/frontend/adapters"
+
+// Instead of manual configuration
+app.Use(adapters.React(frontend.Options{
+    Root: "./dist",
+}))
+```
+
+## Available Adapters
+
+### React
+
+```go
+func React(opts frontend.Options) mizu.Middleware
+```
+
+Optimized for React applications with Vite.
+
+**Defaults:**
+- Manifest: `.vite/manifest.json`
+- Output directory: `dist`
+
+**Example:**
+```go
+import "github.com/go-mizu/mizu/middlewares/frontend/adapters"
+
+app.Use(adapters.React(frontend.Options{
+    Root: "./dist",
+}))
+```
+
+### Vue
+
+```go
+func Vue(opts frontend.Options) mizu.Middleware
+```
+
+Optimized for Vue 3 applications with Vite.
+
+**Defaults:**
+- Manifest: `.vite/manifest.json`
+- Output directory: `dist`
+
+**Example:**
+```go
+app.Use(adapters.Vue(frontend.Options{
+    Root: "./dist",
+}))
+```
+
+### Svelte
+
+```go
+func Svelte(opts frontend.Options) mizu.Middleware
+```
+
+Optimized for Svelte applications with Vite.
+
+**Defaults:**
+- Manifest: `.vite/manifest.json`
+- Output directory: `dist`
+
+**Example:**
+```go
+app.Use(adapters.Svelte(frontend.Options{
+    Root: "./dist",
+}))
+```
+
+### SvelteKit
+
+```go
+func SvelteKit(opts frontend.Options) mizu.Middleware
+```
+
+Optimized for SvelteKit with static adapter.
+
+**Defaults:**
+- Output directory: `build`
+- Index: `index.html`
+
+**Example:**
+```go
+app.Use(adapters.SvelteKit(frontend.Options{
+    Root: "./build",
+}))
+```
+
+### Solid
+
+```go
+func Solid(opts frontend.Options) mizu.Middleware
+```
+
+Optimized for Solid.js with Vite.
+
+**Defaults:**
+- Manifest: `.vite/manifest.json`
+- Output directory: `dist`
+
+**Example:**
+```go
+app.Use(adapters.Solid(frontend.Options{
+    Root: "./dist",
+}))
+```
+
+### Astro
+
+```go
+func Astro(opts frontend.Options) mizu.Middleware
+```
+
+Optimized for Astro with static output.
+
+**Defaults:**
+- Output directory: `dist`
+- Index: `index.html`
+
+**Example:**
+```go
+app.Use(adapters.Astro(frontend.Options{
+    Root: "./dist",
+}))
+```
+
+### Angular
+
+```go
+func Angular(opts frontend.Options) mizu.Middleware
+```
+
+Optimized for Angular applications.
+
+**Defaults:**
+- Output directory: `dist/app-name/browser`
+- Index: `index.html`
+
+**Example:**
+```go
+app.Use(adapters.Angular(frontend.Options{
+    Root: "./dist/my-app/browser",
+}))
+```
+
+## Using Adapters
+
+### Basic Usage
+
+```go
+package server
+
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/frontend"
+    "github.com/go-mizu/mizu/middlewares/frontend/adapters"
+)
+
+func New() *mizu.App {
+    app := mizu.New()
+
+    // API routes
+    app.Get("/api/users", handleUsers)
+
+    // Frontend with adapter
+    app.Use(adapters.React(frontend.Options{
+        Mode:        frontend.ModeAuto,
+        Root:        "./dist",
+        DevServer:   "http://localhost:5173",
+        IgnorePaths: []string{"/api"},
+    }))
+
+    return app
+}
+```
+
+### With Embedded FS
+
+```go
+//go:embed all:dist
+var distFS embed.FS
+
+func New() *mizu.App {
+    app := mizu.New()
+
+    dist, _ := fs.Sub(distFS, "dist")
+
+    app.Use(adapters.Vue(frontend.Options{
+        FS:        dist,
+        DevServer: "http://localhost:5173",
+    }))
+
+    return app
+}
+```
+
+### Custom Configuration
+
+Adapters still accept all standard options:
+
+```go
+app.Use(adapters.React(frontend.Options{
+    Mode:      frontend.ModeProduction,
+    Root:      "./dist",
+    Prefix:    "/app",
+    InjectEnv: []string{"API_URL"},
+    CacheControl: frontend.CacheConfig{
+        HashedAssets: 180 * 24 * time.Hour,
+    },
+}))
+```
+
+## When to Use Adapters
+
+**Use adapters when:**
+- Using standard framework setup
+- Want framework-specific optimizations
+- Prefer convention over configuration
+
+**Use `frontend.WithOptions` when:**
+- Custom build configuration
+- Non-standard directory structure
+- Need full control over options
+
+## Creating Custom Adapters
+
+You can create your own adapters:
+
+```go
+package myadapters
+
+import (
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/frontend"
+)
+
+func Qwik(opts frontend.Options) mizu.Middleware {
+    // Apply Qwik-specific defaults
+    if opts.Root == "" {
+        opts.Root = "./dist"
+    }
+    if opts.Index == "" {
+        opts.Index = "index.html"
+    }
+    if opts.Manifest == "" {
+        opts.Manifest = "q-manifest.json"
+    }
+
+    return frontend.WithOptions(opts)
+}
+```
+
+Use:
+
+```go
+import "yourmodule/myadapters"
+
+app.Use(myadapters.Qwik(frontend.Options{
+    Root: "./dist",
+}))
+```
+
+## Adapter Comparison
+
+| Adapter | Build Tool | Output Dir | Manifest | Notes |
+|---------|-----------|------------|----------|-------|
+| React | Vite | `dist` | `.vite/manifest.json` | Standard Vite setup |
+| Vue | Vite | `dist` | `.vite/manifest.json` | Standard Vite setup |
+| Svelte | Vite | `dist` | `.vite/manifest.json` | Standard Vite setup |
+| SvelteKit | SvelteKit | `build` | None | Static adapter |
+| Angular | Angular CLI | `dist/app/browser` | None | Production build |
+| Solid | Vite | `dist` | `.vite/manifest.json` | Standard Vite setup |
+| Astro | Astro | `dist` | None | Static output |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="API Reference" href="/frontend/api-reference" icon="book">
+    Complete API documentation
+  </Card>
+  <Card title="Configuration" href="/frontend/configuration" icon="sliders">
+    All configuration options
+  </Card>
+  <Card title="Framework Guides" href="/frontend/react" icon="code">
+    Framework-specific guides
+  </Card>
+</CardGroup>

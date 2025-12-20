@@ -1,0 +1,264 @@
+---
+title: "SSR vs SPA"
+description: "Understanding server-side rendering and single-page applications."
+icon: "code"
+---
+
+Understanding the difference between Server-Side Rendering (SSR) and Single-Page Applications (SPA) helps you choose the right approach.
+
+## Server-Side Rendering (SSR)
+
+The server generates HTML for each request.
+
+### How It Works
+
+1. User requests `/users`
+2. Server fetches data from database
+3. Server renders HTML template
+4. Server sends complete HTML
+5. Browser displays page immediately
+
+### Example with HTMX
+
+```go
+app.Get("/users", func(c *mizu.Ctx) error {
+    users := db.GetUsers()
+    return c.Render("users.html", map[string]any{
+        "Users": users,
+    })
+})
+```
+
+```html
+<!-- users.html -->
+<h1>Users</h1>
+<ul>
+    {{range .Users}}
+        <li>{{.Name}}</li>
+    {{end}}
+</ul>
+```
+
+### Pros
+
+- **SEO-friendly**: Search engines see full HTML
+- **Fast initial load**: No JavaScript needed
+- **Works without JS**: Functional even if JS disabled
+- **Simpler**: No client-side routing or state management
+
+### Cons
+
+- **Server load**: Server renders every page
+- **Full page reloads**: Less smooth than SPA
+- **Network dependency**: Requires server for every action
+- **Less interactive**: Limited client-side interactivity
+
+## Single-Page Application (SPA)
+
+The browser loads once, then JavaScript handles all interactions.
+
+### How It Works
+
+1. User visits site
+2. Server sends minimal HTML + JavaScript bundle
+3. JavaScript loads and runs
+4. JavaScript fetches data via API
+5. JavaScript updates DOM
+
+### Example with React
+
+```go
+// Server just serves the SPA
+app.Use(frontend.New("./dist"))
+
+// APIs handle data
+app.Get("/api/users", func(c *mizu.Ctx) error {
+    users := db.GetUsers()
+    return c.JSON(200, users)
+})
+```
+
+```tsx
+// React handles rendering
+function Users() {
+  const [users, setUsers] = useState([])
+
+  useEffect(() => {
+    fetch('/api/users')
+      .then(r => r.json())
+      .then(setUsers)
+  }, [])
+
+  return (
+    <ul>
+      {users.map(user => <li key={user.id}>{user.name}</li>)}
+    </ul>
+  )
+}
+```
+
+### Pros
+
+- **Smooth UX**: No page reloads
+- **Rich interactions**: Complex UI possible
+- **Offline capable**: Can work offline with service workers
+- **Reduced server load**: Server only handles API requests
+
+### Cons
+
+- **SEO challenges**: Requires extra work for search engines
+- **Slower initial load**: Must download JavaScript first
+- **Complexity**: Client-side routing, state management
+- **JavaScript required**: Doesn't work without JS
+
+## Hybrid Approaches
+
+### HTMX with Alpine.js
+
+Server renders HTML, Alpine adds interactivity:
+
+```html
+<div x-data="{ open: false }">
+    <!-- Server-rendered content -->
+    <button @click="open = !open">Toggle</button>
+
+    <div x-show="open" hx-get="/users" hx-target="#list">
+        Load users
+    </div>
+
+    <div id="list"></div>
+</div>
+```
+
+**Benefits:**
+- SEO-friendly
+- Progressive enhancement
+- Minimal JavaScript
+
+### SPA with SSR (Next.js, Nuxt)
+
+Generate static HTML at build time:
+
+```tsx
+// Next.js
+export async function getStaticProps() {
+  const users = await fetch('/api/users').then(r => r.json())
+  return { props: { users } }
+}
+```
+
+**Benefits:**
+- SEO-friendly
+- SPA-like interactions
+- Fast initial load
+
+## Decision Matrix
+
+| Factor | SSR (HTMX) | SPA (React) | Hybrid |
+|--------|------------|-------------|--------|
+| **SEO** | ✅ Excellent | ⚠️ Requires work | ✅ Excellent |
+| **Initial load** | ✅ Fast | ❌ Slower | ✅ Fast |
+| **Interactivity** | ⚠️ Limited | ✅ Rich | ✅ Good |
+| **Complexity** | ✅ Simple | ❌ Complex | ⚠️ Moderate |
+| **Offline** | ❌ No | ✅ Yes | ⚠️ Partial |
+| **Server load** | ❌ Higher | ✅ Lower | ⚠️ Moderate |
+| **JS required** | ❌ No | ✅ Yes | ⚠️ Partial |
+
+## When to Use SSR
+
+Choose SSR (HTMX) when:
+- SEO is critical
+- Simple CRUD operations
+- Content-heavy sites
+- Team prefers server-side
+- Progressive enhancement needed
+
+**Examples:**
+- Blogs
+- Marketing sites
+- Admin dashboards
+- Documentation sites
+
+## When to Use SPA
+
+Choose SPA (React/Vue/Svelte) when:
+- Rich interactivity needed
+- Desktop-like experience
+- Complex client-side state
+- Offline support needed
+
+**Examples:**
+- Email clients
+- Project management tools
+- Design tools
+- Real-time dashboards
+
+## When to Use Hybrid
+
+Choose Hybrid when:
+- Need both SEO and interactivity
+- Want best of both worlds
+- Content + interactive features
+
+**Examples:**
+- E-commerce (product pages + cart)
+- Social media (feeds + messaging)
+- SaaS apps (marketing site + app)
+
+## Performance Comparison
+
+### First Contentful Paint (FCP)
+
+**SSR:** ~500ms (server renders immediately)
+**SPA:** ~2000ms (download + parse + render JavaScript)
+
+### Time to Interactive (TTI)
+
+**SSR:** ~1000ms (minimal JavaScript)
+**SPA:** ~3000ms (JavaScript must load)
+
+### Subsequent Navigation
+
+**SSR:** ~300ms (server renders + network)
+**SPA:** ~50ms (client-side only)
+
+## Mizu's Approach
+
+Mizu supports both equally:
+
+**SSR:**
+```go
+app.Use(view.Middleware())  // Template engine
+app.Static("/static", staticFS)  // Assets
+```
+
+**SPA:**
+```go
+app.Use(frontend.New("./dist"))  // SPA middleware
+```
+
+**Both:**
+```go
+// API routes
+app.Get("/api/users", handleUsers)
+
+// SSR pages
+app.Get("/blog/{slug}", handleBlog)
+
+// SPA for app
+app.Use(frontend.New("./dist"))
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="HTMX Guide" href="/frontend/htmx" icon="bolt">
+    Server-side approach
+  </Card>
+  <Card title="React Guide" href="/frontend/react" icon="react">
+    SPA approach
+  </Card>
+  <Card title="View Engine" href="/view/overview" icon="file">
+    Server-side templates
+  </Card>
+</CardGroup>

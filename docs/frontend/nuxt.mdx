@@ -1,0 +1,135 @@
+---
+title: "Nuxt"
+description: "Build Nuxt applications with static generation and Mizu backend."
+icon: "code"
+---
+
+Nuxt is a Vue framework with server-side rendering, static generation, and file-based routing. With Mizu, you'll use Nuxt's **static generation** mode.
+
+## Quick Start
+
+```bash
+mizu new ./my-nuxt-app --template frontend/nuxt
+cd my-nuxt-app
+make dev
+```
+
+## Configuration
+
+### `client/nuxt.config.ts`
+
+```ts
+export default defineNuxtConfig({
+  ssr: false,  // SPA mode
+  nitro: {
+    output: {
+      dir: '../dist',
+      publicDir: '../dist'
+    }
+  }
+})
+```
+
+## Backend Setup
+
+```go
+//go:embed all:../../dist
+var distFS embed.FS
+
+func New(cfg *Config) *mizu.App {
+    app := mizu.New()
+
+    app.Get("/api/users", handleUsers)
+
+    dist, _ := fs.Sub(distFS, "dist")
+    app.Use(frontend.WithOptions(frontend.Options{
+        Mode:        frontend.ModeAuto,
+        FS:          dist,
+        Root:        "./dist",
+        DevServer:   "http://localhost:" + cfg.DevPort,
+        IgnorePaths: []string{"/api"},
+    }))
+
+    return app
+}
+```
+
+## File-Based Routing
+
+```
+client/pages/
+├── index.vue            # / route
+├── about.vue            # /about route
+└── users/
+    ├── index.vue        # /users route
+    └── [id].vue         # /users/:id route
+```
+
+### `client/pages/index.vue`
+
+```vue
+<template>
+  <div>
+    <h1>Users</h1>
+    <ul>
+      <li v-for="user in users" :key="user.id">{{ user.name }}</li>
+    </ul>
+  </div>
+</template>
+
+<script setup lang="ts">
+const { data: users } = await useFetch('/api/users')
+</script>
+```
+
+### `client/pages/users/[id].vue`
+
+```vue
+<template>
+  <div v-if="user">
+    <h1>{{ user.name }}</h1>
+    <p>{{ user.email }}</p>
+  </div>
+</template>
+
+<script setup lang="ts">
+const route = useRoute()
+const { data: user } = await useFetch(`/api/users/${route.params.id}`)
+</script>
+```
+
+## Composables
+
+```ts
+// composables/useUsers.ts
+export const useUsers = () => {
+  const users = ref([])
+  const loading = ref(false)
+
+  const fetchUsers = async () => {
+    loading.value = true
+    const { data } = await useFetch('/api/users')
+    users.value = data.value
+    loading.value = false
+  }
+
+  return { users, loading, fetchUsers }
+}
+```
+
+## Building
+
+```bash
+make build
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Vue Guide" href="/frontend/vue" icon="vuejs">
+    Vanilla Vue with Vite
+  </Card>
+  <Card title="Next.js" href="/frontend/nextjs" icon="code">
+    React equivalent
+  </Card>
+</CardGroup>

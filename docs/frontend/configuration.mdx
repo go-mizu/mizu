@@ -1,0 +1,673 @@
+---
+title: "Configuration"
+description: "Complete reference for frontend middleware configuration options."
+icon: "sliders"
+---
+
+The frontend middleware offers extensive configuration options to handle various deployment scenarios, frameworks, and requirements.
+
+## Basic Configuration
+
+### Minimal Setup
+
+The simplest configuration:
+
+```go
+app.Use(frontend.New("./dist"))
+```
+
+This uses sensible defaults:
+- Auto-detects mode based on `MIZU_ENV`
+- Serves from `./dist` in production
+- Proxies to `http://localhost:5173` in development
+- Ignores `/api`, `/health`, `/metrics`
+
+### With Dev Server
+
+Specify both production and development:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode:      frontend.ModeAuto,
+    Root:      "./dist",
+    DevServer: "http://localhost:5173",
+}))
+```
+
+### Embedded Filesystem
+
+Use embedded files for single-binary deployment:
+
+```go
+//go:embed all:dist
+var distFS embed.FS
+
+func setup() {
+    dist, _ := fs.Sub(distFS, "dist")
+    app.Use(frontend.WithFS(dist))
+}
+```
+
+## Options Reference
+
+### Mode
+
+Controls how the middleware operates.
+
+```go
+type Mode string
+
+const (
+    ModeDev        Mode = "dev"         // Always proxy to dev server
+    ModeProduction Mode = "production"  // Always serve static files
+    ModeAuto       Mode = "auto"        // Auto-detect from env
+)
+```
+
+**Usage:**
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode: frontend.ModeAuto,  // Default
+}))
+```
+
+**Auto-detection logic:**
+
+Environment variable checked in order:
+1. `MIZU_ENV`
+2. `GO_ENV`
+3. `ENV`
+
+If value is `"production"` or `"prod"` (case-insensitive) → Production mode
+Otherwise → Development mode
+
+### Root
+
+Directory containing built frontend files (production only).
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Root: "./dist",  // Default
+}))
+```
+
+**Path resolution:**
+- Relative paths are relative to working directory
+- Absolute paths work as expected
+
+**Common paths:**
+- Vite: `"./dist"`
+- Angular: `"./dist/my-app/browser"`
+- Next.js: `"./out"`
+- Nuxt: `"./dist"`
+
+### FS (Embedded Filesystem)
+
+Embedded filesystem for production builds (takes precedence over `Root`).
+
+```go
+//go:embed all:dist
+var distFS embed.FS
+
+func setup() {
+    dist, _ := fs.Sub(distFS, "dist")
+
+    app.Use(frontend.WithOptions(frontend.Options{
+        FS: dist,  // Use embedded files
+    }))
+}
+```
+
+**Why use `fs.Sub`?**
+
+The embed directive includes the directory name:
+```
+distFS contains:
+  dist/
+    index.html
+    assets/
+```
+
+Using `fs.Sub` extracts the subdirectory:
+```
+dist contains:
+  index.html
+  assets/
+```
+
+Now `index.html` is at the root level as expected.
+
+### Index
+
+The fallback HTML file for SPA routing.
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Index: "index.html",  // Default
+}))
+```
+
+**When is it used?**
+- Request path is `/` or empty
+- Requested file doesn't exist (SPA fallback)
+- Requested path is a directory
+
+### DevServer
+
+URL of the frontend development server.
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    DevServer: "http://localhost:5173",  // Default (Vite)
+}))
+```
+
+**Common dev server URLs:**
+- Vite: `"http://localhost:5173"`
+- Angular: `"http://localhost:4200"`
+- Next.js: `"http://localhost:3000"`
+- Create React App: `"http://localhost:3000"`
+
+### DevServerTimeout
+
+Timeout for requests to the dev server.
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    DevServerTimeout: 30 * time.Second,  // Default
+}))
+```
+
+Increase for slow dev servers:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    DevServerTimeout: 60 * time.Second,
+}))
+```
+
+### ProxyWebSocket
+
+Enable WebSocket proxying for HMR.
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    ProxyWebSocket: true,  // Default
+}))
+```
+
+Disable if you don't need HMR:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    ProxyWebSocket: false,
+}))
+```
+
+### Prefix
+
+URL prefix for serving the frontend.
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Prefix: "/app",  // Serve from /app/*
+}))
+```
+
+**Routing:**
+- `/app` → `index.html`
+- `/app/about` → `index.html` (SPA fallback)
+- `/app/assets/main.js` → `assets/main.js`
+- `/` → Not handled by frontend middleware
+
+**Frontend router configuration required:**
+
+```tsx
+// React Router
+<BrowserRouter basename="/app">
+```
+
+```ts
+// Vite config
+export default {
+    base: '/app/',
+}
+```
+
+### IgnorePaths
+
+Paths that bypass the frontend middleware and go to Go handlers.
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    IgnorePaths: []string{"/api", "/health", "/metrics"},  // Default
+}))
+```
+
+**Add custom paths:**
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    IgnorePaths: []string{"/api", "/auth", "/webhooks"},
+}))
+```
+
+**Disable all:**
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    IgnorePaths: []string{},  // No automatic ignores
+}))
+```
+
+### CacheControl
+
+Configure caching behavior for different asset types.
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    CacheControl: frontend.CacheConfig{
+        HashedAssets:   365 * 24 * time.Hour,  // Default: 1 year
+        UnhashedAssets: 7 * 24 * time.Hour,    // Default: 1 week
+        HTML:           0,                      // Default: no-cache
+        Patterns: map[string]time.Duration{
+            "*.woff2": 30 * 24 * time.Hour,
+        },
+    },
+}))
+```
+
+**CacheConfig fields:**
+- **HashedAssets**: Files with content hash in name (e.g., `main.abc123.js`)
+- **UnhashedAssets**: Files without hash (e.g., `logo.png`)
+- **HTML**: HTML files (`.html`)
+- **Patterns**: Custom patterns override defaults
+
+See [Caching Strategy](/frontend/caching) for details.
+
+### SecurityHeaders
+
+Enable automatic security headers.
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    SecurityHeaders: true,  // Default
+}))
+```
+
+**Headers added:**
+```
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+X-XSS-Protection: 1; mode=block
+Referrer-Policy: strict-origin-when-cross-origin
+```
+
+**Disable if using helmet:**
+
+```go
+app.Use(helmet.Default())
+
+app.Use(frontend.WithOptions(frontend.Options{
+    SecurityHeaders: false,  // Avoid duplicates
+}))
+```
+
+### SourceMaps
+
+Allow serving source map files (`.js.map`, `.css.map`).
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    SourceMaps: false,  // Default (blocked in production)
+}))
+```
+
+**Enable for debugging:**
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    SourceMaps: true,
+}))
+```
+
+**Conditional source maps:**
+
+```go
+isProduction := os.Getenv("MIZU_ENV") == "production"
+
+app.Use(frontend.WithOptions(frontend.Options{
+    SourceMaps: !isProduction,  // Only in development
+}))
+```
+
+### Manifest
+
+Path to build manifest for asset mapping.
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Manifest: ".vite/manifest.json",
+}))
+```
+
+The manifest is used for:
+- Asset fingerprinting
+- Module preloading
+- CSS injection
+- Template helpers
+
+See [Build Manifest](/frontend/manifest) for details.
+
+### InjectEnv
+
+Inject server-side environment variables into the frontend.
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    InjectEnv: []string{"API_URL", "ANALYTICS_ID"},
+}))
+```
+
+Variables are exposed as `window.__ENV__`:
+
+```tsx
+// Frontend code
+const apiUrl = window.__ENV__.API_URL;
+```
+
+**Security warning:** Only inject non-sensitive values. These are visible to users.
+
+See [Environment Injection](/frontend/env-injection) for details.
+
+### InjectMeta
+
+Inject custom meta tags into HTML.
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    InjectMeta: map[string]string{
+        "description": "My awesome app",
+        "keywords":    "go, mizu, web",
+    },
+}))
+```
+
+Injects:
+
+```html
+<meta name="description" content="My awesome app">
+<meta name="keywords" content="go, mizu, web">
+```
+
+### ServiceWorker
+
+Path to service worker file for PWA support.
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    ServiceWorker: "sw.js",
+}))
+```
+
+Proper headers are added for service worker scope.
+
+See [Service Workers](/frontend/service-workers) for details.
+
+### ErrorHandler
+
+Custom error handler for frontend errors.
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    ErrorHandler: func(c *mizu.Ctx, err error) error {
+        c.Logger().Error("frontend error", "error", err)
+        return c.JSON(500, map[string]string{
+            "error": "Internal Server Error",
+        })
+    },
+}))
+```
+
+### NotFoundHandler
+
+Custom handler called before SPA fallback.
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    NotFoundHandler: func(c *mizu.Ctx) error {
+        // Log 404s
+        c.Logger().Warn("file not found", "path", c.Request().URL.Path)
+
+        // Return nil to continue to SPA fallback
+        return nil
+
+        // Or return error to skip fallback and respond
+        // return c.JSON(404, map[string]string{"error": "not found"})
+    },
+}))
+```
+
+## Configuration Examples
+
+### Complete Production Setup
+
+```go
+package server
+
+import (
+    "embed"
+    "io/fs"
+    "os"
+    "time"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/frontend"
+)
+
+//go:embed all:../../dist
+var distFS embed.FS
+
+func New() *mizu.App {
+    app := mizu.New()
+
+    // API routes first
+    setupAPIRoutes(app)
+
+    // Frontend configuration
+    dist, _ := fs.Sub(distFS, "dist")
+    app.Use(frontend.WithOptions(frontend.Options{
+        // Mode
+        Mode: frontend.ModeProduction,
+
+        // Files
+        FS:    dist,
+        Index: "index.html",
+
+        // Routing
+        Prefix:      "",
+        IgnorePaths: []string{"/api"},
+
+        // Caching
+        CacheControl: frontend.CacheConfig{
+            HashedAssets:   365 * 24 * time.Hour,
+            UnhashedAssets: 7 * 24 * time.Hour,
+            HTML:           0,
+            Patterns: map[string]time.Duration{
+                "*.woff2": 30 * 24 * time.Hour,
+            },
+        },
+
+        // Security
+        SecurityHeaders: true,
+        SourceMaps:      false,
+
+        // Environment
+        InjectEnv: []string{"API_URL"},
+        InjectMeta: map[string]string{
+            "description": "My app",
+        },
+    }))
+
+    return app
+}
+```
+
+### Development-Optimized Setup
+
+```go
+func New() *mizu.App {
+    app := mizu.New()
+
+    setupAPIRoutes(app)
+
+    app.Use(frontend.WithOptions(frontend.Options{
+        Mode:             frontend.ModeDev,
+        DevServer:        "http://localhost:5173",
+        DevServerTimeout: 60 * time.Second,
+        ProxyWebSocket:   true,
+        IgnorePaths:      []string{"/api"},
+    }))
+
+    return app
+}
+```
+
+### Auto-Switching Setup
+
+```go
+func New() *mizu.App {
+    app := mizu.New()
+
+    setupAPIRoutes(app)
+
+    dist, _ := fs.Sub(distFS, "dist")
+    app.Use(frontend.WithOptions(frontend.Options{
+        // Auto-detect based on MIZU_ENV
+        Mode: frontend.ModeAuto,
+
+        // Production settings
+        FS:   dist,
+        Root: "./dist",  // Fallback if FS fails
+
+        // Development settings
+        DevServer:      "http://localhost:5173",
+        ProxyWebSocket: true,
+
+        // Common settings
+        IgnorePaths: []string{"/api"},
+        InjectEnv:   []string{"API_URL"},
+    }))
+
+    return app
+}
+```
+
+### Multi-Environment Setup
+
+```go
+type Config struct {
+    Environment string
+    Port        string
+    DevPort     string
+}
+
+func New(cfg *Config) *mizu.App {
+    app := mizu.New()
+
+    setupAPIRoutes(app)
+
+    opts := frontend.Options{
+        Mode:        frontend.ModeAuto,
+        Root:        "./dist",
+        DevServer:   "http://localhost:" + cfg.DevPort,
+        IgnorePaths: []string{"/api"},
+    }
+
+    // Environment-specific configuration
+    switch cfg.Environment {
+    case "production":
+        dist, _ := fs.Sub(distFS, "dist")
+        opts.FS = dist
+        opts.SourceMaps = false
+        opts.SecurityHeaders = true
+        opts.InjectEnv = []string{"API_URL"}
+
+    case "staging":
+        opts.SourceMaps = true  // Enable for debugging
+        opts.SecurityHeaders = true
+        opts.InjectEnv = []string{"API_URL", "DEBUG"}
+
+    case "development":
+        opts.Mode = frontend.ModeDev
+        opts.DevServerTimeout = 60 * time.Second
+    }
+
+    app.Use(frontend.WithOptions(opts))
+
+    return app
+}
+```
+
+## Environment Variables
+
+Configure via environment:
+
+```bash
+# Mode detection
+export MIZU_ENV=production  # or development
+export GO_ENV=production    # alternative
+export ENV=production       # alternative
+
+# Custom ports
+export PORT=3000
+export DEV_PORT=5173
+
+# API URL injection
+export API_URL=https://api.example.com
+```
+
+Access in configuration:
+
+```go
+type Config struct {
+    Env     string
+    Port    string
+    DevPort string
+    APIURL  string
+}
+
+func LoadConfig() *Config {
+    return &Config{
+        Env:     getEnv("MIZU_ENV", "development"),
+        Port:    getEnv("PORT", "3000"),
+        DevPort: getEnv("DEV_PORT", "5173"),
+        APIURL:  getEnv("API_URL", "http://localhost:3000/api"),
+    }
+}
+
+func getEnv(key, fallback string) string {
+    if value := os.Getenv(key); value != "" {
+        return value
+    }
+    return fallback
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Development Mode" href="/frontend/development" icon="code">
+    Learn about dev mode and HMR
+  </Card>
+  <Card title="Production Mode" href="/frontend/production" icon="rocket">
+    Optimize for production deployment
+  </Card>
+  <Card title="Caching Strategy" href="/frontend/caching" icon="database">
+    Deep dive into caching
+  </Card>
+  <Card title="Security" href="/frontend/security" icon="shield">
+    Security best practices
+  </Card>
+</CardGroup>
