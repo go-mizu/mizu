@@ -1,0 +1,121 @@
+# {{.Name}}
+
+A Flutter application powered by Mizu.
+
+## Getting Started
+
+### Prerequisites
+
+- Flutter SDK 3.2.0 or later
+- Dart SDK 3.2.0 or later
+- iOS: Xcode 15+ (for iOS development)
+- Android: Android Studio with Android SDK
+
+### Installation
+
+1. Install dependencies:
+   ```bash
+   flutter pub get
+   ```
+
+2. Run the app:
+   ```bash
+   # Run on connected device or emulator
+   flutter run
+
+   # Run on specific platform
+   flutter run -d ios
+   flutter run -d android
+   flutter run -d chrome  # web
+   ```
+
+## Project Structure
+
+```
+lib/
+├── main.dart           # App entry point
+├── app.dart            # MaterialApp configuration
+├── config/
+│   └── config.dart     # App configuration
+├── runtime/
+│   ├── mizu_runtime.dart   # Core Mizu client
+│   ├── transport.dart      # HTTP transport
+│   ├── token_store.dart    # Secure token storage
+│   ├── live.dart           # SSE streaming
+│   ├── device_info.dart    # Device information
+│   └── exceptions.dart     # Error types
+├── sdk/
+│   ├── client.dart     # API client
+│   ├── types.dart      # Type definitions
+│   └── extensions.dart # Convenience extensions
+├── models/
+│   └── app_state.dart  # App state
+├── screens/
+│   ├── home_screen.dart
+│   └── welcome_screen.dart
+├── widgets/
+│   ├── loading_view.dart
+│   └── error_view.dart
+└── providers/
+    └── providers.dart  # Riverpod providers
+```
+
+## Configuration
+
+### Environment Variables
+
+Configure the app using environment variables:
+
+```bash
+# Development
+flutter run --dart-define=MIZU_BASE_URL=http://localhost:3000
+
+# Production
+flutter run --release --dart-define=MIZU_BASE_URL=https://api.example.com
+```
+
+### Android Emulator
+
+For Android emulator, use `10.0.2.2` to access host machine's localhost:
+```bash
+flutter run --dart-define=MIZU_BASE_URL=http://10.0.2.2:3000
+```
+
+## Testing
+
+```bash
+# Run unit tests
+flutter test
+
+# Run integration tests
+flutter test integration_test
+
+# Run with coverage
+flutter test --coverage
+```
+
+## Building
+
+```bash
+# Build Android APK
+flutter build apk
+
+# Build iOS
+flutter build ios
+
+# Build Web
+flutter build web
+```
+
+## Dependencies
+
+- **flutter_riverpod** - State management
+- **http** - HTTP client
+- **flutter_secure_storage** - Secure token storage
+- **device_info_plus** - Device information
+- **package_info_plus** - App version info
+- **uuid** - UUID generation
+
+## License
+
+This project is licensed under the MIT License.

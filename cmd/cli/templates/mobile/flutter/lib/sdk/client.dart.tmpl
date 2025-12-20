@@ -1,0 +1,72 @@
+import '../runtime/mizu_runtime.dart';
+import '../runtime/token_store.dart';
+import 'types.dart';
+
+/// Generated Mizu API client for {{.Name}}
+class {{.Name | pascal}}Client {
+  final MizuRuntime _runtime;
+
+  {{.Name | pascal}}Client(this._runtime);
+
+  // MARK: - Auth
+
+  /// Sign in with credentials
+  Future<AuthResponse> signIn({
+    required String email,
+    required String password,
+  }) async {
+    final response = await _runtime.post<Map<String, dynamic>, Map<String, dynamic>>(
+      '/auth/signin',
+      body: {'email': email, 'password': password},
+    );
+    return AuthResponse.fromJson(response);
+  }
+
+  /// Sign up with credentials
+  Future<AuthResponse> signUp({
+    required String email,
+    required String password,
+    required String name,
+  }) async {
+    final response = await _runtime.post<Map<String, dynamic>, Map<String, dynamic>>(
+      '/auth/signup',
+      body: {'email': email, 'password': password, 'name': name},
+    );
+    return AuthResponse.fromJson(response);
+  }
+
+  /// Sign out
+  Future<void> signOut() async {
+    await _runtime.delete<void>('/auth/signout');
+    await _runtime.tokenStore.clearToken();
+  }
+
+  // MARK: - Users
+
+  /// Get current user profile
+  Future<User> getCurrentUser() async {
+    final response = await _runtime.get<Map<String, dynamic>>('/users/me');
+    return User.fromJson(response);
+  }
+
+  /// Update current user profile
+  Future<User> updateCurrentUser(UserUpdate update) async {
+    final response = await _runtime.put<Map<String, dynamic>, Map<String, dynamic>>(
+      '/users/me',
+      body: update.toJson(),
+    );
+    return User.fromJson(response);
+  }
+
+  /// Store auth token from response
+  Future<void> storeAuthToken(AuthResponse response) async {
+    final expiresAt = DateTime.now().add(Duration(seconds: response.token.expiresIn));
+    await _runtime.tokenStore.setToken(
+      AuthToken(
+        accessToken: response.token.accessToken,
+        refreshToken: response.token.refreshToken,
+        expiresAt: expiresAt,
+      ),
+    );
+  }
+}

@@ -1,0 +1,64 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:{{.Name | lower | replace " " "_" | replace "-" "_"}}/app.dart';
+import 'package:{{.Name | lower | replace " " "_" | replace "-" "_"}}/runtime/mizu_runtime.dart';
+import 'package:{{.Name | lower | replace " " "_" | replace "-" "_"}}/runtime/token_store.dart';
+
+void main() {
+  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  group('App Integration Tests', () {
+    setUp(() async {
+      // Use in-memory token store for testing
+      await MizuRuntime.initialize(
+        baseURL: 'http://localhost:3000',
+      );
+    });
+
+    testWidgets('Welcome screen to Home screen flow', (tester) async {
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: {{.Name | pascal}}App(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Verify welcome screen is shown
+      expect(find.text('Welcome to {{.Name}}'), findsOneWidget);
+      expect(find.text('Get Started'), findsOneWidget);
+
+      // Tap get started button
+      await tester.tap(find.text('Get Started'));
+      await tester.pumpAndSettle();
+
+      // Verify home screen is shown after authentication
+      expect(find.text('Connected to Mizu backend'), findsOneWidget);
+    });
+
+    testWidgets('Sign out returns to welcome screen', (tester) async {
+      // Pre-authenticate
+      await MizuRuntime.shared.tokenStore.setToken(
+        const AuthToken(accessToken: 'test_token'),
+      );
+
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: {{.Name | pascal}}App(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Verify home screen is shown
+      expect(find.text('Sign Out'), findsOneWidget);
+
+      // Tap sign out
+      await tester.tap(find.text('Sign Out'));
+      await tester.pumpAndSettle();
+
+      // Verify welcome screen is shown
+      expect(find.text('Welcome to {{.Name}}'), findsOneWidget);
+    });
+  });
+}

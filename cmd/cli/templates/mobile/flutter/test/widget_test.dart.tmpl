@@ -1,0 +1,123 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:{{.Name | lower | replace " " "_" | replace "-" "_"}}/screens/welcome_screen.dart';
+import 'package:{{.Name | lower | replace " " "_" | replace "-" "_"}}/widgets/loading_view.dart';
+import 'package:{{.Name | lower | replace " " "_" | replace "-" "_"}}/widgets/error_view.dart';
+
+void main() {
+  group('WelcomeScreen', () {
+    testWidgets('displays welcome message', (tester) async {
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: MaterialApp(home: WelcomeScreen()),
+        ),
+      );
+
+      expect(find.text('Welcome to {{.Name}}'), findsOneWidget);
+      expect(find.text('Get Started'), findsOneWidget);
+    });
+
+    testWidgets('displays Flutter dash icon', (tester) async {
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: MaterialApp(home: WelcomeScreen()),
+        ),
+      );
+
+      expect(find.byIcon(Icons.flutter_dash), findsOneWidget);
+    });
+  });
+
+  group('LoadingView', () {
+    testWidgets('displays progress indicator', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: LoadingView())),
+      );
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    });
+
+    testWidgets('displays message when provided', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(body: LoadingView(message: 'Loading...')),
+        ),
+      );
+
+      expect(find.text('Loading...'), findsOneWidget);
+    });
+
+    testWidgets('does not display message when not provided', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: LoadingView())),
+      );
+
+      expect(find.text('Loading...'), findsNothing);
+    });
+  });
+
+  group('ErrorView', () {
+    testWidgets('displays error message', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: ErrorView(error: Exception('Test error'))),
+        ),
+      );
+
+      expect(find.text('Something went wrong'), findsOneWidget);
+    });
+
+    testWidgets('displays error icon', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: ErrorView(error: Exception('Test'))),
+        ),
+      );
+
+      expect(find.byIcon(Icons.error_outline), findsOneWidget);
+    });
+
+    testWidgets('displays retry button when callback provided', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ErrorView(
+              error: Exception('Test'),
+              onRetry: () {},
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Try Again'), findsOneWidget);
+    });
+
+    testWidgets('does not display retry button when callback not provided', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: ErrorView(error: Exception('Test'))),
+        ),
+      );
+
+      expect(find.text('Try Again'), findsNothing);
+    });
+
+    testWidgets('calls onRetry when retry button tapped', (tester) async {
+      var retryCount = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ErrorView(
+              error: Exception('Test'),
+              onRetry: () => retryCount++,
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Try Again'));
+      expect(retryCount, equals(1));
+    });
+  });
+}

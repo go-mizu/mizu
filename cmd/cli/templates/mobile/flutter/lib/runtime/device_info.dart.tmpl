@@ -1,0 +1,108 @@
+import 'dart:io';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:uuid/uuid.dart';
+
+/// Device information container
+class DeviceInfoData {
+  final String deviceId;
+  final String appVersion;
+  final String appBuild;
+  final String model;
+  final String platform;
+  final String osVersion;
+  final String timezone;
+  final String locale;
+
+  const DeviceInfoData({
+    required this.deviceId,
+    required this.appVersion,
+    required this.appBuild,
+    required this.model,
+    required this.platform,
+    required this.osVersion,
+    required this.timezone,
+    required this.locale,
+  });
+}
+
+/// Device information utilities
+class DeviceInfo {
+  static const _deviceIdKey = 'mizu_device_id';
+  static const _storage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
+  static final _deviceInfoPlugin = DeviceInfoPlugin();
+  static DeviceInfoData? _cachedInfo;
+
+  /// Collects device information
+  static Future<DeviceInfoData> collect() async {
+    if (_cachedInfo != null) return _cachedInfo!;
+
+    final deviceId = await _getOrCreateDeviceId();
+    final packageInfo = await PackageInfo.fromPlatform();
+
+    String model;
+    String osVersion;
+    String platform;
+
+    if (Platform.isIOS) {
+      final iosInfo = await _deviceInfoPlugin.iosInfo;
+      model = iosInfo.utsname.machine;
+      osVersion = iosInfo.systemVersion;
+      platform = 'ios';
+    } else if (Platform.isAndroid) {
+      final androidInfo = await _deviceInfoPlugin.androidInfo;
+      model = androidInfo.model;
+      osVersion = androidInfo.version.release;
+      platform = 'android';
+    } else if (Platform.isMacOS) {
+      final macInfo = await _deviceInfoPlugin.macOsInfo;
+      model = macInfo.model;
+      osVersion = '${macInfo.majorVersion}.${macInfo.minorVersion}.${macInfo.patchVersion}';
+      platform = 'macos';
+    } else if (Platform.isWindows) {
+      final windowsInfo = await _deviceInfoPlugin.windowsInfo;
+      model = windowsInfo.productName;
+      osVersion = '${windowsInfo.majorVersion}.${windowsInfo.minorVersion}';
+      platform = 'windows';
+    } else if (Platform.isLinux) {
+      final linuxInfo = await _deviceInfoPlugin.linuxInfo;
+      model = linuxInfo.prettyName;
+      osVersion = linuxInfo.versionId ?? 'unknown';
+      platform = 'linux';
+    } else {
+      model = 'unknown';
+      osVersion = 'unknown';
+      platform = 'unknown';
+    }
+
+    _cachedInfo = DeviceInfoData(
+      deviceId: deviceId,
+      appVersion: packageInfo.version,
+      appBuild: packageInfo.buildNumber,
+      model: model,
+      platform: platform,
+      osVersion: osVersion,
+      timezone: DateTime.now().timeZoneName,
+      locale: Platform.localeName,
+    );
+
+    return _cachedInfo!;
+  }
+
+  static Future<String> _getOrCreateDeviceId() async {
+    var deviceId = await _storage.read(key: _deviceIdKey);
+    if (deviceId == null) {
+      deviceId = const Uuid().v4();
+      await _storage.write(key: _deviceIdKey, value: deviceId);
+    }
+    return deviceId;
+  }
+
+  /// Clears cached info (useful for testing)
+  static void clearCache() {
+    _cachedInfo = null;
+  }
+}

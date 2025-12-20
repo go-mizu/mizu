@@ -1,0 +1,17 @@
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    - prefer_const_constructors
+    - prefer_const_declarations
+    - prefer_final_fields
+    - prefer_final_locals
+    - avoid_print
+    - require_trailing_commas
+
+analyzer:
+  errors:
+    invalid_annotation_target: ignore
+  exclude:
+    - '**/*.g.dart'
+    - '**/*.freezed.dart'

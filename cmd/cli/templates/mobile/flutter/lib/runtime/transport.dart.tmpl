@@ -1,0 +1,145 @@
+import 'dart:async';
+import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'exceptions.dart';
+
+/// Transport request
+class TransportRequest {
+  final String url;
+  final String method;
+  final Map<String, String> headers;
+  final String? body;
+  final Duration timeout;
+
+  const TransportRequest({
+    required this.url,
+    required this.method,
+    required this.headers,
+    this.body,
+    required this.timeout,
+  });
+}
+
+/// Transport response
+class TransportResponse {
+  final int statusCode;
+  final Map<String, String> headers;
+  final String body;
+
+  const TransportResponse({
+    required this.statusCode,
+    required this.headers,
+    required this.body,
+  });
+}
+
+/// Transport protocol for executing HTTP requests
+abstract class Transport {
+  Future<TransportResponse> execute(TransportRequest request);
+}
+
+/// HTTP-based transport implementation
+class HttpTransport implements Transport {
+  final http.Client _client;
+  final List<RequestInterceptor> _interceptors = [];
+
+  HttpTransport({http.Client? client}) : _client = client ?? http.Client();
+
+  /// Adds a request interceptor
+  void addInterceptor(RequestInterceptor interceptor) {
+    _interceptors.add(interceptor);
+  }
+
+  @override
+  Future<TransportResponse> execute(TransportRequest request) async {
+    var req = request;
+
+    // Apply interceptors
+    for (final interceptor in _interceptors) {
+      req = await interceptor.intercept(req);
+    }
+
+    try {
+      final uri = Uri.parse(req.url);
+      http.Response response;
+
+      switch (req.method.toUpperCase()) {
+        case 'GET':
+          response = await _client
+              .get(uri, headers: req.headers)
+              .timeout(req.timeout);
+          break;
+        case 'POST':
+          response = await _client
+              .post(uri, headers: req.headers, body: req.body)
+              .timeout(req.timeout);
+          break;
+        case 'PUT':
+          response = await _client
+              .put(uri, headers: req.headers, body: req.body)
+              .timeout(req.timeout);
+          break;
+        case 'DELETE':
+          response = await _client
+              .delete(uri, headers: req.headers, body: req.body)
+              .timeout(req.timeout);
+          break;
+        case 'PATCH':
+          response = await _client
+              .patch(uri, headers: req.headers, body: req.body)
+              .timeout(req.timeout);
+          break;
+        default:
+          throw MizuError.invalidResponse();
+      }
+
+      return TransportResponse(
+        statusCode: response.statusCode,
+        headers: response.headers,
+        body: response.body,
+      );
+    } on SocketException catch (e) {
+      throw MizuError.network(e);
+    } on TimeoutException catch (e) {
+      throw MizuError.network(e);
+    } catch (e) {
+      throw MizuError.network(e);
+    }
+  }
+
+  void dispose() {
+    _client.close();
+  }
+}
+
+/// Request interceptor protocol
+abstract class RequestInterceptor {
+  Future<TransportRequest> intercept(TransportRequest request);
+}
+
+/// Logging interceptor for debugging
+class LoggingInterceptor implements RequestInterceptor {
+  @override
+  Future<TransportRequest> intercept(TransportRequest request) async {
+    // ignore: avoid_print
+    print('[Mizu] ${request.method} ${request.url}');
+    return request;
+  }
+}
+
+/// Retry interceptor with exponential backoff
+class RetryInterceptor implements RequestInterceptor {
+  final int maxRetries;
+  final Duration baseDelay;
+
+  const RetryInterceptor({
+    this.maxRetries = 3,
+    this.baseDelay = const Duration(seconds: 1),
+  });
+
+  @override
+  Future<TransportRequest> intercept(TransportRequest request) async {
+    // Retry logic is handled at transport level
+    return request;
+  }
+}

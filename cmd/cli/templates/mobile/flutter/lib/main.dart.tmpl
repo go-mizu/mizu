@@ -1,0 +1,21 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'app.dart';
+import 'config/config.dart';
+import 'runtime/mizu_runtime.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Mizu runtime
+  await MizuRuntime.initialize(
+    baseURL: AppConfig.baseURL,
+    timeout: AppConfig.timeout,
+  );
+
+  runApp(
+    const ProviderScope(
+      child: {{.Name | pascal}}App(),
+    ),
+  );
+}

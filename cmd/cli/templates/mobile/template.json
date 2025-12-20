@@ -3,6 +3,8 @@
   "description": "Mobile application with Mizu backend",
   "tags": ["mizu", "mobile", "ios", "android", "flutter", "react-native"],
   "subTemplates": [
-    { "name": "ios", "description": "iOS app with Swift and SwiftUI" }
+    { "name": "ios", "description": "iOS app with Swift and SwiftUI" },
+    { "name": "android", "description": "Android app with Kotlin and Jetpack Compose" },
+    { "name": "flutter", "description": "Cross-platform app with Flutter and Dart" }
   ]
 }

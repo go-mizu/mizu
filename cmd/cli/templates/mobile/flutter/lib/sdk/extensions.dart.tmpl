@@ -1,0 +1,18 @@
+import '../runtime/mizu_runtime.dart';
+import '../runtime/token_store.dart';
+import 'types.dart';
+
+/// Convenience extensions for working with the SDK
+extension MizuRuntimeExtensions on MizuRuntime {
+  /// Store an auth response token
+  Future<void> storeAuthToken(AuthResponse response) async {
+    final expiresAt = DateTime.now().add(Duration(seconds: response.token.expiresIn));
+    await tokenStore.setToken(
+      AuthToken(
+        accessToken: response.token.accessToken,
+        refreshToken: response.token.refreshToken,
+        expiresAt: expiresAt,
+      ),
+    );
+  }
+}

@@ -1,0 +1,149 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:{{.Name | lower | replace " " "_" | replace "-" "_"}}/runtime/token_store.dart';
+import 'package:{{.Name | lower | replace " " "_" | replace "-" "_"}}/runtime/exceptions.dart';
+
+void main() {
+  group('InMemoryTokenStore', () {
+    late InMemoryTokenStore store;
+
+    setUp(() {
+      store = InMemoryTokenStore();
+    });
+
+    test('returns null when no token stored', () async {
+      expect(await store.getToken(), isNull);
+    });
+
+    test('stores and retrieves token', () async {
+      const token = AuthToken(
+        accessToken: 'test123',
+        refreshToken: 'refresh456',
+      );
+
+      await store.setToken(token);
+      final retrieved = await store.getToken();
+
+      expect(retrieved?.accessToken, equals('test123'));
+      expect(retrieved?.refreshToken, equals('refresh456'));
+    });
+
+    test('clears token', () async {
+      const token = AuthToken(accessToken: 'test123');
+      await store.setToken(token);
+      await store.clearToken();
+
+      expect(await store.getToken(), isNull);
+    });
+
+    test('notifies observers on token change', () async {
+      AuthToken? notifiedToken;
+      store.onTokenChange((token) => notifiedToken = token);
+
+      const token = AuthToken(accessToken: 'test123');
+      await store.setToken(token);
+
+      expect(notifiedToken?.accessToken, equals('test123'));
+    });
+  });
+
+  group('AuthToken', () {
+    test('isExpired returns false when no expiry', () {
+      const token = AuthToken(accessToken: 'test');
+      expect(token.isExpired, isFalse);
+    });
+
+    test('isExpired returns true when expired', () {
+      final token = AuthToken(
+        accessToken: 'test',
+        expiresAt: DateTime.now().subtract(const Duration(seconds: 1)),
+      );
+      expect(token.isExpired, isTrue);
+    });
+
+    test('isExpired returns false when not expired', () {
+      final token = AuthToken(
+        accessToken: 'test',
+        expiresAt: DateTime.now().add(const Duration(hours: 1)),
+      );
+      expect(token.isExpired, isFalse);
+    });
+
+    test('serializes to JSON', () {
+      const token = AuthToken(
+        accessToken: 'test123',
+        refreshToken: 'refresh456',
+        tokenType: 'Bearer',
+      );
+      final json = token.toJson();
+
+      expect(json['access_token'], equals('test123'));
+      expect(json['refresh_token'], equals('refresh456'));
+      expect(json['token_type'], equals('Bearer'));
+    });
+
+    test('deserializes from JSON', () {
+      final json = {
+        'access_token': 'test123',
+        'refresh_token': 'refresh456',
+        'token_type': 'Bearer',
+      };
+      final token = AuthToken.fromJson(json);
+
+      expect(token.accessToken, equals('test123'));
+      expect(token.refreshToken, equals('refresh456'));
+      expect(token.tokenType, equals('Bearer'));
+    });
+  });
+
+  group('MizuError', () {
+    test('creates network error', () {
+      final error = MizuError.network(Exception('test'));
+      expect(error.isNetwork, isTrue);
+      expect(error.message, equals('Network error'));
+    });
+
+    test('creates api error', () {
+      const apiError = APIError(code: 'test_error', message: 'Test message');
+      final error = MizuError.api(apiError);
+      expect(error.isApi, isTrue);
+      expect(error.apiError?.code, equals('test_error'));
+    });
+
+    test('creates http error', () {
+      final error = MizuError.http(404, 'Not found');
+      expect(error.isHttp, isTrue);
+      expect(error.message, equals('HTTP error 404'));
+    });
+
+    test('creates unauthorized error', () {
+      final error = MizuError.unauthorized();
+      expect(error.isUnauthorized, isTrue);
+    });
+
+    test('creates token expired error', () {
+      final error = MizuError.tokenExpired();
+      expect(error.isTokenExpired, isTrue);
+    });
+  });
+
+  group('APIError', () {
+    test('deserializes from JSON', () {
+      final json = {
+        'code': 'validation_error',
+        'message': 'Invalid input',
+        'trace_id': 'abc123',
+      };
+      final error = APIError.fromJson(json);
+
+      expect(error.code, equals('validation_error'));
+      expect(error.message, equals('Invalid input'));
+      expect(error.traceId, equals('abc123'));
+    });
+
+    test('toString includes code and message', () {
+      const error = APIError(code: 'test', message: 'Test message');
+      expect(error.toString(), contains('test'));
+      expect(error.toString(), contains('Test message'));
+    });
+  });
+}
