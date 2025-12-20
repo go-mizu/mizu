@@ -1,0 +1,11 @@
+{
+  "name": "mobile/kmm",
+  "description": "Kotlin Multiplatform Mobile app with shared code, Compose UI for Android, and SwiftUI for iOS",
+  "tags": ["mizu", "mobile", "kmm", "kotlin", "multiplatform", "compose", "swiftui", "cross-platform"],
+  "variables": {
+    "name": { "description": "Project name", "default": "" },
+    "package": { "description": "Package name (e.g., com.example.app)", "default": "com.example.app" },
+    "platforms": { "description": "Target platforms (android,ios)", "default": "android,ios" },
+    "storage": { "description": "Local storage: none, sqldelight", "default": "none" }
+  }
+}

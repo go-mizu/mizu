@@ -1,0 +1,45 @@
+import Foundation
+import Combine
+import shared
+
+@MainActor
+class AppViewModel: ObservableObject {
+    @Published var isAuthenticated = false
+
+    init() {
+        // Check initial state
+        let token = MizuRuntime.shared.tokenStore.getToken()
+        isAuthenticated = token != nil
+
+        // Observe changes
+        MizuRuntime.shared.tokenStore.addObserver { [weak self] token in
+            DispatchQueue.main.async {
+                self?.isAuthenticated = token != nil
+            }
+        }
+    }
+
+    func getStarted() async {
+        do {
+            // Demo: Set a test token
+            try await MizuRuntime.shared.tokenStore.setToken(
+                token: AuthToken(
+                    accessToken: "demo_token",
+                    refreshToken: nil,
+                    expiresAt: nil,
+                    tokenType: "Bearer"
+                )
+            )
+        } catch {
+            print("Error: \(error)")
+        }
+    }
+
+    func signOut() async {
+        do {
+            try await MizuRuntime.shared.tokenStore.clearToken()
+        } catch {
+            print("Error: \(error)")
+        }
+    }
+}

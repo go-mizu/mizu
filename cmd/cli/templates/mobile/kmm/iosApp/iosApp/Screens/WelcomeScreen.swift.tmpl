@@ -1,0 +1,51 @@
+import SwiftUI
+import shared
+
+struct WelcomeScreen: View {
+    @ObservedObject var viewModel: AppViewModel
+    @State private var isLoading = false
+
+    var body: some View {
+        VStack {
+            Spacer()
+
+            VStack(spacing: 24) {
+                Circle()
+                    .fill(Color.indigo.opacity(0.1))
+                    .frame(width: 80, height: 80)
+                    .overlay(
+                        Text("K")
+                            .font(.system(size: 40, weight: .bold))
+                            .foregroundColor(.indigo)
+                    )
+
+                Text("Welcome to {{.Name}}")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+
+                Text("A modern KMM app powered by Mizu")
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            if isLoading {
+                ProgressView()
+            } else {
+                Button {
+                    Task {
+                        isLoading = true
+                        defer { isLoading = false }
+                        await viewModel.getStarted()
+                    }
+                } label: {
+                    Text("Get Started")
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding()
+    }
+}

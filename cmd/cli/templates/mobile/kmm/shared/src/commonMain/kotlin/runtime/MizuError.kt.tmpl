@@ -1,0 +1,75 @@
+package {{.Package}}.runtime
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
+/**
+ * API error response from server
+ */
+@Serializable
+data class ApiError(
+    val code: String,
+    val message: String,
+    val details: Map<String, String>? = null,
+    @SerialName("trace_id") val traceId: String? = null
+)
+
+/**
+ * Mizu client error
+ */
+sealed class MizuError(
+    override val message: String,
+    override val cause: Throwable? = null
+) : Exception(message, cause) {
+
+    /** Invalid server response */
+    class InvalidResponse(
+        message: String = "Invalid server response"
+    ) : MizuError(message)
+
+    /** HTTP error */
+    class Http(
+        val statusCode: Int,
+        val body: String
+    ) : MizuError("HTTP error $statusCode")
+
+    /** API error from server */
+    class Api(
+        val error: ApiError
+    ) : MizuError(error.message)
+
+    /** Network error */
+    class Network(
+        message: String,
+        cause: Throwable? = null
+    ) : MizuError(message, cause)
+
+    /** Encoding error */
+    class Encoding(
+        message: String,
+        cause: Throwable? = null
+    ) : MizuError(message, cause)
+
+    /** Decoding error */
+    class Decoding(
+        message: String,
+        cause: Throwable? = null
+    ) : MizuError(message, cause)
+
+    /** Unauthorized */
+    class Unauthorized(
+        message: String = "Unauthorized"
+    ) : MizuError(message)
+
+    /** Token expired */
+    class TokenExpired(
+        message: String = "Token expired"
+    ) : MizuError(message)
+}
+
+val MizuError.isInvalidResponse: Boolean get() = this is MizuError.InvalidResponse
+val MizuError.isHttp: Boolean get() = this is MizuError.Http
+val MizuError.isApi: Boolean get() = this is MizuError.Api
+val MizuError.isNetwork: Boolean get() = this is MizuError.Network
+val MizuError.isUnauthorized: Boolean get() = this is MizuError.Unauthorized
+val MizuError.isTokenExpired: Boolean get() = this is MizuError.TokenExpired

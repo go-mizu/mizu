@@ -1,0 +1,98 @@
+package {{.Package}}.runtime
+
+import kotlinx.cinterop.*
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import platform.Foundation.*
+import platform.Security.*
+
+/**
+ * iOS Keychain-backed token storage
+ */
+class IOSTokenStore : TokenStore {
+    private val observers = mutableListOf<TokenObserver>()
+    private val json = Json { ignoreUnknownKeys = true }
+
+    override fun getToken(): AuthToken? {
+        val data = keychainGet(TOKEN_KEY) ?: return null
+        return try {
+            json.decodeFromString(data)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    override suspend fun setToken(token: AuthToken) {
+        val tokenJson = json.encodeToString(token)
+        keychainSet(TOKEN_KEY, tokenJson)
+        notifyObservers(token)
+    }
+
+    override suspend fun clearToken() {
+        keychainDelete(TOKEN_KEY)
+        notifyObservers(null)
+    }
+
+    override fun addObserver(observer: TokenObserver) {
+        observers.add(observer)
+    }
+
+    override fun removeObserver(observer: TokenObserver) {
+        observers.remove(observer)
+    }
+
+    private fun notifyObservers(token: AuthToken?) {
+        observers.forEach { it(token) }
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    private fun keychainGet(key: String): String? = memScoped {
+        val query = CFDictionaryCreateMutable(null, 4, null, null).apply {
+            CFDictionaryAddValue(this, kSecClass, kSecClassGenericPassword)
+            CFDictionaryAddValue(this, kSecAttrAccount, CFBridgingRetain(key))
+            CFDictionaryAddValue(this, kSecReturnData, kCFBooleanTrue)
+            CFDictionaryAddValue(this, kSecMatchLimit, kSecMatchLimitOne)
+        }
+
+        val result = alloc<CFTypeRefVar>()
+        val status = SecItemCopyMatching(query, result.ptr)
+
+        if (status == errSecSuccess) {
+            val data = CFBridgingRelease(result.value) as? NSData
+            data?.let {
+                NSString.create(data = it, encoding = NSUTF8StringEncoding) as? String
+            }
+        } else {
+            null
+        }
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    private fun keychainSet(key: String, value: String) {
+        keychainDelete(key)
+
+        val valueData = (value as NSString).dataUsingEncoding(NSUTF8StringEncoding) ?: return
+
+        val query = CFDictionaryCreateMutable(null, 3, null, null).apply {
+            CFDictionaryAddValue(this, kSecClass, kSecClassGenericPassword)
+            CFDictionaryAddValue(this, kSecAttrAccount, CFBridgingRetain(key))
+            CFDictionaryAddValue(this, kSecValueData, CFBridgingRetain(valueData))
+        }
+
+        SecItemAdd(query, null)
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    private fun keychainDelete(key: String) {
+        val query = CFDictionaryCreateMutable(null, 2, null, null).apply {
+            CFDictionaryAddValue(this, kSecClass, kSecClassGenericPassword)
+            CFDictionaryAddValue(this, kSecAttrAccount, CFBridgingRetain(key))
+        }
+
+        SecItemDelete(query)
+    }
+
+    companion object {
+        private const val TOKEN_KEY = "mizu_auth_token"
+    }
+}

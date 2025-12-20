@@ -1,0 +1,20 @@
+package {{.Package}}.runtime
+
+/**
+ * Device information interface
+ */
+interface DeviceInfo {
+    val deviceId: String
+    val appVersion: String
+    val appBuild: String
+    val model: String
+    val platform: String
+    val osVersion: String
+    val timezone: String
+    val locale: String
+}
+
+/**
+ * Expect declaration for platform-specific device info
+ */
+expect class PlatformDeviceInfo() : DeviceInfo

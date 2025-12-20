@@ -1,0 +1,17 @@
+package {{.Package}}.runtime
+
+import android.os.Build
+import java.util.*
+
+actual fun currentTimeMillis(): Long = System.currentTimeMillis()
+
+actual class PlatformDeviceInfo : DeviceInfo {
+    override val deviceId: String = ""
+    override val appVersion: String = "1.0.0"
+    override val appBuild: String = "1"
+    override val model: String = Build.MODEL
+    override val platform: String = "android"
+    override val osVersion: String = Build.VERSION.RELEASE
+    override val timezone: String = TimeZone.getDefault().id
+    override val locale: String = Locale.getDefault().toLanguageTag()
+}
