@@ -436,7 +436,7 @@
               "frontend/sveltekit",
               "frontend/angular",
               "frontend/htmx",
-              "frontend/nextjs",
+              "frontend/next",
               "frontend/nuxt",
               "frontend/preact",
               "frontend/alpine"
