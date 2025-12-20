@@ -1,0 +1,73 @@
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+using {{.Namespace}}.Runtime;
+
+namespace {{.Namespace}}.ViewModels;
+
+public abstract class BaseViewModel : INotifyPropertyChanged
+{
+    private bool _isBusy;
+    public bool IsBusy
+    {
+        get => _isBusy;
+        set => SetProperty(ref _isBusy, value);
+    }
+
+    private string? _title;
+    public string? Title
+    {
+        get => _title;
+        set => SetProperty(ref _title, value);
+    }
+
+    private string? _errorMessage;
+    public string? ErrorMessage
+    {
+        get => _errorMessage;
+        set => SetProperty(ref _errorMessage, value);
+    }
+
+    public bool HasError => !string.IsNullOrEmpty(ErrorMessage);
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    protected bool SetProperty<T>(ref T storage, T value, [CallerMemberName] string? propertyName = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(storage, value))
+            return false;
+
+        storage = value;
+        OnPropertyChanged(propertyName);
+        return true;
+    }
+
+    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+
+    protected async Task ExecuteAsync(Func<Task> operation, string? errorMessage = null)
+    {
+        if (IsBusy)
+            return;
+
+        try
+        {
+            IsBusy = true;
+            ErrorMessage = null;
+            await operation();
+        }
+        catch (MizuException ex)
+        {
+            ErrorMessage = errorMessage ?? ex.Message;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = errorMessage ?? ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+}

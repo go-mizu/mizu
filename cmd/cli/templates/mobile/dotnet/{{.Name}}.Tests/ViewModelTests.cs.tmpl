@@ -1,0 +1,79 @@
+using {{.Namespace}}.ViewModels;
+using {{.Namespace}}.Runtime;
+using Moq;
+using Xunit;
+
+namespace {{.Namespace}}.Tests;
+
+public class ViewModelTests
+{
+    [Fact]
+    public void BaseViewModel_SetsIsBusy()
+    {
+        var viewModel = new TestViewModel();
+
+        Assert.False(viewModel.IsBusy);
+
+        viewModel.IsBusy = true;
+        Assert.True(viewModel.IsBusy);
+    }
+
+    [Fact]
+    public void BaseViewModel_RaisesPropertyChanged()
+    {
+        var viewModel = new TestViewModel();
+        var propertyChanged = false;
+        viewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(BaseViewModel.IsBusy))
+                propertyChanged = true;
+        };
+
+        viewModel.IsBusy = true;
+
+        Assert.True(propertyChanged);
+    }
+
+    [Fact]
+    public void BaseViewModel_SetsTitle()
+    {
+        var viewModel = new TestViewModel();
+        viewModel.Title = "Test Title";
+
+        Assert.Equal("Test Title", viewModel.Title);
+    }
+
+    [Fact]
+    public void BaseViewModel_SetsErrorMessage()
+    {
+        var viewModel = new TestViewModel();
+        viewModel.ErrorMessage = "Test Error";
+
+        Assert.Equal("Test Error", viewModel.ErrorMessage);
+        Assert.True(viewModel.HasError);
+    }
+
+    [Fact]
+    public void BaseViewModel_HasErrorIsFalseWhenNoError()
+    {
+        var viewModel = new TestViewModel();
+
+        Assert.False(viewModel.HasError);
+    }
+
+    // Helper class for testing
+    private class TestViewModel : BaseViewModel
+    {
+        public new bool IsBusy
+        {
+            get => base.IsBusy;
+            set => base.IsBusy = value;
+        }
+
+        public new string? ErrorMessage
+        {
+            get => base.ErrorMessage;
+            set => base.ErrorMessage = value;
+        }
+    }
+}

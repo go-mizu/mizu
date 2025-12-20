@@ -1,0 +1,255 @@
+using System.Net.Http;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
+
+namespace {{.Namespace}}.Runtime;
+
+/// <summary>
+/// Server-sent event
+/// </summary>
+public class ServerEvent
+{
+    public string? Id { get; init; }
+    public string? Event { get; init; }
+    public required string Data { get; init; }
+    public int? Retry { get; init; }
+
+    /// <summary>
+    /// Decodes the event data as JSON
+    /// </summary>
+    public T Decode<T>()
+    {
+        return JsonSerializer.Deserialize<T>(Data, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+            PropertyNameCaseInsensitive = true
+        })!;
+    }
+
+    /// <summary>
+    /// Decodes the event data as a raw dictionary
+    /// </summary>
+    public Dictionary<string, JsonElement> DecodeJson()
+    {
+        return JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(Data)!;
+    }
+}
+
+/// <summary>
+/// Live connection manager for SSE
+/// </summary>
+public class LiveConnection
+{
+    private readonly MizuRuntime _runtime;
+    private readonly Dictionary<string, CancellationTokenSource> _activeConnections = new();
+    private readonly object _lock = new();
+
+    public LiveConnection(MizuRuntime runtime)
+    {
+        _runtime = runtime;
+    }
+
+    /// <summary>
+    /// Connects to an SSE endpoint and returns an async stream of events
+    /// </summary>
+    public async IAsyncEnumerable<ServerEvent> ConnectAsync(
+        string path,
+        Dictionary<string, string>? headers = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        lock (_lock)
+        {
+            if (_activeConnections.ContainsKey(path))
+            {
+                _activeConnections[path].Cancel();
+            }
+            _activeConnections[path] = cts;
+        }
+
+        try
+        {
+            await foreach (var evt in StreamEventsAsync(path, headers, cts.Token))
+            {
+                yield return evt;
+            }
+        }
+        finally
+        {
+            lock (_lock)
+            {
+                _activeConnections.Remove(path);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Disconnects from a specific path
+    /// </summary>
+    public void Disconnect(string path)
+    {
+        lock (_lock)
+        {
+            if (_activeConnections.TryGetValue(path, out var cts))
+            {
+                cts.Cancel();
+                _activeConnections.Remove(path);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Disconnects all active connections
+    /// </summary>
+    public void DisconnectAll()
+    {
+        lock (_lock)
+        {
+            foreach (var cts in _activeConnections.Values)
+            {
+                cts.Cancel();
+            }
+            _activeConnections.Clear();
+        }
+    }
+
+    private async IAsyncEnumerable<ServerEvent> StreamEventsAsync(
+        string path,
+        Dictionary<string, string>? headers,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var url = BuildUrl(path);
+
+        using var client = new HttpClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+
+        request.Headers.Add("Accept", "text/event-stream");
+        request.Headers.Add("Cache-Control", "no-cache");
+
+        // Add default headers
+        foreach (var kvp in _runtime.DefaultHeaders)
+        {
+            request.Headers.TryAddWithoutValidation(kvp.Key, kvp.Value);
+        }
+
+        // Add custom headers
+        if (headers != null)
+        {
+            foreach (var kvp in headers)
+            {
+                request.Headers.TryAddWithoutValidation(kvp.Key, kvp.Value);
+            }
+        }
+
+        // Add auth token
+        var token = await _runtime.TokenStore.GetTokenAsync();
+        if (token != null)
+        {
+            request.Headers.Add("Authorization", $"Bearer {token.AccessToken}");
+        }
+
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new MizuException(MizuErrorType.Http, $"SSE connection failed: {response.StatusCode}");
+        }
+
+        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+
+        var eventBuilder = new SSEEventBuilder();
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (line == null)
+                break;
+
+            var evt = eventBuilder.ProcessLine(line);
+            if (evt != null)
+            {
+                yield return evt;
+            }
+        }
+    }
+
+    private Uri BuildUrl(string path)
+    {
+        var baseUrl = _runtime.BaseUrl.ToString().TrimEnd('/');
+        var cleanPath = path.StartsWith('/') ? path : $"/{path}";
+        return new Uri($"{baseUrl}{cleanPath}");
+    }
+}
+
+/// <summary>
+/// SSE event parser
+/// </summary>
+internal class SSEEventBuilder
+{
+    private string? _id;
+    private string? _event;
+    private readonly List<string> _data = new();
+    private int? _retry;
+
+    public ServerEvent? ProcessLine(string line)
+    {
+        if (string.IsNullOrEmpty(line))
+        {
+            // Empty line means end of event
+            if (_data.Count == 0)
+                return null;
+
+            var evt = new ServerEvent
+            {
+                Id = _id,
+                Event = _event,
+                Data = string.Join("\n", _data),
+                Retry = _retry
+            };
+
+            // Reset for next event (keep id for Last-Event-ID)
+            _event = null;
+            _data.Clear();
+            _retry = null;
+
+            return evt;
+        }
+
+        if (line.StartsWith(':'))
+        {
+            // Comment, ignore
+            return null;
+        }
+
+        var colonIndex = line.IndexOf(':');
+        if (colonIndex == -1)
+        {
+            // Field with no value
+            return null;
+        }
+
+        var field = line[..colonIndex];
+        var value = colonIndex + 1 < line.Length ? line[(colonIndex + 1)..].TrimStart() : "";
+
+        switch (field)
+        {
+            case "id":
+                _id = value;
+                break;
+            case "event":
+                _event = value;
+                break;
+            case "data":
+                _data.Add(value);
+                break;
+            case "retry":
+                if (int.TryParse(value, out var retry))
+                    _retry = retry;
+                break;
+        }
+
+        return null;
+    }
+}

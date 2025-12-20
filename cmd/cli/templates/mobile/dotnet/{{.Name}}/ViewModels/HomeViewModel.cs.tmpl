@@ -1,0 +1,27 @@
+using System.Windows.Input;
+using {{.Namespace}}.Runtime;
+
+namespace {{.Namespace}}.ViewModels;
+
+public class HomeViewModel : BaseViewModel
+{
+    private readonly MizuRuntime _runtime;
+
+    public ICommand SignOutCommand { get; }
+
+    public HomeViewModel(MizuRuntime runtime)
+    {
+        _runtime = runtime;
+        Title = "Home";
+        SignOutCommand = new Command(async () => await SignOutAsync());
+    }
+
+    private async Task SignOutAsync()
+    {
+        await ExecuteAsync(async () =>
+        {
+            await _runtime.TokenStore.ClearTokenAsync();
+            await Shell.Current.GoToAsync("//welcome");
+        });
+    }
+}

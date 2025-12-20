@@ -1,0 +1,79 @@
+using {{.Namespace}}.Runtime;
+
+namespace {{.Namespace}}.SDK;
+
+/// <summary>
+/// Generated Mizu API client for {{.Name}}
+/// </summary>
+public class {{.Name}}Client
+{
+    private readonly MizuRuntime _runtime;
+
+    public {{.Name}}Client(MizuRuntime runtime)
+    {
+        _runtime = runtime;
+    }
+
+    // MARK: - Auth
+
+    /// <summary>
+    /// Sign in with credentials
+    /// </summary>
+    public async Task<AuthResponse> SignInAsync(
+        string email,
+        string password,
+        CancellationToken cancellationToken = default)
+    {
+        return await _runtime.PostAsync<AuthResponse, SignInRequest>(
+            "/auth/signin",
+            new SignInRequest { Email = email, Password = password },
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Sign up with credentials
+    /// </summary>
+    public async Task<AuthResponse> SignUpAsync(
+        string email,
+        string password,
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        return await _runtime.PostAsync<AuthResponse, SignUpRequest>(
+            "/auth/signup",
+            new SignUpRequest { Email = email, Password = password, Name = name },
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Sign out
+    /// </summary>
+    public async Task SignOutAsync(CancellationToken cancellationToken = default)
+    {
+        await _runtime.DeleteAsync("/auth/signout", cancellationToken: cancellationToken);
+        await _runtime.TokenStore.ClearTokenAsync();
+    }
+
+    // MARK: - Users
+
+    /// <summary>
+    /// Get current user profile
+    /// </summary>
+    public async Task<User> GetCurrentUserAsync(CancellationToken cancellationToken = default)
+    {
+        return await _runtime.GetAsync<User>("/users/me", cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Update current user profile
+    /// </summary>
+    public async Task<User> UpdateCurrentUserAsync(
+        UserUpdate update,
+        CancellationToken cancellationToken = default)
+    {
+        return await _runtime.PutAsync<User, UserUpdate>(
+            "/users/me",
+            update,
+            cancellationToken: cancellationToken);
+    }
+}

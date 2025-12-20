@@ -1,0 +1,106 @@
+using {{.Namespace}}.Runtime;
+using Xunit;
+
+namespace {{.Namespace}}.Tests;
+
+public class RuntimeTests
+{
+    [Fact]
+    public async Task InMemoryTokenStore_ReturnsNullWhenNoTokenStored()
+    {
+        var store = new InMemoryTokenStore();
+        var token = await store.GetTokenAsync();
+        Assert.Null(token);
+    }
+
+    [Fact]
+    public async Task InMemoryTokenStore_StoresAndRetrievesToken()
+    {
+        var store = new InMemoryTokenStore();
+        var token = new AuthToken
+        {
+            AccessToken = "test123",
+            RefreshToken = "refresh456"
+        };
+
+        await store.SetTokenAsync(token);
+        var retrieved = await store.GetTokenAsync();
+
+        Assert.NotNull(retrieved);
+        Assert.Equal("test123", retrieved.AccessToken);
+        Assert.Equal("refresh456", retrieved.RefreshToken);
+    }
+
+    [Fact]
+    public async Task InMemoryTokenStore_ClearsToken()
+    {
+        var store = new InMemoryTokenStore();
+        var token = new AuthToken { AccessToken = "test123" };
+
+        await store.SetTokenAsync(token);
+        await store.ClearTokenAsync();
+
+        var retrieved = await store.GetTokenAsync();
+        Assert.Null(retrieved);
+    }
+
+    [Fact]
+    public async Task InMemoryTokenStore_NotifiesObserversOnTokenChange()
+    {
+        var store = new InMemoryTokenStore();
+        AuthToken? notifiedToken = null;
+        store.TokenChanged += (_, e) => notifiedToken = e.Token;
+
+        var token = new AuthToken { AccessToken = "test123" };
+        await store.SetTokenAsync(token);
+
+        Assert.NotNull(notifiedToken);
+        Assert.Equal("test123", notifiedToken.AccessToken);
+    }
+
+    [Fact]
+    public void AuthToken_IsExpiredReturnsFalseWhenNoExpiry()
+    {
+        var token = new AuthToken { AccessToken = "test" };
+        Assert.False(token.IsExpired);
+    }
+
+    [Fact]
+    public void AuthToken_IsExpiredReturnsTrueWhenExpired()
+    {
+        var token = new AuthToken
+        {
+            AccessToken = "test",
+            ExpiresAt = DateTime.UtcNow.AddSeconds(-1)
+        };
+        Assert.True(token.IsExpired);
+    }
+
+    [Fact]
+    public void AuthToken_IsExpiredReturnsFalseWhenNotExpired()
+    {
+        var token = new AuthToken
+        {
+            AccessToken = "test",
+            ExpiresAt = DateTime.UtcNow.AddHours(1)
+        };
+        Assert.False(token.IsExpired);
+    }
+
+    [Fact]
+    public void MizuException_CreatesNetworkError()
+    {
+        var error = new MizuException(MizuErrorType.Network, "Connection failed");
+        Assert.True(error.IsNetwork);
+        Assert.Equal("Connection failed", error.Message);
+    }
+
+    [Fact]
+    public void MizuException_CreatesApiError()
+    {
+        var apiError = new ApiError { Code = "test_error", Message = "Test message" };
+        var error = new MizuException(MizuErrorType.Api, apiError.Message, apiError);
+        Assert.True(error.IsApi);
+        Assert.Equal("test_error", error.ApiError?.Code);
+    }
+}

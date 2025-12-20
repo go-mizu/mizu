@@ -1,0 +1,31 @@
+namespace {{.Namespace}}.Controls;
+
+public partial class LoadingView : ContentView
+{
+    public static readonly BindableProperty MessageProperty = BindableProperty.Create(
+        nameof(Message),
+        typeof(string),
+        typeof(LoadingView),
+        default(string),
+        propertyChanged: OnMessageChanged);
+
+    public string? Message
+    {
+        get => (string?)GetValue(MessageProperty);
+        set => SetValue(MessageProperty, value);
+    }
+
+    public LoadingView()
+    {
+        InitializeComponent();
+    }
+
+    private static void OnMessageChanged(BindableObject bindable, object oldValue, object newValue)
+    {
+        if (bindable is LoadingView view)
+        {
+            view.MessageLabel.Text = newValue as string;
+            view.MessageLabel.IsVisible = !string.IsNullOrEmpty(newValue as string);
+        }
+    }
+}

@@ -1,0 +1,57 @@
+namespace {{.Namespace}}.Runtime;
+
+/// <summary>
+/// Error type enumeration
+/// </summary>
+public enum MizuErrorType
+{
+    InvalidResponse,
+    Http,
+    Api,
+    Network,
+    Encoding,
+    Decoding,
+    Unauthorized,
+    TokenExpired
+}
+
+/// <summary>
+/// API error response from server
+/// </summary>
+public class ApiError
+{
+    public required string Code { get; init; }
+    public required string Message { get; init; }
+    public Dictionary<string, object>? Details { get; init; }
+    public string? TraceId { get; init; }
+}
+
+/// <summary>
+/// Mizu client exception
+/// </summary>
+public class MizuException : Exception
+{
+    public MizuErrorType ErrorType { get; }
+    public ApiError? ApiError { get; }
+    public int? StatusCode { get; }
+
+    public MizuException(
+        MizuErrorType errorType,
+        string message,
+        ApiError? apiError = null,
+        int? statusCode = null,
+        Exception? innerException = null)
+        : base(message, innerException)
+    {
+        ErrorType = errorType;
+        ApiError = apiError;
+        StatusCode = statusCode;
+    }
+
+    public bool IsInvalidResponse => ErrorType == MizuErrorType.InvalidResponse;
+    public bool IsHttp => ErrorType == MizuErrorType.Http;
+    public bool IsApi => ErrorType == MizuErrorType.Api;
+    public bool IsNetwork => ErrorType == MizuErrorType.Network;
+    public bool IsUnauthorized => ErrorType == MizuErrorType.Unauthorized;
+    public bool IsTokenExpired => ErrorType == MizuErrorType.TokenExpired;
+}
