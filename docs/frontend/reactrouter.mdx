@@ -1,0 +1,1265 @@
+---
+title: "React Router"
+description: "Build modern, type-safe React applications with React Router v7, file-based routing, and Mizu backend."
+icon: "react"
+---
+
+React Router v7 is the latest evolution of the most popular routing library for React, now merged with Remix to create a powerful full-featured framework. It combines the best of both worlds: React Router's proven routing with Remix's data loading patterns, all while maintaining a simple, focused API. This guide shows you how to build production-ready React Router v7 apps with Mizu as your backend.
+
+## Why React Router v7?
+
+React Router v7 launched in December 2024 as the merger of Remix and React Router, bringing modern framework features to React applications:
+
+**Type-Safe Routing** - Auto-generated types for routes, loaders, and actions with full end-to-end type safety.
+
+**File-Based Routing** - Organize routes by creating files in the routes/ directory. No manual route configuration needed.
+
+**Built-In Data Loading** - Loaders run before routes render, providing data with guaranteed type safety.
+
+**Type-Safe Actions** - Handle form submissions with type-safe actions that integrate with loaders.
+
+**Error Boundaries** - Per-route error handling with automatic error boundary generation.
+
+**Optimized Builds** - Automatic code splitting, route-based prefetching, and Vite-powered builds.
+
+**Static Export** - Can generate static HTML files for serving with Mizu backend.
+
+**Progressive Enhancement** - Works without JavaScript, enhances with React hydration.
+
+### React Router v7 vs Other Frameworks
+
+| Feature | React Router v7 | React + RR v6 | Next.js | Remix |
+|---------|----------------|---------------|---------|-------|
+| **Type Safety** | ✅ Auto-generated | ⚠️ Manual | ⚠️ Manual | ✅ Built-in |
+| **Routing** | File-based | Manual | File-based | File-based |
+| **Data Loading** | Built-in loaders | Manual fetch | getStaticProps | Loaders |
+| **Bundle Size** | ~50kB | ~45kB | ~90kB | ~50kB |
+| **Learning Curve** | ⚠️ Moderate | ✅ Easy | ⚠️ Moderate | ⚠️ Moderate |
+| **Static Export** | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No |
+| **SSR** | ⚠️ Optional | ❌ No | ✅ Yes | ✅ Yes |
+| **Best for** | Data-heavy SPAs | Simple SPAs | Full-stack | SSR apps |
+| **Company** | Remix/Shopify | Independent | Vercel | Remix/Shopify |
+
+**Choose React Router v7 when:**
+- You want modern framework features with React Router familiarity
+- Type safety from routes to data is important
+- You need built-in data loading patterns
+- File-based routing appeals to you
+- You're building a data-heavy SPA with static export
+- You want the option to add SSR later
+
+**Choose something else when:**
+- You need the simplest possible setup → Use React + React Router v6
+- You need full SSR now → Use Next.js or full Remix
+- Bundle size is critical → Use Preact
+- You prefer Vue → Use Vue Router or Nuxt
+
+## Quick Start
+
+Create a new React Router v7 project with the CLI:
+
+```bash
+mizu new ./my-app --template frontend/reactrouter
+cd my-app
+make install
+make dev
+```
+
+Visit `http://localhost:3000` to see your app!
+
+## Project Structure
+
+```
+my-app/
+├── cmd/
+│   └── server/
+│       └── main.go                    # Go entry point
+├── app/
+│   └── server/
+│       ├── app.go                     # Mizu app configuration
+│       ├── config.go                  # Server configuration
+│       └── routes.go                  # API routes (Go)
+├── client/                            # React Router v7 application
+│   ├── app/
+│   │   ├── root.tsx                   # Root layout
+│   │   ├── routes.ts                  # Route definitions
+│   │   ├── routes/                    # Route modules
+│   │   │   ├── _layout.tsx            # Main layout
+│   │   │   ├── _index.tsx             # Home page (/)
+│   │   │   ├── about.tsx              # About page (/about)
+│   │   │   └── users/
+│   │   │       ├── _layout.tsx        # Users layout
+│   │   │       ├── _index.tsx         # Users list (/users)
+│   │   │       └── $id.tsx            # User detail (/users/:id)
+│   │   └── styles/
+│   │       └── app.css                # Global styles
+│   ├── public/
+│   │   └── favicon.ico                # Public assets
+│   ├── package.json                   # npm dependencies
+│   ├── vite.config.ts                 # Vite configuration
+│   ├── tsconfig.json                  # TypeScript config
+│   └── react-router.config.ts         # React Router config
+├── dist/                              # Built files (after build)
+├── go.mod
+└── Makefile
+```
+
+## How React Router v7 Works with Mizu
+
+React Router v7 integrates seamlessly with Mizu through static export mode:
+
+```
+Development Mode
+    ↓
+┌─────────────────────────────┐
+│ React Router Dev (5173)     │
+│ - Hot Module Replacement    │
+│ - TypeScript compilation    │
+│ - Type generation           │
+│ - Fast Vite builds          │
+└─────────────┬───────────────┘
+              │
+              ↓
+┌─────────────────────────────┐
+│ Mizu Server (3000)          │
+│ - Proxies to RR dev server  │
+│ - Handles /api requests     │
+│ - Serves API endpoints      │
+└─────────────────────────────┘
+
+Production Mode
+    ↓
+┌─────────────────────────────┐
+│ react-router build          │
+│ - Static HTML generation    │
+│ - Type-safe builds          │
+│ - Code splitting            │
+│ - Optimized assets          │
+└─────────────┬───────────────┘
+              ↓
+┌─────────────────────────────┐
+│ Embedded in Go Binary       │
+│ - All files in single bin   │
+│ - Served by Mizu            │
+│ - No Node.js needed         │
+└─────────────────────────────┘
+```
+
+**At runtime in production:**
+1. User requests `http://yourdomain.com`
+2. Mizu serves `index.html` from embedded FS
+3. Browser loads React Router bundles
+4. React Router hydrates and takes over
+5. Client-side routing handles navigation
+6. API calls go to Mizu Go handlers
+
+## Backend Setup
+
+### `app/server/app.go`
+
+```go
+package server
+
+import (
+    "embed"
+    "io/fs"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/frontend"
+)
+
+//go:embed all:../../dist
+var distFS embed.FS
+
+func New(cfg *Config) *mizu.App {
+    app := mizu.New()
+
+    // API routes come first
+    setupRoutes(app)
+
+    // Frontend middleware (handles all non-API routes)
+    dist, _ := fs.Sub(distFS, "dist")
+    app.Use(frontend.WithOptions(frontend.Options{
+        Mode:        frontend.ModeAuto,       // Auto-detect dev/prod
+        FS:          dist,                     // Embedded files
+        Root:        "./dist",                 // Fallback in dev
+        DevServer:   "http://localhost:" + cfg.DevPort,
+        IgnorePaths: []string{"/api"},        // Don't proxy /api
+    }))
+
+    return app
+}
+```
+
+### `app/server/routes.go`
+
+```go
+package server
+
+import "github.com/go-mizu/mizu"
+
+func setupRoutes(app *mizu.App) {
+    api := app.Prefix("/api")
+
+    // User endpoints
+    api.Get("/users", handleUsers)
+    api.Post("/users", createUser)
+    api.Get("/users/{id}", getUser)
+    api.Put("/users/{id}", updateUser)
+    api.Delete("/users/{id}", deleteUser)
+}
+
+func handleUsers(c *mizu.Ctx) error {
+    users := []map[string]any{
+        {"id": 1, "name": "Alice", "email": "alice@example.com", "role": "admin"},
+        {"id": 2, "name": "Bob", "email": "bob@example.com", "role": "user"},
+    }
+    return c.JSON(200, users)
+}
+
+func getUser(c *mizu.Ctx) error {
+    id := c.Param("id")
+    user := map[string]any{
+        "id":    id,
+        "name":  "User " + id,
+        "email": "user" + id + "@example.com",
+        "role":  "user",
+    }
+    return c.JSON(200, user)
+}
+```
+
+## Frontend Setup
+
+### File-Based Routing
+
+React Router v7 uses file-based routing conventions:
+
+```
+app/routes/
+├── _layout.tsx           →  Wraps all routes
+├── _index.tsx            →  / (home)
+├── about.tsx             →  /about
+├── users/
+│   ├── _layout.tsx       →  Layout for /users/*
+│   ├── _index.tsx        →  /users
+│   └── $id.tsx           →  /users/:id (dynamic)
+```
+
+**Naming conventions:**
+- `_index.tsx` → Index route (matches parent path exactly)
+- `_layout.tsx` → Layout component (wraps child routes)
+- `$id.tsx` → Dynamic segment (captures param)
+- `.tsx` → Route file
+
+### Route Configuration
+
+#### `app/routes.ts`
+
+Define your route tree programmatically:
+
+```typescript
+import {
+  type RouteConfig,
+  route,
+  layout,
+  index,
+} from "@react-router/dev/routes";
+
+export default [
+  layout("routes/_layout.tsx", [
+    index("routes/_index.tsx"),
+    route("about", "routes/about.tsx"),
+    route("users", "routes/users/_layout.tsx", [
+      index("routes/users/_index.tsx"),
+      route(":id", "routes/users/$id.tsx"),
+    ]),
+  ]),
+] satisfies RouteConfig;
+```
+
+This creates the route structure:
+- `/` → _layout → _index
+- `/about` → _layout → about
+- `/users` → _layout → users/_layout → users/_index
+- `/users/:id` → _layout → users/_layout → users/$id
+
+### Root Component
+
+#### `app/root.tsx`
+
+```typescript
+import {
+  Links,
+  Meta,
+  Outlet,
+  Scripts,
+  ScrollRestoration,
+} from "react-router";
+
+import type { Route } from "./+types/root";
+import stylesheet from "./styles/app.css?url";
+
+export const links: Route.LinksFunction = () => [
+  { rel: "stylesheet", href: stylesheet },
+];
+
+export function Layout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <head>
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <Meta />
+        <Links />
+      </head>
+      <body>
+        {children}
+        <ScrollRestoration />
+        <Scripts />
+      </body>
+    </html>
+  );
+}
+
+export default function Root() {
+  return <Outlet />;
+}
+```
+
+**Why this structure?**
+- `Layout` wraps all pages (renders once)
+- `Meta` renders all route meta tags
+- `Links` renders all route link tags (stylesheets, etc.)
+- `Scripts` includes React Router scripts
+- `ScrollRestoration` remembers scroll positions
+
+## Data Loading with Loaders
+
+React Router v7's killer feature is type-safe data loading:
+
+### Basic Loader
+
+```typescript
+import { useLoaderData } from "react-router";
+import type { Route } from "./+types/_index";
+
+// Loader runs before component renders
+export async function loader() {
+  const res = await fetch("/api/users");
+  const users = await res.json();
+  return { users };
+}
+
+// Component receives fully typed loader data
+export default function Users({ loaderData }: Route.ComponentProps) {
+  const { users } = loaderData;  // Typed automatically!
+
+  return (
+    <ul>
+      {users.map(user => (
+        <li key={user.id}>{user.name}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+### Loader with Params
+
+```typescript
+import type { Route } from "./+types/$id";
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export async function loader({ params }: Route.LoaderArgs) {
+  // params.id is typed as string
+  const res = await fetch(`/api/users/${params.id}`);
+
+  if (!res.ok) {
+    throw new Response("Not Found", { status: 404 });
+  }
+
+  const user: User = await res.json();
+  return { user };
+}
+
+export default function UserDetail({ loaderData }: Route.ComponentProps) {
+  // loaderData.user is typed as User!
+  return (
+    <div>
+      <h1>{loaderData.user.name}</h1>
+      <p>{loaderData.user.email}</p>
+    </div>
+  );
+}
+```
+
+**Loader benefits:**
+- Data loads before rendering (no loading states)
+- Full type safety from loader to component
+- Errors handled by error boundaries
+- Can be cached and revalidated
+- Run in parallel for nested routes
+
+### Error Handling
+
+Each route can have its own error boundary:
+
+```typescript
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  return (
+    <div className="error">
+      <h1>Oops!</h1>
+      <p>
+        {error instanceof Error
+          ? error.message
+          : "Something went wrong"}
+      </p>
+      <a href="/users">Back to Users</a>
+    </div>
+  );
+}
+```
+
+Errors from loaders are automatically caught!
+
+## Meta Tags and SEO
+
+Define meta tags per route:
+
+```typescript
+export function meta({ data, params }: Route.MetaArgs) {
+  return [
+    { title: `${data.user.name} - My App` },
+    { name: "description", content: `Profile of ${data.user.name}` },
+    { property: "og:title", content: data.user.name },
+    { property: "og:image", content: data.user.avatar },
+  ];
+}
+```
+
+**Meta function features:**
+- Access to loader data (`data`)
+- Access to URL params (`params`)
+- Fully typed with Route.MetaArgs
+- Rendered in `<head>` by `<Meta />` component
+
+## Navigation
+
+### Links
+
+```typescript
+import { Link } from "react-router";
+
+function Navigation() {
+  return (
+    <nav>
+      <Link to="/">Home</Link>
+      <Link to="/about">About</Link>
+      <Link to="/users">Users</Link>
+
+      {/* With state */}
+      <Link to="/users/1" state={{ from: "nav" }}>
+        User 1
+      </Link>
+
+      {/* Relative navigation */}
+      <Link to="../">Back</Link>
+
+      {/* With className function */}
+      <Link
+        to="/users"
+        className={({ isActive }) => isActive ? "active" : ""}
+      >
+        Users
+      </Link>
+    </nav>
+  );
+}
+```
+
+### Programmatic Navigation
+
+```typescript
+import { useNavigate } from "react-router";
+
+function CreateUser() {
+  const navigate = useNavigate();
+
+  const handleSubmit = async (data) => {
+    const user = await createUser(data);
+    navigate(`/users/${user.id}`);  // Navigate to new user
+  };
+
+  return <form onSubmit={handleSubmit}>...</form>;
+}
+
+// Navigate back
+function BackButton() {
+  const navigate = useNavigate();
+  return <button onClick={() => navigate(-1)}>Back</button>;
+}
+```
+
+## Forms and Actions
+
+React Router v7 provides type-safe form handling:
+
+### Basic Form
+
+```typescript
+import { Form, useActionData } from "react-router";
+import type { Route } from "./+types/create";
+
+interface ActionData {
+  errors?: {
+    name?: string;
+    email?: string;
+  };
+  user?: {
+    id: number;
+    name: string;
+    email: string;
+  };
+}
+
+export async function action({ request }: Route.ActionArgs) {
+  const formData = await request.formData();
+
+  const name = formData.get("name") as string;
+  const email = formData.get("email") as string;
+
+  // Validate
+  const errors: ActionData["errors"] = {};
+  if (!name) errors.name = "Name is required";
+  if (!email) errors.email = "Email is required";
+
+  if (Object.keys(errors).length) {
+    return { errors };
+  }
+
+  // Create user
+  const res = await fetch("/api/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, email }),
+  });
+
+  const user = await res.json();
+  return { user };
+}
+
+export default function CreateUser() {
+  const actionData = useActionData<typeof action>();
+
+  return (
+    <Form method="post">
+      <div>
+        <label>Name</label>
+        <input name="name" />
+        {actionData?.errors?.name && <span>{actionData.errors.name}</span>}
+      </div>
+
+      <div>
+        <label>Email</label>
+        <input name="email" />
+        {actionData?.errors?.email && <span>{actionData.errors.email}</span>}
+      </div>
+
+      <button type="submit">Create</button>
+    </Form>
+  );
+}
+```
+
+**Form benefits:**
+- Uses Web Forms API (works without JS)
+- Automatic revalidation after submission
+- Loading states via `useNavigation()`
+- Progressive enhancement
+- Type-safe action data
+
+### Optimistic UI
+
+```typescript
+import { useFetcher } from "react-router";
+
+function TodoItem({ todo }) {
+  const fetcher = useFetcher();
+
+  // Optimistic UI: show pending state immediately
+  const isCompleted = fetcher.formData
+    ? fetcher.formData.get("completed") === "true"
+    : todo.completed;
+
+  return (
+    <fetcher.Form method="post" action={`/todos/${todo.id}`}>
+      <input
+        type="checkbox"
+        name="completed"
+        value="true"
+        checked={isCompleted}
+        onChange={(e) => e.currentTarget.form?.requestSubmit()}
+      />
+      <span style={{ textDecoration: isCompleted ? "line-through" : "none" }}>
+        {todo.title}
+      </span>
+    </fetcher.Form>
+  );
+}
+```
+
+## TypeScript Integration
+
+React Router v7 generates types automatically:
+
+### Type Generation
+
+Run `npm run typecheck` to:
+1. Generate route types in `app/+types/`
+2. Type check your entire app
+
+### Using Generated Types
+
+```typescript
+import type { Route } from "./+types/$id";
+
+// Loader args are typed
+export async function loader({ params }: Route.LoaderArgs) {
+  // params.id exists and is typed as string
+}
+
+// Action args are typed
+export async function action({ request }: Route.ActionArgs) {
+  // request is typed as Request
+}
+
+// Component props are typed
+export default function MyRoute({ loaderData }: Route.ComponentProps) {
+  // loaderData has the exact shape from your loader!
+}
+
+// Meta args are typed
+export function meta({ data, params }: Route.MetaArgs) {
+  // data is your loader return type
+  // params are your route params
+}
+
+// Error boundary props are typed
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  // error is typed
+}
+```
+
+**No manual type annotations needed!**
+
+## Configuration
+
+### `react-router.config.ts`
+
+```typescript
+import type { Config } from "@react-router/dev/config";
+
+export default {
+  // Static export mode (no SSR)
+  ssr: false,
+
+  // Build output (relative to client/)
+  buildDirectory: "../dist",
+
+  // Server build file
+  serverBuildFile: "index.js",
+
+  // Vite config
+  vite: {
+    server: {
+      port: 5173,
+      strictPort: true,
+    },
+  },
+
+  // Prerender routes (optional)
+  async prerender() {
+    return ["/", "/about"];
+  },
+} satisfies Config;
+```
+
+### `vite.config.ts`
+
+```typescript
+import { reactRouter } from "@react-router/dev/vite";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [reactRouter()],
+
+  // Customize Vite if needed
+  resolve: {
+    alias: {
+      "~": "/app",
+    },
+  },
+});
+```
+
+## Development Workflow
+
+### Start Development
+
+```bash
+# Using Makefile (recommended)
+make dev
+
+# Or manually
+# Terminal 1: React Router dev
+cd client && npm run dev
+
+# Terminal 2: Mizu server
+go run cmd/server/main.go
+```
+
+Visit `http://localhost:3000`
+
+### Making Changes
+
+**Frontend changes:**
+1. Edit any `.tsx` file
+2. Save the file
+3. Browser updates instantly (HMR)
+4. Types regenerate automatically
+
+**Backend changes:**
+1. Edit `.go` files
+2. Stop server (Ctrl+C)
+3. Restart with `go run cmd/server/main.go`
+
+Or use [air](https://github.com/cosmtrek/air) for auto-reload.
+
+### Type Checking
+
+```bash
+make typecheck
+
+# Or manually
+cd client && npm run typecheck
+```
+
+This:
+1. Generates route types
+2. Runs TypeScript compiler
+3. Shows any type errors
+
+## Building for Production
+
+Build the complete app:
+
+```bash
+make build
+```
+
+This:
+1. Runs `react-router build` in client/
+2. Generates static HTML for all routes
+3. Outputs to `dist/` directory
+4. Ready to embed in Go binary
+
+Run in production:
+
+```bash
+MIZU_ENV=production ./bin/server
+```
+
+### Build Optimizations
+
+**Code splitting:**
+
+React Router automatically splits code by route. Each route loads only when navigated to.
+
+**Prefetching:**
+
+```typescript
+<Link to="/users" prefetch="intent">
+  Users
+</Link>
+```
+
+Options:
+- `intent`: Prefetch on hover
+- `render`: Prefetch on render
+- `none`: No prefetch (default)
+
+**Bundle analysis:**
+
+```bash
+cd client
+npm run build -- --profile
+```
+
+Check `dist/` for bundle sizes.
+
+## Advanced Features
+
+### Nested Layouts
+
+Create shared layouts for route groups:
+
+```
+routes/
+├── admin/
+│   ├── _layout.tsx        # Admin layout
+│   ├── dashboard.tsx      # /admin/dashboard
+│   └── users.tsx          # /admin/users
+```
+
+```typescript
+// routes/admin/_layout.tsx
+export default function AdminLayout() {
+  return (
+    <div className="admin">
+      <aside>Admin Sidebar</aside>
+      <main>
+        <Outlet />
+      </main>
+    </div>
+  );
+}
+```
+
+### Route Grouping
+
+Use `.` for pathless layouts:
+
+```
+routes/
+├── auth._index.tsx        # /auth (no layout)
+├── auth.login.tsx         # /auth/login (no layout)
+└── _layout.tsx            # Main layout (for other routes)
+```
+
+### Splat Routes
+
+Catch-all routes:
+
+```typescript
+// routes/$.tsx
+export default function NotFound() {
+  return <h1>404 - Page Not Found</h1>;
+}
+```
+
+Matches: `/anything/not/matched`
+
+### Resource Routes
+
+API-only routes (no UI):
+
+```typescript
+// routes/api.users.ts
+export async function loader() {
+  const users = await db.users.findMany();
+  return Response.json(users);
+}
+```
+
+## Real-World Example: User Management
+
+Complete example with CRUD operations:
+
+### List Users
+
+```typescript
+// routes/users/_index.tsx
+import { Link, useLoaderData } from "react-router";
+import type { Route } from "./+types/_index";
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+}
+
+export async function loader() {
+  const res = await fetch("/api/users");
+  const users: User[] = await res.json();
+  return { users };
+}
+
+export function meta({}: Route.MetaArgs) {
+  return [{ title: "Users" }];
+}
+
+export default function Users({ loaderData }: Route.ComponentProps) {
+  return (
+    <div>
+      <h1>Users</h1>
+      <div className="user-grid">
+        {loaderData.users.map(user => (
+          <Link key={user.id} to={`/users/${user.id}`} className="user-card">
+            <div className="avatar">{user.name[0]}</div>
+            <div>
+              <h3>{user.name}</h3>
+              <p>{user.email}</p>
+              <span className={`badge-${user.role}`}>{user.role}</span>
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+### View User Detail
+
+```typescript
+// routes/users/$id.tsx
+import { useLoaderData, useNavigate } from "react-router";
+import type { Route } from "./+types/$id";
+
+export async function loader({ params }: Route.LoaderArgs) {
+  const res = await fetch(`/api/users/${params.id}`);
+
+  if (!res.ok) {
+    throw new Response("User not found", { status: 404 });
+  }
+
+  const user = await res.json();
+  return { user };
+}
+
+export function meta({ data }: Route.MetaArgs) {
+  return [{ title: `${data?.user.name || "User"}` }];
+}
+
+export default function UserDetail({ loaderData }: Route.ComponentProps) {
+  const navigate = useNavigate();
+
+  return (
+    <div>
+      <button onClick={() => navigate(-1)}>← Back</button>
+
+      <div className="user-profile">
+        <div className="avatar-large">{loaderData.user.name[0]}</div>
+        <h2>{loaderData.user.name}</h2>
+        <p>{loaderData.user.email}</p>
+        <span className="badge">{loaderData.user.role}</span>
+      </div>
+    </div>
+  );
+}
+
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  return (
+    <div>
+      <h1>Error Loading User</h1>
+      <p>{error instanceof Error ? error.message : "Unknown error"}</p>
+      <a href="/users">Back to Users</a>
+    </div>
+  );
+}
+```
+
+## Performance Tips
+
+### 1. Use Loaders for Data
+
+**❌ Don't fetch in components:**
+```typescript
+export default function Users() {
+  const [users, setUsers] = useState([]);
+
+  useEffect(() => {
+    fetch("/api/users").then(r => r.json()).then(setUsers);
+  }, []);
+
+  return <div>{/* ... */}</div>;
+}
+```
+
+**✅ Use loaders:**
+```typescript
+export async function loader() {
+  const res = await fetch("/api/users");
+  return { users: await res.json() };
+}
+
+export default function Users({ loaderData }: Route.ComponentProps) {
+  return <div>{/* loaderData.users ready */}</div>;
+}
+```
+
+### 2. Prefetch Important Routes
+
+```typescript
+<Link to="/dashboard" prefetch="intent">
+  Dashboard
+</Link>
+```
+
+### 3. Use React.memo for Static Content
+
+```typescript
+const UserCard = memo(({ user }) => (
+  <div className="user-card">
+    <h3>{user.name}</h3>
+    <p>{user.email}</p>
+  </div>
+));
+```
+
+### 4. Code Split Large Components
+
+```typescript
+import { lazy, Suspense } from "react";
+
+const Chart = lazy(() => import("./Chart"));
+
+export default function Dashboard() {
+  return (
+    <div>
+      <h1>Dashboard</h1>
+      <Suspense fallback={<div>Loading chart...</div>}>
+        <Chart />
+      </Suspense>
+    </div>
+  );
+}
+```
+
+## Troubleshooting
+
+### Types Not Generating
+
+**Problem:** `+types/` folder not updating
+
+**Solution:**
+```bash
+cd client
+npm run typecheck
+```
+
+This regenerates types from your routes.
+
+---
+
+### 404 on Page Refresh
+
+**Problem:** Direct URLs work in dev, 404 in production
+
+**Solution:** Ensure React Router config has `ssr: false`:
+
+```typescript
+// react-router.config.ts
+export default {
+  ssr: false,  // Important for static export
+} satisfies Config;
+```
+
+---
+
+### HMR Not Working
+
+**Problem:** Changes don't appear in browser
+
+**Solution:** Check Vite dev server is running on correct port:
+
+```typescript
+// react-router.config.ts
+export default {
+  vite: {
+    server: {
+      port: 5173,      // Must match
+      strictPort: true, // Fail if port taken
+    },
+  },
+} satisfies Config;
+```
+
+---
+
+### Build Errors
+
+**Problem:** `react-router build` fails
+
+**Solution:**
+
+1. Check all imports are valid
+2. Run `npm run typecheck` to find type errors
+3. Check loader/action return types
+4. Ensure all route files export default component
+
+---
+
+### Loader Data is Undefined
+
+**Problem:** `loaderData` is undefined in component
+
+**Solution:**
+
+1. Ensure loader exports are async functions
+2. Check loader returns an object (not just a value)
+3. Verify loader path in `routes.ts` is correct
+
+## Deployment
+
+### Production Build
+
+```bash
+# Build everything
+make build
+
+# Build Go binary
+go build -o bin/server ./cmd/server
+
+# Run production server
+MIZU_ENV=production ./bin/server
+```
+
+### Docker Deployment
+
+```dockerfile
+# Build stage
+FROM node:20 AS frontend
+WORKDIR /app
+COPY client/package*.json ./
+RUN npm install
+COPY client/ ./
+RUN npm run build
+
+# Go build stage
+FROM golang:1.22 AS backend
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . ./
+COPY --from=frontend /app/../dist ./dist
+RUN go build -o server ./cmd/server
+
+# Runtime stage
+FROM debian:bookworm-slim
+COPY --from=backend /app/server /server
+EXPOSE 3000
+CMD ["/server"]
+```
+
+## Migration from React Router v6
+
+Migrating is straightforward:
+
+### 1. Update Dependencies
+
+```bash
+npm install react-router@latest
+npm install -D @react-router/dev @react-router/node @react-router/serve
+```
+
+### 2. Move Routes to Files
+
+**Before (v6):**
+```typescript
+<Routes>
+  <Route path="/" element={<Home />} />
+  <Route path="/about" element={<About />} />
+  <Route path="/users/:id" element={<User />} />
+</Routes>
+```
+
+**After (v7):**
+```
+app/routes/
+├── _index.tsx   # Home
+├── about.tsx    # About
+└── users/
+    └── $id.tsx  # User
+```
+
+### 3. Convert to Loaders
+
+**Before:**
+```typescript
+function Users() {
+  const [users, setUsers] = useState([]);
+
+  useEffect(() => {
+    fetch("/api/users").then(r => r.json()).then(setUsers);
+  }, []);
+
+  return <div>{users.map(...)}</div>;
+}
+```
+
+**After:**
+```typescript
+export async function loader() {
+  const res = await fetch("/api/users");
+  return { users: await res.json() };
+}
+
+export default function Users({ loaderData }: Route.ComponentProps) {
+  return <div>{loaderData.users.map(...)}</div>;
+}
+```
+
+### 4. Add Type Generation
+
+Create `routes.ts`:
+
+```typescript
+import { type RouteConfig, index, route } from "@react-router/dev/routes";
+
+export default [
+  index("routes/_index.tsx"),
+  route("about", "routes/about.tsx"),
+  route("users/:id", "routes/users/$id.tsx"),
+] satisfies RouteConfig;
+```
+
+## When to Choose React Router v7
+
+### Choose React Router v7 When:
+
+✅ You want modern framework features without SSR complexity
+✅ Type-safe routing and data loading is important
+✅ You're familiar with React Router and want the next evolution
+✅ File-based routing appeals to you
+✅ You need built-in data loading patterns
+✅ Static export + Go backend is your deployment model
+✅ You might want to add SSR later (easy upgrade path)
+
+### Choose Something Else When:
+
+- **Simplest possible setup** → Use React + React Router v6
+- **Need SSR now** → Use full Remix or Next.js
+- **Prefer manual routing** → Use React + React Router v6
+- **Bundle size is critical** → Use Preact
+- **Team prefers Vue** → Use Vue Router or Nuxt
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="React Guide" href="/frontend/react" icon="react">
+    Compare with regular React setup
+  </Card>
+  <Card title="API Integration" href="/frontend/api-integration" icon="plug">
+    Best practices for API communication
+  </Card>
+  <Card title="Deployment" href="/frontend/building" icon="rocket">
+    Build and deploy your app
+  </Card>
+  <Card title="Next.js Guide" href="/frontend/next" icon="triangle">
+    Compare with Next.js
+  </Card>
+  <Card title="React Router Docs" href="https://reactrouter.com" icon="external-link">
+    Official React Router documentation
+  </Card>
+  <Card title="Remix Migration" href="https://remix.run/docs/en/main/start/future-flags#v3_fetcherPersist" icon="external-link">
+    Migrate from Remix to React Router v7
+  </Card>
+</CardGroup>

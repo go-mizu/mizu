@@ -431,6 +431,7 @@
             "group": "Framework Integration",
             "pages": [
               "frontend/react",
+              "frontend/reactrouter",
               "frontend/vue",
               "frontend/svelte",
               "frontend/sveltekit",
