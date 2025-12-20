@@ -1,0 +1,10 @@
+.page h1 {
+  margin-bottom: 1rem;
+}
+
+.api-message {
+  background: white;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+}

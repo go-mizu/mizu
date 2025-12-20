@@ -1,0 +1,26 @@
+package server
+
+import "os"
+
+// Config holds server configuration.
+type Config struct {
+	Port    string
+	DevPort string
+	Env     string
+}
+
+// LoadConfig loads configuration from environment variables.
+func LoadConfig() *Config {
+	return &Config{
+		Port:    getEnv("PORT", "3000"),
+		DevPort: getEnv("DEV_PORT", "4200"),
+		Env:     getEnv("MIZU_ENV", "development"),
+	}
+}
+
+func getEnv(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}

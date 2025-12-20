@@ -38,6 +38,7 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 	foundReact := false
 	foundVue := false
 	foundSvelte := false
+	foundAngular := false
 	for _, tmpl := range templates {
 		if tmpl.Name == "frontend/spa/react" {
 			foundReact = true
@@ -47,6 +48,9 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 		}
 		if tmpl.Name == "frontend/spa/svelte" {
 			foundSvelte = true
+		}
+		if tmpl.Name == "frontend/spa/angular" {
+			foundAngular = true
 		}
 	}
 
@@ -58,6 +62,9 @@ func TestListTemplatesIncludesNested(t *testing.T) {
 	}
 	if !foundSvelte {
 		t.Error("listTemplates() did not include nested template 'frontend/spa/svelte'")
+	}
+	if !foundAngular {
+		t.Error("listTemplates() did not include nested template 'frontend/spa/angular'")
 	}
 }
 
@@ -72,6 +79,7 @@ func TestTemplateExistsNested(t *testing.T) {
 		{"frontend/spa/react", true},
 		{"frontend/spa/vue", true},
 		{"frontend/spa/svelte", true},
+		{"frontend/spa/angular", true},
 		{"frontend/spa/nonexistent", false},
 		{"frontend/nonexistent", false},
 		{"nonexistent", false},
@@ -98,6 +106,7 @@ func TestLoadTemplateMeta(t *testing.T) {
 		{"frontend/spa/react", "frontend/spa/react", true},
 		{"frontend/spa/vue", "frontend/spa/vue", true},
 		{"frontend/spa/svelte", "frontend/spa/svelte", true},
+		{"frontend/spa/angular", "frontend/spa/angular", true},
 	}
 
 	for _, tt := range tests {
@@ -823,5 +832,250 @@ func TestSvelteTemplateHasSvelteSpecificContent(t *testing.T) {
 	}
 	if !strings.Contains(string(homeSvelte), "onMount") {
 		t.Error("Home.svelte does not contain onMount lifecycle function")
+	}
+}
+
+// Angular template tests
+
+func TestListTemplatesIncludesAngular(t *testing.T) {
+	templates, err := listTemplates()
+	if err != nil {
+		t.Fatalf("listTemplates() error: %v", err)
+	}
+
+	found := false
+	for _, tmpl := range templates {
+		if tmpl.Name == "frontend/spa/angular" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("listTemplates() did not include nested template 'frontend/spa/angular'")
+	}
+}
+
+func TestTemplateExistsAngular(t *testing.T) {
+	if !templateExists("frontend/spa/angular") {
+		t.Error("templateExists('frontend/spa/angular') returned false")
+	}
+}
+
+func TestLoadTemplateFilesAngular(t *testing.T) {
+	files, err := loadTemplateFiles("frontend/spa/angular")
+	if err != nil {
+		t.Fatalf("loadTemplateFiles() error: %v", err)
+	}
+
+	if len(files) == 0 {
+		t.Error("loadTemplateFiles() returned no files")
+	}
+
+	// Check for expected files
+	expectedFiles := []string{
+		".gitignore",                                      // from _common
+		"go.mod",                                          // from _common
+		"cmd/server/main.go",                              // template specific
+		"app/server/app.go",                               // template specific
+		"app/server/config.go",                            // template specific
+		"app/server/routes.go",                            // template specific
+		"client/package.json",                             // template specific
+		"client/angular.json",                             // template specific (Angular)
+		"client/src/main.ts",                              // template specific
+		"client/src/app/app.component.ts",                 // template specific (Angular)
+		"client/src/app/app.routes.ts",                    // template specific (Angular)
+		"Makefile",                                        // template specific
+	}
+
+	fileMap := make(map[string]bool)
+	for _, f := range files {
+		fileMap[f.path] = true
+	}
+
+	for _, expected := range expectedFiles {
+		if !fileMap[expected] {
+			t.Errorf("expected file %q not found in template files", expected)
+		}
+	}
+}
+
+func TestBuildPlanAngularTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/angular", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if len(p.ops) == 0 {
+		t.Error("buildPlan() returned empty plan")
+	}
+
+	// Check for expected operations
+	hasWrite := false
+	hasMkdir := false
+	for _, op := range p.ops {
+		switch op.kind {
+		case opWrite:
+			hasWrite = true
+		case opMkdir:
+			hasMkdir = true
+		}
+	}
+
+	if !hasWrite {
+		t.Error("plan has no write operations")
+	}
+	if !hasMkdir {
+		t.Error("plan has no mkdir operations")
+	}
+}
+
+func TestApplyPlanAngularTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myapp", "example.com/myapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/angular", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Verify key files exist
+	expectedFiles := []string{
+		"go.mod",
+		"cmd/server/main.go",
+		"app/server/app.go",
+		"app/server/config.go",
+		"app/server/routes.go",
+		"client/package.json",
+		"client/angular.json",
+		"client/tsconfig.json",
+		"client/src/index.html",
+		"client/src/main.ts",
+		"client/src/app/app.component.ts",
+		"client/src/app/app.routes.ts",
+		"client/src/app/app.config.ts",
+		"client/src/app/components/layout/layout.component.ts",
+		"client/src/app/pages/home/home.component.ts",
+		"client/src/app/pages/about/about.component.ts",
+		"Makefile",
+	}
+
+	for _, file := range expectedFiles {
+		path := filepath.Join(tmpDir, file)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("expected file %q does not exist", file)
+		}
+	}
+}
+
+func TestAngularTemplateVariableSubstitution(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("myangularapp", "github.com/user/myangularapp", "Apache-2.0", nil)
+
+	p, err := buildPlan("frontend/spa/angular", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check go.mod contains the module path
+	gomod, err := os.ReadFile(filepath.Join(tmpDir, "go.mod"))
+	if err != nil {
+		t.Fatalf("ReadFile(go.mod) error: %v", err)
+	}
+
+	if !strings.Contains(string(gomod), "github.com/user/myangularapp") {
+		t.Error("go.mod does not contain module path")
+	}
+
+	// Check package.json contains the project name
+	pkgjson, err := os.ReadFile(filepath.Join(tmpDir, "client/package.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(package.json) error: %v", err)
+	}
+
+	if !strings.Contains(string(pkgjson), "myangularapp-client") {
+		t.Error("package.json does not contain project name")
+	}
+
+	// Check that package.json has Angular dependencies
+	if !strings.Contains(string(pkgjson), `"@angular/core"`) {
+		t.Error("package.json does not contain @angular/core dependency")
+	}
+	if !strings.Contains(string(pkgjson), `"@angular/router"`) {
+		t.Error("package.json does not contain @angular/router dependency")
+	}
+}
+
+func TestAngularTemplateHasAngularSpecificContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	vars := newTemplateVars("testapp", "example.com/testapp", "MIT", nil)
+
+	p, err := buildPlan("frontend/spa/angular", tmpDir, vars)
+	if err != nil {
+		t.Fatalf("buildPlan() error: %v", err)
+	}
+
+	if err := p.apply(false); err != nil {
+		t.Fatalf("apply() error: %v", err)
+	}
+
+	// Check app.component.ts contains Angular-specific content
+	appComponent, err := os.ReadFile(filepath.Join(tmpDir, "client/src/app/app.component.ts"))
+	if err != nil {
+		t.Fatalf("ReadFile(app.component.ts) error: %v", err)
+	}
+
+	if !strings.Contains(string(appComponent), "@Component") {
+		t.Error("app.component.ts does not contain @Component decorator")
+	}
+	if !strings.Contains(string(appComponent), "standalone: true") {
+		t.Error("app.component.ts does not contain standalone: true")
+	}
+	if !strings.Contains(string(appComponent), "@angular/core") {
+		t.Error("app.component.ts does not import from @angular/core")
+	}
+
+	// Check angular.json exists and contains proper configuration
+	angularJson, err := os.ReadFile(filepath.Join(tmpDir, "client/angular.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(angular.json) error: %v", err)
+	}
+
+	if !strings.Contains(string(angularJson), "@angular-devkit/build-angular") {
+		t.Error("angular.json does not contain @angular-devkit/build-angular")
+	}
+
+	// Check main.ts uses Angular bootstrapApplication
+	mainTs, err := os.ReadFile(filepath.Join(tmpDir, "client/src/main.ts"))
+	if err != nil {
+		t.Fatalf("ReadFile(main.ts) error: %v", err)
+	}
+
+	if !strings.Contains(string(mainTs), "bootstrapApplication") {
+		t.Error("main.ts does not contain Angular bootstrapApplication")
+	}
+
+	// Check home.component.ts uses Angular signals
+	homeComponent, err := os.ReadFile(filepath.Join(tmpDir, "client/src/app/pages/home/home.component.ts"))
+	if err != nil {
+		t.Fatalf("ReadFile(home.component.ts) error: %v", err)
+	}
+
+	if !strings.Contains(string(homeComponent), "signal") {
+		t.Error("home.component.ts does not contain Angular signals")
+	}
+	if !strings.Contains(string(homeComponent), "HttpClient") {
+		t.Error("home.component.ts does not contain HttpClient")
 	}
 }

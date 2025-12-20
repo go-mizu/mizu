@@ -1,0 +1,21 @@
+package server
+
+import (
+	"github.com/go-mizu/mizu"
+)
+
+func setupRoutes(app *mizu.App) {
+	api := app.Prefix("/api")
+
+	api.Get("/health", func(c *mizu.Ctx) error {
+		return c.JSON(200, map[string]any{
+			"status": "ok",
+		})
+	})
+
+	api.Get("/hello", func(c *mizu.Ctx) error {
+		return c.JSON(200, map[string]any{
+			"message": "Hello from {{.Name}}!",
+		})
+	})
+}
