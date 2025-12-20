@@ -1,12 +1,105 @@
 ---
 title: "Nuxt"
-description: "Build Nuxt applications with static generation and Mizu backend."
+description: "Build Nuxt 3 applications with static generation and Mizu backend."
 icon: "code"
 ---
 
-Nuxt is a Vue framework with server-side rendering, static generation, and file-based routing. With Mizu, you'll use Nuxt's **static generation** mode.
+Nuxt is the intuitive Vue framework that provides an amazing developer experience with powerful features like auto-imports, file-based routing, server-side rendering, and static site generation. When using Nuxt with Mizu, you'll leverage Nuxt's **static generation** mode to create a fully static site, while Mizu handles your backend API.
+
+## Why Nuxt with Mizu?
+
+Nuxt brings the best of Vue with additional superpowers:
+
+**File-based routing** - Create pages by adding files to the `pages/` directory. Routes are automatically generated.
+
+**Auto-imports** - Components, composables, and utilities are automatically imported. No more import statements!
+
+**Layouts** - Define reusable page layouts that wrap your pages.
+
+**Composables** - Vue's Composition API with built-in composables like `useFetch`, `useState`, `useRoute`, and more.
+
+**Server Components** - Write components that run on the server (or at build time) for better performance.
+
+**Developer Experience** - Hot Module Replacement, TypeScript support, and excellent error messages.
+
+### Nuxt with Mizu vs Standalone Nuxt
+
+| Feature | Nuxt + Mizu | Standalone Nuxt |
+|---------|------------|-----------------|
+| **Hosting** | Single Go binary | Node.js server or Cloudflare |
+| **Backend** | Go handlers | Nuxt server routes |
+| **Deployment** | Any server with Go | Node.js required |
+| **SSR** | ❌ No (SPA mode) | ✅ Yes |
+| **Static Generation** | ✅ Yes (SPA) | ✅ Yes (SSG) |
+| **API Routes** | Go backend | Nuxt server routes |
+| **Performance** | ⚡ Very fast (Go) | ⚡ Fast (Node.js) |
+| **Type Safety** | Backend: Go, Frontend: TS | Full-stack TypeScript |
+
+**When to use Nuxt with Mizu:**
+- You want Nuxt's DX (auto-imports, composables, file-based routing)
+- You prefer Go for backend APIs
+- You want a single binary deployment
+- You're building an SPA or static site
+
+**When to use standalone Nuxt:**
+- You need full SSR (server-side rendering at request time)
+- You want Nuxt server routes and middleware
+- You prefer Node.js for everything
+- You need Nuxt's full-stack features (server components, API routes)
+
+### Nuxt vs Vue with Vite
+
+| Feature | Nuxt | Vue + Vite |
+|---------|------|-----------|
+| **File-based routing** | ✅ Built-in | ⚠️ Manual (vue-router) |
+| **Auto-imports** | ✅ Yes | ❌ No |
+| **Layouts** | ✅ Built-in | ⚠️ Manual |
+| **Built-in composables** | ✅ Many | ⚠️ Few |
+| **Bundle size** | ⚠️ Larger | ✅ Smaller |
+| **Setup complexity** | ⚠️ More | ✅ Less |
+| **Flexibility** | ⚠️ Opinionated | ✅ Very flexible |
+| **Best for** | Apps, sites | Libraries, simple apps |
+
+## How Nuxt Works with Mizu
+
+When you build Nuxt in SPA mode for Mizu:
+
+```
+Build Process
+    ↓
+┌─────────────────────────────┐
+│ Nuxt analyzes pages/        │
+│ - Creates routes            │
+│ - Auto-imports components   │
+└─────────────┬───────────────┘
+              ↓
+┌─────────────────────────────┐
+│ Vite builds application     │
+│ - Bundles Vue components    │
+│ - Optimizes assets          │
+│ - Generates chunks          │
+└─────────────┬───────────────┘
+              ↓
+┌─────────────────────────────┐
+│ Outputs SPA files           │
+│ - dist/                     │
+│   ├── index.html           │
+│   ├── _nuxt/               │
+│   │   └── *.js             │
+│   └── assets/              │
+└─────────────────────────────┘
+```
+
+**At runtime:**
+1. Mizu serves the pre-built files
+2. Browser loads `index.html` + JavaScript
+3. Vue takes over and renders the app
+4. Client-side routing handles navigation
+5. API calls go to Mizu backend (Go)
 
 ## Quick Start
+
+Create a new Nuxt project with the CLI:
 
 ```bash
 mizu new ./my-nuxt-app --template frontend/nuxt
@@ -14,122 +107,2005 @@ cd my-nuxt-app
 make dev
 ```
 
+Visit `http://localhost:3000` to see your app!
+
+## Project Structure
+
+```
+my-nuxt-app/
+├── cmd/
+│   └── server/
+│       └── main.go              # Go entry point
+├── app/
+│   └── server/
+│       ├── app.go               # Mizu app configuration
+│       ├── config.go            # Server configuration
+│       └── routes.go            # API routes (Go)
+├── client/                      # Nuxt application
+│   ├── pages/                   # File-based routes
+│   │   ├── index.vue           # Home page (/)
+│   │   ├── about.vue           # About page (/about)
+│   │   └── users/
+│   │       ├── index.vue       # Users list (/users)
+│   │       └── [id].vue        # User detail (/users/123)
+│   ├── components/              # Auto-imported components
+│   │   ├── TheHeader.vue
+│   │   ├── TheFooter.vue
+│   │   └── UserCard.vue
+│   ├── composables/             # Auto-imported composables
+│   │   ├── useUsers.ts
+│   │   └── useAuth.ts
+│   ├── layouts/                 # Page layouts
+│   │   ├── default.vue         # Default layout
+│   │   └── auth.vue            # Auth layout
+│   ├── public/                  # Static assets
+│   │   └── images/
+│   ├── assets/                  # Assets to be processed
+│   │   ├── css/
+│   │   └── images/
+│   ├── plugins/                 # Vue plugins
+│   │   └── api.ts
+│   ├── middleware/              # Route middleware
+│   │   └── auth.ts
+│   ├── app.vue                  # Root component
+│   ├── nuxt.config.ts          # Nuxt configuration
+│   ├── package.json
+│   └── tsconfig.json
+├── dist/                        # Built files (after build)
+├── go.mod
+└── Makefile
+```
+
 ## Configuration
 
-### `client/nuxt.config.ts`
+### Nuxt Configuration
+
+Configure Nuxt for SPA mode and Mizu integration:
+
+#### `client/nuxt.config.ts`
 
 ```ts
+// https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
-  ssr: false,  // SPA mode
+  // SPA mode (no SSR)
+  ssr: false,
+
+  // Development tools
+  devtools: { enabled: true },
+
+  // TypeScript configuration
+  typescript: {
+    strict: true,
+    typeCheck: true
+  },
+
+  // Build output configuration
   nitro: {
     output: {
-      dir: '../dist',
-      publicDir: '../dist'
+      dir: '../dist',           // Output to dist/ at project root
+      publicDir: '../dist'      // Public directory
     }
-  }
+  },
+
+  // Vite configuration
+  vite: {
+    server: {
+      port: 5173,
+      strictPort: true,
+      hmr: {
+        clientPort: 3000        // Mizu's port for HMR
+      }
+    }
+  },
+
+  // Auto-import configuration
+  components: {
+    dirs: [
+      '~/components',           // Auto-import from components/
+      '~/components/common',    // Sub-directories too
+      '~/components/forms'
+    ]
+  },
+
+  // CSS
+  css: ['~/assets/css/main.css'],
+
+  // Modules (add as needed)
+  modules: [
+    // '@pinia/nuxt',          // State management
+    // '@nuxtjs/tailwindcss',  // Tailwind CSS
+  ]
 })
 ```
 
-## Backend Setup
+**Configuration explained:**
+
+- **ssr: false** - Runs Nuxt in SPA mode (no server-side rendering)
+- **nitro.output** - Outputs built files to `dist/` directory
+- **vite.server.hmr.clientPort** - HMR through Mizu's proxy on port 3000
+- **components.dirs** - Directories to auto-import components from
+
+### Backend Configuration
+
+#### `app/server/app.go`
 
 ```go
+package server
+
+import (
+    "embed"
+    "io/fs"
+
+    "github.com/go-mizu/mizu"
+    "github.com/go-mizu/mizu/middlewares/frontend"
+)
+
+// Embed the Nuxt build output
 //go:embed all:../../dist
 var distFS embed.FS
 
 func New(cfg *Config) *mizu.App {
     app := mizu.New()
 
-    app.Get("/api/users", handleUsers)
+    // API routes come first
+    setupRoutes(app)
 
+    // Extract 'dist' subdirectory from embedded FS
     dist, _ := fs.Sub(distFS, "dist")
+
+    // Frontend middleware (handles all non-API routes)
     app.Use(frontend.WithOptions(frontend.Options{
-        Mode:        frontend.ModeAuto,
-        FS:          dist,
-        Root:        "./dist",
-        DevServer:   "http://localhost:" + cfg.DevPort,
-        IgnorePaths: []string{"/api"},
+        Mode:        frontend.ModeAuto,       // Auto-detect dev/prod
+        FS:          dist,                     // Embedded dist files
+        Root:        "./dist",                 // Fallback to filesystem
+        DevServer:   "http://localhost:" + cfg.DevPort,  // Nuxt dev server
+        IgnorePaths: []string{"/api"},        // Don't proxy /api
     }))
 
     return app
 }
 ```
 
+#### `app/server/routes.go`
+
+```go
+package server
+
+import "github.com/go-mizu/mizu"
+
+func setupRoutes(app *mizu.App) {
+    // User API
+    app.Get("/api/users", handleUsers)
+    app.Post("/api/users", createUser)
+    app.Get("/api/users/{id}", getUser)
+    app.Put("/api/users/{id}", updateUser)
+    app.Delete("/api/users/{id}", deleteUser)
+
+    // Posts API
+    app.Get("/api/posts", handlePosts)
+    app.Get("/api/posts/{id}", getPost)
+}
+
+func handleUsers(c *mizu.Ctx) error {
+    users := []map[string]any{
+        {"id": 1, "name": "Alice", "email": "alice@example.com", "role": "admin"},
+        {"id": 2, "name": "Bob", "email": "bob@example.com", "role": "user"},
+        {"id": 3, "name": "Charlie", "email": "charlie@example.com", "role": "user"},
+    }
+    return c.JSON(200, users)
+}
+
+func getUser(c *mizu.Ctx) error {
+    id := c.Param("id")
+    user := map[string]any{
+        "id":    id,
+        "name":  "User " + id,
+        "email": "user" + id + "@example.com",
+        "role":  "user",
+    }
+    return c.JSON(200, user)
+}
+
+func createUser(c *mizu.Ctx) error {
+    var user map[string]any
+    if err := c.BodyJSON(&user); err != nil {
+        return c.JSON(400, map[string]string{"error": "Invalid JSON"})
+    }
+
+    // Add ID (in real app, use database)
+    user["id"] = 4
+
+    return c.JSON(201, user)
+}
+```
+
 ## File-Based Routing
 
+Nuxt automatically generates routes based on files in the `pages/` directory.
+
+### Basic Routes
+
 ```
-client/pages/
-├── index.vue            # / route
-├── about.vue            # /about route
-└── users/
-    ├── index.vue        # /users route
-    └── [id].vue         # /users/:id route
+pages/
+├── index.vue               → /
+├── about.vue              → /about
+├── contact.vue            → /contact
+└── blog.vue               → /blog
 ```
 
-### `client/pages/index.vue`
+### Nested Routes
+
+```
+pages/
+├── users/
+│   ├── index.vue          → /users
+│   └── profile.vue        → /users/profile
+└── blog/
+    ├── index.vue          → /blog
+    └── [slug].vue         → /blog/:slug
+```
+
+### Dynamic Routes
+
+Use square brackets for dynamic segments:
+
+```
+pages/
+├── users/
+│   └── [id].vue           → /users/:id
+├── posts/
+│   └── [slug].vue         → /posts/:slug
+└── products/
+    └── [category]/
+        └── [id].vue       → /products/:category/:id
+```
+
+### Route Parameters
+
+Access route parameters with `useRoute()`:
+
+#### `pages/users/[id].vue`
 
 ```vue
 <template>
   <div>
-    <h1>Users</h1>
-    <ul>
-      <li v-for="user in users" :key="user.id">{{ user.name }}</li>
-    </ul>
+    <h1 v-if="user">{{ user.name }}</h1>
+    <p v-if="user">Email: {{ user.email }}</p>
+    <p v-if="user">Role: {{ user.role }}</p>
+
+    <div v-if="pending">Loading...</div>
+    <div v-if="error" class="error">Error: {{ error.message }}</div>
   </div>
 </template>
 
 <script setup lang="ts">
-const { data: users } = await useFetch('/api/users')
+// Get route params (auto-imported!)
+const route = useRoute()
+const id = route.params.id
+
+// Fetch user data (useFetch is auto-imported!)
+const { data: user, pending, error } = await useFetch(`/api/users/${id}`)
+</script>
+
+<style scoped>
+.error {
+  color: red;
+  padding: 1rem;
+  border: 1px solid red;
+  border-radius: 4px;
+}
+</style>
+```
+
+### Catch-All Routes
+
+Create a catch-all route with `[...slug].vue`:
+
+```
+pages/
+└── blog/
+    └── [...slug].vue      → /blog/* (any path)
+```
+
+```vue
+<!-- pages/blog/[...slug].vue -->
+<script setup lang="ts">
+const route = useRoute()
+const slug = route.params.slug // Array of path segments
+</script>
+
+<template>
+  <div>
+    <h1>Blog Post</h1>
+    <p>Slug: {{ slug }}</p>
+  </div>
+</template>
+```
+
+## Auto-Imports
+
+One of Nuxt's killer features is auto-imports. No more import statements!
+
+### What Gets Auto-Imported?
+
+**Vue APIs:**
+```vue
+<script setup>
+// All Vue APIs are auto-imported
+const count = ref(0)                    // ref
+const doubled = computed(() => count.value * 2)  // computed
+const route = useRoute()                // Nuxt composable
+const router = useRouter()              // Nuxt composable
+
+onMounted(() => {                       // onMounted
+  console.log('Component mounted')
+})
 </script>
 ```
 
-### `client/pages/users/[id].vue`
+**Components:**
+```vue
+<template>
+  <!-- Components are auto-imported from components/ -->
+  <TheHeader />
+  <UserCard :user="user" />
+  <TheFooter />
+</template>
+
+<script setup>
+// No imports needed!
+</script>
+```
+
+**Composables:**
+```vue
+<script setup>
+// Composables from composables/ are auto-imported
+const { users, loading } = useUsers()     // composables/useUsers.ts
+const { user, login, logout } = useAuth() // composables/useAuth.ts
+</script>
+```
+
+**Utils:**
+```vue
+<script setup>
+// Utils from utils/ are auto-imported
+const formatted = formatDate(new Date()) // utils/formatDate.ts
+</script>
+```
+
+### Auto-Import Configuration
+
+Control what gets auto-imported in `nuxt.config.ts`:
+
+```ts
+export default defineNuxtConfig({
+  // Disable auto-imports (not recommended)
+  imports: {
+    autoImport: false
+  },
+
+  // Or customize which directories
+  imports: {
+    dirs: [
+      'composables',           // Default
+      'composables/**',        // All subdirectories
+      'utils',
+      'stores'
+    ]
+  }
+})
+```
+
+### TypeScript Support
+
+Nuxt automatically generates TypeScript types for auto-imports:
+
+```ts
+// .nuxt/imports.d.ts (auto-generated)
+export const ref: typeof import('vue')['ref']
+export const computed: typeof import('vue')['computed']
+export const useRoute: typeof import('#app')['useRoute']
+// ... many more
+```
+
+Your IDE will have full autocomplete and type checking!
+
+## Layouts
+
+Layouts wrap your pages with common UI elements.
+
+### Default Layout
+
+Create a default layout that wraps all pages:
+
+#### `layouts/default.vue`
 
 ```vue
 <template>
-  <div v-if="user">
-    <h1>{{ user.name }}</h1>
-    <p>{{ user.email }}</p>
+  <div class="app-layout">
+    <TheHeader />
+
+    <nav class="main-nav">
+      <NuxtLink to="/">Home</NuxtLink>
+      <NuxtLink to="/about">About</NuxtLink>
+      <NuxtLink to="/users">Users</NuxtLink>
+      <NuxtLink to="/blog">Blog</NuxtLink>
+    </nav>
+
+    <main class="content">
+      <!-- Page content goes here -->
+      <slot />
+    </main>
+
+    <TheFooter />
+  </div>
+</template>
+
+<style scoped>
+.app-layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-nav {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem;
+  background: #f5f5f5;
+}
+
+.main-nav a {
+  color: #42b983;
+  text-decoration: none;
+}
+
+.main-nav a.router-link-active {
+  font-weight: bold;
+}
+
+.content {
+  flex: 1;
+  padding: 2rem;
+}
+</style>
+```
+
+### Custom Layouts
+
+Create additional layouts for different page types:
+
+#### `layouts/auth.vue`
+
+```vue
+<template>
+  <div class="auth-layout">
+    <div class="auth-container">
+      <div class="auth-logo">
+        <img src="/logo.svg" alt="Logo" />
+      </div>
+
+      <slot />
+
+      <p class="auth-footer">
+        © 2025 My App
+      </p>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.auth-layout {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.auth-container {
+  background: white;
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  max-width: 400px;
+  width: 100%;
+}
+</style>
+```
+
+### Using Layouts in Pages
+
+Specify which layout to use with `definePageMeta`:
+
+```vue
+<!-- pages/login.vue -->
+<template>
+  <div>
+    <h1>Login</h1>
+    <form @submit.prevent="handleLogin">
+      <input v-model="email" type="email" placeholder="Email" />
+      <input v-model="password" type="password" placeholder="Password" />
+      <button type="submit">Login</button>
+    </form>
   </div>
 </template>
 
 <script setup lang="ts">
-const route = useRoute()
-const { data: user } = await useFetch(`/api/users/${route.params.id}`)
+// Use auth layout instead of default
+definePageMeta({
+  layout: 'auth'
+})
+
+const email = ref('')
+const password = ref('')
+
+const handleLogin = () => {
+  // Handle login
+}
 </script>
 ```
 
-## Composables
+### No Layout
+
+Disable layout for a page:
+
+```vue
+<script setup>
+definePageMeta({
+  layout: false
+})
+</script>
+```
+
+## Built-in Composables
+
+Nuxt provides powerful composables for common tasks.
+
+### useFetch
+
+Fetch data from an API:
+
+```vue
+<script setup lang="ts">
+interface User {
+  id: number
+  name: string
+  email: string
+}
+
+// Fetch on component mount
+const { data: users, pending, error, refresh } = await useFetch<User[]>('/api/users')
+
+// With options
+const { data } = await useFetch('/api/users', {
+  method: 'GET',
+  headers: {
+    'Authorization': 'Bearer token'
+  },
+  // Transform response
+  transform: (data) => data.map(u => ({ ...u, fullName: u.name.toUpperCase() })),
+  // Pick specific fields
+  pick: ['id', 'name']
+})
+</script>
+
+<template>
+  <div>
+    <div v-if="pending">Loading...</div>
+    <div v-else-if="error">Error: {{ error.message }}</div>
+    <div v-else>
+      <ul>
+        <li v-for="user in users" :key="user.id">
+          {{ user.name }}
+        </li>
+      </ul>
+      <button @click="refresh">Refresh</button>
+    </div>
+  </div>
+</template>
+```
+
+### useAsyncData
+
+More control over async data fetching:
+
+```vue
+<script setup lang="ts">
+const { data: user, pending } = await useAsyncData('user-123', () =>
+  $fetch('/api/users/123')
+)
+
+// With dependencies
+const route = useRoute()
+const { data } = await useAsyncData(
+  `user-${route.params.id}`,  // Unique key
+  () => $fetch(`/api/users/${route.params.id}`),
+  {
+    // Re-fetch when route changes
+    watch: [() => route.params.id]
+  }
+)
+</script>
+```
+
+### useState
+
+Shared state across components:
+
+```ts
+// composables/useCounter.ts
+export const useCounter = () => {
+  // State is shared across all components using this composable
+  const count = useState('counter', () => 0)
+
+  const increment = () => count.value++
+  const decrement = () => count.value--
+
+  return { count, increment, decrement }
+}
+```
+
+```vue
+<!-- Any component -->
+<script setup>
+const { count, increment } = useCounter()
+</script>
+
+<template>
+  <div>
+    <p>Count: {{ count }}</p>
+    <button @click="increment">+</button>
+  </div>
+</template>
+```
+
+### useRoute and useRouter
+
+Access routing information:
+
+```vue
+<script setup lang="ts">
+const route = useRoute()
+const router = useRouter()
+
+// Current route info
+console.log(route.path)        // '/users/123'
+console.log(route.params.id)   // '123'
+console.log(route.query.tab)   // 'profile'
+console.log(route.hash)        // '#section'
+
+// Navigate programmatically
+const goToUser = (id: number) => {
+  router.push(`/users/${id}`)
+}
+
+const goBack = () => {
+  router.back()
+}
+
+const goToUserWithQuery = () => {
+  router.push({
+    path: '/users/123',
+    query: { tab: 'settings' }
+  })
+}
+</script>
+```
+
+### useCookie
+
+Work with cookies:
+
+```vue
+<script setup lang="ts">
+// Get/set cookie
+const token = useCookie('token')
+
+token.value = 'new-token-value'  // Sets cookie
+
+// With options
+const preference = useCookie('theme', {
+  maxAge: 60 * 60 * 24 * 365,  // 1 year
+  sameSite: 'lax'
+})
+</script>
+```
+
+### useHead
+
+Manage document head:
+
+```vue
+<script setup lang="ts">
+useHead({
+  title: 'My Page Title',
+  meta: [
+    { name: 'description', content: 'Page description' },
+    { property: 'og:title', content: 'My Page Title' },
+    { property: 'og:image', content: '/og-image.png' }
+  ],
+  link: [
+    { rel: 'canonical', href: 'https://example.com/page' }
+  ]
+})
+
+// Or use composable approach
+useSeoMeta({
+  title: 'My Page',
+  ogTitle: 'My Page',
+  description: 'Page description',
+  ogDescription: 'Page description',
+  ogImage: '/og-image.png'
+})
+</script>
+```
+
+## Custom Composables
+
+Create reusable composables for your app logic:
+
+### User Management Composable
 
 ```ts
 // composables/useUsers.ts
 export const useUsers = () => {
-  const users = ref([])
+  const users = useState<User[]>('users', () => [])
   const loading = ref(false)
+  const error = ref<Error | null>(null)
 
   const fetchUsers = async () => {
     loading.value = true
-    const { data } = await useFetch('/api/users')
-    users.value = data.value
-    loading.value = false
+    error.value = null
+
+    try {
+      const { data } = await useFetch('/api/users')
+      users.value = data.value || []
+    } catch (e) {
+      error.value = e as Error
+    } finally {
+      loading.value = false
+    }
   }
 
-  return { users, loading, fetchUsers }
+  const addUser = async (user: Omit<User, 'id'>) => {
+    const { data } = await useFetch('/api/users', {
+      method: 'POST',
+      body: user
+    })
+
+    if (data.value) {
+      users.value.push(data.value)
+    }
+  }
+
+  const deleteUser = async (id: number) => {
+    await useFetch(`/api/users/${id}`, {
+      method: 'DELETE'
+    })
+
+    users.value = users.value.filter(u => u.id !== id)
+  }
+
+  return {
+    users: readonly(users),
+    loading: readonly(loading),
+    error: readonly(error),
+    fetchUsers,
+    addUser,
+    deleteUser
+  }
 }
 ```
 
-## Building
+Usage:
+
+```vue
+<script setup lang="ts">
+const { users, loading, fetchUsers, addUser, deleteUser } = useUsers()
+
+onMounted(() => {
+  fetchUsers()
+})
+
+const handleAddUser = async () => {
+  await addUser({ name: 'New User', email: 'new@example.com' })
+}
+</script>
+
+<template>
+  <div>
+    <button @click="handleAddUser">Add User</button>
+
+    <div v-if="loading">Loading...</div>
+    <ul v-else>
+      <li v-for="user in users" :key="user.id">
+        {{ user.name }}
+        <button @click="deleteUser(user.id)">Delete</button>
+      </li>
+    </ul>
+  </div>
+</template>
+```
+
+### Authentication Composable
+
+```ts
+// composables/useAuth.ts
+interface User {
+  id: number
+  name: string
+  email: string
+}
+
+export const useAuth = () => {
+  const user = useState<User | null>('auth-user', () => null)
+  const token = useCookie('auth-token')
+
+  const login = async (email: string, password: string) => {
+    const { data, error } = await useFetch('/api/auth/login', {
+      method: 'POST',
+      body: { email, password }
+    })
+
+    if (data.value) {
+      user.value = data.value.user
+      token.value = data.value.token
+    }
+
+    return { data, error }
+  }
+
+  const logout = async () => {
+    await useFetch('/api/auth/logout', {
+      method: 'POST'
+    })
+
+    user.value = null
+    token.value = null
+  }
+
+  const fetchUser = async () => {
+    if (!token.value) return
+
+    const { data } = await useFetch('/api/auth/me', {
+      headers: {
+        Authorization: `Bearer ${token.value}`
+      }
+    })
+
+    user.value = data.value
+  }
+
+  const isAuthenticated = computed(() => !!user.value)
+
+  return {
+    user: readonly(user),
+    isAuthenticated,
+    login,
+    logout,
+    fetchUser
+  }
+}
+```
+
+## Middleware
+
+Route middleware runs before rendering a page.
+
+### Global Middleware
+
+Runs on every route:
+
+```ts
+// middleware/auth.global.ts
+export default defineNuxtRouteMiddleware((to, from) => {
+  const { isAuthenticated } = useAuth()
+
+  // Protect /dashboard routes
+  if (to.path.startsWith('/dashboard') && !isAuthenticated.value) {
+    return navigateTo('/login')
+  }
+})
+```
+
+### Named Middleware
+
+Runs only when specified:
+
+```ts
+// middleware/admin.ts
+export default defineNuxtRouteMiddleware((to, from) => {
+  const { user } = useAuth()
+
+  if (user.value?.role !== 'admin') {
+    return navigateTo('/')
+  }
+})
+```
+
+Use in pages:
+
+```vue
+<!-- pages/admin/index.vue -->
+<script setup lang="ts">
+definePageMeta({
+  middleware: 'admin'  // Runs admin middleware
+})
+</script>
+
+<template>
+  <div>
+    <h1>Admin Dashboard</h1>
+  </div>
+</template>
+```
+
+### Multiple Middleware
+
+```vue
+<script setup>
+definePageMeta({
+  middleware: ['auth', 'admin']  // Runs both
+})
+</script>
+```
+
+## Components
+
+### Auto-Imported Components
+
+Components in `components/` are automatically available:
+
+```
+components/
+├── TheHeader.vue        → <TheHeader />
+├── TheFooter.vue        → <TheFooter />
+├── UserCard.vue         → <UserCard />
+└── common/
+    └── Button.vue       → <CommonButton />
+```
+
+```vue
+<template>
+  <div>
+    <TheHeader />
+    <UserCard :user="user" />
+    <CommonButton @click="handleClick">Click me</CommonButton>
+    <TheFooter />
+  </div>
+</template>
+
+<script setup>
+// No imports needed!
+</script>
+```
+
+### Component Example
+
+```vue
+<!-- components/UserCard.vue -->
+<template>
+  <div class="user-card">
+    <img :src="avatarUrl" :alt="user.name" class="avatar" />
+    <div class="info">
+      <h3>{{ user.name }}</h3>
+      <p>{{ user.email }}</p>
+      <span class="role" :class="user.role">{{ user.role }}</span>
+    </div>
+    <div class="actions">
+      <button @click="$emit('edit', user)">Edit</button>
+      <button @click="$emit('delete', user.id)" class="danger">Delete</button>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+interface User {
+  id: number
+  name: string
+  email: string
+  role: string
+}
+
+interface Props {
+  user: User
+}
+
+const props = defineProps<Props>()
+
+const emit = defineEmits<{
+  edit: [user: User]
+  delete: [id: number]
+}>()
+
+const avatarUrl = computed(() =>
+  `https://ui-avatars.com/api/?name=${encodeURIComponent(props.user.name)}`
+)
+</script>
+
+<style scoped>
+.user-card {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  align-items: center;
+}
+
+.avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+}
+
+.info {
+  flex: 1;
+}
+
+.role {
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.875rem;
+}
+
+.role.admin {
+  background: #ff6b6b;
+  color: white;
+}
+
+.role.user {
+  background: #e0e0e0;
+  color: #333;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+button.danger {
+  background: #ff6b6b;
+  color: white;
+}
+</style>
+```
+
+## State Management with Pinia
+
+For complex state, use Pinia:
+
+```bash
+cd client
+npm install pinia @pinia/nuxt
+```
+
+Add to `nuxt.config.ts`:
+
+```ts
+export default defineNuxtConfig({
+  modules: ['@pinia/nuxt']
+})
+```
+
+Create a store:
+
+```ts
+// stores/users.ts
+import { defineStore } from 'pinia'
+
+interface User {
+  id: number
+  name: string
+  email: string
+  role: string
+}
+
+export const useUserStore = defineStore('users', () => {
+  const users = ref<User[]>([])
+  const loading = ref(false)
+  const selectedUser = ref<User | null>(null)
+
+  const userCount = computed(() => users.value.length)
+  const adminUsers = computed(() =>
+    users.value.filter(u => u.role === 'admin')
+  )
+
+  async function fetchUsers() {
+    loading.value = true
+    try {
+      const { data } = await useFetch<User[]>('/api/users')
+      users.value = data.value || []
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function addUser(user: Omit<User, 'id'>) {
+    const { data } = await useFetch<User>('/api/users', {
+      method: 'POST',
+      body: user
+    })
+
+    if (data.value) {
+      users.value.push(data.value)
+    }
+  }
+
+  async function updateUser(id: number, updates: Partial<User>) {
+    const { data } = await useFetch<User>(`/api/users/${id}`, {
+      method: 'PUT',
+      body: updates
+    })
+
+    if (data.value) {
+      const index = users.value.findIndex(u => u.id === id)
+      if (index !== -1) {
+        users.value[index] = data.value
+      }
+    }
+  }
+
+  async function deleteUser(id: number) {
+    await useFetch(`/api/users/${id}`, {
+      method: 'DELETE'
+    })
+
+    users.value = users.value.filter(u => u.id !== id)
+  }
+
+  function selectUser(user: User) {
+    selectedUser.value = user
+  }
+
+  function clearSelection() {
+    selectedUser.value = null
+  }
+
+  return {
+    users,
+    loading,
+    selectedUser,
+    userCount,
+    adminUsers,
+    fetchUsers,
+    addUser,
+    updateUser,
+    deleteUser,
+    selectUser,
+    clearSelection
+  }
+})
+```
+
+Use in components:
+
+```vue
+<script setup lang="ts">
+const userStore = useUserStore()
+
+onMounted(() => {
+  userStore.fetchUsers()
+})
+
+const handleDelete = (id: number) => {
+  if (confirm('Delete user?')) {
+    userStore.deleteUser(id)
+  }
+}
+</script>
+
+<template>
+  <div>
+    <h1>Users ({{ userStore.userCount }})</h1>
+    <p>Admins: {{ userStore.adminUsers.length }}</p>
+
+    <div v-if="userStore.loading">Loading...</div>
+    <ul v-else>
+      <li v-for="user in userStore.users" :key="user.id">
+        {{ user.name }} - {{ user.role }}
+        <button @click="handleDelete(user.id)">Delete</button>
+      </li>
+    </ul>
+  </div>
+</template>
+```
+
+## Styling
+
+### Scoped Styles
+
+Use scoped styles by default:
+
+```vue
+<template>
+  <div class="card">
+    <h2>Title</h2>
+  </div>
+</template>
+
+<style scoped>
+.card {
+  border: 1px solid #ddd;
+  padding: 1rem;
+}
+
+/* Only affects this component */
+h2 {
+  color: #42b983;
+}
+</style>
+```
+
+### Global Styles
+
+Create global CSS:
+
+```css
+/* assets/css/main.css */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  line-height: 1.6;
+  color: #333;
+}
+```
+
+Import in `nuxt.config.ts`:
+
+```ts
+export default defineNuxtConfig({
+  css: ['~/assets/css/main.css']
+})
+```
+
+### Tailwind CSS
+
+Install Tailwind module:
+
+```bash
+cd client
+npm install -D @nuxtjs/tailwindcss
+```
+
+Add to `nuxt.config.ts`:
+
+```ts
+export default defineNuxtConfig({
+  modules: ['@nuxtjs/tailwindcss']
+})
+```
+
+Use in components:
+
+```vue
+<template>
+  <div class="container mx-auto px-4">
+    <h1 class="text-4xl font-bold text-green-600">Hello Nuxt!</h1>
+    <button class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+      Click me
+    </button>
+  </div>
+</template>
+```
+
+### CSS Modules
+
+```vue
+<template>
+  <button :class="$style.button">Click me</button>
+</template>
+
+<style module>
+.button {
+  background: #42b983;
+  color: white;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+}
+
+.button:hover {
+  background: #35a372;
+}
+</style>
+```
+
+## Plugins
+
+Create Vue plugins:
+
+```ts
+// plugins/api.ts
+export default defineNuxtPlugin(() => {
+  const api = {
+    get: (url: string) => $fetch(url),
+    post: (url: string, data: any) => $fetch(url, { method: 'POST', body: data }),
+    put: (url: string, data: any) => $fetch(url, { method: 'PUT', body: data }),
+    delete: (url: string) => $fetch(url, { method: 'DELETE' })
+  }
+
+  return {
+    provide: {
+      api
+    }
+  }
+})
+```
+
+Use in components:
+
+```vue
+<script setup lang="ts">
+const { $api } = useNuxtApp()
+
+const users = await $api.get('/api/users')
+</script>
+```
+
+## Development Workflow
+
+### Starting Development
+
+```bash
+# Option 1: Use Makefile (recommended)
+make dev
+
+# Option 2: Manual (two terminals)
+
+# Terminal 1: Nuxt dev server
+cd client
+npm run dev   # Starts on http://localhost:5173
+
+# Terminal 2: Mizu server
+go run cmd/server/main.go  # Starts on http://localhost:3000
+```
+
+**How it works:**
+1. Nuxt runs dev server on port 5173
+2. Mizu runs on port 3000
+3. Requests to port 3000 proxy to Nuxt (except `/api`)
+4. Visit `http://localhost:3000`
+5. HMR works through proxy
+
+### Making Changes
+
+**Frontend changes:**
+- Edit files in `client/`
+- Nuxt HMR updates browser instantly
+- Components, pages, composables auto-reload
+
+**Backend changes:**
+- Edit Go files
+- Restart Mizu server
+- Or use `air` for auto-reload
+
+```bash
+go install github.com/cosmtrek/air@latest
+air
+```
+
+## Building for Production
+
+Build the application:
 
 ```bash
 make build
 ```
 
+This runs:
+1. `cd client && npm run build` - Nuxt build
+2. `go build` - Go binary with embedded frontend
+
+### Build Output
+
+```
+dist/
+├── index.html              # SPA entry point
+├── _nuxt/                  # Nuxt assets
+│   ├── entry.abc123.js    # Main bundle
+│   ├── *.chunk.js         # Code split chunks
+│   └── *.css              # Styles
+└── assets/                # Static assets
+```
+
+### Running in Production
+
+```bash
+MIZU_ENV=production ./bin/server
+```
+
+## TypeScript
+
+Nuxt has excellent TypeScript support:
+
+### Typed Composables
+
+```ts
+// composables/useUsers.ts
+import type { User } from '~/types'
+
+export const useUsers = () => {
+  const users = useState<User[]>('users', () => [])
+
+  const fetchUsers = async (): Promise<void> => {
+    const { data } = await useFetch<User[]>('/api/users')
+    users.value = data.value || []
+  }
+
+  return {
+    users: readonly(users),
+    fetchUsers
+  }
+}
+```
+
+### Typed Components
+
+```vue
+<script setup lang="ts">
+interface Props {
+  title: string
+  count?: number
+}
+
+interface Emits {
+  (e: 'update', value: number): void
+  (e: 'delete'): void
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  count: 0
+})
+
+const emit = defineEmits<Emits>()
+
+const handleIncrement = () => {
+  emit('update', props.count + 1)
+}
+</script>
+
+<template>
+  <div>
+    <h1>{{ title }}</h1>
+    <p>Count: {{ count }}</p>
+    <button @click="handleIncrement">Increment</button>
+    <button @click="emit('delete')">Delete</button>
+  </div>
+</template>
+```
+
+### Auto-Generated Types
+
+Nuxt generates types automatically:
+
+```ts
+// .nuxt/types/middleware.d.ts
+declare module '#app' {
+  interface PageMeta {
+    middleware?: 'auth' | 'admin' | 'guest'
+  }
+}
+```
+
+## Troubleshooting
+
+### HMR Not Working
+
+**Symptom:** Changes don't appear in browser
+
+**Cause:** HMR WebSocket not connecting through proxy
+
+**Solution:** Check `vite.server.hmr.clientPort` in `nuxt.config.ts`:
+
+```ts
+export default defineNuxtConfig({
+  vite: {
+    server: {
+      hmr: {
+        clientPort: 3000  // Must match Mizu port
+      }
+    }
+  }
+})
+```
+
+---
+
+### Hydration Mismatch
+
+**Error:**
+```
+[Vue warn]: Hydration node mismatch
+```
+
+**Cause:** Server-rendered HTML doesn't match client
+
+**Solution:** Wrap dynamic content in `<ClientOnly>`:
+
+```vue
+<template>
+  <div>
+    <p>Static content</p>
+    <ClientOnly>
+      <p>{{ new Date().toString() }}</p>
+    </ClientOnly>
+  </div>
+</template>
+```
+
+---
+
+### Auto-Import Not Working
+
+**Symptom:** Component/composable not found
+
+**Solution 1:** Check file naming (must be in correct directory)
+
+```
+components/
+└── UserCard.vue  ✅ Works
+
+composables/
+└── useUsers.ts   ✅ Works
+```
+
+**Solution 2:** Restart dev server:
+
+```bash
+npm run dev
+```
+
+**Solution 3:** Check `.nuxt/` was generated:
+
+```bash
+rm -rf client/.nuxt
+npm run dev
+```
+
+---
+
+### 404 on Refresh in SPA Mode
+
+**Symptom:** Page works initially, but refreshing gives 404
+
+**Cause:** SPA fallback not configured
+
+**Solution:** Mizu automatically handles this, but ensure:
+
+```go
+app.Use(frontend.WithOptions(frontend.Options{
+    Mode: frontend.ModeAuto,
+    Root: "./dist",
+    Index: "index.html",  // Important for SPA fallback
+}))
+```
+
+---
+
+### Build Fails: "Cannot find module"
+
+**Error:**
+```
+Cannot find module '@/components/Header'
+```
+
+**Cause:** Path alias not configured
+
+**Solution:** Check `tsconfig.json`:
+
+```json
+{
+  "extends": "./.nuxt/tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"],
+      "~/*": ["./*"]
+    }
+  }
+}
+```
+
+## Real-World Example: Task Management App
+
+Complete example showing Nuxt features:
+
+### Backend
+
+```go
+// app/server/routes.go
+type Task struct {
+    ID        int    `json:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
+    UserID    int    `json:"user_id"`
+}
+
+var tasks = []Task{
+    {ID: 1, Title: "Learn Nuxt", Completed: true, UserID: 1},
+    {ID: 2, Title: "Build App", Completed: false, UserID: 1},
+}
+
+func setupRoutes(app *mizu.App) {
+    app.Get("/api/tasks", handleTasks)
+    app.Post("/api/tasks", createTask)
+    app.Put("/api/tasks/{id}", updateTask)
+    app.Delete("/api/tasks/{id}", deleteTask)
+}
+
+func handleTasks(c *mizu.Ctx) error {
+    return c.JSON(200, tasks)
+}
+
+func createTask(c *mizu.Ctx) error {
+    var task Task
+    if err := c.BodyJSON(&task); err != nil {
+        return c.JSON(400, map[string]string{"error": "Invalid JSON"})
+    }
+    task.ID = len(tasks) + 1
+    tasks = append(tasks, task)
+    return c.JSON(201, task)
+}
+```
+
+### Store
+
+```ts
+// stores/tasks.ts
+import { defineStore } from 'pinia'
+
+interface Task {
+  id: number
+  title: string
+  completed: boolean
+  user_id: number
+}
+
+export const useTaskStore = defineStore('tasks', () => {
+  const tasks = ref<Task[]>([])
+  const loading = ref(false)
+  const filter = ref<'all' | 'active' | 'completed'>('all')
+
+  const filteredTasks = computed(() => {
+    switch (filter.value) {
+      case 'active':
+        return tasks.value.filter(t => !t.completed)
+      case 'completed':
+        return tasks.value.filter(t => t.completed)
+      default:
+        return tasks.value
+    }
+  })
+
+  const activeCount = computed(() =>
+    tasks.value.filter(t => !t.completed).length
+  )
+
+  async function fetchTasks() {
+    loading.value = true
+    const { data } = await useFetch<Task[]>('/api/tasks')
+    tasks.value = data.value || []
+    loading.value = false
+  }
+
+  async function addTask(title: string) {
+    const { data } = await useFetch<Task>('/api/tasks', {
+      method: 'POST',
+      body: { title, completed: false, user_id: 1 }
+    })
+
+    if (data.value) {
+      tasks.value.push(data.value)
+    }
+  }
+
+  async function toggleTask(id: number) {
+    const task = tasks.value.find(t => t.id === id)
+    if (!task) return
+
+    const { data } = await useFetch<Task>(`/api/tasks/${id}`, {
+      method: 'PUT',
+      body: { ...task, completed: !task.completed }
+    })
+
+    if (data.value) {
+      const index = tasks.value.findIndex(t => t.id === id)
+      tasks.value[index] = data.value
+    }
+  }
+
+  async function deleteTask(id: number) {
+    await useFetch(`/api/tasks/${id}`, {
+      method: 'DELETE'
+    })
+
+    tasks.value = tasks.value.filter(t => t.id !== id)
+  }
+
+  return {
+    tasks: readonly(tasks),
+    loading: readonly(loading),
+    filter,
+    filteredTasks,
+    activeCount,
+    fetchTasks,
+    addTask,
+    toggleTask,
+    deleteTask
+  }
+})
+```
+
+### Page
+
+```vue
+<!-- pages/tasks.vue -->
+<template>
+  <div class="tasks-page">
+    <h1>My Tasks</h1>
+
+    <TaskForm @add="taskStore.addTask" />
+
+    <div class="filters">
+      <button
+        @click="taskStore.filter = 'all'"
+        :class="{ active: taskStore.filter === 'all' }"
+      >
+        All
+      </button>
+      <button
+        @click="taskStore.filter = 'active'"
+        :class="{ active: taskStore.filter === 'active' }"
+      >
+        Active ({{ taskStore.activeCount }})
+      </button>
+      <button
+        @click="taskStore.filter = 'completed'"
+        :class="{ active: taskStore.filter === 'completed' }"
+      >
+        Completed
+      </button>
+    </div>
+
+    <div v-if="taskStore.loading">Loading tasks...</div>
+
+    <TransitionGroup name="list" tag="ul" v-else class="task-list">
+      <li v-for="task in taskStore.filteredTasks" :key="task.id">
+        <TaskItem
+          :task="task"
+          @toggle="taskStore.toggleTask"
+          @delete="taskStore.deleteTask"
+        />
+      </li>
+    </TransitionGroup>
+  </div>
+</template>
+
+<script setup lang="ts">
+const taskStore = useTaskStore()
+
+onMounted(() => {
+  taskStore.fetchTasks()
+})
+</script>
+
+<style scoped>
+.tasks-page {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.filters {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.filters button {
+  padding: 0.5rem 1rem;
+  border: 1px solid #ddd;
+  background: white;
+  cursor: pointer;
+}
+
+.filters button.active {
+  background: #42b983;
+  color: white;
+  border-color: #42b983;
+}
+
+.task-list {
+  list-style: none;
+  padding: 0;
+}
+
+.list-move,
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.3s ease;
+}
+
+.list-enter-from,
+.list-leave-to {
+  opacity: 0;
+  transform: translateX(30px);
+}
+
+.list-leave-active {
+  position: absolute;
+}
+</style>
+```
+
+### Components
+
+```vue
+<!-- components/TaskForm.vue -->
+<template>
+  <form @submit.prevent="handleSubmit" class="task-form">
+    <input
+      v-model="title"
+      type="text"
+      placeholder="What needs to be done?"
+      required
+    />
+    <button type="submit">Add</button>
+  </form>
+</template>
+
+<script setup lang="ts">
+const title = ref('')
+
+const emit = defineEmits<{
+  add: [title: string]
+}>()
+
+const handleSubmit = () => {
+  if (title.value.trim()) {
+    emit('add', title.value)
+    title.value = ''
+  }
+}
+</script>
+
+<style scoped>
+.task-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.task-form input {
+  flex: 1;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.task-form button {
+  padding: 0.75rem 1.5rem;
+  background: #42b983;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+</style>
+```
+
+```vue
+<!-- components/TaskItem.vue -->
+<template>
+  <div class="task-item" :class="{ completed: task.completed }">
+    <input
+      type="checkbox"
+      :checked="task.completed"
+      @change="$emit('toggle', task.id)"
+    />
+    <span class="title">{{ task.title }}</span>
+    <button @click="$emit('delete', task.id)" class="delete">×</button>
+  </div>
+</template>
+
+<script setup lang="ts">
+interface Task {
+  id: number
+  title: string
+  completed: boolean
+}
+
+defineProps<{
+  task: Task
+}>()
+
+defineEmits<{
+  toggle: [id: number]
+  delete: [id: number]
+}>()
+</script>
+
+<style scoped>
+.task-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+  background: white;
+}
+
+.task-item.completed {
+  opacity: 0.6;
+}
+
+.task-item.completed .title {
+  text-decoration: line-through;
+}
+
+.title {
+  flex: 1;
+}
+
+.delete {
+  background: #ff6b6b;
+  color: white;
+  border: none;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+</style>
+```
+
+## When to Choose Nuxt
+
+### Choose Nuxt When:
+
+✅ You want file-based routing with zero configuration
+✅ You love Vue and want enhanced DX
+✅ Auto-imports appeal to you (less boilerplate)
+✅ You want built-in layouts and middleware
+✅ You're building a content-heavy site or app
+✅ Your team values convention over configuration
+✅ You want powerful built-in composables
+
+### Choose Vanilla Vue When:
+
+✅ You want complete control over setup
+✅ You prefer explicit imports
+✅ Bundle size is critical (Nuxt adds overhead)
+✅ You're building a library
+✅ You don't need file-based routing
+✅ You prefer configuration freedom
+
 ## Next Steps
 
 <CardGroup cols={2}>
   <Card title="Vue Guide" href="/frontend/vue" icon="vuejs">
-    Vanilla Vue with Vite
+    Compare with vanilla Vue + Vite
   </Card>
-  <Card title="Next.js" href="/frontend/nextjs" icon="code">
-    React equivalent
+  <Card title="Next.js Guide" href="/frontend/nextjs" icon="code">
+    React equivalent of Nuxt
+  </Card>
+  <Card title="Pinia" href="https://pinia.vuejs.org" icon="external-link">
+    Official Vue state management
+  </Card>
+  <Card title="Nuxt Docs" href="https://nuxt.com" icon="external-link">
+    Official Nuxt documentation
   </Card>
 </CardGroup>
