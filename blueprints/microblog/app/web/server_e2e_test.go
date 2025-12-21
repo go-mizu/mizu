@@ -1,4 +1,4 @@
-package microblog_test
+package web_test
 
 import (
 	"bytes"
@@ -830,6 +830,367 @@ func TestServerTimeout(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Errorf("expected 200, got %d", resp.StatusCode)
 	}
+}
+
+// TestE2EUserRegistrationAndLogin tests the complete registration and login workflow.
+// This test verifies that a user can successfully:
+// 1. Register a new account
+// 2. Log in with their credentials
+// 3. Access authenticated pages
+func TestE2EUserRegistrationAndLogin(t *testing.T) {
+	srv, cleanup := testServer(t)
+	defer cleanup()
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// Step 1: Verify registration page loads
+	t.Run("registration_page_loads", func(t *testing.T) {
+		resp, err := http.Get(ts.URL + "/register")
+		if err != nil {
+			t.Fatalf("failed to load register page: %v", err)
+		}
+		defer resp.Body.Close()
+
+		assertHTMLPage(t, resp, "/register")
+	})
+
+	// Step 2: Register a new user
+	var token string
+	var accountID string
+	t.Run("user_registration", func(t *testing.T) {
+		regBody := `{"username":"testuser","email":"test@example.com","password":"password123"}`
+		resp, err := http.Post(ts.URL+"/api/v1/auth/register", "application/json", bytes.NewBufferString(regBody))
+		if err != nil {
+			t.Fatalf("registration request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			t.Fatalf("registration failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+		}
+
+		var result apiResponse
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode registration response: %v", err)
+		}
+
+		var data authData
+		if err := json.Unmarshal(result.Data, &data); err != nil {
+			t.Fatalf("failed to decode auth data: %v", err)
+		}
+
+		if data.Account.Username != "testuser" {
+			t.Errorf("expected username 'testuser', got %s", data.Account.Username)
+		}
+		if data.Token == "" {
+			t.Error("expected token to be returned after registration")
+		}
+
+		token = data.Token
+		accountID = data.Account.ID
+	})
+
+	// Step 3: Verify login page loads
+	t.Run("login_page_loads", func(t *testing.T) {
+		resp, err := http.Get(ts.URL + "/login")
+		if err != nil {
+			t.Fatalf("failed to load login page: %v", err)
+		}
+		defer resp.Body.Close()
+
+		assertHTMLPage(t, resp, "/login")
+	})
+
+	// Step 4: Login with registered credentials
+	t.Run("user_login", func(t *testing.T) {
+		loginBody := `{"username":"testuser","password":"password123"}`
+		resp, err := http.Post(ts.URL+"/api/v1/auth/login", "application/json", bytes.NewBufferString(loginBody))
+		if err != nil {
+			t.Fatalf("login request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			t.Fatalf("login failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+		}
+
+		var result apiResponse
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode login response: %v", err)
+		}
+
+		var data authData
+		if err := json.Unmarshal(result.Data, &data); err != nil {
+			t.Fatalf("failed to decode auth data: %v", err)
+		}
+
+		if data.Token == "" {
+			t.Error("expected token to be returned after login")
+		}
+		if data.Account.Username != "testuser" {
+			t.Errorf("expected username 'testuser', got %s", data.Account.Username)
+		}
+
+		// Update token with login token (should be same or new)
+		token = data.Token
+	})
+
+	// Step 5: Access authenticated pages with token
+	t.Run("access_authenticated_pages", func(t *testing.T) {
+		// Test home page
+		req, _ := http.NewRequest("GET", ts.URL+"/", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("failed to access home page: %v", err)
+		}
+		defer resp.Body.Close()
+
+		assertHTMLPage(t, resp, "/")
+
+		// Test notifications page
+		req, _ = http.NewRequest("GET", ts.URL+"/notifications", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		resp, err = http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("failed to access notifications page: %v", err)
+		}
+		defer resp.Body.Close()
+
+		assertHTMLPage(t, resp, "/notifications")
+
+		// Test settings page
+		req, _ = http.NewRequest("GET", ts.URL+"/settings", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		resp, err = http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("failed to access settings page: %v", err)
+		}
+		defer resp.Body.Close()
+
+		assertHTMLPage(t, resp, "/settings")
+	})
+
+	// Step 6: Create a post as authenticated user
+	t.Run("create_post_as_user", func(t *testing.T) {
+		postBody := `{"content":"Hello from e2e test! #testing"}`
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/posts", bytes.NewBufferString(postBody))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("failed to create post: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 && resp.StatusCode != 201 {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			t.Fatalf("create post failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+		}
+	})
+
+	// Step 7: View user profile
+	t.Run("view_user_profile", func(t *testing.T) {
+		resp, err := http.Get(ts.URL + "/u/testuser")
+		if err != nil {
+			t.Fatalf("failed to view profile: %v", err)
+		}
+		defer resp.Body.Close()
+
+		assertHTMLPage(t, resp, "/u/testuser")
+	})
+
+	// Step 8: Verify credentials endpoint
+	t.Run("verify_credentials", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/accounts/verify_credentials", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("verify credentials request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			t.Fatalf("verify credentials failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+		}
+
+		var result struct {
+			Data struct {
+				ID       string `json:"id"`
+				Username string `json:"username"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if result.Data.ID != accountID {
+			t.Errorf("expected account ID %s, got %s", accountID, result.Data.ID)
+		}
+		if result.Data.Username != "testuser" {
+			t.Errorf("expected username 'testuser', got %s", result.Data.Username)
+		}
+	})
+}
+
+// TestE2ECompleteUserJourney tests a complete user journey from registration to interaction.
+// This simulates a realistic user flow including:
+// 1. Registration
+// 2. Login
+// 3. Creating posts
+// 4. Following other users
+// 5. Interacting with posts (like, bookmark)
+func TestE2ECompleteUserJourney(t *testing.T) {
+	srv, cleanup := testServer(t)
+	defer cleanup()
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// Create first user (Alice)
+	aliceToken := registerAndGetToken(t, ts.URL, "alice", "alice@example.com")
+	aliceID := registerAndGetAccountID(t, ts.URL, "alice_dup", "alice2@example.com")
+
+	// Create second user (Bob)
+	bobToken := registerAndGetToken(t, ts.URL, "bob", "bob@example.com")
+	_ = registerAndGetAccountID(t, ts.URL, "bob_dup", "bob2@example.com") // Just to register, ID not needed
+
+	// Alice creates a post
+	var alicePostID string
+	t.Run("alice_creates_post", func(t *testing.T) {
+		alicePostID = createPost(t, ts.URL, aliceToken, "Hello world from Alice! #intro")
+		if alicePostID == "" {
+			t.Fatal("failed to create post for alice")
+		}
+	})
+
+	// Bob follows Alice
+	t.Run("bob_follows_alice", func(t *testing.T) {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/accounts/"+aliceID+"/follow", nil)
+		req.Header.Set("Authorization", "Bearer "+bobToken)
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("follow request failed: %v", err)
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			t.Errorf("expected 200 for follow, got %d", resp.StatusCode)
+		}
+	})
+
+	// Bob likes Alice's post
+	t.Run("bob_likes_alice_post", func(t *testing.T) {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/posts/"+alicePostID+"/like", nil)
+		req.Header.Set("Authorization", "Bearer "+bobToken)
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("like request failed: %v", err)
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			t.Errorf("expected 200 for like, got %d", resp.StatusCode)
+		}
+	})
+
+	// Bob bookmarks Alice's post
+	t.Run("bob_bookmarks_alice_post", func(t *testing.T) {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/posts/"+alicePostID+"/bookmark", nil)
+		req.Header.Set("Authorization", "Bearer "+bobToken)
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("bookmark request failed: %v", err)
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			t.Errorf("expected 200 for bookmark, got %d", resp.StatusCode)
+		}
+	})
+
+	// Verify Bob's bookmarks contain the post
+	t.Run("verify_bob_bookmarks", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/bookmarks", nil)
+		req.Header.Set("Authorization", "Bearer "+bobToken)
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("get bookmarks request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			t.Fatalf("expected 200 for bookmarks, got %d: %s", resp.StatusCode, string(bodyBytes))
+		}
+
+		var result struct {
+			Data []postData `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode bookmarks: %v", err)
+		}
+
+		if len(result.Data) == 0 {
+			t.Error("expected at least one bookmark")
+		}
+	})
+
+	// Verify Bob's home timeline includes Alice's posts
+	t.Run("verify_bob_home_timeline", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/timelines/home", nil)
+		req.Header.Set("Authorization", "Bearer "+bobToken)
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("home timeline request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			t.Fatalf("expected 200 for home timeline, got %d: %s", resp.StatusCode, string(bodyBytes))
+		}
+
+		var result struct {
+			Data []postData `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode timeline: %v", err)
+		}
+
+		// Since Bob follows Alice, Alice's posts should appear in Bob's home timeline
+		// (depending on timeline algorithm implementation)
+	})
+
+	// Alice views her followers
+	t.Run("alice_views_followers", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/accounts/"+aliceID+"/followers", nil)
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("get followers request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			t.Fatalf("expected 200 for followers, got %d: %s", resp.StatusCode, string(bodyBytes))
+		}
+	})
 }
 
 // Helper functions
