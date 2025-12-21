@@ -318,11 +318,11 @@ func (s *Store) scanPage(row *sql.Row) (*view.Page, error) {
 }
 
 // GetRandomID returns a random page ID from the top pages by content length.
-// It selects from the top 10000 pages by bytes_html to ensure quality content.
+// It selects from the top pages by bytes_html to ensure quality content.
 func (s *Store) GetRandomID(ctx context.Context) (string, error) {
 	query := `
 		SELECT id FROM (
-			SELECT id FROM pages ORDER BY bytes_html DESC LIMIT 10000
+			SELECT id FROM pages ORDER BY bytes_html DESC LIMIT 1000
 		) ORDER BY RANDOM() LIMIT 1
 	`
 	var id string

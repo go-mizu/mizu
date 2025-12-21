@@ -5,36 +5,54 @@
 {{define "view-content"}}
 <article class="article">
     <header class="article-header">
-        <h1 class="article-title">{{.Page.Title}}</h1>
+        <div class="article-title-row">
+            <h1 class="article-title">{{.Page.Title}}</h1>
+            {{if .Markdown}}
+            <div class="article-actions">
+                <button type="button" class="icon-btn{{if .UseMD}} active{{end}}" data-toggle-markdown title="{{if .UseMD}}WikiText mode{{else}}Markdown mode{{end}}">
+                    <svg viewBox="0 0 208 128" fill="currentColor"><path d="M30 98V30h20l20 25 20-25h20v68H90V59L70 84 50 59v39H30zm125 0l-30-33h20V30h20v35h20l-30 33z"/></svg>
+                </button>
+                <button type="button" class="icon-btn" data-copy-markdown title="Copy source">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                </button>
+            </div>
+            {{end}}
+        </div>
         <div class="article-meta">
-            <span class="wiki-badge">{{.Page.WikiName}}</span>
-            <span class="meta-dot">&middot;</span>
-            <span>{{.Page.InLanguage}}</span>
+            <span class="meta-tag">{{.Page.WikiName}}</span>
+            <span class="meta-sep"></span>
+            <span class="meta-item">{{.Page.InLanguage}}</span>
             {{if .Page.WordCount}}
-            <span class="meta-dot">&middot;</span>
-            <span>{{formatNumber .Page.WordCount}} words</span>
+            <span class="meta-sep"></span>
+            <span class="meta-item">{{formatNumber .Page.WordCount}} words</span>
             {{end}}
             {{if .Page.ReadTimeStr}}
-            <span class="meta-dot">&middot;</span>
-            <span>{{.Page.ReadTimeStr}}</span>
+            <span class="meta-sep"></span>
+            <span class="meta-item">{{.Page.ReadTimeStr}}</span>
             {{end}}
             {{if .Page.DateModifiedRel}}
-            <span class="meta-dot">&middot;</span>
-            <span title="{{.Page.DateModifiedFmt}}">Updated {{.Page.DateModifiedRel}}</span>
+            <span class="meta-sep"></span>
+            <span class="meta-item" title="{{.Page.DateModifiedFmt}}">{{.Page.DateModifiedRel}}</span>
             {{end}}
             {{if .Page.URL}}
-            <span class="meta-dot">&middot;</span>
-            <a href="{{.Page.URL}}" target="_blank" rel="noopener">View on Wikipedia</a>
+            <span class="meta-sep"></span>
+            <a href="{{.Page.URL}}" target="_blank" rel="noopener" class="meta-link">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                Wikipedia
+            </a>
             {{end}}
         </div>
     </header>
 
-    <div class="article-content">
+    <div class="article-content" data-article-content>
         {{if .HTML}}
         {{.HTML}}
         {{else}}
         <p>{{.Page.Text}}</p>
         {{end}}
     </div>
+    {{if .Markdown}}
+    <script id="markdown-source" type="text/plain">{{.Markdown}}</script>
+    {{end}}
 </article>
 {{end}}

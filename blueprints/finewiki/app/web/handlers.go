@@ -74,6 +74,7 @@ func (s *Server) page(c *mizu.Ctx) error {
 	id := strings.TrimSpace(c.Query("id"))
 	wikiname := strings.TrimSpace(c.Query("wiki"))
 	title := strings.TrimSpace(c.Query("title"))
+	useMD := c.Query("md") == "true"
 
 	var p *view.Page
 	var err error
@@ -96,11 +97,28 @@ func (s *Server) page(c *mizu.Ctx) error {
 	p.FormatDates()
 	p.ComputeReadStats()
 
-	// Render page content (uses WikiText if available for preserved links)
+	// Render page content
 	var htmlContent template.HTML
-	rendered, err := view.RenderPage(p)
-	if err == nil {
-		htmlContent = template.HTML(rendered)
+	var markdownSource string
+
+	if useMD {
+		// MD mode: Use plain Text field (cleaner, no wiki markup artifacts)
+		markdownSource = p.Text
+		rendered, err := view.RenderMarkdown(p.Text, p.WikiName)
+		if err == nil {
+			htmlContent = template.HTML(rendered)
+		}
+	} else {
+		// Default: use WikiText with full parsing (preserves internal links)
+		if p.WikiText != "" {
+			markdownSource = view.ConvertWikiTextToMarkdown(p.WikiText, p.WikiName)
+		} else {
+			markdownSource = p.Text
+		}
+		rendered, err := view.RenderPage(p)
+		if err == nil {
+			htmlContent = template.HTML(rendered)
+		}
 	}
 
 	s.render(c, "page/view.html", map[string]any{
@@ -110,6 +128,8 @@ func (s *Server) page(c *mizu.Ctx) error {
 		"Infoboxes": p.Infoboxes,
 		"TOC":       nil,
 		"HTML":      htmlContent,
+		"Markdown":  markdownSource,
+		"UseMD":     useMD,
 		"Theme":     "",
 	})
 	return nil
