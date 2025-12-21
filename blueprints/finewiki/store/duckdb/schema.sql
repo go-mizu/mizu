@@ -1,0 +1,12 @@
+CREATE TABLE IF NOT EXISTS titles (
+  id          VARCHAR PRIMARY KEY,
+  wikiname    VARCHAR NOT NULL,
+  in_language VARCHAR NOT NULL,
+  title       VARCHAR NOT NULL,
+  title_lc    VARCHAR NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS meta (
+  k VARCHAR PRIMARY KEY,
+  v VARCHAR NOT NULL
+);
