@@ -15,7 +15,6 @@ import (
 	"testing"
 
 	"github.com/go-mizu/blueprints/finewiki/app/web"
-	"github.com/go-mizu/blueprints/finewiki/cli"
 	"github.com/go-mizu/blueprints/finewiki/feature/search"
 	"github.com/go-mizu/blueprints/finewiki/feature/view"
 	"github.com/go-mizu/blueprints/finewiki/store/duckdb"
@@ -185,7 +184,7 @@ func setupServer(t *testing.T) *httptest.Server {
 	searchSvc := search.New(store)
 	viewSvc := view.New(store)
 
-	tmpl, err := cli.NewTemplates()
+	tmpl, err := web.NewTemplates()
 	if err != nil {
 		t.Fatalf("new templates: %v", err)
 	}

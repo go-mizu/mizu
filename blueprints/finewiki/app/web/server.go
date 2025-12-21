@@ -19,11 +19,11 @@ type Server struct {
 
 	view     view.API
 	search   search.API
-	tmpl     Templates
+	tmpl     Renderer
 	contract contract.Invoker
 }
 
-func New(viewAPI view.API, searchAPI search.API, tmpl Templates) *Server {
+func New(viewAPI view.API, searchAPI search.API, tmpl Renderer) *Server {
 	// Create the API service that implements the WikiAPI contract
 	apiSvc := api.New(viewAPI, searchAPI)
 

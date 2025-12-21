@@ -1,4 +1,4 @@
-package cli
+package web
 
 import (
 	"embed"
@@ -10,7 +10,12 @@ import (
 //go:embed views/**/*
 var viewsFS embed.FS
 
-// Templates wraps the HTML templates.
+// Renderer is the interface for template rendering.
+type Renderer interface {
+	Render(w any, name string, data any) error
+}
+
+// Templates wraps the HTML templates and implements Renderer.
 type Templates struct {
 	t *template.Template
 }

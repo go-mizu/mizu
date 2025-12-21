@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/go-mizu/blueprints/finewiki/app/web"
-	"github.com/go-mizu/blueprints/finewiki/cli"
 	"github.com/go-mizu/blueprints/finewiki/feature/search"
 	"github.com/go-mizu/blueprints/finewiki/feature/view"
 	"github.com/go-mizu/blueprints/finewiki/store/duckdb"
@@ -68,7 +67,7 @@ func TestAPI_E2E(t *testing.T) {
 	viewSvc := view.New(store)
 
 	// Create embedded templates
-	tmpl, err := cli.NewTemplates()
+	tmpl, err := web.NewTemplates()
 	if err != nil {
 		t.Fatalf("failed to create templates: %v", err)
 	}

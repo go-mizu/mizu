@@ -1,0 +1,32 @@
+{{define "page/view.html"}}
+{{template "layout/app.html" .}}
+{{end}}
+
+{{define "view-content"}}
+<article class="article">
+    <header class="article-header">
+        <h1 class="article-title">{{.Page.Title}}</h1>
+        <div class="article-meta">
+            <span class="wiki-badge">{{.Page.WikiName}}</span>
+            <span class="meta-dot">&middot;</span>
+            <span>{{.Page.InLanguage}}</span>
+            {{if .Page.DateModifiedRel}}
+            <span class="meta-dot">&middot;</span>
+            <span title="{{.Page.DateModifiedFmt}}">Updated {{.Page.DateModifiedRel}}</span>
+            {{end}}
+            {{if .Page.URL}}
+            <span class="meta-dot">&middot;</span>
+            <a href="{{.Page.URL}}" target="_blank" rel="noopener">View on Wikipedia</a>
+            {{end}}
+        </div>
+    </header>
+
+    <div class="article-content">
+        {{if .HTML}}
+        {{.HTML}}
+        {{else}}
+        <p>{{.Page.Text}}</p>
+        {{end}}
+    </div>
+</article>
+{{end}}

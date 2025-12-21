@@ -89,7 +89,7 @@ func runServe(ctx context.Context, addr, dataDir, lang string) error {
 		return err
 	}
 
-	tmpl, err := NewTemplates()
+	tmpl, err := web.NewTemplates()
 	if err != nil {
 		return err
 	}

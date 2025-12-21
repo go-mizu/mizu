@@ -1,0 +1,30 @@
+{{define "page/home.html"}}
+{{template "layout/app.html" .}}
+{{end}}
+
+{{define "home-content"}}
+<div class="home">
+    <h1 class="home-title">FineWiki</h1>
+    <p class="home-subtitle">Fast Wikipedia reader</p>
+
+    <form class="home-search" action="/search" method="get">
+        <div class="search-box">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="m21 21-4.35-4.35"/>
+            </svg>
+            <input
+                type="search"
+                name="q"
+                class="search-input"
+                placeholder="Search articles..."
+                autocomplete="off"
+                autofocus
+                data-search-input
+            >
+        </div>
+    </form>
+
+    <p class="home-hint">Press <kbd>/</kbd> to search from anywhere</p>
+</div>
+{{end}}
