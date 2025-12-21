@@ -12,7 +12,7 @@
         <h1 class="auth-title">Create your account</h1>
         <p class="auth-subtitle">Join the conversation</p>
 
-        <form class="auth-form" id="registerForm" action="/register" method="POST">
+        <form class="auth-form" id="registerForm" data-form="register">
             <div class="form-group">
                 <label class="form-label" for="username">Username</label>
                 <input
@@ -24,6 +24,7 @@
                     pattern="[a-zA-Z0-9_]+"
                     maxlength="30"
                     autocomplete="username"
+                    data-validate="required username"
                     required
                 >
                 <p class="form-hint">Only letters, numbers, and underscores. Max 30 characters.</p>
@@ -38,6 +39,7 @@
                     class="form-input"
                     placeholder="Enter your email"
                     autocomplete="email"
+                    data-validate="required email"
                     required
                 >
             </div>
@@ -53,6 +55,7 @@
                         placeholder="Create a password"
                         minlength="8"
                         autocomplete="new-password"
+                        data-validate="required password"
                         required
                     >
                     <button type="button" class="password-toggle" data-toggle="password">
