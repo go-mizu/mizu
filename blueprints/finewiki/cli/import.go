@@ -48,46 +48,78 @@ Examples:
 	return c
 }
 
+// parquetFileInfo contains URL and size for a parquet file
+type parquetFileInfo struct {
+	URL      string
+	Filename string
+	Size     int64
+}
+
 func runImport(ctx context.Context, dataDir, lang string) error {
-	// Get parquet URLs for this language
-	urls, err := getParquetURLs(ctx, lang)
+	// Get parquet file info for this language
+	files, err := getParquetFiles(ctx, lang)
 	if err != nil {
 		return err
 	}
 
-	if len(urls) == 0 {
+	if len(files) == 0 {
 		return fmt.Errorf("no parquet files found for language: %s", lang)
 	}
 
 	langDir := LangDir(dataDir, lang)
+
+	// Print download info
+	fmt.Printf("Downloading %s Wikipedia\n", strings.ToUpper(lang))
+	fmt.Printf("Source: huggingface.co/datasets/%s\n", hfDataset)
+	fmt.Printf("Target: %s/\n", langDir)
+	fmt.Println()
+
+	// Calculate total size
+	var totalSize int64
+	for _, f := range files {
+		totalSize += f.Size
+	}
+	fmt.Printf("Files: %d (total: %s)\n", len(files), formatBytes(totalSize))
+
+	// Create downloader
+	dl := NewDownloader()
+	if dl.UseCurl() {
+		fmt.Println("Using: curl")
+	} else {
+		fmt.Println("Using: native Go")
+	}
+	fmt.Println()
+
+	// Create language directory
 	if err := os.MkdirAll(langDir, 0o755); err != nil {
 		return err
 	}
 
 	// Download all parquet files
-	for i, url := range urls {
+	for i, f := range files {
 		var dst string
-		if len(urls) == 1 {
+		if len(files) == 1 {
 			dst = filepath.Join(langDir, "data.parquet")
 		} else {
 			dst = filepath.Join(langDir, fmt.Sprintf("data-%03d.parquet", i))
 		}
 
-		fmt.Printf("downloading %s (%d/%d)...\n", filepath.Base(dst), i+1, len(urls))
+		fmt.Printf("[%d/%d] %s (%s)\n", i+1, len(files), filepath.Base(dst), formatBytes(f.Size))
 
-		if err := downloadFile(ctx, url, dst); err != nil {
-			return fmt.Errorf("download %s: %w", url, err)
+		if err := dl.Download(ctx, f.URL, dst, f.Size); err != nil {
+			return fmt.Errorf("download %s: %w", f.Filename, err)
 		}
 
+		// Verify file size
 		fi, _ := os.Stat(dst)
-		fmt.Printf("saved: %s (%.1f MB)\n", dst, float64(fi.Size())/(1024*1024))
+		fmt.Printf("  Saved: %s\n", formatBytes(fi.Size()))
 	}
 
-	fmt.Printf("\nimport complete. run 'finewiki serve %s' to start.\n", lang)
+	fmt.Printf("\nImport complete. Run 'finewiki serve %s' to start.\n", lang)
 	return nil
 }
 
-func getParquetURLs(ctx context.Context, lang string) ([]string, error) {
+func getParquetFiles(ctx context.Context, lang string) ([]parquetFileInfo, error) {
 	// Query HuggingFace datasets server API
 	url := fmt.Sprintf("%s/parquet?dataset=%s&config=%s", hfServerAPI, hfDataset, lang)
 
@@ -114,7 +146,9 @@ func getParquetURLs(ctx context.Context, lang string) ([]string, error) {
 
 	var result struct {
 		ParquetFiles []struct {
-			URL string `json:"url"`
+			URL      string `json:"url"`
+			Filename string `json:"filename"`
+			Size     int64  `json:"size"`
 		} `json:"parquet_files"`
 	}
 
@@ -122,55 +156,16 @@ func getParquetURLs(ctx context.Context, lang string) ([]string, error) {
 		return nil, err
 	}
 
-	urls := make([]string, 0, len(result.ParquetFiles))
+	files := make([]parquetFileInfo, 0, len(result.ParquetFiles))
 	for _, f := range result.ParquetFiles {
 		if f.URL != "" {
-			urls = append(urls, f.URL)
+			files = append(files, parquetFileInfo{
+				URL:      f.URL,
+				Filename: f.Filename,
+				Size:     f.Size,
+			})
 		}
 	}
 
-	return urls, nil
-}
-
-func downloadFile(ctx context.Context, url, dst string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return err
-	}
-
-	if token := os.Getenv("HF_TOKEN"); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	client := &http.Client{Timeout: 0} // No timeout for large files
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("http %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	tmp := dst + ".partial"
-	f, err := os.Create(tmp)
-	if err != nil {
-		return err
-	}
-
-	_, copyErr := io.Copy(f, resp.Body)
-	closeErr := f.Close()
-
-	if copyErr != nil {
-		_ = os.Remove(tmp)
-		return copyErr
-	}
-	if closeErr != nil {
-		_ = os.Remove(tmp)
-		return closeErr
-	}
-
-	return os.Rename(tmp, dst)
+	return files, nil
 }
