@@ -8,8 +8,6 @@ finewiki/
 │       ├── server.go
 │       ├── handlers.go
 │       ├── render.go
-│       └── middleware.go
-│
 ├── feature/
 │   ├── search/
 │   │   ├── api.go

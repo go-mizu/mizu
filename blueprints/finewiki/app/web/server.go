@@ -8,7 +8,7 @@ import (
 )
 
 type Server struct {
-	r *mizu.Router
+	app *mizu.App
 
 	view   view.API
 	search search.API
@@ -17,7 +17,7 @@ type Server struct {
 
 func New(viewAPI view.API, searchAPI search.API, tmpl Templates) *Server {
 	s := &Server{
-		r:      mizu.New(),
+		app:    mizu.New(),
 		view:   viewAPI,
 		search: searchAPI,
 		tmpl:   tmpl,
@@ -27,7 +27,7 @@ func New(viewAPI view.API, searchAPI search.API, tmpl Templates) *Server {
 }
 
 func (s *Server) routes() {
-	r := s.r
+	r := s.app
 
 	r.Use(Logging())
 
@@ -35,11 +35,11 @@ func (s *Server) routes() {
 	r.Get("/page", s.page)
 	r.Get("/search", s.searchPage)
 
-	r.Get("/healthz", func(c *mizu.Ctx) {
-		c.Text(200, "ok")
+	r.Get("/healthz", func(c *mizu.Ctx) error {
+		return c.Text(200, "ok")
 	})
 }
 
-func (s *Server) Handler() *mizu.Router {
-	return s.r
+func (s *Server) Handler() *mizu.App {
+	return s.app
 }

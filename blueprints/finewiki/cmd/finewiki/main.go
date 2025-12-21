@@ -23,7 +23,7 @@ import (
 	"github.com/go-mizu/blueprints/finewiki/feature/view"
 	"github.com/go-mizu/blueprints/finewiki/store/duckdb"
 
-	_ "github.com/marcboeker/go-duckdb"
+	_ "github.com/duckdb/duckdb-go/v2"
 )
 
 //go:embed views/**/*
