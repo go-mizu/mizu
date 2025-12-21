@@ -2,22 +2,32 @@
 package cli
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
+	"strings"
 
+	"github.com/charmbracelet/fang"
 	"github.com/spf13/cobra"
 )
 
+// Version information (set at build time via ldflags)
 var (
-	dataDir string
+	Version   = "dev"
+	Commit    = "unknown"
+	BuildTime = "unknown"
 )
 
-// NewRoot creates the root command.
-func NewRoot() *cobra.Command {
+var dataDir string
+
+// Execute runs the CLI with the given context.
+func Execute(ctx context.Context) error {
 	homeDir, _ := os.UserHomeDir()
 	defaultDataDir := filepath.Join(homeDir, "data", "blueprint", "microblog")
 
-	cmd := &cobra.Command{
+	root := &cobra.Command{
 		Use:   "microblog",
 		Short: "A modern microblogging platform",
 		Long: `Microblog is a self-hosted microblogging platform combining the best
@@ -30,20 +40,38 @@ Features include:
   - Following/followers social graph
   - Content warnings and visibility controls
   - Full-text search and trending topics`,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 	}
 
-	cmd.PersistentFlags().StringVar(&dataDir, "data", defaultDataDir, "Data directory")
+	root.SetVersionTemplate("microblog {{.Version}}\n")
+	root.Version = versionString()
+	root.PersistentFlags().StringVar(&dataDir, "data", defaultDataDir, "Data directory")
 
-	cmd.AddCommand(
+	root.AddCommand(
 		NewServe(),
 		NewInit(),
 		NewUser(),
 	)
 
-	return cmd
+	if err := fang.Execute(ctx, root,
+		fang.WithVersion(Version),
+		fang.WithCommit(Commit),
+	); err != nil {
+		fmt.Fprintln(os.Stderr, errorStyle.Render(iconCross+" "+err.Error()))
+		return err
+	}
+	return nil
 }
 
-// Execute runs the CLI.
-func Execute() error {
-	return NewRoot().Execute()
+func versionString() string {
+	if strings.TrimSpace(Version) != "" && Version != "dev" {
+		return Version
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		if bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+			return bi.Main.Version
+		}
+	}
+	return "dev"
 }

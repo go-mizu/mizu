@@ -3,6 +3,8 @@ module github.com/go-mizu/blueprints/microblog
 go 1.25.5
 
 require (
+	github.com/charmbracelet/fang v0.6.0
+	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/duckdb/duckdb-go/v2 v2.5.4
 	github.com/go-mizu/mizu v0.5.0
 	github.com/oklog/ulid/v2 v2.1.0
