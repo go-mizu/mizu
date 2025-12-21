@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/spf13/cobra"
@@ -43,19 +44,26 @@ func newUserCreate() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			username := args[0]
+			ui := NewUI()
+			start := time.Now()
 
+			ui.Header(iconUser, "Create User")
+			ui.Blank()
+
+			generatedPassword := false
 			if password == "" {
-				// Generate a random password if not provided
 				password = fmt.Sprintf("temp%d", os.Getpid())
-				fmt.Printf("Generated temporary password: %s\n", password)
+				generatedPassword = true
 			}
 
 			store, cleanup, err := openAccountsStore()
 			if err != nil {
+				ui.Error("Failed to open database")
 				return err
 			}
 			defer cleanup()
 
+			ui.StartSpinner("Creating user account...")
 			svc := accounts.NewService(store)
 			account, err := svc.Create(context.Background(), &accounts.CreateIn{
 				Username: username,
@@ -63,18 +71,31 @@ func newUserCreate() *cobra.Command {
 				Password: password,
 			})
 			if err != nil {
+				ui.StopSpinnerError("Failed to create user")
 				return fmt.Errorf("create user: %w", err)
 			}
+			ui.StopSpinner("Account created", time.Since(start))
 
 			if admin {
 				if err := svc.SetAdmin(context.Background(), account.ID, true); err != nil {
-					return fmt.Errorf("set admin: %w", err)
+					ui.Warn("Failed to set admin flag")
 				}
 			}
 
-			fmt.Printf("Created user: @%s (ID: %s)\n", account.Username, account.ID)
+			ui.Success("User created successfully")
+			ui.Blank()
+			ui.Info("Username", usernameStyle.Render("@"+account.Username))
+			ui.Info("ID", account.ID)
+			if email != "" {
+				ui.Info("Email", email)
+			}
 			if admin {
-				fmt.Println("  Admin: yes")
+				ui.Info("Admin", successStyle.Render("yes"))
+			}
+			if generatedPassword {
+				ui.Blank()
+				ui.Warn("Generated temporary password:")
+				ui.Hint(password)
 			}
 
 			return nil
@@ -93,25 +114,35 @@ func newUserList() *cobra.Command {
 		Use:   "list",
 		Short: "List all users",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ui := NewUI()
+
 			store, cleanup, err := openAccountsStore()
 			if err != nil {
+				ui.Error("Failed to open database")
 				return err
 			}
 			defer cleanup()
 
+			ui.Header(iconUser, "User Accounts")
+			ui.Blank()
+
 			svc := accounts.NewService(store)
 			list, err := svc.List(context.Background(), 100, 0)
 			if err != nil {
+				ui.Error("Failed to list users")
 				return fmt.Errorf("list users: %w", err)
 			}
 
-			fmt.Printf("Users (%d total):\n\n", list.Total)
+			if list.Total == 0 {
+				ui.Hint("No users found. Use 'microblog user create' to add users.")
+				return nil
+			}
+
+			ui.Info("Total users", fmt.Sprintf("%d", list.Total))
+			ui.Blank()
+
 			for _, a := range list.Accounts {
-				verified := ""
-				if a.Verified {
-					verified = " [verified]"
-				}
-				fmt.Printf("  @%-20s %s%s\n", a.Username, a.DisplayName, verified)
+				ui.UserRow(a.Username, a.DisplayName, a.Verified, a.Admin, a.Suspended)
 			}
 
 			return nil
@@ -128,24 +159,32 @@ func newUserVerify() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			username := args[0]
+			ui := NewUI()
 
 			store, cleanup, err := openAccountsStore()
 			if err != nil {
+				ui.Error("Failed to open database")
 				return err
 			}
 			defer cleanup()
 
+			ui.StartSpinner(fmt.Sprintf("Verifying @%s...", username))
+
 			svc := accounts.NewService(store)
 			account, err := svc.GetByUsername(context.Background(), username)
 			if err != nil {
+				ui.StopSpinnerError("User not found")
 				return fmt.Errorf("find user: %w", err)
 			}
 
 			if err := svc.Verify(context.Background(), account.ID, true); err != nil {
+				ui.StopSpinnerError("Failed to verify user")
 				return fmt.Errorf("verify user: %w", err)
 			}
 
-			fmt.Printf("Verified user: @%s\n", account.Username)
+			ui.StopSpinnerError("") // Clear line
+			ui.Success(fmt.Sprintf("Verified user %s", usernameStyle.Render("@"+account.Username)))
+
 			return nil
 		},
 	}
@@ -162,27 +201,35 @@ func newUserSuspend() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			username := args[0]
+			ui := NewUI()
 
 			store, cleanup, err := openAccountsStore()
 			if err != nil {
+				ui.Error("Failed to open database")
 				return err
 			}
 			defer cleanup()
 
+			ui.StartSpinner(fmt.Sprintf("Suspending @%s...", username))
+
 			svc := accounts.NewService(store)
 			account, err := svc.GetByUsername(context.Background(), username)
 			if err != nil {
+				ui.StopSpinnerError("User not found")
 				return fmt.Errorf("find user: %w", err)
 			}
 
 			if err := svc.Suspend(context.Background(), account.ID, true); err != nil {
+				ui.StopSpinnerError("Failed to suspend user")
 				return fmt.Errorf("suspend user: %w", err)
 			}
 
-			fmt.Printf("Suspended user: @%s\n", account.Username)
+			ui.StopSpinnerError("") // Clear line
+			ui.Success(fmt.Sprintf("Suspended user %s", usernameStyle.Render("@"+account.Username)))
 			if reason != "" {
-				fmt.Printf("  Reason: %s\n", reason)
+				ui.Info("Reason", reason)
 			}
+
 			return nil
 		},
 	}

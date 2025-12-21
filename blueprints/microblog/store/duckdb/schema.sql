@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS media (
   height      INTEGER,
   position    INTEGER DEFAULT 0,
   created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+  FOREIGN KEY (post_id) REFERENCES posts(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_media_post_id ON media(post_id);
@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS polls (
   expires_at   TIMESTAMP,
   voters_count INTEGER DEFAULT 0,
   created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+  FOREIGN KEY (post_id) REFERENCES posts(id)
 );
 
 -- Poll votes
@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS poll_votes (
   choice     INTEGER NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(poll_id, account_id, choice),
-  FOREIGN KEY (poll_id) REFERENCES polls(id) ON DELETE CASCADE,
+  FOREIGN KEY (poll_id) REFERENCES polls(id),
   FOREIGN KEY (account_id) REFERENCES accounts(id)
 );
 
@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS likes (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(account_id, post_id),
   FOREIGN KEY (account_id) REFERENCES accounts(id),
-  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+  FOREIGN KEY (post_id) REFERENCES posts(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_likes_account_id ON likes(account_id);
@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS reposts (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(account_id, post_id),
   FOREIGN KEY (account_id) REFERENCES accounts(id),
-  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+  FOREIGN KEY (post_id) REFERENCES posts(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_reposts_account_id ON reposts(account_id);
@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS bookmarks (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(account_id, post_id),
   FOREIGN KEY (account_id) REFERENCES accounts(id),
-  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+  FOREIGN KEY (post_id) REFERENCES posts(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_bookmarks_account_id ON bookmarks(account_id);
@@ -160,7 +160,7 @@ CREATE TABLE IF NOT EXISTS post_hashtags (
   post_id    VARCHAR NOT NULL,
   hashtag_id VARCHAR NOT NULL,
   PRIMARY KEY(post_id, hashtag_id),
-  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
+  FOREIGN KEY (post_id) REFERENCES posts(id),
   FOREIGN KEY (hashtag_id) REFERENCES hashtags(id)
 );
 
@@ -170,7 +170,7 @@ CREATE TABLE IF NOT EXISTS mentions (
   post_id    VARCHAR NOT NULL,
   account_id VARCHAR NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
+  FOREIGN KEY (post_id) REFERENCES posts(id),
   FOREIGN KEY (account_id) REFERENCES accounts(id)
 );
 
@@ -188,7 +188,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (account_id) REFERENCES accounts(id),
   FOREIGN KEY (actor_id) REFERENCES accounts(id),
-  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+  FOREIGN KEY (post_id) REFERENCES posts(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_notifications_account_id ON notifications(account_id);
@@ -212,7 +212,7 @@ CREATE TABLE IF NOT EXISTS list_members (
   account_id VARCHAR NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY(list_id, account_id),
-  FOREIGN KEY (list_id) REFERENCES lists(id) ON DELETE CASCADE,
+  FOREIGN KEY (list_id) REFERENCES lists(id),
   FOREIGN KEY (account_id) REFERENCES accounts(id)
 );
 
@@ -252,7 +252,7 @@ CREATE TABLE IF NOT EXISTS edit_history (
   content_warning TEXT,
   sensitive       BOOLEAN,
   created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+  FOREIGN KEY (post_id) REFERENCES posts(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_edit_history_post_id ON edit_history(post_id);
@@ -266,8 +266,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   ip_address VARCHAR,
   expires_at TIMESTAMP NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
-);
+  FOREIGN KEY (account_id) REFERENCES accounts(id));
 
 CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
 CREATE INDEX IF NOT EXISTS idx_sessions_account_id ON sessions(account_id);
