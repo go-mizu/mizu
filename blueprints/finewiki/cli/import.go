@@ -95,13 +95,21 @@ func runImport(ctx context.Context, dataDir, lang string) error {
 		return err
 	}
 
-	// Download all parquet files
+	// Download all parquet files (skip if already exists with correct size)
+	var downloaded, skipped int
 	for i, f := range files {
 		var dst string
 		if len(files) == 1 {
 			dst = filepath.Join(langDir, "data.parquet")
 		} else {
 			dst = filepath.Join(langDir, fmt.Sprintf("data-%03d.parquet", i))
+		}
+
+		// Check if file already exists with correct size
+		if fi, err := os.Stat(dst); err == nil && fi.Size() == f.Size {
+			fmt.Printf("[%d/%d] %s - skipped (already exists)\n", i+1, len(files), filepath.Base(dst))
+			skipped++
+			continue
 		}
 
 		fmt.Printf("[%d/%d] %s (%s)\n", i+1, len(files), filepath.Base(dst), formatBytes(f.Size))
@@ -113,6 +121,12 @@ func runImport(ctx context.Context, dataDir, lang string) error {
 		// Verify file size
 		fi, _ := os.Stat(dst)
 		fmt.Printf("  Saved: %s\n", formatBytes(fi.Size()))
+		downloaded++
+	}
+
+	if skipped > 0 && downloaded == 0 {
+		fmt.Printf("\nAll files already exist. Run 'finewiki serve %s' to start.\n", lang)
+		return nil
 	}
 
 	fmt.Printf("\nImport complete. Run 'finewiki serve %s' to start.\n", lang)
