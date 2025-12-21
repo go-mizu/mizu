@@ -12,7 +12,7 @@
         <h1 class="auth-title">Welcome back</h1>
         <p class="auth-subtitle">Log in to your account</p>
 
-        <form class="auth-form" id="loginForm" action="/login" method="POST">
+        <form class="auth-form" id="loginForm" data-form="login">
             <div class="form-group">
                 <label class="form-label" for="username">Username or email</label>
                 <input
@@ -22,6 +22,7 @@
                     class="form-input"
                     placeholder="Enter your username or email"
                     autocomplete="username"
+                    data-validate="required"
                     required
                 >
             </div>
@@ -36,6 +37,7 @@
                         class="form-input"
                         placeholder="Enter your password"
                         autocomplete="current-password"
+                        data-validate="required"
                         required
                     >
                     <button type="button" class="password-toggle" data-toggle="password">

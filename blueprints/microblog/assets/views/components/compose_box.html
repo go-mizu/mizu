@@ -3,7 +3,7 @@
     <div class="compose-avatar">
         {{template "avatar" dict "Account" .Account "Size" "lg"}}
     </div>
-    <form class="compose-form" id="composeForm" data-reply-to="{{.ReplyToID}}">
+    <form class="compose-form" id="composeForm" data-form="compose" {{if .ReplyToID}}data-reply-to="{{.ReplyToID}}"{{end}}>
         {{if .ReplyTo}}
         <div class="compose-reply-context">
             Replying to <a href="/@{{.ReplyTo.Account.Username}}">@{{.ReplyTo.Account.Username}}</a>
@@ -16,6 +16,8 @@
             maxlength="500"
             rows="1"
             id="composeInput"
+            data-char-counter="charCount"
+            data-autoresize
         ></textarea>
         <div class="compose-footer">
             <div class="compose-tools">
@@ -43,8 +45,8 @@
                 </button>
             </div>
             <div class="compose-submit">
-                <span class="compose-counter" id="composeCounter">0/500</span>
-                <button type="submit" class="btn btn-primary" id="composeSubmit" disabled>Post</button>
+                <span class="char-count"><span id="charCount">0</span>/500</span>
+                <button type="submit" class="btn btn-primary" id="composeSubmit">Post</button>
             </div>
         </div>
     </form>
