@@ -70,6 +70,24 @@ func convertWikiLinks(text, wikiname string) string {
 	})
 }
 
+// RenderPage renders a Page to HTML.
+// Uses WikiText when available (to preserve internal links), falling back to Text.
+func RenderPage(p *Page) (string, error) {
+	// Prefer WikiText for content with links preserved
+	if p.WikiText != "" {
+		// Convert WikiText to markdown, then render to HTML
+		markdown := ConvertWikiTextToMarkdown(p.WikiText, p.WikiName)
+		return RenderMarkdown(markdown, p.WikiName)
+	}
+
+	// Fallback to pre-processed Text field
+	if p.Text != "" {
+		return RenderMarkdown(p.Text, p.WikiName)
+	}
+
+	return "", nil
+}
+
 // RenderText converts plain text to basic HTML (preserving paragraphs).
 // Also converts wiki links. Use this as a fallback when markdown parsing is not desired.
 func RenderText(text, wikiname string) string {
