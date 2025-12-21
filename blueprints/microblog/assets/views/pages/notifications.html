@@ -1,0 +1,35 @@
+{{define "title"}}Notifications - Microblog{{end}}
+
+{{define "content"}}
+<div class="section-header flex items-center justify-between">
+    <h1 class="section-title">Notifications</h1>
+    {{if .Notifications}}
+    <button class="btn btn-ghost btn-sm" id="markAllRead">Mark all as read</button>
+    {{end}}
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+    <button class="tab active" data-filter="all">All</button>
+    <button class="tab" data-filter="mentions">Mentions</button>
+    <button class="tab" data-filter="likes">Likes</button>
+    <button class="tab" data-filter="reposts">Reposts</button>
+    <button class="tab" data-filter="follows">Follows</button>
+</div>
+
+<!-- Notifications -->
+<div id="notificationsList">
+    {{if .Notifications}}
+    {{range .Notifications}}
+    {{template "notification_item" .}}
+    {{end}}
+    {{else}}
+    {{template "empty_state" dict "Icon" "notifications" "Title" "No notifications yet" "Description" "When someone interacts with your posts, you'll see it here."}}
+    {{end}}
+</div>
+
+<!-- Loading -->
+<div class="loading hidden" id="notificationsLoader">
+    <div class="spinner"></div>
+</div>
+{{end}}

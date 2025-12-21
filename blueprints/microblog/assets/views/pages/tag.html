@@ -1,0 +1,41 @@
+{{define "title"}}#{{.Tag}} - Microblog{{end}}
+
+{{define "content"}}
+<div class="section-header flex items-center gap-4">
+    <a href="javascript:history.back()" class="btn btn-ghost btn-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+            <line x1="19" y1="12" x2="5" y2="12"/>
+            <polyline points="12 19 5 12 12 5"/>
+        </svg>
+    </a>
+    <div>
+        <h1 class="section-title">#{{.Tag}}</h1>
+        {{if .PostCount}}
+        <p class="text-sm text-secondary">{{.PostCount}} posts</p>
+        {{end}}
+    </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+    <button class="tab active">Top</button>
+    <button class="tab">Latest</button>
+    <button class="tab">People</button>
+</div>
+
+<!-- Posts -->
+<div id="tagPosts">
+    {{if .Posts}}
+    {{range .Posts}}
+    {{template "post_card" .}}
+    {{end}}
+    {{else}}
+    {{template "empty_state" dict "Icon" "posts" "Title" "No posts yet" "Description" (printf "Be the first to post with #%s" .Tag)}}
+    {{end}}
+</div>
+
+<!-- Loading -->
+<div class="loading hidden" id="postsLoader">
+    <div class="spinner"></div>
+</div>
+{{end}}

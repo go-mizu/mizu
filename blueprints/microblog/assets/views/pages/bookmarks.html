@@ -1,0 +1,24 @@
+{{define "title"}}Bookmarks - Microblog{{end}}
+
+{{define "content"}}
+<div class="section-header">
+    <h1 class="section-title">Bookmarks</h1>
+    <p class="text-sm text-secondary">@{{.Account.Username}}</p>
+</div>
+
+<!-- Bookmarked Posts -->
+<div id="bookmarksList">
+    {{if .Posts}}
+    {{range .Posts}}
+    {{template "post_card" .}}
+    {{end}}
+    {{else}}
+    {{template "empty_state" dict "Icon" "bookmarks" "Title" "No bookmarks yet" "Description" "When you bookmark a post, it'll show up here."}}
+    {{end}}
+</div>
+
+<!-- Loading -->
+<div class="loading hidden" id="bookmarksLoader">
+    <div class="spinner"></div>
+</div>
+{{end}}

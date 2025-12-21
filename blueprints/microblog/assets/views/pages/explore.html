@@ -1,0 +1,49 @@
+{{define "title"}}Explore - Microblog{{end}}
+
+{{define "content"}}
+<div class="section-header">
+    <h1 class="section-title">Explore</h1>
+</div>
+
+<!-- Search -->
+<div class="p-4 border-b">
+    <form action="/search" method="GET" class="search-box">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="search" name="q" placeholder="Search posts, people, and tags..." class="search-input" value="">
+    </form>
+</div>
+
+<!-- Trending Tags -->
+{{if .TrendingTags}}
+<div class="section">
+    <div class="p-4 border-b">
+        <h2 class="font-bold text-lg">Trending now</h2>
+    </div>
+    {{range .TrendingTags}}
+    <a href="/tags/{{.Name}}" class="trending-item">
+        <div class="trending-category">Trending</div>
+        <div class="trending-name">#{{.Name}}</div>
+        <div class="trending-count">{{.PostsCount}} posts</div>
+    </a>
+    {{end}}
+    <a href="/explore/trending" class="block p-4 text-blue link">Show more</a>
+</div>
+{{end}}
+
+<!-- Trending Posts -->
+<div class="section">
+    <div class="p-4 border-b">
+        <h2 class="font-bold text-lg">Popular posts</h2>
+    </div>
+    {{if .Posts}}
+    {{range .Posts}}
+    {{template "post_card" .}}
+    {{end}}
+    {{else}}
+    {{template "empty_state" dict "Icon" "posts" "Title" "No trending posts" "Description" "Check back later for popular posts."}}
+    {{end}}
+</div>
+{{end}}

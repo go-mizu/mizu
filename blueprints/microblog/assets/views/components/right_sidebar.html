@@ -1,0 +1,63 @@
+{{define "right_sidebar"}}
+<!-- Search -->
+<div class="card card-padded mb-4">
+    <form action="/search" method="GET" class="search-box">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="search" name="q" placeholder="Search..." class="search-input" value="{{.SearchQuery}}">
+    </form>
+</div>
+
+<!-- Trending -->
+{{if .TrendingTags}}
+<div class="card mb-4">
+    <div class="card-header">
+        <h3 class="font-bold">Trending</h3>
+    </div>
+    <div class="card-body p-0">
+        {{range .TrendingTags}}
+        <a href="/tags/{{.Name}}" class="trending-item">
+            <div class="trending-category">Trending</div>
+            <div class="trending-name">#{{.Name}}</div>
+            <div class="trending-count">{{.PostsCount}} posts</div>
+        </a>
+        {{end}}
+    </div>
+</div>
+{{end}}
+
+<!-- Who to follow -->
+{{if .Suggestions}}
+<div class="card mb-4">
+    <div class="card-header">
+        <h3 class="font-bold">Who to follow</h3>
+    </div>
+    <div class="card-body p-0">
+        {{range .Suggestions}}
+        <div class="user-card">
+            {{template "avatar" dict "Account" . "Size" "md"}}
+            <div class="user-card-info">
+                <a href="/@{{.Username}}" class="user-card-name">{{if .DisplayName}}{{.DisplayName}}{{else}}{{.Username}}{{end}}</a>
+                <div class="user-card-handle">@{{.Username}}</div>
+            </div>
+            <div class="user-card-action">
+                <button class="btn btn-outline btn-sm" data-follow="{{.ID}}" data-following="false">Follow</button>
+            </div>
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}
+
+<!-- Footer -->
+<div class="p-4 text-sm text-muted">
+    <div class="flex flex-wrap gap-2 mb-2">
+        <a href="/about" class="link-muted">About</a>
+        <a href="/terms" class="link-muted">Terms</a>
+        <a href="/privacy" class="link-muted">Privacy</a>
+    </div>
+    <div class="text-muted">&copy; 2024 Microblog</div>
+</div>
+{{end}}
