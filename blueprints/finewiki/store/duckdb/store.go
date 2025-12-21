@@ -8,6 +8,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/go-mizu/blueprints/finewiki/feature/search"
@@ -66,23 +67,16 @@ func (s *Store) Ensure(ctx context.Context, cfg Config, opts EnsureOptions) erro
 		return fmt.Errorf("duckdb: schema: %w", err)
 	}
 
-	// Seed titles and pages if empty
-	if opts.SeedIfEmpty {
-		var titlesCount, pagesCount int64
-		row := s.db.QueryRowContext(ctx, "SELECT count(*) FROM titles")
-		if err := row.Scan(&titlesCount); err != nil {
-			return fmt.Errorf("duckdb: count titles: %w", err)
-		}
-		row = s.db.QueryRowContext(ctx, "SELECT count(*) FROM pages")
-		if err := row.Scan(&pagesCount); err != nil {
-			return fmt.Errorf("duckdb: count pages: %w", err)
-		}
-
-		if (titlesCount == 0 || pagesCount == 0) && s.glob != "" {
+	// Check if seeding is needed (empty tables or count mismatch with parquet)
+	if opts.SeedIfEmpty && s.glob != "" {
+		needsSeed, reason := s.checkNeedsSeed(ctx, s.glob)
+		if needsSeed {
+			log.Printf("Seeding database: %s", reason)
 			seed := strings.ReplaceAll(seedSQL, "__PARQUET_GLOB__", s.glob)
 			if _, err := s.db.ExecContext(ctx, seed); err != nil {
 				return fmt.Errorf("duckdb: seed: %w", err)
 			}
+			log.Printf("Seeding complete")
 		}
 	}
 
@@ -329,6 +323,47 @@ func (s *Store) Close() error {
 		return s.db.Close()
 	}
 	return nil
+}
+
+// checkNeedsSeed determines if database needs to be seeded.
+// Returns (true, reason) if seeding is needed, (false, "") otherwise.
+func (s *Store) checkNeedsSeed(ctx context.Context, glob string) (bool, string) {
+	// Check if tables are empty
+	var dbCount int64
+	row := s.db.QueryRowContext(ctx, "SELECT count(*) FROM pages")
+	if err := row.Scan(&dbCount); err != nil {
+		return true, "cannot count pages"
+	}
+
+	if dbCount == 0 {
+		return true, "tables are empty"
+	}
+
+	// Check if parquet glob changed
+	var storedGlob string
+	row = s.db.QueryRowContext(ctx, "SELECT v FROM meta WHERE k = 'parquet_glob'")
+	if err := row.Scan(&storedGlob); err != nil || storedGlob != glob {
+		return true, "parquet source changed"
+	}
+
+	// Compare DB count with stored parquet_count (after deduplication)
+	var storedCount string
+	row = s.db.QueryRowContext(ctx, "SELECT v FROM meta WHERE k = 'parquet_count'")
+	if err := row.Scan(&storedCount); err != nil {
+		// No stored count, need to reseed
+		return true, "no stored parquet_count"
+	}
+
+	var storedCountInt int64
+	if _, err := fmt.Sscanf(storedCount, "%d", &storedCountInt); err != nil {
+		return true, "invalid stored parquet_count"
+	}
+
+	if dbCount != storedCountInt {
+		return true, fmt.Sprintf("count mismatch (db=%d, expected=%d)", dbCount, storedCountInt)
+	}
+
+	return false, ""
 }
 
 // Stats returns basic statistics about the store.

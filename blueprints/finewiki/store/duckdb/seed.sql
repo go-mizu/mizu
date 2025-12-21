@@ -1,17 +1,23 @@
--- Seed titles table for fast search
-INSERT OR IGNORE INTO titles
-SELECT
+-- Idempotent seed: DELETE + INSERT pattern
+-- This file is executed when DB count differs from parquet count
+
+-- Clear existing data for fresh seed
+DELETE FROM titles;
+DELETE FROM pages;
+
+-- Seed titles table from parquet (dedupe by id, keep first occurrence)
+INSERT INTO titles
+SELECT DISTINCT ON (id)
   id,
   wikiname,
   in_language,
   title,
   lower(title) AS title_lc
-FROM read_parquet('__PARQUET_GLOB__')
-WHERE NOT EXISTS (SELECT 1 FROM titles);
+FROM read_parquet('__PARQUET_GLOB__');
 
--- Seed pages table for fast page retrieval
-INSERT OR IGNORE INTO pages
-SELECT
+-- Seed pages table from parquet (dedupe by id, keep first occurrence)
+INSERT INTO pages
+SELECT DISTINCT ON (id)
   id,
   wikiname,
   page_id,
@@ -27,9 +33,12 @@ SELECT
   COALESCE(wikitext, ''),
   COALESCE(version, ''),
   COALESCE(infoboxes::VARCHAR, '[]')
-FROM read_parquet('__PARQUET_GLOB__')
-WHERE NOT EXISTS (SELECT 1 FROM pages);
+FROM read_parquet('__PARQUET_GLOB__');
 
-INSERT INTO meta (k, v)
-SELECT 'seeded_at', cast(now() AS VARCHAR)
-WHERE NOT EXISTS (SELECT 1 FROM meta WHERE k = 'seeded_at');
+-- Update metadata
+DELETE FROM meta WHERE k IN ('seeded_at', 'parquet_count', 'parquet_glob');
+
+INSERT INTO meta (k, v) VALUES
+  ('seeded_at', cast(now() AS VARCHAR)),
+  ('parquet_count', (SELECT cast(count(*) AS VARCHAR) FROM pages)),
+  ('parquet_glob', '__PARQUET_GLOB__');
