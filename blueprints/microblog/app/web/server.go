@@ -4,13 +4,16 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"html/template"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/go-mizu/mizu"
 
+	"github.com/go-mizu/blueprints/microblog/assets"
 	"github.com/go-mizu/blueprints/microblog/feature/accounts"
 	"github.com/go-mizu/blueprints/microblog/feature/interactions"
 	"github.com/go-mizu/blueprints/microblog/feature/notifications"
@@ -24,19 +27,20 @@ import (
 
 // Server is the HTTP server.
 type Server struct {
-	app    *mizu.App
-	cfg    Config
-	store  *duckdb.Store
+	app       *mizu.App
+	cfg       Config
+	db        *sql.DB
+	templates *template.Template
 
-	// Services
-	accounts      *accounts.Service
-	posts         *posts.Service
-	timelines     *timelines.Service
-	interactions  *interactions.Service
-	relationships *relationships.Service
-	notifications *notifications.Service
-	search        *search.Service
-	trending      *trending.Service
+	// Services (as interfaces)
+	accounts      accounts.API
+	posts         posts.API
+	timelines     timelines.API
+	interactions  interactions.API
+	relationships relationships.API
+	notifications notifications.API
+	search        search.API
+	trending      trending.API
 }
 
 // New creates a new server.
@@ -53,34 +57,57 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	// Create store
-	store, err := duckdb.New(db)
+	// Create core store for schema initialization
+	coreStore, err := duckdb.New(db)
 	if err != nil {
 		return nil, fmt.Errorf("create store: %w", err)
 	}
 
 	// Initialize schema
-	if err := store.Ensure(context.Background()); err != nil {
+	if err := coreStore.Ensure(context.Background()); err != nil {
 		return nil, fmt.Errorf("ensure schema: %w", err)
 	}
 
-	// Create services
-	accountsSvc := accounts.NewService(store)
-	postsSvc := posts.NewService(store, accountsSvc)
+	// Create feature stores
+	accountsStore := duckdb.NewAccountsStore(db)
+	postsStore := duckdb.NewPostsStore(db)
+	interactionsStore := duckdb.NewInteractionsStore(db)
+	relationshipsStore := duckdb.NewRelationshipsStore(db)
+	timelinesStore := duckdb.NewTimelinesStore(db)
+	notificationsStore := duckdb.NewNotificationsStore(db)
+	searchStore := duckdb.NewSearchStore(db)
+	trendingStore := duckdb.NewTrendingStore(db)
+
+	// Create services with stores
+	accountsSvc := accounts.NewService(accountsStore)
+	postsSvc := posts.NewService(postsStore, accountsSvc)
+
+	// Parse templates
+	tmpl, err := assets.Templates()
+	if err != nil {
+		return nil, fmt.Errorf("parse templates: %w", err)
+	}
 
 	s := &Server{
 		app:           mizu.New(),
 		cfg:           cfg,
-		store:         store,
+		db:            db,
+		templates:     tmpl,
 		accounts:      accountsSvc,
 		posts:         postsSvc,
-		timelines:     timelines.NewService(store, accountsSvc, postsSvc),
-		interactions:  interactions.NewService(store),
-		relationships: relationships.NewService(store),
-		notifications: notifications.NewService(store, accountsSvc),
-		search:        search.NewService(store),
-		trending:      trending.NewService(store),
+		timelines:     timelines.NewService(timelinesStore, accountsSvc),
+		interactions:  interactions.NewService(interactionsStore),
+		relationships: relationships.NewService(relationshipsStore),
+		notifications: notifications.NewService(notificationsStore, accountsSvc),
+		search:        search.NewService(searchStore),
+		trending:      trending.NewService(trendingStore),
 	}
+
+	// Serve static files from embedded assets
+	s.app.Get("/static/*", func(c *mizu.Ctx) error {
+		http.StripPrefix("/static/", http.FileServer(http.FS(assets.Static()))).ServeHTTP(c.Writer(), c.Request())
+		return nil
+	})
 
 	s.setupRoutes()
 	return s, nil
@@ -94,8 +121,8 @@ func (s *Server) Run() error {
 
 // Close shuts down the server.
 func (s *Server) Close() error {
-	if s.store != nil {
-		return s.store.Close()
+	if s.db != nil {
+		return s.db.Close()
 	}
 	return nil
 }
@@ -169,4 +196,15 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/explore", s.handleExplorePage)
 	s.app.Get("/notifications", s.handleNotificationsPage)
 	s.app.Get("/settings", s.handleSettingsPage)
+}
+
+// render renders a template with the given data.
+func (s *Server) render(c *mizu.Ctx, name string, data map[string]any) error {
+	if data == nil {
+		data = make(map[string]any)
+	}
+	data["Dev"] = s.cfg.Dev
+
+	c.Header().Set("Content-Type", "text/html; charset=utf-8")
+	return s.templates.ExecuteTemplate(c.Writer(), name, data)
 }
