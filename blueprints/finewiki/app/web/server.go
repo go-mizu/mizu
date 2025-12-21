@@ -57,6 +57,7 @@ func (s *Server) routes() {
 	// HTML pages (/ handles both home and search)
 	r.Get("/", s.searchPage)
 	r.Get("/page", s.page)
+	r.Get("/random", s.randomPage)
 
 	r.Get("/healthz", func(c *mizu.Ctx) error {
 		return c.Text(200, "ok")

@@ -40,3 +40,10 @@ func (s *Service) ByTitle(ctx context.Context, wikiname, title string) (*Page, e
 	}
 	return s.store.GetByTitle(ctx, wikiname, title)
 }
+
+func (s *Service) RandomID(ctx context.Context) (string, error) {
+	if s.store == nil {
+		return "", errors.New("view: nil store")
+	}
+	return s.store.GetRandomID(ctx)
+}

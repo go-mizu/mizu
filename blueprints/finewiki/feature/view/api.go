@@ -136,9 +136,11 @@ func FormatDate(t time.Time) string {
 type Store interface {
 	GetByID(ctx context.Context, id string) (*Page, error)
 	GetByTitle(ctx context.Context, wikiname, title string) (*Page, error)
+	GetRandomID(ctx context.Context) (string, error)
 }
 
 type API interface {
 	ByID(ctx context.Context, id string) (*Page, error)
 	ByTitle(ctx context.Context, wikiname, title string) (*Page, error)
+	RandomID(ctx context.Context) (string, error)
 }

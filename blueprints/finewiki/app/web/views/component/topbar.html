@@ -1,6 +1,13 @@
 {{define "topbar.html"}}
 <header class="topbar">
-    <a href="/" class="topbar-logo">FineWiki</a>
+    <a href="/" class="topbar-logo">
+        <svg class="topbar-logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+            <path d="M8 7h8M8 11h8M8 15h5"/>
+        </svg>
+        <span>FineWiki</span>
+    </a>
     <div class="topbar-search">
         <form action="/search" method="get" class="search-box">
             <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -19,6 +26,11 @@
         </form>
     </div>
     <div class="topbar-actions">
+        <a href="/random" class="random-btn" title="Random article">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>
+            </svg>
+        </a>
         <button class="theme-toggle" data-theme-toggle aria-label="Toggle theme">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
