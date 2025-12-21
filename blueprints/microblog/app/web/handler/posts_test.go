@@ -362,3 +362,154 @@ func TestPost_GetContext(t *testing.T) {
 		t.Errorf("expected status 200, got %d", rec.Code)
 	}
 }
+
+func TestPost_IsOwnerField(t *testing.T) {
+	_, accountsSvc, postsSvc, cleanup := setupPostsTestEnv(t)
+	defer cleanup()
+
+	// Create two accounts
+	owner, err := accountsSvc.Create(context.Background(), &accounts.CreateIn{
+		Username: "owner",
+		Email:    "owner@example.com",
+		Password: "password123",
+	})
+	if err != nil {
+		t.Fatalf("failed to create owner account: %v", err)
+	}
+
+	otherUser, err := accountsSvc.Create(context.Background(), &accounts.CreateIn{
+		Username: "other",
+		Email:    "other@example.com",
+		Password: "password123",
+	})
+	if err != nil {
+		t.Fatalf("failed to create other account: %v", err)
+	}
+
+	// Create a post as owner
+	post, err := postsSvc.Create(context.Background(), owner.ID, &posts.CreateIn{
+		Content: "Test post for ownership",
+	})
+	if err != nil {
+		t.Fatalf("failed to create post: %v", err)
+	}
+
+	t.Run("owner sees IsOwner=true", func(t *testing.T) {
+		getAccountID := func(c *mizu.Ctx) string {
+			return owner.ID
+		}
+		optionalAuth := func(c *mizu.Ctx) string {
+			return owner.ID
+		}
+
+		h := handler.NewPost(postsSvc, getAccountID, optionalAuth)
+
+		rec, ctx := testRequest("GET", "/api/v1/posts/"+post.ID, nil, owner.ID)
+		ctx.Request().SetPathValue("id", post.ID)
+
+		if err := h.Get(ctx); err != nil {
+			t.Fatalf("Get() error = %v", err)
+		}
+
+		if rec.Code != 200 {
+			t.Errorf("expected status 200, got %d", rec.Code)
+		}
+
+		var resp map[string]any
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		data, ok := resp["data"].(map[string]any)
+		if !ok {
+			t.Fatal("expected data field in response")
+		}
+
+		isOwner, ok := data["is_owner"].(bool)
+		if !ok {
+			t.Fatal("expected is_owner field in response")
+		}
+
+		if !isOwner {
+			t.Error("expected is_owner to be true for owner")
+		}
+	})
+
+	t.Run("other user sees IsOwner=false", func(t *testing.T) {
+		getAccountID := func(c *mizu.Ctx) string {
+			return otherUser.ID
+		}
+		optionalAuth := func(c *mizu.Ctx) string {
+			return otherUser.ID
+		}
+
+		h := handler.NewPost(postsSvc, getAccountID, optionalAuth)
+
+		rec, ctx := testRequest("GET", "/api/v1/posts/"+post.ID, nil, otherUser.ID)
+		ctx.Request().SetPathValue("id", post.ID)
+
+		if err := h.Get(ctx); err != nil {
+			t.Fatalf("Get() error = %v", err)
+		}
+
+		if rec.Code != 200 {
+			t.Errorf("expected status 200, got %d", rec.Code)
+		}
+
+		var resp map[string]any
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		data, ok := resp["data"].(map[string]any)
+		if !ok {
+			t.Fatal("expected data field in response")
+		}
+
+		isOwner, ok := data["is_owner"].(bool)
+		if !ok {
+			t.Fatal("expected is_owner field in response")
+		}
+
+		if isOwner {
+			t.Error("expected is_owner to be false for other user")
+		}
+	})
+
+	t.Run("anonymous user sees IsOwner=false", func(t *testing.T) {
+		getAccountID := func(c *mizu.Ctx) string {
+			return ""
+		}
+		optionalAuth := func(c *mizu.Ctx) string {
+			return ""
+		}
+
+		h := handler.NewPost(postsSvc, getAccountID, optionalAuth)
+
+		rec, ctx := testRequest("GET", "/api/v1/posts/"+post.ID, nil, "")
+		ctx.Request().SetPathValue("id", post.ID)
+
+		if err := h.Get(ctx); err != nil {
+			t.Fatalf("Get() error = %v", err)
+		}
+
+		if rec.Code != 200 {
+			t.Errorf("expected status 200, got %d", rec.Code)
+		}
+
+		var resp map[string]any
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		data, ok := resp["data"].(map[string]any)
+		if !ok {
+			t.Fatal("expected data field in response")
+		}
+
+		// IsOwner field should not be present or should be false for anonymous
+		if isOwner, ok := data["is_owner"].(bool); ok && isOwner {
+			t.Error("expected is_owner to be false for anonymous user")
+		}
+	})
+}

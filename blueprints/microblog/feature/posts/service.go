@@ -270,4 +270,5 @@ func (s *Service) loadViewerState(ctx context.Context, post *Post, viewerID stri
 	post.Liked, _ = s.store.CheckLiked(ctx, viewerID, post.ID)
 	post.Reposted, _ = s.store.CheckReposted(ctx, viewerID, post.ID)
 	post.Bookmarked, _ = s.store.CheckBookmarked(ctx, viewerID, post.ID)
+	post.IsOwner = viewerID == post.AccountID
 }

@@ -1,10 +1,27 @@
 {{define "post"}}
-{{template "layouts/default.html" .}}
-{{end}}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Microblog - A self-hosted microblogging platform">
+    <title>{{if .Thread.Post.Account.DisplayName}}{{.Thread.Post.Account.DisplayName}}{{else}}{{.Thread.Post.Account.Username}}{{end}} on Microblog</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/app.css">
+    <link rel="icon" type="image/svg+xml" href="/static/img/logo.svg">
+</head>
+<body>
+    <div class="app-container">
+        <div class="app-layout">
+            <!-- Left Sidebar -->
+            <aside class="app-sidebar">
+                {{template "nav_sidebar" .}}
+            </aside>
 
-{{define "title"}}{{if .Thread.Post.Account.DisplayName}}{{.Thread.Post.Account.DisplayName}}{{else}}{{.Thread.Post.Account.Username}}{{end}} on Microblog{{end}}
-
-{{define "content"}}
+            <!-- Main Content -->
+            <main class="app-main">
 <div class="section-header flex items-center gap-4">
     <a href="javascript:history.back()" class="btn btn-ghost btn-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
@@ -174,4 +191,32 @@
 {{else}}
 {{template "empty_state" dict "Icon" "posts" "Title" "No replies yet" "Description" "Be the first to reply to this post."}}
 {{end}}
+            </main>
+
+            <!-- Right Sidebar -->
+            <aside class="app-aside">
+                {{template "right_sidebar" .}}
+            </aside>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Modal Container (managed by JavaScript) -->
+    <div class="modal-backdrop" id="modal-container" style="display: none;"></div>
+
+    <!-- Compose FAB (Mobile) -->
+    {{if .Account}}
+    <button class="compose-fab" aria-label="New post">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+    </button>
+    {{end}}
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
 {{end}}

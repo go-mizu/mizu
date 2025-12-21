@@ -51,6 +51,7 @@ type Post struct {
 	Liked      bool `json:"liked,omitempty"`
 	Reposted   bool `json:"reposted,omitempty"`
 	Bookmarked bool `json:"bookmarked,omitempty"`
+	IsOwner    bool `json:"is_owner"`
 }
 
 // Media represents a media attachment.
