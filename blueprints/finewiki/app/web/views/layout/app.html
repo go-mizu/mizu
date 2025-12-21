@@ -103,7 +103,6 @@ body {
     right: 0;
     height: var(--topbar-height);
     background: var(--bg);
-    border-bottom: 1px solid var(--border);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -112,6 +111,9 @@ body {
 }
 
 .topbar-logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     font-size: 20px;
     font-weight: 600;
     color: var(--fg);
@@ -122,6 +124,12 @@ body {
 .topbar-logo:hover {
     text-decoration: none;
     color: var(--fg);
+}
+
+.topbar-logo-icon {
+    width: 24px;
+    height: 24px;
+    color: var(--accent);
 }
 
 .topbar-search {
@@ -194,6 +202,28 @@ body {
 }
 
 .theme-toggle svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* Random Button */
+.random-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    border-radius: 50%;
+    color: var(--fg-secondary);
+    transition: background 0.2s, color 0.2s;
+}
+
+.random-btn:hover {
+    background: var(--surface);
+    color: var(--fg);
+    text-decoration: none;
+}
+
+.random-btn svg {
     width: 20px;
     height: 20px;
 }

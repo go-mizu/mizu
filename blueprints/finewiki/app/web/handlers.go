@@ -58,6 +58,15 @@ func (s *Server) searchPage(c *mizu.Ctx) error {
 	return nil
 }
 
+func (s *Server) randomPage(c *mizu.Ctx) error {
+	ctx := c.Request().Context()
+	id, err := s.view.RandomID(ctx)
+	if err != nil {
+		return c.Text(500, "No pages available")
+	}
+	return c.Redirect(302, fmt.Sprintf("/page?id=%s", id))
+}
+
 func (s *Server) page(c *mizu.Ctx) error {
 	ctx := c.Request().Context()
 

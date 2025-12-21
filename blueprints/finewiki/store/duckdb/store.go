@@ -317,6 +317,20 @@ func (s *Store) scanPage(row *sql.Row) (*view.Page, error) {
 	return &p, nil
 }
 
+// GetRandomID returns a random page ID from the database.
+func (s *Store) GetRandomID(ctx context.Context) (string, error) {
+	query := `SELECT id FROM titles ORDER BY RANDOM() LIMIT 1`
+	var id string
+	err := s.db.QueryRowContext(ctx, query).Scan(&id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", errors.New("no pages available")
+		}
+		return "", fmt.Errorf("duckdb: random: %w", err)
+	}
+	return id, nil
+}
+
 // Close closes the database connection.
 func (s *Store) Close() error {
 	if s.db != nil {
