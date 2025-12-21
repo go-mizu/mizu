@@ -12,7 +12,7 @@
 
 # Go workspace/build cache (optional if using module-aware mode)
 # go env GOCACHE
-**/pkg/
+# **/pkg/
 **/bin/
 
 # Coverage output
