@@ -5,7 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
+	"unicode"
 )
 
 // InfoboxItem represents a single key-value pair in an infobox.
@@ -47,6 +50,11 @@ type Page struct {
 	Infoboxes       []Infobox `json:"infoboxes_parsed,omitempty"`
 	DateModifiedRel string    `json:"date_modified_relative,omitempty"` // "3 days ago"
 	DateModifiedFmt string    `json:"date_modified_formatted,omitempty"` // "Dec 18, 2024"
+
+	// Reading stats (computed)
+	WordCount   int    `json:"-"` // Total word count
+	ReadTimeMin int    `json:"-"` // Estimated read time in minutes
+	ReadTimeStr string `json:"-"` // Human-readable read time
 }
 
 // ParseInfoboxes decodes InfoboxesJSON into the Infoboxes slice.
@@ -131,6 +139,70 @@ func FormatRelativeTime(t time.Time) string {
 // FormatDate returns a formatted date string like "Dec 18, 2024".
 func FormatDate(t time.Time) string {
 	return t.Format("Jan 2, 2006")
+}
+
+// htmlTagRegex matches HTML tags for stripping
+var htmlTagRegex = regexp.MustCompile(`<[^>]*>`)
+
+// ComputeReadStats calculates word count and estimated reading time.
+func (p *Page) ComputeReadStats() {
+	// Use Text field for word count
+	text := p.Text
+
+	// Strip HTML tags
+	text = htmlTagRegex.ReplaceAllString(text, " ")
+
+	// Count words by splitting on whitespace and filtering
+	words := strings.FieldsFunc(text, func(r rune) bool {
+		return unicode.IsSpace(r) || r == '\n' || r == '\r'
+	})
+
+	// Filter out empty strings and very short tokens
+	count := 0
+	for _, w := range words {
+		w = strings.TrimSpace(w)
+		if len(w) > 0 {
+			count++
+		}
+	}
+	p.WordCount = count
+
+	// Average reading speed: 200-250 words per minute
+	// Use 225 wpm as middle ground
+	if count == 0 {
+		p.ReadTimeMin = 0
+		p.ReadTimeStr = ""
+		return
+	}
+
+	minutes := float64(count) / 225.0
+	p.ReadTimeMin = int(minutes + 0.5) // Round to nearest
+	if p.ReadTimeMin < 1 {
+		p.ReadTimeMin = 1
+	}
+
+	if p.ReadTimeMin == 1 {
+		p.ReadTimeStr = "1 min read"
+	} else {
+		p.ReadTimeStr = fmt.Sprintf("%d min read", p.ReadTimeMin)
+	}
+}
+
+// FormatWordCount returns a human-readable word count with thousands separator.
+func FormatWordCount(n int) string {
+	if n < 1000 {
+		return fmt.Sprintf("%d", n)
+	}
+
+	s := fmt.Sprintf("%d", n)
+	var result strings.Builder
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			result.WriteRune(',')
+		}
+		result.WriteRune(c)
+	}
+	return result.String()
 }
 
 type Store interface {

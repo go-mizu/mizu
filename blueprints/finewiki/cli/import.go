@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,10 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/go-mizu/blueprints/finewiki/store/duckdb"
+
+	_ "github.com/duckdb/duckdb-go/v2"
 )
 
 const (
@@ -24,11 +29,12 @@ func importCmd() *cobra.Command {
 
 	c := &cobra.Command{
 		Use:   "import <lang>",
-		Short: "Download parquet data for a specific language",
-		Long: `Download the FineWiki parquet file for a specific language from HuggingFace.
+		Short: "Download and index Wikipedia data for a language",
+		Long: `Download the FineWiki parquet file for a specific language from HuggingFace
+and prepare the DuckDB database for serving.
 
-The parquet file is saved to <data-dir>/<lang>/data.parquet.
-After downloading, run 'finewiki serve <lang>' to start the server.
+The data is saved to <data-dir>/<lang>/.
+After importing, run 'finewiki serve <lang>' to start the server.
 
 Examples:
   finewiki import vi              # Download Vietnamese data
@@ -56,46 +62,58 @@ type parquetFileInfo struct {
 }
 
 func runImport(ctx context.Context, dataDir, lang string) error {
+	ui := NewUI()
+	importStart := time.Now()
+
 	// Get parquet file info for this language
 	files, err := getParquetFiles(ctx, lang)
 	if err != nil {
+		ui.Error(fmt.Sprintf("Failed to fetch file info for '%s'", lang))
+		ui.Hint(err.Error())
+		ui.Blank()
+		ui.Hint("Check available languages at:")
+		ui.Hint("https://huggingface.co/datasets/HuggingFaceFW/finewiki")
 		return err
 	}
 
 	if len(files) == 0 {
+		ui.Error(fmt.Sprintf("No data found for language '%s'", lang))
+		ui.Blank()
+		ui.Hint("Check available languages at:")
+		ui.Hint("https://huggingface.co/datasets/HuggingFaceFW/finewiki")
 		return fmt.Errorf("no parquet files found for language: %s", lang)
 	}
 
 	langDir := LangDir(dataDir, lang)
 
-	// Print download info
-	fmt.Printf("Downloading %s Wikipedia\n", strings.ToUpper(lang))
-	fmt.Printf("Source: huggingface.co/datasets/%s\n", hfDataset)
-	fmt.Printf("Target: %s/\n", langDir)
-	fmt.Println()
+	// Print header
+	ui.Header(iconDownload, fmt.Sprintf("Downloading %s Wikipedia", strings.ToUpper(lang)))
+	ui.Info("Source", fmt.Sprintf("huggingface.co/datasets/%s", hfDataset))
+	ui.Info("Target", langDir)
+	ui.Blank()
 
 	// Calculate total size
 	var totalSize int64
 	for _, f := range files {
 		totalSize += f.Size
 	}
-	fmt.Printf("Files: %d (total: %s)\n", len(files), formatBytes(totalSize))
+	ui.Info("Files", fmt.Sprintf("%d (%s total)", len(files), formatBytes(totalSize)))
 
 	// Create downloader
 	dl := NewDownloader()
 	if dl.UseCurl() {
-		fmt.Println("Using: curl")
+		ui.Info("Using", "curl")
 	} else {
-		fmt.Println("Using: native Go")
+		ui.Info("Using", "native Go HTTP")
 	}
-	fmt.Println()
+	ui.Blank()
 
 	// Create language directory
 	if err := os.MkdirAll(langDir, 0o755); err != nil {
 		return err
 	}
 
-	// Download all parquet files (skip if already exists with correct size)
+	// Download all parquet files
 	var downloaded, skipped int
 	for i, f := range files {
 		var dst string
@@ -105,32 +123,101 @@ func runImport(ctx context.Context, dataDir, lang string) error {
 			dst = filepath.Join(langDir, fmt.Sprintf("data-%03d.parquet", i))
 		}
 
+		filename := filepath.Base(dst)
+
 		// Check if file already exists with correct size
 		if fi, err := os.Stat(dst); err == nil && fi.Size() == f.Size {
-			fmt.Printf("[%d/%d] %s - skipped (already exists)\n", i+1, len(files), filepath.Base(dst))
+			ui.Progress(i+1, len(files), filename, formatBytes(f.Size), true)
 			skipped++
 			continue
 		}
 
-		fmt.Printf("[%d/%d] %s (%s)\n", i+1, len(files), filepath.Base(dst), formatBytes(f.Size))
-
+		// Download file
+		dlStart := time.Now()
 		if err := dl.Download(ctx, f.URL, dst, f.Size); err != nil {
+			ui.Error(fmt.Sprintf("Failed to download %s", filename))
+			ui.Hint(err.Error())
 			return fmt.Errorf("download %s: %w", f.Filename, err)
 		}
 
-		// Verify file size
+		// Verify and print completion
 		fi, _ := os.Stat(dst)
-		fmt.Printf("  Saved: %s\n", formatBytes(fi.Size()))
+		ui.ProgressDone(i+1, len(files), filename, formatBytes(fi.Size()), time.Since(dlStart))
 		downloaded++
 	}
 
-	if skipped > 0 && downloaded == 0 {
-		fmt.Printf("\nAll files already exist. Run 'finewiki serve %s' to start.\n", lang)
-		return nil
+	ui.Blank()
+
+	// Seed database
+	if err := seedDatabase(ctx, ui, dataDir, lang); err != nil {
+		return err
 	}
 
-	fmt.Printf("\nImport complete. Run 'finewiki serve %s' to start.\n", lang)
+	// Get article count for summary
+	articleCount := getArticleCount(dataDir, lang)
+
+	// Print summary
+	ui.Success("Import complete!")
+	ui.Summary([][2]string{
+		{"Articles", formatNumber(articleCount)},
+		{"Database", DuckDBPath(dataDir, lang)},
+		{"Duration", time.Since(importStart).Round(100 * time.Millisecond).String()},
+	})
+	ui.Blank()
+	ui.Hint(fmt.Sprintf("Run: finewiki serve %s", lang))
+	ui.Blank()
+
 	return nil
+}
+
+func seedDatabase(ctx context.Context, ui *UI, dataDir, lang string) error {
+	dbPath := DuckDBPath(dataDir, lang)
+	parquetGlob := ParquetGlob(dataDir, lang)
+
+	ui.StartSpinner("Preparing database...")
+
+	db, err := sql.Open("duckdb", dbPath)
+	if err != nil {
+		ui.StopSpinnerError("Failed to open database")
+		return err
+	}
+	defer db.Close()
+
+	store, err := duckdb.New(db)
+	if err != nil {
+		ui.StopSpinnerError("Failed to initialize store")
+		return err
+	}
+
+	start := time.Now()
+
+	if err := store.Ensure(ctx, duckdb.Config{
+		ParquetGlob: parquetGlob,
+		EnableFTS:   true,
+	}, duckdb.EnsureOptions{
+		SeedIfEmpty: true,
+		BuildIndex:  true,
+		BuildFTS:    true,
+	}); err != nil {
+		ui.StopSpinnerError("Failed to prepare database")
+		return err
+	}
+
+	ui.StopSpinner("Database ready", time.Since(start))
+	return nil
+}
+
+func getArticleCount(dataDir, lang string) int64 {
+	dbPath := DuckDBPath(dataDir, lang)
+	db, err := sql.Open("duckdb", dbPath)
+	if err != nil {
+		return 0
+	}
+	defer db.Close()
+
+	var count int64
+	db.QueryRow("SELECT count(*) FROM pages").Scan(&count)
+	return count
 }
 
 func getParquetFiles(ctx context.Context, lang string) ([]parquetFileInfo, error) {
@@ -183,3 +270,4 @@ func getParquetFiles(ctx context.Context, lang string) ([]parquetFileInfo, error
 
 	return files, nil
 }
+

@@ -10,6 +10,14 @@
             <span class="wiki-badge">{{.Page.WikiName}}</span>
             <span class="meta-dot">&middot;</span>
             <span>{{.Page.InLanguage}}</span>
+            {{if .Page.WordCount}}
+            <span class="meta-dot">&middot;</span>
+            <span>{{formatNumber .Page.WordCount}} words</span>
+            {{end}}
+            {{if .Page.ReadTimeStr}}
+            <span class="meta-dot">&middot;</span>
+            <span>{{.Page.ReadTimeStr}}</span>
+            {{end}}
             {{if .Page.DateModifiedRel}}
             <span class="meta-dot">&middot;</span>
             <span title="{{.Page.DateModifiedFmt}}">Updated {{.Page.DateModifiedRel}}</span>

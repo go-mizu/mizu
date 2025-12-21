@@ -8,6 +8,7 @@
         </svg>
         <span>FineWiki</span>
     </a>
+    {{if not .IsHome}}
     <div class="topbar-search">
         <form action="/search" method="get" class="search-box">
             <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -25,6 +26,7 @@
             >
         </form>
     </div>
+    {{end}}
     <div class="topbar-actions">
         <a href="/random" class="random-btn" title="Random article">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
