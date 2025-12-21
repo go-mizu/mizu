@@ -3,6 +3,8 @@ module github.com/go-mizu/blueprints/finewiki
 go 1.25.5
 
 require (
+	github.com/charmbracelet/bubbles v0.20.0
+	github.com/charmbracelet/bubbletea v1.2.4
 	github.com/charmbracelet/fang v0.4.4
 	github.com/duckdb/duckdb-go/v2 v2.5.4
 	github.com/go-mizu/mizu v0.5.0
@@ -12,7 +14,10 @@ require (
 require (
 	charm.land/lipgloss/v2 v2.0.0-beta.3.0.20251106193318-19329a3e8410 // indirect
 	github.com/apache/arrow-go/v18 v18.5.0 // indirect
+	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.4.1 // indirect
+	github.com/charmbracelet/harmonica v0.2.0 // indirect
+	github.com/charmbracelet/lipgloss v1.0.0 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20251217160852-6b0c0e26fad9 // indirect
 	github.com/charmbracelet/x/ansi v0.11.3 // indirect
 	github.com/charmbracelet/x/exp/charmtone v0.0.0-20251215102626-e0db08df7383 // indirect
@@ -30,6 +35,7 @@ require (
 	github.com/duckdb/duckdb-go-bindings/windows-amd64 v0.1.24 // indirect
 	github.com/duckdb/duckdb-go/arrowmapping v0.0.27 // indirect
 	github.com/duckdb/duckdb-go/mapping v0.0.27 // indirect
+	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
@@ -38,12 +44,16 @@ require (
 	github.com/klauspost/compress v1.18.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
+	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
+	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/mango v0.2.0 // indirect
 	github.com/muesli/mango-cobra v1.3.0 // indirect
 	github.com/muesli/mango-pflag v0.2.0 // indirect
 	github.com/muesli/roff v0.1.0 // indirect
+	github.com/muesli/termenv v0.15.2 // indirect
 	github.com/pierrec/lz4/v4 v4.1.23 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
