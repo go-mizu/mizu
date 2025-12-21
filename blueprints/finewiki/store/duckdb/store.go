@@ -271,6 +271,7 @@ func (s *Store) GetByTitle(ctx context.Context, wikiname, title string) (*view.P
 		return nil, errors.New("duckdb: parquet glob not configured")
 	}
 
+	// First try exact match, then case-insensitive match
 	query := fmt.Sprintf(`
 		SELECT
 			id,
@@ -288,7 +289,7 @@ func (s *Store) GetByTitle(ctx context.Context, wikiname, title string) (*view.P
 			COALESCE(version, '') as version,
 			COALESCE(infoboxes::VARCHAR, '[]') as infoboxes
 		FROM read_parquet('%s')
-		WHERE wikiname = $1 AND title = $2
+		WHERE wikiname = $1 AND LOWER(title) = LOWER($2)
 		LIMIT 1
 	`, s.glob)
 
