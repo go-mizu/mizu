@@ -83,7 +83,7 @@ mizu version
 
 ### Using the CLI
 
-The CLI provides commands for creating and running Mizu projects.
+The CLI provides commands for creating projects, running development servers, working with service contracts, and exploring middlewares.
 
 **Create a new project:**
 
@@ -94,18 +94,67 @@ mizu new --list
 # Create a project from a template
 mizu new ./myapp --template minimal
 
+# Create a frontend project with a specific framework
+mizu new ./myapp --template frontend:react
+mizu new ./myapp --template frontend:vue
+
 # Preview what will be created (dry run)
 mizu new ./myapp --template api --dry-run
 ```
+
+Available templates include:
+- `minimal` - Smallest runnable Mizu project
+- `api` - JSON API service with recommended layout
+- `web` - Full-stack web app with views and components
+- `contract` - Code-first API contract with REST, JSON-RPC, and OpenAPI
+- `live` - Real-time interactive app with live views
+- `sync` - Offline-first app with sync and reactive state
+- `frontend:*` - Frontend frameworks (react, vue, svelte, angular, next, nuxt, htmx, alpine, preact, sveltekit)
+- `mobile:*` - Mobile apps (ios, android, flutter, dotnet, reactnative)
 
 **Run in development mode:**
 
 ```bash
 cd myapp
 mizu dev
+
+# Pass arguments to your application
+mizu dev -- --port 3000
 ```
 
 The `dev` command auto-detects your main package (checking `cmd/` or the current directory) and runs it. Use `--cmd` to specify a custom path if needed.
+
+**Work with service contracts:**
+
+```bash
+# List all methods from a contract
+mizu contract ls
+
+# Show method details
+mizu contract show todo.Create
+
+# Call a method
+mizu contract call todo.Create '{"title":"Buy milk"}'
+
+# Export OpenAPI spec
+mizu contract spec > openapi.json
+
+# Generate code from a contract definition
+mizu contract gen contract.go
+```
+
+**Explore middlewares:**
+
+```bash
+# List all available middlewares
+mizu middleware ls
+
+# Filter by category
+mizu middleware ls -c security
+
+# Show middleware details
+mizu middleware show helmet
+```
 
 **Global flags:**
 
