@@ -7,14 +7,15 @@
 {{define "content"}}
 {{if .Account}}
 <!-- Authenticated User Timeline -->
-<div class="section-header">
+<div class="section-header" style="position: sticky; top: 0; z-index: 10; background-color: var(--color-surface);">
     <h1 class="section-title">Home</h1>
 </div>
 
+<!-- Compose Box - Always visible at top -->
 {{template "compose_box" dict "Account" .Account}}
 
 <!-- Timeline Tabs -->
-<div class="tabs">
+<div class="tabs" style="position: sticky; top: 72px; z-index: 9; background-color: var(--color-surface);">
     <button class="tab active" data-tab="for-you">For you</button>
     <button class="tab" data-tab="following">Following</button>
 </div>
