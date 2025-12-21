@@ -1,268 +1,136 @@
-// Package interactions provides like, repost, and bookmark functionality.
 package interactions
 
 import (
 	"context"
-	"database/sql"
 	"errors"
-	"fmt"
 	"time"
-
-	"github.com/go-mizu/blueprints/microblog/pkg/ulid"
-	"github.com/go-mizu/blueprints/microblog/store/duckdb"
 )
 
 var (
 	ErrNotFound      = errors.New("not found")
 	ErrAlreadyExists = errors.New("already exists")
+	ErrPollExpired   = errors.New("poll has expired")
+	ErrAlreadyVoted  = errors.New("already voted")
+	ErrMultipleNotAllowed = errors.New("multiple choices not allowed")
 )
 
 // Service handles interaction operations.
+// Implements API interface.
 type Service struct {
-	store *duckdb.Store
+	store Store
 }
 
 // NewService creates a new interactions service.
-func NewService(store *duckdb.Store) *Service {
+func NewService(store Store) *Service {
 	return &Service{store: store}
 }
 
 // Like creates a like on a post.
 func (s *Service) Like(ctx context.Context, accountID, postID string) error {
-	// Check if already liked
-	var exists bool
-	err := s.store.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM likes WHERE account_id = $1 AND post_id = $2)", accountID, postID).Scan(&exists)
+	created, err := s.store.Like(ctx, accountID, postID)
 	if err != nil {
-		return fmt.Errorf("interactions: check like: %w", err)
+		return err
 	}
-	if exists {
-		return nil // Idempotent
+	if created {
+		_ = s.store.IncrementLikes(ctx, postID)
+		s.createNotification(ctx, postID, accountID, "like")
 	}
-
-	// Create like
-	_, err = s.store.Exec(ctx, `
-		INSERT INTO likes (id, account_id, post_id, created_at)
-		VALUES ($1, $2, $3, $4)
-	`, ulid.New(), accountID, postID, time.Now())
-	if err != nil {
-		return fmt.Errorf("interactions: create like: %w", err)
-	}
-
-	// Update post counter
-	_, _ = s.store.Exec(ctx, "UPDATE posts SET likes_count = likes_count + 1 WHERE id = $1", postID)
-
-	// Create notification
-	s.createNotification(ctx, postID, accountID, "like")
-
 	return nil
 }
 
 // Unlike removes a like from a post.
 func (s *Service) Unlike(ctx context.Context, accountID, postID string) error {
-	result, err := s.store.Exec(ctx, "DELETE FROM likes WHERE account_id = $1 AND post_id = $2", accountID, postID)
+	deleted, err := s.store.Unlike(ctx, accountID, postID)
 	if err != nil {
-		return fmt.Errorf("interactions: delete like: %w", err)
+		return err
 	}
-
-	affected, _ := result.RowsAffected()
-	if affected > 0 {
-		_, _ = s.store.Exec(ctx, "UPDATE posts SET likes_count = likes_count - 1 WHERE id = $1 AND likes_count > 0", postID)
+	if deleted {
+		_ = s.store.DecrementLikes(ctx, postID)
 	}
-
 	return nil
 }
 
 // Repost creates a repost (boost) of a post.
 func (s *Service) Repost(ctx context.Context, accountID, postID string) error {
-	// Check if already reposted
-	var exists bool
-	err := s.store.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM reposts WHERE account_id = $1 AND post_id = $2)", accountID, postID).Scan(&exists)
+	created, err := s.store.Repost(ctx, accountID, postID)
 	if err != nil {
-		return fmt.Errorf("interactions: check repost: %w", err)
+		return err
 	}
-	if exists {
-		return nil // Idempotent
+	if created {
+		_ = s.store.IncrementReposts(ctx, postID)
+		s.createNotification(ctx, postID, accountID, "repost")
 	}
-
-	// Create repost
-	_, err = s.store.Exec(ctx, `
-		INSERT INTO reposts (id, account_id, post_id, created_at)
-		VALUES ($1, $2, $3, $4)
-	`, ulid.New(), accountID, postID, time.Now())
-	if err != nil {
-		return fmt.Errorf("interactions: create repost: %w", err)
-	}
-
-	// Update post counter
-	_, _ = s.store.Exec(ctx, "UPDATE posts SET reposts_count = reposts_count + 1 WHERE id = $1", postID)
-
-	// Create notification
-	s.createNotification(ctx, postID, accountID, "repost")
-
 	return nil
 }
 
 // Unrepost removes a repost.
 func (s *Service) Unrepost(ctx context.Context, accountID, postID string) error {
-	result, err := s.store.Exec(ctx, "DELETE FROM reposts WHERE account_id = $1 AND post_id = $2", accountID, postID)
+	deleted, err := s.store.Unrepost(ctx, accountID, postID)
 	if err != nil {
-		return fmt.Errorf("interactions: delete repost: %w", err)
+		return err
 	}
-
-	affected, _ := result.RowsAffected()
-	if affected > 0 {
-		_, _ = s.store.Exec(ctx, "UPDATE posts SET reposts_count = reposts_count - 1 WHERE id = $1 AND reposts_count > 0", postID)
+	if deleted {
+		_ = s.store.DecrementReposts(ctx, postID)
 	}
-
 	return nil
 }
 
 // Bookmark saves a post privately.
 func (s *Service) Bookmark(ctx context.Context, accountID, postID string) error {
-	// Check if already bookmarked
-	var exists bool
-	err := s.store.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM bookmarks WHERE account_id = $1 AND post_id = $2)", accountID, postID).Scan(&exists)
-	if err != nil {
-		return fmt.Errorf("interactions: check bookmark: %w", err)
-	}
-	if exists {
-		return nil // Idempotent
-	}
-
-	// Create bookmark
-	_, err = s.store.Exec(ctx, `
-		INSERT INTO bookmarks (id, account_id, post_id, created_at)
-		VALUES ($1, $2, $3, $4)
-	`, ulid.New(), accountID, postID, time.Now())
-	if err != nil {
-		return fmt.Errorf("interactions: create bookmark: %w", err)
-	}
-
-	return nil
+	return s.store.Bookmark(ctx, accountID, postID)
 }
 
 // Unbookmark removes a bookmark.
 func (s *Service) Unbookmark(ctx context.Context, accountID, postID string) error {
-	_, err := s.store.Exec(ctx, "DELETE FROM bookmarks WHERE account_id = $1 AND post_id = $2", accountID, postID)
-	return err
+	return s.store.Unbookmark(ctx, accountID, postID)
 }
 
 // VotePoll casts a vote on a poll.
 func (s *Service) VotePoll(ctx context.Context, accountID, pollID string, choices []int) error {
 	// Check if poll exists and not expired
-	var expiresAt sql.NullTime
-	var multiple bool
-	err := s.store.QueryRow(ctx, "SELECT expires_at, multiple FROM polls WHERE id = $1", pollID).Scan(&expiresAt, &multiple)
+	expiresAt, multiple, err := s.store.GetPollInfo(ctx, pollID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrNotFound
-		}
-		return fmt.Errorf("interactions: get poll: %w", err)
+		return ErrNotFound
 	}
 
-	if expiresAt.Valid && time.Now().After(expiresAt.Time) {
-		return errors.New("poll has expired")
+	if expiresAt != nil {
+		t, _ := time.Parse(time.RFC3339, *expiresAt)
+		if time.Now().After(t) {
+			return ErrPollExpired
+		}
 	}
 
 	// Check if already voted
-	var voted bool
-	err = s.store.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM poll_votes WHERE poll_id = $1 AND account_id = $2)", pollID, accountID).Scan(&voted)
+	voted, err := s.store.CheckVoted(ctx, pollID, accountID)
 	if err != nil {
-		return fmt.Errorf("interactions: check vote: %w", err)
+		return err
 	}
 	if voted {
-		return errors.New("already voted")
+		return ErrAlreadyVoted
 	}
 
 	// Validate choices
 	if !multiple && len(choices) > 1 {
-		return errors.New("multiple choices not allowed")
+		return ErrMultipleNotAllowed
 	}
 
-	// Insert votes
-	for _, choice := range choices {
-		_, err = s.store.Exec(ctx, `
-			INSERT INTO poll_votes (id, poll_id, account_id, choice, created_at)
-			VALUES ($1, $2, $3, $4, $5)
-		`, ulid.New(), pollID, accountID, choice, time.Now())
-		if err != nil {
-			return fmt.Errorf("interactions: insert vote: %w", err)
-		}
-	}
-
-	// Update voters count
-	_, _ = s.store.Exec(ctx, "UPDATE polls SET voters_count = voters_count + 1 WHERE id = $1", pollID)
-
-	// Update options vote counts (this is a simplified approach)
-	// In production, you'd use a proper JSON update or separate table
-	for _, choice := range choices {
-		_, _ = s.store.Exec(ctx, `
-			UPDATE polls
-			SET options = json_set(options, '$[' || $1 || '].votes_count',
-				COALESCE(json_extract(options, '$[' || $1 || '].votes_count')::INT, 0) + 1)
-			WHERE id = $2
-		`, choice, pollID)
-	}
-
-	return nil
+	return s.store.VotePoll(ctx, accountID, pollID, choices)
 }
 
 // GetLikedBy returns accounts that liked a post.
 func (s *Service) GetLikedBy(ctx context.Context, postID string, limit, offset int) ([]string, error) {
-	rows, err := s.store.Query(ctx, `
-		SELECT account_id FROM likes
-		WHERE post_id = $1
-		ORDER BY created_at DESC
-		LIMIT $2 OFFSET $3
-	`, postID, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("interactions: get liked by: %w", err)
-	}
-	defer rows.Close()
-
-	var ids []string
-	for rows.Next() {
-		var id string
-		if rows.Scan(&id) == nil {
-			ids = append(ids, id)
-		}
-	}
-	return ids, nil
+	return s.store.GetLikedBy(ctx, postID, limit, offset)
 }
 
 // GetRepostedBy returns accounts that reposted a post.
 func (s *Service) GetRepostedBy(ctx context.Context, postID string, limit, offset int) ([]string, error) {
-	rows, err := s.store.Query(ctx, `
-		SELECT account_id FROM reposts
-		WHERE post_id = $1
-		ORDER BY created_at DESC
-		LIMIT $2 OFFSET $3
-	`, postID, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("interactions: get reposted by: %w", err)
-	}
-	defer rows.Close()
-
-	var ids []string
-	for rows.Next() {
-		var id string
-		if rows.Scan(&id) == nil {
-			ids = append(ids, id)
-		}
-	}
-	return ids, nil
+	return s.store.GetRepostedBy(ctx, postID, limit, offset)
 }
 
 func (s *Service) createNotification(ctx context.Context, postID, actorID, notifType string) {
-	// Get post owner
-	var ownerID string
-	err := s.store.QueryRow(ctx, "SELECT account_id FROM posts WHERE id = $1", postID).Scan(&ownerID)
+	ownerID, err := s.store.GetPostOwner(ctx, postID)
 	if err != nil || ownerID == actorID {
 		return // Don't notify yourself
 	}
-
-	_, _ = s.store.Exec(ctx, `
-		INSERT INTO notifications (id, account_id, type, actor_id, post_id, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`, ulid.New(), ownerID, notifType, actorID, postID, time.Now())
+	_ = s.store.CreateNotification(ctx, ownerID, actorID, notifType, postID)
 }

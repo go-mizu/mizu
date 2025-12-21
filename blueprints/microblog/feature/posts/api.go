@@ -2,6 +2,7 @@
 package posts
 
 import (
+	"context"
 	"time"
 
 	"github.com/go-mizu/blueprints/microblog/feature/accounts"
@@ -38,13 +39,13 @@ type Post struct {
 	RepliesCount int `json:"replies_count"`
 
 	// Relationships
-	Account   *accounts.Account `json:"account,omitempty"`
-	Media     []*Media          `json:"media,omitempty"`
-	Poll      *Poll             `json:"poll,omitempty"`
-	ReplyTo   *Post             `json:"reply_to,omitempty"`
-	QuoteOf   *Post             `json:"quote_of,omitempty"`
-	Mentions  []string          `json:"mentions,omitempty"`
-	Hashtags  []string          `json:"hashtags,omitempty"`
+	Account  *accounts.Account `json:"account,omitempty"`
+	Media    []*Media          `json:"media,omitempty"`
+	Poll     *Poll             `json:"poll,omitempty"`
+	ReplyTo  *Post             `json:"reply_to,omitempty"`
+	QuoteOf  *Post             `json:"quote_of,omitempty"`
+	Mentions []string          `json:"mentions,omitempty"`
+	Hashtags []string          `json:"hashtags,omitempty"`
 
 	// Current user state
 	Liked      bool `json:"liked,omitempty"`
@@ -84,15 +85,15 @@ type PollOption struct {
 
 // CreateIn contains input for creating a post.
 type CreateIn struct {
-	Content        string          `json:"content"`
-	ContentWarning string          `json:"content_warning,omitempty"`
-	Visibility     Visibility      `json:"visibility,omitempty"`
-	ReplyToID      string          `json:"reply_to_id,omitempty"`
-	QuoteOfID      string          `json:"quote_of_id,omitempty"`
-	Language       string          `json:"language,omitempty"`
-	Sensitive      bool            `json:"sensitive,omitempty"`
-	MediaIDs       []string        `json:"media_ids,omitempty"`
-	Poll           *CreatePollIn   `json:"poll,omitempty"`
+	Content        string        `json:"content"`
+	ContentWarning string        `json:"content_warning,omitempty"`
+	Visibility     Visibility    `json:"visibility,omitempty"`
+	ReplyToID      string        `json:"reply_to_id,omitempty"`
+	QuoteOfID      string        `json:"quote_of_id,omitempty"`
+	Language       string        `json:"language,omitempty"`
+	Sensitive      bool          `json:"sensitive,omitempty"`
+	MediaIDs       []string      `json:"media_ids,omitempty"`
+	Poll           *CreatePollIn `json:"poll,omitempty"`
 }
 
 // CreatePollIn contains input for creating a poll.
@@ -118,7 +119,55 @@ type ThreadContext struct {
 
 // PostList is a paginated list of posts.
 type PostList struct {
-	Posts  []*Post `json:"posts"`
-	MaxID  string  `json:"max_id,omitempty"`
-	MinID  string  `json:"min_id,omitempty"`
+	Posts []*Post `json:"posts"`
+	MaxID string  `json:"max_id,omitempty"`
+	MinID string  `json:"min_id,omitempty"`
+}
+
+// API defines the posts service contract.
+type API interface {
+	Create(ctx context.Context, accountID string, in *CreateIn) (*Post, error)
+	GetByID(ctx context.Context, id, viewerID string) (*Post, error)
+	Update(ctx context.Context, id, accountID string, in *UpdateIn) (*Post, error)
+	Delete(ctx context.Context, id, accountID string) error
+	GetThread(ctx context.Context, id, viewerID string) (*ThreadContext, error)
+}
+
+// Store defines the data access contract for posts.
+type Store interface {
+	// Post CRUD
+	Insert(ctx context.Context, p *Post) error
+	GetByID(ctx context.Context, id string) (*Post, error)
+	Update(ctx context.Context, id string, in *UpdateIn) error
+	Delete(ctx context.Context, id string) error
+	GetOwner(ctx context.Context, id string) (accountID string, replyToID string, err error)
+
+	// Thread operations
+	GetThreadID(ctx context.Context, replyToID string) (string, error)
+	GetDescendants(ctx context.Context, postID string, limit int) ([]*Post, error)
+
+	// Counters
+	IncrementReplies(ctx context.Context, postID string) error
+	DecrementReplies(ctx context.Context, postID string) error
+	IncrementReposts(ctx context.Context, postID string) error
+
+	// Media & Poll
+	GetMedia(ctx context.Context, postID string) ([]*Media, error)
+	GetPoll(ctx context.Context, postID string) (*Poll, error)
+	GetVoterChoices(ctx context.Context, pollID, accountID string) ([]int, error)
+	CreatePoll(ctx context.Context, postID string, in *CreatePollIn) error
+
+	// Viewer state
+	CheckLiked(ctx context.Context, accountID, postID string) (bool, error)
+	CheckReposted(ctx context.Context, accountID, postID string) (bool, error)
+	CheckBookmarked(ctx context.Context, accountID, postID string) (bool, error)
+
+	// Hashtags & Mentions
+	SaveHashtag(ctx context.Context, postID, tag string) error
+	SaveMention(ctx context.Context, postID, username string) error
+	DeleteHashtags(ctx context.Context, postID string) error
+	DeleteMentions(ctx context.Context, postID string) error
+
+	// Edit history
+	SaveEditHistory(ctx context.Context, postID, content, cw string, sensitive bool) error
 }
