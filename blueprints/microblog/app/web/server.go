@@ -14,7 +14,7 @@ import (
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/go-mizu/mizu"
 
-	"github.com/go-mizu/blueprints/microblog/app/web/handlers"
+	"github.com/go-mizu/blueprints/microblog/app/web/handler"
 	"github.com/go-mizu/blueprints/microblog/assets"
 	"github.com/go-mizu/blueprints/microblog/feature/accounts"
 	"github.com/go-mizu/blueprints/microblog/feature/interactions"
@@ -45,15 +45,15 @@ type Server struct {
 	trending      trending.API
 
 	// Handler groups
-	authHandlers         *handlers.AuthHandlers
-	accountHandlers      *handlers.AccountHandlers
-	postHandlers         *handlers.PostHandlers
-	interactionHandlers  *handlers.InteractionHandlers
-	relationshipHandlers *handlers.RelationshipHandlers
-	timelineHandlers     *handlers.TimelineHandlers
-	notificationHandlers *handlers.NotificationHandlers
-	searchHandlers       *handlers.SearchHandlers
-	pageHandlers         *handlers.PageHandlers
+	authHandlers         *handler.Auth
+	accountHandlers      *handler.Account
+	postHandlers         *handler.Post
+	interactionHandlers  *handler.Interaction
+	relationshipHandlers *handler.Relationship
+	timelineHandlers     *handler.Timeline
+	notificationHandlers *handler.Notification
+	searchHandlers       *handler.Search
+	pageHandlers         *handler.Page
 }
 
 // New creates a new server.
@@ -123,15 +123,15 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	// Create handler groups with dependencies
-	s.authHandlers = handlers.NewAuthHandlers(accountsSvc)
-	s.accountHandlers = handlers.NewAccountHandlers(accountsSvc, relationshipsSvc, timelinesSvc, s.getAccountID, s.optionalAuth)
-	s.postHandlers = handlers.NewPostHandlers(postsSvc, s.getAccountID, s.optionalAuth)
-	s.interactionHandlers = handlers.NewInteractionHandlers(interactionsSvc, postsSvc, accountsSvc, s.getAccountID)
-	s.relationshipHandlers = handlers.NewRelationshipHandlers(relationshipsSvc, s.getAccountID)
-	s.timelineHandlers = handlers.NewTimelineHandlers(timelinesSvc, s.getAccountID, s.optionalAuth)
-	s.notificationHandlers = handlers.NewNotificationHandlers(notificationsSvc, s.getAccountID)
-	s.searchHandlers = handlers.NewSearchHandlers(searchSvc, trendingSvc, postsSvc, s.optionalAuth)
-	s.pageHandlers = handlers.NewPageHandlers(tmpl, accountsSvc, postsSvc, timelinesSvc, relationshipsSvc, notificationsSvc, trendingSvc, s.optionalAuth, cfg.Dev)
+	s.authHandlers = handler.NewAuth(accountsSvc)
+	s.accountHandlers = handler.NewAccount(accountsSvc, relationshipsSvc, timelinesSvc, s.getAccountID, s.optionalAuth)
+	s.postHandlers = handler.NewPost(postsSvc, s.getAccountID, s.optionalAuth)
+	s.interactionHandlers = handler.NewInteraction(interactionsSvc, postsSvc, accountsSvc, s.getAccountID)
+	s.relationshipHandlers = handler.NewRelationship(relationshipsSvc, s.getAccountID)
+	s.timelineHandlers = handler.NewTimeline(timelinesSvc, s.getAccountID, s.optionalAuth)
+	s.notificationHandlers = handler.NewNotification(notificationsSvc, s.getAccountID)
+	s.searchHandlers = handler.NewSearch(searchSvc, trendingSvc, postsSvc, s.optionalAuth)
+	s.pageHandlers = handler.NewPage(tmpl, accountsSvc, postsSvc, timelinesSvc, relationshipsSvc, notificationsSvc, trendingSvc, s.optionalAuth, cfg.Dev)
 
 	s.setupRoutes()
 

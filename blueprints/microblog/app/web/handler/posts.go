@@ -1,4 +1,4 @@
-package handlers
+package handler
 
 import (
 	"github.com/go-mizu/mizu"
@@ -6,20 +6,20 @@ import (
 	"github.com/go-mizu/blueprints/microblog/feature/posts"
 )
 
-// PostHandlers contains post-related handlers.
-type PostHandlers struct {
+// Post contains post-related handlers.
+type Post struct {
 	posts        posts.API
 	getAccountID func(*mizu.Ctx) string
 	optionalAuth func(*mizu.Ctx) string
 }
 
-// NewPostHandlers creates new post handlers.
-func NewPostHandlers(
+// NewPost creates new post handlers.
+func NewPost(
 	posts posts.API,
 	getAccountID func(*mizu.Ctx) string,
 	optionalAuth func(*mizu.Ctx) string,
-) *PostHandlers {
-	return &PostHandlers{
+) *Post {
+	return &Post{
 		posts:        posts,
 		getAccountID: getAccountID,
 		optionalAuth: optionalAuth,
@@ -27,7 +27,7 @@ func NewPostHandlers(
 }
 
 // Create creates a new post.
-func (h *PostHandlers) Create(c *mizu.Ctx) error {
+func (h *Post) Create(c *mizu.Ctx) error {
 	accountID := h.getAccountID(c)
 	var in posts.CreateIn
 	if err := c.BindJSON(&in, 1<<20); err != nil {
@@ -43,7 +43,7 @@ func (h *PostHandlers) Create(c *mizu.Ctx) error {
 }
 
 // Get returns a specific post.
-func (h *PostHandlers) Get(c *mizu.Ctx) error {
+func (h *Post) Get(c *mizu.Ctx) error {
 	id := c.Param("id")
 	viewerID := h.optionalAuth(c)
 
@@ -56,7 +56,7 @@ func (h *PostHandlers) Get(c *mizu.Ctx) error {
 }
 
 // Update updates an existing post.
-func (h *PostHandlers) Update(c *mizu.Ctx) error {
+func (h *Post) Update(c *mizu.Ctx) error {
 	id := c.Param("id")
 	accountID := h.getAccountID(c)
 	var in posts.UpdateIn
@@ -73,7 +73,7 @@ func (h *PostHandlers) Update(c *mizu.Ctx) error {
 }
 
 // Delete deletes a post.
-func (h *PostHandlers) Delete(c *mizu.Ctx) error {
+func (h *Post) Delete(c *mizu.Ctx) error {
 	id := c.Param("id")
 	accountID := h.getAccountID(c)
 
@@ -85,7 +85,7 @@ func (h *PostHandlers) Delete(c *mizu.Ctx) error {
 }
 
 // GetContext returns a post's thread context.
-func (h *PostHandlers) GetContext(c *mizu.Ctx) error {
+func (h *Post) GetContext(c *mizu.Ctx) error {
 	id := c.Param("id")
 	viewerID := h.optionalAuth(c)
 

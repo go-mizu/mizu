@@ -1,4 +1,4 @@
-package handlers
+package handler
 
 import (
 	"github.com/go-mizu/mizu"
@@ -8,22 +8,22 @@ import (
 	"github.com/go-mizu/blueprints/microblog/feature/posts"
 )
 
-// InteractionHandlers contains interaction-related handlers.
-type InteractionHandlers struct {
+// Interaction contains interaction-related handlers.
+type Interaction struct {
 	interactions interactions.API
 	posts        posts.API
 	accounts     accounts.API
 	getAccountID func(*mizu.Ctx) string
 }
 
-// NewInteractionHandlers creates new interaction handlers.
-func NewInteractionHandlers(
+// NewInteraction creates new interaction handlers.
+func NewInteraction(
 	interactions interactions.API,
 	posts posts.API,
 	accounts accounts.API,
 	getAccountID func(*mizu.Ctx) string,
-) *InteractionHandlers {
-	return &InteractionHandlers{
+) *Interaction {
+	return &Interaction{
 		interactions: interactions,
 		posts:        posts,
 		accounts:     accounts,
@@ -32,7 +32,7 @@ func NewInteractionHandlers(
 }
 
 // Like adds a like to a post.
-func (h *InteractionHandlers) Like(c *mizu.Ctx) error {
+func (h *Interaction) Like(c *mizu.Ctx) error {
 	accountID := h.getAccountID(c)
 	postID := c.Param("id")
 
@@ -45,7 +45,7 @@ func (h *InteractionHandlers) Like(c *mizu.Ctx) error {
 }
 
 // Unlike removes a like from a post.
-func (h *InteractionHandlers) Unlike(c *mizu.Ctx) error {
+func (h *Interaction) Unlike(c *mizu.Ctx) error {
 	accountID := h.getAccountID(c)
 	postID := c.Param("id")
 
@@ -58,7 +58,7 @@ func (h *InteractionHandlers) Unlike(c *mizu.Ctx) error {
 }
 
 // Repost adds a repost.
-func (h *InteractionHandlers) Repost(c *mizu.Ctx) error {
+func (h *Interaction) Repost(c *mizu.Ctx) error {
 	accountID := h.getAccountID(c)
 	postID := c.Param("id")
 
@@ -71,7 +71,7 @@ func (h *InteractionHandlers) Repost(c *mizu.Ctx) error {
 }
 
 // Unrepost removes a repost.
-func (h *InteractionHandlers) Unrepost(c *mizu.Ctx) error {
+func (h *Interaction) Unrepost(c *mizu.Ctx) error {
 	accountID := h.getAccountID(c)
 	postID := c.Param("id")
 
@@ -84,7 +84,7 @@ func (h *InteractionHandlers) Unrepost(c *mizu.Ctx) error {
 }
 
 // Bookmark adds a bookmark.
-func (h *InteractionHandlers) Bookmark(c *mizu.Ctx) error {
+func (h *Interaction) Bookmark(c *mizu.Ctx) error {
 	accountID := h.getAccountID(c)
 	postID := c.Param("id")
 
@@ -97,7 +97,7 @@ func (h *InteractionHandlers) Bookmark(c *mizu.Ctx) error {
 }
 
 // Unbookmark removes a bookmark.
-func (h *InteractionHandlers) Unbookmark(c *mizu.Ctx) error {
+func (h *Interaction) Unbookmark(c *mizu.Ctx) error {
 	accountID := h.getAccountID(c)
 	postID := c.Param("id")
 
@@ -110,7 +110,7 @@ func (h *InteractionHandlers) Unbookmark(c *mizu.Ctx) error {
 }
 
 // LikedBy returns accounts that liked a post.
-func (h *InteractionHandlers) LikedBy(c *mizu.Ctx) error {
+func (h *Interaction) LikedBy(c *mizu.Ctx) error {
 	postID := c.Param("id")
 	limit := IntQuery(c, "limit", 40)
 
@@ -130,7 +130,7 @@ func (h *InteractionHandlers) LikedBy(c *mizu.Ctx) error {
 }
 
 // RepostedBy returns accounts that reposted a post.
-func (h *InteractionHandlers) RepostedBy(c *mizu.Ctx) error {
+func (h *Interaction) RepostedBy(c *mizu.Ctx) error {
 	postID := c.Param("id")
 	limit := IntQuery(c, "limit", 40)
 

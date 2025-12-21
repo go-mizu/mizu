@@ -1,4 +1,4 @@
-package handlers
+package handler
 
 import (
 	"github.com/go-mizu/mizu"
@@ -6,25 +6,25 @@ import (
 	"github.com/go-mizu/blueprints/microblog/feature/relationships"
 )
 
-// RelationshipHandlers contains relationship-related handlers.
-type RelationshipHandlers struct {
+// Relationship contains relationship-related handlers.
+type Relationship struct {
 	relationships relationships.API
 	getAccountID  func(*mizu.Ctx) string
 }
 
-// NewRelationshipHandlers creates new relationship handlers.
-func NewRelationshipHandlers(
+// NewRelationship creates new relationship handlers.
+func NewRelationship(
 	relationships relationships.API,
 	getAccountID func(*mizu.Ctx) string,
-) *RelationshipHandlers {
-	return &RelationshipHandlers{
+) *Relationship {
+	return &Relationship{
 		relationships: relationships,
 		getAccountID:  getAccountID,
 	}
 }
 
 // Follow follows an account.
-func (h *RelationshipHandlers) Follow(c *mizu.Ctx) error {
+func (h *Relationship) Follow(c *mizu.Ctx) error {
 	accountID := h.getAccountID(c)
 	targetID := c.Param("id")
 
@@ -37,7 +37,7 @@ func (h *RelationshipHandlers) Follow(c *mizu.Ctx) error {
 }
 
 // Unfollow unfollows an account.
-func (h *RelationshipHandlers) Unfollow(c *mizu.Ctx) error {
+func (h *Relationship) Unfollow(c *mizu.Ctx) error {
 	accountID := h.getAccountID(c)
 	targetID := c.Param("id")
 
@@ -50,7 +50,7 @@ func (h *RelationshipHandlers) Unfollow(c *mizu.Ctx) error {
 }
 
 // Block blocks an account.
-func (h *RelationshipHandlers) Block(c *mizu.Ctx) error {
+func (h *Relationship) Block(c *mizu.Ctx) error {
 	accountID := h.getAccountID(c)
 	targetID := c.Param("id")
 
@@ -63,7 +63,7 @@ func (h *RelationshipHandlers) Block(c *mizu.Ctx) error {
 }
 
 // Unblock unblocks an account.
-func (h *RelationshipHandlers) Unblock(c *mizu.Ctx) error {
+func (h *Relationship) Unblock(c *mizu.Ctx) error {
 	accountID := h.getAccountID(c)
 	targetID := c.Param("id")
 
@@ -76,7 +76,7 @@ func (h *RelationshipHandlers) Unblock(c *mizu.Ctx) error {
 }
 
 // Mute mutes an account.
-func (h *RelationshipHandlers) Mute(c *mizu.Ctx) error {
+func (h *Relationship) Mute(c *mizu.Ctx) error {
 	accountID := h.getAccountID(c)
 	targetID := c.Param("id")
 
@@ -89,7 +89,7 @@ func (h *RelationshipHandlers) Mute(c *mizu.Ctx) error {
 }
 
 // Unmute unmutes an account.
-func (h *RelationshipHandlers) Unmute(c *mizu.Ctx) error {
+func (h *Relationship) Unmute(c *mizu.Ctx) error {
 	accountID := h.getAccountID(c)
 	targetID := c.Param("id")
 
@@ -102,7 +102,7 @@ func (h *RelationshipHandlers) Unmute(c *mizu.Ctx) error {
 }
 
 // GetRelationships returns relationships with specified accounts.
-func (h *RelationshipHandlers) GetRelationships(c *mizu.Ctx) error {
+func (h *Relationship) GetRelationships(c *mizu.Ctx) error {
 	accountID := h.getAccountID(c)
 	ids := c.Query("id[]")
 

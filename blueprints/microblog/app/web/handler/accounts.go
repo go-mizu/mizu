@@ -1,4 +1,4 @@
-package handlers
+package handler
 
 import (
 	"github.com/go-mizu/mizu"
@@ -8,8 +8,8 @@ import (
 	"github.com/go-mizu/blueprints/microblog/feature/timelines"
 )
 
-// AccountHandlers contains account-related handlers.
-type AccountHandlers struct {
+// Account contains account-related handlers.
+type Account struct {
 	accounts      accounts.API
 	relationships relationships.API
 	timelines     timelines.API
@@ -17,15 +17,15 @@ type AccountHandlers struct {
 	optionalAuth  func(*mizu.Ctx) string
 }
 
-// NewAccountHandlers creates new account handlers.
-func NewAccountHandlers(
+// NewAccount creates new account handlers.
+func NewAccount(
 	accounts accounts.API,
 	relationships relationships.API,
 	timelines timelines.API,
 	getAccountID func(*mizu.Ctx) string,
 	optionalAuth func(*mizu.Ctx) string,
-) *AccountHandlers {
-	return &AccountHandlers{
+) *Account {
+	return &Account{
 		accounts:      accounts,
 		relationships: relationships,
 		timelines:     timelines,
@@ -35,7 +35,7 @@ func NewAccountHandlers(
 }
 
 // VerifyCredentials returns the current user's account.
-func (h *AccountHandlers) VerifyCredentials(c *mizu.Ctx) error {
+func (h *Account) VerifyCredentials(c *mizu.Ctx) error {
 	accountID := h.getAccountID(c)
 	account, err := h.accounts.GetByID(c.Request().Context(), accountID)
 	if err != nil {
@@ -45,7 +45,7 @@ func (h *AccountHandlers) VerifyCredentials(c *mizu.Ctx) error {
 }
 
 // UpdateCredentials updates the current user's account.
-func (h *AccountHandlers) UpdateCredentials(c *mizu.Ctx) error {
+func (h *Account) UpdateCredentials(c *mizu.Ctx) error {
 	accountID := h.getAccountID(c)
 	var in accounts.UpdateIn
 	if err := c.BindJSON(&in, 1<<20); err != nil {
@@ -60,7 +60,7 @@ func (h *AccountHandlers) UpdateCredentials(c *mizu.Ctx) error {
 }
 
 // GetAccount returns a specific account.
-func (h *AccountHandlers) GetAccount(c *mizu.Ctx) error {
+func (h *Account) GetAccount(c *mizu.Ctx) error {
 	id := c.Param("id")
 
 	// Check if it's a username
@@ -85,7 +85,7 @@ func (h *AccountHandlers) GetAccount(c *mizu.Ctx) error {
 }
 
 // GetAccountPosts returns a specific account's posts.
-func (h *AccountHandlers) GetAccountPosts(c *mizu.Ctx) error {
+func (h *Account) GetAccountPosts(c *mizu.Ctx) error {
 	accountID := c.Param("id")
 	viewerID := h.optionalAuth(c)
 	limit := IntQuery(c, "limit", 20)
@@ -100,7 +100,7 @@ func (h *AccountHandlers) GetAccountPosts(c *mizu.Ctx) error {
 }
 
 // GetAccountFollowers returns a specific account's followers.
-func (h *AccountHandlers) GetAccountFollowers(c *mizu.Ctx) error {
+func (h *Account) GetAccountFollowers(c *mizu.Ctx) error {
 	accountID := c.Param("id")
 	limit := IntQuery(c, "limit", 40)
 	offset := IntQuery(c, "offset", 0)
@@ -122,7 +122,7 @@ func (h *AccountHandlers) GetAccountFollowers(c *mizu.Ctx) error {
 }
 
 // GetAccountFollowing returns accounts that a specific account follows.
-func (h *AccountHandlers) GetAccountFollowing(c *mizu.Ctx) error {
+func (h *Account) GetAccountFollowing(c *mizu.Ctx) error {
 	accountID := c.Param("id")
 	limit := IntQuery(c, "limit", 40)
 	offset := IntQuery(c, "offset", 0)

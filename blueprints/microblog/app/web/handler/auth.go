@@ -1,4 +1,4 @@
-package handlers
+package handler
 
 import (
 	"github.com/go-mizu/mizu"
@@ -6,18 +6,18 @@ import (
 	"github.com/go-mizu/blueprints/microblog/feature/accounts"
 )
 
-// AuthHandlers contains authentication-related handlers.
-type AuthHandlers struct {
+// Auth contains authentication-related handlers.
+type Auth struct {
 	accounts accounts.API
 }
 
-// NewAuthHandlers creates new auth handlers.
-func NewAuthHandlers(accounts accounts.API) *AuthHandlers {
-	return &AuthHandlers{accounts: accounts}
+// NewAuth creates new auth handlers.
+func NewAuth(accounts accounts.API) *Auth {
+	return &Auth{accounts: accounts}
 }
 
 // Register handles user registration.
-func (h *AuthHandlers) Register(c *mizu.Ctx) error {
+func (h *Auth) Register(c *mizu.Ctx) error {
 	var in accounts.CreateIn
 	if err := c.BindJSON(&in, 1<<20); err != nil {
 		return c.JSON(400, ErrorResponse("INVALID_REQUEST", "Invalid request body"))
@@ -42,7 +42,7 @@ func (h *AuthHandlers) Register(c *mizu.Ctx) error {
 }
 
 // Login handles user login.
-func (h *AuthHandlers) Login(c *mizu.Ctx) error {
+func (h *Auth) Login(c *mizu.Ctx) error {
 	var in accounts.LoginIn
 	if err := c.BindJSON(&in, 1<<20); err != nil {
 		return c.JSON(400, ErrorResponse("INVALID_REQUEST", "Invalid request body"))
@@ -64,7 +64,7 @@ func (h *AuthHandlers) Login(c *mizu.Ctx) error {
 }
 
 // Logout handles user logout.
-func (h *AuthHandlers) Logout(c *mizu.Ctx) error {
+func (h *Auth) Logout(c *mizu.Ctx) error {
 	token := c.Request().Header.Get("Authorization")
 	if len(token) > 7 {
 		token = token[7:] // Remove "Bearer "
