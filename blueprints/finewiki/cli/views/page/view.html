@@ -4,6 +4,22 @@
 
 {{define "view-content"}}
 <article class="article">
+    {{if .Infoboxes}}
+    <aside class="infobox">
+        {{range .Infoboxes}}
+        {{if .Name}}
+        <div class="infobox-title">{{.Name}}</div>
+        {{end}}
+        {{range .Items}}
+        <div class="infobox-row">
+            <div class="infobox-label">{{.Label}}</div>
+            <div class="infobox-value">{{.Value}}</div>
+        </div>
+        {{end}}
+        {{end}}
+    </aside>
+    {{end}}
+
     <header class="article-header">
         <h1 class="article-title">{{.Page.Title}}</h1>
         <div class="article-meta">
@@ -21,7 +37,16 @@
                 </svg>
                 {{.Page.InLanguage}}
             </span>
-            {{if .Page.DateModified}}
+            {{if .Page.DateModifiedRel}}
+            <span class="article-meta-sep">&middot;</span>
+            <span class="article-meta-item" title="{{.Page.DateModifiedFmt}}">
+                <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                    <path d="M16 2v4M8 2v4M3 10h18"/>
+                </svg>
+                {{.Page.DateModifiedRel}}
+            </span>
+            {{else if .Page.DateModified}}
             <span class="article-meta-sep">&middot;</span>
             <span class="article-meta-item">
                 <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -78,6 +103,63 @@
 <style>
 .article {
     max-width: 100%;
+}
+
+/* Infobox - Wikipedia-style floating panel */
+.infobox {
+    float: right;
+    clear: right;
+    width: 280px;
+    margin: 0 0 1rem 1.5rem;
+    padding: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 0.875rem;
+    overflow: hidden;
+}
+
+.infobox-title {
+    padding: 0.75rem 1rem;
+    font-weight: 600;
+    font-size: 1rem;
+    text-align: center;
+    background: var(--bg-alt);
+    border-bottom: 1px solid var(--border);
+    color: var(--fg);
+}
+
+.infobox-row {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+}
+
+.infobox-row:last-child {
+    border-bottom: none;
+}
+
+.infobox-label {
+    flex: 0 0 40%;
+    padding: 0.5rem 0.75rem;
+    font-weight: 500;
+    color: var(--fg-muted);
+    background: var(--bg-alt);
+    word-break: break-word;
+}
+
+.infobox-value {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    color: var(--fg);
+    word-break: break-word;
+}
+
+@media (max-width: 768px) {
+    .infobox {
+        float: none;
+        width: 100%;
+        margin: 0 0 1.5rem 0;
+    }
 }
 
 .article-header {
