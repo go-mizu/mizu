@@ -30,8 +30,8 @@ func serveCmd() *cobra.Command {
 		Short: "Start the web server for a specific language",
 		Long: `Start the FineWiki web server for a specific language.
 
-The server reads from the parquet file at <data-dir>/<lang>/data.parquet
-and uses a DuckDB index at <data-dir>/<lang>/wiki.duckdb.
+The server reads from the DuckDB database at <data-dir>/<lang>/wiki.duckdb.
+Run 'finewiki import <lang>' first to download and prepare the data.
 
 Examples:
   finewiki serve vi                  # Serve Vietnamese wiki on :8080
@@ -53,12 +53,26 @@ Examples:
 }
 
 func runServe(ctx context.Context, addr, dataDir, lang string) error {
+	ui := NewUI()
 	parquetGlob := ParquetGlob(dataDir, lang)
 	dbPath := DuckDBPath(dataDir, lang)
 
-	// Check parquet exists (either single or sharded)
-	if !parquetExists(dataDir, lang) {
-		return fmt.Errorf("parquet file not found for language '%s'\nrun 'finewiki import %s' first", lang, lang)
+	// Check if database exists
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		// Check if parquet exists but database doesn't
+		if parquetExists(dataDir, lang) {
+			ui.Error(fmt.Sprintf("Database not initialized for '%s'", lang))
+			ui.Blank()
+			ui.Hint("Parquet data exists but database hasn't been created.")
+			ui.Hint(fmt.Sprintf("Run: finewiki import %s", lang))
+			return fmt.Errorf("database not initialized")
+		}
+
+		ui.Error(fmt.Sprintf("No data found for '%s'", lang))
+		ui.Blank()
+		ui.Hint("Download the data first:")
+		ui.Hint(fmt.Sprintf("Run: finewiki import %s", lang))
+		return fmt.Errorf("data not found")
 	}
 
 	// Ensure directory exists for duckdb
@@ -69,6 +83,8 @@ func runServe(ctx context.Context, addr, dataDir, lang string) error {
 
 	db, err := sql.Open("duckdb", dbPath)
 	if err != nil {
+		ui.Error("Failed to open database")
+		ui.Hint(err.Error())
 		return err
 	}
 	defer db.Close()
@@ -78,15 +94,27 @@ func runServe(ctx context.Context, addr, dataDir, lang string) error {
 		return err
 	}
 
+	// Only verify schema exists, don't seed
 	if err := store.Ensure(ctx, duckdb.Config{
 		ParquetGlob: parquetGlob,
 		EnableFTS:   true,
 	}, duckdb.EnsureOptions{
-		SeedIfEmpty: true,
-		BuildIndex:  true,
-		BuildFTS:    true,
+		SeedIfEmpty: false, // Don't seed during serve
+		BuildIndex:  false, // Already built during import
+		BuildFTS:    false,
 	}); err != nil {
 		return err
+	}
+
+	// Verify database has data
+	stats, _ := store.Stats(ctx)
+	pageCount, _ := stats["pages"].(int64)
+	if pageCount == 0 {
+		ui.Error(fmt.Sprintf("Database is empty for '%s'", lang))
+		ui.Blank()
+		ui.Hint("Re-import the data:")
+		ui.Hint(fmt.Sprintf("Run: finewiki import %s", lang))
+		return fmt.Errorf("empty database")
 	}
 
 	tmpl, err := web.NewTemplates()
@@ -105,7 +133,17 @@ func runServe(ctx context.Context, addr, dataDir, lang string) error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	fmt.Fprintf(os.Stdout, "serving %s wiki on %s\n", lang, addr)
+	// Print server info
+	ui.Header(iconServer, "FineWiki Server")
+	ui.Info("Language", fmt.Sprintf("%s", lang))
+	ui.Info("Articles", formatNumber(pageCount))
+	ui.Info("Database", dbPath)
+	ui.Blank()
+	ui.Info("Listening", fmt.Sprintf("http://localhost%s", addr))
+	ui.Blank()
+	ui.Hint("Press Ctrl+C to stop")
+	ui.Blank()
+
 	return httpSrv.ListenAndServe()
 }
 

@@ -3,8 +3,10 @@ package web
 import (
 	"embed"
 	"errors"
+	"fmt"
 	"html/template"
 	"io"
+	"strings"
 )
 
 //go:embed views/**/*
@@ -23,7 +25,8 @@ type Templates struct {
 // NewTemplates loads templates from embedded filesystem.
 func NewTemplates() (*Templates, error) {
 	funcs := template.FuncMap{
-		"dict": dict,
+		"dict":         dict,
+		"formatNumber": formatNumber,
 	}
 
 	t := template.New("views").Funcs(funcs)
@@ -67,4 +70,21 @@ func dict(kv ...any) (map[string]any, error) {
 		m[k] = kv[i+1]
 	}
 	return m, nil
+}
+
+// formatNumber formats a number with thousand separators.
+func formatNumber(n int) string {
+	if n < 1000 {
+		return fmt.Sprintf("%d", n)
+	}
+
+	s := fmt.Sprintf("%d", n)
+	var result strings.Builder
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			result.WriteRune(',')
+		}
+		result.WriteRune(c)
+	}
+	return result.String()
 }

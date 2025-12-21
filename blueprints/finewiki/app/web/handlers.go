@@ -22,6 +22,7 @@ func (s *Server) searchPage(c *mizu.Ctx) error {
 			"PageTitle": "FineWiki - Fast Wiki Viewer",
 			"Query":     "",
 			"Theme":     "",
+			"IsHome":    true,
 		})
 		return nil
 	}
@@ -90,9 +91,10 @@ func (s *Server) page(c *mizu.Ctx) error {
 		return c.Text(404, err.Error())
 	}
 
-	// Parse infoboxes and format dates for display
+	// Parse infoboxes, format dates, and compute read stats for display
 	_ = p.ParseInfoboxes()
 	p.FormatDates()
+	p.ComputeReadStats()
 
 	// Render page content (uses WikiText if available for preserved links)
 	var htmlContent template.HTML
