@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"log"
+	"fmt"
 
 	"github.com/spf13/cobra"
 
@@ -18,19 +18,40 @@ func NewServe() *cobra.Command {
 		Short: "Start the web server",
 		Long:  `Start the microblog web server.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ui := NewUI()
+
+			ui.Header(iconServer, "Microblog Server")
+			ui.Blank()
+
 			cfg := web.Config{
 				Addr:    addr,
 				DataDir: dataDir,
 				Dev:     dev,
 			}
 
+			ui.Info("Address", fmt.Sprintf("http://localhost%s", addr))
+			ui.Info("Data", dataDir)
+			if dev {
+				ui.Info("Mode", warnStyle.Render("development"))
+			} else {
+				ui.Info("Mode", "production")
+			}
+			ui.Blank()
+
+			ui.StartSpinner("Starting server...")
+
 			server, err := web.New(cfg)
 			if err != nil {
+				ui.StopSpinnerError("Failed to start server")
 				return err
 			}
 			defer server.Close()
 
-			log.Printf("Server starting on http://localhost%s", addr)
+			ui.StopSpinnerError("") // Clear spinner line
+			ui.Success(fmt.Sprintf("Server running at http://localhost%s", addr))
+			ui.Hint("Press Ctrl+C to stop")
+			ui.Blank()
+
 			return server.Run()
 		},
 	}
