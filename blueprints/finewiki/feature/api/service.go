@@ -27,6 +27,7 @@ func New(viewAPI view.API, searchAPI search.API) *Service {
 }
 
 // GetPage retrieves a wiki page by ID or by (wikiname, title).
+// The response includes parsed infoboxes and human-readable date formatting.
 func (s *Service) GetPage(ctx context.Context, in *GetPageIn) (*view.Page, error) {
 	if in == nil {
 		return nil, errors.New("missing input")
@@ -36,16 +37,27 @@ func (s *Service) GetPage(ctx context.Context, in *GetPageIn) (*view.Page, error
 	wikiname := strings.TrimSpace(in.WikiName)
 	title := strings.TrimSpace(in.Title)
 
+	var p *view.Page
+	var err error
+
 	switch {
 	case id != "":
-		return s.view.ByID(ctx, id)
-
+		p, err = s.view.ByID(ctx, id)
 	case wikiname != "" && title != "":
-		return s.view.ByTitle(ctx, wikiname, title)
-
+		p, err = s.view.ByTitle(ctx, wikiname, title)
 	default:
 		return nil, errors.New("provide either 'id' or both 'wikiname' and 'title'")
 	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Enhance the page with parsed data
+	_ = p.ParseInfoboxes()
+	p.FormatDates()
+
+	return p, nil
 }
 
 // Search searches for pages by title prefix with optional filters.

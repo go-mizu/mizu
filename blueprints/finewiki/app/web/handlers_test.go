@@ -85,17 +85,30 @@ func TestServer_Home(t *testing.T) {
 
 func TestServer_Search(t *testing.T) {
 	tests := []struct {
-		name       string
-		query      string
-		searchAPI  *mockSearchAPI
-		wantStatus int
+		name         string
+		query        string
+		searchAPI    *mockSearchAPI
+		wantStatus   int
+		wantRedirect string
 	}{
 		{
-			name:  "search with results",
+			name:  "search with single result redirects",
 			query: "?q=test",
 			searchAPI: &mockSearchAPI{
 				results: []search.Result{
-					{ID: "1", Title: "Test Result"},
+					{ID: "enwiki/123", Title: "Test Result"},
+				},
+			},
+			wantStatus:   http.StatusFound,
+			wantRedirect: "/page?id=enwiki/123",
+		},
+		{
+			name:  "search with multiple results shows list",
+			query: "?q=test",
+			searchAPI: &mockSearchAPI{
+				results: []search.Result{
+					{ID: "1", Title: "Test Result 1"},
+					{ID: "2", Title: "Test Result 2"},
 				},
 			},
 			wantStatus: http.StatusOK,
@@ -129,6 +142,14 @@ func TestServer_Search(t *testing.T) {
 
 			if rec.Code != tt.wantStatus {
 				t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+
+			// Verify redirect location for single result case
+			if tt.wantRedirect != "" {
+				location := rec.Header().Get("Location")
+				if location != tt.wantRedirect {
+					t.Errorf("redirect location = %q, want %q", location, tt.wantRedirect)
+				}
 			}
 		})
 	}

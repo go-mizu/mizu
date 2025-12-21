@@ -9,6 +9,7 @@ require (
 	github.com/duckdb/duckdb-go/v2 v2.5.4
 	github.com/go-mizu/mizu v0.5.0
 	github.com/spf13/cobra v1.10.2
+	github.com/yuin/goldmark v1.7.13
 )
 
 require (

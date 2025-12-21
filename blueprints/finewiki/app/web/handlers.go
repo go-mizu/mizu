@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/go-mizu/blueprints/finewiki/feature/search"
+	"github.com/go-mizu/blueprints/finewiki/feature/view"
 	"github.com/go-mizu/mizu"
 )
 
@@ -40,6 +41,12 @@ func (s *Server) searchPage(c *mizu.Ctx) error {
 		return c.Text(500, err.Error())
 	}
 
+	// If exactly one result, redirect directly to that page
+	if len(results) == 1 {
+		r := results[0]
+		return c.Redirect(302, fmt.Sprintf("/page?id=%s", r.ID))
+	}
+
 	s.render(c, "page/search.html", map[string]any{
 		"PageTitle":  fmt.Sprintf("%s - Search - FineWiki", text),
 		"Query":      text,
@@ -58,38 +65,43 @@ func (s *Server) page(c *mizu.Ctx) error {
 	wikiname := strings.TrimSpace(c.Query("wiki"))
 	title := strings.TrimSpace(c.Query("title"))
 
+	var p *view.Page
+	var err error
+
 	switch {
 	case id != "":
-		p, err := s.view.ByID(ctx, id)
-		if err != nil {
-			return c.Text(404, err.Error())
-		}
-		s.render(c, "page/view.html", map[string]any{
-			"PageTitle": fmt.Sprintf("%s - FineWiki", p.Title),
-			"Query":     "",
-			"Page":      p,
-			"TOC":       nil,
-			"HTML":      template.HTML(""),
-			"Theme":     "",
-		})
-		return nil
-
+		p, err = s.view.ByID(ctx, id)
 	case wikiname != "" && title != "":
-		p, err := s.view.ByTitle(ctx, wikiname, title)
-		if err != nil {
-			return c.Text(404, err.Error())
-		}
-		s.render(c, "page/view.html", map[string]any{
-			"PageTitle": fmt.Sprintf("%s - FineWiki", p.Title),
-			"Query":     "",
-			"Page":      p,
-			"TOC":       nil,
-			"HTML":      template.HTML(""),
-			"Theme":     "",
-		})
-		return nil
-
+		p, err = s.view.ByTitle(ctx, wikiname, title)
 	default:
 		return c.Text(400, "missing id or (wiki,title)")
 	}
+
+	if err != nil {
+		return c.Text(404, err.Error())
+	}
+
+	// Parse infoboxes and format dates for display
+	_ = p.ParseInfoboxes()
+	p.FormatDates()
+
+	// Render markdown content with wiki link support
+	var htmlContent template.HTML
+	if p.Text != "" {
+		rendered, err := view.RenderMarkdown(p.Text, p.WikiName)
+		if err == nil {
+			htmlContent = template.HTML(rendered)
+		}
+	}
+
+	s.render(c, "page/view.html", map[string]any{
+		"PageTitle": fmt.Sprintf("%s - FineWiki", p.Title),
+		"Query":     "",
+		"Page":      p,
+		"Infoboxes": p.Infoboxes,
+		"TOC":       nil,
+		"HTML":      htmlContent,
+		"Theme":     "",
+	})
+	return nil
 }
