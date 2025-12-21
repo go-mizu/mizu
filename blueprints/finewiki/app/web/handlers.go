@@ -85,13 +85,11 @@ func (s *Server) page(c *mizu.Ctx) error {
 	_ = p.ParseInfoboxes()
 	p.FormatDates()
 
-	// Render markdown content with wiki link support
+	// Render page content (uses WikiText if available for preserved links)
 	var htmlContent template.HTML
-	if p.Text != "" {
-		rendered, err := view.RenderMarkdown(p.Text, p.WikiName)
-		if err == nil {
-			htmlContent = template.HTML(rendered)
-		}
+	rendered, err := view.RenderPage(p)
+	if err == nil {
+		htmlContent = template.HTML(rendered)
 	}
 
 	s.render(c, "page/view.html", map[string]any{
