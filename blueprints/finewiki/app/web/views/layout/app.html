@@ -241,8 +241,6 @@ a:hover {
 /* Article Typography */
 .article {
     font-family: var(--font-serif);
-    font-size: 21px;
-    line-height: 1.75;
     color: var(--fg);
 }
 
@@ -250,39 +248,130 @@ a:hover {
     margin-bottom: 32px;
 }
 
-.article-title {
-    font-family: var(--font-sans);
-    font-size: 42px;
-    font-weight: 700;
-    line-height: 1.2;
-    letter-spacing: -0.02em;
-    margin: 0 0 16px;
-    color: var(--fg);
+.article-title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
 }
 
+.article-title {
+    font-family: var(--font-sans);
+    font-size: 40px;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.025em;
+    margin: 0;
+    color: var(--fg);
+    flex: 1;
+}
+
+.article-actions {
+    display: flex;
+    gap: 2px;
+    flex-shrink: 0;
+    margin-top: 6px;
+}
+
+.icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: var(--fg-secondary);
+    cursor: pointer;
+    transition: all 0.1s;
+    opacity: 0.6;
+}
+
+.icon-btn:hover {
+    background: var(--surface);
+    color: var(--fg);
+    opacity: 1;
+}
+
+.icon-btn.active {
+    color: var(--accent);
+    opacity: 1;
+}
+
+.icon-btn.success {
+    color: var(--accent);
+    opacity: 1;
+}
+
+.icon-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Article Meta - Notion style */
 .article-meta {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
+    gap: 0;
+    margin-top: 12px;
     font-family: var(--font-sans);
     font-size: 14px;
     color: var(--fg-secondary);
+    flex-wrap: wrap;
 }
 
-.article-meta a {
+.meta-tag {
+    display: inline-flex;
+    padding: 2px 8px;
+    background: var(--fg);
+    color: var(--bg);
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.meta-sep {
+    width: 3px;
+    height: 3px;
+    background: var(--fg-secondary);
+    border-radius: 50%;
+    margin: 0 10px;
+    opacity: 0.5;
+}
+
+.meta-item {
     color: var(--fg-secondary);
 }
 
-.article-meta a:hover {
+.meta-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--fg-secondary);
+    text-decoration: none;
+    transition: color 0.1s;
+}
+
+.meta-link:hover {
     color: var(--accent);
+    text-decoration: none;
 }
 
-.meta-dot {
-    color: var(--fg-secondary);
+.meta-link svg {
+    width: 12px;
+    height: 12px;
 }
 
 /* Article Content */
+.article-content {
+    font-size: 18px;
+    line-height: 1.7;
+}
+
 .article-content h1,
 .article-content h2,
 .article-content h3,
@@ -290,46 +379,46 @@ a:hover {
 .article-content h5,
 .article-content h6 {
     font-family: var(--font-sans);
-    font-weight: 700;
+    font-weight: 600;
     color: var(--fg);
     letter-spacing: -0.01em;
-    margin: 0;
 }
 
 .article-content h1 {
-    font-size: 36px;
-    line-height: 1.25;
-    margin-top: 48px;
-    margin-bottom: 24px;
+    font-size: 32px;
+    line-height: 1.3;
+    margin: 2em 0 0.75em;
 }
 
 .article-content h2 {
-    font-size: 28px;
+    font-size: 26px;
     line-height: 1.35;
-    margin-top: 48px;
-    margin-bottom: 16px;
-    padding-top: 24px;
+    margin: 1.75em 0 0.5em;
 }
 
 .article-content h3 {
     font-size: 22px;
     line-height: 1.4;
-    margin-top: 36px;
-    margin-bottom: 12px;
+    margin: 1.5em 0 0.5em;
 }
 
 .article-content h4 {
     font-size: 18px;
     line-height: 1.5;
-    margin-top: 28px;
-    margin-bottom: 8px;
+    margin: 1.25em 0 0.5em;
 }
 
 .article-content p {
-    margin: 0 0 1.5em;
+    margin: 0 0 1em;
 }
 
 .article-content > *:first-child {
+    margin-top: 0;
+}
+
+.article-content > h1:first-child,
+.article-content > h2:first-child,
+.article-content > h3:first-child {
     margin-top: 0;
 }
 
@@ -349,25 +438,28 @@ a:hover {
 /* Lists */
 .article-content ul,
 .article-content ol {
-    margin: 1.5em 0;
-    padding-left: 1.5em;
+    margin: 1em 0;
+    padding-left: 1.75em;
 }
 
 .article-content li {
-    margin-bottom: 0.5em;
-    padding-left: 0.25em;
+    margin-bottom: 0.35em;
 }
 
 .article-content li::marker {
     color: var(--fg-secondary);
 }
 
+.article-content li > ul,
+.article-content li > ol {
+    margin: 0.35em 0;
+}
+
 /* Blockquotes */
 .article-content blockquote {
-    margin: 2em 0;
-    padding: 0 0 0 24px;
-    border-left: 3px solid var(--fg);
-    font-style: italic;
+    margin: 1.25em 0;
+    padding: 0 0 0 1em;
+    border-left: 3px solid var(--border);
     color: var(--fg-secondary);
 }
 
@@ -739,20 +831,32 @@ a:hover {
         padding: 24px var(--content-padding);
     }
 
-    .article {
-        font-size: 18px;
+    .article-title {
+        font-size: 28px;
     }
 
-    .article-title {
-        font-size: 32px;
+    .article-meta {
+        font-size: 13px;
+    }
+
+    .meta-sep {
+        margin: 0 8px;
+    }
+
+    .article-content {
+        font-size: 17px;
+    }
+
+    .article-content h1 {
+        font-size: 26px;
     }
 
     .article-content h2 {
-        font-size: 24px;
+        font-size: 22px;
     }
 
     .article-content h3 {
-        font-size: 20px;
+        font-size: 18px;
     }
 
     .home-title {
@@ -770,7 +874,28 @@ a:hover {
     }
 
     .article-title {
-        font-size: 28px;
+        font-size: 24px;
+    }
+
+    .article-title-row {
+        gap: 8px;
+    }
+
+    .article-meta {
+        font-size: 12px;
+        margin-top: 10px;
+    }
+
+    .meta-tag {
+        font-size: 10px;
+    }
+
+    .meta-sep {
+        margin: 0 6px;
+    }
+
+    .article-content {
+        font-size: 16px;
     }
 
     .home-title {
@@ -856,6 +981,51 @@ a:hover {
         document.addEventListener('DOMContentLoaded', initHighlighting);
     } else {
         initHighlighting();
+    }
+
+    // Article actions: Toggle Markdown and Copy Markdown
+    function initArticleActions() {
+        var toggleBtn = document.querySelector('[data-toggle-markdown]');
+        var copyBtn = document.querySelector('[data-copy-markdown]');
+        var markdownScript = document.getElementById('markdown-source');
+
+        if (!markdownScript) return;
+
+        var markdownText = markdownScript.textContent;
+
+        // Toggle Markdown button - switches between wikitext and markdown via URL
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', function() {
+                var url = new URL(window.location.href);
+                var currentMD = url.searchParams.get('md') === 'true';
+                if (currentMD) {
+                    url.searchParams.delete('md');
+                } else {
+                    url.searchParams.set('md', 'true');
+                }
+                window.location.href = url.toString();
+            });
+        }
+
+        // Copy Markdown button
+        if (copyBtn) {
+            copyBtn.addEventListener('click', function() {
+                navigator.clipboard.writeText(markdownText).then(function() {
+                    copyBtn.classList.add('success');
+                    setTimeout(function() {
+                        copyBtn.classList.remove('success');
+                    }, 1500);
+                }).catch(function(err) {
+                    console.error('Copy failed:', err);
+                });
+            });
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initArticleActions);
+    } else {
+        initArticleActions();
     }
 })();
 {{end}}
