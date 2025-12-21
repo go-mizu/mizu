@@ -5,13 +5,13 @@
 {{define "title"}}Home - Microblog{{end}}
 
 {{define "content"}}
+{{if .Account}}
+<!-- Authenticated User Timeline -->
 <div class="section-header">
     <h1 class="section-title">Home</h1>
 </div>
 
-{{if .Account}}
 {{template "compose_box" dict "Account" .Account}}
-{{end}}
 
 <!-- Timeline Tabs -->
 <div class="tabs">
@@ -34,4 +34,89 @@
 <div class="loading hidden" id="timelineLoader">
     <div class="spinner"></div>
 </div>
+{{else}}
+<!-- Landing Page for Non-Authenticated Users -->
+<div style="max-width: 900px; margin: 0 auto; padding: 3rem 1rem; text-align: center;">
+    <div style="margin-bottom: 3rem;">
+        <div style="display: inline-block; width: 80px; height: 80px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 20px; display: flex; align-items: center; justify-content: center; margin-bottom: 2rem;">
+            <svg viewBox="0 0 24 24" fill="white" style="width: 48px; height: 48px;">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+            </svg>
+        </div>
+        <h1 style="font-size: 3rem; font-weight: 800; margin-bottom: 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
+            Welcome to Microblog
+        </h1>
+        <p style="font-size: 1.25rem; color: var(--text-secondary); max-width: 600px; margin: 0 auto 2rem;">
+            Join the conversation, share your thoughts, and connect with people around the world.
+        </p>
+        <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+            <a href="/register" class="btn btn-primary btn-lg" style="min-width: 150px;">
+                Get Started
+            </a>
+            <a href="/login" class="btn btn-secondary btn-lg" style="min-width: 150px;">
+                Log In
+            </a>
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2rem; margin: 4rem 0; text-align: left;">
+        <div style="padding: 2rem; border-radius: 12px; background: var(--bg-secondary);">
+            <div style="width: 48px; height: 48px; background: #667eea; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" style="width: 24px; height: 24px;">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+            </div>
+            <h3 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem;">Share Your Voice</h3>
+            <p style="color: var(--text-secondary); line-height: 1.6;">
+                Express yourself with posts, replies, and engage in meaningful conversations.
+            </p>
+        </div>
+
+        <div style="padding: 2rem; border-radius: 12px; background: var(--bg-secondary);">
+            <div style="width: 48px; height: 48px; background: #764ba2; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" style="width: 24px; height: 24px;">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+            </div>
+            <h3 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem;">Connect with Others</h3>
+            <p style="color: var(--text-secondary); line-height: 1.6;">
+                Follow people, build your network, and discover new perspectives.
+            </p>
+        </div>
+
+        <div style="padding: 2rem; border-radius: 12px; background: var(--bg-secondary);">
+            <div style="width: 48px; height: 48px; background: #667eea; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" style="width: 24px; height: 24px;">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M12 16v-4"/>
+                    <path d="M12 8h.01"/>
+                </svg>
+            </div>
+            <h3 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem;">Stay Informed</h3>
+            <p style="color: var(--text-secondary); line-height: 1.6;">
+                Explore trending topics, search conversations, and stay up to date.
+            </p>
+        </div>
+    </div>
+
+    {{if .Posts}}
+    <div style="text-align: left; margin-top: 4rem;">
+        <h2 style="font-size: 1.75rem; font-weight: 700; margin-bottom: 2rem; text-align: center;">Latest Posts</h2>
+        <div id="timeline">
+            {{range .Posts}}
+            {{template "post_card" .}}
+            {{end}}
+        </div>
+        <div style="text-align: center; margin-top: 2rem;">
+            <a href="/explore" class="btn btn-secondary">
+                Explore More
+            </a>
+        </div>
+    </div>
+    {{end}}
+</div>
+{{end}}
 {{end}}
