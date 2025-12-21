@@ -285,6 +285,14 @@ func TestStore_Stats_E2E(t *testing.T) {
 		t.Errorf("titles = %d, want > 0", titles.(int64))
 	}
 
+	// Check pages count
+	pages, ok := stats["pages"]
+	if !ok {
+		t.Error("stats missing 'pages'")
+	} else if pages.(int64) <= 0 {
+		t.Errorf("pages = %d, want > 0", pages.(int64))
+	}
+
 	// Check wikis
 	wikis, ok := stats["wikis"]
 	if !ok {
