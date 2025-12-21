@@ -1281,14 +1281,36 @@
     }
 
     // =========================================================================
-    // Compose Button (FAB on mobile)
+    // Compose Button (FAB on mobile and Sidebar)
     // =========================================================================
     function initComposeFAB() {
         const fab = document.querySelector('.compose-fab');
-        if (!fab) return;
+        if (fab) {
+            fab.addEventListener('click', () => {
+                modal.compose();
+            });
+        }
+    }
 
-        fab.addEventListener('click', () => {
-            modal.compose();
+    function initComposeButton() {
+        const composeBtn = document.getElementById('composeBtn');
+        if (!composeBtn) return;
+
+        composeBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+
+            // Check if there's an inline compose box on the page
+            const composeInput = document.getElementById('composeInput');
+            if (composeInput) {
+                // Scroll to the compose box and focus it
+                composeInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                setTimeout(() => {
+                    composeInput.focus();
+                }, 300);
+            } else {
+                // If no inline compose box, open modal
+                modal.compose();
+            }
         });
     }
 
@@ -1316,6 +1338,7 @@
         initAutoResize();
         initMobileNav();
         initComposeFAB();
+        initComposeButton();
 
         // Periodic updates
         if (localStorage.getItem('token')) {

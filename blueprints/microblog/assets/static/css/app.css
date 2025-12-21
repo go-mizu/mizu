@@ -881,6 +881,17 @@ a:hover {
     gap: var(--space-3);
     padding: var(--space-4);
     border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface);
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    transition: box-shadow var(--transition-normal);
+}
+
+.compose:focus-within {
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+    border-bottom-color: var(--color-primary);
 }
 
 .compose-avatar {
@@ -901,10 +912,12 @@ a:hover {
     resize: none;
     min-height: 80px;
     color: var(--color-text);
+    transition: min-height var(--transition-normal);
 }
 
 .compose-input:focus {
     outline: none;
+    min-height: 120px;
 }
 
 .compose-input::placeholder {
