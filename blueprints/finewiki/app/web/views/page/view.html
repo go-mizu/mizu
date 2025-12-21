@@ -5,41 +5,89 @@
 {{define "view-content"}}
 <article class="article">
     <header class="article-header">
-        <div class="article-title-row">
-            <h1 class="article-title">{{.Page.Title}}</h1>
-            {{if .Markdown}}
-            <div class="article-actions">
-                <button type="button" class="icon-btn{{if .UseMD}} active{{end}}" data-toggle-markdown title="{{if .UseMD}}WikiText mode{{else}}Markdown mode{{end}}">
-                    <svg viewBox="0 0 208 128" fill="currentColor"><path d="M30 98V30h20l20 25 20-25h20v68H90V59L70 84 50 59v39H30zm125 0l-30-33h20V30h20v35h20l-30 33z"/></svg>
-                </button>
-                <button type="button" class="icon-btn" data-copy-markdown title="Copy source">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                </button>
+        <h1 class="article-title">{{.Page.Title}}</h1>
+
+        <div class="article-properties">
+            <div class="prop-row">
+                <div class="prop-label">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                    Source
+                </div>
+                <div class="prop-value">
+                    <span class="prop-chip">{{.Page.WikiName}}</span>
+                </div>
+            </div>
+
+            <div class="prop-row">
+                <div class="prop-label">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                    Language
+                </div>
+                <div class="prop-value">{{.Page.InLanguage}}</div>
+            </div>
+
+            {{if .Page.WordCount}}
+            <div class="prop-row">
+                <div class="prop-label">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
+                    Words
+                </div>
+                <div class="prop-value">{{formatNumber .Page.WordCount}}</div>
             </div>
             {{end}}
-        </div>
-        <div class="article-meta">
-            <span class="meta-tag">{{.Page.WikiName}}</span>
-            <span class="meta-sep"></span>
-            <span class="meta-item">{{.Page.InLanguage}}</span>
-            {{if .Page.WordCount}}
-            <span class="meta-sep"></span>
-            <span class="meta-item">{{formatNumber .Page.WordCount}} words</span>
-            {{end}}
+
             {{if .Page.ReadTimeStr}}
-            <span class="meta-sep"></span>
-            <span class="meta-item">{{.Page.ReadTimeStr}}</span>
+            <div class="prop-row">
+                <div class="prop-label">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                    Read time
+                </div>
+                <div class="prop-value">{{.Page.ReadTimeStr}}</div>
+            </div>
             {{end}}
+
             {{if .Page.DateModifiedRel}}
-            <span class="meta-sep"></span>
-            <span class="meta-item" title="{{.Page.DateModifiedFmt}}">{{.Page.DateModifiedRel}}</span>
+            <div class="prop-row">
+                <div class="prop-label">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    Modified
+                </div>
+                <div class="prop-value" title="{{.Page.DateModifiedFmt}}">{{.Page.DateModifiedRel}}</div>
+            </div>
             {{end}}
+
             {{if .Page.URL}}
-            <span class="meta-sep"></span>
-            <a href="{{.Page.URL}}" target="_blank" rel="noopener" class="meta-link">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                Wikipedia
-            </a>
+            <div class="prop-row">
+                <div class="prop-label">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                    Link
+                </div>
+                <div class="prop-value">
+                    <a href="{{.Page.URL}}" target="_blank" rel="noopener" class="prop-link">
+                        Wikipedia
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                    </a>
+                </div>
+            </div>
+            {{end}}
+
+            {{if .Markdown}}
+            <div class="prop-row">
+                <div class="prop-label">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                    Format
+                </div>
+                <div class="prop-value prop-actions">
+                    <button type="button" class="action-btn{{if .UseMD}} active{{end}}" data-toggle-markdown>
+                        <svg viewBox="0 0 208 128" fill="currentColor"><path d="M30 98V30h20l20 25 20-25h20v68H90V59L70 84 50 59v39H30zm125 0l-30-33h20V30h20v35h20l-30 33z"/></svg>
+                        {{if .UseMD}}Markdown{{else}}WikiText{{end}}
+                    </button>
+                    <button type="button" class="action-btn" data-copy-markdown title="Copy source">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        Copy
+                    </button>
+                </div>
+            </div>
             {{end}}
         </div>
     </header>
