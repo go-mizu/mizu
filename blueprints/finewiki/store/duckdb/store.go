@@ -66,15 +66,19 @@ func (s *Store) Ensure(ctx context.Context, cfg Config, opts EnsureOptions) erro
 		return fmt.Errorf("duckdb: schema: %w", err)
 	}
 
-	// Seed titles if empty
+	// Seed titles and pages if empty
 	if opts.SeedIfEmpty {
-		var count int64
+		var titlesCount, pagesCount int64
 		row := s.db.QueryRowContext(ctx, "SELECT count(*) FROM titles")
-		if err := row.Scan(&count); err != nil {
+		if err := row.Scan(&titlesCount); err != nil {
 			return fmt.Errorf("duckdb: count titles: %w", err)
 		}
+		row = s.db.QueryRowContext(ctx, "SELECT count(*) FROM pages")
+		if err := row.Scan(&pagesCount); err != nil {
+			return fmt.Errorf("duckdb: count pages: %w", err)
+		}
 
-		if count == 0 && s.glob != "" {
+		if (titlesCount == 0 || pagesCount == 0) && s.glob != "" {
 			seed := strings.ReplaceAll(seedSQL, "__PARQUET_GLOB__", s.glob)
 			if _, err := s.db.ExecContext(ctx, seed); err != nil {
 				return fmt.Errorf("duckdb: seed: %w", err)
@@ -88,6 +92,9 @@ func (s *Store) Ensure(ctx context.Context, cfg Config, opts EnsureOptions) erro
 			"CREATE INDEX IF NOT EXISTS idx_titles_title_lc ON titles(title_lc)",
 			"CREATE INDEX IF NOT EXISTS idx_titles_wikiname ON titles(wikiname)",
 			"CREATE INDEX IF NOT EXISTS idx_titles_lang ON titles(in_language)",
+			"CREATE INDEX IF NOT EXISTS idx_pages_title_lc ON pages(title_lc)",
+			"CREATE INDEX IF NOT EXISTS idx_pages_wikiname ON pages(wikiname)",
+			"CREATE INDEX IF NOT EXISTS idx_pages_wikiname_title ON pages(wikiname, title_lc)",
 		}
 		for _, ddl := range indexes {
 			if _, err := s.db.ExecContext(ctx, ddl); err != nil {
@@ -236,30 +243,26 @@ func (s *Store) searchFTS(ctx context.Context, q search.Query) ([]search.Result,
 
 // GetByID implements view.Store.
 func (s *Store) GetByID(ctx context.Context, id string) (*view.Page, error) {
-	if s.glob == "" {
-		return nil, errors.New("duckdb: parquet glob not configured")
-	}
-
-	query := fmt.Sprintf(`
+	query := `
 		SELECT
 			id,
 			wikiname,
 			page_id,
 			title,
 			url,
-			COALESCE(date_modified, '') as date_modified,
+			date_modified,
 			in_language,
-			COALESCE(text, '') as text,
-			COALESCE(wikidata_id, '') as wikidata_id,
-			COALESCE(bytes_html, 0) as bytes_html,
-			COALESCE(has_math, false) as has_math,
-			COALESCE(wikitext, '') as wikitext,
-			COALESCE(version, '') as version,
-			COALESCE(infoboxes::VARCHAR, '[]') as infoboxes
-		FROM read_parquet('%s')
+			text,
+			wikidata_id,
+			bytes_html,
+			has_math,
+			wikitext,
+			version,
+			infoboxes
+		FROM pages
 		WHERE id = $1
 		LIMIT 1
-	`, s.glob)
+	`
 
 	row := s.db.QueryRowContext(ctx, query, id)
 	return s.scanPage(row)
@@ -267,31 +270,26 @@ func (s *Store) GetByID(ctx context.Context, id string) (*view.Page, error) {
 
 // GetByTitle implements view.Store.
 func (s *Store) GetByTitle(ctx context.Context, wikiname, title string) (*view.Page, error) {
-	if s.glob == "" {
-		return nil, errors.New("duckdb: parquet glob not configured")
-	}
-
-	// First try exact match, then case-insensitive match
-	query := fmt.Sprintf(`
+	query := `
 		SELECT
 			id,
 			wikiname,
 			page_id,
 			title,
 			url,
-			COALESCE(date_modified, '') as date_modified,
+			date_modified,
 			in_language,
-			COALESCE(text, '') as text,
-			COALESCE(wikidata_id, '') as wikidata_id,
-			COALESCE(bytes_html, 0) as bytes_html,
-			COALESCE(has_math, false) as has_math,
-			COALESCE(wikitext, '') as wikitext,
-			COALESCE(version, '') as version,
-			COALESCE(infoboxes::VARCHAR, '[]') as infoboxes
-		FROM read_parquet('%s')
-		WHERE wikiname = $1 AND LOWER(title) = LOWER($2)
+			text,
+			wikidata_id,
+			bytes_html,
+			has_math,
+			wikitext,
+			version,
+			infoboxes
+		FROM pages
+		WHERE wikiname = $1 AND title_lc = LOWER($2)
 		LIMIT 1
-	`, s.glob)
+	`
 
 	row := s.db.QueryRowContext(ctx, query, wikiname, title)
 	return s.scanPage(row)
@@ -342,6 +340,13 @@ func (s *Store) Stats(ctx context.Context) (map[string]any, error) {
 	row := s.db.QueryRowContext(ctx, "SELECT count(*) FROM titles")
 	if err := row.Scan(&titleCount); err == nil {
 		stats["titles"] = titleCount
+	}
+
+	// Count pages
+	var pageCount int64
+	row = s.db.QueryRowContext(ctx, "SELECT count(*) FROM pages")
+	if err := row.Scan(&pageCount); err == nil {
+		stats["pages"] = pageCount
 	}
 
 	// Count wikis
