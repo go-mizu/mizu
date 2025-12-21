@@ -2,6 +2,9 @@
 package web
 
 import (
+	"log"
+	"time"
+
 	"github.com/go-mizu/blueprints/finewiki/feature/search"
 	"github.com/go-mizu/blueprints/finewiki/feature/view"
 	"github.com/go-mizu/mizu"
@@ -29,7 +32,7 @@ func New(viewAPI view.API, searchAPI search.API, tmpl Templates) *Server {
 func (s *Server) routes() {
 	r := s.app
 
-	r.Use(Logging())
+	r.Use(logging())
 
 	r.Get("/", s.home)
 	r.Get("/page", s.page)
@@ -42,4 +45,30 @@ func (s *Server) routes() {
 
 func (s *Server) Handler() *mizu.App {
 	return s.app
+}
+
+// logging returns a middleware that logs each request.
+func logging() mizu.Middleware {
+	return func(next mizu.Handler) mizu.Handler {
+		return func(c *mizu.Ctx) error {
+			start := time.Now()
+
+			err := next(c)
+
+			elapsed := time.Since(start)
+			status := c.StatusCode()
+			if status == 0 {
+				status = 200
+			}
+
+			log.Printf("%s %s %d %s",
+				c.Request().Method,
+				c.Request().URL.Path,
+				status,
+				elapsed.Round(time.Microsecond),
+			)
+
+			return err
+		}
+	}
 }

@@ -8,8 +8,7 @@ BIN_DIR ?= $(HOME)/bin
 BINARY  ?= $(BIN_DIR)/finewiki
 CMD     ?= ./cmd/finewiki
 
-DATA_DIR ?= $(HOME)/data/blueprints
-DB_FILE  ?= $(DATA_DIR)/finewiki.duckdb
+DATA_DIR ?= $(HOME)/data/blueprint/finewiki
 
 CGO_ENABLED ?= 1
 
@@ -27,9 +26,16 @@ build: ## Build finewiki into $$HOME/bin
 	@echo "Built: $(BINARY) ($(VERSION))"
 
 .PHONY: run
-run: ## Run server (DuckDB at $$HOME/data/blueprints/finewiki.duckdb)
-	@mkdir -p $(DATA_DIR)
-	@CGO_ENABLED=$(CGO_ENABLED) FINEWIKI_DUCKDB="$(DB_FILE)" $(GO) run -trimpath -ldflags "$(GO_LDFLAGS)" $(CMD) $(ARGS)
+run: ## Run finewiki CLI (pass ARGS for subcommands)
+	@CGO_ENABLED=$(CGO_ENABLED) $(GO) run -trimpath -ldflags "$(GO_LDFLAGS)" $(CMD) $(ARGS)
+
+.PHONY: serve
+serve: ## Run 'finewiki serve vi' (default language)
+	@CGO_ENABLED=$(CGO_ENABLED) $(GO) run -trimpath -ldflags "$(GO_LDFLAGS)" $(CMD) serve vi
+
+.PHONY: import
+import: ## Run 'finewiki import vi' (default language)
+	@CGO_ENABLED=$(CGO_ENABLED) $(GO) run -trimpath -ldflags "$(GO_LDFLAGS)" $(CMD) import vi
 
 .PHONY: test
 test: ## Run tests
@@ -46,13 +52,17 @@ update: ## Refresh deps (rm go.sum; go get ./...; go mod tidy)
 	@$(GO) mod tidy
 
 .PHONY: clean
-clean: ## Remove binary and DuckDB file
+clean: ## Remove binary
 	@rm -f $(BINARY)
-	@rm -f "$(DB_FILE)"
+
+.PHONY: clean-data
+clean-data: ## Remove all downloaded data
+	@rm -rf "$(DATA_DIR)"
+	@echo "Removed: $(DATA_DIR)"
 
 .PHONY: help
 help: ## Show available commands
 	@echo ""
 	@grep -E '^[a-zA-Z0-9_\-]+:.*?## ' $(MAKEFILE_LIST) | \
-	  sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+	  sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 	@echo ""
