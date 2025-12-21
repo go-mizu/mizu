@@ -9,14 +9,15 @@ import (
 	"github.com/go-mizu/mizu"
 )
 
-func (s *Server) home(c *mizu.Ctx) {
+func (s *Server) home(c *mizu.Ctx) error {
 	s.render(c, "page/home.html", map[string]any{
 		"Query": "",
 		"Theme": "",
 	})
+	return nil
 }
 
-func (s *Server) searchPage(c *mizu.Ctx) {
+func (s *Server) searchPage(c *mizu.Ctx) error {
 	ctx := c.Request().Context()
 
 	text := strings.TrimSpace(c.Query("q"))
@@ -31,8 +32,7 @@ func (s *Server) searchPage(c *mizu.Ctx) {
 		EnableFTS:  false,
 	})
 	if err != nil {
-		c.Text(500, err.Error())
-		return
+		return c.Text(500, err.Error())
 	}
 
 	s.render(c, "page/search.html", map[string]any{
@@ -42,9 +42,10 @@ func (s *Server) searchPage(c *mizu.Ctx) {
 		"Results":    results,
 		"Theme":      "",
 	})
+	return nil
 }
 
-func (s *Server) page(c *mizu.Ctx) {
+func (s *Server) page(c *mizu.Ctx) error {
 	ctx := c.Request().Context()
 
 	id := strings.TrimSpace(c.Query("id"))
@@ -55,8 +56,7 @@ func (s *Server) page(c *mizu.Ctx) {
 	case id != "":
 		p, err := s.view.ByID(ctx, id)
 		if err != nil {
-			c.Text(404, err.Error())
-			return
+			return c.Text(404, err.Error())
 		}
 		s.render(c, "page/view.html", map[string]any{
 			"Query": "",
@@ -65,13 +65,12 @@ func (s *Server) page(c *mizu.Ctx) {
 			"HTML":  template.HTML(""),
 			"Theme": "",
 		})
-		return
+		return nil
 
 	case wikiname != "" && title != "":
 		p, err := s.view.ByTitle(ctx, wikiname, title)
 		if err != nil {
-			c.Text(404, err.Error())
-			return
+			return c.Text(404, err.Error())
 		}
 		s.render(c, "page/view.html", map[string]any{
 			"Query": "",
@@ -80,9 +79,9 @@ func (s *Server) page(c *mizu.Ctx) {
 			"HTML":  template.HTML(""),
 			"Theme": "",
 		})
-		return
+		return nil
 
 	default:
-		c.Text(400, "missing id or (wiki,title)")
+		return c.Text(400, "missing id or (wiki,title)")
 	}
 }

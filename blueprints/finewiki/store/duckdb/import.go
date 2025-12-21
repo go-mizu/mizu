@@ -13,22 +13,15 @@ import (
 	"time"
 )
 
-type ImportOptions struct {
-	Dir string
-
-	Timeout time.Duration
-
-	Token string
-
-	Client *http.Client
-}
-
-func ImportParquet(ctx context.Context, src string, opt ImportOptions) (string, error) {
+// ImportParquet downloads or copies a Parquet file to a local directory.
+// If src is an HTTP(S) URL, it downloads the file.
+// If src is a local path, it copies the file.
+func ImportParquet(ctx context.Context, src string, dir string) (string, error) {
 	src = strings.TrimSpace(src)
 	if src == "" {
 		return "", errors.New("duckdb: empty src")
 	}
-	dir := strings.TrimSpace(opt.Dir)
+	dir = strings.TrimSpace(dir)
 	if dir == "" {
 		return "", errors.New("duckdb: empty dir")
 	}
@@ -36,18 +29,15 @@ func ImportParquet(ctx context.Context, src string, opt ImportOptions) (string, 
 		return "", err
 	}
 
-	if opt.Timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, opt.Timeout)
-		defer cancel()
-	}
+	token := os.Getenv("HF_TOKEN")
 
 	if isHTTP(src) {
 		dst := filepath.Join(dir, fileNameFromURL(src))
 		if dst == dir || strings.HasSuffix(dst, string(filepath.Separator)) {
 			dst = filepath.Join(dir, "data.parquet")
 		}
-		if err := download(ctx, httpClient(opt), src, dst, opt.Token); err != nil {
+		client := &http.Client{Timeout: 0}
+		if err := download(ctx, client, src, dst, token); err != nil {
 			return "", err
 		}
 		return dst, nil
@@ -68,11 +58,14 @@ func ImportParquet(ctx context.Context, src string, opt ImportOptions) (string, 
 	return dst, nil
 }
 
-func ListParquet(ctx context.Context, dataset string, token string) ([]string, error) {
+// ListParquet returns the Parquet shard URLs for a Hugging Face dataset.
+func ListParquet(ctx context.Context, dataset string) ([]string, error) {
 	dataset = strings.TrimSpace(dataset)
 	if dataset == "" {
 		return nil, errors.New("duckdb: empty dataset")
 	}
+
+	token := os.Getenv("HF_TOKEN")
 
 	u := fmt.Sprintf("https://datasets-server.huggingface.co/parquet?dataset=%s", dataset)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
@@ -111,13 +104,6 @@ func ListParquet(ctx context.Context, dataset string, token string) ([]string, e
 		}
 	}
 	return out, nil
-}
-
-func httpClient(opt ImportOptions) *http.Client {
-	if opt.Client != nil {
-		return opt.Client
-	}
-	return &http.Client{Timeout: 0}
 }
 
 func download(ctx context.Context, c *http.Client, url, dst, token string) error {
@@ -203,7 +189,16 @@ func fileNameFromURL(u string) string {
 		return ""
 	}
 	if j := strings.LastIndexByte(u, '/'); j >= 0 && j < len(u)-1 {
-		return u[j+1:]
+		name := u[j+1:]
+		// Check if this looks like a hostname (no file extension) rather than a filename
+		if !strings.Contains(name, ".") || strings.Count(name, ".") == 1 && !strings.Contains(name, ".parquet") && !strings.Contains(name, ".csv") && !strings.Contains(name, ".json") {
+			// Could be a hostname like "example.com", check if there's a path
+			parts := strings.Split(u, "/")
+			if len(parts) <= 3 { // protocol + empty + host
+				return ""
+			}
+		}
+		return name
 	}
 	return ""
 }
