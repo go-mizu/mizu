@@ -798,12 +798,15 @@ func TestStaticAssets(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Static handler returns 200 for existing files, 404 for missing
-	// Content-Type should be set for CSS if file exists
+	// Verify correct status code
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	// Verify correct Content-Type for CSS files
 	contentType := resp.Header.Get("Content-Type")
-	if resp.StatusCode == 200 && contentType != "" {
-		// File exists and was served
-		t.Logf("static file served with content-type: %s", contentType)
+	if contentType != "text/css; charset=utf-8" {
+		t.Errorf("expected Content-Type 'text/css; charset=utf-8', got '%s'", contentType)
 	}
 }
 
