@@ -1,3 +1,7 @@
+{{define "post"}}
+{{template "layouts/default.html" .}}
+{{end}}
+
 {{define "title"}}{{if .Thread.Post.Account.DisplayName}}{{.Thread.Post.Account.DisplayName}}{{else}}{{.Thread.Post.Account.Username}}{{end}} on Microblog{{end}}
 
 {{define "content"}}

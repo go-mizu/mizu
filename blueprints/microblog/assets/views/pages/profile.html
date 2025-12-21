@@ -1,3 +1,7 @@
+{{define "profile"}}
+{{template "layouts/default.html" .}}
+{{end}}
+
 {{define "title"}}{{if .Profile.DisplayName}}{{.Profile.DisplayName}}{{else}}{{.Profile.Username}}{{end}} (@{{.Profile.Username}}) - Microblog{{end}}
 
 {{define "content"}}

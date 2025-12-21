@@ -156,6 +156,11 @@ func (s *Server) Close() error {
 	return nil
 }
 
+// Handler returns the HTTP handler for testing.
+func (s *Server) Handler() *mizu.App {
+	return s.app
+}
+
 func (s *Server) setupRoutes() {
 	// API routes
 	s.app.Group("/api/v1", func(api *mizu.Router) {
