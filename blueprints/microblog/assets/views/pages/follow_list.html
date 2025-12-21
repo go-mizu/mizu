@@ -1,0 +1,42 @@
+{{define "title"}}{{if eq .ListType "followers"}}Followers{{else}}Following{{end}} - @{{.Profile.Username}} - Microblog{{end}}
+
+{{define "content"}}
+<div class="section-header flex items-center gap-4">
+    <a href="javascript:history.back()" class="btn btn-ghost btn-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+            <line x1="19" y1="12" x2="5" y2="12"/>
+            <polyline points="12 19 5 12 12 5"/>
+        </svg>
+    </a>
+    <div>
+        <h1 class="section-title">{{if .Profile.DisplayName}}{{.Profile.DisplayName}}{{else}}{{.Profile.Username}}{{end}}</h1>
+        <p class="text-sm text-secondary">@{{.Profile.Username}}</p>
+    </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+    <a href="/@{{.Profile.Username}}/followers" class="tab{{if eq .ListType "followers"}} active{{end}}">Followers</a>
+    <a href="/@{{.Profile.Username}}/following" class="tab{{if eq .ListType "following"}} active{{end}}">Following</a>
+</div>
+
+<!-- User List -->
+<div id="userList">
+    {{if .Users}}
+    {{range .Users}}
+    {{template "user_card" .}}
+    {{end}}
+    {{else}}
+    {{if eq .ListType "followers"}}
+    {{template "empty_state" dict "Icon" "users" "Title" "No followers yet" "Description" (printf "@%s doesn't have any followers yet." .Profile.Username)}}
+    {{else}}
+    {{template "empty_state" dict "Icon" "users" "Title" "Not following anyone" "Description" (printf "@%s isn't following anyone yet." .Profile.Username)}}
+    {{end}}
+    {{end}}
+</div>
+
+<!-- Loading -->
+<div class="loading hidden" id="userListLoader">
+    <div class="spinner"></div>
+</div>
+{{end}}

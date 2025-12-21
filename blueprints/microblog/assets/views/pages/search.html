@@ -1,0 +1,103 @@
+{{define "title"}}{{if .Query}}{{.Query}} - {{end}}Search - Microblog{{end}}
+
+{{define "content"}}
+<div class="section-header flex items-center gap-4">
+    <a href="javascript:history.back()" class="btn btn-ghost btn-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+            <line x1="19" y1="12" x2="5" y2="12"/>
+            <polyline points="12 19 5 12 12 5"/>
+        </svg>
+    </a>
+    <form action="/search" method="GET" class="search-box flex-1">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="search" name="q" placeholder="Search..." class="search-input" value="{{.Query}}">
+        {{if .Query}}
+        <a href="/search" class="search-clear">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+        </a>
+        {{end}}
+    </form>
+</div>
+
+{{if .Query}}
+<!-- Tabs -->
+<div class="tabs">
+    <button class="tab{{if eq .Tab "top"}} active{{end}}" data-tab="top">Top</button>
+    <button class="tab{{if eq .Tab "latest"}} active{{end}}" data-tab="latest">Latest</button>
+    <button class="tab{{if eq .Tab "people"}} active{{end}}" data-tab="people">People</button>
+    <button class="tab{{if eq .Tab "tags"}} active{{end}}" data-tab="tags">Tags</button>
+</div>
+
+<!-- Results -->
+<div id="searchResults">
+    {{if eq .Tab "people"}}
+    <!-- People Results -->
+    {{if .Accounts}}
+    {{range .Accounts}}
+    {{template "user_card" .}}
+    {{end}}
+    {{else}}
+    {{template "empty_state" dict "Icon" "users" "Title" "No people found" "Description" (printf "No users matching \"%s\"" .Query)}}
+    {{end}}
+
+    {{else if eq .Tab "tags"}}
+    <!-- Hashtag Results -->
+    {{if .Hashtags}}
+    {{range .Hashtags}}
+    <a href="/tags/{{.Name}}" class="trending-item">
+        <div class="trending-name">#{{.Name}}</div>
+        {{if .PostsCount}}
+        <div class="trending-count">{{.PostsCount}} posts</div>
+        {{end}}
+    </a>
+    {{end}}
+    {{else}}
+    {{template "empty_state" dict "Icon" "search" "Title" "No tags found" "Description" (printf "No hashtags matching \"%s\"" .Query)}}
+    {{end}}
+
+    {{else}}
+    <!-- Posts Results (Top/Latest) -->
+    {{if .Posts}}
+    {{range .Posts}}
+    {{template "post_card" .}}
+    {{end}}
+    {{else}}
+    {{template "empty_state" dict "Icon" "search" "Title" "No results found" "Description" (printf "No posts matching \"%s\"" .Query)}}
+    {{end}}
+    {{end}}
+</div>
+
+{{else}}
+<!-- No Query - Show Search Suggestions -->
+<div class="p-4">
+    <h2 class="font-bold text-lg mb-4">Try searching for</h2>
+    <div class="flex flex-wrap gap-2">
+        <a href="/search?q=technology" class="badge badge-secondary">technology</a>
+        <a href="/search?q=news" class="badge badge-secondary">news</a>
+        <a href="/search?q=sports" class="badge badge-secondary">sports</a>
+        <a href="/search?q=music" class="badge badge-secondary">music</a>
+        <a href="/search?q=art" class="badge badge-secondary">art</a>
+    </div>
+</div>
+
+{{if .TrendingTags}}
+<div class="section mt-4">
+    <div class="p-4 border-b">
+        <h2 class="font-bold text-lg">Trending</h2>
+    </div>
+    {{range .TrendingTags}}
+    <a href="/tags/{{.Name}}" class="trending-item">
+        <div class="trending-name">#{{.Name}}</div>
+        <div class="trending-count">{{.PostsCount}} posts</div>
+    </a>
+    {{end}}
+</div>
+{{end}}
+{{end}}
+{{end}}

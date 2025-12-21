@@ -1,0 +1,28 @@
+{{define "user_card"}}
+<div class="user-card">
+    <a href="/@{{.Username}}">
+        {{template "avatar" dict "Account" . "Size" "lg"}}
+    </a>
+    <div class="user-card-info">
+        <a href="/@{{.Username}}" class="user-card-name">
+            {{if .DisplayName}}{{.DisplayName}}{{else}}{{.Username}}{{end}}
+            {{if .Verified}}
+            <svg class="post-verified" viewBox="0 0 24 24" fill="currentColor" width="16" height="16" style="display: inline; vertical-align: middle;">
+                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+            </svg>
+            {{end}}
+        </a>
+        <div class="user-card-handle">@{{.Username}}</div>
+        {{if .Bio}}
+        <div class="user-card-bio">{{.Bio}}</div>
+        {{end}}
+    </div>
+    <div class="user-card-action">
+        {{if .Following}}
+        <button class="btn btn-secondary btn-sm" data-follow="{{.ID}}" data-following="true">Following</button>
+        {{else}}
+        <button class="btn btn-primary btn-sm" data-follow="{{.ID}}" data-following="false">Follow</button>
+        {{end}}
+    </div>
+</div>
+{{end}}

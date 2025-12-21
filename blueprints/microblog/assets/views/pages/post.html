@@ -1,0 +1,173 @@
+{{define "title"}}{{if .Thread.Post.Account.DisplayName}}{{.Thread.Post.Account.DisplayName}}{{else}}{{.Thread.Post.Account.Username}}{{end}} on Microblog{{end}}
+
+{{define "content"}}
+<div class="section-header flex items-center gap-4">
+    <a href="javascript:history.back()" class="btn btn-ghost btn-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+            <line x1="19" y1="12" x2="5" y2="12"/>
+            <polyline points="12 19 5 12 12 5"/>
+        </svg>
+    </a>
+    <h1 class="section-title">Post</h1>
+</div>
+
+<!-- Ancestors (Context) -->
+{{if .Thread.Ancestors}}
+<div class="thread-ancestors">
+    {{range .Thread.Ancestors}}
+    {{template "post_card" .}}
+    {{end}}
+</div>
+{{end}}
+
+<!-- Main Post (Featured) -->
+<article class="post post-featured" data-post-id="{{.Thread.Post.ID}}">
+    <div class="post-avatar">
+        <a href="/@{{.Thread.Post.Account.Username}}">
+            {{template "avatar" dict "Account" .Thread.Post.Account "Size" "xl"}}
+        </a>
+    </div>
+    <div class="post-content">
+        <div class="flex items-center gap-2 mb-3">
+            <div>
+                <a href="/@{{.Thread.Post.Account.Username}}" class="font-bold text-lg">
+                    {{if .Thread.Post.Account.DisplayName}}{{.Thread.Post.Account.DisplayName}}{{else}}{{.Thread.Post.Account.Username}}{{end}}
+                </a>
+                {{if .Thread.Post.Account.Verified}}
+                <svg class="post-verified" viewBox="0 0 24 24" fill="currentColor" width="18" height="18" style="display: inline; vertical-align: middle;">
+                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                </svg>
+                {{end}}
+                <div class="text-secondary">@{{.Thread.Post.Account.Username}}</div>
+            </div>
+            <div class="post-menu dropdown ml-auto">
+                <button class="btn btn-ghost btn-icon dropdown-trigger">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                        <circle cx="12" cy="12" r="1"/>
+                        <circle cx="12" cy="5" r="1"/>
+                        <circle cx="12" cy="19" r="1"/>
+                    </svg>
+                </button>
+                <div class="dropdown-menu">
+                    <button class="dropdown-item" data-action="copy-link" data-post-id="{{.Thread.Post.ID}}">Copy link</button>
+                    {{if .Thread.Post.IsOwner}}
+                    <button class="dropdown-item" data-action="edit" data-post-id="{{.Thread.Post.ID}}">Edit</button>
+                    <button class="dropdown-item danger" data-action="delete" data-post-id="{{.Thread.Post.ID}}">Delete</button>
+                    {{else}}
+                    <button class="dropdown-item" data-action="report" data-post-id="{{.Thread.Post.ID}}">Report</button>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+
+        {{if .Thread.Post.ContentWarning}}
+        <div class="post-cw mb-4">
+            <span class="post-cw-label">CW: {{.Thread.Post.ContentWarning}}</span>
+            <button class="post-cw-toggle" data-action="toggle-cw">Show more</button>
+        </div>
+        <div class="post-body text-xl hidden" data-cw-content>{{.Thread.Post.Content | safeHTML}}</div>
+        {{else}}
+        <div class="post-body text-xl mb-4">{{.Thread.Post.Content | safeHTML}}</div>
+        {{end}}
+
+        {{if .Thread.Post.Media}}
+        <div class="post-media media-{{len .Thread.Post.Media}} mb-4">
+            {{range .Thread.Post.Media}}
+            {{if eq .Type "image"}}
+            <img src="{{.URL}}" alt="{{.AltText}}" loading="lazy" data-action="lightbox">
+            {{else if eq .Type "video"}}
+            <video src="{{.URL}}" controls preload="metadata"></video>
+            {{end}}
+            {{end}}
+        </div>
+        {{end}}
+
+        {{if .Thread.Post.QuoteOf}}
+        <a href="/@{{.Thread.Post.QuoteOf.Account.Username}}/{{.Thread.Post.QuoteOf.ID}}" class="post-quote mb-4">
+            <div class="post-quote-header">
+                {{template "avatar" dict "Account" .Thread.Post.QuoteOf.Account "Size" "sm"}}
+                <span class="font-medium">{{.Thread.Post.QuoteOf.Account.DisplayName}}</span>
+                <span class="text-secondary">@{{.Thread.Post.QuoteOf.Account.Username}}</span>
+            </div>
+            <div class="post-quote-content">{{.Thread.Post.QuoteOf.Content}}</div>
+        </a>
+        {{end}}
+
+        <div class="text-secondary text-sm py-4 border-b">
+            <time datetime="{{.Thread.Post.CreatedAt.Format "2006-01-02T15:04:05Z07:00"}}">
+                {{.Thread.Post.CreatedAt.Format "3:04 PM · Jan 2, 2006"}}
+            </time>
+        </div>
+
+        {{if or .Thread.Post.RepostsCount .Thread.Post.LikesCount}}
+        <div class="flex gap-4 py-4 border-b">
+            {{if .Thread.Post.RepostsCount}}
+            <a href="/@{{.Thread.Post.Account.Username}}/{{.Thread.Post.ID}}/reposts" class="profile-stat">
+                <strong>{{.Thread.Post.RepostsCount}}</strong> Reposts
+            </a>
+            {{end}}
+            {{if .Thread.Post.LikesCount}}
+            <a href="/@{{.Thread.Post.Account.Username}}/{{.Thread.Post.ID}}/likes" class="profile-stat">
+                <strong>{{.Thread.Post.LikesCount}}</strong> Likes
+            </a>
+            {{end}}
+        </div>
+        {{end}}
+
+        <div class="post-actions py-2 border-b justify-around">
+            <button class="post-action action-reply" data-action="reply" data-post-id="{{.Thread.Post.ID}}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+                </svg>
+            </button>
+
+            <button class="post-action action-repost{{if .Thread.Post.Reposted}} active{{end}}" data-action="repost" data-post-id="{{.Thread.Post.ID}}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                    <path d="M17 1l4 4-4 4"/>
+                    <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                    <path d="M7 23l-4-4 4-4"/>
+                    <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                </svg>
+            </button>
+
+            <button class="post-action action-like{{if .Thread.Post.Liked}} active{{end}}" data-action="like" data-post-id="{{.Thread.Post.ID}}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                </svg>
+            </button>
+
+            <button class="post-action action-bookmark{{if .Thread.Post.Bookmarked}} active{{end}}" data-action="bookmark" data-post-id="{{.Thread.Post.ID}}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+                </svg>
+            </button>
+
+            <button class="post-action action-share" data-action="share" data-post-id="{{.Thread.Post.ID}}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                    <circle cx="18" cy="5" r="3"/>
+                    <circle cx="6" cy="12" r="3"/>
+                    <circle cx="18" cy="19" r="3"/>
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+</article>
+
+<!-- Reply Compose Box -->
+{{if .Account}}
+{{template "compose_box" dict "Account" .Account "ReplyTo" .Thread.Post "ReplyToID" .Thread.Post.ID}}
+{{end}}
+
+<!-- Replies (Descendants) -->
+{{if .Thread.Descendants}}
+<div class="thread-descendants">
+    {{range .Thread.Descendants}}
+    {{template "post_card" .}}
+    {{end}}
+</div>
+{{else}}
+{{template "empty_state" dict "Icon" "posts" "Title" "No replies yet" "Description" "Be the first to reply to this post."}}
+{{end}}
+{{end}}

@@ -1,0 +1,91 @@
+{{define "title"}}Sign up - Microblog{{end}}
+
+{{define "body"}}
+<div class="auth-container">
+    <div class="auth-card">
+        <div class="auth-logo">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+            </svg>
+        </div>
+
+        <h1 class="auth-title">Create your account</h1>
+        <p class="auth-subtitle">Join the conversation</p>
+
+        <form class="auth-form" id="registerForm" action="/register" method="POST">
+            <div class="form-group">
+                <label class="form-label" for="username">Username</label>
+                <input
+                    type="text"
+                    id="username"
+                    name="username"
+                    class="form-input"
+                    placeholder="Choose a username"
+                    pattern="[a-zA-Z0-9_]+"
+                    maxlength="30"
+                    autocomplete="username"
+                    required
+                >
+                <p class="form-hint">Only letters, numbers, and underscores. Max 30 characters.</p>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="email">Email</label>
+                <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    class="form-input"
+                    placeholder="Enter your email"
+                    autocomplete="email"
+                    required
+                >
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="password">Password</label>
+                <div class="password-wrapper">
+                    <input
+                        type="password"
+                        id="password"
+                        name="password"
+                        class="form-input"
+                        placeholder="Create a password"
+                        minlength="8"
+                        autocomplete="new-password"
+                        required
+                    >
+                    <button type="button" class="password-toggle" data-toggle="password">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                            <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                    </button>
+                </div>
+                <p class="form-hint">At least 8 characters.</p>
+            </div>
+
+            <div class="form-group">
+                <label class="form-check">
+                    <input type="checkbox" name="terms" class="form-check-input" required>
+                    <span class="form-check-label">I agree to the <a href="/terms" class="link">Terms of Service</a> and <a href="/privacy" class="link">Privacy Policy</a></span>
+                </label>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block btn-lg" id="registerSubmit">
+                Create account
+            </button>
+
+            {{if .Error}}
+            <p class="form-error text-center mt-4">{{.Error}}</p>
+            {{end}}
+        </form>
+
+        <p class="auth-footer mt-6">
+            Already have an account? <a href="/login">Log in</a>
+        </p>
+    </div>
+</div>
+
+<script src="/static/js/app.js"></script>
+{{end}}

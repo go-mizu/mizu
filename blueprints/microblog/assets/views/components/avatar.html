@@ -1,0 +1,11 @@
+{{define "avatar"}}
+{{$size := .Size}}
+{{$account := .Account}}
+<div class="avatar avatar-{{$size}}">
+    {{if $account.AvatarURL}}
+    <img src="{{$account.AvatarURL}}" alt="{{if $account.DisplayName}}{{$account.DisplayName}}{{else}}{{$account.Username}}{{end}}">
+    {{else}}
+    {{slice $account.Username 0 1 | printf "%s" | upper}}
+    {{end}}
+</div>
+{{end}}

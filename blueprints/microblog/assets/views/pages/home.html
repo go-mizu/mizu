@@ -1,120 +1,33 @@
 {{define "title"}}Home - Microblog{{end}}
 
 {{define "content"}}
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Main timeline -->
-    <div class="lg:col-span-2">
-        {{if .User}}
-        <!-- Compose box -->
-        <div class="bg-white rounded-xl shadow-sm p-4 mb-4">
-            <form action="/api/v1/posts" method="POST" class="space-y-3">
-                <textarea
-                    name="content"
-                    placeholder="What's happening?"
-                    class="w-full p-3 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    rows="3"
-                    maxlength="500"
-                ></textarea>
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                        <button type="button" class="p-2 text-gray-500 hover:text-blue-600" title="Add media">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                            </svg>
-                        </button>
-                        <button type="button" class="p-2 text-gray-500 hover:text-blue-600" title="Add poll">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                            </svg>
-                        </button>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <span class="text-sm text-gray-500"><span id="charCount">0</span>/500</span>
-                        <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-full font-medium hover:bg-blue-700">
-                            Post
-                        </button>
-                    </div>
-                </div>
-            </form>
-        </div>
-        {{end}}
+<div class="section-header">
+    <h1 class="section-title">Home</h1>
+</div>
 
-        <!-- Timeline tabs -->
-        <div class="bg-white rounded-xl shadow-sm mb-4">
-            <div class="flex border-b">
-                <button class="flex-1 py-3 text-center font-medium text-blue-600 border-b-2 border-blue-600">
-                    Home
-                </button>
-                <a href="/explore" class="flex-1 py-3 text-center font-medium text-gray-500 hover:text-gray-700">
-                    Explore
-                </a>
-            </div>
-        </div>
+{{if .Account}}
+{{template "compose_box" dict "Account" .Account}}
+{{end}}
 
-        <!-- Posts -->
-        <div class="space-y-4" id="timeline">
-            {{range .Posts}}
-            {{template "post_card" .}}
-            {{else}}
-            <div class="bg-white rounded-xl shadow-sm p-8 text-center text-gray-500">
-                <p class="text-lg mb-2">No posts yet</p>
-                <p class="text-sm">Follow some accounts to see their posts here</p>
-            </div>
-            {{end}}
-        </div>
-    </div>
+<!-- Timeline Tabs -->
+<div class="tabs">
+    <button class="tab active" data-tab="for-you">For you</button>
+    <button class="tab" data-tab="following">Following</button>
+</div>
 
-    <!-- Sidebar -->
-    <div class="hidden lg:block space-y-4">
-        <!-- Search -->
-        <div class="bg-white rounded-xl shadow-sm p-4">
-            <form action="/search" method="GET">
-                <input
-                    type="search"
-                    name="q"
-                    placeholder="Search..."
-                    class="w-full px-4 py-2 bg-gray-100 rounded-full focus:ring-2 focus:ring-blue-500 focus:bg-white"
-                >
-            </form>
-        </div>
+<!-- Timeline -->
+<div id="timeline">
+    {{if .Posts}}
+    {{range .Posts}}
+    {{template "post_card" .}}
+    {{end}}
+    {{else}}
+    {{template "empty_state" dict "Icon" "posts" "Title" "No posts yet" "Description" "Follow some accounts to see their posts here, or check out the Explore page." "Action" "Explore" "ActionURL" "/explore"}}
+    {{end}}
+</div>
 
-        <!-- Trending -->
-        <div class="bg-white rounded-xl shadow-sm p-4">
-            <h2 class="font-bold text-lg mb-3">Trending</h2>
-            <div class="space-y-3">
-                {{range .Trending}}
-                <a href="/tags/{{.Name}}" class="block hover:bg-gray-50 -mx-2 px-2 py-1 rounded">
-                    <div class="font-medium">#{{.Name}}</div>
-                    <div class="text-sm text-gray-500">{{.PostsCount}} posts</div>
-                </a>
-                {{else}}
-                <p class="text-sm text-gray-500">No trending topics yet</p>
-                {{end}}
-            </div>
-        </div>
-
-        <!-- Who to follow -->
-        {{if .Suggestions}}
-        <div class="bg-white rounded-xl shadow-sm p-4">
-            <h2 class="font-bold text-lg mb-3">Who to follow</h2>
-            <div class="space-y-3">
-                {{range .Suggestions}}
-                <div class="flex items-center justify-between">
-                    <a href="/@{{.Username}}" class="flex items-center gap-2">
-                        <div class="w-10 h-10 bg-gray-200 rounded-full"></div>
-                        <div>
-                            <div class="font-medium">{{.DisplayName}}</div>
-                            <div class="text-sm text-gray-500">@{{.Username}}</div>
-                        </div>
-                    </a>
-                    <button class="px-3 py-1 text-sm font-medium text-blue-600 border border-blue-600 rounded-full hover:bg-blue-50">
-                        Follow
-                    </button>
-                </div>
-                {{end}}
-            </div>
-        </div>
-        {{end}}
-    </div>
+<!-- Loading Indicator -->
+<div class="loading hidden" id="timelineLoader">
+    <div class="spinner"></div>
 </div>
 {{end}}

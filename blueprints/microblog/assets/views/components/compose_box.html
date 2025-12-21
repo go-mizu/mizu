@@ -1,0 +1,52 @@
+{{define "compose_box"}}
+<div class="compose" id="composeBox">
+    <div class="compose-avatar">
+        {{template "avatar" dict "Account" .Account "Size" "lg"}}
+    </div>
+    <form class="compose-form" id="composeForm" data-reply-to="{{.ReplyToID}}">
+        {{if .ReplyTo}}
+        <div class="compose-reply-context">
+            Replying to <a href="/@{{.ReplyTo.Account.Username}}">@{{.ReplyTo.Account.Username}}</a>
+        </div>
+        {{end}}
+        <textarea
+            class="compose-input"
+            name="content"
+            placeholder="{{if .ReplyTo}}Post your reply{{else}}What's happening?{{end}}"
+            maxlength="500"
+            rows="1"
+            id="composeInput"
+        ></textarea>
+        <div class="compose-footer">
+            <div class="compose-tools">
+                <button type="button" class="compose-tool" title="Add media">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                        <polyline points="21 15 16 10 5 21"/>
+                    </svg>
+                </button>
+                <button type="button" class="compose-tool" title="Add poll">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="20" x2="18" y2="10"/>
+                        <line x1="12" y1="20" x2="12" y2="4"/>
+                        <line x1="6" y1="20" x2="6" y2="14"/>
+                    </svg>
+                </button>
+                <button type="button" class="compose-tool" title="Add emoji">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
+                        <line x1="9" y1="9" x2="9.01" y2="9"/>
+                        <line x1="15" y1="9" x2="15.01" y2="9"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="compose-submit">
+                <span class="compose-counter" id="composeCounter">0/500</span>
+                <button type="submit" class="btn btn-primary" id="composeSubmit" disabled>Post</button>
+            </div>
+        </div>
+    </form>
+</div>
+{{end}}

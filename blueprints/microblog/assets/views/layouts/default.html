@@ -1,30 +1,52 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Microblog - A self-hosted microblogging platform">
     <title>{{block "title" .}}Microblog{{end}}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/app.css">
+    <link rel="icon" type="image/svg+xml" href="/static/img/logo.svg">
 </head>
-<body class="bg-gray-100 min-h-screen">
-    <header class="bg-white shadow-sm border-b">
-        <nav class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
-            <a href="/" class="text-xl font-bold text-blue-600">Microblog</a>
-            <div class="flex items-center gap-4">
-                {{if .User}}
-                <a href="/notifications" class="text-gray-600 hover:text-blue-600">Notifications</a>
-                <a href="/@{{.User.Username}}" class="text-gray-600 hover:text-blue-600">@{{.User.Username}}</a>
-                {{else}}
-                <a href="/login" class="text-gray-600 hover:text-blue-600">Login</a>
-                <a href="/register" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Sign up</a>
-                {{end}}
-            </div>
-        </nav>
-    </header>
+<body>
+    {{block "body" .}}
+    <div class="app-layout">
+        <!-- Left Sidebar -->
+        <aside class="app-sidebar">
+            {{template "nav_sidebar" .}}
+        </aside>
 
-    <main class="max-w-4xl mx-auto px-4 py-6">
-        {{block "content" .}}{{end}}
-    </main>
+        <!-- Main Content -->
+        <main class="app-main">
+            {{block "content" .}}{{end}}
+        </main>
+
+        <!-- Right Sidebar -->
+        <aside class="app-aside">
+            {{template "right_sidebar" .}}
+        </aside>
+    </div>
+    {{end}}
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Modal Container -->
+    <div class="modal-backdrop" id="modalBackdrop"></div>
+    <div class="modal" id="modal">
+        <div class="modal-header">
+            <button class="modal-close" id="modalClose">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+            <h2 class="modal-title" id="modalTitle"></h2>
+        </div>
+        <div class="modal-body" id="modalBody"></div>
+    </div>
 
     <script src="/static/js/app.js"></script>
 </body>
