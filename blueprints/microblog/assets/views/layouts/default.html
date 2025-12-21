@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{block "title" .}}Microblog{{end}}</title>
+    <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <header class="bg-white shadow-sm border-b">
+        <nav class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+            <a href="/" class="text-xl font-bold text-blue-600">Microblog</a>
+            <div class="flex items-center gap-4">
+                {{if .User}}
+                <a href="/notifications" class="text-gray-600 hover:text-blue-600">Notifications</a>
+                <a href="/@{{.User.Username}}" class="text-gray-600 hover:text-blue-600">@{{.User.Username}}</a>
+                {{else}}
+                <a href="/login" class="text-gray-600 hover:text-blue-600">Login</a>
+                <a href="/register" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Sign up</a>
+                {{end}}
+            </div>
+        </nav>
+    </header>
+
+    <main class="max-w-4xl mx-auto px-4 py-6">
+        {{block "content" .}}{{end}}
+    </main>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
