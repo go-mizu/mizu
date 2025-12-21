@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -132,13 +133,20 @@ func New(cfg Config) (*Server, error) {
 	s.searchHandlers = handlers.NewSearchHandlers(searchSvc, trendingSvc, postsSvc, s.optionalAuth)
 	s.pageHandlers = handlers.NewPageHandlers(tmpl, accountsSvc, postsSvc, timelinesSvc, relationshipsSvc, notificationsSvc, trendingSvc, s.optionalAuth, cfg.Dev)
 
+	s.setupRoutes()
+
 	// Serve static files from embedded assets
-	s.app.Get("/static/*", func(c *mizu.Ctx) error {
-		http.StripPrefix("/static/", http.FileServer(http.FS(assets.Static()))).ServeHTTP(c.Writer(), c.Request())
+	staticHandler := http.StripPrefix("/static/", http.FileServer(http.FS(assets.Static())))
+	s.app.Get("/static/{path...}", func(c *mizu.Ctx) error {
+		// Set correct Content-Type header based on file extension
+		ext := filepath.Ext(c.Request().URL.Path)
+		if contentType := mime.TypeByExtension(ext); contentType != "" {
+			c.Writer().Header().Set("Content-Type", contentType)
+		}
+		staticHandler.ServeHTTP(c.Writer(), c.Request())
 		return nil
 	})
 
-	s.setupRoutes()
 	return s, nil
 }
 
