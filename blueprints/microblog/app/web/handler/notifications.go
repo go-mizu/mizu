@@ -1,4 +1,4 @@
-package handlers
+package handler
 
 import (
 	"github.com/go-mizu/mizu"
@@ -6,25 +6,25 @@ import (
 	"github.com/go-mizu/blueprints/microblog/feature/notifications"
 )
 
-// NotificationHandlers contains notification-related handlers.
-type NotificationHandlers struct {
+// Notification contains notification-related handlers.
+type Notification struct {
 	notifications notifications.API
 	getAccountID  func(*mizu.Ctx) string
 }
 
-// NewNotificationHandlers creates new notification handlers.
-func NewNotificationHandlers(
+// NewNotification creates new notification handlers.
+func NewNotification(
 	notifications notifications.API,
 	getAccountID func(*mizu.Ctx) string,
-) *NotificationHandlers {
-	return &NotificationHandlers{
+) *Notification {
+	return &Notification{
 		notifications: notifications,
 		getAccountID:  getAccountID,
 	}
 }
 
 // List returns the user's notifications.
-func (h *NotificationHandlers) List(c *mizu.Ctx) error {
+func (h *Notification) List(c *mizu.Ctx) error {
 	accountID := h.getAccountID(c)
 	limit := IntQuery(c, "limit", 30)
 	maxID := c.Query("max_id")
@@ -39,7 +39,7 @@ func (h *NotificationHandlers) List(c *mizu.Ctx) error {
 }
 
 // Clear marks all notifications as read.
-func (h *NotificationHandlers) Clear(c *mizu.Ctx) error {
+func (h *Notification) Clear(c *mizu.Ctx) error {
 	accountID := h.getAccountID(c)
 	if err := h.notifications.MarkAllAsRead(c.Request().Context(), accountID); err != nil {
 		return c.JSON(500, ErrorResponse("CLEAR_FAILED", err.Error()))
@@ -48,7 +48,7 @@ func (h *NotificationHandlers) Clear(c *mizu.Ctx) error {
 }
 
 // Dismiss dismisses a specific notification.
-func (h *NotificationHandlers) Dismiss(c *mizu.Ctx) error {
+func (h *Notification) Dismiss(c *mizu.Ctx) error {
 	accountID := h.getAccountID(c)
 	id := c.Param("id")
 	if err := h.notifications.Dismiss(c.Request().Context(), id, accountID); err != nil {

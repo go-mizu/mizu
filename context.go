@@ -35,6 +35,12 @@ type Ctx struct {
 	log         *slog.Logger
 }
 
+// NewCtx returns new Ctx.
+func NewCtx(w http.ResponseWriter, r *http.Request, lg *slog.Logger) *Ctx {
+	// We make it public, to make writing tests easier.
+	return newCtx(w, r, lg)
+}
+
 // newCtx creates a Ctx from net/http types (router adapter).
 func newCtx(w http.ResponseWriter, r *http.Request, lg *slog.Logger) *Ctx {
 	if lg == nil {

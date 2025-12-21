@@ -1,4 +1,4 @@
-package handlers
+package handler
 
 import (
 	"github.com/go-mizu/mizu"
@@ -8,22 +8,22 @@ import (
 	"github.com/go-mizu/blueprints/microblog/feature/trending"
 )
 
-// SearchHandlers contains search and trending-related handlers.
-type SearchHandlers struct {
+// Search contains search and trending-related handlers.
+type Search struct {
 	search       search.API
 	trending     trending.API
 	posts        posts.API
 	optionalAuth func(*mizu.Ctx) string
 }
 
-// NewSearchHandlers creates new search handlers.
-func NewSearchHandlers(
+// NewSearch creates new search handlers.
+func NewSearch(
 	search search.API,
 	trending trending.API,
 	posts posts.API,
 	optionalAuth func(*mizu.Ctx) string,
-) *SearchHandlers {
-	return &SearchHandlers{
+) *Search {
+	return &Search{
 		search:       search,
 		trending:     trending,
 		posts:        posts,
@@ -32,7 +32,7 @@ func NewSearchHandlers(
 }
 
 // Search performs a search.
-func (h *SearchHandlers) Search(c *mizu.Ctx) error {
+func (h *Search) Search(c *mizu.Ctx) error {
 	query := c.Query("q")
 	limit := IntQuery(c, "limit", 25)
 	viewerID := h.optionalAuth(c)
@@ -65,7 +65,7 @@ func (h *SearchHandlers) Search(c *mizu.Ctx) error {
 }
 
 // TrendingTags returns trending hashtags.
-func (h *SearchHandlers) TrendingTags(c *mizu.Ctx) error {
+func (h *Search) TrendingTags(c *mizu.Ctx) error {
 	limit := IntQuery(c, "limit", 10)
 	tags, err := h.trending.Tags(c.Request().Context(), limit)
 	if err != nil {
@@ -75,7 +75,7 @@ func (h *SearchHandlers) TrendingTags(c *mizu.Ctx) error {
 }
 
 // TrendingPosts returns trending posts.
-func (h *SearchHandlers) TrendingPosts(c *mizu.Ctx) error {
+func (h *Search) TrendingPosts(c *mizu.Ctx) error {
 	limit := IntQuery(c, "limit", 20)
 	viewerID := h.optionalAuth(c)
 

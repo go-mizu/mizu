@@ -1,4 +1,4 @@
-package handlers
+package handler
 
 import (
 	"html/template"
@@ -13,8 +13,8 @@ import (
 	"github.com/go-mizu/blueprints/microblog/feature/trending"
 )
 
-// PageHandlers contains web page handlers.
-type PageHandlers struct {
+// Page contains web page handlers.
+type Page struct {
 	templates     *template.Template
 	accounts      accounts.API
 	posts         posts.API
@@ -26,8 +26,8 @@ type PageHandlers struct {
 	dev           bool
 }
 
-// NewPageHandlers creates new page handlers.
-func NewPageHandlers(
+// NewPage creates new page handlers.
+func NewPage(
 	templates *template.Template,
 	accounts accounts.API,
 	posts posts.API,
@@ -37,8 +37,8 @@ func NewPageHandlers(
 	trending trending.API,
 	optionalAuth func(*mizu.Ctx) string,
 	dev bool,
-) *PageHandlers {
-	return &PageHandlers{
+) *Page {
+	return &Page{
 		templates:     templates,
 		accounts:      accounts,
 		posts:         posts,
@@ -51,7 +51,7 @@ func NewPageHandlers(
 	}
 }
 
-func (h *PageHandlers) render(c *mizu.Ctx, name string, data map[string]any) error {
+func (h *Page) render(c *mizu.Ctx, name string, data map[string]any) error {
 	if data == nil {
 		data = make(map[string]any)
 	}
@@ -62,7 +62,7 @@ func (h *PageHandlers) render(c *mizu.Ctx, name string, data map[string]any) err
 }
 
 // Home renders the home page.
-func (h *PageHandlers) Home(c *mizu.Ctx) error {
+func (h *Page) Home(c *mizu.Ctx) error {
 	viewerID := h.optionalAuth(c)
 	var account *accounts.Account
 	var postList []*posts.Post
@@ -86,21 +86,21 @@ func (h *PageHandlers) Home(c *mizu.Ctx) error {
 }
 
 // Login renders the login page.
-func (h *PageHandlers) Login(c *mizu.Ctx) error {
+func (h *Page) Login(c *mizu.Ctx) error {
 	return h.render(c, "login", map[string]any{
 		"Title": "Login",
 	})
 }
 
 // Register renders the registration page.
-func (h *PageHandlers) Register(c *mizu.Ctx) error {
+func (h *Page) Register(c *mizu.Ctx) error {
 	return h.render(c, "register", map[string]any{
 		"Title": "Register",
 	})
 }
 
 // Profile renders a user's profile page.
-func (h *PageHandlers) Profile(c *mizu.Ctx) error {
+func (h *Page) Profile(c *mizu.Ctx) error {
 	username := c.Param("username")
 	viewerID := h.optionalAuth(c)
 
@@ -141,7 +141,7 @@ func (h *PageHandlers) Profile(c *mizu.Ctx) error {
 }
 
 // Post renders a single post/thread page.
-func (h *PageHandlers) Post(c *mizu.Ctx) error {
+func (h *Page) Post(c *mizu.Ctx) error {
 	postID := c.Param("id")
 	viewerID := h.optionalAuth(c)
 
@@ -166,7 +166,7 @@ func (h *PageHandlers) Post(c *mizu.Ctx) error {
 }
 
 // Tag renders a hashtag timeline page.
-func (h *PageHandlers) Tag(c *mizu.Ctx) error {
+func (h *Page) Tag(c *mizu.Ctx) error {
 	tag := c.Param("tag")
 	viewerID := h.optionalAuth(c)
 
@@ -189,7 +189,7 @@ func (h *PageHandlers) Tag(c *mizu.Ctx) error {
 }
 
 // Explore renders the explore page.
-func (h *PageHandlers) Explore(c *mizu.Ctx) error {
+func (h *Page) Explore(c *mizu.Ctx) error {
 	viewerID := h.optionalAuth(c)
 
 	trendingTags, _ := h.trending.Tags(c.Request().Context(), 10)
@@ -217,7 +217,7 @@ func (h *PageHandlers) Explore(c *mizu.Ctx) error {
 }
 
 // Notifications renders the notifications page.
-func (h *PageHandlers) Notifications(c *mizu.Ctx) error {
+func (h *Page) Notifications(c *mizu.Ctx) error {
 	accountID := h.optionalAuth(c)
 	if accountID == "" {
 		return c.Redirect(302, "/login")
@@ -237,7 +237,7 @@ func (h *PageHandlers) Notifications(c *mizu.Ctx) error {
 }
 
 // Bookmarks renders the bookmarks page.
-func (h *PageHandlers) Bookmarks(c *mizu.Ctx) error {
+func (h *Page) Bookmarks(c *mizu.Ctx) error {
 	accountID := h.optionalAuth(c)
 	if accountID == "" {
 		return c.Redirect(302, "/login")
@@ -257,7 +257,7 @@ func (h *PageHandlers) Bookmarks(c *mizu.Ctx) error {
 }
 
 // Search renders the search page.
-func (h *PageHandlers) Search(c *mizu.Ctx) error {
+func (h *Page) Search(c *mizu.Ctx) error {
 	query := c.Query("q")
 	viewerID := h.optionalAuth(c)
 
@@ -283,7 +283,7 @@ func (h *PageHandlers) Search(c *mizu.Ctx) error {
 }
 
 // Settings renders the settings page.
-func (h *PageHandlers) Settings(c *mizu.Ctx) error {
+func (h *Page) Settings(c *mizu.Ctx) error {
 	accountID := h.optionalAuth(c)
 	if accountID == "" {
 		return c.Redirect(302, "/login")
@@ -300,7 +300,7 @@ func (h *PageHandlers) Settings(c *mizu.Ctx) error {
 }
 
 // FollowList renders the followers/following list page.
-func (h *PageHandlers) FollowList(c *mizu.Ctx) error {
+func (h *Page) FollowList(c *mizu.Ctx) error {
 	username := c.Param("username")
 	listType := c.Param("type") // "followers" or "following"
 	viewerID := h.optionalAuth(c)
