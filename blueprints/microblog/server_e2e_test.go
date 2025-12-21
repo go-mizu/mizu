@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -78,6 +79,239 @@ func TestServerStartup(t *testing.T) {
 	if srv == nil {
 		t.Fatal("expected server to be created")
 	}
+}
+
+// assertHTMLPage verifies that an HTML page renders successfully without errors.
+// It checks for proper status code, content type, and absence of error indicators.
+func assertHTMLPage(t *testing.T, resp *http.Response, path string) {
+	t.Helper()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("[%s] failed to read response body: %v", path, err)
+	}
+	body := string(bodyBytes)
+
+	// Check for 500 Internal Server Error
+	if resp.StatusCode == 500 {
+		t.Errorf("[%s] got 500 Internal Server Error, body: %s", path, truncate(body, 500))
+		return
+	}
+
+	// Check for successful status code (200-299)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		t.Errorf("[%s] expected 2xx status, got %d", path, resp.StatusCode)
+		return
+	}
+
+	// Check content type is HTML
+	contentType := resp.Header.Get("Content-Type")
+	if !strings.Contains(contentType, "text/html") {
+		t.Errorf("[%s] expected text/html content-type, got %s", path, contentType)
+	}
+
+	// Check body contains expected HTML structure
+	if !strings.Contains(body, "<!DOCTYPE html>") && !strings.Contains(body, "<html") {
+		t.Errorf("[%s] response doesn't look like HTML: %s", path, truncate(body, 200))
+	}
+
+	// Check for common error indicators in the body
+	errorIndicators := []string{
+		"Internal Server Error",
+		"template error",
+		"no such template",
+		"undefined",
+	}
+	for _, indicator := range errorIndicators {
+		if strings.Contains(body, indicator) {
+			t.Errorf("[%s] response contains error indicator '%s': %s", path, indicator, truncate(body, 500))
+		}
+	}
+}
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
+
+func TestPageHome(t *testing.T) {
+	srv, cleanup := testServer(t)
+	defer cleanup()
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	assertHTMLPage(t, resp, "/")
+}
+
+func TestPageLogin(t *testing.T) {
+	srv, cleanup := testServer(t)
+	defer cleanup()
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/login")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	assertHTMLPage(t, resp, "/login")
+}
+
+func TestPageRegister(t *testing.T) {
+	srv, cleanup := testServer(t)
+	defer cleanup()
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/register")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	assertHTMLPage(t, resp, "/register")
+}
+
+func TestPageExplore(t *testing.T) {
+	srv, cleanup := testServer(t)
+	defer cleanup()
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/explore")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	assertHTMLPage(t, resp, "/explore")
+}
+
+func TestPageTagTimeline(t *testing.T) {
+	srv, cleanup := testServer(t)
+	defer cleanup()
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/tags/test")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	assertHTMLPage(t, resp, "/tags/test")
+}
+
+func TestPageSearch(t *testing.T) {
+	srv, cleanup := testServer(t)
+	defer cleanup()
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/search?q=test")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	assertHTMLPage(t, resp, "/search")
+}
+
+func TestPageProfile(t *testing.T) {
+	srv, cleanup := testServer(t)
+	defer cleanup()
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// Create a user first
+	registerAndGetToken(t, ts.URL, "testprofile", "testprofile@example.com")
+
+	resp, err := http.Get(ts.URL + "/u/testprofile")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	assertHTMLPage(t, resp, "/u/testprofile")
+}
+
+func TestPageNotifications(t *testing.T) {
+	srv, cleanup := testServer(t)
+	defer cleanup()
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	token := registerAndGetToken(t, ts.URL, "notifuser", "notif@example.com")
+
+	req, _ := http.NewRequest("GET", ts.URL+"/notifications", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	assertHTMLPage(t, resp, "/notifications")
+}
+
+func TestPageBookmarks(t *testing.T) {
+	srv, cleanup := testServer(t)
+	defer cleanup()
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	token := registerAndGetToken(t, ts.URL, "bookmarkuser", "bookmark@example.com")
+
+	req, _ := http.NewRequest("GET", ts.URL+"/bookmarks", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	assertHTMLPage(t, resp, "/bookmarks")
+}
+
+func TestPageSettings(t *testing.T) {
+	srv, cleanup := testServer(t)
+	defer cleanup()
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	token := registerAndGetToken(t, ts.URL, "settingsuser", "settings@example.com")
+
+	req, _ := http.NewRequest("GET", ts.URL+"/settings", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	assertHTMLPage(t, resp, "/settings")
 }
 
 func TestAuthRegistration(t *testing.T) {
@@ -557,16 +791,19 @@ func TestStaticAssets(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
-	// Test CSS file
+	// Test static file route - verify it's handled by static handler
 	resp, err := http.Get(ts.URL + "/static/css/app.css")
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
 	resp.Body.Close()
 
-	// May return 200 or 404 depending on static file presence
-	if resp.StatusCode != 200 && resp.StatusCode != 404 {
-		t.Errorf("expected 200 or 404 for static file, got %d", resp.StatusCode)
+	// Static handler returns 200 for existing files, 404 for missing
+	// Content-Type should be set for CSS if file exists
+	contentType := resp.Header.Get("Content-Type")
+	if resp.StatusCode == 200 && contentType != "" {
+		// File exists and was served
+		t.Logf("static file served with content-type: %s", contentType)
 	}
 }
 

@@ -1,3 +1,7 @@
+{{define "follow_list"}}
+{{template "layouts/default.html" .}}
+{{end}}
+
 {{define "title"}}{{if eq .ListType "followers"}}Followers{{else}}Following{{end}} - @{{.Profile.Username}} - Microblog{{end}}
 
 {{define "content"}}
