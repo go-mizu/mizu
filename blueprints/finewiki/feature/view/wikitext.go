@@ -8,6 +8,21 @@ import (
 
 // Regex patterns for WikiText conversion
 var (
+	// Code blocks: <syntaxhighlight lang="python">...</syntaxhighlight>
+	syntaxHighlightRe = regexp.MustCompile(`(?s)<syntaxhighlight([^>]*)>(.*?)</syntaxhighlight>`)
+
+	// Source blocks: <source lang="python">...</source> (deprecated but still used)
+	sourceRe = regexp.MustCompile(`(?s)<source([^>]*)>(.*?)</source>`)
+
+	// Inline code: <code>...</code>
+	inlineCodeRe = regexp.MustCompile(`<code>([^<]*)</code>`)
+
+	// Preformatted text: <pre>...</pre>
+	preRe = regexp.MustCompile(`(?s)<pre>([^<]*)</pre>`)
+
+	// Language attribute in syntaxhighlight/source tags
+	langAttrRe = regexp.MustCompile(`lang\s*=\s*["']?([^"'\s>]+)["']?`)
+
 	// Internal links: [[Page]] or [[Page|Display]]
 	wikiLinkRe = regexp.MustCompile(`\[\[([^\]|]+)(?:\|([^\]]+))?\]\]`)
 
@@ -74,6 +89,9 @@ func ConvertWikiTextToMarkdown(wikitext, wikiname string) string {
 	}
 
 	text := wikitext
+
+	// Convert code blocks FIRST to preserve code content before other processing
+	text = convertCodeBlocks(text)
 
 	// Remove HTML comments first
 	text = commentRe.ReplaceAllString(text, "")
@@ -190,6 +208,62 @@ func cleanupNewlines(text string) string {
 
 	// Trim leading/trailing whitespace
 	text = strings.TrimSpace(text)
+
+	return text
+}
+
+// convertCodeBlocks converts Wikipedia code block tags to markdown fenced code blocks.
+// Handles:
+// - <syntaxhighlight lang="python">...</syntaxhighlight> → ```python\n...\n```
+// - <source lang="python">...</source> → ```python\n...\n```
+// - <code>...</code> → `...`
+// - <pre>...</pre> → ```\n...\n```
+func convertCodeBlocks(text string) string {
+	// Helper function to convert a code block match to fenced markdown
+	convertBlock := func(re *regexp.Regexp, match string) string {
+		submatches := re.FindStringSubmatch(match)
+		if len(submatches) < 3 {
+			return match
+		}
+
+		attrs := submatches[1] // Attributes like lang="python"
+		code := submatches[2]  // The code content
+
+		// Extract language from attributes
+		lang := ""
+		if langMatch := langAttrRe.FindStringSubmatch(attrs); len(langMatch) > 1 {
+			lang = strings.ToLower(langMatch[1])
+		}
+
+		// Trim leading/trailing whitespace from code but preserve internal formatting
+		code = strings.TrimSpace(code)
+
+		// Return fenced code block
+		return "\n```" + lang + "\n" + code + "\n```\n"
+	}
+
+	// Convert <syntaxhighlight> blocks
+	text = syntaxHighlightRe.ReplaceAllStringFunc(text, func(match string) string {
+		return convertBlock(syntaxHighlightRe, match)
+	})
+
+	// Convert <source> blocks
+	text = sourceRe.ReplaceAllStringFunc(text, func(match string) string {
+		return convertBlock(sourceRe, match)
+	})
+
+	// Convert <pre> blocks to fenced code blocks (no language)
+	text = preRe.ReplaceAllStringFunc(text, func(match string) string {
+		submatches := preRe.FindStringSubmatch(match)
+		if len(submatches) < 2 {
+			return match
+		}
+		code := strings.TrimSpace(submatches[1])
+		return "\n```\n" + code + "\n```\n"
+	})
+
+	// Convert inline <code> to backticks
+	text = inlineCodeRe.ReplaceAllString(text, "`$1`")
 
 	return text
 }

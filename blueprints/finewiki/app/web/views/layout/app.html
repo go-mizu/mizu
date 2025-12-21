@@ -6,6 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{if .PageTitle}}{{.PageTitle}}{{else}}FineWiki{{end}}</title>
     <meta name="description" content="Fast, read-only wiki viewer powered by DuckDB">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/base16/tomorrow.min.css" media="(prefers-color-scheme: light)">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/base16/tomorrow-night.min.css" media="(prefers-color-scheme: dark)">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <style>
         {{template "styles"}}
     </style>
@@ -49,7 +52,7 @@
 
     /* Spacing */
     --topbar-height: 60px;
-    --content-width: 680px;
+    --content-width: 1200px;
     --content-padding: 24px;
 }
 
@@ -276,7 +279,6 @@ a:hover {
     margin-top: 48px;
     margin-bottom: 16px;
     padding-top: 24px;
-    border-top: 1px solid var(--border);
 }
 
 .article-content h3 {
@@ -366,6 +368,158 @@ a:hover {
     background: none;
     padding: 0;
     font-size: inherit;
+}
+
+/* Code block with language label */
+.article-content pre {
+    position: relative;
+}
+
+.article-content pre[data-lang]::before {
+    content: attr(data-lang);
+    position: absolute;
+    top: 0;
+    right: 0;
+    padding: 4px 12px;
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--fg-secondary);
+    background: var(--surface);
+    border-radius: 0 6px 0 6px;
+    border-left: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+}
+
+/* Syntax Highlighting - Minimal Theme */
+.hljs {
+    display: block;
+    overflow-x: auto;
+    color: var(--fg);
+}
+
+/* Comments */
+.hljs-comment,
+.hljs-quote {
+    color: #6a737d;
+    font-style: italic;
+}
+
+[data-theme="dark"] .hljs-comment,
+[data-theme="dark"] .hljs-quote {
+    color: #8b949e;
+}
+
+/* Keywords, Built-ins */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-name,
+.hljs-tag {
+    color: #d73a49;
+}
+
+[data-theme="dark"] .hljs-keyword,
+[data-theme="dark"] .hljs-selector-tag,
+[data-theme="dark"] .hljs-built_in,
+[data-theme="dark"] .hljs-name,
+[data-theme="dark"] .hljs-tag {
+    color: #ff7b72;
+}
+
+/* Strings */
+.hljs-string,
+.hljs-attr,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+    color: #032f62;
+}
+
+[data-theme="dark"] .hljs-string,
+[data-theme="dark"] .hljs-attr,
+[data-theme="dark"] .hljs-symbol,
+[data-theme="dark"] .hljs-bullet,
+[data-theme="dark"] .hljs-addition {
+    color: #a5d6ff;
+}
+
+/* Numbers, Constants */
+.hljs-number,
+.hljs-literal {
+    color: #005cc5;
+}
+
+[data-theme="dark"] .hljs-number,
+[data-theme="dark"] .hljs-literal {
+    color: #79c0ff;
+}
+
+/* Functions, Classes */
+.hljs-title,
+.hljs-section,
+.hljs-type,
+.hljs-class .hljs-title {
+    color: #6f42c1;
+}
+
+[data-theme="dark"] .hljs-title,
+[data-theme="dark"] .hljs-section,
+[data-theme="dark"] .hljs-type,
+[data-theme="dark"] .hljs-class .hljs-title {
+    color: #d2a8ff;
+}
+
+/* Variables, Params */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-params {
+    color: #e36209;
+}
+
+[data-theme="dark"] .hljs-variable,
+[data-theme="dark"] .hljs-template-variable,
+[data-theme="dark"] .hljs-params {
+    color: #ffa657;
+}
+
+/* Punctuation, Operators */
+.hljs-punctuation,
+.hljs-operator {
+    color: var(--fg);
+}
+
+/* Deletion (diff) */
+.hljs-deletion {
+    color: #b31d28;
+    background: rgba(255, 0, 0, 0.1);
+}
+
+[data-theme="dark"] .hljs-deletion {
+    color: #ffdcd7;
+    background: rgba(248, 81, 73, 0.15);
+}
+
+/* Meta, attributes */
+.hljs-meta,
+.hljs-doctag {
+    color: #22863a;
+}
+
+[data-theme="dark"] .hljs-meta,
+[data-theme="dark"] .hljs-doctag {
+    color: #7ee787;
+}
+
+/* Regex */
+.hljs-regexp {
+    color: #032f62;
+}
+
+[data-theme="dark"] .hljs-regexp {
+    color: #a5d6ff;
 }
 
 /* Tables */
@@ -640,6 +794,39 @@ a:hover {
             document.activeElement.blur();
         }
     });
+
+    // Syntax highlighting with highlight.js
+    function initHighlighting() {
+        if (typeof hljs === 'undefined') return;
+
+        // Find all code blocks and add language labels
+        document.querySelectorAll('pre code').forEach(function(block) {
+            // Extract language from class (e.g., "language-python" -> "python")
+            var classes = block.className.split(/\s+/);
+            var lang = '';
+            for (var i = 0; i < classes.length; i++) {
+                if (classes[i].startsWith('language-')) {
+                    lang = classes[i].replace('language-', '');
+                    break;
+                }
+            }
+
+            // Add data-lang attribute to pre for the label
+            if (lang && block.parentElement) {
+                block.parentElement.setAttribute('data-lang', lang);
+            }
+
+            // Apply highlighting
+            hljs.highlightElement(block);
+        });
+    }
+
+    // Run highlighting when DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initHighlighting);
+    } else {
+        initHighlighting();
+    }
 })();
 {{end}}
 
