@@ -290,3 +290,95 @@ func TestConvertWikiTextToMarkdown_EmptyInput(t *testing.T) {
 		t.Errorf("Empty input should return empty string, got %q", got)
 	}
 }
+
+func TestConvertWikiTextToMarkdown_CodeBlocks(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name: "syntaxhighlight with python",
+			input: `<syntaxhighlight lang="python">
+def hello():
+    print("Hello, World!")
+</syntaxhighlight>`,
+			want: "```python\ndef hello():\n    print(\"Hello, World!\")\n```",
+		},
+		{
+			name: "syntaxhighlight with single quotes",
+			input: `<syntaxhighlight lang='javascript'>
+console.log("test");
+</syntaxhighlight>`,
+			want: "```javascript\nconsole.log(\"test\");\n```",
+		},
+		{
+			name: "source tag (deprecated but valid)",
+			input: `<source lang="go">
+func main() {
+    fmt.Println("Hello")
+}
+</source>`,
+			want: "```go\nfunc main() {\n    fmt.Println(\"Hello\")\n}\n```",
+		},
+		{
+			name:  "inline code",
+			input: `Use <code>print()</code> to output text`,
+			want:  "Use `print()` to output text",
+		},
+		{
+			name:  "multiple inline codes",
+			input: `Variables like <code>x</code> and <code>y</code>`,
+			want:  "Variables like `x` and `y`",
+		},
+		{
+			name: "pre block",
+			input: `<pre>
+plain text block
+with multiple lines
+</pre>`,
+			want: "```\nplain text block\nwith multiple lines\n```",
+		},
+		{
+			name:  "code block without language",
+			input: `<syntaxhighlight>some code</syntaxhighlight>`,
+			want:  "```\nsome code\n```",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ConvertWikiTextToMarkdown(tt.input, "enwiki")
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("ConvertWikiTextToMarkdown() = %q, want substring %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConvertWikiTextToMarkdown_CodeBlocksNotStripped(t *testing.T) {
+	// Ensure code blocks are not stripped by other cleanups
+	input := `== Code Example ==
+
+<syntaxhighlight lang="python">
+# This is a comment with [[link]] and '''bold'''
+def test():
+    pass
+</syntaxhighlight>
+
+Some text after.`
+
+	got := ConvertWikiTextToMarkdown(input, "enwiki")
+
+	// Code content should be preserved
+	if !strings.Contains(got, "# This is a comment") {
+		t.Error("Comment in code should be preserved")
+	}
+	if !strings.Contains(got, "def test():") {
+		t.Error("Function definition should be preserved")
+	}
+	// The code block markers should be present
+	if !strings.Contains(got, "```python") {
+		t.Error("Should have python code fence")
+	}
+}
