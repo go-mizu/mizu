@@ -1,0 +1,37 @@
+{{define "page/search.html"}}
+{{template "layout/app.html" .}}
+{{end}}
+
+{{define "search-content"}}
+{{if .Query}}
+<div class="search-header">
+    <p class="search-title">Results for</p>
+    <h1 class="search-query">{{.Query}}</h1>
+</div>
+
+{{if .Results}}
+<ul class="search-results">
+    {{range .Results}}
+    <li class="search-result">
+        <a href="/page?id={{.ID}}" class="search-result-link">{{.Title}}</a>
+        <div class="search-result-meta">
+            <span class="wiki-badge">{{.WikiName}}</span>
+            <span>{{.InLanguage}}</span>
+        </div>
+    </li>
+    {{end}}
+</ul>
+{{else}}
+<div class="search-no-results">
+    <h2 class="search-no-results-title">No results found</h2>
+    <p>Try different keywords or check your spelling.</p>
+</div>
+{{end}}
+
+{{else}}
+<div class="search-no-results">
+    <h2 class="search-no-results-title">Enter a search term</h2>
+    <p>Type in the search box above to find articles.</p>
+</div>
+{{end}}
+{{end}}
