@@ -6,7 +6,7 @@ SELECT
   title
 FROM read_parquet('__PARQUET_GLOB__');
 
-INSERT INTO titles
+INSERT OR IGNORE INTO titles
 SELECT
   id,
   wikiname,
