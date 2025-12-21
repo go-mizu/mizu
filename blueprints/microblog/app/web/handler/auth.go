@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"net/http"
+
 	"github.com/go-mizu/mizu"
 
 	"github.com/go-mizu/blueprints/microblog/feature/accounts"
@@ -33,6 +35,16 @@ func (h *Auth) Register(c *mizu.Ctx) error {
 		return c.JSON(500, ErrorResponse("SESSION_FAILED", "Failed to create session"))
 	}
 
+	// Set session cookie for auto-login
+	c.SetCookie(&http.Cookie{
+		Name:     "session",
+		Value:    session.Token,
+		Path:     "/",
+		MaxAge:   60 * 60 * 24 * 30, // 30 days
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
 	return c.JSON(200, map[string]any{
 		"data": map[string]any{
 			"account": account,
@@ -55,6 +67,16 @@ func (h *Auth) Login(c *mizu.Ctx) error {
 
 	account, _ := h.accounts.GetByID(c.Request().Context(), session.AccountID)
 
+	// Set session cookie for persistent login
+	c.SetCookie(&http.Cookie{
+		Name:     "session",
+		Value:    session.Token,
+		Path:     "/",
+		MaxAge:   60 * 60 * 24 * 30, // 30 days
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
 	return c.JSON(200, map[string]any{
 		"data": map[string]any{
 			"account": account,
@@ -70,5 +92,16 @@ func (h *Auth) Logout(c *mizu.Ctx) error {
 		token = token[7:] // Remove "Bearer "
 		_ = h.accounts.DeleteSession(c.Request().Context(), token)
 	}
+
+	// Clear session cookie
+	c.SetCookie(&http.Cookie{
+		Name:     "session",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
 	return c.JSON(200, map[string]any{"data": map[string]any{"success": true}})
 }
