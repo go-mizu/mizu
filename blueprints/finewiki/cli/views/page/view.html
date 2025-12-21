@@ -2,13 +2,7 @@
 {{template "layout/app.html" .}}
 {{end}}
 
-{{define "title"}}{{.Page.Title}} - FineWiki{{end}}
-
-{{define "sidebar"}}
-{{template "sidebar.html" .}}
-{{end}}
-
-{{define "content"}}
+{{define "view-content"}}
 <article class="article">
     <header class="article-header">
         <h1 class="article-title">{{.Page.Title}}</h1>

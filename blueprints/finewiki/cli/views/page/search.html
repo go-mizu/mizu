@@ -2,11 +2,7 @@
 {{template "layout/app.html" .}}
 {{end}}
 
-{{define "title"}}{{if .Query}}{{.Query}} - Search{{else}}Search{{end}} - FineWiki{{end}}
-
-{{define "sidebar"}}{{end}}
-
-{{define "content"}}
+{{define "search-content"}}
 <div class="search-page">
     {{if .Query}}
     <div class="search-header">
@@ -19,10 +15,6 @@
             {{end}}
         </p>
     </div>
-
-    {{if or .WikiName .InLanguage}}
-    {{template "filter-bar" .}}
-    {{end}}
 
     {{if .Results}}
     <ul class="search-results">
@@ -49,7 +41,7 @@
         <p class="search-empty-text">
             Try different keywords or check your spelling.
             {{if or .WikiName .InLanguage}}
-            You can also <a href="/search?q={{.Query}}">remove filters</a> to see more results.
+            You can also <a href="/?q={{.Query}}">remove filters</a> to see more results.
             {{end}}
         </p>
     </div>
