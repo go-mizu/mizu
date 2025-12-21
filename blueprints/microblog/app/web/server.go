@@ -13,6 +13,7 @@ import (
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/go-mizu/mizu"
 
+	"github.com/go-mizu/blueprints/microblog/app/web/handlers"
 	"github.com/go-mizu/blueprints/microblog/assets"
 	"github.com/go-mizu/blueprints/microblog/feature/accounts"
 	"github.com/go-mizu/blueprints/microblog/feature/interactions"
@@ -41,6 +42,17 @@ type Server struct {
 	notifications notifications.API
 	search        search.API
 	trending      trending.API
+
+	// Handler groups
+	authHandlers         *handlers.AuthHandlers
+	accountHandlers      *handlers.AccountHandlers
+	postHandlers         *handlers.PostHandlers
+	interactionHandlers  *handlers.InteractionHandlers
+	relationshipHandlers *handlers.RelationshipHandlers
+	timelineHandlers     *handlers.TimelineHandlers
+	notificationHandlers *handlers.NotificationHandlers
+	searchHandlers       *handlers.SearchHandlers
+	pageHandlers         *handlers.PageHandlers
 }
 
 // New creates a new server.
@@ -81,6 +93,12 @@ func New(cfg Config) (*Server, error) {
 	// Create services with stores
 	accountsSvc := accounts.NewService(accountsStore)
 	postsSvc := posts.NewService(postsStore, accountsSvc)
+	timelinesSvc := timelines.NewService(timelinesStore, accountsSvc)
+	interactionsSvc := interactions.NewService(interactionsStore)
+	relationshipsSvc := relationships.NewService(relationshipsStore)
+	notificationsSvc := notifications.NewService(notificationsStore, accountsSvc)
+	searchSvc := search.NewService(searchStore)
+	trendingSvc := trending.NewService(trendingStore)
 
 	// Parse templates
 	tmpl, err := assets.Templates()
@@ -95,13 +113,24 @@ func New(cfg Config) (*Server, error) {
 		templates:     tmpl,
 		accounts:      accountsSvc,
 		posts:         postsSvc,
-		timelines:     timelines.NewService(timelinesStore, accountsSvc),
-		interactions:  interactions.NewService(interactionsStore),
-		relationships: relationships.NewService(relationshipsStore),
-		notifications: notifications.NewService(notificationsStore, accountsSvc),
-		search:        search.NewService(searchStore),
-		trending:      trending.NewService(trendingStore),
+		timelines:     timelinesSvc,
+		interactions:  interactionsSvc,
+		relationships: relationshipsSvc,
+		notifications: notificationsSvc,
+		search:        searchSvc,
+		trending:      trendingSvc,
 	}
+
+	// Create handler groups with dependencies
+	s.authHandlers = handlers.NewAuthHandlers(accountsSvc)
+	s.accountHandlers = handlers.NewAccountHandlers(accountsSvc, relationshipsSvc, timelinesSvc, s.getAccountID, s.optionalAuth)
+	s.postHandlers = handlers.NewPostHandlers(postsSvc, s.getAccountID, s.optionalAuth)
+	s.interactionHandlers = handlers.NewInteractionHandlers(interactionsSvc, postsSvc, accountsSvc, s.getAccountID)
+	s.relationshipHandlers = handlers.NewRelationshipHandlers(relationshipsSvc, s.getAccountID)
+	s.timelineHandlers = handlers.NewTimelineHandlers(timelinesSvc, s.getAccountID, s.optionalAuth)
+	s.notificationHandlers = handlers.NewNotificationHandlers(notificationsSvc, s.getAccountID)
+	s.searchHandlers = handlers.NewSearchHandlers(searchSvc, trendingSvc, postsSvc, s.optionalAuth)
+	s.pageHandlers = handlers.NewPageHandlers(tmpl, accountsSvc, postsSvc, timelinesSvc, relationshipsSvc, notificationsSvc, trendingSvc, s.optionalAuth, cfg.Dev)
 
 	// Serve static files from embedded assets
 	s.app.Get("/static/*", func(c *mizu.Ctx) error {
@@ -131,80 +160,74 @@ func (s *Server) setupRoutes() {
 	// API routes
 	s.app.Group("/api/v1", func(api *mizu.Router) {
 		// Auth
-		api.Post("/auth/register", s.handleRegister)
-		api.Post("/auth/login", s.handleLogin)
-		api.Post("/auth/logout", s.authRequired(s.handleLogout))
+		api.Post("/auth/register", s.authHandlers.Register)
+		api.Post("/auth/login", s.authHandlers.Login)
+		api.Post("/auth/logout", s.authRequired(s.authHandlers.Logout))
 
 		// Accounts
-		api.Get("/accounts/verify_credentials", s.authRequired(s.handleVerifyCredentials))
-		api.Patch("/accounts/update_credentials", s.authRequired(s.handleUpdateCredentials))
-		api.Get("/accounts/{id}", s.handleGetAccount)
-		api.Get("/accounts/{id}/posts", s.handleAccountPosts)
-		api.Get("/accounts/{id}/followers", s.handleAccountFollowers)
-		api.Get("/accounts/{id}/following", s.handleAccountFollowing)
-		api.Post("/accounts/{id}/follow", s.authRequired(s.handleFollow))
-		api.Post("/accounts/{id}/unfollow", s.authRequired(s.handleUnfollow))
-		api.Post("/accounts/{id}/block", s.authRequired(s.handleBlock))
-		api.Post("/accounts/{id}/unblock", s.authRequired(s.handleUnblock))
-		api.Post("/accounts/{id}/mute", s.authRequired(s.handleMute))
-		api.Post("/accounts/{id}/unmute", s.authRequired(s.handleUnmute))
-		api.Get("/accounts/relationships", s.authRequired(s.handleRelationships))
+		api.Get("/accounts/verify_credentials", s.authRequired(s.accountHandlers.VerifyCredentials))
+		api.Patch("/accounts/update_credentials", s.authRequired(s.accountHandlers.UpdateCredentials))
+		api.Get("/accounts/{id}", s.accountHandlers.GetAccount)
+		api.Get("/accounts/{id}/posts", s.accountHandlers.GetAccountPosts)
+		api.Get("/accounts/{id}/followers", s.accountHandlers.GetAccountFollowers)
+		api.Get("/accounts/{id}/following", s.accountHandlers.GetAccountFollowing)
+		api.Post("/accounts/{id}/follow", s.authRequired(s.relationshipHandlers.Follow))
+		api.Post("/accounts/{id}/unfollow", s.authRequired(s.relationshipHandlers.Unfollow))
+		api.Post("/accounts/{id}/block", s.authRequired(s.relationshipHandlers.Block))
+		api.Post("/accounts/{id}/unblock", s.authRequired(s.relationshipHandlers.Unblock))
+		api.Post("/accounts/{id}/mute", s.authRequired(s.relationshipHandlers.Mute))
+		api.Post("/accounts/{id}/unmute", s.authRequired(s.relationshipHandlers.Unmute))
+		api.Get("/accounts/relationships", s.authRequired(s.relationshipHandlers.GetRelationships))
 
 		// Posts
-		api.Post("/posts", s.authRequired(s.handleCreatePost))
-		api.Get("/posts/{id}", s.handleGetPost)
-		api.Put("/posts/{id}", s.authRequired(s.handleUpdatePost))
-		api.Delete("/posts/{id}", s.authRequired(s.handleDeletePost))
-		api.Get("/posts/{id}/context", s.handlePostContext)
-		api.Post("/posts/{id}/like", s.authRequired(s.handleLike))
-		api.Delete("/posts/{id}/like", s.authRequired(s.handleUnlike))
-		api.Post("/posts/{id}/repost", s.authRequired(s.handleRepost))
-		api.Delete("/posts/{id}/repost", s.authRequired(s.handleUnrepost))
-		api.Post("/posts/{id}/bookmark", s.authRequired(s.handleBookmark))
-		api.Delete("/posts/{id}/bookmark", s.authRequired(s.handleUnbookmark))
-		api.Get("/posts/{id}/liked_by", s.handleLikedBy)
-		api.Get("/posts/{id}/reposted_by", s.handleRepostedBy)
+		api.Post("/posts", s.authRequired(s.postHandlers.Create))
+		api.Get("/posts/{id}", s.postHandlers.Get)
+		api.Put("/posts/{id}", s.authRequired(s.postHandlers.Update))
+		api.Delete("/posts/{id}", s.authRequired(s.postHandlers.Delete))
+		api.Get("/posts/{id}/context", s.postHandlers.GetContext)
+		api.Post("/posts/{id}/like", s.authRequired(s.interactionHandlers.Like))
+		api.Delete("/posts/{id}/like", s.authRequired(s.interactionHandlers.Unlike))
+		api.Post("/posts/{id}/repost", s.authRequired(s.interactionHandlers.Repost))
+		api.Delete("/posts/{id}/repost", s.authRequired(s.interactionHandlers.Unrepost))
+		api.Post("/posts/{id}/bookmark", s.authRequired(s.interactionHandlers.Bookmark))
+		api.Delete("/posts/{id}/bookmark", s.authRequired(s.interactionHandlers.Unbookmark))
+		api.Get("/posts/{id}/liked_by", s.interactionHandlers.LikedBy)
+		api.Get("/posts/{id}/reposted_by", s.interactionHandlers.RepostedBy)
 
 		// Timelines
-		api.Get("/timelines/home", s.authRequired(s.handleHomeTimeline))
-		api.Get("/timelines/local", s.handleLocalTimeline)
-		api.Get("/timelines/tag/{tag}", s.handleHashtagTimeline)
+		api.Get("/timelines/home", s.authRequired(s.timelineHandlers.Home))
+		api.Get("/timelines/local", s.timelineHandlers.Local)
+		api.Get("/timelines/tag/{tag}", s.timelineHandlers.Hashtag)
 
 		// Notifications
-		api.Get("/notifications", s.authRequired(s.handleNotifications))
-		api.Post("/notifications/clear", s.authRequired(s.handleClearNotifications))
-		api.Post("/notifications/{id}/dismiss", s.authRequired(s.handleDismissNotification))
+		api.Get("/notifications", s.authRequired(s.notificationHandlers.List))
+		api.Post("/notifications/clear", s.authRequired(s.notificationHandlers.Clear))
+		api.Post("/notifications/{id}/dismiss", s.authRequired(s.notificationHandlers.Dismiss))
 
 		// Search
-		api.Get("/search", s.handleSearch)
+		api.Get("/search", s.searchHandlers.Search)
 
 		// Trends
-		api.Get("/trends/tags", s.handleTrendingTags)
-		api.Get("/trends/posts", s.handleTrendingPosts)
+		api.Get("/trends/tags", s.searchHandlers.TrendingTags)
+		api.Get("/trends/posts", s.searchHandlers.TrendingPosts)
 
 		// Bookmarks
-		api.Get("/bookmarks", s.authRequired(s.handleBookmarks))
+		api.Get("/bookmarks", s.authRequired(s.timelineHandlers.Bookmarks))
 	})
 
 	// Web routes (pages)
-	s.app.Get("/", s.handleHomePage)
-	s.app.Get("/login", s.handleLoginPage)
-	s.app.Get("/register", s.handleRegisterPage)
-	s.app.Get("/@{username}", s.handleProfilePage)
-	s.app.Get("/@{username}/{id}", s.handlePostPage)
-	s.app.Get("/tags/{tag}", s.handleTagPage)
-	s.app.Get("/explore", s.handleExplorePage)
-	s.app.Get("/notifications", s.handleNotificationsPage)
-	s.app.Get("/settings", s.handleSettingsPage)
-}
-
-// render renders a template with the given data.
-func (s *Server) render(c *mizu.Ctx, name string, data map[string]any) error {
-	if data == nil {
-		data = make(map[string]any)
-	}
-	data["Dev"] = s.cfg.Dev
-
-	c.Header().Set("Content-Type", "text/html; charset=utf-8")
-	return s.templates.ExecuteTemplate(c.Writer(), name, data)
+	s.app.Get("/", s.pageHandlers.Home)
+	s.app.Get("/login", s.pageHandlers.Login)
+	s.app.Get("/register", s.pageHandlers.Register)
+	s.app.Get("/explore", s.pageHandlers.Explore)
+	s.app.Get("/search", s.pageHandlers.Search)
+	s.app.Get("/notifications", s.pageHandlers.Notifications)
+	s.app.Get("/bookmarks", s.pageHandlers.Bookmarks)
+	s.app.Get("/settings", s.pageHandlers.Settings)
+	s.app.Get("/settings/{page}", s.pageHandlers.Settings)
+	s.app.Get("/@{username}", s.pageHandlers.Profile)
+	s.app.Get("/@{username}/{id}", s.pageHandlers.Post)
+	s.app.Get("/@{username}/followers", s.pageHandlers.FollowList)
+	s.app.Get("/@{username}/following", s.pageHandlers.FollowList)
+	s.app.Get("/tags/{tag}", s.pageHandlers.Tag)
 }
