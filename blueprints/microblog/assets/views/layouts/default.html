@@ -32,21 +32,20 @@
     {{end}}
 
     <!-- Toast Container -->
-    <div class="toast-container" id="toastContainer"></div>
+    <div class="toast-container" id="toast-container"></div>
 
-    <!-- Modal Container -->
-    <div class="modal-backdrop" id="modalBackdrop"></div>
-    <div class="modal" id="modal">
-        <div class="modal-header">
-            <button class="modal-close" id="modalClose">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M6 18L18 6M6 6l12 12"/>
-                </svg>
-            </button>
-            <h2 class="modal-title" id="modalTitle"></h2>
-        </div>
-        <div class="modal-body" id="modalBody"></div>
-    </div>
+    <!-- Modal Container (managed by JavaScript) -->
+    <div class="modal-backdrop" id="modal-container" style="display: none;"></div>
+
+    <!-- Compose FAB (Mobile) -->
+    {{if .Account}}
+    <button class="compose-fab" aria-label="New post">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+    </button>
+    {{end}}
 
     <script src="/static/js/app.js"></script>
 </body>
