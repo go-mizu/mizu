@@ -191,9 +191,17 @@ a:hover {
 }
 
 /* App Layout */
+.app-container {
+    width: 100%;
+    max-width: var(--container-max);
+    margin: 0 auto;
+    background-color: var(--color-bg);
+}
+
 .app-layout {
     display: flex;
     min-height: 100vh;
+    margin: 0 auto;
 }
 
 .app-sidebar {
@@ -213,6 +221,7 @@ a:hover {
     min-width: 0;
     max-width: var(--main-width);
     border-right: 1px solid var(--color-border);
+    background-color: var(--color-surface);
 }
 
 .app-aside {
@@ -228,9 +237,17 @@ a:hover {
 /* Responsive Layout */
 @media (max-width: 1280px) {
     .app-aside { display: none; }
+    .app-container {
+        max-width: 100%;
+    }
 }
 
 @media (max-width: 768px) {
+    .app-container {
+        margin: 0;
+        max-width: 100%;
+    }
+
     .app-sidebar {
         position: fixed;
         bottom: 0;
@@ -879,18 +896,16 @@ a:hover {
 .compose {
     display: flex;
     gap: var(--space-3);
-    padding: var(--space-4);
-    border-bottom: 1px solid var(--color-border);
+    padding: var(--space-5);
+    border-bottom: 2px solid var(--color-border);
     background: var(--color-surface);
-    position: sticky;
-    top: 0;
-    z-index: var(--z-sticky);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-    transition: box-shadow var(--transition-normal);
+    position: relative;
+    box-shadow: none;
+    transition: box-shadow var(--transition-normal), border-color var(--transition-normal);
 }
 
 .compose:focus-within {
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+    box-shadow: 0 2px 12px rgba(59, 130, 246, 0.08);
     border-bottom-color: var(--color-primary);
 }
 
@@ -910,18 +925,21 @@ a:hover {
     border: none;
     background: transparent;
     resize: none;
-    min-height: 80px;
+    min-height: 100px;
     color: var(--color-text);
     transition: min-height var(--transition-normal);
+    font-family: inherit;
+    line-height: 1.5;
 }
 
 .compose-input:focus {
     outline: none;
-    min-height: 120px;
+    min-height: 140px;
 }
 
 .compose-input::placeholder {
     color: var(--color-text-muted);
+    font-weight: var(--font-normal);
 }
 
 .compose-footer {
@@ -929,7 +947,8 @@ a:hover {
     align-items: center;
     justify-content: space-between;
     padding-top: var(--space-3);
-    border-top: 1px solid var(--color-border);
+    border-top: 1px solid var(--color-border-light);
+    margin-top: var(--space-2);
 }
 
 .compose-tools {
@@ -972,6 +991,20 @@ a:hover {
 }
 
 .compose-counter.over-limit {
+    color: var(--color-error);
+}
+
+.char-count {
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    font-weight: var(--font-medium);
+}
+
+.char-count.char-limit {
+    color: var(--color-warning);
+}
+
+.char-count.char-over {
     color: var(--color-error);
 }
 

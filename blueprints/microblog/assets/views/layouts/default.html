@@ -14,21 +14,23 @@
 </head>
 <body>
     {{block "body" .}}
-    <div class="app-layout">
-        <!-- Left Sidebar -->
-        <aside class="app-sidebar">
-            {{template "nav_sidebar" .}}
-        </aside>
+    <div class="app-container">
+        <div class="app-layout">
+            <!-- Left Sidebar -->
+            <aside class="app-sidebar">
+                {{template "nav_sidebar" .}}
+            </aside>
 
-        <!-- Main Content -->
-        <main class="app-main">
-            {{block "content" .}}{{end}}
-        </main>
+            <!-- Main Content -->
+            <main class="app-main">
+                {{block "content" .}}{{end}}
+            </main>
 
-        <!-- Right Sidebar -->
-        <aside class="app-aside">
-            {{template "right_sidebar" .}}
-        </aside>
+            <!-- Right Sidebar -->
+            <aside class="app-aside">
+                {{template "right_sidebar" .}}
+            </aside>
+        </div>
     </div>
     {{end}}
 
