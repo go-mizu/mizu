@@ -2,11 +2,7 @@
 {{template "layout/app.html" .}}
 {{end}}
 
-{{define "title"}}FineWiki - Fast Wiki Viewer{{end}}
-
-{{define "sidebar"}}{{end}}
-
-{{define "content"}}
+{{define "home-content"}}
 <div class="home">
     <div class="home-hero">
         <h1 class="home-title">
@@ -18,7 +14,7 @@
         <p class="home-subtitle">Fast, read-only wiki viewer powered by DuckDB and Parquet</p>
     </div>
 
-    <form class="home-search" action="/search" method="get">
+    <form class="home-search" action="/" method="get">
         <div class="home-search-wrapper">
             <svg class="home-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="11" cy="11" r="8"/>
@@ -36,9 +32,9 @@
             <button type="submit" class="home-search-btn">Search</button>
         </div>
         <p class="home-search-hint">
-            Try searching for topics like <a href="/search?q=Alan+Turing">Alan Turing</a>,
-            <a href="/search?q=Machine+learning">Machine learning</a>, or
-            <a href="/search?q=History">History</a>
+            Try searching for topics like <a href="/?q=Alan+Turing">Alan Turing</a>,
+            <a href="/?q=Machine+learning">Machine learning</a>, or
+            <a href="/?q=History">History</a>
         </p>
     </form>
 

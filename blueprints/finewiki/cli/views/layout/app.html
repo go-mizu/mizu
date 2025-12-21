@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{block "title" .}}FineWiki{{end}}</title>
+    <title>{{if .PageTitle}}{{.PageTitle}}{{else}}FineWiki{{end}}</title>
     <meta name="description" content="Fast, read-only wiki viewer powered by DuckDB">
     <style>
         {{template "styles"}}
@@ -13,16 +13,13 @@
 <body>
     {{template "topbar.html" .}}
     <div class="layout">
-        {{block "sidebar" .}}{{end}}
         <main class="main">
-            {{block "content" .}}{{end}}
+            {{template "page-content" .}}
         </main>
     </div>
-    {{block "scripts" .}}
     <script>
         {{template "base-scripts"}}
     </script>
-    {{end}}
 </body>
 </html>
 {{end}}
@@ -217,4 +214,8 @@ a:hover {
         }
     });
 })();
+{{end}}
+
+{{define "page-content"}}
+{{if .Page}}{{template "view-content" .}}{{else if .Results}}{{template "search-content" .}}{{else if eq .Query ""}}{{template "home-content" .}}{{else}}{{template "search-content" .}}{{end}}
 {{end}}

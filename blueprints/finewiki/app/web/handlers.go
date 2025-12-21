@@ -2,6 +2,7 @@
 package web
 
 import (
+	"fmt"
 	"html/template"
 	"strings"
 
@@ -9,18 +10,22 @@ import (
 	"github.com/go-mizu/mizu"
 )
 
-func (s *Server) home(c *mizu.Ctx) error {
-	s.render(c, "page/home.html", map[string]any{
-		"Query": "",
-		"Theme": "",
-	})
-	return nil
-}
-
 func (s *Server) searchPage(c *mizu.Ctx) error {
 	ctx := c.Request().Context()
 
 	text := strings.TrimSpace(c.Query("q"))
+
+	// If no query, render home page
+	if text == "" {
+		s.render(c, "page/home.html", map[string]any{
+			"PageTitle": "FineWiki - Fast Wiki Viewer",
+			"Query":     "",
+			"Theme":     "",
+		})
+		return nil
+	}
+
+	// Otherwise, perform search
 	wikiname := strings.TrimSpace(c.Query("wiki"))
 	lang := strings.TrimSpace(c.Query("lang"))
 
@@ -36,6 +41,7 @@ func (s *Server) searchPage(c *mizu.Ctx) error {
 	}
 
 	s.render(c, "page/search.html", map[string]any{
+		"PageTitle":  fmt.Sprintf("%s - Search - FineWiki", text),
 		"Query":      text,
 		"WikiName":   wikiname,
 		"InLanguage": lang,
@@ -59,11 +65,12 @@ func (s *Server) page(c *mizu.Ctx) error {
 			return c.Text(404, err.Error())
 		}
 		s.render(c, "page/view.html", map[string]any{
-			"Query": "",
-			"Page":  p,
-			"TOC":   nil,
-			"HTML":  template.HTML(""),
-			"Theme": "",
+			"PageTitle": fmt.Sprintf("%s - FineWiki", p.Title),
+			"Query":     "",
+			"Page":      p,
+			"TOC":       nil,
+			"HTML":      template.HTML(""),
+			"Theme":     "",
 		})
 		return nil
 
@@ -73,11 +80,12 @@ func (s *Server) page(c *mizu.Ctx) error {
 			return c.Text(404, err.Error())
 		}
 		s.render(c, "page/view.html", map[string]any{
-			"Query": "",
-			"Page":  p,
-			"TOC":   nil,
-			"HTML":  template.HTML(""),
-			"Theme": "",
+			"PageTitle": fmt.Sprintf("%s - FineWiki", p.Title),
+			"Query":     "",
+			"Page":      p,
+			"TOC":       nil,
+			"HTML":      template.HTML(""),
+			"Theme":     "",
 		})
 		return nil
 

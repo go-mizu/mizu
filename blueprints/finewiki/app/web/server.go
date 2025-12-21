@@ -54,10 +54,9 @@ func (s *Server) routes() {
 
 	r.Use(logging())
 
-	// HTML pages
-	r.Get("/", s.home)
+	// HTML pages (/ handles both home and search)
+	r.Get("/", s.searchPage)
 	r.Get("/page", s.page)
-	r.Get("/search", s.searchPage)
 
 	r.Get("/healthz", func(c *mizu.Ctx) error {
 		return c.Text(200, "ok")
