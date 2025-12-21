@@ -597,39 +597,134 @@ func (s *Server) handleBookmarks(c *mizu.Ctx) error {
 // Web page handlers (return HTML)
 
 func (s *Server) handleHomePage(c *mizu.Ctx) error {
-	return c.Text(200, "Home page - TODO: implement view")
+	viewerID := s.optionalAuth(c)
+	var account *accounts.Account
+	var postList []*posts.Post
+
+	if viewerID != "" {
+		account, _ = s.accounts.GetByID(c.Request().Context(), viewerID)
+		postList, _ = s.timelines.Home(c.Request().Context(), viewerID, 20, "", "")
+	} else {
+		postList, _ = s.timelines.Local(c.Request().Context(), "", 20, "", "")
+	}
+
+	trendingTags, _ := s.trending.Tags(c.Request().Context(), 5)
+
+	return s.render(c, "home", map[string]any{
+		"Title":        "Home",
+		"Account":      account,
+		"Posts":        postList,
+		"TrendingTags": trendingTags,
+	})
 }
 
 func (s *Server) handleLoginPage(c *mizu.Ctx) error {
-	return c.Text(200, "Login page - TODO: implement view")
+	return s.render(c, "login", map[string]any{
+		"Title": "Login",
+	})
 }
 
 func (s *Server) handleRegisterPage(c *mizu.Ctx) error {
-	return c.Text(200, "Register page - TODO: implement view")
+	return s.render(c, "register", map[string]any{
+		"Title": "Register",
+	})
 }
 
 func (s *Server) handleProfilePage(c *mizu.Ctx) error {
-	return c.Text(200, "Profile page - TODO: implement view")
+	username := c.Param("username")
+	viewerID := s.optionalAuth(c)
+
+	account, err := s.accounts.GetByUsername(c.Request().Context(), username)
+	if err != nil {
+		return c.Text(404, "User not found")
+	}
+
+	account.FollowersCount, _ = s.relationships.CountFollowers(c.Request().Context(), account.ID)
+	account.FollowingCount, _ = s.relationships.CountFollowing(c.Request().Context(), account.ID)
+
+	postList, _ := s.timelines.Account(c.Request().Context(), account.ID, viewerID, 20, "", false, false)
+
+	return s.render(c, "profile", map[string]any{
+		"Title":   "@" + account.Username,
+		"Account": account,
+		"Posts":   postList,
+	})
 }
 
 func (s *Server) handlePostPage(c *mizu.Ctx) error {
-	return c.Text(200, "Post page - TODO: implement view")
+	postID := c.Param("id")
+	viewerID := s.optionalAuth(c)
+
+	thread, err := s.posts.GetThread(c.Request().Context(), postID, viewerID)
+	if err != nil {
+		return c.Text(404, "Post not found")
+	}
+
+	return s.render(c, "post", map[string]any{
+		"Title":  "Post",
+		"Thread": thread,
+	})
 }
 
 func (s *Server) handleTagPage(c *mizu.Ctx) error {
-	return c.Text(200, "Tag page - TODO: implement view")
+	tag := c.Param("tag")
+	viewerID := s.optionalAuth(c)
+
+	postList, _ := s.timelines.Hashtag(c.Request().Context(), tag, viewerID, 20, "", "")
+
+	return s.render(c, "tag", map[string]any{
+		"Title": "#" + tag,
+		"Tag":   tag,
+		"Posts": postList,
+	})
 }
 
 func (s *Server) handleExplorePage(c *mizu.Ctx) error {
-	return c.Text(200, "Explore page - TODO: implement view")
+	viewerID := s.optionalAuth(c)
+
+	trendingTags, _ := s.trending.Tags(c.Request().Context(), 10)
+
+	postIDs, _ := s.trending.Posts(c.Request().Context(), 20)
+	var postList []*posts.Post
+	for _, id := range postIDs {
+		if p, err := s.posts.GetByID(c.Request().Context(), id, viewerID); err == nil {
+			postList = append(postList, p)
+		}
+	}
+
+	return s.render(c, "explore", map[string]any{
+		"Title":        "Explore",
+		"TrendingTags": trendingTags,
+		"Posts":        postList,
+	})
 }
 
 func (s *Server) handleNotificationsPage(c *mizu.Ctx) error {
-	return c.Text(200, "Notifications page - TODO: implement view")
+	accountID := s.optionalAuth(c)
+	if accountID == "" {
+		return c.Redirect(302, "/login")
+	}
+
+	notifs, _ := s.notifications.List(c.Request().Context(), accountID, nil, 30, "", "", nil)
+
+	return s.render(c, "notifications", map[string]any{
+		"Title":         "Notifications",
+		"Notifications": notifs,
+	})
 }
 
 func (s *Server) handleSettingsPage(c *mizu.Ctx) error {
-	return c.Text(200, "Settings page - TODO: implement view")
+	accountID := s.optionalAuth(c)
+	if accountID == "" {
+		return c.Redirect(302, "/login")
+	}
+
+	account, _ := s.accounts.GetByID(c.Request().Context(), accountID)
+
+	return s.render(c, "settings", map[string]any{
+		"Title":   "Settings",
+		"Account": account,
+	})
 }
 
 // Helpers

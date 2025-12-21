@@ -50,7 +50,7 @@ func newUserCreate() *cobra.Command {
 				fmt.Printf("Generated temporary password: %s\n", password)
 			}
 
-			store, cleanup, err := openStore()
+			store, cleanup, err := openAccountsStore()
 			if err != nil {
 				return err
 			}
@@ -93,7 +93,7 @@ func newUserList() *cobra.Command {
 		Use:   "list",
 		Short: "List all users",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, cleanup, err := openStore()
+			store, cleanup, err := openAccountsStore()
 			if err != nil {
 				return err
 			}
@@ -129,7 +129,7 @@ func newUserVerify() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			username := args[0]
 
-			store, cleanup, err := openStore()
+			store, cleanup, err := openAccountsStore()
 			if err != nil {
 				return err
 			}
@@ -163,7 +163,7 @@ func newUserSuspend() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			username := args[0]
 
-			store, cleanup, err := openStore()
+			store, cleanup, err := openAccountsStore()
 			if err != nil {
 				return err
 			}
@@ -192,27 +192,31 @@ func newUserSuspend() *cobra.Command {
 	return cmd
 }
 
-func openStore() (*duckdb.Store, func(), error) {
+func openAccountsStore() (accounts.Store, func(), error) {
 	dbPath := filepath.Join(dataDir, "microblog.duckdb")
 	db, err := sql.Open("duckdb", dbPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open database: %w", err)
 	}
 
-	store, err := duckdb.New(db)
+	// Initialize schema using core store
+	coreStore, err := duckdb.New(db)
 	if err != nil {
 		db.Close()
 		return nil, nil, fmt.Errorf("create store: %w", err)
 	}
 
-	if err := store.Ensure(context.Background()); err != nil {
+	if err := coreStore.Ensure(context.Background()); err != nil {
 		db.Close()
 		return nil, nil, fmt.Errorf("ensure schema: %w", err)
 	}
 
+	// Return accounts-specific store
+	accountsStore := duckdb.NewAccountsStore(db)
+
 	cleanup := func() {
-		store.Close()
+		db.Close()
 	}
 
-	return store, cleanup, nil
+	return accountsStore, cleanup, nil
 }
