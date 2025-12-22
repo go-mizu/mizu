@@ -1,0 +1,103 @@
+{{define "sidebar"}}
+<aside class="sidebar">
+    {{if .ShowTrending}}
+    <div class="sidebar__section">
+        <h3 class="sidebar__title">Trending Today</h3>
+        {{if .TrendingThreads}}
+            <div class="thread-list">
+                {{range .TrendingThreads}}
+                <div class="thread-card" style="padding: var(--space-3);">
+                    <div class="thread-card__content">
+                        <div class="thread-card__title" style="font-size: var(--text-base); margin-bottom: var(--space-1);">
+                            <a href="/f/{{.Forum.Slug}}/t/{{.ID}}">{{.Title}}</a>
+                        </div>
+                        <div class="thread-card__meta text-xs">
+                            {{.Score}} points · {{.PostCount}} comments
+                        </div>
+                    </div>
+                </div>
+                {{end}}
+            </div>
+        {{else}}
+            <p class="text-muted text-sm">No trending threads yet</p>
+        {{end}}
+    </div>
+    {{end}}
+
+    {{if .ShowAbout}}
+    <div class="sidebar__section">
+        <h3 class="sidebar__title">About This Forum</h3>
+        {{if .Forum}}
+            <p class="text-sm">{{.Forum.Description}}</p>
+            <div class="mt-4">
+                <div class="text-sm text-muted">
+                    <strong>{{.Forum.MemberCount}}</strong> members
+                </div>
+                <div class="text-sm text-muted mt-1">
+                    <strong>{{.Forum.ThreadCount}}</strong> threads
+                </div>
+                <div class="text-sm text-muted mt-1">
+                    <strong>{{.Forum.PostCount}}</strong> posts
+                </div>
+            </div>
+            {{if not .User}}
+                <a href="/login" class="btn btn--primary btn--sm mt-4" style="width: 100%;">Join Forum</a>
+            {{else if not .Forum.IsMember}}
+                <button class="btn btn--primary btn--sm mt-4" style="width: 100%;">Join</button>
+            {{end}}
+        {{else}}
+            <p class="text-sm">A modern, production-ready forum platform built with Mizu.</p>
+        {{end}}
+    </div>
+    {{end}}
+
+    {{if .ShowRules}}
+    <div class="sidebar__section">
+        <h3 class="sidebar__title">Forum Rules</h3>
+        {{if .Forum.Rules}}
+            <ol style="padding-left: var(--space-5); margin: 0;">
+                {{range .Forum.Rules}}
+                <li class="text-sm mb-2">
+                    <strong>{{.Title}}</strong>
+                    {{if .Description}}
+                    <p class="text-muted" style="margin: var(--space-1) 0 0 0;">{{.Description}}</p>
+                    {{end}}
+                </li>
+                {{end}}
+            </ol>
+        {{else}}
+            <p class="text-sm text-muted">Be respectful and follow the community guidelines.</p>
+        {{end}}
+    </div>
+    {{end}}
+
+    {{if .ShowStats}}
+    <div class="sidebar__section">
+        <h3 class="sidebar__title">Community Stats</h3>
+        <div class="text-sm">
+            {{if .Stats}}
+            <div class="mb-2">
+                <strong>{{.Stats.TotalUsers}}</strong> <span class="text-muted">users</span>
+            </div>
+            <div class="mb-2">
+                <strong>{{.Stats.TotalThreads}}</strong> <span class="text-muted">threads</span>
+            </div>
+            <div class="mb-2">
+                <strong>{{.Stats.TotalPosts}}</strong> <span class="text-muted">posts</span>
+            </div>
+            <div class="mb-2">
+                <strong>{{.Stats.ActiveUsers}}</strong> <span class="text-muted">online now</span>
+            </div>
+            {{else}}
+            <div class="mb-2">
+                <strong>0</strong> <span class="text-muted">users</span>
+            </div>
+            <div class="mb-2">
+                <strong>0</strong> <span class="text-muted">threads</span>
+            </div>
+            {{end}}
+        </div>
+    </div>
+    {{end}}
+</aside>
+{{end}}

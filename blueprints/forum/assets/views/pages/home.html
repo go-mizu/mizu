@@ -1,20 +1,43 @@
 {{template "layouts/default.html" .}}
 
-{{define "title"}}Home - Forum{{end}}
+{{define "title"}}Mizu Forum - Modern Discussion Platform{{end}}
+{{define "description"}}A production-ready forum platform built with Mizu. Join discussions, share knowledge, and connect with the community.{{end}}
 
 {{define "content"}}
-<h1>Welcome to Forum</h1>
-<p>A production-ready forum platform built with Mizu</p>
+<div class="page-layout page-layout--with-sidebar">
+    <div class="main-content">
+        <!-- Hero Section -->
+        <div class="card mb-6">
+            <div class="card__body">
+                <h1 style="margin-bottom: var(--space-3);">Welcome to Mizu Forum</h1>
+                <p class="text-lg text-muted" style="margin-bottom: 0;">
+                    A production-ready forum platform built with Mizu. Join discussions, share knowledge, and connect with the community.
+                </p>
+            </div>
+        </div>
 
-<div class="forum-grid">
-    <div class="forum-list">
-        <h2>Forums</h2>
-        <p>Browse discussions by category</p>
+        <!-- Forums List -->
+        <div class="card">
+            <div class="card__header">
+                <h2 class="card__title">Forums</h2>
+            </div>
+            <div class="card__body">
+                {{if .Forums}}
+                <div class="forum-list">
+                    {{range .Forums}}
+                        {{template "forum_card" (dict "ID" .ID "Name" .Name "Slug" .Slug "Description" .Description "Icon" .Icon "MemberCount" .MemberCount "ThreadCount" .ThreadCount "PostCount" .PostCount "IsMember" .IsMember "User" $.User)}}
+                    {{end}}
+                </div>
+                {{else}}
+                <p class="text-muted">No forums available yet. Check back soon!</p>
+                {{end}}
+            </div>
+        </div>
     </div>
 
-    <div class="trending">
-        <h2>Trending</h2>
-        <p>Popular threads today</p>
+    <!-- Sidebar -->
+    <div class="sidebar-content">
+        {{template "sidebar" (dict "ShowTrending" true "ShowStats" true "TrendingThreads" .TrendingThreads "Stats" .Stats "User" .User)}}
     </div>
 </div>
 {{end}}

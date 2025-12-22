@@ -1,17 +1,37 @@
 {{define "forum_card"}}
 <div class="forum-card">
-    {{if .Icon}}
-    <div class="forum-icon">
-        <img src="{{.Icon}}" alt="{{.Name}}">
+    <div class="forum-card__icon">
+        {{if .Icon}}
+        <img src="{{.Icon}}" alt="{{.Name}}" style="width: 100%; height: 100%; border-radius: var(--radius-md);">
+        {{else}}
+        📁
+        {{end}}
     </div>
-    {{end}}
-    <div class="forum-info">
-        <h3><a href="/f/{{.Slug}}">{{.Name}}</a></h3>
-        <p>{{.Description}}</p>
-        <div class="forum-stats">
-            <span>{{.ThreadCount}} threads</span>
+    <div class="forum-card__content">
+        <h3 class="forum-card__name">
+            <a href="/f/{{.Slug}}">{{.Name}}</a>
+        </h3>
+        {{if .Description}}
+        <p class="forum-card__description">{{.Description}}</p>
+        {{end}}
+        <div class="forum-card__stats">
             <span>{{.MemberCount}} members</span>
+            <span>{{.ThreadCount}} threads</span>
+            {{if .PostCount}}
+            <span>{{.PostCount}} posts</span>
+            {{end}}
         </div>
+    </div>
+    <div class="forum-card__actions">
+        {{if $.User}}
+            {{if .IsMember}}
+            <button class="btn btn--sm btn--secondary" data-forum-id="{{.ID}}" data-action="leave">Joined</button>
+            {{else}}
+            <button class="btn btn--sm btn--primary" data-forum-id="{{.ID}}" data-action="join">Join</button>
+            {{end}}
+        {{else}}
+        <a href="/login" class="btn btn--sm btn--primary">Join</a>
+        {{end}}
     </div>
 </div>
 {{end}}
