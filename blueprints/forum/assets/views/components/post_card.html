@@ -1,0 +1,26 @@
+{{define "post_card"}}
+<div class="post-card" data-depth="{{.Depth}}">
+    <div class="vote-section">
+        <button class="upvote">▲</button>
+        <span class="score">{{.Score}}</span>
+        <button class="downvote">▼</button>
+    </div>
+    <div class="post-content">
+        <div class="post-header">
+            <a href="/u/{{.Account.Username}}" class="author">{{.Account.Username}}</a>
+            <span class="karma">{{.Account.TotalKarma}} karma</span>
+            <span class="time">{{.CreatedAt}}</span>
+        </div>
+        <div class="post-body">
+            {{.Content}}
+        </div>
+        <div class="post-actions">
+            <button class="reply">Reply</button>
+            {{if .IsOwner}}
+            <button class="edit">Edit</button>
+            <button class="delete">Delete</button>
+            {{end}}
+        </div>
+    </div>
+</div>
+{{end}}
