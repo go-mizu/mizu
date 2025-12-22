@@ -1,0 +1,17 @@
+{{define "forum_card"}}
+<div class="forum-card">
+    {{if .Icon}}
+    <div class="forum-icon">
+        <img src="{{.Icon}}" alt="{{.Name}}">
+    </div>
+    {{end}}
+    <div class="forum-info">
+        <h3><a href="/f/{{.Slug}}">{{.Name}}</a></h3>
+        <p>{{.Description}}</p>
+        <div class="forum-stats">
+            <span>{{.ThreadCount}} threads</span>
+            <span>{{.MemberCount}} members</span>
+        </div>
+    </div>
+</div>
+{{end}}

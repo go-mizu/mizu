@@ -1,0 +1,17 @@
+{{define "thread_card"}}
+<div class="thread-card">
+    <div class="vote-section">
+        <button class="upvote">▲</button>
+        <span class="score">{{.Score}}</span>
+        <button class="downvote">▼</button>
+    </div>
+    <div class="thread-content">
+        <h3><a href="/f/{{.Forum.Slug}}/t/{{.ID}}">{{.Title}}</a></h3>
+        <div class="thread-meta">
+            <span>by <a href="/u/{{.Account.Username}}">{{.Account.Username}}</a></span>
+            <span>in <a href="/f/{{.Forum.Slug}}">{{.Forum.Name}}</a></span>
+            <span>{{.PostCount}} comments</span>
+        </div>
+    </div>
+</div>
+{{end}}
