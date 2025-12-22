@@ -1,0 +1,151 @@
+{{template "layouts/default.html" .}}
+
+{{define "title"}}Sign Up - Mizu Forum{{end}}
+
+{{define "content"}}
+<div class="content" style="padding: var(--space-12) 0;">
+    <div class="card" style="max-width: 500px; margin: 0 auto;">
+        <div class="card__header">
+            <h2 class="card__title">Create Your Account</h2>
+        </div>
+        <div class="card__body">
+            {{if .Error}}
+            <div class="flash-message flash-message--error mb-4">
+                {{.Error}}
+            </div>
+            {{end}}
+
+            <form method="POST" action="/api/v1/auth/register" id="register-form">
+                <div class="form-group">
+                    <label class="form-label" for="username">Username</label>
+                    <input
+                        type="text"
+                        id="username"
+                        name="username"
+                        class="form-input"
+                        placeholder="Choose a username"
+                        required
+                        autofocus
+                        pattern="[a-zA-Z0-9_]{3,20}"
+                        title="3-20 characters, letters, numbers, and underscores only"
+                    >
+                    <span class="form-help">3-20 characters, letters, numbers, and underscores only</span>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="email">Email</label>
+                    <input
+                        type="email"
+                        id="email"
+                        name="email"
+                        class="form-input"
+                        placeholder="your.email@example.com"
+                        required
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="display_name">Display Name (Optional)</label>
+                    <input
+                        type="text"
+                        id="display_name"
+                        name="display_name"
+                        class="form-input"
+                        placeholder="Your display name"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="password">Password</label>
+                    <input
+                        type="password"
+                        id="password"
+                        name="password"
+                        class="form-input"
+                        placeholder="Create a strong password"
+                        required
+                        minlength="8"
+                    >
+                    <span class="form-help">At least 8 characters</span>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="password_confirm">Confirm Password</label>
+                    <input
+                        type="password"
+                        id="password_confirm"
+                        name="password_confirm"
+                        class="form-input"
+                        placeholder="Confirm your password"
+                        required
+                        minlength="8"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: flex-start; gap: var(--space-2); cursor: pointer;">
+                        <input type="checkbox" name="terms" class="form-checkbox" required>
+                        <span class="text-sm">I agree to the <a href="/terms" target="_blank">Terms of Service</a> and <a href="/privacy" target="_blank">Privacy Policy</a></span>
+                    </label>
+                </div>
+
+                <button type="submit" class="btn btn--primary btn--lg" style="width: 100%;">
+                    Create Account
+                </button>
+            </form>
+        </div>
+        <div class="card__footer text-center">
+            Already have an account? <a href="/login" class="font-semibold">Login</a>
+        </div>
+    </div>
+</div>
+
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.getElementById('register-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
+
+    const password = formData.get('password');
+    const passwordConfirm = formData.get('password_confirm');
+
+    if (password !== passwordConfirm) {
+        alert('Passwords do not match!');
+        return;
+    }
+
+    const data = {
+        username: formData.get('username'),
+        email: formData.get('email'),
+        password: password,
+        display_name: formData.get('display_name') || formData.get('username')
+    };
+
+    try {
+        const response = await fetch('/api/v1/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            // Store token if provided
+            if (result.data && result.data.session && result.data.session.token) {
+                localStorage.setItem('auth_token', result.data.session.token);
+            }
+            // Redirect to home
+            window.location.href = '/';
+        } else {
+            alert(result.error || 'Registration failed. Please try again.');
+        }
+    } catch (error) {
+        alert('An error occurred. Please try again.');
+    }
+});
+</script>
+{{end}}

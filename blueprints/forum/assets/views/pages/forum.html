@@ -1,0 +1,131 @@
+{{template "layouts/default.html" .}}
+
+{{define "title"}}{{.Forum.Name}} - Mizu Forum{{end}}
+{{define "description"}}{{.Forum.Description}}{{end}}
+
+{{define "content"}}
+<!-- Breadcrumb -->
+<nav class="breadcrumb">
+    <div class="breadcrumb__item">
+        <a href="/">Home</a>
+        <span class="breadcrumb__separator">›</span>
+    </div>
+    <div class="breadcrumb__item">
+        <span>{{.Forum.Name}}</span>
+    </div>
+</nav>
+
+<div class="page-layout page-layout--with-sidebar">
+    <div class="main-content">
+        <!-- Forum Header -->
+        <div class="card mb-6">
+            <div class="card__body">
+                <div class="flex justify-between items-center mb-4">
+                    <div class="flex items-center gap-4">
+                        {{if .Forum.Icon}}
+                        <div style="width: 64px; height: 64px; border-radius: var(--radius-lg); background: var(--color-bg-alt); display: flex; align-items: center; justify-content: center; font-size: var(--text-3xl);">
+                            {{.Forum.Icon}}
+                        </div>
+                        {{end}}
+                        <div>
+                            <h1 style="margin-bottom: var(--space-2);">{{.Forum.Name}}</h1>
+                            <p class="text-muted">{{.Forum.Description}}</p>
+                        </div>
+                    </div>
+                    <div>
+                        {{if .User}}
+                            {{if .Forum.IsMember}}
+                            <button class="btn btn--secondary">Joined</button>
+                            {{else}}
+                            <button class="btn btn--primary">Join Forum</button>
+                            {{end}}
+                        {{else}}
+                        <a href="/login" class="btn btn--primary">Join Forum</a>
+                        {{end}}
+                    </div>
+                </div>
+                <div class="flex gap-6 text-sm text-muted">
+                    <span><strong>{{.Forum.MemberCount}}</strong> members</span>
+                    <span><strong>{{.Forum.ThreadCount}}</strong> threads</span>
+                    <span><strong>{{.Forum.PostCount}}</strong> posts</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Subforums (if any) -->
+        {{if .Subforums}}
+        <div class="card mb-6">
+            <div class="card__header">
+                <h3 class="card__title">Subforums</h3>
+            </div>
+            <div class="card__body">
+                <div class="forum-list">
+                    {{range .Subforums}}
+                        {{template "forum_card" (dict "ID" .ID "Name" .Name "Slug" .Slug "Description" .Description "Icon" .Icon "MemberCount" .MemberCount "ThreadCount" .ThreadCount "PostCount" .PostCount "IsMember" .IsMember "User" $.User)}}
+                    {{end}}
+                </div>
+            </div>
+        </div>
+        {{end}}
+
+        <!-- Thread Actions & Sorting -->
+        <div class="flex justify-between items-center mb-4">
+            <div class="flex gap-2">
+                <a href="?sort=hot" class="btn btn--sm {{if eq .Sort "hot"}}btn--primary{{else}}btn--secondary{{end}}">Hot</a>
+                <a href="?sort=new" class="btn btn--sm {{if eq .Sort "new"}}btn--primary{{else}}btn--secondary{{end}}">New</a>
+                <a href="?sort=top" class="btn btn--sm {{if eq .Sort "top"}}btn--primary{{else}}btn--secondary{{end}}">Top</a>
+                <a href="?sort=rising" class="btn btn--sm {{if eq .Sort "rising"}}btn--primary{{else}}btn--secondary{{end}}">Rising</a>
+            </div>
+            {{if .User}}
+            <a href="/f/{{.Forum.Slug}}/submit" class="btn btn--primary">New Thread</a>
+            {{else}}
+            <a href="/login" class="btn btn--primary">Login to Post</a>
+            {{end}}
+        </div>
+
+        <!-- Threads List -->
+        <div class="card">
+            <div class="card__body">
+                {{if .Threads}}
+                <div class="thread-list">
+                    {{range .Threads}}
+                        {{template "thread_card" (dict "ID" .ID "Title" .Title "Content" .Content "Score" .Score "UserVote" .UserVote "PostCount" .PostCount "ViewCount" .ViewCount "Sticky" .Sticky "Locked" .Locked "NSFW" .NSFW "Tags" .Tags "CreatedAt" .CreatedAt "Account" .Account "Forum" .Forum "User" $.User)}}
+                    {{end}}
+                </div>
+
+                <!-- Pagination -->
+                {{if gt .TotalPages 1}}
+                <div class="pagination">
+                    {{if gt .Page 1}}
+                    <a href="?page={{sub .Page 1}}&sort={{.Sort}}" class="pagination__link">Previous</a>
+                    {{end}}
+
+                    {{range $i := .PageNumbers}}
+                    <a href="?page={{$i}}&sort={{$.Sort}}" class="pagination__link {{if eq $i $.Page}}pagination__link--active{{end}}">{{$i}}</a>
+                    {{end}}
+
+                    {{if lt .Page .TotalPages}}
+                    <a href="?page={{add .Page 1}}&sort={{.Sort}}" class="pagination__link">Next</a>
+                    {{end}}
+                </div>
+                {{end}}
+                {{else}}
+                <div class="text-center" style="padding: var(--space-12) 0;">
+                    <p class="text-muted mb-4">No threads yet. Be the first to start a discussion!</p>
+                    {{if .User}}
+                    <a href="/f/{{.Forum.Slug}}/submit" class="btn btn--primary">Create Thread</a>
+                    {{else}}
+                    <a href="/login" class="btn btn--primary">Login to Post</a>
+                    {{end}}
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar-content">
+        {{template "sidebar" (dict "ShowAbout" true "ShowRules" true "Forum" .Forum "User" .User)}}
+    </div>
+</div>
+{{end}}
