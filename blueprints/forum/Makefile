@@ -3,15 +3,17 @@
 help:
 	@echo "Forum - Makefile commands"
 	@echo ""
-	@echo "  make build    - Build the binary"
+	@echo "  make build    - Build and install to $$HOME/bin/forum"
 	@echo "  make run      - Run the server"
 	@echo "  make test     - Run tests"
 	@echo "  make init     - Initialize database"
-	@echo "  make install  - Install to ~/bin/forum"
+	@echo "  make install  - Build and install to $$HOME/bin/forum (alias for build)"
 	@echo "  make clean    - Clean build artifacts"
 
 build:
-	CGO_ENABLED=1 go build -o forum ./cmd/forum
+	@mkdir -p $(HOME)/bin
+	CGO_ENABLED=1 go build -o $(HOME)/bin/forum ./cmd/forum
+	@echo "Built and installed to $(HOME)/bin/forum"
 
 run:
 	go run ./cmd/forum serve
@@ -23,8 +25,9 @@ init:
 	go run ./cmd/forum init
 
 install:
-	CGO_ENABLED=1 go build -o ~/bin/forum ./cmd/forum
-	@echo "Installed to ~/bin/forum"
+	@mkdir -p $(HOME)/bin
+	CGO_ENABLED=1 go build -o $(HOME)/bin/forum ./cmd/forum
+	@echo "Built and installed to $(HOME)/bin/forum"
 
 clean:
 	rm -f forum

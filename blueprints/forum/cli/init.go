@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	_ "github.com/marcboeker/go-duckdb"
+	_ "github.com/duckdb/duckdb-go/v2"
 
 	"github.com/go-mizu/blueprints/forum/store/duckdb"
 	"github.com/spf13/cobra"
