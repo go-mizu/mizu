@@ -53,7 +53,7 @@ Features include:
 	root.PersistentFlags().StringVar(&dataDir, "data", defaultDataDir, "Data directory")
 	root.PersistentFlags().StringVar(&addr, "addr", ":8080", "Server address")
 	root.PersistentFlags().BoolVar(&dev, "dev", false, "Development mode")
-	root.PersistentFlags().StringVar(&theme, "theme", "default", "UI theme (default, old, hn)")
+	root.PersistentFlags().StringVar(&theme, "theme", "default", "UI theme (default, old, hn, vbulletin, bbs)")
 
 	root.AddCommand(
 		NewServe(),

@@ -1,0 +1,72 @@
+{{define "home.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="bbs-layout">
+    <div class="bbs-content">
+        <div class="bbs-sort">
+            <a href="/?sort=hot" class="{{if eq .Data.Sort "hot"}}active{{end}}">[H]ot</a>
+            <a href="/?sort=new" class="{{if eq .Data.Sort "new"}}active{{end}}">[N]ew</a>
+            <a href="/?sort=top" class="{{if eq .Data.Sort "top"}}active{{end}}">[T]op</a>
+            <a href="/?sort=rising" class="{{if eq .Data.Sort "rising"}}active{{end}}">[R]ising</a>
+        </div>
+
+        <div class="bbs-thread-list">
+            <div class="bbs-thread-header">
+                <div>Score</div>
+                <div>Subject</div>
+                <div class="col-author">Author</div>
+                <div class="col-replies">Replies</div>
+                <div class="col-date">Date</div>
+            </div>
+            {{range .Data.Threads}}
+                {{template "thread_card" .}}
+            {{else}}
+                <div class="bbs-empty">
+                    <h3>No messages in this area</h3>
+                    <p>Be the first to post a message!</p>
+                    {{if $.CurrentUser}}
+                        <a href="/b/all/submit" class="bbs-btn bbs-btn-primary">[N]ew Post</a>
+                    {{end}}
+                </div>
+            {{end}}
+        </div>
+    </div>
+
+    <aside class="bbs-sidebar">
+        <div class="bbs-box">
+            <div class="bbs-box-header">[ POPULAR AREAS ]</div>
+            <div class="bbs-box-content">
+                <ul class="bbs-board-list">
+                    {{range .Data.PopularBoards}}
+                        <li>
+                            <a href="/b/{{.Name}}">{{.Name}}</a>
+                            <span class="members">({{formatNumber .MemberCount}})</span>
+                        </li>
+                    {{else}}
+                        <li>No areas yet</li>
+                    {{end}}
+                </ul>
+            </div>
+        </div>
+
+        {{if .CurrentUser}}
+            <div class="bbs-box">
+                <div class="bbs-box-content">
+                    <a href="/b/all/submit" class="bbs-btn bbs-btn-primary bbs-btn-block">[N]ew Post</a>
+                </div>
+            </div>
+        {{else}}
+            <div class="bbs-box">
+                <div class="bbs-box-header">[ WELCOME ]</div>
+                <div class="bbs-box-content">
+                    <p style="margin-bottom: 1ch;">Join the BBS to post messages and participate!</p>
+                    <a href="/register" class="bbs-btn bbs-btn-primary bbs-btn-block">[R]egister</a>
+                    <a href="/login" class="bbs-btn bbs-btn-block" style="margin-top: 4px">[L]ogin</a>
+                </div>
+            </div>
+        {{end}}
+    </aside>
+</div>
+{{end}}

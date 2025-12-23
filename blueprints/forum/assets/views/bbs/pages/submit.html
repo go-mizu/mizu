@@ -1,0 +1,103 @@
+{{define "submit.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="bbs-breadcrumb">
+    <a href="/">Main</a>
+    <span class="separator">&gt;</span>
+    {{if .Data.Board}}
+        <a href="/b/{{.Data.Board.Name}}">{{.Data.Board.Name}}</a>
+        <span class="separator">&gt;</span>
+    {{end}}
+    <span>New Post</span>
+</div>
+
+<div class="bbs-form">
+    <div class="bbs-form-header">[ POST NEW MESSAGE ]</div>
+    <form action="/api/threads" method="post" data-action="submit-thread" class="bbs-form-content">
+        <div class="bbs-submit-tabs">
+            <button type="button" class="active" data-tab="text">[Text]</button>
+            <button type="button" data-tab="link">[Link]</button>
+        </div>
+
+        <input type="hidden" name="type" value="text" id="post-type">
+
+        <div class="bbs-form-group">
+            <label for="board">Area:</label>
+            <select id="board" name="board" required>
+                {{if .Data.Board}}
+                    <option value="{{.Data.Board.Name}}" selected>{{.Data.Board.Name}}</option>
+                {{else}}
+                    <option value="">-- Select Area --</option>
+                    {{range .Data.Boards}}
+                        <option value="{{.Name}}">{{.Name}} - {{.Title}}</option>
+                    {{end}}
+                {{end}}
+            </select>
+        </div>
+
+        <div class="bbs-form-group">
+            <label for="title">Subject:</label>
+            <input type="text" id="title" name="title" required maxlength="300" placeholder="Enter your subject line">
+        </div>
+
+        <div class="bbs-form-group" id="content-group">
+            <label for="content">Message:</label>
+            <textarea id="content" name="content" rows="10" placeholder="Enter your message..."></textarea>
+        </div>
+
+        <div class="bbs-form-group hidden" id="url-group">
+            <label for="url">URL:</label>
+            <input type="url" id="url" name="url" placeholder="https://example.com">
+        </div>
+
+        <div class="bbs-form-group">
+            <label>
+                <input type="checkbox" name="nsfw">
+                Mark as NSFW
+            </label>
+        </div>
+
+        <div class="bbs-form-group">
+            <label>
+                <input type="checkbox" name="spoiler">
+                Mark as Spoiler
+            </label>
+        </div>
+
+        <div class="bbs-form-error hidden"></div>
+
+        <div class="bbs-form-actions">
+            <button type="submit" class="bbs-btn bbs-btn-primary">[Post Message]</button>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const tabs = document.querySelectorAll('.bbs-submit-tabs button');
+    const typeInput = document.getElementById('post-type');
+    const contentGroup = document.getElementById('content-group');
+    const urlGroup = document.getElementById('url-group');
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', function() {
+            tabs.forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+
+            const tabType = this.dataset.tab;
+            typeInput.value = tabType;
+
+            if (tabType === 'link') {
+                contentGroup.classList.add('hidden');
+                urlGroup.classList.remove('hidden');
+            } else {
+                contentGroup.classList.remove('hidden');
+                urlGroup.classList.add('hidden');
+            }
+        });
+    });
+});
+</script>
+{{end}}

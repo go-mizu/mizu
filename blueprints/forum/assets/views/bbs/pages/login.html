@@ -1,0 +1,36 @@
+{{define "login.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="bbs-auth">
+    <div class="bbs-form">
+        <div class="bbs-form-header">[ USER LOGIN ]</div>
+        <form action="/api/auth/login" method="post" data-action="login" class="bbs-form-content">
+            <p style="margin-bottom: 1ch; color: var(--bbs-bright-cyan);">Enter your credentials to access the system:</p>
+
+            <div class="bbs-form-group">
+                <label for="username">Username or Email:</label>
+                <input type="text" id="username" name="username" required autofocus autocomplete="username">
+            </div>
+
+            <div class="bbs-form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" name="password" required autocomplete="current-password">
+            </div>
+
+            <div class="bbs-form-error hidden"></div>
+
+            <div class="bbs-form-actions">
+                <button type="submit" class="bbs-btn bbs-btn-primary">[Login]</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="bbs-box" style="margin-top: 2ch">
+        <div class="bbs-box-content" style="text-align: center;">
+            <p>New to this BBS? <a href="/register">[Register]</a> for an account!</p>
+        </div>
+    </div>
+</div>
+{{end}}

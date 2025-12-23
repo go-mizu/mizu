@@ -1,0 +1,54 @@
+{{define "search.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="bbs-breadcrumb">
+    <a href="/">Main</a>
+    <span class="separator">&gt;</span>
+    <span>Search</span>
+</div>
+
+<div class="bbs-form bbs-search-form">
+    <div class="bbs-form-header">[ SEARCH BBS ]</div>
+    <form action="/search" method="get" class="bbs-form-content">
+        <div class="bbs-search-input">
+            <input type="text" name="q" value="{{.Data.Query}}" placeholder="Enter search terms..." autofocus>
+            <button type="submit" class="bbs-btn bbs-btn-primary">[Search]</button>
+        </div>
+    </form>
+</div>
+
+{{if .Data.Query}}
+    <div class="bbs-box">
+        <div class="bbs-box-header">[ SEARCH RESULTS FOR "{{.Data.Query}}" ]</div>
+        <div class="bbs-box-content">
+            {{if .Data.Threads}}
+                <div class="bbs-thread-list" style="border: none;">
+                    <div class="bbs-thread-header">
+                        <div>Score</div>
+                        <div>Subject</div>
+                        <div class="col-author">Author</div>
+                        <div class="col-replies">Replies</div>
+                        <div class="col-date">Date</div>
+                    </div>
+                    {{range .Data.Threads}}
+                        {{template "thread_card" .}}
+                    {{end}}
+                </div>
+            {{else}}
+                <div class="bbs-empty">
+                    <p>No results found for "{{.Data.Query}}"</p>
+                    <p style="color: var(--bbs-gray);">Try different search terms or check your spelling.</p>
+                </div>
+            {{end}}
+        </div>
+    </div>
+{{else}}
+    <div class="bbs-box">
+        <div class="bbs-box-content">
+            <p style="color: var(--bbs-gray);">Enter a search term above to find messages.</p>
+        </div>
+    </div>
+{{end}}
+{{end}}

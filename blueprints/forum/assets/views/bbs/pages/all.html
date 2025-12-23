@@ -1,0 +1,37 @@
+{{define "all.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="bbs-breadcrumb">
+    <a href="/">Main</a>
+    <span class="separator">&gt;</span>
+    <span>All Areas</span>
+</div>
+
+<div class="bbs-box">
+    <div class="bbs-box-header">[ MESSAGE AREAS ]</div>
+    <div class="bbs-box-content">
+        <p style="margin-bottom: 2ch; color: var(--bbs-bright-cyan);">Browse all available message areas on this BBS:</p>
+
+        {{if .Data.Boards}}
+            <div class="bbs-boards-grid">
+                {{range .Data.Boards}}
+                    <div class="bbs-board-card">
+                        <h3><a href="/b/{{.Name}}">{{.Name}}</a></h3>
+                        <p>{{truncate .Description 100}}</p>
+                        <div class="meta">
+                            <span class="value">{{formatNumber .MemberCount}}</span> members |
+                            <span class="value">{{formatNumber .ThreadCount}}</span> posts
+                        </div>
+                    </div>
+                {{end}}
+            </div>
+        {{else}}
+            <div class="bbs-empty">
+                <p>No message areas available.</p>
+            </div>
+        {{end}}
+    </div>
+</div>
+{{end}}

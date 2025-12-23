@@ -1,0 +1,114 @@
+{{define "thread.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="bbs-breadcrumb">
+    <a href="/">Main</a>
+    <span class="separator">&gt;</span>
+    <a href="/b/{{.Data.Thread.Board.Name}}">{{.Data.Thread.Board.Name}}</a>
+    <span class="separator">&gt;</span>
+    <span>Message #{{.Data.Thread.ID}}</span>
+</div>
+
+<div class="bbs-layout">
+    <div class="bbs-content">
+        <article class="bbs-thread-full">
+            <div class="bbs-thread-full-header">
+                <div class="bbs-thread-full-title">
+                    {{if .Data.Thread.IsPinned}}[PINNED] {{end}}
+                    {{if .Data.Thread.IsLocked}}[LOCKED] {{end}}
+                    {{.Data.Thread.Title}}
+                    {{if eq .Data.Thread.Type "link"}}
+                        <a href="{{.Data.Thread.URL}}" class="bbs-external-link" target="_blank" rel="noopener">({{.Data.Thread.Domain}})</a>
+                    {{end}}
+                </div>
+                <div class="bbs-thread-full-meta">
+                    From: {{if .Data.Thread.Author}}<a href="/u/{{.Data.Thread.Author.Username}}">{{.Data.Thread.Author.Username}}</a>{{else}}[deleted]{{end}}
+                    | Area: <a href="/b/{{.Data.Thread.Board.Name}}">{{.Data.Thread.Board.Name}}</a>
+                    | Date: <span title="{{formatTime .Data.Thread.CreatedAt}}">{{formatTimeRelative .Data.Thread.CreatedAt}}</span>
+                    | Score: {{formatScore .Data.Thread.Score}}
+                    {{if or .Data.Thread.IsNSFW .Data.Thread.IsSpoiler}}
+                        |
+                        {{if .Data.Thread.IsNSFW}}<span class="bbs-tag bbs-tag-nsfw">NSFW</span>{{end}}
+                        {{if .Data.Thread.IsSpoiler}}<span class="bbs-tag bbs-tag-spoiler">SPOILER</span>{{end}}
+                    {{end}}
+                </div>
+            </div>
+
+            {{if .Data.Thread.ContentHTML}}
+                <div class="bbs-thread-full-body">
+                    {{safeHTML .Data.Thread.ContentHTML}}
+                </div>
+            {{end}}
+
+            <div class="bbs-thread-full-actions">
+                <span class="bbs-vote">
+                    <button class="upvote {{if eq .Data.Thread.Vote 1}}active{{end}}" data-action="upvote" data-thread="{{.Data.Thread.ID}}">[+]</button>
+                    <span class="score">{{formatScore .Data.Thread.Score}}</span>
+                    <button class="downvote {{if eq .Data.Thread.Vote -1}}active{{end}}" data-action="downvote" data-thread="{{.Data.Thread.ID}}">[-]</button>
+                </span>
+                <span>{{.Data.Thread.CommentCount}} Replies</span>
+                <button class="{{if .Data.Thread.IsBookmarked}}active{{end}}" data-action="bookmark" data-thread="{{.Data.Thread.ID}}">{{if .Data.Thread.IsBookmarked}}[Saved]{{else}}[Save]{{end}}</button>
+                <button data-action="share">[Share]</button>
+                {{if .Data.Thread.CanEdit}}
+                    <a href="/b/{{.Data.Thread.Board.Name}}/{{.Data.Thread.ID}}/edit">[Edit]</a>
+                {{end}}
+            </div>
+        </article>
+
+        {{if and .CurrentUser (not .Data.Thread.IsLocked)}}
+            <div class="bbs-form">
+                <div class="bbs-form-header">[ POST REPLY ]</div>
+                <form action="/api/threads/{{.Data.Thread.ID}}/comments" method="post" data-action="submit-comment" class="bbs-form-content">
+                    <div class="bbs-form-group">
+                        <textarea name="content" placeholder="Enter your reply..." rows="4"></textarea>
+                    </div>
+                    <div class="bbs-form-actions">
+                        <button type="submit" class="bbs-btn bbs-btn-primary">[Post Reply]</button>
+                    </div>
+                </form>
+            </div>
+        {{else if .Data.Thread.IsLocked}}
+            <div class="bbs-locked-notice">
+                [!] This message thread has been locked. No new replies can be posted.
+            </div>
+        {{end}}
+
+        <div class="bbs-comments">
+            <div class="bbs-comments-header">
+                <span>[ REPLIES ({{.Data.Thread.CommentCount}}) ]</span>
+                <select data-action="sort-comments">
+                    <option value="best" {{if eq .Data.Sort "best"}}selected{{end}}>Best</option>
+                    <option value="top" {{if eq .Data.Sort "top"}}selected{{end}}>Top</option>
+                    <option value="new" {{if eq .Data.Sort "new"}}selected{{end}}>New</option>
+                    <option value="old" {{if eq .Data.Sort "old"}}selected{{end}}>Old</option>
+                    <option value="controversial" {{if eq .Data.Sort "controversial"}}selected{{end}}>Controversial</option>
+                </select>
+            </div>
+            <div class="bbs-comments-list">
+                {{range .Data.Comments}}
+                    {{template "comment" .}}
+                {{else}}
+                    <div class="bbs-empty">
+                        <p>No replies yet. Be the first to respond!</p>
+                    </div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+
+    <aside class="bbs-sidebar">
+        <div class="bbs-box">
+            <div class="bbs-box-header">[ AREA INFO ]</div>
+            <div class="bbs-box-content">
+                <p><strong>{{.Data.Thread.Board.Name}}</strong></p>
+                <p>{{.Data.Thread.Board.Description}}</p>
+                <div class="bbs-board-stats" style="margin-top: 1ch">
+                    <span><span class="value">{{formatNumber .Data.Thread.Board.MemberCount}}</span> members</span>
+                </div>
+            </div>
+        </div>
+    </aside>
+</div>
+{{end}}
