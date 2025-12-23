@@ -49,8 +49,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 	start = time.Now()
 
 	srv, err := web.NewServer(store, web.ServerConfig{
-		Addr: addr,
-		Dev:  dev,
+		Addr:  addr,
+		Dev:   dev,
+		Theme: theme,
 	})
 	if err != nil {
 		ui.StopSpinnerError("Failed to create server")
@@ -64,6 +65,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		{"Address", addr},
 		{"Data Dir", dataDir},
 		{"Mode", modeString(dev)},
+		{"Theme", theme},
 	})
 
 	ui.Blank()

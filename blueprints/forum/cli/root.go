@@ -24,6 +24,7 @@ var (
 	dataDir string
 	addr    string
 	dev     bool
+	theme   string
 )
 
 // Execute runs the CLI with the given context.
@@ -52,6 +53,7 @@ Features include:
 	root.PersistentFlags().StringVar(&dataDir, "data", defaultDataDir, "Data directory")
 	root.PersistentFlags().StringVar(&addr, "addr", ":8080", "Server address")
 	root.PersistentFlags().BoolVar(&dev, "dev", false, "Development mode")
+	root.PersistentFlags().StringVar(&theme, "theme", "default", "UI theme (default, old, hn)")
 
 	root.AddCommand(
 		NewServe(),

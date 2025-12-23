@@ -22,8 +22,9 @@ import (
 
 // ServerConfig holds server configuration.
 type ServerConfig struct {
-	Addr string
-	Dev  bool
+	Addr  string
+	Dev   bool
+	Theme string // "default", "old", "hn"
 }
 
 // Server is the forum web server.
@@ -70,8 +71,14 @@ func NewServer(store *duckdb.Store, cfg ServerConfig) (*Server, error) {
 	// Create Mizu app
 	app := mizu.New()
 
-	// Load templates
-	templates, err := assets.Templates()
+	// Set default theme
+	theme := cfg.Theme
+	if theme == "" {
+		theme = "default"
+	}
+
+	// Load templates for theme
+	templates, err := assets.TemplatesForTheme(theme)
 	if err != nil {
 		return nil, err
 	}
