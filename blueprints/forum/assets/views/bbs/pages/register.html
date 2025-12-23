@@ -1,0 +1,46 @@
+{{define "register.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="bbs-auth">
+    <div class="bbs-form">
+        <div class="bbs-form-header">[ NEW USER REGISTRATION ]</div>
+        <form action="/api/auth/register" method="post" data-action="register" class="bbs-form-content">
+            <p style="margin-bottom: 1ch; color: var(--bbs-bright-cyan);">Create your account to join the community:</p>
+
+            <div class="bbs-form-group">
+                <label for="username">Username:</label>
+                <input type="text" id="username" name="username" required autofocus autocomplete="username" pattern="[a-zA-Z0-9_-]+" title="Letters, numbers, underscores, and hyphens only">
+            </div>
+
+            <div class="bbs-form-group">
+                <label for="email">Email Address:</label>
+                <input type="email" id="email" name="email" required autocomplete="email">
+            </div>
+
+            <div class="bbs-form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" name="password" required autocomplete="new-password" minlength="8">
+            </div>
+
+            <div class="bbs-form-group">
+                <label for="password_confirm">Confirm Password:</label>
+                <input type="password" id="password_confirm" name="password_confirm" required autocomplete="new-password">
+            </div>
+
+            <div class="bbs-form-error hidden"></div>
+
+            <div class="bbs-form-actions">
+                <button type="submit" class="bbs-btn bbs-btn-primary">[Create Account]</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="bbs-box" style="margin-top: 2ch">
+        <div class="bbs-box-content" style="text-align: center;">
+            <p>Already have an account? <a href="/login">[Login]</a></p>
+        </div>
+    </div>
+</div>
+{{end}}

@@ -1,0 +1,54 @@
+{{define "notifications.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="bbs-breadcrumb">
+    <a href="/">Main</a>
+    <span class="separator">&gt;</span>
+    <span>Notifications</span>
+</div>
+
+<div class="bbs-box">
+    <div class="bbs-box-header">
+        [ NOTIFICATIONS ]
+        {{if .Data.Notifications}}
+            <form action="/api/notifications/mark-read" method="post" style="display: inline; float: right;">
+                <button type="submit" class="bbs-btn" style="padding: 2px 8px; font-size: 0.9em;">[Mark All Read]</button>
+            </form>
+        {{end}}
+    </div>
+    <div class="bbs-box-content">
+        {{range .Data.Notifications}}
+            <div class="bbs-notification {{if not .IsRead}}unread{{end}}">
+                <div class="bbs-notification-content">
+                    {{if eq .Type "reply"}}
+                        <a href="/u/{{.Actor.Username}}">{{.Actor.Username}}</a> replied to your {{if .Comment}}comment{{else}}post{{end}}
+                        {{if .Thread}}
+                            in <a href="/b/{{.Thread.Board.Name}}/{{.Thread.ID}}/{{slugify .Thread.Title}}">{{truncate .Thread.Title 40}}</a>
+                        {{end}}
+                    {{else if eq .Type "mention"}}
+                        <a href="/u/{{.Actor.Username}}">{{.Actor.Username}}</a> mentioned you
+                        {{if .Thread}}
+                            in <a href="/b/{{.Thread.Board.Name}}/{{.Thread.ID}}/{{slugify .Thread.Title}}">{{truncate .Thread.Title 40}}</a>
+                        {{end}}
+                    {{else if eq .Type "upvote"}}
+                        Your {{if .Comment}}comment{{else}}post{{end}} received upvotes
+                        {{if .Thread}}
+                            in <a href="/b/{{.Thread.Board.Name}}/{{.Thread.ID}}/{{slugify .Thread.Title}}">{{truncate .Thread.Title 40}}</a>
+                        {{end}}
+                    {{else}}
+                        {{.Message}}
+                    {{end}}
+                </div>
+                <div class="bbs-notification-time">{{formatTimeRelative .CreatedAt}}</div>
+            </div>
+        {{else}}
+            <div class="bbs-empty">
+                <p>No notifications.</p>
+                <p style="color: var(--bbs-gray);">You'll see notifications here when others interact with your posts.</p>
+            </div>
+        {{end}}
+    </div>
+</div>
+{{end}}

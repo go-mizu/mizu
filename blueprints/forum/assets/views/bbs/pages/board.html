@@ -1,0 +1,99 @@
+{{define "board.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="bbs-board-header">
+    <div class="bbs-board-header-main">
+        <div>
+            <h1>{{.Data.Board.Title}}</h1>
+            <span class="board-name">Area: {{.Data.Board.Name}}</span>
+        </div>
+        {{if .CurrentUser}}
+            {{if .Data.Board.IsJoined}}
+                <button class="bbs-btn bbs-btn-secondary" data-action="leave" data-board="{{.Data.Board.Name}}">[Leave]</button>
+            {{else}}
+                <button class="bbs-btn bbs-btn-primary" data-action="join" data-board="{{.Data.Board.Name}}">[Join]</button>
+            {{end}}
+        {{end}}
+    </div>
+    <div class="bbs-board-header-info">
+        <p>{{.Data.Board.Description}}</p>
+        <div class="bbs-board-stats" style="margin-top: 1ch">
+            <span><span class="value">{{formatNumber .Data.Board.MemberCount}}</span> members</span>
+            <span><span class="value">{{formatNumber .Data.Board.ThreadCount}}</span> posts</span>
+            <span>Created {{formatTimeRelative .Data.Board.CreatedAt}}</span>
+        </div>
+    </div>
+</div>
+
+<div class="bbs-layout">
+    <div class="bbs-content">
+        <div class="bbs-sort">
+            <a href="/b/{{.Data.Board.Name}}?sort=hot" class="{{if eq .Data.Sort "hot"}}active{{end}}">[H]ot</a>
+            <a href="/b/{{.Data.Board.Name}}?sort=new" class="{{if eq .Data.Sort "new"}}active{{end}}">[N]ew</a>
+            <a href="/b/{{.Data.Board.Name}}?sort=top" class="{{if eq .Data.Sort "top"}}active{{end}}">[T]op</a>
+            <a href="/b/{{.Data.Board.Name}}?sort=rising" class="{{if eq .Data.Sort "rising"}}active{{end}}">[R]ising</a>
+        </div>
+
+        <div class="bbs-thread-list">
+            <div class="bbs-thread-header">
+                <div>Score</div>
+                <div>Subject</div>
+                <div class="col-author">Author</div>
+                <div class="col-replies">Replies</div>
+                <div class="col-date">Date</div>
+            </div>
+            {{range .Data.Threads}}
+                {{template "thread_card" .}}
+            {{else}}
+                <div class="bbs-empty">
+                    <h3>No messages in this area</h3>
+                    <p>Be the first to post a message!</p>
+                    {{if $.CurrentUser}}
+                        <a href="/b/{{$.Data.Board.Name}}/submit" class="bbs-btn bbs-btn-primary">[N]ew Post</a>
+                    {{end}}
+                </div>
+            {{end}}
+        </div>
+    </div>
+
+    <aside class="bbs-sidebar">
+        <div class="bbs-box">
+            <div class="bbs-box-header">[ AREA INFO ]</div>
+            <div class="bbs-box-content">
+                <p>{{.Data.Board.Description}}</p>
+                <div class="bbs-board-stats" style="margin-top: 1ch">
+                    <span><span class="value">{{formatNumber .Data.Board.MemberCount}}</span> members</span>
+                </div>
+            </div>
+        </div>
+
+        {{if .Data.Board.SidebarHTML}}
+            <div class="bbs-box">
+                <div class="bbs-box-header">[ AREA RULES ]</div>
+                <div class="bbs-box-content">
+                    {{safeHTML .Data.Board.SidebarHTML}}
+                </div>
+            </div>
+        {{end}}
+
+        {{if .CurrentUser}}
+            <div class="bbs-box">
+                <div class="bbs-box-content">
+                    <a href="/b/{{.Data.Board.Name}}/submit" class="bbs-btn bbs-btn-primary bbs-btn-block">[N]ew Post</a>
+                </div>
+            </div>
+        {{end}}
+
+        {{if .Data.Board.IsModerator}}
+            <div class="bbs-box">
+                <div class="bbs-box-header">[ SYSOP TOOLS ]</div>
+                <div class="bbs-box-content">
+                    <a href="/b/{{.Data.Board.Name}}/mod" class="bbs-btn bbs-btn-block">[Mod Dashboard]</a>
+                </div>
+            </div>
+        {{end}}
+    </aside>
+</div>
+{{end}}

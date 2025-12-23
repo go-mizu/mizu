@@ -1,0 +1,78 @@
+{{define "settings.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="bbs-breadcrumb">
+    <a href="/">Main</a>
+    <span class="separator">&gt;</span>
+    <span>User Settings</span>
+</div>
+
+<div class="bbs-form">
+    <div class="bbs-form-header">[ USER CONFIGURATION ]</div>
+    <form action="/api/user/settings" method="post" data-action="update-settings" class="bbs-form-content">
+        <div class="bbs-settings-section">
+            <h2>Profile</h2>
+
+            <div class="bbs-form-group">
+                <label for="username">Username:</label>
+                <input type="text" id="username" name="username" value="{{.CurrentUser.Username}}" disabled>
+            </div>
+
+            <div class="bbs-form-group">
+                <label for="email">Email:</label>
+                <input type="email" id="email" name="email" value="{{.CurrentUser.Email}}">
+            </div>
+
+            <div class="bbs-form-group">
+                <label for="bio">Bio/Tagline:</label>
+                <textarea id="bio" name="bio" rows="3">{{.CurrentUser.Bio}}</textarea>
+            </div>
+        </div>
+
+        <div class="bbs-settings-section">
+            <h2>Password</h2>
+
+            <div class="bbs-form-group">
+                <label for="current_password">Current Password:</label>
+                <input type="password" id="current_password" name="current_password">
+            </div>
+
+            <div class="bbs-form-group">
+                <label for="new_password">New Password:</label>
+                <input type="password" id="new_password" name="new_password">
+            </div>
+
+            <div class="bbs-form-group">
+                <label for="confirm_password">Confirm New Password:</label>
+                <input type="password" id="confirm_password" name="confirm_password">
+            </div>
+        </div>
+
+        <div class="bbs-settings-section">
+            <h2>Preferences</h2>
+
+            <div class="bbs-form-group">
+                <label>
+                    <input type="checkbox" name="email_notifications" {{if .CurrentUser.EmailNotifications}}checked{{end}}>
+                    Email Notifications
+                </label>
+            </div>
+
+            <div class="bbs-form-group">
+                <label>
+                    <input type="checkbox" name="show_nsfw" {{if .CurrentUser.ShowNSFW}}checked{{end}}>
+                    Show NSFW Content
+                </label>
+            </div>
+        </div>
+
+        <div class="bbs-form-error hidden"></div>
+
+        <div class="bbs-form-actions">
+            <button type="submit" class="bbs-btn bbs-btn-primary">[Save Changes]</button>
+        </div>
+    </form>
+</div>
+{{end}}

@@ -1,0 +1,20 @@
+{{define "error.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="bbs-error">
+    <pre style="color: var(--bbs-bright-red); margin-bottom: 2ch;">
+  _____ ____  ____   ___  ____
+ | ____|  _ \|  _ \ / _ \|  _ \
+ |  _| | |_) | |_) | | | | |_) |
+ | |___|  _ <|  _ <| |_| |  _ <
+ |_____|_| \_\_| \_\\___/|_| \_\
+    </pre>
+    <h1>{{.Data.Code}}</h1>
+    <p>{{.Data.Message}}</p>
+    <p style="margin-top: 2ch;">
+        <a href="/" class="bbs-btn">[Return to Main]</a>
+    </p>
+</div>
+{{end}}

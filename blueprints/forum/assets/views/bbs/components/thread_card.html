@@ -1,0 +1,28 @@
+{{define "thread_card"}}
+<div class="bbs-thread-row {{if .IsPinned}}bbs-thread-pinned{{end}} {{if .IsLocked}}bbs-thread-locked{{end}}" data-thread-id="{{.ID}}">
+    <div class="bbs-thread-score">
+        <span class="bbs-vote">
+            <button class="upvote {{if eq .Vote 1}}active{{end}}" data-action="upvote" data-thread="{{.ID}}" title="Upvote">+</button>
+            <span class="score">{{formatScore .Score}}</span>
+            <button class="downvote {{if eq .Vote -1}}active{{end}}" data-action="downvote" data-thread="{{.ID}}" title="Downvote">-</button>
+        </span>
+    </div>
+    <div class="bbs-thread-title">
+        <a href="/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}">{{truncate .Title 60}}</a>
+        {{if eq .Type "link"}}
+            <span class="domain">({{.Domain}})</span>
+        {{end}}
+        {{if .IsNSFW}}<span class="bbs-tag bbs-tag-nsfw">NSFW</span>{{end}}
+        {{if .IsSpoiler}}<span class="bbs-tag bbs-tag-spoiler">SPOIL</span>{{end}}
+    </div>
+    <div class="bbs-thread-author">
+        {{if .Author}}
+            <a href="/u/{{.Author.Username}}">{{.Author.Username}}</a>
+        {{else}}
+            [deleted]
+        {{end}}
+    </div>
+    <div class="bbs-thread-replies">{{.CommentCount}}</div>
+    <div class="bbs-thread-date">{{formatTimeRelative .CreatedAt}}</div>
+</div>
+{{end}}

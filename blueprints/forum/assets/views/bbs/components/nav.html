@@ -1,0 +1,61 @@
+{{define "nav"}}
+<nav class="bbs-nav">
+    <div class="bbs-nav-inner">
+        <div class="bbs-nav-left">
+            <a href="/">[M]ain</a>
+            <a href="/all">[B]oards</a>
+            <a href="/search">[S]earch</a>
+            {{if .CurrentUser}}
+            <a href="/b/all/submit">[N]ew Post</a>
+            {{end}}
+        </div>
+        <div class="bbs-nav-right">
+            {{if .CurrentUser}}
+                <span class="user-info">[{{.CurrentUser.Username}}]</span>
+                <span class="separator">-</span>
+                <span class="user-info">{{formatScore .CurrentUser.Karma}} pts</span>
+                {{if gt .UnreadCount 0}}
+                <span class="separator">-</span>
+                <a href="/notifications" class="unread">[{{.UnreadCount}} NEW]</a>
+                {{end}}
+                <span class="separator">-</span>
+                <a href="/u/{{.CurrentUser.Username}}">[P]rofile</a>
+                <span class="separator">-</span>
+                <a href="/bookmarks">[F]aves</a>
+                <span class="separator">-</span>
+                <a href="/settings">[C]onfig</a>
+                <span class="separator">-</span>
+                <form action="/api/auth/logout" method="post" style="display:inline">
+                    <button type="submit">[G]oodbye</button>
+                </form>
+            {{else}}
+                <a href="/login">[L]ogin</a>
+                <span class="separator">-</span>
+                <a href="/register">[R]egister</a>
+            {{end}}
+        </div>
+    </div>
+</nav>
+<div class="bbs-status">
+    <div class="bbs-status-inner">
+        <span>
+            {{if .Data}}
+                {{if .Data.Board}}
+                    Area: {{.Data.Board.Title}}
+                {{else if .Data.Thread}}
+                    {{if .Data.Thread.Board}}
+                        Area: {{.Data.Thread.Board.Name}}
+                    {{else}}
+                        Area: Main
+                    {{end}}
+                {{else}}
+                    Area: Main Menu
+                {{end}}
+            {{else}}
+                Area: Main Menu
+            {{end}}
+        </span>
+        <span>Node: 1 | Online</span>
+    </div>
+</div>
+{{end}}

@@ -1,0 +1,36 @@
+{{define "default.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Forum BBS - Bulletin Board System">
+    <title>{{.Title}} - Forum BBS</title>
+    <link rel="stylesheet" href="/static/css/bbs.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23000040' width='100' height='100'/><text x='50' y='70' text-anchor='middle' fill='%2355ffff' font-family='monospace' font-size='60' font-weight='bold'>F</text></svg>">
+</head>
+<body>
+    <header class="bbs-header">
+        <pre>
+   _____ ___  ____  _   _ __  __   ____  ____  ____
+  |  ___/ _ \|  _ \| | | |  \/  | | __ )| __ )/ ___|
+  | |_ | | | | |_) | | | | |\/| | |  _ \|  _ \\___ \
+  |  _|| |_| |  _ <| |_| | |  | | | |_) | |_) |___) |
+  |_|   \___/|_| \_\\___/|_|  |_| |____/|____/|____/
+        </pre>
+        <div class="bbs-title">FORUM BULLETIN BOARD SYSTEM</div>
+    </header>
+    {{template "nav" .}}
+    <main class="bbs-main">
+        {{template "content" .}}
+    </main>
+    <footer class="bbs-footer">
+        <div class="bbs-container">
+            [NODE 1] - Online since 2025 - Running Forum BBS v1.0<br>
+            <a href="/">Main Menu</a> | <a href="/all">Board List</a> | <a href="/">SysOp</a>
+        </div>
+    </footer>
+    <script src="/static/js/app.js" defer></script>
+</body>
+</html>
+{{end}}

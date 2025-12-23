@@ -1,0 +1,72 @@
+{{define "comment"}}
+<div class="bbs-comment {{if .IsCollapsed}}collapsed{{end}}" data-comment-id="{{.ID}}" style="--depth: {{.Depth}}">
+    <div class="bbs-comment-header">
+        {{if .IsDeleted}}
+            <span class="bbs-comment-deleted">[deleted]</span>
+        {{else if .Author}}
+            <span class="bbs-comment-author">{{.Author.Username}}</span>
+        {{else}}
+            <span class="bbs-comment-deleted">[deleted]</span>
+        {{end}}
+        <span class="separator">-</span>
+        <span class="bbs-comment-score">({{formatScore .Score}} pts)</span>
+        <span class="separator">-</span>
+        <span class="bbs-comment-time" title="{{formatTime .CreatedAt}}">{{formatTimeRelative .CreatedAt}}</span>
+        {{if .EditedAt}}
+            <span class="separator">-</span>
+            <span class="bbs-comment-time">(edited)</span>
+        {{end}}
+    </div>
+
+    {{if .IsCollapsed}}
+        <div class="bbs-comment-collapsed">
+            <button data-action="expand">[+] {{.ChildCount}} more replies</button>
+        </div>
+    {{else}}
+        <div class="bbs-comment-body">
+            {{if .IsRemoved}}
+                <p class="bbs-comment-removed">[removed by moderator]</p>
+            {{else}}
+                {{safeHTML .ContentHTML}}
+            {{end}}
+        </div>
+
+        <div class="bbs-comment-actions">
+            <span class="bbs-vote">
+                <button class="upvote {{if eq .Vote 1}}active{{end}}" data-action="upvote" data-comment="{{.ID}}">[+]</button>
+                <button class="downvote {{if eq .Vote -1}}active{{end}}" data-action="downvote" data-comment="{{.ID}}">[-]</button>
+            </span>
+            <button data-action="reply" data-comment="{{.ID}}">[Reply]</button>
+            <button data-action="bookmark" data-comment="{{.ID}}" class="{{if .IsBookmarked}}active{{end}}">{{if .IsBookmarked}}[Saved]{{else}}[Save]{{end}}</button>
+            {{if .CanEdit}}
+                <button data-action="edit" data-comment="{{.ID}}">[Edit]</button>
+            {{end}}
+            {{if .CanDelete}}
+                <button data-action="delete" data-comment="{{.ID}}">[Delete]</button>
+            {{end}}
+        </div>
+
+        <div class="bbs-reply-form hidden" id="reply-form-{{.ID}}">
+            <form data-action="submit-reply" data-parent="{{.ID}}" class="bbs-form">
+                <div class="bbs-form-content">
+                    <div class="bbs-form-group">
+                        <textarea name="content" placeholder="Write a reply..." rows="4"></textarea>
+                    </div>
+                    <div class="bbs-form-actions">
+                        <button type="button" class="bbs-btn bbs-btn-secondary" data-action="cancel-reply">[Cancel]</button>
+                        <button type="submit" class="bbs-btn bbs-btn-primary">[Post Reply]</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        {{if .Children}}
+            <div class="bbs-comment-children">
+                {{range .Children}}
+                    {{template "comment" .}}
+                {{end}}
+            </div>
+        {{end}}
+    {{end}}
+</div>
+{{end}}

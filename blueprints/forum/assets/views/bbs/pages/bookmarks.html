@@ -1,0 +1,74 @@
+{{define "bookmarks.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="bbs-breadcrumb">
+    <a href="/">Main</a>
+    <span class="separator">&gt;</span>
+    <span>Saved Items</span>
+</div>
+
+<div class="bbs-tabs">
+    <a href="/bookmarks" class="{{if eq .Data.Tab "threads"}}active{{end}}">[Saved Posts]</a>
+    <a href="/bookmarks?tab=comments" class="{{if eq .Data.Tab "comments"}}active{{end}}">[Saved Comments]</a>
+</div>
+
+{{if eq .Data.Tab "comments"}}
+    <div class="bbs-comments">
+        <div class="bbs-comments-header">
+            <span>[ SAVED COMMENTS ]</span>
+        </div>
+        <div class="bbs-comments-list">
+            {{range .Data.Comments}}
+                <div class="bbs-comment">
+                    <div class="bbs-comment-header">
+                        <span class="bbs-comment-author">{{if .Author}}{{.Author.Username}}{{else}}[deleted]{{end}}</span>
+                        <span class="separator">-</span>
+                        <span class="bbs-comment-score">({{formatScore .Score}} pts)</span>
+                        <span class="separator">-</span>
+                        <span class="bbs-comment-time">{{formatTimeRelative .CreatedAt}}</span>
+                        <span class="separator">-</span>
+                        <a href="/b/{{.Thread.Board.Name}}/{{.Thread.ID}}/{{slugify .Thread.Title}}#comment-{{.ID}}">in {{.Thread.Title}}</a>
+                    </div>
+                    <div class="bbs-comment-body">
+                        {{safeHTML .ContentHTML}}
+                    </div>
+                    <div class="bbs-comment-actions">
+                        <button data-action="bookmark" data-comment="{{.ID}}" class="active">[Remove]</button>
+                    </div>
+                </div>
+            {{else}}
+                <div class="bbs-empty">
+                    <p>No saved comments.</p>
+                </div>
+            {{end}}
+        </div>
+    </div>
+{{else}}
+    <div class="bbs-box">
+        <div class="bbs-box-header">[ SAVED POSTS ]</div>
+        <div class="bbs-box-content">
+            {{if .Data.Threads}}
+                <div class="bbs-thread-list" style="border: none;">
+                    <div class="bbs-thread-header">
+                        <div>Score</div>
+                        <div>Subject</div>
+                        <div class="col-author">Author</div>
+                        <div class="col-replies">Replies</div>
+                        <div class="col-date">Date</div>
+                    </div>
+                    {{range .Data.Threads}}
+                        {{template "thread_card" .}}
+                    {{end}}
+                </div>
+            {{else}}
+                <div class="bbs-empty">
+                    <p>No saved posts.</p>
+                    <p style="color: var(--bbs-gray);">Save posts to view them here later.</p>
+                </div>
+            {{end}}
+        </div>
+    </div>
+{{end}}
+{{end}}

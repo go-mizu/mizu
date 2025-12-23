@@ -1,0 +1,70 @@
+{{define "user.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="bbs-user-header">
+    <div class="bbs-user-header-main">
+        <h1>User: {{.Data.User.Username}}</h1>
+    </div>
+    <div class="bbs-user-header-info">
+        <div class="bbs-user-stats">
+            <span><span class="value">{{formatScore .Data.User.Karma}}</span> karma</span>
+            <span>Joined {{formatTimeRelative .Data.User.CreatedAt}}</span>
+        </div>
+        {{if .Data.User.Bio}}
+            <p style="margin-top: 1ch">{{.Data.User.Bio}}</p>
+        {{end}}
+    </div>
+</div>
+
+<div class="bbs-tabs">
+    <a href="/u/{{.Data.User.Username}}" class="{{if eq .Data.Tab "posts"}}active{{end}}">[Posts]</a>
+    <a href="/u/{{.Data.User.Username}}?tab=comments" class="{{if eq .Data.Tab "comments"}}active{{end}}">[Comments]</a>
+</div>
+
+{{if eq .Data.Tab "comments"}}
+    <div class="bbs-comments">
+        <div class="bbs-comments-header">
+            <span>[ USER COMMENTS ]</span>
+        </div>
+        <div class="bbs-comments-list">
+            {{range .Data.Comments}}
+                <div class="bbs-comment">
+                    <div class="bbs-comment-header">
+                        <span class="bbs-comment-score">({{formatScore .Score}} pts)</span>
+                        <span class="separator">-</span>
+                        <span class="bbs-comment-time">{{formatTimeRelative .CreatedAt}}</span>
+                        <span class="separator">-</span>
+                        <a href="/b/{{.Thread.Board.Name}}/{{.Thread.ID}}/{{slugify .Thread.Title}}#comment-{{.ID}}">in {{.Thread.Title}}</a>
+                    </div>
+                    <div class="bbs-comment-body">
+                        {{safeHTML .ContentHTML}}
+                    </div>
+                </div>
+            {{else}}
+                <div class="bbs-empty">
+                    <p>No comments yet.</p>
+                </div>
+            {{end}}
+        </div>
+    </div>
+{{else}}
+    <div class="bbs-thread-list">
+        <div class="bbs-thread-header">
+            <div>Score</div>
+            <div>Subject</div>
+            <div class="col-author">Author</div>
+            <div class="col-replies">Replies</div>
+            <div class="col-date">Date</div>
+        </div>
+        {{range .Data.Threads}}
+            {{template "thread_card" .}}
+        {{else}}
+            <div class="bbs-empty">
+                <p>No posts yet.</p>
+            </div>
+        {{end}}
+    </div>
+{{end}}
+{{end}}
