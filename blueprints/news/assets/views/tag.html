@@ -1,0 +1,58 @@
+{{template "layout" .}}
+
+{{define "content"}}
+<h2 style="padding:10px;">Stories tagged: <span class="tag" style="font-size:12pt">{{.Tag.Name}}</span></h2>
+
+{{if .Tag.Description}}
+<p style="padding:0 10px; color:#828282;">{{.Tag.Description}}</p>
+{{end}}
+
+<ol class="stories" start="{{add .StartOffset 1}}">
+    {{range $i, $story := .Stories}}
+    <li class="story-item">
+        <span class="story-rank">{{add $.StartOffset (add $i 1)}}.</span>
+        <span class="story-vote">
+            {{if $.User}}
+                <a href="#" class="vote-btn {{if eq $story.UserVote 1}}voted{{end}}"
+                   onclick="vote('story', '{{$story.ID}}'); return false;">▲</a>
+            {{end}}
+        </span>
+        <div class="story-content">
+            <div class="story-title">
+                {{if $story.URL}}
+                    <a href="{{$story.URL}}" rel="nofollow">{{$story.Title}}</a>
+                    <span class="story-domain">({{$story.Domain}})</span>
+                {{else}}
+                    <a href="/story/{{$story.ID}}">{{$story.Title}}</a>
+                {{end}}
+            </div>
+            <div class="story-meta">
+                {{$story.Score}} points by
+                <a href="/user/{{$story.Author.Username}}">{{$story.Author.Username}}</a>
+                {{$story.CreatedAt | timeago}} |
+                <a href="/story/{{$story.ID}}">{{$story.CommentCount}} comments</a>
+            </div>
+        </div>
+    </li>
+    {{end}}
+</ol>
+
+{{if .HasMore}}
+<div class="pagination">
+    <a href="?p={{add .Page 1}}">More</a>
+</div>
+{{end}}
+
+<script>
+function vote(type, id) {
+    fetch('/api/' + type + 's/' + id + '/vote', {
+        method: 'POST',
+        credentials: 'same-origin'
+    }).then(function(r) {
+        if (r.ok) {
+            location.reload();
+        }
+    });
+}
+</script>
+{{end}}

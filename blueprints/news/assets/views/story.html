@@ -1,0 +1,107 @@
+{{template "layout" .}}
+
+{{define "content"}}
+<div class="story-page">
+    <div class="story-header">
+        <div class="story-title">
+            {{if .Story.URL}}
+                <a href="{{.Story.URL}}" rel="nofollow">{{.Story.Title}}</a>
+                <span class="story-domain">({{.Story.Domain}})</span>
+            {{else}}
+                {{.Story.Title}}
+            {{end}}
+        </div>
+        <div class="story-meta">
+            {{.Story.Score}} points by
+            <a href="/user/{{.Story.Author.Username}}">{{.Story.Author.Username}}</a>
+            {{.Story.CreatedAt | timeago}}
+            {{range .Story.Tags}}
+                <a href="/tag/{{.}}" class="tag">{{.}}</a>
+            {{end}}
+        </div>
+    </div>
+
+    {{if .Story.TextHTML}}
+    <div class="story-text">
+        {{.Story.TextHTML | safe}}
+    </div>
+    {{end}}
+
+    {{if .User}}
+    <div class="comment-form">
+        <form action="/comment" method="post">
+            <input type="hidden" name="story_id" value="{{.Story.ID}}">
+            <textarea name="text" placeholder="Add a comment..." required></textarea>
+            <button type="submit">Add Comment</button>
+        </form>
+    </div>
+    {{end}}
+
+    <div class="comments">
+        <h3>{{.Story.CommentCount}} Comments</h3>
+        {{range .Comments}}
+            {{template "comment" dict "Comment" . "User" $.User "StoryID" $.Story.ID}}
+        {{end}}
+    </div>
+</div>
+
+<script>
+function vote(type, id) {
+    fetch('/api/' + type + 's/' + id + '/vote', {
+        method: 'POST',
+        credentials: 'same-origin'
+    }).then(function(r) {
+        if (r.ok) {
+            location.reload();
+        }
+    });
+}
+
+function showReply(id) {
+    var form = document.getElementById('reply-' + id);
+    if (form.style.display === 'none') {
+        form.style.display = 'block';
+    } else {
+        form.style.display = 'none';
+    }
+}
+</script>
+{{end}}
+
+{{define "comment"}}
+<div class="comment" id="comment-{{.Comment.ID}}">
+    <div class="comment-head">
+        {{if $.User}}
+            <a href="#" class="vote-btn {{if eq .Comment.UserVote 1}}voted{{end}}"
+               onclick="vote('comment', '{{.Comment.ID}}'); return false;">▲</a>
+        {{end}}
+        <a href="/user/{{.Comment.Author.Username}}">{{.Comment.Author.Username}}</a>
+        {{.Comment.CreatedAt | timeago}}
+    </div>
+    <div class="comment-body">
+        {{.Comment.TextHTML | safe}}
+    </div>
+    <div class="comment-links">
+        {{if $.User}}
+            <a href="#" onclick="showReply('{{.Comment.ID}}'); return false;">reply</a>
+        {{end}}
+    </div>
+    {{if $.User}}
+    <div id="reply-{{.Comment.ID}}" class="comment-form" style="display:none; margin-top:10px;">
+        <form action="/comment" method="post">
+            <input type="hidden" name="story_id" value="{{$.StoryID}}">
+            <input type="hidden" name="parent_id" value="{{.Comment.ID}}">
+            <textarea name="text" placeholder="Reply..." required></textarea>
+            <button type="submit">Reply</button>
+        </form>
+    </div>
+    {{end}}
+    {{if .Comment.Children}}
+    <div class="comment-children">
+        {{range .Comment.Children}}
+            {{template "comment" dict "Comment" . "User" $.User "StoryID" $.StoryID}}
+        {{end}}
+    </div>
+    {{end}}
+</div>
+{{end}}

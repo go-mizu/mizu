@@ -1,0 +1,261 @@
+package cli
+
+import (
+	"fmt"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/charmbracelet/lipgloss"
+)
+
+// Color palette (HN-inspired)
+var (
+	primaryColor   = lipgloss.Color("#FF6600") // HN orange
+	secondaryColor = lipgloss.Color("#828282") // Gray
+	accentColor    = lipgloss.Color("#828282") // Gray (HN minimal)
+	successColor   = lipgloss.Color("#10B981") // Green
+	errorColor     = lipgloss.Color("#EF4444") // Red
+	warnColor      = lipgloss.Color("#F59E0B") // Amber
+	dimColor       = lipgloss.Color("#828282") // Dim gray
+)
+
+// Styles
+var (
+	titleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(primaryColor)
+
+	subtitleStyle = lipgloss.NewStyle().
+			Foreground(secondaryColor)
+
+	labelStyle = lipgloss.NewStyle().
+			Foreground(dimColor)
+
+	valueStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#E5E7EB"))
+
+	progressStyle = lipgloss.NewStyle().
+			Foreground(primaryColor)
+
+	successStyle = lipgloss.NewStyle().
+			Foreground(successColor).
+			Bold(true)
+
+	errorStyle = lipgloss.NewStyle().
+			Foreground(errorColor).
+			Bold(true)
+
+	warnStyle = lipgloss.NewStyle().
+			Foreground(warnColor)
+
+	hintStyle = lipgloss.NewStyle().
+			Foreground(dimColor).
+			Italic(true)
+
+	usernameStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#000000")).
+			Bold(true)
+
+	storyStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#000000"))
+)
+
+// Icons
+const (
+	iconCheck   = "✓"
+	iconCross   = "✗"
+	iconServer  = "◎"
+	iconStory   = "▪"
+	iconComment = "▸"
+	iconInfo    = "●"
+	iconWarning = "▲"
+	iconUser    = "◇"
+)
+
+// Spinner frames
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+// UI handles formatted CLI output
+type UI struct {
+	mu       sync.Mutex
+	spinning bool
+	spinMsg  string
+	spinDone chan struct{}
+}
+
+// NewUI creates a new UI instance
+func NewUI() *UI {
+	return &UI{}
+}
+
+// Header prints a styled header
+func (u *UI) Header(icon, title string) {
+	fmt.Println()
+	fmt.Printf("%s %s\n", icon, titleStyle.Render(title))
+}
+
+// Info prints a key-value pair
+func (u *UI) Info(label, value string) {
+	fmt.Printf("  %s %s\n",
+		labelStyle.Render(label+":"),
+		valueStyle.Render(value))
+}
+
+// Blank prints an empty line
+func (u *UI) Blank() {
+	fmt.Println()
+}
+
+// StartSpinner starts an animated spinner
+func (u *UI) StartSpinner(message string) {
+	u.mu.Lock()
+	if u.spinning {
+		u.mu.Unlock()
+		return
+	}
+	u.spinning = true
+	u.spinMsg = message
+	u.spinDone = make(chan struct{})
+	u.mu.Unlock()
+
+	go func() {
+		i := 0
+		for {
+			select {
+			case <-u.spinDone:
+				fmt.Print("\r\033[K") // Clear line
+				return
+			default:
+				u.mu.Lock()
+				msg := u.spinMsg
+				u.mu.Unlock()
+				frame := progressStyle.Render(spinnerFrames[i])
+				fmt.Printf("\r%s %s", frame, msg)
+				i = (i + 1) % len(spinnerFrames)
+				time.Sleep(80 * time.Millisecond)
+			}
+		}
+	}()
+}
+
+// UpdateSpinner updates the spinner message
+func (u *UI) UpdateSpinner(message string) {
+	u.mu.Lock()
+	u.spinMsg = message
+	u.mu.Unlock()
+}
+
+// StopSpinner stops the spinner and shows a completion message
+func (u *UI) StopSpinner(message string, duration time.Duration) {
+	u.mu.Lock()
+	if !u.spinning {
+		u.mu.Unlock()
+		return
+	}
+	close(u.spinDone)
+	u.spinning = false
+	u.mu.Unlock()
+
+	time.Sleep(100 * time.Millisecond) // Let spinner goroutine exit
+
+	durStr := subtitleStyle.Render(fmt.Sprintf("(%s)", duration.Round(time.Millisecond)))
+	fmt.Printf("%s %s %s\n", successStyle.Render(iconCheck), message, durStr)
+}
+
+// StopSpinnerError stops the spinner and shows an error
+func (u *UI) StopSpinnerError(message string) {
+	u.mu.Lock()
+	if !u.spinning {
+		u.mu.Unlock()
+		return
+	}
+	close(u.spinDone)
+	u.spinning = false
+	u.mu.Unlock()
+
+	time.Sleep(100 * time.Millisecond)
+	fmt.Printf("%s %s\n", errorStyle.Render(iconCross), message)
+}
+
+// Success prints a success message
+func (u *UI) Success(message string) {
+	fmt.Println()
+	fmt.Printf("%s %s\n", successStyle.Render(iconCheck), message)
+}
+
+// Error prints an error message
+func (u *UI) Error(message string) {
+	fmt.Println()
+	fmt.Printf("%s %s\n", errorStyle.Render(iconCross), message)
+}
+
+// Warn prints a warning message
+func (u *UI) Warn(message string) {
+	fmt.Printf("%s %s\n", warnStyle.Render(iconWarning), message)
+}
+
+// Hint prints a hint message
+func (u *UI) Hint(message string) {
+	fmt.Printf("  %s\n", hintStyle.Render(message))
+}
+
+// Divider prints a horizontal line
+func (u *UI) Divider() {
+	fmt.Println(subtitleStyle.Render(strings.Repeat("─", 50)))
+}
+
+// Summary prints a summary section
+func (u *UI) Summary(items [][2]string) {
+	fmt.Println()
+	u.Divider()
+	for _, item := range items {
+		u.Info(item[0], item[1])
+	}
+	u.Divider()
+}
+
+// StoryRow prints a formatted story row
+func (u *UI) StoryRow(title string, score int64, author string) {
+	meta := subtitleStyle.Render(fmt.Sprintf("[%d pts] by %s", score, author))
+	if len(title) > 50 {
+		title = title[:50] + "..."
+	}
+	fmt.Printf("  %s %-55s %s\n",
+		iconStory,
+		storyStyle.Render(title),
+		meta)
+}
+
+// UserRow prints a formatted user row
+func (u *UI) UserRow(username string, karma int64, admin bool) {
+	badges := ""
+	if admin {
+		badges = successStyle.Render(" [admin]")
+	}
+	fmt.Printf("  %s %-20s karma: %d%s\n",
+		iconUser,
+		usernameStyle.Render(username),
+		karma,
+		badges)
+}
+
+// Progress prints a progress line
+func (u *UI) Progress(icon, message string) {
+	fmt.Printf("  %s %s\n", icon, message)
+}
+
+// Step prints a step message
+func (u *UI) Step(message string) {
+	fmt.Printf("  %s %s\n", progressStyle.Render("→"), message)
+}
+
+// isTerminal checks if stdout is a terminal
+func isTerminal() bool {
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}
