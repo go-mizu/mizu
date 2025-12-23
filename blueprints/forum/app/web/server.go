@@ -30,7 +30,7 @@ type ServerConfig struct {
 type Server struct {
 	app       *mizu.App
 	store     *duckdb.Store
-	templates *template.Template
+	templates map[string]*template.Template
 	config    ServerConfig
 
 	// Services

@@ -4,6 +4,7 @@ import (
 	"embed"
 	"html/template"
 	"io/fs"
+	"path/filepath"
 	"time"
 )
 
@@ -22,29 +23,68 @@ func Views() fs.FS {
 	return sub
 }
 
-// Templates loads and returns all templates.
-func Templates() (*template.Template, error) {
-	tmpl := template.New("")
-	tmpl = tmpl.Funcs(template.FuncMap{
-		"formatTime":        formatTime,
+// templateFuncs returns the template function map.
+func templateFuncs() template.FuncMap {
+	return template.FuncMap{
+		"formatTime":         formatTime,
 		"formatTimeRelative": formatTimeRelative,
-		"formatNumber":      formatNumber,
-		"formatScore":       formatScore,
-		"truncate":          truncate,
-		"slugify":           slugify,
-		"add":               add,
-		"sub":               sub,
-		"mul":               mul,
-		"dict":              dict,
-		"list":              list,
-		"contains":          contains,
-		"hasPrefix":         hasPrefix,
-		"hasSuffix":         hasSuffix,
-		"default":           defaultVal,
-		"safeHTML":          safeHTML,
-	})
+		"formatNumber":       formatNumber,
+		"formatScore":        formatScore,
+		"truncate":           truncate,
+		"slugify":            slugify,
+		"add":                add,
+		"sub":                sub,
+		"mul":                mul,
+		"dict":               dict,
+		"list":               list,
+		"contains":           contains,
+		"hasPrefix":          hasPrefix,
+		"hasSuffix":          hasSuffix,
+		"default":            defaultVal,
+		"safeHTML":           safeHTML,
+	}
+}
 
-	return tmpl.ParseFS(Views(), "layouts/*.html", "pages/*.html", "components/*.html")
+// Templates loads and returns all templates as a map keyed by page name.
+// Each page gets its own isolated template to avoid content block collisions.
+func Templates() (map[string]*template.Template, error) {
+	views := Views()
+
+	// Create base template with layouts and components
+	baseTmpl := template.New("").Funcs(templateFuncs())
+	baseTmpl, err := baseTmpl.ParseFS(views, "layouts/*.html", "components/*.html")
+	if err != nil {
+		return nil, err
+	}
+
+	// Find all page files
+	pageFiles, err := fs.Glob(views, "pages/*.html")
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a map of templates, one per page
+	templates := make(map[string]*template.Template)
+
+	for _, pageFile := range pageFiles {
+		pageName := filepath.Base(pageFile) // e.g., "home.html"
+
+		// Clone the base template so each page is isolated
+		pageTemplate, err := baseTmpl.Clone()
+		if err != nil {
+			return nil, err
+		}
+
+		// Parse only this specific page file
+		pageTemplate, err = pageTemplate.ParseFS(views, pageFile)
+		if err != nil {
+			return nil, err
+		}
+
+		templates[pageName] = pageTemplate
+	}
+
+	return templates, nil
 }
 
 // Template functions
@@ -100,12 +140,12 @@ func formatTimeRelative(t time.Time) string {
 }
 
 func formatInt(n int) string {
-	return template.HTMLEscapeString(formatNumber(int64(n)))
+	return formatInt64(int64(n))
 }
 
 func formatNumber(n int64) string {
 	if n < 1000 {
-		return template.HTMLEscapeString(string(rune('0'+n%10)) + formatNumber(n/10))
+		return formatInt64(n)
 	}
 	if n < 1000000 {
 		return template.HTMLEscapeString(formatFloat(float64(n)/1000) + "k")
