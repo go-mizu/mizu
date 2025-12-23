@@ -1,0 +1,106 @@
+{{define "board.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="content" role="main">
+    <div class="menuarea">
+        <div class="spacer">
+            <ul class="tabmenu">
+                <li class="{{if eq .Data.Sort "hot"}}selected{{end}}"><a href="/b/{{.Data.Board.Name}}?sort=hot">hot</a></li>
+                <li class="{{if eq .Data.Sort "new"}}selected{{end}}"><a href="/b/{{.Data.Board.Name}}?sort=new">new</a></li>
+                <li class="{{if eq .Data.Sort "rising"}}selected{{end}}"><a href="/b/{{.Data.Board.Name}}?sort=rising">rising</a></li>
+                <li class="{{if eq .Data.Sort "top"}}selected{{end}}"><a href="/b/{{.Data.Board.Name}}?sort=top">top</a></li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="sitetable linklisting" id="siteTable">
+        {{range $i, $thread := .Data.Threads}}
+            {{template "thread_card" $thread}}
+        {{else}}
+            <div class="noresults">
+                there doesn't seem to be anything here
+            </div>
+        {{end}}
+    </div>
+
+    <div class="nav-buttons">
+        <span class="nextprev">
+            <a href="/b/{{.Data.Board.Name}}?after=25">next &rsaquo;</a>
+        </span>
+    </div>
+</div>
+
+<div class="side">
+    {{if .CurrentUser}}
+        {{if .Data.Board.IsJoined}}
+        <div class="spacer">
+            <div class="sidebox">
+                <div style="padding: 10px; background: #eff7ff; border: 1px solid #5f99cf;">
+                    <button class="btn" data-action="leave" data-board="{{.Data.Board.Name}}" style="width: 100%;">leave community</button>
+                </div>
+            </div>
+        </div>
+        {{else}}
+        <div class="spacer">
+            <div class="sidebox">
+                <div style="padding: 10px; background: #eff7ff; border: 1px solid #5f99cf;">
+                    <button class="btn" data-action="join" data-board="{{.Data.Board.Name}}" style="width: 100%;">join community</button>
+                </div>
+            </div>
+        </div>
+        {{end}}
+    {{end}}
+
+    <div class="spacer">
+        <div class="sidebox submit">
+            <div class="morelink">
+                <a href="/b/{{.Data.Board.Name}}/submit">Submit a new link</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="spacer">
+        <div class="sidecontentbox">
+            <div class="title">
+                <h1>{{.Data.Board.Title}}</h1>
+            </div>
+            <div class="content">
+                <p>{{.Data.Board.Description}}</p>
+                <div style="margin-top: 10px; font-size: 8pt; color: #888;">
+                    <p><strong>{{formatNumber .Data.Board.MemberCount}}</strong> members</p>
+                    <p><strong>{{formatNumber .Data.Board.ThreadCount}}</strong> posts</p>
+                    <p>Created {{formatTimeRelative .Data.Board.CreatedAt}}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{if .Data.Board.SidebarHTML}}
+    <div class="spacer">
+        <div class="sidecontentbox">
+            <div class="title">
+                <h1>rules</h1>
+            </div>
+            <div class="content">
+                {{safeHTML .Data.Board.SidebarHTML}}
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    {{if .Data.Board.IsModerator}}
+    <div class="spacer">
+        <div class="sidecontentbox">
+            <div class="title">
+                <h1>moderator tools</h1>
+            </div>
+            <div class="content">
+                <a href="/b/{{.Data.Board.Name}}/mod">mod dashboard</a>
+            </div>
+        </div>
+    </div>
+    {{end}}
+</div>
+{{end}}

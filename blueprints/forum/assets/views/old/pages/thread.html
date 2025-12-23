@@ -1,0 +1,95 @@
+{{define "thread.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="content" role="main">
+    <div class="sitetable linklisting" id="siteTable">
+        <div class="thing link thread-page" id="thing_t3_{{.Data.Thread.ID}}" data-thread-id="{{.Data.Thread.ID}}">
+            {{template "thread_card" .Data.Thread}}
+        </div>
+    </div>
+
+    {{if .Data.Thread.ContentHTML}}
+    <div class="expando">
+        <form class="usertext">
+            <div class="usertext-body may-blank-within md-container">
+                <div class="md">
+                    {{safeHTML .Data.Thread.ContentHTML}}
+                </div>
+            </div>
+        </form>
+    </div>
+    {{end}}
+
+    <div class="commentarea">
+        {{if and .CurrentUser (not .Data.Thread.IsLocked)}}
+        <div class="usertext cloneable" style="margin-bottom: 20px;">
+            <form action="/api/threads/{{.Data.Thread.ID}}/comments" method="post" class="reply-form" data-action="submit-comment">
+                <div class="usertext-edit md-container">
+                    <textarea rows="6" cols="80" name="content" placeholder="What are your thoughts?"></textarea>
+                    <div class="usertext-buttons">
+                        <button type="submit" class="save">save</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+        {{else if .Data.Thread.IsLocked}}
+        <div class="locked-notice" style="padding: 10px; background: #fff0f0; border: 1px solid #ccc; margin-bottom: 15px;">
+            This thread has been locked. New comments cannot be posted.
+        </div>
+        {{end}}
+
+        <div class="menuarea">
+            <div class="spacer">
+                <span class="dropdown-title lightdrop">sorted by:</span>
+                <div class="dropdown lightdrop">
+                    <select data-action="sort-comments">
+                        <option value="best" {{if eq .Data.Sort "best"}}selected{{end}}>best</option>
+                        <option value="top" {{if eq .Data.Sort "top"}}selected{{end}}>top</option>
+                        <option value="new" {{if eq .Data.Sort "new"}}selected{{end}}>new</option>
+                        <option value="old" {{if eq .Data.Sort "old"}}selected{{end}}>old</option>
+                        <option value="controversial" {{if eq .Data.Sort "controversial"}}selected{{end}}>controversial</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="sitetable nestedlisting">
+            {{range .Data.Comments}}
+                {{template "comment" .}}
+            {{else}}
+                <div class="noresults" style="padding: 20px;">
+                    there doesn't seem to be any comments yet
+                </div>
+            {{end}}
+        </div>
+    </div>
+</div>
+
+<div class="side">
+    <div class="spacer">
+        <div class="sidecontentbox">
+            <div class="title">
+                <h1>about b/{{.Data.Thread.Board.Name}}</h1>
+            </div>
+            <div class="content">
+                <p>{{.Data.Thread.Board.Description}}</p>
+                <p style="margin-top: 10px; font-size: 8pt; color: #888;">
+                    {{formatNumber .Data.Thread.Board.MemberCount}} members
+                </p>
+            </div>
+        </div>
+    </div>
+
+    {{if .CurrentUser}}
+    <div class="spacer">
+        <div class="sidebox submit">
+            <div class="morelink">
+                <a href="/b/{{.Data.Thread.Board.Name}}/submit">Submit a new link</a>
+            </div>
+        </div>
+    </div>
+    {{end}}
+</div>
+{{end}}

@@ -1,0 +1,54 @@
+{{define "submit.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<tr>
+    <td>
+        <table border="0" cellpadding="0" cellspacing="0">
+        <tr>
+            <td style="padding: 20px;">
+                <b>Submit</b>
+                <br><br>
+                <form action="/api/boards/{{.Data.Board.Name}}/threads" method="post" data-action="submit-thread">
+                    <table border="0">
+                        <tr>
+                            <td>title</td>
+                            <td><input type="text" name="title" size="50" maxlength="300" required></td>
+                        </tr>
+                        <tr>
+                            <td>url</td>
+                            <td><input type="url" name="url" size="50"></td>
+                        </tr>
+                        <tr>
+                            <td>text</td>
+                            <td><textarea name="content" rows="4" cols="49"></textarea></td>
+                        </tr>
+                    </table>
+                    <br>
+                    <div class="form-error hidden" style="color: #ff0000; margin-bottom: 10px;"></div>
+                    <input type="submit" value="submit">
+                </form>
+                <br>
+                <p style="font-size: 8pt; color: #828282;">
+                    Leave url blank to submit a question for discussion. If there is no
+                    url, text will appear at the top of the thread. If there is a url,
+                    text is optional.
+                </p>
+            </td>
+        </tr>
+        </table>
+    </td>
+</tr>
+<tr style="height:10px"></tr>
+<tr>
+    <td>
+        <table width="100%" cellspacing="0" cellpadding="1">
+        <tr>
+            <td bgcolor="#ff6600"></td>
+        </tr>
+        </table>
+    </td>
+</tr>
+</table>
+{{end}}

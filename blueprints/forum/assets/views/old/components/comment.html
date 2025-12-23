@@ -1,0 +1,81 @@
+{{define "comment"}}
+<div class="thing comment {{if .IsCollapsed}}collapsed{{end}}" data-comment-id="{{.ID}}" data-depth="{{.Depth}}">
+    <p class="parent"></p>
+    <div class="midcol unvoted">
+        <div class="arrow up {{if eq .Vote 1}}upmod{{else}}login-required{{end}}" data-action="upvote" data-comment="{{.ID}}" role="button" tabindex="0"></div>
+        <div class="arrow down {{if eq .Vote -1}}downmod{{else}}login-required{{end}}" data-action="downvote" data-comment="{{.ID}}" role="button" tabindex="0"></div>
+    </div>
+    <div class="entry unvoted">
+        <p class="tagline">
+            <a href="#" class="expand" data-action="toggle-collapse">[{{if .IsCollapsed}}+{{else}}-{{end}}]</a>
+            {{if .IsDeleted}}
+                <span class="author">[deleted]</span>
+            {{else if .Author}}
+                <a href="/u/{{.Author.Username}}" class="author">{{.Author.Username}}</a>
+            {{else}}
+                <span class="author">[deleted]</span>
+            {{end}}
+            <span class="score unvoted">{{formatScore .Score}} points</span>
+            <time title="{{formatTime .CreatedAt}}" datetime="{{.CreatedAt}}">{{formatTimeRelative .CreatedAt}}</time>
+            {{if .EditedAt}}
+            <time class="edited" title="last edited {{formatTime .EditedAt}}">*</time>
+            {{end}}
+        </p>
+
+        {{if not .IsCollapsed}}
+        <form action="#" class="usertext">
+            <div class="usertext-body">
+                {{if .IsRemoved}}
+                    <p class="md">[removed]</p>
+                {{else}}
+                    <div class="md">{{safeHTML .ContentHTML}}</div>
+                {{end}}
+            </div>
+        </form>
+
+        <ul class="flat-list buttons">
+            <li class="first">
+                <a href="#" class="bylink">permalink</a>
+            </li>
+            <li>
+                <button class="save-btn {{if .IsBookmarked}}saved{{end}}" data-action="bookmark" data-comment="{{.ID}}">{{if .IsBookmarked}}unsave{{else}}save{{end}}</button>
+            </li>
+            <li>
+                <a href="#" class="reportbtn">report</a>
+            </li>
+            <li>
+                <a href="#" class="give-gold">give award</a>
+            </li>
+            <li>
+                <button class="reply-btn" data-action="reply" data-comment="{{.ID}}">reply</button>
+            </li>
+        </ul>
+
+        <div class="reply-form child hidden" id="reply-form-{{.ID}}">
+            <form data-action="submit-reply" data-parent="{{.ID}}">
+                <div class="usertext-edit">
+                    <textarea name="content" rows="5" cols="1" placeholder="what are your thoughts?"></textarea>
+                    <div class="bottom-area">
+                        <div class="usertext-buttons">
+                            <button type="submit" class="save">save</button>
+                            <button type="button" class="cancel" data-action="cancel-reply">cancel</button>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        {{if .Children}}
+        <div class="child">
+            <div class="sitetable listing">
+                {{range .Children}}
+                    {{template "comment" .}}
+                {{end}}
+            </div>
+        </div>
+        {{end}}
+        {{end}}
+    </div>
+    <div class="clearleft"></div>
+</div>
+{{end}}

@@ -1,0 +1,71 @@
+{{define "notifications.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="content" role="main">
+    <div class="menuarea">
+        <div class="spacer">
+            <h1 style="font-size: 14pt; color: #369;">inbox</h1>
+        </div>
+    </div>
+
+    <div class="sitetable messagetable">
+        {{range .Data.Notifications}}
+        <div class="thing message {{if not .IsRead}}unread{{end}}" style="padding: 10px; border-bottom: 1px solid #e5e5e5; {{if not .IsRead}}background-color: #fff6e5;{{end}}">
+            <div class="entry">
+                <p class="tagline">
+                    {{if eq .Type "reply"}}
+                        <span style="font-weight: bold; color: #ff4500;">comment reply</span>
+                    {{else if eq .Type "mention"}}
+                        <span style="font-weight: bold; color: #ff4500;">username mention</span>
+                    {{else}}
+                        <span style="font-weight: bold; color: #ff4500;">notification</span>
+                    {{end}}
+                    from <a href="/u/{{.FromUser.Username}}" class="author">{{.FromUser.Username}}</a>
+                    <span style="color: #888;">{{formatTimeRelative .CreatedAt}}</span>
+                </p>
+                {{if .ContentHTML}}
+                <div class="usertext-body md-container" style="margin-top: 5px;">
+                    <div class="md">
+                        {{safeHTML .ContentHTML}}
+                    </div>
+                </div>
+                {{end}}
+                <ul class="flat-list" style="margin-top: 5px;">
+                    {{if .ThreadID}}
+                    <li><a href="/b/{{.BoardName}}/{{.ThreadID}}">context</a></li>
+                    {{end}}
+                    {{if not .IsRead}}
+                    <li><a data-action="mark-read" data-notification="{{.ID}}">mark as read</a></li>
+                    {{end}}
+                </ul>
+            </div>
+        </div>
+        {{else}}
+        <div class="noresults">
+            there doesn't seem to be anything here
+        </div>
+        {{end}}
+    </div>
+
+    {{if .Data.Notifications}}
+    <div style="padding: 10px;">
+        <a data-action="mark-all-read" style="color: #369; font-weight: bold;">mark all as read</a>
+    </div>
+    {{end}}
+</div>
+
+<div class="side">
+    <div class="spacer">
+        <div class="sidecontentbox">
+            <div class="title">
+                <h1>inbox</h1>
+            </div>
+            <div class="content">
+                <p>Replies and mentions will appear here.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

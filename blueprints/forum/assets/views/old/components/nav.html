@@ -1,0 +1,59 @@
+{{define "nav"}}
+<div id="header" class="nav">
+    <div id="header-bottom-left" class="nav-left">
+        <a href="/" class="nav-logo" id="header-img">
+            <span class="forum-logo">forum</span>
+        </a>
+        <span class="separator">-</span>
+        <span class="pagename">
+            {{if .Data}}
+                {{if .Data.Board}}
+                    <a href="/b/{{.Data.Board.Name}}">{{.Data.Board.Name}}</a>
+                {{else}}
+                    <a href="/">front page</a>
+                {{end}}
+            {{else}}
+                <a href="/">front page</a>
+            {{end}}
+        </span>
+    </div>
+    <div id="header-bottom-right" class="nav-right">
+        {{if .CurrentUser}}
+            <span class="user">
+                <a href="/u/{{.CurrentUser.Username}}" class="user-link">{{.CurrentUser.Username}}</a>
+                <span class="userkarma">({{formatScore .CurrentUser.Karma}})</span>
+            </span>
+            <span class="separator">|</span>
+            {{if gt .UnreadCount 0}}
+                <a href="/notifications" class="mail-icon has-mail" title="new mail">[{{.UnreadCount}}]</a>
+                <span class="separator">|</span>
+            {{end}}
+            <a href="/settings">preferences</a>
+            <span class="separator">|</span>
+            <form action="/api/auth/logout" method="post" class="logout-form">
+                <button type="submit" class="logout-btn">logout</button>
+            </form>
+        {{else}}
+            <a href="/login">login</a>
+            <span class="separator">or</span>
+            <a href="/register">register</a>
+        {{end}}
+    </div>
+</div>
+<div id="sr-header-area" class="nav-tabs">
+    <div class="sr-bar">
+        <a href="/" class="{{if not .Data}}{{if not .Data.Board}}selected{{end}}{{end}}">front</a>
+        <span class="separator">-</span>
+        <a href="/all">all</a>
+        <span class="separator">-</span>
+        <a href="/search">search</a>
+    </div>
+    <div class="sr-bar right">
+        {{if .CurrentUser}}
+            <a href="/bookmarks">saved</a>
+            <span class="separator">|</span>
+        {{end}}
+        <a href="/b/all/submit">submit</a>
+    </div>
+</div>
+{{end}}

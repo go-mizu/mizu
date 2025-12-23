@@ -1,0 +1,105 @@
+{{define "settings.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="content">
+    <h1 style="font-size: 14pt; margin-bottom: 20px;">preferences</h1>
+
+    <div class="spacer" style="margin-bottom: 30px;">
+        <h2 style="font-size: 12pt; color: #369; border-bottom: 1px solid #5f99cf; padding-bottom: 5px; margin-bottom: 15px;">profile</h2>
+        <form action="/api/auth/me" method="put" data-action="update-profile">
+            <table style="font-size: 10pt;">
+                <tr>
+                    <td style="padding: 5px 10px 5px 0; color: #888; text-align: right; vertical-align: top;">display name</td>
+                    <td style="padding: 5px 0;">
+                        <input type="text" id="display_name" name="display_name" value="{{.CurrentUser.DisplayName}}" maxlength="50" style="width: 300px;">
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 5px 10px 5px 0; color: #888; text-align: right; vertical-align: top;">about</td>
+                    <td style="padding: 5px 0;">
+                        <textarea id="bio" name="bio" rows="4" maxlength="500" style="width: 300px;">{{.CurrentUser.Bio}}</textarea>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 5px 10px 5px 0; color: #888; text-align: right; vertical-align: top;">avatar url</td>
+                    <td style="padding: 5px 0;">
+                        <input type="url" id="avatar_url" name="avatar_url" value="{{.CurrentUser.AvatarURL}}" style="width: 300px;">
+                    </td>
+                </tr>
+                <tr>
+                    <td></td>
+                    <td style="padding: 10px 0;">
+                        <button type="submit">save options</button>
+                    </td>
+                </tr>
+            </table>
+        </form>
+    </div>
+
+    <div class="spacer" style="margin-bottom: 30px;">
+        <h2 style="font-size: 12pt; color: #369; border-bottom: 1px solid #5f99cf; padding-bottom: 5px; margin-bottom: 15px;">password</h2>
+        <form action="/api/auth/password" method="put" data-action="update-password">
+            <table style="font-size: 10pt;">
+                <tr>
+                    <td style="padding: 5px 10px 5px 0; color: #888; text-align: right;">current password</td>
+                    <td style="padding: 5px 0;">
+                        <input type="password" id="current_password" name="current_password" required style="width: 200px;">
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 5px 10px 5px 0; color: #888; text-align: right;">new password</td>
+                    <td style="padding: 5px 0;">
+                        <input type="password" id="new_password" name="new_password" required minlength="8" style="width: 200px;">
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 5px 10px 5px 0; color: #888; text-align: right;">confirm password</td>
+                    <td style="padding: 5px 0;">
+                        <input type="password" id="confirm_password" name="confirm_password" required minlength="8" style="width: 200px;">
+                    </td>
+                </tr>
+                <tr>
+                    <td></td>
+                    <td style="padding: 10px 0;">
+                        <button type="submit">change password</button>
+                    </td>
+                </tr>
+            </table>
+        </form>
+    </div>
+
+    <div class="spacer">
+        <h2 style="font-size: 12pt; color: #d10023; border-bottom: 1px solid #d10023; padding-bottom: 5px; margin-bottom: 15px;">delete account</h2>
+        <p style="font-size: 9pt; color: #888; margin-bottom: 10px;">Once you delete your account, there is no going back. Please be certain.</p>
+        <button type="button" data-action="delete-account" style="background: #fff0f0; border-color: #d10023; color: #d10023;">delete my account</button>
+    </div>
+</div>
+
+<div class="side">
+    <div class="spacer">
+        <div class="sidecontentbox">
+            <div class="title">
+                <h1>account info</h1>
+            </div>
+            <div class="content">
+                <table style="font-size: 9pt;">
+                    <tr>
+                        <td style="color: #888; padding-right: 10px;">username</td>
+                        <td>{{.CurrentUser.Username}}</td>
+                    </tr>
+                    <tr>
+                        <td style="color: #888; padding-right: 10px;">email</td>
+                        <td>{{.CurrentUser.Email}}</td>
+                    </tr>
+                    <tr>
+                        <td style="color: #888; padding-right: 10px;">karma</td>
+                        <td>{{formatScore .CurrentUser.Karma}}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

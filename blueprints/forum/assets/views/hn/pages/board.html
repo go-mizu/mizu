@@ -1,0 +1,73 @@
+{{define "board.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<tr>
+    <td style="padding: 5px 10px; background-color: #f6f6ef;">
+        <span style="font-size: 10pt; font-weight: bold;">{{.Data.Board.Title}}</span>
+        <span style="font-size: 8pt; color: #828282;"> - {{.Data.Board.Description}}</span>
+        {{if .CurrentUser}}
+            {{if .Data.Board.IsJoined}}
+                <button data-action="leave" data-board="{{.Data.Board.Name}}" style="font-size: 8pt; margin-left: 10px;">leave</button>
+            {{else}}
+                <button data-action="join" data-board="{{.Data.Board.Name}}" style="font-size: 8pt; margin-left: 10px;">join</button>
+            {{end}}
+        {{end}}
+    </td>
+</tr>
+<tr>
+    <td>
+        <table border="0" cellpadding="0" cellspacing="0" class="itemlist">
+        <tbody>
+            {{range $i, $thread := .Data.Threads}}
+                {{template "thread_card" $thread}}
+            {{else}}
+                <tr>
+                    <td colspan="3" style="padding:20px">
+                        There doesn't seem to be anything here.
+                    </td>
+                </tr>
+            {{end}}
+            <tr class="morespace" style="height:10px"></tr>
+            <tr>
+                <td colspan="2"></td>
+                <td class="title">
+                    <a href="/b/{{.Data.Board.Name}}?p=2" class="morelink" rel="next">More</a>
+                </td>
+            </tr>
+        </tbody>
+        </table>
+    </td>
+</tr>
+<tr>
+    <td><img src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==" height="10" width="0"></td>
+</tr>
+<tr>
+    <td>
+        <table width="100%" cellspacing="0" cellpadding="1">
+        <tr>
+            <td bgcolor="#ff6600"></td>
+        </tr>
+        </table>
+        <br>
+        <center>
+            <span class="yclinks">
+                <a href="/newsguidelines">Guidelines</a>
+                | <a href="/newsfaq">FAQ</a>
+                | <a href="/lists">Lists</a>
+                | <a href="#">API</a>
+                | <a href="#">Security</a>
+                | <a href="#">Legal</a>
+                | <a href="#">Apply to YC</a>
+                | <a href="#">Contact</a>
+            </span>
+            <br><br>
+            <form method="get" action="/search">
+                Search: <input type="text" name="q" value="" size="17" autocorrect="off" spellcheck="false" autocapitalize="off" autocomplete="off">
+            </form>
+        </center>
+    </td>
+</tr>
+</table>
+{{end}}
