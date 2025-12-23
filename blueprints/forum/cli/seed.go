@@ -29,6 +29,7 @@ Subcommands:
 	cmd.AddCommand(
 		NewSeedSample(),
 		NewSeedReddit(),
+		NewSeedHN(),
 	)
 
 	return cmd

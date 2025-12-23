@@ -29,6 +29,9 @@ type SeedOpts struct {
 	CommentDepth  int
 	DryRun        bool
 	OnProgress    func(msg string)
+	SortBy        string // Sort order for fetching threads (e.g., "hot", "new", "top" for Reddit; "top", "new", "best" for HN)
+	TimeRange     string // Time range for "top" sort (Reddit only)
+	SkipExisting  bool   // Skip items that already exist
 }
 
 // SeedResult contains statistics from a seed operation.
@@ -113,10 +116,18 @@ func (s *Seeder) seedSubreddit(ctx context.Context, source Source, sourceName, s
 	// Fetch threads
 	s.progress(opts, "Fetching threads from %s...", subreddit)
 	threadData, err := source.FetchThreads(ctx, subreddit, FetchOpts{
-		Limit: opts.ThreadLimit,
+		Limit:     opts.ThreadLimit,
+		SortBy:    opts.SortBy,
+		TimeRange: opts.TimeRange,
 	})
 	if err != nil {
 		return fmt.Errorf("fetch threads: %w", err)
+	}
+
+	// Filter out existing threads if SkipExisting is enabled
+	if opts.SkipExisting {
+		threadData, _ = s.FilterNewThreads(ctx, sourceName, threadData)
+		s.progress(opts, "Found %d new threads to seed...", len(threadData))
 	}
 
 	// Seed threads
@@ -384,20 +395,32 @@ func (s *Seeder) ensureUser(ctx context.Context, sourceName, username string, dr
 }
 
 func (s *Seeder) localUsername(sourceName, username string) string {
-	// Prefix with source name, sanitize
+	// Sanitize username
 	sanitized := strings.ToLower(username)
 	sanitized = strings.ReplaceAll(sanitized, "-", "_")
 	sanitized = strings.ReplaceAll(sanitized, ".", "_")
+
+	// Determine prefix based on source
+	prefix := "r_" // Default for reddit
+	switch sourceName {
+	case "reddit":
+		prefix = "r_"
+	case "hn":
+		prefix = "hn_"
+	default:
+		prefix = sourceName[:min(3, len(sourceName))] + "_"
+	}
 
 	// Ensure valid format
 	if len(sanitized) < 3 {
 		sanitized = sanitized + "_u"
 	}
-	if len(sanitized) > 17 { // Leave room for "r_" prefix
-		sanitized = sanitized[:17]
+	maxLen := 20 - len(prefix) // Leave room for prefix
+	if len(sanitized) > maxLen {
+		sanitized = sanitized[:maxLen]
 	}
 
-	return fmt.Sprintf("r_%s", sanitized)
+	return prefix + sanitized
 }
 
 func (s *Seeder) progress(opts SeedOpts, format string, args ...any) {
@@ -410,4 +433,46 @@ func (s *Seeder) progress(opts SeedOpts, format string, args ...any) {
 func (s *Seeder) ClearCache() {
 	s.userCache = make(map[string]string)
 	s.boardCache = make(map[string]string)
+}
+
+// CheckExistsBatch checks which external IDs already exist in seed_mappings.
+// Returns a map of externalID -> localID for existing items.
+func (s *Seeder) CheckExistsBatch(ctx context.Context, sourceName, entityType string, externalIDs []string) (map[string]string, error) {
+	result := make(map[string]string)
+	for _, extID := range externalIDs {
+		mapping, err := s.seedMappings.GetByExternalID(ctx, sourceName, entityType, extID)
+		if err != nil {
+			continue // Ignore errors, treat as not found
+		}
+		if mapping != nil {
+			result[extID] = mapping.LocalID
+		}
+	}
+	return result, nil
+}
+
+// FilterNewThreads returns only threads that haven't been seeded yet.
+func (s *Seeder) FilterNewThreads(ctx context.Context, sourceName string, threads []*ThreadData) ([]*ThreadData, error) {
+	if len(threads) == 0 {
+		return nil, nil
+	}
+
+	extIDs := make([]string, len(threads))
+	for i, t := range threads {
+		extIDs[i] = t.ExternalID
+	}
+
+	existing, err := s.CheckExistsBatch(ctx, sourceName, EntityThread, extIDs)
+	if err != nil {
+		return threads, nil // On error, return all threads
+	}
+
+	newThreads := make([]*ThreadData, 0, len(threads))
+	for _, t := range threads {
+		if _, exists := existing[t.ExternalID]; !exists {
+			newThreads = append(newThreads, t)
+		}
+	}
+
+	return newThreads, nil
 }
