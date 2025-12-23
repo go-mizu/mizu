@@ -77,6 +77,11 @@ func (s *Service) Create(ctx context.Context, authorID string, in CreateIn) (*Co
 	}
 
 	now := time.Now()
+	createdAt := now
+	if in.CreatedAt != nil {
+		createdAt = *in.CreatedAt
+	}
+
 	id := ulid.New()
 
 	// Build path
@@ -86,19 +91,29 @@ func (s *Service) Create(ctx context.Context, authorID string, in CreateIn) (*Co
 		path = path + "/" + id
 	}
 
+	// Use initial counts if provided (for seeding), otherwise default to 1 (auto-upvote)
+	upvotes := int64(1)
+	downvotes := int64(0)
+	if in.InitialUpvotes > 0 || in.InitialDownvotes > 0 {
+		upvotes = in.InitialUpvotes
+		downvotes = in.InitialDownvotes
+	}
+	score := upvotes - downvotes
+
 	comment := &Comment{
-		ID:          id,
-		ThreadID:    in.ThreadID,
-		ParentID:    in.ParentID,
-		AuthorID:    authorID,
-		Content:     in.Content,
-		ContentHTML: contentHTML,
-		Score:       1, // Auto-upvote
-		UpvoteCount: 1,
-		Depth:       depth,
-		Path:        path,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:            id,
+		ThreadID:      in.ThreadID,
+		ParentID:      in.ParentID,
+		AuthorID:      authorID,
+		Content:       in.Content,
+		ContentHTML:   contentHTML,
+		Score:         score,
+		UpvoteCount:   upvotes,
+		DownvoteCount: downvotes,
+		Depth:         depth,
+		Path:          path,
+		CreatedAt:     createdAt,
+		UpdatedAt:     now,
 	}
 
 	if err := s.store.Create(ctx, comment); err != nil {

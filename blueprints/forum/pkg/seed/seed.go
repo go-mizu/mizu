@@ -186,6 +186,7 @@ func (s *Seeder) ensureBoard(ctx context.Context, sourceName string, data *Subre
 		Name:        data.Name,
 		Title:       data.Title,
 		Description: data.Description,
+		MemberCount: data.Subscribers,
 	})
 	if err != nil {
 		// Board might have been created concurrently
@@ -236,15 +237,20 @@ func (s *Seeder) seedThread(ctx context.Context, sourceName, boardID string, dat
 		threadType = threads.ThreadTypeLink
 	}
 
-	// Create thread
+	// Create thread with original vote counts and timestamp
+	createdAt := data.CreatedAt
 	thread, err := s.threads.Create(ctx, authorID, threads.CreateIn{
-		BoardID:   boardID,
-		Title:     data.Title,
-		Content:   data.Content,
-		URL:       data.URL,
-		Type:      threadType,
-		IsNSFW:    data.IsNSFW,
-		IsSpoiler: data.IsSpoiler,
+		BoardID:          boardID,
+		Title:            data.Title,
+		Content:          data.Content,
+		URL:              data.URL,
+		Type:             threadType,
+		IsNSFW:           data.IsNSFW,
+		IsSpoiler:        data.IsSpoiler,
+		InitialUpvotes:   data.UpvoteCount,
+		InitialDownvotes: data.DownvoteCount,
+		InitialComments:  data.CommentCount,
+		CreatedAt:        &createdAt,
 	})
 	if err != nil {
 		return "", false, err
@@ -329,11 +335,15 @@ func (s *Seeder) seedComment(ctx context.Context, sourceName, threadID, parentID
 		return "", false, fmt.Errorf("ensure author: %w", err)
 	}
 
-	// Create comment
+	// Create comment with original vote counts and timestamp
+	createdAt := data.CreatedAt
 	comment, err := s.comments.Create(ctx, authorID, comments.CreateIn{
-		ThreadID: threadID,
-		ParentID: parentID,
-		Content:  data.Content,
+		ThreadID:         threadID,
+		ParentID:         parentID,
+		Content:          data.Content,
+		InitialUpvotes:   data.UpvoteCount,
+		InitialDownvotes: data.DownvoteCount,
+		CreatedAt:        &createdAt,
 	})
 	if err != nil {
 		return "", false, err

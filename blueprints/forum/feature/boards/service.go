@@ -50,6 +50,13 @@ func (s *Service) Create(ctx context.Context, creatorID string, in CreateIn) (*B
 	}
 
 	now := time.Now()
+
+	// Use initial member count if provided (for seeding), otherwise default to 1 (creator auto-joins)
+	memberCount := int64(1)
+	if in.MemberCount > 0 {
+		memberCount = in.MemberCount
+	}
+
 	board := &Board{
 		ID:          ulid.New(),
 		Name:        strings.ToLower(in.Name),
@@ -57,7 +64,7 @@ func (s *Service) Create(ctx context.Context, creatorID string, in CreateIn) (*B
 		Description: description,
 		IsNSFW:      in.IsNSFW,
 		IsPrivate:   in.IsPrivate,
-		MemberCount: 1, // Creator auto-joins
+		MemberCount: memberCount,
 		CreatedAt:   now,
 		CreatedBy:   creatorID,
 		UpdatedAt:   now,

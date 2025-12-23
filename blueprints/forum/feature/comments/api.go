@@ -78,6 +78,11 @@ type CreateIn struct {
 	ThreadID string `json:"thread_id"`
 	ParentID string `json:"parent_id,omitempty"`
 	Content  string `json:"content"`
+
+	// Seeding fields (optional, for importing from external sources)
+	InitialUpvotes   int64      `json:"initial_upvotes,omitempty"`
+	InitialDownvotes int64      `json:"initial_downvotes,omitempty"`
+	CreatedAt        *time.Time `json:"created_at,omitempty"`
 }
 
 // ListOpts contains options for listing comments.
