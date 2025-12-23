@@ -72,8 +72,12 @@ func (c *Client) FetchSubreddit(ctx context.Context, name string) (*seed.Subredd
 	}, nil
 }
 
-// FetchThreads fetches threads from a subreddit.
-func (c *Client) FetchThreads(ctx context.Context, subreddit string, opts seed.FetchOpts) ([]*seed.ThreadData, error) {
+// ListSubreddits fetches a list of subreddits.
+func (c *Client) ListSubreddits(ctx context.Context, opts seed.ListSubredditsOpts) (*seed.SubredditListResult, error) {
+	where := opts.Where
+	if where == "" {
+		where = "popular"
+	}
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = 25
@@ -82,7 +86,7 @@ func (c *Client) FetchThreads(ctx context.Context, subreddit string, opts seed.F
 		limit = 100
 	}
 
-	url := fmt.Sprintf("%s/r/%s.json?limit=%d", baseURL, subreddit, limit)
+	url := fmt.Sprintf("%s/subreddits/%s.json?limit=%d", baseURL, where, limit)
 	if opts.After != "" {
 		url += "&after=" + opts.After
 	}
@@ -92,7 +96,69 @@ func (c *Client) FetchThreads(ctx context.Context, subreddit string, opts seed.F
 		return nil, err
 	}
 
-	var threads []*seed.ThreadData
+	result := &seed.SubredditListResult{
+		After:   listing.Data.After,
+		HasMore: listing.Data.After != "",
+	}
+
+	for _, child := range listing.Data.Children {
+		if child.Kind != "t5" { // t5 = subreddit
+			continue
+		}
+		d := child.Data
+		result.Subreddits = append(result.Subreddits, &seed.SubredditData{
+			Name:        d.DisplayName,
+			Title:       d.DisplayName,
+			Description: d.PublicDescription,
+			Subscribers: d.Subscribers,
+		})
+	}
+
+	return result, nil
+}
+
+// FetchThreads fetches threads from a subreddit.
+func (c *Client) FetchThreads(ctx context.Context, subreddit string, opts seed.FetchOpts) ([]*seed.ThreadData, error) {
+	result, err := c.FetchThreadsWithCursor(ctx, subreddit, opts)
+	if err != nil {
+		return nil, err
+	}
+	return result.Threads, nil
+}
+
+// FetchThreadsWithCursor fetches threads with pagination info for resumable crawling.
+func (c *Client) FetchThreadsWithCursor(ctx context.Context, subreddit string, opts seed.FetchOpts) (*seed.ThreadListResult, error) {
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	// Build URL with sort
+	sortBy := opts.SortBy
+	if sortBy == "" {
+		sortBy = "hot"
+	}
+	url := fmt.Sprintf("%s/r/%s/%s.json?limit=%d", baseURL, subreddit, sortBy, limit)
+	if opts.After != "" {
+		url += "&after=" + opts.After
+	}
+	if opts.TimeRange != "" && sortBy == "top" {
+		url += "&t=" + opts.TimeRange
+	}
+
+	var listing Listing
+	if err := c.get(ctx, url, &listing); err != nil {
+		return nil, err
+	}
+
+	result := &seed.ThreadListResult{
+		After:   listing.Data.After,
+		HasMore: listing.Data.After != "",
+	}
+
 	for _, child := range listing.Data.Children {
 		if child.Kind != "t3" { // t3 = link/post
 			continue
@@ -104,7 +170,7 @@ func (c *Client) FetchThreads(ctx context.Context, subreddit string, opts seed.F
 			continue
 		}
 
-		threads = append(threads, &seed.ThreadData{
+		result.Threads = append(result.Threads, &seed.ThreadData{
 			ExternalID:    d.ID,
 			Title:         d.Title,
 			Content:       d.Selftext,
@@ -123,12 +189,35 @@ func (c *Client) FetchThreads(ctx context.Context, subreddit string, opts seed.F
 		})
 	}
 
-	return threads, nil
+	return result, nil
 }
 
-// FetchComments fetches comments for a thread.
+// FetchComments fetches comments for a thread with default options.
 func (c *Client) FetchComments(ctx context.Context, subreddit, threadID string) ([]*seed.CommentData, error) {
-	url := fmt.Sprintf("%s/r/%s/comments/%s.json?limit=200&depth=10", baseURL, subreddit, threadID)
+	return c.FetchCommentsWithOpts(ctx, subreddit, threadID, seed.CommentOpts{
+		Limit: 200,
+		Depth: 10,
+		Sort:  "best",
+	})
+}
+
+// FetchCommentsWithOpts fetches comments for a thread with custom options.
+func (c *Client) FetchCommentsWithOpts(ctx context.Context, subreddit, threadID string, opts seed.CommentOpts) ([]*seed.CommentData, error) {
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 200
+	}
+	depth := opts.Depth
+	if depth <= 0 {
+		depth = 10
+	}
+	sort := opts.Sort
+	if sort == "" {
+		sort = "best"
+	}
+
+	url := fmt.Sprintf("%s/r/%s/comments/%s.json?limit=%d&depth=%d&sort=%s",
+		baseURL, subreddit, threadID, limit, depth, sort)
 
 	var listings []Listing
 	if err := c.get(ctx, url, &listings); err != nil {

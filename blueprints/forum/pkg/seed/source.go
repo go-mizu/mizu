@@ -7,9 +7,38 @@ import (
 
 // FetchOpts contains options for fetching data.
 type FetchOpts struct {
-	Limit  int
-	After  string // Pagination cursor
-	SortBy string // e.g., "hot", "new", "top"
+	Limit     int
+	After     string // Pagination cursor
+	SortBy    string // e.g., "hot", "new", "top"
+	TimeRange string // For "top": "hour", "day", "week", "month", "year", "all"
+}
+
+// ThreadListResult contains threads with pagination info for resumable crawling.
+type ThreadListResult struct {
+	Threads []*ThreadData
+	After   string // Next page cursor
+	HasMore bool
+}
+
+// CommentOpts contains options for fetching comments.
+type CommentOpts struct {
+	Limit int
+	Depth int
+	Sort  string // "best", "top", "new", "controversial", "old"
+}
+
+// ListSubredditsOpts contains options for listing subreddits.
+type ListSubredditsOpts struct {
+	Where string // "popular", "new", "default"
+	Limit int
+	After string // Pagination cursor
+}
+
+// SubredditListResult contains subreddits with pagination info.
+type SubredditListResult struct {
+	Subreddits []*SubredditData
+	After      string
+	HasMore    bool
 }
 
 // SubredditData represents subreddit metadata from any source.

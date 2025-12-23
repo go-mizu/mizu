@@ -18,11 +18,14 @@ import (
 )
 
 var (
-	redditSubreddits  string
-	redditLimit       int
+	redditSubreddits   string
+	redditLimit        int
 	redditWithComments bool
 	redditCommentDepth int
-	redditDryRun      bool
+	redditDryRun       bool
+	redditSort         string
+	redditTimeRange    string
+	redditSkipExisting bool
 )
 
 // NewSeedReddit creates the seed reddit command.
@@ -34,9 +37,14 @@ func NewSeedReddit() *cobra.Command {
 
 The seeding is idempotent - running it multiple times will not create duplicate data.
 
+Sort options: hot, new, top, rising
+Time range (for top): hour, day, week, month, year, all
+
 Examples:
   forum seed reddit --subreddits golang,programming --limit 25
   forum seed reddit --subreddits golang --limit 10 --with-comments
+  forum seed reddit --subreddits golang --sort top --time week --limit 50
+  forum seed reddit --subreddits golang --skip-existing
   forum seed reddit --subreddits golang --dry-run`,
 		RunE: runSeedReddit,
 	}
@@ -46,6 +54,9 @@ Examples:
 	cmd.Flags().BoolVar(&redditWithComments, "with-comments", false, "Also fetch and seed comments")
 	cmd.Flags().IntVar(&redditCommentDepth, "comment-depth", 5, "Maximum depth for nested comments")
 	cmd.Flags().BoolVar(&redditDryRun, "dry-run", false, "Show what would be seeded without making changes")
+	cmd.Flags().StringVar(&redditSort, "sort", "hot", "Sort order: hot, new, top, rising")
+	cmd.Flags().StringVar(&redditTimeRange, "time", "", "Time range for top posts: hour, day, week, month, year, all")
+	cmd.Flags().BoolVar(&redditSkipExisting, "skip-existing", false, "Skip threads that already exist")
 
 	return cmd
 }
@@ -64,8 +75,15 @@ func runSeedReddit(cmd *cobra.Command, args []string) error {
 
 	ui.Info("Subreddits", strings.Join(subs, ", "))
 	ui.Info("Thread limit", fmt.Sprintf("%d per subreddit", redditLimit))
+	ui.Info("Sort", redditSort)
+	if redditTimeRange != "" && redditSort == "top" {
+		ui.Info("Time range", redditTimeRange)
+	}
 	if redditWithComments {
 		ui.Info("Comments", fmt.Sprintf("enabled (depth %d)", redditCommentDepth))
+	}
+	if redditSkipExisting {
+		ui.Info("Skip existing", "yes")
 	}
 	if redditDryRun {
 		ui.Warn("DRY RUN - no changes will be made")
@@ -114,6 +132,9 @@ func runSeedReddit(cmd *cobra.Command, args []string) error {
 		WithComments: redditWithComments,
 		CommentDepth: redditCommentDepth,
 		DryRun:       redditDryRun,
+		SortBy:       redditSort,
+		TimeRange:    redditTimeRange,
+		SkipExisting: redditSkipExisting,
 		OnProgress: func(msg string) {
 			ui.UpdateSpinner(msg)
 		},
