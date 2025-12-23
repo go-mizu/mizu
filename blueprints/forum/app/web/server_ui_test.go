@@ -1,5 +1,3 @@
-//go:build e2e
-
 package web_test
 
 import (
@@ -87,7 +85,7 @@ func setupUITestServerWithData(t *testing.T) (*httptest.Server, *duckdb.Store) {
 		BoardID: testBoard.ID,
 		Title:   "Test Thread",
 		Content: "This is test content",
-		Type:    "text",
+		Type:    threads.ThreadTypeText,
 	})
 	if err != nil {
 		t.Fatalf("create thread: %v", err)
@@ -110,6 +108,38 @@ func setupUITestServerWithData(t *testing.T) (*httptest.Server, *duckdb.Store) {
 	})
 
 	return ts, store
+}
+
+// assertNoTemplateErrors checks that the response body has no template rendering errors.
+// This is critical for catching the template collision bug.
+func assertNoTemplateErrors(t *testing.T, body string, path string) {
+	t.Helper()
+
+	// Check for common template error patterns
+	errorPatterns := []string{
+		"error calling slice",
+		"nil pointer dereference",
+		"runtime error:",
+		"panic:",
+	}
+
+	for _, pattern := range errorPatterns {
+		if strings.Contains(body, pattern) {
+			t.Errorf("page %s contains template error: %q\nbody preview: %s", path, pattern, truncateForError(body))
+		}
+	}
+
+	// Also check if template execution error appears in output
+	if strings.Contains(body, "template:") && strings.Contains(body, "error") {
+		t.Errorf("page %s contains template error\nbody preview: %s", path, truncateForError(body))
+	}
+}
+
+func truncateForError(s string) string {
+	if len(s) > 500 {
+		return s[:500] + "..."
+	}
+	return s
 }
 
 func getUIPage(t *testing.T, url string) (int, string) {
@@ -572,4 +602,127 @@ func TestUI_DataAttributes(t *testing.T) {
 		`data-action=`, // Action attributes
 		`data-thread=`, // Thread ID attributes
 	)
+}
+
+// TestUI_TemplateIsolation verifies that each page renders its own content block.
+// This is the critical test for the template collision bug where user.html's
+// content block was being used for all pages due to Go template define semantics.
+func TestUI_TemplateIsolation(t *testing.T) {
+	ts, _ := setupUITestServerWithData(t)
+
+	tests := []struct {
+		name        string
+		path        string
+		mustHave    []string // Content unique to this page
+		mustNotHave []string // Content from OTHER pages that should NOT appear
+	}{
+		{
+			name:        "HomePage_NotUserPage",
+			path:        "/",
+			mustHave:    []string{"Popular Communities"}, // Only home.html has sidebar with Popular Communities
+			mustNotHave: []string{"Post Karma", "Comment Karma"}, // These are only in user.html
+		},
+		{
+			name:        "AllPage_NotUserPage",
+			path:        "/all",
+			mustHave:    []string{"All Posts"},
+			mustNotHave: []string{"Post Karma", "Comment Karma"},
+		},
+		{
+			name:        "LoginPage_NotUserPage",
+			path:        "/login",
+			mustHave:    []string{"Welcome back"},
+			mustNotHave: []string{"Post Karma", "Karma"},
+		},
+		{
+			name:        "RegisterPage_NotUserPage",
+			path:        "/register",
+			mustHave:    []string{"Create your account"},
+			mustNotHave: []string{"Post Karma", "Karma"},
+		},
+		{
+			name:        "SearchPage_NotUserPage",
+			path:        "/search",
+			mustHave:    []string{"Search"},
+			mustNotHave: []string{"Post Karma", "Karma"},
+		},
+		{
+			name:        "BoardPage_NotUserPage",
+			path:        "/b/testboard",
+			mustHave:    []string{"Test Board", "About Community"},
+			mustNotHave: []string{"Post Karma", "Comment Karma"},
+		},
+		{
+			name:        "UserPage_HasUserContent",
+			path:        "/u/testuser",
+			mustHave:    []string{"testuser", "Karma", "Posts", "Comments"},
+			mustNotHave: []string{}, // User page should have its content
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status, body := getUIPage(t, ts.URL+tt.path)
+
+			if status != http.StatusOK {
+				t.Fatalf("status: got %d, want 200", status)
+			}
+
+			// First, check for template errors
+			assertNoTemplateErrors(t, body, tt.path)
+
+			// Check for required content
+			for _, want := range tt.mustHave {
+				if !strings.Contains(body, want) {
+					t.Errorf("page %s missing expected content: %q", tt.path, want)
+				}
+			}
+
+			// Check that content from OTHER templates doesn't appear
+			for _, notWant := range tt.mustNotHave {
+				if strings.Contains(body, notWant) {
+					t.Errorf("page %s incorrectly contains content from wrong template: %q (template collision bug!)", tt.path, notWant)
+				}
+			}
+		})
+	}
+}
+
+// TestUI_AllPagesRenderWithoutErrors visits every page and checks for template errors.
+func TestUI_AllPagesRenderWithoutErrors(t *testing.T) {
+	ts, _ := setupUITestServerWithData(t)
+
+	pages := []struct {
+		path     string
+		wantCode int
+	}{
+		{"/", 200},
+		{"/?sort=hot", 200},
+		{"/?sort=new", 200},
+		{"/?sort=top", 200},
+		{"/all", 200},
+		{"/b/testboard", 200},
+		{"/b/nonexistent", 200}, // Returns error page
+		{"/u/testuser", 200},
+		{"/u/testuser?tab=posts", 200},
+		{"/u/testuser?tab=comments", 200},
+		{"/u/nonexistent", 200}, // Returns error page
+		{"/login", 200},
+		{"/register", 200},
+		{"/search", 200},
+		{"/search?q=test", 200},
+	}
+
+	for _, page := range pages {
+		t.Run(page.path, func(t *testing.T) {
+			status, body := getUIPage(t, ts.URL+page.path)
+
+			if status != page.wantCode {
+				t.Errorf("status: got %d, want %d", status, page.wantCode)
+			}
+
+			assertNoTemplateErrors(t, body, page.path)
+			assertUIValidHTML(t, body)
+		})
+	}
 }

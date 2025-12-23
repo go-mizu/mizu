@@ -34,7 +34,7 @@
         </div>
 
         <h3 class="thread-title">
-            <a href="/b/{{.Board.Name}}/{{.ID}}/{{slugify .Title}}">{{.Title}}</a>
+            <a href="/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}">{{.Title}}</a>
             {{if eq .Type "link"}}
                 <span class="domain">({{.Domain}})</span>
             {{end}}
@@ -50,7 +50,7 @@
         {{end}}
 
         <div class="thread-actions">
-            <a href="/b/{{.Board.Name}}/{{.ID}}/{{slugify .Title}}" class="action-btn">
+            <a href="/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}" class="action-btn">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                 </svg>
@@ -62,7 +62,7 @@
                 </svg>
                 {{if .IsBookmarked}}Saved{{else}}Save{{end}}
             </button>
-            <button class="action-btn share-btn" data-action="share" data-url="/b/{{.Board.Name}}/{{.ID}}/{{slugify .Title}}">
+            <button class="action-btn share-btn" data-action="share" data-url="/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="18" cy="5" r="3"/>
                     <circle cx="6" cy="12" r="3"/>

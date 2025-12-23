@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"html/template"
 	"net/http"
 
@@ -17,7 +18,7 @@ import (
 
 // Page handles HTML page endpoints.
 type Page struct {
-	templates     *template.Template
+	templates     map[string]*template.Template
 	accounts      accounts.API
 	boards        boards.API
 	threads       threads.API
@@ -30,7 +31,7 @@ type Page struct {
 
 // NewPage creates a new page handler.
 func NewPage(
-	templates *template.Template,
+	templates map[string]*template.Template,
 	accounts accounts.API,
 	boards boards.API,
 	threads threads.API,
@@ -62,6 +63,11 @@ type PageData struct {
 }
 
 func (h *Page) render(c *mizu.Ctx, name string, data PageData) error {
+	tmpl, ok := h.templates[name]
+	if !ok {
+		return fmt.Errorf("template %s not found", name)
+	}
+
 	c.Writer().Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	// Get current user
@@ -71,7 +77,7 @@ func (h *Page) render(c *mizu.Ctx, name string, data PageData) error {
 		data.UnreadCount, _ = h.notifications.GetUnreadCount(c.Request().Context(), accountID)
 	}
 
-	return h.templates.ExecuteTemplate(c.Writer(), name, data)
+	return tmpl.ExecuteTemplate(c.Writer(), name, data)
 }
 
 // Home renders the home page.
