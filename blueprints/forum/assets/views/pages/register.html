@@ -5,33 +5,34 @@
 {{define "content"}}
 <div class="page-auth">
     <div class="auth-card">
-        <h1>Create Account</h1>
-        <p class="auth-subtitle">Join the community</p>
+        <h1>Create your account</h1>
+        <p class="auth-subtitle">Join the community and start posting</p>
 
         <form action="/api/auth/register" method="post" class="auth-form" data-action="register">
             <div class="form-group">
                 <label for="username">Username</label>
-                <input type="text" id="username" name="username" required autofocus
+                <input type="text" id="username" name="username" required autofocus autocomplete="username"
                        pattern="[a-zA-Z0-9_]+" minlength="3" maxlength="20"
-                       placeholder="3-20 characters, letters, numbers, underscore">
-                <span class="form-hint">Choose wisely. You can't change it later.</span>
+                       placeholder="Choose a username">
+                <span class="form-hint">3-20 characters. Letters, numbers, and underscores only.</span>
             </div>
 
             <div class="form-group">
                 <label for="email">Email</label>
-                <input type="email" id="email" name="email" required
-                       placeholder="your@email.com">
+                <input type="email" id="email" name="email" required autocomplete="email"
+                       placeholder="Enter your email address">
             </div>
 
             <div class="form-group">
                 <label for="password">Password</label>
-                <input type="password" id="password" name="password" required
-                       minlength="8" placeholder="At least 8 characters">
+                <input type="password" id="password" name="password" required autocomplete="new-password"
+                       minlength="8" placeholder="Create a strong password">
+                <span class="form-hint">At least 8 characters.</span>
             </div>
 
             <div class="form-error hidden"></div>
 
-            <button type="submit" class="btn btn-primary btn-block">Sign Up</button>
+            <button type="submit" class="btn btn-primary btn-block btn-lg">Sign Up</button>
         </form>
 
         <div class="auth-footer">

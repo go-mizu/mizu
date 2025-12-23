@@ -11,20 +11,22 @@
         <form action="/api/auth/me" method="put" class="settings-form" data-action="update-profile">
             <div class="form-group">
                 <label for="display_name">Display Name</label>
-                <input type="text" id="display_name" name="display_name" value="{{.CurrentUser.DisplayName}}" maxlength="50">
+                <input type="text" id="display_name" name="display_name" value="{{.CurrentUser.DisplayName}}" maxlength="50" placeholder="Your display name">
             </div>
 
             <div class="form-group">
                 <label for="bio">Bio</label>
-                <textarea id="bio" name="bio" rows="4" maxlength="500">{{.CurrentUser.Bio}}</textarea>
+                <textarea id="bio" name="bio" rows="4" maxlength="500" placeholder="Tell us about yourself">{{.CurrentUser.Bio}}</textarea>
             </div>
 
             <div class="form-group">
                 <label for="avatar_url">Avatar URL</label>
-                <input type="url" id="avatar_url" name="avatar_url" value="{{.CurrentUser.AvatarURL}}" placeholder="https://...">
+                <input type="url" id="avatar_url" name="avatar_url" value="{{.CurrentUser.AvatarURL}}" placeholder="https://example.com/avatar.jpg">
             </div>
 
-            <button type="submit" class="btn btn-primary">Save Changes</button>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Save Changes</button>
+            </div>
         </form>
     </div>
 
@@ -33,26 +35,28 @@
         <form action="/api/auth/password" method="put" class="settings-form" data-action="update-password">
             <div class="form-group">
                 <label for="current_password">Current Password</label>
-                <input type="password" id="current_password" name="current_password" required>
+                <input type="password" id="current_password" name="current_password" required placeholder="Enter your current password">
             </div>
 
             <div class="form-group">
                 <label for="new_password">New Password</label>
-                <input type="password" id="new_password" name="new_password" required minlength="8">
+                <input type="password" id="new_password" name="new_password" required minlength="8" placeholder="Enter a new password">
             </div>
 
             <div class="form-group">
                 <label for="confirm_password">Confirm New Password</label>
-                <input type="password" id="confirm_password" name="confirm_password" required minlength="8">
+                <input type="password" id="confirm_password" name="confirm_password" required minlength="8" placeholder="Confirm your new password">
             </div>
 
-            <button type="submit" class="btn btn-primary">Update Password</button>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Update Password</button>
+            </div>
         </form>
     </div>
 
     <div class="settings-card danger-zone">
         <h2>Danger Zone</h2>
-        <p>Once you delete your account, there is no going back. Please be certain.</p>
+        <p style="margin-bottom: 1rem; color: var(--text-secondary);">Once you delete your account, there is no going back. Please be certain.</p>
         <button type="button" class="btn btn-danger" data-action="delete-account">Delete Account</button>
     </div>
 </div>

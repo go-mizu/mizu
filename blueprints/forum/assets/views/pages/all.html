@@ -3,17 +3,20 @@
 {{end}}
 
 {{define "content"}}
-<div class="page-all">
-    <h1>All Posts</h1>
+<div class="page-layout">
+    <div class="content-feed">
+        <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 1rem;">All Posts</h1>
 
-    <div class="thread-list">
-        {{range .Data.Threads}}
-            {{template "thread_card" .}}
-        {{else}}
-            <div class="empty-state">
-                <p>No posts yet.</p>
-            </div>
-        {{end}}
+        <div class="thread-list">
+            {{range .Data.Threads}}
+                {{template "thread_card" .}}
+            {{else}}
+                <div class="empty-state">
+                    <h3>No posts yet</h3>
+                    <p>Be the first to share something with the community!</p>
+                </div>
+            {{end}}
+        </div>
     </div>
 </div>
 {{end}}

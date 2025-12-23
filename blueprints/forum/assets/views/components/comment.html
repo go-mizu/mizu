@@ -1,8 +1,6 @@
 {{define "comment"}}
 <div class="comment {{if .IsCollapsed}}collapsed{{end}}" data-comment-id="{{.ID}}" data-depth="{{.Depth}}">
-    <div class="comment-sidebar">
-        <div class="collapse-line" data-action="toggle-collapse"></div>
-    </div>
+    <div class="comment-collapse-line" data-action="toggle-collapse" title="Collapse thread"></div>
 
     <div class="comment-main">
         <div class="comment-header">
@@ -16,12 +14,12 @@
             <span class="comment-score">{{formatScore .Score}} points</span>
             <span class="comment-time" title="{{formatTime .CreatedAt}}">{{formatTimeRelative .CreatedAt}}</span>
             {{if .EditedAt}}
-                <span class="edited">(edited)</span>
+                <span class="comment-edited">(edited)</span>
             {{end}}
         </div>
 
         {{if .IsCollapsed}}
-            <div class="comment-collapsed">
+            <div class="comment-collapsed-notice">
                 <button class="expand-btn" data-action="expand">
                     [+] {{.ChildCount}} more replies
                 </button>
@@ -36,9 +34,17 @@
             </div>
 
             <div class="comment-actions">
-                <div class="vote-buttons-inline">
-                    <button class="vote-btn upvote {{if eq .Vote 1}}active{{end}}" data-action="upvote" data-comment="{{.ID}}">▲</button>
-                    <button class="vote-btn downvote {{if eq .Vote -1}}active{{end}}" data-action="downvote" data-comment="{{.ID}}">▼</button>
+                <div class="vote-inline">
+                    <button class="vote-btn upvote {{if eq .Vote 1}}active{{end}}" data-action="upvote" data-comment="{{.ID}}" title="Upvote">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 4l-8 8h5v8h6v-8h5z"/>
+                        </svg>
+                    </button>
+                    <button class="vote-btn downvote {{if eq .Vote -1}}active{{end}}" data-action="downvote" data-comment="{{.ID}}" title="Downvote">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 20l8-8h-5V4H9v8H4z"/>
+                        </svg>
+                    </button>
                 </div>
                 <button class="action-btn reply-btn" data-action="reply" data-comment="{{.ID}}">Reply</button>
                 <button class="action-btn bookmark-btn {{if .IsBookmarked}}active{{end}}" data-action="bookmark" data-comment="{{.ID}}">
@@ -56,8 +62,8 @@
                 <form data-action="submit-reply" data-parent="{{.ID}}">
                     <textarea name="content" placeholder="Write a reply..." rows="4"></textarea>
                     <div class="form-actions">
-                        <button type="button" class="btn btn-secondary" data-action="cancel-reply">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Reply</button>
+                        <button type="button" class="btn btn-ghost btn-sm" data-action="cancel-reply">Cancel</button>
+                        <button type="submit" class="btn btn-primary btn-sm">Reply</button>
                     </div>
                 </form>
             </div>

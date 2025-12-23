@@ -5,9 +5,14 @@
 {{define "content"}}
 <div class="page-error">
     <div class="error-content">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 24px; opacity: 0.5;">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
         <h1>Oops!</h1>
         <p class="error-message">{{.Data.Message}}</p>
-        <a href="/" class="btn btn-primary">Go Home</a>
+        <a href="/" class="btn btn-primary btn-lg">Go Home</a>
     </div>
 </div>
 {{end}}

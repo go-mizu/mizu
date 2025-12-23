@@ -16,7 +16,10 @@
             {{template "thread_card" .}}
         {{else}}
             <div class="empty-state">
-                <p>You haven't saved any posts yet.</p>
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 16px; opacity: 0.5;">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+                </svg>
+                <h3>No saved posts yet</h3>
                 <p>Click the save button on any post to bookmark it for later.</p>
             </div>
         {{end}}
