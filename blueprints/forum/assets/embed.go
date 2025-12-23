@@ -17,10 +17,125 @@ func Static() fs.FS {
 	return sub
 }
 
-// Views returns the views filesystem.
+// Views returns the views filesystem for the default theme.
 func Views() fs.FS {
-	sub, _ := fs.Sub(FS, "views")
+	sub, _ := fs.Sub(FS, "views/default")
 	return sub
+}
+
+// ViewsForTheme returns the views filesystem for a specific theme.
+// Themes inherit from default - theme files override default files.
+func ViewsForTheme(theme string) fs.FS {
+	if theme == "" || theme == "default" {
+		return Views()
+	}
+	return &themeFS{
+		theme:   theme,
+		base:    FS,
+		default_: "views/default",
+		overlay: "views/" + theme,
+	}
+}
+
+// themeFS implements fs.FS with theme inheritance.
+// Files from the overlay (theme) directory take precedence over the default.
+type themeFS struct {
+	theme    string
+	base     fs.FS
+	default_ string
+	overlay  string
+}
+
+func (t *themeFS) Open(name string) (fs.File, error) {
+	// Try overlay first
+	if f, err := t.base.Open(t.overlay + "/" + name); err == nil {
+		return f, nil
+	}
+	// Fall back to default
+	return t.base.Open(t.default_ + "/" + name)
+}
+
+func (t *themeFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	// Merge directory listings from both default and overlay
+	entries := make(map[string]fs.DirEntry)
+
+	// Read default first
+	if dir, ok := t.base.(fs.ReadDirFS); ok {
+		defaultPath := t.default_
+		if name != "." {
+			defaultPath = t.default_ + "/" + name
+		}
+		if list, err := dir.ReadDir(defaultPath); err == nil {
+			for _, e := range list {
+				entries[e.Name()] = e
+			}
+		}
+	}
+
+	// Read overlay (overrides default entries)
+	if dir, ok := t.base.(fs.ReadDirFS); ok {
+		overlayPath := t.overlay
+		if name != "." {
+			overlayPath = t.overlay + "/" + name
+		}
+		if list, err := dir.ReadDir(overlayPath); err == nil {
+			for _, e := range list {
+				entries[e.Name()] = e
+			}
+		}
+	}
+
+	// Convert map to sorted slice
+	result := make([]fs.DirEntry, 0, len(entries))
+	for _, e := range entries {
+		result = append(result, e)
+	}
+	return result, nil
+}
+
+func (t *themeFS) ReadFile(name string) ([]byte, error) {
+	// Try overlay first
+	if f, ok := t.base.(fs.ReadFileFS); ok {
+		if data, err := f.ReadFile(t.overlay + "/" + name); err == nil {
+			return data, nil
+		}
+	}
+	// Fall back to default
+	if f, ok := t.base.(fs.ReadFileFS); ok {
+		return f.ReadFile(t.default_ + "/" + name)
+	}
+	return nil, fs.ErrNotExist
+}
+
+func (t *themeFS) Glob(pattern string) ([]string, error) {
+	matches := make(map[string]bool)
+
+	// Glob default
+	if g, ok := t.base.(fs.GlobFS); ok {
+		if list, err := g.Glob(t.default_ + "/" + pattern); err == nil {
+			for _, m := range list {
+				// Remove the prefix to get relative path
+				rel := m[len(t.default_)+1:]
+				matches[rel] = true
+			}
+		}
+	}
+
+	// Glob overlay
+	if g, ok := t.base.(fs.GlobFS); ok {
+		if list, err := g.Glob(t.overlay + "/" + pattern); err == nil {
+			for _, m := range list {
+				rel := m[len(t.overlay)+1:]
+				matches[rel] = true
+			}
+		}
+	}
+
+	result := make([]string, 0, len(matches))
+	for m := range matches {
+		result = append(result, m)
+	}
+	return result, nil
 }
 
 // templateFuncs returns the template function map.
@@ -48,17 +163,46 @@ func templateFuncs() template.FuncMap {
 // Templates loads and returns all templates as a map keyed by page name.
 // Each page gets its own isolated template to avoid content block collisions.
 func Templates() (map[string]*template.Template, error) {
-	views := Views()
+	return TemplatesForTheme("default")
+}
+
+// TemplatesForTheme loads templates for a specific theme with inheritance from default.
+func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
+	views := ViewsForTheme(theme)
 
 	// Create base template with layouts and components
 	baseTmpl := template.New("").Funcs(templateFuncs())
-	baseTmpl, err := baseTmpl.ParseFS(views, "layouts/*.html", "components/*.html")
-	if err != nil {
-		return nil, err
+
+	// For theme filesystem, we need to manually find and parse files
+	// since ParseFS with glob patterns needs proper fs.GlobFS support
+	layoutFiles := []string{"layouts/default.html"}
+	componentFiles := []string{"components/nav.html", "components/comment.html", "components/thread_card.html"}
+
+	for _, f := range layoutFiles {
+		content, err := fs.ReadFile(views, f)
+		if err != nil {
+			return nil, err
+		}
+		_, err = baseTmpl.New(filepath.Base(f)).Parse(string(content))
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// Find all page files
-	pageFiles, err := fs.Glob(views, "pages/*.html")
+	for _, f := range componentFiles {
+		content, err := fs.ReadFile(views, f)
+		if err != nil {
+			return nil, err
+		}
+		_, err = baseTmpl.New(filepath.Base(f)).Parse(string(content))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Find all page files from default theme (all themes have same pages)
+	defaultViews := Views()
+	pageFiles, err := fs.Glob(defaultViews, "pages/*.html")
 	if err != nil {
 		return nil, err
 	}
@@ -75,8 +219,12 @@ func Templates() (map[string]*template.Template, error) {
 			return nil, err
 		}
 
-		// Parse only this specific page file
-		pageTemplate, err = pageTemplate.ParseFS(views, pageFile)
+		// Parse the page file (may come from theme or default via themeFS)
+		content, err := fs.ReadFile(views, pageFile)
+		if err != nil {
+			return nil, err
+		}
+		_, err = pageTemplate.New(pageName).Parse(string(content))
 		if err != nil {
 			return nil, err
 		}
