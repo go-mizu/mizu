@@ -74,6 +74,14 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Account, error) {
 	return s.store.GetByID(ctx, id)
 }
 
+// GetByIDs retrieves multiple accounts by their IDs.
+func (s *Service) GetByIDs(ctx context.Context, ids []string) (map[string]*Account, error) {
+	if len(ids) == 0 {
+		return make(map[string]*Account), nil
+	}
+	return s.store.GetByIDs(ctx, ids)
+}
+
 // GetByUsername retrieves an account by username.
 func (s *Service) GetByUsername(ctx context.Context, username string) (*Account, error) {
 	return s.store.GetByUsername(ctx, username)

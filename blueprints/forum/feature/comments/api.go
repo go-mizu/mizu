@@ -105,6 +105,7 @@ type API interface {
 	// Comment management
 	Create(ctx context.Context, authorID string, in CreateIn) (*Comment, error)
 	GetByID(ctx context.Context, id string) (*Comment, error)
+	GetByIDs(ctx context.Context, ids []string) (map[string]*Comment, error)
 	Update(ctx context.Context, id string, content string) (*Comment, error)
 	Delete(ctx context.Context, id string) error
 
@@ -134,6 +135,7 @@ type API interface {
 type Store interface {
 	Create(ctx context.Context, comment *Comment) error
 	GetByID(ctx context.Context, id string) (*Comment, error)
+	GetByIDs(ctx context.Context, ids []string) (map[string]*Comment, error)
 	Update(ctx context.Context, comment *Comment) error
 	Delete(ctx context.Context, id string) error
 

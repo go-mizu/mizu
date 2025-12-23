@@ -154,6 +154,14 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Comment, error) {
 	return comment, nil
 }
 
+// GetByIDs retrieves multiple comments by their IDs.
+func (s *Service) GetByIDs(ctx context.Context, ids []string) (map[string]*Comment, error) {
+	if len(ids) == 0 {
+		return make(map[string]*Comment), nil
+	}
+	return s.store.GetByIDs(ctx, ids)
+}
+
 // Update updates a comment.
 func (s *Service) Update(ctx context.Context, id string, content string) (*Comment, error) {
 	comment, err := s.store.GetByID(ctx, id)
@@ -232,10 +240,8 @@ func (s *Service) ListByThread(ctx context.Context, threadID string, opts ListOp
 		return nil, err
 	}
 
-	// Load authors
-	for _, c := range comments {
-		c.Author, _ = s.accounts.GetByID(ctx, c.AuthorID)
-	}
+	// Batch load authors
+	s.loadAuthors(ctx, comments)
 
 	return comments, nil
 }
@@ -254,10 +260,8 @@ func (s *Service) ListByParent(ctx context.Context, parentID string, opts ListOp
 		return nil, err
 	}
 
-	// Load authors
-	for _, c := range comments {
-		c.Author, _ = s.accounts.GetByID(ctx, c.AuthorID)
-	}
+	// Batch load authors
+	s.loadAuthors(ctx, comments)
 
 	return comments, nil
 }
@@ -276,10 +280,8 @@ func (s *Service) ListByAuthor(ctx context.Context, authorID string, opts ListOp
 		return nil, err
 	}
 
-	// Load authors
-	for _, c := range comments {
-		c.Author, _ = s.accounts.GetByID(ctx, c.AuthorID)
-	}
+	// Batch load authors
+	s.loadAuthors(ctx, comments)
 
 	return comments, nil
 }
@@ -307,11 +309,11 @@ func (s *Service) GetTree(ctx context.Context, threadID string, opts TreeOpts) (
 		return nil, err
 	}
 
-	// Load authors
-	for _, c := range comments {
-		c.Author, _ = s.accounts.GetByID(ctx, c.AuthorID)
+	// Batch load authors
+	s.loadAuthors(ctx, comments)
 
-		// Mark collapsed
+	// Mark collapsed
+	for _, c := range comments {
 		if c.Depth >= opts.CollapseAt {
 			c.IsCollapsed = true
 		}
@@ -344,10 +346,12 @@ func (s *Service) GetSubtree(ctx context.Context, parentID string, depth int) ([
 	var filtered []*Comment
 	for _, c := range comments {
 		if c.Depth <= maxDepth {
-			c.Author, _ = s.accounts.GetByID(ctx, c.AuthorID)
 			filtered = append(filtered, c)
 		}
 	}
+
+	// Batch load authors
+	s.loadAuthors(ctx, filtered)
 
 	return s.BuildTree(filtered), nil
 }
@@ -473,6 +477,36 @@ func (s *Service) EnrichComments(ctx context.Context, comments []*Comment, viewe
 	enrich(comments)
 
 	return nil
+}
+
+// loadAuthors batch loads authors for comments.
+func (s *Service) loadAuthors(ctx context.Context, comments []*Comment) {
+	if len(comments) == 0 {
+		return
+	}
+
+	// Collect unique author IDs
+	authorIDs := make([]string, 0, len(comments))
+	seen := make(map[string]bool)
+	for _, c := range comments {
+		if c.AuthorID != "" && !seen[c.AuthorID] {
+			authorIDs = append(authorIDs, c.AuthorID)
+			seen[c.AuthorID] = true
+		}
+	}
+
+	// Batch fetch authors
+	authors, err := s.accounts.GetByIDs(ctx, authorIDs)
+	if err != nil {
+		return
+	}
+
+	// Assign authors to comments
+	for _, c := range comments {
+		if author, ok := authors[c.AuthorID]; ok {
+			c.Author = author
+		}
+	}
 }
 
 // FormatPath creates a materialized path.

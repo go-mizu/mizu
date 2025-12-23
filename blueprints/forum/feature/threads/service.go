@@ -157,6 +157,14 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Thread, error) {
 	return thread, nil
 }
 
+// GetByIDs retrieves multiple threads by their IDs.
+func (s *Service) GetByIDs(ctx context.Context, ids []string) (map[string]*Thread, error) {
+	if len(ids) == 0 {
+		return make(map[string]*Thread), nil
+	}
+	return s.store.GetByIDs(ctx, ids)
+}
+
 // Update updates a thread.
 func (s *Service) Update(ctx context.Context, id string, in UpdateIn) (*Thread, error) {
 	thread, err := s.store.GetByID(ctx, id)
@@ -239,10 +247,8 @@ func (s *Service) List(ctx context.Context, opts ListOpts) ([]*Thread, error) {
 		return nil, err
 	}
 
-	// Load authors
-	for _, t := range threads {
-		t.Author, _ = s.accounts.GetByID(ctx, t.AuthorID)
-	}
+	// Batch load authors
+	s.loadAuthors(ctx, threads)
 
 	return threads, nil
 }
@@ -261,10 +267,8 @@ func (s *Service) ListByBoard(ctx context.Context, boardID string, opts ListOpts
 		return nil, err
 	}
 
-	// Load authors
-	for _, t := range threads {
-		t.Author, _ = s.accounts.GetByID(ctx, t.AuthorID)
-	}
+	// Batch load authors
+	s.loadAuthors(ctx, threads)
 
 	return threads, nil
 }
@@ -283,10 +287,8 @@ func (s *Service) ListByAuthor(ctx context.Context, authorID string, opts ListOp
 		return nil, err
 	}
 
-	// Load authors
-	for _, t := range threads {
-		t.Author, _ = s.accounts.GetByID(ctx, t.AuthorID)
-	}
+	// Batch load authors
+	s.loadAuthors(ctx, threads)
 
 	return threads, nil
 }
@@ -466,4 +468,34 @@ func (s *Service) EnrichThreads(ctx context.Context, threads []*Thread, viewerID
 // RecalculateHotScores recalculates hot scores for all threads.
 func (s *Service) RecalculateHotScores(ctx context.Context) error {
 	return s.store.UpdateHotScores(ctx)
+}
+
+// loadAuthors batch loads authors for threads.
+func (s *Service) loadAuthors(ctx context.Context, threads []*Thread) {
+	if len(threads) == 0 {
+		return
+	}
+
+	// Collect unique author IDs
+	authorIDs := make([]string, 0, len(threads))
+	seen := make(map[string]bool)
+	for _, t := range threads {
+		if t.AuthorID != "" && !seen[t.AuthorID] {
+			authorIDs = append(authorIDs, t.AuthorID)
+			seen[t.AuthorID] = true
+		}
+	}
+
+	// Batch fetch authors
+	authors, err := s.accounts.GetByIDs(ctx, authorIDs)
+	if err != nil {
+		return
+	}
+
+	// Assign authors to threads
+	for _, t := range threads {
+		if author, ok := authors[t.AuthorID]; ok {
+			t.Author = author
+		}
+	}
 }

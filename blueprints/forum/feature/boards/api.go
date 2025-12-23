@@ -140,6 +140,7 @@ type API interface {
 	Create(ctx context.Context, creatorID string, in CreateIn) (*Board, error)
 	GetByName(ctx context.Context, name string) (*Board, error)
 	GetByID(ctx context.Context, id string) (*Board, error)
+	GetByIDs(ctx context.Context, ids []string) (map[string]*Board, error)
 	Update(ctx context.Context, id string, in UpdateIn) (*Board, error)
 	Delete(ctx context.Context, id string) error
 	Archive(ctx context.Context, id string) error
@@ -180,6 +181,7 @@ type Store interface {
 	Create(ctx context.Context, board *Board) error
 	GetByName(ctx context.Context, name string) (*Board, error)
 	GetByID(ctx context.Context, id string) (*Board, error)
+	GetByIDs(ctx context.Context, ids []string) (map[string]*Board, error)
 	Update(ctx context.Context, board *Board) error
 	Delete(ctx context.Context, id string) error
 
@@ -187,6 +189,7 @@ type Store interface {
 	AddMember(ctx context.Context, member *BoardMember) error
 	RemoveMember(ctx context.Context, boardID, accountID string) error
 	GetMember(ctx context.Context, boardID, accountID string) (*BoardMember, error)
+	GetMemberBoards(ctx context.Context, accountID string, boardIDs []string) (map[string]*BoardMember, error)
 	ListMembers(ctx context.Context, boardID string, opts ListOpts) ([]*accounts.Account, error)
 	ListJoinedBoards(ctx context.Context, accountID string) ([]*Board, error)
 
@@ -194,6 +197,7 @@ type Store interface {
 	AddModerator(ctx context.Context, mod *BoardModerator) error
 	RemoveModerator(ctx context.Context, boardID, accountID string) error
 	GetModerator(ctx context.Context, boardID, accountID string) (*BoardModerator, error)
+	GetModeratorBoards(ctx context.Context, accountID string, boardIDs []string) (map[string]*BoardModerator, error)
 	ListModerators(ctx context.Context, boardID string) ([]*BoardModerator, error)
 	ListModeratedBoards(ctx context.Context, accountID string) ([]*Board, error)
 

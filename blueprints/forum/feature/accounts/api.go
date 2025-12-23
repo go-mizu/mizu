@@ -125,6 +125,7 @@ type API interface {
 	// Account management
 	Create(ctx context.Context, in CreateIn) (*Account, error)
 	GetByID(ctx context.Context, id string) (*Account, error)
+	GetByIDs(ctx context.Context, ids []string) (map[string]*Account, error)
 	GetByUsername(ctx context.Context, username string) (*Account, error)
 	GetByEmail(ctx context.Context, email string) (*Account, error)
 	Update(ctx context.Context, id string, in UpdateIn) (*Account, error)
@@ -155,6 +156,7 @@ type API interface {
 type Store interface {
 	Create(ctx context.Context, account *Account) error
 	GetByID(ctx context.Context, id string) (*Account, error)
+	GetByIDs(ctx context.Context, ids []string) (map[string]*Account, error)
 	GetByUsername(ctx context.Context, username string) (*Account, error)
 	GetByEmail(ctx context.Context, email string) (*Account, error)
 	Update(ctx context.Context, account *Account) error
