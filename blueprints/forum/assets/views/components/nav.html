@@ -1,0 +1,44 @@
+{{define "nav"}}
+<nav class="nav">
+    <div class="nav-container">
+        <a href="/" class="nav-logo">
+            <span class="logo-icon">F</span>
+            <span class="logo-text">Forum</span>
+        </a>
+
+        <div class="nav-search">
+            <form action="/search" method="get">
+                <input type="search" name="q" placeholder="Search..." class="search-input" value="{{with .Data}}{{.Query}}{{end}}">
+            </form>
+        </div>
+
+        <div class="nav-actions">
+            {{if .CurrentUser}}
+                <a href="/notifications" class="nav-link nav-icon" title="Notifications">
+                    <span class="icon">🔔</span>
+                    {{if gt .UnreadCount 0}}
+                        <span class="badge">{{.UnreadCount}}</span>
+                    {{end}}
+                </a>
+                <a href="/bookmarks" class="nav-link" title="Bookmarks">Saved</a>
+                <div class="nav-user">
+                    <a href="/u/{{.CurrentUser.Username}}" class="nav-link user-link">
+                        {{if .CurrentUser.AvatarURL}}
+                            <img src="{{.CurrentUser.AvatarURL}}" alt="" class="user-avatar-sm">
+                        {{end}}
+                        <span>{{.CurrentUser.Username}}</span>
+                        <span class="karma">{{formatScore .CurrentUser.Karma}}</span>
+                    </a>
+                    <a href="/settings" class="nav-link">Settings</a>
+                    <form action="/api/auth/logout" method="post" class="logout-form">
+                        <button type="submit" class="nav-link btn-link">Logout</button>
+                    </form>
+                </div>
+            {{else}}
+                <a href="/login" class="nav-link">Login</a>
+                <a href="/register" class="nav-link btn-primary">Sign Up</a>
+            {{end}}
+        </div>
+    </div>
+</nav>
+{{end}}

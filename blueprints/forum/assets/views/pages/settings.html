@@ -1,0 +1,59 @@
+{{define "settings.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="page-settings">
+    <h1>Account Settings</h1>
+
+    <div class="settings-card">
+        <h2>Profile</h2>
+        <form action="/api/auth/me" method="put" class="settings-form" data-action="update-profile">
+            <div class="form-group">
+                <label for="display_name">Display Name</label>
+                <input type="text" id="display_name" name="display_name" value="{{.CurrentUser.DisplayName}}" maxlength="50">
+            </div>
+
+            <div class="form-group">
+                <label for="bio">Bio</label>
+                <textarea id="bio" name="bio" rows="4" maxlength="500">{{.CurrentUser.Bio}}</textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="avatar_url">Avatar URL</label>
+                <input type="url" id="avatar_url" name="avatar_url" value="{{.CurrentUser.AvatarURL}}" placeholder="https://...">
+            </div>
+
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+        </form>
+    </div>
+
+    <div class="settings-card">
+        <h2>Change Password</h2>
+        <form action="/api/auth/password" method="put" class="settings-form" data-action="update-password">
+            <div class="form-group">
+                <label for="current_password">Current Password</label>
+                <input type="password" id="current_password" name="current_password" required>
+            </div>
+
+            <div class="form-group">
+                <label for="new_password">New Password</label>
+                <input type="password" id="new_password" name="new_password" required minlength="8">
+            </div>
+
+            <div class="form-group">
+                <label for="confirm_password">Confirm New Password</label>
+                <input type="password" id="confirm_password" name="confirm_password" required minlength="8">
+            </div>
+
+            <button type="submit" class="btn btn-primary">Update Password</button>
+        </form>
+    </div>
+
+    <div class="settings-card danger-zone">
+        <h2>Danger Zone</h2>
+        <p>Once you delete your account, there is no going back. Please be certain.</p>
+        <button type="button" class="btn btn-danger" data-action="delete-account">Delete Account</button>
+    </div>
+</div>
+{{end}}

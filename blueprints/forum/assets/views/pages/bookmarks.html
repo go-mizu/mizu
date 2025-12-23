@@ -1,0 +1,25 @@
+{{define "bookmarks.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="page-bookmarks">
+    <h1>Saved</h1>
+
+    <div class="tab-nav">
+        <a href="/bookmarks?type=threads" class="tab active">Posts</a>
+        <a href="/bookmarks?type=comments" class="tab">Comments</a>
+    </div>
+
+    <div class="thread-list">
+        {{range .Data.Threads}}
+            {{template "thread_card" .}}
+        {{else}}
+            <div class="empty-state">
+                <p>You haven't saved any posts yet.</p>
+                <p>Click the save button on any post to bookmark it for later.</p>
+            </div>
+        {{end}}
+    </div>
+</div>
+{{end}}

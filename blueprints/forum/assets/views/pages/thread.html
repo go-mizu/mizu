@@ -1,0 +1,118 @@
+{{define "thread.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="page-thread">
+    <div class="content-area">
+        <article class="thread-full">
+            <div class="vote-buttons">
+                <button class="vote-btn upvote {{if eq .Data.Thread.Vote 1}}active{{end}}" data-action="upvote" data-thread="{{.Data.Thread.ID}}">
+                    <span class="icon">▲</span>
+                </button>
+                <span class="vote-score">{{formatScore .Data.Thread.Score}}</span>
+                <button class="vote-btn downvote {{if eq .Data.Thread.Vote -1}}active{{end}}" data-action="downvote" data-thread="{{.Data.Thread.ID}}">
+                    <span class="icon">▼</span>
+                </button>
+            </div>
+
+            <div class="thread-content">
+                <div class="thread-meta">
+                    <a href="/b/{{.Data.Thread.Board.Name}}" class="board-link">b/{{.Data.Thread.Board.Name}}</a>
+                    <span class="separator">·</span>
+                    Posted by
+                    {{if .Data.Thread.Author}}
+                        <a href="/u/{{.Data.Thread.Author.Username}}" class="author-link">u/{{.Data.Thread.Author.Username}}</a>
+                    {{else}}
+                        [deleted]
+                    {{end}}
+                    <span class="separator">·</span>
+                    <span class="time" title="{{formatTime .Data.Thread.CreatedAt}}">{{formatTimeRelative .Data.Thread.CreatedAt}}</span>
+                </div>
+
+                <h1 class="thread-title">
+                    {{.Data.Thread.Title}}
+                    {{if eq .Data.Thread.Type "link"}}
+                        <a href="{{.Data.Thread.URL}}" class="external-link" target="_blank" rel="noopener">({{.Data.Thread.Domain}})</a>
+                    {{end}}
+                </h1>
+
+                <div class="thread-tags">
+                    {{if .Data.Thread.IsNSFW}}<span class="tag nsfw">NSFW</span>{{end}}
+                    {{if .Data.Thread.IsSpoiler}}<span class="tag spoiler">Spoiler</span>{{end}}
+                    {{if .Data.Thread.IsPinned}}<span class="tag pinned">Pinned</span>{{end}}
+                    {{if .Data.Thread.IsLocked}}<span class="tag locked">Locked</span>{{end}}
+                    {{if .Data.Thread.IsOC}}<span class="tag oc">OC</span>{{end}}
+                </div>
+
+                {{if .Data.Thread.ContentHTML}}
+                    <div class="thread-body">
+                        {{safeHTML .Data.Thread.ContentHTML}}
+                    </div>
+                {{end}}
+
+                <div class="thread-actions">
+                    <span class="action-info">{{.Data.Thread.CommentCount}} comments</span>
+                    <button class="action-btn bookmark-btn {{if .Data.Thread.IsBookmarked}}active{{end}}" data-action="bookmark" data-thread="{{.Data.Thread.ID}}">
+                        {{if .Data.Thread.IsBookmarked}}Saved{{else}}Save{{end}}
+                    </button>
+                    <button class="action-btn share-btn" data-action="share">Share</button>
+                    {{if .Data.Thread.CanEdit}}
+                        <a href="/b/{{.Data.Thread.Board.Name}}/{{.Data.Thread.ID}}/edit" class="action-btn">Edit</a>
+                    {{end}}
+                </div>
+            </div>
+        </article>
+
+        {{if and .CurrentUser (not .Data.Thread.IsLocked)}}
+            <div class="comment-form">
+                <form action="/api/threads/{{.Data.Thread.ID}}/comments" method="post" data-action="submit-comment">
+                    <textarea name="content" placeholder="What are your thoughts?" rows="4"></textarea>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Comment</button>
+                    </div>
+                </form>
+            </div>
+        {{else if .Data.Thread.IsLocked}}
+            <div class="locked-notice">
+                <p>This thread has been locked. New comments cannot be posted.</p>
+            </div>
+        {{end}}
+
+        <div class="comments-section">
+            <div class="comments-header">
+                <h2>Comments</h2>
+                <div class="sort-dropdown">
+                    <select data-action="sort-comments">
+                        <option value="best" {{if eq .Data.Sort "best"}}selected{{end}}>Best</option>
+                        <option value="top" {{if eq .Data.Sort "top"}}selected{{end}}>Top</option>
+                        <option value="new" {{if eq .Data.Sort "new"}}selected{{end}}>New</option>
+                        <option value="old" {{if eq .Data.Sort "old"}}selected{{end}}>Old</option>
+                        <option value="controversial" {{if eq .Data.Sort "controversial"}}selected{{end}}>Controversial</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="comments-list">
+                {{range .Data.Comments}}
+                    {{template "comment" .}}
+                {{else}}
+                    <div class="empty-state">
+                        <p>No comments yet. Be the first to share your thoughts!</p>
+                    </div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+
+    <aside class="sidebar">
+        <div class="sidebar-section board-about">
+            <h3>b/{{.Data.Thread.Board.Name}}</h3>
+            <p>{{.Data.Thread.Board.Description}}</p>
+            <div class="board-stats">
+                <span>{{formatNumber .Data.Thread.Board.MemberCount}} members</span>
+            </div>
+        </div>
+    </aside>
+</div>
+{{end}}

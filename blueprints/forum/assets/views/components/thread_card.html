@@ -1,0 +1,78 @@
+{{define "thread_card"}}
+<article class="thread-card" data-thread-id="{{.ID}}">
+    <div class="vote-buttons">
+        <button class="vote-btn upvote {{if eq .Vote 1}}active{{end}}" data-action="upvote" data-thread="{{.ID}}">
+            <span class="icon">▲</span>
+        </button>
+        <span class="vote-score">{{formatScore .Score}}</span>
+        <button class="vote-btn downvote {{if eq .Vote -1}}active{{end}}" data-action="downvote" data-thread="{{.ID}}">
+            <span class="icon">▼</span>
+        </button>
+    </div>
+
+    <div class="thread-content">
+        {{if .ThumbnailURL}}
+            <div class="thread-thumbnail">
+                <img src="{{.ThumbnailURL}}" alt="">
+            </div>
+        {{end}}
+
+        <div class="thread-main">
+            <div class="thread-meta">
+                {{if .Board}}
+                    <a href="/b/{{.Board.Name}}" class="board-link">b/{{.Board.Name}}</a>
+                    <span class="separator">·</span>
+                {{end}}
+                Posted by
+                {{if .Author}}
+                    <a href="/u/{{.Author.Username}}" class="author-link">u/{{.Author.Username}}</a>
+                {{else}}
+                    [deleted]
+                {{end}}
+                <span class="separator">·</span>
+                <span class="time" title="{{formatTime .CreatedAt}}">{{formatTimeRelative .CreatedAt}}</span>
+                {{if .EditedAt}}
+                    <span class="edited">(edited)</span>
+                {{end}}
+            </div>
+
+            <h3 class="thread-title">
+                <a href="/b/{{.Board.Name}}/{{.ID}}/{{slugify .Title}}">
+                    {{.Title}}
+                </a>
+                {{if eq .Type "link"}}
+                    <span class="domain">({{.Domain}})</span>
+                {{end}}
+            </h3>
+
+            {{if .IsNSFW}}
+                <span class="tag nsfw">NSFW</span>
+            {{end}}
+            {{if .IsSpoiler}}
+                <span class="tag spoiler">Spoiler</span>
+            {{end}}
+            {{if .IsPinned}}
+                <span class="tag pinned">Pinned</span>
+            {{end}}
+            {{if .IsLocked}}
+                <span class="tag locked">Locked</span>
+            {{end}}
+
+            <div class="thread-actions">
+                <a href="/b/{{.Board.Name}}/{{.ID}}/{{slugify .Title}}" class="action-btn">
+                    <span class="icon">💬</span>
+                    {{.CommentCount}} comments
+                </a>
+                <button class="action-btn bookmark-btn {{if .IsBookmarked}}active{{end}}" data-action="bookmark" data-thread="{{.ID}}">
+                    <span class="icon">{{if .IsBookmarked}}★{{else}}☆{{end}}</span>
+                    {{if .IsBookmarked}}Saved{{else}}Save{{end}}
+                </button>
+                <button class="action-btn share-btn" data-action="share" data-url="/b/{{.Board.Name}}/{{.ID}}/{{slugify .Title}}">
+                    <span class="icon">↗</span>
+                    Share
+                </button>
+            </div>
+        </div>
+    </div>
+</article>
+{{end}}

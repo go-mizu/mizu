@@ -1,0 +1,90 @@
+{{define "user.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="page-user">
+    <div class="user-header">
+        {{if .Data.User.BannerURL}}
+            <div class="user-banner" style="background-image: url('{{.Data.User.BannerURL}}')"></div>
+        {{end}}
+        <div class="user-info">
+            {{if .Data.User.AvatarURL}}
+                <img src="{{.Data.User.AvatarURL}}" alt="" class="user-avatar">
+            {{else}}
+                <div class="user-avatar placeholder">{{slice .Data.User.Username 0 1}}</div>
+            {{end}}
+            <div class="user-details">
+                <h1>{{if .Data.User.DisplayName}}{{.Data.User.DisplayName}}{{else}}{{.Data.User.Username}}{{end}}</h1>
+                <span class="username">u/{{.Data.User.Username}}</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="content-area">
+        <div class="user-stats">
+            <div class="stat">
+                <span class="stat-value">{{formatScore .Data.User.Karma}}</span>
+                <span class="stat-label">Karma</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value">{{formatScore .Data.User.PostKarma}}</span>
+                <span class="stat-label">Post Karma</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value">{{formatScore .Data.User.CommentKarma}}</span>
+                <span class="stat-label">Comment Karma</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value">{{formatTimeRelative .Data.User.CreatedAt}}</span>
+                <span class="stat-label">Member since</span>
+            </div>
+        </div>
+
+        {{if .Data.User.Bio}}
+            <div class="user-bio">
+                <p>{{.Data.User.Bio}}</p>
+            </div>
+        {{end}}
+
+        <div class="tab-nav">
+            <a href="/u/{{.Data.User.Username}}?tab=posts" class="tab {{if eq .Data.Tab "posts"}}active{{end}}">Posts</a>
+            <a href="/u/{{.Data.User.Username}}?tab=comments" class="tab {{if eq .Data.Tab "comments"}}active{{end}}">Comments</a>
+        </div>
+
+        {{if eq .Data.Tab "posts"}}
+            <div class="thread-list">
+                {{range .Data.Threads}}
+                    {{template "thread_card" .}}
+                {{else}}
+                    <div class="empty-state">
+                        <p>No posts yet.</p>
+                    </div>
+                {{end}}
+            </div>
+        {{else}}
+            <div class="comment-list">
+                {{range .Data.Comments}}
+                    <div class="comment-preview">
+                        <div class="comment-context">
+                            <a href="/b/{{.ThreadID}}" class="thread-link">In thread</a>
+                            <span class="separator">·</span>
+                            <span class="time">{{formatTimeRelative .CreatedAt}}</span>
+                        </div>
+                        <div class="comment-content">
+                            {{safeHTML .ContentHTML}}
+                        </div>
+                        <div class="comment-stats">
+                            <span>{{formatScore .Score}} points</span>
+                        </div>
+                    </div>
+                {{else}}
+                    <div class="empty-state">
+                        <p>No comments yet.</p>
+                    </div>
+                {{end}}
+            </div>
+        {{end}}
+    </div>
+</div>
+{{end}}
