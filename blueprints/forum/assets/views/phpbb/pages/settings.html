@@ -1,0 +1,86 @@
+{{define "settings.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="panel ucp-panel">
+    <div class="inner">
+        <h2>User Control Panel</h2>
+    </div>
+</div>
+
+{{if .Data.Success}}
+<div class="success-box">
+    Your settings have been saved successfully.
+</div>
+{{end}}
+
+{{if .Data.Error}}
+<div class="error-box">
+    {{.Data.Error}}
+</div>
+{{end}}
+
+<form action="/api/users/settings" method="post" class="phpbb-form settings-form">
+    <div class="panel profile-settings">
+        <div class="inner">
+            <h3>Profile Settings</h3>
+            <fieldset>
+                <dl>
+                    <dt><label for="email">E-mail address:</label></dt>
+                    <dd><input type="email" id="email" name="email" value="{{.CurrentUser.Email}}"></dd>
+                </dl>
+                <dl>
+                    <dt><label for="bio">Signature:</label></dt>
+                    <dd>
+                        <textarea id="bio" name="bio" rows="4">{{.CurrentUser.Bio}}</textarea>
+                        <p class="field-desc">This will appear below all your posts.</p>
+                    </dd>
+                </dl>
+            </fieldset>
+        </div>
+    </div>
+
+    <div class="panel password-settings">
+        <div class="inner">
+            <h3>Change Password</h3>
+            <fieldset>
+                <dl>
+                    <dt><label for="current_password">Current password:</label></dt>
+                    <dd><input type="password" id="current_password" name="current_password"></dd>
+                </dl>
+                <dl>
+                    <dt><label for="new_password">New password:</label></dt>
+                    <dd><input type="password" id="new_password" name="new_password"></dd>
+                </dl>
+                <dl>
+                    <dt><label for="confirm_password">Confirm new password:</label></dt>
+                    <dd><input type="password" id="confirm_password" name="confirm_password"></dd>
+                </dl>
+            </fieldset>
+        </div>
+    </div>
+
+    <div class="panel notification-settings">
+        <div class="inner">
+            <h3>Notification Settings</h3>
+            <fieldset>
+                <dl>
+                    <dt><label for="email_notifications">E-mail notifications:</label></dt>
+                    <dd>
+                        <select id="email_notifications" name="email_notifications">
+                            <option value="all">All notifications</option>
+                            <option value="mentions">Mentions only</option>
+                            <option value="none">None</option>
+                        </select>
+                    </dd>
+                </dl>
+            </fieldset>
+        </div>
+    </div>
+
+    <fieldset class="submit-buttons">
+        <button type="submit" class="button button-primary">Submit</button>
+    </fieldset>
+</form>
+{{end}}

@@ -1,0 +1,87 @@
+{{define "nav"}}
+<div id="page-header">
+    <div class="headerbar">
+        <div class="inner">
+            <div id="site-description">
+                <a id="logo" href="/" title="Board index">
+                    <span class="site-name">Forum</span>
+                </a>
+                <p class="site-desc">Your community discussion board</p>
+            </div>
+            <div id="search-box">
+                <form action="/search" method="get">
+                    <fieldset>
+                        <input type="search" name="q" placeholder="Search...">
+                        <button type="submit" class="search-btn">Search</button>
+                    </fieldset>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="navbar">
+        <div class="inner">
+            <ul class="navlinks">
+                <li class="icon-home"><a href="/" title="Board index">Board index</a></li>
+            </ul>
+            <ul class="rightside">
+                {{if .CurrentUser}}
+                <li class="icon-logout">
+                    <form action="/api/auth/logout" method="post" class="logout-form">
+                        <button type="submit" class="logout-link">Logout [ {{.CurrentUser.Username}} ]</button>
+                    </form>
+                </li>
+                {{else}}
+                <li class="icon-register"><a href="/register">Register</a></li>
+                <li class="icon-login"><a href="/login">Login</a></li>
+                {{end}}
+            </ul>
+        </div>
+    </div>
+
+    {{if .CurrentUser}}
+    <div class="user-panel">
+        <div class="inner">
+            <ul class="linklist leftside">
+                <li><a href="/u/{{.CurrentUser.Username}}" class="username">{{.CurrentUser.Username}}</a></li>
+                <li><span class="user-karma">{{formatScore .CurrentUser.Karma}} points</span></li>
+            </ul>
+            <ul class="linklist rightside">
+                <li><a href="/settings">User Control Panel</a></li>
+                {{if gt .UnreadCount 0}}
+                <li class="has-notifications"><a href="/notifications">{{.UnreadCount}} new notifications</a></li>
+                {{else}}
+                <li><a href="/notifications">Notifications</a></li>
+                {{end}}
+                <li><a href="/bookmarks">Bookmarks</a></li>
+            </ul>
+        </div>
+    </div>
+    {{end}}
+</div>
+
+<div class="breadcrumbs">
+    <div class="inner">
+        <ul class="linklist navlinks">
+            <li class="icon-home"><a href="/">Board index</a></li>
+            {{if .Data}}
+                {{if .Data.Board}}
+                <li class="separator">&raquo;</li>
+                <li><a href="/b/{{.Data.Board.Name}}">{{.Data.Board.Title}}</a></li>
+                    {{if .Data.Thread}}
+                    <li class="separator">&raquo;</li>
+                    <li><span>{{.Data.Thread.Title}}</span></li>
+                    {{end}}
+                {{else if .Data.Thread}}
+                    {{if .Data.Thread.Board}}
+                    <li class="separator">&raquo;</li>
+                    <li><a href="/b/{{.Data.Thread.Board.Name}}">{{.Data.Thread.Board.Name}}</a></li>
+                    {{end}}
+                    <li class="separator">&raquo;</li>
+                    <li><span>{{.Data.Thread.Title}}</span></li>
+                {{end}}
+            {{end}}
+        </ul>
+    </div>
+</div>
+{{end}}

@@ -1,0 +1,89 @@
+{{define "search.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="panel search-panel">
+    <div class="inner">
+        <h2>Search</h2>
+        <form action="/search" method="get" class="phpbb-form search-form">
+            <fieldset>
+                <dl>
+                    <dt><label for="q">Search for keywords:</label></dt>
+                    <dd>
+                        <input type="search" id="q" name="q" value="{{.Data.Query}}">
+                        <button type="submit" class="button button-primary">Search</button>
+                    </dd>
+                </dl>
+                <dl>
+                    <dt><label for="board">Search in forum:</label></dt>
+                    <dd>
+                        <select id="board" name="board">
+                            <option value="">All forums</option>
+                            {{range .Data.Boards}}
+                            <option value="{{.Name}}" {{if eq $.Data.Board .Name}}selected{{end}}>{{.Name}}</option>
+                            {{end}}
+                        </select>
+                    </dd>
+                </dl>
+            </fieldset>
+        </form>
+    </div>
+</div>
+
+{{if .Data.Query}}
+<div class="panel results-header">
+    <div class="inner">
+        <h3>Search results for "{{.Data.Query}}"</h3>
+    </div>
+</div>
+
+<div class="forumbg search-results">
+    <div class="inner">
+        <ul class="topiclist topics">
+            <li class="header">
+                <dl class="row-item">
+                    <dt><div class="list-inner">Topic / Started by</div></dt>
+                    <dd class="posts">Forum</dd>
+                    <dd class="views">Replies</dd>
+                    <dd class="lastpost">Last post</dd>
+                </dl>
+            </li>
+        </ul>
+        <ul class="topiclist topics">
+            {{range .Data.Threads}}
+            <li class="row">
+                <dl class="row-item">
+                    <dd class="topic-info">
+                        <div class="list-inner">
+                            <a href="/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}" class="topictitle">{{.Title}}</a>
+                            <br>
+                            <span class="topic-poster">
+                                by
+                                {{if .Author}}
+                                <a href="/u/{{.Author.Username}}" class="username">{{.Author.Username}}</a>
+                                {{else}}
+                                <span class="username">[deleted]</span>
+                                {{end}}
+                            </span>
+                        </div>
+                    </dd>
+                    <dd class="posts">
+                        {{if .Board}}
+                        <a href="/b/{{.Board.Name}}">{{.Board.Name}}</a>
+                        {{end}}
+                    </dd>
+                    <dd class="views">{{.CommentCount}}</dd>
+                    <dd class="lastpost">{{formatTimeRelative .CreatedAt}}</dd>
+                </dl>
+            </li>
+            {{else}}
+            <li class="row no-results">
+                <div class="inner">No results found for "{{.Data.Query}}"</div>
+            </li>
+            {{end}}
+        </ul>
+    </div>
+</div>
+{{end}}
+{{end}}

@@ -1,0 +1,60 @@
+{{define "register.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="panel register-panel">
+    <div class="inner">
+        <h2>Registration</h2>
+        <p class="panel-desc">Register to create your account and join the community.</p>
+
+        {{if .Data.Error}}
+        <div class="error-box">
+            {{.Data.Error}}
+        </div>
+        {{end}}
+
+        <form action="/api/auth/register" method="post" class="phpbb-form">
+            <fieldset>
+                <legend>Required Information</legend>
+                <dl>
+                    <dt><label for="username">Username:</label></dt>
+                    <dd>
+                        <input type="text" id="username" name="username" required>
+                        <p class="field-desc">Your username must be between 3 and 20 characters.</p>
+                    </dd>
+                </dl>
+                <dl>
+                    <dt><label for="email">E-mail address:</label></dt>
+                    <dd>
+                        <input type="email" id="email" name="email" required>
+                        <p class="field-desc">A valid e-mail address. All e-mails from the system will be sent to this address.</p>
+                    </dd>
+                </dl>
+                <dl>
+                    <dt><label for="password">Password:</label></dt>
+                    <dd>
+                        <input type="password" id="password" name="password" required>
+                        <p class="field-desc">Your password must be at least 6 characters.</p>
+                    </dd>
+                </dl>
+                <dl>
+                    <dt><label for="password_confirm">Confirm password:</label></dt>
+                    <dd>
+                        <input type="password" id="password_confirm" name="password_confirm" required>
+                        <p class="field-desc">Re-enter your password for confirmation.</p>
+                    </dd>
+                </dl>
+            </fieldset>
+            <fieldset class="submit-buttons">
+                <button type="submit" class="button button-primary">Submit</button>
+            </fieldset>
+        </form>
+
+        <div class="register-footer">
+            <hr class="dashed">
+            <p>Already have an account? <a href="/login">Login</a></p>
+        </div>
+    </div>
+</div>
+{{end}}

@@ -1,0 +1,46 @@
+{{define "login.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="panel login-panel">
+    <div class="inner">
+        <h2>Login</h2>
+        <p class="panel-desc">Please enter your username and password to log in.</p>
+
+        {{if .Data.Error}}
+        <div class="error-box">
+            {{.Data.Error}}
+        </div>
+        {{end}}
+
+        <form action="/api/auth/login" method="post" class="phpbb-form">
+            <fieldset class="fields1">
+                <dl>
+                    <dt><label for="username">Username:</label></dt>
+                    <dd><input type="text" id="username" name="username" required tabindex="1"></dd>
+                </dl>
+                <dl>
+                    <dt><label for="password">Password:</label></dt>
+                    <dd><input type="password" id="password" name="password" required tabindex="2"></dd>
+                </dl>
+                <dl>
+                    <dt>&nbsp;</dt>
+                    <dd>
+                        <label><input type="checkbox" name="remember" value="1" tabindex="3"> Remember me</label>
+                    </dd>
+                </dl>
+            </fieldset>
+            <fieldset class="submit-buttons">
+                <button type="submit" class="button button-primary" tabindex="4">Login</button>
+            </fieldset>
+        </form>
+
+        <div class="login-footer">
+            <hr class="dashed">
+            <p>Don't have an account? <a href="/register">Register</a></p>
+            <p><a href="#">I forgot my password</a></p>
+        </div>
+    </div>
+</div>
+{{end}}

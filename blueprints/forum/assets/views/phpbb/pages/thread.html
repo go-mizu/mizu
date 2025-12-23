@@ -1,0 +1,147 @@
+{{define "thread.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="action-bar top">
+    <div class="inner">
+        <h2 class="topic-title">
+            {{if or .Data.Thread.IsPinned .Data.Thread.IsLocked .Data.Thread.IsNSFW}}
+            <span class="topic-labels">
+                {{if .Data.Thread.IsPinned}}<span class="label label-sticky">Sticky</span>{{end}}
+                {{if .Data.Thread.IsLocked}}<span class="label label-locked">Locked</span>{{end}}
+                {{if .Data.Thread.IsNSFW}}<span class="label label-nsfw">NSFW</span>{{end}}
+            </span>
+            {{end}}
+            {{.Data.Thread.Title}}
+        </h2>
+    </div>
+</div>
+
+<div class="post-container first-post" data-thread-id="{{.Data.Thread.ID}}">
+    <div class="post bg1">
+        <div class="inner">
+            <dl class="postprofile">
+                <dt>
+                    {{if .Data.Thread.Author}}
+                    <a href="/u/{{.Data.Thread.Author.Username}}" class="username">{{.Data.Thread.Author.Username}}</a>
+                    <span class="user-rank">Member</span>
+                    {{else}}
+                    <span class="username">[deleted]</span>
+                    {{end}}
+                </dt>
+                <dd class="profile-posts">
+                    {{if .Data.Thread.Author}}Posts: {{formatNumber .Data.Thread.Author.Karma}}{{end}}
+                </dd>
+                <dd class="profile-joined">
+                    {{if .Data.Thread.Author}}Joined: {{formatTimeRelative .Data.Thread.Author.CreatedAt}}{{end}}
+                </dd>
+            </dl>
+            <div class="postbody">
+                <div class="post-header">
+                    <p class="author">
+                        {{if .Data.Thread.Author}}
+                        <a href="/u/{{.Data.Thread.Author.Username}}" class="username">{{.Data.Thread.Author.Username}}</a>
+                        {{else}}
+                        <span class="username">[deleted]</span>
+                        {{end}}
+                    </p>
+                    <p class="post-time">
+                        <time>{{formatTimeRelative .Data.Thread.CreatedAt}}</time>
+                        {{if eq .Data.Thread.Type "link"}}
+                        &bull; <a href="{{.Data.Thread.URL}}" target="_blank" rel="nofollow">{{.Data.Thread.Domain}}</a>
+                        {{end}}
+                    </p>
+                </div>
+
+                <div class="content">
+                    {{if eq .Data.Thread.Type "link"}}
+                    <p class="link-url">
+                        <a href="{{.Data.Thread.URL}}" target="_blank" rel="nofollow" class="external-link">{{.Data.Thread.URL}}</a>
+                    </p>
+                    {{end}}
+                    {{if .Data.Thread.ContentHTML}}
+                    <div class="post-content">
+                        {{safeHTML .Data.Thread.ContentHTML}}
+                    </div>
+                    {{end}}
+                </div>
+
+                <div class="post-buttons">
+                    <div class="vote-buttons">
+                        <span class="arrow up {{if eq .Data.Thread.Vote 1}}upmod{{else}}login-required{{end}}" data-action="upvote" data-thread="{{.Data.Thread.ID}}" role="button" tabindex="0"></span>
+                        <span class="score">{{formatScore .Data.Thread.Score}}</span>
+                        <span class="arrow down {{if eq .Data.Thread.Vote -1}}downmod{{else}}login-required{{end}}" data-action="downvote" data-thread="{{.Data.Thread.ID}}" role="button" tabindex="0"></span>
+                    </div>
+                    <ul class="post-actions">
+                        <li><button class="save-btn {{if .Data.Thread.IsBookmarked}}saved{{end}}" data-action="bookmark" data-thread="{{.Data.Thread.ID}}">{{if .Data.Thread.IsBookmarked}}Unsave{{else}}Save{{end}}</button></li>
+                        <li><button class="share-btn" data-action="share" data-url="/b/{{if .Data.Thread.Board}}{{.Data.Thread.Board.Name}}{{else}}all{{end}}/{{.Data.Thread.ID}}/{{slugify .Data.Thread.Title}}">Share</button></li>
+                        <li><a href="#" class="report-btn">Report</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="replies-header">
+    <div class="inner">
+        <h3>{{.Data.Thread.CommentCount}} {{if eq .Data.Thread.CommentCount 1}}Reply{{else}}Replies{{end}}</h3>
+        <div class="sort-dropdown">
+            <label>Sort by:</label>
+            <select data-action="sort-comments">
+                <option value="best" {{if eq .Data.Sort "best"}}selected{{end}}>Best</option>
+                <option value="top" {{if eq .Data.Sort "top"}}selected{{end}}>Top</option>
+                <option value="new" {{if eq .Data.Sort "new"}}selected{{end}}>Newest</option>
+                <option value="old" {{if eq .Data.Sort "old"}}selected{{end}}>Oldest</option>
+                <option value="controversial" {{if eq .Data.Sort "controversial"}}selected{{end}}>Controversial</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+{{if and .CurrentUser (not .Data.Thread.IsLocked)}}
+<div class="quick-reply-box">
+    <div class="inner">
+        <h3>Post a reply</h3>
+        <form action="/api/threads/{{.Data.Thread.ID}}/comments" method="post" class="reply-form" data-action="submit-comment">
+            <textarea rows="6" name="content" placeholder="Write your reply here..."></textarea>
+            <div class="form-buttons">
+                <button type="submit" class="button button-primary">Submit</button>
+            </div>
+        </form>
+    </div>
+</div>
+{{else if .Data.Thread.IsLocked}}
+<div class="panel notice-panel locked-notice">
+    <div class="inner">
+        <p>This topic is locked. New replies cannot be posted.</p>
+    </div>
+</div>
+{{end}}
+
+<div class="post-container replies">
+    {{range .Data.Comments}}
+        {{template "comment" .}}
+    {{else}}
+    <div class="no-replies">
+        <p>No replies yet. Be the first to reply!</p>
+    </div>
+    {{end}}
+</div>
+
+{{if .Data.Thread.Board}}
+<div class="panel forum-info-sidebar">
+    <div class="inner">
+        <h3>About {{.Data.Thread.Board.Name}}</h3>
+        <p class="forum-description">{{.Data.Thread.Board.Description}}</p>
+        <p class="forum-stats">{{formatNumber .Data.Thread.Board.MemberCount}} members</p>
+        {{if .CurrentUser}}
+        <p class="forum-action">
+            <a href="/b/{{.Data.Thread.Board.Name}}/submit" class="button">Post New Topic</a>
+        </p>
+        {{end}}
+    </div>
+</div>
+{{end}}
+{{end}}

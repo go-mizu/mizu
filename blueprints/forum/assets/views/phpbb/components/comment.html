@@ -1,0 +1,89 @@
+{{define "comment"}}
+<div class="post {{if .IsCollapsed}}collapsed{{end}}" data-comment-id="{{.ID}}" data-depth="{{.Depth}}">
+    <div class="inner">
+        <dl class="postprofile">
+            <dt>
+                {{if .IsDeleted}}
+                <span class="username">[deleted]</span>
+                {{else if .Author}}
+                <a href="/u/{{.Author.Username}}" class="username">{{.Author.Username}}</a>
+                <span class="user-rank">Member</span>
+                {{else}}
+                <span class="username">[deleted]</span>
+                {{end}}
+            </dt>
+            <dd class="profile-posts">
+                {{if .Author}}Posts: {{formatNumber .Author.Karma}}{{end}}
+            </dd>
+        </dl>
+
+        <div class="postbody">
+            <div class="post-header">
+                <span class="post-toggle">
+                    <a href="#" class="expand" data-action="toggle-collapse">[{{if .IsCollapsed}}+{{else}}-{{end}}]</a>
+                </span>
+                <p class="author">
+                    {{if .IsDeleted}}
+                    <span class="username">[deleted]</span>
+                    {{else if .Author}}
+                    <a href="/u/{{.Author.Username}}" class="username">{{.Author.Username}}</a>
+                    {{else}}
+                    <span class="username">[deleted]</span>
+                    {{end}}
+                </p>
+                <p class="post-time">
+                    <time title="{{formatTime .CreatedAt}}" datetime="{{.CreatedAt}}">{{formatTimeRelative .CreatedAt}}</time>
+                    {{if .EditedAt}}
+                    <span class="edited">*edited</span>
+                    {{end}}
+                </p>
+                <p class="post-score">
+                    <span class="score">{{formatScore .Score}} points</span>
+                </p>
+            </div>
+
+            {{if not .IsCollapsed}}
+            <div class="content">
+                {{if .IsRemoved}}
+                <p class="removed">[removed by moderator]</p>
+                {{else}}
+                <div class="post-content">{{safeHTML .ContentHTML}}</div>
+                {{end}}
+            </div>
+
+            <div class="post-buttons">
+                <div class="vote-buttons">
+                    <span class="arrow up {{if eq .Vote 1}}upmod{{else}}login-required{{end}}" data-action="upvote" data-comment="{{.ID}}" role="button" tabindex="0"></span>
+                    <span class="arrow down {{if eq .Vote -1}}downmod{{else}}login-required{{end}}" data-action="downvote" data-comment="{{.ID}}" role="button" tabindex="0"></span>
+                </div>
+                <ul class="post-actions">
+                    <li><a href="#" class="permalink">Permalink</a></li>
+                    <li><button class="save-btn {{if .IsBookmarked}}saved{{end}}" data-action="bookmark" data-comment="{{.ID}}">{{if .IsBookmarked}}Unsave{{else}}Save{{end}}</button></li>
+                    <li><button class="reply-btn" data-action="reply" data-comment="{{.ID}}">Reply</button></li>
+                    <li><a href="#" class="report-btn">Report</a></li>
+                </ul>
+            </div>
+
+            <div class="reply-form hidden" id="reply-form-{{.ID}}">
+                <form data-action="submit-reply" data-parent="{{.ID}}">
+                    <h3>Quick Reply</h3>
+                    <textarea name="content" rows="5" placeholder="Write your reply..."></textarea>
+                    <div class="form-buttons">
+                        <button type="submit" class="button button-primary">Submit</button>
+                        <button type="button" class="button" data-action="cancel-reply">Cancel</button>
+                    </div>
+                </form>
+            </div>
+
+            {{if .Children}}
+            <div class="replies">
+                {{range .Children}}
+                    {{template "comment" .}}
+                {{end}}
+            </div>
+            {{end}}
+            {{end}}
+        </div>
+    </div>
+</div>
+{{end}}

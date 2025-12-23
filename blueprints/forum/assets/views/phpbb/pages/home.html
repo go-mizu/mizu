@@ -1,0 +1,88 @@
+{{define "home.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="panel welcome-panel">
+    <div class="inner">
+        <h2>Welcome to the Forum</h2>
+        <p>Browse discussions from all communities below.</p>
+    </div>
+</div>
+
+<div class="action-bar top">
+    <div class="inner">
+        <ul class="sort-tabs">
+            <li class="{{if eq .Data.Sort "hot"}}active{{end}}"><a href="/?sort=hot">Hot</a></li>
+            <li class="{{if eq .Data.Sort "new"}}active{{end}}"><a href="/?sort=new">New</a></li>
+            <li class="{{if eq .Data.Sort "rising"}}active{{end}}"><a href="/?sort=rising">Rising</a></li>
+            <li class="{{if eq .Data.Sort "top"}}active{{end}}"><a href="/?sort=top">Top</a></li>
+        </ul>
+        {{if .CurrentUser}}
+        <div class="buttons">
+            <a href="/b/all/submit" class="button button-primary">New Topic</a>
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<div class="forumbg">
+    <div class="inner">
+        <ul class="topiclist topics">
+            <li class="header">
+                <dl class="row-item">
+                    <dt><div class="list-inner">Topics</div></dt>
+                    <dd class="posts">Replies</dd>
+                    <dd class="views">Points</dd>
+                    <dd class="lastpost">Last post</dd>
+                </dl>
+            </li>
+        </ul>
+        <ul class="topiclist topics">
+            {{range .Data.Threads}}
+                {{template "thread_card" .}}
+            {{else}}
+            <li class="row no-results">
+                <div class="inner">There are no topics to display.</div>
+            </li>
+            {{end}}
+        </ul>
+    </div>
+</div>
+
+<div class="action-bar bottom">
+    <div class="inner">
+        <div class="pagination">
+            <a href="/?after=25" class="button">Next &raquo;</a>
+        </div>
+    </div>
+</div>
+
+{{if .Data.PopularBoards}}
+<div class="forumbg popular-forums">
+    <div class="inner">
+        <h3 class="forum-header">Popular Forums</h3>
+        <ul class="topiclist forums">
+            {{range .Data.PopularBoards}}
+            <li class="row">
+                <dl class="row-item forum_read">
+                    <dt class="forum-icon">
+                        <div class="forum-folder-icon"></div>
+                    </dt>
+                    <dd class="forum-info">
+                        <div class="list-inner">
+                            <a href="/b/{{.Name}}" class="forumtitle">{{.Title}}</a>
+                            <br>
+                            <span class="forum-desc">{{.Description}}</span>
+                        </div>
+                    </dd>
+                    <dd class="topics">{{formatNumber .ThreadCount}} <dfn>topics</dfn></dd>
+                    <dd class="posts">{{formatNumber .MemberCount}} <dfn>members</dfn></dd>
+                </dl>
+            </li>
+            {{end}}
+        </ul>
+    </div>
+</div>
+{{end}}
+{{end}}

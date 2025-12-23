@@ -1,0 +1,62 @@
+{{define "bookmarks.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="panel ucp-panel">
+    <div class="inner">
+        <h2>Bookmarked Topics</h2>
+        <p>Topics you have saved for later reading.</p>
+    </div>
+</div>
+
+<div class="forumbg bookmarks-list">
+    <div class="inner">
+        <ul class="topiclist topics">
+            <li class="header">
+                <dl class="row-item">
+                    <dt><div class="list-inner">Topic / Started by</div></dt>
+                    <dd class="posts">Forum</dd>
+                    <dd class="views">Replies</dd>
+                    <dd class="lastpost">Saved</dd>
+                </dl>
+            </li>
+        </ul>
+        <ul class="topiclist topics">
+            {{range .Data.Threads}}
+            <li class="row" data-thread-id="{{.ID}}">
+                <dl class="row-item">
+                    <dd class="topic-info">
+                        <div class="list-inner">
+                            <a href="/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}" class="topictitle">{{.Title}}</a>
+                            <br>
+                            <span class="topic-poster">
+                                by
+                                {{if .Author}}
+                                <a href="/u/{{.Author.Username}}" class="username">{{.Author.Username}}</a>
+                                {{else}}
+                                <span class="username">[deleted]</span>
+                                {{end}}
+                            </span>
+                            <br>
+                            <button class="button button-secondary-small" data-action="bookmark" data-thread="{{.ID}}">Remove</button>
+                        </div>
+                    </dd>
+                    <dd class="posts">
+                        {{if .Board}}
+                        <a href="/b/{{.Board.Name}}">{{.Board.Name}}</a>
+                        {{end}}
+                    </dd>
+                    <dd class="views">{{.CommentCount}}</dd>
+                    <dd class="lastpost">{{formatTimeRelative .CreatedAt}}</dd>
+                </dl>
+            </li>
+            {{else}}
+            <li class="row no-results">
+                <div class="inner">You haven't bookmarked any topics yet.</div>
+            </li>
+            {{end}}
+        </ul>
+    </div>
+</div>
+{{end}}

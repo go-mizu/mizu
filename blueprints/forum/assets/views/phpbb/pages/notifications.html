@@ -1,0 +1,72 @@
+{{define "notifications.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="panel ucp-panel">
+    <div class="inner">
+        <h2>Notifications</h2>
+        <p>Your recent notifications and activity.</p>
+    </div>
+</div>
+
+<div class="forumbg notifications-list">
+    <div class="inner">
+        <ul class="topiclist notifications">
+            <li class="header">
+                <dl class="row-item">
+                    <dt><div class="list-inner">Notification</div></dt>
+                    <dd class="lastpost">Date</dd>
+                </dl>
+            </li>
+        </ul>
+        <ul class="topiclist notifications">
+            {{range .Data.Notifications}}
+            <li class="row {{if not .IsRead}}unread{{end}}">
+                <dl class="row-item">
+                    <dt class="notification-icon">
+                        {{if not .IsRead}}
+                        <span class="new-badge">NEW</span>
+                        {{end}}
+                    </dt>
+                    <dd class="notification-info">
+                        <div class="list-inner">
+                            {{if eq .Type "reply"}}
+                            <a href="/u/{{.Actor.Username}}" class="username">{{.Actor.Username}}</a> replied to your topic
+                            {{if .Thread}}
+                            "<a href="/b/{{if .Thread.Board}}{{.Thread.Board.Name}}{{else}}all{{end}}/{{.Thread.ID}}/{{slugify .Thread.Title}}">{{.Thread.Title}}</a>"
+                            {{end}}
+                            {{else if eq .Type "mention"}}
+                            <a href="/u/{{.Actor.Username}}" class="username">{{.Actor.Username}}</a> mentioned you
+                            {{if .Thread}}
+                            in "<a href="/b/{{if .Thread.Board}}{{.Thread.Board.Name}}{{else}}all{{end}}/{{.Thread.ID}}/{{slugify .Thread.Title}}">{{.Thread.Title}}</a>"
+                            {{end}}
+                            {{else if eq .Type "vote"}}
+                            Your post received votes
+                            {{else}}
+                            {{.Type}} notification
+                            {{end}}
+                        </div>
+                    </dd>
+                    <dd class="lastpost">{{formatTimeRelative .CreatedAt}}</dd>
+                </dl>
+            </li>
+            {{else}}
+            <li class="row no-results">
+                <div class="inner">No notifications yet.</div>
+            </li>
+            {{end}}
+        </ul>
+    </div>
+</div>
+
+{{if .Data.Notifications}}
+<div class="action-bar bottom">
+    <div class="inner">
+        <form action="/api/notifications/mark-read" method="post">
+            <button type="submit" class="button">Mark all as read</button>
+        </form>
+    </div>
+</div>
+{{end}}
+{{end}}

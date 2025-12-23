@@ -1,0 +1,35 @@
+{{define "error.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="panel error-panel">
+    <div class="inner">
+        <h2>Information</h2>
+        <div class="error-content">
+            <div class="error-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#BC2A4D" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+            </div>
+            <h3 class="error-title">{{if .Data.Code}}Error {{.Data.Code}}{{else}}Error{{end}}</h3>
+            <p class="error-message">
+                {{if .Data.Message}}
+                {{.Data.Message}}
+                {{else}}
+                The page you requested could not be found or you do not have permission to view it.
+                {{end}}
+            </p>
+            <p class="error-help">
+                If you followed a valid link, please notify the administrator.
+            </p>
+            <div class="error-actions">
+                <a href="/" class="button button-primary">Board index</a>
+                <a href="javascript:history.back()" class="button">Go back</a>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
