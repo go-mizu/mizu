@@ -100,6 +100,9 @@ type CreateIn struct {
 	Description string `json:"description"`
 	IsNSFW      bool   `json:"is_nsfw"`
 	IsPrivate   bool   `json:"is_private"`
+
+	// Seeding fields (optional, for importing from external sources)
+	MemberCount int64 `json:"member_count,omitempty"`
 }
 
 // Validate validates the create input.

@@ -83,23 +83,43 @@ func (s *Service) Create(ctx context.Context, authorID string, in CreateIn) (*Th
 	}
 
 	now := time.Now()
+	createdAt := now
+	if in.CreatedAt != nil {
+		createdAt = *in.CreatedAt
+	}
+
+	// Use initial counts if provided (for seeding), otherwise default to 1 (auto-upvote)
+	upvotes := int64(1)
+	downvotes := int64(0)
+	commentCount := int64(0)
+	if in.InitialUpvotes > 0 || in.InitialDownvotes > 0 {
+		upvotes = in.InitialUpvotes
+		downvotes = in.InitialDownvotes
+	}
+	if in.InitialComments > 0 {
+		commentCount = in.InitialComments
+	}
+	score := upvotes - downvotes
+
 	thread := &Thread{
-		ID:          ulid.New(),
-		BoardID:     in.BoardID,
-		AuthorID:    authorID,
-		Title:       in.Title,
-		Content:     in.Content,
-		ContentHTML: contentHTML,
-		URL:         in.URL,
-		Domain:      domain,
-		Type:        threadType,
-		Score:       1, // Auto-upvote
-		UpvoteCount: 1,
-		HotScore:    HotScore(1, 0, now),
-		IsNSFW:      in.IsNSFW || board.IsNSFW, // Inherit from board
-		IsSpoiler:   in.IsSpoiler,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:            ulid.New(),
+		BoardID:       in.BoardID,
+		AuthorID:      authorID,
+		Title:         in.Title,
+		Content:       in.Content,
+		ContentHTML:   contentHTML,
+		URL:           in.URL,
+		Domain:        domain,
+		Type:          threadType,
+		Score:         score,
+		UpvoteCount:   upvotes,
+		DownvoteCount: downvotes,
+		CommentCount:  commentCount,
+		HotScore:      HotScore(upvotes, downvotes, createdAt),
+		IsNSFW:        in.IsNSFW || board.IsNSFW, // Inherit from board
+		IsSpoiler:     in.IsSpoiler,
+		CreatedAt:     createdAt,
+		UpdatedAt:     now,
 	}
 
 	if err := s.store.Create(ctx, thread); err != nil {

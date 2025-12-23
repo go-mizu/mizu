@@ -109,6 +109,12 @@ type CreateIn struct {
 	Type      ThreadType `json:"type"`
 	IsNSFW    bool       `json:"is_nsfw"`
 	IsSpoiler bool       `json:"is_spoiler"`
+
+	// Seeding fields (optional, for importing from external sources)
+	InitialUpvotes   int64      `json:"initial_upvotes,omitempty"`
+	InitialDownvotes int64      `json:"initial_downvotes,omitempty"`
+	InitialComments  int64      `json:"initial_comments,omitempty"`
+	CreatedAt        *time.Time `json:"created_at,omitempty"`
 }
 
 // UpdateIn contains input for updating a thread.
