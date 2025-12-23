@@ -130,6 +130,16 @@ func (s *Server) Run() error {
 	return s.app.Listen(s.config.Addr)
 }
 
+// Handler returns the HTTP handler for the server.
+func (s *Server) Handler() http.Handler {
+	return s.app.Router
+}
+
+// ServeHTTP implements http.Handler.
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.app.Router.ServeHTTP(w, r)
+}
+
 // setupRoutes configures all routes.
 func (s *Server) setupRoutes() {
 	r := s.app.Router
