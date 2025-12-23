@@ -1,0 +1,33 @@
+{{template "layout" .}}
+
+{{define "content"}}
+<div class="form-page">
+    <h2>Submit</h2>
+
+    {{if .Error}}
+    <div class="error">{{.Error}}</div>
+    {{end}}
+
+    <form action="/submit" method="post">
+        <div class="form-row">
+            <label for="title">Title</label>
+            <input type="text" id="title" name="title" required maxlength="150">
+        </div>
+
+        <div class="form-row">
+            <label for="url">URL</label>
+            <input type="url" id="url" name="url" placeholder="https://...">
+            <div class="form-hint">Leave blank for a text post</div>
+        </div>
+
+        <div class="form-row">
+            <label for="text">Text</label>
+            <textarea id="text" name="text" placeholder="Optional text for Ask/Show posts..."></textarea>
+        </div>
+
+        <div class="form-row">
+            <button type="submit">Submit</button>
+        </div>
+    </form>
+</div>
+{{end}}

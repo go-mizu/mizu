@@ -1,0 +1,40 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}}</title>
+    <link rel="stylesheet" href="/static/css/news.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <a href="/" class="logo">News</a>
+            <a href="/newest">new</a>
+            <a href="/top">top</a>
+            {{if .User}}
+            <a href="/submit">submit</a>
+            {{end}}
+            <span class="right">
+                {{if .User}}
+                    <a href="/user/{{.User.Username}}">{{.User.Username}}</a> ({{.User.Karma}}) |
+                    <form action="/logout" method="post" style="display:inline">
+                        <button type="submit" style="background:none;border:none;color:inherit;cursor:pointer;font:inherit;padding:0">logout</button>
+                    </form>
+                {{else}}
+                    <a href="/login">login</a>
+                {{end}}
+            </span>
+        </nav>
+    </header>
+    <main>
+        {{template "content" .}}
+    </main>
+    <footer>
+        <a href="#">Guidelines</a> |
+        <a href="#">About</a>
+    </footer>
+</body>
+</html>
+{{end}}
