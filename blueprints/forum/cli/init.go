@@ -1,29 +1,51 @@
 package cli
 
 import (
-	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/go-mizu/mizu/blueprints/forum/store/duckdb"
 )
 
-var initCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Initialize the forum database",
-	Long:  `Creates the database and runs all migrations to set up the schema.`,
-	RunE:  runInit,
+// NewInit creates the init command.
+func NewInit() *cobra.Command {
+	return &cobra.Command{
+		Use:   "init",
+		Short: "Initialize the forum database",
+		Long: `Creates the database and runs all migrations to set up the schema.
+
+This command is safe to run multiple times - it will not overwrite existing data.`,
+		RunE: runInit,
+	}
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
-	fmt.Printf("Initializing forum database at %s...\n", dataDir)
+	ui := NewUI()
+
+	ui.Header(iconDatabase, "Initializing Forum Database")
+	ui.Blank()
+
+	start := time.Now()
+	ui.StartSpinner("Creating database...")
 
 	store, err := duckdb.Open(dataDir)
 	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
+		ui.StopSpinnerError("Failed to create database")
+		return err
 	}
 	defer store.Close()
 
-	fmt.Println("Database initialized successfully!")
+	ui.StopSpinner("Database created", time.Since(start))
+
+	ui.Summary([][2]string{
+		{"Location", dataDir},
+		{"Status", "Ready"},
+	})
+
+	ui.Success("Database initialized successfully!")
+	ui.Blank()
+	ui.Hint("Next: run 'forum seed' to add sample data, or 'forum serve' to start the server")
+
 	return nil
 }

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -13,21 +14,36 @@ import (
 	"github.com/go-mizu/mizu/blueprints/forum/store/duckdb"
 )
 
-var seedCmd = &cobra.Command{
-	Use:   "seed",
-	Short: "Seed the database with sample data",
-	Long:  `Populates the database with sample users, boards, threads, and comments for testing.`,
-	RunE:  runSeed,
+// NewSeed creates the seed command.
+func NewSeed() *cobra.Command {
+	return &cobra.Command{
+		Use:   "seed",
+		Short: "Seed the database with sample data",
+		Long: `Populates the database with sample users, boards, threads, and comments for testing.
+
+This is useful for development and demonstration purposes.`,
+		RunE: runSeed,
+	}
 }
 
 func runSeed(cmd *cobra.Command, args []string) error {
-	fmt.Printf("Seeding database at %s...\n", dataDir)
+	ui := NewUI()
+
+	ui.Header(iconDatabase, "Seeding Forum Database")
+	ui.Blank()
+
+	// Open database
+	start := time.Now()
+	ui.StartSpinner("Opening database...")
 
 	store, err := duckdb.Open(dataDir)
 	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
+		ui.StopSpinnerError("Failed to open database")
+		return err
 	}
 	defer store.Close()
+
+	ui.StopSpinner("Database opened", time.Since(start))
 
 	ctx := context.Background()
 
@@ -37,17 +53,21 @@ func runSeed(cmd *cobra.Command, args []string) error {
 	threadsSvc := threads.NewService(store.Threads(), accountsSvc, boardsSvc)
 	commentsSvc := comments.NewService(store.Comments(), accountsSvc, threadsSvc)
 
+	// Track counts
+	var userCount, boardCount, threadCount, commentCount int
+
 	// Create sample users
-	fmt.Println("Creating sample users...")
+	ui.Header(iconUser, "Creating Users")
 	users := []struct {
 		username string
 		email    string
 		password string
+		isAdmin  bool
 	}{
-		{"admin", "admin@example.com", "password123"},
-		{"alice", "alice@example.com", "password123"},
-		{"bob", "bob@example.com", "password123"},
-		{"charlie", "charlie@example.com", "password123"},
+		{"admin", "admin@example.com", "password123", true},
+		{"alice", "alice@example.com", "password123", false},
+		{"bob", "bob@example.com", "password123", false},
+		{"charlie", "charlie@example.com", "password123", false},
 	}
 
 	userIDs := make(map[string]string)
@@ -58,20 +78,21 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Password: u.password,
 		})
 		if err != nil {
-			fmt.Printf("  Warning: could not create user %s: %v\n", u.username, err)
 			// Try to get existing user
 			existing, _ := accountsSvc.GetByUsername(ctx, u.username)
 			if existing != nil {
 				userIDs[u.username] = existing.ID
+				ui.Warn(fmt.Sprintf("User @%s already exists", u.username))
 			}
 			continue
 		}
 		userIDs[u.username] = account.ID
-		fmt.Printf("  Created user: %s\n", u.username)
+		userCount++
+		ui.UserRow(u.username, u.email, u.isAdmin, false)
 	}
 
 	// Create sample boards
-	fmt.Println("Creating sample boards...")
+	ui.Header(iconBoard, "Creating Boards")
 	sampleBoards := []struct {
 		name        string
 		title       string
@@ -97,20 +118,21 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Description: b.description,
 		})
 		if err != nil {
-			fmt.Printf("  Warning: could not create board %s: %v\n", b.name, err)
 			// Try to get existing board
 			existing, _ := boardsSvc.GetByName(ctx, b.name)
 			if existing != nil {
 				boardIDs[b.name] = existing.ID
+				ui.Warn(fmt.Sprintf("Board b/%s already exists", b.name))
 			}
 			continue
 		}
 		boardIDs[b.name] = board.ID
-		fmt.Printf("  Created board: b/%s\n", b.name)
+		boardCount++
+		ui.BoardRow(b.name, b.title, 0)
 	}
 
 	// Create sample threads
-	fmt.Println("Creating sample threads...")
+	ui.Header(iconThread, "Creating Threads")
 	sampleThreads := []struct {
 		board   string
 		author  string
@@ -163,21 +185,17 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Type:    "text",
 		})
 		if err != nil {
-			fmt.Printf("  Warning: could not create thread: %v\n", err)
+			ui.Warn(fmt.Sprintf("Could not create thread: %v", err))
 			continue
 		}
 		threadIDs[fmt.Sprintf("thread_%d", i)] = thread.ID
-		title := t.title
-		if len(title) > 40 {
-			title = title[:40] + "..."
-		}
-		fmt.Printf("  Created thread: %s\n", title)
+		threadCount++
+		ui.ThreadRow(t.title, t.author, 0, 0)
 	}
 
 	// Create sample comments
-	fmt.Println("Creating sample comments...")
+	ui.Header(iconComment, "Creating Comments")
 	for key, threadID := range threadIDs {
-		// Add a few comments to each thread
 		commentAuthors := []string{"alice", "bob", "charlie", "admin"}
 		commentTexts := []string{
 			"Great post! I completely agree with your points.",
@@ -196,19 +214,25 @@ func runSeed(cmd *cobra.Command, args []string) error {
 				Content:  text,
 			})
 			if err != nil {
-				fmt.Printf("  Warning: could not create comment on %s: %v\n", key, err)
+				ui.Warn(fmt.Sprintf("Could not create comment on %s: %v", key, err))
 				continue
 			}
+			commentCount++
 		}
 	}
-	fmt.Println("  Created sample comments")
+	ui.Progress(iconCheck, fmt.Sprintf("Created %d comments", commentCount))
 
 	// Summary
-	fmt.Println("\nSeeding complete!")
-	fmt.Printf("  Users: %d\n", len(userIDs))
-	fmt.Printf("  Boards: %d\n", len(boardIDs))
-	fmt.Printf("  Threads: %d\n", len(threadIDs))
-	fmt.Println("\nYou can now run: forum serve")
+	ui.Summary([][2]string{
+		{"Users", fmt.Sprintf("%d", userCount)},
+		{"Boards", fmt.Sprintf("%d", boardCount)},
+		{"Threads", fmt.Sprintf("%d", threadCount)},
+		{"Comments", fmt.Sprintf("%d", commentCount)},
+	})
+
+	ui.Success("Database seeded successfully!")
+	ui.Blank()
+	ui.Hint("Next: run 'forum serve' to start the server")
 
 	return nil
 }

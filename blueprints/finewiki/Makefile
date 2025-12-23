@@ -48,7 +48,7 @@ test-race: ## Run tests with race detector
 .PHONY: update
 update: ## Refresh deps (rm go.sum; go get ./...; go mod tidy)
 	@rm -f go.sum
-	@$(GO) get ./...
+	@$(GO) get -u ./...
 	@$(GO) mod tidy
 
 .PHONY: clean

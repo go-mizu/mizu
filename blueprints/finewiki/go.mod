@@ -3,12 +3,12 @@ module github.com/go-mizu/blueprints/finewiki
 go 1.25.5
 
 require (
-	github.com/charmbracelet/bubbles v0.20.0
-	github.com/charmbracelet/bubbletea v1.2.4
+	github.com/charmbracelet/bubbles v0.21.0
+	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/fang v0.4.4
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/duckdb/duckdb-go/v2 v2.5.4
-	github.com/go-mizu/mizu v0.5.0
+	github.com/go-mizu/mizu v0.5.2
 	github.com/spf13/cobra v1.10.2
 	github.com/yuin/goldmark v1.7.13
 )
@@ -29,9 +29,14 @@ require (
 	github.com/clipperhouse/displaywidth v0.6.2 // indirect
 	github.com/clipperhouse/stringish v0.1.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.3.0 // indirect
-	github.com/duckdb/duckdb-go-bindings v0.1.24 // indirect
+	github.com/duckdb/duckdb-go-bindings v0.3.1 // indirect
 	github.com/duckdb/duckdb-go-bindings/darwin-amd64 v0.1.24 // indirect
 	github.com/duckdb/duckdb-go-bindings/darwin-arm64 v0.1.24 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/darwin-amd64 v0.3.1 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/darwin-arm64 v0.3.1 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/linux-amd64 v0.3.1 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/linux-arm64 v0.3.1 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.3.1 // indirect
 	github.com/duckdb/duckdb-go-bindings/linux-amd64 v0.1.24 // indirect
 	github.com/duckdb/duckdb-go-bindings/linux-arm64 v0.1.24 // indirect
 	github.com/duckdb/duckdb-go-bindings/windows-amd64 v0.1.24 // indirect
@@ -66,7 +71,7 @@ require (
 	golang.org/x/mod v0.31.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.39.0 // indirect
-	golang.org/x/telemetry v0.0.0-20251219171224-e0dd3dd4fbaf // indirect
+	golang.org/x/telemetry v0.0.0-20251222180846-3f2a21fb04ff // indirect
 	golang.org/x/text v0.32.0 // indirect
 	golang.org/x/tools v0.40.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect

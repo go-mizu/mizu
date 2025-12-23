@@ -2,10 +2,10 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -13,32 +13,65 @@ import (
 	"github.com/go-mizu/mizu/blueprints/forum/store/duckdb"
 )
 
-var serveCmd = &cobra.Command{
-	Use:   "serve",
-	Short: "Start the forum server",
-	Long:  `Starts the HTTP server for the forum application.`,
-	RunE:  runServe,
+// NewServe creates the serve command.
+func NewServe() *cobra.Command {
+	return &cobra.Command{
+		Use:   "serve",
+		Short: "Start the forum server",
+		Long: `Starts the HTTP server for the forum application.
+
+The server provides both the REST API and HTML pages for the forum.`,
+		RunE: runServe,
+	}
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
+	ui := NewUI()
+
+	ui.Header(iconServer, "Starting Forum Server")
+	ui.Blank()
+
 	// Open database
+	start := time.Now()
+	ui.StartSpinner("Opening database...")
+
 	store, err := duckdb.Open(dataDir)
 	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
+		ui.StopSpinnerError("Failed to open database")
+		return err
 	}
 	defer store.Close()
 
+	ui.StopSpinner("Database ready", time.Since(start))
+
 	// Create server
+	ui.StartSpinner("Initializing server...")
+	start = time.Now()
+
 	srv, err := web.NewServer(store, web.ServerConfig{
 		Addr: addr,
 		Dev:  dev,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create server: %w", err)
+		ui.StopSpinnerError("Failed to create server")
+		return err
 	}
 
+	ui.StopSpinner("Server initialized", time.Since(start))
+
+	// Print configuration
+	ui.Summary([][2]string{
+		{"Address", addr},
+		{"Data Dir", dataDir},
+		{"Mode", modeString(dev)},
+	})
+
+	ui.Blank()
+	ui.Hint("Press Ctrl+C to stop the server")
+	ui.Blank()
+
 	// Setup graceful shutdown
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(cmd.Context())
 	defer cancel()
 
 	sigCh := make(chan os.Signal, 1)
@@ -46,15 +79,20 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	go func() {
 		<-sigCh
-		fmt.Println("\nShutting down...")
+		ui.Blank()
+		ui.Warn("Shutting down...")
 		cancel()
 	}()
 
 	// Start server
-	fmt.Printf("Forum server starting on %s\n", addr)
-	if dev {
-		fmt.Println("Running in development mode")
-	}
+	ui.Step("Listening on " + addr)
 
 	return srv.Start(ctx)
+}
+
+func modeString(dev bool) string {
+	if dev {
+		return "development"
+	}
+	return "production"
 }
