@@ -1,0 +1,57 @@
+{{define "thread_card"}}
+<li class="row topic-row {{if .IsPinned}}sticky{{end}} {{if .IsLocked}}locked{{end}}" data-thread-id="{{.ID}}">
+    <dl class="row-item topic_{{if gt .Score 50}}hot{{else if .IsLocked}}locked{{else if .IsPinned}}sticky{{else}}read{{end}}">
+        <dt class="topic-icon">
+            <div class="topic-folder-icon {{if gt .Score 50}}hot{{else if .IsLocked}}locked{{else if .IsPinned}}sticky{{end}}"></div>
+        </dt>
+        <dd class="topic-info">
+            <div class="list-inner">
+                {{if or .IsNSFW .IsSpoiler .IsPinned .IsLocked}}
+                <div class="topic-labels">
+                    {{if .IsPinned}}<span class="label label-sticky">Sticky</span>{{end}}
+                    {{if .IsLocked}}<span class="label label-locked">Locked</span>{{end}}
+                    {{if .IsNSFW}}<span class="label label-nsfw">NSFW</span>{{end}}
+                    {{if .IsSpoiler}}<span class="label label-spoiler">Spoiler</span>{{end}}
+                </div>
+                {{end}}
+                <a href="/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}" class="topictitle">{{.Title}}</a>
+                {{if eq .Type "link"}}
+                <span class="topic-domain">(<a href="/search?q=site:{{.Domain}}">{{.Domain}}</a>)</span>
+                {{end}}
+                <br>
+                <div class="topic-poster">
+                    by
+                    {{if .Author}}
+                    <a href="/u/{{.Author.Username}}" class="username">{{.Author.Username}}</a>
+                    {{else}}
+                    <span class="username">[deleted]</span>
+                    {{end}}
+                    &raquo; <time>{{formatTimeRelative .CreatedAt}}</time>
+                    {{if .Board}}
+                    &bull; in <a href="/b/{{.Board.Name}}" class="forumlink">{{.Board.Name}}</a>
+                    {{end}}
+                </div>
+            </div>
+        </dd>
+        <dd class="posts">
+            <dfn>Replies</dfn>
+            {{.CommentCount}}
+        </dd>
+        <dd class="views">
+            <dfn>Points</dfn>
+            <div class="vote-display">
+                <span class="arrow up {{if eq .Vote 1}}upmod{{else}}login-required{{end}}" data-action="upvote" data-thread="{{.ID}}" role="button" tabindex="0"></span>
+                <span class="score">{{formatScore .Score}}</span>
+                <span class="arrow down {{if eq .Vote -1}}downmod{{else}}login-required{{end}}" data-action="downvote" data-thread="{{.ID}}" role="button" tabindex="0"></span>
+            </div>
+        </dd>
+        <dd class="lastpost">
+            <dfn>Last post</dfn>
+            <span>{{formatTimeRelative .CreatedAt}}</span>
+            {{if .Author}}
+            <br>by <a href="/u/{{.Author.Username}}" class="username-coloured">{{.Author.Username}}</a>
+            {{end}}
+        </dd>
+    </dl>
+</li>
+{{end}}

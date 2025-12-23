@@ -1,0 +1,119 @@
+{{define "submit.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="panel submit-panel">
+    <div class="inner">
+        <h2>Post a new topic{{if .Data.Board}} in {{.Data.Board.Title}}{{end}}</h2>
+    </div>
+</div>
+
+{{if .Data.Error}}
+<div class="error-box">
+    {{.Data.Error}}
+</div>
+{{end}}
+
+<form action="/api/threads" method="post" class="phpbb-form submit-form">
+    {{if .Data.Board}}
+    <input type="hidden" name="board" value="{{.Data.Board.Name}}">
+    {{end}}
+
+    <div class="panel topic-info-panel">
+        <div class="inner">
+            <h3>Topic Information</h3>
+            <fieldset>
+                {{if not .Data.Board}}
+                <dl>
+                    <dt><label for="board">Forum:</label></dt>
+                    <dd>
+                        <select id="board" name="board" required>
+                            <option value="">-- Select a Forum --</option>
+                            {{range .Data.Boards}}
+                            <option value="{{.Name}}">{{.Name}}</option>
+                            {{end}}
+                        </select>
+                    </dd>
+                </dl>
+                {{end}}
+                <dl>
+                    <dt><label for="title">Subject:</label></dt>
+                    <dd><input type="text" id="title" name="title" required></dd>
+                </dl>
+                <dl>
+                    <dt><label for="type">Topic Type:</label></dt>
+                    <dd>
+                        <select id="type" name="type">
+                            <option value="text">Discussion</option>
+                            <option value="link">Link</option>
+                        </select>
+                    </dd>
+                </dl>
+            </fieldset>
+        </div>
+    </div>
+
+    <div class="panel url-panel" id="url-section" style="display: none;">
+        <div class="inner">
+            <h3>Link URL</h3>
+            <fieldset>
+                <dl>
+                    <dt><label for="url">URL:</label></dt>
+                    <dd><input type="url" id="url" name="url" placeholder="https://"></dd>
+                </dl>
+            </fieldset>
+        </div>
+    </div>
+
+    <div class="panel message-panel" id="content-section">
+        <div class="inner">
+            <h3 class="message-header">Message body</h3>
+            <fieldset>
+                <dl>
+                    <dd class="full-width">
+                        <textarea name="content" rows="12" placeholder="Enter your message here..."></textarea>
+                    </dd>
+                </dl>
+            </fieldset>
+        </div>
+    </div>
+
+    <div class="panel options-panel">
+        <div class="inner">
+            <h3>Options</h3>
+            <fieldset>
+                <dl class="checkbox-row">
+                    <dd>
+                        <label><input type="checkbox" name="nsfw" value="1"> Mark as NSFW</label>
+                    </dd>
+                </dl>
+                <dl class="checkbox-row">
+                    <dd>
+                        <label><input type="checkbox" name="spoiler" value="1"> Mark as Spoiler</label>
+                    </dd>
+                </dl>
+            </fieldset>
+        </div>
+    </div>
+
+    <fieldset class="submit-buttons">
+        <button type="submit" class="button button-primary">Submit</button>
+        <button type="button" class="button" onclick="history.back()">Cancel</button>
+    </fieldset>
+</form>
+
+<script>
+document.getElementById('type').addEventListener('change', function() {
+    var urlSection = document.getElementById('url-section');
+    var contentSection = document.getElementById('content-section');
+    if (this.value === 'link') {
+        urlSection.style.display = 'block';
+        contentSection.querySelector('.message-header').textContent = 'Description (optional)';
+    } else {
+        urlSection.style.display = 'none';
+        contentSection.querySelector('.message-header').textContent = 'Message body';
+    }
+});
+</script>
+{{end}}

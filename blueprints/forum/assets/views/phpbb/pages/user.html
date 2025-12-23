@@ -1,0 +1,118 @@
+{{define "user.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="panel profile-panel">
+    <div class="inner profile-header">
+        <div class="profile-avatar">
+            <div class="avatar-placeholder"></div>
+        </div>
+        <div class="profile-info">
+            <h2>{{.Data.User.Username}}</h2>
+            <dl class="profile-details">
+                <dt>Joined:</dt>
+                <dd>{{formatTimeRelative .Data.User.CreatedAt}}</dd>
+                <dt>Total posts:</dt>
+                <dd>{{formatNumber .Data.User.CommentCount}}</dd>
+                <dt>Topics:</dt>
+                <dd>{{formatNumber .Data.User.ThreadCount}}</dd>
+                <dt>Reputation:</dt>
+                <dd>{{formatNumber .Data.User.Karma}}</dd>
+            </dl>
+        </div>
+    </div>
+</div>
+
+{{if .Data.User.Bio}}
+<div class="panel bio-panel">
+    <div class="inner">
+        <h3>About {{.Data.User.Username}}</h3>
+        <div class="bio-content">
+            {{.Data.User.Bio}}
+        </div>
+    </div>
+</div>
+{{end}}
+
+<div class="panel threads-panel">
+    <div class="inner">
+        <h3>Recent Topics by {{.Data.User.Username}}</h3>
+    </div>
+</div>
+
+<div class="forumbg">
+    <div class="inner">
+        <ul class="topiclist topics">
+            <li class="header">
+                <dl class="row-item">
+                    <dt><div class="list-inner">Topic</div></dt>
+                    <dd class="posts">Forum</dd>
+                    <dd class="views">Replies</dd>
+                    <dd class="lastpost">Posted</dd>
+                </dl>
+            </li>
+        </ul>
+        <ul class="topiclist topics">
+            {{range .Data.Threads}}
+            <li class="row">
+                <dl class="row-item">
+                    <dd class="topic-info full-width">
+                        <div class="list-inner">
+                            <a href="/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}" class="topictitle">{{.Title}}</a>
+                        </div>
+                    </dd>
+                    <dd class="posts">
+                        {{if .Board}}
+                        <a href="/b/{{.Board.Name}}">{{.Board.Name}}</a>
+                        {{end}}
+                    </dd>
+                    <dd class="views">{{.CommentCount}}</dd>
+                    <dd class="lastpost">{{formatTimeRelative .CreatedAt}}</dd>
+                </dl>
+            </li>
+            {{else}}
+            <li class="row no-results">
+                <div class="inner">No topics yet</div>
+            </li>
+            {{end}}
+        </ul>
+    </div>
+</div>
+
+<div class="panel posts-panel">
+    <div class="inner">
+        <h3>Recent Posts by {{.Data.User.Username}}</h3>
+    </div>
+</div>
+
+<div class="post-container user-posts">
+    {{range .Data.Comments}}
+    <div class="post user-post">
+        <div class="inner">
+            <div class="postbody">
+                <div class="post-header">
+                    <p class="post-context">
+                        Posted in
+                        {{if .Thread}}
+                        <a href="/b/{{if .Thread.Board}}{{.Thread.Board.Name}}{{else}}all{{end}}/{{.Thread.ID}}/{{slugify .Thread.Title}}">{{.Thread.Title}}</a>
+                        {{end}}
+                    </p>
+                    <p class="post-time">
+                        <time>{{formatTimeRelative .CreatedAt}}</time>
+                        &bull; <span class="score">{{formatScore .Score}} points</span>
+                    </p>
+                </div>
+                <div class="content">
+                    <div class="post-content">{{safeHTML .ContentHTML}}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {{else}}
+    <div class="no-posts">
+        <p>No posts yet</p>
+    </div>
+    {{end}}
+</div>
+{{end}}

@@ -1,0 +1,63 @@
+{{define "all.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="panel welcome-panel">
+    <div class="inner">
+        <h2>Board index</h2>
+        <p>Browse all available forums and communities.</p>
+    </div>
+</div>
+
+<div class="forumbg forum-list">
+    <div class="inner">
+        <ul class="topiclist forums">
+            <li class="header">
+                <dl class="row-item">
+                    <dt><div class="list-inner">Forum</div></dt>
+                    <dd class="topics">Topics</dd>
+                    <dd class="posts">Members</dd>
+                    <dd class="lastpost">Last post</dd>
+                </dl>
+            </li>
+        </ul>
+        <ul class="topiclist forums">
+            {{range .Data.Boards}}
+            <li class="row">
+                <dl class="row-item forum_read">
+                    <dt class="forum-icon">
+                        <div class="forum-folder-icon"></div>
+                    </dt>
+                    <dd class="forum-info">
+                        <div class="list-inner">
+                            <a href="/b/{{.Name}}" class="forumtitle">{{.Title}}</a>
+                            <br>
+                            <span class="forum-desc">{{.Description}}</span>
+                        </div>
+                    </dd>
+                    <dd class="topics">{{formatNumber .ThreadCount}}</dd>
+                    <dd class="posts">{{formatNumber .MemberCount}}</dd>
+                    <dd class="lastpost">
+                        <span>{{formatTimeRelative .CreatedAt}}</span>
+                    </dd>
+                </dl>
+            </li>
+            {{else}}
+            <li class="row no-results">
+                <div class="inner">No forums available.</div>
+            </li>
+            {{end}}
+        </ul>
+    </div>
+</div>
+
+{{if .CurrentUser}}
+<div class="panel create-forum-panel">
+    <div class="inner">
+        <h3>Create a new forum</h3>
+        <p><a href="/create-board" class="button">Create Forum</a></p>
+    </div>
+</div>
+{{end}}
+{{end}}
