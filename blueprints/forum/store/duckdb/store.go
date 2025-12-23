@@ -23,6 +23,7 @@ type Store struct {
 	votes         *VotesStore
 	bookmarks     *BookmarksStore
 	notifications *NotificationsStore
+	seedMappings  *SeedMappingsStore
 }
 
 // Open opens a DuckDB database at the given path and initializes all stores.
@@ -52,6 +53,7 @@ func Open(dataDir string) (*Store, error) {
 		votes:         NewVotesStore(db),
 		bookmarks:     NewBookmarksStore(db),
 		notifications: NewNotificationsStore(db),
+		seedMappings:  NewSeedMappingsStore(db),
 	}, nil
 }
 
@@ -98,6 +100,11 @@ func (s *Store) Bookmarks() *BookmarksStore {
 // Notifications returns the notifications store.
 func (s *Store) Notifications() *NotificationsStore {
 	return s.notifications
+}
+
+// SeedMappings returns the seed mappings store.
+func (s *Store) SeedMappings() *SeedMappingsStore {
+	return s.seedMappings
 }
 
 // Tx executes a function within a transaction.

@@ -237,3 +237,15 @@ CREATE TABLE IF NOT EXISTS reports (
 );
 
 CREATE INDEX IF NOT EXISTS idx_reports_board_status ON reports(board_id, status, created_at DESC);
+
+-- Seed mappings (for idempotent external data seeding)
+CREATE TABLE IF NOT EXISTS seed_mappings (
+    source VARCHAR NOT NULL,
+    entity_type VARCHAR NOT NULL,
+    external_id VARCHAR NOT NULL,
+    local_id VARCHAR NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (source, entity_type, external_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_seed_mappings_local ON seed_mappings(local_id);
