@@ -227,7 +227,17 @@ func (s *Service) ListByThread(ctx context.Context, threadID string, opts ListOp
 		opts.SortBy = CommentSortBest
 	}
 
-	return s.store.ListByThread(ctx, threadID, opts)
+	comments, err := s.store.ListByThread(ctx, threadID, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load authors
+	for _, c := range comments {
+		c.Author, _ = s.accounts.GetByID(ctx, c.AuthorID)
+	}
+
+	return comments, nil
 }
 
 // ListByParent lists direct children of a comment.
@@ -239,7 +249,17 @@ func (s *Service) ListByParent(ctx context.Context, parentID string, opts ListOp
 		opts.SortBy = CommentSortBest
 	}
 
-	return s.store.ListByParent(ctx, parentID, opts)
+	comments, err := s.store.ListByParent(ctx, parentID, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load authors
+	for _, c := range comments {
+		c.Author, _ = s.accounts.GetByID(ctx, c.AuthorID)
+	}
+
+	return comments, nil
 }
 
 // ListByAuthor lists comments by an author.
@@ -251,7 +271,17 @@ func (s *Service) ListByAuthor(ctx context.Context, authorID string, opts ListOp
 		opts.SortBy = CommentSortNew
 	}
 
-	return s.store.ListByAuthor(ctx, authorID, opts)
+	comments, err := s.store.ListByAuthor(ctx, authorID, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load authors
+	for _, c := range comments {
+		c.Author, _ = s.accounts.GetByID(ctx, c.AuthorID)
+	}
+
+	return comments, nil
 }
 
 // GetTree gets a comment tree for a thread.
