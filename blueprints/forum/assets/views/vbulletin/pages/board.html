@@ -1,0 +1,132 @@
+{{define "board.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="vb-box">
+    <div class="vb-box-header">
+        {{.Data.Board.Title}}
+        {{if .CurrentUser}}
+            {{if .Data.Board.IsJoined}}
+            <span style="float: right;">
+                <button class="btn" data-action="leave" data-board="{{.Data.Board.Name}}" style="padding: 2px 8px; font-size: 10px;">Leave Forum</button>
+            </span>
+            {{else}}
+            <span style="float: right;">
+                <button class="btn" data-action="join" data-board="{{.Data.Board.Name}}" style="padding: 2px 8px; font-size: 10px;">Join Forum</button>
+            </span>
+            {{end}}
+        {{end}}
+    </div>
+    <div class="vb-box-content">
+        <p>{{.Data.Board.Description}}</p>
+        <p style="margin-top: 8px; font-size: 10px; color: #808080;">
+            <strong>{{formatNumber .Data.Board.MemberCount}}</strong> members &bull;
+            <strong>{{formatNumber .Data.Board.ThreadCount}}</strong> threads &bull;
+            Created {{formatTimeRelative .Data.Board.CreatedAt}}
+        </p>
+        {{if .CurrentUser}}
+        <p style="margin-top: 10px;">
+            <a href="/b/{{.Data.Board.Name}}/submit" style="font-weight: bold;">[Post New Thread]</a>
+        </p>
+        {{end}}
+    </div>
+</div>
+
+<div class="menuarea">
+    <ul class="tabmenu">
+        <li class="{{if eq .Data.Sort "hot"}}selected{{end}}"><a href="/b/{{.Data.Board.Name}}?sort=hot">Hot Threads</a></li>
+        <li class="{{if eq .Data.Sort "new"}}selected{{end}}"><a href="/b/{{.Data.Board.Name}}?sort=new">New Posts</a></li>
+        <li class="{{if eq .Data.Sort "rising"}}selected{{end}}"><a href="/b/{{.Data.Board.Name}}?sort=rising">Rising</a></li>
+        <li class="{{if eq .Data.Sort "top"}}selected{{end}}"><a href="/b/{{.Data.Board.Name}}?sort=top">Top</a></li>
+    </ul>
+</div>
+
+<div class="sitetable linklisting" id="siteTable">
+    <table class="forum-table">
+        <thead>
+            <tr>
+                <th style="width: 50px;"></th>
+                <th>Thread / Thread Starter</th>
+                <th style="width: 80px; text-align: center;">Replies</th>
+                <th style="width: 80px; text-align: center;">Points</th>
+                <th style="width: 140px;">Last Post</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range $i, $thread := .Data.Threads}}
+            <tr data-thread-id="{{$thread.ID}}">
+                <td style="text-align: center;">
+                    <div class="midcol unvoted">
+                        <div class="arrow up {{if eq $thread.Vote 1}}upmod{{else}}login-required{{end}}" data-action="upvote" data-thread="{{$thread.ID}}" role="button" tabindex="0"></div>
+                        <div class="arrow down {{if eq $thread.Vote -1}}downmod{{else}}login-required{{end}}" data-action="downvote" data-thread="{{$thread.ID}}" role="button" tabindex="0"></div>
+                    </div>
+                </td>
+                <td>
+                    {{if or $thread.IsPinned $thread.IsLocked $thread.IsNSFW}}
+                    <span>
+                        {{if $thread.IsPinned}}<span class="flair pinned">Sticky</span>{{end}}
+                        {{if $thread.IsLocked}}<span class="flair locked">Closed</span>{{end}}
+                        {{if $thread.IsNSFW}}<span class="flair nsfw">NSFW</span>{{end}}
+                    </span>
+                    {{end}}
+                    <a href="/b/{{$.Data.Board.Name}}/{{$thread.ID}}/{{slugify $thread.Title}}" style="font-weight: bold;">{{$thread.Title}}</a>
+                    {{if eq $thread.Type "link"}}
+                    <span class="domain">(<a href="/search?q=site:{{$thread.Domain}}">{{$thread.Domain}}</a>)</span>
+                    {{end}}
+                    <br>
+                    <span style="font-size: 10px; color: #808080;">
+                        Started by
+                        {{if $thread.Author}}
+                        <a href="/u/{{$thread.Author.Username}}">{{$thread.Author.Username}}</a>
+                        {{else}}
+                        [deleted]
+                        {{end}}
+                    </span>
+                </td>
+                <td style="text-align: center; font-weight: bold; color: #22229c;">{{$thread.CommentCount}}</td>
+                <td style="text-align: center; font-weight: bold; color: #22229c;">{{formatScore $thread.Score}}</td>
+                <td style="font-size: 10px; color: #808080;">
+                    {{formatTimeRelative $thread.CreatedAt}}
+                    {{if $thread.Author}}
+                    <br>by <a href="/u/{{$thread.Author.Username}}">{{$thread.Author.Username}}</a>
+                    {{end}}
+                </td>
+            </tr>
+            {{else}}
+            <tr>
+                <td colspan="5" class="noresults">There are no threads in this forum yet. Be the first to post!</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+
+<div class="nav-buttons">
+    <span class="nextprev">
+        <a href="/b/{{.Data.Board.Name}}?after=25">Next Page &raquo;</a>
+    </span>
+</div>
+
+{{if .Data.Board.SidebarHTML}}
+<div class="vb-box" style="margin-top: 15px;">
+    <div class="vb-box-header">
+        Forum Rules
+    </div>
+    <div class="vb-box-content">
+        {{safeHTML .Data.Board.SidebarHTML}}
+    </div>
+</div>
+{{end}}
+
+{{if .Data.Board.IsModerator}}
+<div class="vb-box" style="margin-top: 15px;">
+    <div class="vb-box-header">
+        Moderator Tools
+    </div>
+    <div class="vb-box-content">
+        <a href="/b/{{.Data.Board.Name}}/mod">Moderator Dashboard</a>
+    </div>
+</div>
+{{end}}
+{{end}}

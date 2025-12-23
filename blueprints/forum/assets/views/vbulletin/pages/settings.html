@@ -1,0 +1,91 @@
+{{define "settings.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="vb-box">
+    <div class="vb-box-header">
+        User Control Panel - Edit Settings
+    </div>
+</div>
+
+{{if .Data.Success}}
+<div class="vb-box" style="margin-top: 10px;">
+    <div class="vb-box-content" style="background: #e8ffe8; color: #006400;">
+        Your settings have been saved successfully.
+    </div>
+</div>
+{{end}}
+
+{{if .Data.Error}}
+<div class="form-error" style="margin-top: 10px;">
+    {{.Data.Error}}
+</div>
+{{end}}
+
+<form action="/api/users/settings" method="post" style="margin-top: 15px;">
+    <div class="vb-box">
+        <div class="vb-box-header">
+            Profile Settings
+        </div>
+        <div class="vb-box-content">
+            <table class="settings-table">
+                <tr>
+                    <td style="width: 150px;"><label for="email">Email Address:</label></td>
+                    <td><input type="email" id="email" name="email" value="{{.CurrentUser.Email}}" style="width: 300px;"></td>
+                </tr>
+                <tr>
+                    <td><label for="bio">Bio / Signature:</label></td>
+                    <td><textarea id="bio" name="bio" rows="4" style="width: 300px;">{{.CurrentUser.Bio}}</textarea></td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <div class="vb-box" style="margin-top: 15px;">
+        <div class="vb-box-header">
+            Change Password
+        </div>
+        <div class="vb-box-content">
+            <table class="settings-table">
+                <tr>
+                    <td style="width: 150px;"><label for="current_password">Current Password:</label></td>
+                    <td><input type="password" id="current_password" name="current_password" style="width: 200px;"></td>
+                </tr>
+                <tr>
+                    <td><label for="new_password">New Password:</label></td>
+                    <td><input type="password" id="new_password" name="new_password" style="width: 200px;"></td>
+                </tr>
+                <tr>
+                    <td><label for="confirm_password">Confirm Password:</label></td>
+                    <td><input type="password" id="confirm_password" name="confirm_password" style="width: 200px;"></td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <div class="vb-box" style="margin-top: 15px;">
+        <div class="vb-box-header">
+            Notification Settings
+        </div>
+        <div class="vb-box-content">
+            <table class="settings-table">
+                <tr>
+                    <td style="width: 150px;"><label for="email_notifications">Email Notifications:</label></td>
+                    <td>
+                        <select id="email_notifications" name="email_notifications">
+                            <option value="all">All notifications</option>
+                            <option value="mentions">Mentions only</option>
+                            <option value="none">None</option>
+                        </select>
+                    </td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <div style="margin-top: 15px;">
+        <button type="submit">Save Settings</button>
+    </div>
+</form>
+{{end}}

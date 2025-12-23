@@ -1,0 +1,67 @@
+{{define "notifications.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="vb-box">
+    <div class="vb-box-header">
+        Private Messages &amp; Notifications
+    </div>
+    <div class="vb-box-content">
+        Your recent notifications and activity.
+    </div>
+</div>
+
+<div class="sitetable" style="margin-top: 15px;">
+    <table class="forum-table">
+        <thead>
+            <tr>
+                <th style="width: 30px;"></th>
+                <th>Notification</th>
+                <th style="width: 140px;">Date</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Data.Notifications}}
+            <tr class="{{if not .IsRead}}alt1{{else}}alt2{{end}}">
+                <td style="text-align: center;">
+                    {{if not .IsRead}}
+                    <span style="color: #ff6600; font-weight: bold;">NEW</span>
+                    {{end}}
+                </td>
+                <td>
+                    {{if eq .Type "reply"}}
+                    <a href="/u/{{.Actor.Username}}">{{.Actor.Username}}</a> replied to your thread
+                    {{if .Thread}}
+                    "<a href="/b/{{if .Thread.Board}}{{.Thread.Board.Name}}{{else}}all{{end}}/{{.Thread.ID}}/{{slugify .Thread.Title}}">{{.Thread.Title}}</a>"
+                    {{end}}
+                    {{else if eq .Type "mention"}}
+                    <a href="/u/{{.Actor.Username}}">{{.Actor.Username}}</a> mentioned you
+                    {{if .Thread}}
+                    in "<a href="/b/{{if .Thread.Board}}{{.Thread.Board.Name}}{{else}}all{{end}}/{{.Thread.ID}}/{{slugify .Thread.Title}}">{{.Thread.Title}}</a>"
+                    {{end}}
+                    {{else if eq .Type "vote"}}
+                    Your post received votes
+                    {{else}}
+                    {{.Type}} notification
+                    {{end}}
+                </td>
+                <td style="font-size: 10px; color: #808080;">{{formatTimeRelative .CreatedAt}}</td>
+            </tr>
+            {{else}}
+            <tr>
+                <td colspan="3" class="noresults">No notifications yet.</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+
+{{if .Data.Notifications}}
+<div style="margin-top: 15px;">
+    <form action="/api/notifications/mark-read" method="post" style="display: inline;">
+        <button type="submit">Mark All as Read</button>
+    </form>
+</div>
+{{end}}
+{{end}}

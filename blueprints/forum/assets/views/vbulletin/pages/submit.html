@@ -1,0 +1,115 @@
+{{define "submit.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="vb-box">
+    <div class="vb-box-header">
+        Post New Thread
+        {{if .Data.Board}}
+        in {{.Data.Board.Title}}
+        {{end}}
+    </div>
+</div>
+
+{{if .Data.Error}}
+<div class="form-error" style="margin-top: 10px;">
+    {{.Data.Error}}
+</div>
+{{end}}
+
+<form action="/api/threads" method="post" style="margin-top: 15px;">
+    {{if .Data.Board}}
+    <input type="hidden" name="board" value="{{.Data.Board.Name}}">
+    {{end}}
+
+    <div class="vb-box">
+        <div class="vb-box-header">
+            Thread Information
+        </div>
+        <div class="vb-box-content">
+            <table class="settings-table">
+                {{if not .Data.Board}}
+                <tr>
+                    <td style="width: 120px;"><label for="board">Post In:</label></td>
+                    <td>
+                        <select id="board" name="board" required>
+                            <option value="">-- Select Forum --</option>
+                            {{range .Data.Boards}}
+                            <option value="{{.Name}}">{{.Name}}</option>
+                            {{end}}
+                        </select>
+                    </td>
+                </tr>
+                {{end}}
+                <tr>
+                    <td style="width: 120px;"><label for="title">Title:</label></td>
+                    <td><input type="text" id="title" name="title" required style="width: 100%;"></td>
+                </tr>
+                <tr>
+                    <td><label for="type">Thread Type:</label></td>
+                    <td>
+                        <select id="type" name="type">
+                            <option value="text">Discussion</option>
+                            <option value="link">Link</option>
+                        </select>
+                    </td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <div class="vb-box" style="margin-top: 15px;" id="url-section" style="display: none;">
+        <div class="vb-box-header">
+            Link URL
+        </div>
+        <div class="vb-box-content">
+            <table class="settings-table">
+                <tr>
+                    <td style="width: 120px;"><label for="url">URL:</label></td>
+                    <td><input type="url" id="url" name="url" style="width: 100%;" placeholder="https://"></td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <div class="vb-box" style="margin-top: 15px;" id="content-section">
+        <div class="vb-box-header">
+            Message
+        </div>
+        <div class="vb-box-content">
+            <textarea name="content" rows="12" style="width: 100%;" placeholder="Enter your message here..."></textarea>
+        </div>
+    </div>
+
+    <div class="vb-box" style="margin-top: 15px;">
+        <div class="vb-box-header">
+            Options
+        </div>
+        <div class="vb-box-content">
+            <label><input type="checkbox" name="nsfw" value="1"> Mark as NSFW</label>
+            <br>
+            <label><input type="checkbox" name="spoiler" value="1"> Mark as Spoiler</label>
+        </div>
+    </div>
+
+    <div style="margin-top: 15px;">
+        <button type="submit">Post New Thread</button>
+        <button type="button" onclick="history.back()">Cancel</button>
+    </div>
+</form>
+
+<script>
+document.getElementById('type').addEventListener('change', function() {
+    var urlSection = document.getElementById('url-section');
+    var contentSection = document.getElementById('content-section');
+    if (this.value === 'link') {
+        urlSection.style.display = 'block';
+        contentSection.querySelector('.vb-box-header').textContent = 'Description (optional)';
+    } else {
+        urlSection.style.display = 'none';
+        contentSection.querySelector('.vb-box-header').textContent = 'Message';
+    }
+});
+</script>
+{{end}}

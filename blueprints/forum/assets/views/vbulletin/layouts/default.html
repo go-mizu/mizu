@@ -1,0 +1,33 @@
+{{define "default.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Forum - Community Discussions">
+    <title>{{.Title}} - Forum</title>
+    <link rel="stylesheet" href="/static/css/vbulletin.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23075387' width='100' height='100' rx='8'/><path fill='white' d='M20 25h60v12H20zM20 44h60v12H20zM20 63h40v12H20z'/></svg>">
+</head>
+<body>
+    <div class="forum-page">
+        {{template "nav" .}}
+        <div class="main-content">
+            {{template "content" .}}
+        </div>
+        <div class="footer-parent">
+            <div class="footer">
+                All times are GMT.
+                <br><br>
+                <a href="/">Contact Us</a> -
+                <a href="/">Forum Archive</a> -
+                <a href="/">Top</a>
+                <br><br>
+                Powered by vBulletin&reg; Version 3.0.0
+            </div>
+        </div>
+    </div>
+    <script src="/static/js/app.js" defer></script>
+</body>
+</html>
+{{end}}
