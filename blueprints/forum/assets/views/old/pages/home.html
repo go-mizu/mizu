@@ -1,0 +1,96 @@
+{{define "home.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="content" role="main">
+    <div class="menuarea">
+        <div class="spacer">
+            <ul class="tabmenu">
+                <li class="{{if eq .Data.Sort "hot"}}selected{{end}}"><a href="/?sort=hot">hot</a></li>
+                <li class="{{if eq .Data.Sort "new"}}selected{{end}}"><a href="/?sort=new">new</a></li>
+                <li class="{{if eq .Data.Sort "rising"}}selected{{end}}"><a href="/?sort=rising">rising</a></li>
+                <li class="{{if eq .Data.Sort "top"}}selected{{end}}"><a href="/?sort=top">top</a></li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="sitetable linklisting" id="siteTable">
+        {{range $i, $thread := .Data.Threads}}
+            {{template "thread_card" $thread}}
+        {{else}}
+            <div class="noresults">
+                there doesn't seem to be anything here
+            </div>
+        {{end}}
+    </div>
+
+    <div class="nav-buttons">
+        <span class="nextprev">
+            <a href="/?after=25">next &rsaquo;</a>
+        </span>
+    </div>
+</div>
+
+<div class="side">
+    {{if not .CurrentUser}}
+    <div class="spacer">
+        <div class="sidebox create">
+            <div class="morelink">
+                <a href="/login" class="login-required">Submit a new link</a>
+            </div>
+        </div>
+    </div>
+    {{else}}
+    <div class="spacer">
+        <div class="sidebox submit">
+            <div class="morelink">
+                <a href="/b/all/submit">Submit a new link</a>
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    <div class="spacer">
+        <div class="sidecontentbox">
+            <div class="title">
+                <h1>popular communities</h1>
+            </div>
+            <ul class="content">
+                {{range .Data.PopularBoards}}
+                <li>
+                    <a href="/b/{{.Name}}">b/{{.Name}}</a>
+                    <span class="subscribers">{{formatNumber .MemberCount}} members</span>
+                </li>
+                {{else}}
+                <li>No communities yet</li>
+                {{end}}
+            </ul>
+        </div>
+    </div>
+
+    {{if not .CurrentUser}}
+    <div class="spacer">
+        <div class="sidecontentbox account">
+            <div class="title">
+                <h1>account activity</h1>
+            </div>
+            <div class="content">
+                <p><a href="/register">create an account</a> to vote, comment, and submit posts.</p>
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    <div class="spacer">
+        <div class="sidecontentbox">
+            <div class="title">
+                <h1>recently viewed links</h1>
+            </div>
+            <ul class="content">
+                <li class="noresults">clear</li>
+            </ul>
+        </div>
+    </div>
+</div>
+{{end}}

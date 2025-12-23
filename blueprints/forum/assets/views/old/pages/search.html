@@ -1,0 +1,78 @@
+{{define "search.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="content">
+    <div class="searchpane">
+        <form action="/search" method="get" style="margin-bottom: 20px;">
+            <input type="search" name="q" value="{{.Data.Query}}" placeholder="search" style="width: 300px; padding: 5px;">
+            <button type="submit">search</button>
+        </form>
+    </div>
+
+    {{if .Data.Query}}
+        <div class="search-results">
+            {{if .Data.Boards}}
+            <div class="spacer" style="margin-bottom: 20px;">
+                <h2 style="font-size: 12pt; color: #369; margin-bottom: 10px;">communities</h2>
+                <div class="sitetable">
+                    {{range .Data.Boards}}
+                    <div class="thing" style="padding: 8px 0; border-bottom: 1px solid #e5e5e5;">
+                        <a href="/b/{{.Name}}" style="font-weight: bold;">b/{{.Name}}</a>
+                        <span style="color: #888; font-size: 8pt; margin-left: 10px;">{{formatNumber .MemberCount}} members</span>
+                        {{if .Description}}
+                        <p style="font-size: 9pt; color: #555; margin-top: 3px;">{{.Description}}</p>
+                        {{end}}
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+            {{end}}
+
+            {{if .Data.Users}}
+            <div class="spacer" style="margin-bottom: 20px;">
+                <h2 style="font-size: 12pt; color: #369; margin-bottom: 10px;">users</h2>
+                <div class="sitetable">
+                    {{range .Data.Users}}
+                    <div class="thing" style="padding: 8px 0; border-bottom: 1px solid #e5e5e5;">
+                        <a href="/u/{{.Username}}" style="font-weight: bold;">u/{{.Username}}</a>
+                        <span style="color: #888; font-size: 8pt; margin-left: 10px;">{{formatScore .Karma}} karma</span>
+                        {{if .DisplayName}}
+                        <span style="font-size: 9pt; color: #555; margin-left: 5px;">({{.DisplayName}})</span>
+                        {{end}}
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+            {{end}}
+
+            {{if and (not .Data.Boards) (not .Data.Users)}}
+                <div class="noresults">
+                    there doesn't seem to be anything here
+                </div>
+            {{end}}
+        </div>
+    {{else}}
+        <div class="noresults">
+            enter a search term to find communities and users
+        </div>
+    {{end}}
+</div>
+
+<div class="side">
+    <div class="spacer">
+        <div class="sidecontentbox">
+            <div class="title">
+                <h1>search tips</h1>
+            </div>
+            <div class="content">
+                <ul style="padding-left: 15px; font-size: 9pt;">
+                    <li>Search for community names</li>
+                    <li>Search for usernames</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

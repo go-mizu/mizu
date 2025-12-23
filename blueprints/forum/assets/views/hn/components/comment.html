@@ -1,0 +1,72 @@
+{{define "comment"}}
+<tr class="athing comtr" id="{{.ID}}" data-comment-id="{{.ID}}">
+    <td>
+        <table border="0">
+        <tr>
+            <td class="ind" indent="{{.Depth}}">
+                <img src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==" height="1" width="{{mul .Depth 40}}">
+            </td>
+            <td valign="top" class="votelinks">
+                <center>
+                    <a id="up_{{.ID}}" class="{{if eq .Vote 1}}nosee{{end}}" data-action="upvote" data-comment="{{.ID}}">
+                        <div class="votearrow" title="upvote"></div>
+                    </a>
+                </center>
+            </td>
+            <td class="default">
+                <div style="margin-top:2px; margin-bottom:-10px">
+                    <span class="comhead">
+                        {{if .IsDeleted}}
+                            <span class="hnuser">[deleted]</span>
+                        {{else if .Author}}
+                            <a href="/u/{{.Author.Username}}" class="hnuser">{{.Author.Username}}</a>
+                        {{else}}
+                            <span class="hnuser">[deleted]</span>
+                        {{end}}
+                        <span class="age" title="{{formatTime .CreatedAt}}"><a href="#">{{formatTimeRelative .CreatedAt}}</a></span>
+                        <span id="unv_{{.ID}}"></span>
+                        | <a class="togg clicky" data-action="toggle-collapse" n="{{.ChildCount}}">[{{if .IsCollapsed}}+{{.ChildCount}} more{{else}}-{{end}}]</a>
+                        <span class="par"></span>
+                        {{if .EditedAt}}
+                        <span class="edited">*</span>
+                        {{end}}
+                    </span>
+                </div>
+                <br>
+                {{if not .IsCollapsed}}
+                <div class="comment">
+                    <span class="commtext c00">
+                        {{if .IsRemoved}}
+                            <span class="dead">[flagged]</span>
+                        {{else}}
+                            {{safeHTML .ContentHTML}}
+                        {{end}}
+                    </span>
+                    <div class="reply">
+                        <p>
+                            <font size="1">
+                                <u><a data-action="reply" data-comment="{{.ID}}">reply</a></u>
+                            </font>
+                        </p>
+                        <div class="reply-form hidden" id="reply-form-{{.ID}}">
+                            <form data-action="submit-reply" data-parent="{{.ID}}">
+                                <textarea name="content" rows="6" cols="60"></textarea>
+                                <br><br>
+                                <input type="submit" value="add comment">
+                                <input type="button" value="cancel" data-action="cancel-reply">
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                {{end}}
+            </td>
+        </tr>
+        </table>
+    </td>
+</tr>
+{{if and .Children (not .IsCollapsed)}}
+    {{range .Children}}
+        {{template "comment" .}}
+    {{end}}
+{{end}}
+{{end}}

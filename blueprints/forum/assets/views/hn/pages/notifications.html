@@ -1,0 +1,71 @@
+{{define "notifications.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<tr>
+    <td style="padding: 10px;">
+        <b>Notifications</b>
+        {{if .Data.Notifications}}
+        | <a data-action="mark-all-read" style="font-size: 8pt;">mark all as read</a>
+        {{end}}
+    </td>
+</tr>
+<tr>
+    <td>
+        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+        <tbody>
+            {{range .Data.Notifications}}
+            <tr class="athing">
+                <td style="padding: 10px; border-bottom: 1px solid #e0e0e0; {{if not .IsRead}}background-color: #ffffcc;{{end}}">
+                    <span class="comhead">
+                        {{if eq .Type "reply"}}
+                            <span style="color: #ff6600;">reply</span>
+                        {{else if eq .Type "mention"}}
+                            <span style="color: #ff6600;">mention</span>
+                        {{else}}
+                            <span style="color: #ff6600;">notification</span>
+                        {{end}}
+                        from <a href="/u/{{.FromUser.Username}}" class="hnuser">{{.FromUser.Username}}</a>
+                        <span class="age">{{formatTimeRelative .CreatedAt}}</span>
+                    </span>
+                    {{if .ContentHTML}}
+                    <div class="comment" style="margin-top: 5px;">
+                        <span class="commtext">
+                            {{safeHTML .ContentHTML}}
+                        </span>
+                    </div>
+                    {{end}}
+                    <div style="margin-top: 5px; font-size: 8pt;">
+                        {{if .ThreadID}}
+                        <a href="/b/{{.BoardName}}/{{.ThreadID}}">context</a>
+                        {{end}}
+                        {{if not .IsRead}}
+                        | <a data-action="mark-read" data-notification="{{.ID}}">mark as read</a>
+                        {{end}}
+                    </div>
+                </td>
+            </tr>
+            {{else}}
+            <tr>
+                <td style="padding: 20px; color: #828282;">
+                    No notifications yet.
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+        </table>
+    </td>
+</tr>
+<tr style="height:10px"></tr>
+<tr>
+    <td>
+        <table width="100%" cellspacing="0" cellpadding="1">
+        <tr>
+            <td bgcolor="#ff6600"></td>
+        </tr>
+        </table>
+    </td>
+</tr>
+</table>
+{{end}}

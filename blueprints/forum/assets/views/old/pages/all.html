@@ -1,0 +1,65 @@
+{{define "all.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="content" role="main">
+    <div class="menuarea">
+        <div class="spacer">
+            <ul class="tabmenu">
+                <li class="{{if eq .Data.Sort "hot"}}selected{{end}}"><a href="/all?sort=hot">hot</a></li>
+                <li class="{{if eq .Data.Sort "new"}}selected{{end}}"><a href="/all?sort=new">new</a></li>
+                <li class="{{if eq .Data.Sort "rising"}}selected{{end}}"><a href="/all?sort=rising">rising</a></li>
+                <li class="{{if eq .Data.Sort "top"}}selected{{end}}"><a href="/all?sort=top">top</a></li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="sitetable linklisting" id="siteTable">
+        {{range $i, $thread := .Data.Threads}}
+            {{template "thread_card" $thread}}
+        {{else}}
+            <div class="noresults">
+                there doesn't seem to be anything here
+            </div>
+        {{end}}
+    </div>
+
+    <div class="nav-buttons">
+        <span class="nextprev">
+            <a href="/all?after=25">next &rsaquo;</a>
+        </span>
+    </div>
+</div>
+
+<div class="side">
+    {{if not .CurrentUser}}
+    <div class="spacer">
+        <div class="sidebox create">
+            <div class="morelink">
+                <a href="/login" class="login-required">Submit a new link</a>
+            </div>
+        </div>
+    </div>
+    {{else}}
+    <div class="spacer">
+        <div class="sidebox submit">
+            <div class="morelink">
+                <a href="/b/all/submit">Submit a new link</a>
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    <div class="spacer">
+        <div class="sidecontentbox">
+            <div class="title">
+                <h1>all</h1>
+            </div>
+            <div class="content">
+                <p>The most active posts from all of forum.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

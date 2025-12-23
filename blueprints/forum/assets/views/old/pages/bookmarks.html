@@ -1,0 +1,36 @@
+{{define "bookmarks.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="content" role="main">
+    <div class="menuarea">
+        <div class="spacer">
+            <h1 style="font-size: 14pt; color: #369;">saved links</h1>
+        </div>
+    </div>
+
+    <div class="sitetable linklisting" id="siteTable">
+        {{range .Data.Threads}}
+            {{template "thread_card" .}}
+        {{else}}
+            <div class="noresults">
+                you haven't saved anything yet
+            </div>
+        {{end}}
+    </div>
+</div>
+
+<div class="side">
+    <div class="spacer">
+        <div class="sidecontentbox">
+            <div class="title">
+                <h1>saved</h1>
+            </div>
+            <div class="content">
+                <p>Posts and comments you've saved will appear here.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

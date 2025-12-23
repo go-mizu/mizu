@@ -1,0 +1,52 @@
+{{define "register.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="content login-page">
+    <h1>create an account</h1>
+
+    <form action="/api/auth/register" method="post" data-action="register">
+        <div class="form-group">
+            <label for="username">username:</label>
+            <input type="text" id="username" name="username" required autofocus autocomplete="username"
+                   pattern="[a-zA-Z0-9_]+" minlength="3" maxlength="20">
+            <div style="font-size: 8pt; color: #888; margin-top: 2px;">3-20 characters. Letters, numbers, and underscores only.</div>
+        </div>
+
+        <div class="form-group">
+            <label for="email">email:</label>
+            <input type="email" id="email" name="email" required autocomplete="email">
+        </div>
+
+        <div class="form-group">
+            <label for="password">password:</label>
+            <input type="password" id="password" name="password" required autocomplete="new-password" minlength="8">
+            <div style="font-size: 8pt; color: #888; margin-top: 2px;">At least 8 characters.</div>
+        </div>
+
+        <div class="form-error hidden"></div>
+
+        <div class="form-group">
+            <button type="submit">create account</button>
+        </div>
+    </form>
+
+    <div style="margin-top: 20px; font-size: 10pt;">
+        <p>already have an account? <a href="/login">log in</a></p>
+    </div>
+</div>
+
+<div class="side">
+    <div class="spacer">
+        <div class="sidecontentbox">
+            <div class="title">
+                <h1>join forum</h1>
+            </div>
+            <div class="content">
+                <p>Create an account to vote, comment, and submit posts.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

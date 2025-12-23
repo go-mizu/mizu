@@ -1,0 +1,85 @@
+{{define "user.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="content">
+    <div class="side" style="float: right; width: 300px; margin-left: 10px;">
+        <div class="spacer">
+            <div class="sidecontentbox">
+                <div class="title">
+                    <h1>about u/{{.Data.User.Username}}</h1>
+                </div>
+                <div class="content">
+                    {{if .Data.User.Bio}}
+                    <p style="margin-bottom: 10px;">{{.Data.User.Bio}}</p>
+                    {{end}}
+                    <table style="font-size: 9pt;">
+                        <tr>
+                            <td style="color: #888; padding-right: 10px;">post karma</td>
+                            <td>{{formatScore .Data.User.PostKarma}}</td>
+                        </tr>
+                        <tr>
+                            <td style="color: #888; padding-right: 10px;">comment karma</td>
+                            <td>{{formatScore .Data.User.CommentKarma}}</td>
+                        </tr>
+                        <tr>
+                            <td style="color: #888; padding-right: 10px;">joined</td>
+                            <td>{{formatTimeRelative .Data.User.CreatedAt}}</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="spacer" style="margin-right: 320px;">
+        <div class="titlebox">
+            <h1 style="font-size: 16pt; margin-bottom: 5px;">{{if .Data.User.DisplayName}}{{.Data.User.DisplayName}}{{else}}{{.Data.User.Username}}{{end}}</h1>
+            <span style="color: #888; font-size: 10pt;">u/{{.Data.User.Username}}</span>
+        </div>
+    </div>
+
+    <div class="menuarea" style="margin-right: 320px;">
+        <div class="spacer">
+            <ul class="tabmenu">
+                <li class="{{if eq .Data.Tab "posts"}}selected{{end}}"><a href="/u/{{.Data.User.Username}}?tab=posts">overview</a></li>
+                <li class="{{if eq .Data.Tab "comments"}}selected{{end}}"><a href="/u/{{.Data.User.Username}}?tab=comments">comments</a></li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="sitetable linklisting" id="siteTable" style="margin-right: 320px;">
+        {{if eq .Data.Tab "posts"}}
+            {{range .Data.Threads}}
+                {{template "thread_card" .}}
+            {{else}}
+                <div class="noresults">
+                    there doesn't seem to be anything here
+                </div>
+            {{end}}
+        {{else}}
+            {{range .Data.Comments}}
+            <div class="thing comment" style="padding: 10px; border-bottom: 1px solid #e5e5e5;">
+                <div class="entry">
+                    <p class="tagline">
+                        <a href="/u/{{$.Data.User.Username}}" class="author">{{$.Data.User.Username}}</a>
+                        <span style="color: #888;">{{formatScore .Score}} points</span>
+                        <span style="color: #888;">{{formatTimeRelative .CreatedAt}}</span>
+                    </p>
+                    <div class="usertext-body md-container">
+                        <div class="md">
+                            {{safeHTML .ContentHTML}}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {{else}}
+                <div class="noresults">
+                    there doesn't seem to be anything here
+                </div>
+            {{end}}
+        {{end}}
+    </div>
+</div>
+{{end}}

@@ -1,0 +1,104 @@
+{{define "settings.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<tr>
+    <td>
+        <table border="0" cellpadding="0" cellspacing="0">
+        <tr>
+            <td style="padding: 20px;">
+                <table border="0">
+                    <tr class="athing">
+                        <td valign="top">user:</td>
+                        <td>{{.CurrentUser.Username}}</td>
+                    </tr>
+                    <tr>
+                        <td valign="top">created:</td>
+                        <td>{{formatTimeRelative .CurrentUser.CreatedAt}}</td>
+                    </tr>
+                    <tr>
+                        <td valign="top">karma:</td>
+                        <td>{{formatScore .CurrentUser.Karma}}</td>
+                    </tr>
+                    <tr>
+                        <td valign="top">email:</td>
+                        <td>{{.CurrentUser.Email}}</td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+        </table>
+    </td>
+</tr>
+
+<tr>
+    <td>
+        <table border="0" cellpadding="0" cellspacing="0">
+        <tr>
+            <td style="padding: 10px 20px;">
+                <b>Profile</b>
+                <br><br>
+                <form action="/api/auth/me" method="put" data-action="update-profile">
+                    <table border="0">
+                        <tr>
+                            <td>about:</td>
+                            <td><textarea name="bio" cols="60" rows="4">{{.CurrentUser.Bio}}</textarea></td>
+                        </tr>
+                        <tr>
+                            <td></td>
+                            <td style="padding-top: 10px;"><input type="submit" value="update"></td>
+                        </tr>
+                    </table>
+                </form>
+            </td>
+        </tr>
+        </table>
+    </td>
+</tr>
+
+<tr>
+    <td>
+        <table border="0" cellpadding="0" cellspacing="0">
+        <tr>
+            <td style="padding: 10px 20px;">
+                <b>Change Password</b>
+                <br><br>
+                <form action="/api/auth/password" method="put" data-action="update-password">
+                    <table border="0">
+                        <tr>
+                            <td>current:</td>
+                            <td><input type="password" name="current_password" size="20" required></td>
+                        </tr>
+                        <tr>
+                            <td>new:</td>
+                            <td><input type="password" name="new_password" size="20" required minlength="8"></td>
+                        </tr>
+                        <tr>
+                            <td>confirm:</td>
+                            <td><input type="password" name="confirm_password" size="20" required minlength="8"></td>
+                        </tr>
+                        <tr>
+                            <td></td>
+                            <td style="padding-top: 10px;"><input type="submit" value="change password"></td>
+                        </tr>
+                    </table>
+                </form>
+            </td>
+        </tr>
+        </table>
+    </td>
+</tr>
+
+<tr style="height:10px"></tr>
+<tr>
+    <td>
+        <table width="100%" cellspacing="0" cellpadding="1">
+        <tr>
+            <td bgcolor="#ff6600"></td>
+        </tr>
+        </table>
+    </td>
+</tr>
+</table>
+{{end}}

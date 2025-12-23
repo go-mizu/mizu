@@ -1,0 +1,66 @@
+{{define "thread_card"}}
+<div class="thing link" data-thread-id="{{.ID}}">
+    <p class="parent"></p>
+    <span class="rank"></span>
+    <div class="midcol unvoted">
+        <div class="arrow up {{if eq .Vote 1}}upmod{{else}}login-required{{end}}" data-action="upvote" data-thread="{{.ID}}" role="button" tabindex="0"></div>
+        <div class="score unvoted">{{formatScore .Score}}</div>
+        <div class="arrow down {{if eq .Vote -1}}downmod{{else}}login-required{{end}}" data-action="downvote" data-thread="{{.ID}}" role="button" tabindex="0"></div>
+    </div>
+    {{if .ThumbnailURL}}
+    <a href="{{if eq .Type "link"}}{{.URL}}{{else}}/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}{{end}}" class="thumbnail">
+        <img src="{{.ThumbnailURL}}" alt="">
+    </a>
+    {{else}}
+    <a href="/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}" class="thumbnail default"></a>
+    {{end}}
+    <div class="entry unvoted">
+        <p class="title">
+            <a class="title {{if eq .Type "link"}}outbound{{end}}" href="{{if eq .Type "link"}}{{.URL}}{{else}}/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}{{end}}">{{.Title}}</a>
+            {{if eq .Type "link"}}
+            <span class="domain">(<a href="/search?q=site:{{.Domain}}">{{.Domain}}</a>)</span>
+            {{end}}
+        </p>
+        <div class="tagline">
+            submitted
+            <time title="{{formatTime .CreatedAt}}" datetime="{{.CreatedAt}}">{{formatTimeRelative .CreatedAt}}</time>
+            by
+            {{if .Author}}
+            <a href="/u/{{.Author.Username}}" class="author">{{.Author.Username}}</a>
+            {{else}}
+            <span class="author">[deleted]</span>
+            {{end}}
+            to
+            {{if .Board}}
+            <a href="/b/{{.Board.Name}}" class="board-link">b/{{.Board.Name}}</a>
+            {{end}}
+        </div>
+        {{if or .IsNSFW .IsSpoiler .IsPinned .IsLocked}}
+        <div class="linkflairlabel">
+            {{if .IsPinned}}<span class="flair pinned">announcement</span>{{end}}
+            {{if .IsLocked}}<span class="flair locked">locked</span>{{end}}
+            {{if .IsNSFW}}<span class="flair nsfw">nsfw</span>{{end}}
+            {{if .IsSpoiler}}<span class="flair spoiler">spoiler</span>{{end}}
+        </div>
+        {{end}}
+        <ul class="flat-list buttons">
+            <li class="first">
+                <a href="/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}" class="comments">{{.CommentCount}} comments</a>
+            </li>
+            <li>
+                <button class="share-btn" data-action="share" data-url="/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}">share</button>
+            </li>
+            <li>
+                <button class="save-btn {{if .IsBookmarked}}saved{{end}}" data-action="bookmark" data-thread="{{.ID}}">{{if .IsBookmarked}}unsave{{else}}save{{end}}</button>
+            </li>
+            <li>
+                <button class="hide-btn">hide</button>
+            </li>
+            <li>
+                <a href="/report" class="reportbtn">report</a>
+            </li>
+        </ul>
+    </div>
+    <div class="clearleft"></div>
+</div>
+{{end}}

@@ -1,0 +1,39 @@
+{{define "bookmarks.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<tr>
+    <td style="padding: 10px;">
+        <b>Saved Items</b>
+    </td>
+</tr>
+<tr>
+    <td>
+        <table border="0" cellpadding="0" cellspacing="0" class="itemlist">
+        <tbody>
+            {{range $i, $thread := .Data.Threads}}
+                {{template "thread_card" $thread}}
+            {{else}}
+                <tr>
+                    <td colspan="3" style="padding:20px; color: #828282;">
+                        You haven't saved anything yet.
+                    </td>
+                </tr>
+            {{end}}
+        </tbody>
+        </table>
+    </td>
+</tr>
+<tr style="height:10px"></tr>
+<tr>
+    <td>
+        <table width="100%" cellspacing="0" cellpadding="1">
+        <tr>
+            <td bgcolor="#ff6600"></td>
+        </tr>
+        </table>
+    </td>
+</tr>
+</table>
+{{end}}

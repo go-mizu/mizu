@@ -1,0 +1,103 @@
+{{define "submit.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="content">
+    <div class="formtabs-container">
+        <div class="spacer">
+            <ul class="tabmenu formtab">
+                <li class="selected" id="link-tab"><a>link</a></li>
+                <li id="text-tab"><a>text</a></li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="submit-page" style="padding: 10px;">
+        <form id="newlink" action="/api/boards/{{.Data.Board.Name}}/threads" method="post" data-action="submit-thread">
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label for="title" style="display: block; font-weight: bold; margin-bottom: 5px;">title</label>
+                <input type="text" id="title" name="title" required maxlength="300" style="width: 500px;">
+            </div>
+
+            <div class="form-group link-input" style="margin-bottom: 15px;">
+                <label for="url" style="display: block; font-weight: bold; margin-bottom: 5px;">url</label>
+                <input type="url" id="url" name="url" style="width: 500px;" placeholder="https://example.com">
+            </div>
+
+            <div class="form-group text-input hidden" style="margin-bottom: 15px;">
+                <label for="content" style="display: block; font-weight: bold; margin-bottom: 5px;">text (optional)</label>
+                <textarea id="content" name="content" rows="6" style="width: 500px;"></textarea>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="display: block; font-weight: bold; margin-bottom: 5px;">options</label>
+                <label style="display: inline-block; margin-right: 15px;">
+                    <input type="checkbox" name="is_nsfw" value="true"> nsfw
+                </label>
+                <label style="display: inline-block;">
+                    <input type="checkbox" name="is_spoiler" value="true"> spoiler
+                </label>
+            </div>
+
+            <div class="form-error hidden"></div>
+
+            <div class="form-group">
+                <button type="submit">submit</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="side">
+    <div class="spacer">
+        <div class="sidecontentbox">
+            <div class="title">
+                <h1>submitting to b/{{.Data.Board.Name}}</h1>
+            </div>
+            <div class="content">
+                <p>You are submitting a link to:</p>
+                <p><a href="/b/{{.Data.Board.Name}}">b/{{.Data.Board.Name}}</a></p>
+            </div>
+        </div>
+    </div>
+
+    <div class="spacer">
+        <div class="sidecontentbox">
+            <div class="title">
+                <h1>posting rules</h1>
+            </div>
+            <div class="content">
+                <ol style="padding-left: 20px; font-size: 9pt;">
+                    <li>Follow the community guidelines</li>
+                    <li>No spam or self-promotion</li>
+                    <li>Be civil and respectful</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var linkTab = document.getElementById('link-tab');
+    var textTab = document.getElementById('text-tab');
+    var linkInput = document.querySelector('.link-input');
+    var textInput = document.querySelector('.text-input');
+
+    linkTab.addEventListener('click', function() {
+        linkTab.classList.add('selected');
+        textTab.classList.remove('selected');
+        linkInput.classList.remove('hidden');
+        textInput.classList.add('hidden');
+    });
+
+    textTab.addEventListener('click', function() {
+        textTab.classList.add('selected');
+        linkTab.classList.remove('selected');
+        textInput.classList.remove('hidden');
+        linkInput.classList.add('hidden');
+    });
+});
+</script>
+{{end}}

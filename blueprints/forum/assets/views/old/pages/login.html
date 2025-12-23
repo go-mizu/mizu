@@ -1,0 +1,44 @@
+{{define "login.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="content login-page">
+    <h1>login</h1>
+
+    <form action="/api/auth/login" method="post" data-action="login">
+        <div class="form-group">
+            <label for="username">username:</label>
+            <input type="text" id="username" name="username" required autofocus autocomplete="username">
+        </div>
+
+        <div class="form-group">
+            <label for="password">password:</label>
+            <input type="password" id="password" name="password" required autocomplete="current-password">
+        </div>
+
+        <div class="form-error hidden"></div>
+
+        <div class="form-group">
+            <button type="submit">login</button>
+        </div>
+    </form>
+
+    <div style="margin-top: 20px; font-size: 10pt;">
+        <p>new to forum? <a href="/register">create an account</a></p>
+    </div>
+</div>
+
+<div class="side">
+    <div class="spacer">
+        <div class="sidecontentbox">
+            <div class="title">
+                <h1>welcome back</h1>
+            </div>
+            <div class="content">
+                <p>Log in to vote, comment, and submit posts.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

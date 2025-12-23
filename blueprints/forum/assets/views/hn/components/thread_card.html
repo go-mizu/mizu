@@ -1,0 +1,35 @@
+{{define "thread_card"}}
+<tr class="athing" id="{{.ID}}" data-thread-id="{{.ID}}">
+    <td align="right" valign="top" class="title"><span class="rank"></span></td>
+    <td valign="top" class="votelinks">
+        <center>
+            <a id="up_{{.ID}}" class="{{if eq .Vote 1}}nosee{{end}}" data-action="upvote" data-thread="{{.ID}}">
+                <div class="votearrow" title="upvote"></div>
+            </a>
+        </center>
+    </td>
+    <td class="title">
+        <span class="titleline">
+            <a href="{{if eq .Type "link"}}{{.URL}}{{else}}/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}{{end}}">{{.Title}}</a>
+            {{if eq .Type "link"}}
+            <span class="sitebit comhead"> (<a href="/search?q=site:{{.Domain}}"><span class="sitestr">{{.Domain}}</span></a>)</span>
+            {{end}}
+        </span>
+    </td>
+</tr>
+<tr>
+    <td colspan="2"></td>
+    <td class="subtext">
+        <span class="score" id="score_{{.ID}}">{{formatScore .Score}} points</span> by
+        {{if .Author}}
+        <a href="/u/{{.Author.Username}}" class="hnuser">{{.Author.Username}}</a>
+        {{else}}
+        <span class="hnuser">[deleted]</span>
+        {{end}}
+        <span class="age" title="{{formatTime .CreatedAt}}"><a href="/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}">{{formatTimeRelative .CreatedAt}}</a></span>
+        | <a href="#">hide</a>
+        | <a href="/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}">{{.CommentCount}}&nbsp;comments</a>
+    </td>
+</tr>
+<tr class="spacer" style="height:5px"></tr>
+{{end}}

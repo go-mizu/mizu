@@ -1,0 +1,99 @@
+{{define "user.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<tr>
+    <td>
+        <table border="0" cellpadding="0" cellspacing="0">
+        <tr>
+            <td style="padding: 20px;">
+                <table border="0">
+                    <tr class="athing">
+                        <td valign="top">user:</td>
+                        <td><a href="/u/{{.Data.User.Username}}" class="hnuser">{{.Data.User.Username}}</a></td>
+                    </tr>
+                    <tr>
+                        <td valign="top">created:</td>
+                        <td>{{formatTimeRelative .Data.User.CreatedAt}}</td>
+                    </tr>
+                    <tr>
+                        <td valign="top">karma:</td>
+                        <td>{{formatScore .Data.User.Karma}}</td>
+                    </tr>
+                    {{if .Data.User.Bio}}
+                    <tr>
+                        <td valign="top">about:</td>
+                        <td style="overflow-wrap: break-word;">{{.Data.User.Bio}}</td>
+                    </tr>
+                    {{end}}
+                </table>
+                <br><br>
+                <a href="/u/{{.Data.User.Username}}?tab=posts">submissions</a> |
+                <a href="/u/{{.Data.User.Username}}?tab=comments">comments</a>
+            </td>
+        </tr>
+        </table>
+    </td>
+</tr>
+<tr style="height:10px"></tr>
+
+{{if eq .Data.Tab "posts"}}
+<tr>
+    <td>
+        <table border="0" cellpadding="0" cellspacing="0" class="itemlist">
+        <tbody>
+            {{range $i, $thread := .Data.Threads}}
+                {{template "thread_card" $thread}}
+            {{else}}
+                <tr>
+                    <td colspan="3" style="padding:20px; color: #828282;">
+                        No submissions yet.
+                    </td>
+                </tr>
+            {{end}}
+        </tbody>
+        </table>
+    </td>
+</tr>
+{{else}}
+<tr>
+    <td>
+        <table border="0" cellpadding="0" cellspacing="0">
+        <tbody>
+            {{range .Data.Comments}}
+            <tr>
+                <td style="padding: 5px 20px; border-bottom: 1px solid #e0e0e0;">
+                    <span style="font-size: 8pt; color: #828282;">
+                        {{formatScore .Score}} points | {{formatTimeRelative .CreatedAt}}
+                    </span>
+                    <div style="margin-top: 5px; font-size: 9pt;">
+                        {{safeHTML .ContentHTML}}
+                    </div>
+                </td>
+            </tr>
+            {{else}}
+            <tr>
+                <td style="padding:20px; color: #828282;">
+                    No comments yet.
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+        </table>
+    </td>
+</tr>
+{{end}}
+
+<tr style="height:10px"></tr>
+<tr>
+    <td>
+        <table width="100%" cellspacing="0" cellpadding="1">
+        <tr>
+            <td bgcolor="#ff6600"></td>
+        </tr>
+        </table>
+    </td>
+</tr>
+</table>
+{{end}}
