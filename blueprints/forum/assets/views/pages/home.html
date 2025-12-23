@@ -3,13 +3,37 @@
 {{end}}
 
 {{define "content"}}
-<div class="page-home">
-    <div class="content-area">
+<div class="page-layout">
+    <div class="content-feed">
         <div class="sort-tabs">
-            <a href="/?sort=hot" class="sort-tab {{if eq .Data.Sort "hot"}}active{{end}}">Hot</a>
-            <a href="/?sort=new" class="sort-tab {{if eq .Data.Sort "new"}}active{{end}}">New</a>
-            <a href="/?sort=top" class="sort-tab {{if eq .Data.Sort "top"}}active{{end}}">Top</a>
-            <a href="/?sort=rising" class="sort-tab {{if eq .Data.Sort "rising"}}active{{end}}">Rising</a>
+            <a href="/?sort=hot" class="sort-tab {{if eq .Data.Sort "hot"}}active{{end}}">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.555C21.965 6.012 17.461 2 12 2z"/>
+                </svg>
+                Hot
+            </a>
+            <a href="/?sort=new" class="sort-tab {{if eq .Data.Sort "new"}}active{{end}}">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                </svg>
+                New
+            </a>
+            <a href="/?sort=top" class="sort-tab {{if eq .Data.Sort "top"}}active{{end}}">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="20" x2="12" y2="10"/>
+                    <line x1="18" y1="20" x2="18" y2="4"/>
+                    <line x1="6" y1="20" x2="6" y2="16"/>
+                </svg>
+                Top
+            </a>
+            <a href="/?sort=rising" class="sort-tab {{if eq .Data.Sort "rising"}}active{{end}}">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+                    <polyline points="17 6 23 6 23 12"/>
+                </svg>
+                Rising
+            </a>
         </div>
 
         <div class="thread-list">
@@ -17,41 +41,57 @@
                 {{template "thread_card" .}}
             {{else}}
                 <div class="empty-state">
-                    <p>No posts yet. Be the first to post!</p>
+                    <h3>No posts yet</h3>
+                    <p>Be the first to share something with the community!</p>
+                    {{if $.CurrentUser}}
+                        <a href="/b/all/submit" class="btn btn-primary">Create Post</a>
+                    {{end}}
                 </div>
             {{end}}
         </div>
     </div>
 
     <aside class="sidebar">
-        <div class="sidebar-section">
-            <h3>Popular Communities</h3>
-            <ul class="board-list">
-                {{range .Data.PopularBoards}}
-                    <li>
-                        <a href="/b/{{.Name}}" class="board-link">
-                            {{if .IconURL}}
-                                <img src="{{.IconURL}}" alt="" class="board-icon">
-                            {{else}}
-                                <span class="board-icon-placeholder">{{slice .Name 0 1}}</span>
-                            {{end}}
-                            <span class="board-name">b/{{.Name}}</span>
-                            <span class="board-members">{{formatNumber .MemberCount}} members</span>
-                        </a>
-                    </li>
-                {{end}}
-            </ul>
+        <div class="sidebar-card">
+            <div class="sidebar-card-header">Popular Communities</div>
+            <div class="sidebar-card-body">
+                <ul class="board-list">
+                    {{range .Data.PopularBoards}}
+                        <li>
+                            <a href="/b/{{.Name}}" class="board-list-item">
+                                {{if .IconURL}}
+                                    <img src="{{.IconURL}}" alt="" class="board-icon">
+                                {{else}}
+                                    <span class="board-icon-placeholder">{{slice .Name 0 1}}</span>
+                                {{end}}
+                                <div class="board-list-info">
+                                    <span class="name">b/{{.Name}}</span>
+                                    <span class="members">{{formatNumber .MemberCount}} members</span>
+                                </div>
+                            </a>
+                        </li>
+                    {{else}}
+                        <li class="empty-state" style="padding: 1rem;">
+                            <p>No communities yet</p>
+                        </li>
+                    {{end}}
+                </ul>
+            </div>
         </div>
 
         {{if .CurrentUser}}
-            <div class="sidebar-section">
-                <a href="/b/all/submit" class="btn btn-primary btn-block">Create Post</a>
+            <div class="sidebar-card">
+                <div class="sidebar-card-body">
+                    <a href="/b/all/submit" class="btn btn-primary btn-block">Create Post</a>
+                </div>
             </div>
         {{else}}
-            <div class="sidebar-section cta">
-                <p>Join the community to post, vote, and comment.</p>
-                <a href="/register" class="btn btn-primary btn-block">Sign Up</a>
-                <a href="/login" class="btn btn-secondary btn-block">Login</a>
+            <div class="sidebar-card">
+                <div class="sidebar-card-body sidebar-cta">
+                    <p>Join the community to post, vote, and comment.</p>
+                    <a href="/register" class="btn btn-primary btn-block">Sign Up</a>
+                    <a href="/login" class="btn btn-secondary btn-block">Log In</a>
+                </div>
             </div>
         {{end}}
     </aside>

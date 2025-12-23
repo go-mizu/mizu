@@ -3,69 +3,100 @@
 {{end}}
 
 {{define "content"}}
-<div class="page-thread">
-    <div class="content-area">
+<div class="page-layout">
+    <div class="content-feed">
         <article class="thread-full">
-            <div class="vote-buttons">
-                <button class="vote-btn upvote {{if eq .Data.Thread.Vote 1}}active{{end}}" data-action="upvote" data-thread="{{.Data.Thread.ID}}">
-                    <span class="icon">▲</span>
-                </button>
-                <span class="vote-score">{{formatScore .Data.Thread.Score}}</span>
-                <button class="vote-btn downvote {{if eq .Data.Thread.Vote -1}}active{{end}}" data-action="downvote" data-thread="{{.Data.Thread.ID}}">
-                    <span class="icon">▼</span>
-                </button>
+            <div class="thread-header">
+                <div class="vote-column">
+                    <button class="vote-btn upvote {{if eq .Data.Thread.Vote 1}}active{{end}}" data-action="upvote" data-thread="{{.Data.Thread.ID}}" title="Upvote">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 4l-8 8h5v8h6v-8h5z"/>
+                        </svg>
+                    </button>
+                    <span class="vote-score">{{formatScore .Data.Thread.Score}}</span>
+                    <button class="vote-btn downvote {{if eq .Data.Thread.Vote -1}}active{{end}}" data-action="downvote" data-thread="{{.Data.Thread.ID}}" title="Downvote">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 20l8-8h-5V4H9v8H4z"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="thread-content">
+                    <div class="thread-meta">
+                        <a href="/b/{{.Data.Thread.Board.Name}}" class="board-link">b/{{.Data.Thread.Board.Name}}</a>
+                        <span class="separator">·</span>
+                        Posted by
+                        {{if .Data.Thread.Author}}
+                            <a href="/u/{{.Data.Thread.Author.Username}}" class="author-link">u/{{.Data.Thread.Author.Username}}</a>
+                        {{else}}
+                            <span class="author-deleted">[deleted]</span>
+                        {{end}}
+                        <span class="separator">·</span>
+                        <span class="time" title="{{formatTime .Data.Thread.CreatedAt}}">{{formatTimeRelative .Data.Thread.CreatedAt}}</span>
+                    </div>
+
+                    <h1 class="thread-title">
+                        {{.Data.Thread.Title}}
+                        {{if eq .Data.Thread.Type "link"}}
+                            <a href="{{.Data.Thread.URL}}" class="external-link" target="_blank" rel="noopener">({{.Data.Thread.Domain}})</a>
+                        {{end}}
+                    </h1>
+
+                    {{if or .Data.Thread.IsNSFW .Data.Thread.IsSpoiler .Data.Thread.IsPinned .Data.Thread.IsLocked .Data.Thread.IsOC}}
+                        <div class="thread-tags">
+                            {{if .Data.Thread.IsPinned}}<span class="tag pinned">Pinned</span>{{end}}
+                            {{if .Data.Thread.IsLocked}}<span class="tag locked">Locked</span>{{end}}
+                            {{if .Data.Thread.IsNSFW}}<span class="tag nsfw">NSFW</span>{{end}}
+                            {{if .Data.Thread.IsSpoiler}}<span class="tag spoiler">Spoiler</span>{{end}}
+                            {{if .Data.Thread.IsOC}}<span class="tag oc">OC</span>{{end}}
+                        </div>
+                    {{end}}
+                </div>
             </div>
 
-            <div class="thread-content">
-                <div class="thread-meta">
-                    <a href="/b/{{.Data.Thread.Board.Name}}" class="board-link">b/{{.Data.Thread.Board.Name}}</a>
-                    <span class="separator">·</span>
-                    Posted by
-                    {{if .Data.Thread.Author}}
-                        <a href="/u/{{.Data.Thread.Author.Username}}" class="author-link">u/{{.Data.Thread.Author.Username}}</a>
-                    {{else}}
-                        [deleted]
-                    {{end}}
-                    <span class="separator">·</span>
-                    <span class="time" title="{{formatTime .Data.Thread.CreatedAt}}">{{formatTimeRelative .Data.Thread.CreatedAt}}</span>
+            {{if .Data.Thread.ContentHTML}}
+                <div class="thread-body-content">
+                    {{safeHTML .Data.Thread.ContentHTML}}
                 </div>
+            {{end}}
 
-                <h1 class="thread-title">
-                    {{.Data.Thread.Title}}
-                    {{if eq .Data.Thread.Type "link"}}
-                        <a href="{{.Data.Thread.URL}}" class="external-link" target="_blank" rel="noopener">({{.Data.Thread.Domain}})</a>
-                    {{end}}
-                </h1>
-
-                <div class="thread-tags">
-                    {{if .Data.Thread.IsNSFW}}<span class="tag nsfw">NSFW</span>{{end}}
-                    {{if .Data.Thread.IsSpoiler}}<span class="tag spoiler">Spoiler</span>{{end}}
-                    {{if .Data.Thread.IsPinned}}<span class="tag pinned">Pinned</span>{{end}}
-                    {{if .Data.Thread.IsLocked}}<span class="tag locked">Locked</span>{{end}}
-                    {{if .Data.Thread.IsOC}}<span class="tag oc">OC</span>{{end}}
-                </div>
-
-                {{if .Data.Thread.ContentHTML}}
-                    <div class="thread-body">
-                        {{safeHTML .Data.Thread.ContentHTML}}
-                    </div>
+            <div class="thread-actions">
+                <span class="action-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    {{.Data.Thread.CommentCount}} Comments
+                </span>
+                <button class="action-btn bookmark-btn {{if .Data.Thread.IsBookmarked}}active{{end}}" data-action="bookmark" data-thread="{{.Data.Thread.ID}}">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="{{if .Data.Thread.IsBookmarked}}currentColor{{else}}none{{end}}" stroke="currentColor" stroke-width="2">
+                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    {{if .Data.Thread.IsBookmarked}}Saved{{else}}Save{{end}}
+                </button>
+                <button class="action-btn share-btn" data-action="share">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="18" cy="5" r="3"/>
+                        <circle cx="6" cy="12" r="3"/>
+                        <circle cx="18" cy="19" r="3"/>
+                        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                        <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                    </svg>
+                    Share
+                </button>
+                {{if .Data.Thread.CanEdit}}
+                    <a href="/b/{{.Data.Thread.Board.Name}}/{{.Data.Thread.ID}}/edit" class="action-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                        Edit
+                    </a>
                 {{end}}
-
-                <div class="thread-actions">
-                    <span class="action-info">{{.Data.Thread.CommentCount}} comments</span>
-                    <button class="action-btn bookmark-btn {{if .Data.Thread.IsBookmarked}}active{{end}}" data-action="bookmark" data-thread="{{.Data.Thread.ID}}">
-                        {{if .Data.Thread.IsBookmarked}}Saved{{else}}Save{{end}}
-                    </button>
-                    <button class="action-btn share-btn" data-action="share">Share</button>
-                    {{if .Data.Thread.CanEdit}}
-                        <a href="/b/{{.Data.Thread.Board.Name}}/{{.Data.Thread.ID}}/edit" class="action-btn">Edit</a>
-                    {{end}}
-                </div>
             </div>
         </article>
 
         {{if and .CurrentUser (not .Data.Thread.IsLocked)}}
-            <div class="comment-form">
+            <div class="comment-form-main">
                 <form action="/api/threads/{{.Data.Thread.ID}}/comments" method="post" data-action="submit-comment">
                     <textarea name="content" placeholder="What are your thoughts?" rows="4"></textarea>
                     <div class="form-actions">
@@ -75,6 +106,10 @@
             </div>
         {{else if .Data.Thread.IsLocked}}
             <div class="locked-notice">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom: 8px;">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
                 <p>This thread has been locked. New comments cannot be posted.</p>
             </div>
         {{end}}
@@ -106,11 +141,17 @@
     </div>
 
     <aside class="sidebar">
-        <div class="sidebar-section board-about">
-            <h3>b/{{.Data.Thread.Board.Name}}</h3>
-            <p>{{.Data.Thread.Board.Description}}</p>
-            <div class="board-stats">
-                <span>{{formatNumber .Data.Thread.Board.MemberCount}} members</span>
+        <div class="sidebar-card">
+            <div class="sidebar-card-header">About Community</div>
+            <div class="sidebar-card-body board-about">
+                <h3 style="margin-bottom: 8px;">b/{{.Data.Thread.Board.Name}}</h3>
+                <p>{{.Data.Thread.Board.Description}}</p>
+                <div class="board-stats" style="margin-top: 12px;">
+                    <div class="stat">
+                        <span class="stat-value">{{formatNumber .Data.Thread.Board.MemberCount}}</span>
+                        <span class="stat-label">Members</span>
+                    </div>
+                </div>
             </div>
         </div>
     </aside>

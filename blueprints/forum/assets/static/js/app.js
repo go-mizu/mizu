@@ -1,4 +1,4 @@
-// Forum JavaScript
+// Forum JavaScript - Modern UI Interactions
 
 document.addEventListener('DOMContentLoaded', function() {
     // Vote handling
@@ -6,7 +6,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const voteBtn = e.target.closest('.vote-btn');
         if (!voteBtn) return;
 
-        const action = voteBtn.dataset.action;
+        e.preventDefault();
+        const action = voteBtn.dataset.action || (voteBtn.classList.contains('upvote') ? 'upvote' : 'downvote');
         const threadId = voteBtn.dataset.thread;
         const commentId = voteBtn.dataset.comment;
 
@@ -19,9 +20,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Bookmark handling
     document.addEventListener('click', function(e) {
-        const bookmarkBtn = e.target.closest('.bookmark-btn');
+        const bookmarkBtn = e.target.closest('.bookmark-btn, [data-action="bookmark"]');
         if (!bookmarkBtn) return;
 
+        e.preventDefault();
         const threadId = bookmarkBtn.dataset.thread;
         const commentId = bookmarkBtn.dataset.comment;
         const isBookmarked = bookmarkBtn.classList.contains('active');
@@ -33,47 +35,92 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // Share button
+    document.addEventListener('click', function(e) {
+        const shareBtn = e.target.closest('.share-btn, [data-action="share"]');
+        if (!shareBtn) return;
+
+        e.preventDefault();
+        const url = shareBtn.dataset.url || window.location.href;
+
+        if (navigator.share) {
+            navigator.share({ url: url }).catch(() => {});
+        } else if (navigator.clipboard) {
+            navigator.clipboard.writeText(window.location.origin + url)
+                .then(() => {
+                    showToast('Link copied to clipboard');
+                });
+        }
+    });
+
     // Join/Leave board
     document.addEventListener('click', function(e) {
         const btn = e.target.closest('[data-action="join"], [data-action="leave"]');
         if (!btn) return;
 
+        e.preventDefault();
         const board = btn.dataset.board;
         const action = btn.dataset.action;
 
         handleBoardMembership(board, action, btn);
     });
 
-    // Comment reply
+    // Comment reply toggle
     document.addEventListener('click', function(e) {
         const replyBtn = e.target.closest('[data-action="reply"]');
         if (!replyBtn) return;
 
+        e.preventDefault();
         const commentId = replyBtn.dataset.comment;
         const form = document.getElementById('reply-form-' + commentId);
         if (form) {
+            // Hide other reply forms
+            document.querySelectorAll('.reply-form').forEach(f => {
+                if (f.id !== 'reply-form-' + commentId) {
+                    f.classList.add('hidden');
+                }
+            });
             form.classList.toggle('hidden');
+            if (!form.classList.contains('hidden')) {
+                form.querySelector('textarea').focus();
+            }
         }
     });
 
+    // Cancel reply
     document.addEventListener('click', function(e) {
         const cancelBtn = e.target.closest('[data-action="cancel-reply"]');
         if (!cancelBtn) return;
 
+        e.preventDefault();
         const form = cancelBtn.closest('.reply-form');
         if (form) {
             form.classList.add('hidden');
+            form.querySelector('textarea').value = '';
         }
     });
 
-    // Comment collapse
+    // Comment collapse/expand
     document.addEventListener('click', function(e) {
-        const collapseLine = e.target.closest('.collapse-line');
+        const collapseLine = e.target.closest('.comment-collapse-line, [data-action="toggle-collapse"]');
         if (!collapseLine) return;
 
+        e.preventDefault();
         const comment = collapseLine.closest('.comment');
         if (comment) {
             comment.classList.toggle('collapsed');
+        }
+    });
+
+    // Expand collapsed comment
+    document.addEventListener('click', function(e) {
+        const expandBtn = e.target.closest('[data-action="expand"]');
+        if (!expandBtn) return;
+
+        e.preventDefault();
+        const comment = expandBtn.closest('.comment');
+        if (comment) {
+            comment.classList.remove('collapsed');
         }
     });
 
@@ -102,6 +149,12 @@ document.addEventListener('DOMContentLoaded', function() {
             case 'submit-reply':
                 handleSubmitReply(form);
                 break;
+            case 'update-profile':
+                handleUpdateProfile(form);
+                break;
+            case 'update-password':
+                handleUpdatePassword(form);
+                break;
         }
     });
 
@@ -110,6 +163,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const typeTab = e.target.closest('.type-tab');
         if (!typeTab) return;
 
+        e.preventDefault();
         const type = typeTab.dataset.type;
         const tabs = document.querySelectorAll('.type-tab');
         const textInput = document.querySelector('.text-input');
@@ -119,15 +173,46 @@ document.addEventListener('DOMContentLoaded', function() {
         typeTab.classList.add('active');
 
         if (type === 'link') {
-            textInput.classList.add('hidden');
-            linkInput.classList.remove('hidden');
+            if (textInput) textInput.classList.add('hidden');
+            if (linkInput) linkInput.classList.remove('hidden');
         } else {
-            textInput.classList.remove('hidden');
-            linkInput.classList.add('hidden');
+            if (textInput) textInput.classList.remove('hidden');
+            if (linkInput) linkInput.classList.add('hidden');
+        }
+    });
+
+    // Comment sort dropdown
+    document.addEventListener('change', function(e) {
+        const select = e.target.closest('[data-action="sort-comments"]');
+        if (!select) return;
+
+        const url = new URL(window.location);
+        url.searchParams.set('sort', select.value);
+        window.location = url.toString();
+    });
+
+    // Mark all notifications as read
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('[data-action="mark-all-read"]');
+        if (!btn) return;
+
+        e.preventDefault();
+        handleMarkAllRead(btn);
+    });
+
+    // Delete account confirmation
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('[data-action="delete-account"]');
+        if (!btn) return;
+
+        e.preventDefault();
+        if (confirm('Are you sure you want to delete your account? This cannot be undone.')) {
+            handleDeleteAccount();
         }
     });
 });
 
+// Vote handler
 async function handleVote(type, id, value, btn) {
     const endpoint = type === 'thread' ? `/api/threads/${id}/vote` : `/api/comments/${id}/vote`;
     const isActive = btn.classList.contains('active');
@@ -143,51 +228,76 @@ async function handleVote(type, id, value, btn) {
             });
         }
 
-        // Toggle state
-        const container = btn.closest('.vote-buttons, .vote-buttons-inline');
+        // Find vote container (could be vote-column or vote-inline)
+        const container = btn.closest('.vote-column, .vote-inline');
+        if (!container) return;
+
         const upBtn = container.querySelector('.upvote');
         const downBtn = container.querySelector('.downvote');
         const scoreEl = container.querySelector('.vote-score');
 
-        upBtn.classList.remove('active');
-        downBtn.classList.remove('active');
+        // Remove active state from both
+        if (upBtn) upBtn.classList.remove('active');
+        if (downBtn) downBtn.classList.remove('active');
 
-        if (!isActive) {
-            btn.classList.add('active');
-        }
-
-        // Update score display (simplified)
+        // Update score
         if (scoreEl) {
-            let score = parseInt(scoreEl.textContent) || 0;
+            let score = parseInt(scoreEl.textContent.replace(/[^-\d]/g, '')) || 0;
+
+            // Calculate new score based on previous state and new action
             if (isActive) {
                 score -= value;
             } else {
-                score += value;
+                // If clicking opposite vote, need to remove old vote too
+                const wasUpvoted = upBtn && upBtn === btn ? false : (upBtn && upBtn.classList.contains('active'));
+                const wasDownvoted = downBtn && downBtn === btn ? false : (downBtn && downBtn.classList.contains('active'));
+
+                if (wasUpvoted && value === -1) score -= 2;
+                else if (wasDownvoted && value === 1) score += 2;
+                else score += value;
             }
-            scoreEl.textContent = score;
+
+            scoreEl.textContent = formatScore(score);
+        }
+
+        // Add active state to clicked button if it wasn't already active
+        if (!isActive) {
+            btn.classList.add('active');
         }
     } catch (err) {
         console.error('Vote failed:', err);
     }
 }
 
+// Bookmark handler
 async function handleBookmark(type, id, save, btn) {
     const endpoint = type === 'thread' ? `/api/threads/${id}/bookmark` : `/api/comments/${id}/bookmark`;
 
     try {
         await fetch(endpoint, { method: save ? 'POST' : 'DELETE' });
 
-        btn.classList.toggle('active');
-        const icon = btn.querySelector('.icon');
-        if (icon) {
-            icon.textContent = save ? '★' : '☆';
+        btn.classList.toggle('active', save);
+
+        // Update SVG fill
+        const svg = btn.querySelector('svg');
+        if (svg) {
+            svg.setAttribute('fill', save ? 'currentColor' : 'none');
         }
-        btn.childNodes[btn.childNodes.length - 1].textContent = save ? 'Saved' : 'Save';
+
+        // Update text
+        const textNode = Array.from(btn.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
+        if (textNode) {
+            textNode.textContent = save ? 'Saved' : 'Save';
+        } else {
+            // Text might be inside the button after SVG
+            btn.innerHTML = btn.innerHTML.replace(save ? 'Save' : 'Saved', save ? 'Saved' : 'Save');
+        }
     } catch (err) {
         console.error('Bookmark failed:', err);
     }
 }
 
+// Board membership handler
 async function handleBoardMembership(board, action, btn) {
     const endpoint = `/api/boards/${board}/join`;
 
@@ -210,6 +320,7 @@ async function handleBoardMembership(board, action, btn) {
     }
 }
 
+// Auth handlers
 async function handleLogin(form) {
     const data = new FormData(form);
     const body = {
@@ -226,8 +337,8 @@ async function handleLogin(form) {
 
         const json = await res.json();
 
-        if (json.error) {
-            showFormError(form, json.error.message);
+        if (!res.ok || json.error) {
+            showFormError(form, json.error?.message || 'Login failed');
         } else {
             window.location.href = '/';
         }
@@ -253,8 +364,8 @@ async function handleRegister(form) {
 
         const json = await res.json();
 
-        if (json.error) {
-            showFormError(form, json.error.message);
+        if (!res.ok || json.error) {
+            showFormError(form, json.error?.message || 'Registration failed');
         } else {
             window.location.href = '/';
         }
@@ -263,24 +374,22 @@ async function handleRegister(form) {
     }
 }
 
+// Thread submission
 async function handleSubmitThread(form) {
     const data = new FormData(form);
-    const board = form.action.split('/')[4]; // Extract board from URL
+    const board = form.action.split('/boards/')[1]?.split('/')[0];
 
     const body = {
         title: data.get('title'),
-        content: data.get('content'),
-        url: data.get('url'),
+        content: data.get('content') || '',
+        url: data.get('url') || '',
         is_nsfw: data.get('is_nsfw') === 'true',
         is_spoiler: data.get('is_spoiler') === 'true'
     };
 
-    // Determine type
-    if (body.url) {
-        body.type = 'link';
-    } else {
-        body.type = 'text';
-    }
+    // Determine type based on which tab is active
+    const activeTab = document.querySelector('.type-tab.active');
+    body.type = activeTab?.dataset.type || (body.url ? 'link' : 'text');
 
     try {
         const res = await fetch(form.action, {
@@ -291,8 +400,8 @@ async function handleSubmitThread(form) {
 
         const json = await res.json();
 
-        if (json.error) {
-            showFormError(form, json.error.message);
+        if (!res.ok || json.error) {
+            showFormError(form, json.error?.message || 'Failed to create post');
         } else {
             window.location.href = '/b/' + board;
         }
@@ -301,6 +410,7 @@ async function handleSubmitThread(form) {
     }
 }
 
+// Comment submission
 async function handleSubmitComment(form) {
     const data = new FormData(form);
     const body = { content: data.get('content') };
@@ -314,8 +424,8 @@ async function handleSubmitComment(form) {
 
         const json = await res.json();
 
-        if (json.error) {
-            showFormError(form, json.error.message);
+        if (!res.ok || json.error) {
+            showFormError(form, json.error?.message || 'Failed to post comment');
         } else {
             window.location.reload();
         }
@@ -324,10 +434,14 @@ async function handleSubmitComment(form) {
     }
 }
 
+// Reply submission
 async function handleSubmitReply(form) {
     const parentId = form.dataset.parent;
     const content = form.querySelector('textarea').value;
-    const threadId = window.location.pathname.split('/')[3];
+
+    // Extract thread ID from URL
+    const pathParts = window.location.pathname.split('/');
+    const threadId = pathParts[3]; // /b/boardname/threadid/...
 
     const body = {
         content: content,
@@ -343,23 +457,161 @@ async function handleSubmitReply(form) {
 
         const json = await res.json();
 
-        if (json.error) {
-            alert(json.error.message);
+        if (!res.ok || json.error) {
+            showToast(json.error?.message || 'Failed to post reply', 'error');
         } else {
             window.location.reload();
         }
     } catch (err) {
-        alert('An error occurred');
+        showToast('An error occurred', 'error');
     }
 }
 
+// Profile update
+async function handleUpdateProfile(form) {
+    const data = new FormData(form);
+    const body = {
+        display_name: data.get('display_name'),
+        bio: data.get('bio'),
+        avatar_url: data.get('avatar_url')
+    };
+
+    try {
+        const res = await fetch('/api/auth/me', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+
+        if (res.ok) {
+            showToast('Profile updated successfully');
+        } else {
+            const json = await res.json();
+            showToast(json.error?.message || 'Failed to update profile', 'error');
+        }
+    } catch (err) {
+        showToast('An error occurred', 'error');
+    }
+}
+
+// Password update
+async function handleUpdatePassword(form) {
+    const data = new FormData(form);
+
+    if (data.get('new_password') !== data.get('confirm_password')) {
+        showFormError(form, 'Passwords do not match');
+        return;
+    }
+
+    const body = {
+        current_password: data.get('current_password'),
+        new_password: data.get('new_password')
+    };
+
+    try {
+        const res = await fetch('/api/auth/password', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+
+        if (res.ok) {
+            form.reset();
+            showToast('Password updated successfully');
+        } else {
+            const json = await res.json();
+            showFormError(form, json.error?.message || 'Failed to update password');
+        }
+    } catch (err) {
+        showFormError(form, 'An error occurred');
+    }
+}
+
+// Mark all notifications as read
+async function handleMarkAllRead(btn) {
+    try {
+        await fetch('/api/notifications/read', { method: 'POST' });
+
+        document.querySelectorAll('.notification.unread').forEach(n => {
+            n.classList.remove('unread');
+        });
+
+        btn.remove();
+    } catch (err) {
+        console.error('Failed to mark notifications as read:', err);
+    }
+}
+
+// Delete account
+async function handleDeleteAccount() {
+    try {
+        const res = await fetch('/api/auth/me', { method: 'DELETE' });
+
+        if (res.ok) {
+            window.location.href = '/';
+        } else {
+            showToast('Failed to delete account', 'error');
+        }
+    } catch (err) {
+        showToast('An error occurred', 'error');
+    }
+}
+
+// UI Helpers
 function showFormError(form, message) {
     let errorEl = form.querySelector('.form-error');
     if (!errorEl) {
         errorEl = document.createElement('div');
         errorEl.className = 'form-error';
-        form.insertBefore(errorEl, form.querySelector('button[type="submit"]'));
+        const submitBtn = form.querySelector('button[type="submit"]');
+        if (submitBtn) {
+            submitBtn.parentNode.insertBefore(errorEl, submitBtn);
+        } else {
+            form.appendChild(errorEl);
+        }
     }
     errorEl.textContent = message;
     errorEl.classList.remove('hidden');
+}
+
+function showToast(message, type = 'success') {
+    // Create toast element if it doesn't exist
+    let toast = document.getElementById('toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'toast';
+        toast.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 24px;
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        `;
+        document.body.appendChild(toast);
+    }
+
+    toast.textContent = message;
+    toast.style.background = type === 'error' ? '#ef4444' : '#22c55e';
+    toast.style.opacity = '1';
+
+    setTimeout(() => {
+        toast.style.opacity = '0';
+    }, 3000);
+}
+
+function formatScore(score) {
+    if (Math.abs(score) >= 1000000) {
+        return (score / 1000000).toFixed(1).replace(/\.0$/, '') + 'm';
+    }
+    if (Math.abs(score) >= 1000) {
+        return (score / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    }
+    return score.toString();
 }
