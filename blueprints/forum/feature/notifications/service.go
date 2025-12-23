@@ -77,10 +77,8 @@ func (s *Service) List(ctx context.Context, accountID string, opts ListOpts) ([]
 		return nil, err
 	}
 
-	// Load relationships
-	for _, n := range notifications {
-		s.loadRelationships(ctx, n)
-	}
+	// Batch load relationships
+	s.loadRelationshipsBatch(ctx, notifications)
 
 	return notifications, nil
 }
@@ -112,7 +110,7 @@ func (s *Service) GetUnreadCount(ctx context.Context, accountID string) (int64, 
 	return s.store.CountUnread(ctx, accountID)
 }
 
-// loadRelationships loads related entities.
+// loadRelationships loads related entities for a single notification.
 func (s *Service) loadRelationships(ctx context.Context, n *Notification) {
 	if n.ActorID != "" && s.accounts != nil {
 		n.Actor, _ = s.accounts.GetByID(ctx, n.ActorID)
@@ -125,6 +123,74 @@ func (s *Service) loadRelationships(ctx context.Context, n *Notification) {
 	}
 	if n.CommentID != "" && s.comments != nil {
 		n.Comment, _ = s.comments.GetByID(ctx, n.CommentID)
+	}
+}
+
+// loadRelationshipsBatch batch loads related entities for multiple notifications.
+func (s *Service) loadRelationshipsBatch(ctx context.Context, notifications []*Notification) {
+	if len(notifications) == 0 {
+		return
+	}
+
+	// Collect unique IDs for each entity type
+	actorIDs := make([]string, 0)
+	boardIDs := make([]string, 0)
+	threadIDs := make([]string, 0)
+	commentIDs := make([]string, 0)
+	seen := make(map[string]bool)
+
+	for _, n := range notifications {
+		if n.ActorID != "" && !seen["a:"+n.ActorID] {
+			actorIDs = append(actorIDs, n.ActorID)
+			seen["a:"+n.ActorID] = true
+		}
+		if n.BoardID != "" && !seen["b:"+n.BoardID] {
+			boardIDs = append(boardIDs, n.BoardID)
+			seen["b:"+n.BoardID] = true
+		}
+		if n.ThreadID != "" && !seen["t:"+n.ThreadID] {
+			threadIDs = append(threadIDs, n.ThreadID)
+			seen["t:"+n.ThreadID] = true
+		}
+		if n.CommentID != "" && !seen["c:"+n.CommentID] {
+			commentIDs = append(commentIDs, n.CommentID)
+			seen["c:"+n.CommentID] = true
+		}
+	}
+
+	// Batch fetch all entities
+	var actors map[string]*accounts.Account
+	var boards map[string]*boards.Board
+	var threads map[string]*threads.Thread
+	var comments map[string]*comments.Comment
+
+	if len(actorIDs) > 0 && s.accounts != nil {
+		actors, _ = s.accounts.GetByIDs(ctx, actorIDs)
+	}
+	if len(boardIDs) > 0 && s.boards != nil {
+		boards, _ = s.boards.GetByIDs(ctx, boardIDs)
+	}
+	if len(threadIDs) > 0 && s.threads != nil {
+		threads, _ = s.threads.GetByIDs(ctx, threadIDs)
+	}
+	if len(commentIDs) > 0 && s.comments != nil {
+		comments, _ = s.comments.GetByIDs(ctx, commentIDs)
+	}
+
+	// Assign entities to notifications
+	for _, n := range notifications {
+		if actors != nil {
+			n.Actor = actors[n.ActorID]
+		}
+		if boards != nil {
+			n.Board = boards[n.BoardID]
+		}
+		if threads != nil {
+			n.Thread = threads[n.ThreadID]
+		}
+		if comments != nil {
+			n.Comment = comments[n.CommentID]
+		}
 	}
 }
 

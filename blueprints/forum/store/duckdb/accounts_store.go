@@ -3,6 +3,7 @@ package duckdb
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 
 	"github.com/go-mizu/mizu/blueprints/forum/feature/accounts"
@@ -44,6 +45,44 @@ func (s *AccountsStore) GetByID(ctx context.Context, id string) (*accounts.Accou
 			created_at, updated_at
 		FROM accounts WHERE id = $1
 	`, id))
+}
+
+// GetByIDs retrieves multiple accounts by their IDs.
+func (s *AccountsStore) GetByIDs(ctx context.Context, ids []string) (map[string]*accounts.Account, error) {
+	if len(ids) == 0 {
+		return make(map[string]*accounts.Account), nil
+	}
+
+	// Build placeholders
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+
+	query := `
+		SELECT id, username, email, password_hash, display_name, bio,
+			avatar_url, banner_url, karma, post_karma, comment_karma,
+			is_admin, is_suspended, suspend_reason, suspend_until,
+			created_at, updated_at
+		FROM accounts WHERE id IN (` + strings.Join(placeholders, ",") + `)`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]*accounts.Account)
+	for rows.Next() {
+		account, err := s.scanAccountFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		result[account.ID] = account
+	}
+	return result, rows.Err()
 }
 
 // GetByUsername retrieves an account by username.

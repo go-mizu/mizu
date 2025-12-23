@@ -3,6 +3,8 @@ package duckdb
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"strings"
 
 	"github.com/go-mizu/mizu/blueprints/forum/feature/comments"
 )
@@ -41,6 +43,44 @@ func (s *CommentsStore) GetByID(ctx context.Context, id string) (*comments.Comme
 			is_removed, is_deleted, remove_reason, created_at, updated_at, edited_at
 		FROM comments WHERE id = $1
 	`, id))
+}
+
+// GetByIDs retrieves multiple comments by their IDs.
+func (s *CommentsStore) GetByIDs(ctx context.Context, ids []string) (map[string]*comments.Comment, error) {
+	if len(ids) == 0 {
+		return make(map[string]*comments.Comment), nil
+	}
+
+	// Build placeholders
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+
+	query := `
+		SELECT id, thread_id, parent_id, author_id, content, content_html,
+			score, upvote_count, downvote_count, depth, path, child_count,
+			is_removed, is_deleted, remove_reason, created_at, updated_at, edited_at
+		FROM comments WHERE id IN (` + strings.Join(placeholders, ",") + `)`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	commentList, err := s.scanComments(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]*comments.Comment)
+	for _, c := range commentList {
+		result[c.ID] = c
+	}
+	return result, nil
 }
 
 // Update updates a comment.

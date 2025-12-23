@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/forum/feature/threads"
@@ -46,6 +47,45 @@ func (s *ThreadsStore) GetByID(ctx context.Context, id string) (*threads.Thread,
 			is_nsfw, is_spoiler, is_oc, remove_reason, created_at, updated_at, edited_at
 		FROM threads WHERE id = $1
 	`, id))
+}
+
+// GetByIDs retrieves multiple threads by their IDs.
+func (s *ThreadsStore) GetByIDs(ctx context.Context, ids []string) (map[string]*threads.Thread, error) {
+	if len(ids) == 0 {
+		return make(map[string]*threads.Thread), nil
+	}
+
+	// Build placeholders
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+
+	query := `
+		SELECT id, board_id, author_id, title, content, content_html,
+			url, domain, thumbnail_url, type, score, upvote_count, downvote_count,
+			comment_count, view_count, hot_score, is_pinned, is_locked, is_removed,
+			is_nsfw, is_spoiler, is_oc, remove_reason, created_at, updated_at, edited_at
+		FROM threads WHERE id IN (` + strings.Join(placeholders, ",") + `)`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	threadList, err := s.scanThreads(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]*threads.Thread)
+	for _, t := range threadList {
+		result[t.ID] = t
+	}
+	return result, nil
 }
 
 // Update updates a thread.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/go-mizu/mizu/blueprints/forum/feature/accounts"
@@ -52,6 +53,44 @@ func (s *BoardsStore) GetByID(ctx context.Context, id string) (*boards.Board, er
 			member_count, thread_count, created_at, created_by, updated_at
 		FROM boards WHERE id = $1
 	`, id))
+}
+
+// GetByIDs retrieves multiple boards by their IDs.
+func (s *BoardsStore) GetByIDs(ctx context.Context, ids []string) (map[string]*boards.Board, error) {
+	if len(ids) == 0 {
+		return make(map[string]*boards.Board), nil
+	}
+
+	// Build placeholders
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+
+	query := `
+		SELECT id, name, title, description, sidebar, sidebar_html,
+			icon_url, banner_url, primary_color, is_nsfw, is_private, is_archived,
+			member_count, thread_count, created_at, created_by, updated_at
+		FROM boards WHERE id IN (` + strings.Join(placeholders, ",") + `)`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	boardList, err := s.scanBoards(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]*boards.Board)
+	for _, b := range boardList {
+		result[b.ID] = b
+	}
+	return result, nil
 }
 
 // Update updates a board.
@@ -108,6 +147,43 @@ func (s *BoardsStore) GetMember(ctx context.Context, boardID, accountID string) 
 		return nil, err
 	}
 	return member, nil
+}
+
+// GetMemberBoards retrieves membership status for a user across multiple boards.
+func (s *BoardsStore) GetMemberBoards(ctx context.Context, accountID string, boardIDs []string) (map[string]*boards.BoardMember, error) {
+	if len(boardIDs) == 0 {
+		return make(map[string]*boards.BoardMember), nil
+	}
+
+	// Build placeholders (accountID is $1, board IDs start at $2)
+	placeholders := make([]string, len(boardIDs))
+	args := make([]any, len(boardIDs)+1)
+	args[0] = accountID
+	for i, id := range boardIDs {
+		placeholders[i] = fmt.Sprintf("$%d", i+2)
+		args[i+1] = id
+	}
+
+	query := `
+		SELECT board_id, account_id, joined_at
+		FROM board_members
+		WHERE account_id = $1 AND board_id IN (` + strings.Join(placeholders, ",") + `)`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]*boards.BoardMember)
+	for rows.Next() {
+		member := &boards.BoardMember{}
+		if err := rows.Scan(&member.BoardID, &member.AccountID, &member.JoinedAt); err != nil {
+			return nil, err
+		}
+		result[member.BoardID] = member
+	}
+	return result, rows.Err()
 }
 
 // ListMembers lists board members.
@@ -209,6 +285,47 @@ func (s *BoardsStore) GetModerator(ctx context.Context, boardID, accountID strin
 		_ = json.Unmarshal([]byte(permsJSON.String), &mod.Permissions)
 	}
 	return mod, nil
+}
+
+// GetModeratorBoards retrieves moderator status for a user across multiple boards.
+func (s *BoardsStore) GetModeratorBoards(ctx context.Context, accountID string, boardIDs []string) (map[string]*boards.BoardModerator, error) {
+	if len(boardIDs) == 0 {
+		return make(map[string]*boards.BoardModerator), nil
+	}
+
+	// Build placeholders (accountID is $1, board IDs start at $2)
+	placeholders := make([]string, len(boardIDs))
+	args := make([]any, len(boardIDs)+1)
+	args[0] = accountID
+	for i, id := range boardIDs {
+		placeholders[i] = fmt.Sprintf("$%d", i+2)
+		args[i+1] = id
+	}
+
+	query := `
+		SELECT board_id, account_id, permissions, added_at, added_by
+		FROM board_moderators
+		WHERE account_id = $1 AND board_id IN (` + strings.Join(placeholders, ",") + `)`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]*boards.BoardModerator)
+	for rows.Next() {
+		mod := &boards.BoardModerator{}
+		var permsJSON sql.NullString
+		if err := rows.Scan(&mod.BoardID, &mod.AccountID, &permsJSON, &mod.AddedAt, &mod.AddedBy); err != nil {
+			return nil, err
+		}
+		if permsJSON.Valid {
+			_ = json.Unmarshal([]byte(permsJSON.String), &mod.Permissions)
+		}
+		result[mod.BoardID] = mod
+	}
+	return result, rows.Err()
 }
 
 // ListModerators lists board moderators.

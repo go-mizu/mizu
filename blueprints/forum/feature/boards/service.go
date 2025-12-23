@@ -108,6 +108,14 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Board, error) {
 	return s.store.GetByID(ctx, id)
 }
 
+// GetByIDs retrieves multiple boards by their IDs.
+func (s *Service) GetByIDs(ctx context.Context, ids []string) (map[string]*Board, error) {
+	if len(ids) == 0 {
+		return make(map[string]*Board), nil
+	}
+	return s.store.GetByIDs(ctx, ids)
+}
+
 // Update updates a board.
 func (s *Service) Update(ctx context.Context, id string, in UpdateIn) (*Board, error) {
 	board, err := s.store.GetByID(ctx, id)
@@ -390,15 +398,34 @@ func (s *Service) EnrichBoard(ctx context.Context, board *Board, viewerID string
 
 // EnrichBoards enriches multiple boards with viewer state.
 func (s *Service) EnrichBoards(ctx context.Context, boards []*Board, viewerID string) error {
-	if viewerID == "" {
+	if viewerID == "" || len(boards) == 0 {
 		return nil
 	}
 
-	for _, board := range boards {
-		if err := s.EnrichBoard(ctx, board, viewerID); err != nil {
-			return err
-		}
+	// Collect board IDs
+	boardIDs := make([]string, len(boards))
+	for i, b := range boards {
+		boardIDs[i] = b.ID
 	}
+
+	// Batch fetch membership status
+	members, err := s.store.GetMemberBoards(ctx, viewerID, boardIDs)
+	if err != nil {
+		return err
+	}
+
+	// Batch fetch moderator status
+	moderators, err := s.store.GetModeratorBoards(ctx, viewerID, boardIDs)
+	if err != nil {
+		return err
+	}
+
+	// Assign states to boards
+	for _, board := range boards {
+		_, board.IsJoined = members[board.ID]
+		_, board.IsModerator = moderators[board.ID]
+	}
+
 	return nil
 }
 

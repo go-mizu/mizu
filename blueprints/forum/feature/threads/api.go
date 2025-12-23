@@ -137,6 +137,7 @@ type API interface {
 	// Thread management
 	Create(ctx context.Context, authorID string, in CreateIn) (*Thread, error)
 	GetByID(ctx context.Context, id string) (*Thread, error)
+	GetByIDs(ctx context.Context, ids []string) (map[string]*Thread, error)
 	Update(ctx context.Context, id string, in UpdateIn) (*Thread, error)
 	Delete(ctx context.Context, id string) error
 	IncrementViews(ctx context.Context, id string) error
@@ -174,6 +175,7 @@ type API interface {
 type Store interface {
 	Create(ctx context.Context, thread *Thread) error
 	GetByID(ctx context.Context, id string) (*Thread, error)
+	GetByIDs(ctx context.Context, ids []string) (map[string]*Thread, error)
 	Update(ctx context.Context, thread *Thread) error
 	Delete(ctx context.Context, id string) error
 
