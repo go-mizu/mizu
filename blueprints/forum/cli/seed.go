@@ -14,11 +14,31 @@ import (
 	"github.com/go-mizu/mizu/blueprints/forum/store/duckdb"
 )
 
-// NewSeed creates the seed command.
+// NewSeed creates the seed command with subcommands.
 func NewSeed() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "seed",
-		Short: "Seed the database with sample data",
+		Short: "Seed the database with data",
+		Long: `Populates the database with sample data or real data from external sources.
+
+Subcommands:
+  sample   - Create sample users, boards, threads, and comments
+  reddit   - Import real posts from Reddit subreddits`,
+	}
+
+	cmd.AddCommand(
+		NewSeedSample(),
+		NewSeedReddit(),
+	)
+
+	return cmd
+}
+
+// NewSeedSample creates the seed sample command.
+func NewSeedSample() *cobra.Command {
+	return &cobra.Command{
+		Use:   "sample",
+		Short: "Seed with sample data",
 		Long: `Populates the database with sample users, boards, threads, and comments for testing.
 
 This is useful for development and demonstration purposes.`,
