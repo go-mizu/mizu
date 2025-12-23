@@ -1,0 +1,74 @@
+{{define "search.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="page-search">
+    <div class="content-area">
+        <h1>Search</h1>
+
+        <form action="/search" method="get" class="search-form">
+            <input type="search" name="q" value="{{.Data.Query}}" placeholder="Search communities and users..." class="search-input-lg" autofocus>
+            <button type="submit" class="btn btn-primary">Search</button>
+        </form>
+
+        {{if .Data.Query}}
+            <div class="search-results">
+                {{if .Data.Boards}}
+                    <section class="results-section">
+                        <h2>Communities</h2>
+                        <ul class="board-list">
+                            {{range .Data.Boards}}
+                                <li class="board-item">
+                                    <a href="/b/{{.Name}}" class="board-link">
+                                        {{if .IconURL}}
+                                            <img src="{{.IconURL}}" alt="" class="board-icon">
+                                        {{else}}
+                                            <span class="board-icon-placeholder">{{slice .Name 0 1}}</span>
+                                        {{end}}
+                                        <div class="board-info">
+                                            <span class="board-name">b/{{.Name}}</span>
+                                            <span class="board-description">{{truncate .Description 100}}</span>
+                                        </div>
+                                        <span class="board-members">{{formatNumber .MemberCount}} members</span>
+                                    </a>
+                                </li>
+                            {{end}}
+                        </ul>
+                    </section>
+                {{end}}
+
+                {{if .Data.Users}}
+                    <section class="results-section">
+                        <h2>Users</h2>
+                        <ul class="user-list">
+                            {{range .Data.Users}}
+                                <li class="user-item">
+                                    <a href="/u/{{.Username}}" class="user-link">
+                                        {{if .AvatarURL}}
+                                            <img src="{{.AvatarURL}}" alt="" class="user-avatar-sm">
+                                        {{else}}
+                                            <span class="user-avatar-placeholder">{{slice .Username 0 1}}</span>
+                                        {{end}}
+                                        <div class="user-info">
+                                            <span class="username">u/{{.Username}}</span>
+                                            {{if .DisplayName}}<span class="display-name">{{.DisplayName}}</span>{{end}}
+                                        </div>
+                                        <span class="karma">{{formatScore .Karma}} karma</span>
+                                    </a>
+                                </li>
+                            {{end}}
+                        </ul>
+                    </section>
+                {{end}}
+
+                {{if and (not .Data.Boards) (not .Data.Users)}}
+                    <div class="empty-state">
+                        <p>No results found for "{{.Data.Query}}"</p>
+                    </div>
+                {{end}}
+            </div>
+        {{end}}
+    </div>
+</div>
+{{end}}

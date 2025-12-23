@@ -1,0 +1,52 @@
+{{define "submit.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="page-submit">
+    <div class="submit-card">
+        <h1>Create a Post</h1>
+        <p class="submit-board">Posting to <a href="/b/{{.Data.Board.Name}}">b/{{.Data.Board.Name}}</a></p>
+
+        <form action="/api/boards/{{.Data.Board.Name}}/threads" method="post" class="submit-form" data-action="submit-thread">
+            <div class="post-type-tabs">
+                <button type="button" class="type-tab active" data-type="text">Text</button>
+                <button type="button" class="type-tab" data-type="link">Link</button>
+            </div>
+
+            <div class="form-group">
+                <label for="title">Title</label>
+                <input type="text" id="title" name="title" required maxlength="300" placeholder="An interesting title">
+            </div>
+
+            <div class="form-group text-input">
+                <label for="content">Text (optional)</label>
+                <textarea id="content" name="content" rows="8" placeholder="What do you want to discuss?"></textarea>
+            </div>
+
+            <div class="form-group link-input hidden">
+                <label for="url">URL</label>
+                <input type="url" id="url" name="url" placeholder="https://example.com">
+            </div>
+
+            <div class="form-options">
+                <label class="checkbox-label">
+                    <input type="checkbox" name="is_nsfw" value="true">
+                    NSFW
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" name="is_spoiler" value="true">
+                    Spoiler
+                </label>
+            </div>
+
+            <div class="form-error hidden"></div>
+
+            <div class="form-actions">
+                <a href="/b/{{.Data.Board.Name}}" class="btn btn-secondary">Cancel</a>
+                <button type="submit" class="btn btn-primary">Post</button>
+            </div>
+        </form>
+    </div>
+</div>
+{{end}}

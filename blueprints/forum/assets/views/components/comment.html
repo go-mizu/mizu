@@ -1,0 +1,75 @@
+{{define "comment"}}
+<div class="comment {{if .IsCollapsed}}collapsed{{end}}" data-comment-id="{{.ID}}" data-depth="{{.Depth}}">
+    <div class="comment-sidebar">
+        <div class="collapse-line" data-action="toggle-collapse"></div>
+    </div>
+
+    <div class="comment-main">
+        <div class="comment-header">
+            {{if .IsDeleted}}
+                <span class="author-deleted">[deleted]</span>
+            {{else if .Author}}
+                <a href="/u/{{.Author.Username}}" class="comment-author">{{.Author.Username}}</a>
+            {{else}}
+                <span class="author-deleted">[deleted]</span>
+            {{end}}
+            <span class="comment-score">{{formatScore .Score}} points</span>
+            <span class="comment-time" title="{{formatTime .CreatedAt}}">{{formatTimeRelative .CreatedAt}}</span>
+            {{if .EditedAt}}
+                <span class="edited">(edited)</span>
+            {{end}}
+        </div>
+
+        {{if .IsCollapsed}}
+            <div class="comment-collapsed">
+                <button class="expand-btn" data-action="expand">
+                    [+] {{.ChildCount}} more replies
+                </button>
+            </div>
+        {{else}}
+            <div class="comment-body">
+                {{if .IsRemoved}}
+                    <p class="removed">[removed by moderator]</p>
+                {{else}}
+                    {{safeHTML .ContentHTML}}
+                {{end}}
+            </div>
+
+            <div class="comment-actions">
+                <div class="vote-buttons-inline">
+                    <button class="vote-btn upvote {{if eq .Vote 1}}active{{end}}" data-action="upvote" data-comment="{{.ID}}">▲</button>
+                    <button class="vote-btn downvote {{if eq .Vote -1}}active{{end}}" data-action="downvote" data-comment="{{.ID}}">▼</button>
+                </div>
+                <button class="action-btn reply-btn" data-action="reply" data-comment="{{.ID}}">Reply</button>
+                <button class="action-btn bookmark-btn {{if .IsBookmarked}}active{{end}}" data-action="bookmark" data-comment="{{.ID}}">
+                    {{if .IsBookmarked}}Saved{{else}}Save{{end}}
+                </button>
+                {{if .CanEdit}}
+                    <button class="action-btn edit-btn" data-action="edit" data-comment="{{.ID}}">Edit</button>
+                {{end}}
+                {{if .CanDelete}}
+                    <button class="action-btn delete-btn" data-action="delete" data-comment="{{.ID}}">Delete</button>
+                {{end}}
+            </div>
+
+            <div class="reply-form hidden" id="reply-form-{{.ID}}">
+                <form data-action="submit-reply" data-parent="{{.ID}}">
+                    <textarea name="content" placeholder="Write a reply..." rows="4"></textarea>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" data-action="cancel-reply">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Reply</button>
+                    </div>
+                </form>
+            </div>
+
+            {{if .Children}}
+                <div class="comment-children">
+                    {{range .Children}}
+                        {{template "comment" .}}
+                    {{end}}
+                </div>
+            {{end}}
+        {{end}}
+    </div>
+</div>
+{{end}}

@@ -1,0 +1,19 @@
+{{define "all.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="page-all">
+    <h1>All Posts</h1>
+
+    <div class="thread-list">
+        {{range .Data.Threads}}
+            {{template "thread_card" .}}
+        {{else}}
+            <div class="empty-state">
+                <p>No posts yet.</p>
+            </div>
+        {{end}}
+    </div>
+</div>
+{{end}}

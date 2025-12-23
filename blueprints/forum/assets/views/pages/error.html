@@ -1,0 +1,13 @@
+{{define "error.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="page-error">
+    <div class="error-content">
+        <h1>Oops!</h1>
+        <p class="error-message">{{.Data.Message}}</p>
+        <a href="/" class="btn btn-primary">Go Home</a>
+    </div>
+</div>
+{{end}}

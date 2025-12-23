@@ -1,0 +1,55 @@
+{{define "notifications.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="page-notifications">
+    <div class="notifications-header">
+        <h1>Notifications</h1>
+        <button class="btn btn-secondary" data-action="mark-all-read">Mark all as read</button>
+    </div>
+
+    <div class="notifications-list">
+        {{range .Data.Notifications}}
+            <div class="notification {{if not .Read}}unread{{end}}" data-notification-id="{{.ID}}">
+                <div class="notification-icon">
+                    {{if eq .Type "reply"}}💬{{end}}
+                    {{if eq .Type "mention"}}@{{end}}
+                    {{if eq .Type "thread_vote"}}▲{{end}}
+                    {{if eq .Type "comment_vote"}}▲{{end}}
+                    {{if eq .Type "follow"}}👤{{end}}
+                    {{if eq .Type "mod"}}🛡{{end}}
+                </div>
+                <div class="notification-content">
+                    {{if .Actor}}
+                        <a href="/u/{{.Actor.Username}}" class="actor">{{.Actor.Username}}</a>
+                    {{end}}
+                    {{if eq .Type "reply"}}
+                        replied to your {{if .Thread}}post{{else}}comment{{end}}
+                    {{else if eq .Type "mention"}}
+                        mentioned you in a {{if .Thread}}post{{else}}comment{{end}}
+                    {{else if eq .Type "thread_vote"}}
+                        upvoted your post
+                    {{else if eq .Type "comment_vote"}}
+                        upvoted your comment
+                    {{else if eq .Type "follow"}}
+                        started following you
+                    {{else if eq .Type "mod"}}
+                        {{.Message}}
+                    {{end}}
+                    {{if .Thread}}
+                        <a href="/b/{{.Thread.Board.Name}}/{{.Thread.ID}}" class="context">{{truncate .Thread.Title 50}}</a>
+                    {{end}}
+                </div>
+                <div class="notification-time">
+                    {{formatTimeRelative .CreatedAt}}
+                </div>
+            </div>
+        {{else}}
+            <div class="empty-state">
+                <p>No notifications yet.</p>
+            </div>
+        {{end}}
+    </div>
+</div>
+{{end}}

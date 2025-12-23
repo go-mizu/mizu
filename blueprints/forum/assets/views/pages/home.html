@@ -1,0 +1,59 @@
+{{define "home.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="page-home">
+    <div class="content-area">
+        <div class="sort-tabs">
+            <a href="/?sort=hot" class="sort-tab {{if eq .Data.Sort "hot"}}active{{end}}">Hot</a>
+            <a href="/?sort=new" class="sort-tab {{if eq .Data.Sort "new"}}active{{end}}">New</a>
+            <a href="/?sort=top" class="sort-tab {{if eq .Data.Sort "top"}}active{{end}}">Top</a>
+            <a href="/?sort=rising" class="sort-tab {{if eq .Data.Sort "rising"}}active{{end}}">Rising</a>
+        </div>
+
+        <div class="thread-list">
+            {{range .Data.Threads}}
+                {{template "thread_card" .}}
+            {{else}}
+                <div class="empty-state">
+                    <p>No posts yet. Be the first to post!</p>
+                </div>
+            {{end}}
+        </div>
+    </div>
+
+    <aside class="sidebar">
+        <div class="sidebar-section">
+            <h3>Popular Communities</h3>
+            <ul class="board-list">
+                {{range .Data.PopularBoards}}
+                    <li>
+                        <a href="/b/{{.Name}}" class="board-link">
+                            {{if .IconURL}}
+                                <img src="{{.IconURL}}" alt="" class="board-icon">
+                            {{else}}
+                                <span class="board-icon-placeholder">{{slice .Name 0 1}}</span>
+                            {{end}}
+                            <span class="board-name">b/{{.Name}}</span>
+                            <span class="board-members">{{formatNumber .MemberCount}} members</span>
+                        </a>
+                    </li>
+                {{end}}
+            </ul>
+        </div>
+
+        {{if .CurrentUser}}
+            <div class="sidebar-section">
+                <a href="/b/all/submit" class="btn btn-primary btn-block">Create Post</a>
+            </div>
+        {{else}}
+            <div class="sidebar-section cta">
+                <p>Join the community to post, vote, and comment.</p>
+                <a href="/register" class="btn btn-primary btn-block">Sign Up</a>
+                <a href="/login" class="btn btn-secondary btn-block">Login</a>
+            </div>
+        {{end}}
+    </aside>
+</div>
+{{end}}

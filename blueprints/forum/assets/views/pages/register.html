@@ -1,0 +1,42 @@
+{{define "register.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="page-auth">
+    <div class="auth-card">
+        <h1>Create Account</h1>
+        <p class="auth-subtitle">Join the community</p>
+
+        <form action="/api/auth/register" method="post" class="auth-form" data-action="register">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required autofocus
+                       pattern="[a-zA-Z0-9_]+" minlength="3" maxlength="20"
+                       placeholder="3-20 characters, letters, numbers, underscore">
+                <span class="form-hint">Choose wisely. You can't change it later.</span>
+            </div>
+
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email" required
+                       placeholder="your@email.com">
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required
+                       minlength="8" placeholder="At least 8 characters">
+            </div>
+
+            <div class="form-error hidden"></div>
+
+            <button type="submit" class="btn btn-primary btn-block">Sign Up</button>
+        </form>
+
+        <div class="auth-footer">
+            <p>Already have an account? <a href="/login">Log in</a></p>
+        </div>
+    </div>
+</div>
+{{end}}

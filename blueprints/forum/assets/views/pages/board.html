@@ -1,0 +1,88 @@
+{{define "board.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="page-board">
+    <div class="board-header" {{if .Data.Board.BannerURL}}style="background-image: url('{{.Data.Board.BannerURL}}')"{{end}}>
+        <div class="board-header-content">
+            {{if .Data.Board.IconURL}}
+                <img src="{{.Data.Board.IconURL}}" alt="" class="board-icon-lg">
+            {{else}}
+                <div class="board-icon-lg placeholder">{{slice .Data.Board.Name 0 1}}</div>
+            {{end}}
+            <div class="board-info">
+                <h1>{{.Data.Board.Title}}</h1>
+                <span class="board-name">b/{{.Data.Board.Name}}</span>
+            </div>
+            {{if .CurrentUser}}
+                {{if .Data.Board.IsJoined}}
+                    <button class="btn btn-secondary" data-action="leave" data-board="{{.Data.Board.Name}}">Joined</button>
+                {{else}}
+                    <button class="btn btn-primary" data-action="join" data-board="{{.Data.Board.Name}}">Join</button>
+                {{end}}
+            {{end}}
+        </div>
+    </div>
+
+    <div class="content-area">
+        <div class="sort-tabs">
+            <a href="/b/{{.Data.Board.Name}}?sort=hot" class="sort-tab {{if eq .Data.Sort "hot"}}active{{end}}">Hot</a>
+            <a href="/b/{{.Data.Board.Name}}?sort=new" class="sort-tab {{if eq .Data.Sort "new"}}active{{end}}">New</a>
+            <a href="/b/{{.Data.Board.Name}}?sort=top" class="sort-tab {{if eq .Data.Sort "top"}}active{{end}}">Top</a>
+            <a href="/b/{{.Data.Board.Name}}?sort=rising" class="sort-tab {{if eq .Data.Sort "rising"}}active{{end}}">Rising</a>
+        </div>
+
+        <div class="thread-list">
+            {{range .Data.Threads}}
+                {{template "thread_card" .}}
+            {{else}}
+                <div class="empty-state">
+                    <p>No posts in this community yet.</p>
+                    {{if .CurrentUser}}
+                        <a href="/b/{{$.Data.Board.Name}}/submit" class="btn btn-primary">Create the first post</a>
+                    {{end}}
+                </div>
+            {{end}}
+        </div>
+    </div>
+
+    <aside class="sidebar">
+        <div class="sidebar-section board-about">
+            <h3>About {{.Data.Board.Title}}</h3>
+            <p class="board-description">{{.Data.Board.Description}}</p>
+            <div class="board-stats">
+                <div class="stat">
+                    <span class="stat-value">{{formatNumber .Data.Board.MemberCount}}</span>
+                    <span class="stat-label">Members</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value">{{formatNumber .Data.Board.ThreadCount}}</span>
+                    <span class="stat-label">Posts</span>
+                </div>
+            </div>
+            <p class="board-created">Created {{formatTimeRelative .Data.Board.CreatedAt}}</p>
+        </div>
+
+        {{if .Data.Board.SidebarHTML}}
+            <div class="sidebar-section board-rules">
+                <h3>Rules</h3>
+                {{safeHTML .Data.Board.SidebarHTML}}
+            </div>
+        {{end}}
+
+        {{if .CurrentUser}}
+            <div class="sidebar-section">
+                <a href="/b/{{.Data.Board.Name}}/submit" class="btn btn-primary btn-block">Create Post</a>
+            </div>
+        {{end}}
+
+        {{if .Data.Board.IsModerator}}
+            <div class="sidebar-section mod-tools">
+                <h3>Mod Tools</h3>
+                <a href="/b/{{.Data.Board.Name}}/mod" class="btn btn-secondary btn-block">Mod Dashboard</a>
+            </div>
+        {{end}}
+    </aside>
+</div>
+{{end}}
