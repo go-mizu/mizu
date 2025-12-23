@@ -1,0 +1,71 @@
+{{define "nav"}}
+<div class="vb-logo-header">
+    <div class="vb-logo">
+        <a href="/">Forum</a>
+    </div>
+    <div class="vb-search-box">
+        <form action="/search" method="get">
+            <input type="text" name="q" placeholder="Search...">
+            <button type="submit">Go</button>
+        </form>
+    </div>
+</div>
+
+<div class="nav">
+    <div class="nav-left">
+        <a href="/" class="nav-btn">Forum Home</a>
+        <a href="/all" class="nav-btn">All Boards</a>
+        {{if .CurrentUser}}
+        <a href="/b/all/submit" class="nav-btn">New Thread</a>
+        {{end}}
+    </div>
+    <div class="nav-right">
+        {{if .CurrentUser}}
+            <a href="/u/{{.CurrentUser.Username}}" class="user-link">{{.CurrentUser.Username}}</a>
+            <span class="userkarma">({{formatScore .CurrentUser.Karma}} pts)</span>
+            <span class="separator">|</span>
+            {{if gt .UnreadCount 0}}
+                <a href="/notifications" class="mail-icon has-mail">[{{.UnreadCount}} New]</a>
+                <span class="separator">|</span>
+            {{end}}
+            <a href="/bookmarks">Saved</a>
+            <span class="separator">|</span>
+            <a href="/settings">Settings</a>
+            <span class="separator">|</span>
+            <form action="/api/auth/logout" method="post" class="logout-form">
+                <button type="submit" class="logout-btn">Log Out</button>
+            </form>
+        {{else}}
+            <a href="/register">Register</a>
+            <span class="separator">|</span>
+            <a href="/login">Log In</a>
+        {{end}}
+    </div>
+</div>
+
+<div class="nav-tabs">
+    <div class="sr-bar">
+        <a href="/">Forum</a>
+        <span class="separator">&gt;</span>
+        {{if .Data}}
+            {{if .Data.Board}}
+                <a href="/b/{{.Data.Board.Name}}">{{.Data.Board.Title}}</a>
+                {{if .Data.Thread}}
+                    <span class="separator">&gt;</span>
+                    <span>{{.Data.Thread.Title}}</span>
+                {{end}}
+            {{else if .Data.Thread}}
+                {{if .Data.Thread.Board}}
+                    <a href="/b/{{.Data.Thread.Board.Name}}">{{.Data.Thread.Board.Name}}</a>
+                    <span class="separator">&gt;</span>
+                {{end}}
+                <span>{{.Data.Thread.Title}}</span>
+            {{else}}
+                <span>Main Index</span>
+            {{end}}
+        {{else}}
+            <span>Main Index</span>
+        {{end}}
+    </div>
+</div>
+{{end}}

@@ -1,0 +1,28 @@
+{{define "error.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="vb-box">
+    <div class="vb-box-header">
+        vBulletin Message
+    </div>
+    <div class="vb-box-content" style="text-align: center; padding: 30px;">
+        <h2 style="color: #cc0000; margin-bottom: 15px;">{{if .Data.Code}}Error {{.Data.Code}}{{else}}Error{{end}}</h2>
+        <p style="font-size: 12px; margin-bottom: 20px;">
+            {{if .Data.Message}}
+            {{.Data.Message}}
+            {{else}}
+            The page you requested could not be found or you do not have permission to view it.
+            {{end}}
+        </p>
+        <p style="font-size: 11px; color: #808080;">
+            If you followed a valid link, please notify the administrator.
+        </p>
+        <div style="margin-top: 20px;">
+            <a href="/" style="margin-right: 10px;">[Forum Home]</a>
+            <a href="javascript:history.back()">[Go Back]</a>
+        </div>
+    </div>
+</div>
+{{end}}

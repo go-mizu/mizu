@@ -1,0 +1,61 @@
+{{define "all.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="vb-box">
+    <div class="vb-box-header">
+        All Forums - Browse Communities
+    </div>
+    <div class="vb-box-content">
+        Browse all available forums and communities.
+    </div>
+</div>
+
+<div class="sitetable" style="margin-top: 15px;">
+    <table class="forum-table">
+        <thead>
+            <tr>
+                <th>Forum</th>
+                <th style="width: 80px; text-align: center;">Threads</th>
+                <th style="width: 80px; text-align: center;">Members</th>
+                <th style="width: 180px;">Last Post</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Data.Boards}}
+            <tr>
+                <td>
+                    <div class="thread-icon" style="float: left; margin-right: 10px;"></div>
+                    <div>
+                        <a href="/b/{{.Name}}" style="font-weight: bold; font-size: 12px;">{{.Title}}</a>
+                        <br>
+                        <span style="font-size: 10px; color: #808080;">{{.Description}}</span>
+                    </div>
+                </td>
+                <td style="text-align: center; font-weight: bold; color: #22229c;">{{formatNumber .ThreadCount}}</td>
+                <td style="text-align: center; font-weight: bold; color: #22229c;">{{formatNumber .MemberCount}}</td>
+                <td style="font-size: 10px; color: #808080;">
+                    {{formatTimeRelative .CreatedAt}}
+                </td>
+            </tr>
+            {{else}}
+            <tr>
+                <td colspan="4" class="noresults">No forums available.</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+
+{{if .CurrentUser}}
+<div class="vb-box" style="margin-top: 15px;">
+    <div class="vb-box-header">
+        Create New Forum
+    </div>
+    <div class="vb-box-content">
+        <a href="/create-board">Create a new community forum</a>
+    </div>
+</div>
+{{end}}
+{{end}}

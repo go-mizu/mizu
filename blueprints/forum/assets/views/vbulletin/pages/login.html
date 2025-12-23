@@ -1,0 +1,44 @@
+{{define "login.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="login-page">
+    <div class="login-page-header">
+        User Login
+    </div>
+    <div class="login-page-content">
+        {{if .Data.Error}}
+        <div class="form-error">
+            {{.Data.Error}}
+        </div>
+        {{end}}
+
+        <form action="/api/auth/login" method="post">
+            <table class="settings-table">
+                <tr>
+                    <th colspan="2">Enter your username and password to log in</th>
+                </tr>
+                <tr>
+                    <td style="width: 120px;"><label for="username">Username:</label></td>
+                    <td><input type="text" id="username" name="username" required></td>
+                </tr>
+                <tr>
+                    <td><label for="password">Password:</label></td>
+                    <td><input type="password" id="password" name="password" required></td>
+                </tr>
+                <tr>
+                    <td></td>
+                    <td>
+                        <button type="submit">Log In</button>
+                    </td>
+                </tr>
+            </table>
+        </form>
+
+        <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #c6dff5; font-size: 11px;">
+            <p>Don't have an account? <a href="/register">Register here</a></p>
+        </div>
+    </div>
+</div>
+{{end}}

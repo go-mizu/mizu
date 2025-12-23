@@ -1,0 +1,58 @@
+{{define "bookmarks.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="vb-box">
+    <div class="vb-box-header">
+        My Saved Threads
+    </div>
+    <div class="vb-box-content">
+        Threads you have saved for later reading.
+    </div>
+</div>
+
+<div class="sitetable linklisting" style="margin-top: 15px;">
+    <table class="forum-table">
+        <thead>
+            <tr>
+                <th>Thread / Started by</th>
+                <th style="width: 100px;">Forum</th>
+                <th style="width: 80px; text-align: center;">Replies</th>
+                <th style="width: 140px;">Saved</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Data.Threads}}
+            <tr data-thread-id="{{.ID}}">
+                <td>
+                    <a href="/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}" style="font-weight: bold;">{{.Title}}</a>
+                    <br>
+                    <span style="font-size: 10px; color: #808080;">
+                        Started by
+                        {{if .Author}}
+                        <a href="/u/{{.Author.Username}}">{{.Author.Username}}</a>
+                        {{else}}
+                        [deleted]
+                        {{end}}
+                    </span>
+                    <br>
+                    <button class="save-btn saved" data-action="bookmark" data-thread="{{.ID}}" style="font-size: 10px; margin-top: 5px;">Unsave</button>
+                </td>
+                <td>
+                    {{if .Board}}
+                    <a href="/b/{{.Board.Name}}">{{.Board.Name}}</a>
+                    {{end}}
+                </td>
+                <td style="text-align: center;">{{.CommentCount}}</td>
+                <td style="font-size: 10px; color: #808080;">{{formatTimeRelative .CreatedAt}}</td>
+            </tr>
+            {{else}}
+            <tr>
+                <td colspan="4" class="noresults">You haven't saved any threads yet.</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}

@@ -1,0 +1,85 @@
+{{define "search.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="vb-box">
+    <div class="vb-box-header">
+        Search Forums
+    </div>
+    <div class="vb-box-content">
+        <form action="/search" method="get" class="search-form" style="background: none; border: none; padding: 0;">
+            <table class="settings-table">
+                <tr>
+                    <td style="width: 120px;"><label for="q">Search For:</label></td>
+                    <td>
+                        <input type="search" id="q" name="q" value="{{.Data.Query}}" style="width: 300px;">
+                        <button type="submit">Search Now</button>
+                    </td>
+                </tr>
+                <tr>
+                    <td><label for="board">Search In:</label></td>
+                    <td>
+                        <select id="board" name="board">
+                            <option value="">All Forums</option>
+                            {{range .Data.Boards}}
+                            <option value="{{.Name}}" {{if eq $.Data.Board .Name}}selected{{end}}>{{.Name}}</option>
+                            {{end}}
+                        </select>
+                    </td>
+                </tr>
+            </table>
+        </form>
+    </div>
+</div>
+
+{{if .Data.Query}}
+<div class="vb-box" style="margin-top: 15px;">
+    <div class="vb-box-header">
+        Search Results for "{{.Data.Query}}"
+    </div>
+</div>
+
+<div class="sitetable linklisting">
+    <table class="forum-table">
+        <thead>
+            <tr>
+                <th>Thread / Started by</th>
+                <th style="width: 100px;">Forum</th>
+                <th style="width: 80px; text-align: center;">Replies</th>
+                <th style="width: 140px;">Last Post</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Data.Threads}}
+            <tr>
+                <td>
+                    <a href="/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}" style="font-weight: bold;">{{.Title}}</a>
+                    <br>
+                    <span style="font-size: 10px; color: #808080;">
+                        Started by
+                        {{if .Author}}
+                        <a href="/u/{{.Author.Username}}">{{.Author.Username}}</a>
+                        {{else}}
+                        [deleted]
+                        {{end}}
+                    </span>
+                </td>
+                <td>
+                    {{if .Board}}
+                    <a href="/b/{{.Board.Name}}">{{.Board.Name}}</a>
+                    {{end}}
+                </td>
+                <td style="text-align: center;">{{.CommentCount}}</td>
+                <td style="font-size: 10px; color: #808080;">{{formatTimeRelative .CreatedAt}}</td>
+            </tr>
+            {{else}}
+            <tr>
+                <td colspan="4" class="noresults">No results found for "{{.Data.Query}}"</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}
+{{end}}

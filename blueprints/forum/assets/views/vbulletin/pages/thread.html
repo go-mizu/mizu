@@ -1,0 +1,144 @@
+{{define "thread.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="vb-box">
+    <div class="vb-box-header">
+        {{if or .Data.Thread.IsPinned .Data.Thread.IsLocked .Data.Thread.IsNSFW}}
+        <span>
+            {{if .Data.Thread.IsPinned}}<span class="flair pinned">Sticky</span>{{end}}
+            {{if .Data.Thread.IsLocked}}<span class="flair locked">Closed</span>{{end}}
+            {{if .Data.Thread.IsNSFW}}<span class="flair nsfw">NSFW</span>{{end}}
+        </span>
+        {{end}}
+        {{.Data.Thread.Title}}
+    </div>
+</div>
+
+<div class="sitetable linklisting" id="siteTable">
+    <div class="thing link thread-page" id="thing_t3_{{.Data.Thread.ID}}" data-thread-id="{{.Data.Thread.ID}}">
+        <table class="forum-table" style="margin-bottom: 0;">
+            <tr>
+                <td style="width: 130px; text-align: center; vertical-align: top; background: linear-gradient(to bottom, #e0e8f0, #c6dff5);">
+                    <div style="padding: 10px;">
+                        {{if .Data.Thread.Author}}
+                        <div style="font-weight: bold; color: #22229c; margin-bottom: 5px;">
+                            <a href="/u/{{.Data.Thread.Author.Username}}">{{.Data.Thread.Author.Username}}</a>
+                        </div>
+                        <div style="font-size: 10px; color: #808080; margin-bottom: 10px;">Member</div>
+                        <div style="width: 80px; height: 80px; background: #fff; border: 1px solid #808080; margin: 0 auto 10px;"></div>
+                        <div style="font-size: 10px; color: #808080;">
+                            Posts: {{formatNumber .Data.Thread.Author.Karma}}
+                        </div>
+                        {{else}}
+                        <div style="font-weight: bold; color: #808080;">[deleted]</div>
+                        {{end}}
+                        <div style="margin-top: 10px;">
+                            <div class="midcol unvoted" style="width: auto;">
+                                <div class="arrow up {{if eq .Data.Thread.Vote 1}}upmod{{else}}login-required{{end}}" data-action="upvote" data-thread="{{.Data.Thread.ID}}" role="button" tabindex="0" style="display: inline-block;"></div>
+                                <span class="score" style="margin: 0 5px;">{{formatScore .Data.Thread.Score}}</span>
+                                <div class="arrow down {{if eq .Data.Thread.Vote -1}}downmod{{else}}login-required{{end}}" data-action="downvote" data-thread="{{.Data.Thread.ID}}" role="button" tabindex="0" style="display: inline-block;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </td>
+                <td style="vertical-align: top;">
+                    <div style="padding: 10px; background: #f5f8fb; border-bottom: 1px solid #c6dff5; font-size: 10px; color: #808080;">
+                        Posted {{formatTimeRelative .Data.Thread.CreatedAt}}
+                        {{if eq .Data.Thread.Type "link"}}
+                        &bull; <a href="{{.Data.Thread.URL}}" target="_blank">{{.Data.Thread.Domain}}</a>
+                        {{end}}
+                    </div>
+                    <div style="padding: 15px;">
+                        {{if eq .Data.Thread.Type "link"}}
+                        <p style="margin-bottom: 15px;">
+                            <a href="{{.Data.Thread.URL}}" target="_blank" style="font-size: 14px; font-weight: bold;">{{.Data.Thread.URL}}</a>
+                        </p>
+                        {{end}}
+                        {{if .Data.Thread.ContentHTML}}
+                        <div class="md" style="font-size: 12px; line-height: 1.6;">
+                            {{safeHTML .Data.Thread.ContentHTML}}
+                        </div>
+                        {{end}}
+                    </div>
+                    <div style="padding: 10px; background: #e9eff5; border-top: 1px solid #c6dff5;">
+                        <ul class="flat-list buttons">
+                            <li><button class="save-btn {{if .Data.Thread.IsBookmarked}}saved{{end}}" data-action="bookmark" data-thread="{{.Data.Thread.ID}}">{{if .Data.Thread.IsBookmarked}}Unsave{{else}}Save{{end}}</button></li>
+                            <li><button class="share-btn" data-action="share" data-url="/b/{{if .Data.Thread.Board}}{{.Data.Thread.Board.Name}}{{else}}all{{end}}/{{.Data.Thread.ID}}/{{slugify .Data.Thread.Title}}">Share</button></li>
+                            <li><a href="#" class="reportbtn">Report</a></li>
+                        </ul>
+                    </div>
+                </td>
+            </tr>
+        </table>
+    </div>
+</div>
+
+<div class="commentarea" style="margin-top: 15px;">
+    <div class="vb-box-header">
+        {{.Data.Thread.CommentCount}} {{if eq .Data.Thread.CommentCount 1}}Reply{{else}}Replies{{end}}
+        <span style="float: right; font-weight: normal; font-size: 10px;">
+            <span class="dropdown-title">Sort by:</span>
+            <select data-action="sort-comments" style="padding: 2px;">
+                <option value="best" {{if eq .Data.Sort "best"}}selected{{end}}>Best</option>
+                <option value="top" {{if eq .Data.Sort "top"}}selected{{end}}>Top</option>
+                <option value="new" {{if eq .Data.Sort "new"}}selected{{end}}>Newest</option>
+                <option value="old" {{if eq .Data.Sort "old"}}selected{{end}}>Oldest</option>
+                <option value="controversial" {{if eq .Data.Sort "controversial"}}selected{{end}}>Controversial</option>
+            </select>
+        </span>
+    </div>
+
+    {{if and .CurrentUser (not .Data.Thread.IsLocked)}}
+    <div class="quick-reply">
+        <div class="quick-reply-header">
+            Quick Reply
+        </div>
+        <div class="quick-reply-content">
+            <form action="/api/threads/{{.Data.Thread.ID}}/comments" method="post" class="reply-form" data-action="submit-comment" style="background: none; border: none; padding: 0;">
+                <textarea rows="6" name="content" placeholder="Type your reply here..." style="width: 100%;"></textarea>
+                <div class="usertext-buttons" style="margin-top: 10px;">
+                    <button type="submit" class="save">Post Reply</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {{else if .Data.Thread.IsLocked}}
+    <div class="vb-box" style="margin-top: 10px;">
+        <div class="vb-box-content" style="background: #fff8e0; color: #806000;">
+            This thread has been closed. New replies cannot be posted.
+        </div>
+    </div>
+    {{end}}
+
+    <div class="sitetable nestedlisting" style="margin-top: 15px;">
+        {{range .Data.Comments}}
+            {{template "comment" .}}
+        {{else}}
+            <div class="noresults">
+                No replies yet. Be the first to reply!
+            </div>
+        {{end}}
+    </div>
+</div>
+
+{{if .Data.Thread.Board}}
+<div class="vb-box" style="margin-top: 15px;">
+    <div class="vb-box-header">
+        About {{.Data.Thread.Board.Name}}
+    </div>
+    <div class="vb-box-content">
+        <p>{{.Data.Thread.Board.Description}}</p>
+        <p style="margin-top: 10px; font-size: 10px; color: #808080;">
+            {{formatNumber .Data.Thread.Board.MemberCount}} members
+        </p>
+        {{if .CurrentUser}}
+        <p style="margin-top: 10px;">
+            <a href="/b/{{.Data.Thread.Board.Name}}/submit">[Post New Thread]</a>
+        </p>
+        {{end}}
+    </div>
+</div>
+{{end}}
+{{end}}

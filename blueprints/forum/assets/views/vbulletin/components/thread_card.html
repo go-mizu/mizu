@@ -1,0 +1,57 @@
+{{define "thread_card"}}
+<div class="thing link" data-thread-id="{{.ID}}">
+    <div class="thread-icon {{if .IsPinned}}pinned{{else if .IsLocked}}locked{{else if gt .Score 50}}hot{{end}}"></div>
+    <div class="midcol unvoted">
+        <div class="arrow up {{if eq .Vote 1}}upmod{{else}}login-required{{end}}" data-action="upvote" data-thread="{{.ID}}" role="button" tabindex="0"></div>
+        <div class="score unvoted">{{formatScore .Score}}</div>
+        <div class="arrow down {{if eq .Vote -1}}downmod{{else}}login-required{{end}}" data-action="downvote" data-thread="{{.ID}}" role="button" tabindex="0"></div>
+    </div>
+    <div class="entry unvoted">
+        {{if or .IsNSFW .IsSpoiler .IsPinned .IsLocked}}
+        <div class="linkflairlabel">
+            {{if .IsPinned}}<span class="flair pinned">Sticky</span>{{end}}
+            {{if .IsLocked}}<span class="flair locked">Closed</span>{{end}}
+            {{if .IsNSFW}}<span class="flair nsfw">NSFW</span>{{end}}
+            {{if .IsSpoiler}}<span class="flair spoiler">Spoiler</span>{{end}}
+        </div>
+        {{end}}
+        <p class="title">
+            <a class="title {{if eq .Type "link"}}outbound{{end}}" href="{{if eq .Type "link"}}{{.URL}}{{else}}/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}{{end}}">{{.Title}}</a>
+            {{if eq .Type "link"}}
+            <span class="domain">(<a href="/search?q=site:{{.Domain}}">{{.Domain}}</a>)</span>
+            {{end}}
+        </p>
+        <div class="tagline">
+            Started by
+            {{if .Author}}
+            <a href="/u/{{.Author.Username}}" class="author">{{.Author.Username}}</a>
+            {{else}}
+            <span class="author">[deleted]</span>
+            {{end}}
+            in
+            {{if .Board}}
+            <a href="/b/{{.Board.Name}}" class="board-link">{{.Board.Name}}</a>
+            {{end}}
+            &bull;
+            <time title="{{formatTime .CreatedAt}}" datetime="{{.CreatedAt}}">{{formatTimeRelative .CreatedAt}}</time>
+        </div>
+        <ul class="flat-list buttons">
+            <li class="first">
+                <a href="/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}" class="comments">{{.CommentCount}} {{if eq .CommentCount 1}}Reply{{else}}Replies{{end}}</a>
+            </li>
+            <li>
+                <button class="save-btn {{if .IsBookmarked}}saved{{end}}" data-action="bookmark" data-thread="{{.ID}}">{{if .IsBookmarked}}Unsave{{else}}Save{{end}}</button>
+            </li>
+            <li>
+                <button class="share-btn" data-action="share" data-url="/b/{{if .Board}}{{.Board.Name}}{{else}}all{{end}}/{{.ID}}/{{slugify .Title}}">Share</button>
+            </li>
+        </ul>
+    </div>
+    <div class="thread-stats">
+        <div><strong>{{.CommentCount}}</strong> replies</div>
+        <div><strong>{{formatScore .Score}}</strong> points</div>
+        <div>Last: {{formatTimeRelative .CreatedAt}}</div>
+    </div>
+    <div class="clearleft"></div>
+</div>
+{{end}}
