@@ -234,7 +234,17 @@ func (s *Service) List(ctx context.Context, opts ListOpts) ([]*Thread, error) {
 		opts.SortBy = SortHot
 	}
 
-	return s.store.List(ctx, opts)
+	threads, err := s.store.List(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load authors
+	for _, t := range threads {
+		t.Author, _ = s.accounts.GetByID(ctx, t.AuthorID)
+	}
+
+	return threads, nil
 }
 
 // ListByBoard lists threads in a board.
@@ -246,7 +256,17 @@ func (s *Service) ListByBoard(ctx context.Context, boardID string, opts ListOpts
 		opts.SortBy = SortHot
 	}
 
-	return s.store.ListByBoard(ctx, boardID, opts)
+	threads, err := s.store.ListByBoard(ctx, boardID, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load authors
+	for _, t := range threads {
+		t.Author, _ = s.accounts.GetByID(ctx, t.AuthorID)
+	}
+
+	return threads, nil
 }
 
 // ListByAuthor lists threads by an author.
@@ -258,7 +278,17 @@ func (s *Service) ListByAuthor(ctx context.Context, authorID string, opts ListOp
 		opts.SortBy = SortNew
 	}
 
-	return s.store.ListByAuthor(ctx, authorID, opts)
+	threads, err := s.store.ListByAuthor(ctx, authorID, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load authors
+	for _, t := range threads {
+		t.Author, _ = s.accounts.GetByID(ctx, t.AuthorID)
+	}
+
+	return threads, nil
 }
 
 // Remove removes a thread (moderator action).
