@@ -3,103 +3,143 @@
 {{template "base" .}}
 
 {{define "content"}}
-<div class="page settings-page">
+<div class="settings-page">
     <header class="page-header">
+        <a href="javascript:history.back()" class="back-btn" title="Back">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+        </a>
         <h1>Settings</h1>
     </header>
 
-    <nav class="settings-nav">
-        <a href="/settings/profile" class="{{if eq .Page "profile"}}active{{end}}">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            Profile
-        </a>
-        <a href="/settings/account" class="{{if eq .Page "account"}}active{{end}}">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-            Account
-        </a>
-        <a href="/settings/privacy" class="{{if eq .Page "privacy"}}active{{end}}">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            Privacy
-        </a>
-    </nav>
+    <div class="settings-section">
+        <h2>Appearance</h2>
+        <div class="settings-item">
+            <div class="settings-item-info">
+                <h3>Dark Mode</h3>
+                <p>Switch between light and dark themes</p>
+            </div>
+            <label class="toggle">
+                <input type="checkbox" id="theme-setting">
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
+    </div>
 
-    <div class="settings-content">
-        {{if eq .Page "profile"}}
-        <div class="settings-section">
-            <h2>Profile Settings</h2>
-            <form id="profile-form">
-                <div class="form-group">
-                    <label for="display_name">Display Name</label>
-                    <input type="text" id="display_name" name="display_name" placeholder="Your name">
-                </div>
-                <div class="form-group">
-                    <label for="bio">Bio</label>
-                    <textarea id="bio" name="bio" maxlength="500" rows="4" placeholder="Tell people about yourself"></textarea>
-                    <small>Up to 500 characters</small>
-                </div>
-                <div class="form-group">
-                    <label for="location">Location</label>
-                    <input type="text" id="location" name="location" placeholder="Where are you?">
-                </div>
-                <div class="form-group">
-                    <label for="website">Website</label>
-                    <input type="url" id="website" name="website" placeholder="https://yourwebsite.com">
-                </div>
-                <button type="submit">Save Changes</button>
-            </form>
+    <div class="settings-section">
+        <h2>Profile</h2>
+        <form id="profile-form">
+            <div class="form-group">
+                <label for="display_name">Display Name</label>
+                <input type="text" id="display_name" name="display_name" placeholder="Your name">
+            </div>
+            <div class="form-group">
+                <label for="bio">Bio</label>
+                <textarea id="bio" name="bio" maxlength="500" rows="3" placeholder="Tell people about yourself"></textarea>
+            </div>
+            <div class="form-group">
+                <label for="location">Location</label>
+                <input type="text" id="location" name="location" placeholder="Where are you?">
+            </div>
+            <div class="form-group">
+                <label for="website">Website</label>
+                <input type="url" id="website" name="website" placeholder="https://yourwebsite.com">
+            </div>
+            <button type="submit" class="btn-save">Save Profile</button>
+        </form>
+    </div>
+
+    <div class="settings-section">
+        <h2>Privacy</h2>
+        <div class="settings-item">
+            <div class="settings-item-info">
+                <h3>Private Account</h3>
+                <p>Only approved followers can see your posts</p>
+            </div>
+            <label class="toggle">
+                <input type="checkbox" id="private-setting">
+                <span class="toggle-slider"></span>
+            </label>
         </div>
-        {{else if eq .Page "account"}}
-        <div class="settings-section">
-            <h2>Email</h2>
-            <form id="account-form">
-                <div class="form-group">
-                    <label for="email">Email Address</label>
-                    <input type="email" id="email" name="email" placeholder="your@email.com">
-                </div>
-                <button type="submit">Update Email</button>
-            </form>
+        <div class="settings-item">
+            <div class="settings-item-info">
+                <h3>Discoverable</h3>
+                <p>Allow your profile in search and suggestions</p>
+            </div>
+            <label class="toggle">
+                <input type="checkbox" id="discoverable-setting" checked>
+                <span class="toggle-slider"></span>
+            </label>
         </div>
-        <div class="settings-section">
-            <h2>Change Password</h2>
-            <form id="password-form">
-                <div class="form-group">
-                    <label for="current_password">Current Password</label>
-                    <input type="password" id="current_password" name="current_password" autocomplete="current-password">
-                </div>
-                <div class="form-group">
-                    <label for="new_password">New Password</label>
-                    <input type="password" id="new_password" name="new_password" autocomplete="new-password" minlength="8">
-                    <small>Minimum 8 characters</small>
-                </div>
-                <div class="form-group">
-                    <label for="confirm_password">Confirm New Password</label>
-                    <input type="password" id="confirm_password" name="confirm_password" autocomplete="new-password">
-                </div>
-                <button type="submit">Change Password</button>
-            </form>
-        </div>
-        {{else if eq .Page "privacy"}}
-        <div class="settings-section">
-            <h2>Privacy Settings</h2>
-            <form id="privacy-form">
-                <div class="form-group" style="display: flex; align-items: flex-start; gap: var(--space-3);">
-                    <input type="checkbox" id="private" name="private" style="width: 20px; height: 20px; margin-top: 2px;">
-                    <div>
-                        <label for="private" style="font-weight: var(--font-bold); margin-bottom: var(--space-1); display: block;">Private Account</label>
-                        <small>Only approved followers can see your posts</small>
-                    </div>
-                </div>
-                <div class="form-group" style="display: flex; align-items: flex-start; gap: var(--space-3);">
-                    <input type="checkbox" id="discoverable" name="discoverable" checked style="width: 20px; height: 20px; margin-top: 2px;">
-                    <div>
-                        <label for="discoverable" style="font-weight: var(--font-bold); margin-bottom: var(--space-1); display: block;">Discoverable</label>
-                        <small>Allow your profile to appear in search results and suggestions</small>
-                    </div>
-                </div>
-                <button type="submit">Save Settings</button>
-            </form>
-        </div>
-        {{end}}
+    </div>
+
+    <div class="settings-section">
+        <h2>Account</h2>
+        <a href="/logout" class="settings-item" style="color: var(--danger);">
+            <div class="settings-item-info">
+                <h3>Log out</h3>
+            </div>
+        </a>
     </div>
 </div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const theme = localStorage.getItem('theme') || 'light';
+    document.getElementById('theme-setting').checked = theme === 'dark';
+
+    document.getElementById('theme-setting').addEventListener('change', function() {
+        const newTheme = this.checked ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+    });
+
+    loadProfile();
+});
+
+async function loadProfile() {
+    try {
+        const res = await fetch('/api/v1/accounts/verify_credentials');
+        if (res.ok) {
+            const account = await res.json();
+            document.getElementById('display_name').value = account.display_name || '';
+            document.getElementById('bio').value = account.bio || '';
+            document.getElementById('location').value = account.location || '';
+            document.getElementById('website').value = account.website || '';
+            document.getElementById('private-setting').checked = account.private || false;
+            document.getElementById('discoverable-setting').checked = account.discoverable !== false;
+        }
+    } catch (err) {
+        console.error('Failed to load profile:', err);
+    }
+}
+
+document.getElementById('profile-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const btn = this.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    try {
+        await fetch('/api/v1/accounts/update_credentials', {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                display_name: this.display_name.value,
+                bio: this.bio.value,
+                location: this.location.value,
+                website: this.website.value
+            })
+        });
+        btn.textContent = 'Saved!';
+        setTimeout(() => btn.textContent = 'Save Profile', 2000);
+    } catch (err) {
+        console.error(err);
+        btn.textContent = 'Error';
+    } finally {
+        btn.disabled = false;
+    }
+});
+</script>
 {{end}}

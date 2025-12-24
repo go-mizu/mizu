@@ -3,14 +3,15 @@
 {{template "base" .}}
 
 {{define "content"}}
-<div class="page bookmarks-page">
-    <header class="page-header">
-        <h1>Bookmarks</h1>
-    </header>
+<header class="page-header">
+    <a href="javascript:history.back()" class="back-btn" title="Back">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+    </a>
+    <h1>Bookmarks</h1>
+</header>
 
-    <div class="timeline" id="bookmarks">
-        <div class="loading">Loading bookmarks...</div>
-    </div>
+<div class="timeline" id="bookmarks">
+    <div class="loading"></div>
 </div>
 {{end}}
 
@@ -19,13 +20,14 @@
 document.addEventListener('DOMContentLoaded', loadBookmarks);
 
 async function loadBookmarks() {
+    const container = document.getElementById('bookmarks');
     try {
         const res = await fetch('/api/v1/bookmarks');
         if (res.status === 401) {
-            document.getElementById('bookmarks').innerHTML = `
+            container.innerHTML = `
                 <div class="empty">
                     <div class="icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
                     </div>
                     <h3>Sign in required</h3>
                     <p>Please <a href="/login">log in</a> to view your bookmarks.</p>
@@ -36,8 +38,7 @@ async function loadBookmarks() {
         const posts = await res.json();
         renderPosts(posts);
     } catch (err) {
-        console.error(err);
-        document.getElementById('bookmarks').innerHTML = '<div class="empty"><h3>Unable to load bookmarks</h3></div>';
+        container.innerHTML = '<div class="empty"><h3>Unable to load bookmarks</h3></div>';
     }
 }
 
@@ -47,7 +48,7 @@ function renderPosts(posts) {
         container.innerHTML = `
             <div class="empty">
                 <div class="icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
                 </div>
                 <h3>No bookmarks yet</h3>
                 <p>Save posts for later by clicking the bookmark icon.</p>
@@ -65,68 +66,32 @@ function renderPost(post) {
     const username = account.username || 'anonymous';
 
     return `
-        <article class="post" data-id="${post.id}" onclick="window.location='/posts/${post.id}'">
-            <div class="post-avatar">
-                <a href="/@${username}" onclick="event.stopPropagation()">
-                    <img src="${avatarUrl}" alt="${displayName}" loading="lazy">
-                </a>
-            </div>
-            <div class="post-content">
-                <div class="post-header">
-                    <a href="/@${username}" class="display-name" onclick="event.stopPropagation()">${displayName}</a>
-                    <span class="username">@${username}</span>
-                    <span class="timestamp">${formatRelative(post.created_at)}</span>
+        <article class="content-card" onclick="window.location='/u/${username}/post/${post.id}'">
+            <div class="card-main">
+                <div class="card-header">
+                    <a href="/@${username}" class="card-avatar" onclick="event.stopPropagation()">
+                        <img src="${avatarUrl}" alt="${displayName}" loading="lazy">
+                    </a>
+                    <div class="card-user-info">
+                        <div class="card-username">
+                            <a href="/@${username}" class="display-name" onclick="event.stopPropagation()">${displayName}</a>
+                        </div>
+                        <span class="username">@${username} · ${formatRelative(post.created_at)}</span>
+                    </div>
                 </div>
-                <div class="post-body">${formatContent(post.content)}</div>
-                <div class="post-actions" onclick="event.stopPropagation()">
-                    <button class="action reply" data-id="${post.id}" title="Reply">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                        <span class="count">${post.replies_count || ''}</span>
-                    </button>
-                    <button class="action repost ${post.reposted ? 'active' : ''}" data-id="${post.id}" title="Repost">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
-                        <span class="count">${post.reposts_count || ''}</span>
-                    </button>
-                    <button class="action like ${post.liked ? 'active' : ''}" data-id="${post.id}" title="Like">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="${post.liked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>
+                <div class="card-body">${formatContent(post.content)}</div>
+                <div class="card-actions" onclick="event.stopPropagation()">
+                    <button class="action-btn like ${post.liked ? 'active' : ''}" data-id="${post.id}">
+                        <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${post.liked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>
                         <span class="count">${post.likes_count || ''}</span>
                     </button>
-                    <button class="action bookmark active" data-id="${post.id}" title="Remove bookmark">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
+                    <button class="action-btn bookmark active" data-id="${post.id}">
+                        <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
                     </button>
                 </div>
             </div>
         </article>
     `;
-}
-
-function formatRelative(dateStr) {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diff = now - date;
-    const mins = Math.floor(diff / 60000);
-    const hours = Math.floor(diff / 3600000);
-    const days = Math.floor(diff / 86400000);
-
-    if (mins < 1) return 'now';
-    if (mins < 60) return mins + 'm';
-    if (hours < 24) return hours + 'h';
-    if (days < 7) return days + 'd';
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function formatContent(text) {
-    if (!text) return '';
-    let html = escapeHtml(text);
-    html = html.replace(/#(\w+)/g, '<span class="hashtag">#$1</span>');
-    html = html.replace(/@(\w+)/g, '<a href="/@$1" class="mention" onclick="event.stopPropagation()">@$1</a>');
-    return html;
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
 }
 </script>
 {{end}}
