@@ -69,8 +69,8 @@ github.com/duckdb/duckdb-go/mapping v0.0.27 h1:QEta+qPEKmfhd89U8vnm4MVslj1Uscmky
 github.com/duckdb/duckdb-go/mapping v0.0.27/go.mod h1:7C4QWJWG6UOV9b0iWanfF5ML1ivJPX45Kz+VmlvRlTA=
 github.com/duckdb/duckdb-go/v2 v2.5.4 h1:+ip+wPCwf7Eu/dXxp19aLCxwpLUaeOy2UV/peBphXK0=
 github.com/duckdb/duckdb-go/v2 v2.5.4/go.mod h1:CeobOFmWpf7MTDb+MW08/zIWP8TQ2jbPbMgGo5761tY=
-github.com/go-mizu/mizu v0.5.2 h1:B++c8NnLYwKfI6k2x2+ltoMwJIMcx0wL5PZoLonf+28=
-github.com/go-mizu/mizu v0.5.2/go.mod h1:uAB/VeZxmEhPueqTi4THbitXEHRi3kTIYXwYbXivsIc=
+github.com/go-mizu/mizu v0.5.4 h1:7kI0H7Q08hn0W2p82qNlAa7sD7OLObjg4cimvGCHIQo=
+github.com/go-mizu/mizu v0.5.4/go.mod h1:uAB/VeZxmEhPueqTi4THbitXEHRi3kTIYXwYbXivsIc=
 github.com/go-viper/mapstructure/v2 v2.4.0 h1:EBsztssimR/CONLSZZ04E8qAkxNYq4Qp9LvH92wZUgs=
 github.com/go-viper/mapstructure/v2 v2.4.0/go.mod h1:oJDH3BJKyqBA2TXFhDsKDGDTlndYOZ6rGS0BRZIxGhM=
 github.com/goccy/go-json v0.10.5 h1:Fq85nIqj+gXn/S5ahsiTlK3TmC85qgirsdTP/+DeaC4=

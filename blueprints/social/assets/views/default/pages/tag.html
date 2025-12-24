@@ -1,0 +1,58 @@
+{{define "title"}}#{{.Tag}} - Social{{end}}
+
+{{template "base" .}}
+
+{{define "content"}}
+<div class="page tag-page">
+    <header class="page-header">
+        <h1>#{{.Tag}}</h1>
+    </header>
+
+    <div class="timeline" id="timeline" data-tag="{{.Tag}}">
+        <div class="loading">Loading...</div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const tag = document.getElementById('timeline').dataset.tag;
+    if (tag) loadTagTimeline(tag);
+});
+
+async function loadTagTimeline(tag) {
+    try {
+        const res = await fetch(`/api/v1/timelines/tag/${tag}`);
+        const posts = await res.json();
+        renderPosts(posts);
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function renderPosts(posts) {
+    const container = document.getElementById('timeline');
+    if (!posts || posts.length === 0) {
+        container.innerHTML = '<div class="empty">No posts with this tag</div>';
+        return;
+    }
+    container.innerHTML = posts.map(p => `
+        <article class="post">
+            <div class="post-content">
+                <div class="post-header">
+                    ${p.account ? `<a href="/@${p.account.username}">@${p.account.username}</a>` : ''}
+                </div>
+                <div class="post-body">${escapeHtml(p.content)}</div>
+            </div>
+        </article>
+    `).join('');
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{{end}}

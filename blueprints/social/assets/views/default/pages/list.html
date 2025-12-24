@@ -1,0 +1,59 @@
+{{define "title"}}List - Social{{end}}
+
+{{template "base" .}}
+
+{{define "content"}}
+<div class="page list-page">
+    <header class="page-header">
+        <h1>List</h1>
+    </header>
+
+    <div class="timeline" id="timeline" data-list-id="{{.ListID}}">
+        <div class="loading">Loading...</div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const listId = document.getElementById('timeline').dataset.listId;
+    if (listId) loadListTimeline(listId);
+});
+
+async function loadListTimeline(listId) {
+    try {
+        const res = await fetch(`/api/v1/timelines/list/${listId}`);
+        if (res.status === 401) {
+            document.getElementById('timeline').innerHTML = '<div class="empty">Please login</div>';
+            return;
+        }
+        const posts = await res.json();
+        renderPosts(posts);
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function renderPosts(posts) {
+    const container = document.getElementById('timeline');
+    if (!posts || posts.length === 0) {
+        container.innerHTML = '<div class="empty">No posts</div>';
+        return;
+    }
+    container.innerHTML = posts.map(p => `
+        <article class="post">
+            <div class="post-content">
+                <div class="post-body">${escapeHtml(p.content)}</div>
+            </div>
+        </article>
+    `).join('');
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{{end}}

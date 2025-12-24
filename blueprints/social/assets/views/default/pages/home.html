@@ -1,0 +1,135 @@
+{{define "title"}}Home - Social{{end}}
+
+{{template "base" .}}
+
+{{define "content"}}
+<div class="page home-page">
+    <header class="page-header">
+        <h1>Home</h1>
+    </header>
+
+    <div class="compose-box" id="compose-box">
+        <form id="post-form">
+            <textarea name="content" placeholder="What's happening?" maxlength="500"></textarea>
+            <div class="compose-actions">
+                <span class="char-count">500</span>
+                <button type="submit">Post</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="timeline" id="timeline">
+        <div class="loading">Loading...</div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadTimeline();
+
+    document.getElementById('post-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const content = this.content.value;
+        if (!content.trim()) return;
+
+        try {
+            const res = await fetch('/api/v1/posts', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({content})
+            });
+            if (res.ok) {
+                this.content.value = '';
+                loadTimeline();
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    });
+});
+
+async function loadTimeline() {
+    try {
+        const res = await fetch('/api/v1/timelines/home');
+        if (res.status === 401) {
+            const pubRes = await fetch('/api/v1/timelines/public');
+            const posts = await pubRes.json();
+            renderPosts(posts);
+        } else {
+            const posts = await res.json();
+            renderPosts(posts);
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function renderPosts(posts) {
+    const timeline = document.getElementById('timeline');
+    if (!posts || posts.length === 0) {
+        timeline.innerHTML = '<div class="empty">No posts yet</div>';
+        return;
+    }
+    timeline.innerHTML = posts.map(renderPost).join('');
+}
+
+function renderPost(post) {
+    const account = post.account || {};
+    return `
+        <article class="post">
+            <div class="post-avatar">
+                <img src="${account.avatar_url || '/static/images/default-avatar.png'}" alt="">
+            </div>
+            <div class="post-content">
+                <div class="post-header">
+                    <a href="/@${account.username}" class="display-name">${account.display_name || account.username}</a>
+                    <span class="username">@${account.username}</span>
+                    <span class="timestamp">${formatRelative(post.created_at)}</span>
+                </div>
+                <div class="post-body">${escapeHtml(post.content)}</div>
+                <div class="post-actions">
+                    <button class="action reply" data-id="${post.id}">
+                        <span class="icon">Reply</span>
+                        <span class="count">${post.replies_count || ''}</span>
+                    </button>
+                    <button class="action repost ${post.reposted ? 'active' : ''}" data-id="${post.id}">
+                        <span class="icon">Repost</span>
+                        <span class="count">${post.reposts_count || ''}</span>
+                    </button>
+                    <button class="action like ${post.liked ? 'active' : ''}" data-id="${post.id}">
+                        <span class="icon">Like</span>
+                        <span class="count">${post.likes_count || ''}</span>
+                    </button>
+                    <button class="action bookmark ${post.bookmarked ? 'active' : ''}" data-id="${post.id}">
+                        <span class="icon">Bookmark</span>
+                    </button>
+                </div>
+            </div>
+        </article>
+    `;
+}
+
+function formatRelative(dateStr) {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diff = now - date;
+    const mins = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+
+    if (mins < 1) return 'now';
+    if (mins < 60) return mins + 'm';
+    if (hours < 24) return hours + 'h';
+    if (days < 7) return days + 'd';
+    return date.toLocaleDateString();
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{{end}}

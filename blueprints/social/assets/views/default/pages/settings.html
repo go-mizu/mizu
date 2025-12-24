@@ -1,0 +1,80 @@
+{{define "title"}}Settings - Social{{end}}
+
+{{template "base" .}}
+
+{{define "content"}}
+<div class="page settings-page">
+    <header class="page-header">
+        <h1>Settings</h1>
+    </header>
+
+    <nav class="settings-nav">
+        <a href="/settings/profile" class="{{if eq .Page "profile"}}active{{end}}">Profile</a>
+        <a href="/settings/account" class="{{if eq .Page "account"}}active{{end}}">Account</a>
+        <a href="/settings/privacy" class="{{if eq .Page "privacy"}}active{{end}}">Privacy</a>
+    </nav>
+
+    <div class="settings-content">
+        {{if eq .Page "profile"}}
+        <form id="profile-form">
+            <div class="form-group">
+                <label for="display_name">Display Name</label>
+                <input type="text" id="display_name" name="display_name">
+            </div>
+            <div class="form-group">
+                <label for="bio">Bio</label>
+                <textarea id="bio" name="bio" maxlength="500"></textarea>
+            </div>
+            <div class="form-group">
+                <label for="location">Location</label>
+                <input type="text" id="location" name="location">
+            </div>
+            <div class="form-group">
+                <label for="website">Website</label>
+                <input type="url" id="website" name="website">
+            </div>
+            <button type="submit">Save Changes</button>
+        </form>
+        {{else if eq .Page "account"}}
+        <form id="account-form">
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email">
+            </div>
+            <button type="submit">Update Email</button>
+        </form>
+        <hr>
+        <h3>Change Password</h3>
+        <form id="password-form">
+            <div class="form-group">
+                <label for="current_password">Current Password</label>
+                <input type="password" id="current_password" name="current_password">
+            </div>
+            <div class="form-group">
+                <label for="new_password">New Password</label>
+                <input type="password" id="new_password" name="new_password">
+            </div>
+            <button type="submit">Change Password</button>
+        </form>
+        {{else if eq .Page "privacy"}}
+        <form id="privacy-form">
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="private" name="private">
+                    Private Account
+                </label>
+                <small>Only approved followers can see your posts</small>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="discoverable" name="discoverable" checked>
+                    Discoverable
+                </label>
+                <small>Allow your profile to appear in search results</small>
+            </div>
+            <button type="submit">Save Settings</button>
+        </form>
+        {{end}}
+    </div>
+</div>
+{{end}}

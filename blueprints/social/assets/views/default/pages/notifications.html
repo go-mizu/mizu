@@ -1,0 +1,75 @@
+{{define "title"}}Notifications - Social{{end}}
+
+{{template "base" .}}
+
+{{define "content"}}
+<div class="page notifications-page">
+    <header class="page-header">
+        <h1>Notifications</h1>
+        <button id="clear-all">Clear All</button>
+    </header>
+
+    <div class="notifications-list" id="notifications">
+        <div class="loading">Loading...</div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener('DOMContentLoaded', loadNotifications);
+
+document.getElementById('clear-all').addEventListener('click', async function() {
+    try {
+        await fetch('/api/v1/notifications/clear', {method: 'POST'});
+        document.getElementById('notifications').innerHTML = '<div class="empty">No notifications</div>';
+    } catch (err) {
+        console.error(err);
+    }
+});
+
+async function loadNotifications() {
+    try {
+        const res = await fetch('/api/v1/notifications');
+        if (res.status === 401) {
+            document.getElementById('notifications').innerHTML = '<div class="empty">Please login to view notifications</div>';
+            return;
+        }
+        const notifications = await res.json();
+        renderNotifications(notifications);
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function renderNotifications(notifications) {
+    const container = document.getElementById('notifications');
+    if (!notifications || notifications.length === 0) {
+        container.innerHTML = '<div class="empty">No notifications</div>';
+        return;
+    }
+
+    container.innerHTML = notifications.map(n => {
+        const actor = n.actor || {};
+        let message = '';
+        switch (n.type) {
+            case 'follow': message = 'followed you'; break;
+            case 'like': message = 'liked your post'; break;
+            case 'repost': message = 'reposted your post'; break;
+            case 'mention': message = 'mentioned you'; break;
+            case 'reply': message = 'replied to your post'; break;
+            default: message = n.type;
+        }
+        return `
+            <div class="notification ${n.read ? '' : 'unread'}">
+                <img src="${actor.avatar_url || '/static/images/default-avatar.png'}" alt="">
+                <div>
+                    <strong><a href="/@${actor.username}">${actor.display_name || actor.username}</a></strong>
+                    <span>${message}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+</script>
+{{end}}

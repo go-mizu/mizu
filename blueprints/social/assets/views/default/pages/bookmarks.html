@@ -1,0 +1,59 @@
+{{define "title"}}Bookmarks - Social{{end}}
+
+{{template "base" .}}
+
+{{define "content"}}
+<div class="page bookmarks-page">
+    <header class="page-header">
+        <h1>Bookmarks</h1>
+    </header>
+
+    <div class="timeline" id="bookmarks">
+        <div class="loading">Loading...</div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener('DOMContentLoaded', loadBookmarks);
+
+async function loadBookmarks() {
+    try {
+        const res = await fetch('/api/v1/bookmarks');
+        if (res.status === 401) {
+            document.getElementById('bookmarks').innerHTML = '<div class="empty">Please login to view bookmarks</div>';
+            return;
+        }
+        const posts = await res.json();
+        renderPosts(posts);
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function renderPosts(posts) {
+    const container = document.getElementById('bookmarks');
+    if (!posts || posts.length === 0) {
+        container.innerHTML = '<div class="empty">No bookmarks yet</div>';
+        return;
+    }
+    container.innerHTML = posts.map(p => `
+        <article class="post">
+            <div class="post-content">
+                <div class="post-header">
+                    ${p.account ? `<a href="/@${p.account.username}">@${p.account.username}</a>` : ''}
+                </div>
+                <div class="post-body">${escapeHtml(p.content)}</div>
+            </div>
+        </article>
+    `).join('');
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{{end}}

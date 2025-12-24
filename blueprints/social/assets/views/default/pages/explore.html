@@ -1,0 +1,50 @@
+{{define "title"}}Explore - Social{{end}}
+
+{{template "base" .}}
+
+{{define "content"}}
+<div class="page explore-page">
+    <header class="page-header">
+        <h1>Explore</h1>
+    </header>
+
+    <section class="trending-section">
+        <h2>Trending Tags</h2>
+        <div class="trending-tags" id="trending-tags">
+            {{range .TrendingTags}}
+            <a href="/tags/{{.Name}}" class="trending-tag">
+                <span class="tag-name">#{{.Name}}</span>
+                <span class="tag-count">{{.PostsCount}} posts</span>
+            </a>
+            {{else}}
+            <p>No trending tags</p>
+            {{end}}
+        </div>
+    </section>
+
+    <section class="trending-section">
+        <h2>Trending Posts</h2>
+        <div class="timeline" id="trending-posts">
+            {{range .TrendingPosts}}
+            <article class="post">
+                <div class="post-content">
+                    <div class="post-header">
+                        {{with .Account}}
+                        <a href="/@{{.Username}}" class="display-name">{{.DisplayName}}</a>
+                        <span class="username">@{{.Username}}</span>
+                        {{end}}
+                    </div>
+                    <div class="post-body">{{.Content}}</div>
+                    <div class="post-footer">
+                        <span>{{.LikesCount}} likes</span>
+                        <span>{{.RepostsCount}} reposts</span>
+                    </div>
+                </div>
+            </article>
+            {{else}}
+            <p>No trending posts</p>
+            {{end}}
+        </div>
+    </section>
+</div>
+{{end}}

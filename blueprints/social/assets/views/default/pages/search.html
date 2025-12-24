@@ -1,0 +1,110 @@
+{{define "title"}}Search - Social{{end}}
+
+{{template "base" .}}
+
+{{define "content"}}
+<div class="page search-page">
+    <header class="page-header">
+        <h1>Search</h1>
+    </header>
+
+    <div class="search-form">
+        <form id="search-form" action="/search" method="get">
+            <input type="text" name="q" value="{{.Query}}" placeholder="Search posts, people, or tags...">
+            <button type="submit">Search</button>
+        </form>
+    </div>
+
+    <div class="search-tabs">
+        <button class="tab active" data-type="">All</button>
+        <button class="tab" data-type="accounts">People</button>
+        <button class="tab" data-type="posts">Posts</button>
+        <button class="tab" data-type="hashtags">Tags</button>
+    </div>
+
+    <div class="search-results" id="results">
+        {{if .Query}}
+        <div class="loading">Searching...</div>
+        {{else}}
+        <div class="empty">Enter a search term</div>
+        {{end}}
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const query = new URLSearchParams(window.location.search).get('q');
+    if (query) search(query);
+});
+
+async function search(query, type = '') {
+    try {
+        const url = new URL('/api/v1/search', window.location.origin);
+        url.searchParams.set('q', query);
+        if (type) url.searchParams.set('type', type);
+
+        const res = await fetch(url);
+        const data = await res.json();
+        renderResults(data);
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function renderResults(data) {
+    const results = document.getElementById('results');
+    let html = '';
+
+    if (data.accounts && data.accounts.length > 0) {
+        html += '<section><h3>People</h3>';
+        html += data.accounts.map(a => `
+            <div class="search-result account">
+                <a href="/@${a.username}">
+                    <img src="${a.avatar_url || '/static/images/default-avatar.png'}" alt="">
+                    <div>
+                        <strong>${a.display_name || a.username}</strong>
+                        <span>@${a.username}</span>
+                    </div>
+                </a>
+            </div>
+        `).join('');
+        html += '</section>';
+    }
+
+    if (data.hashtags && data.hashtags.length > 0) {
+        html += '<section><h3>Tags</h3>';
+        html += data.hashtags.map(t => `
+            <div class="search-result tag">
+                <a href="/tags/${t.name}">#${t.name}</a>
+                <span>${t.posts_count} posts</span>
+            </div>
+        `).join('');
+        html += '</section>';
+    }
+
+    if (data.posts && data.posts.length > 0) {
+        html += '<section><h3>Posts</h3>';
+        html += data.posts.map(p => `
+            <div class="search-result post">
+                <p>${escapeHtml(p.content)}</p>
+            </div>
+        `).join('');
+        html += '</section>';
+    }
+
+    if (!html) {
+        html = '<div class="empty">No results found</div>';
+    }
+
+    results.innerHTML = html;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{{end}}

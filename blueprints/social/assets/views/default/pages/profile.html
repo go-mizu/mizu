@@ -1,0 +1,91 @@
+{{define "title"}}{{if .Account}}{{.Account.DisplayName}} (@{{.Account.Username}}){{else}}Profile{{end}} - Social{{end}}
+
+{{template "base" .}}
+
+{{define "content"}}
+<div class="page profile-page">
+    {{with .Account}}
+    <header class="profile-header">
+        <div class="profile-cover" style="background-image: url('{{.HeaderURL}}')"></div>
+        <div class="profile-info">
+            <img class="profile-avatar" src="{{if .AvatarURL}}{{.AvatarURL}}{{else}}/static/images/default-avatar.png{{end}}" alt="">
+            <div class="profile-details">
+                <h1 class="display-name">{{.DisplayName}}{{if .Verified}} <span class="verified">Verified</span>{{end}}</h1>
+                <span class="username">@{{.Username}}</span>
+            </div>
+            <button class="follow-btn" id="follow-btn" data-id="{{.ID}}">Follow</button>
+        </div>
+        {{if .Bio}}
+        <p class="profile-bio">{{.Bio}}</p>
+        {{end}}
+        <div class="profile-meta">
+            {{if .Location}}<span class="location">{{.Location}}</span>{{end}}
+            {{if .Website}}<a href="{{.Website}}" class="website" target="_blank">{{.Website}}</a>{{end}}
+            <span class="joined">Joined {{formatTime .CreatedAt}}</span>
+        </div>
+        <div class="profile-stats">
+            <a href="/@{{.Username}}/following"><strong>{{.FollowingCount}}</strong> Following</a>
+            <a href="/@{{.Username}}/followers"><strong>{{.FollowersCount}}</strong> Followers</a>
+        </div>
+    </header>
+
+    <nav class="profile-tabs">
+        <button class="tab active" data-tab="posts">Posts</button>
+        <button class="tab" data-tab="replies">Replies</button>
+        <button class="tab" data-tab="media">Media</button>
+        <button class="tab" data-tab="likes">Likes</button>
+    </nav>
+
+    <div class="timeline" id="timeline" data-account-id="{{.ID}}">
+        <div class="loading">Loading...</div>
+    </div>
+    {{else}}
+    <div class="error">Account not found</div>
+    {{end}}
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const accountId = document.getElementById('timeline').dataset.accountId;
+    if (accountId) loadPosts(accountId);
+});
+
+async function loadPosts(accountId) {
+    try {
+        const res = await fetch(`/api/v1/accounts/${accountId}/posts`);
+        const posts = await res.json();
+        renderPosts(posts);
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function renderPosts(posts) {
+    const timeline = document.getElementById('timeline');
+    if (!posts || posts.length === 0) {
+        timeline.innerHTML = '<div class="empty">No posts yet</div>';
+        return;
+    }
+    timeline.innerHTML = posts.map(p => `
+        <article class="post">
+            <div class="post-content">
+                <div class="post-body">${escapeHtml(p.content)}</div>
+                <div class="post-footer">
+                    <span>${p.likes_count} likes</span>
+                    <span>${p.reposts_count} reposts</span>
+                    <span>${p.replies_count} replies</span>
+                </div>
+            </div>
+        </article>
+    `).join('');
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{{end}}
