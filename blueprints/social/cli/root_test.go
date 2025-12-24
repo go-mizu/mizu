@@ -44,8 +44,9 @@ func TestRootCommand_PersistentFlags(t *testing.T) {
 	if dataFlag == nil {
 		t.Error("--data flag should exist")
 	} else {
-		if dataFlag.DefValue != "./data" {
-			t.Errorf("--data default: got %q, want %q", dataFlag.DefValue, "./data")
+		want := defaultDataDir()
+		if dataFlag.DefValue != want {
+			t.Errorf("--data default: got %q, want %q", dataFlag.DefValue, want)
 		}
 	}
 

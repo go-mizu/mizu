@@ -2,6 +2,9 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
+
 	"github.com/spf13/cobra"
 )
 
@@ -14,6 +17,15 @@ var (
 	addr    string
 	dev     bool
 )
+
+// defaultDataDir returns the default data directory ($HOME/data/blueprint/social).
+func defaultDataDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "./data"
+	}
+	return filepath.Join(home, "data", "blueprint", "social")
+}
 
 // Execute runs the CLI.
 func Execute() error {
@@ -28,7 +40,7 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&dataDir, "data", "./data", "Data directory")
+	rootCmd.PersistentFlags().StringVar(&dataDir, "data", defaultDataDir(), "Data directory")
 	rootCmd.PersistentFlags().StringVar(&addr, "addr", ":8080", "Server address")
 	rootCmd.PersistentFlags().BoolVar(&dev, "dev", false, "Development mode")
 
