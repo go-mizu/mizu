@@ -42,6 +42,7 @@ type Channel struct {
 	LastMessageID string      `json:"last_message_id,omitempty"`
 	LastMessageAt *time.Time  `json:"last_message_at,omitempty"`
 	MessageCount  int64       `json:"message_count"`
+	UnreadCount   int         `json:"unread_count,omitempty"`
 	IconURL       string      `json:"icon_url,omitempty"`
 	OwnerID       string      `json:"owner_id,omitempty"`
 	Recipients    []string    `json:"recipients,omitempty"` // For DMs

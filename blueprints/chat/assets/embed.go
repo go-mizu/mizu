@@ -2,6 +2,7 @@ package assets
 
 import (
 	"embed"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"path/filepath"
@@ -358,8 +359,17 @@ func userInitials(name string) string {
 	return string(runes[0:1])
 }
 
-func statusClass(status string) string {
-	switch status {
+func statusClass(status any) string {
+	s := ""
+	switch v := status.(type) {
+	case string:
+		s = v
+	default:
+		// Handle custom types like accounts.Status by converting to string
+		s = formatAny(v)
+	}
+
+	switch s {
 	case "online":
 		return "online"
 	case "idle":
@@ -369,6 +379,17 @@ func statusClass(status string) string {
 	default:
 		return "offline"
 	}
+}
+
+func formatAny(v any) string {
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(interface{ String() string }); ok {
+		return s.String()
+	}
+	// Use fmt-like behavior for types with underlying string
+	return fmt.Sprint(v)
 }
 
 func add(a, b int) int {
