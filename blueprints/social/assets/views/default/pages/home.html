@@ -5,21 +5,39 @@
 {{define "content"}}
 <div class="page home-page">
     <header class="page-header">
-        <h1>Home</h1>
+        <div>
+            <h1>Home</h1>
+        </div>
     </header>
 
     <div class="compose-box" id="compose-box">
+        <div class="avatar">
+            <img src="/static/images/default-avatar.png" alt="Your avatar" id="user-avatar">
+        </div>
         <form id="post-form">
-            <textarea name="content" placeholder="What's happening?" maxlength="500"></textarea>
+            <textarea name="content" placeholder="What's on your mind?" maxlength="500" rows="3"></textarea>
             <div class="compose-actions">
-                <span class="char-count">500</span>
-                <button type="submit">Post</button>
+                <div class="media-buttons">
+                    <button type="button" title="Add image">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                    </button>
+                    <button type="button" title="Add GIF">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v4"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><circle cx="10" cy="20" r="2"/><path d="M10 7v11"/><path d="M6 20h2"/></svg>
+                    </button>
+                    <button type="button" title="Add emoji">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/></svg>
+                    </button>
+                </div>
+                <div class="compose-right">
+                    <span class="char-count" id="char-count">500</span>
+                    <button type="submit">Post</button>
+                </div>
             </div>
         </form>
     </div>
 
     <div class="timeline" id="timeline">
-        <div class="loading">Loading...</div>
+        <div class="loading">Loading posts...</div>
     </div>
 </div>
 {{end}}
@@ -28,11 +46,33 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     loadTimeline();
+    setupCharCounter();
+    setupPostForm();
+});
 
+function setupCharCounter() {
+    const textarea = document.querySelector('#post-form textarea');
+    const counter = document.getElementById('char-count');
+    const maxLength = 500;
+
+    textarea.addEventListener('input', function() {
+        const remaining = maxLength - this.value.length;
+        counter.textContent = remaining;
+        counter.className = 'char-count';
+        if (remaining < 50) counter.classList.add('warning');
+        if (remaining < 20) counter.classList.add('danger');
+    });
+}
+
+function setupPostForm() {
     document.getElementById('post-form').addEventListener('submit', async function(e) {
         e.preventDefault();
-        const content = this.content.value;
-        if (!content.trim()) return;
+        const content = this.content.value.trim();
+        if (!content) return;
+
+        const btn = this.querySelector('button[type="submit"]');
+        btn.disabled = true;
+        btn.textContent = 'Posting...';
 
         try {
             const res = await fetch('/api/v1/posts', {
@@ -42,73 +82,160 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             if (res.ok) {
                 this.content.value = '';
+                document.getElementById('char-count').textContent = '500';
+                document.getElementById('char-count').className = 'char-count';
                 loadTimeline();
             }
         } catch (err) {
-            console.error(err);
+            console.error('Failed to post:', err);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Post';
         }
     });
-});
+}
 
 async function loadTimeline() {
     try {
-        const res = await fetch('/api/v1/timelines/home');
+        let res = await fetch('/api/v1/timelines/home');
         if (res.status === 401) {
-            const pubRes = await fetch('/api/v1/timelines/public');
-            const posts = await pubRes.json();
-            renderPosts(posts);
-        } else {
-            const posts = await res.json();
-            renderPosts(posts);
+            res = await fetch('/api/v1/timelines/public');
         }
+        const posts = await res.json();
+        renderPosts(posts);
     } catch (err) {
-        console.error(err);
+        console.error('Failed to load timeline:', err);
+        document.getElementById('timeline').innerHTML = '<div class="empty"><h3>Unable to load posts</h3><p>Please try again later.</p></div>';
     }
 }
 
 function renderPosts(posts) {
     const timeline = document.getElementById('timeline');
     if (!posts || posts.length === 0) {
-        timeline.innerHTML = '<div class="empty">No posts yet</div>';
+        timeline.innerHTML = `
+            <div class="empty">
+                <div class="icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                </div>
+                <h3>Welcome to your feed</h3>
+                <p>When you follow people, their posts will show up here.</p>
+            </div>
+        `;
         return;
     }
     timeline.innerHTML = posts.map(renderPost).join('');
+    setupPostActions();
 }
 
 function renderPost(post) {
     const account = post.account || {};
+    const avatarUrl = account.avatar_url || '/static/images/default-avatar.png';
+    const displayName = escapeHtml(account.display_name || account.username || 'Anonymous');
+    const username = account.username || 'anonymous';
+
     return `
-        <article class="post">
+        <article class="post" data-id="${post.id}" onclick="window.location='/posts/${post.id}'">
             <div class="post-avatar">
-                <img src="${account.avatar_url || '/static/images/default-avatar.png'}" alt="">
+                <a href="/@${username}" onclick="event.stopPropagation()">
+                    <img src="${avatarUrl}" alt="${displayName}" loading="lazy">
+                </a>
             </div>
             <div class="post-content">
                 <div class="post-header">
-                    <a href="/@${account.username}" class="display-name">${account.display_name || account.username}</a>
-                    <span class="username">@${account.username}</span>
+                    <a href="/@${username}" class="display-name" onclick="event.stopPropagation()">${displayName}</a>
+                    <span class="username">@${username}</span>
                     <span class="timestamp">${formatRelative(post.created_at)}</span>
                 </div>
-                <div class="post-body">${escapeHtml(post.content)}</div>
-                <div class="post-actions">
-                    <button class="action reply" data-id="${post.id}">
-                        <span class="icon">Reply</span>
+                <div class="post-body">${formatContent(post.content)}</div>
+                <div class="post-actions" onclick="event.stopPropagation()">
+                    <button class="action reply" data-id="${post.id}" title="Reply">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                         <span class="count">${post.replies_count || ''}</span>
                     </button>
-                    <button class="action repost ${post.reposted ? 'active' : ''}" data-id="${post.id}">
-                        <span class="icon">Repost</span>
+                    <button class="action repost ${post.reposted ? 'active' : ''}" data-id="${post.id}" title="Repost">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
                         <span class="count">${post.reposts_count || ''}</span>
                     </button>
-                    <button class="action like ${post.liked ? 'active' : ''}" data-id="${post.id}">
-                        <span class="icon">Like</span>
+                    <button class="action like ${post.liked ? 'active' : ''}" data-id="${post.id}" title="Like">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="${post.liked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>
                         <span class="count">${post.likes_count || ''}</span>
                     </button>
-                    <button class="action bookmark ${post.bookmarked ? 'active' : ''}" data-id="${post.id}">
-                        <span class="icon">Bookmark</span>
+                    <button class="action bookmark ${post.bookmarked ? 'active' : ''}" data-id="${post.id}" title="Bookmark">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="${post.bookmarked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
                     </button>
                 </div>
             </div>
         </article>
     `;
+}
+
+function setupPostActions() {
+    // Like action
+    document.querySelectorAll('.post-actions .like').forEach(btn => {
+        btn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            const postId = this.dataset.id;
+            const isLiked = this.classList.contains('active');
+            const countEl = this.querySelector('.count');
+            const svg = this.querySelector('svg');
+
+            this.classList.add('animating');
+            setTimeout(() => this.classList.remove('animating'), 300);
+
+            try {
+                const res = await fetch(`/api/v1/posts/${postId}/${isLiked ? 'unlike' : 'like'}`, {method: 'POST'});
+                if (res.ok) {
+                    this.classList.toggle('active');
+                    svg.setAttribute('fill', isLiked ? 'none' : 'currentColor');
+                    const count = parseInt(countEl.textContent) || 0;
+                    countEl.textContent = isLiked ? (count - 1 || '') : count + 1;
+                }
+            } catch (err) {
+                console.error('Like failed:', err);
+            }
+        });
+    });
+
+    // Repost action
+    document.querySelectorAll('.post-actions .repost').forEach(btn => {
+        btn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            const postId = this.dataset.id;
+            const isReposted = this.classList.contains('active');
+            const countEl = this.querySelector('.count');
+
+            try {
+                const res = await fetch(`/api/v1/posts/${postId}/${isReposted ? 'unrepost' : 'repost'}`, {method: 'POST'});
+                if (res.ok) {
+                    this.classList.toggle('active');
+                    const count = parseInt(countEl.textContent) || 0;
+                    countEl.textContent = isReposted ? (count - 1 || '') : count + 1;
+                }
+            } catch (err) {
+                console.error('Repost failed:', err);
+            }
+        });
+    });
+
+    // Bookmark action
+    document.querySelectorAll('.post-actions .bookmark').forEach(btn => {
+        btn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            const postId = this.dataset.id;
+            const isBookmarked = this.classList.contains('active');
+            const svg = this.querySelector('svg');
+
+            try {
+                const res = await fetch(`/api/v1/posts/${postId}/${isBookmarked ? 'unbookmark' : 'bookmark'}`, {method: 'POST'});
+                if (res.ok) {
+                    this.classList.toggle('active');
+                    svg.setAttribute('fill', isBookmarked ? 'none' : 'currentColor');
+                }
+            } catch (err) {
+                console.error('Bookmark failed:', err);
+            }
+        });
+    });
 }
 
 function formatRelative(dateStr) {
@@ -123,7 +250,17 @@ function formatRelative(dateStr) {
     if (mins < 60) return mins + 'm';
     if (hours < 24) return hours + 'h';
     if (days < 7) return days + 'd';
-    return date.toLocaleDateString();
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function formatContent(text) {
+    if (!text) return '';
+    let html = escapeHtml(text);
+    // Highlight hashtags
+    html = html.replace(/#(\w+)/g, '<span class="hashtag">#$1</span>');
+    // Highlight mentions
+    html = html.replace(/@(\w+)/g, '<a href="/@$1" class="mention" onclick="event.stopPropagation()">@$1</a>');
+    return html;
 }
 
 function escapeHtml(text) {

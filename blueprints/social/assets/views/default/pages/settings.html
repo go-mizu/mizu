@@ -9,71 +9,96 @@
     </header>
 
     <nav class="settings-nav">
-        <a href="/settings/profile" class="{{if eq .Page "profile"}}active{{end}}">Profile</a>
-        <a href="/settings/account" class="{{if eq .Page "account"}}active{{end}}">Account</a>
-        <a href="/settings/privacy" class="{{if eq .Page "privacy"}}active{{end}}">Privacy</a>
+        <a href="/settings/profile" class="{{if eq .Page "profile"}}active{{end}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            Profile
+        </a>
+        <a href="/settings/account" class="{{if eq .Page "account"}}active{{end}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+            Account
+        </a>
+        <a href="/settings/privacy" class="{{if eq .Page "privacy"}}active{{end}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Privacy
+        </a>
     </nav>
 
     <div class="settings-content">
         {{if eq .Page "profile"}}
-        <form id="profile-form">
-            <div class="form-group">
-                <label for="display_name">Display Name</label>
-                <input type="text" id="display_name" name="display_name">
-            </div>
-            <div class="form-group">
-                <label for="bio">Bio</label>
-                <textarea id="bio" name="bio" maxlength="500"></textarea>
-            </div>
-            <div class="form-group">
-                <label for="location">Location</label>
-                <input type="text" id="location" name="location">
-            </div>
-            <div class="form-group">
-                <label for="website">Website</label>
-                <input type="url" id="website" name="website">
-            </div>
-            <button type="submit">Save Changes</button>
-        </form>
+        <div class="settings-section">
+            <h2>Profile Settings</h2>
+            <form id="profile-form">
+                <div class="form-group">
+                    <label for="display_name">Display Name</label>
+                    <input type="text" id="display_name" name="display_name" placeholder="Your name">
+                </div>
+                <div class="form-group">
+                    <label for="bio">Bio</label>
+                    <textarea id="bio" name="bio" maxlength="500" rows="4" placeholder="Tell people about yourself"></textarea>
+                    <small>Up to 500 characters</small>
+                </div>
+                <div class="form-group">
+                    <label for="location">Location</label>
+                    <input type="text" id="location" name="location" placeholder="Where are you?">
+                </div>
+                <div class="form-group">
+                    <label for="website">Website</label>
+                    <input type="url" id="website" name="website" placeholder="https://yourwebsite.com">
+                </div>
+                <button type="submit">Save Changes</button>
+            </form>
+        </div>
         {{else if eq .Page "account"}}
-        <form id="account-form">
-            <div class="form-group">
-                <label for="email">Email</label>
-                <input type="email" id="email" name="email">
-            </div>
-            <button type="submit">Update Email</button>
-        </form>
-        <hr>
-        <h3>Change Password</h3>
-        <form id="password-form">
-            <div class="form-group">
-                <label for="current_password">Current Password</label>
-                <input type="password" id="current_password" name="current_password">
-            </div>
-            <div class="form-group">
-                <label for="new_password">New Password</label>
-                <input type="password" id="new_password" name="new_password">
-            </div>
-            <button type="submit">Change Password</button>
-        </form>
+        <div class="settings-section">
+            <h2>Email</h2>
+            <form id="account-form">
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" name="email" placeholder="your@email.com">
+                </div>
+                <button type="submit">Update Email</button>
+            </form>
+        </div>
+        <div class="settings-section">
+            <h2>Change Password</h2>
+            <form id="password-form">
+                <div class="form-group">
+                    <label for="current_password">Current Password</label>
+                    <input type="password" id="current_password" name="current_password" autocomplete="current-password">
+                </div>
+                <div class="form-group">
+                    <label for="new_password">New Password</label>
+                    <input type="password" id="new_password" name="new_password" autocomplete="new-password" minlength="8">
+                    <small>Minimum 8 characters</small>
+                </div>
+                <div class="form-group">
+                    <label for="confirm_password">Confirm New Password</label>
+                    <input type="password" id="confirm_password" name="confirm_password" autocomplete="new-password">
+                </div>
+                <button type="submit">Change Password</button>
+            </form>
+        </div>
         {{else if eq .Page "privacy"}}
-        <form id="privacy-form">
-            <div class="form-group">
-                <label>
-                    <input type="checkbox" id="private" name="private">
-                    Private Account
-                </label>
-                <small>Only approved followers can see your posts</small>
-            </div>
-            <div class="form-group">
-                <label>
-                    <input type="checkbox" id="discoverable" name="discoverable" checked>
-                    Discoverable
-                </label>
-                <small>Allow your profile to appear in search results</small>
-            </div>
-            <button type="submit">Save Settings</button>
-        </form>
+        <div class="settings-section">
+            <h2>Privacy Settings</h2>
+            <form id="privacy-form">
+                <div class="form-group" style="display: flex; align-items: flex-start; gap: var(--space-3);">
+                    <input type="checkbox" id="private" name="private" style="width: 20px; height: 20px; margin-top: 2px;">
+                    <div>
+                        <label for="private" style="font-weight: var(--font-bold); margin-bottom: var(--space-1); display: block;">Private Account</label>
+                        <small>Only approved followers can see your posts</small>
+                    </div>
+                </div>
+                <div class="form-group" style="display: flex; align-items: flex-start; gap: var(--space-3);">
+                    <input type="checkbox" id="discoverable" name="discoverable" checked style="width: 20px; height: 20px; margin-top: 2px;">
+                    <div>
+                        <label for="discoverable" style="font-weight: var(--font-bold); margin-bottom: var(--space-1); display: block;">Discoverable</label>
+                        <small>Allow your profile to appear in search results and suggestions</small>
+                    </div>
+                </div>
+                <button type="submit">Save Settings</button>
+            </form>
+        </div>
         {{end}}
     </div>
 </div>
