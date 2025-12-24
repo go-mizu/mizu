@@ -1,0 +1,115 @@
+{{define "register.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="auth-page">
+    <div class="auth-card">
+        <div class="auth-logo">
+            <svg viewBox="0 0 130 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="50" height="50" rx="12" fill="url(#auth-logo-gradient)"/>
+                <path d="M14 38V12h6l6 14 6-14h6v26h-5V21l-5.5 12h-3L19 21v17h-5z" fill="white"/>
+                <text x="58" y="35" fill="currentColor" font-size="24" font-weight="700" font-family="Inter, sans-serif">Mizu</text>
+                <defs>
+                    <linearGradient id="auth-logo-gradient" x1="0" y1="0" x2="50" y2="50" gradientUnits="userSpaceOnUse">
+                        <stop stop-color="#5865F2"/>
+                        <stop offset="1" stop-color="#EB459E"/>
+                    </linearGradient>
+                </defs>
+            </svg>
+        </div>
+
+        <h1 class="auth-title">Create an account</h1>
+        <p class="auth-subtitle">Join the conversation</p>
+
+        <form id="register-form">
+            <div class="form-group">
+                <label class="form-label required" for="email">Email</label>
+                <input class="form-input" type="email" id="email" name="email" required autofocus autocomplete="email">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label required" for="display_name">Display Name</label>
+                <input class="form-input" type="text" id="display_name" name="display_name" autocomplete="name">
+                <div class="form-hint">This is how others see you. You can use special characters and emoji.</div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label required" for="username">Username</label>
+                <input class="form-input" type="text" id="username" name="username" required autocomplete="username" pattern="[a-z0-9_]{3,32}">
+                <div class="form-hint">Lowercase letters, numbers, and underscores only.</div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label required" for="password">Password</label>
+                <input class="form-input" type="password" id="password" name="password" required minlength="8" autocomplete="new-password">
+                <div class="form-hint">Must be at least 8 characters.</div>
+            </div>
+
+            <div id="error-message" class="form-error hidden"></div>
+
+            <button type="submit" class="btn btn-primary btn-block btn-lg mt-4" id="submit-btn">
+                Continue
+            </button>
+
+            <div class="auth-footer">
+                Already have an account? <a href="/login">Log In</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+document.getElementById('register-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const btn = document.getElementById('submit-btn');
+    const errorEl = document.getElementById('error-message');
+
+    btn.disabled = true;
+    btn.textContent = 'Creating account...';
+    errorEl.classList.add('hidden');
+
+    const data = {
+        email: form.email.value,
+        username: form.username.value,
+        password: form.password.value,
+        display_name: form.display_name.value || form.username.value
+    };
+
+    try {
+        const res = await fetch('/api/v1/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+
+        if (res.ok) {
+            // Auto-login after registration
+            const loginRes = await fetch('/api/v1/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ login: data.email, password: data.password })
+            });
+
+            if (loginRes.ok) {
+                window.location.href = '/';
+            } else {
+                window.location.href = '/login';
+            }
+        } else {
+            const json = await res.json();
+            errorEl.textContent = json.error?.message || 'Registration failed';
+            errorEl.classList.remove('hidden');
+            btn.disabled = false;
+            btn.textContent = 'Continue';
+        }
+    } catch (err) {
+        errorEl.textContent = 'Unable to connect. Please try again.';
+        errorEl.classList.remove('hidden');
+        btn.disabled = false;
+        btn.textContent = 'Continue';
+    }
+});
+</script>
+{{end}}

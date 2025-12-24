@@ -1,0 +1,41 @@
+{{define "channel_list.html"}}
+<aside class="channel-sidebar" id="channel-sidebar">
+    {{if .Data.currentServer}}
+    <header class="server-header">
+        <span class="server-name">{{.Data.currentServer.Name}}</span>
+        <button class="server-dropdown-btn" title="Server Settings">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M7 10l5 5 5-5H7z"/>
+            </svg>
+        </button>
+    </header>
+    {{else}}
+    <header class="server-header">
+        <span class="server-name">Direct Messages</span>
+    </header>
+    {{end}}
+
+    <div class="channel-scroller">
+        <div class="channel-list" id="channel-list">
+            {{if .Data.channels}}
+                {{range .Data.channels}}
+                <a href="/channels/{{$.Data.currentServer.ID}}/{{.ID}}"
+                   class="channel{{if eq .ID $.Data.channelID}} active{{end}}">
+                    <span class="channel-icon">#</span>
+                    <span class="channel-name">{{.Name}}</span>
+                    {{if .UnreadCount}}
+                    <span class="channel-unread">{{.UnreadCount}}</span>
+                    {{end}}
+                </a>
+                {{end}}
+            {{else}}
+                <div class="channel-empty">
+                    <p>No channels yet</p>
+                </div>
+            {{end}}
+        </div>
+    </div>
+
+    {{template "user_panel.html" .}}
+</aside>
+{{end}}

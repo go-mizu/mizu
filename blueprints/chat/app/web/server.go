@@ -42,7 +42,7 @@ type Server struct {
 	app       *mizu.App
 	cfg       Config
 	db        *sql.DB
-	templates *template.Template
+	templates map[string]*template.Template
 	hub       *ws.Hub
 	upgrader  websocket.Upgrader
 
@@ -137,7 +137,7 @@ func New(cfg Config) (*Server, error) {
 	s.serverHandler = handler.NewServer(serversSvc, channelsSvc, membersSvc, rolesSvc, s.getUserID)
 	s.channelHandler = handler.NewChannel(channelsSvc, membersSvc, hub, s.getUserID)
 	s.messageHandler = handler.NewMessage(messagesSvc, channelsSvc, presenceSvc, hub, s.getUserID)
-	s.pageHandler = handler.NewPage(tmpl, accountsSvc, serversSvc, s.getUserID, cfg.Dev)
+	s.pageHandler = handler.NewPage(tmpl, accountsSvc, serversSvc, channelsSvc, messagesSvc, membersSvc, s.getUserID, cfg.Dev)
 
 	s.setupRoutes()
 

@@ -1,0 +1,87 @@
+{{define "login.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="auth-page">
+    <div class="auth-card">
+        <div class="auth-logo">
+            <svg viewBox="0 0 130 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="50" height="50" rx="12" fill="url(#auth-logo-gradient)"/>
+                <path d="M14 38V12h6l6 14 6-14h6v26h-5V21l-5.5 12h-3L19 21v17h-5z" fill="white"/>
+                <text x="58" y="35" fill="currentColor" font-size="24" font-weight="700" font-family="Inter, sans-serif">Mizu</text>
+                <defs>
+                    <linearGradient id="auth-logo-gradient" x1="0" y1="0" x2="50" y2="50" gradientUnits="userSpaceOnUse">
+                        <stop stop-color="#5865F2"/>
+                        <stop offset="1" stop-color="#EB459E"/>
+                    </linearGradient>
+                </defs>
+            </svg>
+        </div>
+
+        <h1 class="auth-title">Welcome back!</h1>
+        <p class="auth-subtitle">We're so excited to see you again!</p>
+
+        <form id="login-form">
+            <div class="form-group">
+                <label class="form-label required" for="login">Email or Username</label>
+                <input class="form-input" type="text" id="login" name="login" required autofocus autocomplete="username">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label required" for="password">Password</label>
+                <input class="form-input" type="password" id="password" name="password" required autocomplete="current-password">
+            </div>
+
+            <div id="error-message" class="form-error hidden"></div>
+
+            <button type="submit" class="btn btn-primary btn-block btn-lg mt-4" id="submit-btn">
+                Log In
+            </button>
+
+            <div class="auth-footer">
+                Need an account? <a href="/register">Register</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const btn = document.getElementById('submit-btn');
+    const errorEl = document.getElementById('error-message');
+
+    btn.disabled = true;
+    btn.textContent = 'Logging in...';
+    errorEl.classList.add('hidden');
+
+    try {
+        const res = await fetch('/api/v1/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                login: form.login.value,
+                password: form.password.value
+            })
+        });
+
+        if (res.ok) {
+            window.location.href = '/';
+        } else {
+            const json = await res.json();
+            errorEl.textContent = json.error?.message || 'Invalid login credentials';
+            errorEl.classList.remove('hidden');
+            btn.disabled = false;
+            btn.textContent = 'Log In';
+        }
+    } catch (err) {
+        errorEl.textContent = 'Unable to connect. Please try again.';
+        errorEl.classList.remove('hidden');
+        btn.disabled = false;
+        btn.textContent = 'Log In';
+    }
+});
+</script>
+{{end}}

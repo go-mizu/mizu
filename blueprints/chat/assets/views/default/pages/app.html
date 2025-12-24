@@ -1,0 +1,367 @@
+{{define "app.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="app" id="app">
+    {{template "server_list.html" .}}
+    {{template "channel_list.html" .}}
+
+    <!-- Chat Area -->
+    <main class="chat-area" id="chat-area">
+        {{if .Data.currentChannel}}
+        <header class="chat-header">
+            <span class="chat-header-icon">#</span>
+            <span class="chat-header-name">{{.Data.currentChannel.Name}}</span>
+            {{if .Data.currentChannel.Topic}}
+            <span class="chat-header-divider"></span>
+            <span class="chat-header-topic">{{.Data.currentChannel.Topic}}</span>
+            {{end}}
+        </header>
+
+        <div class="messages" id="messages">
+            {{if .Data.messages}}
+                {{range .Data.messages}}
+                <div class="message" data-message-id="{{.ID}}">
+                    <div class="message-avatar">
+                        {{if .Author}}
+                            {{if .Author.AvatarURL}}
+                                <img src="{{.Author.AvatarURL}}" alt="{{.Author.DisplayName}}">
+                            {{else}}
+                                <span>{{userInitials .Author.DisplayName}}</span>
+                            {{end}}
+                        {{else}}
+                            <span>?</span>
+                        {{end}}
+                    </div>
+                    <div class="message-content">
+                        <div class="message-header">
+                            <span class="message-author">{{if .Author}}{{.Author.DisplayName}}{{else}}Unknown{{end}}</span>
+                            <span class="message-timestamp">{{formatTimestamp .CreatedAt}}</span>
+                            {{if .IsEdited}}
+                            <span class="message-edited">(edited)</span>
+                            {{end}}
+                        </div>
+                        <div class="message-body">
+                            {{if .ContentHTML}}
+                                {{safeHTML .ContentHTML}}
+                            {{else}}
+                                {{.Content}}
+                            {{end}}
+                        </div>
+                        {{if .Reactions}}
+                        <div class="message-reactions">
+                            {{range .Reactions}}
+                            <button class="reaction{{if .Me}} me{{end}}" data-emoji="{{.Emoji}}">
+                                <span class="reaction-emoji">{{.Emoji}}</span>
+                                <span class="reaction-count">{{.Count}}</span>
+                            </button>
+                            {{end}}
+                        </div>
+                        {{end}}
+                    </div>
+                    <div class="message-actions">
+                        <button class="message-action" title="Add Reaction" data-action="react">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 18c-4.411 0-8-3.589-8-8s3.589-8 8-8 8 3.589 8 8-3.589 8-8 8zm3.5-9c.828 0 1.5-.672 1.5-1.5S16.328 8 15.5 8 14 8.672 14 9.5s.672 1.5 1.5 1.5zm-7 0c.828 0 1.5-.672 1.5-1.5S9.328 8 8.5 8 7 8.672 7 9.5 7.672 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/>
+                            </svg>
+                        </button>
+                        <button class="message-action" title="Reply" data-action="reply">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z"/>
+                            </svg>
+                        </button>
+                        <button class="message-action" title="More" data-action="more">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                {{end}}
+            {{else}}
+                <div class="messages-empty">
+                    <h3>Welcome to #{{.Data.currentChannel.Name}}!</h3>
+                    <p>This is the start of the channel. Send a message to get the conversation going.</p>
+                </div>
+            {{end}}
+        </div>
+
+        <div class="typing-indicator hidden" id="typing-indicator">
+            <div class="typing-dots">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+            <span id="typing-users">Someone is typing...</span>
+        </div>
+
+        <div class="message-input-wrapper">
+            <form id="message-form" class="message-input">
+                <button type="button" class="input-action" title="Attach file">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 5v14M5 12h14"/>
+                    </svg>
+                </button>
+                <input type="text" id="message-input" name="content" placeholder="Message #{{.Data.currentChannel.Name}}" autocomplete="off">
+                <button type="submit" class="input-action" title="Send">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/>
+                    </svg>
+                </button>
+            </form>
+        </div>
+        {{else}}
+        <div class="messages-empty">
+            <h3>Welcome to Mizu Chat</h3>
+            <p>Select a channel to start chatting</p>
+        </div>
+        {{end}}
+    </main>
+
+    {{if .Data.currentServer}}
+    {{template "member_list.html" .}}
+    {{end}}
+</div>
+
+<script>
+// App configuration from server
+const CONFIG = {
+    userId: '{{.User.ID}}',
+    serverId: {{if .Data.currentServer}}'{{.Data.currentServer.ID}}'{{else}}null{{end}},
+    channelId: {{if .Data.currentChannel}}'{{.Data.currentChannel.ID}}'{{else}}null{{end}},
+    channelName: {{if .Data.currentChannel}}'{{.Data.currentChannel.Name}}'{{else}}''{{end}}
+};
+
+// WebSocket connection
+let ws = null;
+let reconnectTimeout = null;
+
+function initWebSocket() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const token = document.cookie.split('; ').find(row => row.startsWith('session='))?.split('=')[1];
+    if (!token) return;
+
+    ws = new WebSocket(`${protocol}//${window.location.host}/ws?token=${token}`);
+
+    ws.onopen = () => {
+        console.log('WebSocket connected');
+        if (reconnectTimeout) {
+            clearTimeout(reconnectTimeout);
+            reconnectTimeout = null;
+        }
+    };
+
+    ws.onclose = () => {
+        console.log('WebSocket disconnected');
+        reconnectTimeout = setTimeout(initWebSocket, 3000);
+    };
+
+    ws.onerror = (err) => {
+        console.error('WebSocket error:', err);
+    };
+
+    ws.onmessage = (event) => {
+        try {
+            const msg = JSON.parse(event.data);
+            handleWSMessage(msg);
+        } catch (err) {
+            console.error('Failed to parse message:', err);
+        }
+    };
+}
+
+function handleWSMessage(msg) {
+    if (msg.op !== 0) return; // Only handle dispatch
+
+    const data = msg.d;
+    switch (msg.t) {
+        case 'MESSAGE_CREATE':
+            if (data.channel_id === CONFIG.channelId) {
+                appendMessage(data);
+            }
+            break;
+        case 'MESSAGE_UPDATE':
+            updateMessage(data);
+            break;
+        case 'MESSAGE_DELETE':
+            removeMessage(data.id);
+            break;
+        case 'TYPING_START':
+            if (data.channel_id === CONFIG.channelId && data.user_id !== CONFIG.userId) {
+                showTyping(data);
+            }
+            break;
+        case 'PRESENCE_UPDATE':
+            updatePresence(data);
+            break;
+    }
+}
+
+// Message handling
+function appendMessage(msg) {
+    const container = document.getElementById('messages');
+    const wasAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 50;
+
+    // Remove empty state if present
+    const empty = container.querySelector('.messages-empty');
+    if (empty) empty.remove();
+
+    const div = document.createElement('div');
+    div.className = 'message';
+    div.dataset.messageId = msg.id;
+    div.innerHTML = `
+        <div class="message-avatar">
+            ${msg.author?.avatar_url
+                ? `<img src="${escapeHtml(msg.author.avatar_url)}" alt="${escapeHtml(msg.author.display_name)}">`
+                : `<span>${escapeHtml((msg.author?.display_name || '?')[0])}</span>`
+            }
+        </div>
+        <div class="message-content">
+            <div class="message-header">
+                <span class="message-author">${escapeHtml(msg.author?.display_name || 'Unknown')}</span>
+                <span class="message-timestamp">${formatTimestamp(msg.created_at)}</span>
+            </div>
+            <div class="message-body">${msg.content_html || escapeHtml(msg.content)}</div>
+        </div>
+    `;
+    container.appendChild(div);
+
+    if (wasAtBottom) {
+        container.scrollTop = container.scrollHeight;
+    }
+}
+
+function updateMessage(msg) {
+    const el = document.querySelector(`.message[data-message-id="${msg.id}"]`);
+    if (el) {
+        const body = el.querySelector('.message-body');
+        if (body) {
+            body.innerHTML = msg.content_html || escapeHtml(msg.content);
+        }
+        const header = el.querySelector('.message-header');
+        if (header && !header.querySelector('.message-edited')) {
+            header.insertAdjacentHTML('beforeend', '<span class="message-edited">(edited)</span>');
+        }
+    }
+}
+
+function removeMessage(id) {
+    const el = document.querySelector(`.message[data-message-id="${id}"]`);
+    if (el) el.remove();
+}
+
+// Typing indicator
+let typingTimeout = null;
+function showTyping(data) {
+    const el = document.getElementById('typing-indicator');
+    el.classList.remove('hidden');
+    if (typingTimeout) clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => el.classList.add('hidden'), 5000);
+}
+
+function updatePresence(data) {
+    const member = document.querySelector(`.member[data-user-id="${data.user_id}"]`);
+    if (member) {
+        const dot = member.querySelector('.status-dot');
+        if (dot) {
+            dot.className = `status-dot ${data.status || 'offline'}`;
+        }
+        if (data.status === 'offline') {
+            member.classList.add('offline');
+        } else {
+            member.classList.remove('offline');
+        }
+    }
+}
+
+// Message sending
+async function sendMessage(content) {
+    if (!content || !CONFIG.channelId) return false;
+
+    try {
+        const res = await fetch(`/api/v1/channels/${CONFIG.channelId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content })
+        });
+        return res.ok;
+    } catch (err) {
+        console.error('Failed to send message:', err);
+        return false;
+    }
+}
+
+// Server creation
+async function createServer(name) {
+    try {
+        const res = await fetch('/api/v1/servers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name })
+        });
+        if (res.ok) {
+            window.location.reload();
+        }
+        return res.ok;
+    } catch (err) {
+        console.error('Failed to create server:', err);
+        return false;
+    }
+}
+
+// Utilities
+function formatTimestamp(iso) {
+    const date = new Date(iso);
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+    const isYesterday = new Date(now - 86400000).toDateString() === date.toDateString();
+
+    const time = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+    if (isToday) return `Today at ${time}`;
+    if (isYesterday) return `Yesterday at ${time}`;
+    return date.toLocaleDateString([], { month: 'numeric', day: 'numeric', year: 'numeric' }) + ' ' + time;
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+// Event listeners
+document.addEventListener('DOMContentLoaded', () => {
+    initWebSocket();
+
+    // Message form
+    const form = document.getElementById('message-form');
+    if (form) {
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const input = document.getElementById('message-input');
+            const content = input.value.trim();
+            if (content) {
+                input.value = '';
+                await sendMessage(content);
+            }
+        });
+    }
+
+    // Scroll to bottom on load
+    const messages = document.getElementById('messages');
+    if (messages) {
+        messages.scrollTop = messages.scrollHeight;
+    }
+
+    // Create server button
+    document.querySelectorAll('[data-action="create-server"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const name = prompt('Enter server name:');
+            if (name) createServer(name);
+        });
+    });
+});
+</script>
+{{end}}

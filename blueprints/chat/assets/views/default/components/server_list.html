@@ -1,0 +1,29 @@
+{{define "server_list.html"}}
+<nav class="server-list" id="server-list">
+    <a href="/" class="server-icon home{{if not .Data.currentServer}} active{{end}}" title="Home">
+        <svg width="28" height="20" viewBox="0 0 28 20" fill="currentColor">
+            <path d="M23.0212 1.67671C21.3107 0.879656 19.5079 0.318797 17.6584 0C17.4062 0.461742 17.1749 0.934541 16.9708 1.4184C15.003 1.12145 12.9974 1.12145 11.0283 1.4184C10.819 0.934541 10.589 0.461744 10.3368 0C8.48074 0.31879 6.67795 0.880124 4.97318 1.67671C1.08344 7.16609 0.000519934 12.5184 0.538932 17.7935C2.47566 19.2149 4.68243 20.2628 7.04658 20.8776C7.55997 20.1826 8.02119 19.4469 8.42674 18.6766C7.67979 18.398 6.9604 18.0526 6.27722 17.6452C6.47152 17.5057 6.65853 17.3649 6.84029 17.2228C11.4605 19.3454 16.5648 19.3454 21.1425 17.2228C21.3256 17.3649 21.5126 17.5057 21.7056 17.6452C21.0224 18.0526 20.303 18.398 19.5561 18.6766C19.9617 19.4469 20.4229 20.1826 20.9363 20.8776C23.3004 20.2628 25.5072 19.2149 27.4439 17.7935C28.0685 11.6832 26.5077 6.38071 23.0212 1.67671ZM9.68041 14.5944C8.39235 14.5944 7.34007 13.4159 7.34007 11.9783C7.34007 10.5408 8.36975 9.36227 9.68041 9.36227C10.9801 9.36227 12.0324 10.5408 12.0091 11.9783C12.0091 13.4159 10.9801 14.5944 9.68041 14.5944ZM18.3161 14.5944C17.0165 14.5944 15.9642 13.4159 15.9642 11.9783C15.9642 10.5408 16.9939 9.36227 18.3161 9.36227C19.6258 9.36227 20.6781 10.5408 20.6548 11.9783C20.6548 13.4159 19.6258 14.5944 18.3161 14.5944Z"/>
+        </svg>
+    </a>
+    <div class="server-separator"></div>
+    {{range .Data.servers}}
+    <a href="/channels/{{.ID}}/{{.DefaultChannel}}" class="server-icon{{if and $.Data.currentServer (eq .ID $.Data.currentServer.ID)}} active{{end}}" title="{{.Name}}">
+        {{if .IconURL}}
+            <img src="{{.IconURL}}" alt="{{.Name}}">
+        {{else}}
+            <span class="server-initial">{{slice .Name 0 1}}</span>
+        {{end}}
+    </a>
+    {{end}}
+    <button class="server-icon server-add" title="Create a Server" data-action="create-server">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 5v14M5 12h14"/>
+        </svg>
+    </button>
+    <button class="server-icon server-explore" title="Explore Servers" onclick="window.location.href='/explore'">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10zm0-2a8 8 0 100-16 8 8 0 000 16zm-5-7h4V9h2v4h4v2h-4v4h-2v-4H7v-2z"/>
+        </svg>
+    </button>
+</nav>
+{{end}}
