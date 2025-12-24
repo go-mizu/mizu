@@ -1,0 +1,75 @@
+{{define "register.html"}}
+{{template "base.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="auth-page">
+  <div class="auth-card">
+    <h1 class="auth-title">Create an account</h1>
+    <p class="auth-subtitle">Join the conversation</p>
+
+    <form id="register-form">
+      <div class="form-group">
+        <label class="form-label" for="email">Email</label>
+        <input class="form-input" type="email" id="email" name="email" required autofocus>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="username">Username</label>
+        <input class="form-input" type="text" id="username" name="username" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="password">Password</label>
+        <input class="form-input" type="password" id="password" name="password" required minlength="8">
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 8px;">Continue</button>
+
+      <p style="margin-top: 16px; font-size: 14px; color: var(--text-muted);">
+        Already have an account? <a href="/login">Log In</a>
+      </p>
+    </form>
+  </div>
+</div>
+
+<script>
+document.getElementById('register-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const data = {
+    email: form.email.value,
+    username: form.username.value,
+    password: form.password.value
+  };
+
+  try {
+    const res = await fetch('/api/v1/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+
+    if (res.ok) {
+      // Auto-login after registration
+      const loginRes = await fetch('/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ login: data.email, password: data.password })
+      });
+
+      if (loginRes.ok) {
+        window.location.href = '/';
+      } else {
+        window.location.href = '/login';
+      }
+    } else {
+      const json = await res.json();
+      alert(json.error?.message || 'Registration failed');
+    }
+  } catch (err) {
+    alert('Registration failed');
+  }
+});
+</script>
+{{end}}
