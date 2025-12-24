@@ -38,12 +38,9 @@ type Server struct {
 	tags     *tags.Service
 
 	// Handlers
-	auth    *handler.Auth
-	story   *handler.Story
-	comment *handler.Comment
-	vote    *handler.Vote
-	user    *handler.User
-	page    *handler.Page
+	story *handler.Story
+	user  *handler.User
+	page  *handler.Page
 }
 
 // NewServer creates a new server with the given store and config.
@@ -57,8 +54,8 @@ func NewServer(store *duckdb.Store, cfg ServerConfig) (*Server, error) {
 
 	usersSvc := users.NewService(usersStore)
 	tagsSvc := tags.NewService(tagsStore)
-	storiesSvc := stories.NewService(storiesStore, usersStore, votesStore, tagsStore)
-	commentsSvc := comments.NewService(commentsStore, storiesStore, usersStore, votesStore)
+	storiesSvc := stories.NewService(storiesStore, usersStore, votesStore)
+	commentsSvc := comments.NewService(commentsStore, usersStore, votesStore)
 	votesSvc := votes.NewService(votesStore)
 
 	// Create Mizu app
@@ -83,10 +80,7 @@ func NewServer(store *duckdb.Store, cfg ServerConfig) (*Server, error) {
 	}
 
 	// Create handlers
-	s.auth = handler.NewAuth(usersSvc, s.getUserID)
 	s.story = handler.NewStory(storiesSvc, s.getUserID)
-	s.comment = handler.NewComment(commentsSvc, s.getUserID)
-	s.vote = handler.NewVote(storiesSvc, commentsSvc, s.getUserID)
 	s.user = handler.NewUser(usersSvc, storiesSvc, commentsSvc)
 	s.page = handler.NewPage(templates, usersSvc, storiesSvc, commentsSvc, tagsSvc, s.getUserID)
 
@@ -123,48 +117,23 @@ func (s *Server) setupRoutes() {
 	// Static files
 	r.Get("/static/{path...}", s.serveStatic)
 
-	// API routes
+	// API routes (read-only)
 	r.Group("/api", func(api *mizu.Router) {
-		// Auth
-		api.Post("/auth/register", s.auth.Register)
-		api.Post("/auth/login", s.auth.Login)
-		api.Post("/auth/logout", s.authRequired(s.auth.Logout))
-
 		// Stories
 		api.Get("/stories", s.story.List)
 		api.Get("/stories/{id}", s.story.Get)
-		api.Post("/stories", s.authRequired(s.story.Create))
-
-		// Story voting
-		api.Post("/stories/{id}/vote", s.authRequired(s.vote.VoteStory))
-		api.Delete("/stories/{id}/vote", s.authRequired(s.vote.UnvoteStory))
-
-		// Comments
-		api.Post("/comments", s.authRequired(s.comment.Create))
-		api.Post("/comments/{id}/vote", s.authRequired(s.vote.VoteComment))
-		api.Delete("/comments/{id}/vote", s.authRequired(s.vote.UnvoteComment))
 
 		// Users
 		api.Get("/users/{username}", s.user.Get)
 	})
 
-	// HTML pages
+	// HTML pages (read-only)
 	r.Get("/", s.page.Home)
 	r.Get("/newest", s.page.Newest)
 	r.Get("/top", s.page.Top)
 	r.Get("/story/{id}", s.page.Story)
-	r.Get("/submit", s.authRequired(s.page.Submit))
 	r.Get("/user/{username}", s.page.User)
 	r.Get("/tag/{name}", s.page.Tag)
-	r.Get("/login", s.page.Login)
-	r.Get("/register", s.page.Register)
-
-	// Form submissions (for HTML forms)
-	r.Post("/submit", s.authRequired(s.page.SubmitPost))
-	r.Post("/comment", s.authRequired(s.page.CommentPost))
-	r.Post("/login", s.page.LoginPost)
-	r.Post("/register", s.page.RegisterPost)
-	r.Post("/logout", s.authRequired(s.page.LogoutPost))
 }
 
 func (s *Server) serveStatic(c *mizu.Ctx) error {
@@ -180,8 +149,8 @@ func (s *Server) serveStatic(c *mizu.Ctx) error {
 
 // getUserID extracts the user ID from the request.
 func (s *Server) getUserID(c *mizu.Ctx) string {
-	// Check Authorization header
-	auth := c.Header().Get("Authorization")
+	// Check Authorization header (request header, not response header)
+	auth := c.Request().Header.Get("Authorization")
 	if strings.HasPrefix(auth, "Bearer ") {
 		token := strings.TrimPrefix(auth, "Bearer ")
 		session, err := s.users.GetSession(c.Request().Context(), token)
@@ -202,19 +171,3 @@ func (s *Server) getUserID(c *mizu.Ctx) string {
 	return ""
 }
 
-// authRequired middleware requires authentication.
-func (s *Server) authRequired(next mizu.Handler) mizu.Handler {
-	return func(c *mizu.Ctx) error {
-		userID := s.getUserID(c)
-		if userID == "" {
-			// Check if this is an API request or page request
-			path := c.Request().URL.Path
-			if strings.HasPrefix(path, "/api/") {
-				return handler.Unauthorized(c)
-			}
-			// Redirect to login for page requests
-			return c.Redirect(302, "/login?next="+path)
-		}
-		return next(c)
-	}
-}

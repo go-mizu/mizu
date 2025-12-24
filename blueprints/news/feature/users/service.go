@@ -50,3 +50,4 @@ func (s *Service) List(ctx context.Context, limit, offset int) ([]*User, error) 
 	}
 	return s.store.List(ctx, limit, offset)
 }
+

@@ -3,7 +3,6 @@ package users
 import (
 	"context"
 	"errors"
-	"regexp"
 	"time"
 )
 
@@ -16,19 +15,6 @@ var (
 	ErrInvalidEmail    = errors.New("invalid email format")
 	ErrInvalidPassword = errors.New("invalid password")
 	ErrSessionExpired  = errors.New("session expired")
-)
-
-// Validation constants
-const (
-	UsernameMinLen = 2
-	UsernameMaxLen = 15
-	PasswordMinLen = 8
-	SessionTTL     = 30 * 24 * time.Hour // 30 days
-)
-
-var (
-	UsernameRegex = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]*$`)
-	EmailRegex    = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
 )
 
 // User represents a user account.
@@ -61,41 +47,6 @@ func (s *Session) IsExpired() bool {
 	return time.Now().After(s.ExpiresAt)
 }
 
-// CreateIn contains input for creating a user.
-type CreateIn struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-// Validate validates the create input.
-func (in *CreateIn) Validate() error {
-	if len(in.Username) < UsernameMinLen || len(in.Username) > UsernameMaxLen {
-		return ErrInvalidUsername
-	}
-	if !UsernameRegex.MatchString(in.Username) {
-		return ErrInvalidUsername
-	}
-	if !EmailRegex.MatchString(in.Email) {
-		return ErrInvalidEmail
-	}
-	if len(in.Password) < PasswordMinLen {
-		return ErrInvalidPassword
-	}
-	return nil
-}
-
-// UpdateIn contains input for updating a user.
-type UpdateIn struct {
-	About *string `json:"about,omitempty"`
-}
-
-// LoginIn contains input for login.
-type LoginIn struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
 // API defines the users service interface.
 type API interface {
 	// User management
@@ -117,8 +68,13 @@ type Store interface {
 	GetByUsername(ctx context.Context, username string) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 
+	// Create
+	Create(ctx context.Context, user *User) error
+
 	// Sessions
 	GetSessionByToken(ctx context.Context, token string) (*Session, error)
+	CreateSession(ctx context.Context, session *Session) error
+	DeleteSession(ctx context.Context, token string) error
 
 	// Lists
 	List(ctx context.Context, limit, offset int) ([]*User, error)

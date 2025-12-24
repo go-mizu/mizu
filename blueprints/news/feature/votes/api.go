@@ -65,4 +65,6 @@ type Store interface {
 	GetByUserAndTarget(ctx context.Context, userID, targetType, targetID string) (*Vote, error)
 	GetByUserAndTargets(ctx context.Context, userID, targetType string, targetIDs []string) (map[string]*Vote, error)
 	CountByTarget(ctx context.Context, targetType, targetID string) (int64, error)
+	Create(ctx context.Context, vote *Vote) error
+	Delete(ctx context.Context, userID, targetType, targetID string) error
 }

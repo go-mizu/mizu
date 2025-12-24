@@ -269,3 +269,40 @@ func (s *StoriesStore) scanStoryFromRows(rows *sql.Rows) (*stories.Story, error)
 
 	return story, nil
 }
+
+// Create creates a new story with optional tags.
+func (s *StoriesStore) Create(ctx context.Context, story *stories.Story, tagIDs []string) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO stories (id, author_id, title, url, domain, text, text_html, score, comment_count, hot_score, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, story.ID, story.AuthorID, story.Title, story.URL, story.Domain,
+		story.Text, story.TextHTML, story.Score, story.CommentCount, story.HotScore, story.CreatedAt)
+	if err != nil {
+		return err
+	}
+
+	// Add tags
+	for _, tagID := range tagIDs {
+		_, _ = s.db.ExecContext(ctx, `
+			INSERT INTO story_tags (story_id, tag_id) VALUES ($1, $2)
+		`, story.ID, tagID)
+	}
+
+	return nil
+}
+
+// IncrementCommentCount increments the comment count for a story.
+func (s *StoriesStore) IncrementCommentCount(ctx context.Context, storyID string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE stories SET comment_count = comment_count + 1 WHERE id = $1
+	`, storyID)
+	return err
+}
+
+// UpdateScore updates the score for a story.
+func (s *StoriesStore) UpdateScore(ctx context.Context, storyID string, delta int) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE stories SET score = score + $1 WHERE id = $2
+	`, delta, storyID)
+	return err
+}

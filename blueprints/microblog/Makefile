@@ -25,6 +25,9 @@ build: ## Build microblog into $$HOME/bin
 	@CGO_ENABLED=$(CGO_ENABLED) $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
 	@echo "Built: $(BINARY) ($(VERSION))"
 
+.PHONY: install
+install: build ## Build and install to $$HOME/bin
+
 .PHONY: run
 run: ## Run microblog CLI (pass ARGS for subcommands)
 	@CGO_ENABLED=$(CGO_ENABLED) $(GO) run -trimpath -ldflags "$(GO_LDFLAGS)" $(CMD) $(ARGS)

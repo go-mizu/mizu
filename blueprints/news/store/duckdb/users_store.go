@@ -157,3 +157,27 @@ func (s *UsersStore) scanUserFromRows(rows *sql.Rows) (*users.User, error) {
 
 	return user, nil
 }
+
+// Create creates a new user.
+func (s *UsersStore) Create(ctx context.Context, user *users.User) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO users (id, username, email, password_hash, about, karma, is_admin, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`, user.ID, user.Username, user.Email, user.PasswordHash, user.About, user.Karma, user.IsAdmin, user.CreatedAt)
+	return err
+}
+
+// CreateSession creates a new session.
+func (s *UsersStore) CreateSession(ctx context.Context, session *users.Session) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO sessions (id, user_id, token, expires_at, created_at)
+		VALUES ($1, $2, $3, $4, $5)
+	`, session.ID, session.UserID, session.Token, session.ExpiresAt, session.CreatedAt)
+	return err
+}
+
+// DeleteSession deletes a session by token.
+func (s *UsersStore) DeleteSession(ctx context.Context, token string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token = $1`, token)
+	return err
+}
