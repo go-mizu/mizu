@@ -335,6 +335,111 @@ func TestUI_TemplateErrorDetection(t *testing.T) {
 	}
 }
 
+// TestUI_ComponentsWithData tests that all UI components render correctly with real data.
+// This catches template field mismatches like accessing .UnreadCount on Channel.
+func TestUI_ComponentsWithData(t *testing.T) {
+	srv, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	// Create users
+	aliceToken := registerAndGetToken(t, srv.app, "compAlice")
+	bobToken := registerAndGetToken(t, srv.app, "compBob")
+
+	// Alice creates a server
+	serverBody := map[string]interface{}{
+		"name":        "Component Test Server",
+		"description": "Testing all components",
+		"is_public":   true,
+	}
+	serverRec := doRequest(t, srv.app, "POST", "/api/v1/servers", serverBody, aliceToken)
+	var serverResp map[string]interface{}
+	parseResponse(t, serverRec, &serverResp)
+	serverID := serverResp["data"].(map[string]interface{})["id"].(string)
+
+	// Create multiple channels (tests channel_list.html with multiple items)
+	var channelIDs []string
+	for _, ch := range []struct{ name, topic string }{
+		{"general", "General discussion"},
+		{"announcements", "Important updates"},
+		{"random", "Off-topic chat"},
+	} {
+		channelBody := map[string]interface{}{
+			"name":  ch.name,
+			"type":  "text",
+			"topic": ch.topic,
+		}
+		channelRec := doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/channels", channelBody, aliceToken)
+		var channelResp map[string]interface{}
+		parseResponse(t, channelRec, &channelResp)
+		channelIDs = append(channelIDs, channelResp["data"].(map[string]interface{})["id"].(string))
+	}
+
+	// Bob joins (tests member_list.html with multiple members)
+	doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/join", nil, bobToken)
+
+	// Both users send messages (tests message.html with author data)
+	messages := []struct {
+		token   string
+		content string
+	}{
+		{aliceToken, "Hello from Alice!"},
+		{bobToken, "Hi Alice, Bob here."},
+		{aliceToken, "Welcome to the server!"},
+	}
+	for _, msg := range messages {
+		msgBody := map[string]interface{}{"content": msg.content}
+		doRequest(t, srv.app, "POST", "/api/v1/channels/"+channelIDs[0]+"/messages", msgBody, msg.token)
+	}
+
+	// Test the full page render (exercises all components together)
+	t.Run("full page with all components", func(t *testing.T) {
+		rec := doHTMLRequest(t, srv.app, "GET", "/channels/"+serverID+"/"+channelIDs[0], aliceToken)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d\nbody: %s", rec.Code, http.StatusOK, rec.Body.String())
+		}
+
+		body := rec.Body.String()
+		checkTemplateError(t, body)
+
+		// Verify key component content is rendered
+		componentChecks := []struct {
+			desc    string
+			content string
+		}{
+			{"server name in channel list", "Component Test Server"},
+			{"channel name", "general"},
+			{"message content", "Hello from Alice"},
+			{"member section", "member"},
+		}
+		for _, check := range componentChecks {
+			if !strings.Contains(body, check.content) {
+				t.Errorf("%s: expected %q in response", check.desc, check.content)
+			}
+		}
+	})
+
+	// Test each channel (ensures channel_list.html active state works)
+	for i, chID := range channelIDs {
+		t.Run("channel "+string(rune('a'+i)), func(t *testing.T) {
+			rec := doHTMLRequest(t, srv.app, "GET", "/channels/"+serverID+"/"+chID, aliceToken)
+			if rec.Code != http.StatusOK {
+				t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+			}
+			checkTemplateError(t, rec.Body.String())
+		})
+	}
+
+	// Test as different user (tests user_panel.html with different user data)
+	t.Run("view as Bob", func(t *testing.T) {
+		rec := doHTMLRequest(t, srv.app, "GET", "/channels/"+serverID+"/"+channelIDs[0], bobToken)
+		if rec.Code != http.StatusOK {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+		}
+		checkTemplateError(t, rec.Body.String())
+	})
+}
+
 // doHTMLRequest performs an HTML page request with optional auth via cookie.
 func doHTMLRequest(t *testing.T, handler http.Handler, method, path, token string) *httptest.ResponseRecorder {
 	t.Helper()
