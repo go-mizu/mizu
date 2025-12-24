@@ -10,11 +10,11 @@ import (
 
 // TrendingTag represents a trending hashtag.
 type TrendingTag struct {
-	Name       string `json:"name"`
-	URL        string `json:"url,omitempty"`
-	PostsCount int    `json:"posts_count"`
-	AccountsCount int `json:"accounts_count,omitempty"`
-	History    []DayHistory `json:"history,omitempty"`
+	Name          string       `json:"name"`
+	URL           string       `json:"url,omitempty"`
+	PostsCount    int          `json:"posts_count"`
+	AccountsCount int          `json:"accounts_count,omitempty"`
+	History       []DayHistory `json:"history,omitempty"`
 }
 
 // DayHistory represents usage stats for a day.

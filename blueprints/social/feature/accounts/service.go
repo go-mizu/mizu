@@ -59,13 +59,13 @@ func (s *Service) Create(ctx context.Context, in *CreateIn) (*Account, error) {
 	// Create account
 	now := time.Now()
 	account := &Account{
-		ID:          ulid.New(),
-		Username:    in.Username,
-		Email:       in.Email,
-		DisplayName: in.DisplayName,
+		ID:           ulid.New(),
+		Username:     in.Username,
+		Email:        in.Email,
+		DisplayName:  in.DisplayName,
 		Discoverable: true,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 
 	if err := s.store.Insert(ctx, account, hash); err != nil {

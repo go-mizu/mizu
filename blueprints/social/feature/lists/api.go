@@ -11,10 +11,10 @@ import (
 
 // Errors
 var (
-	ErrNotFound     = errors.New("list not found")
-	ErrUnauthorized = errors.New("unauthorized")
+	ErrNotFound      = errors.New("list not found")
+	ErrUnauthorized  = errors.New("unauthorized")
 	ErrAlreadyMember = errors.New("already a member")
-	ErrNotMember    = errors.New("not a member")
+	ErrNotMember     = errors.New("not a member")
 )
 
 // List represents a curated list of accounts.

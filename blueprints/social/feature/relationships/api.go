@@ -9,16 +9,16 @@ import (
 
 // Errors
 var (
-	ErrAlreadyFollowing    = errors.New("already following")
-	ErrNotFollowing        = errors.New("not following")
-	ErrCannotFollowSelf    = errors.New("cannot follow yourself")
-	ErrBlocked             = errors.New("user is blocked")
-	ErrAlreadyBlocked      = errors.New("already blocked")
-	ErrNotBlocked          = errors.New("not blocked")
-	ErrCannotBlockSelf     = errors.New("cannot block yourself")
-	ErrAlreadyMuted        = errors.New("already muted")
-	ErrNotMuted            = errors.New("not muted")
-	ErrCannotMuteSelf      = errors.New("cannot mute yourself")
+	ErrAlreadyFollowing      = errors.New("already following")
+	ErrNotFollowing          = errors.New("not following")
+	ErrCannotFollowSelf      = errors.New("cannot follow yourself")
+	ErrBlocked               = errors.New("user is blocked")
+	ErrAlreadyBlocked        = errors.New("already blocked")
+	ErrNotBlocked            = errors.New("not blocked")
+	ErrCannotBlockSelf       = errors.New("cannot block yourself")
+	ErrAlreadyMuted          = errors.New("already muted")
+	ErrNotMuted              = errors.New("not muted")
+	ErrCannotMuteSelf        = errors.New("cannot mute yourself")
 	ErrFollowRequestNotFound = errors.New("follow request not found")
 )
 

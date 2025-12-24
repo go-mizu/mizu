@@ -33,8 +33,8 @@ func TestTimelinesStore_GetHomeFeed(t *testing.T) {
 
 	// Create posts
 	for i := 0; i < 2; i++ {
-		createTestPost(t, postsStore, user.ID)    // user's own posts
-		createTestPost(t, postsStore, friend.ID)  // friend's posts
+		createTestPost(t, postsStore, user.ID)     // user's own posts
+		createTestPost(t, postsStore, friend.ID)   // friend's posts
 		createTestPost(t, postsStore, stranger.ID) // stranger's posts
 	}
 

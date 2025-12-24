@@ -31,16 +31,16 @@ type SearchResult struct {
 
 // SearchOpts specifies search options.
 type SearchOpts struct {
-	Query       string
-	Type        string // accounts, posts, hashtags, or empty for all
-	Limit       int
-	Offset      int
-	AccountID   string // For filtering "from:user" searches
-	Following   bool   // Only search accounts user follows
-	Resolve     bool   // Attempt to resolve remote accounts
-	MinLikes    int    // Minimum likes filter
-	MinReposts  int    // Minimum reposts filter
-	HasMedia    bool   // Only posts with media
+	Query      string
+	Type       string // accounts, posts, hashtags, or empty for all
+	Limit      int
+	Offset     int
+	AccountID  string // For filtering "from:user" searches
+	Following  bool   // Only search accounts user follows
+	Resolve    bool   // Attempt to resolve remote accounts
+	MinLikes   int    // Minimum likes filter
+	MinReposts int    // Minimum reposts filter
+	HasMedia   bool   // Only posts with media
 }
 
 // API defines the search service contract.
