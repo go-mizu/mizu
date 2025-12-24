@@ -1,0 +1,27 @@
+{{define "comment"}}
+<div class="comment" data-comment-id="{{.ID}}" data-depth="{{.Depth}}">
+    <div class="comment-header">
+        {{if .Author}}
+            <a href="/user/{{.Author.Username}}" class="author-link">{{.Author.Username}}</a>
+        {{else}}
+            <span class="author-deleted">[deleted]</span>
+        {{end}}
+        <span class="separator">-</span>
+        <span class="score">{{formatScore .Score}} points</span>
+        <span class="separator">-</span>
+        <span class="time" title="{{formatTime .CreatedAt}}">{{formatTimeRelative .CreatedAt}}</span>
+    </div>
+
+    <div class="comment-content">
+        {{safeHTML .TextHTML}}
+    </div>
+
+    {{if .Children}}
+        <div class="comment-children">
+            {{range .Children}}
+                {{template "comment" .}}
+            {{end}}
+        </div>
+    {{end}}
+</div>
+{{end}}

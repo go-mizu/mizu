@@ -1,0 +1,40 @@
+{{define "comment"}}
+<tr class="comtr" id="{{.ID}}">
+    <td>
+        <table border="0">
+        <tr>
+            <td class="ind" style="width:{{mul .Depth 40}}px"></td>
+            <td valign="top" class="votelinks">
+                <center>
+                    <div class="votearrow" title="upvote"></div>
+                </center>
+            </td>
+            <td class="default">
+                <div style="margin-top:2px;margin-bottom:-10px">
+                    <span class="comhead">
+                        {{if .Author}}
+                        <a href="/user/{{.Author.Username}}" class="hnuser">{{.Author.Username}}</a>
+                        {{else}}
+                        <span class="hnuser">[deleted]</span>
+                        {{end}}
+                        <span class="age" title="{{formatTime .CreatedAt}}"><a href="/story/{{.ID}}">{{formatTimeRelative .CreatedAt}}</a></span>
+                        <span class="par"></span>
+                    </span>
+                </div>
+                <br>
+                <div class="comment">
+                    <span class="commtext">
+                        {{safeHTML .TextHTML}}
+                    </span>
+                </div>
+            </td>
+        </tr>
+        </table>
+    </td>
+</tr>
+{{if .Children}}
+{{range .Children}}
+{{template "comment" .}}
+{{end}}
+{{end}}
+{{end}}

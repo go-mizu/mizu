@@ -13,7 +13,7 @@ import (
 
 // Page handles HTML page rendering.
 type Page struct {
-	templates *template.Template
+	templates map[string]*template.Template
 	users     *users.Service
 	stories   *stories.Service
 	comments  *comments.Service
@@ -23,7 +23,7 @@ type Page struct {
 
 // NewPage creates a new page handler.
 func NewPage(
-	templates *template.Template,
+	templates map[string]*template.Template,
 	users *users.Service,
 	stories *stories.Service,
 	comments *comments.Service,
@@ -60,8 +60,12 @@ type PageData struct {
 }
 
 func (h *Page) render(c *mizu.Ctx, name string, data PageData) error {
+	tmpl, ok := h.templates[name]
+	if !ok {
+		return c.Text(500, "Template not found: "+name)
+	}
 	c.Header().Set("Content-Type", "text/html; charset=utf-8")
-	return h.templates.ExecuteTemplate(c.Writer(), name, data)
+	return tmpl.ExecuteTemplate(c.Writer(), name, data)
 }
 
 func (h *Page) getCurrentUser(c *mizu.Ctx) *users.User {

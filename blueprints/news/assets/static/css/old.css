@@ -1,0 +1,736 @@
+/* Classic Forum Theme */
+
+/* Reset */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+/* Base */
+body {
+    font: normal x-small verdana, arial, helvetica, sans-serif;
+    font-size: 10pt;
+    background-color: white;
+    color: black;
+    margin: 0;
+    padding: 0;
+}
+
+a {
+    color: #0079d3;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+a:visited {
+    color: #551a8b;
+}
+
+/* Forum Page Container */
+.forum-page {
+    margin: 0;
+    padding: 0;
+}
+
+/* Header */
+.nav {
+    background-color: #cee3f8;
+    padding: 2px 5px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 10pt;
+    border-bottom: 1px solid #5f99cf;
+}
+
+.nav-left {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.nav-right {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.nav-logo {
+    text-decoration: none;
+}
+
+.forum-logo {
+    font-family: verdana, arial, helvetica, sans-serif;
+    font-size: 18px;
+    font-weight: bold;
+    color: #0079d3;
+    letter-spacing: -1px;
+}
+
+.nav .separator {
+    color: #808080;
+}
+
+.pagename a {
+    color: #ff4500;
+    font-weight: bold;
+}
+
+.nav-right .user-link {
+    color: #369;
+    font-weight: bold;
+}
+
+.userkarma {
+    color: #808080;
+    font-weight: normal;
+}
+
+.logout-form {
+    display: inline;
+}
+
+.logout-btn {
+    background: none;
+    border: none;
+    color: #0079d3;
+    cursor: pointer;
+    font: inherit;
+    padding: 0;
+}
+
+.logout-btn:hover {
+    text-decoration: underline;
+}
+
+.mail-icon {
+    color: #ff4500;
+    font-weight: bold;
+}
+
+/* Navigation Tabs Area */
+.nav-tabs {
+    background-color: #f0f0f0;
+    padding: 2px 5px;
+    font-size: 8pt;
+    border-bottom: 1px solid #ccc;
+    display: flex;
+    justify-content: space-between;
+}
+
+.sr-bar {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.sr-bar a {
+    color: #808080;
+}
+
+.sr-bar a:hover {
+    color: #0079d3;
+}
+
+.sr-bar a.selected {
+    color: #ff4500;
+    font-weight: bold;
+}
+
+.sr-bar.right {
+    margin-left: auto;
+}
+
+/* Main Content */
+.main-content {
+    padding: 5px 10px;
+    display: flex;
+}
+
+.content {
+    flex: 1;
+    min-width: 0;
+}
+
+.side {
+    width: 300px;
+    flex-shrink: 0;
+    margin-left: 10px;
+}
+
+/* Tab Menu */
+.menuarea {
+    margin-bottom: 10px;
+}
+
+.tabmenu {
+    display: flex;
+    list-style: none;
+    border-bottom: 1px solid #5f99cf;
+    padding-bottom: 0;
+}
+
+.tabmenu li {
+    margin-right: 0;
+}
+
+.tabmenu li a {
+    display: block;
+    padding: 2px 6px;
+    background-color: #eff7ff;
+    border: 1px solid #5f99cf;
+    border-bottom: none;
+    color: #369;
+    font-weight: bold;
+    font-size: 10pt;
+}
+
+.tabmenu li a:hover {
+    background-color: #cee3f8;
+    text-decoration: none;
+}
+
+.tabmenu li.selected a {
+    background-color: white;
+    border-bottom: 1px solid white;
+    margin-bottom: -1px;
+}
+
+/* Thing (Post) Container */
+.thing {
+    padding: 5px 0;
+    border-bottom: 1px solid #e5e5e5;
+    display: flex;
+    align-items: flex-start;
+}
+
+.thing:hover {
+    background-color: #f8f8f8;
+}
+
+/* Rank */
+.rank {
+    width: 30px;
+    text-align: right;
+    font-size: 14pt;
+    color: #c6c6c6;
+    font-weight: bold;
+    padding-right: 5px;
+}
+
+/* Vote Column */
+.midcol {
+    width: 15px;
+    text-align: center;
+    padding: 0 5px;
+}
+
+.arrow {
+    width: 15px;
+    height: 14px;
+    background-position: center;
+    background-repeat: no-repeat;
+    cursor: pointer;
+    margin: 0 auto;
+}
+
+.arrow.up {
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='14' viewBox='0 0 15 14'%3E%3Cpath fill='%23c6c6c6' d='M7.5 0L0 10h15z'/%3E%3C/svg%3E") center no-repeat;
+}
+
+.arrow.up:hover,
+.arrow.up.upmod {
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='14' viewBox='0 0 15 14'%3E%3Cpath fill='%23ff4500' d='M7.5 0L0 10h15z'/%3E%3C/svg%3E") center no-repeat;
+}
+
+.arrow.down {
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='14' viewBox='0 0 15 14'%3E%3Cpath fill='%23c6c6c6' d='M7.5 14L0 4h15z'/%3E%3C/svg%3E") center no-repeat;
+}
+
+.arrow.down:hover,
+.arrow.down.downmod {
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='14' viewBox='0 0 15 14'%3E%3Cpath fill='%237193ff' d='M7.5 14L0 4h15z'/%3E%3C/svg%3E") center no-repeat;
+}
+
+.score {
+    font-size: 10pt;
+    font-weight: bold;
+    color: #c6c6c6;
+}
+
+.score.likes {
+    color: #ff4500;
+}
+
+.score.dislikes {
+    color: #7193ff;
+}
+
+/* Thumbnail */
+.thumbnail {
+    width: 70px;
+    height: 70px;
+    margin-right: 5px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.thumbnail img {
+    max-width: 70px;
+    max-height: 70px;
+    border: 1px solid #ccc;
+}
+
+.thumbnail.default {
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='50' viewBox='0 0 70 50'%3E%3Crect fill='%23f5f5f5' width='70' height='50'/%3E%3Ctext x='35' y='30' text-anchor='middle' fill='%23ccc' font-size='12'%3Eself%3C/text%3E%3C/svg%3E") center no-repeat;
+    width: 70px;
+    height: 50px;
+}
+
+/* Entry (Post Content) */
+.entry {
+    flex: 1;
+    min-width: 0;
+}
+
+.entry .title {
+    margin: 0 0 2px 0;
+}
+
+.entry .title a.title {
+    font-size: 12pt;
+    font-weight: normal;
+    color: #0079d3;
+}
+
+.entry .title a.title:visited {
+    color: #551a8b;
+}
+
+.entry .title a.title:hover {
+    text-decoration: underline;
+}
+
+.entry .title .domain {
+    font-size: 8pt;
+    color: #888;
+}
+
+.entry .title .domain a {
+    color: #888;
+}
+
+/* Tagline */
+.tagline {
+    font-size: 8pt;
+    color: #888;
+    margin-bottom: 2px;
+}
+
+.tagline a.author {
+    color: #369;
+}
+
+.tagline a.board-link {
+    color: #369;
+    font-weight: bold;
+}
+
+.tagline time {
+    color: #888;
+}
+
+/* Flair/Tags */
+.linkflairlabel {
+    margin-bottom: 2px;
+}
+
+.flair {
+    font-size: 8pt;
+    padding: 0 2px;
+    border: 1px solid;
+    margin-right: 3px;
+}
+
+.flair.nsfw {
+    color: #d10023;
+    border-color: #d10023;
+}
+
+.flair.spoiler {
+    color: #000;
+    border-color: #000;
+    background: #000;
+    color: #fff;
+}
+
+.flair.pinned {
+    color: #228b22;
+    border-color: #228b22;
+}
+
+.flair.locked {
+    color: #ffb000;
+    border-color: #ffb000;
+}
+
+/* Flat List (Action Buttons) */
+.flat-list {
+    display: flex;
+    list-style: none;
+    font-size: 8pt;
+    font-weight: bold;
+}
+
+.flat-list li {
+    margin-right: 5px;
+}
+
+.flat-list li a,
+.flat-list li button {
+    color: #888;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font: inherit;
+    font-weight: bold;
+    padding: 0;
+}
+
+.flat-list li a:hover,
+.flat-list li button:hover {
+    text-decoration: underline;
+}
+
+.flat-list .comments {
+    color: #888;
+}
+
+.save-btn.saved {
+    color: #ff4500;
+}
+
+/* Clear Float */
+.clearleft {
+    clear: left;
+}
+
+/* Navigation Buttons */
+.nav-buttons {
+    padding: 10px;
+    text-align: center;
+}
+
+.nextprev a {
+    color: #369;
+    font-weight: bold;
+}
+
+/* No Results */
+.noresults {
+    padding: 20px;
+    color: #888;
+    text-align: center;
+    font-size: 12pt;
+}
+
+/* Sidebar */
+.spacer {
+    margin-bottom: 15px;
+}
+
+.sidebox {
+    background: #f0f0f0;
+    border: 1px solid #ddd;
+}
+
+.sidebox.create .morelink,
+.sidebox.submit .morelink {
+    background: linear-gradient(#cee3f8, #a0c0e8);
+    padding: 5px 10px;
+    text-align: center;
+}
+
+.sidebox .morelink a {
+    color: #336699;
+    font-weight: bold;
+    font-size: 12pt;
+}
+
+.sidecontentbox {
+    background: white;
+    border: 1px solid #ddd;
+}
+
+.sidecontentbox .title {
+    background: #cee3f8;
+    padding: 5px;
+    border-bottom: 1px solid #5f99cf;
+}
+
+.sidecontentbox .title h1 {
+    font-size: 10pt;
+    font-weight: bold;
+    color: #369;
+    margin: 0;
+}
+
+.sidecontentbox .content {
+    padding: 10px;
+}
+
+.sidecontentbox ul.content {
+    list-style: none;
+    padding: 5px 10px;
+}
+
+.sidecontentbox ul.content li {
+    padding: 3px 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.sidecontentbox ul.content li a {
+    color: #0079d3;
+}
+
+.sidecontentbox ul.content li .subscribers {
+    font-size: 8pt;
+    color: #888;
+    margin-left: 5px;
+}
+
+/* Footer */
+.footer-parent {
+    margin-top: 30px;
+    padding: 10px;
+    background: #f0f0f0;
+    border-top: 1px solid #ccc;
+    text-align: center;
+    font-size: 9pt;
+}
+
+.footer a {
+    color: #808080;
+}
+
+/* Comments Section */
+.thing.comment {
+    padding: 5px 0 5px 10px;
+    border: none;
+    border-left: 2px solid #e5e5e5;
+    display: block;
+}
+
+.thing.comment:hover {
+    background: transparent;
+}
+
+.thing.comment .midcol {
+    float: left;
+    width: auto;
+    padding: 0 5px 0 0;
+}
+
+.thing.comment .entry {
+    margin-left: 25px;
+}
+
+.thing.comment .tagline {
+    font-size: 8pt;
+}
+
+.thing.comment .tagline .expand {
+    color: #888;
+    font-weight: normal;
+}
+
+.thing.comment .usertext-body {
+    padding: 5px 0;
+}
+
+.thing.comment .md {
+    font-size: 10pt;
+    line-height: 1.4;
+}
+
+.thing.comment .md p {
+    margin: 5px 0;
+}
+
+.thing.comment .child {
+    margin-left: 0;
+}
+
+.thing.comment .child .thing.comment {
+    margin-left: 20px;
+}
+
+/* Reply Form */
+.reply-form {
+    margin-top: 10px;
+    padding: 10px;
+    background: #f5f5f5;
+}
+
+.reply-form textarea {
+    width: 100%;
+    font-family: verdana, arial, sans-serif;
+    font-size: 10pt;
+    padding: 5px;
+    border: 1px solid #c6c6c6;
+}
+
+.reply-form .usertext-buttons {
+    margin-top: 5px;
+}
+
+.reply-form .save,
+.reply-form .cancel {
+    font-size: 10pt;
+    padding: 3px 10px;
+    margin-right: 5px;
+    cursor: pointer;
+}
+
+.reply-form .save {
+    background: #cee3f8;
+    border: 1px solid #5f99cf;
+    color: #369;
+    font-weight: bold;
+}
+
+.reply-form .cancel {
+    background: #f0f0f0;
+    border: 1px solid #ccc;
+    color: #808080;
+}
+
+/* Hidden Elements */
+.hidden {
+    display: none !important;
+}
+
+/* Thread Page Specific */
+.thread-page .thing.link {
+    border-bottom: none;
+    padding: 10px;
+    background: #f8f8f8;
+    margin-bottom: 10px;
+}
+
+.comments-area {
+    padding: 10px;
+}
+
+/* Forms */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="url"],
+input[type="search"],
+textarea,
+select {
+    font-family: verdana, arial, sans-serif;
+    font-size: 10pt;
+    padding: 4px;
+    border: 1px solid #c6c6c6;
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="url"]:focus,
+input[type="search"]:focus,
+textarea:focus,
+select:focus {
+    outline: none;
+    border-color: #5f99cf;
+}
+
+/* Buttons */
+button,
+input[type="submit"] {
+    font-family: verdana, arial, sans-serif;
+    font-size: 10pt;
+    padding: 3px 10px;
+    background: #cee3f8;
+    border: 1px solid #5f99cf;
+    color: #369;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+button:hover,
+input[type="submit"]:hover {
+    background: #a0c0e8;
+}
+
+/* Login/Register Page */
+.login-page {
+    max-width: 400px;
+    margin: 50px auto;
+    padding: 20px;
+}
+
+.login-page h1 {
+    font-size: 14pt;
+    color: #369;
+    margin-bottom: 20px;
+}
+
+.login-page .form-group {
+    margin-bottom: 15px;
+}
+
+.login-page label {
+    display: block;
+    font-size: 10pt;
+    font-weight: bold;
+    margin-bottom: 5px;
+    color: #333;
+}
+
+.login-page input[type="text"],
+.login-page input[type="email"],
+.login-page input[type="password"] {
+    width: 100%;
+    padding: 8px;
+}
+
+/* Error/Alert */
+.form-error {
+    background: #fff0f0;
+    border: 1px solid #ff0000;
+    color: #d10023;
+    padding: 10px;
+    margin-bottom: 15px;
+    font-size: 10pt;
+}
+
+/* Responsive */
+@media (max-width: 800px) {
+    .main-content {
+        flex-direction: column;
+    }
+
+    .side {
+        width: 100%;
+        margin-left: 0;
+        margin-top: 20px;
+    }
+
+    .nav-tabs {
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    .sr-bar.right {
+        margin-left: 0;
+    }
+}

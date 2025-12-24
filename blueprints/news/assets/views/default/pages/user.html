@@ -1,0 +1,47 @@
+{{define "user.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="user-header">
+    <div class="user-banner"></div>
+    <div class="user-header-content">
+        <div class="user-avatar placeholder">{{slice .Profile.Username 0 1}}</div>
+        <div class="user-details">
+            <h1>{{.Profile.Username}}</h1>
+            <span class="username">u/{{.Profile.Username}}</span>
+        </div>
+    </div>
+</div>
+
+<div class="user-stats">
+    <div class="stat">
+        <span class="stat-value">{{formatScore .Profile.Karma}}</span>
+        <span class="stat-label">Karma</span>
+    </div>
+    <div class="stat">
+        <span class="stat-value">{{formatTimeRelative .Profile.CreatedAt}}</span>
+        <span class="stat-label">Joined</span>
+    </div>
+</div>
+
+{{if .Profile.About}}
+    <div class="user-bio">
+        <p>{{safeHTML .Profile.About}}</p>
+    </div>
+{{end}}
+
+<div class="tab-nav">
+    <span class="tab active">Stories</span>
+</div>
+
+<div class="thread-list">
+    {{range .Stories}}
+        {{template "story_card" .}}
+    {{else}}
+        <div class="empty-state">
+            <p>No stories yet.</p>
+        </div>
+    {{end}}
+</div>
+{{end}}

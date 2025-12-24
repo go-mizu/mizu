@@ -1,0 +1,16 @@
+{{define "nav"}}
+<nav class="nav">
+    <div class="nav-container">
+        <a href="/" class="nav-logo">
+            <span class="logo-icon">N</span>
+            <span class="logo-text">News</span>
+        </a>
+
+        <div class="nav-links">
+            <a href="/" class="nav-link {{if eq .Sort "hot"}}active{{end}}">Hot</a>
+            <a href="/newest" class="nav-link {{if eq .Sort "new"}}active{{end}}">New</a>
+            <a href="/top" class="nav-link {{if eq .Sort "top"}}active{{end}}">Top</a>
+        </div>
+    </div>
+</nav>
+{{end}}
