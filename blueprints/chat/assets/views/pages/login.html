@@ -1,0 +1,58 @@
+{{define "login.html"}}
+{{template "base.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="auth-page">
+  <div class="auth-card">
+    <h1 class="auth-title">Welcome back!</h1>
+    <p class="auth-subtitle">We're so excited to see you again!</p>
+
+    <form id="login-form" method="POST" action="/api/v1/auth/login">
+      <div class="form-group">
+        <label class="form-label" for="login">Email or Username</label>
+        <input class="form-input" type="text" id="login" name="login" required autofocus>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="password">Password</label>
+        <input class="form-input" type="password" id="password" name="password" required>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 8px;">Log In</button>
+
+      <p style="margin-top: 16px; font-size: 14px; color: var(--text-muted);">
+        Need an account? <a href="/register">Register</a>
+      </p>
+    </form>
+  </div>
+</div>
+
+<script>
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const data = {
+    login: form.login.value,
+    password: form.password.value
+  };
+
+  try {
+    const res = await fetch('/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+
+    if (res.ok) {
+      window.location.href = '/';
+    } else {
+      const json = await res.json();
+      alert(json.error?.message || 'Login failed');
+    }
+  } catch (err) {
+    alert('Login failed');
+  }
+});
+</script>
+{{end}}

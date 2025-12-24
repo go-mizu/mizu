@@ -1,0 +1,43 @@
+{{define "explore.html"}}
+{{template "base.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="landing">
+  <header class="landing-header">
+    <a href="/" class="landing-logo">Chat</a>
+    <nav class="landing-nav">
+      {{if .User}}
+        <a href="/" class="btn btn-secondary">Open Chat</a>
+      {{else}}
+        <a href="/login" class="btn btn-secondary">Login</a>
+        <a href="/register" class="btn btn-primary">Sign Up</a>
+      {{end}}
+    </nav>
+  </header>
+
+  <section style="padding: 2rem 4rem; max-width: 1200px; margin: 0 auto;">
+    <h1 style="font-size: 2rem; margin-bottom: 2rem;">Explore Public Servers</h1>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.5rem;">
+      {{range .Data.servers}}
+      <div style="background: var(--bg-primary); border-radius: 8px; overflow: hidden;">
+        <div style="height: 120px; background: linear-gradient(135deg, var(--accent-primary), #eb459e);"></div>
+        <div style="padding: 1rem;">
+          <h3 style="font-size: 1.25rem; margin-bottom: 0.5rem;">{{.Name}}</h3>
+          <p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1rem;">
+            {{if .Description}}{{.Description}}{{else}}A wonderful community{{end}}
+          </p>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="color: var(--text-muted); font-size: 0.875rem;">{{.MemberCount}} members</span>
+            <a href="/api/v1/servers/{{.ID}}/join" class="btn btn-primary" style="padding: 8px 16px;">Join</a>
+          </div>
+        </div>
+      </div>
+      {{else}}
+      <p style="color: var(--text-muted);">No public servers yet. Be the first to create one!</p>
+      {{end}}
+    </div>
+  </section>
+</div>
+{{end}}
