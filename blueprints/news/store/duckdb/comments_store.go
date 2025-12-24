@@ -148,3 +148,47 @@ func (s *CommentsStore) scanCommentFromRows(rows *sql.Rows) (*comments.Comment, 
 
 	return comment, nil
 }
+
+// Create creates a new comment.
+func (s *CommentsStore) Create(ctx context.Context, comment *comments.Comment) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO comments (id, story_id, parent_id, author_id, text, text_html, score, depth, path, child_count, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, comment.ID, comment.StoryID, nullString(comment.ParentID), comment.AuthorID,
+		comment.Text, comment.TextHTML, comment.Score, comment.Depth,
+		comment.Path, comment.ChildCount, comment.CreatedAt)
+	return err
+}
+
+// IncrementChildCount increments the child count for a comment.
+func (s *CommentsStore) IncrementChildCount(ctx context.Context, commentID string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE comments SET child_count = child_count + 1 WHERE id = $1
+	`, commentID)
+	return err
+}
+
+// GetDepth returns the depth of a comment.
+func (s *CommentsStore) GetDepth(ctx context.Context, commentID string) (int, string, error) {
+	var depth int
+	var path string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT depth, path FROM comments WHERE id = $1
+	`, commentID).Scan(&depth, &path)
+	return depth, path, err
+}
+
+func nullString(s string) sql.NullString {
+	if s == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: s, Valid: true}
+}
+
+// UpdateScore updates the score for a comment.
+func (s *CommentsStore) UpdateScore(ctx context.Context, commentID string, delta int) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE comments SET score = score + $1 WHERE id = $2
+	`, delta, commentID)
+	return err
+}

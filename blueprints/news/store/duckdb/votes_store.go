@@ -85,3 +85,20 @@ func (s *VotesStore) CountByTarget(ctx context.Context, targetType, targetID str
 	`, targetType, targetID).Scan(&count)
 	return count, err
 }
+
+// Create creates a new vote.
+func (s *VotesStore) Create(ctx context.Context, vote *votes.Vote) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO votes (id, user_id, target_type, target_id, value, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, vote.ID, vote.UserID, vote.TargetType, vote.TargetID, vote.Value, vote.CreatedAt)
+	return err
+}
+
+// Delete deletes a vote.
+func (s *VotesStore) Delete(ctx context.Context, userID, targetType, targetID string) error {
+	_, err := s.db.ExecContext(ctx, `
+		DELETE FROM votes WHERE user_id = $1 AND target_type = $2 AND target_id = $3
+	`, userID, targetType, targetID)
+	return err
+}

@@ -56,38 +56,6 @@ func (s *Story) IsText() bool {
 	return s.URL == "" && s.Text != ""
 }
 
-// CreateIn contains input for creating a story.
-type CreateIn struct {
-	Title string   `json:"title"`
-	URL   string   `json:"url,omitempty"`
-	Text  string   `json:"text,omitempty"`
-	Tags  []string `json:"tags,omitempty"`
-}
-
-// Validate validates the create input.
-func (in *CreateIn) Validate() error {
-	in.Title = strings.TrimSpace(in.Title)
-	in.URL = strings.TrimSpace(in.URL)
-	in.Text = strings.TrimSpace(in.Text)
-
-	if len(in.Title) < TitleMinLen || len(in.Title) > TitleMaxLen {
-		return ErrInvalidTitle
-	}
-
-	if in.URL != "" {
-		u, err := url.Parse(in.URL)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
-			return ErrInvalidURL
-		}
-	}
-
-	if len(in.Text) > TextMaxLen {
-		return errors.New("text too long")
-	}
-
-	return nil
-}
-
 // ExtractDomain extracts domain from URL.
 func ExtractDomain(rawURL string) string {
 	if rawURL == "" {
@@ -125,6 +93,11 @@ type API interface {
 type Store interface {
 	GetByID(ctx context.Context, id string) (*Story, error)
 	GetByURL(ctx context.Context, url string) (*Story, error)
+
+	// Create
+	Create(ctx context.Context, story *Story, tagIDs []string) error
+	IncrementCommentCount(ctx context.Context, storyID string) error
+	UpdateScore(ctx context.Context, storyID string, delta int) error
 
 	// Lists
 	List(ctx context.Context, in ListIn) ([]*Story, error)

@@ -3,7 +3,6 @@ package comments
 import (
 	"context"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/news/feature/users"
@@ -44,30 +43,6 @@ type Comment struct {
 	Children []*Comment  `json:"children,omitempty"`
 }
 
-// CreateIn contains input for creating a comment.
-type CreateIn struct {
-	StoryID  string `json:"story_id"`
-	ParentID string `json:"parent_id,omitempty"`
-	Text     string `json:"text"`
-}
-
-// Validate validates the create input.
-func (in *CreateIn) Validate() error {
-	in.Text = strings.TrimSpace(in.Text)
-
-	if len(in.Text) < TextMinLen {
-		return ErrInvalidText
-	}
-	if len(in.Text) > TextMaxLen {
-		return errors.New("comment text too long")
-	}
-	if in.StoryID == "" {
-		return errors.New("story_id is required")
-	}
-
-	return nil
-}
-
 // ListIn contains options for listing comments.
 type ListIn struct {
 	StoryID  string
@@ -89,6 +64,12 @@ type API interface {
 // Store defines the data storage interface for comments.
 type Store interface {
 	GetByID(ctx context.Context, id string) (*Comment, error)
+
+	// Create
+	Create(ctx context.Context, comment *Comment) error
+	IncrementChildCount(ctx context.Context, commentID string) error
+	GetDepth(ctx context.Context, commentID string) (int, string, error)
+	UpdateScore(ctx context.Context, commentID string, delta int) error
 
 	// Lists
 	ListByStory(ctx context.Context, storyID string) ([]*Comment, error)

@@ -45,6 +45,7 @@ func LoadTemplates() (*template.Template, error) {
 		"add":     func(a, b int) int { return a + b },
 		"mul":     func(a, b int) int { return a * b },
 		"safe":    func(s string) template.HTML { return template.HTML(s) },
+		"dict":    dict,
 	}
 
 	tmpl := template.New("").Funcs(funcMap)
@@ -122,4 +123,20 @@ func timeAgo(t time.Time) string {
 
 func itoa(i int) string {
 	return strings.TrimSpace(strings.Replace("   ", " ", string(rune('0'+i%10)), 1))
+}
+
+// dict creates a map from key-value pairs for use in templates.
+func dict(values ...any) map[string]any {
+	if len(values)%2 != 0 {
+		return nil
+	}
+	m := make(map[string]any, len(values)/2)
+	for i := 0; i < len(values); i += 2 {
+		key, ok := values[i].(string)
+		if !ok {
+			continue
+		}
+		m[key] = values[i+1]
+	}
+	return m
 }

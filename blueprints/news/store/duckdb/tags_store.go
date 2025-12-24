@@ -157,3 +157,12 @@ func (s *TagsStore) scanTagFromRows(rows *sql.Rows) (*tags.Tag, error) {
 
 	return tag, nil
 }
+
+// Create creates a new tag.
+func (s *TagsStore) Create(ctx context.Context, tag *tags.Tag) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO tags (id, name, description, color, story_count)
+		VALUES ($1, $2, $3, $4, $5)
+	`, tag.ID, tag.Name, tag.Description, tag.Color, tag.StoryCount)
+	return err
+}
