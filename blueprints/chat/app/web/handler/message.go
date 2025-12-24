@@ -72,7 +72,7 @@ func (h *Message) Create(c *mizu.Ctx) error {
 	channelID := c.Param("id")
 
 	var in messages.CreateIn
-	if err := c.Bind(&in); err != nil {
+	if err := c.BindJSON(&in, 0); err != nil {
 		return BadRequest(c, "Invalid request body")
 	}
 
@@ -137,7 +137,7 @@ func (h *Message) Update(c *mizu.Ctx) error {
 	}
 
 	var in messages.UpdateIn
-	if err := c.Bind(&in); err != nil {
+	if err := c.BindJSON(&in, 0); err != nil {
 		return BadRequest(c, "Invalid request body")
 	}
 

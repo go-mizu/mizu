@@ -2,19 +2,30 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/go-mizu/blueprints/chat/cli"
 )
 
-// Version is set at build time.
-var Version = "dev"
+// Version information (set at build time via ldflags).
+var (
+	Version   = "dev"
+	Commit    = "unknown"
+	BuildTime = "unknown"
+)
 
 func main() {
 	cli.Version = Version
-	if err := cli.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	cli.Commit = Commit
+	cli.BuildTime = BuildTime
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	if err := cli.Execute(ctx); err != nil {
 		os.Exit(1)
 	}
 }

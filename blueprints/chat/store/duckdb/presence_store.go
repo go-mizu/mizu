@@ -47,9 +47,10 @@ func (s *PresenceStore) Get(ctx context.Context, userID string) (*presence.Prese
 		FROM presence WHERE user_id = ?
 	`
 	p := &presence.Presence{}
-	var activitiesJSON, clientStatusJSON []byte
+	var customStatus sql.NullString
+	var activitiesRaw, clientStatusRaw any
 	err := s.db.QueryRowContext(ctx, query, userID).Scan(
-		&p.UserID, &p.Status, &p.CustomStatus, &activitiesJSON, &clientStatusJSON, &p.LastSeenAt,
+		&p.UserID, &p.Status, &customStatus, &activitiesRaw, &clientStatusRaw, &p.LastSeenAt,
 	)
 	if err == sql.ErrNoRows {
 		return &presence.Presence{
@@ -62,8 +63,19 @@ func (s *PresenceStore) Get(ctx context.Context, userID string) (*presence.Prese
 		return nil, err
 	}
 
-	json.Unmarshal(activitiesJSON, &p.Activities)
-	json.Unmarshal(clientStatusJSON, &p.ClientStatus)
+	p.CustomStatus = customStatus.String
+
+	// DuckDB returns JSON columns as native Go types, re-marshal to unmarshal into target structs
+	if activitiesRaw != nil {
+		if b, err := json.Marshal(activitiesRaw); err == nil {
+			json.Unmarshal(b, &p.Activities)
+		}
+	}
+	if clientStatusRaw != nil {
+		if b, err := json.Marshal(clientStatusRaw); err == nil {
+			json.Unmarshal(b, &p.ClientStatus)
+		}
+	}
 
 	return p, nil
 }
@@ -97,14 +109,25 @@ func (s *PresenceStore) GetBulk(ctx context.Context, userIDs []string) ([]*prese
 	presenceMap := make(map[string]*presence.Presence)
 	for rows.Next() {
 		p := &presence.Presence{}
-		var activitiesJSON, clientStatusJSON []byte
+		var customStatus sql.NullString
+		var activitiesRaw, clientStatusRaw any
 		if err := rows.Scan(
-			&p.UserID, &p.Status, &p.CustomStatus, &activitiesJSON, &clientStatusJSON, &p.LastSeenAt,
+			&p.UserID, &p.Status, &customStatus, &activitiesRaw, &clientStatusRaw, &p.LastSeenAt,
 		); err != nil {
 			return nil, err
 		}
-		json.Unmarshal(activitiesJSON, &p.Activities)
-		json.Unmarshal(clientStatusJSON, &p.ClientStatus)
+		p.CustomStatus = customStatus.String
+		// DuckDB returns JSON columns as native Go types
+		if activitiesRaw != nil {
+			if b, err := json.Marshal(activitiesRaw); err == nil {
+				json.Unmarshal(b, &p.Activities)
+			}
+		}
+		if clientStatusRaw != nil {
+			if b, err := json.Marshal(clientStatusRaw); err == nil {
+				json.Unmarshal(b, &p.ClientStatus)
+			}
+		}
 		presenceMap[p.UserID] = p
 	}
 

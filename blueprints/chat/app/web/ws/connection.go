@@ -34,7 +34,7 @@ type Connection struct {
 	SessionID string
 	Conn      *websocket.Conn
 	Hub       *Hub
-	Send      chan []byte
+	sendCh    chan []byte
 	Servers   []string // Subscribed server IDs
 	Channels  []string // Subscribed channel IDs (for DMs)
 	Sequence  int64
@@ -53,7 +53,7 @@ func NewConnection(hub *Hub, conn *websocket.Conn, userID, sessionID string) *Co
 		SessionID: sessionID,
 		Conn:      conn,
 		Hub:       hub,
-		Send:      make(chan []byte, 256),
+		sendCh:    make(chan []byte, 256),
 		Servers:   make([]string, 0),
 		Channels:  make([]string, 0),
 		ctx:       ctx,
@@ -73,7 +73,7 @@ func (c *Connection) Start() {
 // Send sends a message to the connection.
 func (c *Connection) Send(msg []byte) {
 	select {
-	case c.Send <- msg:
+	case c.sendCh <- msg:
 	default:
 		// Channel full, connection is slow
 		log.Printf("WebSocket: Send channel full for user %s", c.UserID)
@@ -105,7 +105,7 @@ func (c *Connection) SendEvent(event string, data any) error {
 func (c *Connection) Close() {
 	c.once.Do(func() {
 		c.cancel()
-		close(c.Send)
+		close(c.sendCh)
 		c.Conn.Close()
 	})
 }
@@ -164,7 +164,7 @@ func (c *Connection) writePump() {
 		case <-c.ctx.Done():
 			return
 
-		case message, ok := <-c.Send:
+		case message, ok := <-c.sendCh:
 			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
 				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
@@ -178,10 +178,10 @@ func (c *Connection) writePump() {
 			w.Write(message)
 
 			// Add queued messages to the current websocket message
-			n := len(c.Send)
+			n := len(c.sendCh)
 			for i := 0; i < n; i++ {
 				w.Write([]byte{'\n'})
-				w.Write(<-c.Send)
+				w.Write(<-c.sendCh)
 			}
 
 			if err := w.Close(); err != nil {

@@ -40,16 +40,54 @@ func (s *ServersStore) GetByID(ctx context.Context, id string) (*servers.Server,
 		SELECT id, name, description, icon_url, banner_url, owner_id, is_public, is_verified, invite_code, default_channel, member_count, created_at, updated_at
 		FROM servers WHERE id = ?
 	`
-	srv := &servers.Server{}
-	err := s.db.QueryRowContext(ctx, query, id).Scan(
-		&srv.ID, &srv.Name, &srv.Description, &srv.IconURL, &srv.BannerURL,
-		&srv.OwnerID, &srv.IsPublic, &srv.IsVerified, &srv.InviteCode, &srv.DefaultChannel,
-		&srv.MemberCount, &srv.CreatedAt, &srv.UpdatedAt,
-	)
+	srv, err := scanServer(s.db.QueryRowContext(ctx, query, id))
 	if err == sql.ErrNoRows {
 		return nil, servers.ErrNotFound
 	}
 	return srv, err
+}
+
+// scanServer scans a server row, handling nullable columns.
+func scanServer(row interface{ Scan(...any) error }) (*servers.Server, error) {
+	srv := &servers.Server{}
+	var description, iconURL, bannerURL, inviteCode, defaultChannel sql.NullString
+	err := row.Scan(
+		&srv.ID, &srv.Name, &description, &iconURL, &bannerURL,
+		&srv.OwnerID, &srv.IsPublic, &srv.IsVerified, &inviteCode, &defaultChannel,
+		&srv.MemberCount, &srv.CreatedAt, &srv.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	srv.Description = description.String
+	srv.IconURL = iconURL.String
+	srv.BannerURL = bannerURL.String
+	srv.InviteCode = inviteCode.String
+	srv.DefaultChannel = defaultChannel.String
+	return srv, nil
+}
+
+// scanServers scans multiple server rows.
+func scanServers(rows *sql.Rows) ([]*servers.Server, error) {
+	var srvs []*servers.Server
+	for rows.Next() {
+		srv := &servers.Server{}
+		var description, iconURL, bannerURL, inviteCode, defaultChannel sql.NullString
+		if err := rows.Scan(
+			&srv.ID, &srv.Name, &description, &iconURL, &bannerURL,
+			&srv.OwnerID, &srv.IsPublic, &srv.IsVerified, &inviteCode, &defaultChannel,
+			&srv.MemberCount, &srv.CreatedAt, &srv.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		srv.Description = description.String
+		srv.IconURL = iconURL.String
+		srv.BannerURL = bannerURL.String
+		srv.InviteCode = inviteCode.String
+		srv.DefaultChannel = defaultChannel.String
+		srvs = append(srvs, srv)
+	}
+	return srvs, rows.Err()
 }
 
 // GetByInviteCode retrieves a server by invite code.
@@ -58,12 +96,7 @@ func (s *ServersStore) GetByInviteCode(ctx context.Context, code string) (*serve
 		SELECT id, name, description, icon_url, banner_url, owner_id, is_public, is_verified, invite_code, default_channel, member_count, created_at, updated_at
 		FROM servers WHERE invite_code = ?
 	`
-	srv := &servers.Server{}
-	err := s.db.QueryRowContext(ctx, query, code).Scan(
-		&srv.ID, &srv.Name, &srv.Description, &srv.IconURL, &srv.BannerURL,
-		&srv.OwnerID, &srv.IsPublic, &srv.IsVerified, &srv.InviteCode, &srv.DefaultChannel,
-		&srv.MemberCount, &srv.CreatedAt, &srv.UpdatedAt,
-	)
+	srv, err := scanServer(s.db.QueryRowContext(ctx, query, code))
 	if err == sql.ErrNoRows {
 		return nil, servers.ErrNotFound
 	}
@@ -135,19 +168,7 @@ func (s *ServersStore) ListByUser(ctx context.Context, userID string, limit, off
 	}
 	defer rows.Close()
 
-	var srvs []*servers.Server
-	for rows.Next() {
-		srv := &servers.Server{}
-		if err := rows.Scan(
-			&srv.ID, &srv.Name, &srv.Description, &srv.IconURL, &srv.BannerURL,
-			&srv.OwnerID, &srv.IsPublic, &srv.IsVerified, &srv.InviteCode, &srv.DefaultChannel,
-			&srv.MemberCount, &srv.CreatedAt, &srv.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		srvs = append(srvs, srv)
-	}
-	return srvs, rows.Err()
+	return scanServers(rows)
 }
 
 // ListPublic lists public servers.
@@ -165,19 +186,7 @@ func (s *ServersStore) ListPublic(ctx context.Context, limit, offset int) ([]*se
 	}
 	defer rows.Close()
 
-	var srvs []*servers.Server
-	for rows.Next() {
-		srv := &servers.Server{}
-		if err := rows.Scan(
-			&srv.ID, &srv.Name, &srv.Description, &srv.IconURL, &srv.BannerURL,
-			&srv.OwnerID, &srv.IsPublic, &srv.IsVerified, &srv.InviteCode, &srv.DefaultChannel,
-			&srv.MemberCount, &srv.CreatedAt, &srv.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		srvs = append(srvs, srv)
-	}
-	return srvs, rows.Err()
+	return scanServers(rows)
 }
 
 // UpdateMemberCount updates the member count.
@@ -214,17 +223,5 @@ func (s *ServersStore) Search(ctx context.Context, query string, limit int) ([]*
 	}
 	defer rows.Close()
 
-	var srvs []*servers.Server
-	for rows.Next() {
-		srv := &servers.Server{}
-		if err := rows.Scan(
-			&srv.ID, &srv.Name, &srv.Description, &srv.IconURL, &srv.BannerURL,
-			&srv.OwnerID, &srv.IsPublic, &srv.IsVerified, &srv.InviteCode, &srv.DefaultChannel,
-			&srv.MemberCount, &srv.CreatedAt, &srv.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		srvs = append(srvs, srv)
-	}
-	return srvs, rows.Err()
+	return scanServers(rows)
 }

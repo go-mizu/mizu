@@ -2,26 +2,33 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/go-mizu/blueprints/chat/app/web"
 )
 
-var serveCmd = &cobra.Command{
-	Use:   "serve",
-	Short: "Start the web server",
-	Long:  `Start the Chat web server.`,
-	RunE:  runServe,
+// NewServe creates the serve command.
+func NewServe() *cobra.Command {
+	return &cobra.Command{
+		Use:   "serve",
+		Short: "Start the web server",
+		Long: `Starts the HTTP server for the chat application.
+
+The server provides the REST API, WebSocket connections, and HTML pages.`,
+		RunE: runServe,
+	}
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
 	ui := NewUI()
-	ui.Header("Chat", Version)
+
+	ui.Header(iconServer, "Starting Chat Server")
+	ui.Blank()
 
 	cfg := web.Config{
 		Addr:    addr,
@@ -29,23 +36,31 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Dev:     dev,
 	}
 
-	ui.Info("Starting server...")
-	ui.Item("Address", cfg.Addr)
-	ui.Item("Data", cfg.DataDir)
-	ui.Item("Mode", func() string {
-		if cfg.Dev {
-			return "development"
-		}
-		return "production"
-	}())
+	// Create server
+	ui.StartSpinner("Initializing server...")
+	start := time.Now()
 
 	server, err := web.New(cfg)
 	if err != nil {
-		return fmt.Errorf("create server: %w", err)
+		ui.StopSpinnerError("Failed to create server")
+		return err
 	}
 	defer server.Close()
 
-	// Handle shutdown
+	ui.StopSpinner("Server initialized", time.Since(start))
+
+	// Print configuration
+	ui.Summary([][2]string{
+		{"Address", addr},
+		{"Data Dir", dataDir},
+		{"Mode", modeString(dev)},
+	})
+
+	ui.Blank()
+	ui.Hint("Press Ctrl+C to stop the server")
+	ui.Blank()
+
+	// Setup graceful shutdown
 	ctx, cancel := context.WithCancel(cmd.Context())
 	defer cancel()
 
@@ -54,13 +69,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	go func() {
 		<-sigCh
-		ui.Info("Shutting down...")
+		ui.Blank()
+		ui.Warn("Shutting down...")
 		cancel()
 		server.Close()
 	}()
 
-	ui.Success("Server started")
-	ui.Item("URL", fmt.Sprintf("http://localhost%s", cfg.Addr))
+	// Start server
+	ui.Step("Listening on " + addr)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -73,4 +89,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 	case <-ctx.Done():
 		return nil
 	}
+}
+
+func modeString(dev bool) string {
+	if dev {
+		return "development"
+	}
+	return "production"
 }
