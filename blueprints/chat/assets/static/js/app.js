@@ -96,7 +96,13 @@ function setTheme(theme) {
 }
 
 function getTheme() {
-    return localStorage.getItem('theme') || 'dark';
+    return localStorage.getItem('theme') || 'light';
+}
+
+function toggleTheme() {
+    const current = getTheme();
+    const next = current === 'dark' ? 'light' : 'dark';
+    setTheme(next);
 }
 
 // Apply saved theme on load

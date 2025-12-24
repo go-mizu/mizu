@@ -6,6 +6,7 @@ import (
 	"github.com/go-mizu/mizu"
 
 	"github.com/go-mizu/blueprints/chat/app/web/ws"
+	"github.com/go-mizu/blueprints/chat/feature/accounts"
 	"github.com/go-mizu/blueprints/chat/feature/channels"
 	"github.com/go-mizu/blueprints/chat/feature/messages"
 	"github.com/go-mizu/blueprints/chat/feature/presence"
@@ -15,6 +16,7 @@ import (
 type Message struct {
 	messages  messages.API
 	channels  channels.API
+	accounts  accounts.API
 	presence  presence.API
 	hub       *ws.Hub
 	getUserID func(*mizu.Ctx) string
@@ -24,6 +26,7 @@ type Message struct {
 func NewMessage(
 	messages messages.API,
 	channels channels.API,
+	accounts accounts.API,
 	presence presence.API,
 	hub *ws.Hub,
 	getUserID func(*mizu.Ctx) string,
@@ -31,6 +34,7 @@ func NewMessage(
 	return &Message{
 		messages:  messages,
 		channels:  channels,
+		accounts:  accounts,
 		presence:  presence,
 		hub:       hub,
 		getUserID: getUserID,
@@ -87,6 +91,11 @@ func (h *Message) Create(c *mizu.Ctx) error {
 	msg, err := h.messages.Create(ctx, userID, &in)
 	if err != nil {
 		return InternalError(c, "Failed to create message")
+	}
+
+	// Populate author info for WebSocket broadcast
+	if author, err := h.accounts.GetByID(ctx, userID); err == nil {
+		msg.Author = author
 	}
 
 	// Update channel last message
