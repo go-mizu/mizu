@@ -1,0 +1,77 @@
+{{define "title"}}Post - Social{{end}}
+
+{{template "base" .}}
+
+{{define "content"}}
+<div class="page post-page">
+    {{with .Post}}
+    <article class="post post-detail">
+        <div class="post-avatar">
+            {{with .Account}}
+            <a href="/@{{.Username}}">
+                <img src="{{if .AvatarURL}}{{.AvatarURL}}{{else}}/static/images/default-avatar.png{{end}}" alt="">
+            </a>
+            {{end}}
+        </div>
+        <div class="post-content">
+            <div class="post-header">
+                {{with .Account}}
+                <a href="/@{{.Username}}" class="display-name">{{.DisplayName}}</a>
+                <span class="username">@{{.Username}}</span>
+                {{end}}
+            </div>
+            <div class="post-body">{{.Content}}</div>
+            <div class="post-meta">
+                <span class="timestamp">{{formatTime .CreatedAt}}</span>
+                {{if .EditedAt}}<span class="edited">Edited</span>{{end}}
+            </div>
+            <div class="post-stats">
+                <span><strong>{{.LikesCount}}</strong> Likes</span>
+                <span><strong>{{.RepostsCount}}</strong> Reposts</span>
+                <span><strong>{{.RepliesCount}}</strong> Replies</span>
+            </div>
+            <div class="post-actions">
+                <button class="action reply">Reply</button>
+                <button class="action repost">Repost</button>
+                <button class="action like">Like</button>
+                <button class="action bookmark">Bookmark</button>
+            </div>
+        </div>
+    </article>
+    {{end}}
+
+    {{with .Context}}
+    {{if .Ancestors}}
+    <section class="thread-ancestors">
+        <h3>Thread</h3>
+        {{range .Ancestors}}
+        <article class="post">
+            <div class="post-content">
+                {{with .Account}}
+                <a href="/@{{.Username}}">@{{.Username}}</a>
+                {{end}}
+                <p>{{.Content}}</p>
+            </div>
+        </article>
+        {{end}}
+    </section>
+    {{end}}
+
+    {{if .Descendants}}
+    <section class="thread-replies">
+        <h3>Replies</h3>
+        {{range .Descendants}}
+        <article class="post">
+            <div class="post-content">
+                {{with .Account}}
+                <a href="/@{{.Username}}">@{{.Username}}</a>
+                {{end}}
+                <p>{{.Content}}</p>
+            </div>
+        </article>
+        {{end}}
+    </section>
+    {{end}}
+    {{end}}
+</div>
+{{end}}

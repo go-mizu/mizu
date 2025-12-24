@@ -1,0 +1,56 @@
+{{define "title"}}Lists - Social{{end}}
+
+{{template "base" .}}
+
+{{define "content"}}
+<div class="page lists-page">
+    <header class="page-header">
+        <h1>Lists</h1>
+        <button id="create-list">New List</button>
+    </header>
+
+    <div class="lists" id="lists">
+        <div class="loading">Loading...</div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener('DOMContentLoaded', loadLists);
+
+async function loadLists() {
+    try {
+        const res = await fetch('/api/v1/lists');
+        if (res.status === 401) {
+            document.getElementById('lists').innerHTML = '<div class="empty">Please login to view lists</div>';
+            return;
+        }
+        const lists = await res.json();
+        renderLists(lists);
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function renderLists(lists) {
+    const container = document.getElementById('lists');
+    if (!lists || lists.length === 0) {
+        container.innerHTML = '<div class="empty">No lists yet</div>';
+        return;
+    }
+    container.innerHTML = lists.map(l => `
+        <a href="/lists/${l.id}" class="list-item">
+            <strong>${escapeHtml(l.title)}</strong>
+            <span>${l.member_count || 0} members</span>
+        </a>
+    `).join('');
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{{end}}

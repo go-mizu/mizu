@@ -1,0 +1,54 @@
+{{define "title"}}{{if eq .ListType "followers"}}Followers{{else}}Following{{end}} - Social{{end}}
+
+{{template "base" .}}
+
+{{define "content"}}
+<div class="page follow-list-page">
+    <header class="page-header">
+        <a href="/@{{.Account.Username}}" class="back-link">@{{.Account.Username}}</a>
+        <h1>{{if eq .ListType "followers"}}Followers{{else}}Following{{end}}</h1>
+    </header>
+
+    <div class="accounts-list" id="accounts" data-account-id="{{.Account.ID}}" data-type="{{.ListType}}">
+        <div class="loading">Loading...</div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const container = document.getElementById('accounts');
+    const accountId = container.dataset.accountId;
+    const type = container.dataset.type;
+    loadAccounts(accountId, type);
+});
+
+async function loadAccounts(accountId, type) {
+    try {
+        const res = await fetch(`/api/v1/accounts/${accountId}/${type}`);
+        const accounts = await res.json();
+        renderAccounts(accounts);
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function renderAccounts(accounts) {
+    const container = document.getElementById('accounts');
+    if (!accounts || accounts.length === 0) {
+        container.innerHTML = '<div class="empty">No accounts</div>';
+        return;
+    }
+    container.innerHTML = accounts.map(a => `
+        <a href="/@${a.username}" class="account-item">
+            <img src="${a.avatar_url || '/static/images/default-avatar.png'}" alt="">
+            <div>
+                <strong>${a.display_name || a.username}</strong>
+                <span>@${a.username}</span>
+            </div>
+        </a>
+    `).join('');
+}
+</script>
+{{end}}

@@ -1,0 +1,52 @@
+{{define "base"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{block "title" .}}Social{{end}}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    {{block "head" .}}{{end}}
+</head>
+<body>
+    <div class="app">
+        <nav class="sidebar">
+            <div class="logo">
+                <a href="/">Social</a>
+            </div>
+            <ul class="nav-links">
+                <li><a href="/">Home</a></li>
+                <li><a href="/explore">Explore</a></li>
+                <li><a href="/notifications">Notifications</a></li>
+                <li><a href="/search">Search</a></li>
+                <li><a href="/bookmarks">Bookmarks</a></li>
+                <li><a href="/lists">Lists</a></li>
+                <li><a href="/settings">Settings</a></li>
+            </ul>
+            <div class="compose-btn">
+                <button id="compose">Post</button>
+            </div>
+        </nav>
+
+        <main class="content">
+            {{block "content" .}}{{end}}
+        </main>
+
+        <aside class="sidebar-right">
+            <div class="search-box">
+                <form action="/search" method="get">
+                    <input type="text" name="q" placeholder="Search...">
+                </form>
+            </div>
+            <div class="trending">
+                <h3>Trending</h3>
+                <div id="trending-tags"></div>
+            </div>
+        </aside>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+    {{block "scripts" .}}{{end}}
+</body>
+</html>
+{{end}}

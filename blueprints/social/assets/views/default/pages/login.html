@@ -1,0 +1,53 @@
+{{define "title"}}Login - Social{{end}}
+
+{{template "base" .}}
+
+{{define "content"}}
+<div class="page auth-page">
+    <div class="auth-box">
+        <h1>Login</h1>
+        <form id="login-form">
+            <div class="form-group">
+                <label for="username">Username or Email</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <div class="form-error" id="error"></div>
+            <button type="submit">Login</button>
+        </form>
+        <p class="auth-link">Don't have an account? <a href="/register">Register</a></p>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.getElementById('login-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const error = document.getElementById('error');
+    error.textContent = '';
+
+    try {
+        const res = await fetch('/api/v1/auth/login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                username: this.username.value,
+                password: this.password.value
+            })
+        });
+        if (res.ok) {
+            window.location.href = '/';
+        } else {
+            const data = await res.json();
+            error.textContent = data.error || 'Login failed';
+        }
+    } catch (err) {
+        error.textContent = 'An error occurred';
+    }
+});
+</script>
+{{end}}
