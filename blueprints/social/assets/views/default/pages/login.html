@@ -1,74 +1,91 @@
-{{define "base"}}
+{{define "title"}}Login - Social{{end}}
+
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#0a0a0a">
-    <title>{{block "title" .}}Login - Social{{end}}</title>
+    <meta name="theme-color" content="#ffffff">
+    <title>Login - Social</title>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
     <div class="auth-page">
         <div class="auth-box">
-            <div class="logo">
-                <span>Social</span>
+            <div class="auth-logo">
+                <div class="logo-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                </div>
+                <h1>Social</h1>
             </div>
-            <h1>Welcome back</h1>
+
+            <h2>Login</h2>
+
+            <div class="form-error" id="error" style="display: none;"></div>
+
             <form id="login-form">
                 <div class="form-group">
                     <label for="username">Username or Email</label>
-                    <input type="text" id="username" name="username" placeholder="Enter your username or email" required autocomplete="username">
+                    <input type="text" id="username" name="username" placeholder="Enter your username" required autofocus autocomplete="username">
                 </div>
+
                 <div class="form-group">
                     <label for="password">Password</label>
                     <input type="password" id="password" name="password" placeholder="Enter your password" required autocomplete="current-password">
                 </div>
-                <div class="form-error" id="error" style="display: none;"></div>
-                <button type="submit">Sign In</button>
+
+                <button type="submit" class="btn-submit">Log in</button>
             </form>
-            <p class="auth-link">Don't have an account? <a href="/register">Create one</a></p>
+
+            <div class="auth-divider">or</div>
+
+            <p class="auth-link">
+                Don't have an account? <a href="/register">Sign up</a>
+            </p>
         </div>
     </div>
 
     <script>
-    document.getElementById('login-form').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const error = document.getElementById('error');
-        const submitBtn = this.querySelector('button[type="submit"]');
-
-        error.style.display = 'none';
-        error.textContent = '';
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Signing in...';
-
-        try {
-            const res = await fetch('/api/v1/auth/login', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    username: this.username.value,
-                    password: this.password.value
-                })
-            });
-            if (res.ok) {
-                window.location.href = '/';
-            } else {
-                const data = await res.json();
-                error.textContent = data.error || 'Invalid credentials. Please try again.';
-                error.style.display = 'block';
-            }
-        } catch (err) {
-            error.textContent = 'Connection error. Please try again.';
-            error.style.display = 'block';
-        } finally {
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Sign In';
+        // Check for saved theme
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme) {
+            document.documentElement.setAttribute('data-theme', savedTheme);
         }
-    });
+
+        document.getElementById('login-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const error = document.getElementById('error');
+            const submitBtn = this.querySelector('button[type="submit"]');
+
+            error.style.display = 'none';
+            error.textContent = '';
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Signing in...';
+
+            try {
+                const res = await fetch('/api/v1/auth/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        username: this.username.value,
+                        password: this.password.value
+                    })
+                });
+                if (res.ok) {
+                    window.location.href = '/';
+                } else {
+                    const data = await res.json();
+                    error.textContent = data.error || 'Invalid credentials. Please try again.';
+                    error.style.display = 'block';
+                }
+            } catch (err) {
+                error.textContent = 'Connection error. Please try again.';
+                error.style.display = 'block';
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Log in';
+            }
+        });
     </script>
 </body>
 </html>
-{{end}}
-
-{{template "base" .}}

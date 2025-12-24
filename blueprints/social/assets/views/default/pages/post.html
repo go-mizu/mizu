@@ -1,77 +1,122 @@
-{{define "title"}}Post - Social{{end}}
+{{define "title"}}{{if .Post}}Post by @{{.Post.Account.Username}}{{else}}Post{{end}} - Social{{end}}
 
 {{template "base" .}}
 
 {{define "content"}}
-<div class="page post-page">
-    {{with .Post}}
-    <article class="post post-detail">
-        <div class="post-avatar">
+<header class="page-header">
+    <a href="javascript:history.back()" class="back-btn" title="Back">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+    </a>
+    <h1>Post</h1>
+</header>
+
+{{with .Post}}
+<article class="content-card">
+    <div class="card-main">
+        <div class="card-header">
             {{with .Account}}
-            <a href="/@{{.Username}}">
-                <img src="{{if .AvatarURL}}{{.AvatarURL}}{{else}}/static/images/default-avatar.png{{end}}" alt="">
+            <a href="/@{{.Username}}" class="card-avatar">
+                <img src="{{if .AvatarURL}}{{.AvatarURL}}{{else}}/static/images/default-avatar.png{{end}}" alt="{{.DisplayName}}" loading="lazy">
             </a>
+            <div class="card-user-info">
+                <div class="card-username">
+                    <a href="/@{{.Username}}" class="display-name">{{.DisplayName}}</a>
+                    {{if .Verified}}
+                    <svg class="verified-badge" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    {{end}}
+                </div>
+                <span class="username">@{{.Username}}</span>
+            </div>
             {{end}}
         </div>
-        <div class="post-content">
-            <div class="post-header">
-                {{with .Account}}
-                <a href="/@{{.Username}}" class="display-name">{{.DisplayName}}</a>
-                <span class="username">@{{.Username}}</span>
-                {{end}}
-            </div>
-            <div class="post-body">{{.Content}}</div>
-            <div class="post-meta">
-                <span class="timestamp">{{formatTime .CreatedAt}}</span>
-                {{if .EditedAt}}<span class="edited">Edited</span>{{end}}
-            </div>
-            <div class="post-stats">
-                <span><strong>{{.LikesCount}}</strong> Likes</span>
-                <span><strong>{{.RepostsCount}}</strong> Reposts</span>
-                <span><strong>{{.RepliesCount}}</strong> Replies</span>
-            </div>
-            <div class="post-actions">
-                <button class="action reply">Reply</button>
-                <button class="action repost">Repost</button>
-                <button class="action like">Like</button>
-                <button class="action bookmark">Bookmark</button>
-            </div>
+        <div class="card-body" style="font-size: var(--text-lg);">{{.Content}}</div>
+        <div style="padding: var(--space-3) 0; color: var(--text-tertiary); font-size: var(--text-sm); border-bottom: 1px solid var(--border-color);">
+            {{formatTime .CreatedAt}}
+            {{if .EditedAt}}<span style="margin-left: var(--space-2);">· Edited</span>{{end}}
         </div>
-    </article>
-    {{end}}
-
-    {{with .Context}}
-    {{if .Ancestors}}
-    <section class="thread-ancestors">
-        <h3>Thread</h3>
-        {{range .Ancestors}}
-        <article class="post">
-            <div class="post-content">
-                {{with .Account}}
-                <a href="/@{{.Username}}">@{{.Username}}</a>
-                {{end}}
-                <p>{{.Content}}</p>
-            </div>
-        </article>
-        {{end}}
-    </section>
-    {{end}}
-
-    {{if .Descendants}}
-    <section class="thread-replies">
-        <h3>Replies</h3>
-        {{range .Descendants}}
-        <article class="post">
-            <div class="post-content">
-                {{with .Account}}
-                <a href="/@{{.Username}}">@{{.Username}}</a>
-                {{end}}
-                <p>{{.Content}}</p>
-            </div>
-        </article>
-        {{end}}
-    </section>
-    {{end}}
-    {{end}}
+        <div style="display: flex; gap: var(--space-6); padding: var(--space-3) 0; border-bottom: 1px solid var(--border-color);">
+            <span><strong>{{.LikesCount}}</strong> <span style="color: var(--text-secondary);">Likes</span></span>
+            <span><strong>{{.RepostsCount}}</strong> <span style="color: var(--text-secondary);">Reposts</span></span>
+            <span><strong>{{.RepliesCount}}</strong> <span style="color: var(--text-secondary);">Replies</span></span>
+        </div>
+        <div class="card-actions" style="padding: var(--space-3) 0; justify-content: space-around; border-bottom: 1px solid var(--border-color);">
+            <button class="action-btn comment" data-id="{{.ID}}" title="Reply">
+                <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </button>
+            <button class="action-btn repost" data-id="{{.ID}}" title="Repost">
+                <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+            </button>
+            <button class="action-btn like" data-id="{{.ID}}" title="Like">
+                <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>
+            </button>
+            <button class="action-btn bookmark" data-id="{{.ID}}" title="Bookmark">
+                <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
+            </button>
+        </div>
+    </div>
+</article>
+{{else}}
+<div class="error-page">
+    <div class="error-code">404</div>
+    <h1>Post not found</h1>
+    <p>This post may have been deleted or doesn't exist.</p>
+    <a href="/">Go home</a>
 </div>
+{{end}}
+
+<div id="replies"></div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const postId = '{{if .Post}}{{.Post.ID}}{{end}}';
+    if (postId) loadReplies(postId);
+});
+
+async function loadReplies(postId) {
+    const container = document.getElementById('replies');
+    try {
+        const res = await fetch(`/api/v1/posts/${postId}/context`);
+        const context = await res.json();
+        if (context.descendants && context.descendants.length > 0) {
+            container.innerHTML = context.descendants.map(renderPost).join('');
+        }
+    } catch (err) {
+        console.error('Failed to load replies:', err);
+    }
+}
+
+function renderPost(post) {
+    const account = post.account || {};
+    const avatarUrl = account.avatar_url || '/static/images/default-avatar.png';
+    const displayName = escapeHtml(account.display_name || account.username || 'Anonymous');
+    const username = account.username || 'anonymous';
+
+    return `
+        <article class="content-card" onclick="window.location='/u/${username}/post/${post.id}'">
+            <div class="card-main">
+                <div class="card-header">
+                    <a href="/@${username}" class="card-avatar" onclick="event.stopPropagation()">
+                        <img src="${avatarUrl}" alt="${displayName}" loading="lazy">
+                    </a>
+                    <div class="card-user-info">
+                        <div class="card-username">
+                            <a href="/@${username}" class="display-name" onclick="event.stopPropagation()">${displayName}</a>
+                        </div>
+                        <span class="username">@${username} · ${formatRelative(post.created_at)}</span>
+                    </div>
+                </div>
+                <div class="card-body">${formatContent(post.content)}</div>
+                <div class="card-actions" onclick="event.stopPropagation()">
+                    <button class="action-btn like ${post.liked ? 'active' : ''}" data-id="${post.id}">
+                        <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${post.liked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>
+                        <span class="count">${post.likes_count || ''}</span>
+                    </button>
+                </div>
+            </div>
+        </article>
+    `;
+}
+</script>
 {{end}}

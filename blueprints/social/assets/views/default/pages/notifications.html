@@ -3,17 +3,15 @@
 {{template "base" .}}
 
 {{define "content"}}
-<div class="page notifications-page">
-    <header class="page-header">
-        <h1>Notifications</h1>
-        <button id="clear-all" title="Clear all notifications">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-        </button>
-    </header>
+<header class="page-header">
+    <h1>Notifications</h1>
+    <button id="clear-all" class="back-btn" title="Clear all notifications">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+    </button>
+</header>
 
-    <div class="notifications-list" id="notifications">
-        <div class="loading">Loading notifications...</div>
-    </div>
+<div id="notifications">
+    <div class="loading"></div>
 </div>
 {{end}}
 
@@ -23,13 +21,12 @@ document.addEventListener('DOMContentLoaded', loadNotifications);
 
 document.getElementById('clear-all').addEventListener('click', async function() {
     if (!confirm('Clear all notifications?')) return;
-
     try {
         await fetch('/api/v1/notifications/clear', {method: 'POST'});
         document.getElementById('notifications').innerHTML = `
             <div class="empty">
                 <div class="icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
                 </div>
                 <h3>All caught up!</h3>
                 <p>You have no notifications.</p>
@@ -41,14 +38,12 @@ document.getElementById('clear-all').addEventListener('click', async function() 
 });
 
 async function loadNotifications() {
+    const container = document.getElementById('notifications');
     try {
         const res = await fetch('/api/v1/notifications');
         if (res.status === 401) {
-            document.getElementById('notifications').innerHTML = `
+            container.innerHTML = `
                 <div class="empty">
-                    <div class="icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-                    </div>
                     <h3>Sign in required</h3>
                     <p>Please <a href="/login">log in</a> to view notifications.</p>
                 </div>
@@ -58,8 +53,7 @@ async function loadNotifications() {
         const notifications = await res.json();
         renderNotifications(notifications);
     } catch (err) {
-        console.error(err);
-        document.getElementById('notifications').innerHTML = '<div class="empty"><h3>Unable to load notifications</h3></div>';
+        container.innerHTML = '<div class="empty"><h3>Unable to load notifications</h3></div>';
     }
 }
 
@@ -69,7 +63,7 @@ function renderNotifications(notifications) {
         container.innerHTML = `
             <div class="empty">
                 <div class="icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
                 </div>
                 <h3>No notifications yet</h3>
                 <p>When someone interacts with you, it will show up here.</p>
@@ -83,35 +77,36 @@ function renderNotifications(notifications) {
         const avatarUrl = actor.avatar_url || '/static/images/default-avatar.png';
         const displayName = escapeHtml(actor.display_name || actor.username || 'Someone');
 
-        const icons = {
-            follow: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>',
-            like: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>',
-            repost: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>',
-            mention: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg>',
-            reply: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
+        const iconClasses = {
+            follow: 'follow',
+            like: 'like',
+            repost: 'repost',
+            mention: 'comment',
+            reply: 'comment'
         };
 
         const messages = {
-            follow: 'followed you',
+            follow: 'started following you',
             like: 'liked your post',
             repost: 'reposted your post',
             mention: 'mentioned you',
             reply: 'replied to your post'
         };
 
-        const iconClass = n.type || 'follow';
-        const icon = icons[n.type] || icons.follow;
-        const message = messages[n.type] || n.type;
-
         return `
-            <div class="notification ${n.read ? '' : 'unread'}">
-                <div class="notif-icon ${iconClass}">${icon}</div>
-                <img src="${avatarUrl}" alt="${displayName}" loading="lazy">
+            <div class="notification-item ${n.read ? '' : 'unread'}">
+                <div class="notif-icon ${iconClasses[n.type] || 'follow'}">
+                    ${getNotifIcon(n.type)}
+                </div>
+                <div class="notif-avatar">
+                    <img src="${avatarUrl}" alt="${displayName}" loading="lazy">
+                </div>
                 <div class="notif-content">
                     <p class="notif-text">
                         <strong><a href="/@${actor.username}">${displayName}</a></strong>
-                        ${message}
+                        ${messages[n.type] || n.type}
                     </p>
+                    <span class="notif-time">${formatRelative(n.created_at)}</span>
                     ${n.post ? `<div class="notif-preview">${escapeHtml(n.post.content?.substring(0, 100) || '')}</div>` : ''}
                 </div>
             </div>
@@ -119,11 +114,15 @@ function renderNotifications(notifications) {
     }).join('');
 }
 
-function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+function getNotifIcon(type) {
+    const icons = {
+        follow: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>',
+        like: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>',
+        repost: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>',
+        mention: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg>',
+        reply: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
+    };
+    return icons[type] || icons.follow;
 }
 </script>
 {{end}}

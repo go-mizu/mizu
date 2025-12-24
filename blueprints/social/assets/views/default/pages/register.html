@@ -1,93 +1,108 @@
-{{define "base"}}
+{{define "title"}}Register - Social{{end}}
+
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#0a0a0a">
-    <title>{{block "title" .}}Register - Social{{end}}</title>
+    <meta name="theme-color" content="#ffffff">
+    <title>Register - Social</title>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
     <div class="auth-page">
         <div class="auth-box">
-            <div class="logo">
-                <span>Social</span>
+            <div class="auth-logo">
+                <div class="logo-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                </div>
+                <h1>Social</h1>
             </div>
-            <h1>Create your account</h1>
-            <form id="register-form">
+
+            <h2>Create Account</h2>
+
+            <div class="form-error" id="error" style="display: none;"></div>
+
+            <form id="register-form" class="register-form">
                 <div class="form-group">
                     <label for="username">Username</label>
-                    <input type="text" id="username" name="username" placeholder="Choose a username" required autocomplete="username" pattern="[a-zA-Z0-9_]+" minlength="3" maxlength="30">
-                    <small>Letters, numbers, and underscores only</small>
+                    <input type="text" id="username" name="username" placeholder="Choose a username" required autofocus pattern="[a-zA-Z0-9_]+" minlength="3" maxlength="30" autocomplete="username">
                 </div>
+
                 <div class="form-group">
                     <label for="email">Email</label>
                     <input type="email" id="email" name="email" placeholder="Enter your email" required autocomplete="email">
                 </div>
+
                 <div class="form-group">
                     <label for="password">Password</label>
-                    <input type="password" id="password" name="password" placeholder="Create a password" required autocomplete="new-password" minlength="8">
-                    <small>Must be at least 8 characters</small>
+                    <input type="password" id="password" name="password" placeholder="Create a password" required minlength="8" autocomplete="new-password">
                 </div>
+
                 <div class="form-group">
                     <label for="confirm_password">Confirm Password</label>
-                    <input type="password" id="confirm_password" name="confirm_password" placeholder="Confirm your password" required autocomplete="new-password">
+                    <input type="password" id="confirm_password" name="confirm_password" placeholder="Confirm password" required autocomplete="new-password">
                 </div>
-                <div class="form-error" id="error" style="display: none;"></div>
-                <button type="submit">Create Account</button>
+
+                <button type="submit" class="btn-submit">Sign up</button>
             </form>
-            <p class="auth-link">Already have an account? <a href="/login">Sign in</a></p>
+
+            <div class="auth-divider">or</div>
+
+            <p class="auth-link">
+                Already have an account? <a href="/login">Log in</a>
+            </p>
         </div>
     </div>
 
     <script>
-    document.getElementById('register-form').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const error = document.getElementById('error');
-        const submitBtn = this.querySelector('button[type="submit"]');
-
-        error.style.display = 'none';
-        error.textContent = '';
-
-        // Validate passwords match
-        if (this.password.value !== this.confirm_password.value) {
-            error.textContent = 'Passwords do not match.';
-            error.style.display = 'block';
-            return;
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme) {
+            document.documentElement.setAttribute('data-theme', savedTheme);
         }
 
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Creating account...';
+        document.getElementById('register-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const error = document.getElementById('error');
+            const submitBtn = this.querySelector('button[type="submit"]');
 
-        try {
-            const res = await fetch('/api/v1/auth/register', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    username: this.username.value,
-                    email: this.email.value,
-                    password: this.password.value
-                })
-            });
-            if (res.ok) {
-                window.location.href = '/';
-            } else {
-                const data = await res.json();
-                error.textContent = data.error || 'Registration failed. Please try again.';
+            error.style.display = 'none';
+            error.textContent = '';
+
+            if (this.password.value !== this.confirm_password.value) {
+                error.textContent = 'Passwords do not match.';
                 error.style.display = 'block';
+                return;
             }
-        } catch (err) {
-            error.textContent = 'Connection error. Please try again.';
-            error.style.display = 'block';
-        } finally {
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Create Account';
-        }
-    });
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Creating account...';
+
+            try {
+                const res = await fetch('/api/v1/auth/register', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        username: this.username.value,
+                        email: this.email.value,
+                        password: this.password.value
+                    })
+                });
+                if (res.ok) {
+                    window.location.href = '/';
+                } else {
+                    const data = await res.json();
+                    error.textContent = data.error || 'Registration failed. Please try again.';
+                    error.style.display = 'block';
+                }
+            } catch (err) {
+                error.textContent = 'Connection error. Please try again.';
+                error.style.display = 'block';
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Sign up';
+            }
+        });
     </script>
 </body>
 </html>
-{{end}}
-
-{{template "base" .}}
