@@ -27,7 +27,6 @@ func (h *Story) List(c *mizu.Ctx) error {
 	if sort == "" {
 		sort = "hot"
 	}
-	tag := c.Query("tag")
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	if limit == 0 {
 		limit = 30
@@ -42,7 +41,6 @@ func (h *Story) List(c *mizu.Ctx) error {
 
 	list, err := h.stories.List(c.Request().Context(), stories.ListIn{
 		Sort:   sort,
-		Tag:    tag,
 		Limit:  limit,
 		Offset: offset,
 	}, userID)

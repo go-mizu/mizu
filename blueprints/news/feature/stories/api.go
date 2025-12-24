@@ -42,7 +42,6 @@ type Story struct {
 
 	// Joined fields
 	Author   *users.User `json:"author,omitempty"`
-	Tags     []string    `json:"tags,omitempty"`
 	UserVote int         `json:"user_vote,omitempty"`
 }
 
@@ -74,7 +73,6 @@ func ExtractDomain(rawURL string) string {
 // ListIn contains options for listing stories.
 type ListIn struct {
 	Sort   string // "hot", "new", "top"
-	Tag    string // Filter by tag
 	Domain string // Filter by domain
 	Limit  int
 	Offset int
@@ -95,16 +93,11 @@ type Store interface {
 	GetByURL(ctx context.Context, url string) (*Story, error)
 
 	// Create
-	Create(ctx context.Context, story *Story, tagIDs []string) error
+	Create(ctx context.Context, story *Story) error
 	IncrementCommentCount(ctx context.Context, storyID string) error
 	UpdateScore(ctx context.Context, storyID string, delta int) error
 
 	// Lists
 	List(ctx context.Context, in ListIn) ([]*Story, error)
 	ListByAuthor(ctx context.Context, authorID string, limit, offset int) ([]*Story, error)
-	ListByTag(ctx context.Context, tagID string, limit, offset int) ([]*Story, error)
-
-	// Tags
-	GetTagsForStory(ctx context.Context, storyID string) ([]string, error)
-	GetTagsForStories(ctx context.Context, storyIDs []string) (map[string][]string, error)
 }

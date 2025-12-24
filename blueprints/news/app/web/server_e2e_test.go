@@ -88,7 +88,7 @@ func createTestStory(t *testing.T, store *duckdb.Store, user *users.User, title,
 		CreatedAt: time.Now(),
 	}
 
-	if err := store.Stories().Create(ctx, story, nil); err != nil {
+	if err := store.Stories().Create(ctx, story); err != nil {
 		t.Fatalf("create story: %v", err)
 	}
 	return story

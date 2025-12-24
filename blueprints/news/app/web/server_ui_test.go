@@ -14,7 +14,6 @@ import (
 	"github.com/go-mizu/mizu/blueprints/news/app/web"
 	"github.com/go-mizu/mizu/blueprints/news/feature/comments"
 	"github.com/go-mizu/mizu/blueprints/news/feature/stories"
-	"github.com/go-mizu/mizu/blueprints/news/feature/tags"
 	"github.com/go-mizu/mizu/blueprints/news/feature/users"
 	"github.com/go-mizu/mizu/blueprints/news/pkg/ulid"
 	"github.com/go-mizu/mizu/blueprints/news/store/duckdb"
@@ -59,7 +58,6 @@ type hnTestData struct {
 	users    []*users.User
 	stories  []*stories.Story
 	comments []*comments.Comment
-	tags     []*tags.Tag
 }
 
 // seedHNData seeds realistic Hacker News-like data.
@@ -85,21 +83,6 @@ func seedHNData(t *testing.T, store *duckdb.Store) *hnTestData {
 			t.Fatalf("create user %s: %v", username, err)
 		}
 		data.users = append(data.users, user)
-	}
-
-	// Create tags
-	tagNames := []string{"programming", "startup", "tech", "go", "rust"}
-	for _, name := range tagNames {
-		tag := &tags.Tag{
-			ID:          ulid.New(),
-			Name:        name,
-			Description: "Stories about " + name,
-			StoryCount:  0,
-		}
-		if err := store.Tags().Create(ctx, tag); err != nil {
-			t.Fatalf("create tag %s: %v", name, err)
-		}
-		data.tags = append(data.tags, tag)
 	}
 
 	// Create stories
@@ -136,15 +119,7 @@ func seedHNData(t *testing.T, store *duckdb.Store) *hnTestData {
 			CommentCount: int64(i * 3),
 			CreatedAt:    now.Add(-sd.age),
 		}
-		// Assign some tags
-		var tagIDs []string
-		if i%2 == 0 {
-			tagIDs = []string{data.tags[0].ID} // programming
-		}
-		if i%3 == 0 && len(data.tags) > 1 {
-			tagIDs = append(tagIDs, data.tags[1].ID) // startup
-		}
-		if err := store.Stories().Create(ctx, story, tagIDs); err != nil {
+		if err := store.Stories().Create(ctx, story); err != nil {
 			t.Fatalf("create story: %v", err)
 		}
 		story.Author = author
@@ -339,22 +314,6 @@ func TestUI_UserPage(t *testing.T) {
 	)
 }
 
-// TestUI_TagPage tests the tag page renders correctly.
-func TestUI_TagPage(t *testing.T) {
-	ts, _, data := setupUITestServer(t)
-
-	tag := data.tags[0]
-	resp, body := getPage(t, ts.URL+"/tag/"+tag.Name)
-
-	assertStatusOK(t, resp)
-	assertHTML(t, body)
-	assertContainsAll(t, body,
-		tag.Name,
-		"class=\"board-header\"",
-		"class=\"thread-list\"",
-	)
-}
-
 // TestUI_StaticCSS tests that the CSS file is served correctly.
 func TestUI_StaticCSS(t *testing.T) {
 	ts, _, _ := setupUITestServer(t)
@@ -404,7 +363,6 @@ func TestUI_404Pages(t *testing.T) {
 	}{
 		{"NonexistentStory", "/story/nonexistent"},
 		{"NonexistentUser", "/user/nonexistent"},
-		{"NonexistentTag", "/tag/nonexistent"},
 	}
 
 	for _, tc := range tests {
@@ -572,16 +530,6 @@ func TestUI_AllThemes(t *testing.T) {
 				assertHTML(t, body)
 				if !strings.Contains(body, data.users[0].Username) {
 					t.Errorf("user page should contain username")
-				}
-			})
-
-			// Test tag page
-			t.Run("TagPage", func(t *testing.T) {
-				resp, body := getPage(t, ts.URL+"/tag/"+data.tags[0].Name)
-				assertStatusOK(t, resp)
-				assertHTML(t, body)
-				if !strings.Contains(body, data.tags[0].Name) {
-					t.Errorf("tag page should contain tag name")
 				}
 			})
 

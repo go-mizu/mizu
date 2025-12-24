@@ -20,7 +20,6 @@ type Store struct {
 	stories      *StoriesStore
 	comments     *CommentsStore
 	votes        *VotesStore
-	tags         *TagsStore
 	seedMappings *SeedMappingsStore
 }
 
@@ -48,7 +47,6 @@ func Open(dataDir string) (*Store, error) {
 		stories:      NewStoriesStore(db),
 		comments:     NewCommentsStore(db),
 		votes:        NewVotesStore(db),
-		tags:         NewTagsStore(db),
 		seedMappings: NewSeedMappingsStore(db),
 	}, nil
 }
@@ -81,11 +79,6 @@ func (s *Store) Comments() *CommentsStore {
 // Votes returns the votes store.
 func (s *Store) Votes() *VotesStore {
 	return s.votes
-}
-
-// Tags returns the tags store.
-func (s *Store) Tags() *TagsStore {
-	return s.tags
 }
 
 // SeedMappings returns the seed mappings store.

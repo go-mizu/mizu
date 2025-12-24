@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/go-mizu/mizu/blueprints/news/feature/stories"
-	"github.com/go-mizu/mizu/blueprints/news/feature/tags"
 	"github.com/go-mizu/mizu/blueprints/news/feature/users"
 	"github.com/go-mizu/mizu/blueprints/news/pkg/markdown"
 	"github.com/go-mizu/mizu/blueprints/news/pkg/seed"
@@ -67,7 +66,7 @@ func NewSeedSample() *cobra.Command {
 	return &cobra.Command{
 		Use:   "sample",
 		Short: "Seed with sample data",
-		Long:  `Creates sample users, tags, stories, and comments for testing.`,
+		Long:  `Creates sample users, stories, and comments for testing.`,
 		RunE:  runSeedSample,
 	}
 }
@@ -128,9 +127,6 @@ func runSeedHN(cmd *cobra.Command, args []string) error {
 
 	ui.StopSpinner("Seeding complete", time.Since(start))
 
-	// Create default tags if they don't exist
-	createDefaultTags(ctx, store.Tags())
-
 	ui.Summary([][2]string{
 		{"Feed", seedFeed},
 		{"Stories Created", strconv.Itoa(result.StoriesCreated)},
@@ -166,11 +162,6 @@ func runSeedSample(cmd *cobra.Command, args []string) error {
 
 	ctx := cmd.Context()
 
-	// Create default tags
-	ui.StartSpinner("Creating tags...")
-	createDefaultTags(ctx, store.Tags())
-	ui.StopSpinner("Tags created", time.Since(start))
-
 	// Create sample users
 	ui.StartSpinner("Creating users...")
 	userIDs := createSampleUsers(ctx, store.Users())
@@ -185,35 +176,6 @@ func runSeedSample(cmd *cobra.Command, args []string) error {
 	ui.Blank()
 
 	return nil
-}
-
-func createDefaultTags(ctx context.Context, store *duckdb.TagsStore) {
-	defaultTags := []struct {
-		name        string
-		description string
-		color       string
-	}{
-		{"programming", "Software development and programming languages", "#3B82F6"},
-		{"tech", "Technology news and trends", "#8B5CF6"},
-		{"science", "Science and research", "#10B981"},
-		{"ask", "Ask the community", "#F59E0B"},
-		{"show", "Show your work", "#EF4444"},
-		{"meta", "About this site", "#6B7280"},
-	}
-
-	for _, t := range defaultTags {
-		if existing, _ := store.GetByName(ctx, t.name); existing != nil {
-			continue
-		}
-
-		tag := &tags.Tag{
-			ID:          ulid.New(),
-			Name:        t.name,
-			Description: t.description,
-			Color:       t.color,
-		}
-		_ = store.Create(ctx, tag)
-	}
 }
 
 func createSampleUsers(ctx context.Context, store *duckdb.UsersStore) []string {
@@ -272,7 +234,7 @@ func createSampleStories(ctx context.Context, store *duckdb.StoriesStore, userID
 			story.TextHTML = markdown.RenderPlain(story.Text)
 		}
 
-		if err := store.Create(ctx, story, nil); err == nil {
+		if err := store.Create(ctx, story); err == nil {
 			count++
 		}
 	}

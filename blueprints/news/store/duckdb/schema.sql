@@ -27,17 +27,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
--- Tags
-CREATE TABLE IF NOT EXISTS tags (
-    id VARCHAR PRIMARY KEY,
-    name VARCHAR UNIQUE NOT NULL,
-    description TEXT,
-    color VARCHAR DEFAULT '#666666',
-    story_count BIGINT DEFAULT 0
-);
-
-CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(LOWER(name));
-
 -- Stories
 CREATE TABLE IF NOT EXISTS stories (
     id VARCHAR PRIMARY KEY,
@@ -59,15 +48,6 @@ CREATE INDEX IF NOT EXISTS idx_stories_new ON stories(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_stories_top ON stories(score DESC);
 CREATE INDEX IF NOT EXISTS idx_stories_author ON stories(author_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_stories_domain ON stories(domain);
-
--- Story tags (many-to-many)
-CREATE TABLE IF NOT EXISTS story_tags (
-    story_id VARCHAR NOT NULL,
-    tag_id VARCHAR NOT NULL,
-    PRIMARY KEY (story_id, tag_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_story_tags_tag ON story_tags(tag_id);
 
 -- Comments
 CREATE TABLE IF NOT EXISTS comments (
