@@ -1,76 +1,105 @@
-// Chat Application JavaScript
-
-// Utility functions
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => document.querySelectorAll(sel);
+// Mizu Chat - Minimal JavaScript
+// Most rendering is done server-side. This file handles:
+// - API helpers
+// - Keyboard shortcuts
+// - Small UI enhancements
 
 // API helper
 async function api(method, path, body) {
-  const opts = {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-  };
-  if (body) opts.body = JSON.stringify(body);
+    const opts = {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+    };
+    if (body) opts.body = JSON.stringify(body);
 
-  const res = await fetch(`/api/v1${path}`, opts);
-  const json = await res.json();
+    const res = await fetch(`/api/v1${path}`, opts);
+    const json = await res.json();
 
-  if (!res.ok) {
-    throw new Error(json.error?.message || 'Request failed');
-  }
+    if (!res.ok) {
+        throw new Error(json.error?.message || 'Request failed');
+    }
 
-  return json.data;
+    return json.data;
 }
 
-// Time formatting
-function formatTimestamp(iso) {
-  const date = new Date(iso);
-  const now = new Date();
-  const diff = now - date;
+// Toast notifications
+function showToast(message, type = 'info') {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.className = 'toast-container';
+        document.body.appendChild(container);
+    }
 
-  // Today
-  if (diff < 86400000 && date.getDate() === now.getDate()) {
-    return 'Today at ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    container.appendChild(toast);
 
-  // Yesterday
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (date.getDate() === yesterday.getDate()) {
-    return 'Yesterday at ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-
-  // Older
-  return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-// Escape HTML
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 200);
+    }, 3000);
 }
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
-  // Ctrl/Cmd + K: Quick switcher
-  if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-    e.preventDefault();
-    // TODO: Show quick switcher
-  }
+    // Ctrl/Cmd + K: Focus search/quick switcher
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        const input = document.getElementById('message-input') || document.getElementById('search-input');
+        if (input) input.focus();
+    }
 
-  // Escape: Close modals
-  if (e.key === 'Escape') {
-    // TODO: Close active modal
-  }
+    // Escape: Close modals
+    if (e.key === 'Escape') {
+        const overlay = document.querySelector('.modal-overlay.open');
+        if (overlay) {
+            overlay.classList.remove('open');
+        }
+    }
 });
 
 // Auto-resize textareas
 document.addEventListener('input', (e) => {
-  if (e.target.tagName === 'TEXTAREA') {
-    e.target.style.height = 'auto';
-    e.target.style.height = e.target.scrollHeight + 'px';
-  }
+    if (e.target.tagName === 'TEXTAREA' && e.target.dataset.autosize !== 'false') {
+        e.target.style.height = 'auto';
+        e.target.style.height = Math.min(e.target.scrollHeight, 300) + 'px';
+    }
 });
 
-console.log('Chat app loaded');
+// Smooth scroll behavior for messages
+document.addEventListener('DOMContentLoaded', () => {
+    const messages = document.getElementById('messages');
+    if (messages) {
+        // Check if we should auto-scroll
+        const shouldAutoScroll = () => {
+            return messages.scrollHeight - messages.scrollTop <= messages.clientHeight + 100;
+        };
+
+        // Store scroll state
+        let autoScroll = true;
+        messages.addEventListener('scroll', () => {
+            autoScroll = shouldAutoScroll();
+        });
+
+        // Expose for use in templates
+        window.shouldAutoScroll = () => autoScroll;
+    }
+});
+
+// Theme toggle (for future use)
+function setTheme(theme) {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('theme', theme);
+}
+
+function getTheme() {
+    return localStorage.getItem('theme') || 'dark';
+}
+
+// Apply saved theme on load
+document.documentElement.dataset.theme = getTheme();
+
+console.log('Mizu Chat loaded');

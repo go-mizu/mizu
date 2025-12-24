@@ -1,0 +1,113 @@
+{{define "explore.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="explore">
+    <header class="explore-header">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-6);">
+            <a href="/" class="landing-logo">
+                <svg viewBox="0 0 48 48" width="40" height="40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="48" height="48" rx="12" fill="url(#explore-logo-gradient)"/>
+                    <path d="M14 34V14h5l5 12 5-12h5v20h-4V22l-4.5 10h-3L18 22v12h-4z" fill="white"/>
+                    <defs>
+                        <linearGradient id="explore-logo-gradient" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+                            <stop stop-color="#5865F2"/>
+                            <stop offset="1" stop-color="#EB459E"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+            </a>
+            <nav class="landing-nav">
+                {{if .User}}
+                    <a href="/" class="btn btn-primary">Open App</a>
+                {{else}}
+                    <a href="/login" class="btn btn-secondary">Login</a>
+                    <a href="/register" class="btn btn-primary">Sign Up</a>
+                {{end}}
+            </nav>
+        </div>
+
+        <h1>Find your community</h1>
+        <p style="color: var(--text-muted); margin-bottom: var(--space-4);">
+            From gaming, to music, to learning, there's a place for you.
+        </p>
+
+        <div class="explore-search">
+            <input type="text" placeholder="Explore servers" id="search-input">
+            <button class="btn btn-primary">Search</button>
+        </div>
+    </header>
+
+    <div class="explore-content">
+        <div class="server-grid">
+            {{range .Data.servers}}
+            <article class="server-card" onclick="window.location.href='/channels/{{.ID}}/{{.DefaultChannel}}'">
+                <div class="server-card-banner">
+                    {{if .BannerURL}}
+                        <img src="{{.BannerURL}}" alt="">
+                    {{end}}
+                    <div class="server-card-icon">
+                        {{if .IconURL}}
+                            <img src="{{.IconURL}}" alt="{{.Name}}">
+                        {{else}}
+                            {{slice .Name 0 1}}
+                        {{end}}
+                    </div>
+                </div>
+                <div class="server-card-body">
+                    <h3 class="server-card-name">{{.Name}}</h3>
+                    <p class="server-card-description">
+                        {{if .Description}}{{.Description}}{{else}}A wonderful community awaits!{{end}}
+                    </p>
+                    <div class="server-card-meta">
+                        <span class="online-dot"></span>
+                        <span>{{.MemberCount}} Members</span>
+                    </div>
+                </div>
+            </article>
+            {{else}}
+            <div style="grid-column: 1 / -1; text-align: center; padding: var(--space-12); color: var(--text-muted);">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="currentColor" style="margin-bottom: var(--space-4); opacity: 0.5;">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                </svg>
+                <h3 style="font-size: var(--font-size-xl); margin-bottom: var(--space-2); color: var(--text-primary);">No public servers yet</h3>
+                <p>Be the first to create a public server and build your community!</p>
+                {{if .User}}
+                <button class="btn btn-primary" style="margin-top: var(--space-4);" onclick="createServer()">Create Server</button>
+                {{else}}
+                <a href="/register" class="btn btn-primary" style="margin-top: var(--space-4);">Sign Up to Create</a>
+                {{end}}
+            </div>
+            {{end}}
+        </div>
+    </div>
+</div>
+
+{{if .User}}
+<script>
+async function createServer() {
+    const name = prompt('Enter server name:');
+    if (!name) return;
+
+    try {
+        const res = await fetch('/api/v1/servers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, is_public: true })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            window.location.href = `/channels/${data.data.id}/${data.data.default_channel}`;
+        } else {
+            const json = await res.json();
+            alert(json.error?.message || 'Failed to create server');
+        }
+    } catch (err) {
+        alert('Failed to create server');
+    }
+}
+</script>
+{{end}}
+{{end}}

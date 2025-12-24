@@ -1,0 +1,87 @@
+{{define "landing.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="landing">
+    <header class="landing-header">
+        <a href="/" class="landing-logo">
+            <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="48" height="48" rx="12" fill="url(#logo-gradient)"/>
+                <path d="M14 34V14h5l5 12 5-12h5v20h-4V22l-4.5 10h-3L18 22v12h-4z" fill="white"/>
+                <defs>
+                    <linearGradient id="logo-gradient" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+                        <stop stop-color="#5865F2"/>
+                        <stop offset="1" stop-color="#EB459E"/>
+                    </linearGradient>
+                </defs>
+            </svg>
+            Mizu Chat
+        </a>
+        <nav class="landing-nav">
+            <a href="/explore" class="btn btn-secondary">Explore</a>
+            <a href="/login" class="btn btn-secondary">Login</a>
+            <a href="/register" class="btn btn-primary">Sign Up</a>
+        </nav>
+    </header>
+
+    <section class="landing-hero">
+        <h1>Imagine a place...</h1>
+        <p>
+            ...where you can belong to a community, chat with friends,
+            and stay connected. Whether you're part of a gaming guild, art club,
+            or just a group of friends - Mizu makes it easy to talk every day.
+        </p>
+        <div class="landing-cta">
+            <a href="/register" class="btn btn-primary btn-lg">Get Started</a>
+            <a href="/explore" class="btn btn-secondary btn-lg">Explore Servers</a>
+        </div>
+    </section>
+
+    <section class="landing-features">
+        <h2>Why Mizu?</h2>
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                    </svg>
+                </div>
+                <h3>Real-time Messaging</h3>
+                <p>Instant message delivery with WebSocket technology. See when someone's typing and never miss a beat.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+                    </svg>
+                </div>
+                <h3>Create Your Community</h3>
+                <p>Build servers, organize with channels and categories. Manage roles and permissions your way.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+                    </svg>
+                </div>
+                <h3>Express Yourself</h3>
+                <p>React with emoji, pin important messages, customize your profile. Make every conversation yours.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+                    </svg>
+                </div>
+                <h3>Secure by Design</h3>
+                <p>Your conversations are yours. Role-based permissions ensure the right people see the right content.</p>
+            </div>
+        </div>
+    </section>
+
+    <footer class="landing-footer">
+        <p>Built with Mizu Framework. Open source and free forever.</p>
+    </footer>
+</div>
+{{end}}

@@ -1,0 +1,57 @@
+{{define "member_list.html"}}
+<aside class="member-sidebar" id="member-sidebar">
+    {{if .Data.members}}
+        {{$online := 0}}
+        {{$offline := 0}}
+        {{range .Data.members}}
+            {{if eq .Status "online"}}
+                {{$online = add $online 1}}
+            {{else}}
+                {{$offline = add $offline 1}}
+            {{end}}
+        {{end}}
+
+        <div class="member-section">
+            <div class="member-category">Online{{if $online}} — {{$online}}{{end}}</div>
+            {{range .Data.members}}
+                {{if eq .Status "online"}}
+                <div class="member" data-user-id="{{.UserID}}">
+                    <div class="member-avatar">
+                        {{if .AvatarURL}}
+                            <img src="{{.AvatarURL}}" alt="{{.DisplayName}}">
+                        {{else}}
+                            <span>{{userInitials .DisplayName}}</span>
+                        {{end}}
+                        <span class="status-dot online"></span>
+                    </div>
+                    <span class="member-name">{{if .Nickname}}{{.Nickname}}{{else}}{{.DisplayName}}{{end}}</span>
+                </div>
+                {{end}}
+            {{end}}
+        </div>
+
+        <div class="member-section">
+            <div class="member-category">Offline{{if $offline}} — {{$offline}}{{end}}</div>
+            {{range .Data.members}}
+                {{if ne .Status "online"}}
+                <div class="member offline" data-user-id="{{.UserID}}">
+                    <div class="member-avatar">
+                        {{if .AvatarURL}}
+                            <img src="{{.AvatarURL}}" alt="{{.DisplayName}}">
+                        {{else}}
+                            <span>{{userInitials .DisplayName}}</span>
+                        {{end}}
+                        <span class="status-dot offline"></span>
+                    </div>
+                    <span class="member-name">{{if .Nickname}}{{.Nickname}}{{else}}{{.DisplayName}}{{end}}</span>
+                </div>
+                {{end}}
+            {{end}}
+        </div>
+    {{else}}
+        <div class="member-empty">
+            <p>No members</p>
+        </div>
+    {{end}}
+</aside>
+{{end}}
