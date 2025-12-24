@@ -5,6 +5,7 @@ import (
 	"embed"
 	"html/template"
 	"io/fs"
+	"path/filepath"
 	"time"
 )
 
@@ -20,7 +21,12 @@ func Static() fs.FS {
 	return fsys
 }
 
+// PageTemplates holds compiled page templates.
+var pageTemplates map[string]*template.Template
+
 // Templates parses and returns all templates.
+// Each page template is parsed separately with the base layout to avoid
+// block definition conflicts between pages.
 func Templates() (*template.Template, error) {
 	funcs := template.FuncMap{
 		"formatTime":     formatTime,
@@ -31,7 +37,53 @@ func Templates() (*template.Template, error) {
 		"formatNumber":   formatNumber,
 	}
 
-	return template.New("").Funcs(funcs).ParseFS(viewsFS, "views/default/layouts/*.html", "views/default/pages/*.html", "views/default/components/*.html")
+	// Parse base layout and components first
+	base, err := template.New("").Funcs(funcs).ParseFS(viewsFS, "views/default/layouts/*.html", "views/default/components/*.html")
+	if err != nil {
+		return nil, err
+	}
+
+	// Find all page files
+	pageFiles, err := fs.Glob(viewsFS, "views/default/pages/*.html")
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize the page templates map
+	pageTemplates = make(map[string]*template.Template)
+
+	// For each page, clone the base and add the page template
+	// This ensures each page has its own set of block definitions
+	for _, pageFile := range pageFiles {
+		pageName := filepath.Base(pageFile)
+
+		// Clone the base template for this page
+		pageTemplate, err := base.Clone()
+		if err != nil {
+			return nil, err
+		}
+
+		// Parse this page into the clone - the page's defines become part of this clone only
+		pageTemplate, err = pageTemplate.ParseFS(viewsFS, pageFile)
+		if err != nil {
+			return nil, err
+		}
+
+		// Store the complete template for this page
+		pageTemplates[pageName] = pageTemplate
+	}
+
+	// Return the base template (needed for initialization)
+	// The actual page rendering uses GetPageTemplate
+	return base, nil
+}
+
+// GetPageTemplate returns the compiled template for a specific page.
+func GetPageTemplate(name string) *template.Template {
+	if pageTemplates == nil {
+		return nil
+	}
+	return pageTemplates[name]
 }
 
 func formatTime(t time.Time) string {

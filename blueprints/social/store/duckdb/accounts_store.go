@@ -35,7 +35,7 @@ func (s *AccountsStore) Insert(ctx context.Context, a *accounts.Account, passwor
 // GetByID retrieves an account by ID.
 func (s *AccountsStore) GetByID(ctx context.Context, id string) (*accounts.Account, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, username, display_name, email, bio, avatar_url, header_url, location, website, fields, verified, admin, suspended, private, discoverable, created_at, updated_at
+		SELECT id, username, display_name, email, bio, avatar_url, header_url, location, website, CAST(fields AS VARCHAR), verified, admin, suspended, private, discoverable, created_at, updated_at
 		FROM accounts WHERE id = $1
 	`, id)
 	return s.scanAccount(row)
@@ -55,7 +55,7 @@ func (s *AccountsStore) GetByIDs(ctx context.Context, ids []string) ([]*accounts
 	}
 
 	query := fmt.Sprintf(`
-		SELECT id, username, display_name, email, bio, avatar_url, header_url, location, website, fields, verified, admin, suspended, private, discoverable, created_at, updated_at
+		SELECT id, username, display_name, email, bio, avatar_url, header_url, location, website, CAST(fields AS VARCHAR), verified, admin, suspended, private, discoverable, created_at, updated_at
 		FROM accounts WHERE id IN (%s)
 	`, strings.Join(placeholders, ", "))
 
@@ -79,7 +79,7 @@ func (s *AccountsStore) GetByIDs(ctx context.Context, ids []string) ([]*accounts
 // GetByUsername retrieves an account by username.
 func (s *AccountsStore) GetByUsername(ctx context.Context, username string) (*accounts.Account, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, username, display_name, email, bio, avatar_url, header_url, location, website, fields, verified, admin, suspended, private, discoverable, created_at, updated_at
+		SELECT id, username, display_name, email, bio, avatar_url, header_url, location, website, CAST(fields AS VARCHAR), verified, admin, suspended, private, discoverable, created_at, updated_at
 		FROM accounts WHERE LOWER(username) = LOWER($1)
 	`, username)
 	return s.scanAccount(row)
@@ -88,7 +88,7 @@ func (s *AccountsStore) GetByUsername(ctx context.Context, username string) (*ac
 // GetByEmail retrieves an account by email.
 func (s *AccountsStore) GetByEmail(ctx context.Context, email string) (*accounts.Account, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, username, display_name, email, bio, avatar_url, header_url, location, website, fields, verified, admin, suspended, private, discoverable, created_at, updated_at
+		SELECT id, username, display_name, email, bio, avatar_url, header_url, location, website, CAST(fields AS VARCHAR), verified, admin, suspended, private, discoverable, created_at, updated_at
 		FROM accounts WHERE LOWER(email) = LOWER($1)
 	`, email)
 	return s.scanAccount(row)
@@ -185,7 +185,7 @@ func (s *AccountsStore) List(ctx context.Context, limit, offset int) ([]*account
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, username, display_name, email, bio, avatar_url, header_url, location, website, fields, verified, admin, suspended, private, discoverable, created_at, updated_at
+		SELECT id, username, display_name, email, bio, avatar_url, header_url, location, website, CAST(fields AS VARCHAR), verified, admin, suspended, private, discoverable, created_at, updated_at
 		FROM accounts ORDER BY created_at DESC LIMIT $1 OFFSET $2
 	`, limit, offset)
 	if err != nil {
@@ -208,7 +208,7 @@ func (s *AccountsStore) List(ctx context.Context, limit, offset int) ([]*account
 func (s *AccountsStore) Search(ctx context.Context, query string, limit int) ([]*accounts.Account, error) {
 	pattern := "%" + strings.ToLower(query) + "%"
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, username, display_name, email, bio, avatar_url, header_url, location, website, fields, verified, admin, suspended, private, discoverable, created_at, updated_at
+		SELECT id, username, display_name, email, bio, avatar_url, header_url, location, website, CAST(fields AS VARCHAR), verified, admin, suspended, private, discoverable, created_at, updated_at
 		FROM accounts
 		WHERE discoverable = TRUE AND suspended = FALSE AND (LOWER(username) LIKE $1 OR LOWER(display_name) LIKE $1)
 		ORDER BY
@@ -307,8 +307,7 @@ func (s *AccountsStore) DeleteExpiredSessions(ctx context.Context) error {
 
 func (s *AccountsStore) scanAccount(row *sql.Row) (*accounts.Account, error) {
 	var a accounts.Account
-	var displayName, email, bio, avatarURL, headerURL, location, website sql.NullString
-	var fieldsJSON string
+	var displayName, email, bio, avatarURL, headerURL, location, website, fieldsJSON sql.NullString
 
 	err := row.Scan(&a.ID, &a.Username, &displayName, &email, &bio, &avatarURL, &headerURL, &location, &website, &fieldsJSON, &a.Verified, &a.Admin, &a.Suspended, &a.Private, &a.Discoverable, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
@@ -323,8 +322,8 @@ func (s *AccountsStore) scanAccount(row *sql.Row) (*accounts.Account, error) {
 	a.Location = location.String
 	a.Website = website.String
 
-	if fieldsJSON != "" {
-		_ = json.Unmarshal([]byte(fieldsJSON), &a.Fields)
+	if fieldsJSON.Valid && fieldsJSON.String != "" {
+		_ = json.Unmarshal([]byte(fieldsJSON.String), &a.Fields)
 	}
 
 	return &a, nil
@@ -332,8 +331,7 @@ func (s *AccountsStore) scanAccount(row *sql.Row) (*accounts.Account, error) {
 
 func (s *AccountsStore) scanAccountRow(rows *sql.Rows) (*accounts.Account, error) {
 	var a accounts.Account
-	var displayName, email, bio, avatarURL, headerURL, location, website sql.NullString
-	var fieldsJSON string
+	var displayName, email, bio, avatarURL, headerURL, location, website, fieldsJSON sql.NullString
 
 	err := rows.Scan(&a.ID, &a.Username, &displayName, &email, &bio, &avatarURL, &headerURL, &location, &website, &fieldsJSON, &a.Verified, &a.Admin, &a.Suspended, &a.Private, &a.Discoverable, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
@@ -348,8 +346,8 @@ func (s *AccountsStore) scanAccountRow(rows *sql.Rows) (*accounts.Account, error
 	a.Location = location.String
 	a.Website = website.String
 
-	if fieldsJSON != "" {
-		_ = json.Unmarshal([]byte(fieldsJSON), &a.Fields)
+	if fieldsJSON.Valid && fieldsJSON.String != "" {
+		_ = json.Unmarshal([]byte(fieldsJSON.String), &a.Fields)
 	}
 
 	return &a, nil

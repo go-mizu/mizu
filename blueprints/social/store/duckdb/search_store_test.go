@@ -287,23 +287,17 @@ func TestSearchStore_SearchHashtags_OrderByPostsCount(t *testing.T) {
 	db := setupTestStore(t)
 	ctx := context.Background()
 
-	account := createTestAccount(t, db, "testuser")
 	postsStore := NewPostsStore(db)
 	searchStore := NewSearchStore(db)
 
 	// Create hashtags with different post counts
-	tag1ID, _ := postsStore.UpsertHashtag(ctx, "testtag1")
-	tag2ID, _ := postsStore.UpsertHashtag(ctx, "testtag2")
+	// UpsertHashtag increments posts_count each time it's called for existing hashtag
+	postsStore.UpsertHashtag(ctx, "testtag1") // count = 1
 
-	// Link more posts to tag2
-	for i := 0; i < 3; i++ {
-		post := createTestPost(t, postsStore, account.ID)
-		postsStore.LinkPostHashtag(ctx, post.ID, tag2ID)
+	// Call UpsertHashtag multiple times for tag2 to increase its count
+	for i := 0; i < 4; i++ {
+		postsStore.UpsertHashtag(ctx, "testtag2") // count = 1, 2, 3, 4
 	}
-
-	// Link one post to tag1
-	post := createTestPost(t, postsStore, account.ID)
-	postsStore.LinkPostHashtag(ctx, post.ID, tag1ID)
 
 	// Search - should return tag2 first (more posts)
 	results, err := searchStore.SearchHashtags(ctx, "testtag", 10)

@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"fmt"
 	"html/template"
 	"strings"
 
 	"github.com/go-mizu/mizu"
 
+	"github.com/go-mizu/blueprints/social/assets"
 	"github.com/go-mizu/blueprints/social/feature/accounts"
 	"github.com/go-mizu/blueprints/social/feature/notifications"
 	"github.com/go-mizu/blueprints/social/feature/posts"
@@ -49,7 +51,13 @@ func (h *Page) render(c *mizu.Ctx, name string, data map[string]interface{}) err
 	data["Dev"] = h.dev
 
 	c.Writer().Header().Set("Content-Type", "text/html; charset=utf-8")
-	return h.tmpl.ExecuteTemplate(c.Writer(), name, data)
+
+	// Get the page-specific template to use its isolated block definitions
+	pageTmpl := assets.GetPageTemplate(name)
+	if pageTmpl == nil {
+		return fmt.Errorf("template not found: %s", name)
+	}
+	return pageTmpl.ExecuteTemplate(c.Writer(), name, data)
 }
 
 // Home handles GET /
