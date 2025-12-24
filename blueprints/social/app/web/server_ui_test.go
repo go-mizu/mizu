@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/go-mizu/blueprints/social/app/web"
+	"github.com/go-mizu/blueprints/social/assets"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 )
@@ -137,6 +138,42 @@ func assertUIValidHTML(t *testing.T, body string) {
 	}
 	if !strings.Contains(body, "</html>") {
 		t.Error("response is not valid HTML (missing closing html tag)")
+	}
+}
+
+// TestUI_TemplatesParse validates that all templates can be parsed without errors.
+// This catches issues like duplicate template definitions (e.g., multiple {{define "title"}}
+// or {{block "title"}} in the same template) that would cause server startup to fail.
+func TestUI_TemplatesParse(t *testing.T) {
+	_, err := assets.Templates()
+	if err != nil {
+		t.Fatalf("template parsing failed: %v", err)
+	}
+
+	// Verify all expected page templates were registered
+	expectedPages := []string{
+		"home.html",
+		"login.html",
+		"register.html",
+		"explore.html",
+		"search.html",
+		"profile.html",
+		"post.html",
+		"tag.html",
+		"notifications.html",
+		"bookmarks.html",
+		"lists.html",
+		"list.html",
+		"settings.html",
+		"404.html",
+		"follow_list.html",
+	}
+
+	for _, page := range expectedPages {
+		tmpl := assets.GetPageTemplate(page)
+		if tmpl == nil {
+			t.Errorf("page template %q was not registered", page)
+		}
 	}
 }
 
