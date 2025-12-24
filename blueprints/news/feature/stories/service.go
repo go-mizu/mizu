@@ -2,13 +2,9 @@ package stories
 
 import (
 	"context"
-	"time"
 
-	"github.com/go-mizu/mizu/blueprints/news/feature/tags"
 	"github.com/go-mizu/mizu/blueprints/news/feature/users"
 	"github.com/go-mizu/mizu/blueprints/news/feature/votes"
-	"github.com/go-mizu/mizu/blueprints/news/pkg/markdown"
-	"github.com/go-mizu/mizu/blueprints/news/pkg/ulid"
 )
 
 // Service implements the stories.API interface.
@@ -16,69 +12,15 @@ type Service struct {
 	store      Store
 	usersStore users.Store
 	votesStore votes.Store
-	tagsStore  tags.Store
 }
 
 // NewService creates a new stories service.
-func NewService(store Store, usersStore users.Store, votesStore votes.Store, tagsStore tags.Store) *Service {
+func NewService(store Store, usersStore users.Store, votesStore votes.Store) *Service {
 	return &Service{
 		store:      store,
 		usersStore: usersStore,
 		votesStore: votesStore,
-		tagsStore:  tagsStore,
 	}
-}
-
-// Create creates a new story.
-func (s *Service) Create(ctx context.Context, authorID string, in CreateIn) (*Story, error) {
-	if err := in.Validate(); err != nil {
-		return nil, err
-	}
-
-	// Check for duplicate URL
-	if in.URL != "" {
-		if existing, _ := s.store.GetByURL(ctx, in.URL); existing != nil {
-			return nil, ErrDuplicateURL
-		}
-	}
-
-	// Process tags
-	var tagIDs []string
-	if len(in.Tags) > 0 {
-		existingTags, err := s.tagsStore.GetByNames(ctx, in.Tags)
-		if err != nil {
-			return nil, err
-		}
-		for _, tag := range existingTags {
-			tagIDs = append(tagIDs, tag.ID)
-		}
-	}
-
-	story := &Story{
-		ID:        ulid.New(),
-		AuthorID:  authorID,
-		Title:     in.Title,
-		URL:       in.URL,
-		Domain:    ExtractDomain(in.URL),
-		Text:      in.Text,
-		Score:     1,
-		CreatedAt: time.Now(),
-	}
-
-	if story.Text != "" {
-		story.TextHTML = markdown.Render(story.Text)
-	}
-
-	if err := s.store.Create(ctx, story, tagIDs); err != nil {
-		return nil, err
-	}
-
-	// Increment tag counts
-	for _, tagID := range tagIDs {
-		_ = s.tagsStore.IncrementCount(ctx, tagID, 1)
-	}
-
-	return story, nil
 }
 
 // GetByID retrieves a story by ID.
@@ -108,81 +50,6 @@ func (s *Service) GetByID(ctx context.Context, id string, viewerID string) (*Sto
 	return story, nil
 }
 
-// Update updates a story.
-func (s *Service) Update(ctx context.Context, id string, authorID string, in CreateIn) (*Story, error) {
-	story, err := s.store.GetByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
-	if story.AuthorID != authorID {
-		return nil, ErrNotFound
-	}
-
-	if err := in.Validate(); err != nil {
-		return nil, err
-	}
-
-	story.Title = in.Title
-	story.Text = in.Text
-	if story.Text != "" {
-		story.TextHTML = markdown.Render(story.Text)
-	}
-
-	if err := s.store.Update(ctx, story); err != nil {
-		return nil, err
-	}
-
-	return story, nil
-}
-
-// Delete deletes a story.
-func (s *Service) Delete(ctx context.Context, id string, authorID string) error {
-	story, err := s.store.GetByID(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	if story.AuthorID != authorID {
-		return ErrNotFound
-	}
-
-	return s.store.Delete(ctx, id)
-}
-
-// Vote adds an upvote to a story.
-func (s *Service) Vote(ctx context.Context, storyID, userID string, value int) error {
-	// Check if already voted
-	if existing, _ := s.votesStore.GetByUserAndTarget(ctx, userID, votes.TargetStory, storyID); existing != nil {
-		return votes.ErrAlreadyVoted
-	}
-
-	vote := &votes.Vote{
-		ID:         ulid.New(),
-		UserID:     userID,
-		TargetType: votes.TargetStory,
-		TargetID:   storyID,
-		Value:      1, // Only upvotes
-		CreatedAt:  time.Now(),
-	}
-
-	if err := s.votesStore.Create(ctx, vote); err != nil {
-		return err
-	}
-
-	// Update story score
-	return s.store.UpdateScore(ctx, storyID, 1)
-}
-
-// Unvote removes a vote from a story.
-func (s *Service) Unvote(ctx context.Context, storyID, userID string) error {
-	if err := s.votesStore.Delete(ctx, userID, votes.TargetStory, storyID); err != nil {
-		return err
-	}
-
-	return s.store.UpdateScore(ctx, storyID, -1)
-}
-
 // List lists stories.
 func (s *Service) List(ctx context.Context, in ListIn, viewerID string) ([]*Story, error) {
 	if in.Limit <= 0 {
@@ -209,16 +76,6 @@ func (s *Service) ListByAuthor(ctx context.Context, authorID string, limit, offs
 	}
 
 	return s.populateStories(ctx, stories, viewerID)
-}
-
-// UpdateScore updates a story's score.
-func (s *Service) UpdateScore(ctx context.Context, id string, delta int64) error {
-	return s.store.UpdateScore(ctx, id, delta)
-}
-
-// RecalculateHotScores recalculates hot scores for all stories.
-func (s *Service) RecalculateHotScores(ctx context.Context) error {
-	return s.store.RecalculateHotScores(ctx)
 }
 
 func (s *Service) populateStories(ctx context.Context, stories []*Story, viewerID string) ([]*Story, error) {

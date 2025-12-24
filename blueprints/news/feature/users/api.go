@@ -99,23 +99,12 @@ type LoginIn struct {
 // API defines the users service interface.
 type API interface {
 	// User management
-	Create(ctx context.Context, in CreateIn) (*User, error)
 	GetByID(ctx context.Context, id string) (*User, error)
 	GetByIDs(ctx context.Context, ids []string) (map[string]*User, error)
 	GetByUsername(ctx context.Context, username string) (*User, error)
-	Update(ctx context.Context, id string, in UpdateIn) (*User, error)
 
 	// Authentication
-	Login(ctx context.Context, in LoginIn) (*User, error)
-	CreateSession(ctx context.Context, userID string) (*Session, error)
 	GetSession(ctx context.Context, token string) (*Session, error)
-	DeleteSession(ctx context.Context, token string) error
-
-	// Karma
-	UpdateKarma(ctx context.Context, id string, delta int64) error
-
-	// Admin
-	SetAdmin(ctx context.Context, id string, isAdmin bool) error
 
 	// Lists
 	List(ctx context.Context, limit, offset int) ([]*User, error)
@@ -123,18 +112,13 @@ type API interface {
 
 // Store defines the data storage interface for users.
 type Store interface {
-	Create(ctx context.Context, user *User) error
 	GetByID(ctx context.Context, id string) (*User, error)
 	GetByIDs(ctx context.Context, ids []string) (map[string]*User, error)
 	GetByUsername(ctx context.Context, username string) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
-	Update(ctx context.Context, user *User) error
 
 	// Sessions
-	CreateSession(ctx context.Context, session *Session) error
 	GetSessionByToken(ctx context.Context, token string) (*Session, error)
-	DeleteSession(ctx context.Context, token string) error
-	CleanExpiredSessions(ctx context.Context) error
 
 	// Lists
 	List(ctx context.Context, limit, offset int) ([]*User, error)

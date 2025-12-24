@@ -56,34 +56,22 @@ func (in *CreateIn) Validate() error {
 
 // API defines the tags service interface.
 type API interface {
-	Create(ctx context.Context, in CreateIn) (*Tag, error)
 	GetByID(ctx context.Context, id string) (*Tag, error)
 	GetByName(ctx context.Context, name string) (*Tag, error)
 	GetByNames(ctx context.Context, names []string) ([]*Tag, error)
-	Update(ctx context.Context, id string, in CreateIn) (*Tag, error)
-	Delete(ctx context.Context, id string) error
 
 	// Lists
 	List(ctx context.Context, limit int) ([]*Tag, error)
 	ListPopular(ctx context.Context, limit int) ([]*Tag, error)
-
-	// Counts
-	IncrementCount(ctx context.Context, id string, delta int64) error
 }
 
 // Store defines the data storage interface for tags.
 type Store interface {
-	Create(ctx context.Context, tag *Tag) error
 	GetByID(ctx context.Context, id string) (*Tag, error)
 	GetByName(ctx context.Context, name string) (*Tag, error)
 	GetByNames(ctx context.Context, names []string) ([]*Tag, error)
-	Update(ctx context.Context, tag *Tag) error
-	Delete(ctx context.Context, id string) error
 
 	// Lists
 	List(ctx context.Context, limit int) ([]*Tag, error)
 	ListPopular(ctx context.Context, limit int) ([]*Tag, error)
-
-	// Counts
-	IncrementCount(ctx context.Context, id string, delta int64) error
 }

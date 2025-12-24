@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/go-mizu/mizu/blueprints/news/feature/stories"
-	"github.com/go-mizu/mizu/blueprints/news/pkg/ranking"
 )
 
 // StoriesStore implements stories.Store.
@@ -18,34 +17,6 @@ type StoriesStore struct {
 // NewStoriesStore creates a new stories store.
 func NewStoriesStore(db *sql.DB) *StoriesStore {
 	return &StoriesStore{db: db}
-}
-
-// Create creates a story.
-func (s *StoriesStore) Create(ctx context.Context, story *stories.Story, tagIDs []string) error {
-	// Calculate initial hot score
-	story.HotScore = ranking.HotScore(story.Score, story.CreatedAt)
-
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO stories (id, author_id, title, url, domain, text, text_html, score, comment_count, hot_score, is_removed, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-	`, story.ID, story.AuthorID, story.Title, story.URL, story.Domain,
-		story.Text, story.TextHTML, story.Score, story.CommentCount,
-		story.HotScore, story.IsRemoved, story.CreatedAt)
-	if err != nil {
-		return err
-	}
-
-	// Add tags
-	for _, tagID := range tagIDs {
-		_, err = s.db.ExecContext(ctx, `
-			INSERT INTO story_tags (story_id, tag_id) VALUES ($1, $2)
-		`, story.ID, tagID)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 // GetByID retrieves a story by ID.
@@ -62,24 +33,6 @@ func (s *StoriesStore) GetByURL(ctx context.Context, url string) (*stories.Story
 		SELECT id, author_id, title, url, domain, text, text_html, score, comment_count, hot_score, is_removed, created_at
 		FROM stories WHERE url = $1 AND is_removed = FALSE
 	`, url))
-}
-
-// Update updates a story.
-func (s *StoriesStore) Update(ctx context.Context, story *stories.Story) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE stories SET
-			title = $2, url = $3, domain = $4, text = $5, text_html = $6,
-			score = $7, comment_count = $8, hot_score = $9, is_removed = $10
-		WHERE id = $1
-	`, story.ID, story.Title, story.URL, story.Domain, story.Text, story.TextHTML,
-		story.Score, story.CommentCount, story.HotScore, story.IsRemoved)
-	return err
-}
-
-// Delete marks a story as removed.
-func (s *StoriesStore) Delete(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE stories SET is_removed = TRUE WHERE id = $1`, id)
-	return err
 }
 
 // List lists stories.
@@ -194,36 +147,6 @@ func (s *StoriesStore) ListByTag(ctx context.Context, tagID string, limit, offse
 		result = append(result, story)
 	}
 	return result, rows.Err()
-}
-
-// UpdateScore updates a story's score.
-func (s *StoriesStore) UpdateScore(ctx context.Context, id string, delta int64) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE stories SET score = score + $2 WHERE id = $1
-	`, id, delta)
-	return err
-}
-
-// IncrementCommentCount increments a story's comment count.
-func (s *StoriesStore) IncrementCommentCount(ctx context.Context, id string, delta int64) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE stories SET comment_count = comment_count + $2 WHERE id = $1
-	`, id, delta)
-	return err
-}
-
-// RecalculateHotScores recalculates hot scores for recent stories.
-func (s *StoriesStore) RecalculateHotScores(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE stories
-		SET hot_score = score / POWER(
-			(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at)) / 3600) + 2,
-			1.8
-		)
-		WHERE created_at > CURRENT_TIMESTAMP - INTERVAL '48 hours'
-		AND is_removed = FALSE
-	`)
-	return err
 }
 
 // GetTagsForStory gets tags for a story.

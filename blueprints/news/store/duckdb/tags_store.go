@@ -19,15 +19,6 @@ func NewTagsStore(db *sql.DB) *TagsStore {
 	return &TagsStore{db: db}
 }
 
-// Create creates a tag.
-func (s *TagsStore) Create(ctx context.Context, tag *tags.Tag) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO tags (id, name, description, color, story_count)
-		VALUES ($1, $2, $3, $4, $5)
-	`, tag.ID, tag.Name, tag.Description, tag.Color, tag.StoryCount)
-	return err
-}
-
 // GetByID retrieves a tag by ID.
 func (s *TagsStore) GetByID(ctx context.Context, id string) (*tags.Tag, error) {
 	return s.scanTag(s.db.QueryRowContext(ctx, `
@@ -78,22 +69,6 @@ func (s *TagsStore) GetByNames(ctx context.Context, names []string) ([]*tags.Tag
 	return result, rows.Err()
 }
 
-// Update updates a tag.
-func (s *TagsStore) Update(ctx context.Context, tag *tags.Tag) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE tags SET
-			name = $2, description = $3, color = $4, story_count = $5
-		WHERE id = $1
-	`, tag.ID, tag.Name, tag.Description, tag.Color, tag.StoryCount)
-	return err
-}
-
-// Delete deletes a tag.
-func (s *TagsStore) Delete(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM tags WHERE id = $1`, id)
-	return err
-}
-
 // List lists all tags.
 func (s *TagsStore) List(ctx context.Context, limit int) ([]*tags.Tag, error) {
 	rows, err := s.db.QueryContext(ctx, `
@@ -140,14 +115,6 @@ func (s *TagsStore) ListPopular(ctx context.Context, limit int) ([]*tags.Tag, er
 		result = append(result, tag)
 	}
 	return result, rows.Err()
-}
-
-// IncrementCount increments a tag's story count.
-func (s *TagsStore) IncrementCount(ctx context.Context, id string, delta int64) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE tags SET story_count = story_count + $2 WHERE id = $1
-	`, id, delta)
-	return err
 }
 
 func (s *TagsStore) scanTag(row *sql.Row) (*tags.Tag, error) {

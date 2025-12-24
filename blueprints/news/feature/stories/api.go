@@ -114,41 +114,22 @@ type ListIn struct {
 
 // API defines the stories service interface.
 type API interface {
-	Create(ctx context.Context, authorID string, in CreateIn) (*Story, error)
 	GetByID(ctx context.Context, id string, viewerID string) (*Story, error)
-	Update(ctx context.Context, id string, authorID string, in CreateIn) (*Story, error)
-	Delete(ctx context.Context, id string, authorID string) error
-
-	// Voting
-	Vote(ctx context.Context, storyID, userID string, value int) error
-	Unvote(ctx context.Context, storyID, userID string) error
 
 	// Lists
 	List(ctx context.Context, in ListIn, viewerID string) ([]*Story, error)
 	ListByAuthor(ctx context.Context, authorID string, limit, offset int, viewerID string) ([]*Story, error)
-
-	// Scores
-	UpdateScore(ctx context.Context, id string, delta int64) error
-	RecalculateHotScores(ctx context.Context) error
 }
 
 // Store defines the data storage interface for stories.
 type Store interface {
-	Create(ctx context.Context, story *Story, tagIDs []string) error
 	GetByID(ctx context.Context, id string) (*Story, error)
 	GetByURL(ctx context.Context, url string) (*Story, error)
-	Update(ctx context.Context, story *Story) error
-	Delete(ctx context.Context, id string) error
 
 	// Lists
 	List(ctx context.Context, in ListIn) ([]*Story, error)
 	ListByAuthor(ctx context.Context, authorID string, limit, offset int) ([]*Story, error)
 	ListByTag(ctx context.Context, tagID string, limit, offset int) ([]*Story, error)
-
-	// Scores
-	UpdateScore(ctx context.Context, id string, delta int64) error
-	IncrementCommentCount(ctx context.Context, id string, delta int64) error
-	RecalculateHotScores(ctx context.Context) error
 
 	// Tags
 	GetTagsForStory(ctx context.Context, storyID string) ([]string, error)

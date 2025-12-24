@@ -53,12 +53,6 @@ func (in *VoteIn) Validate() error {
 
 // API defines the votes service interface.
 type API interface {
-	// Vote on a target (story or comment)
-	Vote(ctx context.Context, userID string, in VoteIn) error
-
-	// Remove a vote
-	Unvote(ctx context.Context, userID, targetType, targetID string) error
-
 	// Get user's vote on a target
 	GetVote(ctx context.Context, userID, targetType, targetID string) (*Vote, error)
 
@@ -68,9 +62,7 @@ type API interface {
 
 // Store defines the data storage interface for votes.
 type Store interface {
-	Create(ctx context.Context, vote *Vote) error
 	GetByUserAndTarget(ctx context.Context, userID, targetType, targetID string) (*Vote, error)
 	GetByUserAndTargets(ctx context.Context, userID, targetType string, targetIDs []string) (map[string]*Vote, error)
-	Delete(ctx context.Context, userID, targetType, targetID string) error
 	CountByTarget(ctx context.Context, targetType, targetID string) (int64, error)
 }

@@ -19,15 +19,6 @@ func NewVotesStore(db *sql.DB) *VotesStore {
 	return &VotesStore{db: db}
 }
 
-// Create creates a vote.
-func (s *VotesStore) Create(ctx context.Context, vote *votes.Vote) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO votes (id, user_id, target_type, target_id, value, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`, vote.ID, vote.UserID, vote.TargetType, vote.TargetID, vote.Value, vote.CreatedAt)
-	return err
-}
-
 // GetByUserAndTarget retrieves a vote by user and target.
 func (s *VotesStore) GetByUserAndTarget(ctx context.Context, userID, targetType, targetID string) (*votes.Vote, error) {
 	vote := &votes.Vote{}
@@ -82,15 +73,6 @@ func (s *VotesStore) GetByUserAndTargets(ctx context.Context, userID, targetType
 		result[vote.TargetID] = vote
 	}
 	return result, rows.Err()
-}
-
-// Delete deletes a vote.
-func (s *VotesStore) Delete(ctx context.Context, userID, targetType, targetID string) error {
-	_, err := s.db.ExecContext(ctx, `
-		DELETE FROM votes
-		WHERE user_id = $1 AND target_type = $2 AND target_id = $3
-	`, userID, targetType, targetID)
-	return err
 }
 
 // CountByTarget counts votes for a target.
