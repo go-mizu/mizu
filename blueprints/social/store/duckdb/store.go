@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	_ "embed"
 	"fmt"
+	"path/filepath"
 )
 
 //go:embed schema.sql
@@ -14,6 +15,23 @@ var schema string
 // Store is the core store for database operations.
 type Store struct {
 	db *sql.DB
+}
+
+// Open opens or creates a DuckDB database in the given directory.
+func Open(dataDir string) (*Store, error) {
+	dbPath := filepath.Join(dataDir, "social.db")
+	db, err := sql.Open("duckdb", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("open duckdb: %w", err)
+	}
+
+	store := &Store{db: db}
+	if err := store.Ensure(context.Background()); err != nil {
+		db.Close()
+		return nil, err
+	}
+
+	return store, nil
 }
 
 // New creates a new store.

@@ -276,10 +276,10 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/lists/{id}", s.pageHandlers.ListView)
 	s.app.Get("/settings", s.pageHandlers.Settings)
 	s.app.Get("/settings/{page}", s.pageHandlers.Settings)
-	s.app.Get("/@{username}", s.pageHandlers.Profile)
-	s.app.Get("/@{username}/post/{id}", s.pageHandlers.Post)
-	s.app.Get("/@{username}/followers", s.pageHandlers.FollowList)
-	s.app.Get("/@{username}/following", s.pageHandlers.FollowList)
+	s.app.Get("/u/{username}", s.pageHandlers.Profile)
+	s.app.Get("/u/{username}/post/{id}", s.pageHandlers.Post)
+	s.app.Get("/u/{username}/followers", s.pageHandlers.FollowList)
+	s.app.Get("/u/{username}/following", s.pageHandlers.FollowList)
 	s.app.Get("/tags/{tag}", s.pageHandlers.Tag)
 }
 

@@ -44,7 +44,7 @@ func (s *TimelinesStore) GetHomeFeed(ctx context.Context, accountID string, limi
 		argNum++
 	}
 
-	query += fmt.Sprintf(" ORDER BY p.created_at DESC LIMIT $%d", argNum)
+	query += fmt.Sprintf(" ORDER BY p.created_at DESC, p.id DESC LIMIT $%d", argNum)
 	args = append(args, limit)
 
 	return s.queryPosts(ctx, query, args...)
@@ -75,7 +75,7 @@ func (s *TimelinesStore) GetPublicFeed(ctx context.Context, limit int, maxID, mi
 		argNum++
 	}
 
-	query += fmt.Sprintf(" ORDER BY p.created_at DESC LIMIT $%d", argNum)
+	query += fmt.Sprintf(" ORDER BY p.created_at DESC, p.id DESC LIMIT $%d", argNum)
 	args = append(args, limit)
 
 	return s.queryPosts(ctx, query, args...)
@@ -109,7 +109,7 @@ func (s *TimelinesStore) GetUserFeed(ctx context.Context, userID string, limit i
 		argNum++
 	}
 
-	query += fmt.Sprintf(" ORDER BY p.created_at DESC LIMIT $%d", argNum)
+	query += fmt.Sprintf(" ORDER BY p.created_at DESC, p.id DESC LIMIT $%d", argNum)
 	args = append(args, limit)
 
 	return s.queryPosts(ctx, query, args...)
@@ -139,7 +139,7 @@ func (s *TimelinesStore) GetHashtagFeed(ctx context.Context, tag string, limit i
 		argNum++
 	}
 
-	query += fmt.Sprintf(" ORDER BY p.created_at DESC LIMIT $%d", argNum)
+	query += fmt.Sprintf(" ORDER BY p.created_at DESC, p.id DESC LIMIT $%d", argNum)
 	args = append(args, limit)
 
 	return s.queryPosts(ctx, query, args...)
@@ -167,7 +167,7 @@ func (s *TimelinesStore) GetListFeed(ctx context.Context, listID string, limit i
 		argNum++
 	}
 
-	query += fmt.Sprintf(" ORDER BY p.created_at DESC LIMIT $%d", argNum)
+	query += fmt.Sprintf(" ORDER BY p.created_at DESC, p.id DESC LIMIT $%d", argNum)
 	args = append(args, limit)
 
 	return s.queryPosts(ctx, query, args...)

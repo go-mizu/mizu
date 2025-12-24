@@ -24,7 +24,7 @@ func NewSearchStore(db *sql.DB) *SearchStore {
 func (s *SearchStore) SearchAccounts(ctx context.Context, query string, limit, offset int) ([]*accounts.Account, error) {
 	pattern := "%" + strings.ToLower(query) + "%"
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, username, display_name, email, bio, avatar_url, header_url, location, website, fields, verified, admin, suspended, private, discoverable, created_at, updated_at
+		SELECT id, username, display_name, email, bio, avatar_url, header_url, location, website, CAST(fields AS VARCHAR), verified, admin, suspended, private, discoverable, created_at, updated_at
 		FROM accounts
 		WHERE discoverable = TRUE AND suspended = FALSE
 		AND (LOWER(username) LIKE $1 OR LOWER(display_name) LIKE $1)
@@ -147,8 +147,7 @@ func (s *SearchStore) SuggestHashtags(ctx context.Context, prefix string, limit 
 
 func (s *SearchStore) scanAccountRow(rows *sql.Rows) (*accounts.Account, error) {
 	var a accounts.Account
-	var displayName, email, bio, avatarURL, headerURL, location, website sql.NullString
-	var fieldsJSON string
+	var displayName, email, bio, avatarURL, headerURL, location, website, fieldsJSON sql.NullString
 
 	err := rows.Scan(&a.ID, &a.Username, &displayName, &email, &bio, &avatarURL, &headerURL, &location, &website, &fieldsJSON, &a.Verified, &a.Admin, &a.Suspended, &a.Private, &a.Discoverable, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
