@@ -11,7 +11,6 @@ import (
 	"github.com/go-mizu/mizu/blueprints/news/assets"
 	"github.com/go-mizu/mizu/blueprints/news/feature/comments"
 	"github.com/go-mizu/mizu/blueprints/news/feature/stories"
-	"github.com/go-mizu/mizu/blueprints/news/feature/tags"
 	"github.com/go-mizu/mizu/blueprints/news/feature/users"
 	"github.com/go-mizu/mizu/blueprints/news/feature/votes"
 	"github.com/go-mizu/mizu/blueprints/news/store/duckdb"
@@ -36,7 +35,6 @@ type Server struct {
 	stories  *stories.Service
 	comments *comments.Service
 	votes    *votes.Service
-	tags     *tags.Service
 
 	// Handlers
 	story *handler.Story
@@ -51,10 +49,8 @@ func NewServer(store *duckdb.Store, cfg ServerConfig) (*Server, error) {
 	storiesStore := store.Stories()
 	commentsStore := store.Comments()
 	votesStore := store.Votes()
-	tagsStore := store.Tags()
 
 	usersSvc := users.NewService(usersStore)
-	tagsSvc := tags.NewService(tagsStore)
 	storiesSvc := stories.NewService(storiesStore, usersStore, votesStore)
 	commentsSvc := comments.NewService(commentsStore, usersStore, votesStore)
 	votesSvc := votes.NewService(votesStore)
@@ -81,13 +77,12 @@ func NewServer(store *duckdb.Store, cfg ServerConfig) (*Server, error) {
 		stories:   storiesSvc,
 		comments:  commentsSvc,
 		votes:     votesSvc,
-		tags:      tagsSvc,
 	}
 
 	// Create handlers
 	s.story = handler.NewStory(storiesSvc, s.getUserID)
 	s.user = handler.NewUser(usersSvc, storiesSvc, commentsSvc)
-	s.page = handler.NewPage(templates, usersSvc, storiesSvc, commentsSvc, tagsSvc, s.getUserID)
+	s.page = handler.NewPage(templates, usersSvc, storiesSvc, commentsSvc, s.getUserID)
 
 	// Setup routes
 	s.setupRoutes()
@@ -138,7 +133,6 @@ func (s *Server) setupRoutes() {
 	r.Get("/top", s.page.Top)
 	r.Get("/story/{id}", s.page.Story)
 	r.Get("/user/{username}", s.page.User)
-	r.Get("/tag/{name}", s.page.Tag)
 }
 
 func (s *Server) serveStatic(c *mizu.Ctx) error {

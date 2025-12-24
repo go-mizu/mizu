@@ -35,11 +35,6 @@ func (s *Service) GetByID(ctx context.Context, id string, viewerID string) (*Sto
 		story.Author = author
 	}
 
-	// Populate tags
-	if tags, err := s.store.GetTagsForStory(ctx, id); err == nil {
-		story.Tags = tags
-	}
-
 	// Populate user vote
 	if viewerID != "" {
 		if vote, _ := s.votesStore.GetByUserAndTarget(ctx, viewerID, votes.TargetStory, id); vote != nil {
@@ -94,9 +89,6 @@ func (s *Service) populateStories(ctx context.Context, stories []*Story, viewerI
 	// Fetch authors
 	authors, _ := s.usersStore.GetByIDs(ctx, authorIDs)
 
-	// Fetch tags
-	storyTags, _ := s.store.GetTagsForStories(ctx, storyIDs)
-
 	// Fetch user votes
 	var userVotes map[string]*votes.Vote
 	if viewerID != "" {
@@ -107,9 +99,6 @@ func (s *Service) populateStories(ctx context.Context, stories []*Story, viewerI
 	for _, story := range stories {
 		if author, ok := authors[story.AuthorID]; ok {
 			story.Author = author
-		}
-		if tags, ok := storyTags[story.ID]; ok {
-			story.Tags = tags
 		}
 		if vote, ok := userVotes[story.ID]; ok {
 			story.UserVote = vote.Value

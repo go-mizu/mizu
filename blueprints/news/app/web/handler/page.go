@@ -7,7 +7,6 @@ import (
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/news/feature/comments"
 	"github.com/go-mizu/mizu/blueprints/news/feature/stories"
-	"github.com/go-mizu/mizu/blueprints/news/feature/tags"
 	"github.com/go-mizu/mizu/blueprints/news/feature/users"
 )
 
@@ -17,7 +16,6 @@ type Page struct {
 	users     *users.Service
 	stories   *stories.Service
 	comments  *comments.Service
-	tags      *tags.Service
 	getUserID func(*mizu.Ctx) string
 }
 
@@ -27,7 +25,6 @@ func NewPage(
 	users *users.Service,
 	stories *stories.Service,
 	comments *comments.Service,
-	tags *tags.Service,
 	getUserID func(*mizu.Ctx) string,
 ) *Page {
 	return &Page{
@@ -35,7 +32,6 @@ func NewPage(
 		users:     users,
 		stories:   stories,
 		comments:  comments,
-		tags:      tags,
 		getUserID: getUserID,
 	}
 }
@@ -48,8 +44,6 @@ type PageData struct {
 	Story       *stories.Story
 	Comments    []*comments.Comment
 	Profile     *users.User
-	Tags        []*tags.Tag
-	Tag         *tags.Tag
 	Sort        string
 	Page        int
 	HasMore     bool
@@ -213,42 +207,4 @@ func (h *Page) User(c *mizu.Ctx) error {
 	})
 }
 
-// Tag renders stories filtered by tag.
-func (h *Page) Tag(c *mizu.Ctx) error {
-	name := c.Param("name")
-	page, _ := strconv.Atoi(c.Query("p"))
-	if page < 1 {
-		page = 1
-	}
-	limit := 30
-	offset := (page - 1) * limit
-
-	tag, err := h.tags.GetByName(c.Request().Context(), name)
-	if err != nil {
-		return c.Text(404, "Tag not found")
-	}
-
-	userID := h.getUserID(c)
-	storiesList, _ := h.stories.List(c.Request().Context(), stories.ListIn{
-		Tag:    name,
-		Sort:   "hot",
-		Limit:  limit + 1,
-		Offset: offset,
-	}, userID)
-
-	hasMore := len(storiesList) > limit
-	if hasMore {
-		storiesList = storiesList[:limit]
-	}
-
-	return h.render(c, "tag.html", PageData{
-		Title:       tag.Name + " | News",
-		User:        h.getCurrentUser(c),
-		Tag:         tag,
-		Stories:     storiesList,
-		Page:        page,
-		HasMore:     hasMore,
-		StartOffset: offset,
-	})
-}
 

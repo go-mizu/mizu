@@ -156,7 +156,7 @@ func (s *Seeder) seedStory(ctx context.Context, sourceName string, data *StoryDa
 		story.TextHTML = markdown.RenderPlain(story.Text)
 	}
 
-	if err := s.storiesStore.Create(ctx, story, nil); err != nil {
+	if err := s.storiesStore.Create(ctx, story); err != nil {
 		return "", false, err
 	}
 
