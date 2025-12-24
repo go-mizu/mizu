@@ -1,0 +1,50 @@
+{{define "home.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="page-layout">
+    <div class="content-feed">
+        <div class="sort-tabs">
+            <a href="/" class="sort-tab {{if eq .Sort "hot"}}active{{end}}">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.555C21.965 6.012 17.461 2 12 2z"/>
+                </svg>
+                Hot
+            </a>
+            <a href="/newest" class="sort-tab {{if eq .Sort "new"}}active{{end}}">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                </svg>
+                New
+            </a>
+            <a href="/top" class="sort-tab {{if eq .Sort "top"}}active{{end}}">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="20" x2="12" y2="10"/>
+                    <line x1="18" y1="20" x2="18" y2="4"/>
+                    <line x1="6" y1="20" x2="6" y2="16"/>
+                </svg>
+                Top
+            </a>
+        </div>
+
+        <div class="thread-list">
+            {{range .Stories}}
+                {{template "story_card" .}}
+            {{else}}
+                <div class="empty-state">
+                    <h3>No stories yet</h3>
+                    <p>Check back later for new content!</p>
+                </div>
+            {{end}}
+        </div>
+
+        {{if .HasMore}}
+            <div class="pagination">
+                <a href="?p={{add .Page 1}}" class="btn btn-secondary">Load More</a>
+            </div>
+        {{end}}
+    </div>
+</div>
+{{end}}

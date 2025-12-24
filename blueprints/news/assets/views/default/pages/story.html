@@ -1,0 +1,69 @@
+{{define "story.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="page-layout">
+    <div class="content-feed">
+        <article class="thread-full">
+            <div class="thread-header">
+                <div class="vote-column">
+                    <span class="vote-score">{{formatScore .Story.Score}}</span>
+                </div>
+
+                <div class="thread-content">
+                    <div class="thread-meta">
+                        {{if .Story.Author}}
+                            <a href="/user/{{.Story.Author.Username}}" class="author-link">{{.Story.Author.Username}}</a>
+                        {{else}}
+                            <span class="author-deleted">[deleted]</span>
+                        {{end}}
+                        <span class="separator">-</span>
+                        <span class="time" title="{{formatTime .Story.CreatedAt}}">{{formatTimeRelative .Story.CreatedAt}}</span>
+                    </div>
+
+                    <h1 class="thread-title">
+                        {{if .Story.URL}}
+                            <a href="{{.Story.URL}}" target="_blank" rel="noopener">{{.Story.Title}}</a>
+                            <span class="domain">({{domain .Story.URL}})</span>
+                        {{else}}
+                            {{.Story.Title}}
+                        {{end}}
+                    </h1>
+                </div>
+            </div>
+
+            {{if .Story.TextHTML}}
+                <div class="thread-body-content">
+                    {{safeHTML .Story.TextHTML}}
+                </div>
+            {{end}}
+
+            <div class="thread-actions">
+                <span class="action-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    {{len .Comments}} Comments
+                </span>
+            </div>
+        </article>
+
+        <div class="comments-section">
+            <div class="comments-header">
+                <h2>Comments</h2>
+            </div>
+
+            <div class="comments-list">
+                {{range .Comments}}
+                    {{template "comment" .}}
+                {{else}}
+                    <div class="empty-state">
+                        <p>No comments yet.</p>
+                    </div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

@@ -1,0 +1,37 @@
+{{define "story_card"}}
+<article class="thread-card" data-story-id="{{.ID}}">
+    <div class="vote-column">
+        <span class="vote-score">{{formatScore .Score}}</span>
+    </div>
+
+    <div class="thread-body">
+        <div class="thread-meta">
+            {{if .Author}}
+                <a href="/user/{{.Author.Username}}" class="author-link">{{.Author.Username}}</a>
+            {{else}}
+                <span class="author-deleted">[deleted]</span>
+            {{end}}
+            <span class="separator">-</span>
+            <span class="time" title="{{formatTime .CreatedAt}}">{{formatTimeRelative .CreatedAt}}</span>
+        </div>
+
+        <h3 class="thread-title">
+            {{if .URL}}
+                <a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>
+                <span class="domain">({{domain .URL}})</span>
+            {{else}}
+                <a href="/story/{{.ID}}">{{.Title}}</a>
+            {{end}}
+        </h3>
+
+        <div class="thread-actions">
+            <a href="/story/{{.ID}}" class="action-btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+                {{.CommentCount}} Comments
+            </a>
+        </div>
+    </div>
+</article>
+{{end}}

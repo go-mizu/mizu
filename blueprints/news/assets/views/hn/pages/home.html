@@ -1,0 +1,53 @@
+{{define "home.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<tr>
+    <td>
+        <table border="0" cellpadding="0" cellspacing="0" class="itemlist">
+        <tbody>
+            {{range .Stories}}
+                {{template "story_card" .}}
+            {{else}}
+                <tr>
+                    <td colspan="3" style="padding:20px">
+                        No stories yet.
+                    </td>
+                </tr>
+            {{end}}
+            <tr class="morespace" style="height:10px"></tr>
+            {{if .HasMore}}
+            <tr>
+                <td colspan="2"></td>
+                <td class="title">
+                    <a href="?p={{add .Page 1}}" class="morelink" rel="next">More</a>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+        </table>
+    </td>
+</tr>
+<tr>
+    <td><img src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==" height="10" width="0"></td>
+</tr>
+<tr>
+    <td>
+        <table width="100%" cellspacing="0" cellpadding="1">
+        <tr>
+            <td bgcolor="#ff6600"></td>
+        </tr>
+        </table>
+        <br>
+        <center>
+            <span class="yclinks">
+                <a href="/">Guidelines</a>
+                | <a href="/">FAQ</a>
+                | <a href="/">API</a>
+            </span>
+        </center>
+    </td>
+</tr>
+</table>
+{{end}}

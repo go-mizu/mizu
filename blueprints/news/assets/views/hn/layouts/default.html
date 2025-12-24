@@ -1,0 +1,20 @@
+{{define "default.html"}}
+<!DOCTYPE html>
+<html lang="en" op="news">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="referrer" content="origin">
+    <meta name="description" content="News - A read-only news aggregator">
+    <title>{{.Title}} | News</title>
+    <link rel="stylesheet" href="/static/css/hn.css">
+    <link rel="shortcut icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23ff6600' width='100' height='100' rx='8'/><text x='50' y='70' font-size='60' font-family='sans-serif' font-weight='bold' fill='white' text-anchor='middle'>N</text></svg>">
+</head>
+<body>
+<center>
+    {{template "nav" .}}
+    {{template "content" .}}
+</center>
+</body>
+</html>
+{{end}}

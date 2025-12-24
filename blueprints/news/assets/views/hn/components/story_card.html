@@ -1,0 +1,34 @@
+{{define "story_card"}}
+<tr class="athing" id="{{.ID}}" data-story-id="{{.ID}}">
+    <td align="right" valign="top" class="title"><span class="rank"></span></td>
+    <td valign="top" class="votelinks">
+        <center>
+            <div class="votearrow" title="upvote"></div>
+        </center>
+    </td>
+    <td class="title">
+        <span class="titleline">
+            {{if .URL}}
+            <a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>
+            <span class="sitebit comhead"> (<span class="sitestr">{{domain .URL}}</span>)</span>
+            {{else}}
+            <a href="/story/{{.ID}}">{{.Title}}</a>
+            {{end}}
+        </span>
+    </td>
+</tr>
+<tr>
+    <td colspan="2"></td>
+    <td class="subtext">
+        <span class="score" id="score_{{.ID}}">{{formatScore .Score}} points</span> by
+        {{if .Author}}
+        <a href="/user/{{.Author.Username}}" class="hnuser">{{.Author.Username}}</a>
+        {{else}}
+        <span class="hnuser">[deleted]</span>
+        {{end}}
+        <span class="age" title="{{formatTime .CreatedAt}}"><a href="/story/{{.ID}}">{{formatTimeRelative .CreatedAt}}</a></span>
+        | <a href="/story/{{.ID}}">{{.CommentCount}}&nbsp;comments</a>
+    </td>
+</tr>
+<tr class="spacer" style="height:5px"></tr>
+{{end}}

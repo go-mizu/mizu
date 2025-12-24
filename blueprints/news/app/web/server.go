@@ -19,15 +19,16 @@ import (
 
 // ServerConfig holds server configuration.
 type ServerConfig struct {
-	Addr string
-	Dev  bool
+	Addr  string
+	Dev   bool
+	Theme string // "default", "hn", "bbs", "old", "phpbb", "vbulletin"
 }
 
 // Server is the news web server.
 type Server struct {
 	app       *mizu.App
 	store     *duckdb.Store
-	templates *template.Template
+	templates map[string]*template.Template
 	config    ServerConfig
 
 	// Services
@@ -61,8 +62,12 @@ func NewServer(store *duckdb.Store, cfg ServerConfig) (*Server, error) {
 	// Create Mizu app
 	app := mizu.New()
 
-	// Load templates
-	templates, err := assets.LoadTemplates()
+	// Load templates for selected theme
+	theme := cfg.Theme
+	if theme == "" {
+		theme = "default"
+	}
+	templates, err := assets.LoadTemplatesForTheme(theme)
 	if err != nil {
 		return nil, err
 	}

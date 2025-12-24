@@ -1,0 +1,981 @@
+/* BBS Theme - Authentic Bulletin Board System styling */
+
+/* ANSI Color Palette */
+:root {
+    --bbs-black: #0a0a0a;
+    --bbs-dark-blue: #000040;
+    --bbs-blue: #0000aa;
+    --bbs-bright-blue: #5555ff;
+    --bbs-cyan: #00aaaa;
+    --bbs-bright-cyan: #55ffff;
+    --bbs-green: #00aa00;
+    --bbs-bright-green: #55ff55;
+    --bbs-red: #aa0000;
+    --bbs-bright-red: #ff5555;
+    --bbs-magenta: #aa00aa;
+    --bbs-bright-magenta: #ff55ff;
+    --bbs-yellow: #aa5500;
+    --bbs-bright-yellow: #ffff55;
+    --bbs-white: #aaaaaa;
+    --bbs-bright-white: #ffffff;
+    --bbs-gray: #555555;
+}
+
+/* Reset */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+/* Base styling */
+html {
+    font-size: 14px;
+    height: 100%;
+}
+
+body {
+    font-family: 'IBM Plex Mono', 'Courier New', Courier, monospace;
+    background-color: var(--bbs-black);
+    color: var(--bbs-white);
+    min-height: 100%;
+    line-height: 1.4;
+}
+
+a {
+    color: var(--bbs-bright-cyan);
+    text-decoration: none;
+}
+
+a:hover {
+    color: var(--bbs-bright-yellow);
+    text-decoration: underline;
+}
+
+/* Container */
+.bbs-container {
+    max-width: 80ch;
+    margin: 0 auto;
+    padding: 0 1ch;
+}
+
+/* ASCII Art Header */
+.bbs-header {
+    background-color: var(--bbs-blue);
+    color: var(--bbs-bright-white);
+    padding: 8px 0;
+    text-align: center;
+    border-bottom: 2px solid var(--bbs-bright-blue);
+}
+
+.bbs-header pre {
+    font-size: 10px;
+    line-height: 1.1;
+    color: var(--bbs-bright-cyan);
+    margin: 0;
+}
+
+.bbs-header .bbs-title {
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: var(--bbs-bright-yellow);
+    letter-spacing: 2px;
+}
+
+/* Navigation Bar */
+.bbs-nav {
+    background-color: var(--bbs-dark-blue);
+    border-bottom: 1px solid var(--bbs-bright-blue);
+    padding: 4px 0;
+}
+
+.bbs-nav-inner {
+    max-width: 80ch;
+    margin: 0 auto;
+    padding: 0 1ch;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.bbs-nav-left, .bbs-nav-right {
+    display: flex;
+    gap: 2ch;
+    flex-wrap: wrap;
+}
+
+.bbs-nav a, .bbs-nav button {
+    color: var(--bbs-bright-cyan);
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-size: inherit;
+    cursor: pointer;
+    padding: 2px 0;
+}
+
+.bbs-nav a:hover, .bbs-nav button:hover {
+    color: var(--bbs-bright-yellow);
+}
+
+.bbs-nav .active {
+    color: var(--bbs-bright-yellow);
+}
+
+.bbs-nav .separator {
+    color: var(--bbs-gray);
+}
+
+.bbs-nav .user-info {
+    color: var(--bbs-bright-green);
+}
+
+.bbs-nav .unread {
+    color: var(--bbs-bright-red);
+}
+
+/* Status Bar */
+.bbs-status {
+    background-color: var(--bbs-cyan);
+    color: var(--bbs-black);
+    padding: 2px 0;
+    font-weight: bold;
+}
+
+.bbs-status-inner {
+    max-width: 80ch;
+    margin: 0 auto;
+    padding: 0 1ch;
+    display: flex;
+    justify-content: space-between;
+}
+
+/* Main Content */
+.bbs-main {
+    max-width: 80ch;
+    margin: 0 auto;
+    padding: 1ch;
+    min-height: calc(100vh - 200px);
+}
+
+/* Box Drawing Borders */
+.bbs-box {
+    border: 1px solid var(--bbs-bright-blue);
+    margin-bottom: 1ch;
+    background-color: rgba(0, 0, 64, 0.3);
+}
+
+.bbs-box-header {
+    background-color: var(--bbs-blue);
+    color: var(--bbs-bright-yellow);
+    padding: 4px 1ch;
+    font-weight: bold;
+    border-bottom: 1px solid var(--bbs-bright-blue);
+}
+
+.bbs-box-content {
+    padding: 1ch;
+}
+
+/* Thread List */
+.bbs-thread-list {
+    border: 1px solid var(--bbs-bright-blue);
+}
+
+.bbs-thread-header {
+    background-color: var(--bbs-blue);
+    color: var(--bbs-bright-white);
+    padding: 4px 1ch;
+    display: grid;
+    grid-template-columns: 6ch 1fr 12ch 8ch 10ch;
+    gap: 1ch;
+    font-weight: bold;
+    border-bottom: 1px solid var(--bbs-bright-blue);
+}
+
+.bbs-thread-row {
+    display: grid;
+    grid-template-columns: 6ch 1fr 12ch 8ch 10ch;
+    gap: 1ch;
+    padding: 4px 1ch;
+    border-bottom: 1px solid var(--bbs-gray);
+}
+
+.bbs-thread-row:hover {
+    background-color: rgba(85, 85, 255, 0.1);
+}
+
+.bbs-thread-row:last-child {
+    border-bottom: none;
+}
+
+.bbs-thread-score {
+    color: var(--bbs-bright-green);
+    text-align: right;
+}
+
+.bbs-thread-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bbs-thread-title a {
+    color: var(--bbs-bright-cyan);
+}
+
+.bbs-thread-title .domain {
+    color: var(--bbs-gray);
+    font-size: 0.9em;
+}
+
+.bbs-thread-author {
+    color: var(--bbs-bright-magenta);
+}
+
+.bbs-thread-replies {
+    color: var(--bbs-bright-yellow);
+    text-align: right;
+}
+
+.bbs-thread-date {
+    color: var(--bbs-white);
+    text-align: right;
+}
+
+.bbs-thread-pinned {
+    background-color: rgba(170, 85, 0, 0.2);
+}
+
+.bbs-thread-pinned .bbs-thread-title::before {
+    content: "[PIN] ";
+    color: var(--bbs-bright-yellow);
+}
+
+.bbs-thread-locked .bbs-thread-title::before {
+    content: "[LOCK] ";
+    color: var(--bbs-bright-red);
+}
+
+/* Tags */
+.bbs-tag {
+    font-size: 0.85em;
+    padding: 0 4px;
+    margin-left: 4px;
+}
+
+.bbs-tag-nsfw {
+    color: var(--bbs-black);
+    background-color: var(--bbs-bright-red);
+}
+
+.bbs-tag-spoiler {
+    color: var(--bbs-black);
+    background-color: var(--bbs-bright-yellow);
+}
+
+.bbs-tag-pinned {
+    color: var(--bbs-black);
+    background-color: var(--bbs-bright-green);
+}
+
+.bbs-tag-locked {
+    color: var(--bbs-bright-white);
+    background-color: var(--bbs-gray);
+}
+
+/* Sort Tabs */
+.bbs-sort {
+    margin-bottom: 1ch;
+    color: var(--bbs-white);
+}
+
+.bbs-sort a {
+    color: var(--bbs-bright-cyan);
+    margin-right: 2ch;
+}
+
+.bbs-sort a.active {
+    color: var(--bbs-bright-yellow);
+}
+
+.bbs-sort::before {
+    content: "Sort: ";
+    color: var(--bbs-gray);
+}
+
+/* Thread View */
+.bbs-thread-full {
+    border: 1px solid var(--bbs-bright-blue);
+    margin-bottom: 2ch;
+}
+
+.bbs-thread-full-header {
+    background-color: var(--bbs-blue);
+    padding: 1ch;
+    border-bottom: 1px solid var(--bbs-bright-blue);
+}
+
+.bbs-thread-full-title {
+    color: var(--bbs-bright-yellow);
+    font-size: 1.2em;
+    margin-bottom: 8px;
+}
+
+.bbs-thread-full-meta {
+    color: var(--bbs-white);
+    font-size: 0.9em;
+}
+
+.bbs-thread-full-meta a {
+    color: var(--bbs-bright-cyan);
+}
+
+.bbs-thread-full-body {
+    padding: 1ch;
+    background-color: rgba(0, 0, 64, 0.3);
+}
+
+.bbs-thread-full-body p {
+    margin-bottom: 1em;
+}
+
+.bbs-thread-full-body p:last-child {
+    margin-bottom: 0;
+}
+
+.bbs-thread-full-actions {
+    background-color: var(--bbs-dark-blue);
+    padding: 8px 1ch;
+    border-top: 1px solid var(--bbs-bright-blue);
+    display: flex;
+    gap: 2ch;
+    flex-wrap: wrap;
+}
+
+.bbs-thread-full-actions button,
+.bbs-thread-full-actions a {
+    background: none;
+    border: 1px solid var(--bbs-bright-blue);
+    color: var(--bbs-bright-cyan);
+    padding: 4px 8px;
+    font-family: inherit;
+    font-size: inherit;
+    cursor: pointer;
+}
+
+.bbs-thread-full-actions button:hover,
+.bbs-thread-full-actions a:hover {
+    background-color: var(--bbs-bright-blue);
+    color: var(--bbs-bright-white);
+}
+
+.bbs-thread-full-actions button.active {
+    color: var(--bbs-bright-yellow);
+    border-color: var(--bbs-bright-yellow);
+}
+
+/* Voting */
+.bbs-vote {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.bbs-vote button {
+    background: none;
+    border: none;
+    color: var(--bbs-gray);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 1em;
+    padding: 0;
+    line-height: 1;
+}
+
+.bbs-vote button:hover {
+    color: var(--bbs-bright-yellow);
+}
+
+.bbs-vote button.active.upvote {
+    color: var(--bbs-bright-green);
+}
+
+.bbs-vote button.active.downvote {
+    color: var(--bbs-bright-red);
+}
+
+.bbs-vote .score {
+    color: var(--bbs-bright-green);
+    min-width: 4ch;
+    text-align: center;
+}
+
+/* Comments */
+.bbs-comments {
+    border: 1px solid var(--bbs-bright-blue);
+}
+
+.bbs-comments-header {
+    background-color: var(--bbs-blue);
+    color: var(--bbs-bright-yellow);
+    padding: 4px 1ch;
+    font-weight: bold;
+    border-bottom: 1px solid var(--bbs-bright-blue);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.bbs-comments-header select {
+    background-color: var(--bbs-dark-blue);
+    color: var(--bbs-bright-cyan);
+    border: 1px solid var(--bbs-bright-blue);
+    font-family: inherit;
+    font-size: inherit;
+    padding: 2px 4px;
+}
+
+.bbs-comments-list {
+    padding: 1ch;
+}
+
+.bbs-comment {
+    margin-bottom: 1ch;
+    padding-left: calc(var(--depth, 0) * 2ch);
+}
+
+.bbs-comment-header {
+    color: var(--bbs-gray);
+    font-size: 0.9em;
+    margin-bottom: 4px;
+}
+
+.bbs-comment-author {
+    color: var(--bbs-bright-magenta);
+    font-weight: bold;
+}
+
+.bbs-comment-score {
+    color: var(--bbs-bright-green);
+}
+
+.bbs-comment-time {
+    color: var(--bbs-gray);
+}
+
+.bbs-comment-body {
+    color: var(--bbs-white);
+    padding-left: 2ch;
+    border-left: 1px solid var(--bbs-gray);
+    margin-bottom: 4px;
+}
+
+.bbs-comment-body p {
+    margin-bottom: 0.5em;
+}
+
+.bbs-comment-body p:last-child {
+    margin-bottom: 0;
+}
+
+.bbs-comment-actions {
+    font-size: 0.9em;
+    display: flex;
+    gap: 2ch;
+    padding-left: 2ch;
+}
+
+.bbs-comment-actions button,
+.bbs-comment-actions a {
+    background: none;
+    border: none;
+    color: var(--bbs-bright-cyan);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: inherit;
+    padding: 0;
+}
+
+.bbs-comment-actions button:hover,
+.bbs-comment-actions a:hover {
+    color: var(--bbs-bright-yellow);
+}
+
+.bbs-comment-deleted {
+    color: var(--bbs-gray);
+    font-style: italic;
+}
+
+.bbs-comment-removed {
+    color: var(--bbs-bright-red);
+}
+
+/* Reply Form */
+.bbs-reply-form {
+    margin-top: 8px;
+    padding-left: 2ch;
+}
+
+.bbs-reply-form.hidden {
+    display: none;
+}
+
+/* Forms */
+.bbs-form {
+    border: 1px solid var(--bbs-bright-blue);
+    margin-bottom: 2ch;
+}
+
+.bbs-form-header {
+    background-color: var(--bbs-blue);
+    color: var(--bbs-bright-yellow);
+    padding: 4px 1ch;
+    font-weight: bold;
+    border-bottom: 1px solid var(--bbs-bright-blue);
+}
+
+.bbs-form-content {
+    padding: 1ch;
+    background-color: rgba(0, 0, 64, 0.3);
+}
+
+.bbs-form-group {
+    margin-bottom: 1ch;
+}
+
+.bbs-form-group label {
+    display: block;
+    color: var(--bbs-bright-cyan);
+    margin-bottom: 4px;
+}
+
+.bbs-form-group input,
+.bbs-form-group textarea,
+.bbs-form-group select {
+    width: 100%;
+    background-color: var(--bbs-black);
+    color: var(--bbs-bright-white);
+    border: 1px solid var(--bbs-bright-blue);
+    padding: 8px;
+    font-family: inherit;
+    font-size: inherit;
+}
+
+.bbs-form-group input:focus,
+.bbs-form-group textarea:focus,
+.bbs-form-group select:focus {
+    outline: none;
+    border-color: var(--bbs-bright-yellow);
+}
+
+.bbs-form-group textarea {
+    min-height: 100px;
+    resize: vertical;
+}
+
+.bbs-form-error {
+    color: var(--bbs-bright-red);
+    margin-bottom: 1ch;
+    padding: 8px;
+    border: 1px solid var(--bbs-bright-red);
+    background-color: rgba(170, 0, 0, 0.2);
+}
+
+.bbs-form-error.hidden {
+    display: none;
+}
+
+.bbs-form-actions {
+    display: flex;
+    gap: 1ch;
+    margin-top: 1ch;
+}
+
+/* Buttons */
+.bbs-btn {
+    background-color: var(--bbs-blue);
+    color: var(--bbs-bright-white);
+    border: 1px solid var(--bbs-bright-blue);
+    padding: 8px 16px;
+    font-family: inherit;
+    font-size: inherit;
+    cursor: pointer;
+}
+
+.bbs-btn:hover {
+    background-color: var(--bbs-bright-blue);
+}
+
+.bbs-btn-primary {
+    background-color: var(--bbs-cyan);
+    color: var(--bbs-black);
+    border-color: var(--bbs-bright-cyan);
+}
+
+.bbs-btn-primary:hover {
+    background-color: var(--bbs-bright-cyan);
+}
+
+.bbs-btn-secondary {
+    background-color: transparent;
+    color: var(--bbs-bright-cyan);
+}
+
+.bbs-btn-secondary:hover {
+    background-color: var(--bbs-blue);
+}
+
+.bbs-btn-block {
+    width: 100%;
+    display: block;
+    text-align: center;
+}
+
+/* Sidebar */
+.bbs-layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2ch;
+}
+
+@media (min-width: 800px) {
+    .bbs-layout {
+        grid-template-columns: 1fr 25ch;
+    }
+}
+
+.bbs-sidebar .bbs-box {
+    margin-bottom: 1ch;
+}
+
+/* Board List */
+.bbs-board-list {
+    list-style: none;
+}
+
+.bbs-board-list li {
+    padding: 4px 0;
+    border-bottom: 1px solid var(--bbs-gray);
+}
+
+.bbs-board-list li:last-child {
+    border-bottom: none;
+}
+
+.bbs-board-list a {
+    color: var(--bbs-bright-cyan);
+}
+
+.bbs-board-list .members {
+    color: var(--bbs-gray);
+    font-size: 0.9em;
+}
+
+/* Board Header */
+.bbs-board-header {
+    border: 1px solid var(--bbs-bright-blue);
+    margin-bottom: 2ch;
+}
+
+.bbs-board-header-main {
+    background-color: var(--bbs-blue);
+    padding: 1ch;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1ch;
+}
+
+.bbs-board-header h1 {
+    color: var(--bbs-bright-yellow);
+    font-size: 1.2em;
+}
+
+.bbs-board-header .board-name {
+    color: var(--bbs-bright-cyan);
+}
+
+.bbs-board-header-info {
+    padding: 1ch;
+    background-color: rgba(0, 0, 64, 0.3);
+}
+
+.bbs-board-stats {
+    display: flex;
+    gap: 2ch;
+    color: var(--bbs-white);
+}
+
+.bbs-board-stats .value {
+    color: var(--bbs-bright-green);
+}
+
+/* User Profile */
+.bbs-user-header {
+    border: 1px solid var(--bbs-bright-blue);
+    margin-bottom: 2ch;
+}
+
+.bbs-user-header-main {
+    background-color: var(--bbs-blue);
+    padding: 1ch;
+}
+
+.bbs-user-header h1 {
+    color: var(--bbs-bright-magenta);
+    font-size: 1.2em;
+}
+
+.bbs-user-header-info {
+    padding: 1ch;
+    background-color: rgba(0, 0, 64, 0.3);
+}
+
+.bbs-user-stats {
+    display: flex;
+    gap: 2ch;
+    color: var(--bbs-white);
+}
+
+.bbs-user-stats .value {
+    color: var(--bbs-bright-green);
+}
+
+/* Auth Pages */
+.bbs-auth {
+    max-width: 50ch;
+    margin: 4ch auto;
+}
+
+/* Search */
+.bbs-search-form {
+    margin-bottom: 2ch;
+}
+
+.bbs-search-input {
+    display: flex;
+    gap: 1ch;
+}
+
+.bbs-search-input input {
+    flex: 1;
+    background-color: var(--bbs-black);
+    color: var(--bbs-bright-white);
+    border: 1px solid var(--bbs-bright-blue);
+    padding: 8px;
+    font-family: inherit;
+    font-size: inherit;
+}
+
+/* Notifications */
+.bbs-notification {
+    padding: 1ch;
+    border-bottom: 1px solid var(--bbs-gray);
+}
+
+.bbs-notification:last-child {
+    border-bottom: none;
+}
+
+.bbs-notification.unread {
+    background-color: rgba(85, 85, 255, 0.1);
+}
+
+.bbs-notification-content {
+    color: var(--bbs-white);
+}
+
+.bbs-notification-time {
+    color: var(--bbs-gray);
+    font-size: 0.9em;
+}
+
+/* Empty State */
+.bbs-empty {
+    text-align: center;
+    padding: 4ch 2ch;
+    color: var(--bbs-gray);
+}
+
+.bbs-empty h3 {
+    color: var(--bbs-white);
+    margin-bottom: 1ch;
+}
+
+/* Error Page */
+.bbs-error {
+    text-align: center;
+    padding: 4ch 2ch;
+}
+
+.bbs-error h1 {
+    color: var(--bbs-bright-red);
+    font-size: 3em;
+    margin-bottom: 1ch;
+}
+
+.bbs-error p {
+    color: var(--bbs-white);
+    margin-bottom: 2ch;
+}
+
+/* Footer */
+.bbs-footer {
+    background-color: var(--bbs-dark-blue);
+    border-top: 1px solid var(--bbs-bright-blue);
+    padding: 1ch 0;
+    margin-top: 2ch;
+    text-align: center;
+    color: var(--bbs-gray);
+    font-size: 0.9em;
+}
+
+.bbs-footer a {
+    color: var(--bbs-bright-cyan);
+}
+
+/* Breadcrumb */
+.bbs-breadcrumb {
+    padding: 8px 0;
+    color: var(--bbs-gray);
+    font-size: 0.9em;
+}
+
+.bbs-breadcrumb a {
+    color: var(--bbs-bright-cyan);
+}
+
+.bbs-breadcrumb .separator {
+    margin: 0 1ch;
+}
+
+/* Settings */
+.bbs-settings-section {
+    margin-bottom: 2ch;
+}
+
+.bbs-settings-section h2 {
+    color: var(--bbs-bright-yellow);
+    margin-bottom: 1ch;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--bbs-gray);
+}
+
+/* Tabs */
+.bbs-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--bbs-bright-blue);
+    margin-bottom: 2ch;
+}
+
+.bbs-tabs a {
+    padding: 8px 16px;
+    color: var(--bbs-bright-cyan);
+    border: 1px solid transparent;
+    border-bottom: none;
+    margin-bottom: -1px;
+}
+
+.bbs-tabs a:hover {
+    background-color: rgba(85, 85, 255, 0.1);
+}
+
+.bbs-tabs a.active {
+    background-color: var(--bbs-dark-blue);
+    border-color: var(--bbs-bright-blue);
+    color: var(--bbs-bright-yellow);
+}
+
+/* Locked Notice */
+.bbs-locked-notice {
+    text-align: center;
+    padding: 2ch;
+    background-color: rgba(170, 0, 0, 0.2);
+    border: 1px solid var(--bbs-bright-red);
+    color: var(--bbs-bright-red);
+    margin-bottom: 2ch;
+}
+
+/* Link External */
+.bbs-external-link {
+    color: var(--bbs-gray);
+    font-size: 0.9em;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+    .bbs-thread-header,
+    .bbs-thread-row {
+        grid-template-columns: 5ch 1fr;
+    }
+
+    .bbs-thread-header .col-author,
+    .bbs-thread-header .col-replies,
+    .bbs-thread-header .col-date,
+    .bbs-thread-row .bbs-thread-author,
+    .bbs-thread-row .bbs-thread-replies,
+    .bbs-thread-row .bbs-thread-date {
+        display: none;
+    }
+
+    .bbs-nav-inner {
+        flex-direction: column;
+    }
+}
+
+/* All Boards Page */
+.bbs-boards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(30ch, 1fr));
+    gap: 1ch;
+}
+
+.bbs-board-card {
+    border: 1px solid var(--bbs-bright-blue);
+    padding: 1ch;
+}
+
+.bbs-board-card h3 {
+    color: var(--bbs-bright-cyan);
+    margin-bottom: 4px;
+}
+
+.bbs-board-card p {
+    color: var(--bbs-white);
+    font-size: 0.9em;
+}
+
+.bbs-board-card .meta {
+    color: var(--bbs-gray);
+    font-size: 0.85em;
+    margin-top: 8px;
+}
+
+/* Submit Page Tabs */
+.bbs-submit-tabs {
+    display: flex;
+    gap: 1ch;
+    margin-bottom: 1ch;
+}
+
+.bbs-submit-tabs button {
+    background-color: var(--bbs-dark-blue);
+    color: var(--bbs-bright-cyan);
+    border: 1px solid var(--bbs-bright-blue);
+    padding: 8px 16px;
+    font-family: inherit;
+    font-size: inherit;
+    cursor: pointer;
+}
+
+.bbs-submit-tabs button:hover {
+    background-color: var(--bbs-blue);
+}
+
+.bbs-submit-tabs button.active {
+    background-color: var(--bbs-blue);
+    color: var(--bbs-bright-yellow);
+}
