@@ -28,13 +28,13 @@ var (
 
 // Notification represents a notification.
 type Notification struct {
-	ID        string            `json:"id"`
-	AccountID string            `json:"account_id"`
-	Type      string            `json:"type"`
-	ActorID   string            `json:"actor_id,omitempty"`
-	PostID    string            `json:"post_id,omitempty"`
-	Read      bool              `json:"read"`
-	CreatedAt time.Time         `json:"created_at"`
+	ID        string    `json:"id"`
+	AccountID string    `json:"account_id"`
+	Type      string    `json:"type"`
+	ActorID   string    `json:"actor_id,omitempty"`
+	PostID    string    `json:"post_id,omitempty"`
+	Read      bool      `json:"read"`
+	CreatedAt time.Time `json:"created_at"`
 
 	// Enriched fields
 	Actor *accounts.Account `json:"actor,omitempty"`
@@ -43,10 +43,10 @@ type Notification struct {
 
 // ListOpts specifies options for listing notifications.
 type ListOpts struct {
-	Limit       int
-	MaxID       string
-	SinceID     string
-	Types       []string
+	Limit        int
+	MaxID        string
+	SinceID      string
+	Types        []string
 	ExcludeTypes []string
 }
 

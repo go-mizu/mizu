@@ -9,34 +9,34 @@ import (
 
 // Errors
 var (
-	ErrNotFound          = errors.New("account not found")
-	ErrUsernameTaken     = errors.New("username already taken")
-	ErrEmailTaken        = errors.New("email already taken")
+	ErrNotFound           = errors.New("account not found")
+	ErrUsernameTaken      = errors.New("username already taken")
+	ErrEmailTaken         = errors.New("email already taken")
 	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrAccountSuspended  = errors.New("account is suspended")
-	ErrUnauthorized      = errors.New("unauthorized")
-	ErrInvalidSession    = errors.New("invalid or expired session")
+	ErrAccountSuspended   = errors.New("account is suspended")
+	ErrUnauthorized       = errors.New("unauthorized")
+	ErrInvalidSession     = errors.New("invalid or expired session")
 )
 
 // Account represents a user account.
 type Account struct {
-	ID          string    `json:"id"`
-	Username    string    `json:"username"`
-	DisplayName string    `json:"display_name,omitempty"`
-	Email       string    `json:"-"` // Never expose email in JSON
-	Bio         string    `json:"bio,omitempty"`
-	AvatarURL   string    `json:"avatar_url,omitempty"`
-	HeaderURL   string    `json:"header_url,omitempty"`
-	Location    string    `json:"location,omitempty"`
-	Website     string    `json:"website,omitempty"`
-	Fields      []Field   `json:"fields,omitempty"`
-	Verified    bool      `json:"verified"`
-	Admin       bool      `json:"-"` // Don't expose admin status
-	Suspended   bool      `json:"-"` // Don't expose suspension
-	Private     bool      `json:"private"`
-	Discoverable bool     `json:"discoverable"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID           string    `json:"id"`
+	Username     string    `json:"username"`
+	DisplayName  string    `json:"display_name,omitempty"`
+	Email        string    `json:"-"` // Never expose email in JSON
+	Bio          string    `json:"bio,omitempty"`
+	AvatarURL    string    `json:"avatar_url,omitempty"`
+	HeaderURL    string    `json:"header_url,omitempty"`
+	Location     string    `json:"location,omitempty"`
+	Website      string    `json:"website,omitempty"`
+	Fields       []Field   `json:"fields,omitempty"`
+	Verified     bool      `json:"verified"`
+	Admin        bool      `json:"-"` // Don't expose admin status
+	Suspended    bool      `json:"-"` // Don't expose suspension
+	Private      bool      `json:"private"`
+	Discoverable bool      `json:"discoverable"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 
 	// Computed fields (from joins/aggregations)
 	FollowersCount int  `json:"followers_count"`

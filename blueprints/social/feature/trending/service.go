@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	defaultLimit  = 10
-	trendWindow   = 24 * time.Hour
+	defaultLimit = 10
+	trendWindow  = 24 * time.Hour
 )
 
 // Service implements the trending API.

@@ -27,22 +27,22 @@ var (
 
 // Post represents a post/status.
 type Post struct {
-	ID             string            `json:"id"`
-	AccountID      string            `json:"account_id"`
-	Content        string            `json:"content"`
-	ContentWarning string            `json:"content_warning,omitempty"`
-	Visibility     string            `json:"visibility"`
-	ReplyToID      string            `json:"reply_to_id,omitempty"`
-	ThreadID       string            `json:"thread_id,omitempty"`
-	QuoteOfID      string            `json:"quote_of_id,omitempty"`
-	Language       string            `json:"language,omitempty"`
-	Sensitive      bool              `json:"sensitive"`
-	EditedAt       *time.Time        `json:"edited_at,omitempty"`
-	CreatedAt      time.Time         `json:"created_at"`
-	LikesCount     int               `json:"likes_count"`
-	RepostsCount   int               `json:"reposts_count"`
-	RepliesCount   int               `json:"replies_count"`
-	QuotesCount    int               `json:"quotes_count"`
+	ID             string     `json:"id"`
+	AccountID      string     `json:"account_id"`
+	Content        string     `json:"content"`
+	ContentWarning string     `json:"content_warning,omitempty"`
+	Visibility     string     `json:"visibility"`
+	ReplyToID      string     `json:"reply_to_id,omitempty"`
+	ThreadID       string     `json:"thread_id,omitempty"`
+	QuoteOfID      string     `json:"quote_of_id,omitempty"`
+	Language       string     `json:"language,omitempty"`
+	Sensitive      bool       `json:"sensitive"`
+	EditedAt       *time.Time `json:"edited_at,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	LikesCount     int        `json:"likes_count"`
+	RepostsCount   int        `json:"reposts_count"`
+	RepliesCount   int        `json:"replies_count"`
+	QuotesCount    int        `json:"quotes_count"`
 
 	// Enriched fields
 	Account  *accounts.Account `json:"account,omitempty"`
@@ -92,11 +92,11 @@ type UpdateIn struct {
 
 // ListOpts specifies options for listing posts.
 type ListOpts struct {
-	Limit       int
-	Offset      int
-	AccountID   string
+	Limit          int
+	Offset         int
+	AccountID      string
 	ExcludeReplies bool
-	OnlyMedia   bool
+	OnlyMedia      bool
 }
 
 // Context represents a post's thread context.
