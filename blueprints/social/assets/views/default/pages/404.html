@@ -1,11 +1,12 @@
-{{define "title"}}Not Found - Social{{end}}
+{{define "title"}}Page Not Found - Social{{end}}
 
 {{template "base" .}}
 
 {{define "content"}}
 <div class="page error-page">
-    <h1>404</h1>
-    <p>Page not found</p>
+    <div class="error-code">404</div>
+    <h1>Page not found</h1>
+    <p>The page you're looking for doesn't exist or has been moved.</p>
     <a href="/">Go home</a>
 </div>
 {{end}}

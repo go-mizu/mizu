@@ -8,25 +8,35 @@
         <h1>Search</h1>
     </header>
 
-    <div class="search-form">
+    <div class="search-form" style="padding: var(--space-4) var(--space-5);">
         <form id="search-form" action="/search" method="get">
-            <input type="text" name="q" value="{{.Query}}" placeholder="Search posts, people, or tags...">
-            <button type="submit">Search</button>
+            <div class="search-box">
+                <span class="search-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                </span>
+                <input type="text" name="q" value="{{.Query}}" placeholder="Search posts, people, or tags..." autofocus>
+            </div>
         </form>
     </div>
 
-    <div class="search-tabs">
+    <nav class="search-tabs">
         <button class="tab active" data-type="">All</button>
         <button class="tab" data-type="accounts">People</button>
         <button class="tab" data-type="posts">Posts</button>
         <button class="tab" data-type="hashtags">Tags</button>
-    </div>
+    </nav>
 
     <div class="search-results" id="results">
         {{if .Query}}
         <div class="loading">Searching...</div>
         {{else}}
-        <div class="empty">Enter a search term</div>
+        <div class="empty">
+            <div class="icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            </div>
+            <h3>Search Social</h3>
+            <p>Find people, posts, and trending topics</p>
+        </div>
         {{end}}
     </div>
 </div>
@@ -37,9 +47,24 @@
 document.addEventListener('DOMContentLoaded', function() {
     const query = new URLSearchParams(window.location.search).get('q');
     if (query) search(query);
+    setupTabs();
 });
 
+function setupTabs() {
+    document.querySelectorAll('.search-tabs .tab').forEach(tab => {
+        tab.addEventListener('click', function() {
+            document.querySelectorAll('.search-tabs .tab').forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+            const query = document.querySelector('input[name="q"]').value;
+            if (query) search(query, this.dataset.type);
+        });
+    });
+}
+
 async function search(query, type = '') {
+    const results = document.getElementById('results');
+    results.innerHTML = '<div class="loading">Searching...</div>';
+
     try {
         const url = new URL('/api/v1/search', window.location.origin);
         url.searchParams.set('q', query);
@@ -47,58 +72,96 @@ async function search(query, type = '') {
 
         const res = await fetch(url);
         const data = await res.json();
-        renderResults(data);
+        renderResults(data, type);
     } catch (err) {
         console.error(err);
+        results.innerHTML = '<div class="empty"><h3>Search failed</h3><p>Please try again.</p></div>';
     }
 }
 
-function renderResults(data) {
+function renderResults(data, type) {
     const results = document.getElementById('results');
     let html = '';
 
-    if (data.accounts && data.accounts.length > 0) {
-        html += '<section><h3>People</h3>';
+    // Accounts
+    if ((!type || type === 'accounts') && data.accounts && data.accounts.length > 0) {
+        html += '<section class="search-section"><h3>People</h3><div class="accounts-list">';
         html += data.accounts.map(a => `
-            <div class="search-result account">
-                <a href="/@${a.username}">
-                    <img src="${a.avatar_url || '/static/images/default-avatar.png'}" alt="">
-                    <div>
-                        <strong>${a.display_name || a.username}</strong>
-                        <span>@${a.username}</span>
-                    </div>
-                </a>
-            </div>
+            <a href="/@${a.username}" class="account-item">
+                <img src="${a.avatar_url || '/static/images/default-avatar.png'}" alt="${escapeHtml(a.display_name || a.username)}" loading="lazy">
+                <div class="account-info">
+                    <span class="display-name">${escapeHtml(a.display_name || a.username)}</span>
+                    <span class="username">@${a.username}</span>
+                </div>
+            </a>
         `).join('');
-        html += '</section>';
+        html += '</div></section>';
     }
 
-    if (data.hashtags && data.hashtags.length > 0) {
-        html += '<section><h3>Tags</h3>';
+    // Hashtags
+    if ((!type || type === 'hashtags') && data.hashtags && data.hashtags.length > 0) {
+        html += '<section class="search-section" style="padding: var(--space-4) var(--space-5);"><h3>Tags</h3><div class="trending-tags" style="margin-top: var(--space-3);">';
         html += data.hashtags.map(t => `
-            <div class="search-result tag">
-                <a href="/tags/${t.name}">#${t.name}</a>
-                <span>${t.posts_count} posts</span>
-            </div>
+            <a href="/tags/${t.name}" class="trending-tag">
+                <span class="tag-name">#${t.name}</span>
+                <span class="tag-count">${t.posts_count} posts</span>
+            </a>
         `).join('');
-        html += '</section>';
+        html += '</div></section>';
     }
 
-    if (data.posts && data.posts.length > 0) {
-        html += '<section><h3>Posts</h3>';
-        html += data.posts.map(p => `
-            <div class="search-result post">
-                <p>${escapeHtml(p.content)}</p>
-            </div>
-        `).join('');
-        html += '</section>';
+    // Posts
+    if ((!type || type === 'posts') && data.posts && data.posts.length > 0) {
+        html += '<section class="search-section"><h3 style="padding: var(--space-4) var(--space-5);">Posts</h3><div class="timeline">';
+        html += data.posts.map(renderPost).join('');
+        html += '</div></section>';
     }
 
     if (!html) {
-        html = '<div class="empty">No results found</div>';
+        html = `
+            <div class="empty">
+                <div class="icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                </div>
+                <h3>No results found</h3>
+                <p>Try searching for something else</p>
+            </div>
+        `;
     }
 
     results.innerHTML = html;
+}
+
+function renderPost(post) {
+    const account = post.account || {};
+    const avatarUrl = account.avatar_url || '/static/images/default-avatar.png';
+    const displayName = escapeHtml(account.display_name || account.username || 'Anonymous');
+    const username = account.username || 'anonymous';
+
+    return `
+        <article class="post" data-id="${post.id}" onclick="window.location='/posts/${post.id}'">
+            <div class="post-avatar">
+                <a href="/@${username}" onclick="event.stopPropagation()">
+                    <img src="${avatarUrl}" alt="${displayName}" loading="lazy">
+                </a>
+            </div>
+            <div class="post-content">
+                <div class="post-header">
+                    <a href="/@${username}" class="display-name" onclick="event.stopPropagation()">${displayName}</a>
+                    <span class="username">@${username}</span>
+                </div>
+                <div class="post-body">${formatContent(post.content)}</div>
+            </div>
+        </article>
+    `;
+}
+
+function formatContent(text) {
+    if (!text) return '';
+    let html = escapeHtml(text);
+    html = html.replace(/#(\w+)/g, '<span class="hashtag">#$1</span>');
+    html = html.replace(/@(\w+)/g, '<a href="/@$1" class="mention" onclick="event.stopPropagation()">@$1</a>');
+    return html;
 }
 
 function escapeHtml(text) {
