@@ -79,36 +79,19 @@ type ListIn struct {
 
 // API defines the comments service interface.
 type API interface {
-	Create(ctx context.Context, authorID string, in CreateIn) (*Comment, error)
 	GetByID(ctx context.Context, id string, viewerID string) (*Comment, error)
-	Update(ctx context.Context, id string, authorID string, text string) (*Comment, error)
-	Delete(ctx context.Context, id string, authorID string) error
-
-	// Voting
-	Vote(ctx context.Context, commentID, userID string, value int) error
-	Unvote(ctx context.Context, commentID, userID string) error
 
 	// Lists
 	ListByStory(ctx context.Context, storyID string, viewerID string) ([]*Comment, error)
 	ListByAuthor(ctx context.Context, authorID string, limit, offset int, viewerID string) ([]*Comment, error)
-
-	// Scores
-	UpdateScore(ctx context.Context, id string, delta int64) error
 }
 
 // Store defines the data storage interface for comments.
 type Store interface {
-	Create(ctx context.Context, comment *Comment) error
 	GetByID(ctx context.Context, id string) (*Comment, error)
-	Update(ctx context.Context, comment *Comment) error
-	Delete(ctx context.Context, id string) error
 
 	// Lists
 	ListByStory(ctx context.Context, storyID string) ([]*Comment, error)
 	ListByParent(ctx context.Context, parentID string) ([]*Comment, error)
 	ListByAuthor(ctx context.Context, authorID string, limit, offset int) ([]*Comment, error)
-
-	// Scores
-	UpdateScore(ctx context.Context, id string, delta int64) error
-	IncrementChildCount(ctx context.Context, id string, delta int64) error
 }

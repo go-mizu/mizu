@@ -19,16 +19,6 @@ func NewUsersStore(db *sql.DB) *UsersStore {
 	return &UsersStore{db: db}
 }
 
-// Create creates a user.
-func (s *UsersStore) Create(ctx context.Context, user *users.User) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO users (id, username, email, password_hash, about, karma, is_admin, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-	`, user.ID, user.Username, user.Email, user.PasswordHash,
-		user.About, user.Karma, user.IsAdmin, user.CreatedAt)
-	return err
-}
-
 // GetByID retrieves a user by ID.
 func (s *UsersStore) GetByID(ctx context.Context, id string) (*users.User, error) {
 	return s.scanUser(s.db.QueryRowContext(ctx, `
@@ -87,27 +77,6 @@ func (s *UsersStore) GetByEmail(ctx context.Context, email string) (*users.User,
 	`, email))
 }
 
-// Update updates a user.
-func (s *UsersStore) Update(ctx context.Context, user *users.User) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE users SET
-			username = $2, email = $3, password_hash = $4, about = $5,
-			karma = $6, is_admin = $7
-		WHERE id = $1
-	`, user.ID, user.Username, user.Email, user.PasswordHash,
-		user.About, user.Karma, user.IsAdmin)
-	return err
-}
-
-// CreateSession creates a session.
-func (s *UsersStore) CreateSession(ctx context.Context, session *users.Session) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO sessions (id, user_id, token, expires_at, created_at)
-		VALUES ($1, $2, $3, $4, $5)
-	`, session.ID, session.UserID, session.Token, session.ExpiresAt, session.CreatedAt)
-	return err
-}
-
 // GetSessionByToken retrieves a session by token.
 func (s *UsersStore) GetSessionByToken(ctx context.Context, token string) (*users.Session, error) {
 	session := &users.Session{}
@@ -122,18 +91,6 @@ func (s *UsersStore) GetSessionByToken(ctx context.Context, token string) (*user
 		return nil, err
 	}
 	return session, nil
-}
-
-// DeleteSession deletes a session.
-func (s *UsersStore) DeleteSession(ctx context.Context, token string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token = $1`, token)
-	return err
-}
-
-// CleanExpiredSessions removes expired sessions.
-func (s *UsersStore) CleanExpiredSessions(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at < CURRENT_TIMESTAMP`)
-	return err
 }
 
 // List lists users.

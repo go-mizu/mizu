@@ -17,39 +17,12 @@ func NewCommentsStore(db *sql.DB) *CommentsStore {
 	return &CommentsStore{db: db}
 }
 
-// Create creates a comment.
-func (s *CommentsStore) Create(ctx context.Context, comment *comments.Comment) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO comments (id, story_id, parent_id, author_id, text, text_html, score, depth, path, child_count, is_removed, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-	`, comment.ID, comment.StoryID, sql.NullString{String: comment.ParentID, Valid: comment.ParentID != ""},
-		comment.AuthorID, comment.Text, comment.TextHTML, comment.Score,
-		comment.Depth, comment.Path, comment.ChildCount, comment.IsRemoved, comment.CreatedAt)
-	return err
-}
-
 // GetByID retrieves a comment by ID.
 func (s *CommentsStore) GetByID(ctx context.Context, id string) (*comments.Comment, error) {
 	return s.scanComment(s.db.QueryRowContext(ctx, `
 		SELECT id, story_id, parent_id, author_id, text, text_html, score, depth, path, child_count, is_removed, created_at
 		FROM comments WHERE id = $1 AND is_removed = FALSE
 	`, id))
-}
-
-// Update updates a comment.
-func (s *CommentsStore) Update(ctx context.Context, comment *comments.Comment) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE comments SET
-			text = $2, text_html = $3, score = $4, child_count = $5, is_removed = $6
-		WHERE id = $1
-	`, comment.ID, comment.Text, comment.TextHTML, comment.Score, comment.ChildCount, comment.IsRemoved)
-	return err
-}
-
-// Delete marks a comment as removed.
-func (s *CommentsStore) Delete(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE comments SET is_removed = TRUE WHERE id = $1`, id)
-	return err
 }
 
 // ListByStory lists all comments for a story.
@@ -123,22 +96,6 @@ func (s *CommentsStore) ListByAuthor(ctx context.Context, authorID string, limit
 		result = append(result, comment)
 	}
 	return result, rows.Err()
-}
-
-// UpdateScore updates a comment's score.
-func (s *CommentsStore) UpdateScore(ctx context.Context, id string, delta int64) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE comments SET score = score + $2 WHERE id = $1
-	`, id, delta)
-	return err
-}
-
-// IncrementChildCount increments a comment's child count.
-func (s *CommentsStore) IncrementChildCount(ctx context.Context, id string, delta int64) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE comments SET child_count = child_count + $2 WHERE id = $1
-	`, id, delta)
-	return err
 }
 
 func (s *CommentsStore) scanComment(row *sql.Row) (*comments.Comment, error) {
