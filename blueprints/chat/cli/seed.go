@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -18,38 +19,54 @@ import (
 	"github.com/go-mizu/blueprints/chat/store/duckdb"
 )
 
-var seedCmd = &cobra.Command{
-	Use:   "seed",
-	Short: "Seed sample data",
-	Long:  `Seed the Chat database with sample data.`,
-	RunE:  runSeed,
+// NewSeed creates the seed command.
+func NewSeed() *cobra.Command {
+	return &cobra.Command{
+		Use:   "seed",
+		Short: "Seed sample data",
+		Long: `Seed the Chat database with sample data.
+
+Creates sample users, servers, channels, and messages for testing.`,
+		RunE: runSeed,
+	}
 }
 
 func runSeed(cmd *cobra.Command, args []string) error {
 	ui := NewUI()
-	ui.Header("Chat", Version)
-	ui.Info("Seeding database...")
+
+	ui.Header(iconInfo, "Seeding Chat Database")
+	ui.Blank()
+
+	// Setup
+	ui.StartSpinner("Opening database...")
+	start := time.Now()
 
 	// Create data directory
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		ui.StopSpinnerError("Failed to create data directory")
 		return fmt.Errorf("create data dir: %w", err)
 	}
 
 	dbPath := filepath.Join(dataDir, "chat.duckdb")
 	db, err := sql.Open("duckdb", dbPath)
 	if err != nil {
+		ui.StopSpinnerError("Failed to open database")
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer db.Close()
 
 	store, err := duckdb.New(db)
 	if err != nil {
+		ui.StopSpinnerError("Failed to create store")
 		return fmt.Errorf("create store: %w", err)
 	}
 
 	if err := store.Ensure(context.Background()); err != nil {
+		ui.StopSpinnerError("Failed to ensure schema")
 		return fmt.Errorf("ensure schema: %w", err)
 	}
+
+	ui.StopSpinner("Database ready", time.Since(start))
 
 	ctx := context.Background()
 
@@ -69,7 +86,8 @@ func runSeed(cmd *cobra.Command, args []string) error {
 	rolesSvc := roles.NewService(rolesStore, nil)
 
 	// Create sample users
-	ui.Info("Creating users...")
+	ui.Blank()
+	ui.Step("Creating users...")
 	users := []struct {
 		Username    string
 		Email       string
@@ -99,12 +117,14 @@ func runSeed(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(createdUsers) == 0 {
-		ui.Success("Database already seeded")
+		ui.Blank()
+		ui.Warn("Database already seeded")
 		return nil
 	}
 
 	// Create sample servers
-	ui.Info("Creating servers...")
+	ui.Blank()
+	ui.Step("Creating servers...")
 	sampleServers := []struct {
 		Name        string
 		Description string
@@ -189,9 +209,12 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	ui.Success("Database seeded")
-	ui.Item("Users", fmt.Sprintf("%d", len(createdUsers)))
-	ui.Item("Servers", fmt.Sprintf("%d", len(sampleServers)))
+	// Summary
+	ui.Summary([][2]string{
+		{"Users", fmt.Sprintf("%d", len(createdUsers))},
+		{"Servers", fmt.Sprintf("%d", len(sampleServers))},
+	})
 
+	ui.Success("Database seeded successfully")
 	return nil
 }

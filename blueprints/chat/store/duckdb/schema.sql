@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   device_type VARCHAR,
   expires_at  TIMESTAMP NOT NULL,
   created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS categories (
   name        VARCHAR NOT NULL,
   position    INTEGER DEFAULT 0,
   created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+  FOREIGN KEY (server_id) REFERENCES servers(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_categories_server_id ON categories(server_id);
@@ -100,8 +100,8 @@ CREATE TABLE IF NOT EXISTS channels (
   owner_id        VARCHAR,
   created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE,
-  FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
+  FOREIGN KEY (server_id) REFERENCES servers(id),
+  FOREIGN KEY (category_id) REFERENCES categories(id),
   FOREIGN KEY (owner_id) REFERENCES users(id)
 );
 
@@ -115,8 +115,8 @@ CREATE TABLE IF NOT EXISTS channel_recipients (
   user_id     VARCHAR NOT NULL,
   created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (channel_id, user_id),
-  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  FOREIGN KEY (channel_id) REFERENCES channels(id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
 -- Roles: Permission groups within servers
@@ -132,7 +132,7 @@ CREATE TABLE IF NOT EXISTS roles (
   is_mentionable BOOLEAN DEFAULT FALSE,
   icon_url      VARCHAR,
   created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+  FOREIGN KEY (server_id) REFERENCES servers(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_roles_server_id ON roles(server_id);
@@ -147,8 +147,8 @@ CREATE TABLE IF NOT EXISTS members (
   is_deafened BOOLEAN DEFAULT FALSE,
   joined_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (server_id, user_id),
-  FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  FOREIGN KEY (server_id) REFERENCES servers(id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_members_user_id ON members(user_id);
@@ -160,9 +160,9 @@ CREATE TABLE IF NOT EXISTS member_roles (
   role_id    VARCHAR NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (server_id, user_id, role_id),
-  FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+  FOREIGN KEY (server_id) REFERENCES servers(id),
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (role_id) REFERENCES roles(id)
 );
 
 -- Channel permission overrides
@@ -173,7 +173,7 @@ CREATE TABLE IF NOT EXISTS channel_permissions (
   allow       BIGINT DEFAULT 0,
   deny        BIGINT DEFAULT 0,
   PRIMARY KEY (channel_id, target_id),
-  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE
+  FOREIGN KEY (channel_id) REFERENCES channels(id)
 );
 
 -- Messages: All messages
@@ -192,7 +192,7 @@ CREATE TABLE IF NOT EXISTS messages (
   is_edited         BOOLEAN DEFAULT FALSE,
   edited_at         TIMESTAMP,
   created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
+  FOREIGN KEY (channel_id) REFERENCES channels(id),
   FOREIGN KEY (author_id) REFERENCES users(id)
 );
 
@@ -208,8 +208,8 @@ CREATE TABLE IF NOT EXISTS message_mentions (
   message_id  VARCHAR NOT NULL,
   user_id     VARCHAR NOT NULL,
   PRIMARY KEY (message_id, user_id),
-  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  FOREIGN KEY (message_id) REFERENCES messages(id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
 -- Message role mentions
@@ -217,8 +217,8 @@ CREATE TABLE IF NOT EXISTS message_role_mentions (
   message_id  VARCHAR NOT NULL,
   role_id     VARCHAR NOT NULL,
   PRIMARY KEY (message_id, role_id),
-  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
-  FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+  FOREIGN KEY (message_id) REFERENCES messages(id),
+  FOREIGN KEY (role_id) REFERENCES roles(id)
 );
 
 -- Attachments: File attachments
@@ -234,7 +234,7 @@ CREATE TABLE IF NOT EXISTS attachments (
   height        INTEGER,
   is_spoiler    BOOLEAN DEFAULT FALSE,
   created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+  FOREIGN KEY (message_id) REFERENCES messages(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_attachments_message_id ON attachments(message_id);
@@ -256,7 +256,7 @@ CREATE TABLE IF NOT EXISTS embeds (
   author_url  VARCHAR,
   fields      JSON,
   created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+  FOREIGN KEY (message_id) REFERENCES messages(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_embeds_message_id ON embeds(message_id);
@@ -268,8 +268,8 @@ CREATE TABLE IF NOT EXISTS reactions (
   emoji       VARCHAR NOT NULL,
   created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (message_id, user_id, emoji),
-  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  FOREIGN KEY (message_id) REFERENCES messages(id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_reactions_message_id ON reactions(message_id);
@@ -281,8 +281,8 @@ CREATE TABLE IF NOT EXISTS pins (
   pinned_by   VARCHAR NOT NULL,
   pinned_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (channel_id, message_id),
-  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
-  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+  FOREIGN KEY (channel_id) REFERENCES channels(id),
+  FOREIGN KEY (message_id) REFERENCES messages(id),
   FOREIGN KEY (pinned_by) REFERENCES users(id)
 );
 
@@ -295,8 +295,8 @@ CREATE TABLE IF NOT EXISTS read_states (
   last_pin_at     TIMESTAMP,
   updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (user_id, channel_id),
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (channel_id) REFERENCES channels(id)
 );
 
 -- Invites: Server invites
@@ -311,8 +311,8 @@ CREATE TABLE IF NOT EXISTS invites (
   is_temporary BOOLEAN DEFAULT FALSE,
   expires_at  TIMESTAMP,
   created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE,
-  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
+  FOREIGN KEY (server_id) REFERENCES servers(id),
+  FOREIGN KEY (channel_id) REFERENCES channels(id),
   FOREIGN KEY (inviter_id) REFERENCES users(id)
 );
 
@@ -326,7 +326,7 @@ CREATE TABLE IF NOT EXISTS bans (
   banned_by   VARCHAR NOT NULL,
   created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (server_id, user_id),
-  FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE,
+  FOREIGN KEY (server_id) REFERENCES servers(id),
   FOREIGN KEY (user_id) REFERENCES users(id),
   FOREIGN KEY (banned_by) REFERENCES users(id)
 );
@@ -344,9 +344,9 @@ CREATE TABLE IF NOT EXISTS threads (
   locked            BOOLEAN DEFAULT FALSE,
   archive_at        TIMESTAMP,
   created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
-  FOREIGN KEY (parent_channel_id) REFERENCES channels(id) ON DELETE CASCADE,
-  FOREIGN KEY (parent_message_id) REFERENCES messages(id) ON DELETE CASCADE,
+  FOREIGN KEY (channel_id) REFERENCES channels(id),
+  FOREIGN KEY (parent_channel_id) REFERENCES channels(id),
+  FOREIGN KEY (parent_message_id) REFERENCES messages(id),
   FOREIGN KEY (owner_id) REFERENCES users(id)
 );
 
@@ -356,8 +356,8 @@ CREATE TABLE IF NOT EXISTS thread_members (
   user_id     VARCHAR NOT NULL,
   joined_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (thread_id, user_id),
-  FOREIGN KEY (thread_id) REFERENCES channels(id) ON DELETE CASCADE,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  FOREIGN KEY (thread_id) REFERENCES channels(id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
 -- Presence: User presence state
@@ -368,7 +368,7 @@ CREATE TABLE IF NOT EXISTS presence (
   activities    JSON,
   client_status JSON,
   last_seen_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
 -- Notifications: User notifications
@@ -383,7 +383,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   data        JSON,
   is_read     BOOLEAN DEFAULT FALSE,
   created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
@@ -403,7 +403,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
   render_embeds       BOOLEAN DEFAULT TRUE,
   render_reactions    BOOLEAN DEFAULT TRUE,
   notification_settings JSON,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
 -- Server settings: Per-server per-user settings
@@ -416,8 +416,8 @@ CREATE TABLE IF NOT EXISTS server_settings (
   notification_level    VARCHAR DEFAULT 'all',
   mobile_push           BOOLEAN DEFAULT TRUE,
   PRIMARY KEY (user_id, server_id),
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (server_id) REFERENCES servers(id)
 );
 
 -- Channel settings: Per-channel per-user settings
@@ -428,8 +428,8 @@ CREATE TABLE IF NOT EXISTS channel_settings (
   notification_level  VARCHAR DEFAULT 'inherit',
   collapsed           BOOLEAN DEFAULT FALSE,
   PRIMARY KEY (user_id, channel_id),
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (channel_id) REFERENCES channels(id)
 );
 
 -- Relationships: Friends, blocks, etc.
@@ -440,8 +440,8 @@ CREATE TABLE IF NOT EXISTS relationships (
   nickname    VARCHAR,
   created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (user_id, target_id),
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  FOREIGN KEY (target_id) REFERENCES users(id) ON DELETE CASCADE
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (target_id) REFERENCES users(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_relationships_user_id ON relationships(user_id);
@@ -456,7 +456,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
   changes     JSON,
   reason      TEXT,
   created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE,
+  FOREIGN KEY (server_id) REFERENCES servers(id),
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 

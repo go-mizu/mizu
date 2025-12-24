@@ -58,7 +58,7 @@ func (h *Server) Create(c *mizu.Ctx) error {
 	}
 
 	var in servers.CreateIn
-	if err := c.Bind(&in); err != nil {
+	if err := c.BindJSON(&in, 0); err != nil {
 		return BadRequest(c, "Invalid request body")
 	}
 
@@ -124,7 +124,7 @@ func (h *Server) Update(c *mizu.Ctx) error {
 	}
 
 	var in servers.UpdateIn
-	if err := c.Bind(&in); err != nil {
+	if err := c.BindJSON(&in, 0); err != nil {
 		return BadRequest(c, "Invalid request body")
 	}
 

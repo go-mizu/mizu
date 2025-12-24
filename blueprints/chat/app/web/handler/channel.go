@@ -41,7 +41,7 @@ func (h *Channel) Create(c *mizu.Ctx) error {
 	serverID := c.Param("id")
 
 	var in channels.CreateIn
-	if err := c.Bind(&in); err != nil {
+	if err := c.BindJSON(&in, 0); err != nil {
 		return BadRequest(c, "Invalid request body")
 	}
 
@@ -86,7 +86,7 @@ func (h *Channel) Update(c *mizu.Ctx) error {
 	channelID := c.Param("id")
 
 	var in channels.UpdateIn
-	if err := c.Bind(&in); err != nil {
+	if err := c.BindJSON(&in, 0); err != nil {
 		return BadRequest(c, "Invalid request body")
 	}
 
@@ -157,7 +157,7 @@ func (h *Channel) CreateDM(c *mizu.Ctx) error {
 	var in struct {
 		RecipientID string `json:"recipient_id"`
 	}
-	if err := c.Bind(&in); err != nil {
+	if err := c.BindJSON(&in, 0); err != nil {
 		return BadRequest(c, "Invalid request body")
 	}
 
@@ -184,7 +184,7 @@ func (h *Channel) CreateGroupDM(c *mizu.Ctx) error {
 		RecipientIDs []string `json:"recipient_ids"`
 		Name         string   `json:"name"`
 	}
-	if err := c.Bind(&in); err != nil {
+	if err := c.BindJSON(&in, 0); err != nil {
 		return BadRequest(c, "Invalid request body")
 	}
 
@@ -213,7 +213,7 @@ func (h *Channel) CreateCategory(c *mizu.Ctx) error {
 		Name     string `json:"name"`
 		Position int    `json:"position"`
 	}
-	if err := c.Bind(&in); err != nil {
+	if err := c.BindJSON(&in, 0); err != nil {
 		return BadRequest(c, "Invalid request body")
 	}
 

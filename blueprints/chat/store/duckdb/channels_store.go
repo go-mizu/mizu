@@ -26,9 +26,20 @@ func (s *ChannelsStore) Insert(ctx context.Context, ch *channels.Channel) error 
 		INSERT INTO channels (id, server_id, category_id, type, name, topic, position, is_private, is_nsfw, slow_mode_delay, owner_id, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
+	// Convert empty strings to nil for nullable foreign keys
+	var serverID, categoryID, ownerID any
+	if ch.ServerID != "" {
+		serverID = ch.ServerID
+	}
+	if ch.CategoryID != "" {
+		categoryID = ch.CategoryID
+	}
+	if ch.OwnerID != "" {
+		ownerID = ch.OwnerID
+	}
 	_, err := s.db.ExecContext(ctx, query,
-		ch.ID, ch.ServerID, ch.CategoryID, ch.Type, ch.Name, ch.Topic,
-		ch.Position, ch.IsPrivate, ch.IsNSFW, ch.SlowModeDelay, ch.OwnerID,
+		ch.ID, serverID, categoryID, ch.Type, ch.Name, ch.Topic,
+		ch.Position, ch.IsPrivate, ch.IsNSFW, ch.SlowModeDelay, ownerID,
 		ch.CreatedAt, ch.UpdatedAt,
 	)
 	return err
@@ -41,16 +52,38 @@ func (s *ChannelsStore) GetByID(ctx context.Context, id string) (*channels.Chann
 		FROM channels WHERE id = ?
 	`
 	ch := &channels.Channel{}
+	var serverID, categoryID, name, topic, lastMsgID, iconURL, ownerID sql.NullString
+	var bitrate, userLimit sql.NullInt64
+	var lastMsgAt sql.NullTime
 	err := s.db.QueryRowContext(ctx, query, id).Scan(
-		&ch.ID, &ch.ServerID, &ch.CategoryID, &ch.Type, &ch.Name, &ch.Topic,
-		&ch.Position, &ch.IsPrivate, &ch.IsNSFW, &ch.SlowModeDelay, &ch.Bitrate, &ch.UserLimit,
-		&ch.LastMessageID, &ch.LastMessageAt, &ch.MessageCount, &ch.IconURL, &ch.OwnerID,
+		&ch.ID, &serverID, &categoryID, &ch.Type, &name, &topic,
+		&ch.Position, &ch.IsPrivate, &ch.IsNSFW, &ch.SlowModeDelay, &bitrate, &userLimit,
+		&lastMsgID, &lastMsgAt, &ch.MessageCount, &iconURL, &ownerID,
 		&ch.CreatedAt, &ch.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, channels.ErrNotFound
 	}
-	return ch, err
+	if err != nil {
+		return nil, err
+	}
+	ch.ServerID = serverID.String
+	ch.CategoryID = categoryID.String
+	ch.Name = name.String
+	ch.Topic = topic.String
+	ch.LastMessageID = lastMsgID.String
+	ch.IconURL = iconURL.String
+	ch.OwnerID = ownerID.String
+	if bitrate.Valid {
+		ch.Bitrate = int(bitrate.Int64)
+	}
+	if userLimit.Valid {
+		ch.UserLimit = int(userLimit.Int64)
+	}
+	if lastMsgAt.Valid {
+		ch.LastMessageAt = &lastMsgAt.Time
+	}
+	return ch, nil
 }
 
 // Update updates a channel.
@@ -123,13 +156,32 @@ func (s *ChannelsStore) ListByServer(ctx context.Context, serverID string) ([]*c
 	var chs []*channels.Channel
 	for rows.Next() {
 		ch := &channels.Channel{}
+		var srvID, categoryID, name, topic, lastMsgID, iconURL, ownerID sql.NullString
+		var bitrate, userLimit sql.NullInt64
+		var lastMsgAt sql.NullTime
 		if err := rows.Scan(
-			&ch.ID, &ch.ServerID, &ch.CategoryID, &ch.Type, &ch.Name, &ch.Topic,
-			&ch.Position, &ch.IsPrivate, &ch.IsNSFW, &ch.SlowModeDelay, &ch.Bitrate, &ch.UserLimit,
-			&ch.LastMessageID, &ch.LastMessageAt, &ch.MessageCount, &ch.IconURL, &ch.OwnerID,
+			&ch.ID, &srvID, &categoryID, &ch.Type, &name, &topic,
+			&ch.Position, &ch.IsPrivate, &ch.IsNSFW, &ch.SlowModeDelay, &bitrate, &userLimit,
+			&lastMsgID, &lastMsgAt, &ch.MessageCount, &iconURL, &ownerID,
 			&ch.CreatedAt, &ch.UpdatedAt,
 		); err != nil {
 			return nil, err
+		}
+		ch.ServerID = srvID.String
+		ch.CategoryID = categoryID.String
+		ch.Name = name.String
+		ch.Topic = topic.String
+		ch.LastMessageID = lastMsgID.String
+		ch.IconURL = iconURL.String
+		ch.OwnerID = ownerID.String
+		if bitrate.Valid {
+			ch.Bitrate = int(bitrate.Int64)
+		}
+		if userLimit.Valid {
+			ch.UserLimit = int(userLimit.Int64)
+		}
+		if lastMsgAt.Valid {
+			ch.LastMessageAt = &lastMsgAt.Time
 		}
 		chs = append(chs, ch)
 	}
@@ -154,13 +206,32 @@ func (s *ChannelsStore) ListDMsByUser(ctx context.Context, userID string) ([]*ch
 	var chs []*channels.Channel
 	for rows.Next() {
 		ch := &channels.Channel{}
+		var srvID, categoryID, name, topic, lastMsgID, iconURL, ownerID sql.NullString
+		var bitrate, userLimit sql.NullInt64
+		var lastMsgAt sql.NullTime
 		if err := rows.Scan(
-			&ch.ID, &ch.ServerID, &ch.CategoryID, &ch.Type, &ch.Name, &ch.Topic,
-			&ch.Position, &ch.IsPrivate, &ch.IsNSFW, &ch.SlowModeDelay, &ch.Bitrate, &ch.UserLimit,
-			&ch.LastMessageID, &ch.LastMessageAt, &ch.MessageCount, &ch.IconURL, &ch.OwnerID,
+			&ch.ID, &srvID, &categoryID, &ch.Type, &name, &topic,
+			&ch.Position, &ch.IsPrivate, &ch.IsNSFW, &ch.SlowModeDelay, &bitrate, &userLimit,
+			&lastMsgID, &lastMsgAt, &ch.MessageCount, &iconURL, &ownerID,
 			&ch.CreatedAt, &ch.UpdatedAt,
 		); err != nil {
 			return nil, err
+		}
+		ch.ServerID = srvID.String
+		ch.CategoryID = categoryID.String
+		ch.Name = name.String
+		ch.Topic = topic.String
+		ch.LastMessageID = lastMsgID.String
+		ch.IconURL = iconURL.String
+		ch.OwnerID = ownerID.String
+		if bitrate.Valid {
+			ch.Bitrate = int(bitrate.Int64)
+		}
+		if userLimit.Valid {
+			ch.UserLimit = int(userLimit.Int64)
+		}
+		if lastMsgAt.Valid {
+			ch.LastMessageAt = &lastMsgAt.Time
 		}
 		chs = append(chs, ch)
 	}

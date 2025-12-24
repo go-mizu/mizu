@@ -39,16 +39,33 @@ func (s *UsersStore) GetByID(ctx context.Context, id string) (*accounts.User, er
 		SELECT id, username, discriminator, display_name, email, avatar_url, banner_url, bio, status, custom_status, is_bot, is_verified, is_admin, created_at, updated_at
 		FROM users WHERE id = ?
 	`
-	u := &accounts.User{}
-	err := s.db.QueryRowContext(ctx, query, id).Scan(
-		&u.ID, &u.Username, &u.Discriminator, &u.DisplayName, &u.Email,
-		&u.AvatarURL, &u.BannerURL, &u.Bio, &u.Status, &u.CustomStatus,
-		&u.IsBot, &u.IsVerified, &u.IsAdmin, &u.CreatedAt, &u.UpdatedAt,
-	)
+	u, err := scanUser(s.db.QueryRowContext(ctx, query, id))
 	if err == sql.ErrNoRows {
 		return nil, accounts.ErrNotFound
 	}
 	return u, err
+}
+
+// scanUser scans a user row, handling nullable columns.
+func scanUser(row interface{ Scan(...any) error }) (*accounts.User, error) {
+	u := &accounts.User{}
+	var displayName, email, avatarURL, bannerURL, bio, status, customStatus sql.NullString
+	err := row.Scan(
+		&u.ID, &u.Username, &u.Discriminator, &displayName, &email,
+		&avatarURL, &bannerURL, &bio, &status, &customStatus,
+		&u.IsBot, &u.IsVerified, &u.IsAdmin, &u.CreatedAt, &u.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	u.DisplayName = displayName.String
+	u.Email = email.String
+	u.AvatarURL = avatarURL.String
+	u.BannerURL = bannerURL.String
+	u.Bio = bio.String
+	u.Status = accounts.Status(status.String)
+	u.CustomStatus = customStatus.String
+	return u, nil
 }
 
 // GetByIDs retrieves multiple users by IDs.
@@ -73,16 +90,29 @@ func (s *UsersStore) GetByIDs(ctx context.Context, ids []string) ([]*accounts.Us
 	}
 	defer rows.Close()
 
+	return scanUsers(rows)
+}
+
+// scanUsers scans multiple user rows.
+func scanUsers(rows *sql.Rows) ([]*accounts.User, error) {
 	var users []*accounts.User
 	for rows.Next() {
 		u := &accounts.User{}
+		var displayName, email, avatarURL, bannerURL, bio, status, customStatus sql.NullString
 		if err := rows.Scan(
-			&u.ID, &u.Username, &u.Discriminator, &u.DisplayName, &u.Email,
-			&u.AvatarURL, &u.BannerURL, &u.Bio, &u.Status, &u.CustomStatus,
+			&u.ID, &u.Username, &u.Discriminator, &displayName, &email,
+			&avatarURL, &bannerURL, &bio, &status, &customStatus,
 			&u.IsBot, &u.IsVerified, &u.IsAdmin, &u.CreatedAt, &u.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
+		u.DisplayName = displayName.String
+		u.Email = email.String
+		u.AvatarURL = avatarURL.String
+		u.BannerURL = bannerURL.String
+		u.Bio = bio.String
+		u.Status = accounts.Status(status.String)
+		u.CustomStatus = customStatus.String
 		users = append(users, u)
 	}
 	return users, rows.Err()
@@ -94,12 +124,7 @@ func (s *UsersStore) GetByUsername(ctx context.Context, username string) (*accou
 		SELECT id, username, discriminator, display_name, email, avatar_url, banner_url, bio, status, custom_status, is_bot, is_verified, is_admin, created_at, updated_at
 		FROM users WHERE username = ?
 	`
-	u := &accounts.User{}
-	err := s.db.QueryRowContext(ctx, query, username).Scan(
-		&u.ID, &u.Username, &u.Discriminator, &u.DisplayName, &u.Email,
-		&u.AvatarURL, &u.BannerURL, &u.Bio, &u.Status, &u.CustomStatus,
-		&u.IsBot, &u.IsVerified, &u.IsAdmin, &u.CreatedAt, &u.UpdatedAt,
-	)
+	u, err := scanUser(s.db.QueryRowContext(ctx, query, username))
 	if err == sql.ErrNoRows {
 		return nil, accounts.ErrNotFound
 	}
@@ -112,12 +137,7 @@ func (s *UsersStore) GetByEmail(ctx context.Context, email string) (*accounts.Us
 		SELECT id, username, discriminator, display_name, email, avatar_url, banner_url, bio, status, custom_status, is_bot, is_verified, is_admin, created_at, updated_at
 		FROM users WHERE email = ?
 	`
-	u := &accounts.User{}
-	err := s.db.QueryRowContext(ctx, query, email).Scan(
-		&u.ID, &u.Username, &u.Discriminator, &u.DisplayName, &u.Email,
-		&u.AvatarURL, &u.BannerURL, &u.Bio, &u.Status, &u.CustomStatus,
-		&u.IsBot, &u.IsVerified, &u.IsAdmin, &u.CreatedAt, &u.UpdatedAt,
-	)
+	u, err := scanUser(s.db.QueryRowContext(ctx, query, email))
 	if err == sql.ErrNoRows {
 		return nil, accounts.ErrNotFound
 	}
@@ -206,19 +226,7 @@ func (s *UsersStore) Search(ctx context.Context, query string, limit int) ([]*ac
 	}
 	defer rows.Close()
 
-	var users []*accounts.User
-	for rows.Next() {
-		u := &accounts.User{}
-		if err := rows.Scan(
-			&u.ID, &u.Username, &u.Discriminator, &u.DisplayName, &u.Email,
-			&u.AvatarURL, &u.BannerURL, &u.Bio, &u.Status, &u.CustomStatus,
-			&u.IsBot, &u.IsVerified, &u.IsAdmin, &u.CreatedAt, &u.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		users = append(users, u)
-	}
-	return users, rows.Err()
+	return scanUsers(rows)
 }
 
 // GetNextDiscriminator gets the next available discriminator for a username.
@@ -261,13 +269,20 @@ func (s *UsersStore) GetSession(ctx context.Context, token string) (*accounts.Se
 		FROM sessions WHERE token = ? AND expires_at > CURRENT_TIMESTAMP
 	`
 	sess := &accounts.Session{}
+	var userAgent, ipAddress, deviceType sql.NullString
 	err := s.db.QueryRowContext(ctx, query, token).Scan(
-		&sess.ID, &sess.UserID, &sess.Token, &sess.UserAgent, &sess.IPAddress, &sess.DeviceType, &sess.ExpiresAt, &sess.CreatedAt,
+		&sess.ID, &sess.UserID, &sess.Token, &userAgent, &ipAddress, &deviceType, &sess.ExpiresAt, &sess.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, accounts.ErrInvalidSession
 	}
-	return sess, err
+	if err != nil {
+		return nil, err
+	}
+	sess.UserAgent = userAgent.String
+	sess.IPAddress = ipAddress.String
+	sess.DeviceType = deviceType.String
+	return sess, nil
 }
 
 // DeleteSession deletes a session.
