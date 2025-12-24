@@ -6,47 +6,104 @@
 <div class="auth-page">
     <div class="auth-card">
         <div class="auth-logo">
-            <svg viewBox="0 0 130 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <svg viewBox="0 0 140 50" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <rect width="50" height="50" rx="12" fill="url(#auth-logo-gradient)"/>
                 <path d="M14 38V12h6l6 14 6-14h6v26h-5V21l-5.5 12h-3L19 21v17h-5z" fill="white"/>
-                <text x="58" y="35" fill="currentColor" font-size="24" font-weight="700" font-family="Inter, sans-serif">Mizu</text>
+                <text x="60" y="35" fill="currentColor" font-size="24" font-weight="700" font-family="Inter, sans-serif">Mizu</text>
                 <defs>
                     <linearGradient id="auth-logo-gradient" x1="0" y1="0" x2="50" y2="50" gradientUnits="userSpaceOnUse">
-                        <stop stop-color="#5865F2"/>
-                        <stop offset="1" stop-color="#EB459E"/>
+                        <stop stop-color="#6366f1"/>
+                        <stop offset="0.5" stop-color="#a855f7"/>
+                        <stop offset="1" stop-color="#ec4899"/>
                     </linearGradient>
                 </defs>
             </svg>
         </div>
 
-        <h1 class="auth-title">Welcome back!</h1>
-        <p class="auth-subtitle">We're so excited to see you again!</p>
+        <h1 class="auth-title">Welcome back</h1>
+        <p class="auth-subtitle">Sign in to continue to Mizu</p>
+
+        <div class="auth-social">
+            <button type="button" class="auth-social-btn" onclick="alert('OAuth not configured')">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                </svg>
+                Continue with Google
+            </button>
+            <button type="button" class="auth-social-btn" onclick="alert('OAuth not configured')">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                </svg>
+                Continue with GitHub
+            </button>
+        </div>
+
+        <div class="auth-divider">or continue with email</div>
 
         <form id="login-form">
             <div class="form-group">
-                <label class="form-label required" for="login">Email or Username</label>
-                <input class="form-input" type="text" id="login" name="login" required autofocus autocomplete="username">
+                <label class="form-label" for="login">Email or Username</label>
+                <input class="form-input" type="text" id="login" name="login" required autofocus autocomplete="username" placeholder="you@example.com">
             </div>
 
             <div class="form-group">
-                <label class="form-label required" for="password">Password</label>
-                <input class="form-input" type="password" id="password" name="password" required autocomplete="current-password">
+                <label class="form-label" for="password">
+                    Password
+                    <a href="/forgot-password" style="float: right; font-weight: 400; text-transform: none; letter-spacing: normal;">Forgot password?</a>
+                </label>
+                <div class="form-input-wrapper">
+                    <input class="form-input" type="password" id="password" name="password" required autocomplete="current-password" placeholder="Enter your password">
+                    <button type="button" class="form-input-icon" onclick="togglePassword()" title="Show password">
+                        <svg id="eye-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                            <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                        <svg id="eye-off-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: none;">
+                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                            <line x1="1" y1="1" x2="23" y2="23"/>
+                        </svg>
+                    </button>
+                </div>
             </div>
+
+            <label class="form-checkbox mb-6">
+                <input type="checkbox" name="remember" id="remember">
+                <span class="form-checkbox-label">Remember me for 30 days</span>
+            </label>
 
             <div id="error-message" class="form-error hidden"></div>
 
-            <button type="submit" class="btn btn-primary btn-block btn-lg mt-4" id="submit-btn">
-                Log In
+            <button type="submit" class="btn btn-primary btn-block btn-lg" id="submit-btn">
+                Sign In
             </button>
 
             <div class="auth-footer">
-                Need an account? <a href="/register">Register</a>
+                Don't have an account? <a href="/register">Create one</a>
             </div>
         </form>
     </div>
 </div>
 
 <script>
+function togglePassword() {
+    const input = document.getElementById('password');
+    const eyeIcon = document.getElementById('eye-icon');
+    const eyeOffIcon = document.getElementById('eye-off-icon');
+
+    if (input.type === 'password') {
+        input.type = 'text';
+        eyeIcon.style.display = 'none';
+        eyeOffIcon.style.display = 'block';
+    } else {
+        input.type = 'password';
+        eyeIcon.style.display = 'block';
+        eyeOffIcon.style.display = 'none';
+    }
+}
+
 document.getElementById('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = e.target;
@@ -54,7 +111,8 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
     const errorEl = document.getElementById('error-message');
 
     btn.disabled = true;
-    btn.textContent = 'Logging in...';
+    btn.classList.add('btn-loading');
+    btn.innerHTML = '<span style="opacity: 0;">Sign In</span>';
     errorEl.classList.add('hidden');
 
     try {
@@ -63,7 +121,8 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 login: form.login.value,
-                password: form.password.value
+                password: form.password.value,
+                remember: form.remember.checked
             })
         });
 
@@ -71,16 +130,32 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
             window.location.href = '/';
         } else {
             const json = await res.json();
-            errorEl.textContent = json.error?.message || 'Invalid login credentials';
+            errorEl.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                ${json.error?.message || 'Invalid login credentials'}
+            `;
             errorEl.classList.remove('hidden');
             btn.disabled = false;
-            btn.textContent = 'Log In';
+            btn.classList.remove('btn-loading');
+            btn.textContent = 'Sign In';
         }
     } catch (err) {
-        errorEl.textContent = 'Unable to connect. Please try again.';
+        errorEl.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            Unable to connect. Please try again.
+        `;
         errorEl.classList.remove('hidden');
         btn.disabled = false;
-        btn.textContent = 'Log In';
+        btn.classList.remove('btn-loading');
+        btn.textContent = 'Sign In';
     }
 });
 </script>

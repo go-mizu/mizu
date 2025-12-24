@@ -1,57 +1,344 @@
 {{define "member_list.html"}}
 <aside class="member-sidebar" id="member-sidebar">
-    {{if .Data.members}}
-        {{$online := 0}}
-        {{$offline := 0}}
-        {{range .Data.members}}
-            {{if eq .Status "online"}}
-                {{$online = add $online 1}}
-            {{else}}
-                {{$offline = add $offline 1}}
-            {{end}}
-        {{end}}
+    <!-- Search Members -->
+    <div class="member-search">
+        <div class="member-search-input-wrapper">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="m21 21-4.35-4.35"/>
+            </svg>
+            <input type="text" class="member-search-input" placeholder="Search members" id="member-search" autocomplete="off">
+        </div>
+    </div>
 
-        <div class="member-section">
-            <div class="member-category">Online{{if $online}} — {{$online}}{{end}}</div>
+    <div class="member-scroller">
+        {{if .Data.members}}
+            {{$online := 0}}
+            {{$offline := 0}}
             {{range .Data.members}}
                 {{if eq .Status "online"}}
-                <div class="member" data-user-id="{{.UserID}}">
-                    <div class="member-avatar">
-                        {{if .AvatarURL}}
-                            <img src="{{.AvatarURL}}" alt="{{.DisplayName}}">
-                        {{else}}
-                            <span>{{userInitials .DisplayName}}</span>
-                        {{end}}
-                        <span class="status-dot online"></span>
-                    </div>
-                    <span class="member-name">{{if .Nickname}}{{.Nickname}}{{else}}{{.DisplayName}}{{end}}</span>
-                </div>
+                    {{$online = add $online 1}}
+                {{else}}
+                    {{$offline = add $offline 1}}
                 {{end}}
             {{end}}
-        </div>
 
-        <div class="member-section">
-            <div class="member-category">Offline{{if $offline}} — {{$offline}}{{end}}</div>
-            {{range .Data.members}}
-                {{if ne .Status "online"}}
-                <div class="member offline" data-user-id="{{.UserID}}">
-                    <div class="member-avatar">
-                        {{if .AvatarURL}}
-                            <img src="{{.AvatarURL}}" alt="{{.DisplayName}}">
-                        {{else}}
-                            <span>{{userInitials .DisplayName}}</span>
-                        {{end}}
-                        <span class="status-dot offline"></span>
-                    </div>
-                    <span class="member-name">{{if .Nickname}}{{.Nickname}}{{else}}{{.DisplayName}}{{end}}</span>
+            <!-- Online Members -->
+            <div class="member-section" id="online-members">
+                <div class="member-category">
+                    <span>Online</span>
+                    <span class="member-count">{{$online}}</span>
                 </div>
+                {{range .Data.members}}
+                    {{if eq .Status "online"}}
+                    <div class="member" data-user-id="{{.UserID}}" data-username="{{.DisplayName}}" onclick="showMemberPopout(this, '{{.UserID}}')">
+                        <div class="member-avatar">
+                            {{if .AvatarURL}}
+                                <img src="{{.AvatarURL}}" alt="{{.DisplayName}}" loading="lazy">
+                            {{else}}
+                                <span>{{userInitials .DisplayName}}</span>
+                            {{end}}
+                            <span class="status-dot {{.Status}}"></span>
+                        </div>
+                        <div class="member-info">
+                            <span class="member-name" {{if .RoleColor}}style="color: {{.RoleColor}}"{{end}}>
+                                {{if .Nickname}}{{.Nickname}}{{else}}{{.DisplayName}}{{end}}
+                            </span>
+                            {{if .Activity}}
+                            <span class="member-activity">
+                                {{if eq .Activity.Type "playing"}}
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4-3c-.83 0-1.5-.67-1.5-1.5S18.67 9 19.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+                                    </svg>
+                                {{else if eq .Activity.Type "listening"}}
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+                                    </svg>
+                                {{else if eq .Activity.Type "streaming"}}
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
+                                    </svg>
+                                {{end}}
+                                {{.Activity.Name}}
+                            </span>
+                            {{end}}
+                        </div>
+                        {{if .IsOwner}}
+                        <svg class="member-crown" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" title="Server Owner">
+                            <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5z"/>
+                        </svg>
+                        {{end}}
+                    </div>
+                    {{end}}
                 {{end}}
-            {{end}}
-        </div>
-    {{else}}
-        <div class="member-empty">
-            <p>No members</p>
-        </div>
-    {{end}}
+            </div>
+
+            <!-- Offline Members -->
+            <div class="member-section" id="offline-members">
+                <div class="member-category">
+                    <span>Offline</span>
+                    <span class="member-count">{{$offline}}</span>
+                </div>
+                {{range .Data.members}}
+                    {{if ne .Status "online"}}
+                    <div class="member offline" data-user-id="{{.UserID}}" data-username="{{.DisplayName}}" onclick="showMemberPopout(this, '{{.UserID}}')">
+                        <div class="member-avatar">
+                            {{if .AvatarURL}}
+                                <img src="{{.AvatarURL}}" alt="{{.DisplayName}}" loading="lazy">
+                            {{else}}
+                                <span>{{userInitials .DisplayName}}</span>
+                            {{end}}
+                            <span class="status-dot offline"></span>
+                        </div>
+                        <div class="member-info">
+                            <span class="member-name" {{if .RoleColor}}style="color: {{.RoleColor}}"{{end}}>
+                                {{if .Nickname}}{{.Nickname}}{{else}}{{.DisplayName}}{{end}}
+                            </span>
+                        </div>
+                        {{if .IsOwner}}
+                        <svg class="member-crown" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" title="Server Owner">
+                            <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5z"/>
+                        </svg>
+                        {{end}}
+                    </div>
+                    {{end}}
+                {{end}}
+            </div>
+        {{else}}
+            <div class="member-empty">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="opacity: 0.5;">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+                <p>No members to display</p>
+            </div>
+        {{end}}
+    </div>
 </aside>
+
+<!-- Member Popout -->
+<div class="member-popout" id="member-popout">
+    <div class="member-popout-banner" id="popout-banner"></div>
+    <div class="member-popout-header">
+        <div class="member-popout-avatar" id="popout-avatar"></div>
+        <div class="member-popout-badges" id="popout-badges"></div>
+    </div>
+    <div class="member-popout-body">
+        <div class="member-popout-name" id="popout-name"></div>
+        <div class="member-popout-username" id="popout-username"></div>
+        <div class="member-popout-section">
+            <div class="member-popout-section-title">Member Since</div>
+            <div class="member-popout-section-content" id="popout-joined"></div>
+        </div>
+        <div class="member-popout-section" id="popout-roles-section">
+            <div class="member-popout-section-title">Roles</div>
+            <div class="member-popout-roles" id="popout-roles"></div>
+        </div>
+        <div class="member-popout-section" id="popout-note-section">
+            <div class="member-popout-section-title">Note</div>
+            <textarea class="member-popout-note" id="popout-note" placeholder="Click to add a note"></textarea>
+        </div>
+    </div>
+    <div class="member-popout-footer">
+        <input type="text" class="member-popout-message-input" placeholder="Message @username" id="popout-message-input">
+    </div>
+</div>
+
+<script>
+// Search members
+document.getElementById('member-search')?.addEventListener('input', (e) => {
+    const query = e.target.value.toLowerCase();
+    document.querySelectorAll('.member').forEach(member => {
+        const name = member.dataset.username?.toLowerCase() || '';
+        member.style.display = name.includes(query) ? '' : 'none';
+    });
+
+    // Update counts
+    ['online', 'offline'].forEach(status => {
+        const section = document.getElementById(`${status}-members`);
+        if (section) {
+            const visible = section.querySelectorAll('.member:not([style*="display: none"])').length;
+            const count = section.querySelector('.member-count');
+            if (count) count.textContent = visible;
+        }
+    });
+});
+
+// Member popout
+let currentPopoutUser = null;
+
+function showMemberPopout(element, userId) {
+    const popout = document.getElementById('member-popout');
+    if (!popout) return;
+
+    // Close if clicking same user
+    if (currentPopoutUser === userId && popout.classList.contains('open')) {
+        closeMemberPopout();
+        return;
+    }
+
+    currentPopoutUser = userId;
+
+    // Position popout
+    const rect = element.getBoundingClientRect();
+    const sidebar = document.getElementById('member-sidebar');
+    const sidebarRect = sidebar?.getBoundingClientRect();
+
+    popout.style.top = `${Math.min(rect.top, window.innerHeight - 400)}px`;
+    popout.style.right = `${window.innerWidth - (sidebarRect?.left || rect.left) + 10}px`;
+
+    // Fetch user data
+    fetchMemberData(userId);
+
+    popout.classList.add('open');
+    document.addEventListener('click', closeMemberPopoutOnOutsideClick);
+}
+
+function closeMemberPopout() {
+    const popout = document.getElementById('member-popout');
+    popout?.classList.remove('open');
+    currentPopoutUser = null;
+    document.removeEventListener('click', closeMemberPopoutOnOutsideClick);
+}
+
+function closeMemberPopoutOnOutsideClick(e) {
+    const popout = document.getElementById('member-popout');
+    const member = e.target.closest('.member');
+    if (!popout?.contains(e.target) && !member) {
+        closeMemberPopout();
+    }
+}
+
+async function fetchMemberData(userId) {
+    const serverId = '{{if .Data.currentServer}}{{.Data.currentServer.ID}}{{end}}';
+
+    try {
+        const res = await fetch(`/api/v1/servers/${serverId}/members/${userId}`);
+        if (res.ok) {
+            const data = await res.json();
+            populateMemberPopout(data.data);
+        }
+    } catch (err) {
+        console.error('Failed to fetch member data');
+    }
+}
+
+function populateMemberPopout(member) {
+    // Banner
+    const banner = document.getElementById('popout-banner');
+    if (banner) {
+        if (member.banner_color) {
+            banner.style.background = member.banner_color;
+        } else if (member.banner_url) {
+            banner.style.background = `url(${member.banner_url}) center/cover`;
+        } else {
+            banner.style.background = 'var(--primary)';
+        }
+    }
+
+    // Avatar
+    const avatar = document.getElementById('popout-avatar');
+    if (avatar) {
+        if (member.avatar_url) {
+            avatar.innerHTML = `<img src="${member.avatar_url}" alt="${member.display_name}">`;
+        } else {
+            avatar.innerHTML = `<span>${member.display_name?.charAt(0) || '?'}</span>`;
+        }
+        avatar.innerHTML += `<span class="status-dot ${member.status || 'offline'}"></span>`;
+    }
+
+    // Name & Username
+    document.getElementById('popout-name').textContent = member.nickname || member.display_name;
+    document.getElementById('popout-username').textContent = `${member.username}#${member.discriminator}`;
+
+    // Joined date
+    const joined = document.getElementById('popout-joined');
+    if (joined && member.joined_at) {
+        const date = new Date(member.joined_at);
+        joined.textContent = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
+    // Roles
+    const rolesContainer = document.getElementById('popout-roles');
+    const rolesSection = document.getElementById('popout-roles-section');
+    if (rolesContainer && member.roles?.length) {
+        rolesSection.style.display = '';
+        rolesContainer.innerHTML = member.roles.map(role =>
+            `<span class="member-popout-role" style="--role-color: ${role.color || 'var(--text-muted)'}">${role.name}</span>`
+        ).join('');
+    } else if (rolesSection) {
+        rolesSection.style.display = 'none';
+    }
+
+    // Message input placeholder
+    const input = document.getElementById('popout-message-input');
+    if (input) {
+        input.placeholder = `Message @${member.username}`;
+        input.dataset.userId = member.user_id;
+    }
+}
+
+// Send DM from popout
+document.getElementById('popout-message-input')?.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const input = e.target;
+        const message = input.value.trim();
+        const userId = input.dataset.userId;
+
+        if (!message || !userId) return;
+
+        try {
+            // Create or get DM channel
+            const res = await fetch('/api/v1/channels/dm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ recipient_id: userId })
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                // Send message
+                await fetch(`/api/v1/channels/${data.data.id}/messages`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: message })
+                });
+
+                input.value = '';
+                closeMemberPopout();
+                window.location.href = `/channels/@me/${data.data.id}`;
+            }
+        } catch (err) {
+            console.error('Failed to send message');
+        }
+    }
+});
+
+// Save note
+document.getElementById('popout-note')?.addEventListener('blur', async (e) => {
+    const note = e.target.value.trim();
+    const userId = currentPopoutUser;
+    if (!userId) return;
+
+    try {
+        await fetch(`/api/v1/users/${userId}/note`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ note })
+        });
+    } catch (err) {
+        console.error('Failed to save note');
+    }
+});
+
+// Close popout on Escape
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closeMemberPopout();
+    }
+});
+</script>
 {{end}}
