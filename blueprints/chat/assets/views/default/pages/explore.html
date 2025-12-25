@@ -3,241 +3,217 @@
 {{end}}
 
 {{define "content"}}
-<div class="flex h-screen bg-white">
-    <!-- Sidebar -->
-    {{template "channel_list.html" .}}
-
-    <!-- Main Content -->
-    <div class="flex-1 flex flex-col min-w-0">
-        <!-- Header -->
-        <header class="h-14 flex items-center justify-between px-4 border-b border-gpt-border shrink-0">
-            <div class="flex items-center gap-2">
-                <h1 class="font-semibold text-gpt-text">Explore communities</h1>
-            </div>
-        </header>
-
-        <!-- Content -->
-        <div class="flex-1 overflow-y-auto scrollbar-thin bg-gpt-sidebar/50">
-            <div class="max-w-6xl mx-auto px-6 py-8">
-                <!-- Hero Banner -->
-                <div class="relative rounded-2xl overflow-hidden mb-8 bg-gradient-to-r from-gpt-accent to-gray-700 p-8 md:p-12">
-                    <div class="relative z-10">
-                        <h2 class="text-2xl md:text-3xl font-semibold text-white mb-2">Find your community</h2>
-                        <p class="text-white/80 max-w-xl mb-6">Discover public servers and connect with people who share your interests.</p>
-
-                        <!-- Search -->
-                        <div class="relative max-w-md">
-                            <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gpt-text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="11" cy="11" r="8"/>
-                                <path d="m21 21-4.35-4.35"/>
-                            </svg>
-                            <input
-                                type="text"
-                                id="search-servers"
-                                placeholder="Search communities..."
-                                class="w-full pl-12 pr-4 py-3 rounded-xl text-base outline-none transition-all bg-white text-gpt-text focus:ring-2 focus:ring-white/50 placeholder:text-gpt-text-muted"
-                            >
-                        </div>
-                    </div>
-                    <!-- Decorative elements -->
-                    <div class="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2"></div>
-                    <div class="absolute bottom-0 left-1/2 w-48 h-48 bg-white/5 rounded-full translate-y-1/2"></div>
-                </div>
-
-                {{if .Data.publicServers}}
-                <!-- Stats -->
-                <div class="flex items-center gap-2 mb-6 text-sm text-gpt-text-secondary">
-                    <span id="server-count">{{len .Data.publicServers}} communities</span>
-                    <span class="text-gpt-text-muted">available to join</span>
-                </div>
-
-                <!-- Server Grid -->
-                <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6" id="server-list">
-                    {{range .Data.publicServers}}
-                    <div class="server-card group relative bg-white rounded-2xl border border-gpt-border overflow-hidden hover:border-gpt-text-muted hover:shadow-lg hover:shadow-black/5 transition-all duration-200" data-server-name="{{.Name}}" data-server-id="{{.ID}}">
-                        <!-- Banner -->
-                        <div class="h-28 bg-gradient-to-br from-gpt-sidebar-hover to-gpt-sidebar relative">
-                            {{if .BannerURL}}
-                            <img src="{{.BannerURL}}" alt="" class="w-full h-full object-cover">
-                            {{else}}
-                            <div class="absolute inset-0 bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50"></div>
-                            {{end}}
-                            <!-- Hover overlay -->
-                            <div class="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors"></div>
-                        </div>
-
-                        <!-- Icon -->
-                        <div class="absolute top-16 left-6">
-                            <div class="w-20 h-20 rounded-2xl border-4 border-white bg-white flex items-center justify-center text-2xl font-semibold shadow-sm overflow-hidden group-hover:shadow-md transition-shadow">
-                                {{if .IconURL}}
-                                <img src="{{.IconURL}}" alt="" class="w-full h-full object-cover">
-                                {{else}}
-                                <span class="text-gpt-text-secondary">{{slice .Name 0 1}}</span>
-                                {{end}}
-                            </div>
-                        </div>
-
-                        <!-- Content -->
-                        <div class="pt-12 px-6 pb-6">
-                            <div class="flex items-start justify-between mb-3">
-                                <div class="flex-1 min-w-0 pr-4">
-                                    <div class="flex items-center gap-2 mb-1">
-                                        <h3 class="font-semibold text-lg text-gpt-text truncate">{{.Name}}</h3>
-                                        {{if .IsVerified}}
-                                        <svg class="w-5 h-5 text-blue-500 shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                                            <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                        </svg>
-                                        {{end}}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <p class="text-sm text-gpt-text-secondary line-clamp-2 mb-5 min-h-[40px]">
-                                {{if .Description}}{{.Description}}{{else}}A community on Mizu. Join to see what's happening!{{end}}
-                            </p>
-
-                            <!-- Stats & Actions -->
-                            <div class="flex items-center justify-between pt-4 border-t border-gpt-border">
-                                <div class="flex items-center gap-4">
-                                    <div class="flex items-center gap-1.5 text-sm text-gpt-text-muted">
-                                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                                            <circle cx="9" cy="7" r="4"/>
-                                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                                        </svg>
-                                        <span>{{.MemberCount}}</span>
-                                    </div>
-                                    {{if .Features}}
-                                    <div class="flex items-center gap-1">
-                                        {{range $i, $feature := .Features}}
-                                        {{if lt $i 2}}
-                                        <span class="px-2 py-0.5 rounded text-xs font-medium bg-gpt-sidebar text-gpt-text-secondary">{{$feature}}</span>
-                                        {{end}}
-                                        {{end}}
-                                    </div>
-                                    {{end}}
-                                </div>
-                                <button
-                                    onclick="joinServer('{{.ID}}')"
-                                    class="px-5 py-2 rounded-lg text-sm font-medium text-white bg-gpt-accent hover:opacity-90 active:scale-95 transition-all"
-                                >
-                                    Join
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    {{end}}
-                </div>
-
-                <!-- No Results State -->
-                <div id="no-results" class="hidden flex flex-col items-center justify-center py-16 text-center">
-                    <div class="w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-gpt-sidebar">
-                        <svg class="w-8 h-8 text-gpt-text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <circle cx="11" cy="11" r="8"/>
-                            <path d="m21 21-4.35-4.35"/>
-                        </svg>
-                    </div>
-                    <h3 class="text-lg font-medium text-gpt-text mb-1">No communities found</h3>
-                    <p class="text-sm text-gpt-text-secondary">Try a different search term</p>
-                </div>
-                {{else}}
-                <!-- Empty State -->
-                <div class="flex flex-col items-center justify-center py-20 text-center">
-                    <div class="w-20 h-20 rounded-2xl flex items-center justify-center mb-6 bg-gpt-sidebar">
-                        <svg class="w-10 h-10 text-gpt-text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <circle cx="12" cy="12" r="10"/>
-                            <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
-                        </svg>
-                    </div>
-                    <h3 class="text-xl font-semibold text-gpt-text mb-2">No public communities yet</h3>
-                    <p class="text-gpt-text-secondary mb-8 max-w-md">Be the first to create a public community and invite others to join!</p>
-                    <button
-                        onclick="openCreateServerModal()"
-                        class="px-6 py-3 rounded-xl text-base font-medium text-white bg-gpt-accent hover:opacity-90 transition-opacity"
-                    >
-                        Create community
-                    </button>
-                </div>
-                {{end}}
-
-                <!-- Create CTA -->
-                {{if .Data.publicServers}}
-                <div class="mt-12 p-8 rounded-2xl bg-white border border-gpt-border text-center">
-                    <h3 class="text-lg font-semibold text-gpt-text mb-2">Start your own community</h3>
-                    <p class="text-gpt-text-secondary mb-6 max-w-md mx-auto">Don't see what you're looking for? Create your own server and invite others to join.</p>
-                    <button
-                        onclick="openCreateServerModal()"
-                        class="px-6 py-3 rounded-xl text-base font-medium text-white bg-gpt-accent hover:opacity-90 transition-opacity"
-                    >
-                        Create community
-                    </button>
-                </div>
-                {{end}}
+<div class="min-h-screen bg-white">
+    {{if .Data.isLoggedIn}}
+    <!-- Logged in: Show with sidebar -->
+    <div class="flex h-screen">
+        {{template "channel_list.html" .}}
+        <div class="flex-1 flex flex-col min-w-0">
+            <header class="h-14 flex items-center justify-between px-6 border-b border-gpt-border shrink-0">
+                <h1 class="font-semibold text-gpt-text">Explore</h1>
+            </header>
+            <div class="flex-1 overflow-y-auto scrollbar-thin">
+                {{template "explore_content" .}}
             </div>
         </div>
     </div>
+    {{else}}
+    <!-- Public: Show with navbar -->
+    <nav class="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gpt-border">
+        <div class="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+            <a href="/" class="flex items-center gap-2">
+                <div class="w-7 h-7 rounded-lg bg-gpt-accent flex items-center justify-center">
+                    <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                </div>
+                <span class="font-semibold text-gpt-text">Mizu</span>
+            </a>
+            <div class="flex items-center gap-3">
+                <a href="/login" class="px-4 py-2 text-sm font-medium text-gpt-text hover:text-gpt-text-secondary transition-colors">Log in</a>
+                <a href="/register" class="px-4 py-2 rounded-full text-sm font-medium text-white bg-gpt-accent hover:opacity-90 transition-opacity">Sign up</a>
+            </div>
+        </div>
+    </nav>
+    <div class="overflow-y-auto">
+        {{template "explore_content" .}}
+    </div>
+    {{end}}
 </div>
 
 <script>
-// Search with debounce
-let searchTimeout;
-document.getElementById('search-servers')?.addEventListener('input', (e) => {
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => {
-        const query = e.target.value.toLowerCase().trim();
-        const cards = document.querySelectorAll('.server-card');
-        const noResults = document.getElementById('no-results');
-        const serverCount = document.getElementById('server-count');
-        let visibleCount = 0;
+// Search
+const searchInput = document.getElementById('search-input');
+const serverCards = document.querySelectorAll('[data-server-name]');
+const serverCount = document.getElementById('server-count');
+const noResults = document.getElementById('no-results');
+const serverGrid = document.getElementById('server-grid');
 
-        cards.forEach(card => {
-            const name = card.dataset.serverName.toLowerCase();
-            const isVisible = name.includes(query);
-            card.style.display = isVisible ? '' : 'none';
-            if (isVisible) visibleCount++;
-        });
+searchInput?.addEventListener('input', (e) => {
+    const query = e.target.value.toLowerCase().trim();
+    let visible = 0;
 
-        // Update count and show/hide no results
-        if (serverCount) {
-            serverCount.textContent = `${visibleCount} ${visibleCount === 1 ? 'community' : 'communities'}`;
-        }
-        if (noResults) {
-            noResults.classList.toggle('hidden', visibleCount > 0);
-        }
-    }, 150);
+    serverCards.forEach(card => {
+        const name = card.dataset.serverName.toLowerCase();
+        const match = name.includes(query);
+        card.style.display = match ? '' : 'none';
+        if (match) visible++;
+    });
+
+    if (serverCount) serverCount.textContent = visible;
+    if (noResults) noResults.classList.toggle('hidden', visible > 0);
+    if (serverGrid) serverGrid.classList.toggle('hidden', visible === 0);
 });
 
-// Join server
-async function joinServer(serverId) {
-    const btn = event.target;
-    const originalText = btn.textContent;
-    btn.textContent = 'Joining...';
+// Join
+async function joinServer(id) {
+    {{if not .Data.isLoggedIn}}
+    window.location.href = '/login';
+    return;
+    {{end}}
+
+    const btn = event.currentTarget;
     btn.disabled = true;
+    btn.textContent = 'Joining...';
 
     try {
-        const res = await fetch(`/api/v1/servers/${serverId}/join`, {
+        const res = await fetch(`/api/v1/servers/${id}/join`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
-
         if (res.ok) {
             const data = await res.json();
-            window.location.href = `/channels/${serverId}/${data.data?.default_channel || ''}`;
+            window.location.href = `/channels/${id}/${data.data?.default_channel || ''}`;
         } else {
-            const error = await res.json();
-            if (error.error?.includes('already a member')) {
-                window.location.href = `/channels/${serverId}/`;
+            const err = await res.json();
+            if (err.error?.includes('already')) {
+                window.location.href = `/channels/${id}/`;
             } else {
-                btn.textContent = originalText;
                 btn.disabled = false;
+                btn.textContent = 'Join';
             }
         }
-    } catch (err) {
-        console.error('Failed to join server:', err);
-        btn.textContent = originalText;
+    } catch {
         btn.disabled = false;
+        btn.textContent = 'Join';
     }
 }
 </script>
+{{end}}
+
+{{define "explore_content"}}
+<div class="max-w-3xl mx-auto px-6 py-10">
+    <!-- Header -->
+    <div class="mb-8">
+        <h2 class="text-2xl font-semibold text-gpt-text mb-2">Discover communities</h2>
+        <p class="text-gpt-text-secondary">Find and join public communities on Mizu.</p>
+    </div>
+
+    <!-- Search -->
+    <div class="relative mb-8">
+        <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gpt-text-muted pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <path d="m21 21-4.35-4.35"/>
+        </svg>
+        <input
+            type="text"
+            id="search-input"
+            placeholder="Search communities..."
+            class="w-full pl-12 pr-4 py-3 rounded-xl text-base bg-gpt-sidebar border border-gpt-border text-gpt-text placeholder:text-gpt-text-muted outline-none focus:border-gpt-text-muted transition-colors"
+        >
+    </div>
+
+    {{if .Data.publicServers}}
+    <!-- Count -->
+    <p class="text-sm text-gpt-text-muted mb-4"><span id="server-count">{{len .Data.publicServers}}</span> communities</p>
+
+    <!-- Server List -->
+    <div class="space-y-3" id="server-grid">
+        {{range .Data.publicServers}}
+        <div
+            data-server-name="{{.Name}}"
+            class="group flex items-center gap-4 p-4 rounded-xl border border-gpt-border bg-white hover:border-gpt-text-muted hover:shadow-sm transition-all cursor-pointer"
+            onclick="if(event.target.tagName !== 'BUTTON') joinServer('{{.ID}}')"
+        >
+            <!-- Icon -->
+            <div class="w-12 h-12 rounded-xl bg-gpt-sidebar flex items-center justify-center text-lg font-medium shrink-0 overflow-hidden">
+                {{if .IconURL}}
+                <img src="{{.IconURL}}" alt="" class="w-full h-full object-cover">
+                {{else}}
+                <span class="text-gpt-text-secondary">{{slice .Name 0 1}}</span>
+                {{end}}
+            </div>
+
+            <!-- Info -->
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-1.5 mb-0.5">
+                    <h3 class="font-medium text-gpt-text truncate">{{.Name}}</h3>
+                    {{if .IsVerified}}
+                    <svg class="w-4 h-4 text-blue-500 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                    </svg>
+                    {{end}}
+                </div>
+                <p class="text-sm text-gpt-text-secondary truncate">{{if .Description}}{{.Description}}{{else}}A community on Mizu{{end}}</p>
+            </div>
+
+            <!-- Stats -->
+            <div class="hidden sm:flex items-center gap-1.5 text-sm text-gpt-text-muted shrink-0">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+                <span>{{.MemberCount}}</span>
+            </div>
+
+            <!-- Join Button -->
+            <button
+                onclick="event.stopPropagation(); joinServer('{{.ID}}')"
+                class="px-4 py-2 rounded-lg text-sm font-medium bg-gpt-accent text-white hover:opacity-90 active:scale-95 transition-all shrink-0"
+            >
+                Join
+            </button>
+        </div>
+        {{end}}
+    </div>
+
+    <!-- No Results -->
+    <div id="no-results" class="hidden py-16 text-center">
+        <p class="text-gpt-text-secondary">No communities found</p>
+    </div>
+
+    {{else}}
+    <!-- Empty State -->
+    <div class="py-16 text-center">
+        <div class="w-14 h-14 rounded-xl bg-gpt-sidebar flex items-center justify-center mx-auto mb-4">
+            <svg class="w-7 h-7 text-gpt-text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M8 12h8M12 8v8"/>
+            </svg>
+        </div>
+        <h3 class="font-medium text-gpt-text mb-1">No communities yet</h3>
+        <p class="text-sm text-gpt-text-secondary mb-6">Be the first to create one.</p>
+        {{if .Data.isLoggedIn}}
+        <button onclick="openCreateServerModal()" class="px-5 py-2.5 rounded-lg text-sm font-medium bg-gpt-accent text-white hover:opacity-90 transition-opacity">
+            Create community
+        </button>
+        {{else}}
+        <a href="/register" class="inline-block px-5 py-2.5 rounded-lg text-sm font-medium bg-gpt-accent text-white hover:opacity-90 transition-opacity">
+            Get started
+        </a>
+        {{end}}
+    </div>
+    {{end}}
+
+    {{if and .Data.publicServers .Data.isLoggedIn}}
+    <!-- Create CTA -->
+    <div class="mt-10 pt-8 border-t border-gpt-border text-center">
+        <p class="text-sm text-gpt-text-secondary mb-4">Don't see what you're looking for?</p>
+        <button onclick="openCreateServerModal()" class="px-5 py-2.5 rounded-lg text-sm font-medium border border-gpt-border text-gpt-text hover:bg-gpt-sidebar transition-colors">
+            Create your own
+        </button>
+    </div>
+    {{end}}
+</div>
 {{end}}
