@@ -61,10 +61,11 @@
                     <div class="message-wrapper mb-8 animate-fade-in group" data-message-id="{{.ID}}" data-author-id="{{if .Author}}{{.Author.ID}}{{end}}">
                         {{if and .Author (eq .Author.ID $.User.ID)}}
                         <!-- User message - right aligned bubble -->
-                        <div class="flex justify-end">
+                        <div class="flex flex-col items-end">
                             <div class="user-message max-w-[85%]">
                                 <div class="prose-chat text-gpt-text" data-markdown="{{.Content}}"></div>
                             </div>
+                            <div class="text-xs text-gpt-text-muted mt-1 mr-1" data-timestamp="{{.CreatedAt.Format "2006-01-02T15:04:05Z07:00"}}"></div>
                         </div>
                         {{else}}
                         <!-- Assistant/Other message - ChatGPT style -->
@@ -87,7 +88,10 @@
                             </div>
                             <!-- Message Content -->
                             <div class="flex-1 min-w-0 pt-0">
-                                <div class="font-semibold text-sm text-gpt-text mb-1.5">{{if .Author}}{{.Author.DisplayName}}{{else}}Assistant{{end}}</div>
+                                <div class="flex items-baseline gap-2 mb-1.5">
+                                    <span class="font-semibold text-sm text-gpt-text">{{if .Author}}{{.Author.DisplayName}}{{else}}Unknown{{end}}</span>
+                                    <span class="text-xs text-gpt-text-muted" data-timestamp="{{.CreatedAt.Format "2006-01-02T15:04:05Z07:00"}}"></span>
+                                </div>
                                 <div class="prose-chat text-gpt-text" data-markdown="{{.Content}}"></div>
                                 <!-- Message Actions -->
                                 <div class="message-actions mt-2 -ml-1.5">
@@ -286,6 +290,17 @@ function renderAllMessages() {
     });
 }
 
+// Format all timestamps
+function formatAllTimestamps() {
+    document.querySelectorAll('[data-timestamp]').forEach(el => {
+        const iso = el.getAttribute('data-timestamp');
+        if (iso) {
+            el.textContent = formatTimestamp(iso);
+            el.removeAttribute('data-timestamp');
+        }
+    });
+}
+
 // Copy code to clipboard
 function copyCode(btn) {
     const wrapper = btn.closest('.code-block-wrapper');
@@ -448,13 +463,16 @@ function appendMessage(msg, isOptimistic = false) {
     // Render markdown content
     const renderedContent = renderMarkdown(msg.content);
 
+    const timestamp = formatTimestamp(msg.created_at || new Date().toISOString());
+
     if (isCurrentUser) {
         // User message - right aligned bubble
         div.innerHTML = `
-            <div class="flex justify-end">
+            <div class="flex flex-col items-end">
                 <div class="user-message max-w-[85%]">
                     <div class="prose-chat text-gpt-text">${renderedContent}</div>
                 </div>
+                <div class="text-xs text-gpt-text-muted mt-1 mr-1">${escapeHtml(timestamp)}</div>
             </div>
         `;
     } else {
@@ -468,7 +486,10 @@ function appendMessage(msg, isOptimistic = false) {
                     }
                 </div>
                 <div class="flex-1 min-w-0 pt-0">
-                    <div class="font-semibold text-sm text-gpt-text mb-1.5">${escapeHtml(msg.author?.display_name || 'Assistant')}</div>
+                    <div class="flex items-baseline gap-2 mb-1.5">
+                        <span class="font-semibold text-sm text-gpt-text">${escapeHtml(msg.author?.display_name || 'Unknown')}</span>
+                        <span class="text-xs text-gpt-text-muted">${escapeHtml(timestamp)}</span>
+                    </div>
                     <div class="prose-chat text-gpt-text">${renderedContent}</div>
                     <div class="message-actions mt-2 -ml-1.5">
                         <button class="message-action-btn copy-message-btn" onclick="copyMessage(this)" title="Copy message">
@@ -597,6 +618,8 @@ function autoResize(textarea) {
 document.addEventListener('DOMContentLoaded', () => {
     // Render all markdown messages on page load
     renderAllMessages();
+    // Format all timestamps
+    formatAllTimestamps();
 
     initWebSocket();
 
