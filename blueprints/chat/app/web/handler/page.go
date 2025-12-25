@@ -136,6 +136,16 @@ func (h *Page) ServerView(c *mizu.Ctx) error {
 	var msgs []*messages.Message
 	if channelID != "" {
 		msgs, _ = h.messages.List(ctx, channelID, messages.ListOpts{Limit: 50})
+		// Reverse to show oldest first (messages come DESC from DB)
+		for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
+			msgs[i], msgs[j] = msgs[j], msgs[i]
+		}
+		// Populate author info for each message
+		for _, msg := range msgs {
+			if author, err := h.accounts.GetByID(ctx, msg.AuthorID); err == nil {
+				msg.Author = author
+			}
+		}
 	}
 
 	// Get members for this server
