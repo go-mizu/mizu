@@ -2,9 +2,7 @@ package messages
 
 import (
 	"context"
-	"html"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/go-mizu/blueprints/chat/pkg/ulid"
@@ -143,38 +141,12 @@ func (s *Service) CreateEmbed(ctx context.Context, messageID string, embed *Embe
 	return s.store.InsertEmbed(ctx, messageID, embed)
 }
 
-// processContent converts plain text to HTML with formatting.
+// processContent returns the raw content - markdown rendering is handled client-side.
+// We only process mentions to preserve user/channel references.
 func processContent(content string) string {
-	// Escape HTML
-	result := html.EscapeString(content)
-
-	// Convert newlines to <br>
-	result = strings.ReplaceAll(result, "\n", "<br>")
-
-	// Bold: **text** or __text__
-	result = regexp.MustCompile(`\*\*(.+?)\*\*`).ReplaceAllString(result, "<strong>$1</strong>")
-	result = regexp.MustCompile(`__(.+?)__`).ReplaceAllString(result, "<strong>$1</strong>")
-
-	// Italic: *text* or _text_
-	result = regexp.MustCompile(`\*(.+?)\*`).ReplaceAllString(result, "<em>$1</em>")
-	result = regexp.MustCompile(`_(.+?)_`).ReplaceAllString(result, "<em>$1</em>")
-
-	// Strikethrough: ~~text~~
-	result = regexp.MustCompile(`~~(.+?)~~`).ReplaceAllString(result, "<del>$1</del>")
-
-	// Code: `code`
-	result = regexp.MustCompile("`([^`]+)`").ReplaceAllString(result, "<code>$1</code>")
-
-	// Links
-	result = regexp.MustCompile(`(https?://[^\s<]+)`).ReplaceAllString(result, `<a href="$1" target="_blank" rel="noopener">$1</a>`)
-
-	// Mentions: <@user_id>
-	result = regexp.MustCompile(`&lt;@([A-Za-z0-9]+)&gt;`).ReplaceAllString(result, `<span class="mention" data-user-id="$1">@$1</span>`)
-
-	// Channel mentions: <#channel_id>
-	result = regexp.MustCompile(`&lt;#([A-Za-z0-9]+)&gt;`).ReplaceAllString(result, `<span class="channel-mention" data-channel-id="$1">#$1</span>`)
-
-	return result
+	// Return raw content - client-side marked.js handles markdown rendering
+	// We escape HTML in the template or client-side to prevent XSS
+	return content
 }
 
 // extractMentions extracts user IDs from mentions in content.

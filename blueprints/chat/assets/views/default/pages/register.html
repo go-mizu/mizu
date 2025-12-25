@@ -3,285 +3,147 @@
 {{end}}
 
 {{define "content"}}
-<div class="auth-page">
-    <div class="auth-card">
-        <div class="auth-logo">
-            <svg viewBox="0 0 140 50" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect width="50" height="50" rx="12" fill="url(#auth-logo-gradient)"/>
-                <path d="M14 38V12h6l6 14 6-14h6v26h-5V21l-5.5 12h-3L19 21v17h-5z" fill="white"/>
-                <text x="60" y="35" fill="currentColor" font-size="24" font-weight="700" font-family="Inter, sans-serif">Mizu</text>
-                <defs>
-                    <linearGradient id="auth-logo-gradient" x1="0" y1="0" x2="50" y2="50" gradientUnits="userSpaceOnUse">
-                        <stop stop-color="#6366f1"/>
-                        <stop offset="0.5" stop-color="#a855f7"/>
-                        <stop offset="1" stop-color="#ec4899"/>
-                    </linearGradient>
-                </defs>
-            </svg>
+<div class="min-h-screen flex items-center justify-center p-4 bg-white">
+    <div class="w-full max-w-sm">
+        <!-- Logo & Header -->
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gpt-accent mb-5">
+                <svg class="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+            </div>
+            <h1 class="text-2xl font-semibold text-gpt-text mb-2">Create your account</h1>
+            <p class="text-sm text-gpt-text-secondary">Get started with Mizu Chat</p>
         </div>
 
-        <h1 class="auth-title">Create your account</h1>
-        <p class="auth-subtitle">Join thousands of communities</p>
+        <!-- Register Form -->
+        <form id="register-form" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gpt-text mb-2">Email</label>
+                <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    required
+                    autofocus
+                    autocomplete="email"
+                    placeholder="you@example.com"
+                    class="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all bg-gpt-input-bg border border-gpt-border text-gpt-text focus:ring-2 focus:ring-gpt-accent placeholder:text-gpt-text-muted"
+                >
+            </div>
 
-        <div class="auth-social">
-            <button type="button" class="auth-social-btn" onclick="alert('OAuth not configured')">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+            <div>
+                <label class="block text-sm font-medium text-gpt-text mb-2">Display Name</label>
+                <input
+                    type="text"
+                    id="display_name"
+                    name="display_name"
+                    required
+                    maxlength="32"
+                    placeholder="How others will see you"
+                    class="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all bg-gpt-input-bg border border-gpt-border text-gpt-text focus:ring-2 focus:ring-gpt-accent placeholder:text-gpt-text-muted"
+                >
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gpt-text mb-2">Username</label>
+                <input
+                    type="text"
+                    id="username"
+                    name="username"
+                    required
+                    maxlength="32"
+                    pattern="[a-zA-Z0-9_]+"
+                    autocomplete="username"
+                    placeholder="your_username"
+                    class="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all bg-gpt-input-bg border border-gpt-border text-gpt-text focus:ring-2 focus:ring-gpt-accent placeholder:text-gpt-text-muted"
+                >
+                <p class="mt-1.5 text-xs text-gpt-text-muted">Letters, numbers, and underscores only</p>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gpt-text mb-2">Password</label>
+                <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    required
+                    minlength="8"
+                    autocomplete="new-password"
+                    placeholder="At least 8 characters"
+                    class="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all bg-gpt-input-bg border border-gpt-border text-gpt-text focus:ring-2 focus:ring-gpt-accent placeholder:text-gpt-text-muted"
+                >
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gpt-text mb-2">Confirm Password</label>
+                <input
+                    type="password"
+                    id="confirm_password"
+                    name="confirm_password"
+                    required
+                    autocomplete="new-password"
+                    placeholder="Confirm your password"
+                    class="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all bg-gpt-input-bg border border-gpt-border text-gpt-text focus:ring-2 focus:ring-gpt-accent placeholder:text-gpt-text-muted"
+                >
+            </div>
+
+            <!-- Error Message -->
+            <div id="error-message" class="hidden text-sm text-red-600 bg-red-50 px-4 py-3 rounded-xl border border-red-200"></div>
+
+            <!-- Submit Button -->
+            <button
+                type="submit"
+                id="submit-btn"
+                class="w-full py-3 px-4 rounded-xl text-sm font-medium text-white transition-all btn-transition bg-gpt-accent hover:opacity-90 disabled:opacity-50"
+            >
+                <span id="btn-text">Create Account</span>
+                <svg id="btn-spinner" class="hidden w-5 h-5 mx-auto animate-spin" viewBox="0 0 24 24" fill="none">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
                 </svg>
-                Continue with Google
-            </button>
-            <button type="button" class="auth-social-btn" onclick="alert('OAuth not configured')">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-                </svg>
-                Continue with GitHub
-            </button>
-        </div>
-
-        <div class="auth-divider">or register with email</div>
-
-        <form id="register-form">
-            <div class="form-group">
-                <label class="form-label required" for="email">Email</label>
-                <input class="form-input" type="email" id="email" name="email" required autofocus autocomplete="email" placeholder="you@example.com">
-            </div>
-
-            <div class="form-group">
-                <label class="form-label" for="display_name">Display Name</label>
-                <input class="form-input" type="text" id="display_name" name="display_name" autocomplete="name" placeholder="How you'll appear to others">
-                <div class="form-hint">You can use special characters and emoji.</div>
-            </div>
-
-            <div class="form-group">
-                <label class="form-label required" for="username">Username</label>
-                <div class="form-input-wrapper">
-                    <input class="form-input" type="text" id="username" name="username" required autocomplete="username" pattern="[a-z0-9_]{3,32}" placeholder="Choose a unique username">
-                    <span class="form-input-icon" id="username-status" style="display: none;"></span>
-                </div>
-                <div class="form-hint" id="username-hint">Lowercase letters, numbers, and underscores. 3-32 characters.</div>
-            </div>
-
-            <div class="form-group">
-                <label class="form-label required" for="password">Password</label>
-                <div class="form-input-wrapper">
-                    <input class="form-input" type="password" id="password" name="password" required minlength="8" autocomplete="new-password" placeholder="Create a strong password">
-                    <button type="button" class="form-input-icon" onclick="togglePassword('password')" title="Show password">
-                        <svg class="eye-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                            <circle cx="12" cy="12" r="3"/>
-                        </svg>
-                    </button>
-                </div>
-                <div class="password-strength" id="password-strength" style="display: none;">
-                    <div class="password-strength-bar">
-                        <div class="password-strength-fill" id="strength-fill"></div>
-                    </div>
-                    <div class="password-strength-text" id="strength-text"></div>
-                </div>
-            </div>
-
-            <div class="form-group">
-                <label class="form-label required" for="confirm_password">Confirm Password</label>
-                <div class="form-input-wrapper">
-                    <input class="form-input" type="password" id="confirm_password" name="confirm_password" required autocomplete="new-password" placeholder="Confirm your password">
-                    <button type="button" class="form-input-icon" onclick="togglePassword('confirm_password')" title="Show password">
-                        <svg class="eye-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                            <circle cx="12" cy="12" r="3"/>
-                        </svg>
-                    </button>
-                </div>
-                <div class="form-hint" id="confirm-hint"></div>
-            </div>
-
-            <label class="form-checkbox mb-6">
-                <input type="checkbox" name="terms" id="terms" required>
-                <span class="form-checkbox-label">I agree to the <a href="/terms" target="_blank">Terms of Service</a> and <a href="/privacy" target="_blank">Privacy Policy</a></span>
-            </label>
-
-            <div id="error-message" class="form-error hidden"></div>
-
-            <button type="submit" class="btn btn-primary btn-block btn-lg" id="submit-btn">
-                Create Account
             </button>
 
-            <div class="auth-footer">
-                Already have an account? <a href="/login">Sign in</a>
-            </div>
+            <!-- Sign In Link -->
+            <p class="text-center text-sm pt-2 text-gpt-text-secondary">
+                Already have an account?
+                <a href="/login" class="text-gpt-accent hover:underline font-medium">Sign in</a>
+            </p>
         </form>
     </div>
 </div>
 
 <script>
-let usernameCheckTimeout;
-
-function togglePassword(id) {
-    const input = document.getElementById(id);
-    input.type = input.type === 'password' ? 'text' : 'password';
-}
-
-function checkPasswordStrength(password) {
-    let strength = 0;
-    if (password.length >= 8) strength++;
-    if (password.length >= 12) strength++;
-    if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength++;
-    if (/\d/.test(password)) strength++;
-    if (/[^a-zA-Z0-9]/.test(password)) strength++;
-    return strength;
-}
-
-function updatePasswordStrength() {
-    const password = document.getElementById('password').value;
-    const strengthEl = document.getElementById('password-strength');
-    const fillEl = document.getElementById('strength-fill');
-    const textEl = document.getElementById('strength-text');
-
-    if (!password) {
-        strengthEl.style.display = 'none';
-        return;
-    }
-
-    strengthEl.style.display = 'block';
-    const strength = checkPasswordStrength(password);
-
-    fillEl.className = 'password-strength-fill';
-    if (strength <= 2) {
-        fillEl.classList.add('weak');
-        textEl.textContent = 'Weak - Add more characters, numbers, or symbols';
-    } else if (strength <= 3) {
-        fillEl.classList.add('medium');
-        textEl.textContent = 'Medium - Getting better!';
-    } else {
-        fillEl.classList.add('strong');
-        textEl.textContent = 'Strong - Great password!';
-    }
-}
-
-function checkPasswordMatch() {
-    const password = document.getElementById('password').value;
-    const confirm = document.getElementById('confirm_password').value;
-    const hint = document.getElementById('confirm-hint');
-    const input = document.getElementById('confirm_password');
-
-    if (!confirm) {
-        hint.textContent = '';
-        input.classList.remove('error', 'success');
-        return;
-    }
-
-    if (password === confirm) {
-        hint.textContent = 'Passwords match';
-        hint.style.color = 'var(--text-positive)';
-        input.classList.remove('error');
-        input.classList.add('success');
-    } else {
-        hint.textContent = 'Passwords do not match';
-        hint.style.color = 'var(--text-danger)';
-        input.classList.remove('success');
-        input.classList.add('error');
-    }
-}
-
-async function checkUsername() {
-    const username = document.getElementById('username').value;
-    const statusEl = document.getElementById('username-status');
-    const hintEl = document.getElementById('username-hint');
-    const input = document.getElementById('username');
-
-    if (!username || username.length < 3) {
-        statusEl.style.display = 'none';
-        hintEl.textContent = 'Lowercase letters, numbers, and underscores. 3-32 characters.';
-        hintEl.style.color = 'var(--text-muted)';
-        input.classList.remove('error', 'success');
-        return;
-    }
-
-    // Validate format
-    if (!/^[a-z0-9_]{3,32}$/.test(username)) {
-        statusEl.style.display = 'none';
-        hintEl.textContent = 'Only lowercase letters, numbers, and underscores allowed';
-        hintEl.style.color = 'var(--text-danger)';
-        input.classList.add('error');
-        input.classList.remove('success');
-        return;
-    }
-
-    // Check availability
-    try {
-        const res = await fetch(`/api/v1/auth/check-username?username=${encodeURIComponent(username)}`);
-        const data = await res.json();
-
-        statusEl.style.display = 'flex';
-        if (data.available) {
-            statusEl.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-positive)" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>';
-            hintEl.textContent = 'Username is available!';
-            hintEl.style.color = 'var(--text-positive)';
-            input.classList.remove('error');
-            input.classList.add('success');
-        } else {
-            statusEl.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-danger)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
-            hintEl.textContent = 'Username is already taken';
-            hintEl.style.color = 'var(--text-danger)';
-            input.classList.remove('success');
-            input.classList.add('error');
-        }
-    } catch (e) {
-        statusEl.style.display = 'none';
-    }
-}
-
-document.getElementById('password').addEventListener('input', function() {
-    updatePasswordStrength();
-    checkPasswordMatch();
-});
-
-document.getElementById('confirm_password').addEventListener('input', checkPasswordMatch);
-
-document.getElementById('username').addEventListener('input', function() {
-    clearTimeout(usernameCheckTimeout);
-    usernameCheckTimeout = setTimeout(checkUsername, 500);
-});
-
 document.getElementById('register-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = e.target;
     const btn = document.getElementById('submit-btn');
+    const btnText = document.getElementById('btn-text');
+    const btnSpinner = document.getElementById('btn-spinner');
     const errorEl = document.getElementById('error-message');
 
-    // Validate password match
+    // Validate passwords match
     if (form.password.value !== form.confirm_password.value) {
-        errorEl.innerHTML = `
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"/>
-                <line x1="12" y1="8" x2="12" y2="12"/>
-                <line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-            Passwords do not match
-        `;
+        errorEl.textContent = 'Passwords do not match';
         errorEl.classList.remove('hidden');
         return;
     }
 
     btn.disabled = true;
-    btn.classList.add('btn-loading');
-    btn.innerHTML = '<span style="opacity: 0;">Create Account</span>';
+    btnText.classList.add('hidden');
+    btnSpinner.classList.remove('hidden');
     errorEl.classList.add('hidden');
-
-    const data = {
-        email: form.email.value,
-        username: form.username.value,
-        password: form.password.value,
-        display_name: form.display_name.value || form.username.value
-    };
 
     try {
         const res = await fetch('/api/v1/auth/register', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
+            body: JSON.stringify({
+                email: form.email.value,
+                display_name: form.display_name.value,
+                username: form.username.value,
+                password: form.password.value
+            })
         });
 
         if (res.ok) {
@@ -289,7 +151,10 @@ document.getElementById('register-form').addEventListener('submit', async (e) =>
             const loginRes = await fetch('/api/v1/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ login: data.email, password: data.password })
+                body: JSON.stringify({
+                    login: form.email.value,
+                    password: form.password.value
+                })
             });
 
             if (loginRes.ok) {
@@ -299,32 +164,18 @@ document.getElementById('register-form').addEventListener('submit', async (e) =>
             }
         } else {
             const json = await res.json();
-            errorEl.innerHTML = `
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="10"/>
-                    <line x1="12" y1="8" x2="12" y2="12"/>
-                    <line x1="12" y1="16" x2="12.01" y2="16"/>
-                </svg>
-                ${json.error?.message || 'Registration failed'}
-            `;
+            errorEl.textContent = json.error?.message || 'Registration failed';
             errorEl.classList.remove('hidden');
             btn.disabled = false;
-            btn.classList.remove('btn-loading');
-            btn.textContent = 'Create Account';
+            btnText.classList.remove('hidden');
+            btnSpinner.classList.add('hidden');
         }
     } catch (err) {
-        errorEl.innerHTML = `
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"/>
-                <line x1="12" y1="8" x2="12" y2="12"/>
-                <line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-            Unable to connect. Please try again.
-        `;
+        errorEl.textContent = 'Unable to connect. Please try again.';
         errorEl.classList.remove('hidden');
         btn.disabled = false;
-        btn.classList.remove('btn-loading');
-        btn.textContent = 'Create Account';
+        btnText.classList.remove('hidden');
+        btnSpinner.classList.add('hidden');
     }
 });
 </script>

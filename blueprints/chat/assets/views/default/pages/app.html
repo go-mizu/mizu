@@ -3,206 +3,199 @@
 {{end}}
 
 {{define "content"}}
-<div class="app" id="app">
-    {{template "server_list.html" .}}
+<div class="flex h-screen bg-white">
+    <!-- Sidebar -->
+    {{template "channel_list.html" .}}
 
-    <div class="channel-sidebar">
-        {{template "channel_list.html" .}}
-        {{template "user_panel.html" .}}
-    </div>
-
-    <!-- Chat Area -->
-    <main class="chat-area" id="chat-area">
-        {{if .Data.currentChannel}}
-        <header class="chat-header">
-            <span class="chat-header-icon">#</span>
-            <span class="chat-header-name">{{.Data.currentChannel.Name}}</span>
-            {{if .Data.currentChannel.Topic}}
-            <span class="chat-header-divider"></span>
-            <span class="chat-header-topic">{{.Data.currentChannel.Topic}}</span>
-            {{end}}
-            <div class="chat-header-actions">
-                <button class="chat-header-action" id="pinned-btn" title="Pinned Messages">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 17v5"/>
-                        <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6a1 1 0 0 0-1-1H10a1 1 0 0 0-1 1v4.76z"/>
+    <!-- Main Chat Area -->
+    <div class="flex-1 flex flex-col min-w-0">
+        <!-- Header -->
+        <header class="h-14 flex items-center justify-between px-4 border-b border-gpt-border shrink-0">
+            <div class="flex items-center gap-2">
+                <!-- Sidebar toggle for mobile -->
+                <button id="sidebar-toggle" class="p-2 -ml-2 rounded-lg hover:bg-gpt-sidebar-hover lg:hidden">
+                    <svg class="w-5 h-5 text-gpt-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                        <line x1="9" y1="3" x2="9" y2="21"/>
                     </svg>
                 </button>
-                <button class="chat-header-action" id="members-toggle" title="Toggle Member List">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                        <circle cx="9" cy="7" r="4"/>
-                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                <!-- Model selector -->
+                <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-gpt-sidebar-hover transition-colors">
+                    <span class="font-semibold text-gpt-text">Mizu Chat</span>
+                    <svg class="w-4 h-4 text-gpt-text-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"/>
                     </svg>
                 </button>
-                <button class="chat-header-action" id="search-btn" title="Search (Ctrl+K)">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="11" cy="11" r="8"/>
-                        <path d="m21 21-4.35-4.35"/>
+            </div>
+            <div class="flex items-center gap-1">
+                {{if .Data.currentChannel}}
+                <button class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-gpt-text-secondary hover:bg-gpt-sidebar-hover transition-colors">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+                        <polyline points="16 6 12 2 8 6"/>
+                        <line x1="12" y1="2" x2="12" y2="15"/>
                     </svg>
+                    Share
                 </button>
+                {{end}}
+                <a href="/settings" class="p-2 rounded-lg text-gpt-text-secondary hover:bg-gpt-sidebar-hover transition-colors" title="Settings">
+                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="1"/>
+                        <circle cx="19" cy="12" r="1"/>
+                        <circle cx="5" cy="12" r="1"/>
+                    </svg>
+                </a>
             </div>
         </header>
 
-        <div class="messages" id="messages">
-            {{if .Data.messages}}
-                {{range .Data.messages}}
-                <div class="message" data-message-id="{{.ID}}" data-author-id="{{if .Author}}{{.Author.ID}}{{end}}" oncontextmenu="showContextMenu(event, '{{.ID}}')">
-                    <div class="message-avatar">
-                        {{if .Author}}
-                            {{if .Author.AvatarURL}}
-                                <img src="{{.Author.AvatarURL}}" alt="{{.Author.DisplayName}}">
-                            {{else}}
-                                <span>{{userInitials .Author.DisplayName}}</span>
-                            {{end}}
+        {{if .Data.currentChannel}}
+        <!-- Messages Container -->
+        <div class="flex-1 overflow-y-auto scrollbar-thin" id="messages">
+            <div class="max-w-chat mx-auto px-4 py-6">
+                {{if .Data.messages}}
+                    {{range .Data.messages}}
+                    <div class="message-wrapper mb-8 animate-fade-in group" data-message-id="{{.ID}}" data-author-id="{{if .Author}}{{.Author.ID}}{{end}}">
+                        {{if and .Author (eq .Author.ID $.User.ID)}}
+                        <!-- User message - right aligned bubble -->
+                        <div class="flex justify-end">
+                            <div class="user-message max-w-[85%]">
+                                <div class="prose-chat text-gpt-text" data-markdown="{{.Content}}"></div>
+                            </div>
+                        </div>
                         {{else}}
-                            <span>?</span>
+                        <!-- Assistant/Other message - ChatGPT style -->
+                        <div class="flex gap-4">
+                            <!-- Avatar -->
+                            <div class="w-7 h-7 rounded-full flex items-center justify-center text-sm font-medium shrink-0 overflow-hidden bg-black">
+                                {{if .Author}}
+                                    {{if .Author.AvatarURL}}
+                                        <img src="{{.Author.AvatarURL}}" alt="{{.Author.DisplayName}}" class="w-full h-full object-cover">
+                                    {{else}}
+                                        <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M12 8V4M12 8C9.79 8 8 9.79 8 12M12 8C14.21 8 16 9.79 16 12M8 12H4M8 12C8 14.21 9.79 16 12 16M16 12H20M16 12C16 14.21 14.21 16 12 16M12 16V20"/>
+                                        </svg>
+                                    {{end}}
+                                {{else}}
+                                    <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M12 8V4M12 8C9.79 8 8 9.79 8 12M12 8C14.21 8 16 9.79 16 12M8 12H4M8 12C8 14.21 9.79 16 12 16M16 12H20M16 12C16 14.21 14.21 16 12 16M12 16V20"/>
+                                    </svg>
+                                {{end}}
+                            </div>
+                            <!-- Message Content -->
+                            <div class="flex-1 min-w-0 pt-0">
+                                <div class="font-semibold text-sm text-gpt-text mb-1.5">{{if .Author}}{{.Author.DisplayName}}{{else}}Assistant{{end}}</div>
+                                <div class="prose-chat text-gpt-text" data-markdown="{{.Content}}"></div>
+                                <!-- Message Actions -->
+                                <div class="message-actions mt-2 -ml-1.5">
+                                    <button class="message-action-btn copy-message-btn" title="Copy message">
+                                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                        </svg>
+                                    </button>
+                                    <button class="message-action-btn" title="Good response">
+                                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
+                                        </svg>
+                                    </button>
+                                    <button class="message-action-btn" title="Bad response">
+                                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                         {{end}}
                     </div>
-                    <div class="message-content">
-                        <div class="message-header">
-                            <span class="message-author">{{if .Author}}{{.Author.DisplayName}}{{else}}Unknown{{end}}</span>
-                            <span class="message-timestamp">{{formatTimestamp .CreatedAt}}</span>
-                            {{if .IsEdited}}<span class="message-edited">(edited)</span>{{end}}
+                    {{end}}
+                {{else}}
+                    <!-- Empty State -->
+                    <div class="flex flex-col items-center justify-center py-20 text-center">
+                        <div class="w-16 h-16 rounded-full flex items-center justify-center mb-6 bg-gpt-sidebar border border-gpt-border">
+                            <svg class="w-8 h-8 text-gpt-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                            </svg>
                         </div>
-                        <div class="message-body">
-                            {{if .ContentHTML}}{{safeHTML .ContentHTML}}{{else}}{{.Content}}{{end}}
-                        </div>
-                        {{if .Reactions}}
-                        <div class="message-reactions">
-                            {{range .Reactions}}
-                            <button class="reaction{{if .Me}} me{{end}}" onclick="toggleReaction('{{.Emoji}}', '{{$.ID}}')">
-                                <span class="reaction-emoji">{{.Emoji}}</span>
-                                <span class="reaction-count">{{.Count}}</span>
-                            </button>
-                            {{end}}
-                        </div>
-                        {{end}}
+                        <h3 class="text-xl font-semibold text-gpt-text mb-2">Start a conversation</h3>
+                        <p class="text-gpt-text-secondary max-w-md">Send a message to begin chatting.</p>
                     </div>
-                    <div class="message-actions">
-                        <button class="message-action" title="Reply" onclick="startReply('{{.ID}}')">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
-                        </button>
-                        <button class="message-action" title="Add Reaction" onclick="toggleEmojiPicker('{{.ID}}')">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
-                        </button>
-                        <button class="message-action" title="More" onclick="showContextMenu(event, '{{.ID}}')">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
-                        </button>
-                    </div>
-                </div>
                 {{end}}
-            {{else}}
-                <div class="messages-empty" id="empty-state">
-                    <div style="font-size: 4rem; margin-bottom: 1rem; opacity: 0.5;">#</div>
-                    <h3>Welcome to #{{.Data.currentChannel.Name}}!</h3>
-                    <p>This is the start of the channel. Send a message to get the conversation going.</p>
-                </div>
-            {{end}}
+            </div>
         </div>
 
-        <div class="typing-indicator hidden" id="typing-indicator">
-            <div class="typing-dots"><span></span><span></span><span></span></div>
-            <span id="typing-users">Someone is typing...</span>
-        </div>
-
-        <div class="reply-preview hidden" id="reply-preview">
-            <span class="reply-preview-text">Replying to <strong id="reply-to-user">username</strong></span>
-            <button class="reply-preview-close" onclick="cancelReply()">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        <!-- Scroll to bottom indicator -->
+        <div id="scroll-indicator" class="hidden absolute bottom-32 left-1/2 -translate-x-1/2">
+            <button onclick="scrollToBottom()" class="p-2 rounded-full bg-white border border-gpt-border shadow-lg hover:bg-gpt-sidebar transition-colors">
+                <svg class="w-5 h-5 text-gpt-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="6 9 12 15 18 9"/>
+                </svg>
             </button>
         </div>
 
-        <div class="message-input-wrapper">
-            <form id="message-form" class="message-input">
-                <button type="button" class="input-action" id="attach-btn" title="Attach file">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-                </button>
-                <input type="text" id="message-input" name="content" placeholder="Message #{{.Data.currentChannel.Name}}" autocomplete="off">
-                <button type="button" class="input-action" id="emoji-btn" title="Emoji">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
-                </button>
-                <button type="submit" class="input-action btn-primary" style="border-radius: var(--radius-md);" title="Send">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                </button>
-            </form>
-        </div>
-        {{else}}
-        <div class="messages-empty">
-            <div style="font-size: 4rem; margin-bottom: 1rem; opacity: 0.5;">#</div>
-            <h3>Welcome to Mizu Chat</h3>
-            <p>Select a channel to start chatting</p>
-        </div>
-        {{end}}
-    </main>
-
-    {{if .Data.currentServer}}{{template "member_list.html" .}}{{end}}
-</div>
-
-<!-- Search Modal -->
-<div class="modal-overlay" id="search-modal">
-    <div class="modal search-modal">
-        <div class="search-input-wrapper">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            <input type="text" id="search-input" placeholder="Search messages, channels, or users...">
-            <kbd>ESC</kbd>
-        </div>
-        <div class="search-results" id="search-results">
-            <div class="search-section">
-                <div class="search-section-title">Recent Searches</div>
-                <div class="search-result">
-                    <div class="search-result-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
-                    <div class="search-result-content">
-                        <div class="search-result-title">No recent searches</div>
-                        <div class="search-result-subtitle">Start typing to search</div>
+        <!-- Message Input -->
+        <div class="shrink-0 px-4 pb-4">
+            <div class="max-w-chat mx-auto">
+                <form id="message-form" class="relative">
+                    <div class="relative flex items-end rounded-3xl bg-gpt-input-bg border border-gpt-border shadow-sm">
+                        <!-- Attachment button -->
+                        <button type="button" class="p-3 text-gpt-text-secondary hover:text-gpt-text transition-colors">
+                            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"/>
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                        </button>
+                        <textarea
+                            id="message-input"
+                            name="content"
+                            placeholder="Ask anything"
+                            rows="1"
+                            class="flex-1 py-3 pr-3 bg-transparent text-gpt-text outline-none resize-none scrollbar-hide placeholder:text-gpt-text-muted"
+                            style="max-height: 200px;"
+                        ></textarea>
+                        <!-- Voice button -->
+                        <button type="button" class="p-3 text-gpt-text-secondary hover:text-gpt-text transition-colors">
+                            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                                <line x1="12" y1="19" x2="12" y2="23"/>
+                                <line x1="8" y1="23" x2="16" y2="23"/>
+                            </svg>
+                        </button>
+                        <!-- Send button -->
+                        <button
+                            type="submit"
+                            id="send-btn"
+                            disabled
+                            class="p-2 m-1.5 rounded-full transition-all btn-transition disabled:opacity-30 bg-gpt-accent disabled:bg-gpt-text-muted"
+                        >
+                            <svg class="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="19" x2="12" y2="5"/>
+                                <polyline points="5 12 12 5 19 12"/>
+                            </svg>
+                        </button>
                     </div>
-                </div>
+                </form>
+                <p class="text-xs text-center text-gpt-text-muted mt-2">Mizu Chat can make mistakes. Check important info.</p>
             </div>
         </div>
-        <div class="search-footer">
-            <span><kbd>Enter</kbd> to select</span>
-            <span><kbd>Arrow</kbd> to navigate</span>
-            <span><kbd>ESC</kbd> to close</span>
+        {{else}}
+        <!-- No Channel Selected -->
+        <div class="flex-1 flex flex-col items-center justify-center text-center p-6">
+            <div class="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gpt-sidebar border border-gpt-border">
+                <svg class="w-10 h-10 text-gpt-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+            </div>
+            <h2 class="text-2xl font-semibold text-gpt-text mb-3">How can I help you today?</h2>
+            <p class="text-gpt-text-secondary max-w-md mb-6">Select a conversation from the sidebar or start a new chat.</p>
+            <button onclick="document.getElementById('new-chat-btn')?.click()" class="px-4 py-2.5 rounded-full text-sm font-medium text-white bg-gpt-accent hover:opacity-90 transition-opacity btn-transition">
+                New Chat
+            </button>
         </div>
+        {{end}}
     </div>
 </div>
-
-<!-- Context Menu -->
-<div class="context-menu" id="context-menu">
-    <div class="context-menu-item" data-action="reply"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg> Reply</div>
-    <div class="context-menu-item" data-action="react"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg> Add Reaction</div>
-    <div class="context-menu-item" data-action="edit" id="edit-option"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Edit Message</div>
-    <div class="context-menu-item" data-action="pin"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6a1 1 0 0 0-1-1H10a1 1 0 0 0-1 1v4.76z"/></svg> Pin Message</div>
-    <div class="context-menu-item" data-action="copy"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy Text</div>
-    <div class="context-menu-separator"></div>
-    <div class="context-menu-item danger" data-action="delete" id="delete-option"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Delete Message</div>
-</div>
-
-<!-- Delete Confirmation Modal -->
-<div class="modal-overlay" id="delete-modal">
-    <div class="modal">
-        <div class="modal-header"><h2>Delete Message</h2><p>Are you sure? This cannot be undone.</p></div>
-        <div class="modal-body"><div id="delete-preview" style="background: var(--bg-secondary); border-radius: var(--radius-md); padding: var(--space-4);"></div></div>
-        <div class="modal-footer"><button class="btn btn-secondary" onclick="closeDeleteModal()">Cancel</button><button class="btn btn-danger" id="confirm-delete-btn">Delete</button></div>
-    </div>
-</div>
-
-<!-- Emoji Picker -->
-<div class="emoji-picker hidden" id="emoji-picker">
-    <div class="emoji-picker-header"><input type="text" class="emoji-picker-search" placeholder="Search emoji..." id="emoji-search"></div>
-    <div class="emoji-picker-tabs">
-        <button class="emoji-tab active" data-category="smileys">&#128512;</button>
-        <button class="emoji-tab" data-category="people">&#128075;</button>
-        <button class="emoji-tab" data-category="nature">&#127793;</button>
-        <button class="emoji-tab" data-category="objects">&#128161;</button>
-        <button class="emoji-tab" data-category="symbols">&#10084;</button>
-    </div>
-    <div class="emoji-picker-content"><div class="emoji-category-title">Smileys</div><div class="emoji-grid" id="emoji-grid"></div></div>
-</div>
-
-<!-- Toast Container -->
-<div class="toast-container" id="toast-container"></div>
 
 <script>
 const CONFIG = {
@@ -212,142 +205,359 @@ const CONFIG = {
     channelName: {{if .Data.currentChannel}}'{{.Data.currentChannel.Name}}'{{else}}''{{end}}
 };
 
-let ws = null, reconnectTimeout = null, selectedMessageId = null, replyToMessageId = null;
+let ws = null;
+let reconnectTimeout = null;
 
-const EMOJIS = {
-    smileys: ['&#128512;','&#128513;','&#128514;','&#128515;','&#128516;','&#128517;','&#128518;','&#128519;','&#128520;','&#128521;','&#128522;','&#128077;','&#128078;','&#128079;','&#10084;','&#128293;','&#127881;','&#128640;'],
-    people: ['&#128075;','&#128400;','&#128406;','&#128077;','&#128078;','&#128079;','&#128080;','&#128591;','&#129306;','&#129307;','&#129308;','&#129309;'],
-    nature: ['&#127793;','&#127794;','&#127795;','&#127796;','&#127797;','&#127799;','&#127800;','&#127801;','&#127802;','&#127803;','&#127804;','&#128144;'],
-    objects: ['&#128161;','&#128187;','&#128190;','&#128191;','&#128192;','&#128193;','&#128194;','&#128195;','&#128196;','&#128197;','&#128198;','&#128199;'],
-    symbols: ['&#10084;','&#128148;','&#128149;','&#128150;','&#128151;','&#128152;','&#128153;','&#128154;','&#128155;','&#128156;','&#128157;','&#128158;']
+// Configure marked.js
+marked.setOptions({
+    gfm: true,
+    breaks: true,
+    highlight: function(code, lang) {
+        if (lang && hljs.getLanguage(lang)) {
+            try {
+                return hljs.highlight(code, { language: lang }).value;
+            } catch (e) {}
+        }
+        return hljs.highlightAuto(code).value;
+    }
+});
+
+// Custom renderer for code blocks with ChatGPT-style wrapper
+const renderer = {
+    code(token) {
+        // marked v5+ passes an object with text and lang properties
+        const code = typeof token === 'string' ? token : (token.text || '');
+        const lang = (typeof token === 'object' ? token.lang : null) || 'plaintext';
+        let highlighted = '';
+
+        try {
+            if (typeof hljs !== 'undefined') {
+                if (lang && lang !== 'plaintext' && hljs.getLanguage(lang)) {
+                    highlighted = hljs.highlight(code, { language: lang }).value;
+                } else {
+                    highlighted = hljs.highlightAuto(code).value;
+                }
+            } else {
+                highlighted = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            }
+        } catch (e) {
+            console.error('Highlight error:', e);
+            highlighted = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        const safeLang = lang.replace(/[<>"'&]/g, '');
+        return `<div class="code-block-wrapper">
+            <div class="code-block-header">
+                <span class="code-block-lang">${safeLang}</span>
+                <button class="code-block-copy" onclick="copyCode(this)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                    </svg>
+                    <span>Copy code</span>
+                </button>
+            </div>
+            <pre><code class="hljs language-${safeLang}">${highlighted}</code></pre>
+        </div>`;
+    }
 };
+marked.use({ renderer });
 
-function initEmojiPicker() {
-    const grid = document.getElementById('emoji-grid');
-    if (!grid) return;
-    grid.innerHTML = EMOJIS.smileys.map(e => `<button class="emoji-item" type="button">${e}</button>`).join('');
-    document.querySelectorAll('.emoji-tab').forEach(tab => {
-        tab.addEventListener('click', () => {
-            document.querySelectorAll('.emoji-tab').forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-            grid.innerHTML = EMOJIS[tab.dataset.category].map(e => `<button class="emoji-item" type="button">${e}</button>`).join('');
-            attachEmojiListeners();
-        });
-    });
-    attachEmojiListeners();
+// Render markdown content
+function renderMarkdown(content) {
+    if (!content) return '';
+    return marked.parse(content);
 }
 
-function attachEmojiListeners() {
-    document.querySelectorAll('.emoji-item').forEach(item => {
-        item.addEventListener('click', () => {
-            const emoji = item.textContent;
-            if (selectedMessageId) addReaction(selectedMessageId, emoji);
-            else { const input = document.getElementById('message-input'); if (input) input.value += emoji; }
-            document.getElementById('emoji-picker').classList.add('hidden');
-            selectedMessageId = null;
-        });
+// Render all messages with markdown
+function renderAllMessages() {
+    document.querySelectorAll('[data-markdown]').forEach(el => {
+        const content = el.getAttribute('data-markdown');
+        if (content) {
+            el.innerHTML = renderMarkdown(content);
+            el.removeAttribute('data-markdown');
+        }
     });
 }
 
+// Copy code to clipboard
+function copyCode(btn) {
+    const wrapper = btn.closest('.code-block-wrapper');
+    const code = wrapper.querySelector('code').textContent;
+    navigator.clipboard.writeText(code).then(() => {
+        btn.classList.add('copied');
+        btn.querySelector('span').textContent = 'Copied!';
+        setTimeout(() => {
+            btn.classList.remove('copied');
+            btn.querySelector('span').textContent = 'Copy code';
+        }, 2000);
+    });
+}
+
+// Copy entire message
+function copyMessage(btn) {
+    const wrapper = btn.closest('.message-wrapper');
+    const proseEl = wrapper.querySelector('.prose-chat');
+    const text = proseEl.innerText;
+    navigator.clipboard.writeText(text).then(() => {
+        const svg = btn.querySelector('svg');
+        const originalPath = svg.innerHTML;
+        svg.innerHTML = '<path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" fill="none"/>';
+        setTimeout(() => {
+            svg.innerHTML = originalPath;
+        }, 2000);
+    });
+}
+
+// Initialize WebSocket
 function initWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const token = document.cookie.split('; ').find(row => row.startsWith('session='))?.split('=')[1];
     if (!token) return;
+
     ws = new WebSocket(`${protocol}//${window.location.host}/ws?token=${token}`);
-    ws.onopen = () => { if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; } };
-    ws.onclose = () => { reconnectTimeout = setTimeout(initWebSocket, 3000); };
+
+    ws.onopen = () => {
+        if (reconnectTimeout) {
+            clearTimeout(reconnectTimeout);
+            reconnectTimeout = null;
+        }
+    };
+
+    ws.onclose = () => {
+        reconnectTimeout = setTimeout(initWebSocket, 3000);
+    };
+
     ws.onerror = (err) => console.error('WebSocket error:', err);
-    ws.onmessage = (event) => { try { handleWSMessage(JSON.parse(event.data)); } catch (err) {} };
+
+    ws.onmessage = (event) => {
+        try {
+            handleWSMessage(JSON.parse(event.data));
+        } catch (err) {}
+    };
 }
 
 function handleWSMessage(msg) {
     if (msg.op !== 0) return;
     const data = msg.d;
+
     switch (msg.t) {
-        case 'MESSAGE_CREATE': if (data.channel_id === CONFIG.channelId) appendMessage(data); break;
-        case 'MESSAGE_UPDATE': updateMessage(data); break;
-        case 'MESSAGE_DELETE': removeMessage(data.id); break;
-        case 'TYPING_START': if (data.channel_id === CONFIG.channelId && data.user_id !== CONFIG.userId) showTyping(data); break;
-        case 'PRESENCE_UPDATE': updatePresence(data); break;
+        case 'MESSAGE_CREATE':
+            if (data.channel_id === CONFIG.channelId) appendMessage(data);
+            break;
+        case 'MESSAGE_UPDATE':
+            updateMessage(data);
+            break;
+        case 'MESSAGE_DELETE':
+            removeMessage(data.id);
+            break;
     }
 }
 
 function appendMessage(msg) {
     const container = document.getElementById('messages');
     if (!container) return;
-    const wasAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 50;
-    const empty = container.querySelector('.messages-empty');
-    if (empty) empty.remove();
+
+    const wrapper = container.querySelector('.max-w-chat');
+    if (!wrapper) return;
+
+    const wasAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 100;
+
+    // Remove empty state if present
+    const emptyState = wrapper.querySelector('.py-20');
+    if (emptyState) emptyState.remove();
+
+    const isCurrentUser = msg.author?.id === CONFIG.userId;
     const div = document.createElement('div');
-    div.className = 'message'; div.dataset.messageId = msg.id; div.dataset.authorId = msg.author?.id || '';
-    div.setAttribute('oncontextmenu', `showContextMenu(event, '${msg.id}')`);
-    const initial = (msg.author?.display_name || msg.author?.username || '?')[0].toUpperCase();
-    div.innerHTML = `<div class="message-avatar">${msg.author?.avatar_url ? `<img src="${escapeHtml(msg.author.avatar_url)}" alt="">` : `<span>${initial}</span>`}</div>
-        <div class="message-content"><div class="message-header"><span class="message-author">${escapeHtml(msg.author?.display_name || 'Unknown')}</span><span class="message-timestamp">${formatTimestamp(msg.created_at)}</span></div><div class="message-body">${msg.content_html || escapeHtml(msg.content)}</div></div>
-        <div class="message-actions"><button class="message-action" onclick="startReply('${msg.id}')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg></button><button class="message-action" onclick="toggleEmojiPicker('${msg.id}')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/></svg></button><button class="message-action" onclick="showContextMenu(event, '${msg.id}')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></div>`;
-    container.appendChild(div);
+    div.className = 'message-wrapper mb-8 animate-slide-up group';
+    div.dataset.messageId = msg.id;
+    div.dataset.authorId = msg.author?.id || '';
+
+    // Render markdown content
+    const renderedContent = renderMarkdown(msg.content);
+
+    if (isCurrentUser) {
+        // User message - right aligned bubble
+        div.innerHTML = `
+            <div class="flex justify-end">
+                <div class="user-message max-w-[85%]">
+                    <div class="prose-chat text-gpt-text">${renderedContent}</div>
+                </div>
+            </div>
+        `;
+    } else {
+        // Assistant/Other message - ChatGPT style
+        div.innerHTML = `
+            <div class="flex gap-4">
+                <div class="w-7 h-7 rounded-full flex items-center justify-center text-sm font-medium shrink-0 overflow-hidden bg-black">
+                    ${msg.author?.avatar_url
+                        ? `<img src="${escapeHtml(msg.author.avatar_url)}" alt="" class="w-full h-full object-cover">`
+                        : `<svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4M12 8C9.79 8 8 9.79 8 12M12 8C14.21 8 16 9.79 16 12M8 12H4M8 12C8 14.21 9.79 16 12 16M16 12H20M16 12C16 14.21 14.21 16 12 16M12 16V20"/></svg>`
+                    }
+                </div>
+                <div class="flex-1 min-w-0 pt-0">
+                    <div class="font-semibold text-sm text-gpt-text mb-1.5">${escapeHtml(msg.author?.display_name || 'Assistant')}</div>
+                    <div class="prose-chat text-gpt-text">${renderedContent}</div>
+                    <div class="message-actions mt-2 -ml-1.5">
+                        <button class="message-action-btn copy-message-btn" onclick="copyMessage(this)" title="Copy message">
+                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                            </svg>
+                        </button>
+                        <button class="message-action-btn" title="Good response">
+                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
+                            </svg>
+                        </button>
+                        <button class="message-action-btn" title="Bad response">
+                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    wrapper.appendChild(div);
     if (wasAtBottom) container.scrollTop = container.scrollHeight;
 }
 
 function updateMessage(msg) {
-    const el = document.querySelector(`.message[data-message-id="${msg.id}"]`);
-    if (el) { const body = el.querySelector('.message-body'); if (body) body.innerHTML = msg.content_html || escapeHtml(msg.content); const header = el.querySelector('.message-header'); if (header && !header.querySelector('.message-edited')) header.insertAdjacentHTML('beforeend', '<span class="message-edited">(edited)</span>'); }
+    const el = document.querySelector(`[data-message-id="${msg.id}"]`);
+    if (!el) return;
+    const body = el.querySelector('.prose-chat');
+    if (body) body.innerHTML = renderMarkdown(msg.content);
 }
 
-function removeMessage(id) { const el = document.querySelector(`.message[data-message-id="${id}"]`); if (el) { el.remove(); showToast('Message deleted', 'success'); } }
+function removeMessage(id) {
+    const el = document.querySelector(`[data-message-id="${id}"]`);
+    if (el) {
+        el.style.opacity = '0';
+        el.style.transform = 'translateY(-8px)';
+        el.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+        setTimeout(() => el.remove(), 200);
+    }
+}
 
-let typingTimeout = null;
-function showTyping(data) { const el = document.getElementById('typing-indicator'); if (!el) return; el.classList.remove('hidden'); if (typingTimeout) clearTimeout(typingTimeout); typingTimeout = setTimeout(() => el.classList.add('hidden'), 5000); }
-function updatePresence(data) { const member = document.querySelector(`.member[data-user-id="${data.user_id}"]`); if (member) { const dot = member.querySelector('.status-dot'); if (dot) dot.className = `status-dot ${data.status || 'offline'}`; member.classList.toggle('offline', data.status === 'offline'); } }
-
-async function sendMessage(content, replyTo = null) {
+async function sendMessage(content) {
     if (!content || !CONFIG.channelId) return false;
-    try { const body = { content }; if (replyTo) body.reply_to = replyTo; const res = await fetch(`/api/v1/channels/${CONFIG.channelId}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); return res.ok; }
-    catch (err) { showToast('Failed to send message', 'error'); return false; }
+    try {
+        const res = await fetch(`/api/v1/channels/${CONFIG.channelId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content })
+        });
+        return res.ok;
+    } catch (err) {
+        return false;
+    }
 }
 
-function startReply(messageId) { const msg = document.querySelector(`.message[data-message-id="${messageId}"]`); if (!msg) return; replyToMessageId = messageId; const author = msg.querySelector('.message-author')?.textContent || 'Unknown'; document.getElementById('reply-to-user').textContent = author; document.getElementById('reply-preview').classList.remove('hidden'); document.getElementById('message-input')?.focus(); }
-function cancelReply() { replyToMessageId = null; document.getElementById('reply-preview').classList.add('hidden'); }
+function formatTimestamp(iso) {
+    const date = new Date(iso);
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+    const isYesterday = new Date(now - 86400000).toDateString() === date.toDateString();
+    const time = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
-function showContextMenu(e, messageId) { e.preventDefault(); e.stopPropagation(); selectedMessageId = messageId; const msg = document.querySelector(`.message[data-message-id="${messageId}"]`); const isOwner = msg?.dataset.authorId === CONFIG.userId; document.getElementById('edit-option').style.display = isOwner ? 'flex' : 'none'; document.getElementById('delete-option').style.display = isOwner ? 'flex' : 'none'; const menu = document.getElementById('context-menu'); menu.style.left = `${e.clientX}px`; menu.style.top = `${e.clientY}px`; menu.classList.add('open'); }
-document.addEventListener('click', () => document.getElementById('context-menu').classList.remove('open'));
-document.querySelectorAll('.context-menu-item').forEach(item => item.addEventListener('click', () => { handleContextAction(item.dataset.action); document.getElementById('context-menu').classList.remove('open'); }));
-function handleContextAction(action) { switch (action) { case 'reply': startReply(selectedMessageId); break; case 'react': toggleEmojiPicker(selectedMessageId); break; case 'edit': startEdit(selectedMessageId); break; case 'pin': pinMessage(selectedMessageId); break; case 'copy': copyMessageText(selectedMessageId); break; case 'delete': showDeleteModal(selectedMessageId); break; } }
+    if (isToday) return `Today at ${time}`;
+    if (isYesterday) return `Yesterday at ${time}`;
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' at ' + time;
+}
 
-function startEdit(messageId) { const msg = document.querySelector(`.message[data-message-id="${messageId}"]`); if (!msg) return; const body = msg.querySelector('.message-body'); const originalText = body.textContent; body.innerHTML = `<div style="display: flex; gap: 0.5rem;"><input type="text" class="form-input" value="${escapeHtml(originalText)}" id="edit-input-${messageId}" style="flex: 1;"><button class="btn btn-sm btn-primary" onclick="saveEdit('${messageId}')">Save</button><button class="btn btn-sm btn-secondary" onclick="cancelEdit('${messageId}', '${escapeHtml(originalText)}')">Cancel</button></div>`; document.getElementById(`edit-input-${messageId}`)?.focus(); }
-async function saveEdit(messageId) { const input = document.getElementById(`edit-input-${messageId}`); if (!input) return; const content = input.value.trim(); if (!content) return; try { const res = await fetch(`/api/v1/messages/${messageId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content }) }); if (res.ok) { const msg = document.querySelector(`.message[data-message-id="${messageId}"]`); if (msg) { msg.querySelector('.message-body').textContent = content; if (!msg.querySelector('.message-edited')) msg.querySelector('.message-header').insertAdjacentHTML('beforeend', '<span class="message-edited">(edited)</span>'); } showToast('Message edited', 'success'); } } catch (e) { showToast('Failed to edit', 'error'); } }
-function cancelEdit(messageId, originalText) { const msg = document.querySelector(`.message[data-message-id="${messageId}"]`); if (msg) msg.querySelector('.message-body').textContent = originalText; }
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
 
-function showDeleteModal(messageId) { const msg = document.querySelector(`.message[data-message-id="${messageId}"]`); if (!msg) return; const preview = document.getElementById('delete-preview'); preview.innerHTML = `<strong>${escapeHtml(msg.querySelector('.message-author')?.textContent || '')}</strong>: ${escapeHtml(msg.querySelector('.message-body')?.textContent || '')}`; document.getElementById('confirm-delete-btn').onclick = () => deleteMessage(messageId); document.getElementById('delete-modal').classList.add('open'); }
-function closeDeleteModal() { document.getElementById('delete-modal').classList.remove('open'); }
-async function deleteMessage(messageId) { try { const res = await fetch(`/api/v1/messages/${messageId}`, { method: 'DELETE' }); if (res.ok) { removeMessage(messageId); closeDeleteModal(); } } catch (e) { showToast('Failed to delete', 'error'); } }
-async function pinMessage(messageId) { try { await fetch(`/api/v1/messages/${messageId}/pin`, { method: 'POST' }); showToast('Message pinned', 'success'); } catch (e) { showToast('Failed to pin', 'error'); } }
-function copyMessageText(messageId) { const msg = document.querySelector(`.message[data-message-id="${messageId}"]`); const text = msg?.querySelector('.message-body')?.textContent; if (text) { navigator.clipboard.writeText(text); showToast('Copied', 'success'); } }
+function scrollToBottom() {
+    const messages = document.getElementById('messages');
+    if (messages) {
+        messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
+    }
+}
 
-function toggleEmojiPicker(messageId = null) { selectedMessageId = messageId; const picker = document.getElementById('emoji-picker'); picker.classList.toggle('hidden'); if (!picker.classList.contains('hidden')) { const btn = document.getElementById('emoji-btn'); if (btn) { const rect = btn.getBoundingClientRect(); picker.style.position = 'fixed'; picker.style.bottom = `${window.innerHeight - rect.top + 10}px`; picker.style.right = `${window.innerWidth - rect.right}px`; } } }
-async function addReaction(messageId, emoji) { try { await fetch(`/api/v1/messages/${messageId}/reactions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ emoji }) }); } catch (e) { showToast('Failed to react', 'error'); } }
-function toggleReaction(emoji, messageId) { addReaction(messageId, emoji); }
+// Auto-resize textarea
+function autoResize(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+}
 
-document.getElementById('search-btn')?.addEventListener('click', () => { document.getElementById('search-modal').classList.add('open'); document.getElementById('search-input')?.focus(); });
-document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); document.getElementById('search-modal').classList.add('open'); document.getElementById('search-input')?.focus(); } if (e.key === 'Escape') { document.getElementById('search-modal').classList.remove('open'); document.getElementById('emoji-picker').classList.add('hidden'); closeDeleteModal(); } });
-document.getElementById('search-modal')?.addEventListener('click', (e) => { if (e.target.id === 'search-modal') document.getElementById('search-modal').classList.remove('open'); });
-document.getElementById('members-toggle')?.addEventListener('click', () => { const sidebar = document.querySelector('.member-sidebar'); if (sidebar) sidebar.style.display = sidebar.style.display === 'none' ? 'block' : 'none'; });
-
-function showToast(message, type = 'info') { const container = document.getElementById('toast-container'); if (!container) return; const icons = { success: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>', error: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>', info: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>' }; const toast = document.createElement('div'); toast.className = `toast toast-${type}`; toast.innerHTML = `<span class="toast-icon">${icons[type]}</span><div class="toast-content"><div class="toast-message">${message}</div></div><button class="toast-close" onclick="this.parentElement.remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`; container.appendChild(toast); setTimeout(() => toast.remove(), 5000); }
-
-function formatTimestamp(iso) { const date = new Date(iso); const now = new Date(); const isToday = date.toDateString() === now.toDateString(); const isYesterday = new Date(now - 86400000).toDateString() === date.toDateString(); const time = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); if (isToday) return `Today at ${time}`; if (isYesterday) return `Yesterday at ${time}`; return date.toLocaleDateString([], { month: 'numeric', day: 'numeric', year: 'numeric' }) + ' ' + time; }
-function escapeHtml(str) { if (!str) return ''; const div = document.createElement('div'); div.textContent = str; return div.innerHTML; }
-async function createServer(name) { try { const res = await fetch('/api/v1/servers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }); if (res.ok) window.location.reload(); } catch (e) {} }
-
+// Initialize
 document.addEventListener('DOMContentLoaded', () => {
-    initWebSocket(); initEmojiPicker();
+    // Render all markdown messages on page load
+    renderAllMessages();
+
+    initWebSocket();
+
     const form = document.getElementById('message-form');
-    if (form) form.addEventListener('submit', async (e) => { e.preventDefault(); const input = document.getElementById('message-input'); const content = input.value.trim(); if (content) { input.value = ''; await sendMessage(content, replyToMessageId); cancelReply(); } });
-    const messages = document.getElementById('messages'); if (messages) messages.scrollTop = messages.scrollHeight;
-    document.querySelectorAll('[data-action="create-server"]').forEach(btn => btn.addEventListener('click', () => { const name = prompt('Enter server name:'); if (name) createServer(name); }));
-    document.getElementById('message-input')?.focus();
-    document.getElementById('emoji-btn')?.addEventListener('click', () => toggleEmojiPicker());
-    document.addEventListener('click', (e) => { const picker = document.getElementById('emoji-picker'); const btn = document.getElementById('emoji-btn'); if (picker && !picker.contains(e.target) && e.target !== btn && !btn?.contains(e.target)) picker.classList.add('hidden'); });
+    const input = document.getElementById('message-input');
+    const sendBtn = document.getElementById('send-btn');
+
+    // Attach copy handlers to message copy buttons
+    document.querySelectorAll('.copy-message-btn').forEach(btn => {
+        btn.addEventListener('click', () => copyMessage(btn));
+    });
+
+    if (input) {
+        // Auto-resize on input
+        input.addEventListener('input', () => {
+            autoResize(input);
+            // Enable/disable send button
+            const hasContent = input.value.trim().length > 0;
+            sendBtn.disabled = !hasContent;
+        });
+
+        // Submit on Enter (without Shift)
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                form.dispatchEvent(new Event('submit'));
+            }
+        });
+    }
+
+    if (form) {
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const content = input.value.trim();
+            if (content) {
+                input.value = '';
+                autoResize(input);
+                sendBtn.disabled = true;
+                await sendMessage(content);
+            }
+        });
+    }
+
+    // Scroll to bottom
+    const messages = document.getElementById('messages');
+    if (messages) {
+        messages.scrollTop = messages.scrollHeight;
+
+        // Show/hide scroll indicator
+        messages.addEventListener('scroll', () => {
+            const indicator = document.getElementById('scroll-indicator');
+            if (indicator) {
+                const isNearBottom = messages.scrollHeight - messages.scrollTop <= messages.clientHeight + 200;
+                indicator.classList.toggle('hidden', isNearBottom);
+            }
+        });
+    }
+
+    // Focus input
+    input?.focus();
+
+    // Sidebar toggle
+    document.getElementById('sidebar-toggle')?.addEventListener('click', () => {
+        const sidebar = document.getElementById('sidebar');
+        sidebar?.classList.toggle('-translate-x-full');
+    });
 });
 </script>
 {{end}}

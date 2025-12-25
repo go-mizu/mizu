@@ -1,573 +1,311 @@
 {{define "channel_list.html"}}
-<aside class="channel-sidebar" id="channel-sidebar">
-    {{if .Data.currentServer}}
-    <header class="server-header" id="server-header">
-        <button class="server-header-btn" onclick="toggleServerMenu()">
-            <span class="server-name">{{.Data.currentServer.Name}}</span>
-            <svg class="server-header-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="6 9 12 15 18 9"/>
+<aside id="sidebar" class="w-64 flex flex-col shrink-0 h-full bg-gpt-sidebar border-r border-gpt-border lg:relative fixed inset-y-0 left-0 z-40 transition-transform lg:translate-x-0">
+    <!-- Header with sidebar toggle -->
+    <div class="h-14 flex items-center justify-between px-3 shrink-0">
+        <button id="sidebar-collapse" class="p-2 rounded-lg hover:bg-gpt-sidebar-hover transition-colors">
+            <svg class="w-5 h-5 text-gpt-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <line x1="9" y1="3" x2="9" y2="21"/>
             </svg>
         </button>
-    </header>
-
-    <!-- Server Dropdown Menu -->
-    <div class="server-menu" id="server-menu">
-        <button class="server-menu-item" onclick="showServerBoost()">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+        <button id="new-chat-btn" class="p-2 rounded-lg hover:bg-gpt-sidebar-hover transition-colors" title="New chat">
+            <svg class="w-5 h-5 text-gpt-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 20h9"/>
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
             </svg>
-            Server Boost
-            <span class="badge badge-primary" style="margin-left: auto;">2</span>
-        </button>
-        <div class="server-menu-separator"></div>
-        <button class="server-menu-item" onclick="showInvitePeople()">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                <circle cx="8.5" cy="7" r="4"/>
-                <line x1="20" y1="8" x2="20" y2="14"/>
-                <line x1="23" y1="11" x2="17" y2="11"/>
-            </svg>
-            Invite People
-        </button>
-        <button class="server-menu-item" onclick="showServerSettings()">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="3"/>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-            </svg>
-            Server Settings
-        </button>
-        <button class="server-menu-item" onclick="showCreateChannel()">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"/>
-                <line x1="12" y1="8" x2="12" y2="16"/>
-                <line x1="8" y1="12" x2="16" y2="12"/>
-            </svg>
-            Create Channel
-        </button>
-        <div class="server-menu-separator"></div>
-        <button class="server-menu-item" onclick="showNotificationSettings()">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-            </svg>
-            Notification Settings
-        </button>
-        <button class="server-menu-item" onclick="showPrivacySettings()">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-            </svg>
-            Privacy Settings
-        </button>
-        <div class="server-menu-separator"></div>
-        <button class="server-menu-item text-danger" onclick="leaveServer()">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                <polyline points="16 17 21 12 16 7"/>
-                <line x1="21" y1="12" x2="9" y2="12"/>
-            </svg>
-            Leave Server
         </button>
     </div>
-    {{else}}
-    <header class="server-header">
-        <div class="server-header-btn" style="cursor: default;">
-            <span class="server-name">Direct Messages</span>
-        </div>
-    </header>
-    {{end}}
 
-    <div class="channel-scroller">
-        {{if .Data.currentServer}}
-        <!-- Text Channels -->
-        <div class="channel-category" id="text-channels-category">
-            <button class="channel-category-header" onclick="toggleCategory('text-channels')">
-                <svg class="channel-category-arrow" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M10 17l5-5-5-5v10z"/>
+    <!-- Navigation -->
+    <div class="px-2 mb-2">
+        <a href="/" class="sidebar-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gpt-text">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="m21 21-4.35-4.35"/>
+            </svg>
+            Search chats
+        </a>
+    </div>
+
+    <!-- Scrollable content -->
+    <div class="flex-1 overflow-y-auto scrollbar-thin px-2">
+        {{if .Data.servers}}
+        <!-- Projects Section -->
+        <div class="mb-4">
+            <button class="flex items-center justify-between w-full px-3 py-2 text-sm text-gpt-text-secondary hover:text-gpt-text transition-colors" onclick="toggleSection('projects')">
+                <span class="font-medium">Projects</span>
+                <svg id="projects-chevron" class="w-4 h-4 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 18 15 12 9 6"/>
                 </svg>
-                <span>Text Channels</span>
             </button>
-            <button class="channel-category-add" title="Create Channel" onclick="showCreateChannel('text')">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="12" y1="5" x2="12" y2="19"/>
-                    <line x1="5" y1="12" x2="19" y2="12"/>
-                </svg>
-            </button>
-        </div>
-        <div class="channel-list" id="text-channels">
-            {{if .Data.channels}}
-                {{range .Data.channels}}
-                {{if ne .Type "voice"}}
-                <a href="/channels/{{$.Data.currentServer.ID}}/{{.ID}}"
-                   class="channel{{if eq .ID $.Data.channelID}} active{{end}}"
-                   data-channel-id="{{.ID}}">
-                    <span class="channel-icon">
-                        {{if eq .Type "announcement"}}
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-                        </svg>
-                        {{else if eq .Type "rules"}}
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                            <polyline points="14 2 14 8 20 8"/>
-                            <line x1="16" y1="13" x2="8" y2="13"/>
-                            <line x1="16" y1="17" x2="8" y2="17"/>
-                            <polyline points="10 9 9 9 8 9"/>
-                        </svg>
+            <div id="projects-content" class="hidden">
+                {{range .Data.servers}}
+                <a
+                    href="/channels/{{.ID}}/{{.DefaultChannel}}"
+                    class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm {{if and $.Data.currentServer (eq .ID $.Data.currentServer.ID)}}bg-gpt-sidebar-active text-gpt-text{{else}}text-gpt-text-secondary{{end}}"
+                >
+                    <div class="w-5 h-5 rounded flex items-center justify-center text-xs font-medium bg-gpt-sidebar-hover">
+                        {{if .IconURL}}
+                            <img src="{{.IconURL}}" alt="{{.Name}}" class="w-full h-full object-cover rounded">
                         {{else}}
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M4 9L20 9"/>
-                            <path d="M4 15L20 15"/>
-                            <path d="M10 3L8 21"/>
-                            <path d="M16 3L14 21"/>
-                        </svg>
+                            {{slice .Name 0 1}}
                         {{end}}
-                    </span>
-                    <span class="channel-name">{{.Name}}</span>
-                    {{if .UnreadCount}}
-                    <span class="channel-unread">{{if gt .UnreadCount 99}}99+{{else}}{{.UnreadCount}}{{end}}</span>
-                    {{end}}
-                    <div class="channel-actions">
-                        <button class="channel-action" title="Create Invite" onclick="event.preventDefault(); createChannelInvite('{{.ID}}')">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                                <circle cx="8.5" cy="7" r="4"/>
-                                <line x1="20" y1="8" x2="20" y2="14"/>
-                                <line x1="23" y1="11" x2="17" y2="11"/>
-                            </svg>
-                        </button>
-                        <button class="channel-action" title="Edit Channel" onclick="event.preventDefault(); editChannel('{{.ID}}')">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="12" cy="12" r="3"/>
-                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-                            </svg>
-                        </button>
                     </div>
+                    <span class="truncate">{{.Name}}</span>
                 </a>
                 {{end}}
-                {{end}}
-            {{else}}
-                <div class="channel-empty">
-                    <p>No channels yet</p>
-                    <button class="btn btn-sm btn-primary" onclick="showCreateChannel()">Create Channel</button>
-                </div>
-            {{end}}
-        </div>
-
-        <!-- Voice Channels -->
-        <div class="channel-category" id="voice-channels-category">
-            <button class="channel-category-header" onclick="toggleCategory('voice-channels')">
-                <svg class="channel-category-arrow" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M10 17l5-5-5-5v10z"/>
-                </svg>
-                <span>Voice Channels</span>
-            </button>
-            <button class="channel-category-add" title="Create Voice Channel" onclick="showCreateChannel('voice')">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="12" y1="5" x2="12" y2="19"/>
-                    <line x1="5" y1="12" x2="19" y2="12"/>
-                </svg>
-            </button>
-        </div>
-        <div class="channel-list" id="voice-channels">
-            {{range .Data.channels}}
-            {{if eq .Type "voice"}}
-            <button class="channel voice-channel" data-channel-id="{{.ID}}" onclick="joinVoiceChannel('{{.ID}}')">
-                <span class="channel-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
-                    </svg>
-                </span>
-                <span class="channel-name">{{.Name}}</span>
-                {{if .ConnectedUsers}}
-                <span class="voice-user-count">{{len .ConnectedUsers}}</span>
-                {{end}}
-            </button>
-            {{if .ConnectedUsers}}
-            <div class="voice-users">
-                {{range .ConnectedUsers}}
-                <div class="voice-user">
-                    <div class="voice-user-avatar">
-                        {{if .AvatarURL}}
-                        <img src="{{.AvatarURL}}" alt="{{.DisplayName}}">
-                        {{else}}
-                        <span>{{userInitials .DisplayName}}</span>
-                        {{end}}
+                <button
+                    onclick="openCreateServerModal()"
+                    class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gpt-text-secondary w-full text-left"
+                >
+                    <div class="w-5 h-5 rounded flex items-center justify-center bg-gpt-sidebar-hover">
+                        <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"/>
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
                     </div>
-                    <span class="voice-user-name">{{.DisplayName}}</span>
-                    {{if .IsMuted}}
-                    <svg class="voice-user-muted" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M1 1l22 22M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/>
-                        <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/>
-                        <line x1="12" y1="19" x2="12" y2="23"/>
-                        <line x1="8" y1="23" x2="16" y2="23"/>
-                    </svg>
-                    {{end}}
-                </div>
-                {{end}}
+                    <span>New project</span>
+                </button>
             </div>
-            {{end}}
-            {{end}}
-            {{end}}
         </div>
-        {{else}}
-        <!-- DM List -->
-        <div class="channel-list dm-list" id="dm-list">
-            {{if .Data.directMessages}}
-                {{range .Data.directMessages}}
-                <a href="/channels/@me/{{.ID}}" class="channel dm-channel{{if eq .ID $.Data.channelID}} active{{end}}">
-                    <div class="dm-avatar">
-                        {{if .AvatarURL}}
-                        <img src="{{.AvatarURL}}" alt="{{.DisplayName}}">
-                        {{else}}
-                        <span>{{userInitials .DisplayName}}</span>
-                        {{end}}
-                        <span class="status-dot {{statusClass .Status}}"></span>
-                    </div>
-                    <span class="channel-name">{{.DisplayName}}</span>
-                    {{if .UnreadCount}}
-                    <span class="channel-unread">{{.UnreadCount}}</span>
-                    {{end}}
-                    <button class="channel-action dm-close" title="Close DM" onclick="event.preventDefault(); closeDM('{{.ID}}')">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="18" y1="6" x2="6" y2="18"/>
-                            <line x1="6" y1="6" x2="18" y2="18"/>
+        {{end}}
+
+        <!-- Your chats Section -->
+        <div class="mb-4">
+            <div class="px-3 py-2 text-xs font-medium text-gpt-text-muted uppercase tracking-wider">Your chats</div>
+            {{if .Data.channels}}
+                {{range .Data.channels}}
+                <a
+                    href="/channels/{{if $.Data.currentServer}}{{$.Data.currentServer.ID}}{{else}}@me{{end}}/{{.ID}}"
+                    class="sidebar-item group flex items-center gap-3 px-3 py-2 rounded-lg text-sm {{if eq .ID $.Data.channelID}}bg-gpt-sidebar-active text-gpt-text{{else}}text-gpt-text-secondary{{end}}"
+                >
+                    <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    <span class="truncate flex-1">{{.Name}}</span>
+                    <button class="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-gpt-sidebar-hover transition-all" title="More options">
+                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="1"/>
+                            <circle cx="12" cy="5" r="1"/>
+                            <circle cx="12" cy="19" r="1"/>
                         </svg>
                     </button>
                 </a>
                 {{end}}
             {{else}}
-                <div class="channel-empty">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="opacity: 0.5; margin-bottom: var(--space-2);">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                    </svg>
-                    <p>No direct messages yet</p>
+                <div class="px-3 py-4 text-sm text-gpt-text-muted text-center">
+                    No chats yet
                 </div>
             {{end}}
         </div>
-        {{end}}
     </div>
 
+    <!-- User Panel -->
     {{template "user_panel.html" .}}
 </aside>
 
-<!-- Create Channel Modal -->
-<div class="modal-overlay" id="create-channel-modal">
-    <div class="modal">
-        <div class="modal-header">
-            <h2>Create Channel</h2>
-            <p>Create a new text or voice channel in this server.</p>
-        </div>
-        <div class="modal-body">
-            <form id="create-channel-form">
-                <div class="form-group">
-                    <label class="form-label">Channel Type</label>
-                    <div style="display: flex; gap: var(--space-2);">
-                        <label class="form-radio-card active" data-type="text">
-                            <input type="radio" name="channel_type" value="text" checked>
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M4 9L20 9"/>
-                                <path d="M4 15L20 15"/>
-                                <path d="M10 3L8 21"/>
-                                <path d="M16 3L14 21"/>
-                            </svg>
-                            <span>Text</span>
-                        </label>
-                        <label class="form-radio-card" data-type="voice">
-                            <input type="radio" name="channel_type" value="voice">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-                                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
-                            </svg>
-                            <span>Voice</span>
-                        </label>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label required" for="channel-name">Channel Name</label>
-                    <div class="form-input-group">
-                        <span class="form-input-prefix">#</span>
-                        <input class="form-input" type="text" id="channel-name" name="name" required maxlength="100" placeholder="new-channel" pattern="[a-z0-9-]+" style="padding-left: 2rem;">
-                    </div>
-                    <p class="form-hint">Only lowercase letters, numbers, and hyphens allowed</p>
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="channel-topic">Channel Topic</label>
-                    <input class="form-input" type="text" id="channel-topic" name="topic" maxlength="1024" placeholder="What's this channel about?">
-                </div>
-                <label class="form-checkbox">
-                    <input type="checkbox" name="is_private" id="channel-private">
-                    <span class="form-checkbox-label">Private Channel</span>
-                </label>
-                <p class="form-hint" style="margin-left: 1.75rem;">Only selected members and roles can view this channel</p>
-            </form>
-        </div>
-        <div class="modal-footer">
-            <button class="btn btn-ghost" onclick="closeCreateChannelModal()">Cancel</button>
-            <button class="btn btn-primary" onclick="createChannel()">Create Channel</button>
-        </div>
+<!-- Create Server/Project Modal -->
+<div id="create-server-modal" class="fixed inset-0 z-50 hidden items-center justify-center modal-backdrop bg-black/50">
+    <div class="w-full max-w-md mx-4 rounded-2xl p-6 animate-slide-up bg-white border border-gpt-border shadow-xl">
+        <h2 class="text-xl font-semibold text-gpt-text mb-1">Create a Project</h2>
+        <p class="text-sm text-gpt-text-secondary mb-6">Give your project a name to get started.</p>
+
+        <form id="create-server-form" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gpt-text mb-2">Project Name</label>
+                <input
+                    type="text"
+                    id="server-name"
+                    name="name"
+                    required
+                    maxlength="100"
+                    placeholder="My Project"
+                    class="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all bg-gpt-input-bg border border-gpt-border text-gpt-text focus:ring-2 focus:ring-gpt-accent"
+                >
+            </div>
+
+            <div class="flex gap-3 justify-end pt-2">
+                <button
+                    type="button"
+                    onclick="closeCreateServerModal()"
+                    class="px-4 py-2.5 rounded-lg text-sm font-medium text-gpt-text hover:bg-gpt-sidebar-hover transition-colors btn-transition"
+                >
+                    Cancel
+                </button>
+                <button
+                    type="submit"
+                    class="px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-gpt-accent hover:opacity-90 transition-opacity btn-transition"
+                >
+                    Create Project
+                </button>
+            </div>
+        </form>
     </div>
 </div>
 
-<!-- Invite Modal -->
-<div class="modal-overlay" id="invite-modal">
-    <div class="modal">
-        <div class="modal-header">
-            <h2>Invite People</h2>
-            <p>Share this link with others to grant access to this server.</p>
-        </div>
-        <div class="modal-body">
-            <div class="form-group">
-                <label class="form-label">Invite Link</label>
-                <div style="display: flex; gap: var(--space-2);">
-                    <input class="form-input" type="text" id="invite-link-display" readonly style="flex: 1;">
-                    <button class="btn btn-primary" onclick="copyInviteLink()">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                        </svg>
-                        Copy
-                    </button>
-                </div>
+<!-- Create Channel Modal -->
+<div id="create-channel-modal" class="fixed inset-0 z-50 hidden items-center justify-center modal-backdrop bg-black/50">
+    <div class="w-full max-w-md mx-4 rounded-2xl p-6 animate-slide-up bg-white border border-gpt-border shadow-xl">
+        <h2 class="text-xl font-semibold text-gpt-text mb-1">New Chat</h2>
+        <p class="text-sm text-gpt-text-secondary mb-6">Create a new conversation.</p>
+
+        <form id="create-channel-form" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gpt-text mb-2">Chat Name</label>
+                <input
+                    type="text"
+                    id="channel-name"
+                    name="name"
+                    required
+                    maxlength="100"
+                    placeholder="general"
+                    class="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all bg-gpt-input-bg border border-gpt-border text-gpt-text focus:ring-2 focus:ring-gpt-accent"
+                >
             </div>
-            <div class="form-group">
-                <label class="form-label">Expire After</label>
-                <select class="form-input" id="invite-expire">
-                    <option value="1800">30 minutes</option>
-                    <option value="3600">1 hour</option>
-                    <option value="21600">6 hours</option>
-                    <option value="43200">12 hours</option>
-                    <option value="86400" selected>1 day</option>
-                    <option value="604800">7 days</option>
-                    <option value="0">Never</option>
-                </select>
+
+            <div class="flex gap-3 justify-end pt-2">
+                <button
+                    type="button"
+                    onclick="closeCreateChannelModal()"
+                    class="px-4 py-2.5 rounded-lg text-sm font-medium text-gpt-text hover:bg-gpt-sidebar-hover transition-colors btn-transition"
+                >
+                    Cancel
+                </button>
+                <button
+                    type="submit"
+                    class="px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-gpt-accent hover:opacity-90 transition-opacity btn-transition"
+                >
+                    Create Chat
+                </button>
             </div>
-        </div>
-        <div class="modal-footer">
-            <button class="btn btn-ghost" onclick="closeInviteModal()">Done</button>
-        </div>
+        </form>
     </div>
 </div>
 
 <script>
-// Server menu toggle
-let serverMenuOpen = false;
-
-function toggleServerMenu() {
-    const menu = document.getElementById('server-menu');
-    serverMenuOpen = !serverMenuOpen;
-    if (serverMenuOpen) {
-        menu?.classList.add('open');
-        document.addEventListener('click', closeServerMenuOnOutsideClick);
-    } else {
-        menu?.classList.remove('open');
-        document.removeEventListener('click', closeServerMenuOnOutsideClick);
+// Toggle section visibility
+function toggleSection(section) {
+    const content = document.getElementById(`${section}-content`);
+    const chevron = document.getElementById(`${section}-chevron`);
+    if (content && chevron) {
+        content.classList.toggle('hidden');
+        chevron.classList.toggle('rotate-90');
     }
 }
 
-function closeServerMenuOnOutsideClick(e) {
-    const header = document.getElementById('server-header');
-    const menu = document.getElementById('server-menu');
-    if (!header?.contains(e.target) && !menu?.contains(e.target)) {
-        serverMenuOpen = false;
-        menu?.classList.remove('open');
-        document.removeEventListener('click', closeServerMenuOnOutsideClick);
-    }
+// Server modal
+function openCreateServerModal() {
+    document.getElementById('create-server-modal')?.classList.remove('hidden');
+    document.getElementById('create-server-modal')?.classList.add('flex');
+    document.getElementById('server-name')?.focus();
 }
 
-// Category toggle
-function toggleCategory(categoryId) {
-    const category = document.getElementById(categoryId + '-category');
-    const list = document.getElementById(categoryId);
-    category?.classList.toggle('collapsed');
-    if (list) {
-        list.style.display = category?.classList.contains('collapsed') ? 'none' : 'block';
-    }
+function closeCreateServerModal() {
+    const modal = document.getElementById('create-server-modal');
+    modal?.classList.add('hidden');
+    modal?.classList.remove('flex');
+    document.getElementById('create-server-form')?.reset();
 }
 
-// Channel type selector
-document.querySelectorAll('.form-radio-card').forEach(card => {
-    card.addEventListener('click', () => {
-        document.querySelectorAll('.form-radio-card').forEach(c => c.classList.remove('active'));
-        card.classList.add('active');
-        const prefix = document.querySelector('.form-input-prefix');
-        if (prefix) {
-            prefix.textContent = card.dataset.type === 'voice' ? '🔊' : '#';
-        }
-    });
+document.getElementById('create-server-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'create-server-modal') closeCreateServerModal();
 });
 
-// Create channel modal
-function showCreateChannel(type = 'text') {
-    document.getElementById('server-menu')?.classList.remove('open');
-    serverMenuOpen = false;
+document.getElementById('create-server-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('server-name')?.value.trim();
+    if (!name) return;
 
-    const modal = document.getElementById('create-channel-modal');
-    modal?.classList.add('open');
+    const btn = e.target.querySelector('[type="submit"]');
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
 
-    if (type === 'voice') {
-        document.querySelector('.form-radio-card[data-type="voice"]')?.click();
+    try {
+        const res = await fetch('/api/v1/servers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            window.location.href = `/channels/${data.data.id}/${data.data.default_channel}`;
+        } else {
+            btn.disabled = false;
+            btn.textContent = 'Create Project';
+        }
+    } catch (err) {
+        console.error('Failed to create project');
+        btn.disabled = false;
+        btn.textContent = 'Create Project';
     }
+});
+
+// Channel modal
+function openCreateChannelModal() {
+    document.getElementById('create-channel-modal')?.classList.remove('hidden');
+    document.getElementById('create-channel-modal')?.classList.add('flex');
+    document.getElementById('channel-name')?.focus();
 }
 
 function closeCreateChannelModal() {
-    document.getElementById('create-channel-modal')?.classList.remove('open');
+    const modal = document.getElementById('create-channel-modal');
+    modal?.classList.add('hidden');
+    modal?.classList.remove('flex');
     document.getElementById('create-channel-form')?.reset();
 }
 
-async function createChannel() {
-    const form = document.getElementById('create-channel-form');
-    const name = document.getElementById('channel-name')?.value.trim().toLowerCase().replace(/\s+/g, '-');
-    const topic = document.getElementById('channel-topic')?.value.trim();
-    const type = form?.querySelector('input[name="channel_type"]:checked')?.value;
-    const isPrivate = document.getElementById('channel-private')?.checked;
+document.getElementById('create-channel-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'create-channel-modal') closeCreateChannelModal();
+});
 
-    if (!name) {
-        alert('Please enter a channel name');
-        return;
-    }
+document.getElementById('create-channel-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('channel-name')?.value.trim().toLowerCase().replace(/\s+/g, '-');
+    if (!name) return;
 
     const serverId = '{{if .Data.currentServer}}{{.Data.currentServer.ID}}{{end}}';
+    if (!serverId) return;
+
+    const btn = e.target.querySelector('[type="submit"]');
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
 
     try {
         const res = await fetch(`/api/v1/servers/${serverId}/channels`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, topic, type, is_private: isPrivate })
+            body: JSON.stringify({ name, type: 'text' })
         });
 
         if (res.ok) {
             const data = await res.json();
-            closeCreateChannelModal();
             window.location.href = `/channels/${serverId}/${data.data.id}`;
         } else {
-            const json = await res.json();
-            alert(json.error?.message || 'Failed to create channel');
+            btn.disabled = false;
+            btn.textContent = 'Create Chat';
         }
     } catch (err) {
-        alert('Failed to create channel');
+        console.error('Failed to create chat');
+        btn.disabled = false;
+        btn.textContent = 'Create Chat';
     }
-}
-
-// Invite modal
-function showInvitePeople() {
-    document.getElementById('server-menu')?.classList.remove('open');
-    serverMenuOpen = false;
-    generateInviteLink();
-    document.getElementById('invite-modal')?.classList.add('open');
-}
-
-function closeInviteModal() {
-    document.getElementById('invite-modal')?.classList.remove('open');
-}
-
-async function generateInviteLink() {
-    const serverId = '{{if .Data.currentServer}}{{.Data.currentServer.ID}}{{end}}';
-    const expire = document.getElementById('invite-expire')?.value || '86400';
-
-    try {
-        const res = await fetch(`/api/v1/servers/${serverId}/invites`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ max_age: parseInt(expire) })
-        });
-
-        if (res.ok) {
-            const data = await res.json();
-            const input = document.getElementById('invite-link-display');
-            if (input) {
-                input.value = `${window.location.origin}/invite/${data.data.code}`;
-            }
-        }
-    } catch (err) {
-        console.error('Failed to generate invite');
-    }
-}
-
-function copyInviteLink() {
-    const input = document.getElementById('invite-link-display');
-    if (input) {
-        navigator.clipboard.writeText(input.value);
-        // Show feedback
-        const btn = input.nextElementSibling;
-        const originalText = btn.innerHTML;
-        btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Copied!';
-        setTimeout(() => { btn.innerHTML = originalText; }, 2000);
-    }
-}
-
-document.getElementById('invite-expire')?.addEventListener('change', generateInviteLink);
-
-// Server settings
-function showServerSettings() {
-    document.getElementById('server-menu')?.classList.remove('open');
-    serverMenuOpen = false;
-    const serverId = '{{if .Data.currentServer}}{{.Data.currentServer.ID}}{{end}}';
-    window.location.href = `/servers/${serverId}/settings`;
-}
-
-// Leave server
-async function leaveServer() {
-    if (!confirm('Are you sure you want to leave this server?')) return;
-
-    const serverId = '{{if .Data.currentServer}}{{.Data.currentServer.ID}}{{end}}';
-
-    try {
-        const res = await fetch(`/api/v1/servers/${serverId}/leave`, { method: 'POST' });
-        if (res.ok) {
-            window.location.href = '/';
-        } else {
-            const json = await res.json();
-            alert(json.error?.message || 'Failed to leave server');
-        }
-    } catch (err) {
-        alert('Failed to leave server');
-    }
-}
-
-// Voice channel
-function joinVoiceChannel(channelId) {
-    // Voice functionality would be implemented here
-    console.log('Joining voice channel:', channelId);
-}
-
-// Close DM
-async function closeDM(dmId) {
-    try {
-        await fetch(`/api/v1/channels/${dmId}/close`, { method: 'POST' });
-        window.location.reload();
-    } catch (err) {
-        console.error('Failed to close DM');
-    }
-}
-
-// Edit channel
-function editChannel(channelId) {
-    const serverId = '{{if .Data.currentServer}}{{.Data.currentServer.ID}}{{end}}';
-    window.location.href = `/servers/${serverId}/channels/${channelId}/settings`;
-}
-
-// Create channel invite
-async function createChannelInvite(channelId) {
-    showInvitePeople();
-}
-
-// Modal close handlers
-['create-channel-modal', 'invite-modal'].forEach(id => {
-    document.getElementById(id)?.addEventListener('click', (e) => {
-        if (e.target.id === id) {
-            document.getElementById(id)?.classList.remove('open');
-        }
-    });
 });
 
+// New chat button
+document.getElementById('new-chat-btn')?.addEventListener('click', () => {
+    {{if .Data.currentServer}}
+    openCreateChannelModal();
+    {{else}}
+    openCreateServerModal();
+    {{end}}
+});
+
+// Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+        closeCreateServerModal();
         closeCreateChannelModal();
-        closeInviteModal();
-        if (serverMenuOpen) {
-            toggleServerMenu();
-        }
     }
 });
 </script>

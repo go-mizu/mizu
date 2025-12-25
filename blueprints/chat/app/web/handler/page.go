@@ -59,13 +59,9 @@ type PageData struct {
 func (h *Page) Home(c *mizu.Ctx) error {
 	userID := h.getUserID(c)
 
-	// If not logged in, show landing page
+	// If not logged in, redirect to login
 	if userID == "" {
-		return h.render(c, "landing.html", PageData{
-			Title: "Chat - Realtime Messaging",
-			Data:  map[string]any{},
-			Dev:   h.dev,
-		})
+		return c.Redirect(302, "/login")
 	}
 
 	// Get user
@@ -102,24 +98,9 @@ func (h *Page) Register(c *mizu.Ctx) error {
 	})
 }
 
-// Explore renders the server discovery page.
+// Explore redirects to home page (explore page was removed).
 func (h *Page) Explore(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	var user any
-	if userID != "" {
-		user, _ = h.accounts.GetByID(c.Request().Context(), userID)
-	}
-
-	srvs, _ := h.servers.ListPublic(c.Request().Context(), 50, 0)
-
-	return h.render(c, "explore.html", PageData{
-		Title: "Explore Servers - Chat",
-		User:  user,
-		Data: map[string]any{
-			"servers": srvs,
-		},
-		Dev: h.dev,
-	})
+	return c.Redirect(302, "/")
 }
 
 // ServerView renders a server view with full SSR.

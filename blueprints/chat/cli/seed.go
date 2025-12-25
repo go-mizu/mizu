@@ -189,14 +189,150 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Add sample messages
+		// Add sample messages with rich markdown content
 		if general != nil {
 			sampleMessages := []string{
-				"Welcome to the server!",
-				"Hey everyone, great to be here!",
-				"What's everyone working on today?",
-				"Just discovered this awesome new tool",
-				"Anyone want to collaborate on a project?",
+				"Welcome to the server! 🎉",
+				"Hey everyone! I've been exploring some new **Go patterns** and wanted to share.",
+				`Here's a quick example of a clean HTTP handler pattern:
+
+` + "```go" + `
+func HandleUsers(db *sql.DB) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        users, err := db.Query("SELECT id, name FROM users")
+        if err != nil {
+            http.Error(w, err.Error(), 500)
+            return
+        }
+        defer users.Close()
+
+        json.NewEncoder(w).Encode(users)
+    }
+}
+` + "```" + `
+
+This keeps your handlers clean and testable!`,
+				`Great question! Here's what I recommend:
+
+## Best Practices for API Design
+
+1. **Use consistent naming conventions** - stick to snake_case or camelCase
+2. **Version your APIs** - use ` + "`/api/v1/`" + ` prefixes
+3. **Return proper status codes** - don't just use 200 for everything
+
+### Example Response Structure
+
+` + "```json" + `
+{
+  "data": {
+    "id": "user_123",
+    "name": "Alice",
+    "email": "alice@example.com"
+  },
+  "meta": {
+    "timestamp": "2024-01-15T10:30:00Z"
+  }
+}
+` + "```" + `
+
+> Pro tip: Always include pagination metadata for list endpoints!`,
+				`I've been working on a comparison of popular Go web frameworks:
+
+| Framework | Stars | Performance | Ease of Use |
+|-----------|-------|-------------|-------------|
+| Gin       | 75k   | Excellent   | Good        |
+| Echo      | 28k   | Excellent   | Excellent   |
+| Fiber     | 30k   | Best        | Good        |
+| Chi       | 16k   | Very Good   | Excellent   |
+| **Mizu**  | 1k    | Excellent   | Amazing!    |
+
+Each has its strengths. What are you all using?`,
+				`Here's a Python script I use for quick data processing:
+
+` + "```python" + `
+import pandas as pd
+from pathlib import Path
+
+def process_logs(log_dir: str) -> pd.DataFrame:
+    """Process all log files in a directory."""
+    logs = []
+
+    for file in Path(log_dir).glob("*.log"):
+        with open(file) as f:
+            for line in f:
+                if "ERROR" in line:
+                    logs.append({
+                        "file": file.name,
+                        "line": line.strip()
+                    })
+
+    return pd.DataFrame(logs)
+
+# Usage
+df = process_logs("/var/log/myapp")
+print(f"Found {len(df)} errors")
+` + "```" + `
+
+Super handy for debugging production issues!`,
+				`Anyone tried the new **TypeScript 5.4** features? The ` + "`NoInfer`" + ` utility type is a game changer:
+
+` + "```typescript" + `
+function createStore<T>(initial: NoInfer<T>) {
+  let state = initial;
+
+  return {
+    get: () => state,
+    set: (value: T) => { state = value; }
+  };
+}
+
+// Now TypeScript won't infer from 'initial'
+const store = createStore<number>(0);
+` + "```" + `
+
+This prevents accidental type widening. Really useful for generic functions!`,
+				`## Quick SQL Tip
+
+When dealing with large tables, always use ` + "`EXPLAIN ANALYZE`" + `:
+
+` + "```sql" + `
+EXPLAIN ANALYZE
+SELECT u.name, COUNT(o.id) as order_count
+FROM users u
+LEFT JOIN orders o ON o.user_id = u.id
+WHERE u.created_at > '2024-01-01'
+GROUP BY u.id, u.name
+HAVING COUNT(o.id) > 5
+ORDER BY order_count DESC
+LIMIT 100;
+` + "```" + `
+
+This shows you the actual execution plan and timing. *Much better than guessing!*`,
+				`Here's my terminal setup for productivity:
+
+` + "```bash" + `
+# .zshrc aliases
+alias gs="git status"
+alias gc="git commit -m"
+alias gp="git push"
+alias gl="git log --oneline -20"
+
+# Better ls
+alias ll="ls -lah"
+alias la="ls -A"
+
+# Quick navigation
+alias ..="cd .."
+alias ...="cd ../.."
+alias dev="cd ~/Developer"
+
+# Docker shortcuts
+alias dc="docker-compose"
+alias dps="docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
+` + "```" + `
+
+Small things that save *hours* over time!`,
+				"That's all great stuff! Thanks for sharing everyone. Looking forward to more discussions! 🚀",
 			}
 
 			for i, content := range sampleMessages {

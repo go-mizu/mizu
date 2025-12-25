@@ -66,10 +66,9 @@ func TestUI_AllPages(t *testing.T) {
 	}{
 		// Public pages (no auth required)
 		{
-			name:         "landing page (unauthenticated)",
+			name:         "home redirects to login when unauthenticated",
 			path:         "/",
-			wantStatus:   http.StatusOK,
-			wantContains: []string{"<!DOCTYPE html>", "</html>"},
+			wantStatus:   http.StatusFound,
 		},
 		{
 			name:         "login page",
@@ -84,10 +83,9 @@ func TestUI_AllPages(t *testing.T) {
 			wantContains: []string{"<!DOCTYPE html>", "</html>", "Register"},
 		},
 		{
-			name:         "explore page (unauthenticated)",
+			name:         "explore redirects to home when unauthenticated",
 			path:         "/explore",
-			wantStatus:   http.StatusOK,
-			wantContains: []string{"<!DOCTYPE html>", "</html>"},
+			wantStatus:   http.StatusFound,
 		},
 
 		// Authenticated pages
@@ -99,11 +97,10 @@ func TestUI_AllPages(t *testing.T) {
 			wantContains:  []string{"<!DOCTYPE html>", "</html>"},
 		},
 		{
-			name:          "explore page (authenticated)",
+			name:          "explore redirects to home (authenticated)",
 			path:          "/explore",
 			authenticated: true,
-			wantStatus:    http.StatusOK,
-			wantContains:  []string{"<!DOCTYPE html>", "</html>"},
+			wantStatus:    http.StatusFound,
 		},
 		{
 			name:          "settings page",
@@ -146,6 +143,11 @@ func TestUI_AllPages(t *testing.T) {
 
 			if rec.Code != tt.wantStatus {
 				t.Errorf("status = %d, want %d\nbody: %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+
+			// Skip content checks for redirects
+			if tt.wantStatus == http.StatusFound {
+				return
 			}
 
 			body := rec.Body.String()
@@ -374,10 +376,10 @@ func TestUI_ComponentsWithData(t *testing.T) {
 		channelIDs = append(channelIDs, channelResp["data"].(map[string]interface{})["id"].(string))
 	}
 
-	// Bob joins (tests member_list.html with multiple members)
+	// Bob joins (tests multiple members scenario)
 	doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/join", nil, bobToken)
 
-	// Both users send messages (tests message.html with author data)
+	// Both users send messages (tests message rendering with author data)
 	messages := []struct {
 		token   string
 		content string
@@ -410,7 +412,6 @@ func TestUI_ComponentsWithData(t *testing.T) {
 			{"server name in channel list", "Component Test Server"},
 			{"channel name", "general"},
 			{"message content", "Hello from Alice"},
-			{"member section", "member"},
 		}
 		for _, check := range componentChecks {
 			if !strings.Contains(body, check.content) {
