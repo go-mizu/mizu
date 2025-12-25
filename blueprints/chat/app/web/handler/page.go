@@ -59,9 +59,9 @@ type PageData struct {
 func (h *Page) Home(c *mizu.Ctx) error {
 	userID := h.getUserID(c)
 
-	// If not logged in, redirect to login
+	// If not logged in, show landing page
 	if userID == "" {
-		return c.Redirect(302, "/login")
+		return h.Landing(c)
 	}
 
 	// Get user
@@ -75,6 +75,22 @@ func (h *Page) Home(c *mizu.Ctx) error {
 		User:  user,
 		Data: map[string]any{
 			"servers": srvs,
+		},
+		Dev: h.dev,
+	})
+}
+
+// Landing renders the public landing page for unauthenticated users.
+func (h *Page) Landing(c *mizu.Ctx) error {
+	ctx := c.Request().Context()
+
+	// Get featured public servers
+	publicServers, _ := h.servers.ListPublic(ctx, 6, 0)
+
+	return h.render(c, "home.html", PageData{
+		Title: "Welcome",
+		Data: map[string]any{
+			"publicServers": publicServers,
 		},
 		Dev: h.dev,
 	})

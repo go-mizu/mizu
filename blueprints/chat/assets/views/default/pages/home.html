@@ -1,0 +1,315 @@
+{{define "home.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="min-h-screen bg-white">
+    <!-- Navigation -->
+    <nav class="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-gpt-border">
+        <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+            <a href="/" class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-lg bg-gpt-accent flex items-center justify-center">
+                    <svg class="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                </div>
+                <span class="font-semibold text-lg text-gpt-text">Mizu</span>
+            </a>
+            <div class="flex items-center gap-3">
+                <a href="/login" class="px-4 py-2 text-sm font-medium text-gpt-text hover:text-gpt-text-secondary transition-colors">
+                    Log in
+                </a>
+                <a href="/register" class="px-4 py-2 rounded-full text-sm font-medium text-white bg-gpt-accent hover:opacity-90 transition-opacity">
+                    Sign up
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="pt-32 pb-20 px-6">
+        <div class="max-w-4xl mx-auto text-center">
+            <h1 class="text-5xl md:text-6xl font-semibold text-gpt-text leading-tight mb-6 animate-fade-in">
+                Where conversations<br>come to life
+            </h1>
+            <p class="text-xl text-gpt-text-secondary max-w-2xl mx-auto mb-10 animate-slide-up">
+                Mizu is a modern communication platform that brings people together. Create communities, share ideas, and connect in real-time.
+            </p>
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-4 animate-slide-up">
+                <a href="/register" class="w-full sm:w-auto px-8 py-3.5 rounded-full text-base font-medium text-white bg-gpt-accent hover:opacity-90 transition-opacity">
+                    Get started free
+                </a>
+                <a href="/explore" class="w-full sm:w-auto px-8 py-3.5 rounded-full text-base font-medium text-gpt-text border border-gpt-border hover:bg-gpt-sidebar transition-colors">
+                    Explore communities
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Visual Preview -->
+    <section class="px-6 pb-24">
+        <div class="max-w-5xl mx-auto">
+            <div class="relative rounded-2xl overflow-hidden border border-gpt-border shadow-2xl shadow-black/5">
+                <div class="absolute inset-0 bg-gradient-to-br from-gpt-sidebar via-white to-gpt-sidebar-hover"></div>
+                <div class="relative p-8 md:p-12">
+                    <!-- Mock Chat Interface -->
+                    <div class="bg-white rounded-xl border border-gpt-border overflow-hidden">
+                        <div class="flex">
+                            <!-- Sidebar Preview -->
+                            <div class="hidden md:block w-64 bg-gpt-sidebar border-r border-gpt-border p-4">
+                                <div class="space-y-2">
+                                    <div class="h-10 rounded-lg bg-gpt-sidebar-active flex items-center px-3 gap-2">
+                                        <div class="w-6 h-6 rounded bg-gpt-text-muted/30"></div>
+                                        <div class="h-3 w-24 rounded bg-gpt-text-muted/30"></div>
+                                    </div>
+                                    <div class="h-10 rounded-lg flex items-center px-3 gap-2">
+                                        <div class="w-6 h-6 rounded bg-gpt-text-muted/20"></div>
+                                        <div class="h-3 w-20 rounded bg-gpt-text-muted/20"></div>
+                                    </div>
+                                    <div class="h-10 rounded-lg flex items-center px-3 gap-2">
+                                        <div class="w-6 h-6 rounded bg-gpt-text-muted/20"></div>
+                                        <div class="h-3 w-28 rounded bg-gpt-text-muted/20"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Chat Preview -->
+                            <div class="flex-1 p-6">
+                                <div class="space-y-4">
+                                    <div class="flex items-start gap-3">
+                                        <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-sm font-medium">A</div>
+                                        <div>
+                                            <div class="text-sm font-medium text-gpt-text">Alice</div>
+                                            <div class="mt-1 text-gpt-text-secondary">Hey everyone! Welcome to the team.</div>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-3">
+                                        <div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600 text-sm font-medium">B</div>
+                                        <div>
+                                            <div class="text-sm font-medium text-gpt-text">Bob</div>
+                                            <div class="mt-1 text-gpt-text-secondary">Thanks! Excited to be here.</div>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-3">
+                                        <div class="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 text-sm font-medium">C</div>
+                                        <div>
+                                            <div class="text-sm font-medium text-gpt-text">Carol</div>
+                                            <div class="mt-1 text-gpt-text-secondary">Let's build something great together!</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="py-24 px-6 bg-gpt-sidebar">
+        <div class="max-w-6xl mx-auto">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl md:text-4xl font-semibold text-gpt-text mb-4">
+                    Everything you need to connect
+                </h2>
+                <p class="text-lg text-gpt-text-secondary max-w-2xl mx-auto">
+                    Built with simplicity in mind, Mizu gives you powerful tools without the complexity.
+                </p>
+            </div>
+
+            <div class="grid md:grid-cols-3 gap-8">
+                <!-- Feature 1 -->
+                <div class="bg-white rounded-2xl p-8 border border-gpt-border">
+                    <div class="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center mb-6">
+                        <svg class="w-6 h-6 text-blue-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gpt-text mb-3">Create communities</h3>
+                    <p class="text-gpt-text-secondary leading-relaxed">
+                        Build your own server in seconds. Organize conversations into channels and invite others to join.
+                    </p>
+                </div>
+
+                <!-- Feature 2 -->
+                <div class="bg-white rounded-2xl p-8 border border-gpt-border">
+                    <div class="w-12 h-12 rounded-xl bg-green-50 flex items-center justify-center mb-6">
+                        <svg class="w-6 h-6 text-green-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                        </svg>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gpt-text mb-3">Real-time messaging</h3>
+                    <p class="text-gpt-text-secondary leading-relaxed">
+                        Messages arrive instantly. See when others are typing and never miss an important conversation.
+                    </p>
+                </div>
+
+                <!-- Feature 3 -->
+                <div class="bg-white rounded-2xl p-8 border border-gpt-border">
+                    <div class="w-12 h-12 rounded-xl bg-purple-50 flex items-center justify-center mb-6">
+                        <svg class="w-6 h-6 text-purple-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                        </svg>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gpt-text mb-3">Private by default</h3>
+                    <p class="text-gpt-text-secondary leading-relaxed">
+                        Your conversations stay yours. Control who can access your server with invite-only access.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Explore Communities Section -->
+    {{if .Data.publicServers}}
+    <section class="py-24 px-6">
+        <div class="max-w-6xl mx-auto">
+            <div class="flex items-center justify-between mb-12">
+                <div>
+                    <h2 class="text-3xl md:text-4xl font-semibold text-gpt-text mb-2">
+                        Discover communities
+                    </h2>
+                    <p class="text-lg text-gpt-text-secondary">
+                        Join public servers and connect with people who share your interests.
+                    </p>
+                </div>
+                <a href="/explore" class="hidden md:flex items-center gap-2 text-gpt-text font-medium hover:text-gpt-text-secondary transition-colors">
+                    View all
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                </a>
+            </div>
+
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6" id="featured-servers">
+                {{range $i, $server := .Data.publicServers}}
+                {{if lt $i 6}}
+                <div class="group relative bg-white rounded-2xl border border-gpt-border overflow-hidden hover:border-gpt-text-muted transition-colors">
+                    <!-- Banner -->
+                    <div class="h-24 bg-gradient-to-br from-gpt-sidebar-hover to-gpt-sidebar relative">
+                        {{if $server.BannerURL}}
+                        <img src="{{$server.BannerURL}}" alt="" class="w-full h-full object-cover">
+                        {{end}}
+                    </div>
+
+                    <!-- Icon -->
+                    <div class="absolute top-14 left-6">
+                        <div class="w-16 h-16 rounded-2xl border-4 border-white bg-gpt-sidebar flex items-center justify-center text-xl font-semibold shadow-sm overflow-hidden">
+                            {{if $server.IconURL}}
+                            <img src="{{$server.IconURL}}" alt="" class="w-full h-full object-cover">
+                            {{else}}
+                            <span class="text-gpt-text-secondary">{{slice $server.Name 0 1}}</span>
+                            {{end}}
+                        </div>
+                    </div>
+
+                    <!-- Content -->
+                    <div class="pt-10 px-6 pb-6">
+                        <div class="flex items-center gap-2 mb-2">
+                            <h3 class="font-semibold text-lg text-gpt-text truncate">{{$server.Name}}</h3>
+                            {{if $server.IsVerified}}
+                            <svg class="w-5 h-5 text-blue-500 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            {{end}}
+                        </div>
+                        <p class="text-sm text-gpt-text-secondary line-clamp-2 mb-4 min-h-[40px]">
+                            {{if $server.Description}}{{$server.Description}}{{else}}A community on Mizu{{end}}
+                        </p>
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-4 text-sm text-gpt-text-muted">
+                                <span class="flex items-center gap-1.5">
+                                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                        <circle cx="9" cy="7" r="4"/>
+                                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                                        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                                    </svg>
+                                    {{$server.MemberCount}} members
+                                </span>
+                            </div>
+                            <button onclick="joinServerFromLanding('{{$server.ID}}')" class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-gpt-accent hover:opacity-90 transition-opacity">
+                                Join
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {{end}}
+                {{end}}
+            </div>
+
+            <div class="mt-8 text-center md:hidden">
+                <a href="/explore" class="inline-flex items-center gap-2 text-gpt-text font-medium hover:text-gpt-text-secondary transition-colors">
+                    View all communities
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                </a>
+            </div>
+        </div>
+    </section>
+    {{end}}
+
+    <!-- CTA Section -->
+    <section class="py-24 px-6 bg-gpt-accent">
+        <div class="max-w-4xl mx-auto text-center">
+            <h2 class="text-3xl md:text-4xl font-semibold text-white mb-4">
+                Ready to get started?
+            </h2>
+            <p class="text-lg text-white/80 mb-8 max-w-2xl mx-auto">
+                Join thousands of people already connecting on Mizu. Create your account in seconds.
+            </p>
+            <a href="/register" class="inline-block px-8 py-3.5 rounded-full text-base font-medium text-gpt-accent bg-white hover:bg-white/90 transition-colors">
+                Create free account
+            </a>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="py-12 px-6 border-t border-gpt-border">
+        <div class="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+            <div class="flex items-center gap-2">
+                <div class="w-6 h-6 rounded bg-gpt-accent flex items-center justify-center">
+                    <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                </div>
+                <span class="font-medium text-gpt-text">Mizu</span>
+            </div>
+            <p class="text-sm text-gpt-text-muted">
+                Built with Go and the Mizu framework
+            </p>
+        </div>
+    </footer>
+</div>
+
+<script>
+async function joinServerFromLanding(serverId) {
+    try {
+        const res = await fetch(`/api/v1/servers/${serverId}/join`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            window.location.href = `/channels/${serverId}/${data.data?.default_channel || ''}`;
+        } else if (res.status === 401) {
+            window.location.href = '/login';
+        } else {
+            const error = await res.json();
+            if (error.error?.includes('already a member')) {
+                window.location.href = `/channels/${serverId}/`;
+            }
+        }
+    } catch (err) {
+        console.error('Failed to join server:', err);
+        window.location.href = '/login';
+    }
+}
+</script>
+{{end}}
