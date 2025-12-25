@@ -126,7 +126,7 @@ func TestRunSeed(t *testing.T) {
 			t.Fatalf("second runSeed() returned error: %v", err)
 		}
 
-		// Verify still only 3 users
+		// Verify still only 4 users (alice, bob, charlie + mizu-agent)
 		dbPath := filepath.Join(tmpDir, "messaging.duckdb")
 		db, err := sql.Open("duckdb", dbPath)
 		if err != nil {
@@ -139,8 +139,8 @@ func TestRunSeed(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to count users: %v", err)
 		}
-		if count != 3 {
-			t.Errorf("expected 3 users, got %d", count)
+		if count != 4 {
+			t.Errorf("expected 4 users (alice, bob, charlie + mizu-agent), got %d", count)
 		}
 	})
 }

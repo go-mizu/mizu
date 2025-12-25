@@ -603,8 +603,9 @@ func TestChat_CRUD(t *testing.T) {
 		}
 		json.NewDecoder(rec.Body).Decode(&resp)
 
-		if len(resp.Data) != 2 {
-			t.Errorf("expected 2 chats, got %d", len(resp.Data))
+		// User should have at least 4 chats: 2 default chats (Saved Messages + Agent) + 2 created in test
+		if len(resp.Data) < 4 {
+			t.Errorf("expected at least 4 chats (2 default + 2 created), got %d", len(resp.Data))
 		}
 	})
 
@@ -1245,6 +1246,562 @@ func TestMessageForward(t *testing.T) {
 
 		if rec.Code != http.StatusOK {
 			t.Errorf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+		}
+	})
+}
+
+func TestUsers_Me(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	server, err := New(Config{
+		Addr:    ":0",
+		DataDir: tmpDir,
+		Dev:     true,
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+	defer server.Close()
+
+	// Register a user
+	registerBody := `{"username": "testuser", "email": "test@example.com", "password": "password123"}`
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewBufferString(registerBody))
+	registerReq.Header.Set("Content-Type", "application/json")
+	registerRec := httptest.NewRecorder()
+
+	server.app.ServeHTTP(registerRec, registerReq)
+
+	if registerRec.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, registerRec.Code, registerRec.Body.String())
+	}
+
+	var registerResp struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Session struct {
+				Token string `json:"token"`
+			} `json:"session"`
+		} `json:"data"`
+	}
+	json.NewDecoder(registerRec.Body).Decode(&registerResp)
+	token := registerResp.Data.Session.Token
+
+	t.Run("/api/v1/users/me with bearer token", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/users/me", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+
+		server.app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+		}
+
+		var resp apiResponse
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if !resp.Success {
+			t.Errorf("expected success, got error: %s", resp.Error)
+		}
+	})
+
+	t.Run("/api/v1/users/me with session cookie", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/users/me", nil)
+		req.AddCookie(&http.Cookie{
+			Name:  "session",
+			Value: token,
+		})
+		rec := httptest.NewRecorder()
+
+		server.app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+		}
+
+		var resp apiResponse
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if !resp.Success {
+			t.Errorf("expected success, got error: %s", resp.Error)
+		}
+	})
+
+	t.Run("/api/v1/users/me without auth returns 401", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/users/me", nil)
+		rec := httptest.NewRecorder()
+
+		server.app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("expected status %d, got %d: %s", http.StatusUnauthorized, rec.Code, rec.Body.String())
+		}
+	})
+}
+
+func TestChats_AuthRequired(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	server, err := New(Config{
+		Addr:    ":0",
+		DataDir: tmpDir,
+		Dev:     true,
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+	defer server.Close()
+
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		body       string
+		wantStatus int
+	}{
+		{
+			name:       "GET /api/v1/chats without auth",
+			method:     http.MethodGet,
+			path:       "/api/v1/chats",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "POST /api/v1/chats without auth",
+			method:     http.MethodPost,
+			path:       "/api/v1/chats",
+			body:       `{"type": "direct", "recipient_id": "test"}`,
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "GET /api/v1/chats/:id without auth",
+			method:     http.MethodGet,
+			path:       "/api/v1/chats/someid",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "GET /api/v1/chats/:id/messages without auth",
+			method:     http.MethodGet,
+			path:       "/api/v1/chats/someid/messages",
+			wantStatus: http.StatusUnauthorized,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var req *http.Request
+			if tc.body != "" {
+				req = httptest.NewRequest(tc.method, tc.path, bytes.NewBufferString(tc.body))
+				req.Header.Set("Content-Type", "application/json")
+			} else {
+				req = httptest.NewRequest(tc.method, tc.path, nil)
+			}
+			rec := httptest.NewRecorder()
+
+			server.app.ServeHTTP(rec, req)
+
+			if rec.Code != tc.wantStatus {
+				t.Errorf("expected status %d, got %d: %s", tc.wantStatus, rec.Code, rec.Body.String())
+			}
+
+			var resp handler.Response
+			if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+				t.Fatalf("failed to decode response: %v", err)
+			}
+
+			if resp.Success {
+				t.Error("expected success to be false")
+			}
+			if resp.Error == "" {
+				t.Error("expected error message to be set")
+			}
+		})
+	}
+}
+
+func TestWebSocket_CookieAuth(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	server, err := New(Config{
+		Addr:    ":0",
+		DataDir: tmpDir,
+		Dev:     true,
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+	defer server.Close()
+
+	// Register a user
+	registerBody := `{"username": "wstest", "email": "ws@example.com", "password": "password123"}`
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewBufferString(registerBody))
+	registerReq.Header.Set("Content-Type", "application/json")
+	registerRec := httptest.NewRecorder()
+
+	server.app.ServeHTTP(registerRec, registerReq)
+
+	var registerResp struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Session struct {
+				Token string `json:"token"`
+			} `json:"session"`
+		} `json:"data"`
+	}
+	json.NewDecoder(registerRec.Body).Decode(&registerResp)
+	token := registerResp.Data.Session.Token
+
+	t.Run("WebSocket without auth returns 401", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+		rec := httptest.NewRecorder()
+
+		server.app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("expected status %d, got %d: %s", http.StatusUnauthorized, rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("WebSocket with token query param passes auth", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/ws?token="+token, nil)
+		req.Header.Set("Connection", "Upgrade")
+		req.Header.Set("Upgrade", "websocket")
+		req.Header.Set("Sec-WebSocket-Version", "13")
+		req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+		rec := httptest.NewRecorder()
+
+		server.app.ServeHTTP(rec, req)
+
+		// Not 401 means auth passed (actual upgrade may fail with 500 in test due to httptest limitations)
+		if rec.Code == http.StatusUnauthorized {
+			t.Errorf("expected auth to pass, got 401: %s", rec.Body.String())
+		}
+	})
+
+	t.Run("WebSocket with session cookie passes auth", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+		req.AddCookie(&http.Cookie{
+			Name:  "session",
+			Value: token,
+		})
+		req.Header.Set("Connection", "Upgrade")
+		req.Header.Set("Upgrade", "websocket")
+		req.Header.Set("Sec-WebSocket-Version", "13")
+		req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+		rec := httptest.NewRecorder()
+
+		server.app.ServeHTTP(rec, req)
+
+		// Not 401 means auth passed (actual upgrade may fail with 500 in test due to httptest limitations)
+		if rec.Code == http.StatusUnauthorized {
+			t.Errorf("expected auth to pass, got 401: %s", rec.Body.String())
+		}
+	})
+}
+
+func TestNewUser_DefaultChats(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	server, err := New(Config{
+		Addr:    ":0",
+		DataDir: tmpDir,
+		Dev:     true,
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+	defer server.Close()
+
+	// Verify the agent was created
+	if server.agentID == "" {
+		t.Error("expected agent to be created at startup")
+	}
+
+	// Register a new user
+	registerBody := `{"username": "newuser", "email": "new@example.com", "password": "password123", "display_name": "New User"}`
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewBufferString(registerBody))
+	registerReq.Header.Set("Content-Type", "application/json")
+	registerRec := httptest.NewRecorder()
+
+	server.app.ServeHTTP(registerRec, registerReq)
+
+	if registerRec.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, registerRec.Code, registerRec.Body.String())
+	}
+
+	var registerResp struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Session struct {
+				Token string `json:"token"`
+			} `json:"session"`
+			User struct {
+				ID string `json:"id"`
+			} `json:"user"`
+		} `json:"data"`
+	}
+	json.NewDecoder(registerRec.Body).Decode(&registerResp)
+	token := registerResp.Data.Session.Token
+
+	// List chats for the new user
+	t.Run("new user has default chats", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/chats", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+
+		server.app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+		}
+
+		var resp struct {
+			Data []struct {
+				ID   string `json:"id"`
+				Type string `json:"type"`
+			} `json:"data"`
+		}
+		json.NewDecoder(rec.Body).Decode(&resp)
+
+		// Should have 2 chats: Saved Messages (self-chat) and Agent chat
+		if len(resp.Data) != 2 {
+			t.Errorf("expected 2 default chats, got %d", len(resp.Data))
+		}
+
+		// Both should be direct chats
+		directCount := 0
+		for _, chat := range resp.Data {
+			if chat.Type == "direct" {
+				directCount++
+			}
+		}
+		if directCount != 2 {
+			t.Errorf("expected 2 direct chats, got %d", directCount)
+		}
+	})
+
+	// Check that each chat has a welcome message
+	t.Run("default chats have welcome messages", func(t *testing.T) {
+		// Get chats
+		chatsReq := httptest.NewRequest(http.MethodGet, "/api/v1/chats", nil)
+		chatsReq.Header.Set("Authorization", "Bearer "+token)
+		chatsRec := httptest.NewRecorder()
+		server.app.ServeHTTP(chatsRec, chatsReq)
+
+		var chatsResp struct {
+			Data []struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		json.NewDecoder(chatsRec.Body).Decode(&chatsResp)
+
+		for _, chat := range chatsResp.Data {
+			// Get messages for each chat
+			msgReq := httptest.NewRequest(http.MethodGet, "/api/v1/chats/"+chat.ID+"/messages", nil)
+			msgReq.Header.Set("Authorization", "Bearer "+token)
+			msgRec := httptest.NewRecorder()
+			server.app.ServeHTTP(msgRec, msgReq)
+
+			if msgRec.Code != http.StatusOK {
+				t.Errorf("expected status %d, got %d", http.StatusOK, msgRec.Code)
+				continue
+			}
+
+			var msgResp struct {
+				Data []struct {
+					ID      string `json:"id"`
+					Content string `json:"content"`
+				} `json:"data"`
+			}
+			json.NewDecoder(msgRec.Body).Decode(&msgResp)
+
+			// Each default chat should have at least 1 welcome message
+			if len(msgResp.Data) < 1 {
+				t.Errorf("expected at least 1 message in chat %s, got %d", chat.ID, len(msgResp.Data))
+			}
+		}
+	})
+}
+
+func TestSelfChat_CreateAndMessage(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	server, err := New(Config{
+		Addr:    ":0",
+		DataDir: tmpDir,
+		Dev:     true,
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+	defer server.Close()
+
+	// Register a user
+	registerBody := `{"username": "selfchatuser", "email": "selfchat@example.com", "password": "password123"}`
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewBufferString(registerBody))
+	registerReq.Header.Set("Content-Type", "application/json")
+	registerRec := httptest.NewRecorder()
+	server.app.ServeHTTP(registerRec, registerReq)
+
+	var registerResp struct {
+		Data struct {
+			Session struct {
+				Token string `json:"token"`
+			} `json:"session"`
+			User struct {
+				ID string `json:"id"`
+			} `json:"user"`
+		} `json:"data"`
+	}
+	json.NewDecoder(registerRec.Body).Decode(&registerResp)
+	token := registerResp.Data.Session.Token
+	userID := registerResp.Data.User.ID
+
+	// Get the chats (new user should have 2: Saved Messages and Agent chat)
+	chatsReq := httptest.NewRequest(http.MethodGet, "/api/v1/chats", nil)
+	chatsReq.Header.Set("Authorization", "Bearer "+token)
+	chatsRec := httptest.NewRecorder()
+	server.app.ServeHTTP(chatsRec, chatsReq)
+
+	var chatsResp struct {
+		Data []struct {
+			ID   string `json:"id"`
+			Type string `json:"type"`
+		} `json:"data"`
+	}
+	json.NewDecoder(chatsRec.Body).Decode(&chatsResp)
+
+	if len(chatsResp.Data) < 1 {
+		t.Fatal("expected at least 1 chat")
+	}
+
+	// Use the first direct chat as the test chat (could be either self-chat or agent chat)
+	var testChatID string
+	for _, chat := range chatsResp.Data {
+		if chat.Type == "direct" {
+			testChatID = chat.ID
+			break
+		}
+	}
+
+	if testChatID == "" {
+		t.Fatal("No direct chat found")
+	}
+
+	t.Run("can send message to chat", func(t *testing.T) {
+		body := `{"type": "text", "content": "This is a note to myself"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/chats/"+testChatID+"/messages", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+
+		server.app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusCreated {
+			t.Errorf("expected status %d, got %d: %s", http.StatusCreated, rec.Code, rec.Body.String())
+		}
+
+		var resp struct {
+			Data struct {
+				ID      string `json:"id"`
+				Content string `json:"content"`
+			} `json:"data"`
+		}
+		json.NewDecoder(rec.Body).Decode(&resp)
+
+		if resp.Data.Content != "This is a note to myself" {
+			t.Errorf("expected message content 'This is a note to myself', got '%s'", resp.Data.Content)
+		}
+	})
+
+	t.Run("creating self-chat returns existing or new chat", func(t *testing.T) {
+		body := `{"type": "direct", "recipient_id": "` + userID + `"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/chats", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+
+		server.app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusCreated {
+			t.Errorf("expected status %d, got %d: %s", http.StatusCreated, rec.Code, rec.Body.String())
+		}
+
+		var resp struct {
+			Data struct {
+				ID   string `json:"id"`
+				Type string `json:"type"`
+			} `json:"data"`
+		}
+		json.NewDecoder(rec.Body).Decode(&resp)
+
+		// Should return a direct chat
+		if resp.Data.Type != "direct" {
+			t.Errorf("expected direct chat, got '%s'", resp.Data.Type)
+		}
+	})
+}
+
+func TestAgent_CreatedAtStartup(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	server, err := New(Config{
+		Addr:    ":0",
+		DataDir: tmpDir,
+		Dev:     true,
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+	defer server.Close()
+
+	t.Run("agent user exists", func(t *testing.T) {
+		if server.agentID == "" {
+			t.Error("expected agent ID to be set")
+		}
+
+		// Search for the agent user
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/users/search?q=mizu-agent", nil)
+		rec := httptest.NewRecorder()
+
+		server.app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+		}
+
+		var resp struct {
+			Data []struct {
+				ID          string `json:"id"`
+				Username    string `json:"username"`
+				DisplayName string `json:"display_name"`
+			} `json:"data"`
+		}
+		json.NewDecoder(rec.Body).Decode(&resp)
+
+		if len(resp.Data) == 0 {
+			t.Fatal("expected to find agent user")
+		}
+
+		found := false
+		for _, user := range resp.Data {
+			if user.Username == AgentUsername {
+				found = true
+				if user.DisplayName != "Mizu Agent" {
+					t.Errorf("expected display name 'Mizu Agent', got '%s'", user.DisplayName)
+				}
+				if user.ID != server.agentID {
+					t.Errorf("expected agent ID %s, got %s", server.agentID, user.ID)
+				}
+				break
+			}
+		}
+
+		if !found {
+			t.Error("agent user not found in search results")
 		}
 	})
 }

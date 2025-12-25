@@ -54,10 +54,24 @@
     <main class="flex-1 flex flex-col">
         <!-- No chat selected state -->
         <div id="empty-state" class="flex-1 flex items-center justify-center">
-            <div class="text-center">
+            <div class="text-center max-w-md px-4">
                 <div class="text-6xl mb-4">💬</div>
                 <h2 class="text-xl font-semibold text-primary mb-2">Welcome to Messaging</h2>
-                <p class="text-secondary">Select a chat or start a new conversation</p>
+                <p class="text-secondary mb-6">Select a chat from the sidebar or start a new conversation</p>
+                <div class="space-y-3">
+                    <button onclick="showNewChatModal()" class="w-full py-3 px-4 accent rounded-lg text-white font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                        Start New Chat
+                    </button>
+                    <button onclick="openSavedMessages()" class="w-full py-3 px-4 bg-tertiary rounded-lg text-primary font-medium hover:bg-hover transition-colors flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+                        </svg>
+                        Saved Messages
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -146,23 +160,46 @@
                 </svg>
             </button>
         </div>
-        <input
-            type="text"
-            id="contact-search"
-            placeholder="Search contacts..."
-            class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:border-[#25D366] mb-4"
-            oninput="searchContacts(this.value)"
-        >
-        <div id="contact-list" class="max-h-80 overflow-y-auto space-y-2">
-            <!-- Contacts will be populated here -->
-        </div>
-        <div class="mt-4 pt-4 border-t border-default">
-            <button onclick="showNewGroupModal()" class="w-full py-3 bg-tertiary rounded-lg text-primary font-medium hover:bg-hover transition-colors flex items-center justify-center gap-2">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
-                </svg>
-                Create New Group
+
+        <!-- Quick Actions -->
+        <div class="mb-4 space-y-2">
+            <button onclick="hideNewChatModal(); openSavedMessages();" class="w-full py-3 px-4 bg-tertiary rounded-lg text-primary font-medium hover:bg-hover transition-colors flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center flex-shrink-0">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+                    </svg>
+                </div>
+                <div class="text-left">
+                    <div class="font-medium">Saved Messages</div>
+                    <div class="text-sm text-secondary">Save notes to yourself</div>
+                </div>
             </button>
+            <button onclick="showNewGroupModal()" class="w-full py-3 px-4 bg-tertiary rounded-lg text-primary font-medium hover:bg-hover transition-colors flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-green-500 text-white flex items-center justify-center flex-shrink-0">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                    </svg>
+                </div>
+                <div class="text-left">
+                    <div class="font-medium">New Group</div>
+                    <div class="text-sm text-secondary">Create a group chat</div>
+                </div>
+            </button>
+        </div>
+
+        <div class="border-t border-default pt-4">
+            <input
+                type="text"
+                id="contact-search"
+                placeholder="Search users by name or username..."
+                class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:border-[#25D366] mb-4"
+                oninput="searchUsers(this.value)"
+            >
+            <div id="contact-list" class="max-h-60 overflow-y-auto space-y-2">
+                <div class="text-center text-secondary py-4">
+                    <p>Type to search for users</p>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -179,17 +216,27 @@ let typingTimeout = null;
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
     await loadCurrentUser();
+    await ensureUserChats();
     await loadChats();
     connectWebSocket();
 });
+
+// Ensure user has default chats (Saved Messages + Agent chat)
+async function ensureUserChats() {
+    try {
+        await fetch('/api/v1/users/ensure-chats', { method: 'POST' });
+    } catch (err) {
+        console.error('Failed to ensure user chats:', err);
+    }
+}
 
 // Load current user
 async function loadCurrentUser() {
     try {
         const res = await fetch('/api/v1/users/me');
         const data = await res.json();
-        if (data.success) {
-            currentUser = data.user;
+        if (data.success && data.data) {
+            currentUser = data.data;
             document.getElementById('user-name').textContent = currentUser.display_name || currentUser.username;
             document.getElementById('user-avatar').textContent = (currentUser.display_name || currentUser.username).charAt(0).toUpperCase();
         } else {
@@ -203,16 +250,40 @@ async function loadCurrentUser() {
 
 // Load chats
 async function loadChats() {
+    const chatList = document.getElementById('chat-list');
+    chatList.innerHTML = `
+        <div class="p-4 text-center">
+            <div class="animate-pulse flex flex-col gap-3">
+                <div class="h-16 bg-tertiary rounded-lg"></div>
+                <div class="h-16 bg-tertiary rounded-lg"></div>
+                <div class="h-16 bg-tertiary rounded-lg"></div>
+            </div>
+        </div>
+    `;
+
     try {
         const res = await fetch('/api/v1/chats');
         const data = await res.json();
         if (data.success) {
-            chats = data.chats || [];
+            chats = data.data || [];
             renderChatList();
+        } else {
+            showError('Failed to load chats');
         }
     } catch (err) {
         console.error('Failed to load chats:', err);
+        showError('Failed to load chats');
     }
+}
+
+// Show error notification
+function showError(message) {
+    // Simple error display - append to body temporarily
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+    errorDiv.textContent = message;
+    document.body.appendChild(errorDiv);
+    setTimeout(() => errorDiv.remove(), 3000);
 }
 
 // Render chat list
@@ -223,14 +294,38 @@ function renderChatList() {
             <div class="p-4 text-center text-secondary">
                 <p>No chats yet</p>
                 <p class="text-sm mt-1">Start a new conversation!</p>
+                <button onclick="showNewChatModal()" class="mt-3 px-4 py-2 accent rounded-lg text-white text-sm font-medium">
+                    New Chat
+                </button>
             </div>
         `;
         return;
     }
 
     chatList.innerHTML = chats.map(chat => {
-        const name = chat.type === 'direct' ? chat.other_user?.display_name || chat.other_user?.username : chat.group_name;
-        const avatar = name ? name.charAt(0).toUpperCase() : '?';
+        // Check if this is a self-chat (Saved Messages)
+        const isSelfChat = chat.type === 'direct' && chat.other_user?.id === currentUser?.id;
+        const isAgent = chat.type === 'direct' && chat.other_user?.username === 'mizu-agent';
+
+        let name, avatarContent, avatarClass;
+        if (isSelfChat) {
+            name = 'Saved Messages';
+            avatarContent = '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/></svg>';
+            avatarClass = 'bg-blue-500 text-white';
+        } else if (isAgent) {
+            name = chat.other_user?.display_name || 'Mizu Agent';
+            avatarContent = '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>';
+            avatarClass = 'bg-purple-500 text-white';
+        } else if (chat.type === 'direct') {
+            name = chat.other_user?.display_name || chat.other_user?.username;
+            avatarContent = name ? name.charAt(0).toUpperCase() : '?';
+            avatarClass = 'bg-tertiary text-primary';
+        } else {
+            name = chat.group_name || chat.name;
+            avatarContent = name ? name.charAt(0).toUpperCase() : '?';
+            avatarClass = 'bg-tertiary text-primary';
+        }
+
         const lastMsg = chat.last_message;
         const time = lastMsg ? formatTime(lastMsg.created_at) : '';
         const unread = chat.unread_count || 0;
@@ -241,8 +336,8 @@ function renderChatList() {
                 class="flex items-center gap-3 p-3 mx-2 rounded-lg cursor-pointer ${isActive ? 'bg-tertiary' : 'bg-hover'}"
                 onclick="selectChat('${chat.id}')"
             >
-                <div class="w-12 h-12 rounded-full bg-tertiary flex items-center justify-center text-lg font-semibold text-primary flex-shrink-0">
-                    ${avatar}
+                <div class="w-12 h-12 rounded-full ${avatarClass} flex items-center justify-center text-lg font-semibold flex-shrink-0">
+                    ${avatarContent}
                 </div>
                 <div class="flex-1 min-w-0">
                     <div class="flex items-center justify-between">
@@ -277,19 +372,77 @@ async function selectChat(chatId) {
     document.getElementById('empty-state').classList.add('hidden');
     document.getElementById('chat-view').classList.remove('hidden');
 
-    const name = currentChat.type === 'direct'
-        ? currentChat.other_user?.display_name || currentChat.other_user?.username
-        : currentChat.group_name;
+    // Check if this is a self-chat (Saved Messages)
+    const isSelfChat = currentChat.type === 'direct' && currentChat.other_user?.id === currentUser?.id;
+    const isAgent = currentChat.type === 'direct' && currentChat.other_user?.username === 'mizu-agent';
+
+    let name, avatarHtml, status;
+    const avatarEl = document.getElementById('chat-avatar');
+
+    if (isSelfChat) {
+        name = 'Saved Messages';
+        avatarEl.innerHTML = '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/></svg>';
+        avatarEl.className = 'w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center text-lg font-semibold';
+        status = 'Your personal notes';
+    } else if (isAgent) {
+        name = currentChat.other_user?.display_name || 'Mizu Agent';
+        avatarEl.innerHTML = '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>';
+        avatarEl.className = 'w-10 h-10 rounded-full bg-purple-500 text-white flex items-center justify-center text-lg font-semibold';
+        status = 'AI Assistant';
+    } else if (currentChat.type === 'direct') {
+        name = currentChat.other_user?.display_name || currentChat.other_user?.username;
+        avatarEl.textContent = name ? name.charAt(0).toUpperCase() : '?';
+        avatarEl.className = 'w-10 h-10 rounded-full bg-tertiary flex items-center justify-center text-lg font-semibold text-primary';
+        status = 'Online';
+    } else {
+        name = currentChat.group_name || currentChat.name;
+        avatarEl.textContent = name ? name.charAt(0).toUpperCase() : '?';
+        avatarEl.className = 'w-10 h-10 rounded-full bg-tertiary flex items-center justify-center text-lg font-semibold text-primary';
+        status = `${currentChat.participant_count || 0} members`;
+    }
 
     document.getElementById('chat-name').textContent = name;
-    document.getElementById('chat-avatar').textContent = name ? name.charAt(0).toUpperCase() : '?';
-    document.getElementById('chat-status').textContent = currentChat.type === 'direct' ? 'Online' : `${currentChat.participant_count || 0} members`;
+    document.getElementById('chat-status').textContent = status;
 
     renderChatList(); // Update active state
     await loadMessages(chatId);
 
     // Mark as read
     markAsRead(chatId);
+}
+
+// Open Saved Messages (self-chat)
+async function openSavedMessages() {
+    // Check if saved messages chat already exists
+    const savedChat = chats.find(c =>
+        c.type === 'direct' && c.other_user?.id === currentUser?.id
+    );
+
+    if (savedChat) {
+        selectChat(savedChat.id);
+        return;
+    }
+
+    // Create saved messages chat (chat with self)
+    try {
+        const res = await fetch('/api/v1/chats', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                type: 'direct',
+                recipient_id: currentUser.id
+            })
+        });
+
+        const data = await res.json();
+        if (data.success && data.data) {
+            // Refresh chats to get the new one with proper user info
+            await loadChats();
+            selectChat(data.data.id);
+        }
+    } catch (err) {
+        console.error('Failed to create saved messages:', err);
+    }
 }
 
 // Close chat (mobile)
@@ -302,16 +455,26 @@ function closeChat() {
 
 // Load messages for a chat
 async function loadMessages(chatId) {
+    const container = document.getElementById('messages');
+    container.innerHTML = `
+        <div class="flex items-center justify-center h-full">
+            <div class="animate-spin w-8 h-8 border-2 border-[#25D366] border-t-transparent rounded-full"></div>
+        </div>
+    `;
+
     try {
         const res = await fetch(`/api/v1/chats/${chatId}/messages`);
         const data = await res.json();
         if (data.success) {
-            messages = data.messages || [];
+            messages = data.data || [];
             renderMessages();
             scrollToBottom();
+        } else {
+            showError('Failed to load messages');
         }
     } catch (err) {
         console.error('Failed to load messages:', err);
+        showError('Failed to load messages');
     }
 }
 
@@ -407,13 +570,13 @@ document.getElementById('message-form').addEventListener('submit', async (e) => 
         });
 
         const data = await res.json();
-        if (data.success && data.message) {
-            messages.push(data.message);
+        if (data.success && data.data) {
+            messages.push(data.data);
             renderMessages();
             scrollToBottom();
 
             // Update chat in list
-            currentChat.last_message = data.message;
+            currentChat.last_message = data.data;
             renderChatList();
         }
     } catch (err) {
@@ -551,7 +714,65 @@ function sendTyping() {
 // Modal functions
 function showNewChatModal() {
     document.getElementById('new-chat-modal').classList.remove('hidden');
-    loadContacts();
+    document.getElementById('contact-search').value = '';
+    showRecentContacts();
+}
+
+// Show recent contacts from existing chats
+function showRecentContacts() {
+    const list = document.getElementById('contact-list');
+
+    // Extract unique users from existing chats
+    const recentUsers = [];
+    const seenIds = new Set();
+
+    for (const chat of chats) {
+        if (chat.type === 'direct' && chat.other_user) {
+            const user = chat.other_user;
+            // Skip current user (Saved Messages) but include Agent
+            if (user.id !== currentUser?.id && !seenIds.has(user.id)) {
+                seenIds.add(user.id);
+                recentUsers.push(user);
+            }
+        }
+    }
+
+    if (recentUsers.length === 0) {
+        list.innerHTML = '<div class="text-center text-secondary py-4"><p>Type to search for users</p></div>';
+        return;
+    }
+
+    let html = '<div class="text-xs text-muted uppercase tracking-wide mb-2 px-1">Recent</div>';
+    html += recentUsers.slice(0, 5).map(user => {
+        const isAgent = user.username === 'mizu-agent';
+        let avatarContent, avatarClass;
+
+        if (isAgent) {
+            avatarContent = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>';
+            avatarClass = 'bg-purple-500 text-white';
+        } else {
+            avatarContent = (user.display_name || user.username || '?').charAt(0).toUpperCase();
+            avatarClass = 'bg-tertiary text-primary';
+        }
+
+        return `
+            <div
+                class="flex items-center gap-3 p-3 rounded-lg cursor-pointer bg-hover"
+                onclick="startChat('${user.id}')"
+            >
+                <div class="w-10 h-10 rounded-full ${avatarClass} flex items-center justify-center font-semibold flex-shrink-0">
+                    ${avatarContent}
+                </div>
+                <div>
+                    <div class="font-medium text-primary">${escapeHtml(user.display_name || user.username)}</div>
+                    ${user.display_name ? `<div class="text-sm text-secondary">@${escapeHtml(user.username)}</div>` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    html += '<div class="text-xs text-muted text-center py-2 mt-2 border-t border-default">Or search for more users above</div>';
+    list.innerHTML = html;
 }
 
 function hideNewChatModal() {
@@ -563,51 +784,74 @@ function showNewGroupModal() {
     alert('Group creation coming soon!');
 }
 
-// Load contacts
-async function loadContacts() {
-    try {
-        const res = await fetch('/api/v1/contacts');
-        const data = await res.json();
-        if (data.success) {
-            renderContactList(data.contacts || []);
-        }
-    } catch (err) {
-        console.error('Failed to load contacts:', err);
-    }
-}
+// Search users by query
+let searchTimeout = null;
+async function searchUsers(query) {
+    clearTimeout(searchTimeout);
 
-// Render contact list
-function renderContactList(contacts) {
     const list = document.getElementById('contact-list');
-    if (contacts.length === 0) {
-        list.innerHTML = '<div class="text-center text-secondary py-4">No contacts yet</div>';
+
+    if (query.trim().length < 2) {
+        list.innerHTML = '<div class="text-center text-secondary py-4"><p>Type to search for users</p></div>';
         return;
     }
 
-    list.innerHTML = contacts.map(contact => `
-        <div
-            class="flex items-center gap-3 p-3 rounded-lg cursor-pointer bg-hover"
-            onclick="startChat('${contact.contact_id}')"
-        >
-            <div class="w-10 h-10 rounded-full bg-tertiary flex items-center justify-center font-semibold text-primary">
-                ${(contact.display_name || contact.username || '?').charAt(0).toUpperCase()}
-            </div>
-            <div>
-                <div class="font-medium text-primary">${escapeHtml(contact.display_name || contact.username)}</div>
-                ${contact.display_name ? `<div class="text-sm text-secondary">@${escapeHtml(contact.username)}</div>` : ''}
-            </div>
-        </div>
-    `).join('');
+    list.innerHTML = '<div class="text-center text-secondary py-4"><p>Searching...</p></div>';
+
+    // Debounce the search
+    searchTimeout = setTimeout(async () => {
+        try {
+            const res = await fetch(`/api/v1/users/search?q=${encodeURIComponent(query)}`);
+            const data = await res.json();
+            if (data.success) {
+                renderUserList(data.data || []);
+            }
+        } catch (err) {
+            console.error('Failed to search users:', err);
+            list.innerHTML = '<div class="text-center text-secondary py-4"><p>Search failed</p></div>';
+        }
+    }, 300);
 }
 
-// Search contacts
-function searchContacts(query) {
-    const items = document.querySelectorAll('#contact-list > div');
-    const q = query.toLowerCase();
-    items.forEach(item => {
-        const name = item.textContent.toLowerCase();
-        item.style.display = name.includes(q) ? 'flex' : 'none';
-    });
+// Render user list for new chat
+function renderUserList(users) {
+    const list = document.getElementById('contact-list');
+
+    // Filter out current user from the list (they can use Saved Messages instead)
+    const filteredUsers = users.filter(u => u.id !== currentUser?.id);
+
+    if (filteredUsers.length === 0) {
+        list.innerHTML = '<div class="text-center text-secondary py-4">No users found</div>';
+        return;
+    }
+
+    list.innerHTML = filteredUsers.map(user => {
+        const isAgent = user.username === 'mizu-agent';
+        let avatarContent, avatarClass;
+
+        if (isAgent) {
+            avatarContent = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>';
+            avatarClass = 'bg-purple-500 text-white';
+        } else {
+            avatarContent = (user.display_name || user.username || '?').charAt(0).toUpperCase();
+            avatarClass = 'bg-tertiary text-primary';
+        }
+
+        return `
+            <div
+                class="flex items-center gap-3 p-3 rounded-lg cursor-pointer bg-hover"
+                onclick="startChat('${user.id}')"
+            >
+                <div class="w-10 h-10 rounded-full ${avatarClass} flex items-center justify-center font-semibold flex-shrink-0">
+                    ${avatarContent}
+                </div>
+                <div>
+                    <div class="font-medium text-primary">${escapeHtml(user.display_name || user.username)}</div>
+                    ${user.display_name ? `<div class="text-sm text-secondary">@${escapeHtml(user.username)}</div>` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
 }
 
 // Start chat with contact
@@ -618,18 +862,18 @@ async function startChat(contactId) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 type: 'direct',
-                participant_id: contactId
+                recipient_id: contactId
             })
         });
 
         const data = await res.json();
-        if (data.success && data.chat) {
+        if (data.success && data.data) {
             hideNewChatModal();
-            if (!chats.find(c => c.id === data.chat.id)) {
-                chats.unshift(data.chat);
+            if (!chats.find(c => c.id === data.data.id)) {
+                chats.unshift(data.data);
             }
             renderChatList();
-            selectChat(data.chat.id);
+            selectChat(data.data.id);
         }
     } catch (err) {
         console.error('Failed to create chat:', err);
