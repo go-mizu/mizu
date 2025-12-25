@@ -1,0 +1,803 @@
+{{define "content"}}
+<div style="display: flex; height: 100vh; padding: 8px; gap: 8px;">
+    <!-- Buddy List Window -->
+    <div id="buddy-list-window" class="win-window" style="width: 200px; display: flex; flex-direction: column;">
+        <!-- Title Bar -->
+        <div class="win-titlebar">
+            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect fill='%23FFCC00' width='16' height='16' rx='2'/%3E%3Ccircle cx='8' cy='5' r='3' fill='%23000'/%3E%3Cpath d='M4 10c0-2 2-4 4-4s4 2 4 4v5H4z' fill='%23000'/%3E%3C/svg%3E" class="win-titlebar-icon" alt="AIM">
+            <span class="win-titlebar-text">Buddy List</span>
+            <div class="win-titlebar-buttons">
+                <button class="win-titlebar-btn" title="Minimize">_</button>
+                <button class="win-titlebar-btn" title="Maximize">□</button>
+                <button class="win-titlebar-btn" title="Close">×</button>
+            </div>
+        </div>
+
+        <!-- Menu Bar -->
+        <div class="win-menubar">
+            <span class="win-menu-item"><u>M</u>y AIM</span>
+            <span class="win-menu-item"><u>P</u>eople</span>
+            <span class="win-menu-item"><u>H</u>elp</span>
+        </div>
+
+        <!-- User Info -->
+        <div style="background: #c0c0c0; padding: 4px; border-bottom: 1px solid #808080;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+                <div class="aim-buddy-icon aim-icon-online"></div>
+                <span id="user-screenname" style="font-weight: bold;"></span>
+            </div>
+        </div>
+
+        <!-- Buddy Categories -->
+        <div class="aim-buddy-list" style="flex: 1; overflow-y: auto;">
+            <div id="buddy-categories">
+                <!-- Buddies category -->
+                <div class="aim-category" onclick="toggleCategory(this)">
+                    <span class="aim-category-icon">-</span>
+                    <span>Buddies (<span class="online-count">0</span>/<span class="total-count">0</span>)</span>
+                </div>
+                <div class="aim-category-content" id="buddies-list">
+                    <!-- Buddies loaded dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="aim-toolbar">
+            <button class="aim-toolbar-btn" onclick="showNewChatModal()" title="Send IM">
+                <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 2h12v10H6l-4 3v-3H2z" fill="none" stroke="#000" stroke-width="1"/></svg>
+            </button>
+            <button class="aim-toolbar-btn" onclick="showQRModal()" title="Get Info">
+                <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="5" r="3" fill="none" stroke="#000"/><path d="M4 14v-2c0-2 2-3 4-3s4 1 4 3v2" fill="none" stroke="#000"/></svg>
+            </button>
+            <button class="aim-toolbar-btn" title="Chat">
+                <svg width="16" height="16" viewBox="0 0 16 16"><path d="M1 1h14v9H5l-4 4v-4H1z" fill="none" stroke="#000"/><path d="M4 4h8M4 7h6" stroke="#000"/></svg>
+            </button>
+            <div style="flex: 1;"></div>
+            <button class="aim-toolbar-btn" onclick="window.location.href='/settings'" title="Setup">
+                <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="#000"/><circle cx="8" cy="8" r="2" fill="#000"/></svg>
+            </button>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="win-statusbar">
+            <div class="win-statusbar-panel" id="status-text">Online</div>
+        </div>
+    </div>
+
+    <!-- IM Window (shown when chat selected) -->
+    <div id="im-window" class="win-window" style="flex: 1; display: none; flex-direction: column;">
+        <!-- Title Bar -->
+        <div class="win-titlebar">
+            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect fill='%23FFCC00' width='16' height='16' rx='2'/%3E%3Ccircle cx='8' cy='5' r='3' fill='%23000'/%3E%3Cpath d='M4 10c0-2 2-4 4-4s4 2 4 4v5H4z' fill='%23000'/%3E%3C/svg%3E" class="win-titlebar-icon" alt="AIM">
+            <span class="win-titlebar-text" id="im-title">Instant Message</span>
+            <div class="win-titlebar-buttons">
+                <button class="win-titlebar-btn" title="Minimize">_</button>
+                <button class="win-titlebar-btn" title="Maximize">□</button>
+                <button class="win-titlebar-btn" onclick="closeChat()" title="Close">×</button>
+            </div>
+        </div>
+
+        <!-- Menu Bar -->
+        <div class="win-menubar">
+            <span class="win-menu-item"><u>F</u>ile</span>
+            <span class="win-menu-item"><u>E</u>dit</span>
+            <span class="win-menu-item"><u>I</u>nsert</span>
+            <span class="win-menu-item"><u>P</u>eople</span>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="aim-toolbar">
+            <button class="aim-toolbar-btn" title="Warn">⚠</button>
+            <button class="aim-toolbar-btn" title="Block">🚫</button>
+            <button class="aim-toolbar-btn" title="Add Buddy">➕</button>
+            <div style="flex: 1;"></div>
+            <button class="aim-toolbar-btn" title="Get Info">ℹ</button>
+        </div>
+
+        <!-- Message Display Area -->
+        <div class="aim-message-area" id="messages" style="flex: 1; min-height: 200px;">
+            <!-- Messages will be loaded here -->
+        </div>
+
+        <!-- Formatting Toolbar -->
+        <div style="background: #c0c0c0; padding: 2px 4px; display: flex; gap: 4px; border-top: 1px solid #808080;">
+            <select class="win-input" style="width: 100px;">
+                <option>Arial</option>
+                <option>Times</option>
+                <option>Comic Sans</option>
+            </select>
+            <select class="win-input" style="width: 50px;">
+                <option>10</option>
+                <option>12</option>
+                <option>14</option>
+            </select>
+            <button class="aim-toolbar-btn" style="font-weight: bold;">B</button>
+            <button class="aim-toolbar-btn" style="font-style: italic;">I</button>
+            <button class="aim-toolbar-btn" style="text-decoration: underline;">U</button>
+            <div style="width: 16px; height: 16px; background: #000; border: 1px inset;"></div>
+        </div>
+
+        <!-- Message Input -->
+        <div style="background: #c0c0c0; padding: 4px;">
+            <textarea id="message-input" class="win-textarea" style="width: 100%; height: 60px;" placeholder="Type your message here..." onkeydown="handleKeyDown(event)"></textarea>
+        </div>
+
+        <!-- Send/Buttons Bar -->
+        <div style="background: #c0c0c0; padding: 4px 8px; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #fff;">
+            <button class="win-button" onclick="document.getElementById('message-form').dispatchEvent(new Event('submit'))">Send</button>
+            <button class="win-button" onclick="closeChat()">Close</button>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="win-statusbar">
+            <div class="win-statusbar-panel" id="typing-status">Ready</div>
+            <div class="win-statusbar-panel" style="flex: none; width: 100px;" id="char-count">0 chars</div>
+        </div>
+    </div>
+
+    <!-- Empty State (no chat selected) -->
+    <div id="empty-state" class="win-window" style="flex: 1; display: flex; flex-direction: column;">
+        <div class="win-titlebar">
+            <span class="win-titlebar-text">Welcome to AOL Instant Messenger</span>
+        </div>
+        <div style="flex: 1; display: flex; align-items: center; justify-content: center; background: #c0c0c0;">
+            <div style="text-align: center;">
+                <div class="aim-logo" style="margin: 0 auto 16px;"></div>
+                <div style="font-size: 14px; font-weight: bold; margin-bottom: 8px;">Welcome!</div>
+                <div style="margin-bottom: 16px;">Double-click a buddy to send an Instant Message</div>
+                <button class="win-button win-button-default" onclick="showNewChatModal()">Send an Instant Message</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- New IM Modal -->
+<div id="new-chat-modal" class="win-dialog-overlay" style="display: none;">
+    <div class="win-dialog">
+        <div class="win-titlebar">
+            <span class="win-titlebar-text">New Instant Message</span>
+            <div class="win-titlebar-buttons">
+                <button class="win-titlebar-btn" onclick="hideNewChatModal()">×</button>
+            </div>
+        </div>
+        <div class="win-dialog-content">
+            <div style="margin-bottom: 12px;">
+                <label style="display: block; margin-bottom: 4px;">To:</label>
+                <input type="text" id="contact-search" class="win-input" style="width: 100%;" placeholder="Enter Screen Name" oninput="searchUsers(this.value)">
+            </div>
+            <div id="contact-list" class="win-listbox" style="height: 150px; overflow-y: auto;">
+                <div style="padding: 8px; color: #808080;">Type to search for users...</div>
+            </div>
+        </div>
+        <div class="win-dialog-buttons">
+            <button class="win-button win-button-default" onclick="hideNewChatModal()">OK</button>
+            <button class="win-button" onclick="hideNewChatModal()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- QR/Friend Code Modal -->
+<div id="qr-modal" class="win-dialog-overlay" style="display: none;">
+    <div class="win-dialog" style="width: 350px;">
+        <div class="win-titlebar">
+            <span class="win-titlebar-text">Your Screen Name Info</span>
+            <div class="win-titlebar-buttons">
+                <button class="win-titlebar-btn" onclick="hideQRModal()">×</button>
+            </div>
+        </div>
+        <div class="win-dialog-content">
+            <!-- Tabs -->
+            <div class="win-tabs">
+                <div class="win-tab active" onclick="switchQRTab('my-code')" id="qr-tab-my-code">My Code</div>
+                <div class="win-tab" onclick="switchQRTab('scan')" id="qr-tab-scan">Add Buddy</div>
+            </div>
+            <div class="win-tab-content">
+                <!-- My Code Tab -->
+                <div id="qr-my-code-content">
+                    <div style="text-align: center; margin-bottom: 8px;">Share this code to let others add you:</div>
+                    <div id="qr-code-container" style="background: #fff; padding: 8px; margin: 0 auto; width: fit-content; border: 2px inset;">
+                        Loading...
+                    </div>
+                    <div style="text-align: center; margin-top: 8px;">
+                        <div id="qr-code-text" style="font-family: monospace !important; font-size: 14px; font-weight: bold;"></div>
+                    </div>
+                    <div style="margin-top: 12px; display: flex; gap: 8px; justify-content: center;">
+                        <button class="win-button" onclick="copyFriendCode()">Copy Code</button>
+                        <button class="win-button" onclick="copyFriendLink()">Copy Link</button>
+                    </div>
+                </div>
+                <!-- Add Buddy Tab -->
+                <div id="qr-scan-content" style="display: none;">
+                    <div style="margin-bottom: 8px;">Enter a friend code to add a buddy:</div>
+                    <input type="text" id="friend-code-input" class="win-input" style="width: 100%; text-align: center; font-family: monospace !important;" placeholder="MIZU-XXXXXXXX" oninput="this.value = this.value.toUpperCase()">
+                    <div style="margin-top: 12px;">
+                        <button class="win-button win-button-default" onclick="lookupFriendCode()" style="width: 100%;">Look Up Buddy</button>
+                    </div>
+                    <div id="friend-code-result" style="margin-top: 8px; display: none;"></div>
+                </div>
+            </div>
+        </div>
+        <div class="win-dialog-buttons">
+            <button class="win-button" onclick="hideQRModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Friend Preview Modal -->
+<div id="friend-preview-modal" class="win-dialog-overlay" style="display: none;">
+    <div class="win-dialog" style="width: 280px;">
+        <div class="win-titlebar">
+            <span class="win-titlebar-text">Add Buddy</span>
+            <div class="win-titlebar-buttons">
+                <button class="win-titlebar-btn" onclick="hideFriendPreviewModal()">×</button>
+            </div>
+        </div>
+        <div class="win-dialog-content" style="text-align: center;">
+            <div class="aim-buddy-icon aim-icon-online" style="width: 48px; height: 48px; margin: 0 auto 8px;"></div>
+            <div id="friend-preview-name" style="font-weight: bold; font-size: 14px;"></div>
+            <div id="friend-preview-username" style="color: #808080;"></div>
+            <div id="friend-preview-status" style="margin-top: 8px; font-style: italic;"></div>
+        </div>
+        <div class="win-dialog-buttons">
+            <button class="win-button win-button-default" onclick="confirmAddFriend()">Add Buddy</button>
+            <button class="win-button" onclick="hideFriendPreviewModal()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<form id="message-form" style="display: none;"></form>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+// App state
+let currentUser = null;
+let currentChat = null;
+let chats = [];
+let messages = [];
+let ws = null;
+let typingTimeout = null;
+
+// Initialize app
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadCurrentUser();
+    await ensureUserChats();
+    await loadChats();
+    connectWebSocket();
+
+    // Update char count
+    document.getElementById('message-input').addEventListener('input', function() {
+        document.getElementById('char-count').textContent = this.value.length + ' chars';
+    });
+});
+
+// Ensure user has default chats
+async function ensureUserChats() {
+    try {
+        await fetch('/api/v1/users/ensure-chats', { method: 'POST' });
+    } catch (err) {
+        console.error('Failed to ensure user chats:', err);
+    }
+}
+
+// Load current user
+async function loadCurrentUser() {
+    try {
+        const res = await fetch('/api/v1/users/me');
+        const data = await res.json();
+        if (data.success && data.data) {
+            currentUser = data.data;
+            document.getElementById('user-screenname').textContent = currentUser.display_name || currentUser.username;
+        } else {
+            window.location.href = '/login';
+        }
+    } catch (err) {
+        console.error('Failed to load user:', err);
+        window.location.href = '/login';
+    }
+}
+
+// Load chats
+async function loadChats() {
+    try {
+        const res = await fetch('/api/v1/chats');
+        const data = await res.json();
+        if (data.success) {
+            chats = data.data || [];
+            renderBuddyList();
+        }
+    } catch (err) {
+        console.error('Failed to load chats:', err);
+    }
+}
+
+// Render buddy list
+function renderBuddyList() {
+    const container = document.getElementById('buddies-list');
+    const onlineCount = chats.filter(c => c.type === 'direct').length;
+
+    document.querySelector('.online-count').textContent = onlineCount;
+    document.querySelector('.total-count').textContent = chats.length;
+
+    if (chats.length === 0) {
+        container.innerHTML = '<div style="padding: 4px 20px; color: #808080; font-style: italic;">No buddies yet</div>';
+        return;
+    }
+
+    container.innerHTML = chats.map(chat => {
+        const isSelfChat = chat.type === 'direct' && chat.other_user?.id === currentUser?.id;
+        const isAgent = chat.type === 'direct' && chat.other_user?.username === 'mizu-agent';
+
+        let name, iconClass;
+        if (isSelfChat) {
+            name = 'Saved Messages';
+            iconClass = 'aim-icon-away';
+        } else if (isAgent) {
+            name = chat.other_user?.display_name || 'Mizu Agent';
+            iconClass = 'aim-icon-online';
+        } else if (chat.type === 'direct') {
+            name = chat.other_user?.display_name || chat.other_user?.username;
+            iconClass = 'aim-icon-online';
+        } else {
+            name = chat.group_name || chat.name;
+            iconClass = 'aim-icon-online';
+        }
+
+        const isActive = currentChat?.id === chat.id;
+        const unread = chat.unread_count || 0;
+
+        return `
+            <div class="aim-buddy ${isActive ? 'selected' : ''}" ondblclick="selectChat('${chat.id}')">
+                <div class="aim-buddy-icon ${iconClass}"></div>
+                <span>${escapeHtml(name)}${unread > 0 ? ' (' + unread + ')' : ''}</span>
+            </div>
+        `;
+    }).join('');
+}
+
+// Toggle category expand/collapse
+function toggleCategory(el) {
+    const icon = el.querySelector('.aim-category-icon');
+    const content = el.nextElementSibling;
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+        icon.textContent = '-';
+    } else {
+        content.style.display = 'none';
+        icon.textContent = '+';
+    }
+}
+
+// Select a chat
+async function selectChat(chatId) {
+    currentChat = chats.find(c => c.id === chatId);
+    if (!currentChat) return;
+
+    // Show IM window, hide empty state
+    document.getElementById('empty-state').style.display = 'none';
+    document.getElementById('im-window').style.display = 'flex';
+
+    // Update title
+    const isSelfChat = currentChat.type === 'direct' && currentChat.other_user?.id === currentUser?.id;
+    const isAgent = currentChat.type === 'direct' && currentChat.other_user?.username === 'mizu-agent';
+    let name;
+    if (isSelfChat) {
+        name = 'Saved Messages';
+    } else if (isAgent) {
+        name = currentChat.other_user?.display_name || 'Mizu Agent';
+    } else if (currentChat.type === 'direct') {
+        name = currentChat.other_user?.display_name || currentChat.other_user?.username;
+    } else {
+        name = currentChat.group_name || currentChat.name;
+    }
+    document.getElementById('im-title').textContent = name + ' - Instant Message';
+
+    renderBuddyList();
+    await loadMessages(chatId);
+    markAsRead(chatId);
+}
+
+// Close chat
+function closeChat() {
+    currentChat = null;
+    document.getElementById('im-window').style.display = 'none';
+    document.getElementById('empty-state').style.display = 'flex';
+    renderBuddyList();
+}
+
+// Load messages
+async function loadMessages(chatId) {
+    const container = document.getElementById('messages');
+    container.innerHTML = '<div style="padding: 8px; color: #808080;">Loading...</div>';
+
+    try {
+        const res = await fetch(`/api/v1/chats/${chatId}/messages`);
+        const data = await res.json();
+        if (data.success) {
+            messages = data.data || [];
+            renderMessages();
+        }
+    } catch (err) {
+        console.error('Failed to load messages:', err);
+    }
+}
+
+// Render messages in AIM style
+function renderMessages() {
+    const container = document.getElementById('messages');
+    if (messages.length === 0) {
+        container.innerHTML = '<div style="padding: 8px; color: #808080; font-style: italic;">No messages yet. Start the conversation!</div>';
+        return;
+    }
+
+    container.innerHTML = messages.map(msg => {
+        const isSent = msg.sender_id === currentUser?.id;
+        const senderName = isSent ? (currentUser.display_name || currentUser.username) : (msg.sender_name || 'Unknown');
+        const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        return `
+            <div class="aim-message">
+                <div class="aim-message-header ${isSent ? 'sent' : 'received'}">
+                    ${escapeHtml(senderName)} <span class="aim-message-time">(${time})</span>:
+                </div>
+                <div class="aim-message-content">${escapeHtml(msg.content)}</div>
+            </div>
+        `;
+    }).join('');
+
+    container.scrollTop = container.scrollHeight;
+}
+
+// Mark as read
+async function markAsRead(chatId) {
+    try {
+        await fetch(`/api/v1/chats/${chatId}/read`, { method: 'POST' });
+        const chat = chats.find(c => c.id === chatId);
+        if (chat) chat.unread_count = 0;
+        renderBuddyList();
+    } catch (err) {
+        console.error('Failed to mark as read:', err);
+    }
+}
+
+// Handle message form submission
+document.getElementById('message-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = document.getElementById('message-input');
+    const content = input.value.trim();
+
+    if (!content || !currentChat) return;
+
+    input.value = '';
+    document.getElementById('char-count').textContent = '0 chars';
+
+    try {
+        const res = await fetch(`/api/v1/chats/${currentChat.id}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content })
+        });
+
+        const data = await res.json();
+        if (data.success && data.data) {
+            messages.push(data.data);
+            renderMessages();
+            currentChat.last_message = data.data;
+            renderBuddyList();
+        }
+    } catch (err) {
+        console.error('Failed to send message:', err);
+    }
+});
+
+// Handle Enter key
+function handleKeyDown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        document.getElementById('message-form').dispatchEvent(new Event('submit'));
+    }
+}
+
+// WebSocket connection
+function connectWebSocket() {
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${protocol}//${location.host}/ws`);
+
+    ws.onopen = () => console.log('WebSocket connected');
+
+    ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        handleWebSocketMessage(data);
+    };
+
+    ws.onclose = () => {
+        console.log('WebSocket disconnected, reconnecting...');
+        setTimeout(connectWebSocket, 3000);
+    };
+
+    ws.onerror = (err) => console.error('WebSocket error:', err);
+}
+
+function handleWebSocketMessage(data) {
+    switch(data.type) {
+        case 'new_message':
+            handleNewMessage(data.message);
+            break;
+        case 'typing':
+            handleTyping(data);
+            break;
+    }
+}
+
+function handleNewMessage(msg) {
+    const chat = chats.find(c => c.id === msg.chat_id);
+    if (chat) {
+        chat.last_message = msg;
+        if (currentChat?.id !== msg.chat_id) {
+            chat.unread_count = (chat.unread_count || 0) + 1;
+        }
+        chats = [chat, ...chats.filter(c => c.id !== chat.id)];
+        renderBuddyList();
+    }
+
+    if (currentChat?.id === msg.chat_id) {
+        messages.push(msg);
+        renderMessages();
+        markAsRead(msg.chat_id);
+    }
+}
+
+function handleTyping(data) {
+    if (currentChat?.id === data.chat_id && data.user_id !== currentUser?.id) {
+        document.getElementById('typing-status').textContent = (data.user_name || 'User') + ' is typing...';
+        clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(() => {
+            document.getElementById('typing-status').textContent = 'Ready';
+        }, 3000);
+    }
+}
+
+// Modal functions
+function showNewChatModal() {
+    document.getElementById('new-chat-modal').style.display = 'flex';
+    document.getElementById('contact-search').value = '';
+    document.getElementById('contact-search').focus();
+    showRecentContacts();
+}
+
+function hideNewChatModal() {
+    document.getElementById('new-chat-modal').style.display = 'none';
+}
+
+function showRecentContacts() {
+    const list = document.getElementById('contact-list');
+    const recentUsers = [];
+    const seenIds = new Set();
+
+    for (const chat of chats) {
+        if (chat.type === 'direct' && chat.other_user) {
+            const user = chat.other_user;
+            if (user.id !== currentUser?.id && !seenIds.has(user.id)) {
+                seenIds.add(user.id);
+                recentUsers.push(user);
+            }
+        }
+    }
+
+    if (recentUsers.length === 0) {
+        list.innerHTML = '<div style="padding: 8px; color: #808080;">Type to search for users...</div>';
+        return;
+    }
+
+    list.innerHTML = recentUsers.slice(0, 5).map(user => `
+        <div class="win-listbox-item" ondblclick="startChat('${user.id}')">
+            ${escapeHtml(user.display_name || user.username)}
+        </div>
+    `).join('');
+}
+
+let searchTimeout = null;
+async function searchUsers(query) {
+    clearTimeout(searchTimeout);
+    const list = document.getElementById('contact-list');
+
+    if (query.trim().length < 2) {
+        showRecentContacts();
+        return;
+    }
+
+    list.innerHTML = '<div style="padding: 8px; color: #808080;">Searching...</div>';
+
+    searchTimeout = setTimeout(async () => {
+        try {
+            const res = await fetch(`/api/v1/users/search?q=${encodeURIComponent(query)}`);
+            const data = await res.json();
+            if (data.success) {
+                const users = (data.data || []).filter(u => u.id !== currentUser?.id);
+                if (users.length === 0) {
+                    list.innerHTML = '<div style="padding: 8px; color: #808080;">No users found</div>';
+                } else {
+                    list.innerHTML = users.map(user => `
+                        <div class="win-listbox-item" ondblclick="startChat('${user.id}')">
+                            ${escapeHtml(user.display_name || user.username)}
+                        </div>
+                    `).join('');
+                }
+            }
+        } catch (err) {
+            console.error('Search failed:', err);
+        }
+    }, 300);
+}
+
+async function startChat(contactId) {
+    try {
+        const res = await fetch('/api/v1/chats', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'direct', recipient_id: contactId })
+        });
+
+        const data = await res.json();
+        if (data.success && data.data) {
+            hideNewChatModal();
+            if (!chats.find(c => c.id === data.data.id)) {
+                chats.unshift(data.data);
+            }
+            renderBuddyList();
+            selectChat(data.data.id);
+        }
+    } catch (err) {
+        console.error('Failed to create chat:', err);
+    }
+}
+
+// QR Modal functions
+let currentFriendCode = null;
+let pendingFriendUser = null;
+let pendingFriendCodeToAdd = null;
+
+function showQRModal() {
+    document.getElementById('qr-modal').style.display = 'flex';
+    switchQRTab('my-code');
+    loadMyFriendCode();
+}
+
+function hideQRModal() {
+    document.getElementById('qr-modal').style.display = 'none';
+}
+
+function switchQRTab(tab) {
+    const tabs = document.querySelectorAll('.win-tab');
+    tabs.forEach(t => t.classList.remove('active'));
+
+    if (tab === 'my-code') {
+        document.getElementById('qr-tab-my-code').classList.add('active');
+        document.getElementById('qr-my-code-content').style.display = 'block';
+        document.getElementById('qr-scan-content').style.display = 'none';
+    } else {
+        document.getElementById('qr-tab-scan').classList.add('active');
+        document.getElementById('qr-my-code-content').style.display = 'none';
+        document.getElementById('qr-scan-content').style.display = 'block';
+        document.getElementById('friend-code-input').focus();
+    }
+}
+
+async function loadMyFriendCode() {
+    const container = document.getElementById('qr-code-container');
+    const codeText = document.getElementById('qr-code-text');
+
+    container.innerHTML = 'Generating...';
+    codeText.textContent = '';
+
+    try {
+        const res = await fetch('/api/v1/friend-code');
+        const data = await res.json();
+        if (data.success && data.data) {
+            currentFriendCode = data.data;
+            codeText.textContent = data.data.code;
+
+            container.innerHTML = '';
+            if (typeof QRCode !== 'undefined') {
+                new QRCode(container, {
+                    text: data.data.qr_data,
+                    width: 120,
+                    height: 120,
+                    colorDark: '#000000',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.M
+                });
+            }
+        }
+    } catch (err) {
+        console.error('Failed to load friend code:', err);
+        container.innerHTML = 'Error loading code';
+    }
+}
+
+function copyFriendCode() {
+    if (currentFriendCode?.code) {
+        navigator.clipboard.writeText(currentFriendCode.code);
+        alert('Code copied!');
+    }
+}
+
+function copyFriendLink() {
+    if (currentFriendCode?.qr_data) {
+        const link = currentFriendCode.qr_data.startsWith('http') ? currentFriendCode.qr_data : window.location.origin + currentFriendCode.qr_data;
+        navigator.clipboard.writeText(link);
+        alert('Link copied!');
+    }
+}
+
+async function lookupFriendCode() {
+    const code = document.getElementById('friend-code-input').value.trim();
+    const resultDiv = document.getElementById('friend-code-result');
+
+    if (!code) {
+        alert('Please enter a friend code');
+        return;
+    }
+
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = '<div style="color: #808080;">Looking up...</div>';
+
+    try {
+        const res = await fetch(`/api/v1/friend-code/${encodeURIComponent(code)}`);
+        const data = await res.json();
+
+        if (data.success && data.data) {
+            pendingFriendUser = data.data;
+            pendingFriendCodeToAdd = code;
+            hideQRModal();
+            showFriendPreviewModal(data.data);
+        } else {
+            resultDiv.innerHTML = '<div style="color: #ff0000;">Invalid or expired code</div>';
+        }
+    } catch (err) {
+        resultDiv.innerHTML = '<div style="color: #ff0000;">Error looking up code</div>';
+    }
+}
+
+function showFriendPreviewModal(user) {
+    document.getElementById('friend-preview-name').textContent = user.display_name || user.username;
+    document.getElementById('friend-preview-username').textContent = '@' + user.username;
+    document.getElementById('friend-preview-status').textContent = user.status || 'Online';
+    document.getElementById('friend-preview-modal').style.display = 'flex';
+}
+
+function hideFriendPreviewModal() {
+    document.getElementById('friend-preview-modal').style.display = 'none';
+    pendingFriendUser = null;
+    pendingFriendCodeToAdd = null;
+}
+
+async function confirmAddFriend() {
+    if (!pendingFriendCodeToAdd) return;
+
+    try {
+        const res = await fetch(`/api/v1/friend-code/${encodeURIComponent(pendingFriendCodeToAdd)}`, { method: 'POST' });
+        const data = await res.json();
+
+        if (data.success) {
+            hideFriendPreviewModal();
+            alert('Buddy added!');
+            if (pendingFriendUser?.id) {
+                startChat(pendingFriendUser.id);
+            }
+        } else {
+            alert(data.error || 'Failed to add buddy');
+        }
+    } catch (err) {
+        alert('Error adding buddy');
+    }
+}
+
+// Utility
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+</script>
+{{end}}

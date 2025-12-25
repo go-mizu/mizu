@@ -173,10 +173,97 @@
         <section class="bg-secondary rounded-xl p-6">
             <h2 class="text-lg font-semibold text-primary mb-6">Appearance</h2>
 
-            <div class="flex items-center justify-between">
+            <div class="mb-6">
+                <div class="font-medium text-primary mb-2">Theme</div>
+                <div class="text-sm text-secondary mb-4">Choose your preferred visual style</div>
+
+                <!-- Theme Selection Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <!-- Modern Dark Theme -->
+                    <label class="theme-card cursor-pointer">
+                        <input type="radio" name="theme" value="dark" class="sr-only peer">
+                        <div class="peer-checked:ring-2 peer-checked:ring-[#25D366] rounded-lg overflow-hidden border border-default hover:border-[#25D366] transition-colors">
+                            <div class="h-24 bg-[#0f0f0f] p-3">
+                                <div class="flex gap-2 mb-2">
+                                    <div class="w-8 h-8 rounded-full bg-[#1a1a1a]"></div>
+                                    <div class="flex-1">
+                                        <div class="h-2 bg-[#1a1a1a] rounded w-16 mb-1"></div>
+                                        <div class="h-1.5 bg-[#252525] rounded w-12"></div>
+                                    </div>
+                                </div>
+                                <div class="flex justify-end">
+                                    <div class="bg-[#005c4b] rounded-lg px-2 py-1">
+                                        <div class="h-1.5 bg-[#0f0f0f]/30 rounded w-8"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="p-3 bg-tertiary">
+                                <div class="font-medium text-primary text-sm">Modern Dark</div>
+                                <div class="text-xs text-muted">Default dark theme</div>
+                            </div>
+                        </div>
+                    </label>
+
+                    <!-- Modern Light Theme -->
+                    <label class="theme-card cursor-pointer">
+                        <input type="radio" name="theme" value="light" class="sr-only peer">
+                        <div class="peer-checked:ring-2 peer-checked:ring-[#25D366] rounded-lg overflow-hidden border border-default hover:border-[#25D366] transition-colors">
+                            <div class="h-24 bg-[#ffffff] p-3">
+                                <div class="flex gap-2 mb-2">
+                                    <div class="w-8 h-8 rounded-full bg-[#f0f2f5]"></div>
+                                    <div class="flex-1">
+                                        <div class="h-2 bg-[#f0f2f5] rounded w-16 mb-1"></div>
+                                        <div class="h-1.5 bg-[#e9edef] rounded w-12"></div>
+                                    </div>
+                                </div>
+                                <div class="flex justify-end">
+                                    <div class="bg-[#d9fdd3] rounded-lg px-2 py-1">
+                                        <div class="h-1.5 bg-[#000]/10 rounded w-8"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="p-3 bg-tertiary">
+                                <div class="font-medium text-primary text-sm">Modern Light</div>
+                                <div class="text-xs text-muted">Clean light theme</div>
+                            </div>
+                        </div>
+                    </label>
+
+                    <!-- AIM 1.0 Theme -->
+                    <label class="theme-card cursor-pointer">
+                        <input type="radio" name="theme" value="aim1.0" class="sr-only peer">
+                        <div class="peer-checked:ring-2 peer-checked:ring-[#000080] rounded-lg overflow-hidden border border-default hover:border-[#000080] transition-colors">
+                            <div class="h-24 bg-[#008080] p-2">
+                                <div class="bg-[#c0c0c0] h-full" style="border: 2px solid; border-color: #dfdfdf #404040 #404040 #dfdfdf; box-shadow: 1px 1px 0 #000;">
+                                    <div class="h-4 px-1 flex items-center justify-between" style="background: linear-gradient(90deg, #000080, #1084d0);">
+                                        <span class="text-white text-[8px] font-bold">Buddy List</span>
+                                        <div class="flex gap-0.5">
+                                            <div class="w-3 h-2.5 bg-[#c0c0c0]" style="border: 1px solid; border-color: #fff #404040 #404040 #fff;"></div>
+                                            <div class="w-3 h-2.5 bg-[#c0c0c0]" style="border: 1px solid; border-color: #fff #404040 #404040 #fff;"></div>
+                                        </div>
+                                    </div>
+                                    <div class="p-1 text-[8px]">
+                                        <div class="font-bold border-b border-[#808080] pb-0.5 mb-0.5">Buddies (2/3)</div>
+                                        <div class="flex items-center gap-1 px-1 text-[7px]">
+                                            <span style="color: #008000;">●</span> SmarterChild
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="p-3 bg-tertiary">
+                                <div class="font-medium text-primary text-sm">AIM 1.0</div>
+                                <div class="text-xs text-muted">Classic 1997 nostalgia</div>
+                            </div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Keep dark mode toggle for quick switching -->
+            <div class="flex items-center justify-between pt-4 border-t border-default">
                 <div>
-                    <div class="font-medium text-primary">Dark Mode</div>
-                    <div class="text-sm text-secondary">Use dark theme</div>
+                    <div class="font-medium text-primary">Quick Dark Mode Toggle</div>
+                    <div class="text-sm text-secondary">Switch between dark and light</div>
                 </div>
                 <label class="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" id="dark-mode" class="sr-only peer" onchange="toggleTheme()">
@@ -285,8 +372,8 @@ async function loadCurrentUser() {
     try {
         const res = await fetch('/api/v1/users/me');
         const data = await res.json();
-        if (data.success) {
-            currentUser = data.user;
+        if (data.success && data.data) {
+            currentUser = data.data;
             populateProfile();
         } else {
             window.location.href = '/login';
@@ -311,6 +398,14 @@ function populateProfile() {
 // Load settings from localStorage
 function loadSettings() {
     const theme = localStorage.getItem('theme') || 'dark';
+
+    // Set the theme radio button
+    const themeRadio = document.querySelector(`input[name="theme"][value="${theme}"]`);
+    if (themeRadio) {
+        themeRadio.checked = true;
+    }
+
+    // Set dark mode toggle
     document.getElementById('dark-mode').checked = theme === 'dark';
 
     // Load other settings from localStorage or API
@@ -321,6 +416,15 @@ function loadSettings() {
     document.getElementById('notify-messages').checked = settings.notifyMessages !== false;
     document.getElementById('notify-groups').checked = settings.notifyGroups !== false;
     document.getElementById('notify-sound').checked = settings.notifySound !== false;
+
+    // Add theme radio button change listeners
+    document.querySelectorAll('input[name="theme"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            if (this.checked) {
+                setTheme(this.value);
+            }
+        });
+    });
 }
 
 // Save profile
@@ -341,11 +445,11 @@ document.getElementById('profile-form').addEventListener('submit', async (e) => 
 
         const data = await res.json();
 
-        if (data.success) {
+        if (data.success && data.data) {
             messageDiv.textContent = 'Profile updated successfully';
             messageDiv.className = 'text-sm text-green-400';
             messageDiv.classList.remove('hidden');
-            currentUser = { ...currentUser, ...data.user };
+            currentUser = { ...currentUser, ...data.data };
             populateProfile();
         } else {
             messageDiv.textContent = data.error || 'Failed to update profile';

@@ -1,0 +1,160 @@
+{{define "content"}}
+<div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px;">
+    <!-- Registration Window -->
+    <div class="win-window" style="width: 380px;">
+        <!-- Title Bar -->
+        <div class="win-titlebar">
+            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect fill='%23FFCC00' width='16' height='16' rx='2'/%3E%3Ccircle cx='8' cy='5' r='3' fill='%23000'/%3E%3Cpath d='M4 10c0-2 2-4 4-4s4 2 4 4v5H4z' fill='%23000'/%3E%3C/svg%3E" class="win-titlebar-icon" alt="AIM">
+            <span class="win-titlebar-text">Get a Screen Name</span>
+            <div class="win-titlebar-buttons">
+                <button class="win-titlebar-btn" title="Minimize">_</button>
+                <button class="win-titlebar-btn" title="Close" onclick="window.location.href='/'">×</button>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div style="background: #c0c0c0; padding: 16px;">
+            <!-- Header -->
+            <div style="text-align: center; margin-bottom: 16px;">
+                <div style="font-weight: bold; font-size: 14px;">Create Your Screen Name</div>
+                <div style="font-size: 11px; color: #404040; margin-top: 4px;">
+                    Your Screen Name is your identity on AOL Instant Messenger
+                </div>
+            </div>
+
+            <form id="register-form">
+                <!-- Group Box: Account Info -->
+                <div class="win-groupbox">
+                    <span class="win-groupbox-label">Account Information</span>
+
+                    <!-- Screen Name -->
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; margin-bottom: 4px;"><u>S</u>creen Name:</label>
+                        <input type="text" id="username" name="username" class="win-input" style="width: 100%;" required placeholder="3-16 characters">
+                        <div style="font-size: 10px; color: #808080; margin-top: 2px;">Letters and numbers only</div>
+                    </div>
+
+                    <!-- Display Name -->
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; margin-bottom: 4px;"><u>D</u>isplay Name:</label>
+                        <input type="text" id="display_name" name="display_name" class="win-input" style="width: 100%;" placeholder="How others will see you">
+                    </div>
+
+                    <!-- Email -->
+                    <div style="margin-bottom: 8px;">
+                        <label style="display: block; margin-bottom: 4px;"><u>E</u>mail Address:</label>
+                        <input type="email" id="email" name="email" class="win-input" style="width: 100%;" placeholder="Optional">
+                    </div>
+                </div>
+
+                <!-- Group Box: Password -->
+                <div class="win-groupbox">
+                    <span class="win-groupbox-label">Password</span>
+
+                    <!-- Password -->
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; margin-bottom: 4px;"><u>P</u>assword:</label>
+                        <input type="password" id="password" name="password" class="win-input" style="width: 100%;" required minlength="6">
+                        <div style="font-size: 10px; color: #808080; margin-top: 2px;">At least 6 characters</div>
+                    </div>
+
+                    <!-- Confirm Password -->
+                    <div style="margin-bottom: 8px;">
+                        <label style="display: block; margin-bottom: 4px;"><u>C</u>onfirm Password:</label>
+                        <input type="password" id="confirm_password" name="confirm_password" class="win-input" style="width: 100%;" required>
+                    </div>
+                </div>
+
+                <!-- Terms -->
+                <div style="margin-bottom: 16px; padding: 8px; background: #fff; border: 2px inset; font-size: 10px; max-height: 60px; overflow-y: auto;">
+                    By creating a Screen Name, you agree to AOL's Terms of Service. You must be at least 13 years old to use this service. AOL Instant Messenger is provided "as is" without warranty.
+                </div>
+
+                <!-- Accept Terms -->
+                <div style="margin-bottom: 16px;">
+                    <label class="win-checkbox">
+                        <input type="checkbox" id="accept-terms" required>
+                        <span>I accept the Terms of Service</span>
+                    </label>
+                </div>
+
+                <!-- Error Message -->
+                <div id="error-message" style="display: none; color: #ff0000; margin-bottom: 12px; padding: 8px; background: #fff; border: 1px solid #ff0000;">
+                </div>
+
+                <!-- Buttons -->
+                <div style="display: flex; gap: 8px; justify-content: center;">
+                    <button type="submit" class="win-button win-button-default">Create Screen Name</button>
+                    <button type="button" class="win-button" onclick="window.location.href='/login'">Cancel</button>
+                </div>
+            </form>
+
+            <!-- Separator -->
+            <div style="margin: 16px 0; border-top: 1px solid #808080; border-bottom: 1px solid #fff;"></div>
+
+            <!-- Already have account -->
+            <div style="text-align: center;">
+                <span>Already have a Screen Name?</span>
+                <a href="/login" style="color: #000080; text-decoration: underline; cursor: pointer;">Sign On</a>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="win-statusbar">
+            <div class="win-statusbar-panel" id="status-text">Ready</div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('register-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const statusText = document.getElementById('status-text');
+    const errorDiv = document.getElementById('error-message');
+
+    // Validate passwords match
+    const password = document.getElementById('password').value;
+    const confirmPassword = document.getElementById('confirm_password').value;
+
+    if (password !== confirmPassword) {
+        errorDiv.textContent = 'Passwords do not match';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    statusText.textContent = 'Creating account...';
+    errorDiv.style.display = 'none';
+
+    const formData = {
+        username: document.getElementById('username').value,
+        password: password,
+        display_name: document.getElementById('display_name').value || undefined,
+        email: document.getElementById('email').value || undefined
+    };
+
+    try {
+        const res = await fetch('/api/v1/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData)
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            statusText.textContent = 'Success! Signing on...';
+            window.location.href = '/app';
+        } else {
+            statusText.textContent = 'Ready';
+            errorDiv.textContent = data.error || 'Registration failed. Please try again.';
+            errorDiv.style.display = 'block';
+        }
+    } catch (err) {
+        statusText.textContent = 'Ready';
+        errorDiv.textContent = 'Connection error. Please try again.';
+        errorDiv.style.display = 'block';
+    }
+});
+</script>
+{{end}}

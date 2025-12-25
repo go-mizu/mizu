@@ -1,0 +1,411 @@
+{{define "content"}}
+<div style="display: flex; align-items: flex-start; justify-content: center; min-height: 100vh; padding: 20px;">
+    <!-- Preferences Window -->
+    <div class="win-window" style="width: 450px;">
+        <!-- Title Bar -->
+        <div class="win-titlebar">
+            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect fill='%23FFCC00' width='16' height='16' rx='2'/%3E%3Ccircle cx='8' cy='5' r='3' fill='%23000'/%3E%3Cpath d='M4 10c0-2 2-4 4-4s4 2 4 4v5H4z' fill='%23000'/%3E%3C/svg%3E" class="win-titlebar-icon" alt="AIM">
+            <span class="win-titlebar-text">Preferences</span>
+            <div class="win-titlebar-buttons">
+                <button class="win-titlebar-btn" title="Close" onclick="window.location.href='/app'">×</button>
+            </div>
+        </div>
+
+        <!-- Menu Bar -->
+        <div class="win-menubar">
+            <span class="win-menu-item"><u>F</u>ile</span>
+            <span class="win-menu-item"><u>H</u>elp</span>
+        </div>
+
+        <!-- Content -->
+        <div style="background: #c0c0c0; padding: 12px;">
+            <!-- Tabs -->
+            <div class="win-tabs">
+                <div class="win-tab active" onclick="showTab('profile')" id="tab-profile">Profile</div>
+                <div class="win-tab" onclick="showTab('privacy')" id="tab-privacy">Privacy</div>
+                <div class="win-tab" onclick="showTab('appearance')" id="tab-appearance">Appearance</div>
+                <div class="win-tab" onclick="showTab('password')" id="tab-password">Password</div>
+            </div>
+
+            <div class="win-tab-content" style="min-height: 300px;">
+                <!-- Profile Tab -->
+                <div id="content-profile">
+                    <form id="profile-form">
+                        <div class="win-groupbox">
+                            <span class="win-groupbox-label">Your Information</span>
+
+                            <div style="display: flex; gap: 16px; margin-bottom: 12px;">
+                                <div style="width: 64px; height: 64px; background: #fff; border: 2px inset; display: flex; align-items: center; justify-content: center;">
+                                    <div id="avatar-preview" style="font-size: 32px; font-weight: bold;"></div>
+                                </div>
+                                <div style="flex: 1;">
+                                    <div style="margin-bottom: 8px;">
+                                        <label style="display: block; margin-bottom: 2px;">Display Name:</label>
+                                        <input type="text" id="display_name" class="win-input" style="width: 100%;">
+                                    </div>
+                                    <div>
+                                        <label style="display: block; margin-bottom: 2px;">Screen Name:</label>
+                                        <input type="text" id="username" class="win-input" style="width: 100%;" readonly disabled>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style="margin-bottom: 8px;">
+                                <label style="display: block; margin-bottom: 2px;">Email Address:</label>
+                                <input type="email" id="email" class="win-input" style="width: 100%;">
+                            </div>
+
+                            <div>
+                                <label style="display: block; margin-bottom: 2px;">Profile / Bio:</label>
+                                <textarea id="bio" class="win-textarea" style="width: 100%; height: 60px;"></textarea>
+                            </div>
+                        </div>
+
+                        <div id="profile-message" style="display: none; padding: 4px 8px; margin-bottom: 8px;"></div>
+
+                        <button type="submit" class="win-button win-button-default">Save Changes</button>
+                    </form>
+                </div>
+
+                <!-- Privacy Tab -->
+                <div id="content-privacy" style="display: none;">
+                    <div class="win-groupbox">
+                        <span class="win-groupbox-label">Privacy Settings</span>
+
+                        <div style="margin-bottom: 12px;">
+                            <label style="display: block; margin-bottom: 4px;">Who can see when you're online:</label>
+                            <select id="privacy-last-seen" class="win-input" style="width: 100%;">
+                                <option value="everyone">Everyone</option>
+                                <option value="contacts">My Buddies Only</option>
+                                <option value="nobody">Nobody</option>
+                            </select>
+                        </div>
+
+                        <div style="margin-bottom: 12px;">
+                            <label class="win-checkbox">
+                                <input type="checkbox" id="privacy-read-receipts" checked>
+                                <span>Let others know when I've read their messages</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="win-groupbox">
+                        <span class="win-groupbox-label">Notifications</span>
+
+                        <div style="margin-bottom: 8px;">
+                            <label class="win-checkbox">
+                                <input type="checkbox" id="notify-messages" checked>
+                                <span>Notify me of new messages</span>
+                            </label>
+                        </div>
+
+                        <div style="margin-bottom: 8px;">
+                            <label class="win-checkbox">
+                                <input type="checkbox" id="notify-sound" checked>
+                                <span>Play sound for notifications</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button type="button" class="win-button" onclick="saveSettings()">Apply</button>
+                </div>
+
+                <!-- Appearance Tab -->
+                <div id="content-appearance" style="display: none;">
+                    <div class="win-groupbox">
+                        <span class="win-groupbox-label">Theme</span>
+
+                        <div style="margin-bottom: 12px;">Choose your preferred look:</div>
+
+                        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                            <!-- Modern Dark -->
+                            <label style="cursor: pointer;">
+                                <input type="radio" name="theme" value="dark" style="display: none;">
+                                <div class="theme-option" style="width: 100px; border: 2px solid transparent; padding: 4px;">
+                                    <div style="height: 60px; background: #0f0f0f; border: 2px inset; display: flex; flex-direction: column;">
+                                        <div style="height: 12px; background: #1a1a1a;"></div>
+                                        <div style="flex: 1; padding: 4px;">
+                                            <div style="width: 60%; height: 8px; background: #005c4b; margin-left: auto;"></div>
+                                        </div>
+                                    </div>
+                                    <div style="text-align: center; margin-top: 4px; font-size: 10px;">Modern Dark</div>
+                                </div>
+                            </label>
+
+                            <!-- Modern Light -->
+                            <label style="cursor: pointer;">
+                                <input type="radio" name="theme" value="light" style="display: none;">
+                                <div class="theme-option" style="width: 100px; border: 2px solid transparent; padding: 4px;">
+                                    <div style="height: 60px; background: #fff; border: 2px inset; display: flex; flex-direction: column;">
+                                        <div style="height: 12px; background: #f0f2f5;"></div>
+                                        <div style="flex: 1; padding: 4px;">
+                                            <div style="width: 60%; height: 8px; background: #d9fdd3; margin-left: auto;"></div>
+                                        </div>
+                                    </div>
+                                    <div style="text-align: center; margin-top: 4px; font-size: 10px;">Modern Light</div>
+                                </div>
+                            </label>
+
+                            <!-- AIM 1.0 -->
+                            <label style="cursor: pointer;">
+                                <input type="radio" name="theme" value="aim1.0" style="display: none;">
+                                <div class="theme-option" style="width: 100px; border: 2px solid transparent; padding: 4px;">
+                                    <div style="height: 60px; background: #008080; border: 2px inset; padding: 4px;">
+                                        <div style="background: #c0c0c0; height: 100%; border: 1px outset;">
+                                            <div style="height: 10px; background: linear-gradient(90deg, #000080, #1084d0);"></div>
+                                            <div style="padding: 2px; font-size: 8px;">Buddies</div>
+                                        </div>
+                                    </div>
+                                    <div style="text-align: center; margin-top: 4px; font-size: 10px;">AIM Classic</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button type="button" class="win-button win-button-default" onclick="applyTheme()">Apply Theme</button>
+                </div>
+
+                <!-- Password Tab -->
+                <div id="content-password" style="display: none;">
+                    <form id="password-form">
+                        <div class="win-groupbox">
+                            <span class="win-groupbox-label">Change Password</span>
+
+                            <div style="margin-bottom: 12px;">
+                                <label style="display: block; margin-bottom: 2px;">Current Password:</label>
+                                <input type="password" id="current_password" class="win-input" style="width: 100%;">
+                            </div>
+
+                            <div style="margin-bottom: 12px;">
+                                <label style="display: block; margin-bottom: 2px;">New Password:</label>
+                                <input type="password" id="new_password" class="win-input" style="width: 100%;" minlength="6">
+                                <div style="font-size: 10px; color: #808080;">At least 6 characters</div>
+                            </div>
+
+                            <div style="margin-bottom: 8px;">
+                                <label style="display: block; margin-bottom: 2px;">Confirm New Password:</label>
+                                <input type="password" id="confirm_password" class="win-input" style="width: 100%;">
+                            </div>
+                        </div>
+
+                        <div id="password-message" style="display: none; padding: 4px 8px; margin-bottom: 8px;"></div>
+
+                        <button type="submit" class="win-button">Change Password</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Separator -->
+            <div style="margin: 12px 0; border-top: 1px solid #808080; border-bottom: 1px solid #fff;"></div>
+
+            <!-- Bottom Buttons -->
+            <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                <button class="win-button" onclick="window.location.href='/app'">Close</button>
+                <button class="win-button" onclick="logout()" style="color: #800000;">Sign Off</button>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="win-statusbar">
+            <div class="win-statusbar-panel" id="status-text">Ready</div>
+        </div>
+    </div>
+</div>
+
+<style>
+.theme-option {
+    transition: border-color 0.1s;
+}
+input[name="theme"]:checked + .theme-option {
+    border-color: #000080 !important;
+    background: #d0d0ff;
+}
+</style>
+
+<script>
+let currentUser = null;
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadCurrentUser();
+    loadSettings();
+    initThemeSelection();
+});
+
+function showTab(tabName) {
+    // Hide all content
+    document.querySelectorAll('[id^="content-"]').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.win-tab').forEach(el => el.classList.remove('active'));
+
+    // Show selected
+    document.getElementById('content-' + tabName).style.display = 'block';
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+
+async function loadCurrentUser() {
+    try {
+        const res = await fetch('/api/v1/users/me');
+        const data = await res.json();
+        if (data.success && data.data) {
+            currentUser = data.data;
+            populateProfile();
+        } else {
+            window.location.href = '/login';
+        }
+    } catch (err) {
+        console.error('Failed to load user:', err);
+        window.location.href = '/login';
+    }
+}
+
+function populateProfile() {
+    document.getElementById('display_name').value = currentUser.display_name || '';
+    document.getElementById('username').value = currentUser.username || '';
+    document.getElementById('email').value = currentUser.email || '';
+    document.getElementById('bio').value = currentUser.bio || '';
+
+    const initial = (currentUser.display_name || currentUser.username || '?').charAt(0).toUpperCase();
+    document.getElementById('avatar-preview').textContent = initial;
+}
+
+function loadSettings() {
+    const settings = JSON.parse(localStorage.getItem('settings') || '{}');
+    document.getElementById('privacy-last-seen').value = settings.privacyLastSeen || 'everyone';
+    document.getElementById('privacy-read-receipts').checked = settings.readReceipts !== false;
+    document.getElementById('notify-messages').checked = settings.notifyMessages !== false;
+    document.getElementById('notify-sound').checked = settings.notifySound !== false;
+}
+
+function initThemeSelection() {
+    const theme = localStorage.getItem('theme') || 'aim1.0';
+    const radio = document.querySelector(`input[name="theme"][value="${theme}"]`);
+    if (radio) radio.checked = true;
+}
+
+function saveSettings() {
+    const settings = {
+        privacyLastSeen: document.getElementById('privacy-last-seen').value,
+        readReceipts: document.getElementById('privacy-read-receipts').checked,
+        notifyMessages: document.getElementById('notify-messages').checked,
+        notifySound: document.getElementById('notify-sound').checked
+    };
+    localStorage.setItem('settings', JSON.stringify(settings));
+    document.getElementById('status-text').textContent = 'Settings saved!';
+    setTimeout(() => document.getElementById('status-text').textContent = 'Ready', 2000);
+}
+
+function applyTheme() {
+    const selected = document.querySelector('input[name="theme"]:checked');
+    if (selected) {
+        const theme = selected.value;
+        localStorage.setItem('theme', theme);
+
+        // For switching to/from AIM theme, need to reload
+        if (theme === 'aim1.0') {
+            window.location.href = '/settings';
+        } else {
+            // Switch back to default theme view
+            window.location.href = '/settings?theme=' + theme;
+        }
+    }
+}
+
+// Profile form
+document.getElementById('profile-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const messageDiv = document.getElementById('profile-message');
+
+    try {
+        const res = await fetch('/api/v1/users/me', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                display_name: document.getElementById('display_name').value,
+                email: document.getElementById('email').value,
+                bio: document.getElementById('bio').value
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.success && data.data) {
+            messageDiv.textContent = 'Profile saved!';
+            messageDiv.style.display = 'block';
+            messageDiv.style.background = '#90EE90';
+            messageDiv.style.border = '1px solid #228B22';
+            currentUser = { ...currentUser, ...data.data };
+            populateProfile();
+        } else {
+            messageDiv.textContent = data.error || 'Failed to save';
+            messageDiv.style.display = 'block';
+            messageDiv.style.background = '#FFB6C1';
+            messageDiv.style.border = '1px solid #DC143C';
+        }
+    } catch (err) {
+        messageDiv.textContent = 'Error saving profile';
+        messageDiv.style.display = 'block';
+        messageDiv.style.background = '#FFB6C1';
+        messageDiv.style.border = '1px solid #DC143C';
+    }
+
+    setTimeout(() => messageDiv.style.display = 'none', 3000);
+});
+
+// Password form
+document.getElementById('password-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const messageDiv = document.getElementById('password-message');
+    const newPassword = document.getElementById('new_password').value;
+    const confirmPassword = document.getElementById('confirm_password').value;
+
+    if (newPassword !== confirmPassword) {
+        messageDiv.textContent = 'Passwords do not match';
+        messageDiv.style.display = 'block';
+        messageDiv.style.background = '#FFB6C1';
+        messageDiv.style.border = '1px solid #DC143C';
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/v1/users/me/password', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                current_password: document.getElementById('current_password').value,
+                new_password: newPassword
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            messageDiv.textContent = 'Password changed!';
+            messageDiv.style.display = 'block';
+            messageDiv.style.background = '#90EE90';
+            messageDiv.style.border = '1px solid #228B22';
+            document.getElementById('password-form').reset();
+        } else {
+            messageDiv.textContent = data.error || 'Failed to change password';
+            messageDiv.style.display = 'block';
+            messageDiv.style.background = '#FFB6C1';
+            messageDiv.style.border = '1px solid #DC143C';
+        }
+    } catch (err) {
+        messageDiv.textContent = 'Error changing password';
+        messageDiv.style.display = 'block';
+        messageDiv.style.background = '#FFB6C1';
+        messageDiv.style.border = '1px solid #DC143C';
+    }
+
+    setTimeout(() => messageDiv.style.display = 'none', 3000);
+});
+
+async function logout() {
+    try {
+        await fetch('/api/v1/auth/logout', { method: 'POST' });
+    } catch (err) {
+        console.error('Logout error:', err);
+    }
+    window.location.href = '/';
+}
+</script>
+{{end}}

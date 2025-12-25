@@ -112,8 +112,8 @@ func New(cfg Config) (*Server, error) {
 	hub := ws.NewHub()
 	go hub.Run()
 
-	// Parse templates
-	tmpl, err := assets.Templates()
+	// Parse templates for all themes
+	allTemplates, err := assets.AllTemplates()
 	if err != nil {
 		return nil, fmt.Errorf("parse templates: %w", err)
 	}
@@ -122,7 +122,7 @@ func New(cfg Config) (*Server, error) {
 		app:       mizu.New(),
 		cfg:       cfg,
 		db:        db,
-		templates: tmpl,
+		templates: allTemplates["default"],
 		hub:       hub,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
@@ -148,7 +148,7 @@ func New(cfg Config) (*Server, error) {
 	s.chatHandler = handler.NewChat(chatsSvc, accountsSvc, messagesSvc, s.getUserID)
 	s.messageHandler = handler.NewMessage(messagesSvc, chatsSvc, accountsSvc, hub, s.getUserID)
 	s.storyHandler = handler.NewStory(storiesSvc, s.getUserID)
-	s.pageHandler = handler.NewPage(tmpl, accountsSvc, chatsSvc, messagesSvc, s.getUserID, cfg.Dev)
+	s.pageHandler = handler.NewPageWithThemes(allTemplates, accountsSvc, chatsSvc, messagesSvc, s.getUserID, cfg.Dev)
 	s.friendcodeHandler = handler.NewFriendCode(friendcodeSvc, s.getUserID)
 
 	s.setupRoutes()

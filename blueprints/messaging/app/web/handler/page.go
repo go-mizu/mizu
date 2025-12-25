@@ -13,23 +13,39 @@ import (
 
 // Page handles page rendering.
 type Page struct {
-	templates map[string]*template.Template
-	accounts  accounts.API
-	chats     chats.API
-	messages  messages.API
-	getUserID func(*mizu.Ctx) string
-	dev       bool
+	allTemplates map[string]map[string]*template.Template // theme -> page -> template
+	accounts     accounts.API
+	chats        chats.API
+	messages     messages.API
+	getUserID    func(*mizu.Ctx) string
+	dev          bool
 }
 
 // NewPage creates a new Page handler.
 func NewPage(templates map[string]*template.Template, accounts accounts.API, chats chats.API, msgs messages.API, getUserID func(*mizu.Ctx) string, dev bool) *Page {
+	// Wrap single theme templates in allTemplates format for backwards compatibility
+	allTemplates := map[string]map[string]*template.Template{
+		"default": templates,
+	}
 	return &Page{
-		templates: templates,
-		accounts:  accounts,
-		chats:     chats,
-		messages:  msgs,
-		getUserID: getUserID,
-		dev:       dev,
+		allTemplates: allTemplates,
+		accounts:     accounts,
+		chats:        chats,
+		messages:     msgs,
+		getUserID:    getUserID,
+		dev:          dev,
+	}
+}
+
+// NewPageWithThemes creates a new Page handler with multiple theme support.
+func NewPageWithThemes(allTemplates map[string]map[string]*template.Template, accounts accounts.API, chats chats.API, msgs messages.API, getUserID func(*mizu.Ctx) string, dev bool) *Page {
+	return &Page{
+		allTemplates: allTemplates,
+		accounts:     accounts,
+		chats:        chats,
+		messages:     msgs,
+		getUserID:    getUserID,
+		dev:          dev,
 	}
 }
 
@@ -126,8 +142,27 @@ func (h *Page) Settings(c *mizu.Ctx) error {
 	})
 }
 
+// getTheme reads the theme preference from the cookie.
+func (h *Page) getTheme(c *mizu.Ctx) string {
+	cookie, err := c.Request().Cookie("theme")
+	if err != nil || cookie.Value == "" {
+		return "default"
+	}
+	// Validate theme exists
+	if _, ok := h.allTemplates[cookie.Value]; ok {
+		return cookie.Value
+	}
+	return "default"
+}
+
 func (h *Page) render(c *mizu.Ctx, name string, data any) error {
-	tmpl, ok := h.templates[name]
+	theme := h.getTheme(c)
+	templates, ok := h.allTemplates[theme]
+	if !ok {
+		templates = h.allTemplates["default"]
+	}
+
+	tmpl, ok := templates[name]
 	if !ok {
 		return c.Text(http.StatusInternalServerError, "Template not found: "+name)
 	}
