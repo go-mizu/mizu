@@ -299,7 +299,7 @@ The validator middleware includes comprehensive test coverage for all validation
 | Required fail | Empty value for required field | Validation fails |
 | Min pass | Value length >= minimum | Validation passes |
 | Min fail | Value length < minimum | Validation fails |
-| Max pass | Value length <= maximum | Validation passes |
+| Max pass | Value length {'<='} maximum | Validation passes |
 | Max fail | Value length > maximum | Validation fails |
 | Email pass | Valid email format with @ and . | Validation passes |
 | Email fail | Invalid email format | Validation fails |
