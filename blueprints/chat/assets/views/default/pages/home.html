@@ -166,18 +166,14 @@
 
     <!-- Explore Communities Section -->
     {{if .Data.publicServers}}
-    <section class="py-24 px-6">
-        <div class="max-w-6xl mx-auto">
-            <div class="flex items-center justify-between mb-12">
+    <section class="py-20 px-6">
+        <div class="max-w-3xl mx-auto">
+            <div class="flex items-center justify-between mb-8">
                 <div>
-                    <h2 class="text-3xl md:text-4xl font-semibold text-gpt-text mb-2">
-                        Discover communities
-                    </h2>
-                    <p class="text-lg text-gpt-text-secondary">
-                        Join public servers and connect with people who share your interests.
-                    </p>
+                    <h2 class="text-2xl font-semibold text-gpt-text mb-1">Popular communities</h2>
+                    <p class="text-gpt-text-secondary">Join and start chatting</p>
                 </div>
-                <a href="/explore" class="hidden md:flex items-center gap-2 text-gpt-text font-medium hover:text-gpt-text-secondary transition-colors">
+                <a href="/explore" class="flex items-center gap-1.5 text-sm text-gpt-text font-medium hover:text-gpt-text-secondary transition-colors">
                     View all
                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M5 12h14M12 5l7 7-7 7"/>
@@ -185,70 +181,49 @@
                 </a>
             </div>
 
-            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6" id="featured-servers">
+            <div class="space-y-3">
                 {{range $i, $server := .Data.publicServers}}
-                {{if lt $i 6}}
-                <div class="group relative bg-white rounded-2xl border border-gpt-border overflow-hidden hover:border-gpt-text-muted transition-colors">
-                    <!-- Banner -->
-                    <div class="h-24 bg-gradient-to-br from-gpt-sidebar-hover to-gpt-sidebar relative">
-                        {{if $server.BannerURL}}
-                        <img src="{{$server.BannerURL}}" alt="" class="w-full h-full object-cover">
+                {{if lt $i 5}}
+                <div class="group flex items-center gap-4 p-4 rounded-xl border border-gpt-border bg-white hover:border-gpt-text-muted hover:shadow-sm transition-all">
+                    <!-- Icon -->
+                    <div class="w-12 h-12 rounded-xl bg-gpt-sidebar flex items-center justify-center text-lg font-medium shrink-0 overflow-hidden">
+                        {{if $server.IconURL}}
+                        <img src="{{$server.IconURL}}" alt="" class="w-full h-full object-cover">
+                        {{else}}
+                        <span class="text-gpt-text-secondary">{{slice $server.Name 0 1}}</span>
                         {{end}}
                     </div>
 
-                    <!-- Icon -->
-                    <div class="absolute top-14 left-6">
-                        <div class="w-16 h-16 rounded-2xl border-4 border-white bg-gpt-sidebar flex items-center justify-center text-xl font-semibold shadow-sm overflow-hidden">
-                            {{if $server.IconURL}}
-                            <img src="{{$server.IconURL}}" alt="" class="w-full h-full object-cover">
-                            {{else}}
-                            <span class="text-gpt-text-secondary">{{slice $server.Name 0 1}}</span>
-                            {{end}}
-                        </div>
-                    </div>
-
-                    <!-- Content -->
-                    <div class="pt-10 px-6 pb-6">
-                        <div class="flex items-center gap-2 mb-2">
-                            <h3 class="font-semibold text-lg text-gpt-text truncate">{{$server.Name}}</h3>
+                    <!-- Info -->
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-1.5 mb-0.5">
+                            <h3 class="font-medium text-gpt-text truncate">{{$server.Name}}</h3>
                             {{if $server.IsVerified}}
-                            <svg class="w-5 h-5 text-blue-500 shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            <svg class="w-4 h-4 text-blue-500 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
                             </svg>
                             {{end}}
                         </div>
-                        <p class="text-sm text-gpt-text-secondary line-clamp-2 mb-4 min-h-[40px]">
-                            {{if $server.Description}}{{$server.Description}}{{else}}A community on Mizu{{end}}
-                        </p>
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-4 text-sm text-gpt-text-muted">
-                                <span class="flex items-center gap-1.5">
-                                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                                        <circle cx="9" cy="7" r="4"/>
-                                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                                        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                                    </svg>
-                                    {{$server.MemberCount}} members
-                                </span>
-                            </div>
-                            <button onclick="joinServerFromLanding('{{$server.ID}}')" class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-gpt-accent hover:opacity-90 transition-opacity">
-                                Join
-                            </button>
-                        </div>
+                        <p class="text-sm text-gpt-text-secondary truncate">{{if $server.Description}}{{$server.Description}}{{else}}A community on Mizu{{end}}</p>
                     </div>
+
+                    <!-- Stats -->
+                    <div class="hidden sm:flex items-center gap-1.5 text-sm text-gpt-text-muted shrink-0">
+                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                        <span>{{$server.MemberCount}}</span>
+                    </div>
+
+                    <!-- Join Button -->
+                    <button onclick="joinServerFromLanding('{{$server.ID}}')" class="px-4 py-2 rounded-lg text-sm font-medium bg-gpt-accent text-white hover:opacity-90 active:scale-95 transition-all shrink-0">
+                        Join
+                    </button>
                 </div>
                 {{end}}
                 {{end}}
-            </div>
-
-            <div class="mt-8 text-center md:hidden">
-                <a href="/explore" class="inline-flex items-center gap-2 text-gpt-text font-medium hover:text-gpt-text-secondary transition-colors">
-                    View all communities
-                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M5 12h14M12 5l7 7-7 7"/>
-                    </svg>
-                </a>
             </div>
         </div>
     </section>

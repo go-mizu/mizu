@@ -114,29 +114,31 @@ func (h *Page) Register(c *mizu.Ctx) error {
 	})
 }
 
-// Explore renders the explore public servers page.
+// Explore renders the explore public servers page (publicly accessible).
 func (h *Page) Explore(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return c.Redirect(302, "/login")
-	}
-
 	ctx := c.Request().Context()
-	user, _ := h.accounts.GetByID(ctx, userID)
+	userID := h.getUserID(c)
 
-	// Get user's servers for sidebar
-	srvs, _ := h.servers.ListByUser(ctx, userID, 100, 0)
+	var user any
+	var srvs []*servers.Server
+
+	// If logged in, get user data and their servers
+	if userID != "" {
+		user, _ = h.accounts.GetByID(ctx, userID)
+		srvs, _ = h.servers.ListByUser(ctx, userID, 100, 0)
+	}
 
 	// Get public servers
 	publicServers, _ := h.servers.ListPublic(ctx, 50, 0)
 
 	return h.render(c, "explore.html", PageData{
-		Title: "Explore Servers - Chat",
+		Title: "Explore Communities",
 		User:  user,
 		Data: map[string]any{
 			"servers":       srvs,
 			"publicServers": publicServers,
 			"isExplorePage": true,
+			"isLoggedIn":    userID != "",
 		},
 		Dev: h.dev,
 	})
