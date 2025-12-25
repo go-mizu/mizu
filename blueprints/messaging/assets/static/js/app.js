@@ -2,9 +2,9 @@
 
 // Available themes
 // 'default' themes (dark/light) use CSS variables only
-// 'aim1.0' uses a completely different view directory
-const THEMES = ['dark', 'light', 'aim1.0'];
-const VIEW_THEMES = ['aim1.0']; // Themes that require different server-side views
+// 'aim1.0' and 'ymxp' use completely different view directories
+const THEMES = ['dark', 'light', 'aim1.0', 'ymxp'];
+const VIEW_THEMES = ['aim1.0', 'ymxp']; // Themes that require different server-side views
 
 // Theme handling - set data-theme attribute on page load
 (function() {

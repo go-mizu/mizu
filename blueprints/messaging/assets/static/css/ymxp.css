@@ -1,0 +1,1453 @@
+/* Yahoo! Messenger Windows XP Theme - 100% Authentic Windows XP Luna Blue */
+/* Based on XP.css (https://botoxparty.github.io/XP.css/) */
+
+/* ============================================
+   WINDOWS XP FONTS
+   ============================================ */
+@font-face {
+    font-family: 'Trebuchet MS';
+    src: local('Trebuchet MS'), local('Tahoma'), local('Segoe UI');
+    font-weight: normal;
+    font-style: normal;
+}
+
+/* ============================================
+   ROOT VARIABLES - WINDOWS XP LUNA BLUE (100% AUTHENTIC)
+   ============================================ */
+:root {
+    /* Windows XP Desktop - The famous Bliss blue */
+    --xp-desktop: #004E98;
+
+    /* Window Background - XP cream/tan */
+    --xp-window-bg: #ECE9D8;
+    --xp-window-bg-light: #F5F3E8;
+
+    /* Title Bar - EXACT XP Luna Blue gradient values */
+    --xp-titlebar-blue-1: #0a58ca;
+    --xp-titlebar-blue-2: #3c8ced;
+    --xp-titlebar-blue-3: #4698ed;
+    --xp-titlebar-blue-4: #2878d8;
+    --xp-titlebar-blue-5: #0b5cc6;
+    --xp-titlebar-blue-6: #0854b8;
+
+    /* Inactive Title Bar */
+    --xp-titlebar-inactive-1: #7a8bb6;
+    --xp-titlebar-inactive-2: #9ba8c6;
+    --xp-titlebar-inactive-3: #a0adcc;
+    --xp-titlebar-inactive-4: #8c99b8;
+    --xp-titlebar-inactive-5: #7584a8;
+    --xp-titlebar-inactive-6: #6b7a9c;
+
+    /* Close Button - RED gradient (exact XP values) */
+    --xp-close-red-top: #c9544b;
+    --xp-close-red-mid: #e89b8b;
+    --xp-close-red-bot: #c9544b;
+    --xp-close-border: #8c3a34;
+    --xp-close-hover-top: #d55f57;
+    --xp-close-hover-mid: #f8ab9b;
+
+    /* Min/Max Buttons - BLUE gradient (exact XP values) */
+    --xp-minmax-blue-top: #3c81c3;
+    --xp-minmax-blue-mid: #73b2eb;
+    --xp-minmax-blue-bot: #3c81c3;
+    --xp-minmax-border: #1d4f91;
+    --xp-minmax-hover-top: #4c91d3;
+    --xp-minmax-hover-mid: #83c2fb;
+
+    /* Button Styling */
+    --xp-button-face: #ECE9D8;
+    --xp-button-border: #003c74;
+    --xp-button-shadow: #aca899;
+    --xp-button-highlight: #ffffff;
+
+    /* Selection & Focus */
+    --xp-selection: #316AC5;
+    --xp-selection-text: #ffffff;
+
+    /* Input */
+    --xp-input-border: #7f9db9;
+    --xp-input-focus: #316AC5;
+
+    /* Scrollbar */
+    --xp-scrollbar-track: #f1efe2;
+    --xp-scrollbar-thumb: #ece9d8;
+    --xp-scrollbar-border-light: #f1efe2;
+    --xp-scrollbar-border-dark: #848280;
+
+    /* Text */
+    --xp-text: #000000;
+    --xp-text-link: #0066CC;
+    --xp-text-disabled: #aca899;
+
+    /* Groupbox */
+    --xp-groupbox-border: #d4d0c8;
+    --xp-groupbox-label: #0046D5;
+
+    /* Yahoo Messenger Branding */
+    --ym-purple-dark: #3F0F35;
+    --ym-purple: #5C1A4A;
+    --ym-purple-light: #7A2D61;
+    --ym-yellow: #FFCC00;
+    --ym-yellow-light: #FFE566;
+    --ym-orange: #FF6600;
+
+    /* Status Colors - XP Glossy Orb style */
+    --ym-online: #00AA00;
+    --ym-away: #FF9900;
+    --ym-busy: #CC0000;
+    --ym-invisible: #808080;
+    --ym-offline: #CCCCCC;
+
+    /* Chat Colors */
+    --ym-sent-bubble: #DFE8F6;
+    --ym-sent-border: #B8CCE4;
+    --ym-received-bubble: #FFF8DC;
+    --ym-received-border: #E6D9A3;
+    --ym-buzz: #FF0000;
+}
+
+/* ============================================
+   BASE STYLES
+   ============================================ */
+* {
+    font-family: 'Tahoma', 'Trebuchet MS', 'Segoe UI', Arial, sans-serif !important;
+    font-size: 11px;
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--xp-desktop);
+    color: var(--xp-text);
+    min-height: 100vh;
+}
+
+a {
+    color: var(--xp-text-link);
+    text-decoration: underline;
+}
+
+a:hover {
+    color: #003399;
+}
+
+/* ============================================
+   WINDOWS XP WINDOW FRAME - 100% AUTHENTIC
+   ============================================ */
+.xp-window {
+    background: var(--xp-window-bg);
+    border-radius: 8px 8px 0 0;
+    border: 1px solid #0054e3;
+    box-shadow:
+        0 0 0 1px #0054e3,
+        inset 0 0 0 1px rgba(255, 255, 255, 0.4),
+        3px 3px 12px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+    position: relative;
+}
+
+/* Window top blue border glow effect */
+.xp-window::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg,
+        rgba(255, 255, 255, 0.3) 0%,
+        rgba(255, 255, 255, 0.5) 50%,
+        rgba(255, 255, 255, 0.3) 100%);
+    border-radius: 8px 8px 0 0;
+    z-index: 10;
+    pointer-events: none;
+}
+
+.xp-window-inner {
+    background: var(--xp-window-bg);
+    position: relative;
+}
+
+/* ============================================
+   TITLE BAR - EXACT XP LUNA BLUE GRADIENT
+   ============================================ */
+.xp-titlebar {
+    background: linear-gradient(180deg,
+        var(--xp-titlebar-blue-1) 0%,
+        var(--xp-titlebar-blue-2) 8%,
+        var(--xp-titlebar-blue-3) 15%,
+        var(--xp-titlebar-blue-4) 40%,
+        var(--xp-titlebar-blue-5) 70%,
+        var(--xp-titlebar-blue-6) 100%);
+    color: #ffffff;
+    font-weight: bold;
+    font-size: 11px;
+    padding: 3px 5px 3px 3px;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    min-height: 28px;
+    border-radius: 8px 8px 0 0;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+    user-select: none;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    position: relative;
+    z-index: 1;
+}
+
+.xp-titlebar.inactive {
+    background: linear-gradient(180deg,
+        var(--xp-titlebar-inactive-1) 0%,
+        var(--xp-titlebar-inactive-2) 8%,
+        var(--xp-titlebar-inactive-3) 15%,
+        var(--xp-titlebar-inactive-4) 40%,
+        var(--xp-titlebar-inactive-5) 70%,
+        var(--xp-titlebar-inactive-6) 100%);
+}
+
+.xp-titlebar-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+}
+
+.xp-titlebar-text {
+    flex: 1;
+    padding-left: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.xp-titlebar-buttons {
+    display: flex;
+    gap: 2px;
+    margin-left: auto;
+}
+
+/* ============================================
+   XP TITLE BAR BUTTONS - 100% AUTHENTIC
+   ============================================ */
+.xp-btn-minimize,
+.xp-btn-maximize,
+.xp-btn-close {
+    width: 21px;
+    height: 21px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    box-shadow:
+        inset -1px -1px 0 rgba(0, 0, 0, 0.3),
+        inset 1px 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+/* Blue buttons for min/max - EXACT XP gradient */
+.xp-btn-minimize,
+.xp-btn-maximize {
+    background: linear-gradient(180deg,
+        var(--xp-minmax-blue-top) 0%,
+        var(--xp-minmax-blue-mid) 45%,
+        var(--xp-minmax-blue-bot) 100%);
+    border: 1px solid var(--xp-minmax-border);
+}
+
+.xp-btn-minimize:hover,
+.xp-btn-maximize:hover {
+    background: linear-gradient(180deg,
+        var(--xp-minmax-hover-top) 0%,
+        var(--xp-minmax-hover-mid) 45%,
+        var(--xp-minmax-hover-top) 100%);
+}
+
+.xp-btn-minimize:active,
+.xp-btn-maximize:active {
+    background: var(--xp-minmax-blue-top);
+    box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* Red button for close - EXACT XP gradient */
+.xp-btn-close {
+    background: linear-gradient(180deg,
+        var(--xp-close-red-top) 0%,
+        var(--xp-close-red-mid) 45%,
+        var(--xp-close-red-bot) 100%);
+    border: 1px solid var(--xp-close-border);
+}
+
+.xp-btn-close:hover {
+    background: linear-gradient(180deg,
+        var(--xp-close-hover-top) 0%,
+        var(--xp-close-hover-mid) 45%,
+        var(--xp-close-hover-top) 100%);
+}
+
+.xp-btn-close:active {
+    background: var(--xp-close-red-top);
+    box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* XP Button Icons - Pure CSS with shadows */
+.xp-btn-minimize::after {
+    content: "";
+    width: 8px;
+    height: 2px;
+    background: white;
+    position: absolute;
+    bottom: 5px;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
+}
+
+.xp-btn-maximize::after {
+    content: "";
+    width: 9px;
+    height: 7px;
+    border: 2px solid white;
+    border-top-width: 3px;
+    box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
+}
+
+.xp-btn-close::before,
+.xp-btn-close::after {
+    content: "";
+    position: absolute;
+    width: 10px;
+    height: 2px;
+    background: white;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
+}
+
+.xp-btn-close::before {
+    transform: rotate(45deg);
+}
+
+.xp-btn-close::after {
+    transform: rotate(-45deg);
+}
+
+/* ============================================
+   YAHOO MESSENGER HEADER
+   ============================================ */
+.ym-header {
+    background: linear-gradient(180deg,
+        var(--ym-purple-light) 0%,
+        var(--ym-purple) 50%,
+        var(--ym-purple-dark) 100%);
+    color: #FFFFFF;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid #2E0B22;
+}
+
+.ym-logo {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.ym-logo-icon {
+    width: 28px;
+    height: 28px;
+    background: radial-gradient(circle at 30% 30%, #FFEE00 0%, #FFCC00 50%, #FFB300 100%);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    color: var(--ym-purple);
+    font-weight: bold;
+    text-shadow: none;
+    box-shadow:
+        inset 0 2px 4px rgba(255, 255, 255, 0.5),
+        0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.ym-logo-text {
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.ym-logo-text .yahoo {
+    color: var(--ym-yellow);
+}
+
+/* ============================================
+   MENU BAR - XP STYLE
+   ============================================ */
+.xp-menubar {
+    background: var(--xp-window-bg);
+    padding: 2px 0;
+    display: flex;
+    border-bottom: 1px solid #c5c5c5;
+}
+
+.xp-menu-item {
+    padding: 3px 10px;
+    cursor: pointer;
+    color: var(--xp-text);
+}
+
+.xp-menu-item:hover {
+    background: var(--xp-selection);
+    color: var(--xp-selection-text);
+}
+
+.xp-menu-item u {
+    text-decoration: underline;
+}
+
+/* ============================================
+   XP BUTTONS - 100% AUTHENTIC
+   ============================================ */
+.xp-button {
+    font-family: 'Tahoma', sans-serif !important;
+    font-size: 11px;
+    padding: 0 12px;
+    min-width: 75px;
+    min-height: 23px;
+    height: 23px;
+    background: linear-gradient(180deg,
+        #ffffff 0%,
+        #ece9d8 89%,
+        #d4d0c8 100%);
+    border: 1px solid var(--xp-button-border);
+    border-radius: 3px;
+    box-shadow:
+        inset -1px -1px 0 var(--xp-button-shadow),
+        inset 1px 1px 0 var(--xp-button-highlight),
+        inset -2px -2px 0 #ece9d8,
+        inset 2px 2px 0 #f0ede4;
+    cursor: pointer;
+    color: var(--xp-text);
+    text-align: center;
+    position: relative;
+}
+
+.xp-button:hover {
+    background: linear-gradient(180deg,
+        #ffffff 0%,
+        #f2efe4 89%,
+        #dcd8cd 100%);
+    box-shadow:
+        inset -1px -1px 0 var(--xp-button-shadow),
+        inset 1px 1px 0 var(--xp-button-highlight),
+        inset -2px -2px 0 #ece9d8,
+        inset 2px 2px 0 #f0ede4,
+        inset 0 0 3px 1px rgba(255, 204, 0, 0.4);
+}
+
+.xp-button:active {
+    background: linear-gradient(180deg,
+        #ece9d8 0%,
+        #dcd8cd 100%);
+    box-shadow:
+        inset 1px 1px 0 var(--xp-button-shadow),
+        inset -1px -1px 0 var(--xp-button-highlight);
+    padding: 1px 11px 0 13px;
+}
+
+.xp-button:focus {
+    outline: none;
+}
+
+.xp-button:focus::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    right: 3px;
+    bottom: 3px;
+    border: 1px dotted #000;
+    pointer-events: none;
+}
+
+/* Primary blue button */
+.xp-button-primary {
+    background: linear-gradient(180deg,
+        #a4d3ff 0%,
+        #6fb5f8 40%,
+        #4a9aea 60%,
+        #6fb5f8 100%);
+    border-color: var(--xp-button-border);
+    color: #000;
+    box-shadow:
+        inset -1px -1px 0 #4a86c7,
+        inset 1px 1px 0 #b8e1ff,
+        inset -2px -2px 0 #6eb5f8,
+        inset 2px 2px 0 #c4e3ff;
+}
+
+.xp-button-primary:hover {
+    box-shadow:
+        inset -1px -1px 0 #4a86c7,
+        inset 1px 1px 0 #b8e1ff,
+        inset -2px -2px 0 #6eb5f8,
+        inset 2px 2px 0 #c4e3ff,
+        inset 0 0 3px 1px rgba(255, 204, 0, 0.5);
+}
+
+.xp-button-default {
+    border: 2px solid var(--xp-button-border);
+}
+
+/* ============================================
+   XP INPUT FIELDS - 100% AUTHENTIC
+   ============================================ */
+.xp-input {
+    font-family: 'Tahoma', sans-serif !important;
+    font-size: 11px;
+    padding: 3px 4px;
+    height: 23px;
+    background: #ffffff;
+    border: 1px solid var(--xp-input-border);
+    border-radius: 0;
+    color: var(--xp-text);
+    box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.1);
+}
+
+.xp-input:focus {
+    outline: none;
+    border-color: var(--xp-input-focus);
+}
+
+.xp-input::placeholder {
+    color: #808080;
+}
+
+.xp-input:disabled {
+    background: var(--xp-window-bg);
+    color: #808080;
+}
+
+.xp-textarea {
+    font-family: 'Tahoma', sans-serif !important;
+    font-size: 11px;
+    padding: 4px;
+    background: #ffffff;
+    border: 1px solid var(--xp-input-border);
+    color: var(--xp-text);
+    resize: none;
+    box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.1);
+}
+
+.xp-textarea:focus {
+    outline: none;
+    border-color: var(--xp-input-focus);
+}
+
+.xp-select {
+    font-family: 'Tahoma', sans-serif !important;
+    font-size: 11px;
+    padding: 2px 20px 2px 4px;
+    height: 23px;
+    background: linear-gradient(180deg, #ffffff 0%, #ece9d8 100%);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Crect x='0' y='0' width='16' height='16' fill='%23ece9d8'/%3E%3Cpath d='M4 6l4 5 4-5z' fill='%23000'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0 center;
+    border: 1px solid var(--xp-input-border);
+    border-radius: 0;
+    color: var(--xp-text);
+    cursor: pointer;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+}
+
+.xp-select:focus {
+    outline: none;
+    border-color: var(--xp-input-focus);
+}
+
+/* ============================================
+   XP CHECKBOX & RADIO
+   ============================================ */
+.xp-checkbox,
+.xp-radio {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    color: var(--xp-text);
+}
+
+.xp-checkbox input[type="checkbox"],
+.xp-radio input[type="radio"] {
+    width: 13px;
+    height: 13px;
+    margin: 0;
+    accent-color: var(--xp-selection);
+}
+
+/* ============================================
+   XP LIST BOX
+   ============================================ */
+.xp-listbox {
+    background: #FFFFFF;
+    border: 1px solid var(--xp-input-border);
+    overflow-y: auto;
+}
+
+.xp-listbox-item {
+    padding: 2px 6px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.xp-listbox-item:hover,
+.xp-listbox-item.selected {
+    background: var(--xp-selection);
+    color: var(--xp-selection-text);
+}
+
+/* ============================================
+   XP GROUP BOX
+   ============================================ */
+.xp-groupbox {
+    border: 1px solid var(--xp-groupbox-border);
+    margin: 8px 0;
+    padding: 16px 12px 12px;
+    position: relative;
+    background: var(--xp-window-bg);
+}
+
+.xp-groupbox-label {
+    position: absolute;
+    top: -8px;
+    left: 10px;
+    background: var(--xp-window-bg);
+    padding: 0 6px;
+    font-size: 11px;
+    color: var(--xp-groupbox-label);
+}
+
+/* ============================================
+   XP TABS
+   ============================================ */
+.xp-tabs {
+    display: flex;
+    padding: 0 4px;
+    margin-bottom: -1px;
+    position: relative;
+    z-index: 1;
+}
+
+.xp-tab {
+    background: linear-gradient(180deg,
+        #FFFFFF 0%,
+        #ECE9D8 30%,
+        #D4D0C8 100%);
+    border: 1px solid var(--xp-groupbox-border);
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    padding: 6px 16px;
+    margin-right: 3px;
+    cursor: pointer;
+    font-size: 11px;
+    color: var(--xp-text);
+}
+
+.xp-tab:hover {
+    background: linear-gradient(180deg,
+        #FFFFFF 0%,
+        #F4F1E8 50%,
+        #E8E4DC 100%);
+}
+
+.xp-tab.active {
+    background: var(--xp-window-bg);
+    border-bottom: 1px solid var(--xp-window-bg);
+    margin-bottom: -1px;
+    padding-bottom: 7px;
+}
+
+.xp-tab-content {
+    border: 1px solid var(--xp-groupbox-border);
+    padding: 12px;
+    background: var(--xp-window-bg);
+}
+
+/* ============================================
+   XP SCROLLBARS - 100% AUTHENTIC CHECKERED
+   ============================================ */
+::-webkit-scrollbar {
+    width: 17px;
+    height: 17px;
+}
+
+::-webkit-scrollbar-track {
+    background-color: var(--xp-scrollbar-track);
+    background-image: url("data:image/svg+xml,%3Csvg width='2' height='2' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='0' y='0' width='1' height='1' fill='%23f1efe2'/%3E%3Crect x='1' y='0' width='1' height='1' fill='%23aba899'/%3E%3Crect x='0' y='1' width='1' height='1' fill='%23aba899'/%3E%3Crect x='1' y='1' width='1' height='1' fill='%23f1efe2'/%3E%3C/svg%3E");
+    background-size: 2px 2px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(90deg,
+        var(--xp-scrollbar-thumb) 0%,
+        var(--xp-scrollbar-thumb) 30%,
+        #d4d0c8 100%);
+    border: 1px solid;
+    border-color: var(--xp-scrollbar-border-light) var(--xp-scrollbar-border-dark) var(--xp-scrollbar-border-dark) var(--xp-scrollbar-border-light);
+    box-shadow: inset 1px 1px 0 #fafafa;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(90deg,
+        #f2efe4 0%,
+        #e8e4d9 50%,
+        #dcd8cd 100%);
+}
+
+::-webkit-scrollbar-button {
+    background: linear-gradient(180deg,
+        var(--xp-scrollbar-thumb) 0%,
+        var(--xp-scrollbar-thumb) 80%,
+        #d4d0c8 100%);
+    border: 1px solid;
+    border-color: var(--xp-scrollbar-border-light) var(--xp-scrollbar-border-dark) var(--xp-scrollbar-border-dark) var(--xp-scrollbar-border-light);
+    height: 17px;
+    width: 17px;
+}
+
+::-webkit-scrollbar-button:hover {
+    background: linear-gradient(180deg,
+        #f2efe4 0%,
+        #e8e4d9 80%,
+        #dcd8cd 100%);
+}
+
+::-webkit-scrollbar-button:active {
+    background: #d4d0c8;
+    border-color: var(--xp-scrollbar-border-dark) var(--xp-scrollbar-border-light) var(--xp-scrollbar-border-light) var(--xp-scrollbar-border-dark);
+}
+
+::-webkit-scrollbar-corner {
+    background: var(--xp-window-bg);
+}
+
+/* Scrollbar arrows */
+::-webkit-scrollbar-button:vertical:decrement {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9'%3E%3Cpath d='M1 6l3.5-4 3.5 4z' fill='%23000'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+::-webkit-scrollbar-button:vertical:increment {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9'%3E%3Cpath d='M1 3l3.5 4 3.5-4z' fill='%23000'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+::-webkit-scrollbar-button:horizontal:decrement {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9'%3E%3Cpath d='M6 1l-4 3.5 4 3.5z' fill='%23000'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+::-webkit-scrollbar-button:horizontal:increment {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9'%3E%3Cpath d='M3 1l4 3.5-4 3.5z' fill='%23000'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+/* ============================================
+   XP STATUS BAR
+   ============================================ */
+.xp-statusbar {
+    background: var(--xp-window-bg);
+    border-top: 1px solid #FFFFFF;
+    padding: 2px 4px;
+    font-size: 11px;
+    display: flex;
+    gap: 4px;
+    position: relative;
+}
+
+.xp-statusbar::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: #ACA899;
+}
+
+.xp-statusbar-panel {
+    padding: 1px 6px;
+    background: linear-gradient(180deg,
+        #F0ECE1 0%,
+        #E8E4D9 100%);
+    border: 1px solid;
+    border-color: #ACA899 #FFFFFF #FFFFFF #ACA899;
+    flex: 1;
+}
+
+/* ============================================
+   YAHOO MESSENGER BUDDY LIST
+   ============================================ */
+.ym-buddy-list {
+    background: #FFFFFF;
+}
+
+.ym-user-panel {
+    background: linear-gradient(180deg,
+        #F8F6F0 0%,
+        var(--xp-window-bg) 100%);
+    padding: 8px 10px;
+    border-bottom: 1px solid #D4D0C8;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.ym-user-avatar {
+    width: 48px;
+    height: 48px;
+    border: 2px solid #C0C0C0;
+    border-radius: 4px;
+    background: #E8E8E8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.ym-user-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.ym-user-info {
+    flex: 1;
+}
+
+.ym-user-name {
+    font-weight: bold;
+    font-size: 12px;
+    color: var(--xp-text);
+    margin-bottom: 2px;
+}
+
+.ym-user-status-msg {
+    font-size: 10px;
+    color: #666;
+    margin-bottom: 4px;
+}
+
+.ym-status-dropdown {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.ym-category {
+    background: linear-gradient(180deg,
+        #F4F4F4 0%,
+        #DCDCDC 100%);
+    padding: 4px 8px;
+    border-bottom: 1px solid #C0C0C0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: bold;
+    font-size: 11px;
+}
+
+.ym-category:hover {
+    background: linear-gradient(180deg,
+        #FFFFFF 0%,
+        #EBEBEB 100%);
+}
+
+.ym-category-icon {
+    width: 12px;
+    font-family: 'Courier New', monospace !important;
+    font-size: 10px;
+    font-weight: bold;
+}
+
+.ym-category-count {
+    color: #666;
+    font-weight: normal;
+}
+
+.ym-buddy {
+    padding: 3px 8px 3px 24px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ym-buddy:hover,
+.ym-buddy.selected {
+    background: var(--xp-selection);
+    color: var(--xp-selection-text);
+}
+
+.ym-buddy-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+}
+
+.ym-buddy-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ym-buddy-unread {
+    background: var(--ym-orange);
+    color: white;
+    border-radius: 8px;
+    padding: 0 6px;
+    font-size: 9px;
+    font-weight: bold;
+}
+
+/* ============================================
+   XP GLOSSY ORB STATUS ICONS - 100% AUTHENTIC
+   ============================================ */
+.ym-icon-online {
+    background: radial-gradient(circle at 30% 30%,
+        #90EE90 0%,
+        #32CD32 40%,
+        #228B22 80%,
+        #006400 100%);
+    border-radius: 50%;
+    box-shadow:
+        inset 0 2px 4px rgba(255, 255, 255, 0.5),
+        0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.ym-icon-away {
+    background: radial-gradient(circle at 30% 30%,
+        #FFE066 0%,
+        #FFA500 40%,
+        #FF8C00 80%,
+        #CC7000 100%);
+    border-radius: 50%;
+    box-shadow:
+        inset 0 2px 4px rgba(255, 255, 255, 0.5),
+        0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.ym-icon-busy {
+    background: radial-gradient(circle at 30% 30%,
+        #FF6B6B 0%,
+        #DC143C 40%,
+        #B22222 80%,
+        #8B0000 100%);
+    border-radius: 50%;
+    box-shadow:
+        inset 0 2px 4px rgba(255, 255, 255, 0.5),
+        0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.ym-icon-invisible {
+    background: transparent;
+    border: 2px solid #808080;
+    border-radius: 50%;
+}
+
+.ym-icon-offline {
+    background: radial-gradient(circle at 30% 30%,
+        #E0E0E0 0%,
+        #B0B0B0 40%,
+        #909090 80%,
+        #606060 100%);
+    border-radius: 50%;
+    box-shadow:
+        inset 0 2px 4px rgba(255, 255, 255, 0.3),
+        0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* ============================================
+   YAHOO MESSENGER CHAT WINDOW
+   ============================================ */
+.ym-chat-header {
+    background: linear-gradient(180deg,
+        var(--xp-window-bg) 0%,
+        #E0DCD0 100%);
+    padding: 6px 10px;
+    border-bottom: 1px solid #C0C0C0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.ym-chat-contact {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+}
+
+.ym-chat-contact-avatar {
+    width: 32px;
+    height: 32px;
+    border: 1px solid #C0C0C0;
+    border-radius: 2px;
+    background: #E8E8E8;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.ym-chat-contact-info {
+    flex: 1;
+}
+
+.ym-chat-contact-name {
+    font-weight: bold;
+    font-size: 12px;
+}
+
+.ym-chat-contact-status {
+    font-size: 10px;
+    color: #666;
+}
+
+.ym-chat-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.ym-chat-action-btn {
+    width: 28px;
+    height: 24px;
+    background: linear-gradient(180deg,
+        #FFFFFF 0%,
+        var(--xp-window-bg) 50%,
+        #D8D4C8 100%);
+    border: 1px solid #9D9B91;
+    border-radius: 2px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ym-chat-action-btn:hover {
+    background: linear-gradient(180deg,
+        #FFFFFF 0%,
+        #E8E4D9 50%,
+        #D0CCC0 100%);
+    border-color: var(--xp-selection);
+}
+
+.ym-chat-action-btn.buzz {
+    color: var(--ym-buzz);
+    font-weight: bold;
+    font-size: 14px;
+}
+
+/* Message Area */
+.ym-message-area {
+    background: #FFFFFF;
+    border: 1px solid var(--xp-input-border);
+    margin: 4px;
+    overflow-y: auto;
+    padding: 8px;
+}
+
+.ym-message {
+    margin-bottom: 12px;
+}
+
+.ym-message-header {
+    font-weight: bold;
+    margin-bottom: 2px;
+    font-size: 11px;
+}
+
+.ym-message-header.sent {
+    color: #0000CC;
+}
+
+.ym-message-header.received {
+    color: #CC0000;
+}
+
+.ym-message-time {
+    color: #808080;
+    font-weight: normal;
+    font-size: 10px;
+}
+
+.ym-message-content {
+    padding-left: 4px;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.ym-message-bubble {
+    display: inline-block;
+    max-width: 75%;
+    padding: 6px 10px;
+    border-radius: 8px;
+    margin: 2px 0;
+}
+
+.ym-message-bubble.sent {
+    background: var(--ym-sent-bubble);
+    border: 1px solid var(--ym-sent-border);
+    margin-left: auto;
+    display: block;
+    width: fit-content;
+}
+
+.ym-message-bubble.received {
+    background: var(--ym-received-bubble);
+    border: 1px solid var(--ym-received-border);
+}
+
+/* Buzz Effect */
+@keyframes ym-buzz {
+    0%, 100% { transform: translateX(0) translateY(0); }
+    10% { transform: translateX(-5px) translateY(-2px); }
+    20% { transform: translateX(5px) translateY(2px); }
+    30% { transform: translateX(-5px) translateY(2px); }
+    40% { transform: translateX(5px) translateY(-2px); }
+    50% { transform: translateX(-3px) translateY(-1px); }
+    60% { transform: translateX(3px) translateY(1px); }
+    70% { transform: translateX(-3px) translateY(1px); }
+    80% { transform: translateX(3px) translateY(-1px); }
+    90% { transform: translateX(-2px) translateY(0); }
+}
+
+.ym-buzz-active {
+    animation: ym-buzz 0.6s ease-in-out;
+}
+
+.ym-buzz-message {
+    color: var(--ym-buzz);
+    font-weight: bold;
+    font-style: italic;
+    text-align: center;
+    padding: 8px;
+    background: #FFF0F0;
+    border: 1px solid #FFD0D0;
+    border-radius: 4px;
+    margin: 8px 0;
+}
+
+/* Formatting Toolbar */
+.ym-format-toolbar {
+    background: var(--xp-window-bg);
+    padding: 4px 8px;
+    border-bottom: 1px solid #C0C0C0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.ym-format-btn {
+    width: 22px;
+    height: 22px;
+    background: transparent;
+    border: 1px solid transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    border-radius: 2px;
+}
+
+.ym-format-btn:hover {
+    background: #E8E4D9;
+    border-color: #9D9B91;
+}
+
+.ym-format-btn.active {
+    background: #D0CCC0;
+    border-color: #9D9B91;
+}
+
+.ym-color-picker {
+    width: 18px;
+    height: 18px;
+    border: 1px solid #808080;
+    cursor: pointer;
+}
+
+/* Input Area */
+.ym-input-area {
+    background: var(--xp-window-bg);
+    padding: 4px;
+}
+
+/* Bottom Toolbar */
+.ym-bottom-toolbar {
+    background: var(--xp-window-bg);
+    padding: 6px 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid #FFFFFF;
+}
+
+.ym-emoticon-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    background: transparent;
+    border: 1px solid transparent;
+    cursor: pointer;
+    font-size: 11px;
+    color: var(--xp-text);
+    border-radius: 2px;
+}
+
+.ym-emoticon-btn:hover {
+    background: #E8E4D9;
+    border-color: #9D9B91;
+}
+
+.ym-smiley {
+    font-size: 16px;
+}
+
+/* ============================================
+   XP DIALOG / MODAL
+   ============================================ */
+.xp-dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.xp-dialog {
+    background: var(--xp-window-bg);
+    border-radius: 8px 8px 4px 4px;
+    box-shadow:
+        0 0 0 1px rgba(0, 84, 227, 0.5),
+        5px 5px 20px rgba(0, 0, 0, 0.4);
+    min-width: 300px;
+    overflow: hidden;
+}
+
+.xp-dialog-content {
+    padding: 16px;
+}
+
+.xp-dialog-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 8px 16px 16px;
+}
+
+/* ============================================
+   YAHOO EMOTICON PICKER
+   ============================================ */
+.ym-emoticon-picker {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    background: var(--xp-window-bg);
+    border: 1px solid #808080;
+    box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.3);
+    padding: 8px;
+    display: grid;
+    grid-template-columns: repeat(10, 24px);
+    gap: 2px;
+    z-index: 100;
+}
+
+.ym-emoticon-item {
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+}
+
+.ym-emoticon-item:hover {
+    background: #E8E4D9;
+    border-color: var(--xp-selection);
+}
+
+/* ============================================
+   TOOLBAR ICONS
+   ============================================ */
+.ym-toolbar {
+    background: var(--xp-window-bg);
+    padding: 2px 4px;
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid #C0C0C0;
+}
+
+.ym-toolbar-btn {
+    width: 26px;
+    height: 24px;
+    background: transparent;
+    border: 1px solid transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border-radius: 2px;
+}
+
+.ym-toolbar-btn:hover {
+    background: linear-gradient(180deg,
+        #FFFFFF 0%,
+        #E8E4D9 50%,
+        #D0CCC0 100%);
+    border-color: #9D9B91;
+}
+
+.ym-toolbar-btn:active {
+    background: #D0CCC0;
+}
+
+.ym-toolbar-separator {
+    width: 1px;
+    height: 20px;
+    background: linear-gradient(180deg,
+        #ACA899 0%,
+        #FFFFFF 100%);
+    margin: 2px 4px;
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+.ym-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ym-flex {
+    display: flex;
+}
+
+.ym-flex-col {
+    flex-direction: column;
+}
+
+.ym-gap-2 {
+    gap: 8px;
+}
+
+.ym-gap-1 {
+    gap: 4px;
+}
+
+.ym-mt-2 {
+    margin-top: 8px;
+}
+
+.ym-mb-2 {
+    margin-bottom: 8px;
+}
+
+.ym-p-2 {
+    padding: 8px;
+}
+
+.ym-p-4 {
+    padding: 16px;
+}
+
+.ym-text-center {
+    text-align: center;
+}
+
+.ym-text-muted {
+    color: #808080;
+}
+
+.ym-font-bold {
+    font-weight: bold;
+}
+
+/* ============================================
+   YAHOO! ICONS (SVG) - XP GLOSSY STYLE
+   ============================================ */
+.ym-yahoo-logo {
+    width: 80px;
+    height: 32px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 32'%3E%3Ctext x='0' y='24' font-family='Arial Black' font-size='20' font-weight='bold' fill='%235C1A4A'%3EYAHOO!%3C/text%3E%3C/svg%3E");
+}
+
+.ym-messenger-icon {
+    width: 32px;
+    height: 32px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3CradialGradient id='ymGloss' cx='30%25' cy='30%25'%3E%3Cstop offset='0%25' stop-color='%23FFEE00'/%3E%3Cstop offset='50%25' stop-color='%23FFCC00'/%3E%3Cstop offset='100%25' stop-color='%23E5A800'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='16' cy='16' r='14' fill='url(%23ymGloss)'/%3E%3Cellipse cx='12' cy='10' rx='6' ry='4' fill='rgba(255,255,255,0.4)'/%3E%3Ccircle cx='11' cy='14' r='2' fill='%235C1A4A'/%3E%3Ccircle cx='21' cy='14' r='2' fill='%235C1A4A'/%3E%3Cpath d='M10 20 Q16 26 22 20' stroke='%235C1A4A' stroke-width='2' fill='none'/%3E%3C/svg%3E");
+}
+
+/* ============================================
+   XP SEPARATOR
+   ============================================ */
+.xp-separator {
+    height: 2px;
+    background: linear-gradient(180deg,
+        #ACA899 0%,
+        #FFFFFF 100%);
+    margin: 8px 0;
+}
+
+.xp-separator-vertical {
+    width: 2px;
+    background: linear-gradient(90deg,
+        #ACA899 0%,
+        #FFFFFF 100%);
+    margin: 0 8px;
+}
+
+/* ============================================
+   XP PROGRESS BAR
+   ============================================ */
+.xp-progress {
+    height: 16px;
+    background: #ffffff;
+    border: 1px solid var(--xp-input-border);
+}
+
+.xp-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg,
+        #4fa54f 0%,
+        #5db85d 50%,
+        #4fa54f 100%);
+    box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.3);
+}
+
+/* ============================================
+   XP TOOLTIP
+   ============================================ */
+.xp-tooltip {
+    background: #ffffe1;
+    border: 1px solid #000;
+    padding: 3px 6px;
+    font-size: 11px;
+    box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+    border-radius: 2px;
+}

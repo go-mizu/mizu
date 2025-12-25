@@ -1,0 +1,163 @@
+{{define "content"}}
+<div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px;">
+    <!-- Sign In Window -->
+    <div class="xp-window" style="width: 360px;">
+        <!-- Title Bar -->
+        <div class="xp-titlebar">
+            <svg class="xp-titlebar-icon" viewBox="0 0 16 16">
+                <circle cx="8" cy="8" r="7" fill="#FFCC00"/>
+                <circle cx="6" cy="6" r="1.5" fill="#5C1A4A"/>
+                <circle cx="10" cy="6" r="1.5" fill="#5C1A4A"/>
+                <path d="M5 10 Q8 13 11 10" stroke="#5C1A4A" stroke-width="1.5" fill="none"/>
+            </svg>
+            <span class="xp-titlebar-text">Yahoo! Messenger - Sign In</span>
+            <div class="xp-titlebar-buttons">
+                <button class="xp-btn-minimize" title="Minimize"></button>
+                <button class="xp-btn-close" title="Close" onclick="window.location.href='/'"></button>
+            </div>
+        </div>
+
+        <!-- Yahoo Header -->
+        <div class="ym-header">
+            <div class="ym-logo">
+                <div class="ym-logo-icon">Y!</div>
+                <span class="ym-logo-text"><span class="yahoo">YAHOO!</span> Messenger</span>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div style="background: var(--xp-window-bg); padding: 20px;">
+            <!-- Smiley and Welcome -->
+            <div style="text-align: center; margin-bottom: 16px;">
+                <svg width="48" height="48" viewBox="0 0 48 48" style="margin-bottom: 8px;">
+                    <defs>
+                        <radialGradient id="loginSmiley" cx="30%" cy="30%">
+                            <stop offset="0%" stop-color="#FFEE00"/>
+                            <stop offset="100%" stop-color="#FFCC00"/>
+                        </radialGradient>
+                    </defs>
+                    <circle cx="24" cy="24" r="22" fill="url(#loginSmiley)"/>
+                    <ellipse cx="17" cy="20" rx="3" ry="4" fill="#5C1A4A"/>
+                    <ellipse cx="31" cy="20" rx="3" ry="4" fill="#5C1A4A"/>
+                    <path d="M15 30 Q24 38 33 30" stroke="#5C1A4A" stroke-width="2.5" fill="none"/>
+                </svg>
+                <div style="font-weight: bold; font-size: 12px; color: var(--ym-purple);">Sign in to Yahoo! Messenger</div>
+            </div>
+
+            <form id="login-form">
+                <!-- Yahoo! ID -->
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; margin-bottom: 4px; font-weight: bold;">
+                        Yahoo! ID:
+                    </label>
+                    <input type="text" id="username" name="username" class="xp-input" style="width: 100%;" required autofocus>
+                </div>
+
+                <!-- Password -->
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; margin-bottom: 4px; font-weight: bold;">
+                        Password:
+                    </label>
+                    <input type="password" id="password" name="password" class="xp-input" style="width: 100%;" required>
+                </div>
+
+                <!-- Options -->
+                <div style="margin-bottom: 12px;">
+                    <label class="xp-checkbox">
+                        <input type="checkbox" id="remember-me">
+                        <span>Remember my ID & Password</span>
+                    </label>
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <label class="xp-checkbox">
+                        <input type="checkbox" id="invisible-signin">
+                        <span>Sign in as Invisible</span>
+                    </label>
+                </div>
+
+                <!-- Error Message -->
+                <div id="error-message" style="display: none; color: #CC0000; margin-bottom: 12px; padding: 8px; background: #FFF0F0; border: 1px solid #FFCCCC; border-radius: 2px;">
+                </div>
+
+                <!-- Buttons -->
+                <div style="display: flex; gap: 8px; justify-content: center;">
+                    <button type="submit" class="xp-button xp-button-primary xp-button-default" style="min-width: 90px;">
+                        Sign In
+                    </button>
+                    <button type="button" class="xp-button" onclick="window.location.href='/'" style="min-width: 90px;">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+
+            <!-- Separator -->
+            <div class="xp-separator" style="margin: 16px 0;"></div>
+
+            <!-- Links -->
+            <div style="text-align: center; font-size: 11px;">
+                <div style="margin-bottom: 8px;">
+                    <a href="/register">Get a new Yahoo! ID</a>
+                </div>
+                <div>
+                    <a href="#">Forgot your ID or Password?</a>
+                </div>
+            </div>
+
+            <!-- Version -->
+            <div style="margin-top: 16px; text-align: center; font-size: 10px; color: #808080;">
+                Version 7.0.0.437
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="xp-statusbar">
+            <div class="xp-statusbar-panel" id="status-text">Ready</div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const statusText = document.getElementById('status-text');
+    const errorDiv = document.getElementById('error-message');
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+
+    statusText.textContent = 'Connecting to Yahoo!...';
+    errorDiv.style.display = 'none';
+    submitBtn.disabled = true;
+
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+
+    try {
+        const res = await fetch('/api/v1/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            statusText.textContent = 'Signing in...';
+            setTimeout(() => {
+                window.location.href = '/app';
+            }, 500);
+        } else {
+            statusText.textContent = 'Ready';
+            submitBtn.disabled = false;
+            errorDiv.textContent = data.error || 'Invalid Yahoo! ID or Password';
+            errorDiv.style.display = 'block';
+        }
+    } catch (err) {
+        statusText.textContent = 'Ready';
+        submitBtn.disabled = false;
+        errorDiv.textContent = 'Connection error. Please try again.';
+        errorDiv.style.display = 'block';
+    }
+});
+</script>
+{{end}}

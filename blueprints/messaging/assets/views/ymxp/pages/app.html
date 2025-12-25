@@ -1,0 +1,1042 @@
+{{define "content"}}
+<div style="display: flex; height: 100vh; padding: 8px; gap: 8px;">
+    <!-- Buddy List Window -->
+    <div id="buddy-list-window" class="xp-window" style="width: 220px; display: flex; flex-direction: column;">
+        <!-- Title Bar -->
+        <div class="xp-titlebar">
+            <svg class="xp-titlebar-icon" viewBox="0 0 16 16">
+                <circle cx="8" cy="8" r="7" fill="#FFCC00"/>
+                <circle cx="6" cy="6" r="1.5" fill="#5C1A4A"/>
+                <circle cx="10" cy="6" r="1.5" fill="#5C1A4A"/>
+                <path d="M5 10 Q8 13 11 10" stroke="#5C1A4A" stroke-width="1.5" fill="none"/>
+            </svg>
+            <span class="xp-titlebar-text">Yahoo! Messenger</span>
+            <div class="xp-titlebar-buttons">
+                <button class="xp-btn-minimize" title="Minimize"></button>
+                <button class="xp-btn-maximize" title="Maximize"></button>
+                <button class="xp-btn-close" title="Close"></button>
+            </div>
+        </div>
+
+        <!-- Yahoo Header -->
+        <div class="ym-header" style="padding: 6px 10px;">
+            <div class="ym-logo" style="font-size: 12px;">
+                <div class="ym-logo-icon" style="width: 20px; height: 20px; font-size: 11px;">Y!</div>
+                <span class="ym-logo-text"><span class="yahoo">YAHOO!</span></span>
+            </div>
+        </div>
+
+        <!-- Menu Bar -->
+        <div class="xp-menubar">
+            <span class="xp-menu-item"><u>M</u>essenger</span>
+            <span class="xp-menu-item"><u>C</u>ontacts</span>
+            <span class="xp-menu-item"><u>A</u>ctions</span>
+            <span class="xp-menu-item"><u>H</u>elp</span>
+        </div>
+
+        <!-- User Panel -->
+        <div class="ym-user-panel">
+            <div class="ym-user-avatar">
+                <svg viewBox="0 0 48 48" width="44" height="44">
+                    <circle cx="24" cy="24" r="22" fill="#FFCC00"/>
+                    <circle cx="17" cy="20" r="3" fill="#5C1A4A"/>
+                    <circle cx="31" cy="20" r="3" fill="#5C1A4A"/>
+                    <path d="M15 30 Q24 38 33 30" stroke="#5C1A4A" stroke-width="2.5" fill="none"/>
+                </svg>
+            </div>
+            <div class="ym-user-info">
+                <div class="ym-user-name" id="user-displayname"></div>
+                <div class="ym-user-status-msg" id="user-status-msg">Available</div>
+                <div class="ym-status-dropdown">
+                    <div class="ym-buddy-icon ym-icon-online" style="width: 10px; height: 10px;"></div>
+                    <select class="xp-select" style="font-size: 10px; padding: 1px 16px 1px 2px;" id="status-select">
+                        <option value="online">Available</option>
+                        <option value="busy">Busy</option>
+                        <option value="away">Be Right Back</option>
+                        <option value="invisible">Invisible</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="ym-toolbar">
+            <button class="ym-toolbar-btn" onclick="showNewChatModal()" title="Send an IM">
+                <svg width="16" height="16" viewBox="0 0 16 16">
+                    <path d="M2 2h12v9H5l-3 3v-3H2z" fill="#E8E4D9" stroke="#5C1A4A" stroke-width="1"/>
+                    <path d="M4 5h8M4 8h5" stroke="#5C1A4A" stroke-width="1"/>
+                </svg>
+            </button>
+            <button class="ym-toolbar-btn" onclick="showQRModal()" title="Add a Contact">
+                <svg width="16" height="16" viewBox="0 0 16 16">
+                    <circle cx="8" cy="5" r="3" fill="none" stroke="#5C1A4A"/>
+                    <path d="M4 14v-1c0-2 2-3 4-3s4 1 4 3v1" fill="none" stroke="#5C1A4A"/>
+                    <path d="M12 3v4M10 5h4" stroke="#00AA00" stroke-width="1.5"/>
+                </svg>
+            </button>
+            <div class="ym-toolbar-separator"></div>
+            <button class="ym-toolbar-btn" onclick="window.location.href='/settings'" title="Preferences">
+                <svg width="16" height="16" viewBox="0 0 16 16">
+                    <circle cx="8" cy="8" r="5" fill="none" stroke="#5C1A4A"/>
+                    <circle cx="8" cy="8" r="2" fill="#5C1A4A"/>
+                    <path d="M8 1v2M8 13v2M1 8h2M13 8h2M2.5 2.5l1.5 1.5M12 12l1.5 1.5M2.5 13.5l1.5-1.5M12 4l1.5-1.5" stroke="#5C1A4A" stroke-width="1"/>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Buddy List -->
+        <div class="ym-buddy-list" style="flex: 1; overflow-y: auto;">
+            <div id="buddy-categories">
+                <!-- Friends Category -->
+                <div class="ym-category" onclick="toggleCategory(this)">
+                    <span class="ym-category-icon">-</span>
+                    <span>Friends</span>
+                    <span class="ym-category-count">(<span class="online-count">0</span>/<span class="total-count">0</span>)</span>
+                </div>
+                <div class="ym-category-content" id="buddies-list">
+                    <!-- Buddies loaded dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Toolbar -->
+        <div style="background: var(--xp-window-bg); padding: 4px 8px; border-top: 1px solid #FFFFFF; display: flex; align-items: center;">
+            <button class="ym-emoticon-btn" onclick="showNewChatModal()">
+                <span class="ym-smiley">&#128522;</span>
+                <span>New IM...</span>
+            </button>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="xp-statusbar">
+            <div class="xp-statusbar-panel" id="connection-status">Online</div>
+        </div>
+    </div>
+
+    <!-- Chat Window (shown when chat selected) -->
+    <div id="im-window" class="xp-window" style="flex: 1; display: none; flex-direction: column;">
+        <!-- Title Bar -->
+        <div class="xp-titlebar">
+            <svg class="xp-titlebar-icon" viewBox="0 0 16 16">
+                <circle cx="8" cy="8" r="7" fill="#FFCC00"/>
+                <circle cx="6" cy="6" r="1.5" fill="#5C1A4A"/>
+                <circle cx="10" cy="6" r="1.5" fill="#5C1A4A"/>
+                <path d="M5 10 Q8 13 11 10" stroke="#5C1A4A" stroke-width="1.5" fill="none"/>
+            </svg>
+            <span class="xp-titlebar-text" id="im-title">Instant Message</span>
+            <div class="xp-titlebar-buttons">
+                <button class="xp-btn-minimize" title="Minimize"></button>
+                <button class="xp-btn-maximize" title="Maximize"></button>
+                <button class="xp-btn-close" onclick="closeChat()" title="Close"></button>
+            </div>
+        </div>
+
+        <!-- Menu Bar -->
+        <div class="xp-menubar">
+            <span class="xp-menu-item"><u>M</u>essenger</span>
+            <span class="xp-menu-item"><u>E</u>dit</span>
+            <span class="xp-menu-item"><u>I</u>nsert</span>
+            <span class="xp-menu-item"><u>A</u>ctions</span>
+            <span class="xp-menu-item"><u>H</u>elp</span>
+        </div>
+
+        <!-- Chat Header -->
+        <div class="ym-chat-header">
+            <div class="ym-chat-contact">
+                <div class="ym-chat-contact-avatar">
+                    <svg viewBox="0 0 32 32" width="30" height="30">
+                        <circle cx="16" cy="16" r="14" fill="#FFCC00"/>
+                        <circle cx="12" cy="13" r="2" fill="#5C1A4A"/>
+                        <circle cx="20" cy="13" r="2" fill="#5C1A4A"/>
+                        <path d="M10 20 Q16 25 22 20" stroke="#5C1A4A" stroke-width="2" fill="none"/>
+                    </svg>
+                </div>
+                <div class="ym-chat-contact-info">
+                    <div class="ym-chat-contact-name" id="chat-contact-name"></div>
+                    <div class="ym-chat-contact-status" id="chat-contact-status">Available</div>
+                </div>
+            </div>
+            <div class="ym-chat-actions">
+                <button class="ym-chat-action-btn" title="Voice Call">
+                    <svg width="16" height="16" viewBox="0 0 16 16">
+                        <path d="M3 2c0 8 6 12 11 12v-3l-3-1-1 1c-2-1-4-3-5-5l1-1-1-3z" fill="none" stroke="#5C1A4A" stroke-width="1.5"/>
+                    </svg>
+                </button>
+                <button class="ym-chat-action-btn" title="Video Call">
+                    <svg width="16" height="16" viewBox="0 0 16 16">
+                        <rect x="1" y="4" width="9" height="8" rx="1" fill="none" stroke="#5C1A4A"/>
+                        <path d="M10 6l4-2v8l-4-2z" fill="none" stroke="#5C1A4A"/>
+                    </svg>
+                </button>
+                <button class="ym-chat-action-btn buzz" onclick="sendBuzz()" title="Send a Buzz!">
+                    !
+                </button>
+            </div>
+        </div>
+
+        <!-- Message Area -->
+        <div class="ym-message-area" id="messages" style="flex: 1; min-height: 200px;">
+            <!-- Messages will be loaded here -->
+        </div>
+
+        <!-- Formatting Toolbar -->
+        <div class="ym-format-toolbar">
+            <select class="xp-select" style="width: 100px; height: 22px;">
+                <option>Arial</option>
+                <option>Tahoma</option>
+                <option>Comic Sans MS</option>
+                <option>Times New Roman</option>
+                <option>Verdana</option>
+            </select>
+            <select class="xp-select" style="width: 50px; height: 22px;">
+                <option>10</option>
+                <option selected>11</option>
+                <option>12</option>
+                <option>14</option>
+                <option>16</option>
+            </select>
+            <div class="ym-toolbar-separator"></div>
+            <button class="ym-format-btn" style="font-weight: bold;">B</button>
+            <button class="ym-format-btn" style="font-style: italic;">I</button>
+            <button class="ym-format-btn" style="text-decoration: underline;">U</button>
+            <div class="ym-toolbar-separator"></div>
+            <div class="ym-color-picker" style="background: #000000;" title="Text Color"></div>
+            <div class="ym-color-picker" style="background: #FFCC00; margin-left: 2px;" title="Highlight Color"></div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="ym-input-area">
+            <textarea id="message-input" class="xp-textarea" style="width: 100%; height: 60px;" placeholder="Type your message here..." onkeydown="handleKeyDown(event)" oninput="updateCharCount()"></textarea>
+        </div>
+
+        <!-- Bottom Toolbar -->
+        <div class="ym-bottom-toolbar">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <button class="ym-emoticon-btn" onclick="toggleEmoticonPicker()" id="emoticon-btn">
+                    <span class="ym-smiley">&#128522;</span>
+                    <span>Emoticons</span>
+                </button>
+                <!-- Emoticon Picker -->
+                <div id="emoticon-picker" class="ym-emoticon-picker" style="display: none;">
+                    <div class="ym-emoticon-item" onclick="insertEmoticon(':)')">&#128522;</div>
+                    <div class="ym-emoticon-item" onclick="insertEmoticon(':D')">&#128516;</div>
+                    <div class="ym-emoticon-item" onclick="insertEmoticon(';)')">&#128521;</div>
+                    <div class="ym-emoticon-item" onclick="insertEmoticon(':P')">&#128523;</div>
+                    <div class="ym-emoticon-item" onclick="insertEmoticon(':O')">&#128558;</div>
+                    <div class="ym-emoticon-item" onclick="insertEmoticon(':(')">&#128532;</div>
+                    <div class="ym-emoticon-item" onclick="insertEmoticon(':\'(')">&#128546;</div>
+                    <div class="ym-emoticon-item" onclick="insertEmoticon('X(')">&#128544;</div>
+                    <div class="ym-emoticon-item" onclick="insertEmoticon(':|')">&#128528;</div>
+                    <div class="ym-emoticon-item" onclick="insertEmoticon(':*')">&#128536;</div>
+                    <div class="ym-emoticon-item" onclick="insertEmoticon('B)')">&#128526;</div>
+                    <div class="ym-emoticon-item" onclick="insertEmoticon('O:)')">&#128519;</div>
+                    <div class="ym-emoticon-item" onclick="insertEmoticon('>:)')">&#128520;</div>
+                    <div class="ym-emoticon-item" onclick="insertEmoticon('(L)')">&#10084;&#65039;</div>
+                    <div class="ym-emoticon-item" onclick="insertEmoticon('(Y)')">&#128077;</div>
+                    <div class="ym-emoticon-item" onclick="insertEmoticon('(N)')">&#128078;</div>
+                    <div class="ym-emoticon-item" onclick="insertEmoticon('(^)')">&#127874;</div>
+                    <div class="ym-emoticon-item" onclick="insertEmoticon('(H)')">&#9749;</div>
+                    <div class="ym-emoticon-item" onclick="insertEmoticon('(*)')">&#11088;</div>
+                    <div class="ym-emoticon-item" onclick="insertEmoticon('(F)')">&#127799;</div>
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span id="char-count" style="font-size: 10px; color: #666;">0 chars</span>
+                <button class="xp-button xp-button-primary" onclick="sendMessage()" style="min-width: 70px;">Send</button>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="xp-statusbar">
+            <div class="xp-statusbar-panel" id="typing-status" style="flex: 2;">Ready</div>
+            <div class="xp-statusbar-panel" style="flex: 1; text-align: right;">Yahoo! Messenger</div>
+        </div>
+    </div>
+
+    <!-- Empty State (no chat selected) -->
+    <div id="empty-state" class="xp-window" style="flex: 1; display: flex; flex-direction: column;">
+        <!-- Title Bar -->
+        <div class="xp-titlebar">
+            <svg class="xp-titlebar-icon" viewBox="0 0 16 16">
+                <circle cx="8" cy="8" r="7" fill="#FFCC00"/>
+                <circle cx="6" cy="6" r="1.5" fill="#5C1A4A"/>
+                <circle cx="10" cy="6" r="1.5" fill="#5C1A4A"/>
+                <path d="M5 10 Q8 13 11 10" stroke="#5C1A4A" stroke-width="1.5" fill="none"/>
+            </svg>
+            <span class="xp-titlebar-text">Welcome to Yahoo! Messenger</span>
+            <div class="xp-titlebar-buttons">
+                <button class="xp-btn-minimize" title="Minimize"></button>
+                <button class="xp-btn-maximize" title="Maximize"></button>
+            </div>
+        </div>
+        <div style="flex: 1; display: flex; align-items: center; justify-content: center; background: var(--xp-window-bg);">
+            <div style="text-align: center;">
+                <svg width="80" height="80" viewBox="0 0 80 80" style="margin-bottom: 16px;">
+                    <defs>
+                        <radialGradient id="emptySmiley" cx="30%" cy="30%">
+                            <stop offset="0%" stop-color="#FFEE00"/>
+                            <stop offset="100%" stop-color="#FFCC00"/>
+                        </radialGradient>
+                    </defs>
+                    <circle cx="40" cy="40" r="36" fill="url(#emptySmiley)"/>
+                    <ellipse cx="28" cy="32" rx="5" ry="6" fill="#5C1A4A"/>
+                    <ellipse cx="52" cy="32" rx="5" ry="6" fill="#5C1A4A"/>
+                    <path d="M24 48 Q40 62 56 48" stroke="#5C1A4A" stroke-width="4" fill="none"/>
+                </svg>
+                <div style="font-size: 14px; font-weight: bold; color: var(--ym-purple); margin-bottom: 8px;">Welcome!</div>
+                <div style="margin-bottom: 16px; color: #666;">Double-click a friend to start chatting</div>
+                <button class="xp-button xp-button-primary xp-button-default" onclick="showNewChatModal()">
+                    Send an Instant Message
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- New IM Modal -->
+<div id="new-chat-modal" class="xp-dialog-overlay" style="display: none;">
+    <div class="xp-dialog" style="width: 350px;">
+        <div class="xp-titlebar">
+            <span class="xp-titlebar-text">Send an Instant Message</span>
+            <div class="xp-titlebar-buttons">
+                <button class="xp-btn-close" onclick="hideNewChatModal()"></button>
+            </div>
+        </div>
+        <div class="xp-dialog-content">
+            <div style="margin-bottom: 12px;">
+                <label style="display: block; margin-bottom: 4px; font-weight: bold;">To:</label>
+                <input type="text" id="contact-search" class="xp-input" style="width: 100%;" placeholder="Enter Yahoo! ID" oninput="searchUsers(this.value)">
+            </div>
+            <div style="margin-bottom: 8px; font-size: 10px; color: #666;">Recent Contacts:</div>
+            <div id="contact-list" class="xp-listbox" style="height: 150px; overflow-y: auto;">
+                <div style="padding: 8px; color: #808080;">Type to search for users...</div>
+            </div>
+        </div>
+        <div class="xp-dialog-buttons">
+            <button class="xp-button" onclick="hideNewChatModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- QR/Friend Code Modal -->
+<div id="qr-modal" class="xp-dialog-overlay" style="display: none;">
+    <div class="xp-dialog" style="width: 380px;">
+        <div class="xp-titlebar">
+            <span class="xp-titlebar-text">Add a Contact</span>
+            <div class="xp-titlebar-buttons">
+                <button class="xp-btn-close" onclick="hideQRModal()"></button>
+            </div>
+        </div>
+        <div class="xp-dialog-content">
+            <!-- Tabs -->
+            <div class="xp-tabs">
+                <div class="xp-tab active" onclick="switchQRTab('my-code')" id="qr-tab-my-code">My Friend Code</div>
+                <div class="xp-tab" onclick="switchQRTab('scan')" id="qr-tab-scan">Add Friend</div>
+            </div>
+            <div class="xp-tab-content">
+                <!-- My Code Tab -->
+                <div id="qr-my-code-content">
+                    <div style="text-align: center; margin-bottom: 12px; color: #666;">
+                        Share this code to let others add you:
+                    </div>
+                    <div id="qr-code-container" style="background: #fff; padding: 12px; margin: 0 auto; width: fit-content; border: 1px solid #C0C0C0;">
+                        Loading...
+                    </div>
+                    <div style="text-align: center; margin-top: 12px;">
+                        <div id="qr-code-text" style="font-family: 'Courier New', monospace !important; font-size: 14px; font-weight: bold; color: var(--ym-purple);"></div>
+                    </div>
+                    <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: center;">
+                        <button class="xp-button" onclick="copyFriendCode()">Copy Code</button>
+                        <button class="xp-button" onclick="copyFriendLink()">Copy Link</button>
+                    </div>
+                </div>
+                <!-- Add Friend Tab -->
+                <div id="qr-scan-content" style="display: none;">
+                    <div style="margin-bottom: 12px; color: #666;">Enter a friend code to add a contact:</div>
+                    <input type="text" id="friend-code-input" class="xp-input" style="width: 100%; text-align: center; font-family: 'Courier New', monospace !important; font-size: 13px;" placeholder="MIZU-XXXXXXXX" oninput="this.value = this.value.toUpperCase()">
+                    <div style="margin-top: 12px;">
+                        <button class="xp-button xp-button-primary" onclick="lookupFriendCode()" style="width: 100%;">Look Up Friend</button>
+                    </div>
+                    <div id="friend-code-result" style="margin-top: 12px; display: none;"></div>
+                </div>
+            </div>
+        </div>
+        <div class="xp-dialog-buttons">
+            <button class="xp-button" onclick="hideQRModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Friend Preview Modal -->
+<div id="friend-preview-modal" class="xp-dialog-overlay" style="display: none;">
+    <div class="xp-dialog" style="width: 300px;">
+        <div class="xp-titlebar">
+            <span class="xp-titlebar-text">Add Contact</span>
+            <div class="xp-titlebar-buttons">
+                <button class="xp-btn-close" onclick="hideFriendPreviewModal()"></button>
+            </div>
+        </div>
+        <div class="xp-dialog-content" style="text-align: center;">
+            <svg viewBox="0 0 64 64" width="64" height="64" style="margin-bottom: 12px;">
+                <circle cx="32" cy="32" r="28" fill="#FFCC00"/>
+                <circle cx="24" cy="26" r="4" fill="#5C1A4A"/>
+                <circle cx="40" cy="26" r="4" fill="#5C1A4A"/>
+                <path d="M20 40 Q32 50 44 40" stroke="#5C1A4A" stroke-width="3" fill="none"/>
+            </svg>
+            <div id="friend-preview-name" style="font-weight: bold; font-size: 14px; color: var(--ym-purple);"></div>
+            <div id="friend-preview-username" style="color: #666; margin-top: 4px;"></div>
+            <div id="friend-preview-status" style="margin-top: 8px; font-style: italic; color: var(--ym-online);">Online</div>
+        </div>
+        <div class="xp-dialog-buttons">
+            <button class="xp-button xp-button-primary xp-button-default" onclick="confirmAddFriend()">Add Contact</button>
+            <button class="xp-button" onclick="hideFriendPreviewModal()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<form id="message-form" style="display: none;"></form>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+// App state
+let currentUser = null;
+let currentChat = null;
+let chats = [];
+let messages = [];
+let ws = null;
+let typingTimeout = null;
+let emoticonPickerOpen = false;
+
+// Initialize app
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadCurrentUser();
+    await ensureUserChats();
+    await loadChats();
+    connectWebSocket();
+
+    // Close emoticon picker when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('#emoticon-btn') && !e.target.closest('#emoticon-picker')) {
+            document.getElementById('emoticon-picker').style.display = 'none';
+            emoticonPickerOpen = false;
+        }
+    });
+});
+
+// Ensure user has default chats
+async function ensureUserChats() {
+    try {
+        await fetch('/api/v1/users/ensure-chats', { method: 'POST' });
+    } catch (err) {
+        console.error('Failed to ensure user chats:', err);
+    }
+}
+
+// Load current user
+async function loadCurrentUser() {
+    try {
+        const res = await fetch('/api/v1/users/me');
+        const data = await res.json();
+        if (data.success && data.data) {
+            currentUser = data.data;
+            document.getElementById('user-displayname').textContent = currentUser.display_name || currentUser.username;
+        } else {
+            window.location.href = '/login';
+        }
+    } catch (err) {
+        console.error('Failed to load user:', err);
+        window.location.href = '/login';
+    }
+}
+
+// Load chats
+async function loadChats() {
+    try {
+        const res = await fetch('/api/v1/chats');
+        const data = await res.json();
+        if (data.success) {
+            chats = data.data || [];
+            renderBuddyList();
+        }
+    } catch (err) {
+        console.error('Failed to load chats:', err);
+    }
+}
+
+// Render buddy list
+function renderBuddyList() {
+    const container = document.getElementById('buddies-list');
+    const onlineCount = chats.filter(c => c.type === 'direct').length;
+
+    document.querySelector('.online-count').textContent = onlineCount;
+    document.querySelector('.total-count').textContent = chats.length;
+
+    if (chats.length === 0) {
+        container.innerHTML = '<div style="padding: 4px 24px; color: #808080; font-style: italic;">No friends yet</div>';
+        return;
+    }
+
+    container.innerHTML = chats.map(chat => {
+        const isSelfChat = chat.type === 'direct' && chat.other_user?.id === currentUser?.id;
+        const isAgent = chat.type === 'direct' && chat.other_user?.username === 'mizu-agent';
+
+        let name, iconClass;
+        if (isSelfChat) {
+            name = 'Notepad (Me)';
+            iconClass = 'ym-icon-away';
+        } else if (isAgent) {
+            name = chat.other_user?.display_name || 'Yahoo! Helper';
+            iconClass = 'ym-icon-online';
+        } else if (chat.type === 'direct') {
+            name = chat.other_user?.display_name || chat.other_user?.username;
+            iconClass = 'ym-icon-online';
+        } else {
+            name = chat.group_name || chat.name;
+            iconClass = 'ym-icon-online';
+        }
+
+        const isActive = currentChat?.id === chat.id;
+        const unread = chat.unread_count || 0;
+
+        return `
+            <div class="ym-buddy ${isActive ? 'selected' : ''}" ondblclick="selectChat('${chat.id}')">
+                <div class="ym-buddy-icon ${iconClass}"></div>
+                <span class="ym-buddy-name">${escapeHtml(name)}</span>
+                ${unread > 0 ? `<span class="ym-buddy-unread">${unread}</span>` : ''}
+            </div>
+        `;
+    }).join('');
+}
+
+// Toggle category expand/collapse
+function toggleCategory(el) {
+    const icon = el.querySelector('.ym-category-icon');
+    const content = el.nextElementSibling;
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+        icon.textContent = '-';
+    } else {
+        content.style.display = 'none';
+        icon.textContent = '+';
+    }
+}
+
+// Select a chat
+async function selectChat(chatId) {
+    currentChat = chats.find(c => c.id === chatId);
+    if (!currentChat) return;
+
+    // Show IM window, hide empty state
+    document.getElementById('empty-state').style.display = 'none';
+    document.getElementById('im-window').style.display = 'flex';
+
+    // Update title and header
+    const isSelfChat = currentChat.type === 'direct' && currentChat.other_user?.id === currentUser?.id;
+    const isAgent = currentChat.type === 'direct' && currentChat.other_user?.username === 'mizu-agent';
+    let name;
+    if (isSelfChat) {
+        name = 'Notepad (Me)';
+    } else if (isAgent) {
+        name = currentChat.other_user?.display_name || 'Yahoo! Helper';
+    } else if (currentChat.type === 'direct') {
+        name = currentChat.other_user?.display_name || currentChat.other_user?.username;
+    } else {
+        name = currentChat.group_name || currentChat.name;
+    }
+
+    document.getElementById('im-title').textContent = name + ' - Instant Message';
+    document.getElementById('chat-contact-name').textContent = name;
+
+    renderBuddyList();
+    await loadMessages(chatId);
+    markAsRead(chatId);
+}
+
+// Close chat
+function closeChat() {
+    currentChat = null;
+    document.getElementById('im-window').style.display = 'none';
+    document.getElementById('empty-state').style.display = 'flex';
+    renderBuddyList();
+}
+
+// Load messages
+async function loadMessages(chatId) {
+    const container = document.getElementById('messages');
+    container.innerHTML = '<div style="padding: 8px; color: #808080;">Loading messages...</div>';
+
+    try {
+        const res = await fetch(`/api/v1/chats/${chatId}/messages`);
+        const data = await res.json();
+        if (data.success) {
+            messages = data.data || [];
+            renderMessages();
+        }
+    } catch (err) {
+        console.error('Failed to load messages:', err);
+    }
+}
+
+// Render messages in Yahoo! style
+function renderMessages() {
+    const container = document.getElementById('messages');
+    if (messages.length === 0) {
+        container.innerHTML = '<div style="padding: 16px; color: #808080; font-style: italic; text-align: center;">No messages yet. Start the conversation!</div>';
+        return;
+    }
+
+    container.innerHTML = messages.map(msg => {
+        const isSent = msg.sender_id === currentUser?.id;
+        const senderName = isSent ? (currentUser.display_name || currentUser.username) : (msg.sender_name || 'Unknown');
+        const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        // Check for buzz
+        if (msg.content === '[[BUZZ]]') {
+            return `<div class="ym-buzz-message">&#128276; ${escapeHtml(senderName)} sent you a Buzz!</div>`;
+        }
+
+        return `
+            <div class="ym-message">
+                <div class="ym-message-header ${isSent ? 'sent' : 'received'}">
+                    ${escapeHtml(senderName)} <span class="ym-message-time">(${time})</span>:
+                </div>
+                <div class="ym-message-content">${convertEmoticons(escapeHtml(msg.content))}</div>
+            </div>
+        `;
+    }).join('');
+
+    container.scrollTop = container.scrollHeight;
+}
+
+// Convert emoticons to emoji
+function convertEmoticons(text) {
+    const emoticons = {
+        ':)': '&#128522;',
+        ':D': '&#128516;',
+        ';)': '&#128521;',
+        ':P': '&#128523;',
+        ':O': '&#128558;',
+        ':(': '&#128532;',
+        ':\'(': '&#128546;',
+        'X(': '&#128544;',
+        ':|': '&#128528;',
+        ':*': '&#128536;',
+        'B)': '&#128526;',
+        'O:)': '&#128519;',
+        '>:)': '&#128520;',
+        '(L)': '&#10084;&#65039;',
+        '(Y)': '&#128077;',
+        '(N)': '&#128078;',
+    };
+
+    let result = text;
+    for (const [code, emoji] of Object.entries(emoticons)) {
+        result = result.split(code).join(emoji);
+    }
+    return result;
+}
+
+// Update char count
+function updateCharCount() {
+    const input = document.getElementById('message-input');
+    document.getElementById('char-count').textContent = input.value.length + ' chars';
+}
+
+// Mark as read
+async function markAsRead(chatId) {
+    try {
+        await fetch(`/api/v1/chats/${chatId}/read`, { method: 'POST' });
+        const chat = chats.find(c => c.id === chatId);
+        if (chat) chat.unread_count = 0;
+        renderBuddyList();
+    } catch (err) {
+        console.error('Failed to mark as read:', err);
+    }
+}
+
+// Send message
+async function sendMessage() {
+    const input = document.getElementById('message-input');
+    const content = input.value.trim();
+
+    if (!content || !currentChat) return;
+
+    input.value = '';
+    document.getElementById('char-count').textContent = '0 chars';
+
+    try {
+        const res = await fetch(`/api/v1/chats/${currentChat.id}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content })
+        });
+
+        const data = await res.json();
+        if (data.success && data.data) {
+            messages.push(data.data);
+            renderMessages();
+            currentChat.last_message = data.data;
+            renderBuddyList();
+        }
+    } catch (err) {
+        console.error('Failed to send message:', err);
+    }
+}
+
+// Handle Enter key
+function handleKeyDown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+    }
+}
+
+// Send Buzz
+async function sendBuzz() {
+    if (!currentChat) return;
+
+    // Trigger local buzz animation
+    const chatWindow = document.getElementById('im-window');
+    chatWindow.classList.add('ym-buzz-active');
+    setTimeout(() => chatWindow.classList.remove('ym-buzz-active'), 600);
+
+    // Send buzz message
+    try {
+        await fetch(`/api/v1/chats/${currentChat.id}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: '[[BUZZ]]' })
+        });
+        await loadMessages(currentChat.id);
+    } catch (err) {
+        console.error('Failed to send buzz:', err);
+    }
+}
+
+// Emoticon picker
+function toggleEmoticonPicker() {
+    const picker = document.getElementById('emoticon-picker');
+    emoticonPickerOpen = !emoticonPickerOpen;
+    picker.style.display = emoticonPickerOpen ? 'grid' : 'none';
+}
+
+function insertEmoticon(code) {
+    const input = document.getElementById('message-input');
+    input.value += code;
+    input.focus();
+    updateCharCount();
+    document.getElementById('emoticon-picker').style.display = 'none';
+    emoticonPickerOpen = false;
+}
+
+// WebSocket connection
+function connectWebSocket() {
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${protocol}//${location.host}/ws`);
+
+    ws.onopen = () => {
+        document.getElementById('connection-status').textContent = 'Online';
+    };
+
+    ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        handleWebSocketMessage(data);
+    };
+
+    ws.onclose = () => {
+        document.getElementById('connection-status').textContent = 'Reconnecting...';
+        setTimeout(connectWebSocket, 3000);
+    };
+
+    ws.onerror = (err) => console.error('WebSocket error:', err);
+}
+
+function handleWebSocketMessage(data) {
+    switch(data.type) {
+        case 'new_message':
+            handleNewMessage(data.message);
+            break;
+        case 'typing':
+            handleTyping(data);
+            break;
+    }
+}
+
+function handleNewMessage(msg) {
+    const chat = chats.find(c => c.id === msg.chat_id);
+    if (chat) {
+        chat.last_message = msg;
+        if (currentChat?.id !== msg.chat_id) {
+            chat.unread_count = (chat.unread_count || 0) + 1;
+        }
+        chats = [chat, ...chats.filter(c => c.id !== chat.id)];
+        renderBuddyList();
+    }
+
+    if (currentChat?.id === msg.chat_id) {
+        messages.push(msg);
+        renderMessages();
+        markAsRead(msg.chat_id);
+
+        // Check for buzz
+        if (msg.content === '[[BUZZ]]' && msg.sender_id !== currentUser?.id) {
+            const chatWindow = document.getElementById('im-window');
+            chatWindow.classList.add('ym-buzz-active');
+            setTimeout(() => chatWindow.classList.remove('ym-buzz-active'), 600);
+        }
+    }
+}
+
+function handleTyping(data) {
+    if (currentChat?.id === data.chat_id && data.user_id !== currentUser?.id) {
+        document.getElementById('typing-status').textContent = (data.user_name || 'User') + ' is typing...';
+        clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(() => {
+            document.getElementById('typing-status').textContent = 'Ready';
+        }, 3000);
+    }
+}
+
+// Modal functions
+function showNewChatModal() {
+    document.getElementById('new-chat-modal').style.display = 'flex';
+    document.getElementById('contact-search').value = '';
+    document.getElementById('contact-search').focus();
+    showRecentContacts();
+}
+
+function hideNewChatModal() {
+    document.getElementById('new-chat-modal').style.display = 'none';
+}
+
+function showRecentContacts() {
+    const list = document.getElementById('contact-list');
+    const recentUsers = [];
+    const seenIds = new Set();
+
+    for (const chat of chats) {
+        if (chat.type === 'direct' && chat.other_user) {
+            const user = chat.other_user;
+            if (user.id !== currentUser?.id && !seenIds.has(user.id)) {
+                seenIds.add(user.id);
+                recentUsers.push(user);
+            }
+        }
+    }
+
+    if (recentUsers.length === 0) {
+        list.innerHTML = '<div style="padding: 8px; color: #808080;">Type to search for users...</div>';
+        return;
+    }
+
+    list.innerHTML = recentUsers.slice(0, 5).map(user => `
+        <div class="xp-listbox-item" ondblclick="startChat('${user.id}')">
+            ${escapeHtml(user.display_name || user.username)}
+        </div>
+    `).join('');
+}
+
+let searchTimeout = null;
+async function searchUsers(query) {
+    clearTimeout(searchTimeout);
+    const list = document.getElementById('contact-list');
+
+    if (query.trim().length < 2) {
+        showRecentContacts();
+        return;
+    }
+
+    list.innerHTML = '<div style="padding: 8px; color: #808080;">Searching...</div>';
+
+    searchTimeout = setTimeout(async () => {
+        try {
+            const res = await fetch(`/api/v1/users/search?q=${encodeURIComponent(query)}`);
+            const data = await res.json();
+            if (data.success) {
+                const users = (data.data || []).filter(u => u.id !== currentUser?.id);
+                if (users.length === 0) {
+                    list.innerHTML = '<div style="padding: 8px; color: #808080;">No users found</div>';
+                } else {
+                    list.innerHTML = users.map(user => `
+                        <div class="xp-listbox-item" ondblclick="startChat('${user.id}')">
+                            ${escapeHtml(user.display_name || user.username)}
+                        </div>
+                    `).join('');
+                }
+            }
+        } catch (err) {
+            console.error('Search failed:', err);
+        }
+    }, 300);
+}
+
+async function startChat(contactId) {
+    try {
+        const res = await fetch('/api/v1/chats', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'direct', recipient_id: contactId })
+        });
+
+        const data = await res.json();
+        if (data.success && data.data) {
+            hideNewChatModal();
+            if (!chats.find(c => c.id === data.data.id)) {
+                chats.unshift(data.data);
+            }
+            renderBuddyList();
+            selectChat(data.data.id);
+        }
+    } catch (err) {
+        console.error('Failed to create chat:', err);
+    }
+}
+
+// QR Modal functions
+let currentFriendCode = null;
+let pendingFriendUser = null;
+let pendingFriendCodeToAdd = null;
+
+function showQRModal() {
+    document.getElementById('qr-modal').style.display = 'flex';
+    switchQRTab('my-code');
+    loadMyFriendCode();
+}
+
+function hideQRModal() {
+    document.getElementById('qr-modal').style.display = 'none';
+}
+
+function switchQRTab(tab) {
+    document.querySelectorAll('.xp-tab').forEach(t => t.classList.remove('active'));
+
+    if (tab === 'my-code') {
+        document.getElementById('qr-tab-my-code').classList.add('active');
+        document.getElementById('qr-my-code-content').style.display = 'block';
+        document.getElementById('qr-scan-content').style.display = 'none';
+    } else {
+        document.getElementById('qr-tab-scan').classList.add('active');
+        document.getElementById('qr-my-code-content').style.display = 'none';
+        document.getElementById('qr-scan-content').style.display = 'block';
+        document.getElementById('friend-code-input').focus();
+    }
+}
+
+async function loadMyFriendCode() {
+    const container = document.getElementById('qr-code-container');
+    const codeText = document.getElementById('qr-code-text');
+
+    container.innerHTML = 'Generating...';
+    codeText.textContent = '';
+
+    try {
+        const res = await fetch('/api/v1/friend-code');
+        const data = await res.json();
+        if (data.success && data.data) {
+            currentFriendCode = data.data;
+            codeText.textContent = data.data.code;
+
+            container.innerHTML = '';
+            if (typeof QRCode !== 'undefined') {
+                new QRCode(container, {
+                    text: data.data.qr_data,
+                    width: 120,
+                    height: 120,
+                    colorDark: '#5C1A4A',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.M
+                });
+            }
+        }
+    } catch (err) {
+        console.error('Failed to load friend code:', err);
+        container.innerHTML = 'Error loading code';
+    }
+}
+
+function copyFriendCode() {
+    if (currentFriendCode?.code) {
+        navigator.clipboard.writeText(currentFriendCode.code);
+        alert('Friend code copied!');
+    }
+}
+
+function copyFriendLink() {
+    if (currentFriendCode?.qr_data) {
+        const link = currentFriendCode.qr_data.startsWith('http') ? currentFriendCode.qr_data : window.location.origin + currentFriendCode.qr_data;
+        navigator.clipboard.writeText(link);
+        alert('Link copied!');
+    }
+}
+
+async function lookupFriendCode() {
+    const code = document.getElementById('friend-code-input').value.trim();
+    const resultDiv = document.getElementById('friend-code-result');
+
+    if (!code) {
+        alert('Please enter a friend code');
+        return;
+    }
+
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = '<div style="color: #808080;">Looking up...</div>';
+
+    try {
+        const res = await fetch(`/api/v1/friend-code/${encodeURIComponent(code)}`);
+        const data = await res.json();
+
+        if (data.success && data.data) {
+            pendingFriendUser = data.data;
+            pendingFriendCodeToAdd = code;
+            hideQRModal();
+            showFriendPreviewModal(data.data);
+        } else {
+            resultDiv.innerHTML = '<div style="color: #CC0000;">Invalid or expired code</div>';
+        }
+    } catch (err) {
+        resultDiv.innerHTML = '<div style="color: #CC0000;">Error looking up code</div>';
+    }
+}
+
+function showFriendPreviewModal(user) {
+    document.getElementById('friend-preview-name').textContent = user.display_name || user.username;
+    document.getElementById('friend-preview-username').textContent = '@' + user.username;
+    document.getElementById('friend-preview-status').textContent = user.status || 'Online';
+    document.getElementById('friend-preview-modal').style.display = 'flex';
+}
+
+function hideFriendPreviewModal() {
+    document.getElementById('friend-preview-modal').style.display = 'none';
+    pendingFriendUser = null;
+    pendingFriendCodeToAdd = null;
+}
+
+async function confirmAddFriend() {
+    if (!pendingFriendCodeToAdd) return;
+
+    try {
+        const res = await fetch(`/api/v1/friend-code/${encodeURIComponent(pendingFriendCodeToAdd)}`, { method: 'POST' });
+        const data = await res.json();
+
+        if (data.success) {
+            hideFriendPreviewModal();
+            alert('Friend added successfully!');
+            if (pendingFriendUser?.id) {
+                startChat(pendingFriendUser.id);
+            }
+        } else {
+            alert(data.error || 'Failed to add friend');
+        }
+    } catch (err) {
+        alert('Error adding friend');
+    }
+}
+
+// Utility
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+</script>
+{{end}}

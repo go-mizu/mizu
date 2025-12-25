@@ -159,6 +159,20 @@
                                     <div style="text-align: center; margin-top: 4px; font-size: 10px;">AIM Classic</div>
                                 </div>
                             </label>
+
+                            <!-- Yahoo Messenger -->
+                            <label style="cursor: pointer;">
+                                <input type="radio" name="theme" value="ymxp" style="display: none;">
+                                <div class="theme-option" style="width: 100px; border: 2px solid transparent; padding: 4px;">
+                                    <div style="height: 60px; background: #5C7EC0; border: 2px inset; padding: 4px;">
+                                        <div style="background: #ECE9D8; height: 100%; border: 1px outset;">
+                                            <div style="height: 10px; background: linear-gradient(180deg, #3168D8 0%, #1941A3 100%);"></div>
+                                            <div style="padding: 2px; font-size: 8px;">Yahoo!</div>
+                                        </div>
+                                    </div>
+                                    <div style="text-align: center; margin-top: 4px; font-size: 10px;">Yahoo! XP</div>
+                                </div>
+                            </label>
                         </div>
                     </div>
 
@@ -295,17 +309,9 @@ function saveSettings() {
 
 function applyTheme() {
     const selected = document.querySelector('input[name="theme"]:checked');
-    if (selected) {
-        const theme = selected.value;
-        localStorage.setItem('theme', theme);
-
-        // For switching to/from AIM theme, need to reload
-        if (theme === 'aim1.0') {
-            window.location.href = '/settings';
-        } else {
-            // Switch back to default theme view
-            window.location.href = '/settings?theme=' + theme;
-        }
+    if (selected && typeof setTheme === 'function') {
+        // Use setTheme from app.js - handles cookie, localStorage, and reload
+        setTheme(selected.value);
     }
 }
 
