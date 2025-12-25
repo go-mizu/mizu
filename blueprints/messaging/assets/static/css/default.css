@@ -64,3 +64,346 @@ body {
 .status-sent::after { content: '✓'; }
 .status-delivered::after { content: '✓✓'; }
 .status-read::after { content: '✓✓'; color: #53bdeb; }
+
+/* ============================================
+   EMOJI & STICKER PICKER
+   ============================================ */
+
+/* Picker Container */
+.picker-container {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+    z-index: 100;
+    overflow: hidden;
+}
+
+.emoji-picker {
+    width: 340px;
+    max-height: 400px;
+}
+
+.sticker-picker {
+    width: 380px;
+    max-height: 450px;
+}
+
+/* Picker Header */
+.picker-header {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    gap: 8px;
+}
+
+.picker-search {
+    flex: 1;
+    background: var(--bg-tertiary);
+    border: none;
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.picker-search::placeholder {
+    color: var(--text-muted);
+}
+
+.picker-search:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* Category Tabs */
+.picker-tabs {
+    display: flex;
+    padding: 4px 8px;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+}
+
+.picker-tab {
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 18px;
+    transition: background 0.2s;
+    flex-shrink: 0;
+}
+
+.picker-tab:hover {
+    background: var(--bg-hover);
+}
+
+.picker-tab.active {
+    background: var(--bg-tertiary);
+}
+
+/* Emoji Grid */
+.picker-content {
+    padding: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.emoji-category-title {
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 8px 4px 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 2px;
+}
+
+.emoji-item {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+}
+
+.emoji-item:hover {
+    background: var(--bg-hover);
+    transform: scale(1.15);
+}
+
+/* Sticker Grid */
+.sticker-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    padding: 8px;
+}
+
+.sticker-item {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+}
+
+.sticker-item:hover {
+    background: var(--bg-hover);
+    transform: scale(1.05);
+}
+
+.sticker-item svg {
+    width: 100%;
+    height: 100%;
+}
+
+/* Sticker Pack Tabs */
+.sticker-pack-tabs {
+    display: flex;
+    padding: 8px;
+    gap: 8px;
+    border-top: 1px solid var(--border);
+    overflow-x: auto;
+}
+
+.sticker-pack-tab {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+    flex-shrink: 0;
+}
+
+.sticker-pack-tab:hover {
+    background: var(--bg-hover);
+}
+
+.sticker-pack-tab.active {
+    background: var(--bg-tertiary);
+    box-shadow: 0 0 0 2px var(--accent);
+}
+
+.sticker-pack-tab svg {
+    width: 28px;
+    height: 28px;
+}
+
+/* ============================================
+   MESSAGE REACTIONS
+   ============================================ */
+
+.message-reactions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.reaction-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    background: var(--bg-tertiary);
+    border-radius: 12px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.15s;
+    border: 1px solid transparent;
+}
+
+.reaction-badge:hover {
+    background: var(--bg-hover);
+}
+
+.reaction-badge.me {
+    border-color: var(--accent);
+    background: rgba(37, 211, 102, 0.1);
+}
+
+.reaction-badge .emoji {
+    font-size: 16px;
+}
+
+.reaction-badge .count {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+/* Reaction Picker (Quick) */
+.reaction-picker {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 4px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 4px 8px;
+    display: flex;
+    gap: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    z-index: 50;
+}
+
+.reaction-picker .emoji-item {
+    width: 32px;
+    height: 32px;
+    font-size: 20px;
+}
+
+.reaction-picker .more-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 16px;
+}
+
+.reaction-picker .more-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+/* Message Hover Actions */
+.message-wrapper {
+    position: relative;
+}
+
+.message-actions {
+    position: absolute;
+    top: -16px;
+    right: 8px;
+    display: none;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 2px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.message-wrapper:hover .message-actions {
+    display: flex;
+}
+
+.message-action-btn {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: background 0.15s;
+}
+
+.message-action-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+/* ============================================
+   STICKER MESSAGE
+   ============================================ */
+
+.message-sticker {
+    max-width: 150px;
+    max-height: 150px;
+}
+
+.message-sticker svg {
+    width: 100%;
+    height: 100%;
+}
+
+/* Input Area Buttons */
+.input-emoji-btn,
+.input-sticker-btn {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: background 0.15s, color 0.15s;
+    font-size: 20px;
+}
+
+.input-emoji-btn:hover,
+.input-sticker-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.input-emoji-btn.active,
+.input-sticker-btn.active {
+    color: var(--accent);
+}

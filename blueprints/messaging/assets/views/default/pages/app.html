@@ -133,15 +133,23 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
                         </svg>
                     </button>
-                    <div class="flex-1 relative">
+                    <div class="flex-1 relative" id="message-input-wrapper">
                         <textarea
                             id="message-input"
                             rows="1"
                             placeholder="Type a message..."
-                            class="w-full px-4 py-3 bg-tertiary border border-default rounded-2xl text-primary placeholder-muted focus:outline-none focus:border-[#25D366] resize-none max-h-32"
+                            class="w-full px-4 py-3 pr-20 bg-tertiary border border-default rounded-2xl text-primary placeholder-muted focus:outline-none focus:border-[#25D366] resize-none max-h-32"
                             oninput="autoResize(this); sendTyping()"
                             onkeydown="handleKeyDown(event)"
                         ></textarea>
+                        <div class="absolute right-2 bottom-2 flex gap-1">
+                            <button type="button" class="input-emoji-btn" onclick="toggleEmojiPicker(this, document.getElementById('message-input'))" title="Emoji">
+                                😀
+                            </button>
+                            <button type="button" class="input-sticker-btn" onclick="toggleStickerPicker(this, handleSendSticker)" title="Stickers">
+                                🎨
+                            </button>
+                        </div>
                     </div>
                     <button type="submit" class="p-3 accent rounded-full text-white">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -298,6 +306,8 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="/static/js/emoji-data.js"></script>
+<script src="/static/js/sticker-data.js"></script>
 <script>
 // App state
 let currentUser = null;
@@ -598,20 +608,47 @@ function renderMessages() {
 
         const statusIcon = isSent ? getStatusIcon(msg.status) : '';
 
+        // Check if it's a sticker message
+        const isSticker = msg.type === 'sticker';
+        let contentHtml = '';
+        if (isSticker && msg.sticker_pack_id && msg.sticker_id) {
+            contentHtml = renderStickerMessage(msg.sticker_pack_id, msg.sticker_id);
+        } else {
+            contentHtml = `<div class="text-primary whitespace-pre-wrap break-words">${escapeHtml(msg.content)}</div>`;
+        }
+
+        // Render reactions if any
+        const reactionsHtml = msg.reactions ? renderReactions(msg.reactions, msg.id, currentUser?.id) : '';
+
         return `
             ${dateHeader}
             <div class="flex ${isSent ? 'justify-end' : 'justify-start'}">
-                <div class="${isSent ? 'sent-bubble' : 'received-bubble'} rounded-2xl px-4 py-2 max-w-[70%] ${isSent ? 'rounded-br-md' : 'rounded-bl-md'}">
-                    ${!isSent && currentChat?.type === 'group' ? `<div class="text-xs text-[#25D366] font-medium mb-1">${escapeHtml(msg.sender_name || 'Unknown')}</div>` : ''}
-                    <div class="text-primary whitespace-pre-wrap break-words">${escapeHtml(msg.content)}</div>
-                    <div class="flex items-center justify-end gap-1 mt-1">
-                        <span class="text-xs text-muted">${formatTime(msg.created_at)}</span>
-                        ${statusIcon}
+                <div class="message-wrapper" data-message-id="${msg.id}" data-chat-id="${msg.chat_id}">
+                    <div class="message-actions">
+                        <button class="message-action-btn" onclick="handleReaction('${msg.id}')" title="React">😀</button>
                     </div>
+                    <div class="${isSticker ? '' : (isSent ? 'sent-bubble' : 'received-bubble') + ' rounded-2xl px-4 py-2'} max-w-[70%] ${isSent ? 'rounded-br-md' : 'rounded-bl-md'}">
+                        ${!isSent && currentChat?.type === 'group' ? `<div class="text-xs text-[#25D366] font-medium mb-1">${escapeHtml(msg.sender_name || 'Unknown')}</div>` : ''}
+                        ${contentHtml}
+                        <div class="flex items-center justify-end gap-1 mt-1">
+                            <span class="text-xs text-muted">${formatTime(msg.created_at)}</span>
+                            ${statusIcon}
+                        </div>
+                    </div>
+                    ${reactionsHtml}
                 </div>
             </div>
         `;
     }).join('');
+
+    // Attach reaction badge click handlers
+    container.querySelectorAll('.reaction-badge').forEach(badge => {
+        badge.addEventListener('click', () => {
+            const msgId = badge.dataset.messageId;
+            const emoji = badge.dataset.emoji;
+            handleReactionClick(msgId, emoji);
+        });
+    });
 }
 
 // Get status icon for message
@@ -1226,6 +1263,108 @@ function showSuccess(message) {
     successDiv.textContent = message;
     document.body.appendChild(successDiv);
     setTimeout(() => successDiv.remove(), 3000);
+}
+
+// =========================================
+// Sticker & Emoji Features
+// =========================================
+
+// Handle sending a sticker
+async function handleSendSticker(packId, stickerId) {
+    if (!currentChat) {
+        showError('Please select a chat first');
+        return;
+    }
+
+    try {
+        const packs = window.STICKER_PACKS || {};
+        const pack = packs[packId];
+        const sticker = pack?.stickers.find(s => s.id === stickerId);
+
+        const res = await fetch(`/api/v1/chats/${currentChat.id}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                type: 'sticker',
+                content: sticker ? sticker.name : stickerId,
+                sticker_pack_id: packId,
+                sticker_id: stickerId,
+            })
+        });
+
+        const data = await res.json();
+        if (data.success && data.data) {
+            messages.push(data.data);
+            renderMessages();
+            scrollToBottom();
+            currentChat.last_message = data.data;
+            renderChatList();
+        }
+    } catch (err) {
+        console.error('Failed to send sticker:', err);
+        showError('Failed to send sticker');
+    }
+}
+
+// Handle reaction button click on message
+function handleReaction(messageId) {
+    const wrapper = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (wrapper) {
+        showReactionPicker(wrapper, messageId, async (msgId, emoji) => {
+            if (currentChat) {
+                const success = await addReaction(currentChat.id, msgId, emoji);
+                if (success) {
+                    // Update the message reactions locally
+                    const msg = messages.find(m => m.id === msgId);
+                    if (msg) {
+                        if (!msg.reactions) msg.reactions = [];
+                        const existing = msg.reactions.find(r => r.emoji === emoji);
+                        if (existing) {
+                            if (!existing.me) {
+                                existing.count++;
+                                existing.me = true;
+                            }
+                        } else {
+                            msg.reactions.push({ emoji, count: 1, me: true });
+                        }
+                        renderMessages();
+                    }
+                }
+            }
+        });
+    }
+}
+
+// Handle clicking on an existing reaction badge
+async function handleReactionClick(messageId, emoji) {
+    if (!currentChat) return;
+
+    const msg = messages.find(m => m.id === messageId);
+    if (!msg || !msg.reactions) return;
+
+    const reaction = msg.reactions.find(r => r.emoji === emoji);
+    if (!reaction) return;
+
+    if (reaction.me) {
+        // Remove our reaction
+        const success = await removeReaction(currentChat.id, messageId);
+        if (success) {
+            reaction.count--;
+            reaction.me = false;
+            if (reaction.count <= 0) {
+                msg.reactions = msg.reactions.filter(r => r.emoji !== emoji);
+            }
+            renderMessages();
+        }
+    } else {
+        // Add our reaction
+        const success = await addReaction(currentChat.id, messageId, emoji);
+        if (success) {
+            reaction.count++;
+            reaction.me = true;
+            renderMessages();
+        }
+    }
 }
 </script>
 {{end}}
