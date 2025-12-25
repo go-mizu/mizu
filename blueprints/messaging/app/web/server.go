@@ -23,6 +23,7 @@ import (
 	"github.com/go-mizu/blueprints/messaging/feature/accounts"
 	"github.com/go-mizu/blueprints/messaging/feature/chats"
 	"github.com/go-mizu/blueprints/messaging/feature/contacts"
+	"github.com/go-mizu/blueprints/messaging/feature/friendcode"
 	"github.com/go-mizu/blueprints/messaging/feature/messages"
 	"github.com/go-mizu/blueprints/messaging/feature/presence"
 	"github.com/go-mizu/blueprints/messaging/feature/stories"
@@ -49,22 +50,24 @@ type Server struct {
 	upgrader  websocket.Upgrader
 
 	// Services
-	accounts accounts.API
-	contacts contacts.API
-	chats    chats.API
-	messages messages.API
-	stories  stories.API
-	presence presence.API
+	accounts   accounts.API
+	contacts   contacts.API
+	chats      chats.API
+	messages   messages.API
+	stories    stories.API
+	presence   presence.API
+	friendcode friendcode.API
 
 	// System users
 	agentID string
 
 	// Handlers
-	authHandler    *handler.Auth
-	chatHandler    *handler.Chat
-	messageHandler *handler.Message
-	storyHandler   *handler.Story
-	pageHandler    *handler.Page
+	authHandler       *handler.Auth
+	chatHandler       *handler.Chat
+	messageHandler    *handler.Message
+	storyHandler      *handler.Story
+	pageHandler       *handler.Page
+	friendcodeHandler *handler.FriendCode
 }
 
 // New creates a new server.
@@ -92,6 +95,9 @@ func New(cfg Config) (*Server, error) {
 	usersStore := duckdb.NewUsersStore(db)
 	chatsStore := duckdb.NewChatsStore(db)
 	messagesStore := duckdb.NewMessagesStore(db)
+	friendCodesStore := duckdb.NewFriendCodesStore(db)
+	friendCodeUserStore := duckdb.NewFriendCodeUserStore(usersStore)
+	friendCodeContactStore := duckdb.NewFriendCodeContactStore(db)
 
 	// Create services
 	accountsSvc := accounts.NewService(usersStore)
@@ -100,6 +106,7 @@ func New(cfg Config) (*Server, error) {
 	messagesSvc := messages.NewService(messagesStore)
 	storiesSvc := stories.NewService(nil) // TODO: implement stories store
 	presenceSvc := presence.NewService(nil) // TODO: implement presence store
+	friendcodeSvc := friendcode.NewService(friendCodesStore, friendCodeUserStore, friendCodeContactStore, "")
 
 	// Create WebSocket hub
 	hub := ws.NewHub()
@@ -122,12 +129,13 @@ func New(cfg Config) (*Server, error) {
 			WriteBufferSize: 1024,
 			CheckOrigin:     func(r *http.Request) bool { return true },
 		},
-		accounts: accountsSvc,
-		contacts: contactsSvc,
-		chats:    chatsSvc,
-		messages: messagesSvc,
-		stories:  storiesSvc,
-		presence: presenceSvc,
+		accounts:   accountsSvc,
+		contacts:   contactsSvc,
+		chats:      chatsSvc,
+		messages:   messagesSvc,
+		stories:    storiesSvc,
+		presence:   presenceSvc,
+		friendcode: friendcodeSvc,
 	}
 
 	// Ensure the system agent user exists
@@ -141,6 +149,7 @@ func New(cfg Config) (*Server, error) {
 	s.messageHandler = handler.NewMessage(messagesSvc, chatsSvc, accountsSvc, hub, s.getUserID)
 	s.storyHandler = handler.NewStory(storiesSvc, s.getUserID)
 	s.pageHandler = handler.NewPage(tmpl, accountsSvc, chatsSvc, messagesSvc, s.getUserID, cfg.Dev)
+	s.friendcodeHandler = handler.NewFriendCode(friendcodeSvc, s.getUserID)
 
 	s.setupRoutes()
 
@@ -302,6 +311,12 @@ func (s *Server) setupRoutes() {
 		// Search
 		api.Get("/search/messages", s.messageHandler.Search)
 		api.Get("/starred", s.messageHandler.ListStarred)
+
+		// Friend Codes (QR Code Friend Feature)
+		api.Get("/friend-code", s.friendcodeHandler.Generate)
+		api.Delete("/friend-code", s.friendcodeHandler.Revoke)
+		api.Get("/friend-code/{code}", s.friendcodeHandler.Resolve)
+		api.Post("/friend-code/{code}", s.friendcodeHandler.AddFriend)
 	})
 
 	// WebSocket
@@ -314,6 +329,7 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/app", s.pageHandler.App)
 	s.app.Get("/chat/{id}", s.pageHandler.ChatView)
 	s.app.Get("/settings", s.pageHandler.Settings)
+	s.app.Get("/add-friend/{code}", s.handleAddFriend)
 
 	// Static files
 	staticHandler := http.StripPrefix("/static/", http.FileServer(http.FS(assets.Static())))
@@ -511,6 +527,22 @@ func (s *Server) getUserID(c *mizu.Ctx) string {
 	}
 
 	return ""
+}
+
+// handleAddFriend handles the /add-friend/{code} deep link.
+// It redirects logged-in users to /app with the friend code,
+// or redirects to login for unauthenticated users.
+func (s *Server) handleAddFriend(c *mizu.Ctx) error {
+	code := c.Param("code")
+	userID := s.getUserID(c)
+
+	if userID == "" {
+		// Redirect to login, preserving the friend code
+		return c.Redirect(http.StatusFound, "/login?next=/add-friend/"+code)
+	}
+
+	// Redirect to app with friend code to trigger the add friend modal
+	return c.Redirect(http.StatusFound, "/app?add-friend="+code)
 }
 
 func (s *Server) authRequired(next mizu.Handler) mizu.Handler {

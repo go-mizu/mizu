@@ -23,16 +23,25 @@ func NewService(store Store) *Service {
 
 // Get retrieves a user's presence.
 func (s *Service) Get(ctx context.Context, userID string) (*Presence, error) {
+	if s.store == nil {
+		return nil, nil
+	}
 	return s.store.Get(ctx, userID)
 }
 
 // GetMany retrieves presence for multiple users.
 func (s *Service) GetMany(ctx context.Context, userIDs []string) ([]*Presence, error) {
+	if s.store == nil {
+		return nil, nil
+	}
 	return s.store.GetMany(ctx, userIDs)
 }
 
 // SetOnline sets a user as online.
 func (s *Service) SetOnline(ctx context.Context, userID string) error {
+	if s.store == nil {
+		return nil
+	}
 	p := &Presence{
 		UserID:     userID,
 		Status:     StatusOnline,
@@ -43,6 +52,9 @@ func (s *Service) SetOnline(ctx context.Context, userID string) error {
 
 // SetOffline sets a user as offline.
 func (s *Service) SetOffline(ctx context.Context, userID string) error {
+	if s.store == nil {
+		return nil
+	}
 	if err := s.store.UpdateLastSeen(ctx, userID); err != nil {
 		return err
 	}
@@ -51,6 +63,9 @@ func (s *Service) SetOffline(ctx context.Context, userID string) error {
 
 // SetCustomStatus sets a user's custom status.
 func (s *Service) SetCustomStatus(ctx context.Context, userID, status string) error {
+	if s.store == nil {
+		return nil
+	}
 	return s.store.UpdateCustomStatus(ctx, userID, status)
 }
 

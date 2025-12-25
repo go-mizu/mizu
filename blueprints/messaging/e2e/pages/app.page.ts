@@ -44,6 +44,19 @@ export class AppPage {
   readonly createGroupButton: Locator;
   readonly closeModalButton: Locator;
 
+  // QR Code modal
+  readonly qrButton: Locator;
+  readonly qrModal: Locator;
+  readonly qrMyCodeTab: Locator;
+  readonly qrScanTab: Locator;
+  readonly qrCodeContainer: Locator;
+  readonly qrCodeText: Locator;
+  readonly friendCodeInput: Locator;
+  readonly lookupCodeButton: Locator;
+  readonly friendPreviewModal: Locator;
+  readonly friendPreviewName: Locator;
+  readonly addFriendButton: Locator;
+
   constructor(page: Page) {
     this.page = page;
 
@@ -87,6 +100,19 @@ export class AppPage {
     this.contactList = page.locator('#contact-list');
     this.createGroupButton = page.locator('button:has-text("Create New Group")');
     this.closeModalButton = this.newChatModal.locator('button').first();
+
+    // QR Code modal
+    this.qrButton = page.locator('button[title="QR Code"]');
+    this.qrModal = page.locator('#qr-modal');
+    this.qrMyCodeTab = page.locator('#qr-tab-my-code');
+    this.qrScanTab = page.locator('#qr-tab-scan');
+    this.qrCodeContainer = page.locator('#qr-code-container');
+    this.qrCodeText = page.locator('#qr-code-text');
+    this.friendCodeInput = page.locator('#friend-code-input');
+    this.lookupCodeButton = page.locator('button:has-text("Look Up Code")');
+    this.friendPreviewModal = page.locator('#friend-preview-modal');
+    this.friendPreviewName = page.locator('#friend-preview-name');
+    this.addFriendButton = page.locator('#friend-preview-modal button:has-text("Add Friend")');
   }
 
   async goto(): Promise<void> {
@@ -219,5 +245,36 @@ export class AppPage {
   async getUnreadBadge(chatName: string): Promise<Locator> {
     const chatItem = this.chatList.locator(`div:has-text("${chatName}")`).first();
     return chatItem.locator('.rounded-full.accent');
+  }
+
+  // QR Code modal
+  async openQRModal(): Promise<void> {
+    await this.qrButton.click();
+    await expect(this.qrModal).toBeVisible();
+  }
+
+  async closeQRModal(): Promise<void> {
+    await this.qrModal.locator('button').first().click();
+    await expect(this.qrModal).toBeHidden();
+  }
+
+  async getMyFriendCode(): Promise<string> {
+    await this.openQRModal();
+    await this.page.waitForTimeout(1000); // Wait for code to load
+    const code = await this.qrCodeText.textContent();
+    return code || '';
+  }
+
+  async lookupFriendCode(code: string): Promise<void> {
+    await this.qrScanTab.click();
+    await this.friendCodeInput.fill(code);
+    await this.lookupCodeButton.click();
+  }
+
+  async addFriendByCode(code: string): Promise<void> {
+    await this.openQRModal();
+    await this.lookupFriendCode(code);
+    await expect(this.friendPreviewModal).toBeVisible({ timeout: 5000 });
+    await this.addFriendButton.click();
   }
 }
