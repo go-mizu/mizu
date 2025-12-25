@@ -1,44 +1,47 @@
-/* AOL Instant Messenger 1.0 Theme - Authentic Windows 3.1 Style */
+/* AOL Instant Messenger 1.0 Theme - Authentic Windows 98 Style */
+/* Based on 98.css (https://jdan.github.io/98.css/) */
 
 /* ============================================
-   WINDOWS 3.1 SYSTEM FONTS
+   WINDOWS 98 SYSTEM FONTS
    ============================================ */
 @font-face {
-    font-family: 'W95FA';
-    src: local('Fixedsys'), local('Terminal'), local('MS Sans Serif');
+    font-family: 'Pixelated MS Sans Serif';
+    src: local('Tahoma'), local('MS Sans Serif'), local('Segoe UI');
     font-weight: normal;
     font-style: normal;
 }
 
 /* ============================================
-   ROOT VARIABLES
+   ROOT VARIABLES - WINDOWS 98 COLORS
    ============================================ */
 :root {
-    /* Windows 3.1 System Colors */
-    --win-bg: #c0c0c0;
-    --win-text: #000000;
-    --win-highlight: #000080;
-    --win-highlight-text: #ffffff;
+    /* Windows 98 System Colors */
+    --win98-bg: #c0c0c0;
+    --win98-text: #000000;
+    --win98-desktop: #008080;
 
-    /* 3D Border Colors */
-    --win-border-light: #ffffff;
-    --win-border-dark: #808080;
-    --win-border-darker: #404040;
-    --win-border-darkest: #000000;
+    /* Windows 98 3D Border Colors (exact 98.css values) */
+    --win98-button-highlight: #ffffff;
+    --win98-button-light: #dfdfdf;
+    --win98-button-shadow: #808080;
+    --win98-button-dark-shadow: #0a0a0a;
 
-    /* Title Bar */
-    --win-titlebar-active: #000080;
-    --win-titlebar-inactive: #808080;
-    --win-titlebar-text: #ffffff;
+    /* Title Bar - Windows 98 uses GRADIENT (key difference from 3.1) */
+    --win98-titlebar-active-start: #000080;
+    --win98-titlebar-active-end: #1084d0;
+    --win98-titlebar-inactive-start: #808080;
+    --win98-titlebar-inactive-end: #b5b5b5;
+    --win98-titlebar-text: #ffffff;
 
-    /* Desktop */
-    --win-desktop: #008080;
+    /* Selection */
+    --win98-highlight: #000080;
+    --win98-highlight-text: #ffffff;
 
     /* AIM Specific */
     --aim-yellow: #ffff00;
     --aim-gold: #ffcc00;
-    --aim-sent: #ffffcc;
-    --aim-received: #ffffff;
+    --aim-sent: #ff0000;
+    --aim-received: #0000ff;
     --aim-online: #00aa00;
     --aim-away: #ff8800;
     --aim-offline: #808080;
@@ -48,7 +51,7 @@
    BASE STYLES
    ============================================ */
 * {
-    font-family: 'Tahoma', 'MS Sans Serif', 'Segoe UI', sans-serif !important;
+    font-family: 'Tahoma', 'MS Sans Serif', 'Segoe UI', Arial, sans-serif !important;
     font-size: 11px;
     box-sizing: border-box;
 }
@@ -56,44 +59,50 @@
 html, body {
     margin: 0;
     padding: 0;
-    background: var(--win-desktop);
-    color: var(--win-text);
+    background: var(--win98-desktop);
+    color: var(--win98-text);
     min-height: 100vh;
+    /* Authentic Windows 98 pixelated rendering */
+    -webkit-font-smoothing: none;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 /* ============================================
-   WINDOWS 3.1 WINDOW FRAME
+   WINDOWS 98 WINDOW FRAME
    ============================================ */
 .win-window {
-    background: var(--win-bg);
-    border: 2px solid;
-    border-color: var(--win-border-light) var(--win-border-darker) var(--win-border-darker) var(--win-border-light);
-    box-shadow: 1px 1px 0 var(--win-border-darkest);
+    background: var(--win98-bg);
+    border: none;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        inset -2px -2px 0 var(--win98-button-shadow),
+        inset 2px 2px 0 var(--win98-button-light);
 }
 
 .win-window-inner {
-    border: 1px solid;
-    border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
-    margin: 2px;
+    margin: 3px;
 }
 
 /* ============================================
-   TITLE BAR
+   TITLE BAR - Windows 98 GRADIENT (key feature!)
    ============================================ */
 .win-titlebar {
-    background: linear-gradient(90deg, #000080, #1084d0);
-    color: var(--win-titlebar-text);
+    /* Windows 98 uses horizontal gradient - this is THE key difference from Windows 3.1 */
+    background: linear-gradient(90deg, var(--win98-titlebar-active-start) 0%, var(--win98-titlebar-active-end) 100%);
+    color: var(--win98-titlebar-text);
     font-weight: bold;
     padding: 2px 3px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 18px;
+    height: 20px;
     user-select: none;
+    margin: 2px 2px 0 2px;
 }
 
 .win-titlebar.inactive {
-    background: var(--win-titlebar-inactive);
+    background: linear-gradient(90deg, var(--win98-titlebar-inactive-start) 0%, var(--win98-titlebar-inactive-end) 100%);
 }
 
 .win-titlebar-text {
@@ -103,12 +112,14 @@ html, body {
     overflow: hidden;
     text-overflow: ellipsis;
     font-size: 11px;
+    letter-spacing: 0;
 }
 
 .win-titlebar-icon {
     width: 16px;
     height: 16px;
-    margin-right: 4px;
+    margin-right: 3px;
+    flex-shrink: 0;
 }
 
 .win-titlebar-buttons {
@@ -116,34 +127,81 @@ html, body {
     gap: 2px;
 }
 
+/* Windows 98 Title Bar Buttons */
 .win-titlebar-btn {
     width: 16px;
     height: 14px;
-    background: var(--win-bg);
-    border: 1px solid;
-    border-color: var(--win-border-light) var(--win-border-darker) var(--win-border-darker) var(--win-border-light);
+    background: var(--win98-bg);
+    border: none;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        inset -2px -2px 0 var(--win98-button-shadow),
+        inset 2px 2px 0 var(--win98-button-light);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 9px;
-    font-weight: bold;
+    font-size: 11px;
+    font-weight: normal;
     cursor: pointer;
     padding: 0;
     line-height: 1;
+    color: var(--win98-text);
 }
 
 .win-titlebar-btn:active {
-    border-color: var(--win-border-darker) var(--win-border-light) var(--win-border-light) var(--win-border-darker);
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-dark-shadow),
+        inset -2px -2px 0 var(--win98-button-light),
+        inset 2px 2px 0 var(--win98-button-shadow);
+}
+
+/* Title bar button icons using CSS */
+.win-titlebar-btn-min::after {
+    content: "";
+    width: 6px;
+    height: 2px;
+    background: var(--win98-text);
+    position: absolute;
+    bottom: 3px;
+}
+
+.win-titlebar-btn-max::after {
+    content: "";
+    width: 8px;
+    height: 6px;
+    border: 1px solid var(--win98-text);
+    border-top-width: 2px;
+    background: transparent;
+}
+
+.win-titlebar-btn-close::before,
+.win-titlebar-btn-close::after {
+    content: "";
+    position: absolute;
+    width: 8px;
+    height: 2px;
+    background: var(--win98-text);
+}
+
+.win-titlebar-btn-close::before {
+    transform: rotate(45deg);
+}
+
+.win-titlebar-btn-close::after {
+    transform: rotate(-45deg);
 }
 
 /* ============================================
    MENU BAR
    ============================================ */
 .win-menubar {
-    background: var(--win-bg);
+    background: var(--win98-bg);
     padding: 2px 0;
     display: flex;
-    border-bottom: 1px solid var(--win-border-dark);
+    border-bottom: 1px solid var(--win98-button-shadow);
+    margin: 0 2px;
 }
 
 .win-menu-item {
@@ -152,8 +210,8 @@ html, body {
 }
 
 .win-menu-item:hover {
-    background: var(--win-highlight);
-    color: var(--win-highlight-text);
+    background: var(--win98-highlight);
+    color: var(--win98-highlight-text);
 }
 
 .win-menu-item u {
@@ -161,71 +219,114 @@ html, body {
 }
 
 /* ============================================
-   BUTTONS
+   BUTTONS - Windows 98 Authentic Style
    ============================================ */
 .win-button {
-    background: var(--win-bg);
-    border: 2px solid;
-    border-color: var(--win-border-light) var(--win-border-darker) var(--win-border-darker) var(--win-border-light);
-    padding: 4px 16px;
+    background: var(--win98-bg);
+    border: none;
+    padding: 4px 12px;
     font-size: 11px;
     cursor: pointer;
     min-width: 75px;
+    min-height: 23px;
     text-align: center;
-    box-shadow: 1px 1px 0 var(--win-border-darkest);
+    position: relative;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        inset -2px -2px 0 var(--win98-button-shadow),
+        inset 2px 2px 0 var(--win98-button-light);
 }
 
 .win-button:active {
-    border-color: var(--win-border-darker) var(--win-border-light) var(--win-border-light) var(--win-border-darker);
-    box-shadow: none;
-    padding: 5px 15px 3px 17px;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-dark-shadow),
+        inset -2px -2px 0 var(--win98-button-light),
+        inset 2px 2px 0 var(--win98-button-shadow);
+    padding: 5px 11px 3px 13px;
 }
 
 .win-button:focus {
-    outline: 1px dotted var(--win-text);
-    outline-offset: -4px;
+    outline: none;
+}
+
+.win-button:focus::after {
+    content: "";
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
+    border: 1px dotted #000;
+    pointer-events: none;
 }
 
 .win-button-default {
-    border: 3px solid;
-    border-color: var(--win-border-light) var(--win-border-darker) var(--win-border-darker) var(--win-border-light);
-    box-shadow: inset 0 0 0 1px var(--win-border-darkest), 1px 1px 0 var(--win-border-darkest);
+    outline: 1px solid #000;
+    outline-offset: -4px;
 }
 
 /* ============================================
-   INPUT FIELDS
+   INPUT FIELDS - Windows 98 Sunken Style
    ============================================ */
 .win-input {
     background: #ffffff;
-    border: 2px solid;
-    border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+    border: none;
     padding: 3px 4px;
     font-size: 11px;
-    color: var(--win-text);
+    color: var(--win98-text);
+    min-height: 21px;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-shadow),
+        inset -2px -2px 0 var(--win98-button-light),
+        inset 2px 2px 0 var(--win98-button-dark-shadow);
 }
 
 .win-input:focus {
     outline: none;
 }
 
+.win-input:disabled {
+    background: var(--win98-bg);
+    color: var(--win98-button-shadow);
+}
+
+.win-input::placeholder {
+    color: var(--win98-button-shadow);
+}
+
 .win-textarea {
     background: #ffffff;
-    border: 2px solid;
-    border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+    border: none;
     padding: 3px 4px;
     font-size: 11px;
-    color: var(--win-text);
+    color: var(--win98-text);
     resize: none;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-shadow),
+        inset -2px -2px 0 var(--win98-button-light),
+        inset 2px 2px 0 var(--win98-button-dark-shadow);
+}
+
+.win-textarea:focus {
+    outline: none;
 }
 
 /* ============================================
-   LIST BOX
+   LIST BOX - Windows 98 Sunken Style
    ============================================ */
 .win-listbox {
     background: #ffffff;
-    border: 2px solid;
-    border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+    border: none;
     overflow-y: auto;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-shadow),
+        inset -2px -2px 0 var(--win98-button-light),
+        inset 2px 2px 0 var(--win98-button-dark-shadow);
 }
 
 .win-listbox-item {
@@ -236,15 +337,15 @@ html, body {
 
 .win-listbox-item:hover,
 .win-listbox-item.selected {
-    background: var(--win-highlight);
-    color: var(--win-highlight-text);
+    background: var(--win98-highlight);
+    color: var(--win98-highlight-text);
 }
 
 /* ============================================
    GROUP BOX
    ============================================ */
 .win-groupbox {
-    border: 1px solid var(--win-border-dark);
+    border: 1px solid var(--win98-button-shadow);
     margin: 8px 0;
     padding: 12px 8px 8px;
     position: relative;
@@ -254,13 +355,13 @@ html, body {
     position: absolute;
     top: -8px;
     left: 8px;
-    background: var(--win-bg);
+    background: var(--win98-bg);
     padding: 0 4px;
     font-size: 11px;
 }
 
 /* ============================================
-   SCROLLBARS
+   SCROLLBARS - Windows 98 Dithered Pattern
    ============================================ */
 ::-webkit-scrollbar {
     width: 16px;
@@ -268,77 +369,106 @@ html, body {
 }
 
 ::-webkit-scrollbar-track {
-    background: repeating-conic-gradient(var(--win-bg) 0% 25%, #808080 0% 50%) 50% / 2px 2px;
+    background-color: var(--win98-bg);
+    background-image: url("data:image/svg+xml,%3Csvg width='2' height='2' viewBox='0 0 2 2' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='0' y='0' width='1' height='1' fill='%23c0c0c0'/%3E%3Crect x='1' y='0' width='1' height='1' fill='%23ffffff'/%3E%3Crect x='0' y='1' width='1' height='1' fill='%23ffffff'/%3E%3Crect x='1' y='1' width='1' height='1' fill='%23c0c0c0'/%3E%3C/svg%3E");
+    background-size: 2px 2px;
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--win-bg);
-    border: 2px solid;
-    border-color: var(--win-border-light) var(--win-border-darker) var(--win-border-darker) var(--win-border-light);
+    background: var(--win98-bg);
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        inset -2px -2px 0 var(--win98-button-shadow),
+        inset 2px 2px 0 var(--win98-button-light);
+}
+
+::-webkit-scrollbar-thumb:active {
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-dark-shadow);
 }
 
 ::-webkit-scrollbar-button {
-    background: var(--win-bg);
-    border: 2px solid;
-    border-color: var(--win-border-light) var(--win-border-darker) var(--win-border-darker) var(--win-border-light);
+    background: var(--win98-bg);
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        inset -2px -2px 0 var(--win98-button-shadow),
+        inset 2px 2px 0 var(--win98-button-light);
     display: block;
     height: 16px;
     width: 16px;
 }
 
 ::-webkit-scrollbar-button:active {
-    border-color: var(--win-border-darker) var(--win-border-light) var(--win-border-light) var(--win-border-darker);
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-dark-shadow);
 }
 
 ::-webkit-scrollbar-corner {
-    background: var(--win-bg);
+    background: var(--win98-bg);
 }
 
-/* Scrollbar arrows */
+/* Scrollbar arrows - Windows 98 style */
 ::-webkit-scrollbar-button:vertical:decrement {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Cpath d='M8 5l4 6H4z' fill='%23000'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Cpath d='M4 10l4-5 4 5z' fill='%23000'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: center;
 }
 
 ::-webkit-scrollbar-button:vertical:increment {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Cpath d='M4 5l4 6 4-6z' fill='%23000'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Cpath d='M4 6l4 5 4-5z' fill='%23000'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+::-webkit-scrollbar-button:horizontal:decrement {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Cpath d='M10 4l-5 4 5 4z' fill='%23000'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+::-webkit-scrollbar-button:horizontal:increment {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Cpath d='M6 4l5 4-5 4z' fill='%23000'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: center;
 }
 
 /* ============================================
-   STATUS BAR
+   STATUS BAR - Windows 98 Style
    ============================================ */
 .win-statusbar {
-    background: var(--win-bg);
-    border-top: 2px solid;
-    border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+    background: var(--win98-bg);
     padding: 2px 4px;
     font-size: 11px;
     display: flex;
-    gap: 4px;
+    gap: 2px;
+    margin: 0 2px 2px 2px;
 }
 
 .win-statusbar-panel {
-    border: 1px solid;
-    border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-shadow);
     padding: 1px 4px;
     flex: 1;
 }
 
 /* ============================================
-   AIM BUDDY LIST SPECIFIC
+   AIM BUDDY LIST
    ============================================ */
 .aim-buddy-list {
     background: #ffffff;
+    margin: 0 2px;
 }
 
 .aim-category {
     font-weight: bold;
     padding: 2px 4px;
-    background: var(--win-bg);
-    border-bottom: 1px solid var(--win-border-dark);
+    background: var(--win98-bg);
+    border-bottom: 1px solid var(--win98-button-shadow);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -363,25 +493,34 @@ html, body {
     gap: 6px;
 }
 
-.aim-buddy:hover {
-    background: var(--win-highlight);
-    color: var(--win-highlight-text);
+.aim-buddy:hover,
+.aim-buddy.selected {
+    background: var(--win98-highlight);
+    color: var(--win98-highlight-text);
 }
 
 .aim-buddy-icon {
     width: 16px;
     height: 16px;
     flex-shrink: 0;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
 }
 
-/* Running Man Icon */
+/* AIM Running Man Icon - Windows 98 style (256 color, cleaner) */
 .aim-icon-online {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='3' r='2' fill='%23FFCC00'/%3E%3Cpath d='M6 6h4l1 3-2 1v4h-2v-4l-2-1z' fill='%23FFCC00'/%3E%3Cpath d='M5 9l-2 5h2l1-3' fill='%23FFCC00'/%3E%3Cpath d='M11 9l2 5h-2l-1-3' fill='%23FFCC00'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='3' r='2.5' fill='%23FFCC00' stroke='%23000' stroke-width='0.5'/%3E%3Cpath d='M8 6 L8 9 L5 13 M8 9 L11 13 M6 7 L3 9 M10 7 L13 5' stroke='%23FFCC00' stroke-width='2' stroke-linecap='round' fill='none'/%3E%3Cpath d='M8 6 L8 9 L5 13 M8 9 L11 13 M6 7 L3 9 M10 7 L13 5' stroke='%23000' stroke-width='2.5' stroke-linecap='round' fill='none' opacity='0.2'/%3E%3C/svg%3E");
 }
 
-/* Away Door Icon */
+/* AIM Door Icon - Away status */
 .aim-icon-away {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='3' y='1' width='10' height='14' fill='%23996633'/%3E%3Crect x='4' y='2' width='8' height='12' fill='%23CC9966'/%3E%3Ccircle cx='10' cy='8' r='1' fill='%23FFCC00'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='3' y='1' width='10' height='14' fill='%238B4513' stroke='%23000' stroke-width='0.5'/%3E%3Crect x='4' y='2' width='8' height='12' fill='%23D2691E'/%3E%3Crect x='5' y='3' width='2' height='4' fill='%238B4513'/%3E%3Crect x='9' y='3' width='2' height='4' fill='%238B4513'/%3E%3Ccircle cx='10' cy='8' r='1' fill='%23FFD700' stroke='%23000' stroke-width='0.3'/%3E%3C/svg%3E");
+}
+
+/* Offline icon - grayed out running man */
+.aim-icon-offline {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='3' r='2.5' fill='%23808080' stroke='%23404040' stroke-width='0.5'/%3E%3Cpath d='M8 6 L8 9 L5 13 M8 9 L11 13 M6 7 L3 9 M10 7 L13 5' stroke='%23808080' stroke-width='2' stroke-linecap='round' fill='none'/%3E%3C/svg%3E");
 }
 
 /* ============================================
@@ -389,10 +528,15 @@ html, body {
    ============================================ */
 .aim-message-area {
     background: #ffffff;
-    border: 2px solid;
-    border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+    border: none;
+    margin: 0 2px;
     overflow-y: auto;
     padding: 4px;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-shadow),
+        inset -2px -2px 0 var(--win98-button-light),
+        inset 2px 2px 0 var(--win98-button-dark-shadow);
 }
 
 .aim-message {
@@ -405,11 +549,11 @@ html, body {
 }
 
 .aim-message-header.sent {
-    color: #ff0000;
+    color: var(--aim-sent);
 }
 
 .aim-message-header.received {
-    color: #0000ff;
+    color: var(--aim-received);
 }
 
 .aim-message-content {
@@ -417,43 +561,54 @@ html, body {
 }
 
 .aim-message-time {
-    color: var(--win-border-dark);
+    color: var(--win98-button-shadow);
     font-size: 10px;
+    font-weight: normal;
 }
 
 /* ============================================
-   AIM TOOLBAR
+   AIM TOOLBAR - Windows 98 Style
    ============================================ */
 .aim-toolbar {
-    background: var(--win-bg);
+    background: var(--win98-bg);
     padding: 2px 4px;
     display: flex;
     gap: 2px;
-    border-bottom: 1px solid var(--win-border-dark);
+    border-bottom: 1px solid var(--win98-button-shadow);
+    margin: 0 2px;
 }
 
 .aim-toolbar-btn {
     width: 24px;
     height: 22px;
-    background: var(--win-bg);
-    border: 1px solid;
-    border-color: var(--win-border-light) var(--win-border-darker) var(--win-border-darker) var(--win-border-light);
+    background: var(--win98-bg);
+    border: none;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight);
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
+    padding: 0;
 }
 
 .aim-toolbar-btn:hover {
-    border-color: var(--win-border-light) var(--win-border-dark) var(--win-border-dark) var(--win-border-light);
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        inset -2px -2px 0 var(--win98-button-shadow),
+        inset 2px 2px 0 var(--win98-button-light);
 }
 
 .aim-toolbar-btn:active {
-    border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-dark-shadow);
 }
 
 /* ============================================
-   CHECKBOX & RADIO
+   CHECKBOX & RADIO - Windows 98 Style
    ============================================ */
 .win-checkbox,
 .win-radio {
@@ -463,47 +618,65 @@ html, body {
     cursor: pointer;
 }
 
-.win-checkbox input,
-.win-radio input {
+.win-checkbox input[type="checkbox"],
+.win-radio input[type="radio"] {
     width: 13px;
     height: 13px;
     margin: 0;
+    accent-color: var(--win98-highlight);
 }
 
 /* ============================================
-   TABS
+   TABS - Windows 98 Style
    ============================================ */
 .win-tabs {
     display: flex;
     padding: 2px 4px 0;
+    margin: 0 2px;
 }
 
 .win-tab {
-    background: var(--win-bg);
-    border: 1px solid;
-    border-color: var(--win-border-light) var(--win-border-dark) var(--win-border-dark) var(--win-border-light);
-    border-bottom: none;
+    background: var(--win98-bg);
+    border: none;
+    box-shadow:
+        inset -1px 0 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        inset -2px 0 0 var(--win98-button-shadow),
+        inset 2px 2px 0 var(--win98-button-light);
     padding: 4px 12px;
     margin-right: 2px;
     cursor: pointer;
     position: relative;
-    top: 1px;
+    top: 2px;
 }
 
 .win-tab.active {
-    border-bottom: 1px solid var(--win-bg);
-    background: var(--win-bg);
+    background: var(--win98-bg);
+    top: 0;
+    padding-bottom: 6px;
+    z-index: 1;
+    box-shadow:
+        inset -1px 0 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        inset -2px 0 0 var(--win98-button-shadow),
+        inset 2px 2px 0 var(--win98-button-light),
+        0 2px 0 var(--win98-bg);
 }
 
 .win-tab-content {
-    border: 1px solid;
-    border-color: var(--win-border-light) var(--win-border-dark) var(--win-border-dark) var(--win-border-light);
+    border: none;
     padding: 8px;
-    background: var(--win-bg);
+    background: var(--win98-bg);
+    margin: 0 2px;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        inset -2px -2px 0 var(--win98-button-shadow),
+        inset 2px 2px 0 var(--win98-button-light);
 }
 
 /* ============================================
-   DIALOG / MODAL
+   DIALOG / MODAL - Windows 98 Style
    ============================================ */
 .win-dialog-overlay {
     position: fixed;
@@ -519,10 +692,14 @@ html, body {
 }
 
 .win-dialog {
-    background: var(--win-bg);
-    border: 2px solid;
-    border-color: var(--win-border-light) var(--win-border-darker) var(--win-border-darker) var(--win-border-light);
-    box-shadow: 2px 2px 0 var(--win-border-darkest);
+    background: var(--win98-bg);
+    border: none;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        inset -2px -2px 0 var(--win98-button-shadow),
+        inset 2px 2px 0 var(--win98-button-light),
+        4px 4px 0 rgba(0, 0, 0, 0.5);
     min-width: 300px;
 }
 
@@ -538,29 +715,104 @@ html, body {
 }
 
 /* ============================================
-   ICONS (16x16 pixel art style)
+   AIM LOGO - Windows 98 Style
    ============================================ */
 .aim-logo {
     width: 32px;
     height: 32px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect fill='%23FFCC00' width='32' height='32' rx='4'/%3E%3Ccircle cx='16' cy='10' r='5' fill='%23000'/%3E%3Cpath d='M8 20c0-4 4-8 8-8s8 4 8 8v8H8z' fill='%23000'/%3E%3Ccircle cx='16' cy='10' r='3' fill='%23FFCC00'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect fill='%23FFCC00' width='32' height='32' rx='2'/%3E%3Crect fill='%23FFE066' x='2' y='2' width='28' height='14' rx='1'/%3E%3Ccircle cx='16' cy='10' r='5' fill='%23000'/%3E%3Cpath d='M8 18c0-4 4-6 8-6s8 2 8 6v10H8z' fill='%23000'/%3E%3Ccircle cx='16' cy='10' r='3' fill='%23FFCC00'/%3E%3C/svg%3E");
+    background-size: contain;
 }
 
 /* ============================================
    UTILITY CLASSES
    ============================================ */
 .win-sunken {
-    border: 2px solid;
-    border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+    border: none;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-shadow),
+        inset -2px -2px 0 var(--win98-button-light),
+        inset 2px 2px 0 var(--win98-button-dark-shadow);
 }
 
 .win-raised {
-    border: 2px solid;
-    border-color: var(--win-border-light) var(--win-border-dark) var(--win-border-dark) var(--win-border-light);
+    border: none;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        inset -2px -2px 0 var(--win98-button-shadow),
+        inset 2px 2px 0 var(--win98-button-light);
 }
 
 .win-etched {
-    border: 1px solid var(--win-border-dark);
-    border-right-color: var(--win-border-light);
-    border-bottom-color: var(--win-border-light);
+    border: none;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-shadow);
+}
+
+/* ============================================
+   SELECT DROPDOWN - Windows 98 Style
+   ============================================ */
+.win-select,
+select.win-input {
+    background: #ffffff;
+    border: none;
+    padding: 2px 18px 2px 4px;
+    font-size: 11px;
+    color: var(--win98-text);
+    min-height: 21px;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-shadow),
+        inset -2px -2px 0 var(--win98-button-light),
+        inset 2px 2px 0 var(--win98-button-dark-shadow);
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Crect x='0' y='0' width='16' height='16' fill='%23c0c0c0'/%3E%3Cpath d='M4 6l4 5 4-5z' fill='%23000'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0 center;
+    cursor: pointer;
+}
+
+.win-select:focus,
+select.win-input:focus {
+    outline: none;
+}
+
+/* ============================================
+   PROGRESS BAR - Windows 98 Style
+   ============================================ */
+.win-progress {
+    height: 16px;
+    background: #ffffff;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-shadow),
+        inset -2px -2px 0 var(--win98-button-light),
+        inset 2px 2px 0 var(--win98-button-dark-shadow);
+}
+
+.win-progress-bar {
+    height: 100%;
+    background: repeating-linear-gradient(
+        90deg,
+        var(--win98-highlight) 0px,
+        var(--win98-highlight) 8px,
+        transparent 8px,
+        transparent 10px
+    );
+}
+
+/* ============================================
+   TOOLTIP - Windows 98 Style
+   ============================================ */
+.win-tooltip {
+    background: #ffffe1;
+    border: 1px solid #000;
+    padding: 2px 4px;
+    font-size: 11px;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.25);
 }

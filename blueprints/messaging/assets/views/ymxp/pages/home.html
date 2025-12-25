@@ -1,0 +1,109 @@
+{{define "content"}}
+<div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px;">
+    <!-- Welcome Window -->
+    <div class="xp-window" style="width: 420px;">
+        <!-- Title Bar -->
+        <div class="xp-titlebar">
+            <svg class="xp-titlebar-icon" viewBox="0 0 16 16">
+                <circle cx="8" cy="8" r="7" fill="#FFCC00"/>
+                <circle cx="6" cy="6" r="1.5" fill="#5C1A4A"/>
+                <circle cx="10" cy="6" r="1.5" fill="#5C1A4A"/>
+                <path d="M5 10 Q8 13 11 10" stroke="#5C1A4A" stroke-width="1.5" fill="none"/>
+            </svg>
+            <span class="xp-titlebar-text">Welcome to Yahoo! Messenger</span>
+            <div class="xp-titlebar-buttons">
+                <button class="xp-btn-minimize" title="Minimize"></button>
+                <button class="xp-btn-maximize" title="Maximize"></button>
+                <button class="xp-btn-close" title="Close"></button>
+            </div>
+        </div>
+
+        <!-- Yahoo Header -->
+        <div class="ym-header">
+            <div class="ym-logo">
+                <div class="ym-logo-icon">Y!</div>
+                <span class="ym-logo-text"><span class="yahoo">YAHOO!</span> Messenger</span>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div style="background: var(--xp-window-bg); padding: 24px; text-align: center;">
+            <!-- Y!M Smiley -->
+            <div style="margin-bottom: 20px;">
+                <svg width="80" height="80" viewBox="0 0 80 80">
+                    <defs>
+                        <radialGradient id="smileyGrad" cx="30%" cy="30%">
+                            <stop offset="0%" stop-color="#FFEE00"/>
+                            <stop offset="50%" stop-color="#FFCC00"/>
+                            <stop offset="100%" stop-color="#FFB300"/>
+                        </radialGradient>
+                        <filter id="shadow">
+                            <feDropShadow dx="2" dy="2" stdDeviation="2" flood-opacity="0.3"/>
+                        </filter>
+                    </defs>
+                    <circle cx="40" cy="40" r="36" fill="url(#smileyGrad)" filter="url(#shadow)"/>
+                    <circle cx="40" cy="40" r="34" fill="none" stroke="#E6B800" stroke-width="1"/>
+                    <ellipse cx="28" cy="32" rx="5" ry="6" fill="#5C1A4A"/>
+                    <ellipse cx="52" cy="32" rx="5" ry="6" fill="#5C1A4A"/>
+                    <ellipse cx="29" cy="30" rx="2" ry="2" fill="#FFFFFF"/>
+                    <ellipse cx="53" cy="30" rx="2" ry="2" fill="#FFFFFF"/>
+                    <path d="M24 48 Q40 62 56 48" stroke="#5C1A4A" stroke-width="4" fill="none" stroke-linecap="round"/>
+                </svg>
+            </div>
+
+            <h2 style="margin: 0 0 8px; font-size: 16px; color: var(--ym-purple);">Welcome to Yahoo! Messenger</h2>
+            <p style="margin: 0 0 20px; color: #666; font-size: 11px;">
+                Chat with friends, family, and more - all in one place!
+            </p>
+
+            <!-- Features -->
+            <div class="xp-groupbox" style="text-align: left; margin: 16px 0;">
+                <span class="xp-groupbox-label">Features</span>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="color: var(--ym-online); font-size: 14px;">&#10004;</span>
+                        <span>Instant messaging with friends</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="color: var(--ym-online); font-size: 14px;">&#10004;</span>
+                        <span>Send Buzz to get attention</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="color: var(--ym-online); font-size: 14px;">&#10004;</span>
+                        <span>Emoticons and smileys</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="color: var(--ym-online); font-size: 14px;">&#10004;</span>
+                        <span>Status messages</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Buttons -->
+            <div style="display: flex; gap: 12px; justify-content: center; margin-top: 20px;">
+                <a href="/login">
+                    <button class="xp-button xp-button-primary xp-button-default" style="min-width: 100px;">
+                        Sign In
+                    </button>
+                </a>
+                <a href="/register">
+                    <button class="xp-button" style="min-width: 100px;">
+                        Get a Yahoo! ID
+                    </button>
+                </a>
+            </div>
+
+            <!-- Version Info -->
+            <div style="margin-top: 24px; font-size: 10px; color: #808080;">
+                Yahoo! Messenger Version 7.0<br>
+                &copy; 2006 Yahoo! Inc. All rights reserved.
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="xp-statusbar">
+            <div class="xp-statusbar-panel">Ready</div>
+        </div>
+    </div>
+</div>
+{{end}}

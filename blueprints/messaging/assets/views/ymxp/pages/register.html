@@ -1,0 +1,189 @@
+{{define "content"}}
+<div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px;">
+    <!-- Registration Window -->
+    <div class="xp-window" style="width: 420px;">
+        <!-- Title Bar -->
+        <div class="xp-titlebar">
+            <svg class="xp-titlebar-icon" viewBox="0 0 16 16">
+                <circle cx="8" cy="8" r="7" fill="#FFCC00"/>
+                <circle cx="6" cy="6" r="1.5" fill="#5C1A4A"/>
+                <circle cx="10" cy="6" r="1.5" fill="#5C1A4A"/>
+                <path d="M5 10 Q8 13 11 10" stroke="#5C1A4A" stroke-width="1.5" fill="none"/>
+            </svg>
+            <span class="xp-titlebar-text">Create a Yahoo! ID</span>
+            <div class="xp-titlebar-buttons">
+                <button class="xp-btn-minimize" title="Minimize"></button>
+                <button class="xp-btn-close" title="Close" onclick="window.location.href='/'"></button>
+            </div>
+        </div>
+
+        <!-- Yahoo Header -->
+        <div class="ym-header">
+            <div class="ym-logo">
+                <div class="ym-logo-icon">Y!</div>
+                <span class="ym-logo-text"><span class="yahoo">YAHOO!</span> Messenger</span>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div style="background: var(--xp-window-bg); padding: 20px;">
+            <!-- Step Indicator -->
+            <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="width: 24px; height: 24px; background: var(--ym-purple); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold;">1</div>
+                    <span style="font-weight: bold; color: var(--ym-purple);">Create Your ID</span>
+                </div>
+            </div>
+
+            <p style="text-align: center; margin: 0 0 16px; color: #666; font-size: 11px;">
+                Choose a Yahoo! ID to use with Messenger
+            </p>
+
+            <form id="register-form">
+                <!-- Display Name -->
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; margin-bottom: 4px; font-weight: bold;">
+                        Display Name:
+                    </label>
+                    <input type="text" id="display-name" name="display_name" class="xp-input" style="width: 100%;" placeholder="How you want to appear to others">
+                    <div style="font-size: 10px; color: #666; margin-top: 2px;">This is how your friends will see you</div>
+                </div>
+
+                <!-- Username -->
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; margin-bottom: 4px; font-weight: bold;">
+                        Yahoo! ID:
+                    </label>
+                    <div style="display: flex; align-items: center;">
+                        <input type="text" id="username" name="username" class="xp-input" style="flex: 1;" required placeholder="Choose your ID">
+                        <span style="padding-left: 4px; color: #666;">@yahoo.com</span>
+                    </div>
+                    <div style="font-size: 10px; color: #666; margin-top: 2px;">Letters, numbers, and underscores only</div>
+                </div>
+
+                <!-- Password -->
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; margin-bottom: 4px; font-weight: bold;">
+                        Password:
+                    </label>
+                    <input type="password" id="password" name="password" class="xp-input" style="width: 100%;" required placeholder="Create a password">
+                </div>
+
+                <!-- Confirm Password -->
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 4px; font-weight: bold;">
+                        Re-type Password:
+                    </label>
+                    <input type="password" id="password-confirm" name="password_confirm" class="xp-input" style="width: 100%;" required placeholder="Confirm your password">
+                </div>
+
+                <!-- Terms -->
+                <div class="xp-groupbox" style="margin-bottom: 16px;">
+                    <span class="xp-groupbox-label">Terms of Service</span>
+                    <label class="xp-checkbox">
+                        <input type="checkbox" id="agree-terms" required>
+                        <span>I agree to the <a href="#">Yahoo! Terms of Service</a> and <a href="#">Privacy Policy</a></span>
+                    </label>
+                </div>
+
+                <!-- Error Message -->
+                <div id="error-message" style="display: none; color: #CC0000; margin-bottom: 12px; padding: 8px; background: #FFF0F0; border: 1px solid #FFCCCC; border-radius: 2px;">
+                </div>
+
+                <!-- Buttons -->
+                <div style="display: flex; gap: 8px; justify-content: center;">
+                    <button type="submit" class="xp-button xp-button-primary xp-button-default" style="min-width: 100px;">
+                        Create ID
+                    </button>
+                    <button type="button" class="xp-button" onclick="window.location.href='/'" style="min-width: 100px;">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+
+            <!-- Separator -->
+            <div class="xp-separator" style="margin: 16px 0;"></div>
+
+            <!-- Already have account -->
+            <div style="text-align: center;">
+                <span>Already have a Yahoo! ID?</span>
+                <a href="/login">Sign in here</a>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="xp-statusbar">
+            <div class="xp-statusbar-panel" id="status-text">Ready</div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('register-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const statusText = document.getElementById('status-text');
+    const errorDiv = document.getElementById('error-message');
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+
+    const displayName = document.getElementById('display-name').value.trim();
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    const passwordConfirm = document.getElementById('password-confirm').value;
+
+    // Validation
+    if (password !== passwordConfirm) {
+        errorDiv.textContent = 'Passwords do not match';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    if (password.length < 6) {
+        errorDiv.textContent = 'Password must be at least 6 characters';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+        errorDiv.textContent = 'Yahoo! ID can only contain letters, numbers, and underscores';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    statusText.textContent = 'Creating your Yahoo! ID...';
+    errorDiv.style.display = 'none';
+    submitBtn.disabled = true;
+
+    try {
+        const res = await fetch('/api/v1/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username,
+                password,
+                display_name: displayName || username
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            statusText.textContent = 'Success! Signing you in...';
+            setTimeout(() => {
+                window.location.href = '/app';
+            }, 1000);
+        } else {
+            statusText.textContent = 'Ready';
+            submitBtn.disabled = false;
+            errorDiv.textContent = data.error || 'Registration failed. Please try again.';
+            errorDiv.style.display = 'block';
+        }
+    } catch (err) {
+        statusText.textContent = 'Ready';
+        submitBtn.disabled = false;
+        errorDiv.textContent = 'Connection error. Please try again.';
+        errorDiv.style.display = 'block';
+    }
+});
+</script>
+{{end}}

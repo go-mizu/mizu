@@ -137,7 +137,7 @@ func (s *MessagesStore) List(ctx context.Context, chatID string, opts messages.L
 		args = append(args, opts.After)
 	}
 
-	query += " ORDER BY created_at DESC LIMIT ?"
+	query += " ORDER BY created_at ASC LIMIT ?"
 	args = append(args, opts.Limit)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)

@@ -1,0 +1,302 @@
+{{define "content"}}
+<div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px;">
+    <!-- Preferences Window -->
+    <div class="xp-window" style="width: 480px;">
+        <!-- Title Bar -->
+        <div class="xp-titlebar">
+            <svg class="xp-titlebar-icon" viewBox="0 0 16 16">
+                <circle cx="8" cy="8" r="6" fill="none" stroke="#FFFFFF" stroke-width="1.5"/>
+                <circle cx="8" cy="8" r="2" fill="#FFFFFF"/>
+                <path d="M8 1v2M8 13v2M1 8h2M13 8h2M2.5 2.5l1.5 1.5M12 12l1.5 1.5M2.5 13.5l1.5-1.5M12 4l1.5-1.5" stroke="#FFFFFF" stroke-width="1"/>
+            </svg>
+            <span class="xp-titlebar-text">Yahoo! Messenger Preferences</span>
+            <div class="xp-titlebar-buttons">
+                <button class="xp-btn-minimize" title="Minimize"></button>
+                <button class="xp-btn-close" title="Close" onclick="window.location.href='/app'"></button>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div style="background: var(--xp-window-bg); padding: 16px;">
+            <!-- Tabs -->
+            <div class="xp-tabs">
+                <div class="xp-tab active" onclick="switchTab('general')" id="tab-general">General</div>
+                <div class="xp-tab" onclick="switchTab('appearance')" id="tab-appearance">Appearance</div>
+                <div class="xp-tab" onclick="switchTab('messages')" id="tab-messages">Messages</div>
+                <div class="xp-tab" onclick="switchTab('privacy')" id="tab-privacy">Privacy</div>
+            </div>
+
+            <div class="xp-tab-content" style="min-height: 280px;">
+                <!-- General Tab -->
+                <div id="content-general">
+                    <div class="xp-groupbox">
+                        <span class="xp-groupbox-label">Profile</span>
+
+                        <div style="display: flex; gap: 16px; align-items: flex-start;">
+                            <!-- Avatar -->
+                            <div style="text-align: center;">
+                                <div style="width: 64px; height: 64px; border: 2px solid #C0C0C0; background: #E8E8E8; display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">
+                                    <svg viewBox="0 0 48 48" width="56" height="56">
+                                        <circle cx="24" cy="24" r="20" fill="#FFCC00"/>
+                                        <circle cx="17" cy="19" r="3" fill="#5C1A4A"/>
+                                        <circle cx="31" cy="19" r="3" fill="#5C1A4A"/>
+                                        <path d="M14 30 Q24 38 34 30" stroke="#5C1A4A" stroke-width="2.5" fill="none"/>
+                                    </svg>
+                                </div>
+                                <button class="xp-button" style="min-width: 64px; font-size: 10px;">Change</button>
+                            </div>
+
+                            <!-- Profile Fields -->
+                            <div style="flex: 1;">
+                                <div style="margin-bottom: 12px;">
+                                    <label style="display: block; margin-bottom: 4px;">Display Name:</label>
+                                    <input type="text" id="display-name" class="xp-input" style="width: 100%;">
+                                </div>
+                                <div style="margin-bottom: 8px;">
+                                    <label style="display: block; margin-bottom: 4px;">Status Message:</label>
+                                    <input type="text" id="status-message" class="xp-input" style="width: 100%;" placeholder="What's on your mind?">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="xp-groupbox">
+                        <span class="xp-groupbox-label">Startup</span>
+                        <label class="xp-checkbox" style="margin-bottom: 8px;">
+                            <input type="checkbox" checked>
+                            <span>Start Yahoo! Messenger when I start Windows</span>
+                        </label>
+                        <label class="xp-checkbox">
+                            <input type="checkbox">
+                            <span>Sign in automatically</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Appearance Tab -->
+                <div id="content-appearance" style="display: none;">
+                    <div class="xp-groupbox">
+                        <span class="xp-groupbox-label">Theme</span>
+                        <p style="margin: 0 0 12px; color: #666;">Choose how Yahoo! Messenger looks:</p>
+
+                        <div id="theme-options" style="display: flex; flex-direction: column; gap: 8px;">
+                            <!-- Theme Radio Buttons -->
+                            <label class="xp-radio">
+                                <input type="radio" name="theme" value="dark" id="theme-dark">
+                                <span>Modern Dark</span>
+                            </label>
+                            <label class="xp-radio">
+                                <input type="radio" name="theme" value="light" id="theme-light">
+                                <span>Modern Light</span>
+                            </label>
+                            <label class="xp-radio">
+                                <input type="radio" name="theme" value="aim1.0" id="theme-aim">
+                                <span>AOL Instant Messenger 1.0 (Retro)</span>
+                            </label>
+                            <label class="xp-radio">
+                                <input type="radio" name="theme" value="ymxp" id="theme-ymxp" checked>
+                                <span>Yahoo! Messenger (Windows XP)</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="xp-groupbox">
+                        <span class="xp-groupbox-label">Font</span>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <label>Default font:</label>
+                            <select class="xp-select" style="width: 120px;">
+                                <option>Arial</option>
+                                <option selected>Tahoma</option>
+                                <option>Verdana</option>
+                                <option>Comic Sans MS</option>
+                            </select>
+                            <select class="xp-select" style="width: 60px;">
+                                <option>10</option>
+                                <option selected>11</option>
+                                <option>12</option>
+                                <option>14</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Messages Tab -->
+                <div id="content-messages" style="display: none;">
+                    <div class="xp-groupbox">
+                        <span class="xp-groupbox-label">Message Display</span>
+                        <label class="xp-checkbox" style="margin-bottom: 8px;">
+                            <input type="checkbox" checked>
+                            <span>Show timestamps with messages</span>
+                        </label>
+                        <label class="xp-checkbox" style="margin-bottom: 8px;">
+                            <input type="checkbox" checked>
+                            <span>Convert emoticons to smileys</span>
+                        </label>
+                        <label class="xp-checkbox">
+                            <input type="checkbox">
+                            <span>Play sound on new message</span>
+                        </label>
+                    </div>
+
+                    <div class="xp-groupbox">
+                        <span class="xp-groupbox-label">Buzz</span>
+                        <label class="xp-checkbox" style="margin-bottom: 8px;">
+                            <input type="checkbox" checked>
+                            <span>Allow friends to Buzz me</span>
+                        </label>
+                        <label class="xp-checkbox">
+                            <input type="checkbox" checked>
+                            <span>Play sound when receiving Buzz</span>
+                        </label>
+                    </div>
+
+                    <div class="xp-groupbox">
+                        <span class="xp-groupbox-label">Message History</span>
+                        <label class="xp-checkbox">
+                            <input type="checkbox" checked>
+                            <span>Save message history</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Privacy Tab -->
+                <div id="content-privacy" style="display: none;">
+                    <div class="xp-groupbox">
+                        <span class="xp-groupbox-label">Who Can Contact Me</span>
+                        <label class="xp-radio" style="margin-bottom: 8px;">
+                            <input type="radio" name="contact-pref" value="all" checked>
+                            <span>Anyone</span>
+                        </label>
+                        <label class="xp-radio" style="margin-bottom: 8px;">
+                            <input type="radio" name="contact-pref" value="friends">
+                            <span>Only people on my Friends List</span>
+                        </label>
+                        <label class="xp-radio">
+                            <input type="radio" name="contact-pref" value="none">
+                            <span>No one (appear offline to everyone)</span>
+                        </label>
+                    </div>
+
+                    <div class="xp-groupbox">
+                        <span class="xp-groupbox-label">Account</span>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button class="xp-button">Change Password</button>
+                            <button class="xp-button" onclick="logout()" style="color: #CC0000;">Sign Out</button>
+                        </div>
+                    </div>
+
+                    <div class="xp-groupbox">
+                        <span class="xp-groupbox-label">Data</span>
+                        <button class="xp-button" style="color: #CC0000;">Delete Account</button>
+                        <p style="margin: 8px 0 0; font-size: 10px; color: #666;">
+                            This will permanently delete your account and all messages.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Buttons -->
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; padding-top: 12px; border-top: 1px solid #D4D0C8;">
+                <button class="xp-button xp-button-primary xp-button-default" onclick="saveSettings()" style="min-width: 80px;">OK</button>
+                <button class="xp-button" onclick="window.location.href='/app'" style="min-width: 80px;">Cancel</button>
+                <button class="xp-button" onclick="saveSettings()" style="min-width: 80px;">Apply</button>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="xp-statusbar">
+            <div class="xp-statusbar-panel" id="status-text">Ready</div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentUser = null;
+
+// Load current user
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const res = await fetch('/api/v1/users/me');
+        const data = await res.json();
+        if (data.success && data.data) {
+            currentUser = data.data;
+            document.getElementById('display-name').value = currentUser.display_name || '';
+            document.getElementById('status-message').value = currentUser.status || '';
+        } else {
+            window.location.href = '/login';
+        }
+    } catch (err) {
+        console.error('Failed to load user:', err);
+    }
+
+    // Set current theme
+    const currentTheme = localStorage.getItem('theme') || 'ymxp';
+    const themeRadio = document.querySelector(`input[name="theme"][value="${currentTheme}"]`);
+    if (themeRadio) {
+        themeRadio.checked = true;
+    }
+
+    // Add theme radio button change listeners - apply immediately like default settings
+    document.querySelectorAll('input[name="theme"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            if (this.checked && typeof setTheme === 'function') {
+                setTheme(this.value);
+            }
+        });
+    });
+});
+
+// Tab switching
+function switchTab(tab) {
+    // Update tab buttons
+    document.querySelectorAll('.xp-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+
+    // Update content
+    document.querySelectorAll('[id^="content-"]').forEach(c => c.style.display = 'none');
+    document.getElementById('content-' + tab).style.display = 'block';
+}
+
+// Save settings (profile only - theme is applied immediately on selection)
+async function saveSettings() {
+    const displayName = document.getElementById('display-name').value.trim();
+    const statusMessage = document.getElementById('status-message').value.trim();
+
+    document.getElementById('status-text').textContent = 'Saving...';
+
+    try {
+        const res = await fetch('/api/v1/users/me', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                display_name: displayName,
+                bio: statusMessage
+            })
+        });
+
+        if (res.ok) {
+            document.getElementById('status-text').textContent = 'Settings saved';
+            setTimeout(() => {
+                window.location.href = '/app';
+            }, 500);
+        } else {
+            document.getElementById('status-text').textContent = 'Error saving settings';
+        }
+    } catch (err) {
+        console.error('Failed to save settings:', err);
+        document.getElementById('status-text').textContent = 'Error saving settings';
+    }
+}
+
+// Logout
+async function logout() {
+    try {
+        await fetch('/api/v1/auth/logout', { method: 'POST' });
+        window.location.href = '/';
+    } catch (err) {
+        console.error('Logout failed:', err);
+        window.location.href = '/';
+    }
+}
+</script>
+{{end}}
