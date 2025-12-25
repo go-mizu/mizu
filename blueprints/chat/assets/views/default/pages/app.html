@@ -28,6 +28,10 @@
                 </button>
             </div>
             <div class="flex items-center gap-1">
+                <!-- WebSocket Status Indicator -->
+                <div class="flex items-center gap-1.5 px-2" title="WebSocket Status">
+                    <div id="ws-status" class="w-2 h-2 rounded-full bg-gray-400"></div>
+                </div>
                 {{if .Data.currentChannel}}
                 <button class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-gpt-text-secondary hover:bg-gpt-sidebar-hover transition-colors">
                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -207,6 +211,8 @@ const CONFIG = {
 
 let ws = null;
 let reconnectTimeout = null;
+let wsConnected = false;
+let pendingMessages = new Map(); // For optimistic updates
 
 // Configure marked.js
 marked.setOptions({
@@ -313,37 +319,100 @@ function copyMessage(btn) {
 function initWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const token = document.cookie.split('; ').find(row => row.startsWith('session='))?.split('=')[1];
-    if (!token) return;
+    if (!token) {
+        console.warn('[WS] No session token found, skipping WebSocket connection');
+        updateWSStatus(false);
+        return;
+    }
 
+    console.log('[WS] Connecting...');
     ws = new WebSocket(`${protocol}//${window.location.host}/ws?token=${token}`);
 
     ws.onopen = () => {
+        console.log('[WS] Connected');
+        wsConnected = true;
+        updateWSStatus(true);
         if (reconnectTimeout) {
             clearTimeout(reconnectTimeout);
             reconnectTimeout = null;
         }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+        console.log('[WS] Disconnected, code:', event.code);
+        wsConnected = false;
+        updateWSStatus(false);
         reconnectTimeout = setTimeout(initWebSocket, 3000);
     };
 
-    ws.onerror = (err) => console.error('WebSocket error:', err);
+    ws.onerror = (err) => {
+        console.error('[WS] Error:', err);
+        wsConnected = false;
+        updateWSStatus(false);
+    };
 
     ws.onmessage = (event) => {
         try {
-            handleWSMessage(JSON.parse(event.data));
-        } catch (err) {}
+            // Handle multiple messages in one frame (newline separated)
+            const messages = event.data.split('\n').filter(Boolean);
+            for (const msg of messages) {
+                handleWSMessage(JSON.parse(msg));
+            }
+        } catch (err) {
+            console.error('[WS] Parse error:', err);
+        }
     };
 }
 
+// Update WebSocket connection status indicator
+function updateWSStatus(connected) {
+    const indicator = document.getElementById('ws-status');
+    if (indicator) {
+        indicator.className = connected
+            ? 'w-2 h-2 rounded-full bg-green-500'
+            : 'w-2 h-2 rounded-full bg-red-500 animate-pulse';
+        indicator.title = connected ? 'Connected' : 'Disconnected';
+    }
+}
+
 function handleWSMessage(msg) {
-    if (msg.op !== 0) return;
+    console.log('[WS] Received:', msg.t, msg.d?.id || '');
+
+    // Handle non-dispatch messages
+    if (msg.op === 10) { // HELLO
+        console.log('[WS] Hello received, heartbeat interval:', msg.d?.heartbeat_interval);
+        return;
+    }
+    if (msg.op === 11) { // HEARTBEAT_ACK
+        return;
+    }
+    if (msg.op !== 0) return; // Only handle dispatches
+
     const data = msg.d;
 
     switch (msg.t) {
+        case 'READY':
+            console.log('[WS] Ready event received');
+            break;
         case 'MESSAGE_CREATE':
-            if (data.channel_id === CONFIG.channelId) appendMessage(data);
+            if (data.channel_id === CONFIG.channelId) {
+                // Check if this is a message we sent optimistically
+                const tempId = pendingMessages.get(data.content);
+                if (tempId) {
+                    // Replace optimistic message with real one
+                    console.log('[WS] Replacing optimistic message:', tempId, '->', data.id);
+                    const tempEl = document.querySelector(`[data-message-id="${tempId}"]`);
+                    if (tempEl) {
+                        tempEl.dataset.messageId = data.id;
+                        tempEl.classList.remove('opacity-70');
+                    }
+                    pendingMessages.delete(data.content);
+                } else {
+                    // New message from another user
+                    console.log('[WS] New message from:', data.author?.display_name || data.author_id);
+                    appendMessage(data);
+                }
+            }
             break;
         case 'MESSAGE_UPDATE':
             updateMessage(data);
@@ -351,10 +420,13 @@ function handleWSMessage(msg) {
         case 'MESSAGE_DELETE':
             removeMessage(data.id);
             break;
+        case 'TYPING_START':
+            console.log('[WS] Typing:', data.user_id);
+            break;
     }
 }
 
-function appendMessage(msg) {
+function appendMessage(msg, isOptimistic = false) {
     const container = document.getElementById('messages');
     if (!container) return;
 
@@ -369,7 +441,7 @@ function appendMessage(msg) {
 
     const isCurrentUser = msg.author?.id === CONFIG.userId;
     const div = document.createElement('div');
-    div.className = 'message-wrapper mb-8 animate-slide-up group';
+    div.className = 'message-wrapper mb-8 animate-slide-up group' + (isOptimistic ? ' opacity-70' : '');
     div.dataset.messageId = msg.id;
     div.dataset.authorId = msg.author?.id || '';
 
@@ -444,14 +516,47 @@ function removeMessage(id) {
 
 async function sendMessage(content) {
     if (!content || !CONFIG.channelId) return false;
+
+    // Optimistic update: show message immediately
+    const tempId = 'temp-' + Date.now();
+    const optimisticMsg = {
+        id: tempId,
+        content: content,
+        author: {
+            id: CONFIG.userId,
+            display_name: 'You'
+        },
+        created_at: new Date().toISOString()
+    };
+
+    // Store pending message to reconcile with server response
+    pendingMessages.set(content, tempId);
+
+    // Add message optimistically with slight opacity
+    appendMessage(optimisticMsg, true);
+    console.log('[MSG] Added optimistic message:', tempId);
+
     try {
         const res = await fetch(`/api/v1/channels/${CONFIG.channelId}/messages`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content })
         });
-        return res.ok;
+
+        if (!res.ok) {
+            // Remove optimistic message on failure
+            console.error('[MSG] Send failed, removing optimistic message');
+            removeMessage(tempId);
+            pendingMessages.delete(content);
+            return false;
+        }
+
+        console.log('[MSG] Send successful, waiting for WebSocket confirmation');
+        return true;
     } catch (err) {
+        console.error('[MSG] Send error:', err);
+        removeMessage(tempId);
+        pendingMessages.delete(content);
         return false;
     }
 }
