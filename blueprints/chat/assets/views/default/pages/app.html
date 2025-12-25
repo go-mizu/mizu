@@ -4,11 +4,13 @@
 
 {{define "content"}}
 <div class="flex h-screen bg-white">
-    <!-- Sidebar -->
+    <!-- Left Sidebar -->
     {{template "channel_list.html" .}}
 
-    <!-- Main Chat Area -->
-    <div class="flex-1 flex flex-col min-w-0">
+    <!-- Main Content Area (Chat + Right Sidebar) -->
+    <div class="flex-1 flex min-w-0">
+        <!-- Chat Area -->
+        <div class="flex-1 flex flex-col min-w-0">
         <!-- Header -->
         <header class="h-14 flex items-center justify-between px-4 border-b border-gpt-border shrink-0">
             <div class="flex items-center gap-2">
@@ -32,6 +34,17 @@
                 <div class="flex items-center gap-1.5 px-2" title="WebSocket Status">
                     <div id="ws-status" class="w-2 h-2 rounded-full bg-gray-400"></div>
                 </div>
+                {{if .Data.currentServer}}
+                <!-- Users sidebar toggle -->
+                <button id="users-toggle" class="p-2 rounded-lg text-gpt-text-secondary hover:bg-gpt-sidebar-hover transition-colors" title="Show online users">
+                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                    </svg>
+                </button>
+                {{end}}
                 {{if .Data.currentChannel}}
                 <button class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-gpt-text-secondary hover:bg-gpt-sidebar-hover transition-colors">
                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -59,26 +72,15 @@
                 {{if .Data.messages}}
                     {{range .Data.messages}}
                     <div class="message-wrapper mb-8 animate-fade-in group" data-message-id="{{.ID}}" data-author-id="{{if .Author}}{{.Author.ID}}{{end}}">
-                        {{if and .Author (eq .Author.ID $.User.ID)}}
-                        <!-- User message - right aligned bubble -->
-                        <div class="flex flex-col items-end">
-                            <div class="user-message max-w-[85%]">
-                                <div class="prose-chat text-gpt-text" data-markdown="{{.Content}}"></div>
-                            </div>
-                            <div class="text-xs text-gpt-text-muted mt-1 mr-1" data-timestamp="{{.CreatedAt.Format "2006-01-02T15:04:05Z07:00"}}"></div>
-                        </div>
-                        {{else}}
-                        <!-- Assistant/Other message - ChatGPT style -->
+                        <!-- Message - unified style for all users -->
                         <div class="flex gap-4">
                             <!-- Avatar -->
-                            <div class="w-7 h-7 rounded-full flex items-center justify-center text-sm font-medium shrink-0 overflow-hidden bg-black">
+                            <div class="w-7 h-7 rounded-full flex items-center justify-center text-sm font-medium shrink-0 overflow-hidden {{if and .Author (eq .Author.ID $.User.ID)}}bg-blue-600{{else}}bg-black{{end}}">
                                 {{if .Author}}
                                     {{if .Author.AvatarURL}}
                                         <img src="{{.Author.AvatarURL}}" alt="{{.Author.DisplayName}}" class="w-full h-full object-cover">
                                     {{else}}
-                                        <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <path d="M12 8V4M12 8C9.79 8 8 9.79 8 12M12 8C14.21 8 16 9.79 16 12M8 12H4M8 12C8 14.21 9.79 16 12 16M16 12H20M16 12C16 14.21 14.21 16 12 16M12 16V20"/>
-                                        </svg>
+                                        <span class="text-white text-xs font-semibold">{{slice .Author.DisplayName 0 1}}</span>
                                     {{end}}
                                 {{else}}
                                     <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -89,7 +91,7 @@
                             <!-- Message Content -->
                             <div class="flex-1 min-w-0 pt-0">
                                 <div class="flex items-baseline gap-2 mb-1.5">
-                                    <span class="font-semibold text-sm text-gpt-text">{{if .Author}}{{.Author.DisplayName}}{{else}}Unknown{{end}}</span>
+                                    <span class="font-semibold text-sm text-gpt-text">{{if .Author}}{{.Author.DisplayName}}{{if eq .Author.ID $.User.ID}} (you){{end}}{{else}}Unknown{{end}}</span>
                                     <span class="text-xs text-gpt-text-muted" data-timestamp="{{.CreatedAt.Format "2006-01-02T15:04:05Z07:00"}}"></span>
                                 </div>
                                 <div class="prose-chat text-gpt-text" data-markdown="{{.Content}}"></div>
@@ -114,7 +116,6 @@
                                 </div>
                             </div>
                         </div>
-                        {{end}}
                     </div>
                     {{end}}
                 {{else}}
@@ -200,6 +201,44 @@
             <button onclick="document.getElementById('new-chat-btn')?.click()" class="px-4 py-2.5 rounded-full text-sm font-medium text-white bg-gpt-accent hover:opacity-90 transition-opacity btn-transition">
                 New Chat
             </button>
+        </div>
+        {{end}}
+        </div>
+
+        <!-- Right Sidebar - Online Users (collapsed by default) -->
+        {{if .Data.currentServer}}
+        <div id="right-sidebar" class="w-60 border-l border-gpt-border bg-gpt-sidebar flex-col hidden" data-expanded="false">
+            <div class="h-14 flex items-center justify-between px-4 border-b border-gpt-border">
+                <h3 class="font-semibold text-sm text-gpt-text">Online Users</h3>
+                <button id="close-right-sidebar" class="p-1 rounded hover:bg-gpt-sidebar-hover transition-colors">
+                    <svg class="w-4 h-4 text-gpt-text-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto scrollbar-thin p-3">
+                <!-- Online Users Section -->
+                <div class="mb-4">
+                    <h4 class="text-xs font-semibold text-gpt-text-muted uppercase tracking-wider mb-2 flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                        Online — <span id="online-count">0</span>
+                    </h4>
+                    <div id="online-users-list" class="space-y-1">
+                        <!-- Online users will be inserted here -->
+                    </div>
+                </div>
+                <!-- Offline Users Section -->
+                <div>
+                    <h4 class="text-xs font-semibold text-gpt-text-muted uppercase tracking-wider mb-2 flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-gray-400"></span>
+                        Offline — <span id="offline-count">0</span>
+                    </h4>
+                    <div id="offline-users-list" class="space-y-1">
+                        <!-- Offline users will be inserted here -->
+                    </div>
+                </div>
+            </div>
         </div>
         {{end}}
     </div>
@@ -330,18 +369,32 @@ function copyMessage(btn) {
     });
 }
 
+// Get cookie value by name (handles values containing '=')
+function getCookie(name) {
+    const cookies = document.cookie.split('; ');
+    for (const cookie of cookies) {
+        const idx = cookie.indexOf('=');
+        if (idx > 0 && cookie.substring(0, idx) === name) {
+            return cookie.substring(idx + 1);
+        }
+    }
+    return null;
+}
+
 // Initialize WebSocket
 function initWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const token = document.cookie.split('; ').find(row => row.startsWith('session='))?.split('=')[1];
+    const token = getCookie('session');
+    console.log('[WS] Session token found:', !!token, token ? token.substring(0, 10) + '...' : 'none');
     if (!token) {
         console.warn('[WS] No session token found, skipping WebSocket connection');
         updateWSStatus(false);
         return;
     }
 
-    console.log('[WS] Connecting...');
-    ws = new WebSocket(`${protocol}//${window.location.host}/ws?token=${token}`);
+    const wsUrl = `${protocol}//${window.location.host}/ws?token=${encodeURIComponent(token)}`;
+    console.log('[WS] Connecting to:', wsUrl.substring(0, 50) + '...');
+    ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
         console.log('[WS] Connected');
@@ -438,6 +491,10 @@ function handleWSMessage(msg) {
         case 'TYPING_START':
             console.log('[WS] Typing:', data.user_id);
             break;
+        case 'PRESENCE_UPDATE':
+            console.log('[WS] Presence update:', data.user_id, data.status);
+            handlePresenceUpdate(data);
+            break;
     }
 }
 
@@ -465,54 +522,47 @@ function appendMessage(msg, isOptimistic = false) {
 
     const timestamp = formatTimestamp(msg.created_at || new Date().toISOString());
 
-    if (isCurrentUser) {
-        // User message - right aligned bubble
-        div.innerHTML = `
-            <div class="flex flex-col items-end">
-                <div class="user-message max-w-[85%]">
-                    <div class="prose-chat text-gpt-text">${renderedContent}</div>
-                </div>
-                <div class="text-xs text-gpt-text-muted mt-1 mr-1">${escapeHtml(timestamp)}</div>
+    // Unified message style for all users
+    const avatarBg = isCurrentUser ? 'bg-blue-600' : 'bg-black';
+    const displayName = msg.author?.display_name || 'Unknown';
+    const initial = displayName.charAt(0).toUpperCase();
+    const youLabel = isCurrentUser ? ' (you)' : '';
+
+    div.innerHTML = `
+        <div class="flex gap-4">
+            <div class="w-7 h-7 rounded-full flex items-center justify-center text-sm font-medium shrink-0 overflow-hidden ${avatarBg}">
+                ${msg.author?.avatar_url
+                    ? `<img src="${escapeHtml(msg.author.avatar_url)}" alt="" class="w-full h-full object-cover">`
+                    : `<span class="text-white text-xs font-semibold">${escapeHtml(initial)}</span>`
+                }
             </div>
-        `;
-    } else {
-        // Assistant/Other message - ChatGPT style
-        div.innerHTML = `
-            <div class="flex gap-4">
-                <div class="w-7 h-7 rounded-full flex items-center justify-center text-sm font-medium shrink-0 overflow-hidden bg-black">
-                    ${msg.author?.avatar_url
-                        ? `<img src="${escapeHtml(msg.author.avatar_url)}" alt="" class="w-full h-full object-cover">`
-                        : `<svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4M12 8C9.79 8 8 9.79 8 12M12 8C14.21 8 16 9.79 16 12M8 12H4M8 12C8 14.21 9.79 16 12 16M16 12H20M16 12C16 14.21 14.21 16 12 16M12 16V20"/></svg>`
-                    }
+            <div class="flex-1 min-w-0 pt-0">
+                <div class="flex items-baseline gap-2 mb-1.5">
+                    <span class="font-semibold text-sm text-gpt-text">${escapeHtml(displayName)}${youLabel}</span>
+                    <span class="text-xs text-gpt-text-muted">${escapeHtml(timestamp)}</span>
                 </div>
-                <div class="flex-1 min-w-0 pt-0">
-                    <div class="flex items-baseline gap-2 mb-1.5">
-                        <span class="font-semibold text-sm text-gpt-text">${escapeHtml(msg.author?.display_name || 'Unknown')}</span>
-                        <span class="text-xs text-gpt-text-muted">${escapeHtml(timestamp)}</span>
-                    </div>
-                    <div class="prose-chat text-gpt-text">${renderedContent}</div>
-                    <div class="message-actions mt-2 -ml-1.5">
-                        <button class="message-action-btn copy-message-btn" onclick="copyMessage(this)" title="Copy message">
-                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                            </svg>
-                        </button>
-                        <button class="message-action-btn" title="Good response">
-                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
-                            </svg>
-                        </button>
-                        <button class="message-action-btn" title="Bad response">
-                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/>
-                            </svg>
-                        </button>
-                    </div>
+                <div class="prose-chat text-gpt-text">${renderedContent}</div>
+                <div class="message-actions mt-2 -ml-1.5">
+                    <button class="message-action-btn copy-message-btn" onclick="copyMessage(this)" title="Copy message">
+                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                        </svg>
+                    </button>
+                    <button class="message-action-btn" title="Good response">
+                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
+                        </svg>
+                    </button>
+                    <button class="message-action-btn" title="Bad response">
+                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/>
+                        </svg>
+                    </button>
                 </div>
             </div>
-        `;
-    }
+        </div>
+    `;
 
     wrapper.appendChild(div);
     if (wasAtBottom) container.scrollTop = container.scrollHeight;
@@ -681,11 +731,140 @@ document.addEventListener('DOMContentLoaded', () => {
     // Focus input
     input?.focus();
 
-    // Sidebar toggle
+    // Left sidebar toggle
     document.getElementById('sidebar-toggle')?.addEventListener('click', () => {
         const sidebar = document.getElementById('sidebar');
         sidebar?.classList.toggle('-translate-x-full');
     });
+
+    // Right sidebar (online users) toggle
+    const usersToggle = document.getElementById('users-toggle');
+    const rightSidebar = document.getElementById('right-sidebar');
+    const closeRightSidebar = document.getElementById('close-right-sidebar');
+
+    console.log('[Sidebar] usersToggle:', !!usersToggle, 'rightSidebar:', !!rightSidebar);
+
+    if (usersToggle && rightSidebar) {
+        console.log('[Sidebar] Adding click listener to users toggle');
+        usersToggle.addEventListener('click', () => {
+            console.log('[Sidebar] Toggle clicked');
+            const isExpanded = rightSidebar.dataset.expanded === 'true';
+            if (isExpanded) {
+                rightSidebar.classList.add('hidden');
+                rightSidebar.classList.remove('flex');
+                rightSidebar.dataset.expanded = 'false';
+            } else {
+                rightSidebar.classList.remove('hidden');
+                rightSidebar.classList.add('flex');
+                rightSidebar.dataset.expanded = 'true';
+                fetchOnlineUsers();
+            }
+        });
+
+        closeRightSidebar?.addEventListener('click', () => {
+            rightSidebar.classList.add('hidden');
+            rightSidebar.classList.remove('flex');
+            rightSidebar.dataset.expanded = 'false';
+        });
+    }
+
+    // Fetch online users periodically if sidebar is open
+    if (CONFIG.serverId) {
+        setInterval(() => {
+            if (rightSidebar?.dataset.expanded === 'true') {
+                fetchOnlineUsers();
+            }
+        }, 30000); // Refresh every 30 seconds
+    }
 });
+
+// Online users state
+let onlineUsersCache = new Map();
+
+// Fetch online users from API
+async function fetchOnlineUsers() {
+    console.log('[Users] Fetching online users for server:', CONFIG.serverId);
+    if (!CONFIG.serverId) {
+        console.log('[Users] No server ID, skipping fetch');
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/v1/servers/${CONFIG.serverId}/online`);
+        console.log('[Users] Fetch response:', res.status);
+        if (!res.ok) {
+            console.error('[Users] Fetch failed:', res.status, res.statusText);
+            return;
+        }
+
+        const data = await res.json();
+        console.log('[Users] Data:', data);
+        updateOnlineUsersList(data.data?.online || [], data.data?.offline || []);
+    } catch (err) {
+        console.error('[Users] Fetch error:', err);
+    }
+}
+
+// Update the online users list in the sidebar
+function updateOnlineUsersList(onlineUsers, offlineUsers) {
+    const onlineList = document.getElementById('online-users-list');
+    const offlineList = document.getElementById('offline-users-list');
+    const onlineCount = document.getElementById('online-count');
+    const offlineCount = document.getElementById('offline-count');
+
+    if (!onlineList || !offlineList) return;
+
+    // Update counts
+    if (onlineCount) onlineCount.textContent = onlineUsers.length;
+    if (offlineCount) offlineCount.textContent = offlineUsers.length;
+
+    // Update cache
+    onlineUsersCache.clear();
+    onlineUsers.forEach(u => onlineUsersCache.set(u.id, true));
+
+    // Render online users
+    onlineList.innerHTML = onlineUsers.map(user => renderUserItem(user, true)).join('');
+
+    // Render offline users
+    offlineList.innerHTML = offlineUsers.map(user => renderUserItem(user, false)).join('');
+}
+
+// Render a single user item
+function renderUserItem(user, isOnline) {
+    const initial = (user.display_name || user.username || 'U').charAt(0).toUpperCase();
+    const statusColor = isOnline ? 'bg-green-500' : 'bg-gray-400';
+    const isCurrentUser = user.id === CONFIG.userId;
+
+    return `
+        <div class="flex items-center gap-2 p-2 rounded-lg hover:bg-gpt-sidebar-hover transition-colors cursor-pointer">
+            <div class="relative">
+                <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium overflow-hidden ${isCurrentUser ? 'bg-blue-600' : 'bg-black'}">
+                    ${user.avatar_url
+                        ? `<img src="${escapeHtml(user.avatar_url)}" alt="" class="w-full h-full object-cover">`
+                        : `<span class="text-white text-xs font-semibold">${escapeHtml(initial)}</span>`
+                    }
+                </div>
+                <div class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-gpt-sidebar ${statusColor}"></div>
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-gpt-text truncate">
+                    ${escapeHtml(user.display_name || user.username)}${isCurrentUser ? ' (you)' : ''}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Handle presence updates from WebSocket
+function handlePresenceUpdate(data) {
+    const { user_id, status } = data;
+    const isOnline = status === 'online';
+    onlineUsersCache.set(user_id, isOnline);
+
+    // Refresh the list if sidebar is open
+    if (document.getElementById('right-sidebar')?.dataset.expanded === 'true') {
+        fetchOnlineUsers();
+    }
+}
 </script>
 {{end}}

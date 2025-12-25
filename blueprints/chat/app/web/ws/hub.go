@@ -179,26 +179,40 @@ func (h *Hub) SendToUser(userID, event string, data any) {
 
 func (h *Hub) registerConnection(conn *Connection) {
 	h.connLock.Lock()
-	defer h.connLock.Unlock()
-
+	wasOffline := len(h.connections[conn.UserID]) == 0
 	if h.connections[conn.UserID] == nil {
 		h.connections[conn.UserID] = make(map[*Connection]bool)
 	}
 	h.connections[conn.UserID][conn] = true
+	h.connLock.Unlock()
 
 	log.Printf("WebSocket: User %s connected (total: %d)", conn.UserID, len(h.connections))
+
+	// Broadcast presence update if user was offline
+	if wasOffline {
+		go func() {
+			// Wait a bit for server subscriptions to be set up
+			<-time.After(100 * time.Millisecond)
+			h.broadcastPresenceUpdate(conn.UserID, "online")
+		}()
+	}
 }
 
 func (h *Hub) unregisterConnection(conn *Connection) {
-	h.connLock.Lock()
-	defer h.connLock.Unlock()
+	// Get server subscriptions before unlocking
+	serverIDs := make([]string, len(conn.Servers))
+	copy(serverIDs, conn.Servers)
+	userID := conn.UserID
 
+	h.connLock.Lock()
 	if conns, ok := h.connections[conn.UserID]; ok {
 		delete(conns, conn)
 		if len(conns) == 0 {
 			delete(h.connections, conn.UserID)
 		}
 	}
+	isNowOffline := len(h.connections[conn.UserID]) == 0
+	h.connLock.Unlock()
 
 	// Remove from server subscriptions
 	h.serverLock.Lock()
@@ -226,7 +240,12 @@ func (h *Hub) unregisterConnection(conn *Connection) {
 
 	conn.Close()
 
-	log.Printf("WebSocket: User %s disconnected", conn.UserID)
+	log.Printf("WebSocket: User %s disconnected", userID)
+
+	// Broadcast presence update if user is now offline
+	if isNowOffline && len(serverIDs) > 0 {
+		h.broadcastPresenceUpdateToServers(userID, "offline", serverIDs)
+	}
 }
 
 func (h *Hub) handleBroadcast(b *Broadcast) {
@@ -376,4 +395,37 @@ func (h *Hub) nextSequence() int64 {
 
 func (h *Hub) cleanup() {
 	// Cleanup is handled by connection timeout
+}
+
+// broadcastPresenceUpdate broadcasts a presence update to all servers the user is subscribed to.
+func (h *Hub) broadcastPresenceUpdate(userID, status string) {
+	h.connLock.RLock()
+	conns := h.connections[userID]
+	h.connLock.RUnlock()
+
+	// Collect all server IDs the user is subscribed to
+	serverIDSet := make(map[string]bool)
+	for conn := range conns {
+		for _, serverID := range conn.Servers {
+			serverIDSet[serverID] = true
+		}
+	}
+
+	// Broadcast to each server
+	for serverID := range serverIDSet {
+		h.BroadcastToServer(serverID, EventPresenceUpdate, map[string]any{
+			"user_id": userID,
+			"status":  status,
+		}, "")
+	}
+}
+
+// broadcastPresenceUpdateToServers broadcasts a presence update to specific servers.
+func (h *Hub) broadcastPresenceUpdateToServers(userID, status string, serverIDs []string) {
+	for _, serverID := range serverIDs {
+		h.BroadcastToServer(serverID, EventPresenceUpdate, map[string]any{
+			"user_id": userID,
+			"status":  status,
+		}, "")
+	}
 }

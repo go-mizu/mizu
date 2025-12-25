@@ -74,13 +74,13 @@ func (h *Auth) Login(c *mizu.Ctx) error {
 		return Unauthorized(c, "Invalid credentials")
 	}
 
-	// Set cookie
+	// Set cookie (HttpOnly false to allow WebSocket JS access)
 	http.SetCookie(c.Writer(), &http.Cookie{
 		Name:     "session",
 		Value:    session.Token,
 		Path:     "/",
 		Expires:  session.ExpiresAt,
-		HttpOnly: true,
+		HttpOnly: false,
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -118,7 +118,7 @@ func (h *Auth) Logout(c *mizu.Ctx, userID string) error {
 		Value:    "",
 		Path:     "/",
 		Expires:  time.Unix(0, 0),
-		HttpOnly: true,
+		HttpOnly: false,
 		SameSite: http.SameSiteLaxMode,
 	})
 
