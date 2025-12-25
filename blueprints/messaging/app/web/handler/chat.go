@@ -59,7 +59,7 @@ func (h *Chat) Create(c *mizu.Ctx) error {
 		ParticipantIDs []string `json:"participant_ids,omitempty"`
 	}
 
-	if err := c.BindJSON(&req); err != nil {
+	if err := c.BindJSON(&req, 1<<20); err != nil {
 		return BadRequest(c, "Invalid request body")
 	}
 
@@ -119,7 +119,7 @@ func (h *Chat) Update(c *mizu.Ctx) error {
 
 	chatID := c.Param("id")
 	var in chats.UpdateIn
-	if err := c.BindJSON(&in); err != nil {
+	if err := c.BindJSON(&in, 1<<20); err != nil {
 		return BadRequest(c, "Invalid request body")
 	}
 
@@ -247,7 +247,7 @@ func (h *Chat) MarkAsRead(c *mizu.Ctx) error {
 	var req struct {
 		MessageID string `json:"message_id"`
 	}
-	if err := c.BindJSON(&req); err != nil {
+	if err := c.BindJSON(&req, 1<<20); err != nil {
 		return BadRequest(c, "Invalid request body")
 	}
 

@@ -66,7 +66,7 @@ func (h *Message) Create(c *mizu.Ctx) error {
 
 	chatID := c.Param("id")
 	var in messages.CreateIn
-	if err := c.BindJSON(&in); err != nil {
+	if err := c.BindJSON(&in, 10<<20); err != nil { // 10MB for messages with media
 		return BadRequest(c, "Invalid request body")
 	}
 	in.ChatID = chatID
@@ -116,7 +116,7 @@ func (h *Message) Update(c *mizu.Ctx) error {
 	chatID := c.Param("id")
 	msgID := c.Param("msg_id")
 	var in messages.UpdateIn
-	if err := c.BindJSON(&in); err != nil {
+	if err := c.BindJSON(&in, 1<<20); err != nil {
 		return BadRequest(c, "Invalid request body")
 	}
 
@@ -174,7 +174,7 @@ func (h *Message) AddReaction(c *mizu.Ctx) error {
 	var req struct {
 		Emoji string `json:"emoji"`
 	}
-	if err := c.BindJSON(&req); err != nil {
+	if err := c.BindJSON(&req, 1<<20); err != nil {
 		return BadRequest(c, "Invalid request body")
 	}
 
@@ -209,7 +209,7 @@ func (h *Message) Forward(c *mizu.Ctx) error {
 
 	msgID := c.Param("msg_id")
 	var in messages.ForwardIn
-	if err := c.BindJSON(&in); err != nil {
+	if err := c.BindJSON(&in, 1<<20); err != nil {
 		return BadRequest(c, "Invalid request body")
 	}
 

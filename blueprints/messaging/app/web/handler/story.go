@@ -42,7 +42,7 @@ func (h *Story) Create(c *mizu.Ctx) error {
 	}
 
 	var in stories.CreateIn
-	if err := c.BindJSON(&in); err != nil {
+	if err := c.BindJSON(&in, 10<<20); err != nil { // 10MB for stories with media
 		return BadRequest(c, "Invalid request body")
 	}
 

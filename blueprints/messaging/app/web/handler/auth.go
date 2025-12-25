@@ -22,7 +22,7 @@ func NewAuth(accounts accounts.API) *Auth {
 // Register handles user registration.
 func (h *Auth) Register(c *mizu.Ctx) error {
 	var in accounts.CreateIn
-	if err := c.BindJSON(&in); err != nil {
+	if err := c.BindJSON(&in, 1<<20); err != nil {
 		return BadRequest(c, "Invalid request body")
 	}
 
@@ -79,7 +79,7 @@ func (h *Auth) Register(c *mizu.Ctx) error {
 // Login handles user login.
 func (h *Auth) Login(c *mizu.Ctx) error {
 	var in accounts.LoginIn
-	if err := c.BindJSON(&in); err != nil {
+	if err := c.BindJSON(&in, 1<<20); err != nil {
 		return BadRequest(c, "Invalid request body")
 	}
 
@@ -146,7 +146,7 @@ func (h *Auth) Me(c *mizu.Ctx, userID string) error {
 // UpdateMe updates the current user.
 func (h *Auth) UpdateMe(c *mizu.Ctx, userID string) error {
 	var in accounts.UpdateIn
-	if err := c.BindJSON(&in); err != nil {
+	if err := c.BindJSON(&in, 1<<20); err != nil {
 		return BadRequest(c, "Invalid request body")
 	}
 
