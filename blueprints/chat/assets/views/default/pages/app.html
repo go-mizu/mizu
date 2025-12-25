@@ -35,8 +35,8 @@
                     <div id="ws-status" class="w-2 h-2 rounded-full bg-gray-400"></div>
                 </div>
                 {{if .Data.currentServer}}
-                <!-- Users sidebar toggle -->
-                <button id="users-toggle" class="p-2 rounded-lg text-gpt-text-secondary hover:bg-gpt-sidebar-hover transition-colors" title="Show online users">
+                <!-- Members sidebar toggle -->
+                <button id="users-toggle" class="p-2 rounded-lg text-gpt-text-secondary hover:bg-gpt-sidebar-hover transition-colors" title="Show members">
                     <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
                         <circle cx="9" cy="7" r="4"/>
@@ -75,7 +75,7 @@
                         <!-- Message - unified style for all users -->
                         <div class="flex gap-4">
                             <!-- Avatar -->
-                            <div class="w-7 h-7 rounded-full flex items-center justify-center text-sm font-medium shrink-0 overflow-hidden {{if and .Author (eq .Author.ID $.User.ID)}}bg-blue-600{{else}}bg-black{{end}}">
+                            <div class="w-7 h-7 rounded-full flex items-center justify-center text-sm font-medium shrink-0 overflow-hidden bg-black">
                                 {{if .Author}}
                                     {{if .Author.AvatarURL}}
                                         <img src="{{.Author.AvatarURL}}" alt="{{.Author.DisplayName}}" class="w-full h-full object-cover">
@@ -192,24 +192,22 @@
         <!-- No Channel Selected -->
         <div class="flex-1 flex flex-col items-center justify-center text-center p-6">
             <div class="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gpt-sidebar border border-gpt-border">
-                <svg class="w-10 h-10 text-gpt-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                </svg>
+                <span class="text-4xl font-medium text-gpt-text opacity-40">#</span>
             </div>
-            <h2 class="text-2xl font-semibold text-gpt-text mb-3">How can I help you today?</h2>
-            <p class="text-gpt-text-secondary max-w-md mb-6">Select a conversation from the sidebar or start a new chat.</p>
+            <h2 class="text-2xl font-semibold text-gpt-text mb-3">Welcome!</h2>
+            <p class="text-gpt-text-secondary max-w-md mb-6">Select a channel from the sidebar or create a new one to start chatting.</p>
             <button onclick="document.getElementById('new-chat-btn')?.click()" class="px-4 py-2.5 rounded-full text-sm font-medium text-white bg-gpt-accent hover:opacity-90 transition-opacity btn-transition">
-                New Chat
+                Create Channel
             </button>
         </div>
         {{end}}
         </div>
 
-        <!-- Right Sidebar - Online Users (collapsed by default) -->
+        <!-- Right Sidebar - Members (collapsed by default) -->
         {{if .Data.currentServer}}
         <div id="right-sidebar" class="w-60 border-l border-gpt-border bg-gpt-sidebar flex-col hidden" data-expanded="false">
             <div class="h-14 flex items-center justify-between px-4 border-b border-gpt-border">
-                <h3 class="font-semibold text-sm text-gpt-text">Online Users</h3>
+                <h3 class="font-semibold text-sm text-gpt-text">Members</h3>
                 <button id="close-right-sidebar" class="p-1 rounded hover:bg-gpt-sidebar-hover transition-colors">
                     <svg class="w-4 h-4 text-gpt-text-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18"/>
@@ -523,7 +521,7 @@ function appendMessage(msg, isOptimistic = false) {
     const timestamp = formatTimestamp(msg.created_at || new Date().toISOString());
 
     // Unified message style for all users
-    const avatarBg = isCurrentUser ? 'bg-blue-600' : 'bg-black';
+    const avatarBg = 'bg-black';
     const displayName = msg.author?.display_name || 'Unknown';
     const initial = displayName.charAt(0).toUpperCase();
     const youLabel = isCurrentUser ? ' (you)' : '';
@@ -838,7 +836,7 @@ function renderUserItem(user, isOnline) {
     return `
         <div class="flex items-center gap-2 p-2 rounded-lg hover:bg-gpt-sidebar-hover transition-colors cursor-pointer">
             <div class="relative">
-                <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium overflow-hidden ${isCurrentUser ? 'bg-blue-600' : 'bg-black'}">
+                <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium overflow-hidden bg-black">
                     ${user.avatar_url
                         ? `<img src="${escapeHtml(user.avatar_url)}" alt="" class="w-full h-full object-cover">`
                         : `<span class="text-white text-xs font-semibold">${escapeHtml(initial)}</span>`
