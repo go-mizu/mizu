@@ -324,7 +324,7 @@ func (s *Server) listContacts(c *mizu.Ctx) error {
 func (s *Server) addContact(c *mizu.Ctx) error {
 	userID := s.getUserID(c)
 	var in contacts.AddIn
-	if err := c.BindJSON(&in); err != nil {
+	if err := c.BindJSON(&in, 1<<20); err != nil {
 		return handler.BadRequest(c, "Invalid request")
 	}
 	contact, err := s.contacts.Add(c.Request().Context(), userID, &in)
