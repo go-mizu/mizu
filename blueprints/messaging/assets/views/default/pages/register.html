@@ -1,0 +1,115 @@
+{{define "content"}}
+<div class="min-h-screen flex items-center justify-center px-4">
+    <div class="w-full max-w-md">
+        <div class="text-center mb-8">
+            <span class="text-4xl">💬</span>
+            <h1 class="text-2xl font-bold text-primary mt-4">Create an account</h1>
+            <p class="text-secondary mt-2">Join and start messaging</p>
+        </div>
+
+        <form id="register-form" class="bg-secondary rounded-2xl p-8 space-y-6">
+            <div id="error-message" class="hidden bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-lg text-sm"></div>
+
+            <div>
+                <label for="display_name" class="block text-sm font-medium text-secondary mb-2">
+                    Display Name
+                </label>
+                <input
+                    type="text"
+                    id="display_name"
+                    name="display_name"
+                    class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:border-[#25D366] transition-colors"
+                    placeholder="How should we call you?"
+                >
+            </div>
+
+            <div>
+                <label for="username" class="block text-sm font-medium text-secondary mb-2">
+                    Username
+                </label>
+                <input
+                    type="text"
+                    id="username"
+                    name="username"
+                    required
+                    class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:border-[#25D366] transition-colors"
+                    placeholder="Choose a username"
+                >
+            </div>
+
+            <div>
+                <label for="email" class="block text-sm font-medium text-secondary mb-2">
+                    Email (optional)
+                </label>
+                <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:border-[#25D366] transition-colors"
+                    placeholder="your@email.com"
+                >
+            </div>
+
+            <div>
+                <label for="password" class="block text-sm font-medium text-secondary mb-2">
+                    Password
+                </label>
+                <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    required
+                    minlength="6"
+                    class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:border-[#25D366] transition-colors"
+                    placeholder="At least 6 characters"
+                >
+            </div>
+
+            <button
+                type="submit"
+                class="w-full accent text-white py-3 rounded-lg font-semibold transition-colors"
+            >
+                Create Account
+            </button>
+        </form>
+
+        <p class="text-center mt-6 text-secondary">
+            Already have an account?
+            <a href="/login" class="text-[#25D366] hover:underline">Sign in</a>
+        </p>
+    </div>
+</div>
+
+<script>
+document.getElementById('register-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const errorDiv = document.getElementById('error-message');
+
+    try {
+        const res = await fetch('/api/v1/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username: form.username.value,
+                email: form.email.value || undefined,
+                password: form.password.value,
+                display_name: form.display_name.value || undefined
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            window.location.href = '/app';
+        } else {
+            errorDiv.textContent = data.error || 'Registration failed';
+            errorDiv.classList.remove('hidden');
+        }
+    } catch (err) {
+        errorDiv.textContent = 'An error occurred. Please try again.';
+        errorDiv.classList.remove('hidden');
+    }
+});
+</script>
+{{end}}

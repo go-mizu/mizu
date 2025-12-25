@@ -1,0 +1,63 @@
+{{define "content"}}
+<div class="min-h-screen flex flex-col">
+    <!-- Header -->
+    <header class="bg-secondary border-b border-default">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center gap-2">
+                    <span class="text-2xl">💬</span>
+                    <span class="text-xl font-semibold text-primary">Messaging</span>
+                </div>
+                <div class="flex items-center gap-4">
+                    <a href="/login" class="text-secondary hover:text-primary transition-colors">Login</a>
+                    <a href="/register" class="accent text-white px-4 py-2 rounded-lg font-medium transition-colors">Get Started</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <main class="flex-1 flex items-center justify-center px-4">
+        <div class="text-center max-w-3xl">
+            <h1 class="text-5xl font-bold text-primary mb-6">
+                Simple, secure messaging
+            </h1>
+            <p class="text-xl text-secondary mb-8">
+                Connect with friends and family through instant messaging, voice notes, and stories.
+                Your conversations, your way.
+            </p>
+            <div class="flex justify-center gap-4">
+                <a href="/register" class="accent text-white px-8 py-3 rounded-lg font-semibold text-lg transition-colors">
+                    Start Messaging
+                </a>
+            </div>
+
+            <!-- Features -->
+            <div class="mt-16 grid md:grid-cols-3 gap-8">
+                <div class="p-6 bg-secondary rounded-xl">
+                    <div class="text-4xl mb-4">💬</div>
+                    <h3 class="text-lg font-semibold text-primary mb-2">Instant Messaging</h3>
+                    <p class="text-secondary">Real-time messages with read receipts and typing indicators.</p>
+                </div>
+                <div class="p-6 bg-secondary rounded-xl">
+                    <div class="text-4xl mb-4">👥</div>
+                    <h3 class="text-lg font-semibold text-primary mb-2">Group Chats</h3>
+                    <p class="text-secondary">Create groups with up to 1024 members for any occasion.</p>
+                </div>
+                <div class="p-6 bg-secondary rounded-xl">
+                    <div class="text-4xl mb-4">📸</div>
+                    <h3 class="text-lg font-semibold text-primary mb-2">Stories</h3>
+                    <p class="text-secondary">Share moments that disappear after 24 hours.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-secondary border-t border-default py-6">
+        <div class="max-w-7xl mx-auto px-4 text-center text-muted">
+            <p>&copy; 2025 Messaging. Built with Mizu Framework.</p>
+        </div>
+    </footer>
+</div>
+{{end}}
