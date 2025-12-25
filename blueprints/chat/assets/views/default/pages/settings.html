@@ -3,214 +3,256 @@
 {{end}}
 
 {{define "content"}}
-<div class="settings">
-    <aside class="settings-sidebar">
-        <div class="settings-nav-category">User Settings</div>
-        <nav class="settings-nav">
-            <a href="/settings" class="settings-nav-item active" data-section="account">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                My Account
+<div class="min-h-screen flex bg-white">
+    <!-- Sidebar Navigation -->
+    <aside class="w-64 shrink-0 p-4 border-r border-gpt-border bg-gpt-sidebar">
+        <div class="mb-6">
+            <a href="/" class="sidebar-item flex items-center gap-2 text-sm font-medium px-3 py-2.5 rounded-lg text-gpt-text">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="15 18 9 12 15 6"/>
+                </svg>
+                Back to app
             </a>
-            <a href="/settings/profile" class="settings-nav-item" data-section="profile">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M7 21v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"/></svg>
+        </div>
+
+        <nav class="space-y-1">
+            <span class="block text-xs font-medium uppercase tracking-wider px-3 py-2 text-gpt-text-muted">User Settings</span>
+
+            <a href="#profile" class="nav-link sidebar-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm active" data-section="profile">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                    <circle cx="12" cy="7" r="4"/>
+                </svg>
                 Profile
             </a>
-            <a href="/settings/appearance" class="settings-nav-item" data-section="appearance">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-                Appearance
+
+            <a href="#password" class="nav-link sidebar-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm" data-section="password">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+                Password
             </a>
+
+            <div class="pt-4">
+                <button onclick="logout()" class="sidebar-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm w-full text-left text-red-500 hover:bg-red-50">
+                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                        <polyline points="16 17 21 12 16 7"/>
+                        <line x1="21" y1="12" x2="9" y2="12"/>
+                    </svg>
+                    Log Out
+                </button>
+            </div>
         </nav>
-
-        <div class="settings-nav-category">App Settings</div>
-        <nav class="settings-nav">
-            <a href="/settings/notifications" class="settings-nav-item" data-section="notifications">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                Notifications
-            </a>
-            <a href="/settings/privacy" class="settings-nav-item" data-section="privacy">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                Privacy & Safety
-            </a>
-            <a href="/settings/sessions" class="settings-nav-item" data-section="sessions">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                Sessions
-            </a>
-        </nav>
-
-        <div class="settings-separator"></div>
-
-        <div class="settings-nav-category" style="color: var(--text-danger);">Danger Zone</div>
-        <nav class="settings-nav">
-            <a href="#" class="settings-nav-item" onclick="showDeleteAccountModal(); return false;" style="color: var(--text-danger);">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                Delete Account
-            </a>
-        </nav>
-
-        <div class="settings-nav" style="margin-top: auto; padding-top: 1rem;">
-            <button onclick="logout()" class="settings-nav-item" style="color: var(--text-danger); width: 100%; text-align: left;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-                Log Out
-            </button>
-        </div>
     </aside>
 
-    <main class="settings-content">
-        <a href="/" class="settings-close" title="Close (Esc)">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </a>
+    <!-- Content Area -->
+    <main class="flex-1 p-8 overflow-y-auto">
+        <div class="max-w-2xl">
+            <!-- Profile Section -->
+            <section id="profile" class="mb-12">
+                <h2 class="text-xl font-semibold text-gpt-text mb-6">Profile</h2>
 
-        <section class="settings-section">
-            <h2>My Account</h2>
-
-            <div class="settings-profile-card">
-                <div class="settings-profile-header">
-                    <div class="settings-avatar">
+                <!-- Avatar -->
+                <div class="flex items-center gap-5 mb-8 p-4 rounded-2xl bg-gpt-sidebar border border-gpt-border">
+                    <div class="w-20 h-20 rounded-full flex items-center justify-center text-2xl font-semibold overflow-hidden bg-gpt-sidebar-hover">
                         {{if .User.AvatarURL}}
-                            <img src="{{.User.AvatarURL}}" alt="{{.User.DisplayName}}">
+                            <img src="{{.User.AvatarURL}}" alt="{{.User.DisplayName}}" class="w-full h-full object-cover">
                         {{else}}
-                            <span>{{userInitials .User.DisplayName}}</span>
+                            <span class="text-gpt-text">{{userInitials .User.DisplayName}}</span>
                         {{end}}
-                        <label class="settings-avatar-edit" for="avatar-upload">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    </div>
+                    <div>
+                        <label class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium cursor-pointer transition-colors btn-transition bg-gpt-accent hover:opacity-90 text-white">
+                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="17 8 12 3 7 8"/>
+                                <line x1="12" y1="3" x2="12" y2="15"/>
+                            </svg>
+                            Upload Photo
+                            <input type="file" id="avatar-upload" accept="image/*" class="hidden" onchange="uploadAvatar(this)">
                         </label>
-                        <input type="file" id="avatar-upload" accept="image/*" class="hidden" onchange="uploadAvatar(this)">
+                        <p class="mt-2 text-xs text-gpt-text-muted">JPG, PNG or GIF. Max 5MB.</p>
                     </div>
-                    <div class="settings-profile-info">
-                        <div class="settings-profile-name">{{.User.DisplayName}}</div>
-                        <div class="settings-profile-tag">@{{.User.Username}}</div>
+                </div>
+
+                <!-- Profile Form -->
+                <form id="profile-form" class="space-y-5">
+                    <div>
+                        <label class="block text-sm font-medium text-gpt-text mb-2">Display Name</label>
+                        <input
+                            type="text"
+                            id="display_name"
+                            name="display_name"
+                            value="{{.User.DisplayName}}"
+                            maxlength="32"
+                            class="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all bg-gpt-input-bg border border-gpt-border text-gpt-text focus:ring-2 focus:ring-gpt-accent"
+                        >
                     </div>
-                    <button class="btn btn-secondary" onclick="document.getElementById('avatar-upload').click()">Change Avatar</button>
-                </div>
-            </div>
 
-            <h3>Account Information</h3>
+                    <div>
+                        <label class="block text-sm font-medium text-gpt-text mb-2">Bio</label>
+                        <textarea
+                            id="bio"
+                            name="bio"
+                            rows="3"
+                            maxlength="190"
+                            placeholder="Tell us about yourself..."
+                            class="w-full px-4 py-3 rounded-xl text-sm outline-none resize-none transition-all bg-gpt-input-bg border border-gpt-border text-gpt-text focus:ring-2 focus:ring-gpt-accent placeholder:text-gpt-text-muted"
+                        >{{.User.Bio}}</textarea>
+                    </div>
 
-            <div class="settings-row">
-                <div class="settings-row-info">
-                    <h4>Username</h4>
-                    <p>@{{.User.Username}}</p>
-                </div>
-                <button class="btn btn-outline btn-sm" onclick="showChangeUsernameModal()">Edit</button>
-            </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gpt-text-muted mb-2">Email</label>
+                            <p class="text-sm px-4 py-3 rounded-xl bg-gpt-sidebar border border-gpt-border text-gpt-text">{{.User.Email}}</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gpt-text-muted mb-2">Username</label>
+                            <p class="text-sm px-4 py-3 rounded-xl bg-gpt-sidebar border border-gpt-border text-gpt-text">@{{.User.Username}}</p>
+                        </div>
+                    </div>
 
-            <div class="settings-row">
-                <div class="settings-row-info">
-                    <h4>Email</h4>
-                    <p>{{.User.Email}}</p>
-                </div>
-                <button class="btn btn-outline btn-sm" onclick="showChangeEmailModal()">Edit</button>
-            </div>
+                    <div id="profile-message" class="hidden text-sm text-green-600 bg-green-50 px-4 py-3 rounded-xl border border-green-200"></div>
 
-            <h3>Profile</h3>
-            <form id="profile-form">
-                <div class="form-group">
-                    <label class="form-label" for="display_name">Display Name</label>
-                    <input class="form-input" type="text" id="display_name" name="display_name" value="{{.User.DisplayName}}" maxlength="32">
-                    <div class="form-hint">This is how you'll appear to others.</div>
-                </div>
+                    <button
+                        type="submit"
+                        class="px-5 py-2.5 rounded-lg text-sm font-medium text-white transition-colors btn-transition bg-gpt-accent hover:opacity-90"
+                    >
+                        Save Changes
+                    </button>
+                </form>
+            </section>
 
-                <div class="form-group">
-                    <label class="form-label" for="bio">About Me</label>
-                    <textarea class="form-input" id="bio" name="bio" rows="4" placeholder="Tell us about yourself..." maxlength="190">{{.User.Bio}}</textarea>
-                    <div class="form-hint"><span id="bio-count">0</span>/190 characters</div>
-                </div>
+            <!-- Password Section -->
+            <section id="password" class="mb-12 pt-8 border-t border-gpt-border">
+                <h2 class="text-xl font-semibold text-gpt-text mb-6">Password</h2>
 
-                <div id="save-message" class="form-hint hidden" style="color: var(--text-positive);"></div>
-                <button type="submit" class="btn btn-primary" id="save-btn">Save Changes</button>
-            </form>
+                <form id="password-form" class="space-y-5 max-w-md">
+                    <div>
+                        <label class="block text-sm font-medium text-gpt-text mb-2">Current Password</label>
+                        <input
+                            type="password"
+                            id="current_password"
+                            name="current_password"
+                            required
+                            autocomplete="current-password"
+                            class="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all bg-gpt-input-bg border border-gpt-border text-gpt-text focus:ring-2 focus:ring-gpt-accent"
+                        >
+                    </div>
 
-            <h3>Password</h3>
-            <form id="password-form">
-                <div class="form-group">
-                    <label class="form-label" for="current_password">Current Password</label>
-                    <input class="form-input" type="password" id="current_password" name="current_password" required autocomplete="current-password">
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="new_password">New Password</label>
-                    <input class="form-input" type="password" id="new_password" name="new_password" required minlength="8" autocomplete="new-password">
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="confirm_new_password">Confirm New Password</label>
-                    <input class="form-input" type="password" id="confirm_new_password" name="confirm_new_password" required autocomplete="new-password">
-                </div>
-                <div id="password-error" class="form-error hidden"></div>
-                <div id="password-success" class="form-hint hidden" style="color: var(--text-positive);"></div>
-                <button type="submit" class="btn btn-primary" id="password-btn">Change Password</button>
-            </form>
+                    <div>
+                        <label class="block text-sm font-medium text-gpt-text mb-2">New Password</label>
+                        <input
+                            type="password"
+                            id="new_password"
+                            name="new_password"
+                            required
+                            minlength="8"
+                            autocomplete="new-password"
+                            class="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all bg-gpt-input-bg border border-gpt-border text-gpt-text focus:ring-2 focus:ring-gpt-accent"
+                        >
+                    </div>
 
-            <h3>Appearance</h3>
-            <div class="settings-row">
-                <div class="settings-row-info">
-                    <h4>Theme</h4>
-                    <p>Choose between light and dark mode</p>
-                </div>
-                <div style="display: flex; gap: 0.5rem;">
-                    <button class="btn btn-sm" id="theme-dark" onclick="setTheme('dark')">Dark</button>
-                    <button class="btn btn-sm btn-outline" id="theme-light" onclick="setTheme('light')">Light</button>
-                    <button class="btn btn-sm btn-outline" id="theme-system" onclick="setTheme('system')">System</button>
-                </div>
-            </div>
-        </section>
+                    <div>
+                        <label class="block text-sm font-medium text-gpt-text mb-2">Confirm New Password</label>
+                        <input
+                            type="password"
+                            id="confirm_new_password"
+                            name="confirm_new_password"
+                            required
+                            autocomplete="new-password"
+                            class="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all bg-gpt-input-bg border border-gpt-border text-gpt-text focus:ring-2 focus:ring-gpt-accent"
+                        >
+                    </div>
+
+                    <div id="password-error" class="hidden text-sm text-red-600 bg-red-50 px-4 py-3 rounded-xl border border-red-200"></div>
+                    <div id="password-success" class="hidden text-sm text-green-600 bg-green-50 px-4 py-3 rounded-xl border border-green-200"></div>
+
+                    <button
+                        type="submit"
+                        class="px-5 py-2.5 rounded-lg text-sm font-medium text-white transition-colors btn-transition bg-gpt-accent hover:opacity-90"
+                    >
+                        Change Password
+                    </button>
+                </form>
+            </section>
+
+            <!-- Danger Zone -->
+            <section class="pt-8 border-t border-gpt-border">
+                <h2 class="text-xl font-semibold text-red-500 mb-2">Danger Zone</h2>
+                <p class="text-sm text-gpt-text-secondary mb-5">Permanently delete your account and all of your data. This action cannot be undone.</p>
+                <button
+                    onclick="showDeleteModal()"
+                    class="px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-colors btn-transition"
+                >
+                    Delete Account
+                </button>
+            </section>
+        </div>
     </main>
 </div>
 
 <!-- Delete Account Modal -->
-<div class="modal-overlay" id="delete-account-modal">
-    <div class="modal">
-        <div class="modal-header">
-            <h2>Delete Account</h2>
-            <p>This action is permanent and cannot be undone. All your data will be deleted.</p>
-        </div>
-        <div class="modal-body">
-            <div class="form-group">
-                <label class="form-label">Type <strong>DELETE</strong> to confirm</label>
-                <input class="form-input" type="text" id="delete-confirm-input" placeholder="DELETE">
+<div id="delete-modal" class="fixed inset-0 z-50 hidden items-center justify-center modal-backdrop bg-black/50">
+    <div class="w-full max-w-md mx-4 rounded-2xl p-6 animate-slide-up bg-white border border-gpt-border shadow-xl">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-full flex items-center justify-center bg-red-50">
+                <svg class="w-5 h-5 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+            </div>
+            <div>
+                <h2 class="text-lg font-semibold text-red-500">Delete Account</h2>
             </div>
         </div>
-        <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="closeDeleteAccountModal()">Cancel</button>
-            <button class="btn btn-danger" id="delete-account-btn" disabled onclick="deleteAccount()">Delete Account</button>
+        <p class="text-sm text-gpt-text-secondary mb-6">This action is permanent and cannot be undone. All your data will be deleted.</p>
+
+        <div class="mb-6">
+            <label class="block text-sm font-medium text-gpt-text mb-2">Type DELETE to confirm</label>
+            <input
+                type="text"
+                id="delete-confirm"
+                placeholder="DELETE"
+                class="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all bg-gpt-input-bg border border-gpt-border text-gpt-text focus:ring-2 focus:ring-red-500"
+            >
+        </div>
+
+        <div class="flex gap-3 justify-end">
+            <button
+                onclick="closeDeleteModal()"
+                class="px-4 py-2.5 rounded-lg text-sm font-medium text-gpt-text hover:bg-gpt-sidebar-hover transition-colors btn-transition"
+            >
+                Cancel
+            </button>
+            <button
+                id="delete-btn"
+                onclick="deleteAccount()"
+                disabled
+                class="px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-colors btn-transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+                Delete Account
+            </button>
         </div>
     </div>
 </div>
 
-<!-- Toast Container -->
-<div class="toast-container" id="toast-container"></div>
-
 <script>
-// Theme
-function setTheme(theme) {
-    if (theme === 'system') {
-        localStorage.removeItem('theme');
-        document.documentElement.removeAttribute('data-theme');
-    } else {
-        localStorage.setItem('theme', theme);
-        document.documentElement.setAttribute('data-theme', theme);
-    }
-    updateThemeButtons();
-}
-
-function updateThemeButtons() {
-    const theme = localStorage.getItem('theme') || 'dark';
-    document.querySelectorAll('[id^="theme-"]').forEach(btn => {
-        btn.classList.remove('btn-primary');
-        btn.classList.add('btn-outline');
-    });
-    const active = document.getElementById(`theme-${theme}`);
-    if (active) {
-        active.classList.remove('btn-outline');
-        active.classList.add('btn-primary');
-    }
-}
-
-// Bio character count
-const bioInput = document.getElementById('bio');
-const bioCount = document.getElementById('bio-count');
-if (bioInput && bioCount) {
-    bioCount.textContent = bioInput.value.length;
-    bioInput.addEventListener('input', () => {
-        bioCount.textContent = bioInput.value.length;
+// Navigation active state
+function updateNavigation() {
+    const hash = window.location.hash || '#profile';
+    document.querySelectorAll('.nav-link').forEach(link => {
+        const section = link.dataset.section;
+        if ('#' + section === hash) {
+            link.classList.add('active', 'bg-gpt-sidebar-active', 'text-gpt-text');
+            link.classList.remove('text-gpt-text-secondary');
+        } else {
+            link.classList.remove('active', 'bg-gpt-sidebar-active', 'text-gpt-text');
+            link.classList.add('text-gpt-text-secondary');
+        }
     });
 }
 
@@ -218,8 +260,8 @@ if (bioInput && bioCount) {
 document.getElementById('profile-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = e.target;
-    const btn = document.getElementById('save-btn');
-    const msg = document.getElementById('save-message');
+    const msg = document.getElementById('profile-message');
+    const btn = form.querySelector('[type="submit"]');
 
     btn.disabled = true;
     btn.textContent = 'Saving...';
@@ -238,25 +280,25 @@ document.getElementById('profile-form')?.addEventListener('submit', async (e) =>
             msg.textContent = 'Changes saved successfully!';
             msg.classList.remove('hidden');
             setTimeout(() => msg.classList.add('hidden'), 3000);
-        } else {
-            const json = await res.json();
-            showToast(json.error?.message || 'Failed to save changes', 'error');
         }
     } catch (err) {
-        showToast('Failed to save changes', 'error');
-    } finally {
-        btn.disabled = false;
-        btn.textContent = 'Save Changes';
+        console.error('Failed to save');
     }
+
+    btn.disabled = false;
+    btn.textContent = 'Save Changes';
 });
 
 // Password form
 document.getElementById('password-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = e.target;
-    const btn = document.getElementById('password-btn');
     const errorEl = document.getElementById('password-error');
     const successEl = document.getElementById('password-success');
+    const btn = form.querySelector('[type="submit"]');
+
+    errorEl.classList.add('hidden');
+    successEl.classList.add('hidden');
 
     if (form.new_password.value !== form.confirm_new_password.value) {
         errorEl.textContent = 'Passwords do not match';
@@ -266,8 +308,6 @@ document.getElementById('password-form')?.addEventListener('submit', async (e) =
 
     btn.disabled = true;
     btn.textContent = 'Changing...';
-    errorEl.classList.add('hidden');
-    successEl.classList.add('hidden');
 
     try {
         const res = await fetch('/api/v1/auth/change-password', {
@@ -292,10 +332,10 @@ document.getElementById('password-form')?.addEventListener('submit', async (e) =
     } catch (err) {
         errorEl.textContent = 'Failed to change password';
         errorEl.classList.remove('hidden');
-    } finally {
-        btn.disabled = false;
-        btn.textContent = 'Change Password';
     }
+
+    btn.disabled = false;
+    btn.textContent = 'Change Password';
 });
 
 // Avatar upload
@@ -312,79 +352,65 @@ async function uploadAvatar(input) {
         });
 
         if (res.ok) {
-            showToast('Avatar updated!', 'success');
-            setTimeout(() => location.reload(), 1000);
-        } else {
-            showToast('Failed to upload avatar', 'error');
+            location.reload();
         }
     } catch (err) {
-        showToast('Failed to upload avatar', 'error');
+        console.error('Failed to upload avatar');
     }
 }
 
 // Delete account
-function showDeleteAccountModal() {
-    document.getElementById('delete-account-modal').classList.add('open');
+function showDeleteModal() {
+    document.getElementById('delete-modal')?.classList.remove('hidden');
+    document.getElementById('delete-modal')?.classList.add('flex');
+    document.getElementById('delete-confirm')?.focus();
 }
 
-function closeDeleteAccountModal() {
-    document.getElementById('delete-account-modal').classList.remove('open');
-    document.getElementById('delete-confirm-input').value = '';
-    document.getElementById('delete-account-btn').disabled = true;
+function closeDeleteModal() {
+    document.getElementById('delete-modal')?.classList.add('hidden');
+    document.getElementById('delete-modal')?.classList.remove('flex');
+    document.getElementById('delete-confirm').value = '';
+    document.getElementById('delete-btn').disabled = true;
 }
 
-document.getElementById('delete-confirm-input')?.addEventListener('input', (e) => {
-    document.getElementById('delete-account-btn').disabled = e.target.value !== 'DELETE';
+document.getElementById('delete-confirm')?.addEventListener('input', (e) => {
+    document.getElementById('delete-btn').disabled = e.target.value !== 'DELETE';
 });
 
 async function deleteAccount() {
+    const btn = document.getElementById('delete-btn');
+    btn.disabled = true;
+    btn.textContent = 'Deleting...';
+
     try {
         const res = await fetch('/api/v1/auth/delete', { method: 'DELETE' });
         if (res.ok) {
-            window.location.href = '/';
-        } else {
-            showToast('Failed to delete account', 'error');
+            window.location.href = '/login';
         }
     } catch (err) {
-        showToast('Failed to delete account', 'error');
+        console.error('Failed to delete account');
+        btn.disabled = false;
+        btn.textContent = 'Delete Account';
     }
 }
 
 // Logout
 async function logout() {
     await fetch('/api/v1/auth/logout', { method: 'POST' });
-    window.location.href = '/';
+    window.location.href = '/login';
 }
-
-// Placeholders for future modals
-function showChangeUsernameModal() { showToast('Coming soon', 'info'); }
-function showChangeEmailModal() { showToast('Coming soon', 'info'); }
-
-// Toast
-function showToast(message, type = 'info') {
-    const container = document.getElementById('toast-container');
-    if (!container) return;
-    const icons = {
-        success: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>',
-        error: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
-        info: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
-    };
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    toast.innerHTML = `<span class="toast-icon">${icons[type]}</span><div class="toast-content"><div class="toast-message">${message}</div></div><button class="toast-close" onclick="this.parentElement.remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`;
-    container.appendChild(toast);
-    setTimeout(() => toast.remove(), 5000);
-}
-
-// Keyboard shortcuts
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-        closeDeleteAccountModal();
-        window.location.href = '/';
-    }
-});
 
 // Initialize
-updateThemeButtons();
+updateNavigation();
+
+window.addEventListener('hashchange', updateNavigation);
+
+document.getElementById('delete-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'delete-modal') closeDeleteModal();
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeDeleteModal();
+});
 </script>
 {{end}}
