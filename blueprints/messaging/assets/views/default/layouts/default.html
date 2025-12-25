@@ -8,71 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg-primary: #0f0f0f;
-            --bg-secondary: #1a1a1a;
-            --bg-tertiary: #252525;
-            --bg-hover: #2f2f2f;
-            --text-primary: #f5f5f5;
-            --text-secondary: #a0a0a0;
-            --text-muted: #666666;
-            --accent: #25D366;
-            --accent-hover: #1da851;
-            --border: #2f2f2f;
-            --sent-bubble: #005c4b;
-            --received-bubble: #202c33;
-        }
-
-        [data-theme="light"] {
-            --bg-primary: #ffffff;
-            --bg-secondary: #f0f2f5;
-            --bg-tertiary: #e9edef;
-            --bg-hover: #d9dde0;
-            --text-primary: #111b21;
-            --text-secondary: #54656f;
-            --text-muted: #8696a0;
-            --accent: #25D366;
-            --accent-hover: #1da851;
-            --border: #e9edef;
-            --sent-bubble: #d9fdd3;
-            --received-bubble: #ffffff;
-        }
-
-        * {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        }
-
-        body {
-            background-color: var(--bg-primary);
-            color: var(--text-primary);
-        }
-
-        .bg-primary { background-color: var(--bg-primary); }
-        .bg-secondary { background-color: var(--bg-secondary); }
-        .bg-tertiary { background-color: var(--bg-tertiary); }
-        .bg-hover:hover { background-color: var(--bg-hover); }
-        .text-primary { color: var(--text-primary); }
-        .text-secondary { color: var(--text-secondary); }
-        .text-muted { color: var(--text-muted); }
-        .border-default { border-color: var(--border); }
-        .accent { background-color: var(--accent); }
-        .accent:hover { background-color: var(--accent-hover); }
-
-        .sent-bubble { background-color: var(--sent-bubble); }
-        .received-bubble { background-color: var(--received-bubble); }
-
-        /* Custom scrollbar */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
-
-        /* Message status icons */
-        .status-sent::after { content: '✓'; }
-        .status-delivered::after { content: '✓✓'; }
-        .status-read::after { content: '✓✓'; color: #53bdeb; }
-    </style>
+    <link rel="stylesheet" href="/static/css/default.css">
 </head>
 <body class="min-h-screen">
     {{template "content" .}}

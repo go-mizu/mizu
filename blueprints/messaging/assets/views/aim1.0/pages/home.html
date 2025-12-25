@@ -1,0 +1,73 @@
+{{define "content"}}
+<div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px;">
+    <!-- Welcome Window -->
+    <div class="win-window" style="width: 400px;">
+        <!-- Title Bar -->
+        <div class="win-titlebar">
+            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect fill='%23FFCC00' width='16' height='16' rx='2'/%3E%3Ccircle cx='8' cy='5' r='3' fill='%23000'/%3E%3Cpath d='M4 10c0-2 2-4 4-4s4 2 4 4v5H4z' fill='%23000'/%3E%3C/svg%3E" class="win-titlebar-icon" alt="AIM">
+            <span class="win-titlebar-text">Welcome to AOL Instant Messenger</span>
+            <div class="win-titlebar-buttons">
+                <button class="win-titlebar-btn" title="Minimize">_</button>
+                <button class="win-titlebar-btn" title="Close">×</button>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div style="background: #c0c0c0; padding: 24px;">
+            <!-- Logo and Title -->
+            <div style="text-align: center; margin-bottom: 24px;">
+                <div style="display: inline-block; padding: 12px; background: linear-gradient(180deg, #ffee00, #ffcc00); border: 3px outset #c0c0c0;">
+                    <svg width="64" height="64" viewBox="0 0 64 64">
+                        <circle cx="32" cy="18" r="10" fill="#000"/>
+                        <path d="M16 36c0-8 8-16 16-16s16 8 16 16v24H16z" fill="#000"/>
+                        <circle cx="32" cy="18" r="6" fill="#ffcc00"/>
+                    </svg>
+                </div>
+                <div style="margin-top: 12px;">
+                    <div style="font-weight: bold; font-size: 18px;">AOL Instant Messenger</div>
+                    <div style="font-size: 11px; color: #404040;">The fastest way to communicate online!</div>
+                </div>
+            </div>
+
+            <!-- Features Box -->
+            <div class="win-groupbox" style="margin-bottom: 16px;">
+                <span class="win-groupbox-label">Features</span>
+                <ul style="margin: 0; padding-left: 20px; line-height: 1.8;">
+                    <li>Send instant messages to your buddies</li>
+                    <li>Know when your friends are online</li>
+                    <li>Create a personalized Buddy List</li>
+                    <li>It's FREE!</li>
+                </ul>
+            </div>
+
+            <!-- Buttons -->
+            <div style="display: flex; gap: 12px; justify-content: center;">
+                <button class="win-button win-button-default" onclick="window.location.href='/login'" style="min-width: 120px;">
+                    Sign On
+                </button>
+                <button class="win-button" onclick="window.location.href='/register'" style="min-width: 120px;">
+                    Get Screen Name
+                </button>
+            </div>
+
+            <!-- Separator -->
+            <div style="margin: 20px 0; border-top: 1px solid #808080; border-bottom: 1px solid #fff;"></div>
+
+            <!-- Footer -->
+            <div style="text-align: center; font-size: 10px; color: #808080;">
+                <div>&copy; 1997 America Online, Inc. All Rights Reserved.</div>
+                <div style="margin-top: 4px;">
+                    <a href="#" style="color: #000080;">Privacy Policy</a> |
+                    <a href="#" style="color: #000080;">Terms of Service</a> |
+                    <a href="#" style="color: #000080;">Help</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="win-statusbar">
+            <div class="win-statusbar-panel">Version 1.0</div>
+        </div>
+    </div>
+</div>
+{{end}}

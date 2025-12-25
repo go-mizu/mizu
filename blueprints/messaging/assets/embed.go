@@ -13,29 +13,46 @@ var staticFS embed.FS
 //go:embed views/*
 var viewsFS embed.FS
 
+// Available themes
+var Themes = []string{"default", "aim1.0"}
+
 // Static returns the static files filesystem.
 func Static() fs.FS {
 	sub, _ := fs.Sub(staticFS, "static")
 	return sub
 }
 
-// Templates parses and returns all templates.
+// Templates parses and returns all templates for the default theme.
 func Templates() (map[string]*template.Template, error) {
+	return TemplatesForTheme("default")
+}
+
+// TemplatesForTheme parses and returns all templates for a specific theme.
+func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 	templates := make(map[string]*template.Template)
 
-	// Read the layout
-	layoutBytes, err := viewsFS.ReadFile("views/default/layouts/default.html")
+	// Read the layout for the theme
+	layoutBytes, err := viewsFS.ReadFile("views/" + theme + "/layouts/default.html")
 	if err != nil {
-		return nil, err
+		// Fall back to default theme
+		layoutBytes, err = viewsFS.ReadFile("views/default/layouts/default.html")
+		if err != nil {
+			return nil, err
+		}
 	}
 	layoutContent := string(layoutBytes)
 
 	// Read all pages
 	pages := []string{"home", "login", "register", "app", "settings"}
 	for _, name := range pages {
-		pageBytes, err := viewsFS.ReadFile("views/default/pages/" + name + ".html")
+		// Try theme-specific page first
+		pageBytes, err := viewsFS.ReadFile("views/" + theme + "/pages/" + name + ".html")
 		if err != nil {
-			continue
+			// Fall back to default theme
+			pageBytes, err = viewsFS.ReadFile("views/default/pages/" + name + ".html")
+			if err != nil {
+				continue
+			}
 		}
 
 		tmpl, err := template.New(name).Parse(layoutContent)
@@ -52,4 +69,20 @@ func Templates() (map[string]*template.Template, error) {
 	}
 
 	return templates, nil
+}
+
+// AllTemplates parses and returns templates for all themes.
+// Returns a map of theme -> page -> template.
+func AllTemplates() (map[string]map[string]*template.Template, error) {
+	allTemplates := make(map[string]map[string]*template.Template)
+
+	for _, theme := range Themes {
+		templates, err := TemplatesForTheme(theme)
+		if err != nil {
+			return nil, err
+		}
+		allTemplates[theme] = templates
+	}
+
+	return allTemplates, nil
 }

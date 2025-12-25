@@ -1,0 +1,121 @@
+{{define "content"}}
+<div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px;">
+    <!-- Sign On Window -->
+    <div class="win-window" style="width: 320px;">
+        <!-- Title Bar -->
+        <div class="win-titlebar">
+            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect fill='%23FFCC00' width='16' height='16' rx='2'/%3E%3Ccircle cx='8' cy='5' r='3' fill='%23000'/%3E%3Cpath d='M4 10c0-2 2-4 4-4s4 2 4 4v5H4z' fill='%23000'/%3E%3C/svg%3E" class="win-titlebar-icon" alt="AIM">
+            <span class="win-titlebar-text">Sign On</span>
+            <div class="win-titlebar-buttons">
+                <button class="win-titlebar-btn" title="Minimize">_</button>
+                <button class="win-titlebar-btn" title="Close">×</button>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div style="background: #c0c0c0; padding: 16px;">
+            <!-- AIM Logo -->
+            <div style="text-align: center; margin-bottom: 16px;">
+                <div style="display: inline-block; padding: 8px; background: #ffcc00; border: 2px outset #c0c0c0;">
+                    <svg width="48" height="48" viewBox="0 0 48 48">
+                        <circle cx="24" cy="14" r="8" fill="#000"/>
+                        <path d="M12 28c0-6 6-12 12-12s12 6 12 12v16H12z" fill="#000"/>
+                        <circle cx="24" cy="14" r="5" fill="#ffcc00"/>
+                    </svg>
+                </div>
+                <div style="margin-top: 8px; font-weight: bold; font-size: 14px;">AOL Instant Messenger</div>
+                <div style="font-size: 10px; color: #808080;">Version 1.0</div>
+            </div>
+
+            <form id="login-form">
+                <!-- Screen Name -->
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; margin-bottom: 4px;"><u>S</u>creen Name:</label>
+                    <input type="text" id="username" name="username" class="win-input" style="width: 100%;" required autofocus>
+                </div>
+
+                <!-- Password -->
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; margin-bottom: 4px;"><u>P</u>assword:</label>
+                    <input type="password" id="password" name="password" class="win-input" style="width: 100%;" required>
+                </div>
+
+                <!-- Save Password Checkbox -->
+                <div style="margin-bottom: 16px;">
+                    <label class="win-checkbox">
+                        <input type="checkbox" id="save-password">
+                        <span>Save password</span>
+                    </label>
+                </div>
+
+                <!-- Error Message -->
+                <div id="error-message" style="display: none; color: #ff0000; margin-bottom: 12px; padding: 8px; background: #fff; border: 1px solid #ff0000;">
+                </div>
+
+                <!-- Buttons -->
+                <div style="display: flex; gap: 8px; justify-content: center;">
+                    <button type="submit" class="win-button win-button-default">Sign On</button>
+                    <button type="button" class="win-button" onclick="window.location.href='/'">Cancel</button>
+                </div>
+            </form>
+
+            <!-- Separator -->
+            <div style="margin: 16px 0; border-top: 1px solid #808080; border-bottom: 1px solid #fff;"></div>
+
+            <!-- New User Link -->
+            <div style="text-align: center;">
+                <span>New User?</span>
+                <a href="/register" style="color: #000080; text-decoration: underline; cursor: pointer;">Get a Screen Name</a>
+            </div>
+
+            <!-- Version Info -->
+            <div style="margin-top: 16px; text-align: center; font-size: 10px; color: #808080;">
+                &copy; 1997 America Online, Inc.
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="win-statusbar">
+            <div class="win-statusbar-panel" id="status-text">Ready</div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const statusText = document.getElementById('status-text');
+    const errorDiv = document.getElementById('error-message');
+
+    statusText.textContent = 'Connecting...';
+    errorDiv.style.display = 'none';
+
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+
+    try {
+        const res = await fetch('/api/v1/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            statusText.textContent = 'Signing on...';
+            window.location.href = '/app';
+        } else {
+            statusText.textContent = 'Ready';
+            errorDiv.textContent = data.error || 'Invalid Screen Name or Password';
+            errorDiv.style.display = 'block';
+        }
+    } catch (err) {
+        statusText.textContent = 'Ready';
+        errorDiv.textContent = 'Connection error. Please try again.';
+        errorDiv.style.display = 'block';
+    }
+});
+</script>
+{{end}}

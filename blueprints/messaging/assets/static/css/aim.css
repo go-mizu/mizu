@@ -1,0 +1,566 @@
+/* AOL Instant Messenger 1.0 Theme - Authentic Windows 3.1 Style */
+
+/* ============================================
+   WINDOWS 3.1 SYSTEM FONTS
+   ============================================ */
+@font-face {
+    font-family: 'W95FA';
+    src: local('Fixedsys'), local('Terminal'), local('MS Sans Serif');
+    font-weight: normal;
+    font-style: normal;
+}
+
+/* ============================================
+   ROOT VARIABLES
+   ============================================ */
+:root {
+    /* Windows 3.1 System Colors */
+    --win-bg: #c0c0c0;
+    --win-text: #000000;
+    --win-highlight: #000080;
+    --win-highlight-text: #ffffff;
+
+    /* 3D Border Colors */
+    --win-border-light: #ffffff;
+    --win-border-dark: #808080;
+    --win-border-darker: #404040;
+    --win-border-darkest: #000000;
+
+    /* Title Bar */
+    --win-titlebar-active: #000080;
+    --win-titlebar-inactive: #808080;
+    --win-titlebar-text: #ffffff;
+
+    /* Desktop */
+    --win-desktop: #008080;
+
+    /* AIM Specific */
+    --aim-yellow: #ffff00;
+    --aim-gold: #ffcc00;
+    --aim-sent: #ffffcc;
+    --aim-received: #ffffff;
+    --aim-online: #00aa00;
+    --aim-away: #ff8800;
+    --aim-offline: #808080;
+}
+
+/* ============================================
+   BASE STYLES
+   ============================================ */
+* {
+    font-family: 'Tahoma', 'MS Sans Serif', 'Segoe UI', sans-serif !important;
+    font-size: 11px;
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--win-desktop);
+    color: var(--win-text);
+    min-height: 100vh;
+}
+
+/* ============================================
+   WINDOWS 3.1 WINDOW FRAME
+   ============================================ */
+.win-window {
+    background: var(--win-bg);
+    border: 2px solid;
+    border-color: var(--win-border-light) var(--win-border-darker) var(--win-border-darker) var(--win-border-light);
+    box-shadow: 1px 1px 0 var(--win-border-darkest);
+}
+
+.win-window-inner {
+    border: 1px solid;
+    border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+    margin: 2px;
+}
+
+/* ============================================
+   TITLE BAR
+   ============================================ */
+.win-titlebar {
+    background: linear-gradient(90deg, #000080, #1084d0);
+    color: var(--win-titlebar-text);
+    font-weight: bold;
+    padding: 2px 3px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 18px;
+    user-select: none;
+}
+
+.win-titlebar.inactive {
+    background: var(--win-titlebar-inactive);
+}
+
+.win-titlebar-text {
+    flex: 1;
+    padding-left: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 11px;
+}
+
+.win-titlebar-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: 4px;
+}
+
+.win-titlebar-buttons {
+    display: flex;
+    gap: 2px;
+}
+
+.win-titlebar-btn {
+    width: 16px;
+    height: 14px;
+    background: var(--win-bg);
+    border: 1px solid;
+    border-color: var(--win-border-light) var(--win-border-darker) var(--win-border-darker) var(--win-border-light);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+.win-titlebar-btn:active {
+    border-color: var(--win-border-darker) var(--win-border-light) var(--win-border-light) var(--win-border-darker);
+}
+
+/* ============================================
+   MENU BAR
+   ============================================ */
+.win-menubar {
+    background: var(--win-bg);
+    padding: 2px 0;
+    display: flex;
+    border-bottom: 1px solid var(--win-border-dark);
+}
+
+.win-menu-item {
+    padding: 2px 8px;
+    cursor: pointer;
+}
+
+.win-menu-item:hover {
+    background: var(--win-highlight);
+    color: var(--win-highlight-text);
+}
+
+.win-menu-item u {
+    text-decoration: underline;
+}
+
+/* ============================================
+   BUTTONS
+   ============================================ */
+.win-button {
+    background: var(--win-bg);
+    border: 2px solid;
+    border-color: var(--win-border-light) var(--win-border-darker) var(--win-border-darker) var(--win-border-light);
+    padding: 4px 16px;
+    font-size: 11px;
+    cursor: pointer;
+    min-width: 75px;
+    text-align: center;
+    box-shadow: 1px 1px 0 var(--win-border-darkest);
+}
+
+.win-button:active {
+    border-color: var(--win-border-darker) var(--win-border-light) var(--win-border-light) var(--win-border-darker);
+    box-shadow: none;
+    padding: 5px 15px 3px 17px;
+}
+
+.win-button:focus {
+    outline: 1px dotted var(--win-text);
+    outline-offset: -4px;
+}
+
+.win-button-default {
+    border: 3px solid;
+    border-color: var(--win-border-light) var(--win-border-darker) var(--win-border-darker) var(--win-border-light);
+    box-shadow: inset 0 0 0 1px var(--win-border-darkest), 1px 1px 0 var(--win-border-darkest);
+}
+
+/* ============================================
+   INPUT FIELDS
+   ============================================ */
+.win-input {
+    background: #ffffff;
+    border: 2px solid;
+    border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+    padding: 3px 4px;
+    font-size: 11px;
+    color: var(--win-text);
+}
+
+.win-input:focus {
+    outline: none;
+}
+
+.win-textarea {
+    background: #ffffff;
+    border: 2px solid;
+    border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+    padding: 3px 4px;
+    font-size: 11px;
+    color: var(--win-text);
+    resize: none;
+}
+
+/* ============================================
+   LIST BOX
+   ============================================ */
+.win-listbox {
+    background: #ffffff;
+    border: 2px solid;
+    border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+    overflow-y: auto;
+}
+
+.win-listbox-item {
+    padding: 1px 4px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.win-listbox-item:hover,
+.win-listbox-item.selected {
+    background: var(--win-highlight);
+    color: var(--win-highlight-text);
+}
+
+/* ============================================
+   GROUP BOX
+   ============================================ */
+.win-groupbox {
+    border: 1px solid var(--win-border-dark);
+    margin: 8px 0;
+    padding: 12px 8px 8px;
+    position: relative;
+}
+
+.win-groupbox-label {
+    position: absolute;
+    top: -8px;
+    left: 8px;
+    background: var(--win-bg);
+    padding: 0 4px;
+    font-size: 11px;
+}
+
+/* ============================================
+   SCROLLBARS
+   ============================================ */
+::-webkit-scrollbar {
+    width: 16px;
+    height: 16px;
+}
+
+::-webkit-scrollbar-track {
+    background: repeating-conic-gradient(var(--win-bg) 0% 25%, #808080 0% 50%) 50% / 2px 2px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--win-bg);
+    border: 2px solid;
+    border-color: var(--win-border-light) var(--win-border-darker) var(--win-border-darker) var(--win-border-light);
+}
+
+::-webkit-scrollbar-button {
+    background: var(--win-bg);
+    border: 2px solid;
+    border-color: var(--win-border-light) var(--win-border-darker) var(--win-border-darker) var(--win-border-light);
+    display: block;
+    height: 16px;
+    width: 16px;
+}
+
+::-webkit-scrollbar-button:active {
+    border-color: var(--win-border-darker) var(--win-border-light) var(--win-border-light) var(--win-border-darker);
+}
+
+::-webkit-scrollbar-corner {
+    background: var(--win-bg);
+}
+
+/* Scrollbar arrows */
+::-webkit-scrollbar-button:vertical:decrement {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Cpath d='M8 5l4 6H4z' fill='%23000'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+::-webkit-scrollbar-button:vertical:increment {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Cpath d='M4 5l4 6 4-6z' fill='%23000'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+/* ============================================
+   STATUS BAR
+   ============================================ */
+.win-statusbar {
+    background: var(--win-bg);
+    border-top: 2px solid;
+    border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+    padding: 2px 4px;
+    font-size: 11px;
+    display: flex;
+    gap: 4px;
+}
+
+.win-statusbar-panel {
+    border: 1px solid;
+    border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+    padding: 1px 4px;
+    flex: 1;
+}
+
+/* ============================================
+   AIM BUDDY LIST SPECIFIC
+   ============================================ */
+.aim-buddy-list {
+    background: #ffffff;
+}
+
+.aim-category {
+    font-weight: bold;
+    padding: 2px 4px;
+    background: var(--win-bg);
+    border-bottom: 1px solid var(--win-border-dark);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.aim-category-icon {
+    width: 9px;
+    height: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-family: monospace !important;
+}
+
+.aim-buddy {
+    padding: 1px 4px 1px 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.aim-buddy:hover {
+    background: var(--win-highlight);
+    color: var(--win-highlight-text);
+}
+
+.aim-buddy-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+}
+
+/* Running Man Icon */
+.aim-icon-online {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='3' r='2' fill='%23FFCC00'/%3E%3Cpath d='M6 6h4l1 3-2 1v4h-2v-4l-2-1z' fill='%23FFCC00'/%3E%3Cpath d='M5 9l-2 5h2l1-3' fill='%23FFCC00'/%3E%3Cpath d='M11 9l2 5h-2l-1-3' fill='%23FFCC00'/%3E%3C/svg%3E");
+}
+
+/* Away Door Icon */
+.aim-icon-away {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='3' y='1' width='10' height='14' fill='%23996633'/%3E%3Crect x='4' y='2' width='8' height='12' fill='%23CC9966'/%3E%3Ccircle cx='10' cy='8' r='1' fill='%23FFCC00'/%3E%3C/svg%3E");
+}
+
+/* ============================================
+   AIM MESSAGE WINDOW
+   ============================================ */
+.aim-message-area {
+    background: #ffffff;
+    border: 2px solid;
+    border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+    overflow-y: auto;
+    padding: 4px;
+}
+
+.aim-message {
+    margin-bottom: 8px;
+}
+
+.aim-message-header {
+    font-weight: bold;
+    margin-bottom: 2px;
+}
+
+.aim-message-header.sent {
+    color: #ff0000;
+}
+
+.aim-message-header.received {
+    color: #0000ff;
+}
+
+.aim-message-content {
+    padding-left: 16px;
+}
+
+.aim-message-time {
+    color: var(--win-border-dark);
+    font-size: 10px;
+}
+
+/* ============================================
+   AIM TOOLBAR
+   ============================================ */
+.aim-toolbar {
+    background: var(--win-bg);
+    padding: 2px 4px;
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid var(--win-border-dark);
+}
+
+.aim-toolbar-btn {
+    width: 24px;
+    height: 22px;
+    background: var(--win-bg);
+    border: 1px solid;
+    border-color: var(--win-border-light) var(--win-border-darker) var(--win-border-darker) var(--win-border-light);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.aim-toolbar-btn:hover {
+    border-color: var(--win-border-light) var(--win-border-dark) var(--win-border-dark) var(--win-border-light);
+}
+
+.aim-toolbar-btn:active {
+    border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+}
+
+/* ============================================
+   CHECKBOX & RADIO
+   ============================================ */
+.win-checkbox,
+.win-radio {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+}
+
+.win-checkbox input,
+.win-radio input {
+    width: 13px;
+    height: 13px;
+    margin: 0;
+}
+
+/* ============================================
+   TABS
+   ============================================ */
+.win-tabs {
+    display: flex;
+    padding: 2px 4px 0;
+}
+
+.win-tab {
+    background: var(--win-bg);
+    border: 1px solid;
+    border-color: var(--win-border-light) var(--win-border-dark) var(--win-border-dark) var(--win-border-light);
+    border-bottom: none;
+    padding: 4px 12px;
+    margin-right: 2px;
+    cursor: pointer;
+    position: relative;
+    top: 1px;
+}
+
+.win-tab.active {
+    border-bottom: 1px solid var(--win-bg);
+    background: var(--win-bg);
+}
+
+.win-tab-content {
+    border: 1px solid;
+    border-color: var(--win-border-light) var(--win-border-dark) var(--win-border-dark) var(--win-border-light);
+    padding: 8px;
+    background: var(--win-bg);
+}
+
+/* ============================================
+   DIALOG / MODAL
+   ============================================ */
+.win-dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.win-dialog {
+    background: var(--win-bg);
+    border: 2px solid;
+    border-color: var(--win-border-light) var(--win-border-darker) var(--win-border-darker) var(--win-border-light);
+    box-shadow: 2px 2px 0 var(--win-border-darkest);
+    min-width: 300px;
+}
+
+.win-dialog-content {
+    padding: 16px;
+}
+
+.win-dialog-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 16px 16px;
+}
+
+/* ============================================
+   ICONS (16x16 pixel art style)
+   ============================================ */
+.aim-logo {
+    width: 32px;
+    height: 32px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect fill='%23FFCC00' width='32' height='32' rx='4'/%3E%3Ccircle cx='16' cy='10' r='5' fill='%23000'/%3E%3Cpath d='M8 20c0-4 4-8 8-8s8 4 8 8v8H8z' fill='%23000'/%3E%3Ccircle cx='16' cy='10' r='3' fill='%23FFCC00'/%3E%3C/svg%3E");
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+.win-sunken {
+    border: 2px solid;
+    border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+}
+
+.win-raised {
+    border: 2px solid;
+    border-color: var(--win-border-light) var(--win-border-dark) var(--win-border-dark) var(--win-border-light);
+}
+
+.win-etched {
+    border: 1px solid var(--win-border-dark);
+    border-right-color: var(--win-border-light);
+    border-bottom-color: var(--win-border-light);
+}
