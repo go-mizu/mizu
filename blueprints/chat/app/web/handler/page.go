@@ -98,9 +98,32 @@ func (h *Page) Register(c *mizu.Ctx) error {
 	})
 }
 
-// Explore redirects to home page (explore page was removed).
+// Explore renders the explore public servers page.
 func (h *Page) Explore(c *mizu.Ctx) error {
-	return c.Redirect(302, "/")
+	userID := h.getUserID(c)
+	if userID == "" {
+		return c.Redirect(302, "/login")
+	}
+
+	ctx := c.Request().Context()
+	user, _ := h.accounts.GetByID(ctx, userID)
+
+	// Get user's servers for sidebar
+	srvs, _ := h.servers.ListByUser(ctx, userID, 100, 0)
+
+	// Get public servers
+	publicServers, _ := h.servers.ListPublic(ctx, 50, 0)
+
+	return h.render(c, "explore.html", PageData{
+		Title: "Explore Servers - Chat",
+		User:  user,
+		Data: map[string]any{
+			"servers":       srvs,
+			"publicServers": publicServers,
+			"isExplorePage": true,
+		},
+		Dev: h.dev,
+	})
 }
 
 // ServerView renders a server view with full SSR.

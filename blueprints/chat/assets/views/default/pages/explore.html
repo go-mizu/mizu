@@ -1,0 +1,141 @@
+{{define "explore.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="flex h-screen bg-white">
+    <!-- Sidebar -->
+    {{template "channel_list.html" .}}
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col min-w-0">
+        <!-- Header -->
+        <header class="h-14 flex items-center justify-between px-4 border-b border-gpt-border shrink-0">
+            <div class="flex items-center gap-2">
+                <h1 class="font-semibold text-gpt-text">Explore servers</h1>
+            </div>
+        </header>
+
+        <!-- Content -->
+        <div class="flex-1 overflow-y-auto scrollbar-thin">
+            <div class="max-w-3xl mx-auto px-4 py-8">
+                <!-- Search -->
+                <div class="mb-8">
+                    <div class="relative">
+                        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gpt-text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"/>
+                            <path d="m21 21-4.35-4.35"/>
+                        </svg>
+                        <input
+                            type="text"
+                            id="search-servers"
+                            placeholder="Search servers..."
+                            class="w-full pl-10 pr-4 py-2.5 rounded-lg text-sm outline-none transition-all bg-gpt-sidebar border border-gpt-border text-gpt-text focus:border-gpt-text placeholder:text-gpt-text-muted"
+                        >
+                    </div>
+                </div>
+
+                {{if .Data.publicServers}}
+                <!-- Server List -->
+                <div class="space-y-2" id="server-list">
+                    {{range .Data.publicServers}}
+                    <div class="server-card group flex items-center gap-4 p-4 rounded-xl border border-gpt-border hover:bg-gpt-sidebar transition-colors" data-server-name="{{.Name}}" data-server-id="{{.ID}}">
+                        <!-- Icon -->
+                        <div class="w-12 h-12 rounded-xl flex items-center justify-center text-lg font-semibold bg-gpt-sidebar-hover shrink-0 overflow-hidden">
+                            {{if .IconURL}}
+                            <img src="{{.IconURL}}" alt="" class="w-full h-full object-cover">
+                            {{else}}
+                            <span class="text-gpt-text-secondary">{{slice .Name 0 1}}</span>
+                            {{end}}
+                        </div>
+
+                        <!-- Info -->
+                        <div class="flex-1 min-w-0">
+                            <h3 class="font-medium text-gpt-text truncate">{{.Name}}</h3>
+                            {{if .Description}}
+                            <p class="text-sm text-gpt-text-secondary truncate">{{.Description}}</p>
+                            {{else}}
+                            <p class="text-sm text-gpt-text-muted">No description</p>
+                            {{end}}
+                        </div>
+
+                        <!-- Join Button -->
+                        <button
+                            onclick="joinServer('{{.ID}}')"
+                            class="px-4 py-2 rounded-lg text-sm font-medium text-gpt-text border border-gpt-border hover:bg-gpt-sidebar-hover transition-colors shrink-0"
+                        >
+                            Join
+                        </button>
+                    </div>
+                    {{end}}
+                </div>
+                {{else}}
+                <!-- Empty State -->
+                <div class="flex flex-col items-center justify-center py-16 text-center">
+                    <div class="w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-gpt-sidebar">
+                        <svg class="w-8 h-8 text-gpt-text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-medium text-gpt-text mb-1">No public servers</h3>
+                    <p class="text-sm text-gpt-text-secondary mb-6">Be the first to create one!</p>
+                    <button
+                        onclick="openCreateServerModal()"
+                        class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-gpt-accent hover:opacity-90 transition-opacity"
+                    >
+                        Create server
+                    </button>
+                </div>
+                {{end}}
+
+                <!-- Create CTA -->
+                {{if .Data.publicServers}}
+                <div class="mt-8 p-6 rounded-xl bg-gpt-sidebar border border-gpt-border text-center">
+                    <p class="text-sm text-gpt-text-secondary mb-4">Don't see what you're looking for?</p>
+                    <button
+                        onclick="openCreateServerModal()"
+                        class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-gpt-accent hover:opacity-90 transition-opacity"
+                    >
+                        Create your own server
+                    </button>
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Search
+document.getElementById('search-servers')?.addEventListener('input', (e) => {
+    const query = e.target.value.toLowerCase();
+    document.querySelectorAll('.server-card').forEach(card => {
+        const name = card.dataset.serverName.toLowerCase();
+        card.style.display = name.includes(query) ? '' : 'none';
+    });
+});
+
+// Join server
+async function joinServer(serverId) {
+    try {
+        const res = await fetch(`/api/v1/servers/${serverId}/join`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            window.location.href = `/channels/${serverId}/${data.data?.default_channel || ''}`;
+        } else {
+            const error = await res.json();
+            if (error.error?.includes('already a member')) {
+                window.location.href = `/channels/${serverId}/`;
+            }
+        }
+    } catch (err) {
+        console.error('Failed to join server:', err);
+    }
+}
+</script>
+{{end}}
