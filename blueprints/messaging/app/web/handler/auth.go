@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -9,14 +10,21 @@ import (
 	"github.com/go-mizu/blueprints/messaging/feature/accounts"
 )
 
+// SetupNewUserFunc is a callback to setup default chats for a new user.
+type SetupNewUserFunc func(ctx context.Context, userID string)
+
 // Auth handles authentication endpoints.
 type Auth struct {
-	accounts accounts.API
+	accounts     accounts.API
+	setupNewUser SetupNewUserFunc
 }
 
 // NewAuth creates a new Auth handler.
-func NewAuth(accounts accounts.API) *Auth {
-	return &Auth{accounts: accounts}
+func NewAuth(accounts accounts.API, setupNewUser SetupNewUserFunc) *Auth {
+	return &Auth{
+		accounts:     accounts,
+		setupNewUser: setupNewUser,
+	}
 }
 
 // Register handles user registration.
@@ -36,7 +44,9 @@ func (h *Auth) Register(c *mizu.Ctx) error {
 		return BadRequest(c, "Password must be at least 6 characters")
 	}
 
-	user, err := h.accounts.Create(c.Request().Context(), &in)
+	ctx := c.Request().Context()
+
+	user, err := h.accounts.Create(ctx, &in)
 	if err != nil {
 		switch err {
 		case accounts.ErrUsernameTaken:
@@ -50,8 +60,13 @@ func (h *Auth) Register(c *mizu.Ctx) error {
 		}
 	}
 
+	// Setup default chats for the new user (Saved Messages + Agent chat)
+	if h.setupNewUser != nil {
+		h.setupNewUser(ctx, user.ID)
+	}
+
 	// Auto-login after registration
-	session, err := h.accounts.Login(c.Request().Context(), &accounts.LoginIn{
+	session, err := h.accounts.Login(ctx, &accounts.LoginIn{
 		Login:    in.Username,
 		Password: in.Password,
 	})

@@ -36,6 +36,9 @@ type Config struct {
 	Dev     bool
 }
 
+// AgentUsername is the username for the system agent user.
+const AgentUsername = "mizu-agent"
+
 // Server is the HTTP server.
 type Server struct {
 	app       *mizu.App
@@ -52,6 +55,9 @@ type Server struct {
 	messages messages.API
 	stories  stories.API
 	presence presence.API
+
+	// System users
+	agentID string
 
 	// Handlers
 	authHandler    *handler.Auth
@@ -124,9 +130,14 @@ func New(cfg Config) (*Server, error) {
 		presence: presenceSvc,
 	}
 
+	// Ensure the system agent user exists
+	if err := s.ensureAgent(context.Background()); err != nil {
+		log.Printf("Warning: failed to ensure agent: %v", err)
+	}
+
 	// Create handlers
-	s.authHandler = handler.NewAuth(accountsSvc)
-	s.chatHandler = handler.NewChat(chatsSvc, s.getUserID)
+	s.authHandler = handler.NewAuth(accountsSvc, s.setupNewUser)
+	s.chatHandler = handler.NewChat(chatsSvc, accountsSvc, messagesSvc, s.getUserID)
 	s.messageHandler = handler.NewMessage(messagesSvc, chatsSvc, accountsSvc, hub, s.getUserID)
 	s.storyHandler = handler.NewStory(storiesSvc, s.getUserID)
 	s.pageHandler = handler.NewPage(tmpl, accountsSvc, chatsSvc, messagesSvc, s.getUserID, cfg.Dev)
@@ -134,6 +145,69 @@ func New(cfg Config) (*Server, error) {
 	s.setupRoutes()
 
 	return s, nil
+}
+
+// ensureAgent creates or retrieves the Mizu Agent system user.
+func (s *Server) ensureAgent(ctx context.Context) error {
+	// Try to get existing agent
+	agent, err := s.accounts.GetByUsername(ctx, AgentUsername)
+	if err == nil && agent != nil {
+		s.agentID = agent.ID
+		return nil
+	}
+
+	// Create the agent user
+	agent, err = s.accounts.Create(ctx, &accounts.CreateIn{
+		Username:    AgentUsername,
+		Email:       "agent@mizu.dev",
+		Password:    "agent-system-password-not-for-login",
+		DisplayName: "Mizu Agent",
+	})
+	if err != nil && err != accounts.ErrUsernameTaken {
+		return err
+	}
+	if err == accounts.ErrUsernameTaken {
+		agent, err = s.accounts.GetByUsername(ctx, AgentUsername)
+		if err != nil {
+			return err
+		}
+	}
+
+	s.agentID = agent.ID
+	return nil
+}
+
+// setupNewUser creates the default chats for a new user:
+// 1. Saved Messages (self-chat) with a welcome message
+// 2. Chat with Mizu Agent with a welcome message
+func (s *Server) setupNewUser(ctx context.Context, userID string) {
+	// Create Saved Messages (self-chat)
+	savedChat, err := s.chats.CreateDirect(ctx, userID, &chats.CreateDirectIn{
+		RecipientID: userID,
+	})
+	if err == nil && savedChat != nil {
+		// Add a welcome message to Saved Messages
+		s.messages.Create(ctx, userID, &messages.CreateIn{
+			ChatID:  savedChat.ID,
+			Type:    messages.TypeText,
+			Content: "Welcome to Saved Messages! Use this space to save notes, links, and reminders to yourself.",
+		})
+	}
+
+	// Create chat with Mizu Agent (if agent exists)
+	if s.agentID != "" {
+		agentChat, err := s.chats.CreateDirect(ctx, userID, &chats.CreateDirectIn{
+			RecipientID: s.agentID,
+		})
+		if err == nil && agentChat != nil {
+			// Add a welcome message from the agent
+			s.messages.Create(ctx, s.agentID, &messages.CreateIn{
+				ChatID:  agentChat.ID,
+				Type:    messages.TypeText,
+				Content: "Hello! I'm Mizu Agent, your friendly assistant. I'm here to help you get started with messaging. Feel free to ask me anything!",
+			})
+		}
+	}
 }
 
 // Run starts the server.
@@ -173,6 +247,10 @@ func (s *Server) setupRoutes() {
 		}))
 
 		// Users
+		api.Get("/users/me", s.authRequired(func(c *mizu.Ctx) error {
+			return s.authHandler.Me(c, s.getUserID(c))
+		}))
+		api.Post("/users/ensure-chats", s.authRequired(s.ensureUserChats))
 		api.Get("/users/search", s.userSearch)
 		api.Get("/users/{id}", s.getUser)
 
@@ -250,7 +328,14 @@ func (s *Server) setupRoutes() {
 }
 
 func (s *Server) handleWebSocket(c *mizu.Ctx) error {
+	// Try query param first, then cookie
 	token := c.Query("token")
+	if token == "" {
+		cookie, err := c.Cookie("session")
+		if err == nil && cookie.Value != "" {
+			token = cookie.Value
+		}
+	}
 	if token == "" {
 		return handler.Unauthorized(c, "Token required")
 	}
@@ -287,6 +372,52 @@ func (s *Server) handleWebSocket(c *mizu.Ctx) error {
 	})
 
 	return nil
+}
+
+// ensureUserChats ensures the user has their default chats (Saved Messages and Agent chat).
+func (s *Server) ensureUserChats(c *mizu.Ctx) error {
+	userID := s.getUserID(c)
+	ctx := c.Request().Context()
+
+	created := []string{}
+
+	// Check for Saved Messages (self-chat)
+	_, err := s.chats.GetDirectChat(ctx, userID, userID)
+	if err == chats.ErrNotFound {
+		savedChat, err := s.chats.CreateDirect(ctx, userID, &chats.CreateDirectIn{
+			RecipientID: userID,
+		})
+		if err == nil && savedChat != nil {
+			s.messages.Create(ctx, userID, &messages.CreateIn{
+				ChatID:  savedChat.ID,
+				Type:    messages.TypeText,
+				Content: "Welcome to Saved Messages! Use this space to save notes, links, and reminders to yourself.",
+			})
+			created = append(created, "saved_messages")
+		}
+	}
+
+	// Check for Agent chat
+	if s.agentID != "" && s.agentID != userID {
+		_, err := s.chats.GetDirectChat(ctx, userID, s.agentID)
+		if err == chats.ErrNotFound {
+			agentChat, err := s.chats.CreateDirect(ctx, userID, &chats.CreateDirectIn{
+				RecipientID: s.agentID,
+			})
+			if err == nil && agentChat != nil {
+				s.messages.Create(ctx, s.agentID, &messages.CreateIn{
+					ChatID:  agentChat.ID,
+					Type:    messages.TypeText,
+					Content: "Hello! I'm Mizu Agent, your friendly assistant. I'm here to help you get started with messaging. Feel free to ask me anything!",
+				})
+				created = append(created, "agent_chat")
+			}
+		}
+	}
+
+	return handler.Success(c, map[string]any{
+		"created": created,
+	})
 }
 
 func (s *Server) userSearch(c *mizu.Ctx) error {

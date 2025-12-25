@@ -14,6 +14,9 @@ import (
 	"github.com/go-mizu/blueprints/messaging/store/duckdb"
 )
 
+// AgentUsername is the username for the system agent user.
+const AgentUsername = "mizu-agent"
+
 // NewSeed creates the seed command.
 func NewSeed() *cobra.Command {
 	return &cobra.Command{
@@ -59,9 +62,21 @@ func runSeed(cmd *cobra.Command, args []string) error {
 
 	ctx := context.Background()
 
+	// Create Mizu Agent (system user)
+	ui.StartSpinner("Creating Mizu Agent...")
+	start := time.Now()
+
+	agent, err := EnsureAgent(ctx, accountsSvc)
+	if err != nil {
+		ui.StopSpinnerError("Failed to create agent")
+		return err
+	}
+
+	ui.StopSpinner("Mizu Agent ready", time.Since(start))
+
 	// Create sample users
 	ui.StartSpinner("Creating sample users...")
-	start := time.Now()
+	start = time.Now()
 
 	alice, err := accountsSvc.Create(ctx, &accounts.CreateIn{
 		Username:    "alice",
@@ -72,6 +87,9 @@ func runSeed(cmd *cobra.Command, args []string) error {
 	if err != nil && err != accounts.ErrUsernameTaken {
 		ui.StopSpinnerError("Failed to create alice")
 		return err
+	}
+	if err == accounts.ErrUsernameTaken {
+		alice, _ = accountsSvc.GetByUsername(ctx, "alice")
 	}
 
 	bob, err := accountsSvc.Create(ctx, &accounts.CreateIn{
@@ -84,6 +102,9 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		ui.StopSpinnerError("Failed to create bob")
 		return err
 	}
+	if err == accounts.ErrUsernameTaken {
+		bob, _ = accountsSvc.GetByUsername(ctx, "bob")
+	}
 
 	charlie, err := accountsSvc.Create(ctx, &accounts.CreateIn{
 		Username:    "charlie",
@@ -95,10 +116,25 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		ui.StopSpinnerError("Failed to create charlie")
 		return err
 	}
+	if err == accounts.ErrUsernameTaken {
+		charlie, _ = accountsSvc.GetByUsername(ctx, "charlie")
+	}
 
 	ui.StopSpinner("Users created", time.Since(start))
 
-	// Create sample chats
+	// Setup default chats for each user (Saved Messages + Agent chat)
+	ui.StartSpinner("Setting up default chats...")
+	start = time.Now()
+
+	for _, user := range []*accounts.User{alice, bob, charlie} {
+		if user != nil {
+			SetupDefaultChats(ctx, chatsSvc, messagesSvc, user.ID, agent.ID)
+		}
+	}
+
+	ui.StopSpinner("Default chats created", time.Since(start))
+
+	// Create sample chats between users
 	if alice != nil && bob != nil {
 		ui.StartSpinner("Creating sample chats...")
 		start = time.Now()
@@ -153,7 +189,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 				senderID string
 				content  string
 			}{
-				{alice.ID, "Welcome to the Project Team group! 🎉"},
+				{alice.ID, "Welcome to the Project Team group!"},
 				{bob.ID, "Thanks for adding me!"},
 				{charlie.ID, "Hello everyone! Excited to be here."},
 				{alice.ID, "Let's use this group for all project updates."},
@@ -174,6 +210,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 	ui.Blank()
 	ui.Summary([][2]string{
 		{"Users", "alice, bob, charlie"},
+		{"Agent", "mizu-agent"},
 		{"Password", "password123"},
 		{"Status", "Ready"},
 	})
@@ -182,4 +219,60 @@ func runSeed(cmd *cobra.Command, args []string) error {
 	ui.Success("Database seeded successfully!")
 
 	return nil
+}
+
+// EnsureAgent creates or retrieves the Mizu Agent system user.
+func EnsureAgent(ctx context.Context, accountsSvc accounts.API) (*accounts.User, error) {
+	// Try to get existing agent
+	agent, err := accountsSvc.GetByUsername(ctx, AgentUsername)
+	if err == nil && agent != nil {
+		return agent, nil
+	}
+
+	// Create the agent user
+	agent, err = accountsSvc.Create(ctx, &accounts.CreateIn{
+		Username:    AgentUsername,
+		Email:       "agent@mizu.dev",
+		Password:    "agent-system-password-not-for-login",
+		DisplayName: "Mizu Agent",
+	})
+	if err != nil && err != accounts.ErrUsernameTaken {
+		return nil, err
+	}
+	if err == accounts.ErrUsernameTaken {
+		return accountsSvc.GetByUsername(ctx, AgentUsername)
+	}
+
+	return agent, nil
+}
+
+// SetupDefaultChats creates the default chats for a new user:
+// 1. Saved Messages (self-chat) with a welcome message
+// 2. Chat with Mizu Agent with a welcome message
+func SetupDefaultChats(ctx context.Context, chatsSvc chats.API, messagesSvc messages.API, userID, agentID string) {
+	// Create Saved Messages (self-chat)
+	savedChat, err := chatsSvc.CreateDirect(ctx, userID, &chats.CreateDirectIn{
+		RecipientID: userID,
+	})
+	if err == nil && savedChat != nil {
+		// Add a welcome message to Saved Messages
+		messagesSvc.Create(ctx, userID, &messages.CreateIn{
+			ChatID:  savedChat.ID,
+			Type:    messages.TypeText,
+			Content: "Welcome to Saved Messages! Use this space to save notes, links, and reminders to yourself.",
+		})
+	}
+
+	// Create chat with Mizu Agent
+	agentChat, err := chatsSvc.CreateDirect(ctx, userID, &chats.CreateDirectIn{
+		RecipientID: agentID,
+	})
+	if err == nil && agentChat != nil {
+		// Add a welcome message from the agent
+		messagesSvc.Create(ctx, agentID, &messages.CreateIn{
+			ChatID:  agentChat.ID,
+			Type:    messages.TypeText,
+			Content: "Hello! I'm Mizu Agent, your friendly assistant. I'm here to help you get started with messaging. Feel free to ask me anything!",
+		})
+	}
 }

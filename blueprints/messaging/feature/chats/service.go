@@ -37,24 +37,27 @@ func (s *Service) CreateDirect(ctx context.Context, userID string, in *CreateDir
 		return nil, err
 	}
 
-	// Add both participants
-	participants := []*Participant{
-		{
-			ChatID:   chat.ID,
-			UserID:   userID,
-			Role:     "member",
-			JoinedAt: now,
-		},
-		{
+	// Add the creator as a participant
+	creator := &Participant{
+		ChatID:   chat.ID,
+		UserID:   userID,
+		Role:     "member",
+		JoinedAt: now,
+	}
+	if err := s.store.InsertParticipant(ctx, creator); err != nil {
+		return nil, err
+	}
+
+	// For self-chat (Saved Messages), only add one participant
+	// For regular direct chat, add the recipient as well
+	if in.RecipientID != userID {
+		recipient := &Participant{
 			ChatID:   chat.ID,
 			UserID:   in.RecipientID,
 			Role:     "member",
 			JoinedAt: now,
-		},
-	}
-
-	for _, p := range participants {
-		if err := s.store.InsertParticipant(ctx, p); err != nil {
+		}
+		if err := s.store.InsertParticipant(ctx, recipient); err != nil {
 			return nil, err
 		}
 	}

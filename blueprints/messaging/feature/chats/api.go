@@ -38,15 +38,17 @@ type Chat struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 
 	// For current user context
-	UnreadCount        int       `json:"unread_count,omitempty"`
-	IsMuted            bool      `json:"is_muted,omitempty"`
-	IsPinned           bool      `json:"is_pinned,omitempty"`
-	IsArchived         bool      `json:"is_archived,omitempty"`
-	LastReadMessageID  string    `json:"last_read_message_id,omitempty"`
+	UnreadCount       int    `json:"unread_count,omitempty"`
+	IsMuted           bool   `json:"is_muted,omitempty"`
+	IsPinned          bool   `json:"is_pinned,omitempty"`
+	IsArchived        bool   `json:"is_archived,omitempty"`
+	LastReadMessageID string `json:"last_read_message_id,omitempty"`
 
 	// Populated from joins
-	Participants []*Participant `json:"participants,omitempty"`
-	LastMessage  any            `json:"last_message,omitempty"`
+	Participants     []*Participant `json:"participants,omitempty"`
+	LastMessage      any            `json:"last_message,omitempty"`
+	OtherUser        any            `json:"other_user,omitempty"`        // For direct chats: the other participant
+	ParticipantCount int            `json:"participant_count,omitempty"` // For group chats
 }
 
 // Participant represents a chat participant.
