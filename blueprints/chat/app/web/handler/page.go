@@ -145,24 +145,34 @@ func (h *Page) Explore(c *mizu.Ctx) error {
 }
 
 // ServerView renders a server view with full SSR.
+// Public servers can be viewed without authentication (read-only).
 func (h *Page) ServerView(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return c.Redirect(302, "/login")
-	}
-
 	ctx := c.Request().Context()
+	userID := h.getUserID(c)
 	serverID := c.Param("server_id")
 	channelID := c.Param("channel_id")
 
-	user, _ := h.accounts.GetByID(ctx, userID)
+	// Get server first to check if it's public
 	srv, err := h.servers.GetByID(ctx, serverID)
 	if err != nil {
 		return NotFound(c, "Server not found")
 	}
 
-	// Get user's servers for sidebar
-	srvs, _ := h.servers.ListByUser(ctx, userID, 100, 0)
+	// If not logged in and server is not public, redirect to login
+	if userID == "" && !srv.IsPublic {
+		return c.Redirect(302, "/login")
+	}
+
+	isLoggedIn := userID != ""
+
+	// Get user info if logged in
+	var user any
+	var srvs []*servers.Server
+	if isLoggedIn {
+		user, _ = h.accounts.GetByID(ctx, userID)
+		// Get user's servers for sidebar
+		srvs, _ = h.servers.ListByUser(ctx, userID, 100, 0)
+	}
 
 	// Get channels for this server
 	chs, _ := h.channels.ListByServer(ctx, serverID)
@@ -225,6 +235,7 @@ func (h *Page) ServerView(c *mizu.Ctx) error {
 			"channelID":      channelID,
 			"messages":       msgs,
 			"members":        enrichedMembers,
+			"isLoggedIn":     isLoggedIn,
 		},
 		Dev: h.dev,
 	})
