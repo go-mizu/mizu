@@ -816,3 +816,490 @@ select.win-input:focus {
     font-size: 11px;
     box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.25);
 }
+
+/* ============================================
+   EMOJI & STICKER PICKER (AIM 1.0 Style)
+   ============================================ */
+
+.picker-container {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 4px;
+    z-index: 100;
+}
+
+.emoji-picker,
+.sticker-picker {
+    background: var(--win98-bg);
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        inset -2px -2px 0 var(--win98-button-shadow),
+        inset 2px 2px 0 var(--win98-button-light),
+        2px 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.emoji-picker {
+    width: 280px;
+}
+
+.sticker-picker {
+    width: 320px;
+}
+
+/* Picker Title Bar */
+.picker-titlebar {
+    background: linear-gradient(90deg, var(--win98-titlebar-active-start) 0%, var(--win98-titlebar-active-end) 100%);
+    color: white;
+    font-size: 11px;
+    font-weight: bold;
+    padding: 2px 4px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.picker-titlebar-close {
+    width: 14px;
+    height: 14px;
+    background: var(--win98-bg);
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight);
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.picker-titlebar-close:active {
+    box-shadow:
+        inset 1px 1px 0 var(--win98-button-dark-shadow),
+        inset -1px -1px 0 var(--win98-button-highlight);
+}
+
+/* Picker Content */
+.picker-header {
+    background: var(--win98-bg);
+    padding: 4px;
+    border-bottom: 1px solid var(--win98-button-shadow);
+}
+
+.picker-search {
+    width: 100%;
+    background: white;
+    border: none;
+    padding: 2px 4px;
+    font-size: 11px;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-shadow),
+        inset -2px -2px 0 var(--win98-button-light),
+        inset 2px 2px 0 var(--win98-button-dark-shadow);
+}
+
+.picker-search:focus {
+    outline: none;
+}
+
+/* Category Dropdown for AIM */
+.picker-category-select {
+    width: 100%;
+    background: white;
+    border: none;
+    padding: 2px 4px;
+    font-size: 11px;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-shadow);
+}
+
+/* Emoji Grid */
+.picker-content {
+    background: white;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 4px;
+    margin: 3px;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-shadow),
+        inset -2px -2px 0 var(--win98-button-light),
+        inset 2px 2px 0 var(--win98-button-dark-shadow);
+}
+
+.emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 2px;
+}
+
+.emoji-item {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    border: 1px solid transparent;
+    cursor: pointer;
+}
+
+.emoji-item:hover {
+    background: var(--win98-highlight);
+    color: var(--win98-highlight-text);
+    border: 1px dotted #000;
+}
+
+.emoji-category-title {
+    font-size: 10px;
+    color: var(--win98-text);
+    padding: 4px 2px 2px;
+    font-weight: bold;
+}
+
+/* Sticker Grid */
+.sticker-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    padding: 4px;
+    background: white;
+    margin: 3px;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-shadow),
+        inset -2px -2px 0 var(--win98-button-light),
+        inset 2px 2px 0 var(--win98-button-dark-shadow);
+}
+
+.sticker-item {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border: 1px solid transparent;
+    cursor: pointer;
+}
+
+.sticker-item:hover {
+    background: var(--win98-highlight);
+    border: 1px dotted #000;
+}
+
+.sticker-item svg {
+    width: 100%;
+    height: 100%;
+}
+
+/* Sticker Pack List */
+.sticker-pack-tabs {
+    background: var(--win98-bg);
+    padding: 4px;
+    border-top: 1px solid var(--win98-button-highlight);
+    display: flex;
+    gap: 2px;
+}
+
+.sticker-pack-tab {
+    padding: 2px 8px;
+    background: var(--win98-bg);
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight);
+    font-size: 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sticker-pack-tab:active,
+.sticker-pack-tab.active {
+    box-shadow:
+        inset 1px 1px 0 var(--win98-button-dark-shadow),
+        inset -1px -1px 0 var(--win98-button-highlight);
+    background: #a0a0a0;
+}
+
+.sticker-pack-tab svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* Picker Status Bar */
+.picker-statusbar {
+    background: var(--win98-bg);
+    border-top: 1px solid var(--win98-button-shadow);
+    padding: 2px 4px;
+    font-size: 10px;
+    color: var(--win98-text);
+}
+
+/* ============================================
+   MESSAGE REACTIONS (AIM Style)
+   ============================================ */
+
+.message-reactions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    margin-top: 4px;
+}
+
+.reaction-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 1px 4px;
+    background: var(--win98-bg);
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight);
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.reaction-badge:hover {
+    background: #d0d0d0;
+}
+
+.reaction-badge:active {
+    box-shadow:
+        inset 1px 1px 0 var(--win98-button-dark-shadow),
+        inset -1px -1px 0 var(--win98-button-highlight);
+}
+
+.reaction-badge.me {
+    background: var(--aim-yellow);
+}
+
+.reaction-badge .emoji {
+    font-size: 14px;
+}
+
+.reaction-badge .count {
+    font-size: 10px;
+    color: var(--win98-text);
+}
+
+/* Quick Reaction Picker */
+.reaction-picker {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 2px;
+    background: var(--win98-bg);
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        2px 2px 4px rgba(0, 0, 0, 0.3);
+    padding: 2px;
+    display: flex;
+    gap: 2px;
+    z-index: 50;
+}
+
+.reaction-picker .emoji-item {
+    width: 24px;
+    height: 24px;
+    font-size: 16px;
+}
+
+.reaction-picker .more-btn {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 14px;
+    border: 1px solid transparent;
+}
+
+.reaction-picker .more-btn:hover {
+    background: var(--win98-highlight);
+    color: var(--win98-highlight-text);
+}
+
+/* Message Hover Actions */
+.message-wrapper {
+    position: relative;
+}
+
+.message-actions {
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: none;
+    background: var(--win98-bg);
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight);
+    padding: 1px;
+}
+
+.message-wrapper:hover .message-actions {
+    display: flex;
+}
+
+.message-action-btn {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 12px;
+    border: 1px solid transparent;
+}
+
+.message-action-btn:hover {
+    background: var(--win98-highlight);
+    color: var(--win98-highlight-text);
+}
+
+/* ============================================
+   STICKER MESSAGE (AIM Style)
+   ============================================ */
+
+.message-sticker {
+    max-width: 100px;
+    max-height: 100px;
+}
+
+.message-sticker svg {
+    width: 100%;
+    height: 100%;
+}
+
+/* Input Area Buttons */
+.aim-input-btn {
+    padding: 2px 4px;
+    background: var(--win98-bg);
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight);
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.aim-input-btn:hover {
+    background: #d0d0d0;
+}
+
+.aim-input-btn:active,
+.aim-input-btn.active {
+    box-shadow:
+        inset 1px 1px 0 var(--win98-button-dark-shadow),
+        inset -1px -1px 0 var(--win98-button-highlight);
+}
+
+/* ============================================
+   MESSAGE REACTIONS - Windows 98 Style
+   ============================================ */
+.aim-message {
+    position: relative;
+}
+
+.aim-message-sticker {
+    padding: 8px 16px;
+    max-width: 150px;
+}
+
+.aim-message-sticker svg {
+    width: 100%;
+    height: auto;
+    max-width: 120px;
+    max-height: 120px;
+}
+
+.aim-message-reactions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 4px 16px;
+}
+
+.aim-reaction-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 6px;
+    background: var(--win98-bg);
+    border: none;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.aim-reaction-badge:hover {
+    background: #d0d0d0;
+}
+
+.aim-reaction-badge.own {
+    background: var(--win98-highlight);
+    color: var(--win98-highlight-text);
+}
+
+.aim-message-actions {
+    position: absolute;
+    top: 4px;
+    right: 8px;
+    opacity: 0;
+    transition: opacity 0.1s;
+}
+
+.aim-message:hover .aim-message-actions {
+    opacity: 1;
+}
+
+.aim-react-btn {
+    background: var(--win98-bg);
+    border: none;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight);
+    padding: 2px 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.aim-react-btn:hover {
+    background: #d0d0d0;
+}
+
+.aim-reaction-picker {
+    position: absolute;
+    bottom: 100%;
+    right: 0;
+    background: var(--win98-bg);
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        inset -2px -2px 0 var(--win98-button-shadow),
+        inset 2px 2px 0 var(--win98-button-light);
+    padding: 4px;
+    display: flex;
+    gap: 4px;
+    z-index: 100;
+    margin-bottom: 4px;
+}
+
+.aim-reaction-option {
+    font-size: 18px;
+    cursor: pointer;
+    padding: 4px;
+}
+
+.aim-reaction-option:hover {
+    background: var(--win98-highlight);
+}

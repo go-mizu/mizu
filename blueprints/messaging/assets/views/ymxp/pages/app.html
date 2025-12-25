@@ -211,34 +211,15 @@
 
         <!-- Bottom Toolbar -->
         <div class="ym-bottom-toolbar">
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <button class="ym-emoticon-btn" onclick="toggleEmoticonPicker()" id="emoticon-btn">
+            <div style="display: flex; align-items: center; gap: 8px; position: relative;" id="ym-picker-wrapper">
+                <button class="ym-emoticon-btn" onclick="toggleEmojiPicker(this, document.getElementById('message-input'))" id="emoji-btn">
                     <span class="ym-smiley">&#128522;</span>
-                    <span>Emoticons</span>
+                    <span>Emoji</span>
                 </button>
-                <!-- Emoticon Picker -->
-                <div id="emoticon-picker" class="ym-emoticon-picker" style="display: none;">
-                    <div class="ym-emoticon-item" onclick="insertEmoticon(':)')">&#128522;</div>
-                    <div class="ym-emoticon-item" onclick="insertEmoticon(':D')">&#128516;</div>
-                    <div class="ym-emoticon-item" onclick="insertEmoticon(';)')">&#128521;</div>
-                    <div class="ym-emoticon-item" onclick="insertEmoticon(':P')">&#128523;</div>
-                    <div class="ym-emoticon-item" onclick="insertEmoticon(':O')">&#128558;</div>
-                    <div class="ym-emoticon-item" onclick="insertEmoticon(':(')">&#128532;</div>
-                    <div class="ym-emoticon-item" onclick="insertEmoticon(':\'(')">&#128546;</div>
-                    <div class="ym-emoticon-item" onclick="insertEmoticon('X(')">&#128544;</div>
-                    <div class="ym-emoticon-item" onclick="insertEmoticon(':|')">&#128528;</div>
-                    <div class="ym-emoticon-item" onclick="insertEmoticon(':*')">&#128536;</div>
-                    <div class="ym-emoticon-item" onclick="insertEmoticon('B)')">&#128526;</div>
-                    <div class="ym-emoticon-item" onclick="insertEmoticon('O:)')">&#128519;</div>
-                    <div class="ym-emoticon-item" onclick="insertEmoticon('>:)')">&#128520;</div>
-                    <div class="ym-emoticon-item" onclick="insertEmoticon('(L)')">&#10084;&#65039;</div>
-                    <div class="ym-emoticon-item" onclick="insertEmoticon('(Y)')">&#128077;</div>
-                    <div class="ym-emoticon-item" onclick="insertEmoticon('(N)')">&#128078;</div>
-                    <div class="ym-emoticon-item" onclick="insertEmoticon('(^)')">&#127874;</div>
-                    <div class="ym-emoticon-item" onclick="insertEmoticon('(H)')">&#9749;</div>
-                    <div class="ym-emoticon-item" onclick="insertEmoticon('(*)')">&#11088;</div>
-                    <div class="ym-emoticon-item" onclick="insertEmoticon('(F)')">&#127799;</div>
-                </div>
+                <button class="ym-emoticon-btn" onclick="toggleStickerPicker(this, handleSendSticker)" id="sticker-btn">
+                    <span class="ym-smiley">&#127912;</span>
+                    <span>Stickers</span>
+                </button>
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
                 <span id="char-count" style="font-size: 10px; color: #666;">0 chars</span>
@@ -396,6 +377,8 @@
 
 <form id="message-form" style="display: none;"></form>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="/static/js/emoji-data.js"></script>
+<script src="/static/js/sticker-data.js"></script>
 <script>
 // App state
 let currentUser = null;
@@ -404,22 +387,12 @@ let chats = [];
 let messages = [];
 let ws = null;
 let typingTimeout = null;
-let emoticonPickerOpen = false;
-
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
     await loadCurrentUser();
     await ensureUserChats();
     await loadChats();
     connectWebSocket();
-
-    // Close emoticon picker when clicking outside
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('#emoticon-btn') && !e.target.closest('#emoticon-picker')) {
-            document.getElementById('emoticon-picker').style.display = 'none';
-            emoticonPickerOpen = false;
-        }
-    });
 });
 
 // Ensure user has default chats
@@ -594,17 +567,178 @@ function renderMessages() {
             return `<div class="ym-buzz-message">&#128276; ${escapeHtml(senderName)} sent you a Buzz!</div>`;
         }
 
+        // Handle sticker messages
+        if (msg.type === 'sticker' && msg.metadata?.sticker_id) {
+            const sticker = getStickerById(msg.metadata.sticker_id);
+            const stickerContent = sticker ? sticker.svg : '<div style="padding: 20px; color: #808080;">[Sticker]</div>';
+            return `
+                <div class="ym-message" data-message-id="${msg.id}">
+                    <div class="ym-message-header ${isSent ? 'sent' : 'received'}">
+                        ${escapeHtml(senderName)} <span class="ym-message-time">(${time})</span>:
+                    </div>
+                    <div class="ym-message-sticker">${stickerContent}</div>
+                    ${renderReactions(msg)}
+                    <div class="ym-message-actions">
+                        <button class="ym-react-btn" onclick="showReactionPicker(event, '${msg.id}')" title="Add Reaction">&#128522;</button>
+                    </div>
+                </div>
+            `;
+        }
+
         return `
-            <div class="ym-message">
+            <div class="ym-message" data-message-id="${msg.id}">
                 <div class="ym-message-header ${isSent ? 'sent' : 'received'}">
                     ${escapeHtml(senderName)} <span class="ym-message-time">(${time})</span>:
                 </div>
                 <div class="ym-message-content">${convertEmoticons(escapeHtml(msg.content))}</div>
+                ${renderReactions(msg)}
+                <div class="ym-message-actions">
+                    <button class="ym-react-btn" onclick="showReactionPicker(event, '${msg.id}')" title="Add Reaction">&#128522;</button>
+                </div>
             </div>
         `;
     }).join('');
 
     container.scrollTop = container.scrollHeight;
+}
+
+// Render reactions for a message
+function renderReactions(msg) {
+    if (!msg.reactions || msg.reactions.length === 0) return '';
+
+    const reactionCounts = {};
+    msg.reactions.forEach(r => {
+        if (!reactionCounts[r.emoji]) {
+            reactionCounts[r.emoji] = { count: 0, users: [], hasOwn: false };
+        }
+        reactionCounts[r.emoji].count++;
+        reactionCounts[r.emoji].users.push(r.user_id);
+        if (r.user_id === currentUser?.id) {
+            reactionCounts[r.emoji].hasOwn = true;
+        }
+    });
+
+    return `<div class="ym-message-reactions">
+        ${Object.entries(reactionCounts).map(([emoji, data]) => `
+            <span class="ym-reaction-badge ${data.hasOwn ? 'own' : ''}"
+                  onclick="handleReactionClick('${msg.id}', '${emoji}')"
+                  title="${data.count} reaction${data.count > 1 ? 's' : ''}">
+                ${emoji} ${data.count}
+            </span>
+        `).join('')}
+    </div>`;
+}
+
+// Get sticker by ID
+function getStickerById(stickerId) {
+    if (typeof STICKER_PACKS === 'undefined') return null;
+    for (const pack of STICKER_PACKS) {
+        const sticker = pack.stickers.find(s => s.id === stickerId);
+        if (sticker) return sticker;
+    }
+    return null;
+}
+
+// Show reaction picker
+let activeReactionPicker = null;
+function showReactionPicker(event, messageId) {
+    event.stopPropagation();
+    closeReactionPicker();
+
+    const quickReactions = typeof QUICK_REACTIONS !== 'undefined' ? QUICK_REACTIONS : ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
+    const picker = document.createElement('div');
+    picker.className = 'ym-reaction-picker';
+    picker.innerHTML = quickReactions.map(emoji =>
+        `<span class="ym-reaction-option" onclick="handleReaction('${messageId}', '${emoji}')">${emoji}</span>`
+    ).join('');
+
+    const btn = event.target.closest('.ym-react-btn');
+    btn.parentElement.appendChild(picker);
+    activeReactionPicker = picker;
+
+    setTimeout(() => {
+        document.addEventListener('click', closeReactionPicker, { once: true });
+    }, 0);
+}
+
+function closeReactionPicker() {
+    if (activeReactionPicker) {
+        activeReactionPicker.remove();
+        activeReactionPicker = null;
+    }
+}
+
+// Handle adding a reaction
+async function handleReaction(messageId, emoji) {
+    closeReactionPicker();
+    if (!currentChat) return;
+
+    try {
+        await fetch(`/api/v1/chats/${currentChat.id}/messages/${messageId}/react`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ emoji })
+        });
+        await loadMessages(currentChat.id);
+    } catch (err) {
+        console.error('Failed to add reaction:', err);
+    }
+}
+
+// Handle clicking on a reaction (toggle)
+async function handleReactionClick(messageId, emoji) {
+    if (!currentChat) return;
+
+    const msg = messages.find(m => m.id === messageId);
+    const hasOwn = msg?.reactions?.some(r => r.emoji === emoji && r.user_id === currentUser?.id);
+
+    try {
+        if (hasOwn) {
+            await fetch(`/api/v1/chats/${currentChat.id}/messages/${messageId}/react`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ emoji })
+            });
+        } else {
+            await fetch(`/api/v1/chats/${currentChat.id}/messages/${messageId}/react`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ emoji })
+            });
+        }
+        await loadMessages(currentChat.id);
+    } catch (err) {
+        console.error('Failed to toggle reaction:', err);
+    }
+}
+
+// Handle sending a sticker
+async function handleSendSticker(stickerId) {
+    if (!currentChat) return;
+
+    try {
+        const res = await fetch(`/api/v1/chats/${currentChat.id}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                content: '',
+                type: 'sticker',
+                metadata: { sticker_id: stickerId }
+            })
+        });
+
+        const data = await res.json();
+        if (data.success && data.data) {
+            messages.push(data.data);
+            renderMessages();
+            if (typeof addRecentSticker === 'function') {
+                addRecentSticker(stickerId);
+            }
+        }
+    } catch (err) {
+        console.error('Failed to send sticker:', err);
+    }
 }
 
 // Convert emoticons to emoji
@@ -710,22 +844,6 @@ async function sendBuzz() {
     } catch (err) {
         console.error('Failed to send buzz:', err);
     }
-}
-
-// Emoticon picker
-function toggleEmoticonPicker() {
-    const picker = document.getElementById('emoticon-picker');
-    emoticonPickerOpen = !emoticonPickerOpen;
-    picker.style.display = emoticonPickerOpen ? 'grid' : 'none';
-}
-
-function insertEmoticon(code) {
-    const input = document.getElementById('message-input');
-    input.value += code;
-    input.focus();
-    updateCharCount();
-    document.getElementById('emoticon-picker').style.display = 'none';
-    emoticonPickerOpen = false;
 }
 
 // WebSocket connection

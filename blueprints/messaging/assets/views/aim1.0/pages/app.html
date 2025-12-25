@@ -116,6 +116,11 @@
             <button class="aim-toolbar-btn" style="font-style: italic;">I</button>
             <button class="aim-toolbar-btn" style="text-decoration: underline;">U</button>
             <div style="width: 16px; height: 16px; background: #000; border: 1px inset;"></div>
+            <div style="flex: 1;"></div>
+            <div style="position: relative;" id="aim-picker-wrapper">
+                <button class="aim-input-btn" onclick="toggleEmojiPicker(this, document.getElementById('message-input'))" title="Emoticons">😀</button>
+                <button class="aim-input-btn" onclick="toggleStickerPicker(this, handleSendSticker)" title="Stickers">🎨</button>
+            </div>
         </div>
 
         <!-- Message Input -->
@@ -248,6 +253,8 @@
 
 <form id="message-form" style="display: none;"></form>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="/static/js/emoji-data.js"></script>
+<script src="/static/js/sticker-data.js"></script>
 <script>
 // App state
 let currentUser = null;
@@ -434,17 +441,178 @@ function renderMessages() {
         const senderName = isSent ? (currentUser.display_name || currentUser.username) : (msg.sender_name || 'Unknown');
         const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+        // Handle sticker messages
+        if (msg.type === 'sticker' && msg.metadata?.sticker_id) {
+            const sticker = getStickerById(msg.metadata.sticker_id);
+            const stickerContent = sticker ? sticker.svg : '<div style="padding: 20px; color: #808080;">[Sticker]</div>';
+            return `
+                <div class="aim-message" data-message-id="${msg.id}">
+                    <div class="aim-message-header ${isSent ? 'sent' : 'received'}">
+                        ${escapeHtml(senderName)} <span class="aim-message-time">(${time})</span>:
+                    </div>
+                    <div class="aim-message-sticker">${stickerContent}</div>
+                    ${renderReactions(msg)}
+                    <div class="aim-message-actions">
+                        <button class="aim-react-btn" onclick="showReactionPicker(event, '${msg.id}')" title="Add Reaction">&#128522;</button>
+                    </div>
+                </div>
+            `;
+        }
+
         return `
-            <div class="aim-message">
+            <div class="aim-message" data-message-id="${msg.id}">
                 <div class="aim-message-header ${isSent ? 'sent' : 'received'}">
                     ${escapeHtml(senderName)} <span class="aim-message-time">(${time})</span>:
                 </div>
                 <div class="aim-message-content">${escapeHtml(msg.content)}</div>
+                ${renderReactions(msg)}
+                <div class="aim-message-actions">
+                    <button class="aim-react-btn" onclick="showReactionPicker(event, '${msg.id}')" title="Add Reaction">&#128522;</button>
+                </div>
             </div>
         `;
     }).join('');
 
     container.scrollTop = container.scrollHeight;
+}
+
+// Render reactions for a message
+function renderReactions(msg) {
+    if (!msg.reactions || msg.reactions.length === 0) return '';
+
+    const reactionCounts = {};
+    msg.reactions.forEach(r => {
+        if (!reactionCounts[r.emoji]) {
+            reactionCounts[r.emoji] = { count: 0, users: [], hasOwn: false };
+        }
+        reactionCounts[r.emoji].count++;
+        reactionCounts[r.emoji].users.push(r.user_id);
+        if (r.user_id === currentUser?.id) {
+            reactionCounts[r.emoji].hasOwn = true;
+        }
+    });
+
+    return `<div class="aim-message-reactions">
+        ${Object.entries(reactionCounts).map(([emoji, data]) => `
+            <span class="aim-reaction-badge ${data.hasOwn ? 'own' : ''}"
+                  onclick="handleReactionClick('${msg.id}', '${emoji}')"
+                  title="${data.count} reaction${data.count > 1 ? 's' : ''}">
+                ${emoji} ${data.count}
+            </span>
+        `).join('')}
+    </div>`;
+}
+
+// Get sticker by ID
+function getStickerById(stickerId) {
+    if (typeof STICKER_PACKS === 'undefined') return null;
+    for (const pack of STICKER_PACKS) {
+        const sticker = pack.stickers.find(s => s.id === stickerId);
+        if (sticker) return sticker;
+    }
+    return null;
+}
+
+// Show reaction picker
+let activeReactionPicker = null;
+function showReactionPicker(event, messageId) {
+    event.stopPropagation();
+    closeReactionPicker();
+
+    const quickReactions = typeof QUICK_REACTIONS !== 'undefined' ? QUICK_REACTIONS : ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
+    const picker = document.createElement('div');
+    picker.className = 'aim-reaction-picker';
+    picker.innerHTML = quickReactions.map(emoji =>
+        `<span class="aim-reaction-option" onclick="handleReaction('${messageId}', '${emoji}')">${emoji}</span>`
+    ).join('');
+
+    const btn = event.target.closest('.aim-react-btn');
+    btn.parentElement.appendChild(picker);
+    activeReactionPicker = picker;
+
+    setTimeout(() => {
+        document.addEventListener('click', closeReactionPicker, { once: true });
+    }, 0);
+}
+
+function closeReactionPicker() {
+    if (activeReactionPicker) {
+        activeReactionPicker.remove();
+        activeReactionPicker = null;
+    }
+}
+
+// Handle adding a reaction
+async function handleReaction(messageId, emoji) {
+    closeReactionPicker();
+    if (!currentChat) return;
+
+    try {
+        await fetch(`/api/v1/chats/${currentChat.id}/messages/${messageId}/react`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ emoji })
+        });
+        await loadMessages(currentChat.id);
+    } catch (err) {
+        console.error('Failed to add reaction:', err);
+    }
+}
+
+// Handle clicking on a reaction (toggle)
+async function handleReactionClick(messageId, emoji) {
+    if (!currentChat) return;
+
+    const msg = messages.find(m => m.id === messageId);
+    const hasOwn = msg?.reactions?.some(r => r.emoji === emoji && r.user_id === currentUser?.id);
+
+    try {
+        if (hasOwn) {
+            await fetch(`/api/v1/chats/${currentChat.id}/messages/${messageId}/react`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ emoji })
+            });
+        } else {
+            await fetch(`/api/v1/chats/${currentChat.id}/messages/${messageId}/react`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ emoji })
+            });
+        }
+        await loadMessages(currentChat.id);
+    } catch (err) {
+        console.error('Failed to toggle reaction:', err);
+    }
+}
+
+// Handle sending a sticker
+async function handleSendSticker(stickerId) {
+    if (!currentChat) return;
+
+    try {
+        const res = await fetch(`/api/v1/chats/${currentChat.id}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                content: '',
+                type: 'sticker',
+                metadata: { sticker_id: stickerId }
+            })
+        });
+
+        const data = await res.json();
+        if (data.success && data.data) {
+            messages.push(data.data);
+            renderMessages();
+            if (typeof addRecentSticker === 'function') {
+                addRecentSticker(stickerId);
+            }
+        }
+    } catch (err) {
+        console.error('Failed to send sticker:', err);
+    }
 }
 
 // Mark as read
