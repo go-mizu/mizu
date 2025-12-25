@@ -14,6 +14,11 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                     </svg>
                 </button>
+                <button onclick="showQRModal()" class="p-2 rounded-lg bg-hover text-secondary hover:text-primary" title="QR Code">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+                    </svg>
+                </button>
                 <button onclick="toggleTheme()" class="p-2 rounded-lg bg-hover text-secondary hover:text-primary" title="Toggle theme">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
@@ -204,6 +209,95 @@
     </div>
 </div>
 
+<!-- QR Code Modal -->
+<div id="qr-modal" class="modal hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-secondary rounded-2xl w-full max-w-md mx-4 p-6">
+        <div class="flex items-center justify-between mb-6">
+            <h3 class="text-xl font-semibold text-primary">QR Code</h3>
+            <button onclick="hideQRModal()" class="p-2 rounded-lg bg-hover text-secondary hover:text-primary">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex border-b border-default mb-6">
+            <button id="qr-tab-my-code" onclick="switchQRTab('my-code')" class="flex-1 py-3 text-center font-medium border-b-2 border-[#25D366] text-[#25D366]">My Code</button>
+            <button id="qr-tab-scan" onclick="switchQRTab('scan')" class="flex-1 py-3 text-center font-medium border-b-2 border-transparent text-secondary hover:text-primary">Add Friend</button>
+        </div>
+
+        <!-- My Code Tab -->
+        <div id="qr-my-code-content">
+            <div class="text-center mb-4">
+                <p class="text-secondary text-sm">Share this QR code to let others add you as a friend</p>
+            </div>
+            <div id="qr-code-container" class="bg-white p-6 rounded-xl mx-auto w-64 h-64 flex items-center justify-center">
+                <div class="animate-pulse text-gray-400">Loading...</div>
+            </div>
+            <div class="mt-4 text-center">
+                <p id="qr-code-text" class="font-mono text-sm text-secondary mb-4"></p>
+                <div class="flex gap-2 justify-center">
+                    <button onclick="copyFriendCode()" class="px-4 py-2 bg-tertiary rounded-lg text-primary font-medium hover:bg-hover transition-colors flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                        </svg>
+                        Copy Code
+                    </button>
+                    <button onclick="copyFriendLink()" class="px-4 py-2 bg-tertiary rounded-lg text-primary font-medium hover:bg-hover transition-colors flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                        </svg>
+                        Copy Link
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scan/Add Friend Tab -->
+        <div id="qr-scan-content" class="hidden">
+            <div class="text-center mb-4">
+                <p class="text-secondary text-sm">Enter a friend code to add someone as a friend</p>
+            </div>
+            <div class="mb-4">
+                <input
+                    type="text"
+                    id="friend-code-input"
+                    placeholder="Enter friend code (e.g., MIZU-ABCD1234)"
+                    class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:border-[#25D366] font-mono text-center uppercase"
+                    oninput="this.value = this.value.toUpperCase()"
+                >
+            </div>
+            <button onclick="lookupFriendCode()" class="w-full py-3 px-4 accent rounded-lg text-white font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+                Look Up Code
+            </button>
+            <div id="friend-code-result" class="mt-4 hidden"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Friend Preview Modal -->
+<div id="friend-preview-modal" class="modal hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-secondary rounded-2xl w-full max-w-sm mx-4 p-6 text-center">
+        <div id="friend-preview-avatar" class="w-20 h-20 rounded-full bg-tertiary flex items-center justify-center text-3xl font-semibold text-primary mx-auto mb-4"></div>
+        <h3 id="friend-preview-name" class="text-xl font-semibold text-primary mb-1"></h3>
+        <p id="friend-preview-username" class="text-secondary mb-2"></p>
+        <p id="friend-preview-status" class="text-sm text-muted mb-6"></p>
+        <div class="flex gap-3">
+            <button onclick="hideFriendPreviewModal()" class="flex-1 py-3 px-4 bg-tertiary rounded-lg text-primary font-medium hover:bg-hover transition-colors">
+                Cancel
+            </button>
+            <button onclick="confirmAddFriend()" class="flex-1 py-3 px-4 accent rounded-lg text-white font-medium hover:opacity-90 transition-opacity">
+                Add Friend
+            </button>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 // App state
 let currentUser = null;
@@ -906,6 +1000,232 @@ function formatDate(dateStr) {
     } else {
         return date.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
     }
+}
+
+// =========================================
+// QR Code Friend Feature
+// =========================================
+
+let currentFriendCode = null;
+let pendingFriendUser = null;
+let pendingFriendCodeToAdd = null;
+
+// Initialize: Check for add-friend query param
+document.addEventListener('DOMContentLoaded', () => {
+    const params = new URLSearchParams(window.location.search);
+    const addFriendCode = params.get('add-friend');
+    if (addFriendCode) {
+        // Remove the query param from URL
+        window.history.replaceState({}, document.title, '/app');
+        // Wait for user to load, then process the friend code
+        setTimeout(() => {
+            processAddFriendCode(addFriendCode);
+        }, 500);
+    }
+});
+
+async function processAddFriendCode(code) {
+    try {
+        const res = await fetch(`/api/v1/friend-code/${encodeURIComponent(code)}`);
+        const data = await res.json();
+        if (data.success && data.data) {
+            pendingFriendUser = data.data;
+            pendingFriendCodeToAdd = code;
+            showFriendPreviewModal(data.data);
+        } else {
+            showError(data.error || 'Invalid or expired friend code');
+        }
+    } catch (err) {
+        console.error('Failed to process friend code:', err);
+        showError('Failed to process friend code');
+    }
+}
+
+// QR Modal functions
+function showQRModal() {
+    document.getElementById('qr-modal').classList.remove('hidden');
+    switchQRTab('my-code');
+    loadMyFriendCode();
+}
+
+function hideQRModal() {
+    document.getElementById('qr-modal').classList.add('hidden');
+}
+
+function switchQRTab(tab) {
+    const myCodeTab = document.getElementById('qr-tab-my-code');
+    const scanTab = document.getElementById('qr-tab-scan');
+    const myCodeContent = document.getElementById('qr-my-code-content');
+    const scanContent = document.getElementById('qr-scan-content');
+
+    if (tab === 'my-code') {
+        myCodeTab.classList.add('border-[#25D366]', 'text-[#25D366]');
+        myCodeTab.classList.remove('border-transparent', 'text-secondary');
+        scanTab.classList.remove('border-[#25D366]', 'text-[#25D366]');
+        scanTab.classList.add('border-transparent', 'text-secondary');
+        myCodeContent.classList.remove('hidden');
+        scanContent.classList.add('hidden');
+    } else {
+        scanTab.classList.add('border-[#25D366]', 'text-[#25D366]');
+        scanTab.classList.remove('border-transparent', 'text-secondary');
+        myCodeTab.classList.remove('border-[#25D366]', 'text-[#25D366]');
+        myCodeTab.classList.add('border-transparent', 'text-secondary');
+        scanContent.classList.remove('hidden');
+        myCodeContent.classList.add('hidden');
+        document.getElementById('friend-code-input').focus();
+    }
+}
+
+async function loadMyFriendCode() {
+    const container = document.getElementById('qr-code-container');
+    const codeText = document.getElementById('qr-code-text');
+
+    container.innerHTML = '<div class="animate-pulse text-gray-400">Generating...</div>';
+    codeText.textContent = '';
+
+    try {
+        const res = await fetch('/api/v1/friend-code');
+        const data = await res.json();
+        if (data.success && data.data) {
+            currentFriendCode = data.data;
+            codeText.textContent = data.data.code;
+
+            // Generate QR code
+            container.innerHTML = '';
+            if (typeof QRCode !== 'undefined') {
+                try {
+                    new QRCode(container, {
+                        text: data.data.qr_data,
+                        width: 200,
+                        height: 200,
+                        colorDark: '#000000',
+                        colorLight: '#ffffff',
+                        correctLevel: QRCode.CorrectLevel.M
+                    });
+                } catch (error) {
+                    console.error('QR generation error:', error);
+                    container.innerHTML = '<div class="text-red-500">Failed to generate QR</div>';
+                }
+            } else {
+                // Fallback if QRCode library not loaded
+                container.innerHTML = `<div class="text-center"><div class="font-mono text-lg font-bold">${escapeHtml(data.data.code)}</div><div class="text-sm text-gray-500 mt-2">Share this code</div></div>`;
+            }
+        } else {
+            container.innerHTML = '<div class="text-red-500">Failed to generate code</div>';
+        }
+    } catch (err) {
+        console.error('Failed to load friend code:', err);
+        container.innerHTML = '<div class="text-red-500">Failed to generate code</div>';
+    }
+}
+
+function copyFriendCode() {
+    if (currentFriendCode?.code) {
+        navigator.clipboard.writeText(currentFriendCode.code).then(() => {
+            showSuccess('Code copied to clipboard!');
+        }).catch(() => {
+            showError('Failed to copy code');
+        });
+    }
+}
+
+function copyFriendLink() {
+    if (currentFriendCode?.qr_data) {
+        const link = currentFriendCode.qr_data.startsWith('http')
+            ? currentFriendCode.qr_data
+            : window.location.origin + currentFriendCode.qr_data;
+        navigator.clipboard.writeText(link).then(() => {
+            showSuccess('Link copied to clipboard!');
+        }).catch(() => {
+            showError('Failed to copy link');
+        });
+    }
+}
+
+async function lookupFriendCode() {
+    const input = document.getElementById('friend-code-input');
+    const code = input.value.trim();
+    const resultDiv = document.getElementById('friend-code-result');
+
+    if (!code) {
+        showError('Please enter a friend code');
+        return;
+    }
+
+    resultDiv.classList.remove('hidden');
+    resultDiv.innerHTML = '<div class="text-center text-secondary py-2">Looking up...</div>';
+
+    try {
+        const res = await fetch(`/api/v1/friend-code/${encodeURIComponent(code)}`);
+        const data = await res.json();
+
+        if (data.success && data.data) {
+            pendingFriendUser = data.data;
+            pendingFriendCodeToAdd = code;
+            hideQRModal();
+            showFriendPreviewModal(data.data);
+            resultDiv.classList.add('hidden');
+            input.value = '';
+        } else {
+            resultDiv.innerHTML = `<div class="text-center text-red-500 py-2">${escapeHtml(data.error || 'Invalid or expired code')}</div>`;
+        }
+    } catch (err) {
+        console.error('Failed to lookup friend code:', err);
+        resultDiv.innerHTML = '<div class="text-center text-red-500 py-2">Failed to look up code</div>';
+    }
+}
+
+// Friend Preview Modal
+function showFriendPreviewModal(user) {
+    document.getElementById('friend-preview-avatar').textContent = (user.display_name || user.username || '?').charAt(0).toUpperCase();
+    document.getElementById('friend-preview-name').textContent = user.display_name || user.username;
+    document.getElementById('friend-preview-username').textContent = '@' + user.username;
+    document.getElementById('friend-preview-status').textContent = user.status || 'No status';
+    document.getElementById('friend-preview-modal').classList.remove('hidden');
+}
+
+function hideFriendPreviewModal() {
+    document.getElementById('friend-preview-modal').classList.add('hidden');
+    pendingFriendUser = null;
+    pendingFriendCodeToAdd = null;
+}
+
+async function confirmAddFriend() {
+    if (!pendingFriendCodeToAdd) {
+        showError('No friend code to add');
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/v1/friend-code/${encodeURIComponent(pendingFriendCodeToAdd)}`, {
+            method: 'POST'
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            hideFriendPreviewModal();
+            showSuccess('Friend added successfully!');
+
+            // Optionally start a chat with the new friend
+            if (pendingFriendUser?.id) {
+                startChat(pendingFriendUser.id);
+            }
+        } else {
+            showError(data.error || 'Failed to add friend');
+        }
+    } catch (err) {
+        console.error('Failed to add friend:', err);
+        showError('Failed to add friend');
+    }
+}
+
+// Success notification
+function showSuccess(message) {
+    const successDiv = document.createElement('div');
+    successDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+    successDiv.textContent = message;
+    document.body.appendChild(successDiv);
+    setTimeout(() => successDiv.remove(), 3000);
 }
 </script>
 {{end}}

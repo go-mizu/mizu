@@ -12,6 +12,7 @@
     "test:messaging": "playwright test tests/messaging.spec.ts",
     "test:realtime": "playwright test tests/realtime.spec.ts",
     "test:settings": "playwright test tests/settings.spec.ts",
+    "test:qr": "playwright test tests/qr-friend.spec.ts",
     "report": "playwright show-report"
   },
   "devDependencies": {
