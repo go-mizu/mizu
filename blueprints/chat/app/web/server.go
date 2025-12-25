@@ -236,6 +236,8 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/register", s.pageHandler.Register)
 	s.app.Get("/explore", s.pageHandler.Explore)
 	s.app.Get("/settings", s.pageHandler.Settings)
+	s.app.Get("/channels/{server_id}", s.pageHandler.ServerViewNoChannel)
+	s.app.Get("/channels/{server_id}/", s.pageHandler.ServerViewNoChannel)
 	s.app.Get("/channels/{server_id}/{channel_id}", s.pageHandler.ServerView)
 
 	// Static files
