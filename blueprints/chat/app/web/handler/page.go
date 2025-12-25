@@ -144,6 +144,53 @@ func (h *Page) Explore(c *mizu.Ctx) error {
 	})
 }
 
+// ServerViewNoChannel handles /channels/{server_id} and redirects to the default channel.
+// Public servers can be viewed without authentication (read-only).
+func (h *Page) ServerViewNoChannel(c *mizu.Ctx) error {
+	ctx := c.Request().Context()
+	userID := h.getUserID(c)
+	serverID := c.Param("server_id")
+
+	// Get server first to check if it's public
+	srv, err := h.servers.GetByID(ctx, serverID)
+	if err != nil {
+		return NotFound(c, "Server not found")
+	}
+
+	// If not logged in and server is not public, redirect to login
+	if userID == "" && !srv.IsPublic {
+		return c.Redirect(302, "/login")
+	}
+
+	// Get channels for this server and find the default one
+	chs, _ := h.channels.ListByServer(ctx, serverID)
+	if len(chs) > 0 {
+		// Redirect to the first channel
+		return c.Redirect(302, "/channels/"+serverID+"/"+chs[0].ID)
+	}
+
+	// No channels - render empty server view directly
+	isLoggedIn := userID != ""
+	var user any
+	var srvs []*servers.Server
+	if isLoggedIn {
+		user, _ = h.accounts.GetByID(ctx, userID)
+		srvs, _ = h.servers.ListByUser(ctx, userID, 100, 0)
+	}
+
+	return h.render(c, "app.html", PageData{
+		Title: srv.Name + " - Chat",
+		User:  user,
+		Data: map[string]any{
+			"servers":       srvs,
+			"currentServer": srv,
+			"channels":      chs,
+			"isLoggedIn":    isLoggedIn,
+		},
+		Dev: h.dev,
+	})
+}
+
 // ServerView renders a server view with full SSR.
 // Public servers can be viewed without authentication (read-only).
 func (h *Page) ServerView(c *mizu.Ctx) error {
