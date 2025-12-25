@@ -186,7 +186,7 @@ The redirect middleware includes comprehensive test coverage for all redirect sc
 | `TestWWWRedirect - allows www` | Request to www.example.com/test | Passes through with 200 status (no redirect) |
 | `TestNonWWWRedirect - redirects from www` | Request to www.example.com/test | Redirects to example.com/test with 301 status |
 | `TestNonWWWRedirect - allows non-www` | Request to example.com/test | Passes through with 200 status (no redirect) |
-| `TestNew - redirects matching rule` | Request to /old with rule {From: "/old", To: "/new"} | Redirects to /new with 301 status |
+| `TestNew - redirects matching rule` | Request to /old with rule `{From: "/old", To: "/new"}` | Redirects to /new with 301 status |
 | `TestNew - preserves query string` | Request to /old?foo=bar | Redirects to /new?foo=bar with query preserved |
 | `TestNew_Regex - regex redirect with capture` | Request to /users/123 with pattern /users/(\d+) | Redirects to /profile/123 with captured group |
 | `TestTrailingSlashRedirect - adds trailing slash` | Request to /test without trailing slash | Redirects to /test/ with 301 status |

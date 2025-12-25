@@ -179,7 +179,7 @@ The logger middleware includes comprehensive test coverage for all features and 
 | `TestNew` | Default logger with standard output | Logs contain status code (200), HTTP method (GET), and request path (/test) |
 | `TestWithOptions_CustomFormat` | Custom format string with method, path, and status | Output matches exact format: `[GET] /api -> 201\n` |
 | `TestWithOptions_Skip` | Skip function filtering health check endpoint | No log output for /health endpoint, logs /api endpoint normally |
-| `TestWithOptions_Headers` | Custom header extraction using ${header:X-Request-ID} | Logs the exact value of the X-Request-ID header (test-123) |
+| `TestWithOptions_Headers` | Custom header extraction using `${header:X-Request-ID}` | Logs the exact value of the X-Request-ID header (test-123) |
 | `TestWithOptions_AllTags` | All available format tags (host, protocol, referer, user_agent, bytes_out, query) | Log contains all requested tag values from the HTTP request |
 | `TestWithOptions_XForwardedFor` | Client IP extraction from X-Forwarded-For header | Extracts first IP from comma-separated list (1.2.3.4) |
 | `TestWithOptions_XRealIP` | Client IP extraction from X-Real-IP header | Uses X-Real-IP value (10.0.0.1) when X-Forwarded-For not present |

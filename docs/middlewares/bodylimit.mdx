@@ -147,7 +147,7 @@ The bodylimit middleware uses a two-stage approach to enforce body size limits:
 
 ### Default Behavior
 
-- **Default Limit**: 1MB (1 << 20 bytes) when `Limit` is set to 0 or negative value
+- **Default Limit**: 1MB (`1 << 20 bytes`) when `Limit` is set to 0 or negative value
 - **Default Error Response**: Returns HTTP 413 (Request Entity Too Large) with plain text message
 - **Body Wrapping**: Uses `http.MaxBytesReader` to wrap the request body, which provides graceful error handling during reads
 
