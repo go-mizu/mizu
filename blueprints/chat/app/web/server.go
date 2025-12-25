@@ -198,6 +198,7 @@ func (s *Server) setupRoutes() {
 		api.Post("/servers/{id}/join", s.serverHandler.Join)
 		api.Delete("/servers/{id}/leave", s.serverHandler.Leave)
 		api.Get("/servers/{id}/roles", s.serverHandler.ListRoles)
+		api.Get("/servers/{id}/online", s.getOnlineUsers)
 
 		// Invites
 		api.Post("/invites/{code}", s.serverHandler.JoinByInvite)
@@ -362,4 +363,55 @@ func (g *memberRoleGetter) GetMemberRoleIDs(ctx context.Context, serverID, userI
 		return nil, err
 	}
 	return member.RoleIDs, nil
+}
+
+// getOnlineUsers returns online and offline users for a server.
+func (s *Server) getOnlineUsers(c *mizu.Ctx) error {
+	userID := s.getUserID(c)
+	if userID == "" {
+		return handler.Unauthorized(c, "Authentication required")
+	}
+
+	serverID := c.Param("id")
+	ctx := c.Request().Context()
+
+	// Get all server members
+	mems, err := s.members.List(ctx, serverID, 100, 0)
+	if err != nil {
+		return handler.InternalError(c, "Failed to list members")
+	}
+
+	// Get online user IDs from hub
+	onlineIDs := s.hub.GetServerOnlineUsers(serverID)
+	onlineSet := make(map[string]bool)
+	for _, id := range onlineIDs {
+		onlineSet[id] = true
+	}
+
+	// Separate into online and offline users
+	var onlineUsers, offlineUsers []map[string]any
+	for _, mem := range mems {
+		user, err := s.accounts.GetByID(ctx, mem.UserID)
+		if err != nil {
+			continue
+		}
+
+		userData := map[string]any{
+			"id":           user.ID,
+			"username":     user.Username,
+			"display_name": user.DisplayName,
+			"avatar_url":   user.AvatarURL,
+		}
+
+		if onlineSet[mem.UserID] {
+			onlineUsers = append(onlineUsers, userData)
+		} else {
+			offlineUsers = append(offlineUsers, userData)
+		}
+	}
+
+	return handler.Success(c, map[string]any{
+		"online":  onlineUsers,
+		"offline": offlineUsers,
+	})
 }

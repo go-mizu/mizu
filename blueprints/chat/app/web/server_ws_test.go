@@ -584,3 +584,240 @@ func TestWS_RealTimeFlow(t *testing.T) {
 		t.Errorf("expected 4 messages, got %d", len(msgs))
 	}
 }
+
+// TestWS_OnlineUsers tests the online users API endpoint.
+func TestWS_OnlineUsers(t *testing.T) {
+	srv, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	ts := httptest.NewServer(srv.app)
+	defer ts.Close()
+
+	// Register users
+	aliceToken := registerAndGetToken(t, srv.app, "onlinealice")
+	bobToken := registerAndGetToken(t, srv.app, "onlinebob")
+	charlieToken := registerAndGetToken(t, srv.app, "onlinecharlie")
+
+	// Alice creates a server
+	serverBody := map[string]interface{}{"name": "Online Test Server", "is_public": true}
+	serverRec := doRequest(t, srv.app, "POST", "/api/v1/servers", serverBody, aliceToken)
+	var serverResp map[string]interface{}
+	parseResponse(t, serverRec, &serverResp)
+	serverID := serverResp["data"].(map[string]interface{})["id"].(string)
+
+	// Bob and Charlie join the server
+	doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/join", nil, bobToken)
+	doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/join", nil, charlieToken)
+
+	// Initially, check online users - all should be offline
+	rec := doRequest(t, srv.app, "GET", "/api/v1/servers/"+serverID+"/online", nil, aliceToken)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get online users failed: %s", rec.Body.String())
+	}
+
+	var resp map[string]interface{}
+	parseResponse(t, rec, &resp)
+	data := resp["data"].(map[string]interface{})
+
+	// All users should be offline initially
+	offline := data["offline"].([]interface{})
+	if len(offline) != 3 {
+		t.Errorf("expected 3 offline users, got %d", len(offline))
+	}
+
+	// Connect Alice via WebSocket
+	aliceClient := connectWebSocket(t, ts, aliceToken)
+	defer aliceClient.Close()
+	aliceClient.DrainMessages(2 * time.Second)
+
+	// Wait for connection to be registered
+	time.Sleep(200 * time.Millisecond)
+
+	// Check online users - Alice should be online
+	rec = doRequest(t, srv.app, "GET", "/api/v1/servers/"+serverID+"/online", nil, aliceToken)
+	parseResponse(t, rec, &resp)
+	data = resp["data"].(map[string]interface{})
+
+	online := data["online"].([]interface{})
+	offline = data["offline"].([]interface{})
+
+	if len(online) != 1 {
+		t.Errorf("expected 1 online user, got %d", len(online))
+	}
+	if len(offline) != 2 {
+		t.Errorf("expected 2 offline users, got %d", len(offline))
+	}
+
+	// Connect Bob
+	bobClient := connectWebSocket(t, ts, bobToken)
+	defer bobClient.Close()
+	bobClient.DrainMessages(2 * time.Second)
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Check again - Alice and Bob should be online
+	rec = doRequest(t, srv.app, "GET", "/api/v1/servers/"+serverID+"/online", nil, aliceToken)
+	parseResponse(t, rec, &resp)
+	data = resp["data"].(map[string]interface{})
+
+	online = data["online"].([]interface{})
+	offline = data["offline"].([]interface{})
+
+	if len(online) != 2 {
+		t.Errorf("expected 2 online users, got %d", len(online))
+	}
+	if len(offline) != 1 {
+		t.Errorf("expected 1 offline user (Charlie), got %d", len(offline))
+	}
+}
+
+// TestWS_PresenceUpdate tests receiving PRESENCE_UPDATE via WebSocket.
+func TestWS_PresenceUpdate(t *testing.T) {
+	srv, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	ts := httptest.NewServer(srv.app)
+	defer ts.Close()
+
+	// Register users
+	aliceToken := registerAndGetToken(t, srv.app, "presencealice")
+	bobToken := registerAndGetToken(t, srv.app, "presencebob")
+
+	// Alice creates a server
+	serverBody := map[string]interface{}{"name": "Presence Test Server", "is_public": true}
+	serverRec := doRequest(t, srv.app, "POST", "/api/v1/servers", serverBody, aliceToken)
+	var serverResp map[string]interface{}
+	parseResponse(t, serverRec, &serverResp)
+	serverID := serverResp["data"].(map[string]interface{})["id"].(string)
+
+	// Bob joins the server
+	doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/join", nil, bobToken)
+
+	// Alice connects first
+	aliceClient := connectWebSocket(t, ts, aliceToken)
+	defer aliceClient.Close()
+	aliceClient.DrainMessages(2 * time.Second)
+
+	// Bob connects - Alice should receive a PRESENCE_UPDATE
+	bobClient := connectWebSocket(t, ts, bobToken)
+	defer bobClient.Close()
+	bobClient.DrainMessages(2 * time.Second)
+
+	// Alice should receive PRESENCE_UPDATE for Bob coming online
+	msg := aliceClient.WaitForMessage("PRESENCE_UPDATE", 3*time.Second)
+	if msg == nil {
+		t.Fatal("Alice did not receive PRESENCE_UPDATE when Bob connected")
+	}
+
+	var presenceData map[string]interface{}
+	if err := json.Unmarshal(msg.D, &presenceData); err != nil {
+		t.Fatalf("failed to parse presence data: %v", err)
+	}
+
+	if presenceData["status"] != "online" {
+		t.Errorf("expected status 'online', got %v", presenceData["status"])
+	}
+
+	// Bob disconnects - Alice should receive PRESENCE_UPDATE for offline
+	bobClient.Close()
+
+	// Wait a bit for the disconnect to be processed
+	time.Sleep(200 * time.Millisecond)
+
+	msg = aliceClient.WaitForMessage("PRESENCE_UPDATE", 3*time.Second)
+	if msg == nil {
+		t.Fatal("Alice did not receive PRESENCE_UPDATE when Bob disconnected")
+	}
+
+	if err := json.Unmarshal(msg.D, &presenceData); err != nil {
+		t.Fatalf("failed to parse presence data: %v", err)
+	}
+
+	if presenceData["status"] != "offline" {
+		t.Errorf("expected status 'offline', got %v", presenceData["status"])
+	}
+}
+
+// TestWS_MultiUserPresence tests presence updates with multiple users.
+func TestWS_MultiUserPresence(t *testing.T) {
+	srv, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	ts := httptest.NewServer(srv.app)
+	defer ts.Close()
+
+	// Register users
+	aliceToken := registerAndGetToken(t, srv.app, "multialice")
+	bobToken := registerAndGetToken(t, srv.app, "multibob")
+	charlieToken := registerAndGetToken(t, srv.app, "multicharlie")
+
+	// Alice creates a server
+	serverBody := map[string]interface{}{"name": "Multi Presence Server", "is_public": true}
+	serverRec := doRequest(t, srv.app, "POST", "/api/v1/servers", serverBody, aliceToken)
+	var serverResp map[string]interface{}
+	parseResponse(t, serverRec, &serverResp)
+	serverID := serverResp["data"].(map[string]interface{})["id"].(string)
+
+	// Bob and Charlie join the server
+	doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/join", nil, bobToken)
+	doRequest(t, srv.app, "POST", "/api/v1/servers/"+serverID+"/join", nil, charlieToken)
+
+	// All users connect
+	aliceClient := connectWebSocket(t, ts, aliceToken)
+	defer aliceClient.Close()
+	aliceClient.DrainMessages(2 * time.Second)
+
+	bobClient := connectWebSocket(t, ts, bobToken)
+	defer bobClient.Close()
+	bobClient.DrainMessages(2 * time.Second)
+
+	charlieClient := connectWebSocket(t, ts, charlieToken)
+	defer charlieClient.Close()
+	charlieClient.DrainMessages(2 * time.Second)
+
+	// Wait for all connections to be registered
+	time.Sleep(300 * time.Millisecond)
+
+	// Verify all users are online
+	rec := doRequest(t, srv.app, "GET", "/api/v1/servers/"+serverID+"/online", nil, aliceToken)
+	var resp map[string]interface{}
+	parseResponse(t, rec, &resp)
+	data := resp["data"].(map[string]interface{})
+
+	online := data["online"].([]interface{})
+	if len(online) != 3 {
+		t.Errorf("expected 3 online users, got %d", len(online))
+	}
+
+	// Verify the offline list is empty or nil
+	offlineRaw := data["offline"]
+	if offlineRaw != nil {
+		offline := offlineRaw.([]interface{})
+		if len(offline) != 0 {
+			t.Errorf("expected 0 offline users, got %d", len(offline))
+		}
+	}
+
+	// Charlie disconnects
+	charlieClient.Close()
+	time.Sleep(200 * time.Millisecond)
+
+	// Drain any presence updates
+	aliceClient.DrainMessages(500 * time.Millisecond)
+	bobClient.DrainMessages(500 * time.Millisecond)
+
+	// Verify Charlie is now offline
+	rec = doRequest(t, srv.app, "GET", "/api/v1/servers/"+serverID+"/online", nil, aliceToken)
+	parseResponse(t, rec, &resp)
+	data = resp["data"].(map[string]interface{})
+
+	online = data["online"].([]interface{})
+	offline := data["offline"].([]interface{})
+
+	if len(online) != 2 {
+		t.Errorf("expected 2 online users, got %d", len(online))
+	}
+	if len(offline) != 1 {
+		t.Errorf("expected 1 offline user (Charlie), got %d", len(offline))
+	}
+}
