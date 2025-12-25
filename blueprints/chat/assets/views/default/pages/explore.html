@@ -130,10 +130,10 @@ async function joinServer(id) {
     <!-- Server List -->
     <div class="space-y-3" id="server-grid">
         {{range .Data.publicServers}}
-        <div
+        <a
+            href="/channels/{{.ID}}/"
             data-server-name="{{.Name}}"
             class="group flex items-center gap-4 p-4 rounded-xl border border-gpt-border bg-white hover:border-gpt-text-muted hover:shadow-sm transition-all cursor-pointer"
-            onclick="if(event.target.tagName !== 'BUTTON') joinServer('{{.ID}}')"
         >
             <!-- Icon -->
             <div class="w-12 h-12 rounded-xl bg-gpt-sidebar flex items-center justify-center text-lg font-medium shrink-0 overflow-hidden">
@@ -169,12 +169,12 @@ async function joinServer(id) {
 
             <!-- Join Button -->
             <button
-                onclick="event.stopPropagation(); joinServer('{{.ID}}')"
+                onclick="event.preventDefault(); joinServer('{{.ID}}')"
                 class="px-4 py-2 rounded-lg text-sm font-medium bg-gpt-accent text-white hover:opacity-90 active:scale-95 transition-all shrink-0"
             >
                 Join
             </button>
-        </div>
+        </a>
         {{end}}
     </div>
 
