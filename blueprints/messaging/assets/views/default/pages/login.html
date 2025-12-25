@@ -1,0 +1,86 @@
+{{define "content"}}
+<div class="min-h-screen flex items-center justify-center px-4">
+    <div class="w-full max-w-md">
+        <div class="text-center mb-8">
+            <span class="text-4xl">💬</span>
+            <h1 class="text-2xl font-bold text-primary mt-4">Welcome back</h1>
+            <p class="text-secondary mt-2">Sign in to continue messaging</p>
+        </div>
+
+        <form id="login-form" class="bg-secondary rounded-2xl p-8 space-y-6">
+            <div id="error-message" class="hidden bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-lg text-sm"></div>
+
+            <div>
+                <label for="login" class="block text-sm font-medium text-secondary mb-2">
+                    Username or Email
+                </label>
+                <input
+                    type="text"
+                    id="login"
+                    name="login"
+                    required
+                    class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:border-[#25D366] transition-colors"
+                    placeholder="Enter your username or email"
+                >
+            </div>
+
+            <div>
+                <label for="password" class="block text-sm font-medium text-secondary mb-2">
+                    Password
+                </label>
+                <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    required
+                    class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:border-[#25D366] transition-colors"
+                    placeholder="Enter your password"
+                >
+            </div>
+
+            <button
+                type="submit"
+                class="w-full accent text-white py-3 rounded-lg font-semibold transition-colors"
+            >
+                Sign In
+            </button>
+        </form>
+
+        <p class="text-center mt-6 text-secondary">
+            Don't have an account?
+            <a href="/register" class="text-[#25D366] hover:underline">Create one</a>
+        </p>
+    </div>
+</div>
+
+<script>
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const errorDiv = document.getElementById('error-message');
+
+    try {
+        const res = await fetch('/api/v1/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                login: form.login.value,
+                password: form.password.value
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            window.location.href = '/app';
+        } else {
+            errorDiv.textContent = data.error || 'Login failed';
+            errorDiv.classList.remove('hidden');
+        }
+    } catch (err) {
+        errorDiv.textContent = 'An error occurred. Please try again.';
+        errorDiv.classList.remove('hidden');
+    }
+});
+</script>
+{{end}}
