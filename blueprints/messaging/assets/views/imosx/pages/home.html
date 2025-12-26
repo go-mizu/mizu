@@ -1,0 +1,41 @@
+{{define "content"}}
+<div class="osx-auth-container">
+    <div class="osx-auth-card">
+        <div class="osx-auth-header">
+            <div class="osx-traffic-lights" style="position: absolute; left: 12px; top: 12px;">
+                <div class="osx-traffic-btn osx-btn-close" style="cursor: default;"></div>
+                <div class="osx-traffic-btn osx-btn-minimize" style="cursor: default;"></div>
+                <div class="osx-traffic-btn osx-btn-zoom" style="cursor: default;"></div>
+            </div>
+            <div class="osx-auth-title" style="margin-top: 8px;">iChat</div>
+        </div>
+        <div class="osx-auth-body" style="text-align: center;">
+            <!-- Logo -->
+            <svg class="osx-auth-logo" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <linearGradient id="bubble-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" style="stop-color:#5CB0FF"/>
+                        <stop offset="50%" style="stop-color:#1F8AFF"/>
+                        <stop offset="100%" style="stop-color:#0066DD"/>
+                    </linearGradient>
+                </defs>
+                <rect x="4" y="4" width="56" height="48" rx="8" fill="url(#bubble-grad)" stroke="#004DB3" stroke-width="2"/>
+                <ellipse cx="32" cy="28" rx="20" ry="14" fill="rgba(255,255,255,0.3)"/>
+                <path d="M12 52 L20 44 L28 52 Z" fill="url(#bubble-grad)" stroke="#004DB3" stroke-width="2"/>
+            </svg>
+
+            <h1 style="font-size: 18px; font-weight: bold; margin-bottom: 8px;">Welcome to iChat</h1>
+            <p class="osx-auth-subtitle">Connect with friends using the Mac OS X Aqua experience.</p>
+
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                <a href="/login" class="osx-btn osx-btn-primary osx-btn-default osx-btn-block" style="text-decoration: none;">Sign In</a>
+                <a href="/register" class="osx-btn osx-btn-block" style="text-decoration: none;">Create Account</a>
+            </div>
+
+            <div class="osx-auth-footer">
+                <p style="color: var(--osx-gray-800);">Experience messaging with the iconic Aqua interface.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

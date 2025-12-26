@@ -1,0 +1,319 @@
+{{define "content"}}
+<div class="osx-window" style="max-width: 600px; margin: 40px auto; height: auto; min-height: 500px;">
+    <!-- Title Bar -->
+    <div class="osx-titlebar">
+        <div class="osx-traffic-lights">
+            <button class="osx-traffic-btn osx-btn-close" onclick="window.location.href='/app'" title="Close"></button>
+            <button class="osx-traffic-btn osx-btn-minimize" title="Minimize"></button>
+            <button class="osx-traffic-btn osx-btn-zoom" title="Zoom"></button>
+        </div>
+        <span class="osx-title">Preferences</span>
+    </div>
+
+    <!-- Toolbar with tabs -->
+    <div class="osx-toolbar" style="justify-content: center;">
+        <div class="osx-tabs" style="background: transparent; border: none; margin: 0; padding: 0;">
+            <button class="osx-tab active" onclick="switchTab('general')" id="tab-general">General</button>
+            <button class="osx-tab" onclick="switchTab('appearance')" id="tab-appearance">Appearance</button>
+            <button class="osx-tab" onclick="switchTab('account')" id="tab-account">Account</button>
+        </div>
+    </div>
+
+    <!-- Content -->
+    <div style="padding: 24px; background: var(--osx-gray-300);">
+        <!-- General Tab -->
+        <div id="content-general">
+            <div class="osx-settings-section">
+                <div class="osx-settings-title">Profile</div>
+                <div class="osx-settings-card">
+                    <div class="osx-settings-item">
+                        <span class="osx-settings-label">Display Name</span>
+                        <input type="text" id="display-name" class="osx-input-field" style="width: 200px;">
+                    </div>
+                    <div class="osx-settings-item">
+                        <span class="osx-settings-label">Status Message</span>
+                        <input type="text" id="status-message" class="osx-input-field" style="width: 200px;" placeholder="What's on your mind?">
+                    </div>
+                </div>
+            </div>
+
+            <div class="osx-settings-section">
+                <div class="osx-settings-title">Messages</div>
+                <div class="osx-settings-card">
+                    <div class="osx-settings-item">
+                        <span class="osx-settings-label">Show timestamps</span>
+                        <div class="osx-toggle">
+                            <input type="checkbox" id="show-timestamps" checked>
+                        </div>
+                    </div>
+                    <div class="osx-settings-item">
+                        <span class="osx-settings-label">Play sounds</span>
+                        <div class="osx-toggle">
+                            <input type="checkbox" id="play-sounds" checked>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Appearance Tab -->
+        <div id="content-appearance" style="display: none;">
+            <div class="osx-settings-section">
+                <div class="osx-settings-title">Theme</div>
+                <div class="osx-settings-card">
+                    <div class="osx-settings-item" style="flex-direction: column; align-items: flex-start; gap: 12px;">
+                        <span class="osx-settings-label">Choose your preferred look:</span>
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; width: 100%;">
+                            <!-- Modern Dark -->
+                            <label style="cursor: pointer;">
+                                <input type="radio" name="theme" value="dark" style="display: none;">
+                                <div class="theme-option" style="border: 2px solid transparent; border-radius: 6px; overflow: hidden;">
+                                    <div style="height: 50px; background: #0f0f0f; display: flex; flex-direction: column;">
+                                        <div style="height: 10px; background: #1a1a1a;"></div>
+                                        <div style="flex: 1; padding: 4px; display: flex; justify-content: flex-end;">
+                                            <div style="width: 50%; height: 8px; background: #005c4b; border-radius: 4px;"></div>
+                                        </div>
+                                    </div>
+                                    <div style="padding: 6px; background: var(--osx-gray-400); text-align: center; font-size: 11px;">Modern Dark</div>
+                                </div>
+                            </label>
+
+                            <!-- Modern Light -->
+                            <label style="cursor: pointer;">
+                                <input type="radio" name="theme" value="light" style="display: none;">
+                                <div class="theme-option" style="border: 2px solid transparent; border-radius: 6px; overflow: hidden;">
+                                    <div style="height: 50px; background: #fff; display: flex; flex-direction: column;">
+                                        <div style="height: 10px; background: #f0f2f5;"></div>
+                                        <div style="flex: 1; padding: 4px; display: flex; justify-content: flex-end;">
+                                            <div style="width: 50%; height: 8px; background: #d9fdd3; border-radius: 4px;"></div>
+                                        </div>
+                                    </div>
+                                    <div style="padding: 6px; background: var(--osx-gray-400); text-align: center; font-size: 11px;">Modern Light</div>
+                                </div>
+                            </label>
+
+                            <!-- AIM -->
+                            <label style="cursor: pointer;">
+                                <input type="radio" name="theme" value="aim1.0" style="display: none;">
+                                <div class="theme-option" style="border: 2px solid transparent; border-radius: 6px; overflow: hidden;">
+                                    <div style="height: 50px; background: #008080; padding: 4px;">
+                                        <div style="background: #c0c0c0; height: 100%;">
+                                            <div style="height: 10px; background: linear-gradient(90deg, #000080, #1084d0);"></div>
+                                        </div>
+                                    </div>
+                                    <div style="padding: 6px; background: var(--osx-gray-400); text-align: center; font-size: 11px;">AIM Classic</div>
+                                </div>
+                            </label>
+
+                            <!-- Yahoo -->
+                            <label style="cursor: pointer;">
+                                <input type="radio" name="theme" value="ymxp" style="display: none;">
+                                <div class="theme-option" style="border: 2px solid transparent; border-radius: 6px; overflow: hidden;">
+                                    <div style="height: 50px; background: #5C7EC0; padding: 4px;">
+                                        <div style="background: #ECE9D8; height: 100%;">
+                                            <div style="height: 10px; background: linear-gradient(180deg, #3168D8 0%, #1941A3 100%);"></div>
+                                        </div>
+                                    </div>
+                                    <div style="padding: 6px; background: var(--osx-gray-400); text-align: center; font-size: 11px;">Yahoo! XP</div>
+                                </div>
+                            </label>
+
+                            <!-- iMessage Tahoe -->
+                            <label style="cursor: pointer;">
+                                <input type="radio" name="theme" value="im26" style="display: none;">
+                                <div class="theme-option" style="border: 2px solid transparent; border-radius: 6px; overflow: hidden;">
+                                    <div style="height: 50px; background: linear-gradient(180deg, #f5f5f7 0%, #e8e8ed 100%); padding: 4px;">
+                                        <div style="background: rgba(255,255,255,0.8); height: 100%; border-radius: 4px;">
+                                            <div style="height: 8px; display: flex; gap: 2px; padding: 2px;">
+                                                <div style="width: 5px; height: 5px; border-radius: 50%; background: #FF5F57;"></div>
+                                                <div style="width: 5px; height: 5px; border-radius: 50%; background: #FFBD2E;"></div>
+                                                <div style="width: 5px; height: 5px; border-radius: 50%; background: #28C840;"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="padding: 6px; background: var(--osx-gray-400); text-align: center; font-size: 11px;">iMessage</div>
+                                </div>
+                            </label>
+
+                            <!-- Mac OS 9 -->
+                            <label style="cursor: pointer;">
+                                <input type="radio" name="theme" value="imos9" style="display: none;">
+                                <div class="theme-option" style="border: 2px solid transparent; border-radius: 6px; overflow: hidden;">
+                                    <div style="height: 50px; background: #666699; padding: 4px;">
+                                        <div style="background: #DDDDDD; height: 100%;">
+                                            <div style="height: 10px; background: linear-gradient(180deg, #CCC 0%, #AAA 50%, #CCC 100%);"></div>
+                                        </div>
+                                    </div>
+                                    <div style="padding: 6px; background: var(--osx-gray-400); text-align: center; font-size: 11px;">Mac OS 9</div>
+                                </div>
+                            </label>
+
+                            <!-- Mac OS X Aqua (current) -->
+                            <label style="cursor: pointer;">
+                                <input type="radio" name="theme" value="imosx" style="display: none;" checked>
+                                <div class="theme-option" style="border: 2px solid var(--osx-blue-500); border-radius: 6px; overflow: hidden;">
+                                    <div style="height: 50px; background: repeating-linear-gradient(#fff 0px, #fff 1px, #f0f0f0 1px, #f0f0f0 2px); padding: 4px;">
+                                        <div style="background: #EFEFEF; height: 100%; border-radius: 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+                                            <div style="height: 10px; background: linear-gradient(180deg, #E8E8E8 0%, #BABABA 50%, #C8C8C8 100%); border-radius: 3px 3px 0 0; display: flex; gap: 2px; padding: 2px;">
+                                                <div style="width: 5px; height: 5px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #FF7066, #E33E32);"></div>
+                                                <div style="width: 5px; height: 5px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #FFD566, #DEA123);"></div>
+                                                <div style="width: 5px; height: 5px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #5EDA63, #1AAB29);"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="padding: 6px; background: var(--osx-gray-400); text-align: center; font-size: 11px;">OS X Aqua</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Account Tab -->
+        <div id="content-account" style="display: none;">
+            <div class="osx-settings-section">
+                <div class="osx-settings-title">Security</div>
+                <div class="osx-settings-card">
+                    <div class="osx-settings-item">
+                        <span class="osx-settings-label">Change Password</span>
+                        <button class="osx-btn">Change</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="osx-settings-section">
+                <div class="osx-settings-title">Session</div>
+                <div class="osx-settings-card">
+                    <div class="osx-settings-item">
+                        <span class="osx-settings-label">Sign out of iChat</span>
+                        <button class="osx-btn" onclick="logout()">Sign Out</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="osx-settings-section">
+                <div class="osx-settings-title">Danger Zone</div>
+                <div class="osx-settings-card" style="border-color: var(--osx-error);">
+                    <div class="osx-settings-item">
+                        <div>
+                            <span class="osx-settings-label" style="color: var(--osx-error);">Delete Account</span>
+                            <div style="font-size: 11px; color: var(--osx-gray-800); margin-top: 2px;">This action cannot be undone.</div>
+                        </div>
+                        <button class="osx-btn osx-btn-danger">Delete</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action buttons -->
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--osx-gray-600);">
+            <button class="osx-btn" onclick="window.location.href='/app'">Cancel</button>
+            <button class="osx-btn osx-btn-primary osx-btn-default" onclick="saveSettings()">Save</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.theme-option {
+    transition: border-color 0.15s;
+}
+input[name="theme"]:checked + .theme-option {
+    border-color: var(--osx-blue-500) !important;
+}
+.theme-option:hover {
+    border-color: var(--osx-gray-600) !important;
+}
+</style>
+
+<script>
+let currentUser = null;
+
+// Load current user
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const res = await fetch('/api/v1/users/me');
+        const data = await res.json();
+        if (data.success && data.data) {
+            currentUser = data.data;
+            document.getElementById('display-name').value = currentUser.display_name || '';
+            document.getElementById('status-message').value = currentUser.status || '';
+        } else {
+            window.location.href = '/login';
+        }
+    } catch (err) {
+        console.error('Failed to load user:', err);
+    }
+
+    // Set current theme
+    const currentTheme = localStorage.getItem('theme') || 'imosx';
+    const themeRadio = document.querySelector(`input[name="theme"][value="${currentTheme}"]`);
+    if (themeRadio) {
+        themeRadio.checked = true;
+        themeRadio.closest('label').querySelector('.theme-option').style.borderColor = 'var(--osx-blue-500)';
+    }
+
+    // Add theme radio change listeners
+    document.querySelectorAll('input[name="theme"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            // Reset all borders
+            document.querySelectorAll('.theme-option').forEach(opt => {
+                opt.style.borderColor = 'transparent';
+            });
+            // Highlight selected
+            if (this.checked) {
+                this.closest('label').querySelector('.theme-option').style.borderColor = 'var(--osx-blue-500)';
+                if (typeof setTheme === 'function') {
+                    setTheme(this.value);
+                }
+            }
+        });
+    });
+});
+
+// Tab switching
+function switchTab(tab) {
+    // Update tab buttons
+    document.querySelectorAll('.osx-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+
+    // Update content
+    document.querySelectorAll('[id^="content-"]').forEach(c => c.style.display = 'none');
+    document.getElementById('content-' + tab).style.display = 'block';
+}
+
+// Save settings
+async function saveSettings() {
+    const displayName = document.getElementById('display-name').value.trim();
+    const statusMessage = document.getElementById('status-message').value.trim();
+
+    try {
+        const res = await fetch('/api/v1/users/me', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                display_name: displayName,
+                bio: statusMessage
+            })
+        });
+
+        if (res.ok) {
+            window.location.href = '/app';
+        }
+    } catch (err) {
+        console.error('Failed to save settings:', err);
+    }
+}
+
+// Logout
+async function logout() {
+    try {
+        await fetch('/api/v1/auth/logout', { method: 'POST' });
+        window.location.href = '/';
+    } catch (err) {
+        console.error('Logout failed:', err);
+        window.location.href = '/';
+    }
+}
+</script>
+{{end}}
