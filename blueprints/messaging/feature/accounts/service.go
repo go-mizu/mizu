@@ -118,6 +118,34 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	return s.store.Delete(ctx, id)
 }
 
+// ChangePassword changes a user's password.
+func (s *Service) ChangePassword(ctx context.Context, userID string, in *ChangePasswordIn) error {
+	// Get current password hash
+	currentHash, err := s.store.GetPasswordHashByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	// Verify current password
+	if !password.Verify(in.CurrentPassword, currentHash) {
+		return ErrInvalidCredentials
+	}
+
+	// Validate new password
+	if err := password.Validate(in.NewPassword); err != nil {
+		return err
+	}
+
+	// Hash new password
+	newHash, err := password.Hash(in.NewPassword)
+	if err != nil {
+		return err
+	}
+
+	// Update password
+	return s.store.UpdatePassword(ctx, userID, newHash)
+}
+
 // Login authenticates a user.
 func (s *Service) Login(ctx context.Context, in *LoginIn) (*Session, error) {
 	id, hash, err := s.store.GetPasswordHash(ctx, in.Login)

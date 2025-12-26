@@ -175,3 +175,62 @@ func (h *Auth) UpdateMe(c *mizu.Ctx, userID string) error {
 
 	return Success(c, user)
 }
+
+// ChangePassword changes the current user's password.
+func (h *Auth) ChangePassword(c *mizu.Ctx, userID string) error {
+	var in accounts.ChangePasswordIn
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
+	}
+
+	if in.CurrentPassword == "" {
+		return BadRequest(c, "Current password is required")
+	}
+	if in.NewPassword == "" {
+		return BadRequest(c, "New password is required")
+	}
+
+	err := h.accounts.ChangePassword(c.Request().Context(), userID, &in)
+	if err != nil {
+		switch err {
+		case accounts.ErrInvalidCredentials:
+			return Unauthorized(c, "Current password is incorrect")
+		default:
+			// Check if it's a password validation error
+			if err.Error() != "" {
+				return BadRequest(c, err.Error())
+			}
+			return InternalError(c, "Failed to change password")
+		}
+	}
+
+	return Success(c, map[string]any{
+		"message": "Password changed successfully",
+	})
+}
+
+// DeleteMe deletes the current user's account.
+func (h *Auth) DeleteMe(c *mizu.Ctx, userID string) error {
+	// Delete all sessions first
+	h.accounts.DeleteAllSessions(c.Request().Context(), userID)
+
+	// Delete the account
+	err := h.accounts.Delete(c.Request().Context(), userID)
+	if err != nil {
+		return InternalError(c, "Failed to delete account")
+	}
+
+	// Clear session cookie
+	http.SetCookie(c.Writer(), &http.Cookie{
+		Name:     "session",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
+	})
+
+	return Success(c, map[string]any{
+		"message": "Account deleted successfully",
+	})
+}

@@ -269,6 +269,23 @@ func (s *UsersStore) GetPasswordHash(ctx context.Context, login string) (id, has
 	return id, hash, err
 }
 
+// GetPasswordHashByID retrieves password hash by user ID.
+func (s *UsersStore) GetPasswordHashByID(ctx context.Context, userID string) (hash string, err error) {
+	query := `SELECT password_hash FROM users WHERE id = ?`
+	err = s.db.QueryRowContext(ctx, query, userID).Scan(&hash)
+	if err == sql.ErrNoRows {
+		return "", accounts.ErrNotFound
+	}
+	return hash, err
+}
+
+// UpdatePassword updates user's password hash.
+func (s *UsersStore) UpdatePassword(ctx context.Context, userID string, passwordHash string) error {
+	_, err := s.db.ExecContext(ctx, "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
+		passwordHash, time.Now(), userID)
+	return err
+}
+
 // Search searches for users.
 func (s *UsersStore) Search(ctx context.Context, query string, limit int) ([]*accounts.User, error) {
 	searchQuery := `
