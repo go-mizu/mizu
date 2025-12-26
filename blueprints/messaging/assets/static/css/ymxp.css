@@ -1988,3 +1988,200 @@ a:hover {
     background: var(--xp-selection);
     color: white;
 }
+
+/* ============================================
+   MEDIA MESSAGES - Windows XP Style
+   ============================================ */
+
+.ym-message-media {
+    padding: 4px 4px 4px 4px;
+    max-width: 300px;
+}
+
+.ym-message-image {
+    cursor: pointer;
+}
+
+.ym-message-image img {
+    max-width: 220px;
+    max-height: 160px;
+    border: 1px solid var(--xp-input-border);
+    border-radius: 2px;
+    box-shadow: 1px 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.ym-message-image img:hover {
+    opacity: 0.95;
+    box-shadow: 1px 1px 5px rgba(0, 0, 0, 0.25);
+}
+
+.ym-message-video video {
+    max-width: 260px;
+    max-height: 180px;
+    background: #000;
+    border: 1px solid var(--xp-input-border);
+    border-radius: 2px;
+}
+
+.ym-message-audio audio {
+    width: 220px;
+    height: 32px;
+}
+
+.ym-message-document .ym-doc-link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: linear-gradient(180deg,
+        #FFFFFF 0%,
+        var(--xp-window-bg) 50%,
+        #D8D4C8 100%);
+    border: 1px solid #9D9B91;
+    border-radius: 3px;
+    text-decoration: none;
+    color: var(--xp-text);
+    max-width: 250px;
+}
+
+.ym-message-document .ym-doc-link:hover {
+    background: linear-gradient(180deg,
+        #FFFFFF 0%,
+        #E8E4D9 50%,
+        #D0CCC0 100%);
+    border-color: var(--xp-selection);
+}
+
+.ym-message-document .ym-doc-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+}
+
+.ym-message-document .ym-doc-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.ym-message-document .ym-doc-name {
+    font-weight: bold;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 11px;
+}
+
+.ym-message-document .ym-doc-size {
+    font-size: 10px;
+    color: #808080;
+    margin-top: 2px;
+}
+
+/* Media Preview Modal - Windows XP Dialog Style */
+.ym-media-preview-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.ym-media-preview-dialog {
+    background: var(--xp-window-bg);
+    border-radius: 8px 8px 4px 4px;
+    box-shadow:
+        0 0 0 1px rgba(0, 84, 227, 0.5),
+        5px 5px 20px rgba(0, 0, 0, 0.4);
+    max-width: 500px;
+    max-height: 80vh;
+    overflow: hidden;
+}
+
+.ym-media-preview-content {
+    padding: 8px;
+    background: #ffffff;
+    margin: 4px;
+    border: 1px solid var(--xp-input-border);
+    max-height: 300px;
+    overflow: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ym-media-preview-content img,
+.ym-media-preview-content video {
+    max-width: 100%;
+    max-height: 280px;
+}
+
+.ym-media-preview-caption {
+    padding: 8px;
+}
+
+.ym-media-preview-caption input {
+    width: 100%;
+}
+
+.ym-media-preview-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 8px 16px 16px;
+}
+
+/* Lightbox - Windows XP Style */
+.ym-lightbox-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    cursor: pointer;
+}
+
+.ym-lightbox-content {
+    max-width: 90vw;
+    max-height: 90vh;
+    border: 2px solid var(--xp-input-border);
+    box-shadow: 5px 5px 20px rgba(0, 0, 0, 0.5);
+}
+
+.ym-lightbox-content img,
+.ym-lightbox-content video {
+    max-width: 100%;
+    max-height: 90vh;
+    display: block;
+}
+
+/* Drag & Drop Zone */
+.ym-drop-zone-active {
+    position: relative;
+}
+
+.ym-drop-zone-active::after {
+    content: "Drop files here";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(49, 106, 197, 0.9);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: bold;
+    border: 3px dashed white;
+    z-index: 100;
+}

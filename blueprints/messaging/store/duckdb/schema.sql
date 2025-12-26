@@ -227,6 +227,38 @@ CREATE TABLE IF NOT EXISTS message_media (
 
 CREATE INDEX IF NOT EXISTS idx_message_media_message_id ON message_media(message_id);
 
+-- Standalone media uploads (files uploaded but not yet attached to messages)
+CREATE TABLE IF NOT EXISTS media (
+  id              VARCHAR PRIMARY KEY,
+  user_id         VARCHAR NOT NULL,
+  message_id      VARCHAR,
+  type            VARCHAR NOT NULL,
+  filename        VARCHAR NOT NULL,
+  original_filename VARCHAR NOT NULL,
+  content_type    VARCHAR NOT NULL,
+  size            BIGINT NOT NULL DEFAULT 0,
+  url             VARCHAR NOT NULL,
+  thumbnail_url   VARCHAR,
+  width           INTEGER,
+  height          INTEGER,
+  duration        INTEGER,
+  waveform        TEXT,
+  blurhash        VARCHAR,
+  is_view_once    BOOLEAN DEFAULT FALSE,
+  view_count      INTEGER DEFAULT 0,
+  viewed_at       TIMESTAMP,
+  created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at      TIMESTAMP,
+  deleted_at      TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (message_id) REFERENCES messages(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_media_user_id ON media(user_id);
+CREATE INDEX IF NOT EXISTS idx_media_message_id ON media(message_id);
+CREATE INDEX IF NOT EXISTS idx_media_type ON media(type);
+CREATE INDEX IF NOT EXISTS idx_media_created_at ON media(created_at);
+
 -- Message recipients (for delivery/read tracking in groups)
 CREATE TABLE IF NOT EXISTS message_recipients (
   message_id    VARCHAR NOT NULL,

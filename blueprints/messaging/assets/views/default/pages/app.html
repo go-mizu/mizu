@@ -128,7 +128,8 @@
             <!-- Message input -->
             <div class="p-4 bg-secondary border-t border-default">
                 <form id="message-form" class="flex items-end gap-3">
-                    <button type="button" class="p-2 rounded-lg bg-hover text-secondary hover:text-primary" title="Attach file">
+                    <input type="file" id="media-file-input" class="hidden" multiple accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" onchange="handleFileSelect(event)">
+                    <button type="button" id="attach-btn" class="p-2 rounded-lg bg-hover text-secondary hover:text-primary" title="Attach file" onclick="document.getElementById('media-file-input').click()">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
                         </svg>
@@ -308,6 +309,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="/static/js/emoji-data.js"></script>
 <script src="/static/js/sticker-data.js"></script>
+<script src="/static/js/media.js"></script>
 <script>
 // App state
 let currentUser = null;
@@ -610,9 +612,15 @@ function renderMessages() {
 
         // Check if it's a sticker message
         const isSticker = msg.type === 'sticker';
+        const isMedia = msg.media_id || msg.media_url || ['image', 'video', 'audio', 'voice', 'document'].includes(msg.type);
         let contentHtml = '';
         if (isSticker && msg.sticker_pack_id && msg.sticker_id) {
             contentHtml = renderStickerMessage(msg.sticker_pack_id, msg.sticker_id);
+        } else if (isMedia) {
+            contentHtml = renderMediaContent(msg);
+            if (msg.content) {
+                contentHtml += `<div class="text-primary whitespace-pre-wrap break-words mt-2">${escapeHtml(msg.content)}</div>`;
+            }
         } else {
             contentHtml = `<div class="text-primary whitespace-pre-wrap break-words">${escapeHtml(msg.content)}</div>`;
         }
@@ -1366,5 +1374,189 @@ async function handleReactionClick(messageId, emoji) {
         }
     }
 }
+
+// =========================================
+// Media Upload Features
+// =========================================
+
+// Handle file input selection
+function handleFileSelect(event) {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+        uploadAndSendMedia(Array.from(files));
+    }
+    event.target.value = ''; // Reset for next selection
+}
+
+// Upload files and send as messages
+async function uploadAndSendMedia(files) {
+    if (!currentChat) {
+        showError('Please select a chat first');
+        return;
+    }
+
+    for (const file of files) {
+        try {
+            // Show preview modal
+            if (window.MediaUpload && window.MediaUpload.showMediaPreview) {
+                const proceed = await new Promise((resolve) => {
+                    window.MediaUpload.showMediaPreview(file, async (shouldSend, caption) => {
+                        if (shouldSend) {
+                            await sendMediaMessage(file, caption);
+                        }
+                        resolve(shouldSend);
+                    });
+                });
+            } else {
+                // Fallback: send directly without preview
+                await sendMediaMessage(file, '');
+            }
+        } catch (err) {
+            console.error('Failed to upload media:', err);
+            showError('Failed to upload: ' + file.name);
+        }
+    }
+}
+
+// Send a single media message
+async function sendMediaMessage(file, caption) {
+    if (!currentChat) return;
+
+    try {
+        // Upload the file
+        const result = await window.MediaUpload.uploadMedia(file, (progress) => {
+            console.log('Upload progress:', progress);
+        });
+
+        if (result && result.id) {
+            // Send message with media attachment
+            const res = await fetch(`/api/v1/chats/${currentChat.id}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    content: caption || '',
+                    type: result.type || 'media',
+                    media_id: result.id,
+                    media_url: result.url,
+                    media_type: result.type,
+                    media_content_type: result.content_type,
+                    media_filename: result.original_filename,
+                    media_size: result.size,
+                    media_width: result.width,
+                    media_height: result.height,
+                    media_duration: result.duration,
+                    media_thumbnail_url: result.thumbnail_url
+                })
+            });
+
+            const data = await res.json();
+            if (data.success && data.data) {
+                messages.push(data.data);
+                renderMessages();
+                scrollToBottom();
+                currentChat.last_message = data.data;
+                renderChatList();
+            }
+        }
+    } catch (err) {
+        console.error('Failed to send media:', err);
+        showError('Failed to send media');
+    }
+}
+
+// Initialize drag-drop for chat view
+function initMediaDragDrop() {
+    const chatView = document.getElementById('chat-view');
+    if (!chatView || !window.MediaUpload) return;
+
+    window.MediaUpload.initDragDrop(chatView, (files) => {
+        uploadAndSendMedia(files);
+    });
+}
+
+// Initialize clipboard paste for message input
+function initMediaClipboardPaste() {
+    const messageInput = document.getElementById('message-input');
+    if (!messageInput || !window.MediaUpload) return;
+
+    window.MediaUpload.initClipboardPaste(messageInput, (files) => {
+        uploadAndSendMedia(files);
+    });
+}
+
+// Render media content in a message
+function renderMediaContent(msg) {
+    if (!msg.media_url && !msg.media_id) return '';
+
+    const mediaType = msg.media_type || msg.type;
+    const url = msg.media_url || `/api/v1/media/${msg.media_id}/download`;
+    const thumbnailUrl = msg.media_thumbnail_url || url;
+    const filename = msg.media_filename || 'file';
+    const size = msg.media_size || 0;
+
+    switch (mediaType) {
+        case 'image':
+            return `
+                <div class="message-media message-image" onclick="window.MediaUpload?.showLightbox('${url}', 'image')">
+                    <img src="${thumbnailUrl}" alt="${escapeHtml(filename)}" loading="lazy">
+                </div>
+            `;
+        case 'video':
+            return `
+                <div class="message-media message-video">
+                    <video controls preload="metadata" poster="${thumbnailUrl}">
+                        <source src="${url}" type="${msg.media_content_type || 'video/mp4'}">
+                    </video>
+                </div>
+            `;
+        case 'audio':
+        case 'voice':
+            return `
+                <div class="message-media message-audio">
+                    <audio controls preload="metadata">
+                        <source src="${url}" type="${msg.media_content_type || 'audio/mpeg'}">
+                    </audio>
+                </div>
+            `;
+        case 'document':
+        default:
+            const sizeStr = formatFileSize(size);
+            const ext = filename.split('.').pop().toUpperCase();
+            return `
+                <div class="message-media message-document">
+                    <a href="${url}" download="${escapeHtml(filename)}" class="flex items-center gap-3 p-3 bg-tertiary rounded-lg hover:bg-hover">
+                        <div class="w-10 h-10 rounded-lg bg-blue-500 text-white flex items-center justify-center text-xs font-bold">
+                            ${ext}
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="text-primary truncate">${escapeHtml(filename)}</div>
+                            <div class="text-xs text-muted">${sizeStr}</div>
+                        </div>
+                        <svg class="w-5 h-5 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                        </svg>
+                    </a>
+                </div>
+            `;
+    }
+}
+
+// Format file size
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+// Initialize media features when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    // Wait a bit for other scripts to load
+    setTimeout(() => {
+        initMediaDragDrop();
+        initMediaClipboardPaste();
+    }, 100);
+});
 </script>
 {{end}}
