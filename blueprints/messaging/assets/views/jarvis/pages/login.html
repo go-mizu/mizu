@@ -1,0 +1,107 @@
+{{define "content"}}
+<div class="neural-auth">
+    <div class="neural-auth-container">
+        <div class="neural-auth-panel">
+            <!-- Corner accent (bottom right) -->
+            <div style="position: absolute; bottom: 12px; right: 12px; width: 24px; height: 24px; border-right: 2px solid var(--holo-cyan); border-bottom: 2px solid var(--holo-cyan); opacity: 0.5;"></div>
+
+            <!-- Logo -->
+            <div class="neural-auth-logo">
+                <div class="neural-auth-logo-icon">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                    </svg>
+                </div>
+                <h1 class="neural-auth-title">MIZU</h1>
+                <p class="neural-auth-subtitle">Neural Access Portal</p>
+            </div>
+
+            <!-- Login Form -->
+            <form class="neural-auth-form" id="login-form" onsubmit="handleLogin(event)">
+                <div class="neural-form-group">
+                    <label class="neural-label" for="username">Identity Code</label>
+                    <input type="text" id="username" name="username" class="neural-input" placeholder="Enter your neural ID" required autocomplete="username">
+                </div>
+
+                <div class="neural-form-group">
+                    <label class="neural-label" for="password">Access Key</label>
+                    <input type="password" id="password" name="password" class="neural-input" placeholder="Enter your passkey" required autocomplete="current-password">
+                </div>
+
+                <div id="error-message" class="neural-error" style="display: none;"></div>
+
+                <button type="submit" class="neural-btn neural-btn-primary" style="width: 100%; margin-top: 8px;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                    Authenticate
+                </button>
+            </form>
+
+            <!-- Footer -->
+            <div class="neural-auth-footer">
+                No neural identity? <a href="/register">Create one now</a>
+            </div>
+
+            <!-- Biometric Indicator -->
+            <div class="neural-biometric">
+                <div class="neural-biometric-wave">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <span class="neural-biometric-text">Biometric Ready</span>
+                <div class="neural-biometric-wave">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function handleLogin(event) {
+    event.preventDefault();
+
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+    const errorMessage = document.getElementById('error-message');
+
+    errorMessage.style.display = 'none';
+
+    fetch('/api/login', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password }),
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => {
+                throw new Error(data.error || 'Authentication failed');
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.token) {
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('user', JSON.stringify(data.user));
+            window.location.href = '/app';
+        }
+    })
+    .catch(error => {
+        errorMessage.textContent = error.message;
+        errorMessage.style.display = 'block';
+    });
+}
+</script>
+{{end}}

@@ -1,0 +1,133 @@
+{{define "content"}}
+<div class="neural-auth">
+    <div class="neural-auth-container">
+        <div class="neural-auth-panel">
+            <!-- Corner accent (bottom right) -->
+            <div style="position: absolute; bottom: 12px; right: 12px; width: 24px; height: 24px; border-right: 2px solid var(--holo-cyan); border-bottom: 2px solid var(--holo-cyan); opacity: 0.5;"></div>
+
+            <!-- Logo -->
+            <div class="neural-auth-logo">
+                <div class="neural-auth-logo-icon">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                    </svg>
+                </div>
+                <h1 class="neural-auth-title">MIZU</h1>
+                <p class="neural-auth-subtitle">Neural Identity Creation</p>
+            </div>
+
+            <!-- Register Form -->
+            <form class="neural-auth-form" id="register-form" onsubmit="handleRegister(event)">
+                <div class="neural-form-group">
+                    <label class="neural-label" for="username">Identity Code</label>
+                    <input type="text" id="username" name="username" class="neural-input" placeholder="Choose your neural ID" required autocomplete="username">
+                </div>
+
+                <div class="neural-form-group">
+                    <label class="neural-label" for="displayname">Display Designation</label>
+                    <input type="text" id="displayname" name="displayname" class="neural-input" placeholder="Your visible name" required>
+                </div>
+
+                <div class="neural-form-group">
+                    <label class="neural-label" for="password">Access Key</label>
+                    <input type="password" id="password" name="password" class="neural-input" placeholder="Create a passkey" required autocomplete="new-password">
+                </div>
+
+                <div class="neural-form-group">
+                    <label class="neural-label" for="confirm-password">Confirm Access Key</label>
+                    <input type="password" id="confirm-password" name="confirm-password" class="neural-input" placeholder="Verify passkey" required autocomplete="new-password">
+                </div>
+
+                <div id="error-message" class="neural-error" style="display: none;"></div>
+
+                <button type="submit" class="neural-btn neural-btn-primary" style="width: 100%; margin-top: 8px;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <line x1="19" y1="8" x2="19" y2="14"/>
+                        <line x1="22" y1="11" x2="16" y2="11"/>
+                    </svg>
+                    Initialize Identity
+                </button>
+            </form>
+
+            <!-- Footer -->
+            <div class="neural-auth-footer">
+                Already have a neural ID? <a href="/login">Access now</a>
+            </div>
+
+            <!-- Biometric Indicator -->
+            <div class="neural-biometric">
+                <div class="neural-biometric-wave">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <span class="neural-biometric-text">Neural Scan Ready</span>
+                <div class="neural-biometric-wave">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function handleRegister(event) {
+    event.preventDefault();
+
+    const username = document.getElementById('username').value;
+    const displayname = document.getElementById('displayname').value;
+    const password = document.getElementById('password').value;
+    const confirmPassword = document.getElementById('confirm-password').value;
+    const errorMessage = document.getElementById('error-message');
+
+    errorMessage.style.display = 'none';
+
+    if (password !== confirmPassword) {
+        errorMessage.textContent = 'Access keys do not match';
+        errorMessage.style.display = 'block';
+        return;
+    }
+
+    if (password.length < 6) {
+        errorMessage.textContent = 'Access key must be at least 6 characters';
+        errorMessage.style.display = 'block';
+        return;
+    }
+
+    fetch('/api/register', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, displayname, password }),
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => {
+                throw new Error(data.error || 'Identity creation failed');
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.token) {
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('user', JSON.stringify(data.user));
+            window.location.href = '/app';
+        }
+    })
+    .catch(error => {
+        errorMessage.textContent = error.message;
+        errorMessage.style.display = 'block';
+    });
+}
+</script>
+{{end}}
