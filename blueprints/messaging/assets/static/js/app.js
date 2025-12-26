@@ -77,6 +77,231 @@ function toggleTheme() {
     setThemeCookie(theme);
 })();
 
+// ============================================
+// THEME SWITCHER FAB
+// ============================================
+
+// Theme display names
+const THEME_NAMES = {
+    'dark': 'Dark',
+    'light': 'Light',
+    'aim1.0': 'AIM 1.0',
+    'ymxp': 'Yahoo XP',
+    'im26': 'iMessage',
+    'imos9': 'Mac OS 9',
+    'imosx': 'Mac OS X',
+    'team11': 'Teams'
+};
+
+// Cycle to next theme
+function cycleToNextTheme() {
+    const current = getTheme();
+    const currentIndex = THEMES.indexOf(current);
+    const nextIndex = (currentIndex + 1) % THEMES.length;
+    setTheme(THEMES[nextIndex]);
+}
+
+// Update theme name display
+function updateThemeNameDisplay() {
+    const nameEl = document.getElementById('current-theme-name');
+    if (nameEl) {
+        const theme = getTheme();
+        nameEl.textContent = THEME_NAMES[theme] || theme;
+    }
+}
+
+// Initialize theme switcher FAB
+function initThemeSwitcherFAB() {
+    const fab = document.getElementById('theme-switcher-fab');
+    if (!fab) return;
+
+    // Update theme name
+    updateThemeNameDisplay();
+
+    // Load saved position
+    const savedPos = localStorage.getItem('theme-fab-position');
+    if (savedPos) {
+        try {
+            const pos = JSON.parse(savedPos);
+            fab.style.left = pos.left + 'px';
+            fab.style.bottom = pos.bottom + 'px';
+            fab.style.right = 'auto';
+            fab.style.top = 'auto';
+        } catch (e) {}
+    }
+
+    // Dragging state
+    let isDragging = false;
+    let hasMoved = false;
+    let startX, startY;
+    let initialLeft, initialBottom;
+
+    function startDrag(e) {
+        if (e.target.closest('button')) return;
+
+        isDragging = true;
+        hasMoved = false;
+        fab.classList.add('dragging');
+
+        const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+        const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+
+        const rect = fab.getBoundingClientRect();
+        startX = clientX;
+        startY = clientY;
+        initialLeft = rect.left;
+        initialBottom = window.innerHeight - rect.bottom;
+
+        if (e.type.includes('touch')) {
+            e.preventDefault();
+        }
+    }
+
+    function doDrag(e) {
+        if (!isDragging) return;
+
+        const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+        const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+
+        const deltaX = clientX - startX;
+        const deltaY = startY - clientY; // Inverted for bottom positioning
+
+        if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
+            hasMoved = true;
+        }
+
+        let newLeft = initialLeft + deltaX;
+        let newBottom = initialBottom + deltaY;
+
+        // Constrain to viewport
+        const fabWidth = fab.offsetWidth;
+        const fabHeight = fab.offsetHeight;
+        newLeft = Math.max(10, Math.min(window.innerWidth - fabWidth - 10, newLeft));
+        newBottom = Math.max(10, Math.min(window.innerHeight - fabHeight - 10, newBottom));
+
+        fab.style.left = newLeft + 'px';
+        fab.style.bottom = newBottom + 'px';
+        fab.style.right = 'auto';
+        fab.style.top = 'auto';
+    }
+
+    function endDrag() {
+        if (!isDragging) return;
+
+        isDragging = false;
+        fab.classList.remove('dragging');
+
+        // Save position
+        const rect = fab.getBoundingClientRect();
+        localStorage.setItem('theme-fab-position', JSON.stringify({
+            left: rect.left,
+            bottom: window.innerHeight - rect.bottom
+        }));
+    }
+
+    // Mouse events
+    fab.addEventListener('mousedown', startDrag);
+    document.addEventListener('mousemove', doDrag);
+    document.addEventListener('mouseup', endDrag);
+
+    // Touch events
+    fab.addEventListener('touchstart', startDrag, { passive: false });
+    document.addEventListener('touchmove', doDrag, { passive: true });
+    document.addEventListener('touchend', endDrag);
+
+    // Click to cycle theme (only if not dragged)
+    fab.addEventListener('click', (e) => {
+        if (!hasMoved) {
+            cycleToNextTheme();
+        }
+    });
+}
+
+// Initialize FAB when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initThemeSwitcherFAB);
+} else {
+    initThemeSwitcherFAB();
+}
+
+// ============================================
+// MODAL IMPROVEMENTS
+// ============================================
+
+// Close modals when clicking outside
+function initModalClickOutside() {
+    document.addEventListener('click', (e) => {
+        // Handle different modal overlay types
+        const overlays = [
+            '.modal',
+            '.win-dialog-overlay',
+            '.xp-dialog-overlay',
+            '.im-modal-overlay',
+            '.os9-modal-overlay',
+            '.osx-modal-overlay',
+            '.teams-modal-overlay'
+        ];
+
+        overlays.forEach(selector => {
+            document.querySelectorAll(selector).forEach(overlay => {
+                if (e.target === overlay) {
+                    overlay.classList.add('hidden');
+                    overlay.style.display = 'none';
+                }
+            });
+        });
+    });
+}
+
+// Enhanced escape key handling for all modal types
+function initEnhancedEscapeHandler() {
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            // Close all modal types
+            const modalSelectors = [
+                '.modal:not(.hidden)',
+                '.win-dialog-overlay[style*="display: block"], .win-dialog-overlay:not([style*="display: none"])',
+                '.xp-dialog-overlay[style*="display: block"], .xp-dialog-overlay:not([style*="display: none"])',
+                '.im-modal-overlay:not(.hidden)',
+                '.os9-modal-overlay:not(.hidden)',
+                '.osx-modal-overlay:not(.hidden)',
+                '.teams-modal-overlay:not(.hidden)'
+            ];
+
+            modalSelectors.forEach(selector => {
+                document.querySelectorAll(selector).forEach(modal => {
+                    modal.classList.add('hidden');
+                    modal.style.display = 'none';
+                });
+            });
+        }
+    });
+}
+
+// Initialize modal improvements when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        initModalClickOutside();
+        initEnhancedEscapeHandler();
+    });
+} else {
+    initModalClickOutside();
+    initEnhancedEscapeHandler();
+}
+
+// ============================================
+// LOGOUT FUNCTION
+// ============================================
+
+async function logout() {
+    try {
+        await fetch('/api/v1/auth/logout', { method: 'POST' });
+    } catch (err) {
+        console.error('Logout error:', err);
+    }
+    window.location.href = '/';
+}
+
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
     // Ctrl/Cmd + K: Focus search

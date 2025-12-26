@@ -12,6 +12,25 @@
                     <path d="M12 5v14M5 12h14"/>
                 </svg>
             </button>
+            <button class="os9-titlebar-btn" onclick="showQRModal()" title="Friend Code">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="7" height="7"/>
+                    <rect x="14" y="3" width="7" height="7"/>
+                    <rect x="3" y="14" width="7" height="7"/>
+                    <rect x="14" y="14" width="7" height="7"/>
+                </svg>
+            </button>
+            <a href="/settings" class="os9-titlebar-btn" title="Settings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+                </svg>
+            </a>
+            <button onclick="logout()" class="os9-titlebar-btn logout-btn" title="Sign out">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                </svg>
+            </button>
         </div>
         <div class="os9-window-controls">
             <button class="os9-control-btn os9-control-zoom" title="Zoom"></button>
@@ -205,6 +224,18 @@
 </div>
 
 <form id="message-form" style="display: none;"></form>
+
+<!-- Theme Switcher FAB -->
+<div id="theme-switcher-fab" class="theme-switcher-fab" title="Switch Theme">
+    <div class="theme-switcher-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"/>
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+    </div>
+    <div class="theme-switcher-tooltip">Theme: <span id="current-theme-name"></span></div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="/static/js/emoji-data.js"></script>
 <script src="/static/js/sticker-data.js"></script>

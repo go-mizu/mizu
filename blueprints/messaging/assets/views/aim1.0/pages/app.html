@@ -7,17 +7,17 @@
             <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect fill='%23FFCC00' width='16' height='16' rx='2'/%3E%3Ccircle cx='8' cy='5' r='3' fill='%23000'/%3E%3Cpath d='M4 10c0-2 2-4 4-4s4 2 4 4v5H4z' fill='%23000'/%3E%3C/svg%3E" class="win-titlebar-icon" alt="AIM">
             <span class="win-titlebar-text">Buddy List</span>
             <div class="win-titlebar-buttons">
-                <button class="win-titlebar-btn" title="Minimize">_</button>
-                <button class="win-titlebar-btn" title="Maximize">□</button>
-                <button class="win-titlebar-btn" title="Close">×</button>
+                <button class="win-titlebar-btn ui-disabled" title="Minimize (Not available)">_</button>
+                <button class="win-titlebar-btn ui-disabled" title="Maximize (Not available)">□</button>
+                <button class="win-titlebar-btn ui-disabled" title="Close (Not available)">×</button>
             </div>
         </div>
 
         <!-- Menu Bar -->
         <div class="win-menubar">
-            <span class="win-menu-item"><u>M</u>y AIM</span>
-            <span class="win-menu-item"><u>P</u>eople</span>
-            <span class="win-menu-item"><u>H</u>elp</span>
+            <span class="win-menu-item ui-disabled"><u>M</u>y AIM</span>
+            <span class="win-menu-item ui-disabled"><u>P</u>eople</span>
+            <span class="win-menu-item ui-disabled"><u>H</u>elp</span>
         </div>
 
         <!-- User Info -->
@@ -57,6 +57,9 @@
             <button class="aim-toolbar-btn" onclick="window.location.href='/settings'" title="Setup">
                 <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="#000"/><circle cx="8" cy="8" r="2" fill="#000"/></svg>
             </button>
+            <button class="aim-toolbar-btn logout-btn" onclick="logout()" title="Sign Off" style="color: #800000;">
+                <svg width="16" height="16" viewBox="0 0 16 16"><path d="M10 2v12M10 8H2M5 5l-3 3 3 3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
         </div>
 
         <!-- Status Bar -->
@@ -72,27 +75,27 @@
             <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect fill='%23FFCC00' width='16' height='16' rx='2'/%3E%3Ccircle cx='8' cy='5' r='3' fill='%23000'/%3E%3Cpath d='M4 10c0-2 2-4 4-4s4 2 4 4v5H4z' fill='%23000'/%3E%3C/svg%3E" class="win-titlebar-icon" alt="AIM">
             <span class="win-titlebar-text" id="im-title">Instant Message</span>
             <div class="win-titlebar-buttons">
-                <button class="win-titlebar-btn" title="Minimize">_</button>
-                <button class="win-titlebar-btn" title="Maximize">□</button>
+                <button class="win-titlebar-btn ui-disabled" title="Minimize (Not available)">_</button>
+                <button class="win-titlebar-btn ui-disabled" title="Maximize (Not available)">□</button>
                 <button class="win-titlebar-btn" onclick="closeChat()" title="Close">×</button>
             </div>
         </div>
 
         <!-- Menu Bar -->
         <div class="win-menubar">
-            <span class="win-menu-item"><u>F</u>ile</span>
-            <span class="win-menu-item"><u>E</u>dit</span>
-            <span class="win-menu-item"><u>I</u>nsert</span>
-            <span class="win-menu-item"><u>P</u>eople</span>
+            <span class="win-menu-item ui-disabled"><u>F</u>ile</span>
+            <span class="win-menu-item ui-disabled"><u>E</u>dit</span>
+            <span class="win-menu-item ui-disabled"><u>I</u>nsert</span>
+            <span class="win-menu-item ui-disabled"><u>P</u>eople</span>
         </div>
 
         <!-- Toolbar -->
         <div class="aim-toolbar">
-            <button class="aim-toolbar-btn" title="Warn">⚠</button>
-            <button class="aim-toolbar-btn" title="Block">🚫</button>
-            <button class="aim-toolbar-btn" title="Add Buddy">➕</button>
+            <button class="aim-toolbar-btn ui-disabled" title="Warn (Not available)">⚠</button>
+            <button class="aim-toolbar-btn ui-disabled" title="Block (Not available)">🚫</button>
+            <button class="aim-toolbar-btn ui-disabled" title="Add Buddy (Not available)">➕</button>
             <div style="flex: 1;"></div>
-            <button class="aim-toolbar-btn" title="Get Info">ℹ</button>
+            <button class="aim-toolbar-btn ui-disabled" title="Get Info (Not available)">ℹ</button>
         </div>
 
         <!-- Message Display Area -->
@@ -258,6 +261,18 @@
 </div>
 
 <form id="message-form" style="display: none;"></form>
+
+<!-- Theme Switcher FAB -->
+<div id="theme-switcher-fab" class="theme-switcher-fab" title="Switch Theme">
+    <div class="theme-switcher-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"/>
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+    </div>
+    <div class="theme-switcher-tooltip">Theme: <span id="current-theme-name"></span></div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="/static/js/emoji-data.js"></script>
 <script src="/static/js/sticker-data.js"></script>

@@ -1589,3 +1589,121 @@ body,
 .text-muted {
     transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
+
+/* ============================================
+   THEME SWITCHER FAB (Floating Action Button)
+   ============================================ */
+
+.theme-switcher-fab {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 1000;
+    transition: transform 0.2s, box-shadow 0.2s;
+    user-select: none;
+    touch-action: none;
+}
+
+.theme-switcher-fab:hover {
+    transform: scale(1.08);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+}
+
+.theme-switcher-fab:active {
+    transform: scale(0.95);
+}
+
+.theme-switcher-fab.dragging {
+    cursor: grabbing;
+    transform: scale(1.1);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.theme-switcher-icon {
+    width: 24px;
+    height: 24px;
+    color: var(--text-primary);
+}
+
+.theme-switcher-icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+.theme-switcher-tooltip {
+    position: absolute;
+    left: 52px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.theme-switcher-fab:hover .theme-switcher-tooltip {
+    opacity: 1;
+}
+
+/* ============================================
+   DISABLED STATE FOR MOCK UI ELEMENTS
+   ============================================ */
+
+.ui-disabled {
+    opacity: 0.5;
+    cursor: not-allowed !important;
+    pointer-events: none;
+}
+
+.ui-disabled-hint {
+    cursor: not-allowed;
+    position: relative;
+}
+
+.ui-disabled-hint::after {
+    content: 'Not available';
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-tertiary);
+    color: var(--text-muted);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+}
+
+.ui-disabled-hint:hover::after {
+    opacity: 1;
+}
+
+/* ============================================
+   LOGOUT BUTTON STYLING
+   ============================================ */
+
+.logout-btn {
+    color: var(--error);
+}
+
+.logout-btn:hover {
+    background: rgba(239, 68, 68, 0.1);
+}
