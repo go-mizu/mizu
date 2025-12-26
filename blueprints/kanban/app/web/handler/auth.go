@@ -31,6 +31,9 @@ func (h *Auth) Register(c *mizu.Ctx) error {
 		if err == users.ErrUserExists {
 			return c.JSON(http.StatusConflict, errResponse("user already exists"))
 		}
+		if err == users.ErrMissingUsername || err == users.ErrMissingEmailAddr {
+			return c.JSON(http.StatusBadRequest, errResponse(err.Error()))
+		}
 		return c.JSON(http.StatusInternalServerError, errResponse("failed to register"))
 	}
 

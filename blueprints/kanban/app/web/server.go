@@ -114,7 +114,7 @@ func New(cfg Config) (*Server, error) {
 	projectsSvc := projects.NewService(projectsStore)
 	columnsSvc := columns.NewService(columnsStore)
 	cyclesSvc := cycles.NewService(cyclesStore)
-	issuesSvc := issues.NewService(issuesStore, projectsSvc)
+	issuesSvc := issues.NewService(issuesStore, projectsSvc, columnsSvc)
 	commentsSvc := comments.NewService(commentsStore)
 	fieldsSvc := fields.NewService(fieldsStore)
 	valuesSvc := values.NewService(valuesStore)

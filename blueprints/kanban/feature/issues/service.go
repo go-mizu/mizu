@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-mizu/blueprints/kanban/feature/columns"
 	"github.com/go-mizu/blueprints/kanban/feature/projects"
 	"github.com/go-mizu/blueprints/kanban/pkg/ulid"
 )
@@ -18,11 +19,12 @@ var (
 type Service struct {
 	store    Store
 	projects projects.API
+	columns  columns.API
 }
 
 // NewService creates a new issues service.
-func NewService(store Store, projects projects.API) *Service {
-	return &Service{store: store, projects: projects}
+func NewService(store Store, projects projects.API, columns columns.API) *Service {
+	return &Service{store: store, projects: projects, columns: columns}
 }
 
 func (s *Service) Create(ctx context.Context, projectID, creatorID string, in *CreateIn) (*Issue, error) {
@@ -30,6 +32,16 @@ func (s *Service) Create(ctx context.Context, projectID, creatorID string, in *C
 	project, err := s.projects.GetByID(ctx, projectID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Determine column: use provided or get default
+	columnID := in.ColumnID
+	if columnID == "" {
+		col, err := s.columns.GetDefault(ctx, projectID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get default column: %w", err)
+		}
+		columnID = col.ID
 	}
 
 	// Get next issue number
@@ -45,7 +57,7 @@ func (s *Service) Create(ctx context.Context, projectID, creatorID string, in *C
 		Number:    number,
 		Key:       fmt.Sprintf("%s-%d", project.Key, number),
 		Title:     in.Title,
-		ColumnID:  in.ColumnID,
+		ColumnID:  columnID,
 		CycleID:   in.CycleID,
 		CreatorID: creatorID,
 		Position:  0,
