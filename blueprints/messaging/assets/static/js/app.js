@@ -3,8 +3,8 @@
 // Available themes
 // 'default' themes (dark/light) use CSS variables only
 // View themes use completely different view directories
-const THEMES = ['dark', 'light', 'aim1.0', 'ymxp', 'im26', 'imos9', 'imosx', 'team11'];
-const VIEW_THEMES = ['aim1.0', 'ymxp', 'im26', 'imos9', 'imosx', 'team11']; // Themes that require different server-side views
+const THEMES = ['dark', 'light', 'aim1.0', 'ymxp', 'msn', 'im26', 'imos9', 'imosx', 'team11'];
+const VIEW_THEMES = ['aim1.0', 'ymxp', 'msn', 'im26', 'imos9', 'imosx', 'team11']; // Themes that require different server-side views
 
 // Theme handling - set data-theme attribute on page load
 (function() {
@@ -87,6 +87,7 @@ const THEME_NAMES = {
     'light': 'Light',
     'aim1.0': 'AIM 1.0',
     'ymxp': 'Yahoo XP',
+    'msn': 'MSN Messenger',
     'im26': 'iMessage',
     'imos9': 'Mac OS 9',
     'imosx': 'Mac OS X',
@@ -239,7 +240,8 @@ function initModalClickOutside() {
             '.im-modal-overlay',
             '.os9-modal-overlay',
             '.osx-modal-overlay',
-            '.teams-modal-overlay'
+            '.teams-modal-overlay',
+            '.msn-dialog-overlay'
         ];
 
         overlays.forEach(selector => {
@@ -265,7 +267,8 @@ function initEnhancedEscapeHandler() {
                 '.im-modal-overlay:not(.hidden)',
                 '.os9-modal-overlay:not(.hidden)',
                 '.osx-modal-overlay:not(.hidden)',
-                '.teams-modal-overlay:not(.hidden)'
+                '.teams-modal-overlay:not(.hidden)',
+                '.msn-dialog-overlay[style*="display: flex"], .msn-dialog-overlay:not([style*="display: none"])'
             ];
 
             modalSelectors.forEach(selector => {
@@ -692,7 +695,7 @@ function toggleEmojiPicker(button, inputElement) {
     }, isRetro);
 
     // Find the closest positioned ancestor or use a wrapper with relative positioning
-    const container = button.closest('.relative') || button.closest('#message-input-wrapper') || button.closest('#aim-picker-wrapper') || button.closest('#ym-picker-wrapper') || button.parentElement;
+    const container = button.closest('.relative') || button.closest('#message-input-wrapper') || button.closest('#aim-picker-wrapper') || button.closest('#ym-picker-wrapper') || button.closest('#msn-picker-wrapper') || button.parentElement;
     if (!container.style.position) {
         container.style.position = 'relative';
     }
@@ -719,7 +722,7 @@ function toggleStickerPicker(button, onSendSticker) {
     }, isRetro);
 
     // Find the closest positioned ancestor or use a wrapper with relative positioning
-    const container = button.closest('.relative') || button.closest('#message-input-wrapper') || button.closest('#aim-picker-wrapper') || button.closest('#ym-picker-wrapper') || button.parentElement;
+    const container = button.closest('.relative') || button.closest('#message-input-wrapper') || button.closest('#aim-picker-wrapper') || button.closest('#ym-picker-wrapper') || button.closest('#msn-picker-wrapper') || button.parentElement;
     if (!container.style.position) {
         container.style.position = 'relative';
     }
@@ -745,6 +748,7 @@ document.addEventListener('click', (e) => {
         !e.target.closest('.aim-input-btn') &&
         !e.target.closest('.ym-input-btn') &&
         !e.target.closest('.ym-emoticon-btn') &&
+        !e.target.closest('.msn-emoticon-btn') &&
         !e.target.closest('.message-action-btn')) {
         closeAllPickers();
     }

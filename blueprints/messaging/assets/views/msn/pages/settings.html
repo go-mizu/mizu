@@ -1,0 +1,329 @@
+{{define "content"}}
+<div class="msn-settings" style="height: 100vh; overflow-y: auto;">
+    <!-- Header -->
+    <div class="msn-settings-header">
+        <a href="/app" class="msn-button" style="padding: 4px 8px; min-width: auto;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M15 18l-6-6 6-6"/>
+            </svg>
+        </a>
+        <h1>Settings</h1>
+    </div>
+
+    <!-- Profile Section -->
+    <div class="msn-settings-section">
+        <div class="msn-settings-section-header">Profile</div>
+        <div style="padding: 20px;">
+            <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 24px;">
+                <div id="avatar-preview" style="width: 64px; height: 64px; border-radius: 4px; background: linear-gradient(135deg, #4a4a50 0%, #3a3a40 100%); border: 2px solid var(--vista-glass-border); display: flex; align-items: center; justify-content: center;">
+                    <svg viewBox="0 0 48 48" width="48" height="48">
+                        <circle cx="24" cy="18" r="10" fill="#606570"/>
+                        <ellipse cx="24" cy="42" rx="16" ry="14" fill="#606570"/>
+                    </svg>
+                </div>
+                <div>
+                    <button class="msn-button">Change Photo</button>
+                    <p style="font-size: 10px; color: var(--text-muted); margin-top: 8px;">JPG, PNG. Max 5MB.</p>
+                </div>
+            </div>
+
+            <form id="profile-form" style="display: flex; flex-direction: column; gap: 16px;">
+                <div class="msn-form-group">
+                    <label class="msn-form-label" for="display_name">Display Name</label>
+                    <input type="text" id="display_name" name="display_name" class="msn-input" placeholder="Your display name">
+                </div>
+
+                <div class="msn-form-group">
+                    <label class="msn-form-label" for="username">Username</label>
+                    <input type="text" id="username" name="username" class="msn-input" placeholder="Your username" readonly>
+                    <div class="msn-form-help">Username cannot be changed</div>
+                </div>
+
+                <div class="msn-form-group">
+                    <label class="msn-form-label" for="email">Email</label>
+                    <input type="email" id="email" name="email" class="msn-input" placeholder="your@email.com">
+                </div>
+
+                <div class="msn-form-group">
+                    <label class="msn-form-label" for="bio">Personal Message</label>
+                    <textarea id="bio" name="bio" class="msn-input" style="min-height: 60px; resize: vertical;" placeholder="Share what's on your mind..."></textarea>
+                </div>
+
+                <div id="profile-message" class="hidden" style="font-size: 12px;"></div>
+
+                <button type="submit" class="msn-button msn-button-primary" style="width: 100%;">Save Changes</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Appearance Section -->
+    <div class="msn-settings-section">
+        <div class="msn-settings-section-header">Appearance</div>
+        <div style="padding: 20px;">
+            <div style="margin-bottom: 16px;">
+                <div style="font-weight: bold; margin-bottom: 8px; color: var(--text-primary);">Theme</div>
+                <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 16px;">Choose your preferred visual style</div>
+            </div>
+
+            <!-- Theme Grid -->
+            <div class="msn-theme-grid">
+                <!-- Modern Dark -->
+                <label class="msn-theme-card">
+                    <input type="radio" name="theme" value="dark">
+                    <div class="msn-theme-preview" style="background: #09090b;">
+                        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                            <div style="width: 28px; height: 28px; border-radius: 50%; background: #18181b;"></div>
+                            <div style="flex: 1;">
+                                <div style="height: 6px; background: #18181b; border-radius: 3px; width: 50px; margin-bottom: 4px;"></div>
+                                <div style="height: 4px; background: #27272a; border-radius: 2px; width: 35px;"></div>
+                            </div>
+                        </div>
+                        <div style="display: flex; justify-content: flex-end;">
+                            <div style="background: #27272a; border-radius: 6px; padding: 4px 8px;">
+                                <div style="height: 4px; background: rgba(250,250,250,0.3); border-radius: 2px; width: 28px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="msn-theme-info">
+                        <div class="msn-theme-name">Modern Dark</div>
+                        <div class="msn-theme-desc">Shadcn-inspired</div>
+                    </div>
+                </label>
+
+                <!-- Modern Light -->
+                <label class="msn-theme-card">
+                    <input type="radio" name="theme" value="light">
+                    <div class="msn-theme-preview" style="background: #ffffff;">
+                        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                            <div style="width: 28px; height: 28px; border-radius: 50%; background: #fafafa;"></div>
+                            <div style="flex: 1;">
+                                <div style="height: 6px; background: #f4f4f5; border-radius: 3px; width: 50px; margin-bottom: 4px;"></div>
+                                <div style="height: 4px; background: #e4e4e7; border-radius: 2px; width: 35px;"></div>
+                            </div>
+                        </div>
+                        <div style="display: flex; justify-content: flex-end;">
+                            <div style="background: #f4f4f5; border-radius: 6px; padding: 4px 8px;">
+                                <div style="height: 4px; background: rgba(9,9,11,0.2); border-radius: 2px; width: 28px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="msn-theme-info">
+                        <div class="msn-theme-name">Modern Light</div>
+                        <div class="msn-theme-desc">Clean and minimal</div>
+                    </div>
+                </label>
+
+                <!-- AIM 1.0 -->
+                <label class="msn-theme-card">
+                    <input type="radio" name="theme" value="aim1.0">
+                    <div class="msn-theme-preview" style="background: #008080;">
+                        <div style="background: #c0c0c0; height: 100%; border: 2px solid; border-color: #dfdfdf #404040 #404040 #dfdfdf;">
+                            <div style="height: 14px; background: linear-gradient(90deg, #000080, #1084d0); padding: 2px 4px;">
+                                <span style="color: white; font-size: 9px; font-weight: bold;">Buddy List</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="msn-theme-info">
+                        <div class="msn-theme-name">AIM 1.0</div>
+                        <div class="msn-theme-desc">Classic 1997</div>
+                    </div>
+                </label>
+
+                <!-- Yahoo Messenger -->
+                <label class="msn-theme-card">
+                    <input type="radio" name="theme" value="ymxp">
+                    <div class="msn-theme-preview" style="background: #5C7EC0;">
+                        <div style="background: #ECE9D8; height: 100%; border-radius: 2px;">
+                            <div style="height: 14px; background: linear-gradient(180deg, #3168D8 0%, #1941A3 100%); border-radius: 2px 2px 0 0; padding: 2px 4px;">
+                                <span style="color: white; font-size: 9px; font-weight: bold;">Yahoo!</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="msn-theme-info">
+                        <div class="msn-theme-name">Yahoo! Messenger</div>
+                        <div class="msn-theme-desc">Windows XP era</div>
+                    </div>
+                </label>
+
+                <!-- MSN Messenger -->
+                <label class="msn-theme-card">
+                    <input type="radio" name="theme" value="msn">
+                    <div class="msn-theme-preview" style="background: linear-gradient(180deg, #0a1628 0%, #1c3a50 100%);">
+                        <div style="background: rgba(30, 35, 45, 0.9); height: 100%; border-radius: 4px; border: 1px solid rgba(255,255,255,0.15);">
+                            <div style="height: 14px; background: linear-gradient(180deg, rgba(60, 65, 75, 0.95) 0%, rgba(45, 50, 60, 0.95) 100%); border-radius: 4px 4px 0 0; padding: 2px 4px; display: flex; align-items: center; gap: 4px;">
+                                <div style="width: 8px; height: 8px; background: linear-gradient(135deg, #7FBA00, #FF8C00); border-radius: 50%;"></div>
+                                <span style="color: white; font-size: 8px;">Messenger</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="msn-theme-info">
+                        <div class="msn-theme-name">MSN Messenger</div>
+                        <div class="msn-theme-desc">Windows Vista</div>
+                    </div>
+                </label>
+
+                <!-- iMessage Tahoe -->
+                <label class="msn-theme-card">
+                    <input type="radio" name="theme" value="im26">
+                    <div class="msn-theme-preview" style="background: linear-gradient(135deg, rgba(255,255,255,0.3), rgba(255,255,255,0.1)), linear-gradient(180deg, #f5f5f7 0%, #e8e8ed 100%);">
+                        <div style="background: rgba(255,255,255,0.7); height: 100%; border-radius: 6px; padding: 6px;">
+                            <div style="display: flex; gap: 3px; margin-bottom: 6px;">
+                                <div style="width: 6px; height: 6px; border-radius: 50%; background: #FF5F57;"></div>
+                                <div style="width: 6px; height: 6px; border-radius: 50%; background: #FFBD2E;"></div>
+                                <div style="width: 6px; height: 6px; border-radius: 50%; background: #28C840;"></div>
+                            </div>
+                            <div style="display: flex; justify-content: flex-end;">
+                                <div style="background: #007AFF; border-radius: 10px; padding: 2px 6px;">
+                                    <div style="height: 3px; background: rgba(255,255,255,0.6); border-radius: 2px; width: 20px;"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="msn-theme-info">
+                        <div class="msn-theme-name">iMessage Tahoe</div>
+                        <div class="msn-theme-desc">Liquid glass</div>
+                    </div>
+                </label>
+
+                <!-- Mac OS 9 -->
+                <label class="msn-theme-card">
+                    <input type="radio" name="theme" value="imos9">
+                    <div class="msn-theme-preview" style="background: #666699;">
+                        <div style="background: #DDDDDD; height: 100%; border: 2px solid; border-color: #FFFFFF #888888 #888888 #FFFFFF;">
+                            <div style="height: 14px; background: linear-gradient(180deg, #CCCCCC 0%, #AAAAAA 50%, #CCCCCC 100%); border-bottom: 1px solid #888888; display: flex; align-items: center; justify-content: center;">
+                                <span style="font-size: 9px; font-weight: bold;">Buddy List</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="msn-theme-info">
+                        <div class="msn-theme-name">Mac OS 9</div>
+                        <div class="msn-theme-desc">Platinum interface</div>
+                    </div>
+                </label>
+
+                <!-- Mac OS X -->
+                <label class="msn-theme-card">
+                    <input type="radio" name="theme" value="imosx">
+                    <div class="msn-theme-preview" style="background: linear-gradient(180deg, #6B9BD1 0%, #3A6EA5 100%);">
+                        <div style="background: #E8E8E8; height: 100%; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
+                            <div style="height: 16px; background: linear-gradient(180deg, #EEEEEE 0%, #CCCCCC 100%); border-radius: 4px 4px 0 0; display: flex; align-items: center; padding: 0 6px; gap: 4px;">
+                                <div style="width: 8px; height: 8px; border-radius: 50%; background: #FF5F57;"></div>
+                                <div style="width: 8px; height: 8px; border-radius: 50%; background: #FFBD2E;"></div>
+                                <div style="width: 8px; height: 8px; border-radius: 50%; background: #28C840;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="msn-theme-info">
+                        <div class="msn-theme-name">Mac OS X</div>
+                        <div class="msn-theme-desc">Aqua interface</div>
+                    </div>
+                </label>
+
+                <!-- Microsoft Teams -->
+                <label class="msn-theme-card">
+                    <input type="radio" name="theme" value="team11">
+                    <div class="msn-theme-preview" style="background: #FAFAFA;">
+                        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                            <div style="width: 28px; height: 28px; border-radius: 50%; background: #5B5FC7;"></div>
+                            <div style="flex: 1;">
+                                <div style="height: 6px; background: #E0E0E0; border-radius: 3px; width: 50px; margin-bottom: 4px;"></div>
+                                <div style="height: 4px; background: #F0F0F0; border-radius: 2px; width: 35px;"></div>
+                            </div>
+                        </div>
+                        <div style="display: flex; justify-content: flex-end;">
+                            <div style="background: #E8EBFA; border-radius: 4px; padding: 4px 8px;">
+                                <div style="height: 4px; background: rgba(91,95,199,0.3); border-radius: 2px; width: 28px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="msn-theme-info">
+                        <div class="msn-theme-name">Microsoft Teams</div>
+                        <div class="msn-theme-desc">Fluent 2 design</div>
+                    </div>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <!-- Account Section -->
+    <div class="msn-settings-section">
+        <div class="msn-settings-section-header">Account</div>
+        <div style="padding: 20px;">
+            <button class="msn-button" onclick="logout()" style="background: linear-gradient(180deg, #d44030 0%, #b02020 100%); border-color: #8a1a1a; color: white;">
+                Sign Out
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+// Load current user data
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const res = await fetch('/api/v1/users/me');
+        const data = await res.json();
+        if (data.success && data.data) {
+            const user = data.data;
+            document.getElementById('display_name').value = user.display_name || '';
+            document.getElementById('username').value = user.username || '';
+            document.getElementById('email').value = user.email || '';
+            document.getElementById('bio').value = user.bio || '';
+        }
+    } catch (err) {
+        console.error('Failed to load user:', err);
+    }
+
+    // Set current theme in the radio buttons
+    const currentTheme = localStorage.getItem('theme') || 'dark';
+    const themeRadio = document.querySelector(`input[name="theme"][value="${currentTheme}"]`);
+    if (themeRadio) {
+        themeRadio.checked = true;
+    }
+});
+
+// Handle theme change
+document.querySelectorAll('input[name="theme"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+        if (typeof setTheme === 'function') {
+            setTheme(e.target.value);
+        }
+    });
+});
+
+// Handle profile form submit
+document.getElementById('profile-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const messageDiv = document.getElementById('profile-message');
+
+    const formData = {
+        display_name: document.getElementById('display_name').value,
+        email: document.getElementById('email').value,
+        bio: document.getElementById('bio').value
+    };
+
+    try {
+        const res = await fetch('/api/v1/users/me', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData)
+        });
+
+        const data = await res.json();
+        if (data.success) {
+            messageDiv.textContent = 'Profile updated successfully!';
+            messageDiv.style.color = 'var(--status-online)';
+            messageDiv.classList.remove('hidden');
+            setTimeout(() => messageDiv.classList.add('hidden'), 3000);
+        } else {
+            messageDiv.textContent = data.error || 'Failed to update profile';
+            messageDiv.style.color = 'var(--status-busy)';
+            messageDiv.classList.remove('hidden');
+        }
+    } catch (err) {
+        messageDiv.textContent = 'Connection error. Please try again.';
+        messageDiv.style.color = 'var(--status-busy)';
+        messageDiv.classList.remove('hidden');
+    }
+});
+</script>
+{{end}}

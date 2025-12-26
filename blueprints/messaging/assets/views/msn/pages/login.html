@@ -1,0 +1,91 @@
+{{define "content"}}
+<div class="msn-auth-container">
+    <div class="msn-auth-card">
+        <!-- Header -->
+        <div class="msn-auth-header">
+            <div class="msn-auth-logo">
+                <svg viewBox="0 0 100 100" width="64" height="64">
+                    <defs>
+                        <linearGradient id="msn-btn-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color:#7FBA00"/>
+                            <stop offset="50%" style="stop-color:#9AD200"/>
+                            <stop offset="100%" style="stop-color:#FF8C00"/>
+                        </linearGradient>
+                    </defs>
+                    <ellipse cx="30" cy="35" rx="22" ry="28" fill="url(#msn-btn-gradient)"/>
+                    <ellipse cx="70" cy="35" rx="22" ry="28" fill="url(#msn-btn-gradient)"/>
+                    <ellipse cx="28" cy="70" rx="18" ry="20" fill="url(#msn-btn-gradient)" opacity="0.9"/>
+                    <ellipse cx="72" cy="70" rx="18" ry="20" fill="url(#msn-btn-gradient)" opacity="0.9"/>
+                    <ellipse cx="50" cy="50" rx="6" ry="35" fill="#2a2a2c"/>
+                    <circle cx="50" cy="18" r="8" fill="#2a2a2c"/>
+                    <path d="M46 12 Q40 2 35 5" stroke="#2a2a2c" stroke-width="2" fill="none"/>
+                    <path d="M54 12 Q60 2 65 5" stroke="#2a2a2c" stroke-width="2" fill="none"/>
+                </svg>
+            </div>
+            <h1 class="msn-auth-title">Sign In</h1>
+            <p class="msn-auth-subtitle">Windows Live Messenger</p>
+        </div>
+
+        <!-- Content -->
+        <div class="msn-auth-content">
+            <form id="login-form">
+                <div class="msn-form-group">
+                    <label class="msn-form-label" for="email">Email address</label>
+                    <input type="text" id="email" name="email" class="msn-input" placeholder="someone@example.com" required>
+                </div>
+
+                <div class="msn-form-group">
+                    <label class="msn-form-label" for="password">Password</label>
+                    <input type="password" id="password" name="password" class="msn-input" placeholder="Enter your password" required>
+                </div>
+
+                <div class="msn-form-group" style="display: flex; align-items: center; gap: 8px;">
+                    <input type="checkbox" id="remember" name="remember" style="width: 14px; height: 14px;">
+                    <label for="remember" style="color: var(--text-secondary); cursor: pointer;">Remember me</label>
+                </div>
+
+                <div id="error-message" class="hidden" style="padding: 10px; background: rgba(232, 17, 35, 0.2); border: 1px solid rgba(232, 17, 35, 0.5); border-radius: 4px; color: #ff6b6b; margin-bottom: 16px; font-size: 11px;"></div>
+
+                <button type="submit" class="msn-button msn-button-primary" style="width: 100%; padding: 10px;">Sign In</button>
+            </form>
+        </div>
+
+        <!-- Footer -->
+        <div class="msn-auth-footer">
+            <span>Don't have an account?</span>
+            <a href="/register" style="margin-left: 4px;">Create one</a>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorDiv = document.getElementById('error-message');
+    errorDiv.classList.add('hidden');
+
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+
+    try {
+        const res = await fetch('/api/v1/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            window.location.href = '/app';
+        } else {
+            errorDiv.textContent = data.error || 'Invalid email or password';
+            errorDiv.classList.remove('hidden');
+        }
+    } catch (err) {
+        errorDiv.textContent = 'Connection error. Please try again.';
+        errorDiv.classList.remove('hidden');
+    }
+});
+</script>
+{{end}}
