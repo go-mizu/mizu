@@ -293,6 +293,12 @@ func (s *Server) setupRoutes() {
 		api.Patch("/auth/me", s.authRequired(func(c *mizu.Ctx) error {
 			return s.authHandler.UpdateMe(c, s.getUserID(c))
 		}))
+		api.Put("/users/me/password", s.authRequired(func(c *mizu.Ctx) error {
+			return s.authHandler.ChangePassword(c, s.getUserID(c))
+		}))
+		api.Delete("/users/me", s.authRequired(func(c *mizu.Ctx) error {
+			return s.authHandler.DeleteMe(c, s.getUserID(c))
+		}))
 
 		// Users
 		api.Get("/users/me", s.authRequired(func(c *mizu.Ctx) error {

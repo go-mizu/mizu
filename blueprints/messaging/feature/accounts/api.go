@@ -83,6 +83,12 @@ type Session struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
+// ChangePasswordIn contains input for changing password.
+type ChangePasswordIn struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
 // API defines the accounts service contract.
 type API interface {
 	Create(ctx context.Context, in *CreateIn) (*User, error)
@@ -91,6 +97,7 @@ type API interface {
 	GetByUsername(ctx context.Context, username string) (*User, error)
 	Update(ctx context.Context, id string, in *UpdateIn) (*User, error)
 	Delete(ctx context.Context, id string) error
+	ChangePassword(ctx context.Context, userID string, in *ChangePasswordIn) error
 	Login(ctx context.Context, in *LoginIn) (*Session, error)
 	GetSession(ctx context.Context, token string) (*Session, error)
 	DeleteSession(ctx context.Context, token string) error
@@ -108,11 +115,13 @@ type Store interface {
 	GetByPhone(ctx context.Context, phone string) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	Update(ctx context.Context, id string, in *UpdateIn) error
+	UpdatePassword(ctx context.Context, userID string, passwordHash string) error
 	Delete(ctx context.Context, id string) error
 	ExistsUsername(ctx context.Context, username string) (bool, error)
 	ExistsPhone(ctx context.Context, phone string) (bool, error)
 	ExistsEmail(ctx context.Context, email string) (bool, error)
 	GetPasswordHash(ctx context.Context, login string) (id, hash string, err error)
+	GetPasswordHashByID(ctx context.Context, userID string) (hash string, err error)
 	Search(ctx context.Context, query string, limit int) ([]*User, error)
 	UpdateOnlineStatus(ctx context.Context, userID string, online bool) error
 	UpdateLastSeen(ctx context.Context, userID string) error

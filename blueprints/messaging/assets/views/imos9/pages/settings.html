@@ -46,6 +46,7 @@
                             <option value="im26">iMessage Tahoe</option>
                             <option value="imos9" selected>Mac OS 9</option>
                             <option value="imosx">Mac OS X Aqua</option>
+                            <option value="team11">Teams Win11</option>
                         </select>
                     </div>
                 </div>
@@ -211,22 +212,11 @@ function loadSettings() {
 }
 
 function changeTheme(theme) {
-    // Redirect to theme-specific app
-    const themeMap = {
-        'default': '/app',
-        'aim1.0': '/app',
-        'ymxp': '/app',
-        'im26': '/app',
-        'imos9': '/app'
-    };
-
-    // Store theme preference
-    localStorage.setItem('preferred_theme', theme);
-
-    // For now, just reload - in production this would switch themes
-    if (theme === 'imos9') {
-        window.location.href = '/app?theme=imos9';
+    // Use setTheme if available, otherwise use URL redirect
+    if (typeof setTheme === 'function') {
+        setTheme(theme);
     } else {
+        localStorage.setItem('preferred_theme', theme);
         window.location.href = '/app?theme=' + theme;
     }
 }
@@ -303,7 +293,7 @@ async function handleChangePassword(e) {
     }
 
     try {
-        const res = await fetch('/api/v1/users/password', {
+        const res = await fetch('/api/v1/users/me/password', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
