@@ -2,6 +2,7 @@ package handler
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/go-mizu/mizu"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/go-mizu/blueprints/messaging/feature/accounts"
 	"github.com/go-mizu/blueprints/messaging/feature/chats"
 	"github.com/go-mizu/blueprints/messaging/feature/messages"
+	"github.com/go-mizu/blueprints/messaging/pkg/sanitize"
 )
 
 // Message handles message endpoints.
@@ -71,6 +73,17 @@ func (h *Message) Create(c *mizu.Ctx) error {
 	}
 	in.ChatID = chatID
 
+	// Validate and sanitize message content
+	if strings.TrimSpace(in.Content) == "" {
+		return BadRequest(c, "Message content cannot be empty")
+	}
+
+	content, err := sanitize.MessageContent(in.Content)
+	if err != nil {
+		return BadRequest(c, err.Error())
+	}
+	in.Content = content
+
 	msg, err := h.messages.Create(c.Request().Context(), userID, &in)
 	if err != nil {
 		return InternalError(c, "Failed to create message")
@@ -118,6 +131,15 @@ func (h *Message) Update(c *mizu.Ctx) error {
 	var in messages.UpdateIn
 	if err := c.BindJSON(&in, 1<<20); err != nil {
 		return BadRequest(c, "Invalid request body")
+	}
+
+	// Sanitize content if being updated
+	if in.Content != nil && *in.Content != "" {
+		content, err := sanitize.MessageContent(*in.Content)
+		if err != nil {
+			return BadRequest(c, err.Error())
+		}
+		in.Content = &content
 	}
 
 	msg, err := h.messages.Update(c.Request().Context(), msgID, userID, &in)
@@ -327,9 +349,16 @@ func (h *Message) Search(c *mizu.Ctx) error {
 		return Unauthorized(c, "Authentication required")
 	}
 
-	query := c.Query("q")
+	query := sanitize.SearchQuery(c.Query("q"))
+	if query == "" {
+		return BadRequest(c, "Search query is required")
+	}
+
 	chatID := c.Query("chat_id")
 	limit, _ := strconv.Atoi(c.Query("limit"))
+	if limit <= 0 || limit > 100 {
+		limit = 50 // Default limit
+	}
 
 	opts := messages.SearchOpts{
 		Query:  query,
