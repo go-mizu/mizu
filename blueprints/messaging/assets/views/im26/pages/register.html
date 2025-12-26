@@ -1,0 +1,211 @@
+{{define "content"}}
+<div class="im-auth-container">
+    <div class="im-auth-card">
+        <!-- iMessage Logo -->
+        <div class="im-auth-logo">
+            <svg viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <linearGradient id="imessage-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" stop-color="#5EE173"/>
+                        <stop offset="100%" stop-color="#34C759"/>
+                    </linearGradient>
+                </defs>
+                <rect width="72" height="72" rx="16" fill="url(#imessage-gradient)"/>
+                <path d="M36 16C24.954 16 16 23.835 16 33.5C16 38.186 18.298 42.426 22 45.41V56L31.677 50.307C33.059 50.538 34.5 50.667 36 50.667C47.046 50.667 56 42.832 56 33.333C56 23.835 47.046 16 36 16Z" fill="white"/>
+            </svg>
+        </div>
+
+        <h1 class="im-auth-title">Create Account</h1>
+        <p class="im-auth-subtitle">Set up your Messages account to get started.</p>
+
+        <!-- Register Form -->
+        <form id="register-form" class="im-auth-form">
+            <!-- Error Message -->
+            <div id="error-message" class="im-auth-error hidden"></div>
+
+            <!-- Success Message -->
+            <div id="success-message" class="hidden" style="background: rgba(52, 199, 89, 0.1); border: 1px solid rgba(52, 199, 89, 0.3); border-radius: var(--radius-md); padding: var(--space-3); font-size: 13px; color: var(--accent-green); margin-bottom: var(--space-4);"></div>
+
+            <!-- Display Name -->
+            <div class="im-form-group">
+                <label class="im-label" for="display_name">Display Name</label>
+                <input
+                    type="text"
+                    id="display_name"
+                    name="display_name"
+                    class="im-input-field"
+                    placeholder="How others will see you"
+                    required
+                    autofocus
+                >
+            </div>
+
+            <!-- Username -->
+            <div class="im-form-group">
+                <label class="im-label" for="username">Username</label>
+                <input
+                    type="text"
+                    id="username"
+                    name="username"
+                    class="im-input-field"
+                    placeholder="Choose a unique username"
+                    pattern="[a-zA-Z0-9_]+"
+                    required
+                >
+                <span style="font-size: 11px; color: var(--text-tertiary); margin-top: 4px; display: block;">
+                    Letters, numbers, and underscores only
+                </span>
+            </div>
+
+            <!-- Email -->
+            <div class="im-form-group">
+                <label class="im-label" for="email">Email</label>
+                <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    class="im-input-field"
+                    placeholder="your@email.com"
+                    required
+                >
+            </div>
+
+            <!-- Password -->
+            <div class="im-form-group">
+                <label class="im-label" for="password">Password</label>
+                <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    class="im-input-field"
+                    placeholder="Create a strong password"
+                    minlength="6"
+                    required
+                >
+                <span style="font-size: 11px; color: var(--text-tertiary); margin-top: 4px; display: block;">
+                    At least 6 characters
+                </span>
+            </div>
+
+            <!-- Confirm Password -->
+            <div class="im-form-group">
+                <label class="im-label" for="confirm_password">Confirm Password</label>
+                <input
+                    type="password"
+                    id="confirm_password"
+                    name="confirm_password"
+                    class="im-input-field"
+                    placeholder="Confirm your password"
+                    required
+                >
+            </div>
+
+            <!-- Terms -->
+            <div class="im-form-group">
+                <label class="im-checkbox">
+                    <input type="checkbox" id="terms" required>
+                    <span style="font-size: 13px;">I agree to the <a href="#" style="color: var(--text-link);">Terms of Service</a></span>
+                </label>
+            </div>
+
+            <!-- Submit Button -->
+            <button type="submit" class="im-btn im-btn-primary im-btn-block im-btn-lg" id="submit-btn">
+                <span id="btn-text">Create Account</span>
+                <span id="btn-loading" class="hidden">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation: spin 1s linear infinite;">
+                        <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                    </svg>
+                </span>
+            </button>
+        </form>
+
+        <!-- Divider -->
+        <div class="im-auth-divider">
+            <span>or</span>
+        </div>
+
+        <!-- Back to Home -->
+        <a href="/" style="text-decoration: none;">
+            <button class="im-btn im-btn-secondary im-btn-block">
+                Back to Home
+            </button>
+        </a>
+
+        <!-- Footer -->
+        <div class="im-auth-footer">
+            Already have an account? <a href="/login">Sign in</a>
+        </div>
+    </div>
+</div>
+
+<style>
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+</style>
+
+<script>
+document.getElementById('register-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const errorDiv = document.getElementById('error-message');
+    const successDiv = document.getElementById('success-message');
+    const submitBtn = document.getElementById('submit-btn');
+    const btnText = document.getElementById('btn-text');
+    const btnLoading = document.getElementById('btn-loading');
+
+    const password = document.getElementById('password').value;
+    const confirmPassword = document.getElementById('confirm_password').value;
+
+    // Validate passwords match
+    if (password !== confirmPassword) {
+        errorDiv.textContent = 'Passwords do not match';
+        errorDiv.classList.remove('hidden');
+        return;
+    }
+
+    // Show loading state
+    submitBtn.disabled = true;
+    btnText.classList.add('hidden');
+    btnLoading.classList.remove('hidden');
+    errorDiv.classList.add('hidden');
+    successDiv.classList.add('hidden');
+
+    try {
+        const res = await fetch('/api/v1/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                display_name: document.getElementById('display_name').value,
+                username: document.getElementById('username').value,
+                email: document.getElementById('email').value,
+                password: password
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            successDiv.textContent = 'Account created successfully! Redirecting...';
+            successDiv.classList.remove('hidden');
+            setTimeout(() => {
+                window.location.href = '/app';
+            }, 1500);
+        } else {
+            submitBtn.disabled = false;
+            btnText.classList.remove('hidden');
+            btnLoading.classList.add('hidden');
+            errorDiv.textContent = data.error || 'Registration failed. Please try again.';
+            errorDiv.classList.remove('hidden');
+        }
+    } catch (err) {
+        submitBtn.disabled = false;
+        btnText.classList.remove('hidden');
+        btnLoading.classList.add('hidden');
+        errorDiv.textContent = 'Connection error. Please try again.';
+        errorDiv.classList.remove('hidden');
+    }
+});
+</script>
+{{end}}

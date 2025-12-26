@@ -1,0 +1,393 @@
+{{define "content"}}
+<div style="min-height: 100vh; background: var(--bg-base); overflow-y: auto;">
+    <!-- Header -->
+    <div style="position: sticky; top: 0; background: var(--bg-glass); backdrop-filter: var(--blur-glass); -webkit-backdrop-filter: var(--blur-glass); border-bottom: 1px solid var(--divider); z-index: 10;">
+        <div style="max-width: 600px; margin: 0 auto; padding: var(--space-4); display: flex; align-items: center; justify-content: space-between;">
+            <a href="/app" style="display: flex; align-items: center; gap: var(--space-2); color: var(--accent-blue); text-decoration: none; font-size: 14px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m15 18-6-6 6-6"/>
+                </svg>
+                Messages
+            </a>
+            <h1 style="font-size: 15px; font-weight: 600; color: var(--text-primary);">Settings</h1>
+            <div style="width: 80px;"></div>
+        </div>
+    </div>
+
+    <div class="im-settings">
+        <!-- Profile Section -->
+        <div class="im-settings-section">
+            <div class="im-settings-title">Profile</div>
+            <div class="im-settings-card">
+                <div style="padding: var(--space-4); display: flex; align-items: center; gap: var(--space-4);">
+                    <div class="im-avatar" id="avatar-preview" style="width: 64px; height: 64px; font-size: 24px;"></div>
+                    <div style="flex: 1;">
+                        <div style="font-size: 17px; font-weight: 600; color: var(--text-primary);" id="display-name"></div>
+                        <div style="font-size: 13px; color: var(--text-secondary);" id="username-display"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Account Settings -->
+        <div class="im-settings-section">
+            <div class="im-settings-title">Account</div>
+            <div class="im-settings-card">
+                <form id="profile-form">
+                    <div style="padding: var(--space-4);">
+                        <div class="im-form-group">
+                            <label class="im-label" for="edit-display-name">Display Name</label>
+                            <input type="text" id="edit-display-name" class="im-input-field" placeholder="Your display name">
+                        </div>
+                        <div class="im-form-group">
+                            <label class="im-label" for="edit-username">Username</label>
+                            <input type="text" id="edit-username" class="im-input-field" disabled style="opacity: 0.6;">
+                        </div>
+                        <div class="im-form-group">
+                            <label class="im-label" for="edit-email">Email</label>
+                            <input type="email" id="edit-email" class="im-input-field" placeholder="your@email.com">
+                        </div>
+                        <div class="im-form-group" style="margin-bottom: 0;">
+                            <label class="im-label" for="edit-bio">Bio</label>
+                            <textarea id="edit-bio" class="im-input-field im-textarea" placeholder="Tell us about yourself" style="min-height: 80px;"></textarea>
+                        </div>
+                    </div>
+                    <div style="padding: var(--space-3) var(--space-4); border-top: 1px solid var(--divider); display: flex; justify-content: flex-end;">
+                        <button type="submit" class="im-btn im-btn-primary">Save Changes</button>
+                    </div>
+                </form>
+                <div id="profile-message" class="hidden" style="margin: 0 var(--space-4) var(--space-4); padding: var(--space-3); border-radius: var(--radius-md); font-size: 13px;"></div>
+            </div>
+        </div>
+
+        <!-- Appearance -->
+        <div class="im-settings-section">
+            <div class="im-settings-title">Appearance</div>
+            <div class="im-settings-card">
+                <div style="padding: var(--space-4);">
+                    <div style="font-size: 14px; color: var(--text-primary); margin-bottom: var(--space-3);">Theme</div>
+                    <div class="im-theme-grid">
+                        <!-- Modern Dark -->
+                        <label class="im-theme-option">
+                            <input type="radio" name="theme" value="dark">
+                            <div class="im-theme-preview">
+                                <div class="im-theme-preview-inner" style="background: #09090b; display: flex; flex-direction: column;">
+                                    <div style="height: 10px; background: #18181b;"></div>
+                                    <div style="flex: 1; padding: 6px;">
+                                        <div style="width: 70%; height: 10px; background: #27272a; margin-left: auto; border-radius: 4px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="im-theme-name">Dark</div>
+                        </label>
+
+                        <!-- Modern Light -->
+                        <label class="im-theme-option">
+                            <input type="radio" name="theme" value="light">
+                            <div class="im-theme-preview">
+                                <div class="im-theme-preview-inner" style="background: #ffffff; display: flex; flex-direction: column; border: 1px solid var(--divider);">
+                                    <div style="height: 10px; background: #f4f4f5;"></div>
+                                    <div style="flex: 1; padding: 6px;">
+                                        <div style="width: 70%; height: 10px; background: #e4e4e7; margin-left: auto; border-radius: 4px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="im-theme-name">Light</div>
+                        </label>
+
+                        <!-- iMessage -->
+                        <label class="im-theme-option">
+                            <input type="radio" name="theme" value="im26">
+                            <div class="im-theme-preview">
+                                <div class="im-theme-preview-inner" style="background: #f5f5f7; display: flex; flex-direction: column;">
+                                    <div style="height: 10px; background: rgba(255,255,255,0.8);"></div>
+                                    <div style="flex: 1; padding: 6px;">
+                                        <div style="width: 70%; height: 10px; background: linear-gradient(180deg, #1B8CFF, #007AFF); margin-left: auto; border-radius: 10px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="im-theme-name">iMessage</div>
+                        </label>
+
+                        <!-- AIM Classic -->
+                        <label class="im-theme-option">
+                            <input type="radio" name="theme" value="aim1.0">
+                            <div class="im-theme-preview">
+                                <div class="im-theme-preview-inner" style="background: #008080; padding: 4px;">
+                                    <div style="background: #c0c0c0; height: 100%; border: 1px outset;">
+                                        <div style="height: 10px; background: linear-gradient(90deg, #000080, #1084d0);"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="im-theme-name">AIM Classic</div>
+                        </label>
+
+                        <!-- Yahoo XP -->
+                        <label class="im-theme-option">
+                            <input type="radio" name="theme" value="ymxp">
+                            <div class="im-theme-preview">
+                                <div class="im-theme-preview-inner" style="background: #5C7EC0; padding: 4px;">
+                                    <div style="background: #ECE9D8; height: 100%;">
+                                        <div style="height: 10px; background: linear-gradient(180deg, #3168D8, #1941A3);"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="im-theme-name">Yahoo! XP</div>
+                        </label>
+                    </div>
+                </div>
+                <div style="padding: var(--space-3) var(--space-4); border-top: 1px solid var(--divider); display: flex; justify-content: flex-end;">
+                    <button type="button" class="im-btn im-btn-primary" onclick="applyTheme()">Apply Theme</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Privacy -->
+        <div class="im-settings-section">
+            <div class="im-settings-title">Privacy</div>
+            <div class="im-settings-card">
+                <div class="im-settings-item">
+                    <span class="im-settings-label">Read Receipts</span>
+                    <div class="im-toggle">
+                        <input type="checkbox" id="privacy-read-receipts" checked>
+                    </div>
+                </div>
+                <div class="im-settings-item">
+                    <span class="im-settings-label">Show Online Status</span>
+                    <div class="im-toggle">
+                        <input type="checkbox" id="privacy-online-status" checked>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notifications -->
+        <div class="im-settings-section">
+            <div class="im-settings-title">Notifications</div>
+            <div class="im-settings-card">
+                <div class="im-settings-item">
+                    <span class="im-settings-label">Message Notifications</span>
+                    <div class="im-toggle">
+                        <input type="checkbox" id="notify-messages" checked>
+                    </div>
+                </div>
+                <div class="im-settings-item">
+                    <span class="im-settings-label">Sound</span>
+                    <div class="im-toggle">
+                        <input type="checkbox" id="notify-sound" checked>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Password -->
+        <div class="im-settings-section">
+            <div class="im-settings-title">Security</div>
+            <div class="im-settings-card">
+                <form id="password-form">
+                    <div style="padding: var(--space-4);">
+                        <div class="im-form-group">
+                            <label class="im-label" for="current-password">Current Password</label>
+                            <input type="password" id="current-password" class="im-input-field" placeholder="Enter current password">
+                        </div>
+                        <div class="im-form-group">
+                            <label class="im-label" for="new-password">New Password</label>
+                            <input type="password" id="new-password" class="im-input-field" placeholder="Enter new password" minlength="6">
+                        </div>
+                        <div class="im-form-group" style="margin-bottom: 0;">
+                            <label class="im-label" for="confirm-new-password">Confirm New Password</label>
+                            <input type="password" id="confirm-new-password" class="im-input-field" placeholder="Confirm new password">
+                        </div>
+                    </div>
+                    <div id="password-message" class="hidden" style="margin: 0 var(--space-4); padding: var(--space-3); border-radius: var(--radius-md); font-size: 13px;"></div>
+                    <div style="padding: var(--space-3) var(--space-4); border-top: 1px solid var(--divider); display: flex; justify-content: flex-end;">
+                        <button type="submit" class="im-btn im-btn-secondary">Change Password</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Sign Out -->
+        <div class="im-settings-section">
+            <div class="im-settings-card">
+                <button class="im-btn im-btn-danger im-btn-block" onclick="logout()" style="margin: var(--space-4);">
+                    Sign Out
+                </button>
+            </div>
+        </div>
+
+        <!-- Footer spacing -->
+        <div style="height: var(--space-8);"></div>
+    </div>
+</div>
+
+<script>
+let currentUser = null;
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadCurrentUser();
+    loadSettings();
+    initThemeSelection();
+});
+
+async function loadCurrentUser() {
+    try {
+        const res = await fetch('/api/v1/users/me');
+        const data = await res.json();
+        if (data.success && data.data) {
+            currentUser = data.data;
+            populateProfile();
+        } else {
+            window.location.href = '/login';
+        }
+    } catch (err) {
+        console.error('Failed to load user:', err);
+        window.location.href = '/login';
+    }
+}
+
+function populateProfile() {
+    const initial = (currentUser.display_name || currentUser.username || '?').charAt(0).toUpperCase();
+    document.getElementById('avatar-preview').textContent = initial;
+    document.getElementById('display-name').textContent = currentUser.display_name || currentUser.username;
+    document.getElementById('username-display').textContent = '@' + currentUser.username;
+    document.getElementById('edit-display-name').value = currentUser.display_name || '';
+    document.getElementById('edit-username').value = currentUser.username || '';
+    document.getElementById('edit-email').value = currentUser.email || '';
+    document.getElementById('edit-bio').value = currentUser.bio || '';
+}
+
+function loadSettings() {
+    const settings = JSON.parse(localStorage.getItem('settings') || '{}');
+    document.getElementById('privacy-read-receipts').checked = settings.readReceipts !== false;
+    document.getElementById('privacy-online-status').checked = settings.onlineStatus !== false;
+    document.getElementById('notify-messages').checked = settings.notifyMessages !== false;
+    document.getElementById('notify-sound').checked = settings.notifySound !== false;
+}
+
+function initThemeSelection() {
+    const theme = localStorage.getItem('theme') || 'im26';
+    const radio = document.querySelector(`input[name="theme"][value="${theme}"]`);
+    if (radio) radio.checked = true;
+}
+
+function applyTheme() {
+    const selected = document.querySelector('input[name="theme"]:checked');
+    if (selected && typeof setTheme === 'function') {
+        setTheme(selected.value);
+    }
+}
+
+// Profile form
+document.getElementById('profile-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const messageDiv = document.getElementById('profile-message');
+
+    try {
+        const res = await fetch('/api/v1/users/me', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                display_name: document.getElementById('edit-display-name').value,
+                email: document.getElementById('edit-email').value,
+                bio: document.getElementById('edit-bio').value
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.success && data.data) {
+            messageDiv.textContent = 'Profile saved successfully!';
+            messageDiv.style.background = 'rgba(52, 199, 89, 0.1)';
+            messageDiv.style.color = 'var(--accent-green)';
+            messageDiv.classList.remove('hidden');
+            currentUser = { ...currentUser, ...data.data };
+            populateProfile();
+        } else {
+            messageDiv.textContent = data.error || 'Failed to save profile';
+            messageDiv.style.background = 'rgba(255, 59, 48, 0.1)';
+            messageDiv.style.color = 'var(--accent-red)';
+            messageDiv.classList.remove('hidden');
+        }
+    } catch (err) {
+        messageDiv.textContent = 'Error saving profile';
+        messageDiv.style.background = 'rgba(255, 59, 48, 0.1)';
+        messageDiv.style.color = 'var(--accent-red)';
+        messageDiv.classList.remove('hidden');
+    }
+
+    setTimeout(() => messageDiv.classList.add('hidden'), 3000);
+});
+
+// Password form
+document.getElementById('password-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const messageDiv = document.getElementById('password-message');
+    const newPassword = document.getElementById('new-password').value;
+    const confirmPassword = document.getElementById('confirm-new-password').value;
+
+    if (newPassword !== confirmPassword) {
+        messageDiv.textContent = 'Passwords do not match';
+        messageDiv.style.background = 'rgba(255, 59, 48, 0.1)';
+        messageDiv.style.color = 'var(--accent-red)';
+        messageDiv.classList.remove('hidden');
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/v1/users/me/password', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                current_password: document.getElementById('current-password').value,
+                new_password: newPassword
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            messageDiv.textContent = 'Password changed successfully!';
+            messageDiv.style.background = 'rgba(52, 199, 89, 0.1)';
+            messageDiv.style.color = 'var(--accent-green)';
+            messageDiv.classList.remove('hidden');
+            document.getElementById('password-form').reset();
+        } else {
+            messageDiv.textContent = data.error || 'Failed to change password';
+            messageDiv.style.background = 'rgba(255, 59, 48, 0.1)';
+            messageDiv.style.color = 'var(--accent-red)';
+            messageDiv.classList.remove('hidden');
+        }
+    } catch (err) {
+        messageDiv.textContent = 'Error changing password';
+        messageDiv.style.background = 'rgba(255, 59, 48, 0.1)';
+        messageDiv.style.color = 'var(--accent-red)';
+        messageDiv.classList.remove('hidden');
+    }
+
+    setTimeout(() => messageDiv.classList.add('hidden'), 3000);
+});
+
+// Save privacy/notification settings on change
+['privacy-read-receipts', 'privacy-online-status', 'notify-messages', 'notify-sound'].forEach(id => {
+    document.getElementById(id).addEventListener('change', () => {
+        const settings = {
+            readReceipts: document.getElementById('privacy-read-receipts').checked,
+            onlineStatus: document.getElementById('privacy-online-status').checked,
+            notifyMessages: document.getElementById('notify-messages').checked,
+            notifySound: document.getElementById('notify-sound').checked
+        };
+        localStorage.setItem('settings', JSON.stringify(settings));
+    });
+});
+
+async function logout() {
+    try {
+        await fetch('/api/v1/auth/logout', { method: 'POST' });
+    } catch (err) {
+        console.error('Logout error:', err);
+    }
+    window.location.href = '/';
+}
+</script>
+{{end}}

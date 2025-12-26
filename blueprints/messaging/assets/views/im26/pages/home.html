@@ -1,0 +1,73 @@
+{{define "content"}}
+<div class="im-auth-container">
+    <div class="im-auth-card">
+        <!-- iMessage Logo -->
+        <div class="im-auth-logo">
+            <svg viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <linearGradient id="imessage-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" stop-color="#5EE173"/>
+                        <stop offset="100%" stop-color="#34C759"/>
+                    </linearGradient>
+                </defs>
+                <rect width="72" height="72" rx="16" fill="url(#imessage-gradient)"/>
+                <path d="M36 16C24.954 16 16 23.835 16 33.5C16 38.186 18.298 42.426 22 45.41V56L31.677 50.307C33.059 50.538 34.5 50.667 36 50.667C47.046 50.667 56 42.832 56 33.333C56 23.835 47.046 16 36 16Z" fill="white"/>
+            </svg>
+        </div>
+
+        <h1 class="im-auth-title">Messages</h1>
+        <p class="im-auth-subtitle">Send and receive messages instantly. Stay connected with friends and family.</p>
+
+        <!-- Feature list -->
+        <div style="text-align: left; margin-bottom: var(--space-6);">
+            <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3);">
+                <div style="width: 32px; height: 32px; background: rgba(0, 122, 255, 0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#007AFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                </div>
+                <span style="font-size: 14px; color: var(--text-primary);">Send instant messages and photos</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3);">
+                <div style="width: 32px; height: 32px; background: rgba(52, 199, 89, 0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34C759" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="m9 12 2 2 4-4"/>
+                    </svg>
+                </div>
+                <span style="font-size: 14px; color: var(--text-primary);">Read receipts and typing indicators</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: var(--space-3);">
+                <div style="width: 32px; height: 32px; background: rgba(175, 82, 222, 0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#AF52DE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                    </svg>
+                </div>
+                <span style="font-size: 14px; color: var(--text-primary);">Share files and documents</span>
+            </div>
+        </div>
+
+        <!-- Action buttons -->
+        <div style="display: flex; flex-direction: column; gap: var(--space-3);">
+            <a href="/login" style="text-decoration: none;">
+                <button class="im-btn im-btn-primary im-btn-block im-btn-lg">
+                    Sign In
+                </button>
+            </a>
+            <a href="/register" style="text-decoration: none;">
+                <button class="im-btn im-btn-secondary im-btn-block im-btn-lg">
+                    Create Account
+                </button>
+            </a>
+        </div>
+
+        <!-- Footer -->
+        <div class="im-auth-footer">
+            <span style="color: var(--text-tertiary); font-size: 11px;">
+                A beautiful messaging experience
+            </span>
+        </div>
+    </div>
+</div>
+{{end}}
