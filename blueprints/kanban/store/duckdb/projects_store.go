@@ -87,11 +87,18 @@ func (s *ProjectsStore) Delete(ctx context.Context, id string) error {
 }
 
 func (s *ProjectsStore) IncrementIssueCounter(ctx context.Context, id string) (int, error) {
+	// Note: Using UPDATE + SELECT instead of UPDATE RETURNING due to
+	// DuckDB limitation with RETURNING when FK references exist
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = $1
+	`, id)
+	if err != nil {
+		return 0, err
+	}
+
 	var counter int
-	err := s.db.QueryRowContext(ctx, `
-		UPDATE projects SET issue_counter = issue_counter + 1
-		WHERE id = $1
-		RETURNING issue_counter
+	err = s.db.QueryRowContext(ctx, `
+		SELECT issue_counter FROM projects WHERE id = $1
 	`, id).Scan(&counter)
 	return counter, err
 }

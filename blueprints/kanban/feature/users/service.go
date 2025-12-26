@@ -10,10 +10,12 @@ import (
 )
 
 var (
-	ErrUserExists      = errors.New("user already exists")
-	ErrInvalidEmail    = errors.New("invalid email")
-	ErrInvalidPassword = errors.New("invalid password")
-	ErrNotFound        = errors.New("user not found")
+	ErrUserExists       = errors.New("user already exists")
+	ErrInvalidEmail     = errors.New("invalid email")
+	ErrInvalidPassword  = errors.New("invalid password")
+	ErrNotFound         = errors.New("user not found")
+	ErrMissingUsername  = errors.New("username is required")
+	ErrMissingEmailAddr = errors.New("email is required")
 )
 
 // Service implements the users API.
@@ -27,6 +29,14 @@ func NewService(store Store) *Service {
 }
 
 func (s *Service) Register(ctx context.Context, in *RegisterIn) (*User, *Session, error) {
+	// Validate required fields
+	if in.Username == "" {
+		return nil, nil, ErrMissingUsername
+	}
+	if in.Email == "" {
+		return nil, nil, ErrMissingEmailAddr
+	}
+
 	// Check if user already exists
 	existing, err := s.store.GetByEmail(ctx, in.Email)
 	if err != nil {
