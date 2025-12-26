@@ -2051,3 +2051,91 @@ input, textarea, select {
         background: var(--bg-glass-solid);
     }
 }
+
+/* ============================================
+   THEME SWITCHER FAB (iOS Style)
+   ============================================ */
+
+.theme-switcher-fab {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: var(--bg-glass);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 1000;
+    transition: transform 0.2s, box-shadow 0.2s;
+    user-select: none;
+    touch-action: none;
+}
+
+.theme-switcher-fab:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+
+.theme-switcher-fab:active,
+.theme-switcher-fab.dragging {
+    transform: scale(0.95);
+}
+
+.theme-switcher-icon {
+    width: 26px;
+    height: 26px;
+    color: var(--text-primary);
+}
+
+.theme-switcher-icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+.theme-switcher-tooltip {
+    position: absolute;
+    left: 58px;
+    background: var(--bg-glass);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    color: var(--text-primary);
+    padding: 8px 14px;
+    border-radius: var(--radius-lg);
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.theme-switcher-fab:hover .theme-switcher-tooltip {
+    opacity: 1;
+}
+
+/* ============================================
+   DISABLED STATE FOR MOCK UI ELEMENTS
+   ============================================ */
+
+.ui-disabled {
+    opacity: 0.4;
+    cursor: not-allowed !important;
+    pointer-events: none;
+}
+
+/* ============================================
+   LOGOUT BUTTON STYLING
+   ============================================ */
+
+.logout-btn {
+    color: var(--red);
+}

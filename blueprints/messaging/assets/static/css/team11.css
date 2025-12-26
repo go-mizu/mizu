@@ -1638,3 +1638,88 @@ body {
     background-color: var(--error);
     color: white;
 }
+
+/* ============================================
+   THEME SWITCHER FAB (Fluent/Teams Style)
+   ============================================ */
+
+.theme-switcher-fab {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 1000;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s;
+    user-select: none;
+    touch-action: none;
+}
+
+.theme-switcher-fab:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+    background: var(--bg-hover);
+}
+
+.theme-switcher-fab:active,
+.theme-switcher-fab.dragging {
+    transform: scale(0.95);
+}
+
+.theme-switcher-icon {
+    width: 24px;
+    height: 24px;
+    color: var(--text-primary);
+}
+
+.theme-switcher-icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+.theme-switcher-tooltip {
+    position: absolute;
+    left: 56px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border: 1px solid var(--border);
+}
+
+.theme-switcher-fab:hover .theme-switcher-tooltip {
+    opacity: 1;
+}
+
+/* ============================================
+   DISABLED STATE FOR MOCK UI ELEMENTS
+   ============================================ */
+
+.ui-disabled {
+    opacity: 0.4;
+    cursor: not-allowed !important;
+    pointer-events: none;
+}
+
+/* ============================================
+   LOGOUT BUTTON STYLING
+   ============================================ */
+
+.logout-btn {
+    color: var(--error);
+}

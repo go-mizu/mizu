@@ -1501,3 +1501,82 @@ input, textarea, select {
         max-width: 85%;
     }
 }
+
+/* ============================================
+   THEME SWITCHER FAB (Mac OS 9 Style)
+   ============================================ */
+
+.theme-switcher-fab {
+    position: fixed;
+    bottom: 16px;
+    left: 16px;
+    width: 38px;
+    height: 38px;
+    background: var(--os9-window-bg);
+    border: 1px solid var(--os9-black);
+    box-shadow:
+        inset -1px -1px 0 var(--os9-gray-600),
+        inset 1px 1px 0 var(--os9-white);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 1000;
+    user-select: none;
+    touch-action: none;
+}
+
+.theme-switcher-fab:active,
+.theme-switcher-fab.dragging {
+    box-shadow:
+        inset 1px 1px 0 var(--os9-gray-600),
+        inset -1px -1px 0 var(--os9-white);
+}
+
+.theme-switcher-icon {
+    width: 20px;
+    height: 20px;
+    color: var(--os9-black);
+}
+
+.theme-switcher-icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+.theme-switcher-tooltip {
+    position: absolute;
+    left: 46px;
+    background: #ffffe1;
+    color: var(--os9-black);
+    padding: 3px 8px;
+    border: 1px solid var(--os9-black);
+    font-size: 11px;
+    font-family: var(--font-system);
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+}
+
+.theme-switcher-fab:hover .theme-switcher-tooltip {
+    opacity: 1;
+}
+
+/* ============================================
+   DISABLED STATE FOR MOCK UI ELEMENTS
+   ============================================ */
+
+.ui-disabled {
+    opacity: 0.5;
+    cursor: not-allowed !important;
+    pointer-events: none;
+}
+
+/* ============================================
+   LOGOUT BUTTON STYLING
+   ============================================ */
+
+.logout-btn {
+    color: #800000;
+}
