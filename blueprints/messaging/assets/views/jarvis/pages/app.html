@@ -1,4 +1,53 @@
 {{define "content"}}
+<!-- JARVIS HUD Overlay Elements -->
+<div class="jarvis-hex-grid"></div>
+
+<!-- Floating Particles -->
+<div class="jarvis-particles">
+    <div class="jarvis-particle"></div>
+    <div class="jarvis-particle"></div>
+    <div class="jarvis-particle"></div>
+    <div class="jarvis-particle"></div>
+    <div class="jarvis-particle"></div>
+    <div class="jarvis-particle"></div>
+    <div class="jarvis-particle"></div>
+    <div class="jarvis-particle"></div>
+    <div class="jarvis-particle"></div>
+    <div class="jarvis-particle"></div>
+</div>
+
+<!-- Data Streams -->
+<div class="jarvis-data-stream"></div>
+<div class="jarvis-data-stream"></div>
+<div class="jarvis-data-stream"></div>
+<div class="jarvis-data-stream"></div>
+<div class="jarvis-data-stream"></div>
+
+<!-- HUD Corner Frames -->
+<div class="jarvis-hud-frame top-left"></div>
+<div class="jarvis-hud-frame top-right"></div>
+<div class="jarvis-hud-frame bottom-left"></div>
+<div class="jarvis-hud-frame bottom-right"></div>
+
+<!-- System Readout -->
+<div class="jarvis-data-readout" id="jarvis-readout"></div>
+
+<!-- System Status -->
+<div class="jarvis-system-status">
+    <div class="jarvis-status-item">
+        <span class="jarvis-status-dot"></span>
+        <span>CORE</span>
+    </div>
+    <div class="jarvis-status-item">
+        <span class="jarvis-status-dot"></span>
+        <span>COMM</span>
+    </div>
+    <div class="jarvis-status-item">
+        <span class="jarvis-status-dot"></span>
+        <span>SEC</span>
+    </div>
+</div>
+
 <div class="neural-app">
     <!-- Contact List Sidebar -->
     <div id="contact-list-window" class="neural-window neural-sidebar">
@@ -191,7 +240,7 @@
             </div>
 
             <!-- Input Wrapper -->
-            <div class="neural-input-wrapper">
+            <div class="neural-input-wrapper" id="neural-input-wrapper">
                 <textarea id="message-input" class="neural-textarea" placeholder="Transmit your message..." onkeydown="handleKeyDown(event)" oninput="updateCharCount()"></textarea>
                 <button class="neural-send-btn" onclick="sendMessage()" title="Transmit">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -408,7 +457,38 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Initialize theme switcher
     document.getElementById('theme-switcher-fab').onclick = cycleToNextTheme;
+
+    // Add holographic ripple effect on clicks
+    document.addEventListener('click', (e) => {
+        if (e.target.closest('.neural-btn, .neural-action-btn, .neural-send-btn, .neural-contact')) {
+            createRipple(e);
+        }
+    });
+
+    // Update data readout periodically
+    updateDataReadout();
+    setInterval(updateDataReadout, 5000);
 });
+
+// Create ripple effect
+function createRipple(e) {
+    const ripple = document.createElement('div');
+    ripple.className = 'jarvis-ripple';
+    ripple.style.left = e.clientX + 'px';
+    ripple.style.top = e.clientY + 'px';
+    document.body.appendChild(ripple);
+    setTimeout(() => ripple.remove(), 600);
+}
+
+// Update data readout
+function updateDataReadout() {
+    const readout = document.getElementById('jarvis-readout');
+    if (readout) {
+        const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+        const date = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        readout.textContent = `${time} // ${date.toUpperCase()}`;
+    }
+}
 
 // Ensure user has default chats
 async function ensureUserChats() {
@@ -698,6 +778,249 @@ function renderReactions(msg) {
             </span>
         `).join('')}
     </div>`;
+}
+
+// Render media content in a message
+function renderMediaContent(msg) {
+    if (!msg.media_url && !msg.media_id) return '';
+
+    const mediaType = msg.media_type || msg.type;
+    const url = msg.media_url || `/api/v1/media/${msg.media_id}/download`;
+    const thumbnailUrl = msg.media_thumbnail_url || url;
+    const filename = msg.media_filename || 'file';
+    const size = msg.media_size || 0;
+
+    switch (mediaType) {
+        case 'image':
+            const imageMediaObj = JSON.stringify({type: 'image', url: url, original_filename: filename}).replace(/'/g, "\\'");
+            return `
+                <div class="neural-media neural-image" onclick="window.MediaUpload?.showLightbox([${imageMediaObj}], 0)">
+                    <img src="${thumbnailUrl}" alt="${escapeHtml(filename)}" loading="lazy">
+                </div>
+            `;
+        case 'video':
+            return `
+                <div class="neural-media neural-video">
+                    <video controls preload="metadata" poster="${thumbnailUrl}">
+                        <source src="${url}" type="${msg.media_content_type || 'video/mp4'}">
+                    </video>
+                </div>
+            `;
+        case 'voice':
+            const voiceDuration = msg.media_duration || 0;
+            const voiceUrl = msg.media_url || `/api/v1/media/${msg.media_id}/stream`;
+            const voiceId = msg.media_id || msg.id;
+            return renderJarvisVoicePlayer(voiceId, voiceUrl, voiceDuration);
+        case 'audio':
+            const audioDuration = msg.media_duration || 0;
+            const audioUrl = msg.media_url || `/api/v1/media/${msg.media_id}/stream`;
+            const audioId = msg.media_id || msg.id;
+            return renderJarvisAudioPlayer(audioId, audioUrl, audioDuration, filename);
+        case 'document':
+        default:
+            const sizeStr = formatFileSize(size);
+            const ext = filename.split('.').pop().toUpperCase();
+            return `
+                <div class="neural-media neural-document">
+                    <a href="${url}" download="${escapeHtml(filename)}" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: rgba(0, 212, 255, 0.1); border: 1px solid rgba(0, 212, 255, 0.3); border-radius: 8px; text-decoration: none; color: inherit;">
+                        <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #00D4FF, #0066FF); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; color: #000;">
+                            ${ext}
+                        </div>
+                        <div style="flex: 1; min-width: 0;">
+                            <div style="color: #00D4FF; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(filename)}</div>
+                            <div style="font-size: 11px; color: rgba(0, 212, 255, 0.6);">${sizeStr}</div>
+                        </div>
+                        <svg style="width: 20px; height: 20px; color: #00D4FF;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                        </svg>
+                    </a>
+                </div>
+            `;
+    }
+}
+
+// Render Jarvis-style voice player
+function renderJarvisVoicePlayer(id, url, duration) {
+    const durationStr = formatDuration(duration);
+    const waveformBars = generateWaveformBars(20);
+    return `
+        <div class="jarvis-voice-player" data-audio-id="${id}" data-audio-url="${url}">
+            <button class="jarvis-voice-btn" onclick="toggleJarvisAudio('${id}', '${url}')">
+                <svg class="play-icon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                <svg class="pause-icon" style="display:none" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            </button>
+            <div class="jarvis-voice-wave" id="wave-${id}">
+                ${waveformBars}
+            </div>
+            <span class="jarvis-voice-duration" id="time-${id}">${durationStr}</span>
+        </div>
+        <audio id="audio-${id}" src="${url}" preload="metadata" style="display:none"></audio>
+    `;
+}
+
+// Render Jarvis-style audio player (for music/audio files)
+function renderJarvisAudioPlayer(id, url, duration, filename) {
+    const durationStr = formatDuration(duration);
+    return `
+        <div class="jarvis-audio-player" data-audio-id="${id}" data-audio-url="${url}">
+            <button class="jarvis-audio-btn" onclick="toggleJarvisAudio('${id}', '${url}')">
+                <svg class="play-icon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                <svg class="pause-icon" style="display:none" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            </button>
+            <div class="jarvis-audio-waveform">
+                <div class="jarvis-audio-progress" onclick="seekJarvisAudio(event, '${id}')">
+                    <div class="jarvis-audio-progress-fill" id="progress-${id}"></div>
+                </div>
+                <div class="jarvis-audio-time">
+                    <span id="current-${id}">0:00</span>
+                    <span id="duration-${id}">${durationStr}</span>
+                </div>
+            </div>
+            <div class="jarvis-audio-info">
+                <span class="jarvis-audio-label">AUDIO</span>
+                <span class="jarvis-audio-duration">${durationStr}</span>
+            </div>
+        </div>
+        <audio id="audio-${id}" src="${url}" preload="metadata" style="display:none"></audio>
+    `;
+}
+
+// Generate waveform bars
+function generateWaveformBars(count) {
+    let bars = '';
+    for (let i = 0; i < count; i++) {
+        const height = 20 + Math.random() * 80;
+        bars += `<div class="jarvis-voice-wave-bar" style="height: ${height}%"></div>`;
+    }
+    return bars;
+}
+
+// Format duration in mm:ss
+function formatDuration(seconds) {
+    if (!seconds || seconds === 0) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Audio playback state
+const jarvisAudioPlayers = {};
+
+// Toggle Jarvis audio playback
+function toggleJarvisAudio(id, url) {
+    let audio = document.getElementById(`audio-${id}`);
+    if (!audio) return;
+
+    const player = audio.closest('.jarvis-voice-player, .jarvis-audio-player');
+    const playBtn = player?.querySelector('.jarvis-voice-btn, .jarvis-audio-btn');
+    const playIcon = playBtn?.querySelector('.play-icon');
+    const pauseIcon = playBtn?.querySelector('.pause-icon');
+
+    // Pause all other audio
+    document.querySelectorAll('audio').forEach(a => {
+        if (a.id !== `audio-${id}` && !a.paused) {
+            a.pause();
+            const otherId = a.id.replace('audio-', '');
+            const otherPlayer = a.closest('.jarvis-voice-player, .jarvis-audio-player');
+            if (otherPlayer) {
+                otherPlayer.querySelector('.play-icon').style.display = '';
+                otherPlayer.querySelector('.pause-icon').style.display = 'none';
+                otherPlayer.querySelector('.jarvis-voice-btn, .jarvis-audio-btn')?.classList.remove('playing');
+            }
+        }
+    });
+
+    if (audio.paused) {
+        audio.play();
+        if (playIcon) playIcon.style.display = 'none';
+        if (pauseIcon) pauseIcon.style.display = '';
+        playBtn?.classList.add('playing');
+
+        // Update waveform animation for voice
+        const waveContainer = document.getElementById(`wave-${id}`);
+        if (waveContainer) {
+            waveContainer.querySelectorAll('.jarvis-voice-wave-bar').forEach(bar => {
+                bar.classList.add('active');
+            });
+        }
+
+        // Set up progress updates
+        if (!jarvisAudioPlayers[id]) {
+            jarvisAudioPlayers[id] = true;
+            audio.addEventListener('timeupdate', () => updateJarvisProgress(id, audio));
+            audio.addEventListener('ended', () => endJarvisAudio(id));
+        }
+    } else {
+        audio.pause();
+        if (playIcon) playIcon.style.display = '';
+        if (pauseIcon) pauseIcon.style.display = 'none';
+        playBtn?.classList.remove('playing');
+
+        // Stop waveform animation
+        const waveContainer = document.getElementById(`wave-${id}`);
+        if (waveContainer) {
+            waveContainer.querySelectorAll('.jarvis-voice-wave-bar').forEach(bar => {
+                bar.classList.remove('active');
+            });
+        }
+    }
+}
+
+// Update progress bar
+function updateJarvisProgress(id, audio) {
+    const progress = document.getElementById(`progress-${id}`);
+    const currentTime = document.getElementById(`current-${id}`);
+    const timeDisplay = document.getElementById(`time-${id}`);
+
+    if (audio.duration) {
+        const percent = (audio.currentTime / audio.duration) * 100;
+        if (progress) progress.style.width = `${percent}%`;
+        if (currentTime) currentTime.textContent = formatDuration(audio.currentTime);
+        if (timeDisplay) timeDisplay.textContent = formatDuration(audio.currentTime);
+    }
+}
+
+// Handle audio ended
+function endJarvisAudio(id) {
+    const audio = document.getElementById(`audio-${id}`);
+    const player = audio?.closest('.jarvis-voice-player, .jarvis-audio-player');
+    const playBtn = player?.querySelector('.jarvis-voice-btn, .jarvis-audio-btn');
+    const playIcon = playBtn?.querySelector('.play-icon');
+    const pauseIcon = playBtn?.querySelector('.pause-icon');
+
+    if (playIcon) playIcon.style.display = '';
+    if (pauseIcon) pauseIcon.style.display = 'none';
+    playBtn?.classList.remove('playing');
+
+    const progress = document.getElementById(`progress-${id}`);
+    if (progress) progress.style.width = '0%';
+
+    const waveContainer = document.getElementById(`wave-${id}`);
+    if (waveContainer) {
+        waveContainer.querySelectorAll('.jarvis-voice-wave-bar').forEach(bar => {
+            bar.classList.remove('active');
+        });
+    }
+}
+
+// Seek audio
+function seekJarvisAudio(event, id) {
+    const audio = document.getElementById(`audio-${id}`);
+    if (!audio || !audio.duration) return;
+
+    const progressBar = event.currentTarget;
+    const rect = progressBar.getBoundingClientRect();
+    const percent = (event.clientX - rect.left) / rect.width;
+    audio.currentTime = percent * audio.duration;
+}
+
+// Format file size
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
 // Handle sending sticker
@@ -1050,5 +1373,300 @@ function escapeHtml(str) {
     if (!str) return '';
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
+
+// Show error notification
+function showError(message) {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'neural-notification error';
+    errorDiv.innerHTML = `<span style="color: #FF4444;">⚠ ${escapeHtml(message)}</span>`;
+    errorDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; padding: 12px 20px; background: rgba(255, 68, 68, 0.1); border: 1px solid #FF4444; border-radius: 8px; z-index: 9999; color: #FF4444; font-family: monospace;';
+    document.body.appendChild(errorDiv);
+    setTimeout(() => errorDiv.remove(), 3000);
+}
+
+// =========================================
+// Media Upload Features
+// =========================================
+
+// Handle file input selection
+function handleFileSelect(event) {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+        uploadAndSendMedia(Array.from(files));
+    }
+    event.target.value = ''; // Reset for next selection
+}
+
+// Upload files and send as messages
+async function uploadAndSendMedia(files) {
+    if (!currentChat) {
+        showError('Please select a chat first');
+        return;
+    }
+
+    for (const file of files) {
+        try {
+            // Show preview modal
+            if (window.MediaUpload && window.MediaUpload.showMediaPreview) {
+                const proceed = await new Promise((resolve) => {
+                    window.MediaUpload.showMediaPreview(file, async (shouldSend, caption) => {
+                        if (shouldSend) {
+                            await sendMediaMessage(file, caption);
+                        }
+                        resolve(shouldSend);
+                    });
+                });
+            } else {
+                // Fallback: send directly without preview
+                await sendMediaMessage(file, '');
+            }
+        } catch (err) {
+            console.error('Failed to upload media:', err);
+            showError('Failed to upload: ' + file.name);
+        }
+    }
+}
+
+// Send a single media message
+async function sendMediaMessage(file, caption) {
+    if (!currentChat) return;
+
+    try {
+        // Upload the file
+        const result = await window.MediaUpload.uploadMedia(file, (progress) => {
+            console.log('Upload progress:', progress);
+        });
+
+        if (result && result.id) {
+            // Send message with media attachment
+            const res = await fetch(`/api/v1/chats/${currentChat.id}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    content: caption || '',
+                    type: result.type || 'media',
+                    media_id: result.id,
+                    media_url: result.url,
+                    media_type: result.type,
+                    media_content_type: result.content_type,
+                    media_filename: result.original_filename,
+                    media_size: result.size,
+                    media_width: result.width,
+                    media_height: result.height,
+                    media_duration: result.duration,
+                    media_thumbnail_url: result.thumbnail_url
+                })
+            });
+
+            const data = await res.json();
+            if (data.success && data.data) {
+                messages.push(data.data);
+                renderMessages();
+                currentChat.last_message = data.data;
+                renderContactList();
+            }
+        }
+    } catch (err) {
+        console.error('Failed to send media:', err);
+        showError('Failed to send media');
+    }
+}
+
+// Initialize drag-drop for chat view
+function initMediaDragDrop() {
+    const chatView = document.getElementById('neural-chat-container');
+    if (!chatView || !window.MediaUpload) return;
+
+    window.MediaUpload.initDragDrop(chatView, (files) => {
+        uploadAndSendMedia(files);
+    });
+}
+
+// Initialize clipboard paste for message input
+function initMediaClipboardPaste() {
+    const messageInput = document.getElementById('message-input');
+    if (!messageInput || !window.MediaUpload) return;
+
+    window.MediaUpload.initClipboardPaste(messageInput, (files) => {
+        uploadAndSendMedia(files);
+    });
+}
+
+// =========================================
+// Voice Recording Features
+// =========================================
+
+let isRecordingVoice = false;
+
+// Voice recording state
+let voiceRecordingStartTime = null;
+let voiceRecordingInterval = null;
+let voiceMediaRecorder = null;
+let voiceChunks = [];
+
+// Handle voice record button click
+function handleVoiceRecord() {
+    if (!currentChat) {
+        showError('Please select a chat first');
+        return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+        showError('Voice recording is not supported in your browser');
+        return;
+    }
+
+    if (isRecordingVoice) return;
+    startJarvisVoiceRecording();
+}
+
+// Start Jarvis-style voice recording
+async function startJarvisVoiceRecording() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        voiceMediaRecorder = new MediaRecorder(stream);
+        voiceChunks = [];
+
+        voiceMediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) voiceChunks.push(e.data);
+        };
+
+        voiceMediaRecorder.onstop = async () => {
+            stream.getTracks().forEach(track => track.stop());
+            if (voiceChunks.length > 0) {
+                const blob = new Blob(voiceChunks, { type: 'audio/webm' });
+                const duration = (Date.now() - voiceRecordingStartTime) / 1000;
+                await sendVoiceMessage(blob, duration);
+            }
+        };
+
+        voiceMediaRecorder.start();
+        isRecordingVoice = true;
+        voiceRecordingStartTime = Date.now();
+
+        // Show Jarvis recording UI
+        const inputWrapper = document.getElementById('neural-input-wrapper');
+        const container = document.getElementById('voice-recording-container');
+        if (inputWrapper) inputWrapper.style.display = 'none';
+        container.classList.remove('hidden');
+        container.innerHTML = `
+            <div class="jarvis-recording-ui">
+                <div class="jarvis-recording-indicator"></div>
+                <span class="jarvis-recording-time" id="recording-time">0:00</span>
+                <div class="jarvis-recording-wave">
+                    <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+                </div>
+                <div class="jarvis-recording-actions">
+                    <button class="jarvis-record-cancel" onclick="cancelJarvisRecording()" title="Cancel">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                    </button>
+                    <button class="jarvis-record-send" onclick="sendJarvisRecording()" title="Send">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="22" y1="2" x2="11" y2="13"/>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        `;
+
+        // Update recording time
+        voiceRecordingInterval = setInterval(() => {
+            const elapsed = (Date.now() - voiceRecordingStartTime) / 1000;
+            const timeEl = document.getElementById('recording-time');
+            if (timeEl) timeEl.textContent = formatDuration(elapsed);
+        }, 100);
+
+    } catch (err) {
+        console.error('Failed to start recording:', err);
+        showError('Could not access microphone');
+    }
+}
+
+// Cancel voice recording
+function cancelJarvisRecording() {
+    if (voiceMediaRecorder && voiceMediaRecorder.state !== 'inactive') {
+        voiceChunks = []; // Clear chunks so nothing gets sent
+        voiceMediaRecorder.stop();
+    }
+    clearInterval(voiceRecordingInterval);
+    isRecordingVoice = false;
+
+    const inputWrapper = document.getElementById('neural-input-wrapper');
+    const container = document.getElementById('voice-recording-container');
+    if (inputWrapper) inputWrapper.style.display = '';
+    container.classList.add('hidden');
+    container.innerHTML = '';
+}
+
+// Send voice recording
+function sendJarvisRecording() {
+    if (voiceMediaRecorder && voiceMediaRecorder.state !== 'inactive') {
+        voiceMediaRecorder.stop();
+    }
+    clearInterval(voiceRecordingInterval);
+    isRecordingVoice = false;
+
+    const inputWrapper = document.getElementById('neural-input-wrapper');
+    const container = document.getElementById('voice-recording-container');
+    if (inputWrapper) inputWrapper.style.display = '';
+    container.classList.add('hidden');
+    container.innerHTML = '';
+}
+
+// Send voice message
+async function sendVoiceMessage(blob, duration) {
+    try {
+        // Upload the voice file
+        const formData = new FormData();
+        formData.append('file', blob, 'voice.webm');
+        formData.append('type', 'voice');
+
+        const uploadRes = await fetch('/api/v1/media/upload', {
+            method: 'POST',
+            body: formData
+        });
+        const uploadData = await uploadRes.json();
+
+        if (uploadData.success && uploadData.data) {
+            const media = uploadData.data;
+
+            // Send message with voice attachment
+            const res = await fetch(`/api/v1/chats/${currentChat.id}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    type: 'voice',
+                    content: '',
+                    media_id: media.id,
+                    media_url: media.url,
+                    media_type: 'voice',
+                    media_duration: duration
+                })
+            });
+
+            const data = await res.json();
+            if (data.success && data.data) {
+                messages.push(data.data);
+                renderMessages();
+                currentChat.last_message = data.data;
+                renderContactList();
+            }
+        }
+    } catch (err) {
+        console.error('Failed to send voice message:', err);
+        showError('Failed to send voice message');
+    }
+}
+
+// Initialize media features when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+        initMediaDragDrop();
+        initMediaClipboardPaste();
+    }, 100);
+});
 </script>
 {{end}}

@@ -287,7 +287,7 @@ func SetupDefaultChats(ctx context.Context, chatsSvc chats.API, messagesSvc mess
 				ChatID:        agentChat.ID,
 				Type:          messages.TypeSticker,
 				StickerPackID: "classic",
-				StickerID:     "thumbs-up",
+				StickerID:     "thumbs_up",
 			},
 			// Cat image message using Cataas
 			{
