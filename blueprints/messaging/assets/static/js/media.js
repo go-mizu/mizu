@@ -434,57 +434,539 @@ function initClipboardPaste(inputElement, onPaste) {
 
 class VoiceRecorder {
     constructor(options = {}) {
+        this.onStart = options.onStart || (() => {});
         this.onData = options.onData || (() => {});
         this.onStop = options.onStop || (() => {});
+        this.onError = options.onError || (() => {});
+        this.onCancel = options.onCancel || (() => {});
+        this.onAmplitude = options.onAmplitude || (() => {});
         this.mediaRecorder = null;
         this.audioChunks = [];
         this.startTime = 0;
         this.isRecording = false;
+        this.analyser = null;
+        this.audioContext = null;
+        this.stream = null;
+        this.amplitudeInterval = null;
+        this.waveformData = [];
+        this.maxDuration = options.maxDuration || 300000; // 5 minutes default
+        this.minDuration = options.minDuration || 1000; // 1 second minimum
+        this.maxDurationTimeout = null;
+    }
+
+    async checkPermission() {
+        try {
+            const result = await navigator.permissions.query({ name: 'microphone' });
+            return result.state;
+        } catch {
+            return 'prompt';
+        }
     }
 
     async start() {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            this.mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            this.stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                }
+            });
+
+            // Set up audio analysis for waveform
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const source = this.audioContext.createMediaStreamSource(this.stream);
+            this.analyser = this.audioContext.createAnalyser();
+            this.analyser.fftSize = 256;
+            source.connect(this.analyser);
+
+            // Choose best available format
+            let mimeType = 'audio/webm';
+            if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+                mimeType = 'audio/webm;codecs=opus';
+            } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+                mimeType = 'audio/mp4';
+            } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+                mimeType = 'audio/ogg';
+            }
+
+            this.mediaRecorder = new MediaRecorder(this.stream, { mimeType });
             this.audioChunks = [];
+            this.waveformData = [];
             this.startTime = Date.now();
             this.isRecording = true;
 
             this.mediaRecorder.ondataavailable = (e) => {
-                this.audioChunks.push(e.data);
+                if (e.data.size > 0) {
+                    this.audioChunks.push(e.data);
+                    this.onData(e.data);
+                }
             };
 
             this.mediaRecorder.onstop = () => {
-                const blob = new Blob(this.audioChunks, { type: 'audio/webm' });
                 const duration = Date.now() - this.startTime;
-                this.onStop(blob, duration);
-                stream.getTracks().forEach(track => track.stop());
+                if (duration < this.minDuration) {
+                    this.cleanup();
+                    this.onCancel('Recording too short');
+                    return;
+                }
+                const blob = new Blob(this.audioChunks, { type: mimeType });
+                this.onStop(blob, duration, this.waveformData);
+                this.cleanup();
+            };
+
+            this.mediaRecorder.onerror = (e) => {
+                this.cleanup();
+                this.onError(e.error || new Error('Recording failed'));
             };
 
             this.mediaRecorder.start(100);
+            this.onStart();
+
+            // Start amplitude monitoring
+            this.startAmplitudeMonitor();
+
+            // Set max duration timeout
+            this.maxDurationTimeout = setTimeout(() => {
+                if (this.isRecording) {
+                    this.stop();
+                }
+            }, this.maxDuration);
+
         } catch (err) {
             console.error('Failed to start recording:', err);
+            this.onError(err);
             throw err;
         }
+    }
+
+    startAmplitudeMonitor() {
+        if (!this.analyser) return;
+
+        const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+
+        this.amplitudeInterval = setInterval(() => {
+            if (!this.isRecording) return;
+
+            this.analyser.getByteFrequencyData(dataArray);
+            const sum = dataArray.reduce((a, b) => a + b, 0);
+            const avg = sum / dataArray.length;
+            const normalized = avg / 255;
+
+            this.waveformData.push(normalized);
+            this.onAmplitude(normalized);
+        }, 100);
     }
 
     stop() {
         if (this.mediaRecorder && this.isRecording) {
             this.isRecording = false;
+            if (this.maxDurationTimeout) {
+                clearTimeout(this.maxDurationTimeout);
+            }
             this.mediaRecorder.stop();
         }
     }
 
     cancel() {
-        if (this.mediaRecorder && this.isRecording) {
+        if (this.isRecording) {
             this.isRecording = false;
-            this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
-            this.audioChunks = [];
+            if (this.maxDurationTimeout) {
+                clearTimeout(this.maxDurationTimeout);
+            }
+            this.cleanup();
+            this.onCancel('Cancelled by user');
         }
     }
 
+    cleanup() {
+        if (this.amplitudeInterval) {
+            clearInterval(this.amplitudeInterval);
+            this.amplitudeInterval = null;
+        }
+        if (this.audioContext) {
+            this.audioContext.close();
+            this.audioContext = null;
+        }
+        if (this.stream) {
+            this.stream.getTracks().forEach(track => track.stop());
+            this.stream = null;
+        }
+        this.analyser = null;
+        this.audioChunks = [];
+    }
+
     getDuration() {
-        return Date.now() - this.startTime;
+        return this.isRecording ? Date.now() - this.startTime : 0;
+    }
+
+    getAmplitude() {
+        if (!this.analyser) return 0;
+        const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+        this.analyser.getByteFrequencyData(dataArray);
+        const sum = dataArray.reduce((a, b) => a + b, 0);
+        return sum / dataArray.length / 255;
+    }
+}
+
+// ============================================
+// VOICE RECORDING UI
+// ============================================
+
+let activeVoiceRecorder = null;
+let voiceRecordingUI = null;
+
+// Check if browser supports voice recording
+function supportsVoiceRecording() {
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+}
+
+// Show microphone permission modal
+function showMicPermissionModal(onAllow) {
+    const isRetroTheme = document.documentElement.getAttribute('data-theme')?.includes('aim') ||
+                         document.documentElement.getAttribute('data-theme')?.includes('ymxp');
+
+    const modal = document.createElement('div');
+    modal.className = 'voice-permission-modal';
+    modal.id = 'voice-permission-modal';
+
+    modal.innerHTML = `
+        <div class="voice-permission-content ${isRetroTheme ? 'retro' : ''}">
+            <div class="voice-permission-icon">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                </svg>
+            </div>
+            <h3 class="voice-permission-title">Microphone Access</h3>
+            <p class="voice-permission-text">
+                To send voice messages, please allow microphone access when prompted by your browser.
+            </p>
+            <button class="voice-permission-btn" onclick="this.closest('.voice-permission-modal').remove(); (${onAllow.toString()})();">
+                Allow Microphone
+            </button>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    };
+}
+
+// Create voice recording UI
+function createVoiceRecordingUI(container, onSend, onCancel) {
+    const isRetroTheme = document.documentElement.getAttribute('data-theme')?.includes('aim') ||
+                         document.documentElement.getAttribute('data-theme')?.includes('ymxp');
+
+    const ui = document.createElement('div');
+    ui.className = 'voice-recording-container';
+    ui.id = 'voice-recording-ui';
+
+    // Create waveform bars
+    let barsHtml = '';
+    for (let i = 0; i < 20; i++) {
+        barsHtml += `<div class="voice-live-waveform-bar" style="height: 8px;"></div>`;
+    }
+
+    ui.innerHTML = `
+        <button class="voice-cancel-btn" title="Cancel">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+        </button>
+        <div class="voice-recording-indicator">
+            <div class="voice-recording-dot"></div>
+            <span class="voice-recording-time">0:00</span>
+        </div>
+        <div class="voice-live-waveform">${barsHtml}</div>
+        <div class="voice-slide-hint">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+            <span>Slide to cancel</span>
+        </div>
+        <button class="voice-send-btn" title="Send">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+            </svg>
+        </button>
+    `;
+
+    const cancelBtn = ui.querySelector('.voice-cancel-btn');
+    const sendBtn = ui.querySelector('.voice-send-btn');
+    const timeDisplay = ui.querySelector('.voice-recording-time');
+    const waveformBars = ui.querySelectorAll('.voice-live-waveform-bar');
+
+    cancelBtn.onclick = () => {
+        onCancel();
+    };
+
+    sendBtn.onclick = () => {
+        onSend();
+    };
+
+    // Slide to cancel functionality
+    let startX = 0;
+    let isDragging = false;
+
+    ui.addEventListener('touchstart', (e) => {
+        startX = e.touches[0].clientX;
+        isDragging = true;
+    });
+
+    ui.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        const currentX = e.touches[0].clientX;
+        const diff = startX - currentX;
+        if (diff > 100) {
+            isDragging = false;
+            onCancel();
+        }
+    });
+
+    ui.addEventListener('touchend', () => {
+        isDragging = false;
+    });
+
+    container.appendChild(ui);
+
+    return {
+        element: ui,
+        updateTime: (ms) => {
+            timeDisplay.textContent = formatDuration(ms);
+        },
+        updateWaveform: (amplitude) => {
+            // Shift bars left and add new value
+            for (let i = 0; i < waveformBars.length - 1; i++) {
+                waveformBars[i].style.height = waveformBars[i + 1].style.height;
+            }
+            const height = Math.max(4, Math.min(28, amplitude * 28));
+            waveformBars[waveformBars.length - 1].style.height = height + 'px';
+        },
+        remove: () => {
+            ui.remove();
+        }
+    };
+}
+
+// Start voice recording
+async function startVoiceRecording(container, onComplete, onError) {
+    if (!supportsVoiceRecording()) {
+        onError(new Error('Voice recording not supported in this browser'));
+        return;
+    }
+
+    if (activeVoiceRecorder) {
+        activeVoiceRecorder.cancel();
+    }
+
+    let timeUpdateInterval = null;
+
+    activeVoiceRecorder = new VoiceRecorder({
+        onStart: () => {
+            voiceRecordingUI = createVoiceRecordingUI(
+                container,
+                () => activeVoiceRecorder.stop(),
+                () => activeVoiceRecorder.cancel()
+            );
+
+            timeUpdateInterval = setInterval(() => {
+                if (activeVoiceRecorder) {
+                    voiceRecordingUI.updateTime(activeVoiceRecorder.getDuration());
+                }
+            }, 100);
+        },
+        onAmplitude: (amp) => {
+            if (voiceRecordingUI) {
+                voiceRecordingUI.updateWaveform(amp);
+            }
+        },
+        onStop: async (blob, duration, waveform) => {
+            if (timeUpdateInterval) clearInterval(timeUpdateInterval);
+            if (voiceRecordingUI) voiceRecordingUI.remove();
+            voiceRecordingUI = null;
+            activeVoiceRecorder = null;
+
+            // Normalize waveform to 50 samples
+            const normalizedWaveform = normalizeWaveform(waveform, 50);
+
+            onComplete(blob, duration, normalizedWaveform);
+        },
+        onCancel: (reason) => {
+            if (timeUpdateInterval) clearInterval(timeUpdateInterval);
+            if (voiceRecordingUI) voiceRecordingUI.remove();
+            voiceRecordingUI = null;
+            activeVoiceRecorder = null;
+        },
+        onError: (err) => {
+            if (timeUpdateInterval) clearInterval(timeUpdateInterval);
+            if (voiceRecordingUI) voiceRecordingUI.remove();
+            voiceRecordingUI = null;
+            activeVoiceRecorder = null;
+            onError(err);
+        }
+    });
+
+    try {
+        await activeVoiceRecorder.start();
+    } catch (err) {
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+            showMicPermissionModal(() => startVoiceRecording(container, onComplete, onError));
+        } else {
+            onError(err);
+        }
+    }
+}
+
+// Normalize waveform to specified number of samples
+function normalizeWaveform(data, samples) {
+    if (!data || data.length === 0) return [];
+
+    const result = [];
+    const step = data.length / samples;
+
+    for (let i = 0; i < samples; i++) {
+        const start = Math.floor(i * step);
+        const end = Math.floor((i + 1) * step);
+        let sum = 0;
+        for (let j = start; j < end && j < data.length; j++) {
+            sum += data[j];
+        }
+        result.push(sum / (end - start) || 0);
+    }
+
+    // Normalize to 0-1 range
+    const max = Math.max(...result, 0.1);
+    return result.map(v => v / max);
+}
+
+// Upload voice message
+async function uploadVoiceMessage(blob, duration, waveform) {
+    const formData = new FormData();
+    const filename = `voice_${Date.now()}.webm`;
+    formData.append('file', blob, filename);
+    formData.append('type', 'voice');
+    formData.append('duration', duration.toString());
+    if (waveform && waveform.length > 0) {
+        formData.append('waveform', JSON.stringify(waveform));
+    }
+
+    const response = await fetch('/api/v1/media/upload', {
+        method: 'POST',
+        body: formData
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to upload voice message');
+    }
+
+    const data = await response.json();
+    return data.data || data;
+}
+
+// Render voice message in chat
+function renderVoiceMessage(mediaId, url, duration, waveform, isPlayed = false) {
+    const waveformData = typeof waveform === 'string' ? JSON.parse(waveform) : waveform;
+    const durationStr = formatDuration(duration);
+
+    // Generate waveform bars
+    let barsHtml = '';
+    const barCount = waveformData?.length || 30;
+    for (let i = 0; i < barCount; i++) {
+        const height = waveformData ? Math.max(4, waveformData[i] * 24) : 8;
+        barsHtml += `<div class="voice-waveform-bar" style="height: ${height}px;" data-index="${i}"></div>`;
+    }
+
+    return `
+        <div class="voice-message ${isPlayed ? '' : 'unplayed'}" data-media-id="${mediaId}" data-duration="${duration}">
+            <button class="voice-play-btn" onclick="toggleVoiceMessage(this)">
+                <svg class="icon-play" fill="currentColor" viewBox="0 0 24 24">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+                <svg class="icon-pause" fill="currentColor" viewBox="0 0 24 24">
+                    <rect x="6" y="4" width="4" height="16"/>
+                    <rect x="14" y="4" width="4" height="16"/>
+                </svg>
+                <svg class="icon-loading" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="10" stroke-width="2" stroke-dasharray="32" stroke-dashoffset="32"/>
+                </svg>
+            </button>
+            <div class="voice-waveform-container">
+                <div class="voice-waveform" onclick="seekVoiceMessage(event, this)">
+                    <div class="voice-waveform-bars">${barsHtml}</div>
+                </div>
+                <div class="voice-duration">
+                    <span class="voice-time-current">0:00</span>
+                    <span class="voice-time-total">${durationStr}</span>
+                </div>
+            </div>
+            <div class="voice-unplayed-indicator"></div>
+            <audio src="${url}" preload="metadata"></audio>
+        </div>
+    `;
+}
+
+// Toggle voice message playback
+function toggleVoiceMessage(button) {
+    const container = button.closest('.voice-message');
+    const audio = container.querySelector('audio');
+    const waveformBars = container.querySelectorAll('.voice-waveform-bar');
+    const currentTime = container.querySelector('.voice-time-current');
+    const duration = parseInt(container.dataset.duration, 10);
+
+    // Pause all other voice messages
+    document.querySelectorAll('.voice-message audio').forEach(a => {
+        if (a !== audio && !a.paused) {
+            a.pause();
+            const otherContainer = a.closest('.voice-message');
+            otherContainer.querySelector('.voice-play-btn').classList.remove('playing');
+        }
+    });
+
+    if (audio.paused) {
+        button.classList.add('playing');
+        container.classList.remove('unplayed');
+        audio.play();
+
+        // Update progress
+        audio.ontimeupdate = () => {
+            const progress = audio.currentTime / audio.duration;
+            currentTime.textContent = formatDuration(audio.currentTime * 1000);
+
+            // Update waveform bars
+            const playedCount = Math.floor(progress * waveformBars.length);
+            waveformBars.forEach((bar, i) => {
+                bar.classList.toggle('played', i < playedCount);
+            });
+        };
+
+        audio.onended = () => {
+            button.classList.remove('playing');
+            currentTime.textContent = '0:00';
+            waveformBars.forEach(bar => bar.classList.remove('played'));
+        };
+    } else {
+        button.classList.remove('playing');
+        audio.pause();
+    }
+}
+
+// Seek voice message
+function seekVoiceMessage(event, waveformContainer) {
+    const container = waveformContainer.closest('.voice-message');
+    const audio = container.querySelector('audio');
+    const rect = waveformContainer.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const progress = x / rect.width;
+
+    audio.currentTime = progress * audio.duration;
+
+    if (audio.paused) {
+        const button = container.querySelector('.voice-play-btn');
+        toggleVoiceMessage(button);
     }
 }
 
@@ -712,7 +1194,9 @@ function createAttachButton(chatId, onMediaSent) {
 // Export for global use
 window.MediaUpload = {
     upload: uploadMedia,
+    uploadMedia,
     showPreview: showMediaPreview,
+    showMediaPreview,
     showLightbox,
     initDragDrop,
     initClipboardPaste,
@@ -721,5 +1205,13 @@ window.MediaUpload = {
     createAttachButton,
     sendMessageWithMedia,
     formatFileSize,
-    getMediaType
+    formatDuration,
+    getMediaType,
+    // Voice recording
+    supportsVoiceRecording,
+    startVoiceRecording,
+    uploadVoiceMessage,
+    renderVoiceMessage,
+    toggleVoiceMessage,
+    seekVoiceMessage
 };

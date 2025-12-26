@@ -205,9 +205,12 @@
         </div>
 
         <!-- Input Area -->
-        <div class="ym-input-area">
+        <div class="ym-input-area" id="message-input-area">
             <textarea id="message-input" class="xp-textarea" style="width: 100%; height: 60px;" placeholder="Type your message here..." onkeydown="handleKeyDown(event)" oninput="updateCharCount()"></textarea>
         </div>
+
+        <!-- Voice Recording UI Container -->
+        <div id="voice-recording-container" class="hidden" style="padding: 8px;"></div>
 
         <!-- Bottom Toolbar -->
         <div class="ym-bottom-toolbar">
@@ -224,6 +227,10 @@
                 <button class="ym-emoticon-btn" onclick="toggleStickerPicker(this, handleSendSticker)" id="sticker-btn">
                     <span class="ym-smiley">&#127912;</span>
                     <span>Stickers</span>
+                </button>
+                <button class="ym-emoticon-btn voice-record-btn" id="voice-record-btn" onclick="handleVoiceRecord()" title="Record Voice">
+                    <span class="ym-smiley">&#127908;</span>
+                    <span>Voice</span>
                 </button>
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
@@ -1288,8 +1295,26 @@ function renderMediaContent(msg) {
                     </video>
                 </div>
             `;
-        case 'audio':
         case 'voice':
+            // Use enhanced voice message renderer
+            if (window.MediaUpload?.renderVoiceMessage) {
+                const streamUrl = msg.media_url || `/api/v1/media/${msg.media_id}/stream`;
+                return `<div class="ym-message-media">${window.MediaUpload.renderVoiceMessage(
+                    msg.media_id,
+                    streamUrl,
+                    msg.media_duration || 0,
+                    msg.media_waveform || '[]'
+                )}</div>`;
+            }
+            // Fallback
+            return `
+                <div class="ym-message-media ym-message-audio">
+                    <audio controls>
+                        <source src="${url}" type="${msg.media_content_type || 'audio/webm'}">
+                    </audio>
+                </div>
+            `;
+        case 'audio':
             return `
                 <div class="ym-message-media ym-message-audio">
                     <audio controls>
@@ -1343,5 +1368,85 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }, 100);
 });
+
+// =========================================
+// Voice Recording Features
+// =========================================
+
+let isRecordingVoice = false;
+
+// Handle voice record button click
+function handleVoiceRecord() {
+    if (!currentChat) {
+        alert('Please open a conversation first');
+        return;
+    }
+
+    if (!window.MediaUpload?.supportsVoiceRecording()) {
+        alert('Voice recording is not supported in your browser');
+        return;
+    }
+
+    if (isRecordingVoice) return;
+    isRecordingVoice = true;
+
+    // Hide the regular input area and show recording container
+    const inputArea = document.getElementById('message-input-area');
+    const container = document.getElementById('voice-recording-container');
+    inputArea.classList.add('hidden');
+    container.classList.remove('hidden');
+
+    window.MediaUpload.startVoiceRecording(
+        container,
+        async (blob, duration, waveform) => {
+            // Show input again
+            inputArea.classList.remove('hidden');
+            container.classList.add('hidden');
+            isRecordingVoice = false;
+
+            try {
+                // Upload voice message
+                const media = await window.MediaUpload.uploadVoiceMessage(blob, duration, waveform);
+
+                // Send message with voice attachment
+                const res = await fetch(`/api/v1/chats/${currentChat.id}/messages`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'voice',
+                        content: '',
+                        media_id: media.id,
+                        media_url: media.url,
+                        media_type: 'voice',
+                        media_duration: duration,
+                        media_waveform: JSON.stringify(waveform)
+                    })
+                });
+
+                const data = await res.json();
+                if (data.success && data.data) {
+                    messages.push(data.data);
+                    renderMessages();
+                    scrollToBottom();
+                    currentChat.last_message = data.data;
+                    renderFriendsList();
+                }
+            } catch (err) {
+                console.error('Failed to send voice message:', err);
+                alert('Failed to send voice message');
+            }
+        },
+        (err) => {
+            // Error or cancel
+            inputArea.classList.remove('hidden');
+            container.classList.add('hidden');
+            isRecordingVoice = false;
+
+            if (err && err.message) {
+                console.error('Voice recording error:', err.message);
+            }
+        }
+    );
+}
 </script>
 {{end}}
