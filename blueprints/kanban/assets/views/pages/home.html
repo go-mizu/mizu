@@ -1,0 +1,61 @@
+{{define "pages/home.html"}}
+{{template "layouts/default.html" .}}
+{{define "title"}}Home - Kanban{{end}}
+{{define "content"}}
+<div class="page-header">
+    <h1>Welcome, {{.User.DisplayName}}</h1>
+</div>
+
+<div class="page-content">
+    {{if .Workspaces}}
+    <div class="section">
+        <h2 class="section-title">Your Workspaces</h2>
+        <div class="workspace-grid">
+            {{range .Workspaces}}
+            <a href="/{{.Slug}}" class="workspace-card">
+                <div class="workspace-card-avatar" style="background: {{.AvatarURL | default "#6366f1"}}">
+                    {{slice .Name 0 1 | upper}}
+                </div>
+                <div class="workspace-card-info">
+                    <h3>{{.Name}}</h3>
+                    <p>{{.Description | default "No description"}}</p>
+                </div>
+            </a>
+            {{end}}
+        </div>
+    </div>
+    {{else}}
+    <div class="empty-state">
+        <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+            <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+            <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+            <rect x="14" y="14" width="7" height="7" rx="1"></rect>
+        </svg>
+        <h3 class="empty-state-title">No workspaces yet</h3>
+        <p class="empty-state-description">Create your first workspace to start organizing your projects.</p>
+        <button class="btn btn-primary" onclick="createWorkspace()">Create Workspace</button>
+    </div>
+    {{end}}
+</div>
+
+<script>
+function createWorkspace() {
+    const name = prompt('Workspace name:');
+    if (!name) return;
+
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+    fetch('/api/v1/workspaces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, slug })
+    }).then(res => {
+        if (res.ok) {
+            window.location.href = '/' + slug;
+        }
+    });
+}
+</script>
+{{end}}
+{{end}}

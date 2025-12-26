@@ -1,0 +1,188 @@
+{{define "pages/issue.html"}}
+{{template "layouts/default.html" .}}
+{{define "title"}}{{.Issue.Key}} - {{.Issue.Title}}{{end}}
+{{define "content"}}
+<div class="issue-page">
+    <div class="issue-header">
+        <div class="issue-breadcrumb">
+            <a href="/{{.Workspace.Slug}}/projects/{{.Project.Key}}">{{.Project.Name}}</a>
+            <span class="breadcrumb-separator">/</span>
+            <span>{{.Issue.Key}}</span>
+        </div>
+        <div class="issue-actions">
+            <button class="btn btn-ghost btn-sm" onclick="deleteIssue()">Delete</button>
+        </div>
+    </div>
+
+    <div class="issue-content">
+        <div class="issue-main">
+            <h1 class="issue-title" contenteditable="true" data-field="title">{{.Issue.Title}}</h1>
+
+            <div class="issue-description">
+                <h3>Description</h3>
+                <div class="description-content" contenteditable="true" data-field="description">
+                    {{if .Issue.Description}}
+                    {{.Issue.Description | safeHTML}}
+                    {{else}}
+                    <span class="placeholder">Add a description...</span>
+                    {{end}}
+                </div>
+            </div>
+
+            <div class="issue-comments">
+                <h3>Comments</h3>
+                <div class="comment-form">
+                    <textarea class="form-textarea" placeholder="Add a comment..." id="comment-input"></textarea>
+                    <button class="btn btn-primary btn-sm" onclick="addComment()">Comment</button>
+                </div>
+                <div class="comment-list" id="comment-list">
+                    <!-- Comments loaded via JS -->
+                </div>
+            </div>
+        </div>
+
+        <div class="issue-sidebar">
+            <div class="issue-property">
+                <label>Status</label>
+                <select class="form-select" data-field="status" onchange="updateIssue('status', this.value)">
+                    <option value="backlog" {{if eq .Issue.Status "backlog"}}selected{{end}}>Backlog</option>
+                    <option value="todo" {{if eq .Issue.Status "todo"}}selected{{end}}>Todo</option>
+                    <option value="in_progress" {{if eq .Issue.Status "in_progress"}}selected{{end}}>In Progress</option>
+                    <option value="in_review" {{if eq .Issue.Status "in_review"}}selected{{end}}>In Review</option>
+                    <option value="done" {{if eq .Issue.Status "done"}}selected{{end}}>Done</option>
+                    <option value="cancelled" {{if eq .Issue.Status "cancelled"}}selected{{end}}>Cancelled</option>
+                </select>
+            </div>
+
+            <div class="issue-property">
+                <label>Priority</label>
+                <select class="form-select" data-field="priority" onchange="updateIssue('priority', this.value)">
+                    <option value="none" {{if eq .Issue.Priority "none"}}selected{{end}}>No priority</option>
+                    <option value="low" {{if eq .Issue.Priority "low"}}selected{{end}}>Low</option>
+                    <option value="medium" {{if eq .Issue.Priority "medium"}}selected{{end}}>Medium</option>
+                    <option value="high" {{if eq .Issue.Priority "high"}}selected{{end}}>High</option>
+                    <option value="urgent" {{if eq .Issue.Priority "urgent"}}selected{{end}}>Urgent</option>
+                </select>
+            </div>
+
+            <div class="issue-property">
+                <label>Type</label>
+                <select class="form-select" data-field="type" onchange="updateIssue('type', this.value)">
+                    <option value="task" {{if eq .Issue.Type "task"}}selected{{end}}>Task</option>
+                    <option value="bug" {{if eq .Issue.Type "bug"}}selected{{end}}>Bug</option>
+                    <option value="story" {{if eq .Issue.Type "story"}}selected{{end}}>Story</option>
+                    <option value="epic" {{if eq .Issue.Type "epic"}}selected{{end}}>Epic</option>
+                    <option value="subtask" {{if eq .Issue.Type "subtask"}}selected{{end}}>Subtask</option>
+                </select>
+            </div>
+
+            {{if .Labels}}
+            <div class="issue-property">
+                <label>Labels</label>
+                <div class="issue-labels">
+                    {{range .Labels}}
+                    <span class="label" style="background: {{.Color}}">{{.Name}}</span>
+                    {{end}}
+                </div>
+            </div>
+            {{end}}
+
+            <div class="issue-property">
+                <label>Created</label>
+                <span class="issue-meta-value">{{formatTime .Issue.CreatedAt}}</span>
+            </div>
+
+            <div class="issue-property">
+                <label>Updated</label>
+                <span class="issue-meta-value">{{formatTime .Issue.UpdatedAt}}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const issueKey = '{{.Issue.Key}}';
+const issueId = '{{.Issue.ID}}';
+
+async function updateIssue(field, value) {
+    const data = {};
+    data[field] = value;
+
+    const res = await fetch('/api/v1/issues/' + issueKey, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    });
+
+    if (!res.ok) {
+        alert('Failed to update issue');
+    }
+}
+
+async function deleteIssue() {
+    if (!confirm('Are you sure you want to delete this issue?')) return;
+
+    const res = await fetch('/api/v1/issues/' + issueKey, {
+        method: 'DELETE'
+    });
+
+    if (res.ok) {
+        window.location.href = '/{{.Workspace.Slug}}/projects/{{.Project.Key}}';
+    } else {
+        alert('Failed to delete issue');
+    }
+}
+
+async function addComment() {
+    const input = document.getElementById('comment-input');
+    const content = input.value.trim();
+    if (!content) return;
+
+    const res = await fetch('/api/v1/issues/' + issueId + '/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+    });
+
+    if (res.ok) {
+        input.value = '';
+        loadComments();
+    }
+}
+
+async function loadComments() {
+    const res = await fetch('/api/v1/issues/' + issueId + '/comments');
+    if (res.ok) {
+        const comments = await res.json();
+        const list = document.getElementById('comment-list');
+        list.innerHTML = comments.map(c => `
+            <div class="comment">
+                <div class="comment-header">
+                    <span class="comment-author">User</span>
+                    <span class="comment-time">${new Date(c.created_at).toLocaleDateString()}</span>
+                </div>
+                <div class="comment-content">${c.content}</div>
+            </div>
+        `).join('');
+    }
+}
+
+// Title editing
+document.querySelector('.issue-title').addEventListener('blur', function() {
+    const newTitle = this.textContent.trim();
+    if (newTitle && newTitle !== '{{.Issue.Title}}') {
+        updateIssue('title', newTitle);
+    }
+});
+
+// Description editing
+document.querySelector('.description-content').addEventListener('blur', function() {
+    const newDesc = this.innerHTML.trim();
+    updateIssue('description', newDesc);
+});
+
+// Load comments on page load
+loadComments();
+</script>
+{{end}}
+{{end}}
