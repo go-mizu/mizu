@@ -1,0 +1,89 @@
+{{define "content"}}
+<div class="teams-auth-page">
+    <div class="teams-auth-card">
+        <div class="teams-auth-logo">
+            <svg class="teams-auth-logo-icon" viewBox="0 0 2228.833 2073.333" xmlns="http://www.w3.org/2000/svg">
+                <path d="M1554.637,777.5h575.713c54.391,0,98.483,44.092,98.483,98.483v524.398c0,199.901-162.051,361.952-361.952,361.952h0c-199.901,0-361.952-162.051-361.952-361.952V828.971C1505.93,800.544,1526.211,777.5,1554.637,777.5z" fill="currentColor"/>
+                <circle cx="1943.75" cy="440.583" r="233.25" fill="currentColor"/>
+                <path d="M1218.083,777.5h606.25c54.391,0,98.483,44.092,98.483,98.483v598.873c0,234.51-190.072,424.582-424.582,424.582h0c-234.51,0-424.582-190.072-424.582-424.582V876.395C1073.652,821.592,1118.255,777.5,1218.083,777.5z" fill="currentColor"/>
+                <circle cx="1623.333" cy="381.75" r="284.75" fill="currentColor"/>
+                <path d="M567.5,777.5h789.583c54.391,0,98.483,44.092,98.483,98.483v704.665c0,275.057-222.998,498.055-498.055,498.055h0C682.454,2078.703,459.456,1855.705,459.456,1580.647V876.395C459.456,822.095,503.2,777.5,567.5,777.5z" fill="currentColor"/>
+                <circle cx="1060.167" cy="340.083" r="340.083" fill="currentColor"/>
+            </svg>
+            <span class="teams-auth-logo-text">Teams</span>
+        </div>
+
+        <h1 class="teams-auth-title">Sign in</h1>
+        <p class="teams-auth-subtitle">Enter your credentials to access your account</p>
+
+        <form id="login-form" class="teams-auth-form">
+            <div class="teams-form-group">
+                <label class="teams-form-label" for="username">Username</label>
+                <input
+                    type="text"
+                    id="username"
+                    name="username"
+                    class="teams-input teams-input-lg"
+                    placeholder="Enter your username"
+                    required
+                    autocomplete="username"
+                >
+            </div>
+
+            <div class="teams-form-group">
+                <label class="teams-form-label" for="password">Password</label>
+                <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    class="teams-input teams-input-lg"
+                    placeholder="Enter your password"
+                    required
+                    autocomplete="current-password"
+                >
+            </div>
+
+            <div id="error-message" class="hidden" style="color: var(--error); font-size: 14px; text-align: center;"></div>
+
+            <button type="submit" class="teams-btn teams-btn-primary teams-btn-lg teams-btn-block">
+                Sign in
+            </button>
+        </form>
+
+        <div class="teams-auth-footer">
+            Don't have an account? <a href="/register">Create one</a>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorDiv = document.getElementById('error-message');
+    errorDiv.classList.add('hidden');
+
+    try {
+        const res = await fetch('/api/v1/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username: document.getElementById('username').value,
+                password: document.getElementById('password').value
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            window.location.href = '/app';
+        } else {
+            errorDiv.textContent = data.error || 'Login failed';
+            errorDiv.classList.remove('hidden');
+        }
+    } catch (err) {
+        errorDiv.textContent = 'An error occurred. Please try again.';
+        errorDiv.classList.remove('hidden');
+    }
+});
+</script>
+{{end}}
