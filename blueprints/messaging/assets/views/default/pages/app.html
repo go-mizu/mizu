@@ -43,7 +43,7 @@
                     id="search-input"
                     type="text"
                     placeholder="Search chats..."
-                    class="w-full pl-10 pr-4 py-2 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:border-[#25D366]"
+                    class="w-full pl-10 pr-4 py-2 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-zinc-400/20"
                     oninput="filterChats(this.value)"
                 >
             </div>
@@ -139,7 +139,7 @@
                             id="message-input"
                             rows="1"
                             placeholder="Type a message..."
-                            class="w-full px-4 py-3 pr-20 bg-tertiary border border-default rounded-2xl text-primary placeholder-muted focus:outline-none focus:border-[#25D366] resize-none max-h-32"
+                            class="w-full px-4 py-3 pr-20 bg-tertiary border border-default rounded-2xl text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-zinc-400/20 resize-none max-h-32"
                             oninput="autoResize(this); sendTyping(); updateVoiceButtonVisibility()"
                             onkeydown="handleKeyDown(event)"
                         ></textarea>
@@ -215,7 +215,7 @@
                 type="text"
                 id="contact-search"
                 placeholder="Search users by name or username..."
-                class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:border-[#25D366] mb-4"
+                class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-zinc-400/20 mb-4"
                 oninput="searchUsers(this.value)"
             >
             <div id="contact-list" class="max-h-60 overflow-y-auto space-y-2">
@@ -241,7 +241,7 @@
 
         <!-- Tabs -->
         <div class="flex border-b border-default mb-6">
-            <button id="qr-tab-my-code" onclick="switchQRTab('my-code')" class="flex-1 py-3 text-center font-medium border-b-2 border-[#25D366] text-[#25D366]">My Code</button>
+            <button id="qr-tab-my-code" onclick="switchQRTab('my-code')" class="flex-1 py-3 text-center font-medium border-b-2 border-zinc-600 text-zinc-200">My Code</button>
             <button id="qr-tab-scan" onclick="switchQRTab('scan')" class="flex-1 py-3 text-center font-medium border-b-2 border-transparent text-secondary hover:text-primary">Add Friend</button>
         </div>
 
@@ -282,7 +282,7 @@
                     type="text"
                     id="friend-code-input"
                     placeholder="Enter friend code (e.g., MIZU-ABCD1234)"
-                    class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:border-[#25D366] font-mono text-center uppercase"
+                    class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-zinc-400/20 font-mono text-center uppercase"
                     oninput="this.value = this.value.toUpperCase()"
                 >
             </div>
@@ -573,7 +573,7 @@ async function loadMessages(chatId) {
     const container = document.getElementById('messages');
     container.innerHTML = `
         <div class="flex items-center justify-center h-full">
-            <div class="animate-spin w-8 h-8 border-2 border-[#25D366] border-t-transparent rounded-full"></div>
+            <div class="animate-spin w-8 h-8 border-2 border-zinc-600 border-t-transparent rounded-full"></div>
         </div>
     `;
 
@@ -645,7 +645,7 @@ function renderMessages() {
                         <button class="message-action-btn" onclick="handleReaction('${msg.id}')" title="React">😀</button>
                     </div>
                     <div class="${isSticker ? '' : (isSent ? 'sent-bubble' : 'received-bubble') + ' rounded-2xl px-4 py-2'} max-w-[70%] ${isSent ? 'rounded-br-md' : 'rounded-bl-md'}">
-                        ${!isSent && currentChat?.type === 'group' ? `<div class="text-xs text-[#25D366] font-medium mb-1">${escapeHtml(msg.sender_name || 'Unknown')}</div>` : ''}
+                        ${!isSent && currentChat?.type === 'group' ? `<div class="text-xs text-zinc-400 font-medium mb-1">${escapeHtml(msg.sender_name || 'Unknown')}</div>` : ''}
                         ${contentHtml}
                         <div class="flex items-center justify-end gap-1 mt-1">
                             <span class="text-xs text-muted">${formatTime(msg.created_at)}</span>
@@ -672,7 +672,7 @@ function renderMessages() {
 function getStatusIcon(status) {
     switch(status) {
         case 'read':
-            return '<span class="text-[#53bdeb] text-xs">✓✓</span>';
+            return '<span class="text-blue-400 text-xs">✓✓</span>';
         case 'delivered':
             return '<span class="text-muted text-xs">✓✓</span>';
         case 'sent':
@@ -1113,16 +1113,16 @@ function switchQRTab(tab) {
     const scanContent = document.getElementById('qr-scan-content');
 
     if (tab === 'my-code') {
-        myCodeTab.classList.add('border-[#25D366]', 'text-[#25D366]');
+        myCodeTab.classList.add('border-zinc-600', 'text-zinc-400');
         myCodeTab.classList.remove('border-transparent', 'text-secondary');
-        scanTab.classList.remove('border-[#25D366]', 'text-[#25D366]');
+        scanTab.classList.remove('border-zinc-600', 'text-zinc-400');
         scanTab.classList.add('border-transparent', 'text-secondary');
         myCodeContent.classList.remove('hidden');
         scanContent.classList.add('hidden');
     } else {
-        scanTab.classList.add('border-[#25D366]', 'text-[#25D366]');
+        scanTab.classList.add('border-zinc-600', 'text-zinc-400');
         scanTab.classList.remove('border-transparent', 'text-secondary');
-        myCodeTab.classList.remove('border-[#25D366]', 'text-[#25D366]');
+        myCodeTab.classList.remove('border-zinc-600', 'text-zinc-400');
         myCodeTab.classList.add('border-transparent', 'text-secondary');
         scanContent.classList.remove('hidden');
         myCodeContent.classList.add('hidden');

@@ -36,7 +36,7 @@
                         type="text"
                         id="display_name"
                         name="display_name"
-                        class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:border-[#25D366]"
+                        class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-zinc-400/20"
                         placeholder="Your display name"
                     >
                 </div>
@@ -47,7 +47,7 @@
                         type="text"
                         id="username"
                         name="username"
-                        class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:border-[#25D366]"
+                        class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-zinc-400/20"
                         placeholder="Your username"
                         readonly
                     >
@@ -60,7 +60,7 @@
                         type="email"
                         id="email"
                         name="email"
-                        class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:border-[#25D366]"
+                        class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-zinc-400/20"
                         placeholder="your@email.com"
                     >
                 </div>
@@ -71,7 +71,7 @@
                         id="bio"
                         name="bio"
                         rows="3"
-                        class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:border-[#25D366] resize-none"
+                        class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-zinc-400/20 resize-none"
                         placeholder="Tell us about yourself..."
                     ></textarea>
                 </div>
@@ -97,7 +97,7 @@
                         <div class="font-medium text-primary">Last Seen</div>
                         <div class="text-sm text-secondary">Who can see when you were last online</div>
                     </div>
-                    <select id="privacy-last-seen" class="px-4 py-2 bg-tertiary border border-default rounded-lg text-primary focus:outline-none focus:border-[#25D366]">
+                    <select id="privacy-last-seen" class="px-4 py-2 bg-tertiary border border-default rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-zinc-400/20">
                         <option value="everyone">Everyone</option>
                         <option value="contacts">My Contacts</option>
                         <option value="nobody">Nobody</option>
@@ -109,7 +109,7 @@
                         <div class="font-medium text-primary">Profile Photo</div>
                         <div class="text-sm text-secondary">Who can see your profile photo</div>
                     </div>
-                    <select id="privacy-photo" class="px-4 py-2 bg-tertiary border border-default rounded-lg text-primary focus:outline-none focus:border-[#25D366]">
+                    <select id="privacy-photo" class="px-4 py-2 bg-tertiary border border-default rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-zinc-400/20">
                         <option value="everyone">Everyone</option>
                         <option value="contacts">My Contacts</option>
                         <option value="nobody">Nobody</option>
@@ -123,7 +123,7 @@
                     </div>
                     <label class="relative inline-flex items-center cursor-pointer">
                         <input type="checkbox" id="privacy-read-receipts" class="sr-only peer" checked>
-                        <div class="w-11 h-6 bg-tertiary rounded-full peer peer-checked:bg-[#25D366] after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+                        <div class="w-11 h-6 bg-tertiary rounded-full peer peer-checked:bg-zinc-600 after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
                     </label>
                 </div>
             </div>
@@ -141,7 +141,7 @@
                     </div>
                     <label class="relative inline-flex items-center cursor-pointer">
                         <input type="checkbox" id="notify-messages" class="sr-only peer" checked>
-                        <div class="w-11 h-6 bg-tertiary rounded-full peer peer-checked:bg-[#25D366] after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+                        <div class="w-11 h-6 bg-tertiary rounded-full peer peer-checked:bg-zinc-600 after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
                     </label>
                 </div>
 
@@ -152,7 +152,7 @@
                     </div>
                     <label class="relative inline-flex items-center cursor-pointer">
                         <input type="checkbox" id="notify-groups" class="sr-only peer" checked>
-                        <div class="w-11 h-6 bg-tertiary rounded-full peer peer-checked:bg-[#25D366] after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+                        <div class="w-11 h-6 bg-tertiary rounded-full peer peer-checked:bg-zinc-600 after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
                     </label>
                 </div>
 
@@ -163,7 +163,7 @@
                     </div>
                     <label class="relative inline-flex items-center cursor-pointer">
                         <input type="checkbox" id="notify-sound" class="sr-only peer" checked>
-                        <div class="w-11 h-6 bg-tertiary rounded-full peer peer-checked:bg-[#25D366] after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+                        <div class="w-11 h-6 bg-tertiary rounded-full peer peer-checked:bg-zinc-600 after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
                     </label>
                 </div>
             </div>
@@ -182,24 +182,24 @@
                     <!-- Modern Dark Theme -->
                     <label class="theme-card cursor-pointer">
                         <input type="radio" name="theme" value="dark" class="sr-only peer">
-                        <div class="peer-checked:ring-2 peer-checked:ring-[#25D366] rounded-lg overflow-hidden border border-default hover:border-[#25D366] transition-colors">
-                            <div class="h-24 bg-[#0f0f0f] p-3">
+                        <div class="peer-checked:ring-2 peer-checked:ring-zinc-500 rounded-lg overflow-hidden border border-default hover:border-zinc-500 transition-colors">
+                            <div class="h-24 bg-[#09090b] p-3">
                                 <div class="flex gap-2 mb-2">
-                                    <div class="w-8 h-8 rounded-full bg-[#1a1a1a]"></div>
+                                    <div class="w-8 h-8 rounded-full bg-[#18181b]"></div>
                                     <div class="flex-1">
-                                        <div class="h-2 bg-[#1a1a1a] rounded w-16 mb-1"></div>
-                                        <div class="h-1.5 bg-[#252525] rounded w-12"></div>
+                                        <div class="h-2 bg-[#18181b] rounded w-16 mb-1"></div>
+                                        <div class="h-1.5 bg-[#27272a] rounded w-12"></div>
                                     </div>
                                 </div>
                                 <div class="flex justify-end">
-                                    <div class="bg-[#005c4b] rounded-lg px-2 py-1">
-                                        <div class="h-1.5 bg-[#0f0f0f]/30 rounded w-8"></div>
+                                    <div class="bg-[#27272a] rounded-lg px-2 py-1">
+                                        <div class="h-1.5 bg-[#fafafa]/30 rounded w-8"></div>
                                     </div>
                                 </div>
                             </div>
                             <div class="p-3 bg-tertiary">
                                 <div class="font-medium text-primary text-sm">Modern Dark</div>
-                                <div class="text-xs text-muted">Default dark theme</div>
+                                <div class="text-xs text-muted">Shadcn-inspired</div>
                             </div>
                         </div>
                     </label>
@@ -207,24 +207,24 @@
                     <!-- Modern Light Theme -->
                     <label class="theme-card cursor-pointer">
                         <input type="radio" name="theme" value="light" class="sr-only peer">
-                        <div class="peer-checked:ring-2 peer-checked:ring-[#25D366] rounded-lg overflow-hidden border border-default hover:border-[#25D366] transition-colors">
+                        <div class="peer-checked:ring-2 peer-checked:ring-zinc-500 rounded-lg overflow-hidden border border-default hover:border-zinc-500 transition-colors">
                             <div class="h-24 bg-[#ffffff] p-3">
                                 <div class="flex gap-2 mb-2">
-                                    <div class="w-8 h-8 rounded-full bg-[#f0f2f5]"></div>
+                                    <div class="w-8 h-8 rounded-full bg-[#fafafa]"></div>
                                     <div class="flex-1">
-                                        <div class="h-2 bg-[#f0f2f5] rounded w-16 mb-1"></div>
-                                        <div class="h-1.5 bg-[#e9edef] rounded w-12"></div>
+                                        <div class="h-2 bg-[#f4f4f5] rounded w-16 mb-1"></div>
+                                        <div class="h-1.5 bg-[#e4e4e7] rounded w-12"></div>
                                     </div>
                                 </div>
                                 <div class="flex justify-end">
-                                    <div class="bg-[#d9fdd3] rounded-lg px-2 py-1">
-                                        <div class="h-1.5 bg-[#000]/10 rounded w-8"></div>
+                                    <div class="bg-[#f4f4f5] rounded-lg px-2 py-1">
+                                        <div class="h-1.5 bg-[#09090b]/20 rounded w-8"></div>
                                     </div>
                                 </div>
                             </div>
                             <div class="p-3 bg-tertiary">
                                 <div class="font-medium text-primary text-sm">Modern Light</div>
-                                <div class="text-xs text-muted">Clean light theme</div>
+                                <div class="text-xs text-muted">Clean and minimal</div>
                             </div>
                         </div>
                     </label>
@@ -290,7 +290,7 @@
                 </div>
                 <label class="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" id="dark-mode" class="sr-only peer" onchange="toggleTheme()">
-                    <div class="w-11 h-6 bg-tertiary rounded-full peer peer-checked:bg-[#25D366] after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+                    <div class="w-11 h-6 bg-tertiary rounded-full peer peer-checked:bg-zinc-600 after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
                 </label>
             </div>
         </section>
@@ -306,7 +306,7 @@
                         type="password"
                         id="current_password"
                         name="current_password"
-                        class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:border-[#25D366]"
+                        class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-zinc-400/20"
                         placeholder="Enter current password"
                     >
                 </div>
@@ -318,7 +318,7 @@
                         id="new_password"
                         name="new_password"
                         minlength="6"
-                        class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:border-[#25D366]"
+                        class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-zinc-400/20"
                         placeholder="At least 6 characters"
                     >
                 </div>
@@ -330,7 +330,7 @@
                         id="confirm_password"
                         name="confirm_password"
                         minlength="6"
-                        class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:border-[#25D366]"
+                        class="w-full px-4 py-3 bg-tertiary border border-default rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-zinc-400/20"
                         placeholder="Confirm new password"
                     >
                 </div>
