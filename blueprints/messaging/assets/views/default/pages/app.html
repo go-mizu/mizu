@@ -241,7 +241,7 @@
 
         <!-- Tabs -->
         <div class="flex border-b border-default mb-6">
-            <button id="qr-tab-my-code" onclick="switchQRTab('my-code')" class="flex-1 py-3 text-center font-medium border-b-2 border-zinc-600 text-zinc-200">My Code</button>
+            <button id="qr-tab-my-code" onclick="switchQRTab('my-code')" class="flex-1 py-3 text-center font-medium border-b-2 border-default text-primary">My Code</button>
             <button id="qr-tab-scan" onclick="switchQRTab('scan')" class="flex-1 py-3 text-center font-medium border-b-2 border-transparent text-secondary hover:text-primary">Add Friend</button>
         </div>
 
@@ -251,7 +251,7 @@
                 <p class="text-secondary text-sm">Share this QR code to let others add you as a friend</p>
             </div>
             <div id="qr-code-container" class="bg-white p-6 rounded-xl mx-auto w-64 h-64 flex items-center justify-center">
-                <div class="animate-pulse text-gray-400">Loading...</div>
+                <div class="animate-pulse text-muted">Loading...</div>
             </div>
             <div class="mt-4 text-center">
                 <p id="qr-code-text" class="font-mono text-sm text-secondary mb-4"></p>
@@ -573,7 +573,7 @@ async function loadMessages(chatId) {
     const container = document.getElementById('messages');
     container.innerHTML = `
         <div class="flex items-center justify-center h-full">
-            <div class="animate-spin w-8 h-8 border-2 border-zinc-600 border-t-transparent rounded-full"></div>
+            <div class="animate-spin w-8 h-8 border-2 border-default border-t-transparent rounded-full"></div>
         </div>
     `;
 
@@ -585,10 +585,14 @@ async function loadMessages(chatId) {
             renderMessages();
             scrollToBottom();
         } else {
+            messages = [];
+            renderMessages();
             showError('Failed to load messages');
         }
     } catch (err) {
         console.error('Failed to load messages:', err);
+        messages = [];
+        renderMessages();
         showError('Failed to load messages');
     }
 }
@@ -640,12 +644,12 @@ function renderMessages() {
         return `
             ${dateHeader}
             <div class="flex ${isSent ? 'justify-end' : 'justify-start'}">
-                <div class="message-wrapper" data-message-id="${msg.id}" data-chat-id="${msg.chat_id}">
+                <div class="message-wrapper max-w-[70%]" data-message-id="${msg.id}" data-chat-id="${msg.chat_id}">
                     <div class="message-actions">
                         <button class="message-action-btn" onclick="handleReaction('${msg.id}')" title="React">😀</button>
                     </div>
-                    <div class="${isSticker ? '' : (isSent ? 'sent-bubble' : 'received-bubble') + ' rounded-2xl px-4 py-2'} max-w-[70%] ${isSent ? 'rounded-br-md' : 'rounded-bl-md'}">
-                        ${!isSent && currentChat?.type === 'group' ? `<div class="text-xs text-zinc-400 font-medium mb-1">${escapeHtml(msg.sender_name || 'Unknown')}</div>` : ''}
+                    <div class="${isSticker ? '' : (isSent ? 'sent-bubble' : 'received-bubble') + ' rounded-2xl px-4 py-2'} ${isSent ? 'rounded-br-md' : 'rounded-bl-md'}">
+                        ${!isSent && currentChat?.type === 'group' ? `<div class="text-xs text-secondary font-medium mb-1">${escapeHtml(msg.sender_name || 'Unknown')}</div>` : ''}
                         ${contentHtml}
                         <div class="flex items-center justify-end gap-1 mt-1">
                             <span class="text-xs text-muted">${formatTime(msg.created_at)}</span>
@@ -1113,16 +1117,16 @@ function switchQRTab(tab) {
     const scanContent = document.getElementById('qr-scan-content');
 
     if (tab === 'my-code') {
-        myCodeTab.classList.add('border-zinc-600', 'text-zinc-400');
+        myCodeTab.classList.add('border-default', 'text-primary');
         myCodeTab.classList.remove('border-transparent', 'text-secondary');
-        scanTab.classList.remove('border-zinc-600', 'text-zinc-400');
+        scanTab.classList.remove('border-default', 'text-primary');
         scanTab.classList.add('border-transparent', 'text-secondary');
         myCodeContent.classList.remove('hidden');
         scanContent.classList.add('hidden');
     } else {
-        scanTab.classList.add('border-zinc-600', 'text-zinc-400');
+        scanTab.classList.add('border-default', 'text-primary');
         scanTab.classList.remove('border-transparent', 'text-secondary');
-        myCodeTab.classList.remove('border-zinc-600', 'text-zinc-400');
+        myCodeTab.classList.remove('border-default', 'text-primary');
         myCodeTab.classList.add('border-transparent', 'text-secondary');
         scanContent.classList.remove('hidden');
         myCodeContent.classList.add('hidden');
@@ -1134,7 +1138,7 @@ async function loadMyFriendCode() {
     const container = document.getElementById('qr-code-container');
     const codeText = document.getElementById('qr-code-text');
 
-    container.innerHTML = '<div class="animate-pulse text-gray-400">Generating...</div>';
+    container.innerHTML = '<div class="animate-pulse text-muted">Generating...</div>';
     codeText.textContent = '';
 
     try {
@@ -1162,7 +1166,7 @@ async function loadMyFriendCode() {
                 }
             } else {
                 // Fallback if QRCode library not loaded
-                container.innerHTML = `<div class="text-center"><div class="font-mono text-lg font-bold">${escapeHtml(data.data.code)}</div><div class="text-sm text-gray-500 mt-2">Share this code</div></div>`;
+                container.innerHTML = `<div class="text-center"><div class="font-mono text-lg font-bold text-primary">${escapeHtml(data.data.code)}</div><div class="text-sm text-secondary mt-2">Share this code</div></div>`;
             }
         } else {
             container.innerHTML = '<div class="text-red-500">Failed to generate code</div>';
