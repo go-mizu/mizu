@@ -8,6 +8,7 @@ import (
 	"github.com/go-mizu/mizu"
 
 	"github.com/go-mizu/blueprints/messaging/feature/accounts"
+	"github.com/go-mizu/blueprints/messaging/pkg/password"
 )
 
 // SetupNewUserFunc is a callback to setup default chats for a new user.
@@ -40,8 +41,10 @@ func (h *Auth) Register(c *mizu.Ctx) error {
 	if in.Password == "" {
 		return BadRequest(c, "Password is required")
 	}
-	if len(in.Password) < 6 {
-		return BadRequest(c, "Password must be at least 6 characters")
+
+	// Validate password strength
+	if err := password.Validate(in.Password); err != nil {
+		return BadRequest(c, err.Error())
 	}
 
 	ctx := c.Request().Context()

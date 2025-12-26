@@ -12,12 +12,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/go-mizu/mizu"
 	"github.com/gorilla/websocket"
 
 	"github.com/go-mizu/blueprints/messaging/app/web/handler"
+	"github.com/go-mizu/blueprints/messaging/app/web/middleware"
 	"github.com/go-mizu/blueprints/messaging/app/web/ws"
 	"github.com/go-mizu/blueprints/messaging/assets"
 	"github.com/go-mizu/blueprints/messaging/feature/accounts"
@@ -32,9 +34,10 @@ import (
 
 // Config holds server configuration.
 type Config struct {
-	Addr    string
-	DataDir string
-	Dev     bool
+	Addr           string
+	DataDir        string
+	Dev            bool
+	AllowedOrigins []string // Allowed origins for WebSocket connections
 }
 
 // AgentUsername is the username for the system agent user.
@@ -57,6 +60,10 @@ type Server struct {
 	stories    stories.API
 	presence   presence.API
 	friendcode friendcode.API
+
+	// Rate limiters (per-instance for test isolation)
+	loginLimiter    *middleware.RateLimiter
+	registerLimiter *middleware.RateLimiter
 
 	// System users
 	agentID string
@@ -124,18 +131,23 @@ func New(cfg Config) (*Server, error) {
 		db:        db,
 		templates: allTemplates["default"],
 		hub:       hub,
-		upgrader: websocket.Upgrader{
-			ReadBufferSize:  1024,
-			WriteBufferSize: 1024,
-			CheckOrigin:     func(r *http.Request) bool { return true },
-		},
-		accounts:   accountsSvc,
+		accounts:  accountsSvc,
 		contacts:   contactsSvc,
 		chats:      chatsSvc,
 		messages:   messagesSvc,
 		stories:    storiesSvc,
 		presence:   presenceSvc,
 		friendcode: friendcodeSvc,
+		// Create per-instance rate limiters for test isolation
+		loginLimiter:    middleware.NewRateLimiter(5, time.Minute),     // 5 per minute
+		registerLimiter: middleware.NewRateLimiter(3, 10*time.Minute), // 3 per 10 minutes
+	}
+
+	// Configure WebSocket upgrader with origin validation
+	s.upgrader = websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin:     s.checkWebSocketOrigin,
 	}
 
 	// Ensure the system agent user exists
@@ -240,11 +252,20 @@ func (s *Server) Handler() *mizu.App {
 }
 
 func (s *Server) setupRoutes() {
+	// Apply global security headers middleware
+	securityConfig := middleware.DefaultSecurityConfig(s.cfg.Dev)
+	s.app.Use(middleware.SecurityHeaders(securityConfig))
+
+	// Apply CORS for API if needed
+	if len(s.cfg.AllowedOrigins) > 0 || s.cfg.Dev {
+		s.app.Use(middleware.CORS(s.cfg.AllowedOrigins, s.cfg.Dev))
+	}
+
 	// API routes
 	s.app.Group("/api/v1", func(api *mizu.Router) {
-		// Auth
-		api.Post("/auth/register", s.authHandler.Register)
-		api.Post("/auth/login", s.authHandler.Login)
+		// Auth with rate limiting
+		api.Post("/auth/register", s.rateLimitRegister(s.authHandler.Register))
+		api.Post("/auth/login", s.rateLimitLogin(s.authHandler.Login))
 		api.Post("/auth/logout", s.authRequired(func(c *mizu.Ctx) error {
 			return s.authHandler.Logout(c, s.getUserID(c))
 		}))
@@ -341,6 +362,42 @@ func (s *Server) setupRoutes() {
 		staticHandler.ServeHTTP(c.Writer(), c.Request())
 		return nil
 	})
+}
+
+// checkWebSocketOrigin validates the Origin header for WebSocket connections.
+// This prevents CSRF attacks via cross-origin WebSocket connections.
+func (s *Server) checkWebSocketOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+
+	// Allow connections without Origin header (non-browser clients)
+	if origin == "" {
+		return true
+	}
+
+	// Check against configured allowed origins
+	for _, allowed := range s.cfg.AllowedOrigins {
+		if origin == allowed {
+			return true
+		}
+	}
+
+	// In dev mode, allow localhost origins
+	if s.cfg.Dev {
+		devOrigins := []string{
+			"http://localhost",
+			"http://localhost:8080",
+			"http://127.0.0.1",
+			"http://127.0.0.1:8080",
+		}
+		for _, dev := range devOrigins {
+			if origin == dev {
+				return true
+			}
+		}
+	}
+
+	log.Printf("WebSocket origin rejected: %s", origin)
+	return false
 }
 
 func (s *Server) handleWebSocket(c *mizu.Ctx) error {
@@ -553,4 +610,64 @@ func (s *Server) authRequired(next mizu.Handler) mizu.Handler {
 		}
 		return next(c)
 	}
+}
+
+// rateLimitLogin applies rate limiting to login attempts.
+// Limits: 5 attempts per IP per minute.
+func (s *Server) rateLimitLogin(next mizu.Handler) mizu.Handler {
+	return func(c *mizu.Ctx) error {
+		ip := getClientIP(c.Request())
+		if !s.loginLimiter.Allow(ip) {
+			c.Writer().Header().Set("Retry-After", "60")
+			return c.JSON(http.StatusTooManyRequests, map[string]any{
+				"success": false,
+				"error":   "Too many login attempts. Please try again later.",
+			})
+		}
+		return next(c)
+	}
+}
+
+// rateLimitRegister applies rate limiting to registration attempts.
+// Limits: 3 attempts per IP per 10 minutes.
+func (s *Server) rateLimitRegister(next mizu.Handler) mizu.Handler {
+	return func(c *mizu.Ctx) error {
+		ip := getClientIP(c.Request())
+		if !s.registerLimiter.Allow(ip) {
+			c.Writer().Header().Set("Retry-After", "600")
+			return c.JSON(http.StatusTooManyRequests, map[string]any{
+				"success": false,
+				"error":   "Too many registration attempts. Please try again later.",
+			})
+		}
+		return next(c)
+	}
+}
+
+// getClientIP extracts the client IP from the request.
+func getClientIP(r *http.Request) string {
+	// Check X-Forwarded-For header first (for reverse proxies)
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// Take the first IP in the chain
+		for i := 0; i < len(xff); i++ {
+			if xff[i] == ',' {
+				return xff[:i]
+			}
+		}
+		return xff
+	}
+
+	// Check X-Real-IP header
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return xri
+	}
+
+	// Fall back to RemoteAddr
+	addr := r.RemoteAddr
+	for i := len(addr) - 1; i >= 0; i-- {
+		if addr[i] == ':' {
+			return addr[:i]
+		}
+	}
+	return addr
 }
