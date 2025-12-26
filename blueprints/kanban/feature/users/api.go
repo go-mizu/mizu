@@ -48,6 +48,7 @@ type API interface {
 	Login(ctx context.Context, in *LoginIn) (*User, *Session, error)
 	Logout(ctx context.Context, sessionID string) error
 	GetByID(ctx context.Context, id string) (*User, error)
+	GetByEmail(ctx context.Context, email string) (*User, error)
 	GetBySession(ctx context.Context, sessionID string) (*User, error)
 	Update(ctx context.Context, id string, in *UpdateIn) (*User, error)
 }

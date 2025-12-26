@@ -2,11 +2,13 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
+	"strings"
 
-	"github.com/charmbracelet/lipgloss/v2"
-	"github.com/go-mizu/fang"
+	"github.com/charmbracelet/fang"
 	"github.com/spf13/cobra"
 )
 
@@ -47,6 +49,8 @@ Get started:
 	dataDir = filepath.Join(home, "data", "blueprint", "kanban")
 
 	// Global flags
+	root.SetVersionTemplate("kanban {{.Version}}\n")
+	root.Version = versionString()
 	root.PersistentFlags().StringVar(&dataDir, "data", dataDir, "Data directory")
 	root.PersistentFlags().Bool("dev", false, "Enable development mode")
 
@@ -55,14 +59,24 @@ Get started:
 	root.AddCommand(NewInit())
 	root.AddCommand(NewSeed())
 
-	// Configure fang styling
-	theme := fang.Theme{
-		Primary: lipgloss.NewStyle().Foreground(lipgloss.Color("#7C3AED")),
-		Muted:   lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280")),
-		Success: lipgloss.NewStyle().Foreground(lipgloss.Color("#10B981")),
-		Error:   lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")),
-		Warning: lipgloss.NewStyle().Foreground(lipgloss.Color("#F59E0B")),
+	if err := fang.Execute(ctx, root,
+		fang.WithVersion(Version),
+		fang.WithCommit(Commit),
+	); err != nil {
+		fmt.Fprintln(os.Stderr, errorStyle.Render("[ERROR] "+err.Error()))
+		return err
 	}
+	return nil
+}
 
-	return fang.Execute(ctx, root, fang.WithTheme(theme))
+func versionString() string {
+	if strings.TrimSpace(Version) != "" && Version != "dev" {
+		return Version
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		if bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+			return bi.Main.Version
+		}
+	}
+	return "dev"
 }

@@ -101,8 +101,8 @@ func (s *Service) Update(ctx context.Context, id string, in *UpdateIn) (*Issue, 
 	return s.GetByID(ctx, id)
 }
 
-func (s *Service) Move(ctx context.Context, id, columnID string, position int) (*Issue, error) {
-	if err := s.store.Move(ctx, id, columnID, position); err != nil {
+func (s *Service) Move(ctx context.Context, id string, in *MoveIn) (*Issue, error) {
+	if err := s.store.Move(ctx, id, in.ColumnID, in.Position); err != nil {
 		return nil, err
 	}
 	return s.GetByID(ctx, id)

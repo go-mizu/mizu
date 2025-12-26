@@ -144,15 +144,12 @@ func (h *Issue) Move(c *mizu.Ctx) error {
 		return InternalError(c, "failed to get issue")
 	}
 
-	var in struct {
-		ColumnID string `json:"column_id"`
-		Position int    `json:"position"`
-	}
+	var in issues.MoveIn
 	if err := c.BindJSON(&in, 1<<20); err != nil {
 		return BadRequest(c, "invalid request body")
 	}
 
-	updated, err := h.issues.Move(c.Context(), issue.ID, in.ColumnID, in.Position)
+	updated, err := h.issues.Move(c.Context(), issue.ID, &in)
 	if err != nil {
 		return InternalError(c, "failed to move issue")
 	}

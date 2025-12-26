@@ -48,7 +48,7 @@ type API interface {
 	ListByUser(ctx context.Context, userID string) ([]*Workspace, error)
 	Update(ctx context.Context, id string, in *UpdateIn) (*Workspace, error)
 	Delete(ctx context.Context, id string) error
-	AddMember(ctx context.Context, workspaceID, userID, role string) error
+	AddMember(ctx context.Context, workspaceID, userID, role string) (*Member, error)
 	GetMember(ctx context.Context, workspaceID, userID string) (*Member, error)
 	ListMembers(ctx context.Context, workspaceID string) ([]*Member, error)
 	UpdateMemberRole(ctx context.Context, workspaceID, userID, role string) error

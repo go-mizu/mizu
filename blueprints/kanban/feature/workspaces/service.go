@@ -60,6 +60,17 @@ func (s *Service) Create(ctx context.Context, userID string, in *CreateIn) (*Wor
 	return workspace, nil
 }
 
+func (s *Service) GetByID(ctx context.Context, id string) (*Workspace, error) {
+	ws, err := s.store.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if ws == nil {
+		return nil, ErrNotFound
+	}
+	return ws, nil
+}
+
 func (s *Service) GetBySlug(ctx context.Context, slug string) (*Workspace, error) {
 	ws, err := s.store.GetBySlug(ctx, slug)
 	if err != nil {
@@ -107,6 +118,10 @@ func (s *Service) GetMember(ctx context.Context, workspaceID, userID string) (*M
 
 func (s *Service) ListMembers(ctx context.Context, workspaceID string) ([]*Member, error) {
 	return s.store.ListMembers(ctx, workspaceID)
+}
+
+func (s *Service) UpdateMemberRole(ctx context.Context, workspaceID, userID, role string) error {
+	return s.store.UpdateMemberRole(ctx, workspaceID, userID, role)
 }
 
 func (s *Service) RemoveMember(ctx context.Context, workspaceID, userID string) error {
