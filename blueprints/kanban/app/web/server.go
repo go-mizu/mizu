@@ -16,14 +16,16 @@ import (
 
 	"github.com/go-mizu/blueprints/kanban/app/web/handler"
 	"github.com/go-mizu/blueprints/kanban/assets"
+	"github.com/go-mizu/blueprints/kanban/feature/assignees"
+	"github.com/go-mizu/blueprints/kanban/feature/columns"
 	"github.com/go-mizu/blueprints/kanban/feature/comments"
+	"github.com/go-mizu/blueprints/kanban/feature/cycles"
+	"github.com/go-mizu/blueprints/kanban/feature/fields"
 	"github.com/go-mizu/blueprints/kanban/feature/issues"
-	"github.com/go-mizu/blueprints/kanban/feature/labels"
-	"github.com/go-mizu/blueprints/kanban/feature/notifications"
 	"github.com/go-mizu/blueprints/kanban/feature/projects"
-	"github.com/go-mizu/blueprints/kanban/feature/search"
-	"github.com/go-mizu/blueprints/kanban/feature/sprints"
+	"github.com/go-mizu/blueprints/kanban/feature/teams"
 	"github.com/go-mizu/blueprints/kanban/feature/users"
+	"github.com/go-mizu/blueprints/kanban/feature/values"
 	"github.com/go-mizu/blueprints/kanban/feature/workspaces"
 	"github.com/go-mizu/blueprints/kanban/store/duckdb"
 )
@@ -43,26 +45,31 @@ type Server struct {
 	templates *template.Template
 
 	// Services
-	users         users.API
-	workspaces    workspaces.API
-	projects      projects.API
-	issues        issues.API
-	comments      comments.API
-	labels        labels.API
-	sprints       sprints.API
-	notifications notifications.API
-	search        search.API
+	users      users.API
+	workspaces workspaces.API
+	teams      teams.API
+	projects   projects.API
+	columns    columns.API
+	issues     issues.API
+	cycles     cycles.API
+	comments   comments.API
+	fields     fields.API
+	values     values.API
+	assignees  assignees.API
 
 	// Handlers
-	authHandlers         *handler.Auth
-	workspaceHandlers    *handler.Workspace
-	projectHandlers      *handler.Project
-	issueHandlers        *handler.Issue
-	commentHandlers      *handler.Comment
-	labelHandlers        *handler.Label
-	sprintHandlers       *handler.Sprint
-	notificationHandlers *handler.Notification
-	pageHandlers         *handler.Page
+	authHandlers      *handler.Auth
+	workspaceHandlers *handler.Workspace
+	teamHandlers      *handler.Team
+	projectHandlers   *handler.Project
+	columnHandlers    *handler.Column
+	issueHandlers     *handler.Issue
+	cycleHandlers     *handler.Cycle
+	commentHandlers   *handler.Comment
+	fieldHandlers     *handler.Field
+	valueHandlers     *handler.Value
+	assigneeHandlers  *handler.Assignee
+	pageHandlers      *handler.Page
 }
 
 // New creates a new server.
@@ -93,23 +100,28 @@ func New(cfg Config) (*Server, error) {
 	// Create feature stores
 	usersStore := duckdb.NewUsersStore(db)
 	workspacesStore := duckdb.NewWorkspacesStore(db)
+	teamsStore := duckdb.NewTeamsStore(db)
 	projectsStore := duckdb.NewProjectsStore(db)
+	columnsStore := duckdb.NewColumnsStore(db)
 	issuesStore := duckdb.NewIssuesStore(db)
+	cyclesStore := duckdb.NewCyclesStore(db)
 	commentsStore := duckdb.NewCommentsStore(db)
-	labelsStore := duckdb.NewLabelsStore(db)
-	sprintsStore := duckdb.NewSprintsStore(db)
-	notificationsStore := duckdb.NewNotificationsStore(db)
+	fieldsStore := duckdb.NewFieldsStore(db)
+	valuesStore := duckdb.NewValuesStore(db)
+	assigneesStore := duckdb.NewAssigneesStore(db)
 
 	// Create services with stores
 	usersSvc := users.NewService(usersStore)
 	workspacesSvc := workspaces.NewService(workspacesStore)
+	teamsSvc := teams.NewService(teamsStore)
 	projectsSvc := projects.NewService(projectsStore)
-	labelsSvc := labels.NewService(labelsStore)
-	sprintsSvc := sprints.NewService(sprintsStore)
-	issuesSvc := issues.NewService(issuesStore, projectsSvc)
+	columnsSvc := columns.NewService(columnsStore)
+	cyclesSvc := cycles.NewService(cyclesStore)
+	issuesSvc := issues.NewService(issuesStore, projectsSvc, columnsSvc)
 	commentsSvc := comments.NewService(commentsStore)
-	notificationsSvc := notifications.NewService(notificationsStore)
-	searchSvc := search.NewService(issuesSvc)
+	fieldsSvc := fields.NewService(fieldsStore)
+	valuesSvc := values.NewService(valuesStore)
+	assigneesSvc := assignees.NewService(assigneesStore)
 
 	// Parse templates
 	tmpl, err := assets.Templates()
@@ -118,31 +130,36 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	s := &Server{
-		app:           mizu.New(),
-		cfg:           cfg,
-		db:            db,
-		templates:     tmpl,
-		users:         usersSvc,
-		workspaces:    workspacesSvc,
-		projects:      projectsSvc,
-		issues:        issuesSvc,
-		comments:      commentsSvc,
-		labels:        labelsSvc,
-		sprints:       sprintsSvc,
-		notifications: notificationsSvc,
-		search:        searchSvc,
+		app:        mizu.New(),
+		cfg:        cfg,
+		db:         db,
+		templates:  tmpl,
+		users:      usersSvc,
+		workspaces: workspacesSvc,
+		teams:      teamsSvc,
+		projects:   projectsSvc,
+		columns:    columnsSvc,
+		issues:     issuesSvc,
+		cycles:     cyclesSvc,
+		comments:   commentsSvc,
+		fields:     fieldsSvc,
+		values:     valuesSvc,
+		assignees:  assigneesSvc,
 	}
 
 	// Create handlers
 	s.authHandlers = handler.NewAuth(usersSvc)
 	s.workspaceHandlers = handler.NewWorkspace(workspacesSvc, s.getUserID)
-	s.projectHandlers = handler.NewProject(projectsSvc, workspacesSvc, s.getUserID)
-	s.issueHandlers = handler.NewIssue(issuesSvc, projectsSvc, workspacesSvc, s.getUserID)
+	s.teamHandlers = handler.NewTeam(teamsSvc, s.getUserID)
+	s.projectHandlers = handler.NewProject(projectsSvc, s.getUserID)
+	s.columnHandlers = handler.NewColumn(columnsSvc)
+	s.issueHandlers = handler.NewIssue(issuesSvc, projectsSvc, s.getUserID)
+	s.cycleHandlers = handler.NewCycle(cyclesSvc)
 	s.commentHandlers = handler.NewComment(commentsSvc, s.getUserID)
-	s.labelHandlers = handler.NewLabel(labelsSvc)
-	s.sprintHandlers = handler.NewSprint(sprintsSvc)
-	s.notificationHandlers = handler.NewNotification(notificationsSvc, s.getUserID)
-	s.pageHandlers = handler.NewPage(tmpl, usersSvc, workspacesSvc, projectsSvc, issuesSvc, labelsSvc, sprintsSvc, notificationsSvc, s.optionalAuth, cfg.Dev)
+	s.fieldHandlers = handler.NewField(fieldsSvc)
+	s.valueHandlers = handler.NewValue(valuesSvc)
+	s.assigneeHandlers = handler.NewAssignee(assigneesSvc)
+	s.pageHandlers = handler.NewPage(tmpl, usersSvc, workspacesSvc, projectsSvc, issuesSvc, s.optionalAuth, cfg.Dev)
 
 	s.setupRoutes()
 
@@ -205,9 +222,19 @@ func (s *Server) WorkspaceService() workspaces.API {
 	return s.workspaces
 }
 
+// TeamService returns the teams service.
+func (s *Server) TeamService() teams.API {
+	return s.teams
+}
+
 // ProjectService returns the projects service.
 func (s *Server) ProjectService() projects.API {
 	return s.projects
+}
+
+// ColumnService returns the columns service.
+func (s *Server) ColumnService() columns.API {
+	return s.columns
 }
 
 // IssueService returns the issues service.
@@ -215,14 +242,29 @@ func (s *Server) IssueService() issues.API {
 	return s.issues
 }
 
-// LabelService returns the labels service.
-func (s *Server) LabelService() labels.API {
-	return s.labels
+// CycleService returns the cycles service.
+func (s *Server) CycleService() cycles.API {
+	return s.cycles
 }
 
-// SprintService returns the sprints service.
-func (s *Server) SprintService() sprints.API {
-	return s.sprints
+// CommentService returns the comments service.
+func (s *Server) CommentService() comments.API {
+	return s.comments
+}
+
+// FieldService returns the fields service.
+func (s *Server) FieldService() fields.API {
+	return s.fields
+}
+
+// ValueService returns the values service.
+func (s *Server) ValueService() values.API {
+	return s.values
+}
+
+// AssigneeService returns the assignees service.
+func (s *Server) AssigneeService() assignees.API {
+	return s.assignees
 }
 
 func (s *Server) setupRoutes() {
@@ -243,64 +285,112 @@ func (s *Server) setupRoutes() {
 		api.Get("/workspaces/{slug}/members", s.authRequired(s.workspaceHandlers.ListMembers))
 		api.Post("/workspaces/{slug}/members", s.authRequired(s.workspaceHandlers.AddMember))
 
-		// Projects
-		api.Get("/workspaces/{slug}/projects", s.authRequired(s.projectHandlers.List))
-		api.Post("/workspaces/{slug}/projects", s.authRequired(s.projectHandlers.Create))
-		api.Get("/workspaces/{slug}/projects/{key}", s.authRequired(s.projectHandlers.Get))
-		api.Patch("/workspaces/{slug}/projects/{key}", s.authRequired(s.projectHandlers.Update))
-		api.Delete("/workspaces/{slug}/projects/{key}", s.authRequired(s.projectHandlers.Delete))
+		// Teams (workspace-scoped)
+		api.Get("/workspaces/{workspaceID}/teams", s.authRequired(s.teamHandlers.List))
+		api.Post("/workspaces/{workspaceID}/teams", s.authRequired(s.teamHandlers.Create))
 
-		// Issues
+		// Teams (by ID)
+		api.Get("/teams/{id}", s.authRequired(s.teamHandlers.Get))
+		api.Patch("/teams/{id}", s.authRequired(s.teamHandlers.Update))
+		api.Delete("/teams/{id}", s.authRequired(s.teamHandlers.Delete))
+		api.Get("/teams/{id}/members", s.authRequired(s.teamHandlers.ListMembers))
+		api.Post("/teams/{id}/members", s.authRequired(s.teamHandlers.AddMember))
+		api.Patch("/teams/{id}/members/{userID}", s.authRequired(s.teamHandlers.UpdateMemberRole))
+		api.Delete("/teams/{id}/members/{userID}", s.authRequired(s.teamHandlers.RemoveMember))
+
+		// Projects (team-scoped)
+		api.Get("/teams/{teamID}/projects", s.authRequired(s.projectHandlers.List))
+		api.Post("/teams/{teamID}/projects", s.authRequired(s.projectHandlers.Create))
+
+		// Projects (by ID)
+		api.Get("/projects/{id}", s.authRequired(s.projectHandlers.Get))
+		api.Patch("/projects/{id}", s.authRequired(s.projectHandlers.Update))
+		api.Delete("/projects/{id}", s.authRequired(s.projectHandlers.Delete))
+
+		// Columns (project-scoped)
+		api.Get("/projects/{projectID}/columns", s.authRequired(s.columnHandlers.List))
+		api.Post("/projects/{projectID}/columns", s.authRequired(s.columnHandlers.Create))
+		api.Post("/projects/{projectID}/columns/{id}/default", s.authRequired(s.columnHandlers.SetDefault))
+
+		// Columns (by ID)
+		api.Patch("/columns/{id}", s.authRequired(s.columnHandlers.Update))
+		api.Post("/columns/{id}/position", s.authRequired(s.columnHandlers.UpdatePosition))
+		api.Post("/columns/{id}/archive", s.authRequired(s.columnHandlers.Archive))
+		api.Delete("/columns/{id}/archive", s.authRequired(s.columnHandlers.Unarchive))
+		api.Delete("/columns/{id}", s.authRequired(s.columnHandlers.Delete))
+
+		// Issues (project-scoped)
 		api.Get("/projects/{projectID}/issues", s.authRequired(s.issueHandlers.List))
 		api.Post("/projects/{projectID}/issues", s.authRequired(s.issueHandlers.Create))
+		api.Get("/projects/{projectID}/issues/search", s.authRequired(s.issueHandlers.Search))
+
+		// Issues (column-scoped)
+		api.Get("/columns/{columnID}/issues", s.authRequired(s.issueHandlers.ListByColumn))
+
+		// Issues (cycle-scoped)
+		api.Get("/cycles/{cycleID}/issues", s.authRequired(s.issueHandlers.ListByCycle))
+
+		// Issues (by key)
 		api.Get("/issues/{key}", s.authRequired(s.issueHandlers.Get))
 		api.Patch("/issues/{key}", s.authRequired(s.issueHandlers.Update))
 		api.Delete("/issues/{key}", s.authRequired(s.issueHandlers.Delete))
 		api.Post("/issues/{key}/move", s.authRequired(s.issueHandlers.Move))
-		api.Post("/issues/{key}/assignees", s.authRequired(s.issueHandlers.AddAssignee))
-		api.Delete("/issues/{key}/assignees/{userID}", s.authRequired(s.issueHandlers.RemoveAssignee))
-		api.Post("/issues/{key}/labels", s.authRequired(s.issueHandlers.AddLabel))
-		api.Delete("/issues/{key}/labels/{labelID}", s.authRequired(s.issueHandlers.RemoveLabel))
+		api.Post("/issues/{key}/cycle", s.authRequired(s.issueHandlers.AttachCycle))
+		api.Delete("/issues/{key}/cycle", s.authRequired(s.issueHandlers.DetachCycle))
 
-		// Comments
-		api.Get("/issues/{key}/comments", s.authRequired(s.commentHandlers.List))
-		api.Post("/issues/{key}/comments", s.authRequired(s.commentHandlers.Create))
+		// Cycles (team-scoped)
+		api.Get("/teams/{teamID}/cycles", s.authRequired(s.cycleHandlers.List))
+		api.Post("/teams/{teamID}/cycles", s.authRequired(s.cycleHandlers.Create))
+		api.Get("/teams/{teamID}/cycles/active", s.authRequired(s.cycleHandlers.GetActive))
+
+		// Cycles (by ID)
+		api.Get("/cycles/{id}", s.authRequired(s.cycleHandlers.Get))
+		api.Patch("/cycles/{id}", s.authRequired(s.cycleHandlers.Update))
+		api.Post("/cycles/{id}/status", s.authRequired(s.cycleHandlers.UpdateStatus))
+		api.Delete("/cycles/{id}", s.authRequired(s.cycleHandlers.Delete))
+
+		// Comments (issue-scoped)
+		api.Get("/issues/{issueID}/comments", s.authRequired(s.commentHandlers.List))
+		api.Post("/issues/{issueID}/comments", s.authRequired(s.commentHandlers.Create))
+
+		// Comments (by ID)
 		api.Patch("/comments/{id}", s.authRequired(s.commentHandlers.Update))
 		api.Delete("/comments/{id}", s.authRequired(s.commentHandlers.Delete))
 
-		// Labels
-		api.Get("/projects/{projectID}/labels", s.authRequired(s.labelHandlers.List))
-		api.Post("/projects/{projectID}/labels", s.authRequired(s.labelHandlers.Create))
-		api.Patch("/labels/{id}", s.authRequired(s.labelHandlers.Update))
-		api.Delete("/labels/{id}", s.authRequired(s.labelHandlers.Delete))
+		// Fields (project-scoped)
+		api.Get("/projects/{projectID}/fields", s.authRequired(s.fieldHandlers.List))
+		api.Post("/projects/{projectID}/fields", s.authRequired(s.fieldHandlers.Create))
 
-		// Sprints
-		api.Get("/projects/{projectID}/sprints", s.authRequired(s.sprintHandlers.List))
-		api.Post("/projects/{projectID}/sprints", s.authRequired(s.sprintHandlers.Create))
-		api.Patch("/sprints/{id}", s.authRequired(s.sprintHandlers.Update))
-		api.Delete("/sprints/{id}", s.authRequired(s.sprintHandlers.Delete))
-		api.Post("/sprints/{id}/start", s.authRequired(s.sprintHandlers.Start))
-		api.Post("/sprints/{id}/complete", s.authRequired(s.sprintHandlers.Complete))
+		// Fields (by ID)
+		api.Get("/fields/{id}", s.authRequired(s.fieldHandlers.Get))
+		api.Patch("/fields/{id}", s.authRequired(s.fieldHandlers.Update))
+		api.Post("/fields/{id}/position", s.authRequired(s.fieldHandlers.UpdatePosition))
+		api.Post("/fields/{id}/archive", s.authRequired(s.fieldHandlers.Archive))
+		api.Delete("/fields/{id}/archive", s.authRequired(s.fieldHandlers.Unarchive))
+		api.Delete("/fields/{id}", s.authRequired(s.fieldHandlers.Delete))
 
-		// Notifications
-		api.Get("/notifications", s.authRequired(s.notificationHandlers.List))
-		api.Post("/notifications/{id}/read", s.authRequired(s.notificationHandlers.MarkRead))
-		api.Post("/notifications/read-all", s.authRequired(s.notificationHandlers.MarkAllRead))
+		// Values (issue-scoped)
+		api.Get("/issues/{issueID}/values", s.authRequired(s.valueHandlers.ListByIssue))
+		api.Post("/issues/{issueID}/values", s.authRequired(s.valueHandlers.BulkSet))
+		api.Put("/issues/{issueID}/values/{fieldID}", s.authRequired(s.valueHandlers.Set))
+		api.Get("/issues/{issueID}/values/{fieldID}", s.authRequired(s.valueHandlers.Get))
+		api.Delete("/issues/{issueID}/values/{fieldID}", s.authRequired(s.valueHandlers.Delete))
+
+		// Assignees (issue-scoped)
+		api.Get("/issues/{issueID}/assignees", s.authRequired(s.assigneeHandlers.List))
+		api.Post("/issues/{issueID}/assignees", s.authRequired(s.assigneeHandlers.Add))
+		api.Delete("/issues/{issueID}/assignees/{userID}", s.authRequired(s.assigneeHandlers.Remove))
 	})
 
 	// Web routes (pages)
 	s.app.Get("/", s.pageHandlers.Home)
 	s.app.Get("/login", s.pageHandlers.Login)
 	s.app.Get("/register", s.pageHandlers.Register)
-	s.app.Get("/notifications", s.pageHandlers.Notifications)
 	s.app.Get("/settings", s.pageHandlers.Settings)
 	s.app.Get("/{workspace}", s.pageHandlers.Workspace)
 	s.app.Get("/{workspace}/projects", s.pageHandlers.Projects)
 	s.app.Get("/{workspace}/projects/{key}", s.pageHandlers.Board)
 	s.app.Get("/{workspace}/projects/{key}/list", s.pageHandlers.List)
-	s.app.Get("/{workspace}/projects/{key}/backlog", s.pageHandlers.Backlog)
-	s.app.Get("/{workspace}/projects/{key}/sprints", s.pageHandlers.Sprints)
-	s.app.Get("/{workspace}/projects/{key}/settings", s.pageHandlers.ProjectSettings)
 	s.app.Get("/{workspace}/issue/{key}", s.pageHandlers.Issue)
 	s.app.Get("/{workspace}/settings", s.pageHandlers.WorkspaceSettings)
 	s.app.Get("/{workspace}/members", s.pageHandlers.Members)

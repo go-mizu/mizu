@@ -2,10 +2,8 @@ package cli
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -13,43 +11,45 @@ import (
 	"github.com/go-mizu/blueprints/kanban/app/web"
 )
 
-var serveCmd = &cobra.Command{
-	Use:   "serve",
-	Short: "Start the web server",
-	Long: `Start the Kanban web server.
+// NewServe creates the serve command
+func NewServe() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Start the web server",
+		Long: `Start the Kanban web server.
 
 The server provides:
   - Web UI for project management
   - REST API for programmatic access
-  - Real-time updates via SSE
+  - Real-time updates
 
 Examples:
   kanban serve                    # Start on default port 8080
-  kanban serve --port 3000        # Start on port 3000
-  kanban serve --host 0.0.0.0     # Listen on all interfaces`,
-	RunE: runServe,
-}
+  kanban serve --addr :3000       # Start on port 3000
+  kanban serve --dev              # Enable development mode`,
+		RunE: runServe,
+	}
 
-func init() {
-	rootCmd.AddCommand(serveCmd)
+	cmd.Flags().StringP("addr", "a", ":8080", "Address to listen on")
 
-	serveCmd.Flags().StringP("host", "H", "127.0.0.1", "Host to bind to")
-	serveCmd.Flags().IntP("port", "p", 8080, "Port to listen on")
-	serveCmd.Flags().Bool("dev", false, "Enable development mode")
+	return cmd
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
-	host, _ := cmd.Flags().GetString("host")
-	port, _ := cmd.Flags().GetInt("port")
-	dev, _ := cmd.Flags().GetBool("dev")
-	dbPath, _ := cmd.Root().PersistentFlags().GetString("db")
+	addr, _ := cmd.Flags().GetString("addr")
+	dev, _ := cmd.Root().PersistentFlags().GetBool("dev")
 
-	dataDir := filepath.Dir(dbPath)
-	if dataDir == "." {
-		dataDir = "."
-	}
+	Blank()
+	Header("", "Kanban Server")
+	Blank()
 
-	addr := fmt.Sprintf("%s:%d", host, port)
+	Summary(
+		"Address", addr,
+		"Data", dataDir,
+		"Mode", modeString(dev),
+		"Version", Version,
+	)
+	Blank()
 
 	// Create server
 	srv, err := web.New(web.Config{
@@ -58,24 +58,31 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Dev:     dev,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create server: %w", err)
+		Error(fmt.Sprintf("Failed to create server: %v", err))
+		return err
 	}
 	defer srv.Close()
 
 	// Start server in goroutine
+	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("🚀 Kanban server starting on http://%s", addr)
-		log.Printf("📁 Database: %s", dbPath)
-		if err := srv.Run(); err != nil {
-			log.Fatalf("Server error: %v", err)
-		}
+		Step("", fmt.Sprintf("Server listening on http://localhost%s", addr))
+		errCh <- srv.Run()
 	}()
 
 	// Wait for interrupt signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
 
-	log.Println("Server stopped")
+	select {
+	case err := <-errCh:
+		Error(fmt.Sprintf("Server error: %v", err))
+		return err
+	case <-quit:
+		Blank()
+		Step("", "Shutting down...")
+		Success("Server stopped")
+	}
+
 	return nil
 }

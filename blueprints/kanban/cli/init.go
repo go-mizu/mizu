@@ -2,58 +2,68 @@ package cli
 
 import (
 	"fmt"
-	"log"
-	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/go-mizu/blueprints/kanban/app/web"
 )
 
-var initCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Initialize the database",
-	Long: `Initialize the Kanban database with the required schema.
+// NewInit creates the init command
+func NewInit() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "init",
+		Short: "Initialize the database",
+		Long: `Initialize the Kanban database with the required schema.
 
-This command creates all necessary tables and indexes for:
+This command creates all necessary tables for:
   - Users and sessions
-  - Workspaces and members
-  - Projects and labels
-  - Issues, comments, and activities
-  - Sprints and notifications
+  - Workspaces and teams
+  - Projects and columns
+  - Issues and cycles
+  - Custom fields and values
+  - Comments and assignees
 
 The database will be created if it doesn't exist.
 
 Examples:
-  kanban init                     # Initialize default database
-  kanban init --db /path/to/db    # Initialize at specific path`,
-	RunE: runInit,
-}
+  kanban init                          # Initialize default database
+  kanban init --data /path/to/dir      # Initialize at specific directory`,
+		RunE: runInit,
+	}
 
-func init() {
-	rootCmd.AddCommand(initCmd)
+	return cmd
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
-	dbPath, _ := cmd.Root().PersistentFlags().GetString("db")
+	Blank()
+	Header("", "Initialize Database")
+	Blank()
 
-	log.Printf("Initializing database: %s", dbPath)
+	Summary("Data", dataDir)
+	Blank()
 
-	dataDir := filepath.Dir(dbPath)
-	if dataDir == "." {
-		dataDir = "."
-	}
+	start := time.Now()
+	stop := StartSpinner("Initializing database...")
 
 	srv, err := web.New(web.Config{
-		Addr:    ":8080",
+		Addr:    ":0",
 		DataDir: dataDir,
 		Dev:     false,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to initialize database: %w", err)
+		stop()
+		Error(fmt.Sprintf("Failed to initialize: %v", err))
+		return err
 	}
-	defer srv.Close()
+	srv.Close()
 
-	log.Println("✅ Database initialized successfully")
+	stop()
+	Step("", "Database initialized", time.Since(start))
+	Blank()
+	Success("Database ready")
+	Hint(fmt.Sprintf("Data directory: %s", dataDir))
+	Blank()
+
 	return nil
 }

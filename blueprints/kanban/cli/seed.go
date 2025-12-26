@@ -3,239 +3,174 @@ package cli
 import (
 	"context"
 	"fmt"
-	"log"
-	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/go-mizu/blueprints/kanban/app/web"
+	"github.com/go-mizu/blueprints/kanban/feature/columns"
 	"github.com/go-mizu/blueprints/kanban/feature/issues"
-	"github.com/go-mizu/blueprints/kanban/feature/labels"
 	"github.com/go-mizu/blueprints/kanban/feature/projects"
+	"github.com/go-mizu/blueprints/kanban/feature/teams"
 	"github.com/go-mizu/blueprints/kanban/feature/users"
 	"github.com/go-mizu/blueprints/kanban/feature/workspaces"
 )
 
-var seedCmd = &cobra.Command{
-	Use:   "seed",
-	Short: "Seed the database with sample data",
-	Long: `Seed the database with sample data for development and testing.
+// NewSeed creates the seed command
+func NewSeed() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "seed",
+		Short: "Seed the database with sample data",
+		Long: `Seed the Kanban database with sample data for testing.
 
-This creates:
-  - A demo user (demo@example.com / demo)
-  - A sample workspace
-  - Sample projects with issues
-  - Labels and sample data
+Creates:
+  - Demo user (demo@example.com / password)
+  - Sample workspace and team
+  - Sample project with columns
+  - Sample issues
 
 Examples:
-  kanban seed                     # Seed the database
-  kanban seed --db /path/to/db    # Seed specific database`,
-	RunE: runSeed,
-}
+  kanban seed                     # Seed with default data
+  kanban seed --data /path/to    # Seed specific database`,
+		RunE: runSeed,
+	}
 
-func init() {
-	rootCmd.AddCommand(seedCmd)
+	return cmd
 }
 
 func runSeed(cmd *cobra.Command, args []string) error {
-	dbPath, _ := cmd.Root().PersistentFlags().GetString("db")
+	Blank()
+	Header("", "Seed Database")
+	Blank()
 
-	log.Printf("Seeding database: %s", dbPath)
+	Summary("Data", dataDir)
+	Blank()
 
-	dataDir := filepath.Dir(dbPath)
-	if dataDir == "." {
-		dataDir = "."
-	}
+	start := time.Now()
+	stop := StartSpinner("Seeding database...")
 
 	srv, err := web.New(web.Config{
-		Addr:    ":8080",
+		Addr:    ":0",
 		DataDir: dataDir,
 		Dev:     false,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create server: %w", err)
+		stop()
+		Error(fmt.Sprintf("Failed to create server: %v", err))
+		return err
 	}
 	defer srv.Close()
 
 	ctx := context.Background()
 
-	// Get services
-	userSvc := srv.UserService()
-	workspaceSvc := srv.WorkspaceService()
-	projectSvc := srv.ProjectService()
-	issueSvc := srv.IssueService()
-	labelSvc := srv.LabelService()
-
 	// Create demo user
-	log.Println("Creating demo user...")
-	user, _, err := userSvc.Register(ctx, &users.RegisterIn{
-		Email:       "demo@example.com",
-		Username:    "demo",
-		Password:    "demo",
-		DisplayName: "Demo User",
+	user, _, err := srv.UserService().Register(ctx, &users.RegisterIn{
+		Username: "demo",
+		Email:    "demo@example.com",
+		Password: "password",
 	})
 	if err != nil {
-		log.Printf("Note: %v (user may already exist, trying login)", err)
-		// Try to login as existing user
-		user, _, _ = userSvc.Login(ctx, &users.LoginIn{
-			Email:    "demo@example.com",
-			Password: "demo",
-		})
-	}
-	if user == nil {
-		return fmt.Errorf("failed to create or find demo user")
+		stop()
+		Warn(fmt.Sprintf("User may already exist: %v", err))
+		// Try to get existing user
+		user, _ = srv.UserService().GetByEmail(ctx, "demo@example.com")
+		if user == nil {
+			return fmt.Errorf("failed to create or get user: %w", err)
+		}
 	}
 
 	// Create workspace
-	log.Println("Creating workspace...")
-	workspace, err := workspaceSvc.Create(ctx, user.ID, &workspaces.CreateIn{
-		Slug:        "acme",
-		Name:        "Acme Corp",
-		Description: "Main workspace for Acme Corporation",
+	ws, err := srv.WorkspaceService().Create(ctx, user.ID, &workspaces.CreateIn{
+		Slug: "acme",
+		Name: "Acme Inc",
 	})
 	if err != nil {
-		log.Printf("Note: %v (workspace may already exist)", err)
-		workspace, _ = workspaceSvc.GetBySlug(ctx, "acme")
-	}
-	if workspace == nil {
-		return fmt.Errorf("failed to create or find workspace")
-	}
-
-	// Create projects
-	log.Println("Creating projects...")
-	projectData := []projects.CreateIn{
-		{
-			Key:         "WEB",
-			Name:        "Website Redesign",
-			Description: "Complete redesign of the company website",
-			Color:       "#3b82f6",
-		},
-		{
-			Key:         "MOB",
-			Name:        "Mobile App",
-			Description: "Native mobile application for iOS and Android",
-			Color:       "#8b5cf6",
-		},
-		{
-			Key:         "API",
-			Name:        "Backend API",
-			Description: "Core backend services and APIs",
-			Color:       "#22c55e",
-		},
-	}
-
-	var createdProjects []*projects.Project
-	for _, pd := range projectData {
-		pdCopy := pd // capture for pointer
-		project, err := projectSvc.Create(ctx, workspace.ID, &pdCopy)
-		if err != nil {
-			log.Printf("Note: %v", err)
-			project, _ = projectSvc.GetByKey(ctx, workspace.ID, pd.Key)
+		stop()
+		Warn(fmt.Sprintf("Workspace may already exist: %v", err))
+		ws, _ = srv.WorkspaceService().GetBySlug(ctx, "acme")
+		if ws == nil {
+			return fmt.Errorf("failed to create or get workspace: %w", err)
 		}
+	}
+
+	// Create team
+	team, err := srv.TeamService().Create(ctx, ws.ID, &teams.CreateIn{
+		Key:  "ENG",
+		Name: "Engineering",
+	})
+	if err != nil {
+		stop()
+		Warn(fmt.Sprintf("Team may already exist: %v", err))
+	}
+	if team == nil {
+		teamList, _ := srv.TeamService().ListByWorkspace(ctx, ws.ID)
+		if len(teamList) > 0 {
+			team = teamList[0]
+		}
+	}
+
+	if team != nil {
+		// Create project
+		project, err := srv.ProjectService().Create(ctx, team.ID, &projects.CreateIn{
+			Key:  "DEMO",
+			Name: "Demo Project",
+		})
+		if err != nil {
+			Warn(fmt.Sprintf("Project may already exist: %v", err))
+		}
+		if project == nil {
+			projectList, _ := srv.ProjectService().ListByTeam(ctx, team.ID)
+			if len(projectList) > 0 {
+				project = projectList[0]
+			}
+		}
+
 		if project != nil {
-			createdProjects = append(createdProjects, project)
+			// Create columns
+			colNames := []string{"Backlog", "To Do", "In Progress", "Done"}
+			for i, name := range colNames {
+				_, err := srv.ColumnService().Create(ctx, project.ID, &columns.CreateIn{
+					Name:     name,
+					Position: i,
+				})
+				if err != nil {
+					// Column may already exist
+				}
+			}
+
+			// Create sample issues
+			issueTitles := []string{
+				"Setup project structure",
+				"Implement user authentication",
+				"Design database schema",
+				"Create API endpoints",
+				"Build frontend components",
+			}
+			for _, title := range issueTitles {
+				_, err := srv.IssueService().Create(ctx, project.ID, user.ID, &issues.CreateIn{
+					Title: title,
+				})
+				if err != nil {
+					// Issue may already exist
+				}
+			}
 		}
 	}
 
-	if len(createdProjects) == 0 {
-		return fmt.Errorf("failed to create any projects")
-	}
+	stop()
+	Step("", "Database seeded", time.Since(start))
+	Blank()
+	Success("Sample data created")
+	Blank()
 
-	// Create labels for first project
-	log.Println("Creating labels...")
-	project := createdProjects[0]
-	labelData := []labels.CreateIn{
-		{Name: "bug", Color: "#ef4444"},
-		{Name: "enhancement", Color: "#22c55e"},
-		{Name: "documentation", Color: "#3b82f6"},
-		{Name: "urgent", Color: "#f97316"},
-		{Name: "design", Color: "#8b5cf6"},
-	}
-
-	for _, ld := range labelData {
-		ldCopy := ld // capture for pointer
-		_, err := labelSvc.Create(ctx, project.ID, &ldCopy)
-		if err != nil {
-			log.Printf("Note: label %s: %v", ld.Name, err)
-		}
-	}
-
-	// Create sample issues
-	log.Println("Creating issues...")
-	issueData := []issues.CreateIn{
-		{
-			Title:       "Implement user authentication",
-			Description: "Add login, registration, and session management",
-			Type:        "task",
-			Status:      "done",
-			Priority:    "high",
-		},
-		{
-			Title:       "Design new landing page",
-			Description: "Create mockups for the new landing page design",
-			Type:        "story",
-			Status:      "in_progress",
-			Priority:    "high",
-		},
-		{
-			Title:       "Fix navigation menu on mobile",
-			Description: "The hamburger menu doesn't close properly on mobile devices",
-			Type:        "bug",
-			Status:      "in_progress",
-			Priority:    "medium",
-		},
-		{
-			Title:       "Add dark mode support",
-			Description: "Implement dark mode theme toggle with system preference detection",
-			Type:        "task",
-			Status:      "todo",
-			Priority:    "medium",
-		},
-		{
-			Title:       "Optimize image loading",
-			Description: "Implement lazy loading and WebP format for images",
-			Type:        "task",
-			Status:      "todo",
-			Priority:    "low",
-		},
-		{
-			Title:       "Write API documentation",
-			Description: "Document all REST endpoints with examples",
-			Type:        "task",
-			Status:      "backlog",
-			Priority:    "low",
-		},
-		{
-			Title:       "Performance audit",
-			Description: "Run Lighthouse audit and fix performance issues",
-			Type:        "task",
-			Status:      "backlog",
-			Priority:    "medium",
-		},
-		{
-			Title:       "Setup CI/CD pipeline",
-			Description: "Configure GitHub Actions for automated testing and deployment",
-			Type:        "epic",
-			Status:      "in_review",
-			Priority:    "high",
-		},
-	}
-
-	for _, id := range issueData {
-		idCopy := id // capture for pointer
-		_, err := issueSvc.Create(ctx, project.ID, user.ID, &idCopy)
-		if err != nil {
-			log.Printf("Note: issue '%s': %v", id.Title, err)
-		}
-	}
-
-	log.Println("✅ Database seeded successfully")
-	log.Println("")
-	log.Println("Demo credentials:")
-	log.Println("  Email:    demo@example.com")
-	log.Println("  Password: demo")
-	log.Println("")
-	log.Println("Run 'kanban serve' to start the server")
+	Summary(
+		"User", "demo@example.com",
+		"Password", "password",
+		"Workspace", "acme",
+	)
+	Blank()
+	Hint("Start the server with: kanban serve")
+	Blank()
 
 	return nil
 }
