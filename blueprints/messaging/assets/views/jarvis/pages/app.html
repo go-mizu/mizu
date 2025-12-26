@@ -2,6 +2,17 @@
 <!-- JARVIS HUD Overlay Elements -->
 <div class="jarvis-hex-grid"></div>
 
+<!-- Westworld Grid Overlay -->
+<div class="westworld-grid-overlay"></div>
+
+<!-- Westworld Scanline Effect -->
+<div class="westworld-scanline"></div>
+
+<!-- Cross Markers - Westworld Style -->
+<div class="ww-cross-marker pos-1">+</div>
+<div class="ww-cross-marker pos-2">+</div>
+<div class="ww-cross-marker pos-3">+</div>
+
 <!-- Floating Particles -->
 <div class="jarvis-particles">
     <div class="jarvis-particle"></div>
@@ -29,11 +40,16 @@
 <div class="jarvis-hud-frame bottom-left"></div>
 <div class="jarvis-hud-frame bottom-right"></div>
 
-<!-- System Readout -->
-<div class="jarvis-data-readout" id="jarvis-readout"></div>
+<!-- System Readout - Enhanced Westworld Style -->
+<div class="jarvis-data-readout ww-boot-text" id="jarvis-readout"></div>
 
-<!-- System Status -->
-<div class="jarvis-system-status">
+<!-- Additional Data Readout - Left Side -->
+<div class="jarvis-data-readout" style="left: auto; right: 110px; top: 30px;">
+    <span style="opacity: 0.5;">BUILD</span> <span style="color: var(--holo-teal);">3.14.159</span> // <span style="opacity: 0.5;">HOST</span> <span style="color: var(--holo-cyan);">ONLINE</span>
+</div>
+
+<!-- System Status - Westworld Style -->
+<div class="jarvis-system-status ww-info-panel" style="padding: 8px 12px; position: fixed; bottom: 30px; right: 110px;">
     <div class="jarvis-status-item">
         <span class="jarvis-status-dot"></span>
         <span>CORE</span>
@@ -45,6 +61,15 @@
     <div class="jarvis-status-item">
         <span class="jarvis-status-dot"></span>
         <span>SEC</span>
+    </div>
+    <div class="jarvis-status-item">
+        <span class="jarvis-status-dot"></span>
+        <span>SYNC</span>
+    </div>
+    <div class="ww-sync-indicator" style="margin-left: 12px;">
+        <div class="ww-sync-dot"></div>
+        <div class="ww-sync-dot"></div>
+        <div class="ww-sync-dot"></div>
     </div>
 </div>
 
@@ -66,9 +91,11 @@
             </div>
         </div>
 
-        <!-- User Panel -->
-        <div class="neural-user-panel">
-            <div class="neural-avatar">
+        <!-- User Panel - Westworld Enhanced -->
+        <div class="neural-user-panel ww-corner-frame">
+            <span class="ww-corner-bl"></span>
+            <span class="ww-corner-br"></span>
+            <div class="neural-avatar ww-avatar">
                 <div class="neural-avatar-ring"></div>
                 <div class="neural-avatar-image">
                     <svg viewBox="0 0 48 48">
@@ -77,6 +104,7 @@
                     </svg>
                 </div>
                 <div class="neural-status-indicator" id="user-status-indicator"></div>
+                <div class="ww-host-status"></div>
             </div>
             <div class="neural-user-info">
                 <div class="neural-user-name" id="user-displayname"></div>
@@ -87,6 +115,14 @@
                         <option value="away">Away</option>
                         <option value="invisible">Invisible</option>
                     </select>
+                </div>
+                <!-- Westworld-style micro progress bar -->
+                <div class="ww-progress-bar" style="margin-top: 6px; height: 3px;">
+                    <div class="ww-progress-segment active"></div>
+                    <div class="ww-progress-segment active"></div>
+                    <div class="ww-progress-segment active"></div>
+                    <div class="ww-progress-segment active"></div>
+                    <div class="ww-progress-segment"></div>
                 </div>
             </div>
         </div>
@@ -272,6 +308,10 @@
         </div>
         <div class="neural-empty-state">
             <div class="neural-empty-icon jarvis-arc-reactor">
+                <!-- Westworld Orbital Rings -->
+                <div class="ww-orbital-ring ring-1"></div>
+                <div class="ww-orbital-ring ring-2"></div>
+                <div class="ww-orbital-ring ring-3"></div>
                 <!-- Arc Reactor Icon -->
                 <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="50" cy="50" r="45" stroke="var(--holo-cyan)" stroke-width="2" opacity="0.3"/>

@@ -4101,3 +4101,1349 @@ h2 {
 .neural-main {
     animation: bootSequence 0.8s ease-out 0.2s backwards;
 }
+
+/* ============================================
+   WESTWORLD-INSPIRED INFOGRAPHIC ENHANCEMENTS
+   ============================================ */
+
+/* Grid Overlay - Westworld Style */
+.westworld-grid-overlay {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+        linear-gradient(90deg, rgba(0, 212, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(rgba(0, 212, 255, 0.02) 1px, transparent 1px);
+    background-size: 40px 40px;
+}
+
+/* Enhanced Scanline Effect */
+.westworld-scanline {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        rgba(0, 212, 255, 0.1) 20%,
+        rgba(0, 212, 255, 0.4) 50%,
+        rgba(0, 212, 255, 0.1) 80%,
+        transparent 100%);
+    animation: scanlineMove 6s linear infinite;
+    pointer-events: none;
+    z-index: 9999;
+}
+
+@keyframes scanlineMove {
+    0% { transform: translateY(-100%); }
+    100% { transform: translateY(100vh); }
+}
+
+/* Corner Bracket Decorations - Westworld Style */
+.ww-corner-frame {
+    position: relative;
+}
+
+.ww-corner-frame::before,
+.ww-corner-frame::after,
+.ww-corner-frame > .ww-corner-bl,
+.ww-corner-frame > .ww-corner-br {
+    content: "";
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    pointer-events: none;
+}
+
+.ww-corner-frame::before {
+    top: -1px;
+    left: -1px;
+    border-top: 2px solid var(--holo-cyan);
+    border-left: 2px solid var(--holo-cyan);
+}
+
+.ww-corner-frame::after {
+    top: -1px;
+    right: -1px;
+    border-top: 2px solid var(--holo-cyan);
+    border-right: 2px solid var(--holo-cyan);
+}
+
+.ww-corner-bl {
+    bottom: -1px !important;
+    left: -1px !important;
+    border-bottom: 2px solid var(--holo-cyan) !important;
+    border-left: 2px solid var(--holo-cyan) !important;
+}
+
+.ww-corner-br {
+    bottom: -1px !important;
+    right: -1px !important;
+    border-bottom: 2px solid var(--holo-cyan) !important;
+    border-right: 2px solid var(--holo-cyan) !important;
+}
+
+/* Infographic Panel - Westworld Style */
+.ww-info-panel {
+    position: relative;
+    background: rgba(13, 17, 23, 0.85);
+    border: 1px solid rgba(0, 212, 255, 0.25);
+    padding: 16px;
+    margin: 8px 0;
+}
+
+.ww-info-panel::before,
+.ww-info-panel::after {
+    content: "";
+    position: absolute;
+    width: 12px;
+    height: 12px;
+}
+
+.ww-info-panel::before {
+    top: -1px;
+    left: -1px;
+    border-top: 2px solid var(--holo-cyan);
+    border-left: 2px solid var(--holo-cyan);
+}
+
+.ww-info-panel::after {
+    bottom: -1px;
+    right: -1px;
+    border-bottom: 2px solid var(--holo-cyan);
+    border-right: 2px solid var(--holo-cyan);
+}
+
+.ww-info-panel-title {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 10px;
+    color: var(--holo-cyan);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+}
+
+/* Segmented Progress Bar - Westworld Style */
+.ww-progress-bar {
+    display: flex;
+    gap: 2px;
+    height: 6px;
+    background: transparent;
+}
+
+.ww-progress-segment {
+    flex: 1;
+    background: rgba(0, 212, 255, 0.15);
+    transition: background 0.3s ease;
+}
+
+.ww-progress-segment.active {
+    background: var(--holo-cyan);
+    box-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+}
+
+.ww-progress-segment.warning {
+    background: var(--holo-orange);
+    box-shadow: 0 0 8px rgba(255, 107, 53, 0.5);
+}
+
+.ww-progress-segment.accent {
+    background: var(--holo-teal);
+    box-shadow: 0 0 8px rgba(0, 255, 200, 0.5);
+}
+
+/* Animated Progress Bar with Data Flow */
+.ww-progress-animated {
+    height: 8px;
+    background: rgba(0, 212, 255, 0.1);
+    border: 1px solid rgba(0, 212, 255, 0.2);
+    position: relative;
+    overflow: hidden;
+}
+
+.ww-progress-animated-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--holo-cyan), var(--holo-teal));
+    position: relative;
+    transition: width 0.5s ease;
+}
+
+.ww-progress-animated-fill::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    animation: progressShimmer 2s linear infinite;
+}
+
+@keyframes progressShimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+/* Circular Gauge - Westworld Style */
+.ww-circular-gauge {
+    position: relative;
+    width: 100px;
+    height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ww-circular-gauge svg {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+}
+
+.ww-circular-gauge-bg {
+    fill: none;
+    stroke: rgba(0, 212, 255, 0.15);
+    stroke-width: 4;
+}
+
+.ww-circular-gauge-fill {
+    fill: none;
+    stroke: var(--holo-cyan);
+    stroke-width: 4;
+    stroke-linecap: round;
+    stroke-dasharray: 283;
+    stroke-dashoffset: 283;
+    transition: stroke-dashoffset 1s ease;
+    filter: drop-shadow(0 0 6px rgba(0, 212, 255, 0.5));
+}
+
+.ww-circular-gauge-value {
+    font-family: 'Orbitron', sans-serif !important;
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--holo-cyan);
+    text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+}
+
+.ww-circular-gauge-label {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 8px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    position: absolute;
+    top: 8px;
+}
+
+/* Hexagonal Badge - Westworld Style */
+.ww-hex-badge {
+    position: relative;
+    width: 60px;
+    height: 69px;
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(0, 102, 255, 0.1));
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.ww-hex-badge::before {
+    content: "";
+    position: absolute;
+    inset: 2px;
+    background: var(--void-black);
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+}
+
+.ww-hex-badge-value {
+    position: relative;
+    font-family: 'Orbitron', sans-serif !important;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--holo-cyan);
+    z-index: 1;
+}
+
+.ww-hex-badge-label {
+    position: relative;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 8px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    z-index: 1;
+}
+
+/* Data Cards Grid */
+.ww-data-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+
+.ww-data-card {
+    padding: 10px;
+    background: rgba(0, 212, 255, 0.05);
+    border: 1px solid rgba(0, 212, 255, 0.15);
+    transition: all 0.3s ease;
+}
+
+.ww-data-card:hover {
+    border-color: rgba(0, 212, 255, 0.4);
+    background: rgba(0, 212, 255, 0.1);
+}
+
+.ww-data-card-label {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 8px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 4px;
+}
+
+.ww-data-card-value {
+    font-family: 'Orbitron', sans-serif !important;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+/* Timeline / Behavior History */
+.ww-timeline {
+    position: relative;
+    padding-left: 20px;
+}
+
+.ww-timeline::before {
+    content: "";
+    position: absolute;
+    left: 6px;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: linear-gradient(to bottom, var(--holo-cyan), rgba(0, 212, 255, 0.1));
+}
+
+.ww-timeline-item {
+    position: relative;
+    padding: 8px 0 8px 16px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.ww-timeline-item:hover {
+    background: rgba(0, 212, 255, 0.05);
+}
+
+.ww-timeline-item::before {
+    content: "";
+    position: absolute;
+    left: -14px;
+    top: 12px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--void-black);
+    border: 2px solid var(--holo-cyan);
+    transition: all 0.2s ease;
+}
+
+.ww-timeline-item:hover::before {
+    background: var(--holo-cyan);
+    box-shadow: 0 0 10px var(--holo-cyan);
+    transform: scale(1.2);
+}
+
+.ww-timeline-item.active::before {
+    background: var(--holo-cyan);
+    box-shadow: 0 0 10px var(--holo-cyan);
+}
+
+.ww-timeline-title {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 11px;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ww-timeline-title-icon {
+    color: var(--holo-cyan);
+    font-size: 10px;
+}
+
+.ww-timeline-desc {
+    font-size: 10px;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+}
+
+.ww-timeline-time {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 9px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+/* Memory Fragments */
+.ww-memory-fragment {
+    padding: 10px;
+    background: rgba(0, 212, 255, 0.05);
+    border: 1px solid rgba(0, 212, 255, 0.2);
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.ww-memory-fragment:hover {
+    border-color: rgba(0, 212, 255, 0.4);
+}
+
+.ww-memory-fragment.corrupted {
+    border-color: rgba(255, 107, 53, 0.3);
+    background: rgba(255, 107, 53, 0.05);
+}
+
+.ww-memory-fragment.corrupted .ww-memory-text {
+    color: rgba(255, 107, 53, 0.6);
+    text-decoration: line-through;
+}
+
+.ww-memory-text {
+    font-size: 10px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.ww-memory-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 8px;
+    color: var(--text-muted);
+}
+
+.ww-memory-status {
+    font-size: 8px;
+    color: var(--holo-orange);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+/* Narrative Loops Grid */
+.ww-loops-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+
+.ww-loop-card {
+    padding: 8px;
+    border: 1px solid rgba(0, 212, 255, 0.2);
+    background: rgba(0, 212, 255, 0.03);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.ww-loop-card:hover {
+    transform: scale(1.02);
+}
+
+.ww-loop-card.active {
+    border-color: var(--holo-cyan);
+    background: rgba(0, 212, 255, 0.1);
+}
+
+.ww-loop-card.warning {
+    border-color: var(--holo-orange);
+    background: rgba(255, 107, 53, 0.1);
+}
+
+.ww-loop-card.warning .ww-loop-deviation {
+    color: var(--holo-orange);
+}
+
+.ww-loop-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.ww-loop-status {
+    font-size: 10px;
+}
+
+.ww-loop-name {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 9px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ww-loop-meta {
+    display: flex;
+    justify-content: space-between;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 8px;
+    color: var(--text-muted);
+}
+
+.ww-loop-deviation {
+    color: var(--text-muted);
+}
+
+/* Core Drives Progress */
+.ww-drive-item {
+    margin-bottom: 12px;
+}
+
+.ww-drive-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.ww-drive-label {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 11px;
+    color: var(--text-primary);
+    transition: color 0.2s ease;
+}
+
+.ww-drive-item:hover .ww-drive-label {
+    color: var(--holo-cyan);
+}
+
+.ww-drive-value {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 10px;
+    color: var(--text-muted);
+}
+
+.ww-drive-bar {
+    height: 8px;
+    background: rgba(0, 212, 255, 0.1);
+    border: 1px solid rgba(0, 212, 255, 0.15);
+    position: relative;
+    overflow: hidden;
+}
+
+.ww-drive-bar:hover {
+    border-color: rgba(0, 212, 255, 0.3);
+}
+
+.ww-drive-fill {
+    height: 100%;
+    transition: width 0.7s ease;
+    position: relative;
+}
+
+.ww-drive-fill.cyan {
+    background: linear-gradient(90deg, var(--holo-cyan), rgba(0, 212, 255, 0.5));
+}
+
+.ww-drive-fill.orange {
+    background: linear-gradient(90deg, var(--holo-orange), rgba(255, 107, 53, 0.5));
+}
+
+.ww-drive-fill.teal {
+    background: linear-gradient(90deg, var(--holo-teal), rgba(0, 255, 200, 0.5));
+}
+
+.ww-drive-fill::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+    animation: driveShimmer 3s linear infinite;
+}
+
+@keyframes driveShimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(200%); }
+}
+
+.ww-drive-desc {
+    font-size: 8px;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-top: 2px;
+}
+
+/* Violent Index Hexagon */
+.ww-violent-index {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+}
+
+.ww-violent-text {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.ww-violent-hex {
+    position: relative;
+    width: 100px;
+    height: 115px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.ww-violent-hex-bg {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 212, 255, 0.1);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    transition: all 0.3s ease;
+}
+
+.ww-violent-index:hover .ww-violent-hex-bg {
+    border-color: rgba(0, 212, 255, 0.6);
+}
+
+.ww-violent-hex-value {
+    position: relative;
+    font-family: 'Orbitron', sans-serif !important;
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--holo-cyan);
+    text-shadow: 0 0 15px rgba(0, 212, 255, 0.5);
+    z-index: 1;
+}
+
+.ww-violent-hex-unit {
+    position: relative;
+    font-family: 'Orbitron', sans-serif !important;
+    font-size: 16px;
+    color: rgba(0, 212, 255, 0.7);
+    z-index: 1;
+}
+
+.ww-violent-hex-dot {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background: var(--holo-cyan);
+    transition: all 0.3s ease;
+}
+
+.ww-violent-hex-dot.top {
+    top: -4px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.ww-violent-hex-dot.bottom {
+    bottom: -4px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+/* Conversation Behavior Matrix */
+.ww-behavior-matrix {
+    display: flex;
+    gap: 16px;
+}
+
+.ww-behavior-column {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ww-behavior-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.ww-behavior-arrow {
+    color: var(--holo-cyan);
+    font-size: 10px;
+}
+
+.ww-behavior-word {
+    padding: 4px 12px;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 12px;
+    border: 1px solid rgba(0, 212, 255, 0.2);
+    border-radius: 2px;
+    color: var(--text-muted);
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.ww-behavior-word:hover {
+    border-color: rgba(0, 212, 255, 0.4);
+}
+
+.ww-behavior-word.active {
+    border-color: var(--holo-cyan);
+    background: rgba(0, 212, 255, 0.1);
+    color: var(--text-primary);
+}
+
+.ww-behavior-word.warning {
+    border-color: var(--holo-orange);
+    background: rgba(255, 107, 53, 0.1);
+    color: var(--holo-orange);
+}
+
+/* Bicameral Mind Text */
+.ww-bicameral-text {
+    font-size: 10px;
+    line-height: 1.6;
+}
+
+.ww-bicameral-text .highlight {
+    color: var(--holo-orange);
+}
+
+.ww-bicameral-text .dim {
+    color: var(--text-muted);
+}
+
+/* Hex Code Array */
+.ww-hex-array {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 10px;
+    color: var(--text-muted);
+    line-height: 1.6;
+}
+
+.ww-hex-array div:hover {
+    color: var(--text-secondary);
+}
+
+/* Sync Indicator */
+.ww-sync-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ww-sync-dot {
+    width: 8px;
+    height: 8px;
+    background: var(--holo-cyan);
+    animation: syncPulse 1.5s ease-in-out infinite;
+}
+
+.ww-sync-dot:nth-child(2) {
+    animation-delay: 0.3s;
+    opacity: 0.6;
+}
+
+.ww-sync-dot:nth-child(3) {
+    animation-delay: 0.6s;
+    opacity: 0.3;
+}
+
+@keyframes syncPulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(0.8); opacity: 0.5; }
+}
+
+.ww-sync-label {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+/* ============================================
+   FUTURISTIC ICONSET - WESTWORLD INSPIRED
+   ============================================ */
+
+/* Base Icon Container */
+.ww-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+/* Hexagonal Icon Frame */
+.ww-icon-hex {
+    width: 36px;
+    height: 36px;
+    position: relative;
+}
+
+.ww-icon-hex::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 212, 255, 0.1);
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    transition: all 0.2s ease;
+}
+
+.ww-icon-hex:hover::before {
+    background: rgba(0, 212, 255, 0.2);
+}
+
+.ww-icon-hex svg {
+    position: relative;
+    width: 18px;
+    height: 18px;
+    z-index: 1;
+}
+
+/* Circular Icon with Ring */
+.ww-icon-circle {
+    width: 40px;
+    height: 40px;
+    position: relative;
+}
+
+.ww-icon-circle::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 2px solid rgba(0, 212, 255, 0.3);
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+.ww-icon-circle::after {
+    content: "";
+    position: absolute;
+    inset: 4px;
+    background: rgba(0, 212, 255, 0.05);
+    border-radius: 50%;
+}
+
+.ww-icon-circle:hover::before {
+    border-color: var(--holo-cyan);
+    box-shadow: 0 0 15px rgba(0, 212, 255, 0.3);
+}
+
+.ww-icon-circle svg {
+    position: relative;
+    width: 20px;
+    height: 20px;
+    z-index: 1;
+}
+
+/* Data Flow Icon Animation */
+.ww-icon-data-flow svg {
+    animation: iconDataFlow 2s ease-in-out infinite;
+}
+
+@keyframes iconDataFlow {
+    0%, 100% { filter: drop-shadow(0 0 4px rgba(0, 212, 255, 0.3)); }
+    50% { filter: drop-shadow(0 0 10px rgba(0, 212, 255, 0.6)); }
+}
+
+/* New SVG Icon Definitions (as CSS backgrounds) */
+.ww-icon-neural {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2300d4ff' stroke-width='1.5'%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3Ccircle cx='12' cy='3' r='2'/%3E%3Ccircle cx='12' cy='21' r='2'/%3E%3Ccircle cx='21' cy='12' r='2'/%3E%3Ccircle cx='3' cy='12' r='2'/%3E%3Cpath d='M12 9V5M12 19v-4M15 12h4M5 12h4'/%3E%3C/svg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+.ww-icon-host {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2300d4ff' stroke-width='1.5'%3E%3Cpath d='M12 2L2 7l10 5 10-5-10-5z'/%3E%3Cpath d='M2 17l10 5 10-5'/%3E%3Cpath d='M2 12l10 5 10-5'/%3E%3C/svg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+.ww-icon-memory {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2300d4ff' stroke-width='1.5'%3E%3Crect x='4' y='4' width='16' height='16' rx='2'/%3E%3Cpath d='M9 9h6v6H9z'/%3E%3Cpath d='M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3'/%3E%3C/svg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+.ww-icon-loop {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2300d4ff' stroke-width='1.5'%3E%3Cpath d='M17 1l4 4-4 4'/%3E%3Cpath d='M3 11V9a4 4 0 014-4h14'/%3E%3Cpath d='M7 23l-4-4 4-4'/%3E%3Cpath d='M21 13v2a4 4 0 01-4 4H3'/%3E%3C/svg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+.ww-icon-diagnostic {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2300d4ff' stroke-width='1.5'%3E%3Cpath d='M22 12h-4l-3 9L9 3l-3 9H2'/%3E%3C/svg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+.ww-icon-core {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2300d4ff' stroke-width='1.5'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Ccircle cx='12' cy='12' r='6'/%3E%3Ccircle cx='12' cy='12' r='2' fill='%2300d4ff'/%3E%3C/svg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+.ww-icon-transmit {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2300d4ff' stroke-width='1.5'%3E%3Cpath d='M22 2L11 13'/%3E%3Cpolygon points='22,2 15,22 11,13 2,9' fill='none'/%3E%3C/svg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+.ww-icon-analyze {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2300d4ff' stroke-width='1.5'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='M21 21l-4.35-4.35'/%3E%3Cpath d='M11 8v6M8 11h6'/%3E%3C/svg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+.ww-icon-reverie {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2300d4ff' stroke-width='1.5'%3E%3Cpath d='M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z'/%3E%3C/svg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+/* ============================================
+   ENHANCED CONTACT LIST ICONS
+   ============================================ */
+
+/* New AI Avatar Style */
+.neural-contact-avatar.ww-avatar {
+    position: relative;
+    overflow: visible;
+}
+
+.neural-contact-avatar.ww-avatar::before {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border: 1px solid transparent;
+    border-top-color: var(--holo-cyan);
+    border-radius: 50%;
+    animation: rotateRing 4s linear infinite;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.neural-contact:hover .neural-contact-avatar.ww-avatar::before {
+    opacity: 0.6;
+}
+
+/* Host Status Indicator */
+.ww-host-status {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 12px;
+    height: 12px;
+    background: var(--void-black);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ww-host-status::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--holo-teal);
+    animation: statusPulse 2s ease-in-out infinite;
+}
+
+.ww-host-status.warning::before {
+    background: var(--holo-yellow);
+}
+
+.ww-host-status.error::before {
+    background: var(--holo-orange);
+}
+
+.ww-host-status.offline::before {
+    background: var(--status-offline);
+    animation: none;
+}
+
+/* ============================================
+   DATA VISUALIZATION ENHANCEMENTS
+   ============================================ */
+
+/* Attribute Bars (Violence, Hatred, Love, etc.) */
+.ww-attribute-row {
+    margin-bottom: 8px;
+}
+
+.ww-attribute-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.ww-attribute-label {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 12px;
+    color: var(--holo-cyan);
+    font-style: italic;
+    transition: all 0.2s ease;
+}
+
+.ww-attribute-row:hover .ww-attribute-label {
+    text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+}
+
+.ww-attribute-value {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 10px;
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.ww-attribute-row:hover .ww-attribute-value {
+    opacity: 1;
+}
+
+.ww-attribute-bar {
+    height: 6px;
+    background: rgba(0, 212, 255, 0.15);
+    position: relative;
+    overflow: hidden;
+}
+
+.ww-attribute-bar::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    display: flex;
+}
+
+/* Segmented overlay for attribute bars */
+.ww-attribute-bar-segments {
+    position: absolute;
+    inset: 0;
+    display: flex;
+}
+
+.ww-attribute-bar-segments > div {
+    flex: 1;
+    border-right: 1px solid var(--void-black);
+}
+
+.ww-attribute-bar-segments > div:last-child {
+    border-right: none;
+}
+
+.ww-attribute-fill {
+    height: 100%;
+    background: var(--holo-cyan);
+    position: relative;
+    transition: width 0.5s ease;
+}
+
+.ww-attribute-fill.gradient {
+    background: linear-gradient(90deg, var(--holo-cyan), var(--holo-teal));
+}
+
+.ww-attribute-fill::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+    transform: translateX(-100%);
+    transition: transform 0.5s ease;
+}
+
+.ww-attribute-row:hover .ww-attribute-fill::after {
+    transform: translateX(100%);
+}
+
+/* Time Display Blocks */
+.ww-time-blocks {
+    display: flex;
+    gap: 2px;
+}
+
+.ww-time-block {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Orbitron', sans-serif !important;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.ww-time-block.primary {
+    background: var(--holo-teal);
+    color: var(--void-black);
+}
+
+.ww-time-block.secondary {
+    background: rgba(0, 212, 255, 0.1);
+    border: 1px solid rgba(0, 212, 255, 0.2);
+    color: var(--text-primary);
+}
+
+/* Progress Strip */
+.ww-progress-strip {
+    height: 6px;
+    display: flex;
+    gap: 0;
+    flex: 1;
+}
+
+.ww-progress-strip-segment {
+    flex: 1;
+    transition: background 0.3s ease;
+}
+
+.ww-progress-strip-segment.cyan {
+    background: var(--holo-cyan);
+}
+
+.ww-progress-strip-segment.cyan-dim {
+    background: rgba(0, 212, 255, 0.5);
+}
+
+.ww-progress-strip-segment.teal {
+    background: rgba(0, 255, 200, 0.6);
+}
+
+.ww-progress-strip-segment.muted {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* ============================================
+   ENHANCED ANIMATIONS - WESTWORLD STYLE
+   ============================================ */
+
+/* Flicker Animation */
+@keyframes ww-flicker {
+    0%, 100% { opacity: 1; }
+    92% { opacity: 1; }
+    93% { opacity: 0.3; }
+    94% { opacity: 1; }
+    96% { opacity: 0.5; }
+    97% { opacity: 1; }
+}
+
+.ww-flicker {
+    animation: ww-flicker 4s infinite;
+}
+
+/* Data Pulse */
+@keyframes ww-data-pulse {
+    0% { transform: scaleX(0); opacity: 1; }
+    100% { transform: scaleX(1); opacity: 0; }
+}
+
+.ww-data-pulse {
+    position: relative;
+    overflow: hidden;
+}
+
+.ww-data-pulse::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.3), transparent);
+    transform-origin: left;
+    animation: ww-data-pulse 3s ease-out infinite;
+}
+
+/* Breathing Glow */
+@keyframes ww-breathe {
+    0%, 100% {
+        box-shadow: 0 0 10px rgba(0, 212, 255, 0.2);
+    }
+    50% {
+        box-shadow: 0 0 20px rgba(0, 212, 255, 0.4), 0 0 40px rgba(0, 212, 255, 0.2);
+    }
+}
+
+.ww-breathe {
+    animation: ww-breathe 3s ease-in-out infinite;
+}
+
+/* Ring Rotation */
+@keyframes ww-ring-rotate {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.ww-ring-rotate {
+    animation: ww-ring-rotate 10s linear infinite;
+}
+
+/* Boot Text */
+@keyframes ww-boot-text {
+    0% { width: 0; }
+    100% { width: 100%; }
+}
+
+.ww-boot-text {
+    overflow: hidden;
+    white-space: nowrap;
+    animation: ww-boot-text 2s steps(40) forwards;
+}
+
+/* ============================================
+   SPECIAL EFFECTS
+   ============================================ */
+
+/* Holographic Shimmer on Headers */
+.neural-header-title {
+    position: relative;
+}
+
+.neural-header-title::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.1), transparent);
+    transform: translateX(-100%);
+    animation: headerShimmer 5s ease infinite;
+}
+
+@keyframes headerShimmer {
+    0%, 80%, 100% { transform: translateX(-100%); }
+    90% { transform: translateX(100%); }
+}
+
+/* Enhanced Empty State with Westworld Elements */
+.neural-empty-state .neural-empty-icon {
+    position: relative;
+}
+
+/* Rotating Rings around Arc Reactor */
+.ww-orbital-ring {
+    position: absolute;
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    border-radius: 50%;
+    pointer-events: none;
+}
+
+.ww-orbital-ring.ring-1 {
+    inset: -20px;
+    animation: ww-ring-rotate 6s linear infinite;
+}
+
+.ww-orbital-ring.ring-2 {
+    inset: -35px;
+    animation: ww-ring-rotate 10s linear infinite reverse;
+    border-style: dashed;
+    opacity: 0.5;
+}
+
+.ww-orbital-ring.ring-3 {
+    inset: -50px;
+    animation: ww-ring-rotate 15s linear infinite;
+    opacity: 0.3;
+}
+
+/* Cross Markers (like the Westworld + symbols) */
+.ww-cross-marker {
+    position: fixed;
+    color: rgba(0, 212, 255, 0.2);
+    font-size: 24px;
+    pointer-events: none;
+    animation: ww-cross-pulse 4s ease-in-out infinite;
+}
+
+@keyframes ww-cross-pulse {
+    0%, 100% { opacity: 0.2; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(1.1); }
+}
+
+.ww-cross-marker.pos-1 { bottom: 25%; right: 33%; animation-delay: 0s; }
+.ww-cross-marker.pos-2 { top: 33%; right: 25%; animation-delay: 0.5s; }
+.ww-cross-marker.pos-3 { bottom: 33%; left: 50%; animation-delay: 1s; }
+
+/* Host Profile Hexagon */
+.ww-host-hex {
+    position: relative;
+    width: 200px;
+    height: 230px;
+}
+
+.ww-host-hex-outer {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.3), rgba(0, 212, 255, 0.1));
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    filter: blur(10px);
+}
+
+.ww-host-hex-border {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.4), rgba(0, 212, 255, 0.2));
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    padding: 2px;
+}
+
+.ww-host-hex-inner {
+    width: 100%;
+    height: 100%;
+    background: var(--void-black);
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ww-host-hex-inner img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scale(1.2);
+}
+
+/* Enhanced Modal Styling */
+.neural-modal {
+    position: relative;
+}
+
+.neural-modal::before,
+.neural-modal::after {
+    content: "";
+    position: absolute;
+    width: 16px;
+    height: 16px;
+}
+
+.neural-modal::before {
+    top: -1px;
+    left: -1px;
+    border-top: 2px solid var(--holo-cyan);
+    border-left: 2px solid var(--holo-cyan);
+}
+
+.neural-modal::after {
+    bottom: -1px;
+    right: -1px;
+    border-bottom: 2px solid var(--holo-cyan);
+    border-right: 2px solid var(--holo-cyan);
+}
