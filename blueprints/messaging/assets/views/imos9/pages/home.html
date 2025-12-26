@@ -1,0 +1,32 @@
+{{define "content"}}
+<div class="os9-auth-container">
+    <div class="os9-auth-card">
+        <div class="os9-auth-header">
+            <span class="os9-modal-title">Messages</span>
+        </div>
+        <div class="os9-auth-body" style="text-align: center;">
+            <!-- Mac OS 9 Style Icon -->
+            <svg class="os9-auth-logo" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="2" y="2" width="28" height="28" rx="2" fill="#DDDDDD" stroke="#000000" stroke-width="1"/>
+                <rect x="4" y="6" width="24" height="20" fill="#FFFFFF" stroke="#000000" stroke-width="1"/>
+                <path d="M8 12H24M8 16H20M8 20H16" stroke="#666666" stroke-width="1"/>
+                <rect x="4" y="2" width="24" height="4" fill="#CCCCCC" stroke="#000000" stroke-width="0.5"/>
+            </svg>
+
+            <h1 class="os9-auth-title">Welcome to Messages</h1>
+            <p class="os9-auth-subtitle">Sign in to start messaging your friends</p>
+
+            <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 16px;">
+                <a href="/login" class="os9-btn os9-btn-default os9-btn-block" style="text-decoration: none;">Sign In</a>
+                <a href="/register" class="os9-btn os9-btn-block" style="text-decoration: none;">Create Account</a>
+            </div>
+
+            <div class="os9-auth-footer">
+                <p style="margin-top: 12px; font-size: 10px; color: var(--os9-gray-600);">
+                    Mac OS 9 Platinum Theme
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

@@ -1,0 +1,1107 @@
+{{define "content"}}
+<div class="os9-window">
+    <!-- Title Bar -->
+    <div class="os9-titlebar">
+        <div class="os9-window-controls">
+            <button class="os9-control-btn os9-control-close" title="Close"></button>
+        </div>
+        <span class="os9-title">Messages</span>
+        <div class="os9-titlebar-actions">
+            <button class="os9-titlebar-btn" onclick="showNewChatModal()" title="New Message">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 5v14M5 12h14"/>
+                </svg>
+            </button>
+        </div>
+        <div class="os9-window-controls">
+            <button class="os9-control-btn os9-control-zoom" title="Zoom"></button>
+        </div>
+    </div>
+
+    <!-- Main Layout -->
+    <div class="os9-main">
+        <!-- Sidebar -->
+        <div class="os9-sidebar">
+            <!-- Search -->
+            <div class="os9-search">
+                <input type="text" class="os9-search-input" placeholder="Search..." id="search-input" oninput="filterConversations(this.value)">
+            </div>
+
+            <!-- Conversations List -->
+            <div class="os9-conversations" id="conversations-list">
+                <!-- Conversations will be loaded dynamically -->
+            </div>
+        </div>
+
+        <!-- Content Area -->
+        <div class="os9-content" id="content-area">
+            <!-- Empty State -->
+            <div class="os9-empty-state" id="empty-state">
+                <div class="os9-empty-icon">
+                    <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="4" y="4" width="40" height="40" rx="4" stroke="currentColor" stroke-width="2"/>
+                        <path d="M24 12v12M18 24h12" stroke="currentColor" stroke-width="2"/>
+                        <circle cx="24" cy="32" r="2" fill="currentColor"/>
+                    </svg>
+                </div>
+                <h2 class="os9-empty-title">No Conversation Selected</h2>
+                <p class="os9-empty-text">Choose a conversation from the list or start a new one.</p>
+                <button class="os9-btn os9-btn-default" onclick="showNewChatModal()">New Message</button>
+            </div>
+
+            <!-- Chat View (hidden by default) -->
+            <div id="chat-view" class="hidden" style="display: flex; flex-direction: column; height: 100%;">
+                <!-- Chat Header -->
+                <div class="os9-content-header">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div class="os9-avatar sm" id="chat-avatar"></div>
+                        <span class="os9-content-title" id="chat-title"></span>
+                    </div>
+                </div>
+
+                <!-- Messages -->
+                <div class="os9-messages" id="messages-container">
+                    <!-- Messages will be loaded dynamically -->
+                </div>
+
+                <!-- Input Area -->
+                <div class="os9-input-area">
+                    <div class="os9-input-actions">
+                        <input type="file" id="media-file-input" style="display: none;" multiple accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" onchange="handleFileSelect(event)">
+                        <button class="os9-input-btn" onclick="document.getElementById('media-file-input').click()" title="Attach">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="os9-input-wrapper" id="os9-picker-wrapper">
+                        <textarea
+                            id="message-input"
+                            class="os9-input"
+                            placeholder="Type a message..."
+                            rows="1"
+                            onkeydown="handleKeyDown(event)"
+                            oninput="autoResize(this)"
+                        ></textarea>
+                    </div>
+                    <div class="os9-input-actions">
+                        <button class="os9-input-btn" onclick="toggleEmojiPicker(this, document.getElementById('message-input'))" title="Emoji">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
+                                <line x1="9" y1="9" x2="9.01" y2="9"/>
+                                <line x1="15" y1="9" x2="15.01" y2="9"/>
+                            </svg>
+                        </button>
+                        <button class="os9-input-btn" onclick="toggleStickerPicker(this, handleSendSticker)" title="Stickers">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                <circle cx="8.5" cy="8.5" r="1.5"/>
+                                <path d="m21 15-5-5L5 21"/>
+                            </svg>
+                        </button>
+                        <button class="os9-input-btn voice-record-btn" id="voice-record-btn" onclick="handleVoiceRecord()" title="Voice">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+                                <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+                                <line x1="12" y1="19" x2="12" y2="23"/>
+                                <line x1="8" y1="23" x2="16" y2="23"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <button class="os9-send-btn" id="send-btn" onclick="sendMessage()" title="Send">Send</button>
+                </div>
+
+                <!-- Voice Recording Container -->
+                <div id="voice-recording-container" class="hidden"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- New Message Modal -->
+<div id="new-chat-modal" class="os9-modal-overlay">
+    <div class="os9-modal">
+        <div class="os9-modal-header">
+            <span class="os9-modal-title">New Message</span>
+            <button class="os9-modal-close" onclick="hideNewChatModal()">x</button>
+        </div>
+        <div class="os9-modal-body">
+            <div class="os9-form-group">
+                <label class="os9-label">To:</label>
+                <input type="text" id="contact-search" class="os9-input-field" placeholder="Enter a name or username" oninput="searchUsers(this.value)">
+            </div>
+            <div id="contact-list" style="max-height: 150px; overflow-y: auto; background: var(--os9-white); border: 1px solid var(--os9-gray-500);">
+                <div style="padding: 8px; text-align: center; color: var(--os9-gray-600); font-size: 11px;">
+                    Type to search for users...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- QR/Friend Code Modal -->
+<div id="qr-modal" class="os9-modal-overlay">
+    <div class="os9-modal" style="max-width: 300px;">
+        <div class="os9-modal-header">
+            <span class="os9-modal-title">Your Friend Code</span>
+            <button class="os9-modal-close" onclick="hideQRModal()">x</button>
+        </div>
+        <div class="os9-modal-body" style="text-align: center;">
+            <!-- Tabs -->
+            <div class="os9-tabs" style="margin-bottom: 12px;">
+                <button class="os9-tab active" onclick="switchQRTab('my-code')" id="qr-tab-my-code">My Code</button>
+                <button class="os9-tab" onclick="switchQRTab('scan')" id="qr-tab-scan">Add Friend</button>
+            </div>
+
+            <!-- My Code Tab -->
+            <div id="qr-my-code-content">
+                <p style="font-size: 11px; color: var(--os9-gray-700); margin-bottom: 12px;">
+                    Share this code with friends to let them add you.
+                </p>
+                <div id="qr-code-container" style="background: white; padding: 12px; border: 1px solid var(--os9-black); display: inline-block; margin-bottom: 8px;">
+                    Loading...
+                </div>
+                <div id="qr-code-text" style="font-family: var(--font-mono); font-size: 14px; font-weight: bold; margin-bottom: 12px;"></div>
+                <div style="display: flex; gap: 6px; justify-content: center;">
+                    <button class="os9-btn" onclick="copyFriendCode()">Copy Code</button>
+                    <button class="os9-btn" onclick="copyFriendLink()">Copy Link</button>
+                </div>
+            </div>
+
+            <!-- Add Friend Tab -->
+            <div id="qr-scan-content" class="hidden">
+                <p style="font-size: 11px; color: var(--os9-gray-700); margin-bottom: 12px;">
+                    Enter a friend code to add someone.
+                </p>
+                <div class="os9-form-group">
+                    <input type="text" id="friend-code-input" class="os9-input-field" style="text-align: center; font-family: var(--font-mono);" placeholder="MIZU-XXXXXXXX" oninput="this.value = this.value.toUpperCase()">
+                </div>
+                <button class="os9-btn os9-btn-default os9-btn-block" onclick="lookupFriendCode()">Look Up</button>
+                <div id="friend-code-result" class="hidden" style="margin-top: 12px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Friend Preview Modal -->
+<div id="friend-preview-modal" class="os9-modal-overlay">
+    <div class="os9-modal" style="max-width: 260px;">
+        <div class="os9-modal-header">
+            <span class="os9-modal-title">Add Friend</span>
+            <button class="os9-modal-close" onclick="hideFriendPreviewModal()">x</button>
+        </div>
+        <div class="os9-modal-body" style="text-align: center;">
+            <div class="os9-avatar" style="width: 48px; height: 48px; font-size: 20px; margin: 0 auto 8px;"></div>
+            <div id="friend-preview-name" style="font-size: 14px; font-weight: bold;"></div>
+            <div id="friend-preview-username" style="font-size: 11px; color: var(--os9-gray-700);"></div>
+            <div id="friend-preview-status" style="font-size: 11px; color: var(--os9-gray-600); margin-top: 4px;"></div>
+        </div>
+        <div class="os9-modal-footer">
+            <button class="os9-btn" onclick="hideFriendPreviewModal()">Cancel</button>
+            <button class="os9-btn os9-btn-default" onclick="confirmAddFriend()">Add Friend</button>
+        </div>
+    </div>
+</div>
+
+<form id="message-form" style="display: none;"></form>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="/static/js/emoji-data.js"></script>
+<script src="/static/js/sticker-data.js"></script>
+<script src="/static/js/media.js"></script>
+
+<script>
+// App state
+let currentUser = null;
+let currentChat = null;
+let chats = [];
+let messages = [];
+let ws = null;
+let typingTimeout = null;
+
+// Initialize
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadCurrentUser();
+    await ensureUserChats();
+    await loadChats();
+    connectWebSocket();
+});
+
+// Ensure user has default chats
+async function ensureUserChats() {
+    try {
+        await fetch('/api/v1/users/ensure-chats', { method: 'POST' });
+    } catch (err) {
+        console.error('Failed to ensure user chats:', err);
+    }
+}
+
+// Load current user
+async function loadCurrentUser() {
+    try {
+        const res = await fetch('/api/v1/users/me');
+        const data = await res.json();
+        if (data.success && data.data) {
+            currentUser = data.data;
+        } else {
+            window.location.href = '/login';
+        }
+    } catch (err) {
+        console.error('Failed to load user:', err);
+        window.location.href = '/login';
+    }
+}
+
+// Load chats
+async function loadChats() {
+    try {
+        const res = await fetch('/api/v1/chats');
+        const data = await res.json();
+        if (data.success) {
+            chats = data.data || [];
+            renderConversations();
+        }
+    } catch (err) {
+        console.error('Failed to load chats:', err);
+    }
+}
+
+// Render conversations in sidebar
+function renderConversations() {
+    const container = document.getElementById('conversations-list');
+
+    if (chats.length === 0) {
+        container.innerHTML = `
+            <div style="padding: 16px; text-align: center;">
+                <p style="font-size: 11px; color: var(--os9-gray-600);">No conversations yet</p>
+                <button class="os9-btn-link" onclick="showNewChatModal()" style="margin-top: 6px; font-size: 11px;">Start a new one</button>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = chats.map(chat => {
+        const isSelfChat = chat.type === 'direct' && chat.other_user?.id === currentUser?.id;
+        const isAgent = chat.type === 'direct' && chat.other_user?.username === 'mizu-agent';
+
+        let name, initial;
+        if (isSelfChat) {
+            name = 'Saved Messages';
+            initial = 'S';
+        } else if (isAgent) {
+            name = chat.other_user?.display_name || 'Mizu Agent';
+            initial = 'M';
+        } else if (chat.type === 'direct') {
+            name = chat.other_user?.display_name || chat.other_user?.username;
+            initial = (name || '?').charAt(0).toUpperCase();
+        } else {
+            name = chat.group_name || chat.name;
+            initial = (name || '?').charAt(0).toUpperCase();
+        }
+
+        const isActive = currentChat?.id === chat.id;
+        const unread = chat.unread_count || 0;
+        const preview = chat.last_message?.content || 'No messages yet';
+        const time = chat.last_message?.created_at ? formatTime(chat.last_message.created_at) : '';
+        const gradientClass = `gradient-${(chat.id.charCodeAt(0) % 5) + 1}`;
+
+        return `
+            <div class="os9-conversation ${isActive ? 'active' : ''}" onclick="selectChat('${chat.id}')">
+                <div class="os9-avatar ${gradientClass}">${initial}</div>
+                <div class="os9-conversation-content">
+                    <div class="os9-conversation-header">
+                        <span class="os9-conversation-name">${escapeHtml(name)}</span>
+                        <span class="os9-conversation-time">${time}</span>
+                    </div>
+                    <div class="os9-conversation-preview">${escapeHtml(truncate(preview, 30))}</div>
+                </div>
+                ${unread > 0 ? '<div class="os9-conversation-unread"></div>' : ''}
+            </div>
+        `;
+    }).join('');
+}
+
+// Filter conversations
+function filterConversations(query) {
+    const items = document.querySelectorAll('.os9-conversation');
+    const q = query.toLowerCase();
+
+    items.forEach(item => {
+        const name = item.querySelector('.os9-conversation-name').textContent.toLowerCase();
+        item.style.display = name.includes(q) ? '' : 'none';
+    });
+}
+
+// Select chat
+async function selectChat(chatId) {
+    currentChat = chats.find(c => c.id === chatId);
+    if (!currentChat) return;
+
+    // Update UI
+    document.getElementById('empty-state').classList.add('hidden');
+    document.getElementById('chat-view').classList.remove('hidden');
+    document.getElementById('chat-view').style.display = 'flex';
+
+    // Update header
+    const isSelfChat = currentChat.type === 'direct' && currentChat.other_user?.id === currentUser?.id;
+    const isAgent = currentChat.type === 'direct' && currentChat.other_user?.username === 'mizu-agent';
+    let name, initial;
+
+    if (isSelfChat) {
+        name = 'Saved Messages';
+        initial = 'S';
+    } else if (isAgent) {
+        name = currentChat.other_user?.display_name || 'Mizu Agent';
+        initial = 'M';
+    } else if (currentChat.type === 'direct') {
+        name = currentChat.other_user?.display_name || currentChat.other_user?.username;
+        initial = (name || '?').charAt(0).toUpperCase();
+    } else {
+        name = currentChat.group_name || currentChat.name;
+        initial = (name || '?').charAt(0).toUpperCase();
+    }
+
+    document.getElementById('chat-title').textContent = name;
+    document.getElementById('chat-avatar').textContent = initial;
+
+    renderConversations();
+    await loadMessages(chatId);
+    markAsRead(chatId);
+}
+
+// Load messages
+async function loadMessages(chatId) {
+    const container = document.getElementById('messages-container');
+    container.innerHTML = '<div style="padding: 12px; text-align: center; color: var(--os9-gray-600);">Loading...</div>';
+
+    try {
+        const res = await fetch(`/api/v1/chats/${chatId}/messages`);
+        const data = await res.json();
+        if (data.success) {
+            messages = data.data || [];
+            renderMessages();
+        } else {
+            messages = [];
+            renderMessages();
+        }
+    } catch (err) {
+        console.error('Failed to load messages:', err);
+        messages = [];
+        renderMessages();
+    }
+}
+
+// Render messages
+function renderMessages() {
+    const container = document.getElementById('messages-container');
+
+    if (messages.length === 0) {
+        container.innerHTML = `
+            <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                <p style="font-size: 11px; color: var(--os9-gray-600);">No messages yet. Say hello!</p>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = messages.map((msg, idx) => {
+        const isSent = msg.sender_id === currentUser?.id;
+        const time = formatTime(msg.created_at);
+
+        // Handle sticker messages
+        if (msg.type === 'sticker' && msg.metadata?.sticker_id) {
+            const sticker = getStickerById(msg.metadata.sticker_id);
+            const stickerContent = sticker ? sticker.svg : '<div style="padding: 16px; color: var(--os9-gray-600);">[Sticker]</div>';
+            return `
+                <div class="os9-message-wrapper ${isSent ? 'sent' : 'received'}" data-message-id="${msg.id}">
+                    <div class="os9-message os9-message-sticker ${isSent ? 'sent' : 'received'}">${stickerContent}</div>
+                    <div class="os9-message-time">${time}</div>
+                    ${renderReactions(msg)}
+                </div>
+            `;
+        }
+
+        // Check if it's a media message
+        const isMedia = msg.media_id || msg.media_url || ['image', 'video', 'audio', 'voice', 'document'].includes(msg.type);
+        let contentHtml = '';
+
+        if (isMedia) {
+            contentHtml = renderMediaContent(msg);
+            if (msg.content) {
+                contentHtml += `<div style="margin-top: 6px;">${escapeHtml(msg.content)}</div>`;
+            }
+        } else {
+            contentHtml = escapeHtml(msg.content);
+        }
+
+        return `
+            <div class="os9-message-wrapper ${isSent ? 'sent' : 'received'}" data-message-id="${msg.id}">
+                <div class="os9-message ${isSent ? 'sent' : 'received'}">${contentHtml}</div>
+                <div class="os9-message-time">${time}</div>
+                ${renderReactions(msg)}
+            </div>
+        `;
+    }).join('');
+
+    container.scrollTop = container.scrollHeight;
+}
+
+// Render reactions
+function renderReactions(msg) {
+    if (!msg.reactions || msg.reactions.length === 0) return '';
+
+    const reactionCounts = {};
+    msg.reactions.forEach(r => {
+        if (!reactionCounts[r.emoji]) {
+            reactionCounts[r.emoji] = { count: 0, hasOwn: false };
+        }
+        reactionCounts[r.emoji].count++;
+        if (r.user_id === currentUser?.id) {
+            reactionCounts[r.emoji].hasOwn = true;
+        }
+    });
+
+    return `<div class="os9-reactions">
+        ${Object.entries(reactionCounts).map(([emoji, data]) => `
+            <span class="os9-reaction ${data.hasOwn ? 'own' : ''}" onclick="handleReactionClick('${msg.id}', '${emoji}')">
+                <span class="os9-reaction-emoji">${emoji}</span>
+                <span class="os9-reaction-count">${data.count}</span>
+            </span>
+        `).join('')}
+    </div>`;
+}
+
+// Get sticker by ID
+function getStickerById(stickerId) {
+    if (typeof STICKER_PACKS === 'undefined') return null;
+    for (const pack of STICKER_PACKS) {
+        const sticker = pack.stickers.find(s => s.id === stickerId);
+        if (sticker) return sticker;
+    }
+    return null;
+}
+
+// Handle reaction click
+async function handleReactionClick(messageId, emoji) {
+    if (!currentChat) return;
+
+    const msg = messages.find(m => m.id === messageId);
+    const hasOwn = msg?.reactions?.some(r => r.emoji === emoji && r.user_id === currentUser?.id);
+
+    try {
+        if (hasOwn) {
+            await fetch(`/api/v1/chats/${currentChat.id}/messages/${messageId}/react`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ emoji })
+            });
+        } else {
+            await fetch(`/api/v1/chats/${currentChat.id}/messages/${messageId}/react`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ emoji })
+            });
+        }
+        await loadMessages(currentChat.id);
+    } catch (err) {
+        console.error('Failed to toggle reaction:', err);
+    }
+}
+
+// Handle sending a sticker
+async function handleSendSticker(stickerId) {
+    if (!currentChat) return;
+
+    try {
+        const res = await fetch(`/api/v1/chats/${currentChat.id}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                content: '',
+                type: 'sticker',
+                metadata: { sticker_id: stickerId }
+            })
+        });
+
+        const data = await res.json();
+        if (data.success && data.data) {
+            messages.push(data.data);
+            renderMessages();
+            if (typeof addRecentSticker === 'function') {
+                addRecentSticker(stickerId);
+            }
+        }
+    } catch (err) {
+        console.error('Failed to send sticker:', err);
+    }
+}
+
+// Mark as read
+async function markAsRead(chatId) {
+    try {
+        await fetch(`/api/v1/chats/${chatId}/read`, { method: 'POST' });
+        const chat = chats.find(c => c.id === chatId);
+        if (chat) chat.unread_count = 0;
+        renderConversations();
+    } catch (err) {
+        console.error('Failed to mark as read:', err);
+    }
+}
+
+// Send message
+async function sendMessage() {
+    const input = document.getElementById('message-input');
+    const content = input.value.trim();
+
+    if (!content || !currentChat) return;
+
+    input.value = '';
+    input.style.height = 'auto';
+
+    try {
+        const res = await fetch(`/api/v1/chats/${currentChat.id}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content })
+        });
+
+        const data = await res.json();
+        if (data.success && data.data) {
+            messages.push(data.data);
+            renderMessages();
+            currentChat.last_message = data.data;
+            renderConversations();
+        }
+    } catch (err) {
+        console.error('Failed to send message:', err);
+    }
+}
+
+// Handle Enter key
+function handleKeyDown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+    }
+}
+
+// Auto-resize textarea
+function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 80) + 'px';
+}
+
+// WebSocket
+function connectWebSocket() {
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${protocol}//${location.host}/ws`);
+
+    ws.onopen = () => console.log('WebSocket connected');
+    ws.onmessage = (event) => handleWebSocketMessage(JSON.parse(event.data));
+    ws.onclose = () => {
+        console.log('WebSocket disconnected, reconnecting...');
+        setTimeout(connectWebSocket, 3000);
+    };
+    ws.onerror = (err) => console.error('WebSocket error:', err);
+}
+
+function handleWebSocketMessage(data) {
+    switch(data.type) {
+        case 'new_message':
+            handleNewMessage(data.message);
+            break;
+        case 'typing':
+            handleTyping(data);
+            break;
+    }
+}
+
+function handleNewMessage(msg) {
+    const chat = chats.find(c => c.id === msg.chat_id);
+    if (chat) {
+        chat.last_message = msg;
+        if (currentChat?.id !== msg.chat_id) {
+            chat.unread_count = (chat.unread_count || 0) + 1;
+        }
+        chats = [chat, ...chats.filter(c => c.id !== chat.id)];
+        renderConversations();
+    }
+
+    if (currentChat?.id === msg.chat_id) {
+        messages.push(msg);
+        renderMessages();
+        markAsRead(msg.chat_id);
+    }
+}
+
+function handleTyping(data) {
+    // Could show typing indicator
+}
+
+// Modal functions
+function showNewChatModal() {
+    document.getElementById('new-chat-modal').classList.add('active');
+    document.getElementById('contact-search').value = '';
+    document.getElementById('contact-search').focus();
+    showRecentContacts();
+}
+
+function hideNewChatModal() {
+    document.getElementById('new-chat-modal').classList.remove('active');
+}
+
+function showRecentContacts() {
+    const list = document.getElementById('contact-list');
+    const recentUsers = [];
+    const seenIds = new Set();
+
+    for (const chat of chats) {
+        if (chat.type === 'direct' && chat.other_user) {
+            const user = chat.other_user;
+            if (user.id !== currentUser?.id && !seenIds.has(user.id)) {
+                seenIds.add(user.id);
+                recentUsers.push(user);
+            }
+        }
+    }
+
+    if (recentUsers.length === 0) {
+        list.innerHTML = '<div style="padding: 8px; text-align: center; color: var(--os9-gray-600); font-size: 11px;">Type to search for users...</div>';
+        return;
+    }
+
+    list.innerHTML = recentUsers.slice(0, 5).map(user => {
+        const initial = (user.display_name || user.username || '?').charAt(0).toUpperCase();
+        const gradientClass = `gradient-${(user.id.charCodeAt(0) % 5) + 1}`;
+        return `
+            <div class="os9-conversation" onclick="startChat('${user.id}')" style="margin: 0; border-bottom: 1px solid var(--os9-gray-200);">
+                <div class="os9-avatar sm ${gradientClass}">${initial}</div>
+                <div class="os9-conversation-content">
+                    <span class="os9-conversation-name">${escapeHtml(user.display_name || user.username)}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+let searchTimeout = null;
+async function searchUsers(query) {
+    clearTimeout(searchTimeout);
+    const list = document.getElementById('contact-list');
+
+    if (query.trim().length < 2) {
+        showRecentContacts();
+        return;
+    }
+
+    list.innerHTML = '<div style="padding: 8px; text-align: center; color: var(--os9-gray-600); font-size: 11px;">Searching...</div>';
+
+    searchTimeout = setTimeout(async () => {
+        try {
+            const res = await fetch(`/api/v1/users/search?q=${encodeURIComponent(query)}`);
+            const data = await res.json();
+            if (data.success) {
+                const users = (data.data || []).filter(u => u.id !== currentUser?.id);
+                if (users.length === 0) {
+                    list.innerHTML = '<div style="padding: 8px; text-align: center; color: var(--os9-gray-600); font-size: 11px;">No users found</div>';
+                } else {
+                    list.innerHTML = users.map(user => {
+                        const initial = (user.display_name || user.username || '?').charAt(0).toUpperCase();
+                        const gradientClass = `gradient-${(user.id.charCodeAt(0) % 5) + 1}`;
+                        return `
+                            <div class="os9-conversation" onclick="startChat('${user.id}')" style="margin: 0; border-bottom: 1px solid var(--os9-gray-200);">
+                                <div class="os9-avatar sm ${gradientClass}">${initial}</div>
+                                <div class="os9-conversation-content">
+                                    <span class="os9-conversation-name">${escapeHtml(user.display_name || user.username)}</span>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            }
+        } catch (err) {
+            console.error('Search failed:', err);
+        }
+    }, 300);
+}
+
+async function startChat(contactId) {
+    try {
+        const res = await fetch('/api/v1/chats', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'direct', recipient_id: contactId })
+        });
+
+        const data = await res.json();
+        if (data.success && data.data) {
+            hideNewChatModal();
+            if (!chats.find(c => c.id === data.data.id)) {
+                chats.unshift(data.data);
+            }
+            renderConversations();
+            selectChat(data.data.id);
+        }
+    } catch (err) {
+        console.error('Failed to create chat:', err);
+    }
+}
+
+// QR Modal
+let currentFriendCode = null;
+let pendingFriendUser = null;
+let pendingFriendCodeToAdd = null;
+
+function showQRModal() {
+    document.getElementById('qr-modal').classList.add('active');
+    switchQRTab('my-code');
+    loadMyFriendCode();
+}
+
+function hideQRModal() {
+    document.getElementById('qr-modal').classList.remove('active');
+}
+
+function switchQRTab(tab) {
+    document.querySelectorAll('#qr-modal .os9-tab').forEach(t => t.classList.remove('active'));
+
+    if (tab === 'my-code') {
+        document.getElementById('qr-tab-my-code').classList.add('active');
+        document.getElementById('qr-my-code-content').classList.remove('hidden');
+        document.getElementById('qr-scan-content').classList.add('hidden');
+    } else {
+        document.getElementById('qr-tab-scan').classList.add('active');
+        document.getElementById('qr-my-code-content').classList.add('hidden');
+        document.getElementById('qr-scan-content').classList.remove('hidden');
+        document.getElementById('friend-code-input').focus();
+    }
+}
+
+async function loadMyFriendCode() {
+    const container = document.getElementById('qr-code-container');
+    const codeText = document.getElementById('qr-code-text');
+
+    container.innerHTML = 'Generating...';
+    codeText.textContent = '';
+
+    try {
+        const res = await fetch('/api/v1/friend-code');
+        const data = await res.json();
+        if (data.success && data.data) {
+            currentFriendCode = data.data;
+            codeText.textContent = data.data.code;
+
+            container.innerHTML = '';
+            if (typeof QRCode !== 'undefined') {
+                new QRCode(container, {
+                    text: data.data.qr_data,
+                    width: 100,
+                    height: 100,
+                    colorDark: '#000000',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.M
+                });
+            }
+        }
+    } catch (err) {
+        console.error('Failed to load friend code:', err);
+        container.innerHTML = 'Error loading code';
+    }
+}
+
+function copyFriendCode() {
+    if (currentFriendCode?.code) {
+        navigator.clipboard.writeText(currentFriendCode.code);
+    }
+}
+
+function copyFriendLink() {
+    if (currentFriendCode?.qr_data) {
+        const link = currentFriendCode.qr_data.startsWith('http') ? currentFriendCode.qr_data : window.location.origin + currentFriendCode.qr_data;
+        navigator.clipboard.writeText(link);
+    }
+}
+
+async function lookupFriendCode() {
+    const code = document.getElementById('friend-code-input').value.trim();
+    const resultDiv = document.getElementById('friend-code-result');
+
+    if (!code) return;
+
+    resultDiv.classList.remove('hidden');
+    resultDiv.innerHTML = '<div style="color: var(--os9-gray-600);">Looking up...</div>';
+
+    try {
+        const res = await fetch(`/api/v1/friend-code/${encodeURIComponent(code)}`);
+        const data = await res.json();
+
+        if (data.success && data.data) {
+            pendingFriendUser = data.data;
+            pendingFriendCodeToAdd = code;
+            hideQRModal();
+            showFriendPreviewModal(data.data);
+        } else {
+            resultDiv.innerHTML = '<div style="color: var(--os9-error);">Invalid or expired code</div>';
+        }
+    } catch (err) {
+        resultDiv.innerHTML = '<div style="color: var(--os9-error);">Error looking up code</div>';
+    }
+}
+
+function showFriendPreviewModal(user) {
+    document.getElementById('friend-preview-name').textContent = user.display_name || user.username;
+    document.getElementById('friend-preview-username').textContent = '@' + user.username;
+    document.getElementById('friend-preview-status').textContent = user.status || '';
+    document.getElementById('friend-preview-modal').classList.add('active');
+}
+
+function hideFriendPreviewModal() {
+    document.getElementById('friend-preview-modal').classList.remove('active');
+    pendingFriendUser = null;
+    pendingFriendCodeToAdd = null;
+}
+
+async function confirmAddFriend() {
+    if (!pendingFriendCodeToAdd) return;
+
+    try {
+        const res = await fetch(`/api/v1/friend-code/${encodeURIComponent(pendingFriendCodeToAdd)}`, { method: 'POST' });
+        const data = await res.json();
+
+        if (data.success) {
+            hideFriendPreviewModal();
+            if (pendingFriendUser?.id) {
+                startChat(pendingFriendUser.id);
+            }
+        }
+    } catch (err) {
+        console.error('Error adding friend:', err);
+    }
+}
+
+// Utilities
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function truncate(str, len) {
+    if (!str) return '';
+    return str.length > len ? str.substring(0, len) + '...' : str;
+}
+
+function formatTime(dateStr) {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diff = now - date;
+
+    if (diff < 60000) return 'now';
+    if (diff < 3600000) return Math.floor(diff / 60000) + 'm';
+    if (diff < 86400000) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (diff < 604800000) return date.toLocaleDateString([], { weekday: 'short' });
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+// Media handling
+function handleFileSelect(event) {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+        uploadAndSendMedia(Array.from(files));
+    }
+    event.target.value = '';
+}
+
+async function uploadAndSendMedia(files) {
+    if (!currentChat) return;
+
+    for (const file of files) {
+        try {
+            if (window.MediaUpload && window.MediaUpload.showMediaPreview) {
+                await new Promise((resolve) => {
+                    window.MediaUpload.showMediaPreview(file, async (shouldSend, caption) => {
+                        if (shouldSend) {
+                            await sendMediaMessage(file, caption);
+                        }
+                        resolve(shouldSend);
+                    });
+                });
+            } else {
+                await sendMediaMessage(file, '');
+            }
+        } catch (err) {
+            console.error('Failed to upload media:', err);
+        }
+    }
+}
+
+async function sendMediaMessage(file, caption) {
+    if (!currentChat) return;
+
+    try {
+        const result = await window.MediaUpload.uploadMedia(file, () => {});
+
+        if (result && result.id) {
+            const res = await fetch(`/api/v1/chats/${currentChat.id}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    content: caption || '',
+                    type: result.type || 'media',
+                    media_id: result.id,
+                    media_url: result.url,
+                    media_type: result.type,
+                    media_content_type: result.content_type,
+                    media_filename: result.original_filename,
+                    media_size: result.size,
+                    media_width: result.width,
+                    media_height: result.height,
+                    media_duration: result.duration,
+                    media_thumbnail_url: result.thumbnail_url
+                })
+            });
+
+            const data = await res.json();
+            if (data.success && data.data) {
+                messages.push(data.data);
+                renderMessages();
+                currentChat.last_message = data.data;
+                renderConversations();
+            }
+        }
+    } catch (err) {
+        console.error('Failed to send media:', err);
+    }
+}
+
+function renderMediaContent(msg) {
+    if (!msg.media_url && !msg.media_id) return '';
+
+    const mediaType = msg.media_type || msg.type;
+    const url = msg.media_url || `/api/v1/media/${msg.media_id}/download`;
+    const thumbnailUrl = msg.media_thumbnail_url || url;
+    const filename = msg.media_filename || 'file';
+
+    switch (mediaType) {
+        case 'image':
+            return `<div class="os9-message-media" onclick="window.MediaUpload?.showLightbox([{type: 'image', url: '${url}'}], 0)">
+                <img src="${thumbnailUrl}" alt="${escapeHtml(filename)}" style="max-width: 180px; cursor: pointer;">
+            </div>`;
+        case 'video':
+            return `<div class="os9-message-media">
+                <video controls style="max-width: 200px;">
+                    <source src="${url}" type="${msg.media_content_type || 'video/mp4'}">
+                </video>
+            </div>`;
+        case 'voice':
+            if (window.MediaUpload?.renderVoiceMessage) {
+                const streamUrl = msg.media_url || `/api/v1/media/${msg.media_id}/stream`;
+                return window.MediaUpload.renderVoiceMessage(msg.media_id, streamUrl, msg.media_duration || 0, msg.media_waveform || '[]');
+            }
+            return `<audio controls style="width: 160px;"><source src="${url}"></audio>`;
+        case 'audio':
+            return `<audio controls style="width: 160px;"><source src="${url}"></audio>`;
+        default:
+            return `<div class="os9-document-message">
+                <div class="os9-document-icon">${filename.split('.').pop().toUpperCase().slice(0, 3)}</div>
+                <div class="os9-document-info">
+                    <div class="os9-document-name">${escapeHtml(filename)}</div>
+                    <div class="os9-document-size">${formatFileSize(msg.media_size || 0)}</div>
+                </div>
+            </div>`;
+    }
+}
+
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+// Voice recording
+let isRecordingVoice = false;
+
+function handleVoiceRecord() {
+    if (!currentChat) return;
+
+    if (!window.MediaUpload?.supportsVoiceRecording()) {
+        alert('Voice recording is not supported in your browser');
+        return;
+    }
+
+    if (isRecordingVoice) return;
+    isRecordingVoice = true;
+
+    const inputArea = document.querySelector('.os9-input-area');
+    const container = document.getElementById('voice-recording-container');
+    inputArea.classList.add('hidden');
+    container.classList.remove('hidden');
+
+    window.MediaUpload.startVoiceRecording(
+        container,
+        async (blob, duration, waveform) => {
+            inputArea.classList.remove('hidden');
+            container.classList.add('hidden');
+            isRecordingVoice = false;
+
+            try {
+                const media = await window.MediaUpload.uploadVoiceMessage(blob, duration, waveform);
+
+                const res = await fetch(`/api/v1/chats/${currentChat.id}/messages`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'voice',
+                        content: '',
+                        media_id: media.id,
+                        media_url: media.url,
+                        media_type: 'voice',
+                        media_duration: duration,
+                        media_waveform: JSON.stringify(waveform)
+                    })
+                });
+
+                const data = await res.json();
+                if (data.success && data.data) {
+                    messages.push(data.data);
+                    renderMessages();
+                    currentChat.last_message = data.data;
+                    renderConversations();
+                }
+            } catch (err) {
+                console.error('Failed to send voice message:', err);
+            }
+        },
+        (err) => {
+            inputArea.classList.remove('hidden');
+            container.classList.add('hidden');
+            isRecordingVoice = false;
+        }
+    );
+}
+
+// Initialize drag-drop
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+        const chatView = document.getElementById('chat-view');
+        const messageInput = document.getElementById('message-input');
+
+        if (chatView && window.MediaUpload) {
+            window.MediaUpload.initDragDrop(chatView, (files) => {
+                uploadAndSendMedia(files);
+            });
+        }
+
+        if (messageInput && window.MediaUpload) {
+            window.MediaUpload.initClipboardPaste(messageInput, (files) => {
+                uploadAndSendMedia(files);
+            });
+        }
+    }, 100);
+});
+</script>
+{{end}}
