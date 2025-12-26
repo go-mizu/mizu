@@ -1303,3 +1303,211 @@ select.win-input:focus {
 .aim-reaction-option:hover {
     background: var(--win98-highlight);
 }
+
+/* ============================================
+   MEDIA MESSAGES - Windows 98 Style
+   ============================================ */
+
+.aim-message-media {
+    padding: 4px 16px;
+    max-width: 300px;
+}
+
+.aim-message-image img {
+    max-width: 200px;
+    max-height: 150px;
+    cursor: pointer;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-shadow),
+        inset -2px -2px 0 var(--win98-button-light),
+        inset 2px 2px 0 var(--win98-button-dark-shadow);
+}
+
+.aim-message-image img:hover {
+    opacity: 0.9;
+}
+
+.aim-message-video video {
+    max-width: 250px;
+    max-height: 180px;
+    background: #000;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-shadow),
+        inset -2px -2px 0 var(--win98-button-light),
+        inset 2px 2px 0 var(--win98-button-dark-shadow);
+}
+
+.aim-message-audio audio {
+    width: 200px;
+    height: 32px;
+}
+
+.aim-message-document a {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    background: var(--win98-bg);
+    text-decoration: none;
+    color: var(--win98-text);
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        inset -2px -2px 0 var(--win98-button-shadow),
+        inset 2px 2px 0 var(--win98-button-light);
+}
+
+.aim-message-document a:hover {
+    background: #d0d0d0;
+}
+
+.aim-message-document a:active {
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-dark-shadow),
+        inset -2px -2px 0 var(--win98-button-light),
+        inset 2px 2px 0 var(--win98-button-shadow);
+}
+
+.aim-message-document .doc-icon {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+}
+
+.aim-message-document .doc-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.aim-message-document .doc-name {
+    font-weight: bold;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.aim-message-document .doc-size {
+    font-size: 10px;
+    color: var(--win98-button-shadow);
+}
+
+/* Media Preview Modal - Windows 98 Dialog Style */
+.aim-media-preview-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.aim-media-preview-dialog {
+    background: var(--win98-bg);
+    max-width: 500px;
+    max-height: 80vh;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        inset -2px -2px 0 var(--win98-button-shadow),
+        inset 2px 2px 0 var(--win98-button-light),
+        4px 4px 0 rgba(0, 0, 0, 0.5);
+}
+
+.aim-media-preview-content {
+    padding: 8px;
+    background: #ffffff;
+    margin: 3px;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-shadow);
+    max-height: 300px;
+    overflow: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.aim-media-preview-content img,
+.aim-media-preview-content video {
+    max-width: 100%;
+    max-height: 280px;
+}
+
+.aim-media-preview-caption {
+    padding: 8px;
+}
+
+.aim-media-preview-caption input {
+    width: 100%;
+}
+
+.aim-media-preview-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 16px 16px;
+}
+
+/* Lightbox - Windows 98 Style */
+.aim-lightbox-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    cursor: pointer;
+}
+
+.aim-lightbox-content {
+    max-width: 90vw;
+    max-height: 90vh;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        4px 4px 0 rgba(0, 0, 0, 0.5);
+}
+
+.aim-lightbox-content img,
+.aim-lightbox-content video {
+    max-width: 100%;
+    max-height: 90vh;
+    display: block;
+}
+
+/* Drag & Drop Zone */
+.aim-drop-zone-active {
+    position: relative;
+}
+
+.aim-drop-zone-active::after {
+    content: "Drop files here";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 128, 0.8);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: bold;
+    border: 3px dashed white;
+    z-index: 100;
+}

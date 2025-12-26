@@ -407,3 +407,501 @@ body {
 .input-sticker-btn.active {
     color: var(--accent);
 }
+
+/* ============================================
+   MEDIA & FILE ATTACHMENTS
+   ============================================ */
+
+/* Attach Button */
+.input-attach-btn {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    cursor: pointer;
+    color: var(--text-secondary);
+    background: transparent;
+    border: none;
+    transition: background 0.15s, color 0.15s;
+}
+
+.input-attach-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.input-attach-btn svg {
+    width: 22px;
+    height: 22px;
+}
+
+/* Message Media Container */
+.message-media {
+    max-width: 300px;
+    border-radius: 12px;
+    overflow: hidden;
+    margin-top: 4px;
+}
+
+/* Image Message */
+.message-image {
+    cursor: pointer;
+}
+
+.message-image img {
+    width: 100%;
+    display: block;
+    max-height: 400px;
+    object-fit: cover;
+}
+
+.message-image:hover {
+    opacity: 0.95;
+}
+
+/* Video Message */
+.message-video video {
+    width: 100%;
+    max-height: 400px;
+    display: block;
+    background: #000;
+}
+
+/* Audio/Voice Message */
+.message-audio {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: var(--bg-tertiary);
+    border-radius: 12px;
+    min-width: 220px;
+}
+
+.audio-play-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: white;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+
+.audio-play-btn:hover {
+    background: var(--accent-hover);
+}
+
+.audio-play-btn .hidden {
+    display: none;
+}
+
+.audio-waveform {
+    flex: 1;
+    height: 32px;
+    display: flex;
+    align-items: center;
+}
+
+.waveform-svg {
+    fill: var(--accent);
+    opacity: 0.6;
+}
+
+.audio-progress-track {
+    width: 100%;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+}
+
+.audio-duration {
+    font-size: 12px;
+    color: var(--text-muted);
+    min-width: 40px;
+    text-align: right;
+}
+
+.message-audio audio {
+    display: none;
+}
+
+/* Document Message */
+.message-document {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--bg-tertiary);
+    border-radius: 12px;
+    min-width: 200px;
+}
+
+.document-icon {
+    font-size: 32px;
+    flex-shrink: 0;
+}
+
+.document-info {
+    flex: 1;
+    overflow: hidden;
+}
+
+.document-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.document-size {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.document-download {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: background 0.15s, color 0.15s;
+    flex-shrink: 0;
+}
+
+.document-download:hover {
+    background: var(--bg-hover);
+    color: var(--accent);
+}
+
+/* ============================================
+   MEDIA PREVIEW MODAL
+   ============================================ */
+
+.media-preview-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    backdrop-filter: blur(4px);
+}
+
+.media-preview-modal {
+    background: var(--bg-secondary);
+    border-radius: 16px;
+    max-width: 500px;
+    width: 90%;
+    max-height: 90vh;
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.media-preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.media-preview-title {
+    font-size: 16px;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.media-preview-close {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 24px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.media-preview-close:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.media-preview-body {
+    padding: 16px;
+    max-height: 400px;
+    overflow: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.media-preview-body img,
+.media-preview-body video {
+    max-width: 100%;
+    max-height: 350px;
+    border-radius: 8px;
+}
+
+.audio-preview {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 24px;
+}
+
+.audio-icon {
+    font-size: 64px;
+}
+
+.audio-preview audio {
+    width: 100%;
+}
+
+.document-preview {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 24px;
+    text-align: center;
+}
+
+.document-preview .document-icon {
+    font-size: 64px;
+}
+
+.document-preview .document-name {
+    font-size: 16px;
+    max-width: 300px;
+    word-break: break-word;
+}
+
+.media-preview-footer {
+    padding: 16px;
+    border-top: 1px solid var(--border);
+}
+
+.media-caption-input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-size: 14px;
+    margin-bottom: 12px;
+}
+
+.media-caption-input::placeholder {
+    color: var(--text-muted);
+}
+
+.media-caption-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.media-preview-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.media-preview-btn {
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: background 0.15s;
+}
+
+.media-preview-btn.cancel {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.media-preview-btn.cancel:hover {
+    background: var(--bg-hover);
+}
+
+.media-preview-btn.send {
+    background: var(--accent);
+    color: white;
+}
+
+.media-preview-btn.send:hover {
+    background: var(--accent-hover);
+}
+
+.media-preview-btn.send:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.media-preview-btn .hidden {
+    display: none;
+}
+
+/* Upload Progress */
+.upload-progress {
+    height: 4px;
+    background: var(--border);
+    overflow: hidden;
+}
+
+.upload-progress.hidden {
+    display: none;
+}
+
+.upload-progress-bar {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.2s;
+    width: 0;
+}
+
+/* ============================================
+   LIGHTBOX VIEWER
+   ============================================ */
+
+.lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 300;
+}
+
+.lightbox-content {
+    max-width: 90vw;
+    max-height: 85vh;
+}
+
+.lightbox-content img,
+.lightbox-content video {
+    max-width: 100%;
+    max-height: 85vh;
+    object-fit: contain;
+}
+
+.lightbox-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 50%;
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.lightbox-nav:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.lightbox-prev {
+    left: 16px;
+}
+
+.lightbox-next {
+    right: 16px;
+}
+
+.lightbox-toolbar {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.lightbox-btn {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 50%;
+    color: white;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.lightbox-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.lightbox-counter {
+    color: white;
+    font-size: 14px;
+    padding: 0 12px;
+}
+
+/* ============================================
+   DRAG AND DROP
+   ============================================ */
+
+.drop-zone-indicator {
+    position: absolute;
+    inset: 0;
+    background: rgba(37, 211, 102, 0.1);
+    border: 2px dashed var(--accent);
+    border-radius: 12px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    pointer-events: none;
+}
+
+.drop-zone-indicator.active {
+    display: flex;
+}
+
+.drop-zone-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    color: var(--accent);
+    font-size: 16px;
+    font-weight: 500;
+}
+
+.drop-zone-content svg {
+    opacity: 0.8;
+}

@@ -26,6 +26,7 @@ import (
 	"github.com/go-mizu/blueprints/messaging/feature/chats"
 	"github.com/go-mizu/blueprints/messaging/feature/contacts"
 	"github.com/go-mizu/blueprints/messaging/feature/friendcode"
+	"github.com/go-mizu/blueprints/messaging/feature/media"
 	"github.com/go-mizu/blueprints/messaging/feature/messages"
 	"github.com/go-mizu/blueprints/messaging/feature/presence"
 	"github.com/go-mizu/blueprints/messaging/feature/stories"
@@ -60,6 +61,10 @@ type Server struct {
 	stories    stories.API
 	presence   presence.API
 	friendcode friendcode.API
+	media      media.API
+
+	// File store
+	fileStore *media.LocalFileStore
 
 	// Rate limiters (per-instance for test isolation)
 	loginLimiter    *middleware.RateLimiter
@@ -75,6 +80,7 @@ type Server struct {
 	storyHandler      *handler.Story
 	pageHandler       *handler.Page
 	friendcodeHandler *handler.FriendCode
+	mediaHandler      *handler.MediaHandler
 }
 
 // New creates a new server.
@@ -105,6 +111,14 @@ func New(cfg Config) (*Server, error) {
 	friendCodesStore := duckdb.NewFriendCodesStore(db)
 	friendCodeUserStore := duckdb.NewFriendCodeUserStore(usersStore)
 	friendCodeContactStore := duckdb.NewFriendCodeContactStore(db)
+	mediaStore := duckdb.NewMediaStore(db)
+
+	// Create file store for media
+	mediaDir := filepath.Join(cfg.DataDir, "media")
+	fileStore := media.NewLocalFileStore(mediaDir, "/media")
+	if err := fileStore.EnsureDir(); err != nil {
+		return nil, fmt.Errorf("create media dir: %w", err)
+	}
 
 	// Create services
 	accountsSvc := accounts.NewService(usersStore)
@@ -114,6 +128,7 @@ func New(cfg Config) (*Server, error) {
 	storiesSvc := stories.NewService(nil) // TODO: implement stories store
 	presenceSvc := presence.NewService(nil) // TODO: implement presence store
 	friendcodeSvc := friendcode.NewService(friendCodesStore, friendCodeUserStore, friendCodeContactStore, "")
+	mediaSvc := media.NewService(mediaStore, fileStore)
 
 	// Create WebSocket hub
 	hub := ws.NewHub()
@@ -138,6 +153,8 @@ func New(cfg Config) (*Server, error) {
 		stories:    storiesSvc,
 		presence:   presenceSvc,
 		friendcode: friendcodeSvc,
+		media:      mediaSvc,
+		fileStore:  fileStore,
 		// Create per-instance rate limiters for test isolation
 		loginLimiter:    middleware.NewRateLimiter(5, time.Minute),     // 5 per minute
 		registerLimiter: middleware.NewRateLimiter(3, 10*time.Minute), // 3 per 10 minutes
@@ -162,6 +179,7 @@ func New(cfg Config) (*Server, error) {
 	s.storyHandler = handler.NewStory(storiesSvc, s.getUserID)
 	s.pageHandler = handler.NewPageWithThemes(allTemplates, accountsSvc, chatsSvc, messagesSvc, s.getUserID, cfg.Dev)
 	s.friendcodeHandler = handler.NewFriendCode(friendcodeSvc, s.getUserID)
+	s.mediaHandler = handler.NewMediaHandler(mediaSvc, fileStore, s.getUserID)
 
 	s.setupRoutes()
 
@@ -338,6 +356,16 @@ func (s *Server) setupRoutes() {
 		api.Delete("/friend-code", s.friendcodeHandler.Revoke)
 		api.Get("/friend-code/{code}", s.friendcodeHandler.Resolve)
 		api.Post("/friend-code/{code}", s.friendcodeHandler.AddFriend)
+
+		// Media
+		api.Post("/media/upload", s.mediaHandler.Upload)
+		api.Get("/media/{id}", s.mediaHandler.GetByID)
+		api.Get("/media/{id}/download", s.mediaHandler.Download)
+		api.Get("/media/{id}/thumbnail", s.mediaHandler.Thumbnail)
+		api.Get("/media/{id}/stream", s.mediaHandler.Stream)
+		api.Get("/media/{id}/view", s.mediaHandler.View)
+		api.Delete("/media/{id}", s.mediaHandler.Delete)
+		api.Get("/chats/{id}/media", s.mediaHandler.ListChatMedia)
 	})
 
 	// WebSocket
@@ -362,6 +390,9 @@ func (s *Server) setupRoutes() {
 		staticHandler.ServeHTTP(c.Writer(), c.Request())
 		return nil
 	})
+
+	// Media files (uploaded content)
+	s.app.Get("/media/{path...}", s.mediaHandler.ServeMedia)
 }
 
 // checkWebSocketOrigin validates the Origin header for WebSocket connections.
