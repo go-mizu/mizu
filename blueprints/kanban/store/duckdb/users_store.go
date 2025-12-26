@@ -20,18 +20,18 @@ func NewUsersStore(db *sql.DB) *UsersStore {
 
 func (s *UsersStore) Create(ctx context.Context, u *users.User) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO users (id, email, username, display_name, password_hash, avatar_url, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-	`, u.ID, u.Email, u.Username, u.DisplayName, u.PasswordHash, u.AvatarURL, u.CreatedAt, u.UpdatedAt)
+		INSERT INTO users (id, email, username, display_name, password_hash)
+		VALUES ($1, $2, $3, $4, $5)
+	`, u.ID, u.Email, u.Username, u.DisplayName, u.PasswordHash)
 	return err
 }
 
 func (s *UsersStore) GetByID(ctx context.Context, id string) (*users.User, error) {
 	u := &users.User{}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, email, username, display_name, password_hash, avatar_url, created_at, updated_at
+		SELECT id, email, username, display_name, password_hash
 		FROM users WHERE id = $1
-	`, id).Scan(&u.ID, &u.Email, &u.Username, &u.DisplayName, &u.PasswordHash, &u.AvatarURL, &u.CreatedAt, &u.UpdatedAt)
+	`, id).Scan(&u.ID, &u.Email, &u.Username, &u.DisplayName, &u.PasswordHash)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -41,9 +41,9 @@ func (s *UsersStore) GetByID(ctx context.Context, id string) (*users.User, error
 func (s *UsersStore) GetByEmail(ctx context.Context, email string) (*users.User, error) {
 	u := &users.User{}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, email, username, display_name, password_hash, avatar_url, created_at, updated_at
+		SELECT id, email, username, display_name, password_hash
 		FROM users WHERE email = $1
-	`, email).Scan(&u.ID, &u.Email, &u.Username, &u.DisplayName, &u.PasswordHash, &u.AvatarURL, &u.CreatedAt, &u.UpdatedAt)
+	`, email).Scan(&u.ID, &u.Email, &u.Username, &u.DisplayName, &u.PasswordHash)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -53,9 +53,9 @@ func (s *UsersStore) GetByEmail(ctx context.Context, email string) (*users.User,
 func (s *UsersStore) GetByUsername(ctx context.Context, username string) (*users.User, error) {
 	u := &users.User{}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, email, username, display_name, password_hash, avatar_url, created_at, updated_at
+		SELECT id, email, username, display_name, password_hash
 		FROM users WHERE username = $1
-	`, username).Scan(&u.ID, &u.Email, &u.Username, &u.DisplayName, &u.PasswordHash, &u.AvatarURL, &u.CreatedAt, &u.UpdatedAt)
+	`, username).Scan(&u.ID, &u.Email, &u.Username, &u.DisplayName, &u.PasswordHash)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -64,12 +64,15 @@ func (s *UsersStore) GetByUsername(ctx context.Context, username string) (*users
 
 func (s *UsersStore) Update(ctx context.Context, id string, in *users.UpdateIn) error {
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE users SET
-			display_name = COALESCE($2, display_name),
-			avatar_url = COALESCE($3, avatar_url),
-			updated_at = $4
-		WHERE id = $1
-	`, id, in.DisplayName, in.AvatarURL, time.Now())
+		UPDATE users SET display_name = COALESCE($2, display_name) WHERE id = $1
+	`, id, in.DisplayName)
+	return err
+}
+
+func (s *UsersStore) UpdatePassword(ctx context.Context, id string, passwordHash string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE users SET password_hash = $2 WHERE id = $1
+	`, id, passwordHash)
 	return err
 }
 

@@ -28,12 +28,16 @@ func (s *CommentsStore) Create(ctx context.Context, c *comments.Comment) error {
 
 func (s *CommentsStore) GetByID(ctx context.Context, id string) (*comments.Comment, error) {
 	c := &comments.Comment{}
+	var editedAt sql.NullTime
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, issue_id, author_id, content, edited_at, created_at
 		FROM comments WHERE id = $1
-	`, id).Scan(&c.ID, &c.IssueID, &c.AuthorID, &c.Content, &c.EditedAt, &c.CreatedAt)
+	`, id).Scan(&c.ID, &c.IssueID, &c.AuthorID, &c.Content, &editedAt, &c.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
+	}
+	if editedAt.Valid {
+		c.EditedAt = &editedAt.Time
 	}
 	return c, err
 }
@@ -52,8 +56,12 @@ func (s *CommentsStore) ListByIssue(ctx context.Context, issueID string) ([]*com
 	var list []*comments.Comment
 	for rows.Next() {
 		c := &comments.Comment{}
-		if err := rows.Scan(&c.ID, &c.IssueID, &c.AuthorID, &c.Content, &c.EditedAt, &c.CreatedAt); err != nil {
+		var editedAt sql.NullTime
+		if err := rows.Scan(&c.ID, &c.IssueID, &c.AuthorID, &c.Content, &editedAt, &c.CreatedAt); err != nil {
 			return nil, err
+		}
+		if editedAt.Valid {
+			c.EditedAt = &editedAt.Time
 		}
 		list = append(list, c)
 	}

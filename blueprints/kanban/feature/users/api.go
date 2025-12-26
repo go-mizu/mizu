@@ -8,14 +8,11 @@ import (
 
 // User represents a user account.
 type User struct {
-	ID           string    `json:"id"`
-	Email        string    `json:"email"`
-	Username     string    `json:"username"`
-	DisplayName  string    `json:"display_name"`
-	PasswordHash string    `json:"-"`
-	AvatarURL    string    `json:"avatar_url,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           string `json:"id"`
+	Email        string `json:"email"`
+	Username     string `json:"username"`
+	DisplayName  string `json:"display_name"`
+	PasswordHash string `json:"-"`
 }
 
 // Session represents an authenticated session.
@@ -43,7 +40,6 @@ type LoginIn struct {
 // UpdateIn contains input for updating a user.
 type UpdateIn struct {
 	DisplayName *string `json:"display_name,omitempty"`
-	AvatarURL   *string `json:"avatar_url,omitempty"`
 }
 
 // API defines the users service contract.
@@ -63,6 +59,7 @@ type Store interface {
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	GetByUsername(ctx context.Context, username string) (*User, error)
 	Update(ctx context.Context, id string, in *UpdateIn) error
+	UpdatePassword(ctx context.Context, id string, passwordHash string) error
 	CreateSession(ctx context.Context, sess *Session) error
 	GetSession(ctx context.Context, id string) (*Session, error)
 	DeleteSession(ctx context.Context, id string) error

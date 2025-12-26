@@ -65,7 +65,7 @@ func (s *Store) QueryRow(ctx context.Context, query string, args ...any) *sql.Ro
 func (s *Store) Stats(ctx context.Context) (map[string]any, error) {
 	stats := make(map[string]any)
 
-	tables := []string{"users", "workspaces", "projects", "issues", "comments", "sprints", "notifications"}
+	tables := []string{"users", "workspaces", "teams", "projects", "columns", "cycles", "issues", "comments", "fields", "field_values"}
 	for _, table := range tables {
 		var count int64
 		row := s.db.QueryRowContext(ctx, fmt.Sprintf("SELECT count(*) FROM %s", table))

@@ -50,15 +50,12 @@ func (s *Service) Register(ctx context.Context, in *RegisterIn) (*User, *Session
 		return nil, nil, err
 	}
 
-	now := time.Now()
 	user := &User{
 		ID:           ulid.New(),
 		Email:        in.Email,
 		Username:     in.Username,
 		DisplayName:  in.DisplayName,
 		PasswordHash: hash,
-		CreatedAt:    now,
-		UpdatedAt:    now,
 	}
 
 	if err := s.store.Create(ctx, user); err != nil {
@@ -66,6 +63,7 @@ func (s *Service) Register(ctx context.Context, in *RegisterIn) (*User, *Session
 	}
 
 	// Create session
+	now := time.Now()
 	session := &Session{
 		ID:        ulid.New(),
 		UserID:    user.ID,
