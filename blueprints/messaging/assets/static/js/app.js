@@ -399,7 +399,47 @@ function renderStickerMessage(packId, stickerId) {
     const sticker = pack.stickers.find(s => s.id === stickerId);
     if (!sticker) return '<div class="message-sticker">[Sticker]</div>';
 
-    return `<div class="message-sticker">${sticker.svg}</div>`;
+    return `<div class="message-sticker" onclick="showStickerLightbox('${packId}', '${stickerId}')" style="cursor: pointer;">${sticker.svg}</div>`;
+}
+
+// Show sticker in a larger lightbox view
+function showStickerLightbox(packId, stickerId) {
+    const packs = window.STICKER_PACKS || {};
+    const pack = packs[packId];
+    if (!pack) return;
+
+    const sticker = pack.stickers.find(s => s.id === stickerId);
+    if (!sticker) return;
+
+    // Create overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'sticker-lightbox-overlay';
+    overlay.id = 'sticker-lightbox-overlay';
+    overlay.innerHTML = `
+        <div class="sticker-lightbox-content">
+            <div class="sticker-lightbox-sticker">${sticker.svg}</div>
+            <div class="sticker-lightbox-name">${sticker.name}</div>
+            <div class="sticker-lightbox-pack">${pack.name}</div>
+        </div>
+    `;
+
+    // Close on click
+    overlay.onclick = (e) => {
+        if (e.target === overlay || e.target.closest('.sticker-lightbox-content')) {
+            overlay.remove();
+        }
+    };
+
+    // Close on Escape
+    const escHandler = (e) => {
+        if (e.key === 'Escape') {
+            overlay.remove();
+            document.removeEventListener('keydown', escHandler);
+        }
+    };
+    document.addEventListener('keydown', escHandler);
+
+    document.body.appendChild(overlay);
 }
 
 // Toggle emoji picker
@@ -426,8 +466,12 @@ function toggleEmojiPicker(button, inputElement) {
         }
     }, isRetro);
 
-    button.parentElement.style.position = 'relative';
-    button.parentElement.appendChild(picker);
+    // Find the closest positioned ancestor or use a wrapper with relative positioning
+    const container = button.closest('.relative') || button.closest('#message-input-wrapper') || button.closest('#aim-picker-wrapper') || button.closest('#ym-picker-wrapper') || button.parentElement;
+    if (!container.style.position) {
+        container.style.position = 'relative';
+    }
+    container.appendChild(picker);
 }
 
 // Toggle sticker picker
@@ -449,8 +493,12 @@ function toggleStickerPicker(button, onSendSticker) {
         }
     }, isRetro);
 
-    button.parentElement.style.position = 'relative';
-    button.parentElement.appendChild(picker);
+    // Find the closest positioned ancestor or use a wrapper with relative positioning
+    const container = button.closest('.relative') || button.closest('#message-input-wrapper') || button.closest('#aim-picker-wrapper') || button.closest('#ym-picker-wrapper') || button.parentElement;
+    if (!container.style.position) {
+        container.style.position = 'relative';
+    }
+    container.appendChild(picker);
 }
 
 // Show reaction picker on message

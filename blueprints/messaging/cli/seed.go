@@ -248,7 +248,7 @@ func EnsureAgent(ctx context.Context, accountsSvc accounts.API) (*accounts.User,
 
 // SetupDefaultChats creates the default chats for a new user:
 // 1. Saved Messages (self-chat) with a welcome message
-// 2. Chat with Mizu Agent with a welcome message
+// 2. Chat with Mizu Agent with diverse messages (emoji, stickers, images, multiple languages)
 func SetupDefaultChats(ctx context.Context, chatsSvc chats.API, messagesSvc messages.API, userID, agentID string) {
 	// Create Saved Messages (self-chat)
 	savedChat, err := chatsSvc.CreateDirect(ctx, userID, &chats.CreateDirectIn{
@@ -259,7 +259,7 @@ func SetupDefaultChats(ctx context.Context, chatsSvc chats.API, messagesSvc mess
 		messagesSvc.Create(ctx, userID, &messages.CreateIn{
 			ChatID:  savedChat.ID,
 			Type:    messages.TypeText,
-			Content: "Welcome to Saved Messages! Use this space to save notes, links, and reminders to yourself.",
+			Content: "Welcome to Saved Messages! Use this space to save notes, links, and reminders to yourself. 📝",
 		})
 	}
 
@@ -268,11 +268,92 @@ func SetupDefaultChats(ctx context.Context, chatsSvc chats.API, messagesSvc mess
 		RecipientID: agentID,
 	})
 	if err == nil && agentChat != nil {
-		// Add a welcome message from the agent
-		messagesSvc.Create(ctx, agentID, &messages.CreateIn{
-			ChatID:  agentChat.ID,
-			Type:    messages.TypeText,
-			Content: "Hello! I'm Mizu Agent, your friendly assistant. I'm here to help you get started with messaging. Feel free to ask me anything!",
-		})
+		// Add diverse welcome messages from the agent
+		agentMessages := []messages.CreateIn{
+			// Welcome message with emoji
+			{
+				ChatID:  agentChat.ID,
+				Type:    messages.TypeText,
+				Content: "Hello! 👋 I'm Mizu Agent, your friendly assistant. I'm here to help you get started with messaging!",
+			},
+			// Multilingual greetings
+			{
+				ChatID:  agentChat.ID,
+				Type:    messages.TypeText,
+				Content: "Welcome in many languages:\n🇺🇸 Welcome!\n🇪🇸 ¡Bienvenido!\n🇫🇷 Bienvenue!\n🇩🇪 Willkommen!\n🇯🇵 ようこそ!\n🇨🇳 欢迎!\n🇰🇷 환영합니다!\n🇧🇷 Bem-vindo!",
+			},
+			// Sticker message (thumbs up from classic pack)
+			{
+				ChatID:        agentChat.ID,
+				Type:          messages.TypeSticker,
+				StickerPackID: "classic",
+				StickerID:     "thumbs-up",
+			},
+			// Cat image message using Cataas
+			{
+				ChatID:           agentChat.ID,
+				Type:             messages.TypeImage,
+				Content:          "Here's a cute cat to brighten your day! 🐱",
+				MediaURL:         "https://cataas.com/cat?width=400&height=300",
+				MediaType:        "image",
+				MediaContentType: "image/jpeg",
+				MediaFilename:    "cute-cat.jpg",
+				MediaWidth:       400,
+				MediaHeight:      300,
+			},
+			// Another cat image
+			{
+				ChatID:           agentChat.ID,
+				Type:             messages.TypeImage,
+				Content:          "And another furry friend! 😻",
+				MediaURL:         "https://placekitten.com/500/400",
+				MediaType:        "image",
+				MediaContentType: "image/jpeg",
+				MediaFilename:    "kitten.jpg",
+				MediaWidth:       500,
+				MediaHeight:      400,
+			},
+			// More stickers
+			{
+				ChatID:        agentChat.ID,
+				Type:          messages.TypeSticker,
+				StickerPackID: "classic",
+				StickerID:     "heart",
+			},
+			{
+				ChatID:        agentChat.ID,
+				Type:          messages.TypeSticker,
+				StickerPackID: "reactions",
+				StickerID:     "ok",
+			},
+			// Tips with emoji
+			{
+				ChatID:  agentChat.ID,
+				Type:    messages.TypeText,
+				Content: "💡 Pro Tips:\n\n• 📎 Click the attachment button to share files\n• 😊 Use the emoji picker for reactions\n• 🎨 Check out the sticker packs!\n• 🔊 Record voice messages\n• 🖼️ Drag & drop images to share them quickly",
+			},
+			// Fun facts in different scripts
+			{
+				ChatID:  agentChat.ID,
+				Type:    messages.TypeText,
+				Content: "🌍 Fun fact: This app supports Unicode!\n\nArabic: مرحبا بالعالم\nHebrew: שלום עולם\nThai: สวัสดีชาวโลก\nHindi: नमस्ते दुनिया\nGreek: Γειά σου κόσμε",
+			},
+			// Closing message with sticker
+			{
+				ChatID:        agentChat.ID,
+				Type:          messages.TypeSticker,
+				StickerPackID: "classic",
+				StickerID:     "party",
+			},
+			{
+				ChatID:  agentChat.ID,
+				Type:    messages.TypeText,
+				Content: "Enjoy exploring! Feel free to send me a message anytime. 🚀✨",
+			},
+		}
+
+		for _, msg := range agentMessages {
+			messagesSvc.Create(ctx, agentID, &msg)
+		}
 	}
 }

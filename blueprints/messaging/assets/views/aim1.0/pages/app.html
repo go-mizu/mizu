@@ -66,7 +66,7 @@
     </div>
 
     <!-- IM Window (shown when chat selected) -->
-    <div id="im-window" class="win-window" style="flex: 1; display: none; flex-direction: column;">
+    <div id="im-window" class="win-window" style="flex: 1; display: none; flex-direction: column; min-height: 0;">
         <!-- Title Bar -->
         <div class="win-titlebar">
             <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect fill='%23FFCC00' width='16' height='16' rx='2'/%3E%3Ccircle cx='8' cy='5' r='3' fill='%23000'/%3E%3Cpath d='M4 10c0-2 2-4 4-4s4 2 4 4v5H4z' fill='%23000'/%3E%3C/svg%3E" class="win-titlebar-icon" alt="AIM">
@@ -96,7 +96,7 @@
         </div>
 
         <!-- Message Display Area -->
-        <div class="aim-message-area" id="messages" style="flex: 1; min-height: 200px;">
+        <div class="aim-message-area" id="messages" style="flex: 1; min-height: 0; overflow-y: auto;">
             <!-- Messages will be loaded here -->
         </div>
 
@@ -1092,8 +1092,9 @@ function renderMediaContent(msg) {
 
     switch (mediaType) {
         case 'image':
+            const imageMediaObj = JSON.stringify({type: 'image', url: url, original_filename: filename}).replace(/'/g, "\\'");
             return `
-                <div class="aim-message-media aim-message-image" onclick="window.MediaUpload?.showLightbox('${url}', 'image')">
+                <div class="aim-message-media aim-message-image" onclick="window.MediaUpload?.showLightbox([${imageMediaObj}], 0)">
                     <img src="${thumbnailUrl}" alt="${escapeHtml(filename)}" style="max-width: 200px; max-height: 150px; cursor: pointer; border: 2px inset;">
                 </div>
             `;

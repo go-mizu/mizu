@@ -114,7 +114,7 @@
     </div>
 
     <!-- Chat Window (shown when chat selected) -->
-    <div id="im-window" class="xp-window" style="flex: 1; display: none; flex-direction: column;">
+    <div id="im-window" class="xp-window" style="flex: 1; display: none; flex-direction: column; min-height: 0;">
         <!-- Title Bar -->
         <div class="xp-titlebar">
             <svg class="xp-titlebar-icon" viewBox="0 0 16 16">
@@ -175,7 +175,7 @@
         </div>
 
         <!-- Message Area -->
-        <div class="ym-message-area" id="messages" style="flex: 1; min-height: 200px;">
+        <div class="ym-message-area" id="messages" style="flex: 1; min-height: 0; overflow-y: auto;">
             <!-- Messages will be loaded here -->
         </div>
 
@@ -1287,8 +1287,9 @@ function renderMediaContent(msg) {
 
     switch (mediaType) {
         case 'image':
+            const imageMediaObj = JSON.stringify({type: 'image', url: url, original_filename: filename}).replace(/'/g, "\\'");
             return `
-                <div class="ym-message-media ym-message-image" onclick="window.MediaUpload?.showLightbox('${url}', 'image')">
+                <div class="ym-message-media ym-message-image" onclick="window.MediaUpload?.showLightbox([${imageMediaObj}], 0)">
                     <img src="${thumbnailUrl}" alt="${escapeHtml(filename)}">
                 </div>
             `;

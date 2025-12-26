@@ -193,6 +193,21 @@ CREATE TABLE IF NOT EXISTS messages (
   deleted_for_everyone BOOLEAN DEFAULT FALSE,
   expires_at      TIMESTAMP,
   mention_everyone BOOLEAN DEFAULT FALSE,
+  -- Media fields (for image, video, audio, document messages)
+  media_id            VARCHAR,
+  media_url           VARCHAR,
+  media_type          VARCHAR,
+  media_content_type  VARCHAR,
+  media_filename      VARCHAR,
+  media_size          BIGINT DEFAULT 0,
+  media_width         INTEGER,
+  media_height        INTEGER,
+  media_duration      INTEGER,
+  media_thumbnail_url VARCHAR,
+  media_waveform      TEXT,
+  -- Sticker fields
+  sticker_pack_id VARCHAR,
+  sticker_id      VARCHAR,
   created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (chat_id) REFERENCES chats(id),
   FOREIGN KEY (sender_id) REFERENCES users(id)

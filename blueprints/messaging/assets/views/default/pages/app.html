@@ -81,7 +81,7 @@
         </div>
 
         <!-- Chat view (hidden initially) -->
-        <div id="chat-view" class="hidden flex-1 flex flex-col">
+        <div id="chat-view" class="hidden flex-1 flex flex-col min-h-0">
             <!-- Chat header -->
             <div class="h-16 px-4 flex items-center justify-between bg-secondary border-b border-default">
                 <div class="flex items-center gap-3">
@@ -116,7 +116,7 @@
             </div>
 
             <!-- Messages area -->
-            <div id="messages" class="flex-1 overflow-y-auto p-4 space-y-2">
+            <div id="messages" class="flex-1 overflow-y-auto p-4 space-y-2 min-h-0">
                 <!-- Messages will be populated here -->
             </div>
 
@@ -1509,8 +1509,9 @@ function renderMediaContent(msg) {
 
     switch (mediaType) {
         case 'image':
+            const imageMediaObj = JSON.stringify({type: 'image', url: url, original_filename: filename}).replace(/'/g, "\\'");
             return `
-                <div class="message-media message-image" onclick="window.MediaUpload?.showLightbox('${url}', 'image')">
+                <div class="message-media message-image" onclick="window.MediaUpload?.showLightbox([${imageMediaObj}], 0)">
                     <img src="${thumbnailUrl}" alt="${escapeHtml(filename)}" loading="lazy">
                 </div>
             `;

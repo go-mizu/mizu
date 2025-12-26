@@ -57,6 +57,14 @@ export class AppPage {
   readonly friendPreviewName: Locator;
   readonly addFriendButton: Locator;
 
+  // Media and sticker elements
+  readonly stickerButton: Locator;
+  readonly stickerPicker: Locator;
+  readonly lightboxOverlay: Locator;
+  readonly stickerLightboxOverlay: Locator;
+  readonly fileInput: Locator;
+  readonly mediaPreviewOverlay: Locator;
+
   constructor(page: Page) {
     this.page = page;
 
@@ -113,6 +121,14 @@ export class AppPage {
     this.friendPreviewModal = page.locator('#friend-preview-modal');
     this.friendPreviewName = page.locator('#friend-preview-name');
     this.addFriendButton = page.locator('#friend-preview-modal button:has-text("Add Friend")');
+
+    // Media and sticker elements
+    this.stickerButton = page.locator('.input-sticker-btn, button[title="Stickers"]');
+    this.stickerPicker = page.locator('.sticker-picker');
+    this.lightboxOverlay = page.locator('#lightbox-overlay');
+    this.stickerLightboxOverlay = page.locator('#sticker-lightbox-overlay');
+    this.fileInput = page.locator('#media-file-input');
+    this.mediaPreviewOverlay = page.locator('#media-preview-overlay');
   }
 
   async goto(): Promise<void> {
@@ -276,5 +292,79 @@ export class AppPage {
     await this.lookupFriendCode(code);
     await expect(this.friendPreviewModal).toBeVisible({ timeout: 5000 });
     await this.addFriendButton.click();
+  }
+
+  // Sticker methods
+  async openStickerPicker(): Promise<void> {
+    await this.stickerButton.click();
+    await expect(this.stickerPicker).toBeVisible();
+  }
+
+  async closeStickerPicker(): Promise<void> {
+    // Click outside the picker to close it
+    await this.page.keyboard.press('Escape');
+    await expect(this.stickerPicker).toBeHidden();
+  }
+
+  async sendSticker(packIndex: number = 0, stickerIndex: number = 0): Promise<void> {
+    await this.openStickerPicker();
+    const stickerItems = this.stickerPicker.locator('.sticker-item');
+    await stickerItems.nth(stickerIndex).click();
+  }
+
+  async getStickerMessages(): Promise<Locator> {
+    return this.messagesContainer.locator('.message-sticker');
+  }
+
+  async clickStickerInMessage(): Promise<void> {
+    const stickers = await this.getStickerMessages();
+    const count = await stickers.count();
+    if (count > 0) {
+      await stickers.last().click();
+    }
+  }
+
+  async expectStickerLightboxVisible(): Promise<void> {
+    await expect(this.stickerLightboxOverlay).toBeVisible();
+  }
+
+  async expectStickerLightboxHidden(): Promise<void> {
+    await expect(this.stickerLightboxOverlay).toBeHidden();
+  }
+
+  async closeStickerLightbox(): Promise<void> {
+    await this.stickerLightboxOverlay.click();
+    await this.expectStickerLightboxHidden();
+  }
+
+  // Image/Media lightbox methods
+  async getImageMessages(): Promise<Locator> {
+    return this.messagesContainer.locator('.message-image');
+  }
+
+  async clickImageInMessage(): Promise<void> {
+    const images = await this.getImageMessages();
+    const count = await images.count();
+    if (count > 0) {
+      await images.last().click();
+    }
+  }
+
+  async expectLightboxVisible(): Promise<void> {
+    await expect(this.lightboxOverlay).toBeVisible();
+  }
+
+  async expectLightboxHidden(): Promise<void> {
+    await expect(this.lightboxOverlay).toBeHidden();
+  }
+
+  async closeLightbox(): Promise<void> {
+    await this.lightboxOverlay.click();
+    await this.expectLightboxHidden();
+  }
+
+  async closeLightboxWithEscape(): Promise<void> {
+    await this.page.keyboard.press('Escape');
+    await this.expectLightboxHidden();
   }
 }

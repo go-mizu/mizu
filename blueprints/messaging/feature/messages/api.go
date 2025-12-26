@@ -65,6 +65,23 @@ type Message struct {
 	Status                MessageStatus `json:"status,omitempty"`
 	CreatedAt             time.Time     `json:"created_at"`
 
+	// Media fields (inline for direct access)
+	MediaID           string `json:"media_id,omitempty"`
+	MediaURL          string `json:"media_url,omitempty"`
+	MediaType         string `json:"media_type,omitempty"`
+	MediaContentType  string `json:"media_content_type,omitempty"`
+	MediaFilename     string `json:"media_filename,omitempty"`
+	MediaSize         int64  `json:"media_size,omitempty"`
+	MediaWidth        int    `json:"media_width,omitempty"`
+	MediaHeight       int    `json:"media_height,omitempty"`
+	MediaDuration     int    `json:"media_duration,omitempty"`
+	MediaThumbnailURL string `json:"media_thumbnail_url,omitempty"`
+	MediaWaveform     string `json:"media_waveform,omitempty"`
+
+	// Sticker fields
+	StickerPackID string `json:"sticker_pack_id,omitempty"`
+	StickerID     string `json:"sticker_id,omitempty"`
+
 	// Populated from joins
 	Sender    any        `json:"sender,omitempty"`
 	ReplyTo   *Message   `json:"reply_to,omitempty"`
@@ -119,6 +136,23 @@ type CreateIn struct {
 	MentionEveryone bool        `json:"mention_everyone,omitempty"`
 	Mentions        []string    `json:"mentions,omitempty"`
 	ExpiresIn       int         `json:"expires_in,omitempty"` // seconds
+
+	// Media fields (for image, video, audio, document messages)
+	MediaID           string `json:"media_id,omitempty"`
+	MediaURL          string `json:"media_url,omitempty"`
+	MediaType         string `json:"media_type,omitempty"`
+	MediaContentType  string `json:"media_content_type,omitempty"`
+	MediaFilename     string `json:"media_filename,omitempty"`
+	MediaSize         int64  `json:"media_size,omitempty"`
+	MediaWidth        int    `json:"media_width,omitempty"`
+	MediaHeight       int    `json:"media_height,omitempty"`
+	MediaDuration     int    `json:"media_duration,omitempty"`
+	MediaThumbnailURL string `json:"media_thumbnail_url,omitempty"`
+	MediaWaveform     string `json:"media_waveform,omitempty"`
+
+	// Sticker fields
+	StickerPackID string `json:"sticker_pack_id,omitempty"`
+	StickerID     string `json:"sticker_id,omitempty"`
 }
 
 // UpdateIn contains input for updating a message.
