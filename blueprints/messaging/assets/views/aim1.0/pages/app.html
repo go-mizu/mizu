@@ -429,9 +429,14 @@ async function loadMessages(chatId) {
         if (data.success) {
             messages = data.data || [];
             renderMessages();
+        } else {
+            messages = [];
+            renderMessages();
         }
     } catch (err) {
         console.error('Failed to load messages:', err);
+        messages = [];
+        renderMessages();
     }
 }
 
