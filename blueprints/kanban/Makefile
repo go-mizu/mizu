@@ -1,27 +1,64 @@
-.PHONY: build run test clean dev install
+.DEFAULT_GOAL := help
+SHELL := /usr/bin/env bash
 
-BINARY_NAME=kanban
-BUILD_DIR=./build
+GO      ?= go
+PKG     ?= ./...
+BINARY  ?= $(HOME)/bin/kanban
+CMD     ?= ./cmd/kanban
+DATA_DIR ?= $(HOME)/data/blueprint/kanban
 
-build:
-	@echo "Building $(BINARY_NAME)..."
-	@go build -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/kanban
+CGO_ENABLED ?= 1
 
-run:
-	@go run ./cmd/kanban $(ARGS)
+VERSION ?= $(shell git describe --tags --dirty --match "v*" 2>/dev/null || echo "dev")
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+TIME    ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 
-dev:
-	@go run ./cmd/kanban serve --dev
+LDVARS := -X main.Version=$(VERSION) -X main.Commit=$(COMMIT) -X main.BuildTime=$(TIME)
+GO_LDFLAGS ?= -s -w $(LDVARS)
 
-test:
-	@go test -v ./...
+.PHONY: build
+build: ## Build kanban binary to $$HOME/bin/kanban
+	@mkdir -p $(dir $(BINARY))
+	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
+	@echo "Built: $(BINARY) ($(VERSION))"
 
-clean:
-	@rm -rf $(BUILD_DIR)
+.PHONY: install
+install: build ## Install kanban binary to $$HOME/bin/kanban (alias for build)
 
-install:
-	@echo "Installing $(BINARY_NAME) to $$HOME/bin..."
-	@GOWORK=off go build -o $$HOME/bin/$(BINARY_NAME) ./cmd/kanban
+.PHONY: run
+run: ## Run the server
+	@GOWORK=off $(GO) run $(CMD) serve --dev
 
-init:
-	@go run ./cmd/kanban init
+.PHONY: init
+init: ## Initialize the database
+	@GOWORK=off $(GO) run $(CMD) init
+
+.PHONY: seed
+seed: ## Seed the database with sample data
+	@GOWORK=off $(GO) run $(CMD) seed
+
+.PHONY: test
+test: ## Run all tests
+	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) test $(PKG)
+
+.PHONY: test-v
+test-v: ## Run all tests with verbose output
+	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) test -v $(PKG)
+
+.PHONY: clean
+clean: ## Remove binary and data directory
+	@rm -f $(BINARY)
+	@rm -rf $(DATA_DIR)
+	@echo "Cleaned: $(BINARY), $(DATA_DIR)"
+
+.PHONY: help
+help: ## Show available commands
+	@echo ""
+	@echo "Kanban Blueprint - Linear/Jira-style project management"
+	@echo ""
+	@echo "  Binary:   $(BINARY)"
+	@echo "  Data:     $(DATA_DIR)"
+	@echo ""
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
+	  awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
+	@echo ""

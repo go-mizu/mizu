@@ -9,7 +9,19 @@ import (
 	"github.com/go-mizu/blueprints/kanban/cli"
 )
 
+var (
+	Version   = "dev"
+	Commit    = "unknown"
+	BuildTime = "unknown"
+)
+
 func main() {
+	// Set version info from ldflags
+	cli.Version = Version
+	cli.Commit = Commit
+	cli.BuildTime = BuildTime
+
+	// Create context with signal handling
 	ctx, cancel := signal.NotifyContext(context.Background(),
 		syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()

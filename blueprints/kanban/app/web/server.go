@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"html/template"
 	"log"
 	"mime"
 	"net/http"
@@ -39,10 +38,9 @@ type Config struct {
 
 // Server is the HTTP server.
 type Server struct {
-	app       *mizu.App
-	cfg       Config
-	db        *sql.DB
-	templates *template.Template
+	app *mizu.App
+	cfg Config
+	db  *sql.DB
 
 	// Services
 	users      users.API
@@ -69,7 +67,6 @@ type Server struct {
 	fieldHandlers     *handler.Field
 	valueHandlers     *handler.Value
 	assigneeHandlers  *handler.Assignee
-	pageHandlers      *handler.Page
 }
 
 // New creates a new server.
@@ -117,23 +114,16 @@ func New(cfg Config) (*Server, error) {
 	projectsSvc := projects.NewService(projectsStore)
 	columnsSvc := columns.NewService(columnsStore)
 	cyclesSvc := cycles.NewService(cyclesStore)
-	issuesSvc := issues.NewService(issuesStore, projectsSvc, columnsSvc)
+	issuesSvc := issues.NewService(issuesStore, projectsSvc)
 	commentsSvc := comments.NewService(commentsStore)
 	fieldsSvc := fields.NewService(fieldsStore)
 	valuesSvc := values.NewService(valuesStore)
 	assigneesSvc := assignees.NewService(assigneesStore)
 
-	// Parse templates
-	tmpl, err := assets.Templates()
-	if err != nil {
-		return nil, fmt.Errorf("parse templates: %w", err)
-	}
-
 	s := &Server{
 		app:        mizu.New(),
 		cfg:        cfg,
 		db:         db,
-		templates:  tmpl,
 		users:      usersSvc,
 		workspaces: workspacesSvc,
 		teams:      teamsSvc,
@@ -159,7 +149,6 @@ func New(cfg Config) (*Server, error) {
 	s.fieldHandlers = handler.NewField(fieldsSvc)
 	s.valueHandlers = handler.NewValue(valuesSvc)
 	s.assigneeHandlers = handler.NewAssignee(assigneesSvc)
-	s.pageHandlers = handler.NewPage(tmpl, usersSvc, workspacesSvc, projectsSvc, issuesSvc, s.optionalAuth, cfg.Dev)
 
 	s.setupRoutes()
 
@@ -268,6 +257,11 @@ func (s *Server) AssigneeService() assignees.API {
 }
 
 func (s *Server) setupRoutes() {
+	// Health check
+	s.app.Get("/health", func(c *mizu.Ctx) error {
+		return c.JSON(200, map[string]string{"status": "ok"})
+	})
+
 	// API routes
 	s.app.Group("/api/v1", func(api *mizu.Router) {
 		// Auth
@@ -381,17 +375,4 @@ func (s *Server) setupRoutes() {
 		api.Post("/issues/{issueID}/assignees", s.authRequired(s.assigneeHandlers.Add))
 		api.Delete("/issues/{issueID}/assignees/{userID}", s.authRequired(s.assigneeHandlers.Remove))
 	})
-
-	// Web routes (pages)
-	s.app.Get("/", s.pageHandlers.Home)
-	s.app.Get("/login", s.pageHandlers.Login)
-	s.app.Get("/register", s.pageHandlers.Register)
-	s.app.Get("/settings", s.pageHandlers.Settings)
-	s.app.Get("/{workspace}", s.pageHandlers.Workspace)
-	s.app.Get("/{workspace}/projects", s.pageHandlers.Projects)
-	s.app.Get("/{workspace}/projects/{key}", s.pageHandlers.Board)
-	s.app.Get("/{workspace}/projects/{key}/list", s.pageHandlers.List)
-	s.app.Get("/{workspace}/issue/{key}", s.pageHandlers.Issue)
-	s.app.Get("/{workspace}/settings", s.pageHandlers.WorkspaceSettings)
-	s.app.Get("/{workspace}/members", s.pageHandlers.Members)
 }

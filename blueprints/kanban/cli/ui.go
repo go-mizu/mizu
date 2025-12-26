@@ -9,6 +9,14 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Icons
+const (
+	iconCheck = "✓"
+	iconCross = "✗"
+	iconArrow = "→"
+	iconDot   = "•"
+)
+
 var (
 	// Colors
 	primaryColor   = lipgloss.Color("#7C3AED") // Purple

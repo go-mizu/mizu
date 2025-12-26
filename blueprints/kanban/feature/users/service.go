@@ -125,6 +125,17 @@ func (s *Service) GetByID(ctx context.Context, id string) (*User, error) {
 	return user, nil
 }
 
+func (s *Service) GetByEmail(ctx context.Context, email string) (*User, error) {
+	user, err := s.store.GetByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, ErrNotFound
+	}
+	return user, nil
+}
+
 func (s *Service) GetBySession(ctx context.Context, sessionID string) (*User, error) {
 	session, err := s.store.GetSession(ctx, sessionID)
 	if err != nil {

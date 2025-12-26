@@ -133,12 +133,15 @@ func (h *Workspace) AddMember(c *mizu.Ctx) error {
 		return c.JSON(http.StatusInternalServerError, errResponse("failed to get workspace"))
 	}
 
-	var in workspaces.AddMemberIn
+	var in struct {
+		UserID string `json:"user_id"`
+		Role   string `json:"role"`
+	}
 	if err := c.BindJSON(&in, 1<<20); err != nil {
 		return c.JSON(http.StatusBadRequest, errResponse("invalid request body"))
 	}
 
-	member, err := h.workspaces.AddMember(c.Context(), ws.ID, &in)
+	member, err := h.workspaces.AddMember(c.Context(), ws.ID, in.UserID, in.Role)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, errResponse("failed to add member"))
 	}

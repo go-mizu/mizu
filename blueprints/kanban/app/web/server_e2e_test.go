@@ -24,7 +24,6 @@ import (
 	"github.com/go-mizu/blueprints/kanban/feature/users"
 	"github.com/go-mizu/blueprints/kanban/feature/values"
 	"github.com/go-mizu/blueprints/kanban/feature/workspaces"
-	"github.com/go-mizu/blueprints/kanban/store/duckdb"
 )
 
 // testEnv holds test environment
@@ -864,55 +863,17 @@ func TestComment_List(t *testing.T) {
 }
 
 // ============================================================================
-// Page Tests
+// Health Check Tests
 // ============================================================================
 
-func TestPage_Login(t *testing.T) {
+func TestHealth(t *testing.T) {
 	env, cleanup := testServer(t)
 	defer cleanup()
 
-	rec := doRequest(t, env.server.Handler(), "GET", "/login", nil, "")
+	rec := doRequest(t, env.server.Handler(), "GET", "/health", nil, "")
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d", rec.Code)
-	}
-}
-
-func TestPage_Register(t *testing.T) {
-	env, cleanup := testServer(t)
-	defer cleanup()
-
-	rec := doRequest(t, env.server.Handler(), "GET", "/register", nil, "")
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", rec.Code)
-	}
-}
-
-func TestPage_Home_Redirect(t *testing.T) {
-	env, cleanup := testServer(t)
-	defer cleanup()
-
-	rec := doRequest(t, env.server.Handler(), "GET", "/", nil, "")
-
-	if rec.Code != http.StatusFound {
-		t.Errorf("expected status 302, got %d", rec.Code)
-	}
-}
-
-// ============================================================================
-// Static Files Tests
-// ============================================================================
-
-func TestStatic_NotFound(t *testing.T) {
-	env, cleanup := testServer(t)
-	defer cleanup()
-
-	rec := doRequest(t, env.server.Handler(), "GET", "/static/nonexistent.js", nil, "")
-
-	if rec.Code != http.StatusNotFound && rec.Code != http.StatusOK {
-		// File server might return 200 with empty body or 404
-		t.Logf("status: %d", rec.Code)
 	}
 }
 
