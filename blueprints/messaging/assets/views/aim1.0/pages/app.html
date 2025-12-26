@@ -454,9 +454,8 @@ function renderMessages() {
         const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
         // Handle sticker messages
-        if (msg.type === 'sticker' && msg.metadata?.sticker_id) {
-            const sticker = getStickerById(msg.metadata.sticker_id);
-            const stickerContent = sticker ? sticker.svg : '<div style="padding: 20px; color: #808080;">[Sticker]</div>';
+        if (msg.type === 'sticker' && msg.sticker_pack_id && msg.sticker_id) {
+            const stickerContent = renderStickerMessage(msg.sticker_pack_id, msg.sticker_id);
             return `
                 <div class="aim-message" data-message-id="${msg.id}">
                     <div class="aim-message-header ${isSent ? 'sent' : 'received'}">
@@ -612,17 +611,22 @@ async function handleReactionClick(messageId, emoji) {
 }
 
 // Handle sending a sticker
-async function handleSendSticker(stickerId) {
+async function handleSendSticker(packId, stickerId) {
     if (!currentChat) return;
 
     try {
+        const packs = window.STICKER_PACKS || {};
+        const pack = packs[packId];
+        const sticker = pack?.stickers.find(s => s.id === stickerId);
+
         const res = await fetch(`/api/v1/chats/${currentChat.id}/messages`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                content: '',
                 type: 'sticker',
-                metadata: { sticker_id: stickerId }
+                content: sticker ? sticker.name : stickerId,
+                sticker_pack_id: packId,
+                sticker_id: stickerId,
             })
         });
 
@@ -631,7 +635,7 @@ async function handleSendSticker(stickerId) {
             messages.push(data.data);
             renderMessages();
             if (typeof addRecentSticker === 'function') {
-                addRecentSticker(stickerId);
+                addRecentSticker(packId, stickerId);
             }
         }
     } catch (err) {
