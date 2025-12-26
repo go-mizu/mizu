@@ -3,8 +3,8 @@
 // Available themes
 // 'default' themes (dark/light) use CSS variables only
 // View themes use completely different view directories
-const THEMES = ['dark', 'light', 'aim1.0', 'ymxp', 'msn', 'im26', 'imos9', 'imosx', 'team11'];
-const VIEW_THEMES = ['aim1.0', 'ymxp', 'msn', 'im26', 'imos9', 'imosx', 'team11']; // Themes that require different server-side views
+const THEMES = ['dark', 'light', 'aim1.0', 'ymxp', 'msn', 'im26', 'imos9', 'imosx', 'team11', 'jarvis'];
+const VIEW_THEMES = ['aim1.0', 'ymxp', 'msn', 'im26', 'imos9', 'imosx', 'team11', 'jarvis']; // Themes that require different server-side views
 
 // Theme handling - set data-theme attribute on page load
 (function() {
@@ -91,7 +91,8 @@ const THEME_NAMES = {
     'im26': 'iMessage',
     'imos9': 'Mac OS 9',
     'imosx': 'Mac OS X',
-    'team11': 'Teams'
+    'team11': 'Teams',
+    'jarvis': 'J.A.R.V.I.S.'
 };
 
 // Cycle to next theme

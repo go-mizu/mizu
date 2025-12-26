@@ -14,7 +14,7 @@ var staticFS embed.FS
 var viewsFS embed.FS
 
 // Available themes
-var Themes = []string{"default", "aim1.0", "ymxp", "msn", "im26", "imos9", "imosx", "team11"}
+var Themes = []string{"default", "aim1.0", "ymxp", "msn", "im26", "imos9", "imosx", "team11", "jarvis"}
 
 // Static returns the static files filesystem.
 func Static() fs.FS {
