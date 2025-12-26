@@ -1,0 +1,1640 @@
+/* Microsoft Teams Windows 11 Theme - Fluent 2 Design System */
+
+:root {
+    /* ================================================
+       FLUENT 2 DESIGN TOKENS - LIGHT THEME (Default)
+       ================================================ */
+
+    /* Brand Colors */
+    --teams-brand-primary: #5B5FC7;
+    --teams-brand-hover: #4F52B2;
+    --teams-brand-pressed: #3F3F8F;
+    --teams-brand-selected: #464775;
+    --teams-brand-tint10: #E8EBFA;
+    --teams-brand-tint20: #D1D5F4;
+    --teams-brand-tint30: #B4BAE8;
+
+    /* Neutral Backgrounds */
+    --bg-primary: #FFFFFF;
+    --bg-secondary: #FAFAFA;
+    --bg-tertiary: #F5F5F5;
+    --bg-hover: #F0F0F0;
+    --bg-elevated: #FFFFFF;
+    --bg-canvas: #FFFFFF;
+
+    /* Text Colors */
+    --text-primary: #242424;
+    --text-secondary: #616161;
+    --text-muted: #8A8886;
+    --text-disabled: #BDBDBD;
+    --text-brand: #5B5FC7;
+
+    /* Border Colors */
+    --border: #E0E0E0;
+    --border-subtle: #EDEBE9;
+    --border-strong: #C4C4C4;
+
+    /* Message Bubbles */
+    --sent-bubble: #E8EBFA;
+    --sent-bubble-text: #242424;
+    --received-bubble: #F5F5F5;
+    --received-bubble-text: #242424;
+
+    /* Semantic Colors */
+    --success: #107C10;
+    --warning: #FFB900;
+    --error: #D13438;
+    --info: #0078D4;
+
+    /* Presence */
+    --presence-available: #107C10;
+    --presence-busy: #D13438;
+    --presence-away: #FFB900;
+    --presence-offline: #8A8886;
+
+    /* Accent */
+    --accent: #5B5FC7;
+    --accent-hover: #4F52B2;
+    --accent-pressed: #3F3F8F;
+
+    /* Ring & Shadow */
+    --ring: rgba(91, 95, 199, 0.3);
+    --shadow-2: 0 1.6px 3.6px rgba(0, 0, 0, 0.13), 0 0.3px 0.9px rgba(0, 0, 0, 0.1);
+    --shadow-8: 0 6.4px 14.4px rgba(0, 0, 0, 0.13), 0 1.2px 3.6px rgba(0, 0, 0, 0.1);
+    --shadow-16: 0 12.8px 28.8px rgba(0, 0, 0, 0.13), 0 2.4px 7.2px rgba(0, 0, 0, 0.1);
+
+    /* Typography */
+    --font-family: 'Segoe UI Variable', 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', sans-serif;
+}
+
+/* ================================================
+   DARK THEME
+   ================================================ */
+[data-theme="team11-dark"] {
+    /* Neutral Backgrounds */
+    --bg-primary: #1F1F1F;
+    --bg-secondary: #292929;
+    --bg-tertiary: #333333;
+    --bg-hover: #3D3D3D;
+    --bg-elevated: #383838;
+    --bg-canvas: #141414;
+
+    /* Text Colors */
+    --text-primary: #FFFFFF;
+    --text-secondary: #ADADAD;
+    --text-muted: #8A8886;
+    --text-disabled: #5C5C5C;
+    --text-brand: #7F85F5;
+
+    /* Border Colors */
+    --border: #3D3D3D;
+    --border-subtle: #333333;
+    --border-strong: #5C5C5C;
+
+    /* Message Bubbles */
+    --sent-bubble: #464775;
+    --sent-bubble-text: #FFFFFF;
+    --received-bubble: #333333;
+    --received-bubble-text: #FFFFFF;
+
+    /* Shadows for dark theme */
+    --shadow-2: 0 1.6px 3.6px rgba(0, 0, 0, 0.26), 0 0.3px 0.9px rgba(0, 0, 0, 0.22);
+    --shadow-8: 0 6.4px 14.4px rgba(0, 0, 0, 0.26), 0 1.2px 3.6px rgba(0, 0, 0, 0.22);
+    --shadow-16: 0 12.8px 28.8px rgba(0, 0, 0, 0.26), 0 2.4px 7.2px rgba(0, 0, 0, 0.22);
+}
+
+/* ================================================
+   BASE STYLES
+   ================================================ */
+
+* {
+    font-family: var(--font-family);
+    box-sizing: border-box;
+}
+
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+body {
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-size: 14px;
+    line-height: 20px;
+}
+
+/* ================================================
+   UTILITY CLASSES
+   ================================================ */
+
+.bg-primary { background-color: var(--bg-primary); }
+.bg-secondary { background-color: var(--bg-secondary); }
+.bg-tertiary { background-color: var(--bg-tertiary); }
+.bg-hover:hover { background-color: var(--bg-hover); }
+.bg-brand { background-color: var(--teams-brand-primary); }
+
+.text-primary { color: var(--text-primary); }
+.text-secondary { color: var(--text-secondary); }
+.text-muted { color: var(--text-muted); }
+.text-brand { color: var(--text-brand); }
+
+.border-default { border-color: var(--border); }
+.border-subtle { border-color: var(--border-subtle); }
+
+/* ================================================
+   TYPOGRAPHY
+   ================================================ */
+
+.text-caption-2 {
+    font-size: 10px;
+    line-height: 14px;
+    font-weight: 400;
+}
+
+.text-caption-1 {
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 400;
+}
+
+.text-body-1 {
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 400;
+}
+
+.text-body-1-strong {
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 600;
+}
+
+.text-subtitle-2 {
+    font-size: 16px;
+    line-height: 22px;
+    font-weight: 600;
+}
+
+.text-subtitle-1 {
+    font-size: 20px;
+    line-height: 26px;
+    font-weight: 600;
+}
+
+.text-title-3 {
+    font-size: 24px;
+    line-height: 32px;
+    font-weight: 600;
+}
+
+/* ================================================
+   SCROLLBARS
+   ================================================ */
+
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--border-strong);
+}
+
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+/* ================================================
+   MAIN LAYOUT - TEAMS STYLE
+   ================================================ */
+
+.teams-app {
+    display: flex;
+    height: 100vh;
+    background-color: var(--bg-canvas);
+}
+
+/* Sidebar - Activity Rail + Chat List */
+.teams-sidebar {
+    width: 280px;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--bg-secondary);
+    border-right: 1px solid var(--border);
+}
+
+/* Sidebar Header */
+.teams-sidebar-header {
+    height: 48px;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.teams-user-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.teams-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background-color: var(--teams-brand-primary);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 600;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.teams-avatar-lg {
+    width: 40px;
+    height: 40px;
+    font-size: 16px;
+}
+
+.teams-avatar-xl {
+    width: 80px;
+    height: 80px;
+    font-size: 28px;
+}
+
+.teams-avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.teams-presence {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid var(--bg-secondary);
+    background-color: var(--presence-available);
+}
+
+.teams-presence-away { background-color: var(--presence-away); }
+.teams-presence-busy { background-color: var(--presence-busy); }
+.teams-presence-offline { background-color: var(--presence-offline); }
+
+.teams-user-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.teams-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Icon Buttons */
+.teams-icon-btn {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.1s, color 0.1s;
+}
+
+.teams-icon-btn:hover {
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.teams-icon-btn:active {
+    background-color: var(--bg-tertiary);
+}
+
+.teams-icon-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* Search */
+.teams-search {
+    padding: 8px 12px;
+}
+
+.teams-search-input {
+    width: 100%;
+    height: 32px;
+    padding: 0 12px 0 36px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 14px;
+    transition: border-color 0.1s;
+}
+
+.teams-search-input:hover {
+    border-color: var(--border-strong);
+}
+
+.teams-search-input:focus {
+    outline: none;
+    border-color: var(--teams-brand-primary);
+    box-shadow: 0 0 0 1px var(--teams-brand-primary);
+}
+
+.teams-search-input::placeholder {
+    color: var(--text-muted);
+}
+
+.teams-search-wrapper {
+    position: relative;
+}
+
+.teams-search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 16px;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+/* Chat List */
+.teams-chat-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+}
+
+.teams-chat-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background-color 0.1s;
+    border-left: 3px solid transparent;
+}
+
+.teams-chat-item:hover {
+    background-color: var(--bg-hover);
+}
+
+.teams-chat-item.active {
+    background-color: var(--bg-tertiary);
+    border-left-color: var(--teams-brand-primary);
+}
+
+.teams-chat-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.teams-chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 2px;
+}
+
+.teams-chat-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.teams-chat-time {
+    font-size: 12px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.teams-chat-preview {
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.teams-unread-badge {
+    min-width: 18px;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: 9px;
+    background-color: var(--teams-brand-primary);
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+/* ================================================
+   MAIN CHAT AREA
+   ================================================ */
+
+.teams-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background-color: var(--bg-primary);
+}
+
+/* Chat Header */
+.teams-chat-header-bar {
+    height: 48px;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    background-color: var(--bg-primary);
+}
+
+.teams-chat-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.teams-chat-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.teams-chat-subtitle {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.teams-chat-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Empty State */
+.teams-empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    text-align: center;
+}
+
+.teams-empty-icon {
+    width: 120px;
+    height: 120px;
+    margin-bottom: 24px;
+    color: var(--text-muted);
+}
+
+.teams-empty-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.teams-empty-description {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 24px;
+    max-width: 400px;
+}
+
+/* Messages Area */
+.teams-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* Message Wrapper */
+.teams-message {
+    display: flex;
+    max-width: 65%;
+    position: relative;
+}
+
+.teams-message.sent {
+    align-self: flex-end;
+}
+
+.teams-message.received {
+    align-self: flex-start;
+}
+
+.teams-message-content {
+    position: relative;
+}
+
+/* Message Bubbles */
+.teams-bubble {
+    padding: 8px 12px;
+    border-radius: 4px;
+    word-wrap: break-word;
+    position: relative;
+}
+
+.teams-bubble.sent {
+    background-color: var(--sent-bubble);
+    color: var(--sent-bubble-text);
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 2px;
+}
+
+.teams-bubble.received {
+    background-color: var(--received-bubble);
+    color: var(--received-bubble-text);
+    border-top-left-radius: 4px;
+    border-bottom-left-radius: 2px;
+}
+
+/* First/Last in group */
+.teams-bubble.first { border-top-left-radius: 8px; border-top-right-radius: 8px; }
+.teams-bubble.last { border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; }
+
+.teams-message-text {
+    font-size: 14px;
+    line-height: 20px;
+    white-space: pre-wrap;
+}
+
+.teams-message-meta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.teams-message-time {
+    font-size: 10px;
+    color: var(--text-muted);
+}
+
+.teams-message-status {
+    font-size: 10px;
+    color: var(--text-muted);
+}
+
+.teams-message-status.read {
+    color: var(--teams-brand-primary);
+}
+
+/* Message Sender (for groups) */
+.teams-message-sender {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--teams-brand-primary);
+    margin-bottom: 4px;
+}
+
+/* Message Actions */
+.teams-message-actions {
+    position: absolute;
+    top: -8px;
+    right: 0;
+    display: none;
+    background-color: var(--bg-primary);
+    border-radius: 4px;
+    box-shadow: var(--shadow-2);
+    padding: 4px;
+}
+
+.teams-message:hover .teams-message-actions {
+    display: flex;
+}
+
+.teams-message.sent .teams-message-actions {
+    right: auto;
+    left: 0;
+}
+
+/* Date Divider */
+.teams-date-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px 0;
+}
+
+.teams-date-divider span {
+    font-size: 12px;
+    color: var(--text-muted);
+    background-color: var(--bg-primary);
+    padding: 4px 12px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+}
+
+/* Typing Indicator */
+.teams-typing {
+    padding: 8px 16px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+/* ================================================
+   COMPOSE AREA
+   ================================================ */
+
+.teams-compose {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    background-color: var(--bg-primary);
+}
+
+.teams-compose-container {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px;
+    transition: border-color 0.1s;
+}
+
+.teams-compose-container:focus-within {
+    border-color: var(--teams-brand-primary);
+}
+
+.teams-compose-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.teams-compose-input-wrapper {
+    flex: 1;
+    position: relative;
+}
+
+.teams-compose-input {
+    width: 100%;
+    min-height: 24px;
+    max-height: 200px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 24px;
+    resize: none;
+    font-family: var(--font-family);
+}
+
+.teams-compose-input:focus {
+    outline: none;
+}
+
+.teams-compose-input::placeholder {
+    color: var(--text-muted);
+}
+
+.teams-compose-right {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.teams-send-btn {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 4px;
+    background-color: var(--teams-brand-primary);
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.1s;
+}
+
+.teams-send-btn:hover {
+    background-color: var(--teams-brand-hover);
+}
+
+.teams-send-btn:active {
+    background-color: var(--teams-brand-pressed);
+}
+
+.teams-send-btn:disabled {
+    background-color: var(--text-disabled);
+    cursor: not-allowed;
+}
+
+.teams-send-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* ================================================
+   BUTTONS
+   ================================================ */
+
+.teams-btn {
+    height: 32px;
+    padding: 0 12px;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: background-color 0.1s, color 0.1s;
+}
+
+.teams-btn-primary {
+    background-color: var(--teams-brand-primary);
+    color: white;
+}
+
+.teams-btn-primary:hover {
+    background-color: var(--teams-brand-hover);
+}
+
+.teams-btn-primary:active {
+    background-color: var(--teams-brand-pressed);
+}
+
+.teams-btn-secondary {
+    background-color: transparent;
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+}
+
+.teams-btn-secondary:hover {
+    background-color: var(--bg-hover);
+}
+
+.teams-btn-ghost {
+    background-color: transparent;
+    color: var(--text-primary);
+}
+
+.teams-btn-ghost:hover {
+    background-color: var(--bg-hover);
+}
+
+.teams-btn-lg {
+    height: 40px;
+    padding: 0 16px;
+}
+
+.teams-btn-block {
+    width: 100%;
+}
+
+/* ================================================
+   INPUTS
+   ================================================ */
+
+.teams-input {
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 14px;
+    transition: border-color 0.1s;
+}
+
+.teams-input:hover {
+    border-color: var(--border-strong);
+}
+
+.teams-input:focus {
+    outline: none;
+    border-color: var(--teams-brand-primary);
+    box-shadow: 0 0 0 1px var(--teams-brand-primary);
+}
+
+.teams-input::placeholder {
+    color: var(--text-muted);
+}
+
+.teams-input-lg {
+    height: 40px;
+}
+
+.teams-textarea {
+    min-height: 80px;
+    padding: 8px 12px;
+    resize: vertical;
+}
+
+/* ================================================
+   MODALS
+   ================================================ */
+
+.teams-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+.teams-modal {
+    background-color: var(--bg-primary);
+    border-radius: 8px;
+    box-shadow: var(--shadow-16);
+    max-width: 480px;
+    width: 100%;
+    max-height: 90vh;
+    overflow: hidden;
+    margin: 16px;
+}
+
+.teams-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.teams-modal-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.teams-modal-body {
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.teams-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+}
+
+/* ================================================
+   CARDS
+   ================================================ */
+
+.teams-card {
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: var(--shadow-2);
+    overflow: hidden;
+}
+
+.teams-card-header {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.teams-card-body {
+    padding: 16px;
+}
+
+/* ================================================
+   TOGGLE SWITCH
+   ================================================ */
+
+.teams-toggle {
+    position: relative;
+    width: 40px;
+    height: 20px;
+    cursor: pointer;
+}
+
+.teams-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.teams-toggle-slider {
+    position: absolute;
+    inset: 0;
+    background-color: var(--border-strong);
+    border-radius: 10px;
+    transition: background-color 0.2s;
+}
+
+.teams-toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    left: 2px;
+    top: 2px;
+    background-color: white;
+    border-radius: 50%;
+    transition: transform 0.2s;
+}
+
+.teams-toggle input:checked + .teams-toggle-slider {
+    background-color: var(--teams-brand-primary);
+}
+
+.teams-toggle input:checked + .teams-toggle-slider::before {
+    transform: translateX(20px);
+}
+
+/* ================================================
+   MESSAGE STATUS ICONS
+   ================================================ */
+
+.teams-status-sent::after {
+    content: '✓';
+    font-size: 10px;
+}
+
+.teams-status-delivered::after {
+    content: '✓✓';
+    font-size: 10px;
+}
+
+.teams-status-read::after {
+    content: '✓✓';
+    font-size: 10px;
+    color: var(--teams-brand-primary);
+}
+
+/* ================================================
+   REACTIONS
+   ================================================ */
+
+.teams-reactions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.teams-reaction {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background-color: var(--bg-tertiary);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background-color 0.1s;
+}
+
+.teams-reaction:hover {
+    background-color: var(--bg-hover);
+}
+
+.teams-reaction.active {
+    background-color: var(--teams-brand-tint10);
+    border: 1px solid var(--teams-brand-primary);
+}
+
+.teams-reaction-emoji {
+    font-size: 14px;
+}
+
+.teams-reaction-count {
+    color: var(--text-secondary);
+}
+
+/* ================================================
+   STICKERS
+   ================================================ */
+
+.teams-sticker-message {
+    max-width: 180px;
+}
+
+.teams-sticker-message img {
+    max-width: 100%;
+    height: auto;
+}
+
+/* ================================================
+   MEDIA MESSAGES
+   ================================================ */
+
+.teams-media-message {
+    max-width: 300px;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.teams-media-message img,
+.teams-media-message video {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.teams-document-message {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background-color: var(--bg-tertiary);
+    border-radius: 4px;
+    min-width: 240px;
+}
+
+.teams-document-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 4px;
+    background-color: var(--teams-brand-primary);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.teams-document-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.teams-document-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.teams-document-size {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* ================================================
+   VOICE MESSAGE
+   ================================================ */
+
+.teams-voice-message {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    min-width: 200px;
+}
+
+.teams-voice-play {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background-color: var(--teams-brand-primary);
+    color: white;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.teams-voice-waveform {
+    flex: 1;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.teams-voice-bar {
+    width: 3px;
+    background-color: var(--teams-brand-primary);
+    border-radius: 1.5px;
+    opacity: 0.5;
+}
+
+.teams-voice-duration {
+    font-size: 12px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+/* ================================================
+   SETTINGS PAGE
+   ================================================ */
+
+.teams-settings {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 24px;
+}
+
+.teams-settings-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 32px;
+}
+
+.teams-settings-section {
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 16px;
+    overflow: hidden;
+}
+
+.teams-settings-section-header {
+    padding: 16px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border);
+}
+
+.teams-settings-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.teams-settings-item:last-child {
+    border-bottom: none;
+}
+
+.teams-settings-label {
+    flex: 1;
+}
+
+.teams-settings-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.teams-settings-description {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+/* ================================================
+   THEME SELECTOR
+   ================================================ */
+
+.teams-theme-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+    padding: 16px;
+}
+
+.teams-theme-card {
+    cursor: pointer;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+}
+
+.teams-theme-card:hover {
+    border-color: var(--teams-brand-primary);
+}
+
+.teams-theme-card.active {
+    border-color: var(--teams-brand-primary);
+    box-shadow: 0 0 0 1px var(--teams-brand-primary);
+}
+
+.teams-theme-card input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.teams-theme-preview {
+    height: 80px;
+    padding: 8px;
+}
+
+.teams-theme-info {
+    padding: 8px 12px;
+    background-color: var(--bg-tertiary);
+}
+
+.teams-theme-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.teams-theme-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* ================================================
+   LOGIN/REGISTER PAGES
+   ================================================ */
+
+.teams-auth-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-secondary);
+    padding: 24px;
+}
+
+.teams-auth-card {
+    width: 100%;
+    max-width: 400px;
+    background-color: var(--bg-primary);
+    border-radius: 8px;
+    box-shadow: var(--shadow-8);
+    padding: 40px;
+}
+
+.teams-auth-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 32px;
+}
+
+.teams-auth-logo-icon {
+    width: 40px;
+    height: 40px;
+    fill: var(--teams-brand-primary);
+}
+
+.teams-auth-logo-text {
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.teams-auth-title {
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-align: center;
+    margin-bottom: 8px;
+}
+
+.teams-auth-subtitle {
+    font-size: 14px;
+    color: var(--text-secondary);
+    text-align: center;
+    margin-bottom: 32px;
+}
+
+.teams-auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.teams-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.teams-form-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.teams-auth-footer {
+    margin-top: 24px;
+    text-align: center;
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.teams-auth-footer a {
+    color: var(--teams-brand-primary);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.teams-auth-footer a:hover {
+    text-decoration: underline;
+}
+
+/* ================================================
+   HOME PAGE
+   ================================================ */
+
+.teams-home {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.teams-home-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    background-color: var(--bg-primary);
+}
+
+.teams-home-logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.teams-home-logo svg {
+    width: 32px;
+    height: 32px;
+    fill: var(--teams-brand-primary);
+}
+
+.teams-home-logo span {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.teams-home-nav {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.teams-home-hero {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 24px;
+    text-align: center;
+    background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+}
+
+.teams-home-hero-icon {
+    width: 120px;
+    height: 120px;
+    margin-bottom: 32px;
+    fill: var(--teams-brand-primary);
+}
+
+.teams-home-hero-title {
+    font-size: 40px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 16px;
+}
+
+.teams-home-hero-subtitle {
+    font-size: 18px;
+    color: var(--text-secondary);
+    margin-bottom: 32px;
+    max-width: 600px;
+}
+
+.teams-home-actions {
+    display: flex;
+    gap: 12px;
+}
+
+/* ================================================
+   RESPONSIVE
+   ================================================ */
+
+@media (max-width: 768px) {
+    .teams-sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        z-index: 50;
+        transform: translateX(-100%);
+        transition: transform 0.2s;
+    }
+
+    .teams-sidebar.open {
+        transform: translateX(0);
+    }
+
+    .teams-main {
+        width: 100%;
+    }
+
+    .teams-mobile-header {
+        display: flex;
+    }
+
+    .teams-back-btn {
+        display: flex;
+    }
+}
+
+@media (min-width: 769px) {
+    .teams-mobile-header {
+        display: none;
+    }
+
+    .teams-back-btn {
+        display: none;
+    }
+}
+
+/* ================================================
+   HIDDEN UTILITY
+   ================================================ */
+
+.hidden {
+    display: none !important;
+}
+
+/* ================================================
+   MESSAGE WRAPPER FOR ACTIONS
+   ================================================ */
+
+.message-wrapper {
+    position: relative;
+}
+
+.message-wrapper:hover .message-actions {
+    display: flex;
+}
+
+.message-actions {
+    position: absolute;
+    top: -32px;
+    right: 0;
+    display: none;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: var(--shadow-2);
+    padding: 4px;
+    z-index: 10;
+}
+
+.message-action-btn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+}
+
+.message-action-btn:hover {
+    background-color: var(--bg-hover);
+}
+
+/* ================================================
+   EMOJI/STICKER PICKER BUTTON
+   ================================================ */
+
+.input-emoji-btn,
+.input-sticker-btn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    transition: background-color 0.1s;
+}
+
+.input-emoji-btn:hover,
+.input-sticker-btn:hover {
+    background-color: var(--bg-hover);
+}
+
+/* ================================================
+   REACTIONS RENDERING
+   ================================================ */
+
+.reactions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.reaction-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background-color: var(--bg-tertiary);
+    font-size: 12px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background-color 0.1s;
+}
+
+.reaction-badge:hover {
+    background-color: var(--bg-hover);
+}
+
+.reaction-badge.me {
+    background-color: var(--teams-brand-tint10);
+    border-color: var(--teams-brand-primary);
+}
+
+/* ================================================
+   VOICE RECORD BUTTON
+   ================================================ */
+
+.voice-record-btn {
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.1s, color 0.1s;
+}
+
+.voice-record-btn:hover {
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.voice-record-btn.recording {
+    background-color: var(--error);
+    color: white;
+}

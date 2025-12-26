@@ -1,0 +1,518 @@
+{{define "content"}}
+<div class="teams-settings" style="height: 100vh; overflow-y: auto; background-color: var(--bg-secondary);">
+    <!-- Header -->
+    <div class="teams-settings-header">
+        <a href="/app" class="teams-icon-btn">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+            </svg>
+        </a>
+        <h1 style="font-size: 24px; font-weight: 600;">Settings</h1>
+    </div>
+
+    <!-- Profile Section -->
+    <div class="teams-settings-section">
+        <div class="teams-settings-section-header">Profile</div>
+        <div style="padding: 20px;">
+            <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 24px;">
+                <div id="avatar-preview" class="teams-avatar teams-avatar-xl"></div>
+                <div>
+                    <button class="teams-btn teams-btn-secondary">Change Photo</button>
+                    <p style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">JPG, PNG. Max 5MB.</p>
+                </div>
+            </div>
+
+            <form id="profile-form" style="display: flex; flex-direction: column; gap: 16px;">
+                <div class="teams-form-group">
+                    <label class="teams-form-label" for="display_name">Display Name</label>
+                    <input type="text" id="display_name" name="display_name" class="teams-input" style="width: 100%;" placeholder="Your display name">
+                </div>
+
+                <div class="teams-form-group">
+                    <label class="teams-form-label" for="username">Username</label>
+                    <input type="text" id="username" name="username" class="teams-input" style="width: 100%;" placeholder="Your username" readonly>
+                    <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Username cannot be changed</p>
+                </div>
+
+                <div class="teams-form-group">
+                    <label class="teams-form-label" for="email">Email</label>
+                    <input type="email" id="email" name="email" class="teams-input" style="width: 100%;" placeholder="your@email.com">
+                </div>
+
+                <div class="teams-form-group">
+                    <label class="teams-form-label" for="bio">Bio</label>
+                    <textarea id="bio" name="bio" class="teams-input teams-textarea" style="width: 100%;" placeholder="Tell us about yourself..."></textarea>
+                </div>
+
+                <div id="profile-message" class="hidden" style="font-size: 14px;"></div>
+
+                <button type="submit" class="teams-btn teams-btn-primary teams-btn-block">Save Changes</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Appearance Section -->
+    <div class="teams-settings-section">
+        <div class="teams-settings-section-header">Appearance</div>
+        <div style="padding: 20px;">
+            <div style="margin-bottom: 16px;">
+                <div style="font-weight: 600; margin-bottom: 8px;">Theme</div>
+                <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 16px;">Choose your preferred visual style</div>
+            </div>
+
+            <!-- Theme Grid -->
+            <div class="teams-theme-grid">
+                <!-- Modern Dark -->
+                <label class="teams-theme-card">
+                    <input type="radio" name="theme" value="dark">
+                    <div class="teams-theme-preview" style="background: #09090b;">
+                        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                            <div style="width: 32px; height: 32px; border-radius: 50%; background: #18181b;"></div>
+                            <div style="flex: 1;">
+                                <div style="height: 8px; background: #18181b; border-radius: 4px; width: 60px; margin-bottom: 4px;"></div>
+                                <div style="height: 6px; background: #27272a; border-radius: 4px; width: 40px;"></div>
+                            </div>
+                        </div>
+                        <div style="display: flex; justify-content: flex-end;">
+                            <div style="background: #27272a; border-radius: 8px; padding: 4px 8px;">
+                                <div style="height: 6px; background: rgba(250,250,250,0.3); border-radius: 3px; width: 32px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="teams-theme-info">
+                        <div class="teams-theme-name">Modern Dark</div>
+                        <div class="teams-theme-desc">Shadcn-inspired</div>
+                    </div>
+                </label>
+
+                <!-- Modern Light -->
+                <label class="teams-theme-card">
+                    <input type="radio" name="theme" value="light">
+                    <div class="teams-theme-preview" style="background: #ffffff;">
+                        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                            <div style="width: 32px; height: 32px; border-radius: 50%; background: #fafafa;"></div>
+                            <div style="flex: 1;">
+                                <div style="height: 8px; background: #f4f4f5; border-radius: 4px; width: 60px; margin-bottom: 4px;"></div>
+                                <div style="height: 6px; background: #e4e4e7; border-radius: 4px; width: 40px;"></div>
+                            </div>
+                        </div>
+                        <div style="display: flex; justify-content: flex-end;">
+                            <div style="background: #f4f4f5; border-radius: 8px; padding: 4px 8px;">
+                                <div style="height: 6px; background: rgba(9,9,11,0.2); border-radius: 3px; width: 32px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="teams-theme-info">
+                        <div class="teams-theme-name">Modern Light</div>
+                        <div class="teams-theme-desc">Clean and minimal</div>
+                    </div>
+                </label>
+
+                <!-- Microsoft Teams -->
+                <label class="teams-theme-card">
+                    <input type="radio" name="theme" value="team11">
+                    <div class="teams-theme-preview" style="background: #FAFAFA;">
+                        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                            <div style="width: 32px; height: 32px; border-radius: 50%; background: #5B5FC7;"></div>
+                            <div style="flex: 1;">
+                                <div style="height: 8px; background: #E0E0E0; border-radius: 4px; width: 60px; margin-bottom: 4px;"></div>
+                                <div style="height: 6px; background: #F0F0F0; border-radius: 4px; width: 40px;"></div>
+                            </div>
+                        </div>
+                        <div style="display: flex; justify-content: flex-end;">
+                            <div style="background: #E8EBFA; border-radius: 4px; padding: 4px 8px;">
+                                <div style="height: 6px; background: rgba(91,95,199,0.3); border-radius: 3px; width: 32px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="teams-theme-info">
+                        <div class="teams-theme-name">Microsoft Teams</div>
+                        <div class="teams-theme-desc">Fluent 2 design</div>
+                    </div>
+                </label>
+
+                <!-- AIM 1.0 -->
+                <label class="teams-theme-card">
+                    <input type="radio" name="theme" value="aim1.0">
+                    <div class="teams-theme-preview" style="background: #008080;">
+                        <div style="background: #c0c0c0; height: 100%; border: 2px solid; border-color: #dfdfdf #404040 #404040 #dfdfdf;">
+                            <div style="height: 16px; background: linear-gradient(90deg, #000080, #1084d0); padding: 2px 4px;">
+                                <span style="color: white; font-size: 10px; font-weight: bold;">Buddy List</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="teams-theme-info">
+                        <div class="teams-theme-name">AIM 1.0</div>
+                        <div class="teams-theme-desc">Classic 1997</div>
+                    </div>
+                </label>
+
+                <!-- Yahoo Messenger -->
+                <label class="teams-theme-card">
+                    <input type="radio" name="theme" value="ymxp">
+                    <div class="teams-theme-preview" style="background: #5C7EC0;">
+                        <div style="background: #ECE9D8; height: 100%; border-radius: 2px;">
+                            <div style="height: 16px; background: linear-gradient(180deg, #3168D8 0%, #1941A3 100%); border-radius: 2px 2px 0 0; padding: 2px 4px;">
+                                <span style="color: white; font-size: 10px; font-weight: bold;">Yahoo!</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="teams-theme-info">
+                        <div class="teams-theme-name">Yahoo! Messenger</div>
+                        <div class="teams-theme-desc">Windows XP era</div>
+                    </div>
+                </label>
+
+                <!-- iMessage Tahoe -->
+                <label class="teams-theme-card">
+                    <input type="radio" name="theme" value="im26">
+                    <div class="teams-theme-preview" style="background: linear-gradient(135deg, rgba(255,255,255,0.3), rgba(255,255,255,0.1)), linear-gradient(180deg, #f5f5f7 0%, #e8e8ed 100%);">
+                        <div style="background: rgba(255,255,255,0.7); height: 100%; border-radius: 8px; padding: 6px;">
+                            <div style="display: flex; gap: 4px; margin-bottom: 8px;">
+                                <div style="width: 8px; height: 8px; border-radius: 50%; background: #FF5F57;"></div>
+                                <div style="width: 8px; height: 8px; border-radius: 50%; background: #FFBD2E;"></div>
+                                <div style="width: 8px; height: 8px; border-radius: 50%; background: #28C840;"></div>
+                            </div>
+                            <div style="display: flex; justify-content: flex-end;">
+                                <div style="background: #007AFF; border-radius: 12px; padding: 2px 8px;">
+                                    <div style="height: 4px; background: rgba(255,255,255,0.6); border-radius: 2px; width: 24px;"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="teams-theme-info">
+                        <div class="teams-theme-name">iMessage Tahoe</div>
+                        <div class="teams-theme-desc">Liquid glass</div>
+                    </div>
+                </label>
+
+                <!-- Mac OS 9 -->
+                <label class="teams-theme-card">
+                    <input type="radio" name="theme" value="imos9">
+                    <div class="teams-theme-preview" style="background: #666699;">
+                        <div style="background: #DDDDDD; height: 100%; border: 2px solid; border-color: #FFFFFF #888888 #888888 #FFFFFF;">
+                            <div style="height: 16px; background: linear-gradient(180deg, #CCCCCC 0%, #AAAAAA 50%, #CCCCCC 100%); border-bottom: 1px solid #888888; display: flex; align-items: center; justify-content: center;">
+                                <span style="font-size: 10px; font-weight: bold;">Buddy List</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="teams-theme-info">
+                        <div class="teams-theme-name">Mac OS 9</div>
+                        <div class="teams-theme-desc">Platinum</div>
+                    </div>
+                </label>
+
+                <!-- Mac OS X Aqua -->
+                <label class="teams-theme-card">
+                    <input type="radio" name="theme" value="imosx">
+                    <div class="teams-theme-preview" style="background: repeating-linear-gradient(#FFFFFF 0px, #FFFFFF 1px, #F0F0F0 1px, #F0F0F0 2px);">
+                        <div style="background: #EFEFEF; height: 100%; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">
+                            <div style="height: 20px; background: linear-gradient(180deg, #E8E8E8 0%, #CECECE 45%, #BABABA 55%, #C8C8C8 100%); border-radius: 4px 4px 0 0; display: flex; align-items: center; gap: 4px; padding: 0 6px;">
+                                <div style="width: 10px; height: 10px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #FF7066 0%, #FF5F57 50%, #E33E32 100%);"></div>
+                                <div style="width: 10px; height: 10px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #FFD566 0%, #FFBD2E 50%, #DEA123 100%);"></div>
+                                <div style="width: 10px; height: 10px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #5EDA63 0%, #28C840 50%, #1AAB29 100%);"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="teams-theme-info">
+                        <div class="teams-theme-name">Mac OS X</div>
+                        <div class="teams-theme-desc">Aqua interface</div>
+                    </div>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <!-- Privacy Section -->
+    <div class="teams-settings-section">
+        <div class="teams-settings-section-header">Privacy</div>
+        <div class="teams-settings-item">
+            <div class="teams-settings-label">
+                <div class="teams-settings-title">Last Seen</div>
+                <div class="teams-settings-description">Who can see when you were last online</div>
+            </div>
+            <select id="privacy-last-seen" class="teams-input">
+                <option value="everyone">Everyone</option>
+                <option value="contacts">My Contacts</option>
+                <option value="nobody">Nobody</option>
+            </select>
+        </div>
+        <div class="teams-settings-item">
+            <div class="teams-settings-label">
+                <div class="teams-settings-title">Profile Photo</div>
+                <div class="teams-settings-description">Who can see your profile photo</div>
+            </div>
+            <select id="privacy-photo" class="teams-input">
+                <option value="everyone">Everyone</option>
+                <option value="contacts">My Contacts</option>
+                <option value="nobody">Nobody</option>
+            </select>
+        </div>
+        <div class="teams-settings-item">
+            <div class="teams-settings-label">
+                <div class="teams-settings-title">Read Receipts</div>
+                <div class="teams-settings-description">Show when you've read messages</div>
+            </div>
+            <label class="teams-toggle">
+                <input type="checkbox" id="privacy-read-receipts" checked>
+                <span class="teams-toggle-slider"></span>
+            </label>
+        </div>
+    </div>
+
+    <!-- Notifications Section -->
+    <div class="teams-settings-section">
+        <div class="teams-settings-section-header">Notifications</div>
+        <div class="teams-settings-item">
+            <div class="teams-settings-label">
+                <div class="teams-settings-title">Message Notifications</div>
+                <div class="teams-settings-description">Get notified for new messages</div>
+            </div>
+            <label class="teams-toggle">
+                <input type="checkbox" id="notify-messages" checked>
+                <span class="teams-toggle-slider"></span>
+            </label>
+        </div>
+        <div class="teams-settings-item">
+            <div class="teams-settings-label">
+                <div class="teams-settings-title">Group Notifications</div>
+                <div class="teams-settings-description">Get notified for group messages</div>
+            </div>
+            <label class="teams-toggle">
+                <input type="checkbox" id="notify-groups" checked>
+                <span class="teams-toggle-slider"></span>
+            </label>
+        </div>
+        <div class="teams-settings-item">
+            <div class="teams-settings-label">
+                <div class="teams-settings-title">Sound</div>
+                <div class="teams-settings-description">Play sound for notifications</div>
+            </div>
+            <label class="teams-toggle">
+                <input type="checkbox" id="notify-sound" checked>
+                <span class="teams-toggle-slider"></span>
+            </label>
+        </div>
+    </div>
+
+    <!-- Security Section -->
+    <div class="teams-settings-section">
+        <div class="teams-settings-section-header">Security</div>
+        <div style="padding: 20px;">
+            <form id="password-form" style="display: flex; flex-direction: column; gap: 16px;">
+                <div class="teams-form-group">
+                    <label class="teams-form-label" for="current_password">Current Password</label>
+                    <input type="password" id="current_password" name="current_password" class="teams-input" style="width: 100%;" placeholder="Enter current password">
+                </div>
+                <div class="teams-form-group">
+                    <label class="teams-form-label" for="new_password">New Password</label>
+                    <input type="password" id="new_password" name="new_password" class="teams-input" style="width: 100%;" placeholder="At least 6 characters" minlength="6">
+                </div>
+                <div class="teams-form-group">
+                    <label class="teams-form-label" for="confirm_password">Confirm New Password</label>
+                    <input type="password" id="confirm_password" name="confirm_password" class="teams-input" style="width: 100%;" placeholder="Confirm new password" minlength="6">
+                </div>
+                <div id="password-message" class="hidden" style="font-size: 14px;"></div>
+                <button type="submit" class="teams-btn teams-btn-secondary teams-btn-block">Change Password</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Danger Zone -->
+    <div class="teams-settings-section" style="border-color: var(--error);">
+        <div class="teams-settings-section-header" style="color: var(--error);">Danger Zone</div>
+        <div style="padding: 20px; display: flex; flex-direction: column; gap: 12px;">
+            <button onclick="logout()" class="teams-btn teams-btn-secondary teams-btn-block">Log Out</button>
+            <button onclick="confirmDeleteAccount()" class="teams-btn teams-btn-block" style="background-color: rgba(209, 52, 56, 0.1); color: var(--error);">Delete Account</button>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentUser = null;
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadCurrentUser();
+    loadSettings();
+});
+
+async function loadCurrentUser() {
+    try {
+        const res = await fetch('/api/v1/users/me');
+        const data = await res.json();
+        if (data.success && data.data) {
+            currentUser = data.data;
+            populateProfile();
+        } else {
+            window.location.href = '/login';
+        }
+    } catch (err) {
+        window.location.href = '/login';
+    }
+}
+
+function populateProfile() {
+    document.getElementById('display_name').value = currentUser.display_name || '';
+    document.getElementById('username').value = currentUser.username || '';
+    document.getElementById('email').value = currentUser.email || '';
+    document.getElementById('bio').value = currentUser.bio || '';
+    document.getElementById('avatar-preview').textContent = (currentUser.display_name || currentUser.username || '?').charAt(0).toUpperCase();
+}
+
+function loadSettings() {
+    const theme = localStorage.getItem('theme') || 'dark';
+    const themeRadio = document.querySelector(`input[name="theme"][value="${theme}"]`);
+    if (themeRadio) {
+        themeRadio.checked = true;
+        themeRadio.closest('.teams-theme-card').classList.add('active');
+    }
+
+    const settings = JSON.parse(localStorage.getItem('settings') || '{}');
+    document.getElementById('privacy-last-seen').value = settings.privacyLastSeen || 'everyone';
+    document.getElementById('privacy-photo').value = settings.privacyPhoto || 'everyone';
+    document.getElementById('privacy-read-receipts').checked = settings.readReceipts !== false;
+    document.getElementById('notify-messages').checked = settings.notifyMessages !== false;
+    document.getElementById('notify-groups').checked = settings.notifyGroups !== false;
+    document.getElementById('notify-sound').checked = settings.notifySound !== false;
+
+    document.querySelectorAll('input[name="theme"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            document.querySelectorAll('.teams-theme-card').forEach(card => card.classList.remove('active'));
+            if (this.checked) {
+                this.closest('.teams-theme-card').classList.add('active');
+                setTheme(this.value);
+            }
+        });
+    });
+}
+
+document.getElementById('profile-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const messageDiv = document.getElementById('profile-message');
+
+    try {
+        const res = await fetch('/api/v1/users/me', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                display_name: document.getElementById('display_name').value,
+                email: document.getElementById('email').value,
+                bio: document.getElementById('bio').value
+            })
+        });
+
+        const data = await res.json();
+        if (data.success && data.data) {
+            messageDiv.textContent = 'Profile updated successfully';
+            messageDiv.style.color = 'var(--success)';
+            messageDiv.classList.remove('hidden');
+            currentUser = { ...currentUser, ...data.data };
+            populateProfile();
+        } else {
+            messageDiv.textContent = data.error || 'Failed to update profile';
+            messageDiv.style.color = 'var(--error)';
+            messageDiv.classList.remove('hidden');
+        }
+    } catch (err) {
+        messageDiv.textContent = 'An error occurred';
+        messageDiv.style.color = 'var(--error)';
+        messageDiv.classList.remove('hidden');
+    }
+
+    setTimeout(() => messageDiv.classList.add('hidden'), 3000);
+});
+
+document.getElementById('password-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const messageDiv = document.getElementById('password-message');
+    const newPassword = document.getElementById('new_password').value;
+    const confirmPassword = document.getElementById('confirm_password').value;
+
+    if (newPassword !== confirmPassword) {
+        messageDiv.textContent = 'Passwords do not match';
+        messageDiv.style.color = 'var(--error)';
+        messageDiv.classList.remove('hidden');
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/v1/users/me/password', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                current_password: document.getElementById('current_password').value,
+                new_password: newPassword
+            })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+            messageDiv.textContent = 'Password changed successfully';
+            messageDiv.style.color = 'var(--success)';
+            messageDiv.classList.remove('hidden');
+            document.getElementById('password-form').reset();
+        } else {
+            messageDiv.textContent = data.error || 'Failed to change password';
+            messageDiv.style.color = 'var(--error)';
+            messageDiv.classList.remove('hidden');
+        }
+    } catch (err) {
+        messageDiv.textContent = 'An error occurred';
+        messageDiv.style.color = 'var(--error)';
+        messageDiv.classList.remove('hidden');
+    }
+
+    setTimeout(() => messageDiv.classList.add('hidden'), 3000);
+});
+
+['privacy-last-seen', 'privacy-photo'].forEach(id => {
+    document.getElementById(id).addEventListener('change', saveSettings);
+});
+
+['privacy-read-receipts', 'notify-messages', 'notify-groups', 'notify-sound'].forEach(id => {
+    document.getElementById(id).addEventListener('change', saveSettings);
+});
+
+function saveSettings() {
+    const settings = {
+        privacyLastSeen: document.getElementById('privacy-last-seen').value,
+        privacyPhoto: document.getElementById('privacy-photo').value,
+        readReceipts: document.getElementById('privacy-read-receipts').checked,
+        notifyMessages: document.getElementById('notify-messages').checked,
+        notifyGroups: document.getElementById('notify-groups').checked,
+        notifySound: document.getElementById('notify-sound').checked
+    };
+    localStorage.setItem('settings', JSON.stringify(settings));
+}
+
+async function logout() {
+    try {
+        await fetch('/api/v1/auth/logout', { method: 'POST' });
+    } catch (err) {}
+    window.location.href = '/';
+}
+
+function confirmDeleteAccount() {
+    if (confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
+        if (confirm('This will permanently delete all your messages, chats, and data. Continue?')) {
+            deleteAccount();
+        }
+    }
+}
+
+async function deleteAccount() {
+    try {
+        const res = await fetch('/api/v1/users/me', { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+            alert('Account deleted successfully');
+            window.location.href = '/';
+        } else {
+            alert(data.error || 'Failed to delete account');
+        }
+    } catch (err) {
+        alert('An error occurred');
+    }
+}
+</script>
+{{end}}
