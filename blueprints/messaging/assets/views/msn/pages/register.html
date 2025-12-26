@@ -1,0 +1,127 @@
+{{define "content"}}
+<div class="msn-auth-container">
+    <div class="msn-auth-card">
+        <!-- Header -->
+        <div class="msn-auth-header">
+            <div class="msn-auth-logo">
+                <svg viewBox="0 0 100 100" width="64" height="64">
+                    <defs>
+                        <linearGradient id="msn-reg-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color:#7FBA00"/>
+                            <stop offset="50%" style="stop-color:#9AD200"/>
+                            <stop offset="100%" style="stop-color:#FF8C00"/>
+                        </linearGradient>
+                    </defs>
+                    <ellipse cx="30" cy="35" rx="22" ry="28" fill="url(#msn-reg-gradient)"/>
+                    <ellipse cx="70" cy="35" rx="22" ry="28" fill="url(#msn-reg-gradient)"/>
+                    <ellipse cx="28" cy="70" rx="18" ry="20" fill="url(#msn-reg-gradient)" opacity="0.9"/>
+                    <ellipse cx="72" cy="70" rx="18" ry="20" fill="url(#msn-reg-gradient)" opacity="0.9"/>
+                    <ellipse cx="50" cy="50" rx="6" ry="35" fill="#2a2a2c"/>
+                    <circle cx="50" cy="18" r="8" fill="#2a2a2c"/>
+                    <path d="M46 12 Q40 2 35 5" stroke="#2a2a2c" stroke-width="2" fill="none"/>
+                    <path d="M54 12 Q60 2 65 5" stroke="#2a2a2c" stroke-width="2" fill="none"/>
+                </svg>
+            </div>
+            <h1 class="msn-auth-title">Create Account</h1>
+            <p class="msn-auth-subtitle">Join Windows Live Messenger</p>
+        </div>
+
+        <!-- Content -->
+        <div class="msn-auth-content">
+            <form id="register-form">
+                <div class="msn-form-group">
+                    <label class="msn-form-label" for="display_name">Display Name</label>
+                    <input type="text" id="display_name" name="display_name" class="msn-input" placeholder="Your display name" required>
+                    <div class="msn-form-help">This is how others will see you</div>
+                </div>
+
+                <div class="msn-form-group">
+                    <label class="msn-form-label" for="username">Username</label>
+                    <input type="text" id="username" name="username" class="msn-input" placeholder="Choose a username" required>
+                    <div class="msn-form-help">Letters, numbers, and underscores only</div>
+                </div>
+
+                <div class="msn-form-group">
+                    <label class="msn-form-label" for="email">Email Address</label>
+                    <input type="email" id="email" name="email" class="msn-input" placeholder="someone@example.com" required>
+                </div>
+
+                <div class="msn-form-group">
+                    <label class="msn-form-label" for="password">Password</label>
+                    <input type="password" id="password" name="password" class="msn-input" placeholder="Create a password" required>
+                    <div class="msn-form-help">At least 8 characters</div>
+                </div>
+
+                <div class="msn-form-group">
+                    <label class="msn-form-label" for="confirm_password">Confirm Password</label>
+                    <input type="password" id="confirm_password" name="confirm_password" class="msn-input" placeholder="Confirm your password" required>
+                </div>
+
+                <div id="error-message" class="hidden" style="padding: 10px; background: rgba(232, 17, 35, 0.2); border: 1px solid rgba(232, 17, 35, 0.5); border-radius: 4px; color: #ff6b6b; margin-bottom: 16px; font-size: 11px;"></div>
+
+                <div id="success-message" class="hidden" style="padding: 10px; background: rgba(127, 186, 0, 0.2); border: 1px solid rgba(127, 186, 0, 0.5); border-radius: 4px; color: #9AD200; margin-bottom: 16px; font-size: 11px;"></div>
+
+                <button type="submit" class="msn-button msn-button-primary" style="width: 100%; padding: 10px;">Create Account</button>
+            </form>
+        </div>
+
+        <!-- Footer -->
+        <div class="msn-auth-footer">
+            <span>Already have an account?</span>
+            <a href="/login" style="margin-left: 4px;">Sign in</a>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('register-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorDiv = document.getElementById('error-message');
+    const successDiv = document.getElementById('success-message');
+    errorDiv.classList.add('hidden');
+    successDiv.classList.add('hidden');
+
+    const display_name = document.getElementById('display_name').value;
+    const username = document.getElementById('username').value;
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    const confirm_password = document.getElementById('confirm_password').value;
+
+    if (password !== confirm_password) {
+        errorDiv.textContent = 'Passwords do not match';
+        errorDiv.classList.remove('hidden');
+        return;
+    }
+
+    if (password.length < 8) {
+        errorDiv.textContent = 'Password must be at least 8 characters';
+        errorDiv.classList.remove('hidden');
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/v1/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ display_name, username, email, password })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            successDiv.textContent = 'Account created! Redirecting to sign in...';
+            successDiv.classList.remove('hidden');
+            setTimeout(() => {
+                window.location.href = '/login';
+            }, 1500);
+        } else {
+            errorDiv.textContent = data.error || 'Registration failed';
+            errorDiv.classList.remove('hidden');
+        }
+    } catch (err) {
+        errorDiv.textContent = 'Connection error. Please try again.';
+        errorDiv.classList.remove('hidden');
+    }
+});
+</script>
+{{end}}

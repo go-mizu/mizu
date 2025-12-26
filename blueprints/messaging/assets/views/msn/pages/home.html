@@ -1,0 +1,55 @@
+{{define "content"}}
+<div class="msn-home-container">
+    <div class="msn-home-hero">
+        <!-- MSN Butterfly Logo -->
+        <div class="msn-home-logo">
+            <svg viewBox="0 0 100 100" width="120" height="120">
+                <defs>
+                    <linearGradient id="msn-butterfly-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color:#7FBA00"/>
+                        <stop offset="50%" style="stop-color:#9AD200"/>
+                        <stop offset="100%" style="stop-color:#FF8C00"/>
+                    </linearGradient>
+                    <filter id="glow">
+                        <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+                        <feMerge>
+                            <feMergeNode in="coloredBlur"/>
+                            <feMergeNode in="SourceGraphic"/>
+                        </feMerge>
+                    </filter>
+                </defs>
+                <!-- Left wing top -->
+                <ellipse cx="30" cy="35" rx="22" ry="28" fill="url(#msn-butterfly-gradient)" filter="url(#glow)"/>
+                <!-- Right wing top -->
+                <ellipse cx="70" cy="35" rx="22" ry="28" fill="url(#msn-butterfly-gradient)" filter="url(#glow)"/>
+                <!-- Left wing bottom -->
+                <ellipse cx="28" cy="70" rx="18" ry="20" fill="url(#msn-butterfly-gradient)" filter="url(#glow)" opacity="0.9"/>
+                <!-- Right wing bottom -->
+                <ellipse cx="72" cy="70" rx="18" ry="20" fill="url(#msn-butterfly-gradient)" filter="url(#glow)" opacity="0.9"/>
+                <!-- Body -->
+                <ellipse cx="50" cy="50" rx="6" ry="35" fill="#2a2a2c"/>
+                <!-- Head -->
+                <circle cx="50" cy="18" r="8" fill="#2a2a2c"/>
+                <!-- Antennae -->
+                <path d="M46 12 Q40 2 35 5" stroke="#2a2a2c" stroke-width="2" fill="none"/>
+                <path d="M54 12 Q60 2 65 5" stroke="#2a2a2c" stroke-width="2" fill="none"/>
+            </svg>
+        </div>
+
+        <h1 class="msn-home-title">Windows Live Messenger</h1>
+        <p class="msn-home-subtitle">
+            Connect with friends and family. Share moments, send messages, and stay in touch with the people who matter most.
+        </p>
+
+        <div class="msn-home-actions">
+            <a href="/login" class="msn-home-btn msn-home-btn-primary">Sign In</a>
+            <a href="/register" class="msn-home-btn msn-home-btn-secondary">Create Account</a>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="padding: 16px; text-align: center; color: var(--text-muted); font-size: 11px;">
+        <p style="margin: 0;">Windows Live Messenger</p>
+    </div>
+</div>
+{{end}}
