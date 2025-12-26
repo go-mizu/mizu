@@ -1,0 +1,45 @@
+{{define "content"}}
+<div class="os9-auth-container">
+    <div class="os9-auth-card">
+        <div class="os9-auth-header">
+            <span class="os9-modal-title">Sign In</span>
+        </div>
+        <div class="os9-auth-body">
+            <!-- Mac OS 9 Style Icon -->
+            <div style="text-align: center;">
+                <svg class="os9-auth-logo" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin: 0 auto 12px;">
+                    <rect x="2" y="2" width="28" height="28" rx="2" fill="#DDDDDD" stroke="#000000" stroke-width="1"/>
+                    <circle cx="16" cy="12" r="5" fill="#CCCCCC" stroke="#000000" stroke-width="1"/>
+                    <path d="M8 26C8 21.5817 11.5817 18 16 18C20.4183 18 24 21.5817 24 26" stroke="#000000" stroke-width="1" fill="#CCCCCC"/>
+                </svg>
+                <h2 class="os9-auth-title">Sign In</h2>
+                <p class="os9-auth-subtitle">Enter your credentials to continue</p>
+            </div>
+
+            {{if .Error}}
+            <div class="os9-auth-error">{{.Error}}</div>
+            {{end}}
+
+            <form action="/login" method="POST">
+                <div class="os9-form-group">
+                    <label class="os9-label" for="username">Username:</label>
+                    <input type="text" id="username" name="username" class="os9-input-field" required autofocus value="{{.Username}}">
+                </div>
+
+                <div class="os9-form-group">
+                    <label class="os9-label" for="password">Password:</label>
+                    <input type="password" id="password" name="password" class="os9-input-field" required>
+                </div>
+
+                <button type="submit" class="os9-btn os9-btn-default os9-btn-block" style="margin-top: 16px;">
+                    Sign In
+                </button>
+            </form>
+
+            <div class="os9-auth-footer">
+                Don't have an account? <a href="/register">Create one</a>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
