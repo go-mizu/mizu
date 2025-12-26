@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"net/http"
-
 	"github.com/go-mizu/mizu"
 
 	"github.com/go-mizu/blueprints/kanban/feature/comments"
@@ -21,34 +19,32 @@ func NewComment(comments comments.API, getUserID func(*mizu.Ctx) string) *Commen
 
 // List returns all comments for an issue.
 func (h *Comment) List(c *mizu.Ctx) error {
-	key := c.Param("key")
-	// Note: In a real implementation, we'd resolve the key to issueID
-	// For now, we'll use the key directly (assumes it's the issue ID)
+	issueID := c.Param("issueID")
 
-	list, err := h.comments.ListByIssue(c.Context(), key)
+	list, err := h.comments.ListByIssue(c.Context(), issueID)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, errResponse("failed to list comments"))
+		return InternalError(c, "failed to list comments")
 	}
 
-	return c.JSON(http.StatusOK, list)
+	return OK(c, list)
 }
 
 // Create creates a new comment.
 func (h *Comment) Create(c *mizu.Ctx) error {
-	key := c.Param("key")
+	issueID := c.Param("issueID")
 	userID := h.getUserID(c)
 
 	var in comments.CreateIn
 	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return c.JSON(http.StatusBadRequest, errResponse("invalid request body"))
+		return BadRequest(c, "invalid request body")
 	}
 
-	comment, err := h.comments.Create(c.Context(), key, userID, &in)
+	comment, err := h.comments.Create(c.Context(), issueID, userID, &in)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, errResponse("failed to create comment"))
+		return InternalError(c, "failed to create comment")
 	}
 
-	return c.JSON(http.StatusCreated, comment)
+	return Created(c, comment)
 }
 
 // Update updates a comment.
@@ -59,18 +55,18 @@ func (h *Comment) Update(c *mizu.Ctx) error {
 		Content string `json:"content"`
 	}
 	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return c.JSON(http.StatusBadRequest, errResponse("invalid request body"))
+		return BadRequest(c, "invalid request body")
 	}
 
 	comment, err := h.comments.Update(c.Context(), id, in.Content)
 	if err != nil {
 		if err == comments.ErrNotFound {
-			return c.JSON(http.StatusNotFound, errResponse("comment not found"))
+			return NotFound(c, "comment not found")
 		}
-		return c.JSON(http.StatusInternalServerError, errResponse("failed to update comment"))
+		return InternalError(c, "failed to update comment")
 	}
 
-	return c.JSON(http.StatusOK, comment)
+	return OK(c, comment)
 }
 
 // Delete deletes a comment.
@@ -78,8 +74,8 @@ func (h *Comment) Delete(c *mizu.Ctx) error {
 	id := c.Param("id")
 
 	if err := h.comments.Delete(c.Context(), id); err != nil {
-		return c.JSON(http.StatusInternalServerError, errResponse("failed to delete comment"))
+		return InternalError(c, "failed to delete comment")
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{"message": "comment deleted"})
+	return OK(c, map[string]string{"message": "comment deleted"})
 }
