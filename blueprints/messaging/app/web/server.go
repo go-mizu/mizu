@@ -412,23 +412,27 @@ func (s *Server) checkWebSocketOrigin(r *http.Request) bool {
 		}
 	}
 
-	// In dev mode, allow localhost origins
-	if s.cfg.Dev {
-		devOrigins := []string{
-			"http://localhost",
-			"http://localhost:8080",
-			"http://127.0.0.1",
-			"http://127.0.0.1:8080",
-		}
-		for _, dev := range devOrigins {
-			if origin == dev {
-				return true
-			}
+	// Allow localhost origins when server is bound to localhost or in dev mode
+	if s.cfg.Dev || s.isLocalhost() {
+		if strings.HasPrefix(origin, "http://localhost") ||
+			strings.HasPrefix(origin, "http://127.0.0.1") ||
+			strings.HasPrefix(origin, "http://[::1]") {
+			return true
 		}
 	}
 
 	log.Printf("WebSocket origin rejected: %s", origin)
 	return false
+}
+
+// isLocalhost returns true if the server is bound to a localhost address.
+func (s *Server) isLocalhost() bool {
+	addr := s.cfg.Addr
+	return addr == "" ||
+		strings.HasPrefix(addr, ":") ||
+		strings.HasPrefix(addr, "localhost") ||
+		strings.HasPrefix(addr, "127.0.0.1") ||
+		strings.HasPrefix(addr, "[::1]")
 }
 
 func (s *Server) handleWebSocket(c *mizu.Ctx) error {
