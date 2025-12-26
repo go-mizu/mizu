@@ -1,0 +1,64 @@
+{{define "pages/settings.html"}}
+{{template "layouts/default.html" .}}
+{{define "title"}}Settings{{end}}
+{{define "content"}}
+<div class="page-header">
+    <h1>Settings</h1>
+</div>
+
+<div class="settings-view">
+    <div class="settings-section">
+        <h2>Profile</h2>
+        <form class="settings-form" id="profile-form">
+            <div class="form-group">
+                <label class="form-label">Display Name</label>
+                <input type="text" class="form-input" name="display_name" value="{{.User.DisplayName}}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" class="form-input" name="email" value="{{.User.Email}}" disabled>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Username</label>
+                <input type="text" class="form-input" name="username" value="{{.User.Username}}" disabled>
+            </div>
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+        </form>
+    </div>
+
+    <div class="settings-section">
+        <h2>Theme</h2>
+        <div class="theme-selector">
+            <button class="theme-option active" data-theme="dark">Dark</button>
+            <button class="theme-option" data-theme="light">Light</button>
+        </div>
+    </div>
+
+    <div class="settings-section">
+        <h2>Account</h2>
+        <button class="btn btn-danger" onclick="logout()">Sign Out</button>
+    </div>
+</div>
+
+<script>
+document.querySelectorAll('.theme-option').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.documentElement.setAttribute('data-theme', btn.dataset.theme);
+        document.querySelectorAll('.theme-option').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        localStorage.setItem('theme', btn.dataset.theme);
+    });
+});
+
+// Apply saved theme
+const savedTheme = localStorage.getItem('theme') || 'dark';
+document.documentElement.setAttribute('data-theme', savedTheme);
+document.querySelector(`[data-theme="${savedTheme}"]`)?.classList.add('active');
+
+function logout() {
+    fetch('/api/v1/auth/logout', { method: 'POST' })
+        .then(() => window.location.href = '/login');
+}
+</script>
+{{end}}
+{{end}}

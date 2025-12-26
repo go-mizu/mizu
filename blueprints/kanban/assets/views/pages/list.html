@@ -1,0 +1,58 @@
+{{define "pages/list.html"}}
+{{template "layouts/default.html" .}}
+{{define "title"}}{{.Project.Name}} - List{{end}}
+{{define "content"}}
+<div class="page-header">
+    <h1>{{.Project.Name}}</h1>
+    <div class="page-actions">
+        <button class="btn btn-primary btn-sm" onclick="createIssue()">New Issue</button>
+    </div>
+</div>
+
+<div class="list-view">
+    <table class="issue-table">
+        <thead>
+            <tr>
+                <th>Key</th>
+                <th>Title</th>
+                <th>Status</th>
+                <th>Priority</th>
+                <th>Type</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Issues}}
+            <tr onclick="window.location.href='/{{$.Workspace.Slug}}/issue/{{.Key}}'">
+                <td class="issue-key">{{.Key}}</td>
+                <td class="issue-title-cell">{{.Title}}</td>
+                <td><span class="status-badge status-{{.Status}}">{{statusLabel .Status}}</span></td>
+                <td><span class="priority-badge priority-{{.Priority}}">{{priorityLabel .Priority}}</span></td>
+                <td><span class="type-badge type-{{.Type}}">{{typeLabel .Type}}</span></td>
+                <td class="issue-date">{{formatTime .CreatedAt}}</td>
+            </tr>
+            {{else}}
+            <tr>
+                <td colspan="6" class="empty-row">No issues found</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+
+<script>
+function createIssue() {
+    const title = prompt('Issue title:');
+    if (!title) return;
+
+    fetch('/api/v1/projects/{{.Project.ID}}/issues', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title })
+    }).then(res => {
+        if (res.ok) window.location.reload();
+    });
+}
+</script>
+{{end}}
+{{end}}
