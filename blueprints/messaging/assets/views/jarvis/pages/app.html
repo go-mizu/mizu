@@ -9,7 +9,7 @@
                     <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
                 </svg>
             </div>
-            <span class="neural-header-title">Neural Network</span>
+            <span class="neural-header-title">J.A.R.V.I.S.</span>
             <div class="neural-header-controls">
                 <button class="neural-ctrl-btn minimize ui-disabled" title="Minimize"></button>
                 <button class="neural-ctrl-btn maximize ui-disabled" title="Maximize"></button>
@@ -99,7 +99,7 @@
 
         <!-- Status Bar -->
         <div class="neural-statusbar">
-            <div class="neural-statusbar-item" id="connection-status">Initializing...</div>
+            <div class="neural-statusbar-item" id="connection-status">Initializing J.A.R.V.I.S...</div>
         </div>
     </div>
 
@@ -112,7 +112,7 @@
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                 </svg>
             </div>
-            <span class="neural-header-title" id="chat-title">Neural Link Active</span>
+            <span class="neural-header-title" id="chat-title">J.A.R.V.I.S. Link Active</span>
             <div class="neural-header-controls">
                 <button class="neural-ctrl-btn minimize ui-disabled" title="Minimize"></button>
                 <button class="neural-ctrl-btn maximize ui-disabled" title="Maximize"></button>
@@ -207,7 +207,7 @@
 
         <!-- Status Bar -->
         <div class="neural-statusbar">
-            <div class="neural-statusbar-item" id="typing-status">Ready for transmission</div>
+            <div class="neural-statusbar-item" id="typing-status">Standing by, Sir</div>
         </div>
     </div>
 
@@ -219,21 +219,26 @@
                     <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
                 </svg>
             </div>
-            <span class="neural-header-title">MIZU Neural Interface</span>
+            <span class="neural-header-title">J.A.R.V.I.S. AI Interface</span>
         </div>
         <div class="neural-empty-state">
-            <div class="neural-empty-icon">
-                <svg viewBox="0 0 24 24">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            <div class="neural-empty-icon jarvis-arc-reactor">
+                <!-- Arc Reactor Icon -->
+                <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="50" cy="50" r="45" stroke="var(--holo-cyan)" stroke-width="2" opacity="0.3"/>
+                    <circle cx="50" cy="50" r="35" stroke="var(--holo-cyan)" stroke-width="2" opacity="0.5"/>
+                    <circle cx="50" cy="50" r="25" stroke="var(--holo-cyan)" stroke-width="3" opacity="0.7"/>
+                    <circle cx="50" cy="50" r="15" fill="var(--holo-cyan)" opacity="0.8"/>
+                    <circle cx="50" cy="50" r="8" fill="white"/>
                 </svg>
             </div>
-            <div class="neural-empty-title">No Active Neural Link</div>
-            <div class="neural-empty-text">Select a contact to establish a connection and begin transmission</div>
+            <div class="neural-empty-title">Awaiting Your Command, Sir</div>
+            <div class="neural-empty-text">Select a contact to establish a secure J.A.R.V.I.S. connection</div>
             <button class="neural-btn neural-btn-primary" onclick="showNewChatModal()" style="margin-top: 24px;">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                 </svg>
-                Initialize Neural Link
+                Initialize J.A.R.V.I.S. Link
             </button>
         </div>
     </div>
@@ -461,37 +466,62 @@ function renderContactList() {
     container.innerHTML = chats.map(chat => {
         const isSelfChat = chat.type === 'direct' && chat.other_user?.id === currentUser?.id;
         const isAgent = chat.type === 'direct' && chat.other_user?.username === 'mizu-agent';
+        const isGroup = chat.type === 'group';
 
-        let name, statusClass;
+        let name, statusClass, avatarSvg;
         if (isSelfChat) {
             name = 'Personal Log';
             statusClass = 'away';
+            // Brain icon for personal log
+            avatarSvg = `<svg viewBox="0 0 32 32" fill="currentColor">
+                <path d="M16 4C10 4 6 8 6 14c0 4 2 7 5 9v5h10v-5c3-2 5-5 5-9 0-6-4-10-10-10z"/>
+                <circle cx="12" cy="12" r="2"/><circle cx="20" cy="12" r="2"/>
+            </svg>`;
         } else if (isAgent) {
-            name = chat.other_user?.display_name || 'AI Assistant';
-            statusClass = '';
-        } else if (chat.type === 'direct') {
-            name = chat.other_user?.display_name || chat.other_user?.username;
-            statusClass = '';
-        } else {
+            name = chat.other_user?.display_name || 'J.A.R.V.I.S. AI';
+            statusClass = 'online';
+            // AI/Robot icon
+            avatarSvg = `<svg viewBox="0 0 32 32" fill="currentColor">
+                <rect x="6" y="8" width="20" height="16" rx="3"/>
+                <circle cx="12" cy="16" r="3"/><circle cx="20" cy="16" r="3"/>
+                <rect x="14" y="4" width="4" height="4"/>
+                <line x1="16" y1="0" x2="16" y2="4" stroke="currentColor" stroke-width="2"/>
+            </svg>`;
+        } else if (isGroup) {
             name = chat.group_name || chat.name;
             statusClass = '';
+            // Group/Network icon
+            avatarSvg = `<svg viewBox="0 0 32 32" fill="currentColor">
+                <circle cx="16" cy="8" r="5"/>
+                <circle cx="6" cy="20" r="4"/>
+                <circle cx="26" cy="20" r="4"/>
+                <circle cx="16" cy="26" r="4"/>
+                <line x1="16" y1="13" x2="6" y2="16" stroke="currentColor" stroke-width="1.5"/>
+                <line x1="16" y1="13" x2="26" y2="16" stroke="currentColor" stroke-width="1.5"/>
+                <line x1="16" y1="13" x2="16" y2="22" stroke="currentColor" stroke-width="1.5"/>
+            </svg>`;
+        } else {
+            name = chat.other_user?.display_name || chat.other_user?.username;
+            statusClass = '';
+            // Default user icon
+            avatarSvg = `<svg viewBox="0 0 32 32">
+                <circle cx="16" cy="12" r="7"/>
+                <ellipse cx="16" cy="28" rx="11" ry="10"/>
+            </svg>`;
         }
 
         const isActive = currentChat?.id === chat.id;
         const unread = chat.unread_count || 0;
 
         return `
-            <div class="neural-contact ${isActive ? 'active' : ''}" ondblclick="selectChat('${chat.id}')">
-                <div class="neural-contact-avatar">
-                    <svg viewBox="0 0 32 32">
-                        <circle cx="16" cy="12" r="7"/>
-                        <ellipse cx="16" cy="28" rx="11" ry="10"/>
-                    </svg>
+            <div class="neural-contact ${isActive ? 'active' : ''}" onclick="selectChat('${chat.id}')">
+                <div class="neural-contact-avatar ${isAgent ? 'ai-avatar' : ''} ${isGroup ? 'group-avatar' : ''}">
+                    ${avatarSvg}
                     <div class="neural-contact-status ${statusClass}"></div>
                 </div>
                 <div class="neural-contact-info">
                     <div class="neural-contact-name">${escapeHtml(name)}</div>
-                    <div class="neural-contact-message">Connected</div>
+                    <div class="neural-contact-message">${isAgent ? 'AI Online' : isGroup ? 'Group Channel' : 'Connected'}</div>
                 </div>
                 ${unread > 0 ? `<span class="neural-contact-badge">${unread}</span>` : ''}
             </div>
@@ -782,7 +812,7 @@ function connectWebSocket() {
     ws = new WebSocket(`${protocol}//${location.host}/ws`);
 
     ws.onopen = () => {
-        document.getElementById('connection-status').textContent = 'Neural Link Active';
+        document.getElementById('connection-status').textContent = 'J.A.R.V.I.S. Online - All Systems Operational';
     };
 
     ws.onmessage = (event) => {
@@ -791,7 +821,7 @@ function connectWebSocket() {
     };
 
     ws.onclose = () => {
-        document.getElementById('connection-status').textContent = 'Reconnecting...';
+        document.getElementById('connection-status').textContent = 'Re-establishing secure connection...';
         setTimeout(connectWebSocket, 3000);
     };
 
@@ -829,10 +859,10 @@ function handleNewMessage(message) {
 function handleTyping(data) {
     if (currentChat?.id === data.chat_id && data.user_id !== currentUser?.id) {
         const status = document.getElementById('typing-status');
-        status.textContent = data.username + ' is transmitting...';
+        status.textContent = data.username + ' is composing...';
         clearTimeout(typingTimeout);
         typingTimeout = setTimeout(() => {
-            status.textContent = 'Ready for transmission';
+            status.textContent = 'Standing by, Sir';
         }, 3000);
     }
 }
