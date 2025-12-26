@@ -22,37 +22,37 @@
     --xp-window-bg: #ECE9D8;
     --xp-window-bg-light: #F5F3E8;
 
-    /* Title Bar - EXACT XP Luna Blue gradient values */
-    --xp-titlebar-blue-1: #0a58ca;
-    --xp-titlebar-blue-2: #3c8ced;
-    --xp-titlebar-blue-3: #4698ed;
-    --xp-titlebar-blue-4: #2878d8;
-    --xp-titlebar-blue-5: #0b5cc6;
-    --xp-titlebar-blue-6: #0854b8;
+    /* Title Bar - EXACT XP Luna Blue gradient values from xp.css */
+    --xp-titlebar-blue-1: #0997ff;
+    --xp-titlebar-blue-2: #0053ee;
+    --xp-titlebar-blue-3: #0050ee;
+    --xp-titlebar-blue-4: #0066ff;
+    --xp-titlebar-blue-5: #005bff;
+    --xp-titlebar-blue-6: #003dd7;
 
-    /* Inactive Title Bar */
-    --xp-titlebar-inactive-1: #7a8bb6;
-    --xp-titlebar-inactive-2: #9ba8c6;
-    --xp-titlebar-inactive-3: #a0adcc;
-    --xp-titlebar-inactive-4: #8c99b8;
-    --xp-titlebar-inactive-5: #7584a8;
-    --xp-titlebar-inactive-6: #6b7a9c;
+    /* Inactive Title Bar - Grayed blue */
+    --xp-titlebar-inactive-1: #7a96df;
+    --xp-titlebar-inactive-2: #748ad5;
+    --xp-titlebar-inactive-3: #6d86d0;
+    --xp-titlebar-inactive-4: #6a7fc7;
+    --xp-titlebar-inactive-5: #6175be;
+    --xp-titlebar-inactive-6: #5c6eb5;
 
     /* Close Button - RED gradient (exact XP values) */
-    --xp-close-red-top: #c9544b;
-    --xp-close-red-mid: #e89b8b;
-    --xp-close-red-bot: #c9544b;
-    --xp-close-border: #8c3a34;
-    --xp-close-hover-top: #d55f57;
-    --xp-close-hover-mid: #f8ab9b;
+    --xp-close-red-top: #e04b3e;
+    --xp-close-red-mid: #f7a396;
+    --xp-close-red-bot: #d13b2e;
+    --xp-close-border: #9e2b1f;
+    --xp-close-hover-top: #ec5f52;
+    --xp-close-hover-mid: #ffb5a7;
 
     /* Min/Max Buttons - BLUE gradient (exact XP values) */
-    --xp-minmax-blue-top: #3c81c3;
-    --xp-minmax-blue-mid: #73b2eb;
-    --xp-minmax-blue-bot: #3c81c3;
-    --xp-minmax-border: #1d4f91;
-    --xp-minmax-hover-top: #4c91d3;
-    --xp-minmax-hover-mid: #83c2fb;
+    --xp-minmax-blue-top: #2b71bb;
+    --xp-minmax-blue-mid: #69a3e0;
+    --xp-minmax-blue-bot: #2462a9;
+    --xp-minmax-border: #1a4d8c;
+    --xp-minmax-hover-top: #3d85d0;
+    --xp-minmax-hover-mid: #7bb5f0;
 
     /* Button Styling */
     --xp-button-face: #ECE9D8;
@@ -83,13 +83,15 @@
     --xp-groupbox-border: #d4d0c8;
     --xp-groupbox-label: #0046D5;
 
-    /* Yahoo Messenger Branding */
-    --ym-purple-dark: #3F0F35;
-    --ym-purple: #5C1A4A;
-    --ym-purple-light: #7A2D61;
-    --ym-yellow: #FFCC00;
-    --ym-yellow-light: #FFE566;
+    /* Yahoo Messenger Branding - Authentic YM7 colors */
+    --ym-purple-dark: #400037;
+    --ym-purple: #720060;
+    --ym-purple-light: #9a0082;
+    --ym-purple-accent: #b300a0;
+    --ym-yellow: #FFD800;
+    --ym-yellow-light: #FFEB66;
     --ym-orange: #FF6600;
+    --ym-red: #FF0000;
 
     /* Status Colors - XP Glossy Orb style */
     --ym-online: #00AA00;
@@ -138,11 +140,16 @@ a:hover {
 .xp-window {
     background: var(--xp-window-bg);
     border-radius: 8px 8px 0 0;
-    border: 1px solid #0054e3;
     box-shadow:
-        0 0 0 1px #0054e3,
-        inset 0 0 0 1px rgba(255, 255, 255, 0.4),
-        3px 3px 12px rgba(0, 0, 0, 0.35);
+        /* Outer glow/border effect */
+        inset -1px -1px #00138c,
+        inset 1px 1px #0831d9,
+        inset -2px -2px #001ea0,
+        inset 2px 2px #166aee,
+        inset -3px -3px #003bda,
+        inset 3px 3px #0855dd,
+        /* Drop shadow */
+        4px 4px 15px rgba(0, 0, 0, 0.4);
     overflow: hidden;
     position: relative;
 }
@@ -154,11 +161,11 @@ a:hover {
     top: 0;
     left: 0;
     right: 0;
-    height: 3px;
+    height: 4px;
     background: linear-gradient(90deg,
-        rgba(255, 255, 255, 0.3) 0%,
-        rgba(255, 255, 255, 0.5) 50%,
-        rgba(255, 255, 255, 0.3) 100%);
+        rgba(40, 120, 220, 0.6) 0%,
+        rgba(80, 160, 255, 0.8) 50%,
+        rgba(40, 120, 220, 0.6) 100%);
     border-radius: 8px 8px 0 0;
     z-index: 10;
     pointer-events: none;
@@ -176,24 +183,31 @@ a:hover {
     background: linear-gradient(180deg,
         var(--xp-titlebar-blue-1) 0%,
         var(--xp-titlebar-blue-2) 8%,
-        var(--xp-titlebar-blue-3) 15%,
-        var(--xp-titlebar-blue-4) 40%,
-        var(--xp-titlebar-blue-5) 70%,
+        var(--xp-titlebar-blue-3) 40%,
+        var(--xp-titlebar-blue-4) 88%,
+        var(--xp-titlebar-blue-4) 93%,
+        var(--xp-titlebar-blue-5) 95%,
+        var(--xp-titlebar-blue-6) 96%,
         var(--xp-titlebar-blue-6) 100%);
     color: #ffffff;
     font-weight: bold;
     font-size: 11px;
-    padding: 3px 5px 3px 3px;
+    padding: 3px 5px 3px 4px;
     display: flex;
     align-items: center;
-    gap: 3px;
-    min-height: 28px;
+    gap: 4px;
+    min-height: 26px;
     border-radius: 8px 8px 0 0;
-    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+    text-shadow: 1px 1px 1px #0f1089;
     user-select: none;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4);
     position: relative;
     z-index: 1;
+    border-top: 1px solid #0831d9;
+    border-left: 1px solid #0831d9;
+    border-right: 1px solid #001ea0;
 }
 
 .xp-titlebar.inactive {
@@ -210,20 +224,24 @@ a:hover {
     width: 16px;
     height: 16px;
     flex-shrink: 0;
+    margin-right: 2px;
 }
 
 .xp-titlebar-text {
     flex: 1;
-    padding-left: 2px;
+    padding-left: 1px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    font-size: 12px;
+    letter-spacing: 0.3px;
 }
 
 .xp-titlebar-buttons {
     display: flex;
     gap: 2px;
     margin-left: auto;
+    padding-left: 4px;
 }
 
 /* ============================================
@@ -235,71 +253,95 @@ a:hover {
     width: 21px;
     height: 21px;
     border: none;
-    border-radius: 3px;
+    border-radius: 4px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     position: relative;
     box-shadow:
-        inset -1px -1px 0 rgba(0, 0, 0, 0.3),
-        inset 1px 1px 0 rgba(255, 255, 255, 0.3);
+        inset -1px -1px 0 rgba(0, 0, 0, 0.25),
+        inset 1px 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 /* Blue buttons for min/max - EXACT XP gradient */
 .xp-btn-minimize,
 .xp-btn-maximize {
     background: linear-gradient(180deg,
-        var(--xp-minmax-blue-top) 0%,
-        var(--xp-minmax-blue-mid) 45%,
-        var(--xp-minmax-blue-bot) 100%);
-    border: 1px solid var(--xp-minmax-border);
+        #2f80cd 0%,
+        #68aae5 15%,
+        #3e8dd5 35%,
+        #2a78c7 55%,
+        #256ab5 75%,
+        #1f5fa8 100%);
+    border: 1px solid #1855a3;
 }
 
 .xp-btn-minimize:hover,
 .xp-btn-maximize:hover {
     background: linear-gradient(180deg,
-        var(--xp-minmax-hover-top) 0%,
-        var(--xp-minmax-hover-mid) 45%,
-        var(--xp-minmax-hover-top) 100%);
+        #4092df 0%,
+        #7ab8ef 15%,
+        #509de5 35%,
+        #3c8ad7 55%,
+        #377cc5 75%,
+        #3171b8 100%);
 }
 
 .xp-btn-minimize:active,
 .xp-btn-maximize:active {
-    background: var(--xp-minmax-blue-top);
-    box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.4);
+    background: linear-gradient(180deg,
+        #1f65a9 0%,
+        #4d96d7 30%,
+        #2772b9 60%,
+        #1b5a9b 100%);
+    box-shadow:
+        inset 1px 1px 2px rgba(0, 0, 0, 0.35),
+        inset -1px -1px 0 rgba(255, 255, 255, 0.2);
 }
 
 /* Red button for close - EXACT XP gradient */
 .xp-btn-close {
     background: linear-gradient(180deg,
-        var(--xp-close-red-top) 0%,
-        var(--xp-close-red-mid) 45%,
-        var(--xp-close-red-bot) 100%);
-    border: 1px solid var(--xp-close-border);
+        #d4503b 0%,
+        #f09f93 15%,
+        #e16956 35%,
+        #cf4633 55%,
+        #c33d2a 75%,
+        #b53322 100%);
+    border: 1px solid #972418;
 }
 
 .xp-btn-close:hover {
     background: linear-gradient(180deg,
-        var(--xp-close-hover-top) 0%,
-        var(--xp-close-hover-mid) 45%,
-        var(--xp-close-hover-top) 100%);
+        #e56050 0%,
+        #ffb0a5 15%,
+        #f07a68 35%,
+        #e05848 55%,
+        #d44f3e 75%,
+        #c84535 100%);
 }
 
 .xp-btn-close:active {
-    background: var(--xp-close-red-top);
-    box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.4);
+    background: linear-gradient(180deg,
+        #a82e20 0%,
+        #d87066 30%,
+        #be3c2d 60%,
+        #a0271a 100%);
+    box-shadow:
+        inset 1px 1px 2px rgba(0, 0, 0, 0.35),
+        inset -1px -1px 0 rgba(255, 255, 255, 0.2);
 }
 
 /* XP Button Icons - Pure CSS with shadows */
 .xp-btn-minimize::after {
     content: "";
     width: 8px;
-    height: 2px;
+    height: 3px;
     background: white;
     position: absolute;
     bottom: 5px;
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
 }
 
 .xp-btn-maximize::after {
@@ -308,7 +350,8 @@ a:hover {
     height: 7px;
     border: 2px solid white;
     border-top-width: 3px;
-    box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
+    box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
+    box-sizing: border-box;
 }
 
 .xp-btn-close::before,
@@ -316,9 +359,9 @@ a:hover {
     content: "";
     position: absolute;
     width: 10px;
-    height: 2px;
+    height: 2.5px;
     background: white;
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
 }
 
 .xp-btn-close::before {
@@ -330,19 +373,23 @@ a:hover {
 }
 
 /* ============================================
-   YAHOO MESSENGER HEADER
+   YAHOO MESSENGER HEADER - Authentic YM7 style
    ============================================ */
 .ym-header {
     background: linear-gradient(180deg,
-        var(--ym-purple-light) 0%,
-        var(--ym-purple) 50%,
-        var(--ym-purple-dark) 100%);
+        #aa0090 0%,
+        #880070 30%,
+        #720060 60%,
+        #550048 100%);
     color: #FFFFFF;
-    padding: 8px 12px;
+    padding: 6px 10px;
     display: flex;
     align-items: center;
-    gap: 10px;
-    border-bottom: 1px solid #2E0B22;
+    gap: 8px;
+    border-bottom: 2px solid #3a0030;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.2),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.2);
 }
 
 .ym-logo {
@@ -350,53 +397,69 @@ a:hover {
     align-items: center;
     gap: 6px;
     font-weight: bold;
-    font-size: 14px;
+    font-size: 13px;
 }
 
 .ym-logo-icon {
-    width: 28px;
-    height: 28px;
-    background: radial-gradient(circle at 30% 30%, #FFEE00 0%, #FFCC00 50%, #FFB300 100%);
+    width: 24px;
+    height: 24px;
+    background: radial-gradient(ellipse at 35% 25%,
+        #FFFF66 0%,
+        #FFE500 25%,
+        #FFD800 50%,
+        #FFCC00 75%,
+        #E5B800 100%);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 16px;
-    color: var(--ym-purple);
+    font-size: 13px;
+    color: #720060;
     font-weight: bold;
     text-shadow: none;
     box-shadow:
-        inset 0 2px 4px rgba(255, 255, 255, 0.5),
-        0 2px 4px rgba(0, 0, 0, 0.3);
+        inset 0 2px 4px rgba(255, 255, 255, 0.6),
+        inset 0 -2px 3px rgba(200, 150, 0, 0.3),
+        0 2px 4px rgba(0, 0, 0, 0.4);
+    border: 1px solid #d4a800;
 }
 
 .ym-logo-text {
-    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+    text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.5);
+    letter-spacing: 0.5px;
 }
 
 .ym-logo-text .yahoo {
-    color: var(--ym-yellow);
+    color: #FFD800;
+    font-style: italic;
+    text-shadow:
+        1px 1px 0 rgba(0, 0, 0, 0.4),
+        0 0 8px rgba(255, 216, 0, 0.5);
 }
 
 /* ============================================
    MENU BAR - XP STYLE
    ============================================ */
 .xp-menubar {
-    background: var(--xp-window-bg);
-    padding: 2px 0;
+    background: linear-gradient(180deg,
+        #ECE9D8 0%,
+        #E8E4D8 100%);
+    padding: 1px 2px;
     display: flex;
-    border-bottom: 1px solid #c5c5c5;
+    border-bottom: 1px solid #A8A8A0;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 .xp-menu-item {
-    padding: 3px 10px;
+    padding: 2px 8px;
     cursor: pointer;
-    color: var(--xp-text);
+    color: #000;
+    font-size: 11px;
 }
 
 .xp-menu-item:hover {
-    background: var(--xp-selection);
-    color: var(--xp-selection-text);
+    background: #316AC5;
+    color: #ffffff;
 }
 
 .xp-menu-item u {
@@ -415,17 +478,17 @@ a:hover {
     height: 23px;
     background: linear-gradient(180deg,
         #ffffff 0%,
+        #f6f4ec 50%,
         #ece9d8 89%,
-        #d4d0c8 100%);
-    border: 1px solid var(--xp-button-border);
+        #d8d4c8 100%);
+    border: 1px solid #003c74;
     border-radius: 3px;
     box-shadow:
-        inset -1px -1px 0 var(--xp-button-shadow),
-        inset 1px 1px 0 var(--xp-button-highlight),
-        inset -2px -2px 0 #ece9d8,
-        inset 2px 2px 0 #f0ede4;
+        inset 0 1px 0 #ffffff,
+        inset -1px -1px 0 #aca899,
+        inset 1px 1px 0 #f0ede4;
     cursor: pointer;
-    color: var(--xp-text);
+    color: #000;
     text-align: center;
     position: relative;
 }
@@ -433,28 +496,26 @@ a:hover {
 .xp-button:hover {
     background: linear-gradient(180deg,
         #ffffff 0%,
+        #faf8f0 50%,
         #f2efe4 89%,
-        #dcd8cd 100%);
-    box-shadow:
-        inset -1px -1px 0 var(--xp-button-shadow),
-        inset 1px 1px 0 var(--xp-button-highlight),
-        inset -2px -2px 0 #ece9d8,
-        inset 2px 2px 0 #f0ede4,
-        inset 0 0 3px 1px rgba(255, 204, 0, 0.4);
+        #e0dcd0 100%);
+    border-color: #0046d5;
 }
 
 .xp-button:active {
     background: linear-gradient(180deg,
-        #ece9d8 0%,
-        #dcd8cd 100%);
+        #e8e4d8 0%,
+        #dcd8cc 50%,
+        #d0ccc0 100%);
     box-shadow:
-        inset 1px 1px 0 var(--xp-button-shadow),
-        inset -1px -1px 0 var(--xp-button-highlight);
+        inset 1px 1px 2px rgba(0, 0, 0, 0.15),
+        inset -1px -1px 0 #f0ede4;
     padding: 1px 11px 0 13px;
 }
 
 .xp-button:focus {
     outline: none;
+    border-color: #0046d5;
 }
 
 .xp-button:focus::after {
@@ -468,33 +529,48 @@ a:hover {
     pointer-events: none;
 }
 
-/* Primary blue button */
+/* Primary blue button - XP "hot" button style */
 .xp-button-primary {
     background: linear-gradient(180deg,
-        #a4d3ff 0%,
-        #6fb5f8 40%,
-        #4a9aea 60%,
-        #6fb5f8 100%);
-    border-color: var(--xp-button-border);
+        #b4e4ff 0%,
+        #7cc8f8 15%,
+        #5ab0f0 35%,
+        #469ce4 55%,
+        #3c8cd8 75%,
+        #3480cc 100%);
+    border-color: #1555a0;
     color: #000;
     box-shadow:
-        inset -1px -1px 0 #4a86c7,
-        inset 1px 1px 0 #b8e1ff,
-        inset -2px -2px 0 #6eb5f8,
-        inset 2px 2px 0 #c4e3ff;
+        inset 0 1px 0 rgba(255, 255, 255, 0.6),
+        inset -1px -1px 0 #2878c8,
+        inset 1px 1px 0 #a8d8ff;
 }
 
 .xp-button-primary:hover {
-    box-shadow:
-        inset -1px -1px 0 #4a86c7,
-        inset 1px 1px 0 #b8e1ff,
-        inset -2px -2px 0 #6eb5f8,
-        inset 2px 2px 0 #c4e3ff,
-        inset 0 0 3px 1px rgba(255, 204, 0, 0.5);
+    background: linear-gradient(180deg,
+        #c4f0ff 0%,
+        #8cd8ff 15%,
+        #6ac0f8 35%,
+        #56acec 55%,
+        #4c9ce0 75%,
+        #4490d4 100%);
+}
+
+.xp-button-primary:active {
+    background: linear-gradient(180deg,
+        #3078c0 0%,
+        #5098d8 30%,
+        #3880c8 60%,
+        #2868b0 100%);
 }
 
 .xp-button-default {
-    border: 2px solid var(--xp-button-border);
+    border: 2px solid #003c74;
+    box-shadow:
+        0 0 3px rgba(0, 70, 213, 0.4),
+        inset 0 1px 0 #ffffff,
+        inset -1px -1px 0 #aca899,
+        inset 1px 1px 0 #f0ede4;
 }
 
 /* ============================================
@@ -504,17 +580,22 @@ a:hover {
     font-family: 'Tahoma', sans-serif !important;
     font-size: 11px;
     padding: 3px 4px;
-    height: 23px;
+    height: 22px;
     background: #ffffff;
-    border: 1px solid var(--xp-input-border);
+    border: 1px solid #7f9db9;
     border-radius: 0;
-    color: var(--xp-text);
-    box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.1);
+    color: #000;
+    box-shadow:
+        inset 1px 1px 0 rgba(0, 0, 0, 0.1),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.5);
 }
 
 .xp-input:focus {
     outline: none;
-    border-color: var(--xp-input-focus);
+    border-color: #316AC5;
+    box-shadow:
+        inset 1px 1px 0 rgba(0, 0, 0, 0.1),
+        0 0 2px rgba(49, 106, 197, 0.5);
 }
 
 .xp-input::placeholder {
@@ -531,29 +612,32 @@ a:hover {
     font-size: 11px;
     padding: 4px;
     background: #ffffff;
-    border: 1px solid var(--xp-input-border);
-    color: var(--xp-text);
+    border: 1px solid #7f9db9;
+    color: #000;
     resize: none;
-    box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.1);
+    box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.08);
 }
 
 .xp-textarea:focus {
     outline: none;
-    border-color: var(--xp-input-focus);
+    border-color: #316AC5;
+    box-shadow:
+        inset 1px 1px 0 rgba(0, 0, 0, 0.08),
+        0 0 2px rgba(49, 106, 197, 0.5);
 }
 
 .xp-select {
     font-family: 'Tahoma', sans-serif !important;
     font-size: 11px;
     padding: 2px 20px 2px 4px;
-    height: 23px;
-    background: linear-gradient(180deg, #ffffff 0%, #ece9d8 100%);
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Crect x='0' y='0' width='16' height='16' fill='%23ece9d8'/%3E%3Cpath d='M4 6l4 5 4-5z' fill='%23000'/%3E%3C/svg%3E");
+    height: 22px;
+    background: linear-gradient(180deg, #ffffff 0%, #f2f0e8 90%, #ece9d8 100%);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='17' height='20'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='0%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%23f6f4ec'/%3E%3Cstop offset='90%25' stop-color='%23ece9d8'/%3E%3Cstop offset='100%25' stop-color='%23d8d4c8'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect x='0' y='0' width='17' height='20' fill='url(%23g)'/%3E%3Cpath d='M4 8l4.5 5 4.5-5z' fill='%23000'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 0 center;
-    border: 1px solid var(--xp-input-border);
+    border: 1px solid #7f9db9;
     border-radius: 0;
-    color: var(--xp-text);
+    color: #000;
     cursor: pointer;
     -webkit-appearance: none;
     -moz-appearance: none;
@@ -562,7 +646,7 @@ a:hover {
 
 .xp-select:focus {
     outline: none;
-    border-color: var(--xp-input-focus);
+    border-color: #316AC5;
 }
 
 /* ============================================
@@ -757,15 +841,17 @@ a:hover {
 }
 
 /* ============================================
-   XP STATUS BAR
+   XP STATUS BAR - Authentic style
    ============================================ */
 .xp-statusbar {
-    background: var(--xp-window-bg);
+    background: linear-gradient(180deg,
+        #ECE9D8 0%,
+        #E0DCD0 100%);
     border-top: 1px solid #FFFFFF;
-    padding: 2px 4px;
+    padding: 2px 3px;
     font-size: 11px;
     display: flex;
-    gap: 4px;
+    gap: 2px;
     position: relative;
 }
 
@@ -776,48 +862,57 @@ a:hover {
     left: 0;
     right: 0;
     height: 1px;
-    background: #ACA899;
+    background: #A0A0A0;
 }
 
 .xp-statusbar-panel {
-    padding: 1px 6px;
+    padding: 1px 5px;
     background: linear-gradient(180deg,
         #F0ECE1 0%,
         #E8E4D9 100%);
     border: 1px solid;
-    border-color: #ACA899 #FFFFFF #FFFFFF #ACA899;
+    border-color: #A0A0A0 #FFFFFF #FFFFFF #A0A0A0;
     flex: 1;
+    font-size: 10px;
+    color: #000;
+    box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 /* ============================================
-   YAHOO MESSENGER BUDDY LIST
+   YAHOO MESSENGER BUDDY LIST - Authentic YM7 style
    ============================================ */
 .ym-buddy-list {
     background: #FFFFFF;
+    border: 1px solid #7f9db9;
+    border-top: none;
 }
 
 .ym-user-panel {
     background: linear-gradient(180deg,
         #F8F6F0 0%,
+        #EFEBE0 50%,
         var(--xp-window-bg) 100%);
-    padding: 8px 10px;
-    border-bottom: 1px solid #D4D0C8;
+    padding: 10px;
+    border-bottom: 1px solid #C0C0C0;
     display: flex;
     align-items: flex-start;
     gap: 10px;
+    box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.5);
 }
 
 .ym-user-avatar {
     width: 48px;
     height: 48px;
-    border: 2px solid #C0C0C0;
-    border-radius: 4px;
-    background: #E8E8E8;
+    border: 2px solid #888;
+    border-radius: 3px;
+    background: linear-gradient(135deg, #FFE066 0%, #FFD800 50%, #FFCC00 100%);
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+    box-shadow:
+        inset 0 1px 2px rgba(255, 255, 255, 0.5),
+        0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .ym-user-avatar img {
@@ -828,19 +923,21 @@ a:hover {
 
 .ym-user-info {
     flex: 1;
+    min-width: 0;
 }
 
 .ym-user-name {
     font-weight: bold;
     font-size: 12px;
-    color: var(--xp-text);
-    margin-bottom: 2px;
+    color: #000;
+    margin-bottom: 3px;
 }
 
 .ym-user-status-msg {
     font-size: 10px;
-    color: #666;
-    margin-bottom: 4px;
+    color: #555;
+    margin-bottom: 5px;
+    font-style: italic;
 }
 
 .ym-status-dropdown {
@@ -851,53 +948,71 @@ a:hover {
 
 .ym-category {
     background: linear-gradient(180deg,
-        #F4F4F4 0%,
-        #DCDCDC 100%);
-    padding: 4px 8px;
-    border-bottom: 1px solid #C0C0C0;
+        #E8E8E8 0%,
+        #D5D5D5 50%,
+        #C8C8C8 100%);
+    padding: 4px 6px;
+    border-bottom: 1px solid #A0A0A0;
+    border-top: 1px solid #F0F0F0;
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     font-weight: bold;
     font-size: 11px;
+    color: #333;
 }
 
 .ym-category:hover {
     background: linear-gradient(180deg,
-        #FFFFFF 0%,
-        #EBEBEB 100%);
+        #F5F5F5 0%,
+        #E5E5E5 50%,
+        #D8D8D8 100%);
 }
 
 .ym-category-icon {
-    width: 12px;
-    font-family: 'Courier New', monospace !important;
-    font-size: 10px;
+    width: 14px;
+    height: 14px;
+    font-family: 'Marlett', 'Courier New', monospace !important;
+    font-size: 12px;
     font-weight: bold;
+    color: #555;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .ym-category-count {
     color: #666;
     font-weight: normal;
+    font-size: 10px;
+    margin-left: 2px;
 }
 
 .ym-buddy {
-    padding: 3px 8px 3px 24px;
+    padding: 3px 8px 3px 20px;
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
+    border-bottom: 1px solid #F0F0F0;
 }
 
-.ym-buddy:hover,
+.ym-buddy:hover {
+    background: linear-gradient(90deg,
+        rgba(49, 106, 197, 0.15) 0%,
+        rgba(49, 106, 197, 0.25) 50%,
+        rgba(49, 106, 197, 0.15) 100%);
+}
+
 .ym-buddy.selected {
     background: var(--xp-selection);
     color: var(--xp-selection-text);
 }
 
 .ym-buddy-icon {
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
     flex-shrink: 0;
 }
 
@@ -906,72 +1021,82 @@ a:hover {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 11px;
 }
 
 .ym-buddy-unread {
-    background: var(--ym-orange);
+    background: linear-gradient(180deg, #FF8800 0%, #FF6600 100%);
     color: white;
     border-radius: 8px;
-    padding: 0 6px;
+    padding: 1px 6px;
     font-size: 9px;
     font-weight: bold;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 /* ============================================
-   XP GLOSSY ORB STATUS ICONS - 100% AUTHENTIC
+   XP GLOSSY ORB STATUS ICONS - Authentic YM style
    ============================================ */
 .ym-icon-online {
-    background: radial-gradient(circle at 30% 30%,
-        #90EE90 0%,
-        #32CD32 40%,
-        #228B22 80%,
-        #006400 100%);
+    background: radial-gradient(ellipse at 35% 25%,
+        #66FF66 0%,
+        #33DD33 30%,
+        #00BB00 60%,
+        #008800 100%);
     border-radius: 50%;
     box-shadow:
-        inset 0 2px 4px rgba(255, 255, 255, 0.5),
-        0 2px 4px rgba(0, 0, 0, 0.3);
+        inset 0 1px 2px rgba(255, 255, 255, 0.7),
+        inset 0 -1px 1px rgba(0, 0, 0, 0.2),
+        0 1px 2px rgba(0, 0, 0, 0.3);
+    border: 1px solid #006600;
 }
 
 .ym-icon-away {
-    background: radial-gradient(circle at 30% 30%,
-        #FFE066 0%,
-        #FFA500 40%,
-        #FF8C00 80%,
-        #CC7000 100%);
+    background: radial-gradient(ellipse at 35% 25%,
+        #FFEE66 0%,
+        #FFCC33 30%,
+        #FFAA00 60%,
+        #DD8800 100%);
     border-radius: 50%;
     box-shadow:
-        inset 0 2px 4px rgba(255, 255, 255, 0.5),
-        0 2px 4px rgba(0, 0, 0, 0.3);
+        inset 0 1px 2px rgba(255, 255, 255, 0.7),
+        inset 0 -1px 1px rgba(0, 0, 0, 0.2),
+        0 1px 2px rgba(0, 0, 0, 0.3);
+    border: 1px solid #CC7700;
 }
 
 .ym-icon-busy {
-    background: radial-gradient(circle at 30% 30%,
-        #FF6B6B 0%,
-        #DC143C 40%,
-        #B22222 80%,
-        #8B0000 100%);
+    background: radial-gradient(ellipse at 35% 25%,
+        #FF6666 0%,
+        #EE3333 30%,
+        #CC0000 60%,
+        #990000 100%);
     border-radius: 50%;
     box-shadow:
-        inset 0 2px 4px rgba(255, 255, 255, 0.5),
-        0 2px 4px rgba(0, 0, 0, 0.3);
+        inset 0 1px 2px rgba(255, 255, 255, 0.7),
+        inset 0 -1px 1px rgba(0, 0, 0, 0.2),
+        0 1px 2px rgba(0, 0, 0, 0.3);
+    border: 1px solid #880000;
 }
 
 .ym-icon-invisible {
-    background: transparent;
-    border: 2px solid #808080;
+    background: linear-gradient(180deg, #E8E8E8 0%, #C0C0C0 100%);
+    border: 1.5px dashed #808080;
     border-radius: 50%;
 }
 
 .ym-icon-offline {
-    background: radial-gradient(circle at 30% 30%,
-        #E0E0E0 0%,
-        #B0B0B0 40%,
-        #909090 80%,
+    background: radial-gradient(ellipse at 35% 25%,
+        #D0D0D0 0%,
+        #A8A8A8 30%,
+        #888888 60%,
         #606060 100%);
     border-radius: 50%;
     box-shadow:
-        inset 0 2px 4px rgba(255, 255, 255, 0.3),
-        0 2px 4px rgba(0, 0, 0, 0.2);
+        inset 0 1px 2px rgba(255, 255, 255, 0.5),
+        inset 0 -1px 1px rgba(0, 0, 0, 0.15),
+        0 1px 2px rgba(0, 0, 0, 0.2);
+    border: 1px solid #555;
 }
 
 /* ============================================
@@ -979,13 +1104,15 @@ a:hover {
    ============================================ */
 .ym-chat-header {
     background: linear-gradient(180deg,
-        var(--xp-window-bg) 0%,
+        #F5F3EB 0%,
+        #ECE9D8 50%,
         #E0DCD0 100%);
     padding: 6px 10px;
-    border-bottom: 1px solid #C0C0C0;
+    border-bottom: 1px solid #A0A0A0;
     display: flex;
     align-items: center;
     gap: 10px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 .ym-chat-contact {
@@ -1052,27 +1179,30 @@ a:hover {
     font-size: 14px;
 }
 
-/* Message Area */
+/* Message Area - Authentic YM7 log-style format */
 .ym-message-area {
     background: #FFFFFF;
-    border: 1px solid var(--xp-input-border);
-    margin: 4px;
+    border: 1px solid #7f9db9;
+    margin: 3px;
     overflow-y: auto;
-    padding: 8px;
+    padding: 6px 8px;
+    box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.08);
 }
 
 .ym-message {
-    margin-bottom: 12px;
+    margin-bottom: 8px;
+    line-height: 1.4;
 }
 
 .ym-message-header {
     font-weight: bold;
-    margin-bottom: 2px;
+    margin-bottom: 1px;
     font-size: 11px;
+    display: inline;
 }
 
 .ym-message-header.sent {
-    color: #0000CC;
+    color: #0033CC;
 }
 
 .ym-message-header.received {
@@ -1080,36 +1210,39 @@ a:hover {
 }
 
 .ym-message-time {
-    color: #808080;
+    color: #666666;
     font-weight: normal;
     font-size: 10px;
 }
 
 .ym-message-content {
-    padding-left: 4px;
+    padding-left: 12px;
     font-size: 11px;
-    line-height: 1.4;
+    line-height: 1.5;
+    color: #000;
+    margin-top: 2px;
 }
 
+/* Yahoo-style message bubbles (optional modern look) */
 .ym-message-bubble {
     display: inline-block;
     max-width: 75%;
     padding: 6px 10px;
-    border-radius: 8px;
+    border-radius: 6px;
     margin: 2px 0;
 }
 
 .ym-message-bubble.sent {
-    background: var(--ym-sent-bubble);
-    border: 1px solid var(--ym-sent-border);
+    background: linear-gradient(180deg, #E8F0FC 0%, #D8E8F8 100%);
+    border: 1px solid #B0C8E8;
     margin-left: auto;
     display: block;
     width: fit-content;
 }
 
 .ym-message-bubble.received {
-    background: var(--ym-received-bubble);
-    border: 1px solid var(--ym-received-border);
+    background: linear-gradient(180deg, #FFF8E0 0%, #FFF0C8 100%);
+    border: 1px solid #E8D8A0;
 }
 
 /* Buzz Effect */
@@ -1142,20 +1275,23 @@ a:hover {
     margin: 8px 0;
 }
 
-/* Formatting Toolbar */
+/* Formatting Toolbar - Authentic YM style */
 .ym-format-toolbar {
-    background: var(--xp-window-bg);
-    padding: 4px 8px;
-    border-bottom: 1px solid #C0C0C0;
+    background: linear-gradient(180deg,
+        #F5F3EB 0%,
+        #ECE9D8 100%);
+    padding: 3px 6px;
+    border-bottom: 1px solid #A8A8A0;
+    border-top: 1px solid #FFFFFF;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 3px;
 }
 
 .ym-format-btn {
     width: 22px;
-    height: 22px;
-    background: transparent;
+    height: 20px;
+    background: linear-gradient(180deg, #f8f6f0 0%, #ece9d8 100%);
     border: 1px solid transparent;
     cursor: pointer;
     display: flex;
@@ -1166,20 +1302,22 @@ a:hover {
 }
 
 .ym-format-btn:hover {
-    background: #E8E4D9;
-    border-color: #9D9B91;
+    background: linear-gradient(180deg, #ffffff 0%, #f0ede4 100%);
+    border-color: #0046d5;
 }
 
 .ym-format-btn.active {
-    background: #D0CCC0;
+    background: linear-gradient(180deg, #e0dcd0 0%, #d0ccc0 100%);
     border-color: #9D9B91;
+    box-shadow: inset 1px 1px 1px rgba(0, 0, 0, 0.15);
 }
 
 .ym-color-picker {
     width: 18px;
     height: 18px;
-    border: 1px solid #808080;
+    border: 1px solid #7f9db9;
     cursor: pointer;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
 }
 
 /* Input Area */
@@ -1188,36 +1326,43 @@ a:hover {
     padding: 4px;
 }
 
-/* Bottom Toolbar */
+/* Bottom Toolbar - Authentic YM style */
 .ym-bottom-toolbar {
-    background: var(--xp-window-bg);
-    padding: 6px 8px;
+    background: linear-gradient(180deg,
+        #F2F0E8 0%,
+        #ECE9D8 100%);
+    padding: 5px 8px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     border-top: 1px solid #FFFFFF;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 .ym-emoticon-btn {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
-    background: transparent;
-    border: 1px solid transparent;
+    gap: 4px;
+    padding: 3px 8px;
+    background: linear-gradient(180deg, #f8f6f0 0%, #ece9d8 100%);
+    border: 1px solid #9D9B91;
     cursor: pointer;
     font-size: 11px;
-    color: var(--xp-text);
+    color: #000;
     border-radius: 2px;
 }
 
 .ym-emoticon-btn:hover {
-    background: #E8E4D9;
-    border-color: #9D9B91;
+    background: linear-gradient(180deg, #ffffff 0%, #f2efe4 100%);
+    border-color: #0046d5;
+}
+
+.ym-emoticon-btn:active {
+    background: linear-gradient(180deg, #e0dcd0 0%, #d0ccc0 100%);
 }
 
 .ym-smiley {
-    font-size: 16px;
+    font-size: 14px;
 }
 
 /* ============================================
@@ -1292,14 +1437,17 @@ a:hover {
 }
 
 /* ============================================
-   TOOLBAR ICONS
+   TOOLBAR ICONS - Authentic YM style
    ============================================ */
 .ym-toolbar {
-    background: var(--xp-window-bg);
+    background: linear-gradient(180deg,
+        #F2F0E8 0%,
+        #ECE9D8 100%);
     padding: 2px 4px;
     display: flex;
-    gap: 2px;
-    border-bottom: 1px solid #C0C0C0;
+    gap: 1px;
+    border-bottom: 1px solid #A8A8A0;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 .ym-toolbar-btn {
@@ -1311,28 +1459,34 @@ a:hover {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    border-radius: 2px;
+    border-radius: 3px;
 }
 
 .ym-toolbar-btn:hover {
     background: linear-gradient(180deg,
         #FFFFFF 0%,
-        #E8E4D9 50%,
-        #D0CCC0 100%);
-    border-color: #9D9B91;
+        #F0EDE4 50%,
+        #E0DCD0 100%);
+    border-color: #0046d5;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.8),
+        inset -1px -1px 0 rgba(0, 0, 0, 0.1);
 }
 
 .ym-toolbar-btn:active {
-    background: #D0CCC0;
+    background: linear-gradient(180deg,
+        #E0DCD0 0%,
+        #D0CCC0 100%);
+    box-shadow: inset 1px 1px 1px rgba(0, 0, 0, 0.15);
 }
 
 .ym-toolbar-separator {
-    width: 1px;
+    width: 2px;
     height: 20px;
-    background: linear-gradient(180deg,
-        #ACA899 0%,
+    background: linear-gradient(90deg,
+        #A8A8A0 0%,
         #FFFFFF 100%);
-    margin: 2px 4px;
+    margin: 2px 3px;
 }
 
 /* ============================================
@@ -2622,10 +2776,14 @@ a:hover {
     position: fixed;
     bottom: 16px;
     left: 16px;
-    width: 42px;
-    height: 42px;
-    background: linear-gradient(180deg, #ffffff 0%, #ece9d8 89%, #d4d0c8 100%);
-    border: 1px solid var(--xp-button-border);
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(180deg,
+        #ffffff 0%,
+        #f6f4ec 50%,
+        #ece9d8 89%,
+        #d8d4c8 100%);
+    border: 1px solid #003c74;
     border-radius: 4px;
     display: flex;
     align-items: center;
@@ -2634,17 +2792,30 @@ a:hover {
     z-index: 1000;
     user-select: none;
     touch-action: none;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    box-shadow:
+        0 2px 4px rgba(0, 0, 0, 0.25),
+        inset 0 1px 0 #ffffff,
+        inset -1px -1px 0 #aca899;
 }
 
 .theme-switcher-fab:hover {
-    background: linear-gradient(180deg, #ffffff 0%, #f2efe4 89%, #dcd8cd 100%);
-    border-color: var(--xp-selection);
+    background: linear-gradient(180deg,
+        #ffffff 0%,
+        #faf8f0 50%,
+        #f2efe4 89%,
+        #e0dcd0 100%);
+    border-color: #0046d5;
 }
 
 .theme-switcher-fab:active,
 .theme-switcher-fab.dragging {
-    box-shadow: inset 1px 1px 0 var(--xp-button-shadow);
+    background: linear-gradient(180deg,
+        #e8e4d8 0%,
+        #dcd8cc 50%,
+        #d0ccc0 100%);
+    box-shadow:
+        inset 1px 1px 2px rgba(0, 0, 0, 0.15),
+        0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .theme-switcher-icon {
