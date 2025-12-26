@@ -30,6 +30,23 @@ func (s *Service) Create(ctx context.Context, senderID string, in *CreateIn) (*M
 		MentionEveryone: in.MentionEveryone,
 		Status:          StatusSent,
 		CreatedAt:       now,
+
+		// Media fields
+		MediaID:           in.MediaID,
+		MediaURL:          in.MediaURL,
+		MediaType:         in.MediaType,
+		MediaContentType:  in.MediaContentType,
+		MediaFilename:     in.MediaFilename,
+		MediaSize:         in.MediaSize,
+		MediaWidth:        in.MediaWidth,
+		MediaHeight:       in.MediaHeight,
+		MediaDuration:     in.MediaDuration,
+		MediaThumbnailURL: in.MediaThumbnailURL,
+		MediaWaveform:     in.MediaWaveform,
+
+		// Sticker fields
+		StickerPackID: in.StickerPackID,
+		StickerID:     in.StickerID,
 	}
 
 	if in.Type == "" {

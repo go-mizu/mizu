@@ -824,7 +824,7 @@ select.win-input:focus {
 .picker-container {
     position: absolute;
     bottom: 100%;
-    left: 0;
+    right: 0;
     margin-bottom: 4px;
     z-index: 100;
 }
@@ -846,6 +846,9 @@ select.win-input:focus {
 
 .sticker-picker {
     width: 320px;
+    display: flex;
+    flex-direction: column;
+    max-height: 400px;
 }
 
 /* Picker Title Bar */
@@ -973,6 +976,10 @@ select.win-input:focus {
         inset 1px 1px 0 var(--win98-button-shadow),
         inset -2px -2px 0 var(--win98-button-light),
         inset 2px 2px 0 var(--win98-button-dark-shadow);
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    max-height: 280px;
 }
 
 .sticker-item {
@@ -1487,6 +1494,52 @@ select.win-input:focus {
     max-width: 100%;
     max-height: 90vh;
     display: block;
+}
+
+/* Sticker Lightbox */
+.sticker-lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 128, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 300;
+    cursor: pointer;
+}
+
+.sticker-lightbox-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 24px;
+    background: var(--win98-bg);
+    border: 2px outset var(--win98-bg);
+}
+
+.sticker-lightbox-sticker {
+    width: 180px;
+    height: 180px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sticker-lightbox-sticker svg {
+    width: 100%;
+    height: 100%;
+}
+
+.sticker-lightbox-name {
+    color: #000;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.sticker-lightbox-pack {
+    color: #808080;
+    font-size: 11px;
 }
 
 /* Drag & Drop Zone */

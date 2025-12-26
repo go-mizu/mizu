@@ -25,13 +25,20 @@ func (s *MessagesStore) Insert(ctx context.Context, m *messages.Message) error {
 	query := `
 		INSERT INTO messages (id, chat_id, sender_id, type, content, content_html, reply_to_id,
 			forward_from_id, forward_from_chat_id, forward_from_sender_name, is_forwarded,
-			mention_everyone, expires_at, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			mention_everyone, expires_at,
+			media_id, media_url, media_type, media_content_type, media_filename,
+			media_size, media_width, media_height, media_duration, media_thumbnail_url, media_waveform,
+			sticker_pack_id, sticker_id, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	_, err := s.db.ExecContext(ctx, query,
 		m.ID, m.ChatID, m.SenderID, m.Type, m.Content, m.ContentHTML,
 		nullString(m.ReplyToID), nullString(m.ForwardFromID), nullString(m.ForwardFromChatID),
-		nullString(m.ForwardFromSenderName), m.IsForwarded, m.MentionEveryone, m.ExpiresAt, m.CreatedAt,
+		nullString(m.ForwardFromSenderName), m.IsForwarded, m.MentionEveryone, m.ExpiresAt,
+		nullString(m.MediaID), nullString(m.MediaURL), nullString(m.MediaType), nullString(m.MediaContentType),
+		nullString(m.MediaFilename), m.MediaSize, m.MediaWidth, m.MediaHeight, m.MediaDuration,
+		nullString(m.MediaThumbnailURL), nullString(m.MediaWaveform),
+		nullString(m.StickerPackID), nullString(m.StickerID), m.CreatedAt,
 	)
 	return err
 }
@@ -42,7 +49,10 @@ func (s *MessagesStore) GetByID(ctx context.Context, id string) (*messages.Messa
 		SELECT id, chat_id, sender_id, type, content, content_html, reply_to_id,
 			forward_from_id, forward_from_chat_id, forward_from_sender_name, is_forwarded,
 			is_edited, edited_at, is_deleted, deleted_at, deleted_for_everyone,
-			expires_at, mention_everyone, created_at
+			expires_at, mention_everyone,
+			media_id, media_url, media_type, media_content_type, media_filename,
+			media_size, media_width, media_height, media_duration, media_thumbnail_url, media_waveform,
+			sticker_pack_id, sticker_id, created_at
 		FROM messages WHERE id = ? AND (is_deleted = FALSE OR deleted_for_everyone = FALSE)
 	`
 	m, err := scanMessage(s.db.QueryRowContext(ctx, query, id))
@@ -55,12 +65,19 @@ func (s *MessagesStore) GetByID(ctx context.Context, id string) (*messages.Messa
 func scanMessage(row interface{ Scan(...any) error }) (*messages.Message, error) {
 	m := &messages.Message{}
 	var content, contentHTML, replyToID, forwardFromID, forwardFromChatID, forwardFromSenderName sql.NullString
+	var mediaID, mediaURL, mediaType, mediaContentType, mediaFilename, mediaThumbnailURL, mediaWaveform sql.NullString
+	var stickerPackID, stickerID sql.NullString
+	var mediaSize sql.NullInt64
+	var mediaWidth, mediaHeight, mediaDuration sql.NullInt64
 	var editedAt, deletedAt, expiresAt sql.NullTime
 	err := row.Scan(
 		&m.ID, &m.ChatID, &m.SenderID, &m.Type, &content, &contentHTML, &replyToID,
 		&forwardFromID, &forwardFromChatID, &forwardFromSenderName, &m.IsForwarded,
 		&m.IsEdited, &editedAt, &m.IsDeleted, &deletedAt, &m.DeletedForEveryone,
-		&expiresAt, &m.MentionEveryone, &m.CreatedAt,
+		&expiresAt, &m.MentionEveryone,
+		&mediaID, &mediaURL, &mediaType, &mediaContentType, &mediaFilename,
+		&mediaSize, &mediaWidth, &mediaHeight, &mediaDuration, &mediaThumbnailURL, &mediaWaveform,
+		&stickerPackID, &stickerID, &m.CreatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -71,6 +88,19 @@ func scanMessage(row interface{ Scan(...any) error }) (*messages.Message, error)
 	m.ForwardFromID = forwardFromID.String
 	m.ForwardFromChatID = forwardFromChatID.String
 	m.ForwardFromSenderName = forwardFromSenderName.String
+	m.MediaID = mediaID.String
+	m.MediaURL = mediaURL.String
+	m.MediaType = mediaType.String
+	m.MediaContentType = mediaContentType.String
+	m.MediaFilename = mediaFilename.String
+	m.MediaSize = mediaSize.Int64
+	m.MediaWidth = int(mediaWidth.Int64)
+	m.MediaHeight = int(mediaHeight.Int64)
+	m.MediaDuration = int(mediaDuration.Int64)
+	m.MediaThumbnailURL = mediaThumbnailURL.String
+	m.MediaWaveform = mediaWaveform.String
+	m.StickerPackID = stickerPackID.String
+	m.StickerID = stickerID.String
 	if editedAt.Valid {
 		m.EditedAt = &editedAt.Time
 	}
@@ -120,7 +150,10 @@ func (s *MessagesStore) List(ctx context.Context, chatID string, opts messages.L
 		SELECT id, chat_id, sender_id, type, content, content_html, reply_to_id,
 			forward_from_id, forward_from_chat_id, forward_from_sender_name, is_forwarded,
 			is_edited, edited_at, is_deleted, deleted_at, deleted_for_everyone,
-			expires_at, mention_everyone, created_at
+			expires_at, mention_everyone,
+			media_id, media_url, media_type, media_content_type, media_filename,
+			media_size, media_width, media_height, media_duration, media_thumbnail_url, media_waveform,
+			sticker_pack_id, sticker_id, created_at
 		FROM messages
 		WHERE chat_id = ? AND (is_deleted = FALSE OR deleted_for_everyone = FALSE)
 	`
@@ -150,12 +183,19 @@ func (s *MessagesStore) List(ctx context.Context, chatID string, opts messages.L
 	for rows.Next() {
 		m := &messages.Message{}
 		var content, contentHTML, replyToID, forwardFromID, forwardFromChatID, forwardFromSenderName sql.NullString
+		var mediaID, mediaURL, mediaType, mediaContentType, mediaFilename, mediaThumbnailURL, mediaWaveform sql.NullString
+		var stickerPackID, stickerID sql.NullString
+		var mediaSize sql.NullInt64
+		var mediaWidth, mediaHeight, mediaDuration sql.NullInt64
 		var editedAt, deletedAt, expiresAt sql.NullTime
 		if err := rows.Scan(
 			&m.ID, &m.ChatID, &m.SenderID, &m.Type, &content, &contentHTML, &replyToID,
 			&forwardFromID, &forwardFromChatID, &forwardFromSenderName, &m.IsForwarded,
 			&m.IsEdited, &editedAt, &m.IsDeleted, &deletedAt, &m.DeletedForEveryone,
-			&expiresAt, &m.MentionEveryone, &m.CreatedAt,
+			&expiresAt, &m.MentionEveryone,
+			&mediaID, &mediaURL, &mediaType, &mediaContentType, &mediaFilename,
+			&mediaSize, &mediaWidth, &mediaHeight, &mediaDuration, &mediaThumbnailURL, &mediaWaveform,
+			&stickerPackID, &stickerID, &m.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -165,6 +205,19 @@ func (s *MessagesStore) List(ctx context.Context, chatID string, opts messages.L
 		m.ForwardFromID = forwardFromID.String
 		m.ForwardFromChatID = forwardFromChatID.String
 		m.ForwardFromSenderName = forwardFromSenderName.String
+		m.MediaID = mediaID.String
+		m.MediaURL = mediaURL.String
+		m.MediaType = mediaType.String
+		m.MediaContentType = mediaContentType.String
+		m.MediaFilename = mediaFilename.String
+		m.MediaSize = mediaSize.Int64
+		m.MediaWidth = int(mediaWidth.Int64)
+		m.MediaHeight = int(mediaHeight.Int64)
+		m.MediaDuration = int(mediaDuration.Int64)
+		m.MediaThumbnailURL = mediaThumbnailURL.String
+		m.MediaWaveform = mediaWaveform.String
+		m.StickerPackID = stickerPackID.String
+		m.StickerID = stickerID.String
 		if editedAt.Valid {
 			m.EditedAt = &editedAt.Time
 		}
@@ -185,7 +238,10 @@ func (s *MessagesStore) Search(ctx context.Context, opts messages.SearchOpts) ([
 		SELECT id, chat_id, sender_id, type, content, content_html, reply_to_id,
 			forward_from_id, forward_from_chat_id, forward_from_sender_name, is_forwarded,
 			is_edited, edited_at, is_deleted, deleted_at, deleted_for_everyone,
-			expires_at, mention_everyone, created_at
+			expires_at, mention_everyone,
+			media_id, media_url, media_type, media_content_type, media_filename,
+			media_size, media_width, media_height, media_duration, media_thumbnail_url, media_waveform,
+			sticker_pack_id, sticker_id, created_at
 		FROM messages
 		WHERE (is_deleted = FALSE OR deleted_for_everyone = FALSE)
 			AND content ILIKE ?
@@ -220,12 +276,19 @@ func (s *MessagesStore) Search(ctx context.Context, opts messages.SearchOpts) ([
 	for rows.Next() {
 		m := &messages.Message{}
 		var content, contentHTML, replyToID, forwardFromID, forwardFromChatID, forwardFromSenderName sql.NullString
+		var mediaID, mediaURL, mediaType, mediaContentType, mediaFilename, mediaThumbnailURL, mediaWaveform sql.NullString
+		var stickerPackID, stickerID sql.NullString
+		var mediaSize sql.NullInt64
+		var mediaWidth, mediaHeight, mediaDuration sql.NullInt64
 		var editedAt, deletedAt, expiresAt sql.NullTime
 		if err := rows.Scan(
 			&m.ID, &m.ChatID, &m.SenderID, &m.Type, &content, &contentHTML, &replyToID,
 			&forwardFromID, &forwardFromChatID, &forwardFromSenderName, &m.IsForwarded,
 			&m.IsEdited, &editedAt, &m.IsDeleted, &deletedAt, &m.DeletedForEveryone,
-			&expiresAt, &m.MentionEveryone, &m.CreatedAt,
+			&expiresAt, &m.MentionEveryone,
+			&mediaID, &mediaURL, &mediaType, &mediaContentType, &mediaFilename,
+			&mediaSize, &mediaWidth, &mediaHeight, &mediaDuration, &mediaThumbnailURL, &mediaWaveform,
+			&stickerPackID, &stickerID, &m.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -235,6 +298,19 @@ func (s *MessagesStore) Search(ctx context.Context, opts messages.SearchOpts) ([
 		m.ForwardFromID = forwardFromID.String
 		m.ForwardFromChatID = forwardFromChatID.String
 		m.ForwardFromSenderName = forwardFromSenderName.String
+		m.MediaID = mediaID.String
+		m.MediaURL = mediaURL.String
+		m.MediaType = mediaType.String
+		m.MediaContentType = mediaContentType.String
+		m.MediaFilename = mediaFilename.String
+		m.MediaSize = mediaSize.Int64
+		m.MediaWidth = int(mediaWidth.Int64)
+		m.MediaHeight = int(mediaHeight.Int64)
+		m.MediaDuration = int(mediaDuration.Int64)
+		m.MediaThumbnailURL = mediaThumbnailURL.String
+		m.MediaWaveform = mediaWaveform.String
+		m.StickerPackID = stickerPackID.String
+		m.StickerID = stickerID.String
 		if editedAt.Valid {
 			m.EditedAt = &editedAt.Time
 		}
@@ -306,7 +382,10 @@ func (s *MessagesStore) ListStarred(ctx context.Context, userID string, limit in
 		SELECT m.id, m.chat_id, m.sender_id, m.type, m.content, m.content_html, m.reply_to_id,
 			m.forward_from_id, m.forward_from_chat_id, m.forward_from_sender_name, m.is_forwarded,
 			m.is_edited, m.edited_at, m.is_deleted, m.deleted_at, m.deleted_for_everyone,
-			m.expires_at, m.mention_everyone, m.created_at
+			m.expires_at, m.mention_everyone,
+			m.media_id, m.media_url, m.media_type, m.media_content_type, m.media_filename,
+			m.media_size, m.media_width, m.media_height, m.media_duration, m.media_thumbnail_url, m.media_waveform,
+			m.sticker_pack_id, m.sticker_id, m.created_at
 		FROM messages m
 		JOIN starred_messages sm ON m.id = sm.message_id AND sm.user_id = ?
 		WHERE m.is_deleted = FALSE
@@ -323,12 +402,19 @@ func (s *MessagesStore) ListStarred(ctx context.Context, userID string, limit in
 	for rows.Next() {
 		m := &messages.Message{}
 		var content, contentHTML, replyToID, forwardFromID, forwardFromChatID, forwardFromSenderName sql.NullString
+		var mediaID, mediaURL, mediaType, mediaContentType, mediaFilename, mediaThumbnailURL, mediaWaveform sql.NullString
+		var stickerPackID, stickerID sql.NullString
+		var mediaSize sql.NullInt64
+		var mediaWidth, mediaHeight, mediaDuration sql.NullInt64
 		var editedAt, deletedAt, expiresAt sql.NullTime
 		if err := rows.Scan(
 			&m.ID, &m.ChatID, &m.SenderID, &m.Type, &content, &contentHTML, &replyToID,
 			&forwardFromID, &forwardFromChatID, &forwardFromSenderName, &m.IsForwarded,
 			&m.IsEdited, &editedAt, &m.IsDeleted, &deletedAt, &m.DeletedForEveryone,
-			&expiresAt, &m.MentionEveryone, &m.CreatedAt,
+			&expiresAt, &m.MentionEveryone,
+			&mediaID, &mediaURL, &mediaType, &mediaContentType, &mediaFilename,
+			&mediaSize, &mediaWidth, &mediaHeight, &mediaDuration, &mediaThumbnailURL, &mediaWaveform,
+			&stickerPackID, &stickerID, &m.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -338,6 +424,19 @@ func (s *MessagesStore) ListStarred(ctx context.Context, userID string, limit in
 		m.ForwardFromID = forwardFromID.String
 		m.ForwardFromChatID = forwardFromChatID.String
 		m.ForwardFromSenderName = forwardFromSenderName.String
+		m.MediaID = mediaID.String
+		m.MediaURL = mediaURL.String
+		m.MediaType = mediaType.String
+		m.MediaContentType = mediaContentType.String
+		m.MediaFilename = mediaFilename.String
+		m.MediaSize = mediaSize.Int64
+		m.MediaWidth = int(mediaWidth.Int64)
+		m.MediaHeight = int(mediaHeight.Int64)
+		m.MediaDuration = int(mediaDuration.Int64)
+		m.MediaThumbnailURL = mediaThumbnailURL.String
+		m.MediaWaveform = mediaWaveform.String
+		m.StickerPackID = stickerPackID.String
+		m.StickerID = stickerID.String
 		if editedAt.Valid {
 			m.EditedAt = &editedAt.Time
 		}
@@ -505,7 +604,10 @@ func (s *MessagesStore) ListPinned(ctx context.Context, chatID string) ([]*messa
 		SELECT m.id, m.chat_id, m.sender_id, m.type, m.content, m.content_html, m.reply_to_id,
 			m.forward_from_id, m.forward_from_chat_id, m.forward_from_sender_name, m.is_forwarded,
 			m.is_edited, m.edited_at, m.is_deleted, m.deleted_at, m.deleted_for_everyone,
-			m.expires_at, m.mention_everyone, m.created_at
+			m.expires_at, m.mention_everyone,
+			m.media_id, m.media_url, m.media_type, m.media_content_type, m.media_filename,
+			m.media_size, m.media_width, m.media_height, m.media_duration, m.media_thumbnail_url, m.media_waveform,
+			m.sticker_pack_id, m.sticker_id, m.created_at
 		FROM messages m
 		JOIN pinned_messages pm ON m.id = pm.message_id AND pm.chat_id = ?
 		WHERE m.is_deleted = FALSE
@@ -521,12 +623,19 @@ func (s *MessagesStore) ListPinned(ctx context.Context, chatID string) ([]*messa
 	for rows.Next() {
 		m := &messages.Message{}
 		var content, contentHTML, replyToID, forwardFromID, forwardFromChatID, forwardFromSenderName sql.NullString
+		var mediaID, mediaURL, mediaType, mediaContentType, mediaFilename, mediaThumbnailURL, mediaWaveform sql.NullString
+		var stickerPackID, stickerID sql.NullString
+		var mediaSize sql.NullInt64
+		var mediaWidth, mediaHeight, mediaDuration sql.NullInt64
 		var editedAt, deletedAt, expiresAt sql.NullTime
 		if err := rows.Scan(
 			&m.ID, &m.ChatID, &m.SenderID, &m.Type, &content, &contentHTML, &replyToID,
 			&forwardFromID, &forwardFromChatID, &forwardFromSenderName, &m.IsForwarded,
 			&m.IsEdited, &editedAt, &m.IsDeleted, &deletedAt, &m.DeletedForEveryone,
-			&expiresAt, &m.MentionEveryone, &m.CreatedAt,
+			&expiresAt, &m.MentionEveryone,
+			&mediaID, &mediaURL, &mediaType, &mediaContentType, &mediaFilename,
+			&mediaSize, &mediaWidth, &mediaHeight, &mediaDuration, &mediaThumbnailURL, &mediaWaveform,
+			&stickerPackID, &stickerID, &m.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -536,6 +645,19 @@ func (s *MessagesStore) ListPinned(ctx context.Context, chatID string) ([]*messa
 		m.ForwardFromID = forwardFromID.String
 		m.ForwardFromChatID = forwardFromChatID.String
 		m.ForwardFromSenderName = forwardFromSenderName.String
+		m.MediaID = mediaID.String
+		m.MediaURL = mediaURL.String
+		m.MediaType = mediaType.String
+		m.MediaContentType = mediaContentType.String
+		m.MediaFilename = mediaFilename.String
+		m.MediaSize = mediaSize.Int64
+		m.MediaWidth = int(mediaWidth.Int64)
+		m.MediaHeight = int(mediaHeight.Int64)
+		m.MediaDuration = int(mediaDuration.Int64)
+		m.MediaThumbnailURL = mediaThumbnailURL.String
+		m.MediaWaveform = mediaWaveform.String
+		m.StickerPackID = stickerPackID.String
+		m.StickerID = stickerID.String
 		if editedAt.Valid {
 			m.EditedAt = &editedAt.Time
 		}

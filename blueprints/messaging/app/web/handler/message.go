@@ -73,16 +73,49 @@ func (h *Message) Create(c *mizu.Ctx) error {
 	}
 	in.ChatID = chatID
 
-	// Validate and sanitize message content
-	if strings.TrimSpace(in.Content) == "" {
+	// Determine if this is a media/sticker message
+	isMediaMessage := in.MediaID != "" || in.MediaURL != ""
+	isStickerMessage := in.StickerPackID != "" && in.StickerID != ""
+	isTextMessage := !isMediaMessage && !isStickerMessage
+
+	// Validate content - only required for text messages
+	if isTextMessage && strings.TrimSpace(in.Content) == "" {
 		return BadRequest(c, "Message content cannot be empty")
 	}
 
-	content, err := sanitize.MessageContent(in.Content)
-	if err != nil {
-		return BadRequest(c, err.Error())
+	// Sanitize content if present
+	if in.Content != "" {
+		content, err := sanitize.MessageContent(in.Content)
+		if err != nil {
+			return BadRequest(c, err.Error())
+		}
+		in.Content = content
 	}
-	in.Content = content
+
+	// Set default type based on content
+	if in.Type == "" {
+		if isStickerMessage {
+			in.Type = messages.TypeSticker
+		} else if isMediaMessage {
+			// Determine type from media_type
+			switch in.MediaType {
+			case "image":
+				in.Type = messages.TypeImage
+			case "video":
+				in.Type = messages.TypeVideo
+			case "audio":
+				in.Type = messages.TypeAudio
+			case "voice":
+				in.Type = messages.TypeVoice
+			case "document":
+				in.Type = messages.TypeDocument
+			default:
+				in.Type = messages.TypeImage // default for media
+			}
+		} else {
+			in.Type = messages.TypeText
+		}
+	}
 
 	msg, err := h.messages.Create(c.Request().Context(), userID, &in)
 	if err != nil {
