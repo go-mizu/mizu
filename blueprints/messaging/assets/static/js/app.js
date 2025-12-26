@@ -696,7 +696,7 @@ function toggleEmojiPicker(button, inputElement) {
     }, isRetro);
 
     // Find the closest positioned ancestor or use a wrapper with relative positioning
-    const container = button.closest('.relative') || button.closest('#message-input-wrapper') || button.closest('#aim-picker-wrapper') || button.closest('#ym-picker-wrapper') || button.closest('#msn-picker-wrapper') || button.parentElement;
+    const container = button.closest('.relative') || button.closest('#message-input-wrapper') || button.closest('#aim-picker-wrapper') || button.closest('#ym-picker-wrapper') || button.closest('#msn-picker-wrapper') || button.closest('#neural-picker-wrapper') || button.parentElement;
     if (!container.style.position) {
         container.style.position = 'relative';
     }
@@ -723,7 +723,7 @@ function toggleStickerPicker(button, onSendSticker) {
     }, isRetro);
 
     // Find the closest positioned ancestor or use a wrapper with relative positioning
-    const container = button.closest('.relative') || button.closest('#message-input-wrapper') || button.closest('#aim-picker-wrapper') || button.closest('#ym-picker-wrapper') || button.closest('#msn-picker-wrapper') || button.parentElement;
+    const container = button.closest('.relative') || button.closest('#message-input-wrapper') || button.closest('#aim-picker-wrapper') || button.closest('#ym-picker-wrapper') || button.closest('#msn-picker-wrapper') || button.closest('#neural-picker-wrapper') || button.parentElement;
     if (!container.style.position) {
         container.style.position = 'relative';
     }
@@ -750,6 +750,7 @@ document.addEventListener('click', (e) => {
         !e.target.closest('.ym-input-btn') &&
         !e.target.closest('.ym-emoticon-btn') &&
         !e.target.closest('.msn-emoticon-btn') &&
+        !e.target.closest('.neural-toolbar-btn') &&
         !e.target.closest('.message-action-btn')) {
         closeAllPickers();
     }

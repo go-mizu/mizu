@@ -786,6 +786,7 @@ h2 {
     transition: all var(--transition-fast);
     position: relative;
     border: 1px solid transparent;
+    overflow: hidden;
 }
 
 .neural-contact:hover {
@@ -1225,6 +1226,7 @@ h2 {
     display: flex;
     gap: 8px;
     margin-bottom: 12px;
+    position: relative;
 }
 
 .neural-toolbar-btn {
@@ -1310,6 +1312,8 @@ h2 {
     background: var(--btn-primary-bg);
     border: none;
     color: var(--void-black);
+    position: relative;
+    overflow: hidden;
 }
 
 .neural-btn-primary:hover {
@@ -1594,9 +1598,10 @@ h2 {
 }
 
 /* ============================================
-   EMOJI / STICKER PICKER
+   EMOJI / STICKER PICKER (JARVIS HOLOGRAPHIC STYLE)
    ============================================ */
-.neural-picker {
+.neural-picker,
+.picker-container {
     position: absolute;
     bottom: 100%;
     left: 0;
@@ -1604,79 +1609,228 @@ h2 {
     background: var(--glass-bg-solid);
     border: 1px solid var(--glass-border);
     border-radius: 12px;
-    box-shadow: var(--panel-shadow);
-    width: 320px;
-    max-height: 400px;
+    box-shadow: var(--panel-shadow), 0 0 60px rgba(0, 212, 255, 0.15);
+    width: 340px;
+    max-height: 420px;
     overflow: hidden;
-    z-index: 100;
+    z-index: 1000;
+    animation: holoPickerAppear 0.3s ease-out;
 }
 
-.neural-picker-header {
+@keyframes holoPickerAppear {
+    0% { opacity: 0; transform: translateY(10px) scale(0.95); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Holographic top edge */
+.picker-container::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 10%;
+    right: 10%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--holo-cyan), transparent);
+    z-index: 10;
+}
+
+/* Corner accents */
+.picker-container::after {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    width: 16px;
+    height: 16px;
+    border-left: 2px solid var(--holo-cyan);
+    border-top: 2px solid var(--holo-cyan);
+    opacity: 0.6;
+    animation: cornerPulse 3s ease-in-out infinite;
+}
+
+.neural-picker-header,
+.picker-header {
     padding: 12px 16px;
     border-bottom: 1px solid var(--glass-border);
     display: flex;
     gap: 8px;
+    background: linear-gradient(180deg, rgba(0, 212, 255, 0.08) 0%, transparent 100%);
 }
 
-.neural-picker-tab {
+.picker-search {
+    width: 100%;
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    color: var(--text-primary);
+    font-size: 13px;
+    letter-spacing: 0.03em;
+    transition: all var(--transition-fast);
+}
+
+.picker-search::placeholder {
+    color: var(--input-placeholder);
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+}
+
+.picker-search:focus {
+    outline: none;
+    border-color: var(--input-focus);
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.2);
+}
+
+.picker-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--glass-border);
+    background: rgba(0, 0, 0, 0.2);
+    overflow-x: auto;
+}
+
+.picker-tabs::-webkit-scrollbar {
+    height: 2px;
+}
+
+.neural-picker-tab,
+.picker-tab {
     padding: 6px 12px;
     border-radius: 4px;
     background: transparent;
     border: 1px solid var(--glass-border);
     color: var(--text-secondary);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
+    font-size: 16px;
     cursor: pointer;
     transition: all var(--transition-fast);
+    flex-shrink: 0;
 }
 
 .neural-picker-tab:hover,
-.neural-picker-tab.active {
-    background: rgba(0, 212, 255, 0.1);
+.neural-picker-tab.active,
+.picker-tab:hover,
+.picker-tab.active {
+    background: rgba(0, 212, 255, 0.15);
     border-color: var(--holo-cyan);
     color: var(--holo-cyan);
+    box-shadow: 0 0 15px rgba(0, 212, 255, 0.3);
 }
 
-.neural-picker-body {
+.neural-picker-body,
+.picker-content {
     padding: 12px;
-    max-height: 300px;
+    max-height: 280px;
     overflow-y: auto;
 }
 
-.neural-picker-grid {
+.emoji-category-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--holo-cyan);
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+}
+
+.neural-picker-grid,
+.emoji-grid {
     display: grid;
     grid-template-columns: repeat(8, 1fr);
     gap: 4px;
+    margin-bottom: 12px;
 }
 
-.neural-picker-item {
+.neural-picker-item,
+.emoji-item {
     width: 100%;
     aspect-ratio: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 20px;
+    font-size: 22px;
     border-radius: 6px;
     cursor: pointer;
     transition: all var(--transition-fast);
     border: 1px solid transparent;
+    background: transparent;
 }
 
-.neural-picker-item:hover {
-    background: rgba(0, 212, 255, 0.1);
-    border-color: var(--glass-border);
-    transform: scale(1.1);
+.neural-picker-item:hover,
+.emoji-item:hover {
+    background: rgba(0, 212, 255, 0.15);
+    border-color: var(--holo-cyan);
+    transform: scale(1.2);
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.4);
 }
 
-/* Sticker Grid */
+/* Sticker Picker */
+.sticker-picker {
+    width: 360px;
+}
+
+.sticker-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    padding: 12px;
+    max-height: 280px;
+    overflow-y: auto;
+}
+
+.sticker-pack-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--glass-border);
+    background: rgba(0, 0, 0, 0.3);
+    overflow-x: auto;
+}
+
+.sticker-pack-tab {
+    width: 36px;
+    height: 36px;
+    padding: 4px;
+    border-radius: 6px;
+    background: transparent;
+    border: 1px solid var(--glass-border);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sticker-pack-tab svg {
+    width: 24px;
+    height: 24px;
+    fill: var(--text-secondary);
+}
+
+.sticker-pack-tab:hover,
+.sticker-pack-tab.active {
+    background: rgba(0, 212, 255, 0.15);
+    border-color: var(--holo-cyan);
+    box-shadow: 0 0 15px rgba(0, 212, 255, 0.3);
+}
+
+.sticker-pack-tab.active svg,
+.sticker-pack-tab:hover svg {
+    fill: var(--holo-cyan);
+}
+
+/* Neural Sticker Grid */
 .neural-sticker-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 8px;
 }
 
-.neural-sticker-item {
+.neural-sticker-item,
+.sticker-item {
     aspect-ratio: 1;
     padding: 8px;
     border-radius: 8px;
@@ -1684,18 +1838,137 @@ h2 {
     transition: all var(--transition-fast);
     border: 1px solid var(--glass-border);
     background: var(--void-elevated);
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.neural-sticker-item:hover {
+.neural-sticker-item:hover,
+.sticker-item:hover {
     border-color: var(--holo-cyan);
     box-shadow: var(--glow-cyan);
-    transform: scale(1.05);
+    transform: scale(1.08);
+    background: rgba(0, 212, 255, 0.1);
 }
 
-.neural-sticker-item img {
+.neural-sticker-item img,
+.sticker-item img {
     width: 100%;
     height: 100%;
     object-fit: contain;
+}
+
+.sticker-item svg {
+    width: 100%;
+    height: 100%;
+}
+
+/* Sticker Message */
+.message-sticker {
+    max-width: 150px;
+    padding: 8px;
+}
+
+.message-sticker svg {
+    width: 100%;
+    height: auto;
+    max-height: 150px;
+    filter: drop-shadow(0 0 10px rgba(0, 212, 255, 0.3));
+}
+
+/* Sticker Lightbox */
+.sticker-lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(5, 5, 8, 0.95);
+    backdrop-filter: blur(20px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.sticker-lightbox-content {
+    text-align: center;
+    animation: scaleIn 0.3s ease-out;
+}
+
+@keyframes scaleIn {
+    from { transform: scale(0.8); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+.sticker-lightbox-sticker svg {
+    width: 200px;
+    height: 200px;
+    filter: drop-shadow(0 0 30px rgba(0, 212, 255, 0.5));
+}
+
+.sticker-lightbox-name {
+    margin-top: 20px;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: 0.1em;
+}
+
+.sticker-lightbox-pack {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--holo-cyan);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+}
+
+/* Reaction Picker */
+.reaction-picker {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 8px;
+    display: flex;
+    gap: 4px;
+    padding: 8px 12px;
+    background: var(--glass-bg-solid);
+    border: 1px solid var(--glass-border);
+    border-radius: 24px;
+    box-shadow: var(--panel-shadow);
+    z-index: 1000;
+    animation: holoPickerAppear 0.2s ease-out;
+}
+
+.reaction-picker .emoji-item {
+    width: 32px;
+    height: 32px;
+    font-size: 18px;
+    border-radius: 50%;
+}
+
+.reaction-picker .more-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: transparent;
+    border: 1px solid var(--glass-border);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 16px;
+    transition: all var(--transition-fast);
+}
+
+.reaction-picker .more-btn:hover {
+    background: rgba(0, 212, 255, 0.15);
+    border-color: var(--holo-cyan);
+    color: var(--holo-cyan);
 }
 
 /* ============================================
@@ -2546,20 +2819,415 @@ h2 {
 }
 
 /* Media Messages */
-.neural-media-message {
+.neural-media-message,
+.neural-media {
     max-width: 300px;
     border-radius: 8px;
     overflow: hidden;
 }
 
 .neural-media-message img,
-.neural-media-message video {
+.neural-media-message video,
+.neural-media img,
+.neural-media video {
     width: 100%;
     display: block;
+    cursor: pointer;
 }
 
-.neural-media-message audio {
+.neural-media-message audio,
+.neural-media audio {
     width: 100%;
+}
+
+.neural-image {
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    position: relative;
+}
+
+.neural-image::after {
+    content: "IMAGE SCAN COMPLETE";
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    font-size: 8px;
+    color: var(--holo-cyan);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.neural-image:hover::after {
+    opacity: 0.7;
+}
+
+.neural-video video {
+    background: #000;
+    border: 1px solid rgba(0, 212, 255, 0.3);
+}
+
+/* ============================================
+   JARVIS HOLOGRAPHIC AUDIO PLAYER
+   ============================================ */
+.neural-audio {
+    position: relative;
+}
+
+/* Hide default audio controls for custom player */
+.neural-audio audio {
+    display: none;
+}
+
+/* Custom Jarvis Audio Player */
+.jarvis-audio-player {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, rgba(0, 102, 255, 0.15) 0%, rgba(0, 212, 255, 0.1) 100%);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    border-radius: 12px;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Scan line effect */
+.jarvis-audio-player::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--holo-cyan), transparent);
+    animation: audioScanLine 3s linear infinite;
+}
+
+@keyframes audioScanLine {
+    0% { left: -100%; }
+    100% { left: 100%; }
+}
+
+/* Play/Pause Button */
+.jarvis-audio-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--holo-cyan) 0%, var(--holo-blue) 100%);
+    border: none;
+    color: var(--void-black);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.jarvis-audio-btn::before {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    border-top-color: var(--holo-cyan);
+    animation: rotateRing 2s linear infinite;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.jarvis-audio-btn:hover::before,
+.jarvis-audio-btn.playing::before {
+    opacity: 1;
+}
+
+.jarvis-audio-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 30px rgba(0, 212, 255, 0.6);
+}
+
+.jarvis-audio-btn svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+}
+
+/* Waveform Visualization */
+.jarvis-audio-waveform {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.jarvis-waveform-bars {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    height: 32px;
+    gap: 2px;
+}
+
+.jarvis-waveform-bar {
+    flex: 1;
+    background: linear-gradient(to top, var(--holo-cyan), var(--holo-blue));
+    border-radius: 2px;
+    min-width: 3px;
+    max-width: 6px;
+    transition: height 0.1s ease;
+    opacity: 0.4;
+}
+
+.jarvis-waveform-bar.active {
+    opacity: 1;
+    box-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+}
+
+.jarvis-waveform-bar.played {
+    opacity: 0.8;
+}
+
+/* Progress Track */
+.jarvis-audio-progress {
+    width: 100%;
+    height: 4px;
+    background: rgba(0, 212, 255, 0.2);
+    border-radius: 2px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+}
+
+.jarvis-audio-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--holo-cyan), var(--holo-teal));
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.1s linear;
+    position: relative;
+}
+
+.jarvis-audio-progress-fill::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 10px;
+    height: 10px;
+    background: var(--holo-cyan);
+    border-radius: 50%;
+    box-shadow: 0 0 10px var(--holo-cyan);
+}
+
+/* Time Display */
+.jarvis-audio-time {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 11px;
+    color: var(--holo-cyan);
+    letter-spacing: 0.05em;
+    display: flex;
+    justify-content: space-between;
+}
+
+.jarvis-audio-time span {
+    opacity: 0.8;
+}
+
+/* Audio Info */
+.jarvis-audio-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.jarvis-audio-label {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--text-muted);
+}
+
+.jarvis-audio-duration {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 12px;
+    color: var(--holo-cyan);
+}
+
+/* Voice Message Player (more compact) */
+.jarvis-voice-player {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: linear-gradient(135deg, rgba(255, 107, 53, 0.1) 0%, rgba(0, 212, 255, 0.08) 100%);
+    border: 1px solid rgba(255, 107, 53, 0.3);
+    border-radius: 20px;
+    min-width: 200px;
+    max-width: 280px;
+}
+
+.jarvis-voice-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--holo-orange) 0%, var(--holo-orange-dim) 100%);
+    border: none;
+    color: var(--void-black);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.jarvis-voice-btn:hover {
+    transform: scale(1.1);
+    box-shadow: 0 0 20px rgba(255, 107, 53, 0.5);
+}
+
+.jarvis-voice-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+}
+
+.jarvis-voice-wave {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 24px;
+}
+
+.jarvis-voice-wave-bar {
+    width: 3px;
+    background: var(--holo-orange);
+    border-radius: 2px;
+    transition: height 0.05s ease;
+}
+
+.jarvis-voice-wave-bar.active {
+    animation: voiceWave 0.8s ease-in-out infinite;
+}
+
+.jarvis-voice-duration {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 11px;
+    color: var(--holo-orange);
+    flex-shrink: 0;
+}
+
+/* Voice Recording UI */
+.jarvis-recording-ui {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, rgba(255, 68, 68, 0.1) 0%, rgba(255, 107, 53, 0.08) 100%);
+    border: 1px solid rgba(255, 68, 68, 0.4);
+    border-radius: 12px;
+    animation: recordingPulse 2s ease-in-out infinite;
+}
+
+@keyframes recordingPulse {
+    0%, 100% { border-color: rgba(255, 68, 68, 0.4); }
+    50% { border-color: rgba(255, 68, 68, 0.8); }
+}
+
+.jarvis-recording-indicator {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #FF4444;
+    animation: recordingBlink 1s ease-in-out infinite;
+    box-shadow: 0 0 10px rgba(255, 68, 68, 0.5);
+}
+
+@keyframes recordingBlink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+.jarvis-recording-time {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 18px;
+    color: #FF4444;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+}
+
+.jarvis-recording-wave {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    height: 32px;
+}
+
+.jarvis-recording-wave span {
+    width: 4px;
+    background: linear-gradient(to top, #FF4444, var(--holo-orange));
+    border-radius: 2px;
+    animation: voiceWave 0.5s ease-in-out infinite;
+}
+
+.jarvis-recording-wave span:nth-child(1) { animation-delay: 0s; height: 30%; }
+.jarvis-recording-wave span:nth-child(2) { animation-delay: 0.05s; height: 50%; }
+.jarvis-recording-wave span:nth-child(3) { animation-delay: 0.1s; height: 80%; }
+.jarvis-recording-wave span:nth-child(4) { animation-delay: 0.15s; height: 100%; }
+.jarvis-recording-wave span:nth-child(5) { animation-delay: 0.2s; height: 80%; }
+.jarvis-recording-wave span:nth-child(6) { animation-delay: 0.25s; height: 50%; }
+.jarvis-recording-wave span:nth-child(7) { animation-delay: 0.3s; height: 30%; }
+
+.jarvis-recording-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.jarvis-record-cancel,
+.jarvis-record-send {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.jarvis-record-cancel {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-secondary);
+}
+
+.jarvis-record-cancel:hover {
+    background: rgba(255, 68, 68, 0.2);
+    color: #FF4444;
+}
+
+.jarvis-record-send {
+    background: linear-gradient(135deg, var(--holo-teal) 0%, var(--holo-cyan) 100%);
+    color: var(--void-black);
+}
+
+.jarvis-record-send:hover {
+    transform: scale(1.1);
+    box-shadow: 0 0 20px rgba(0, 255, 200, 0.5);
+}
+
+.jarvis-record-cancel svg,
+.jarvis-record-send svg {
+    width: 18px;
+    height: 18px;
 }
 
 /* File attachments */
@@ -2863,4 +3531,573 @@ h2 {
     .neural-input-area {
         display: none;
     }
+}
+
+/* ============================================
+   JARVIS HUD OVERLAY ELEMENTS
+   ============================================ */
+
+/* HUD Corner Frames */
+.jarvis-hud-frame {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9998;
+}
+
+.jarvis-hud-frame.top-left {
+    top: 20px;
+    left: 20px;
+    width: 80px;
+    height: 80px;
+    border-left: 2px solid var(--holo-cyan);
+    border-top: 2px solid var(--holo-cyan);
+    opacity: 0.4;
+}
+
+.jarvis-hud-frame.top-right {
+    top: 20px;
+    right: 20px;
+    width: 80px;
+    height: 80px;
+    border-right: 2px solid var(--holo-cyan);
+    border-top: 2px solid var(--holo-cyan);
+    opacity: 0.4;
+}
+
+.jarvis-hud-frame.bottom-left {
+    bottom: 20px;
+    left: 20px;
+    width: 80px;
+    height: 80px;
+    border-left: 2px solid var(--holo-cyan);
+    border-bottom: 2px solid var(--holo-cyan);
+    opacity: 0.4;
+}
+
+.jarvis-hud-frame.bottom-right {
+    bottom: 20px;
+    right: 20px;
+    width: 80px;
+    height: 80px;
+    border-right: 2px solid var(--holo-cyan);
+    border-bottom: 2px solid var(--holo-cyan);
+    opacity: 0.4;
+}
+
+/* Animated corner accents */
+.jarvis-hud-frame::before {
+    content: "";
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background: var(--holo-cyan);
+    animation: cornerGlow 2s ease-in-out infinite;
+}
+
+.jarvis-hud-frame.top-left::before { top: -4px; left: -4px; }
+.jarvis-hud-frame.top-right::before { top: -4px; right: -4px; }
+.jarvis-hud-frame.bottom-left::before { bottom: -4px; left: -4px; }
+.jarvis-hud-frame.bottom-right::before { bottom: -4px; right: -4px; }
+
+@keyframes cornerGlow {
+    0%, 100% { opacity: 0.5; box-shadow: 0 0 10px var(--holo-cyan); }
+    50% { opacity: 1; box-shadow: 0 0 20px var(--holo-cyan), 0 0 40px var(--holo-cyan); }
+}
+
+/* Holographic Data Readout */
+.jarvis-data-readout {
+    position: fixed;
+    top: 30px;
+    left: 110px;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 9px;
+    color: var(--holo-cyan);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    opacity: 0.5;
+    pointer-events: none;
+    z-index: 9998;
+}
+
+.jarvis-data-readout::before {
+    content: "SYS.ONLINE // ";
+    animation: dataReadoutBlink 4s steps(1) infinite;
+}
+
+@keyframes dataReadoutBlink {
+    0%, 49% { content: "SYS.ONLINE // "; }
+    50%, 100% { content: "J.A.R.V.I.S. ACTIVE // "; }
+}
+
+/* Hexagon Grid Background */
+.jarvis-hex-grid {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='49' viewBox='0 0 28 49'%3E%3Cg fill-rule='evenodd'%3E%3Cg fill='%2300d4ff' fill-opacity='1'%3E%3Cpath d='M13.99 9.25l13 7.5v15l-13 7.5L1 31.75v-15l12.99-7.5zM3 17.9v12.7l10.99 6.34 11-6.35V17.9l-11-6.34L3 17.9zM0 15l12.98-7.5V0h-2v6.35L0 12.69v2.3zm0 18.5L12.98 41v8h-2v-6.85L0 35.81v-2.3zM15 0v7.5L27.99 15H28v-2.31h-.01L17 6.35V0h-2zm0 49v-8l12.99-7.5H28v2.31h-.01L17 42.15V49h-2z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* Floating Particles Container */
+.jarvis-particles {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 1;
+    overflow: hidden;
+}
+
+/* Individual Particle */
+.jarvis-particle {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    background: var(--holo-cyan);
+    border-radius: 50%;
+    opacity: 0;
+    animation: particleFloat 15s linear infinite;
+}
+
+@keyframes particleFloat {
+    0% {
+        opacity: 0;
+        transform: translateY(100vh) translateX(0) scale(0);
+    }
+    10% {
+        opacity: 0.6;
+        transform: translateY(80vh) translateX(20px) scale(1);
+    }
+    90% {
+        opacity: 0.6;
+        transform: translateY(10vh) translateX(-20px) scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(0) translateX(0) scale(0);
+    }
+}
+
+/* Particle variations */
+.jarvis-particle:nth-child(1) { left: 10%; animation-delay: 0s; animation-duration: 12s; }
+.jarvis-particle:nth-child(2) { left: 20%; animation-delay: 2s; animation-duration: 14s; width: 3px; height: 3px; }
+.jarvis-particle:nth-child(3) { left: 30%; animation-delay: 4s; animation-duration: 16s; }
+.jarvis-particle:nth-child(4) { left: 40%; animation-delay: 1s; animation-duration: 13s; width: 2px; height: 2px; }
+.jarvis-particle:nth-child(5) { left: 50%; animation-delay: 3s; animation-duration: 15s; }
+.jarvis-particle:nth-child(6) { left: 60%; animation-delay: 5s; animation-duration: 11s; width: 3px; height: 3px; }
+.jarvis-particle:nth-child(7) { left: 70%; animation-delay: 2s; animation-duration: 17s; }
+.jarvis-particle:nth-child(8) { left: 80%; animation-delay: 4s; animation-duration: 12s; width: 2px; height: 2px; }
+.jarvis-particle:nth-child(9) { left: 90%; animation-delay: 0s; animation-duration: 14s; }
+.jarvis-particle:nth-child(10) { left: 5%; animation-delay: 6s; animation-duration: 16s; width: 5px; height: 5px; background: var(--holo-teal); }
+
+/* Orbital Ring Animation around Arc Reactor */
+.jarvis-orbital {
+    position: absolute;
+    border: 1px solid var(--holo-cyan);
+    border-radius: 50%;
+    opacity: 0.3;
+    pointer-events: none;
+}
+
+.jarvis-orbital.ring-1 {
+    width: 140px;
+    height: 140px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotateX(70deg);
+    animation: orbitalRing 8s linear infinite;
+}
+
+.jarvis-orbital.ring-2 {
+    width: 160px;
+    height: 160px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotateX(70deg) rotateZ(60deg);
+    animation: orbitalRing 12s linear infinite reverse;
+}
+
+.jarvis-orbital.ring-3 {
+    width: 180px;
+    height: 180px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotateX(70deg) rotateZ(120deg);
+    animation: orbitalRing 10s linear infinite;
+    border-style: dashed;
+}
+
+/* Neural Network Lines (between contacts) */
+.jarvis-neural-line {
+    position: absolute;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--holo-cyan), transparent);
+    opacity: 0.2;
+    transform-origin: left center;
+    pointer-events: none;
+}
+
+/* System Status Bar Enhancement */
+.jarvis-system-status {
+    position: fixed;
+    bottom: 30px;
+    right: 110px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 9px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    pointer-events: none;
+    z-index: 9998;
+}
+
+.jarvis-status-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.jarvis-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--holo-teal);
+    animation: statusPulse 2s ease-in-out infinite;
+}
+
+.jarvis-status-dot.warning {
+    background: var(--holo-yellow);
+}
+
+.jarvis-status-dot.error {
+    background: var(--holo-orange);
+}
+
+/* Arc Reactor Enhancement for Empty State */
+.neural-empty-icon.jarvis-arc-reactor {
+    position: relative;
+}
+
+.neural-empty-icon.jarvis-arc-reactor::before {
+    content: "";
+    position: absolute;
+    inset: -20px;
+    border: 2px solid var(--holo-cyan);
+    border-radius: 50%;
+    opacity: 0.3;
+    animation: orbitalRing 6s linear infinite;
+}
+
+.neural-empty-icon.jarvis-arc-reactor::after {
+    content: "";
+    position: absolute;
+    inset: -35px;
+    border: 1px dashed var(--holo-cyan);
+    border-radius: 50%;
+    opacity: 0.2;
+    animation: orbitalRing 10s linear infinite reverse;
+}
+
+/* Data Stream Effect (vertical lines) */
+.jarvis-data-stream {
+    position: fixed;
+    width: 1px;
+    height: 100px;
+    background: linear-gradient(to bottom, transparent, var(--holo-cyan), transparent);
+    opacity: 0.15;
+    pointer-events: none;
+    z-index: 0;
+    animation: dataStreamFlow 8s linear infinite;
+}
+
+@keyframes dataStreamFlow {
+    0% { transform: translateY(-100px); opacity: 0; }
+    10% { opacity: 0.15; }
+    90% { opacity: 0.15; }
+    100% { transform: translateY(100vh); opacity: 0; }
+}
+
+.jarvis-data-stream:nth-child(1) { left: 15%; animation-delay: 0s; }
+.jarvis-data-stream:nth-child(2) { left: 35%; animation-delay: 2s; height: 80px; }
+.jarvis-data-stream:nth-child(3) { left: 55%; animation-delay: 4s; height: 120px; }
+.jarvis-data-stream:nth-child(4) { left: 75%; animation-delay: 1s; }
+.jarvis-data-stream:nth-child(5) { left: 95%; animation-delay: 3s; height: 60px; }
+
+/* Holographic Ripple Effect on Click */
+.jarvis-ripple {
+    position: absolute;
+    border-radius: 50%;
+    border: 2px solid var(--holo-cyan);
+    pointer-events: none;
+    animation: rippleEffect 0.6s ease-out forwards;
+}
+
+@keyframes rippleEffect {
+    0% {
+        width: 0;
+        height: 0;
+        opacity: 1;
+    }
+    100% {
+        width: 150px;
+        height: 150px;
+        margin-left: -75px;
+        margin-top: -75px;
+        opacity: 0;
+    }
+}
+
+/* AI Voice Indicator (when AI is speaking) */
+.jarvis-voice-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, rgba(0, 102, 255, 0.08) 100%);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    border-radius: 20px;
+    font-size: 11px;
+    color: var(--holo-cyan);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+.jarvis-voice-indicator-waves {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 16px;
+}
+
+.jarvis-voice-indicator-waves span {
+    width: 3px;
+    background: var(--holo-cyan);
+    border-radius: 2px;
+    animation: voiceWave 0.6s ease-in-out infinite;
+}
+
+.jarvis-voice-indicator-waves span:nth-child(1) { animation-delay: 0s; height: 40%; }
+.jarvis-voice-indicator-waves span:nth-child(2) { animation-delay: 0.1s; height: 80%; }
+.jarvis-voice-indicator-waves span:nth-child(3) { animation-delay: 0.2s; height: 100%; }
+.jarvis-voice-indicator-waves span:nth-child(4) { animation-delay: 0.3s; height: 80%; }
+.jarvis-voice-indicator-waves span:nth-child(5) { animation-delay: 0.4s; height: 40%; }
+
+/* Targeting Reticle Animation */
+.jarvis-target-reticle {
+    position: absolute;
+    width: 60px;
+    height: 60px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.jarvis-target-reticle.active {
+    opacity: 0.6;
+}
+
+.jarvis-target-reticle::before,
+.jarvis-target-reticle::after {
+    content: "";
+    position: absolute;
+    border: 2px solid var(--holo-cyan);
+    border-radius: 50%;
+}
+
+.jarvis-target-reticle::before {
+    inset: 0;
+    animation: targetSpin 3s linear infinite;
+    border-top-color: transparent;
+    border-bottom-color: transparent;
+}
+
+.jarvis-target-reticle::after {
+    inset: 10px;
+    animation: targetSpin 2s linear infinite reverse;
+    border-left-color: transparent;
+    border-right-color: transparent;
+}
+
+@keyframes targetSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Holographic Message Hover Effect */
+.neural-message:hover .neural-message-bubble {
+    box-shadow: 0 0 30px rgba(0, 212, 255, 0.2);
+}
+
+.neural-message.sent:hover .neural-message-bubble {
+    box-shadow: 0 0 30px rgba(0, 212, 255, 0.3);
+}
+
+/* Typing indicator enhancement */
+.jarvis-typing-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    color: var(--holo-cyan);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+.jarvis-typing-dots {
+    display: flex;
+    gap: 4px;
+}
+
+.jarvis-typing-dots span {
+    width: 6px;
+    height: 6px;
+    background: var(--holo-cyan);
+    border-radius: 50%;
+    animation: typingBounce 1.4s ease-in-out infinite;
+}
+
+.jarvis-typing-dots span:nth-child(1) { animation-delay: 0s; }
+.jarvis-typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.jarvis-typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typingBounce {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+    30% { transform: translateY(-8px); opacity: 1; }
+}
+
+/* Enhanced contact hover with scan effect */
+.neural-contact::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.1), transparent);
+    transition: left 0.3s ease;
+}
+
+.neural-contact:hover::before {
+    left: 100%;
+}
+
+/* Glitch text effect for status */
+.jarvis-glitch {
+    position: relative;
+}
+
+.jarvis-glitch::before,
+.jarvis-glitch::after {
+    content: attr(data-text);
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.jarvis-glitch::before {
+    animation: glitch-1 2s infinite linear alternate-reverse;
+    color: var(--holo-cyan);
+    z-index: -1;
+}
+
+.jarvis-glitch::after {
+    animation: glitch-2 3s infinite linear alternate-reverse;
+    color: var(--holo-magenta);
+    z-index: -2;
+}
+
+@keyframes glitch-1 {
+    0%, 90%, 100% { clip-path: inset(0 0 0 0); transform: translate(0); }
+    92% { clip-path: inset(50% 0 30% 0); transform: translate(-2px, 1px); }
+    94% { clip-path: inset(20% 0 60% 0); transform: translate(2px, -1px); }
+}
+
+@keyframes glitch-2 {
+    0%, 85%, 100% { clip-path: inset(0 0 0 0); transform: translate(0); }
+    88% { clip-path: inset(70% 0 10% 0); transform: translate(2px, 1px); }
+    91% { clip-path: inset(10% 0 70% 0); transform: translate(-2px, -1px); }
+}
+
+/* Power-up animation for buttons */
+.neural-btn-primary::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    transform: translateX(-100%);
+}
+
+.neural-btn-primary:hover::after {
+    animation: buttonPowerUp 0.5s ease-out forwards;
+}
+
+@keyframes buttonPowerUp {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(100%); }
+}
+
+/* Theme Switcher FAB Enhancement */
+#theme-switcher-fab {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(0, 102, 255, 0.1));
+    border: 2px solid var(--holo-cyan);
+    box-shadow: 0 0 30px rgba(0, 212, 255, 0.3), inset 0 0 20px rgba(0, 212, 255, 0.1);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--holo-cyan);
+    transition: all 0.3s ease;
+    z-index: 1000;
+}
+
+#theme-switcher-fab:hover {
+    transform: scale(1.1);
+    box-shadow: 0 0 50px rgba(0, 212, 255, 0.5), inset 0 0 30px rgba(0, 212, 255, 0.2);
+}
+
+#theme-switcher-fab::before {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border: 2px solid transparent;
+    border-top-color: var(--holo-cyan);
+    border-radius: 50%;
+    animation: rotateRing 3s linear infinite;
+    opacity: 0.5;
+}
+
+/* Boot sequence animation */
+@keyframes bootSequence {
+    0% { opacity: 0; transform: translateY(20px); }
+    100% { opacity: 1; transform: translateY(0); }
+}
+
+.neural-app {
+    animation: bootSequence 0.8s ease-out;
+}
+
+.neural-sidebar {
+    animation: bootSequence 0.8s ease-out 0.1s backwards;
+}
+
+.neural-main {
+    animation: bootSequence 0.8s ease-out 0.2s backwards;
 }
