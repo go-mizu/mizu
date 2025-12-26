@@ -2,6 +2,85 @@
 // Stickers are embedded as SVG data URIs for portability
 
 const STICKER_PACKS = {
+    jarvis: {
+        id: 'jarvis',
+        name: 'J.A.R.V.I.S.',
+        thumbnail: 'arc_reactor',
+        stickers: [
+            {
+                id: 'arc_reactor',
+                name: 'Arc Reactor',
+                tags: ['arc', 'reactor', 'power', 'stark', 'ironman'],
+                svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><radialGradient id="arcG" cx="50%" cy="50%" r="50%"><stop offset="0%" style="stop-color:#FFFFFF"/><stop offset="30%" style="stop-color:#00D4FF"/><stop offset="70%" style="stop-color:#0066FF"/><stop offset="100%" style="stop-color:#001133"/></radialGradient><filter id="glow"><feGaussianBlur stdDeviation="3" result="coloredBlur"/><feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><circle cx="60" cy="60" r="55" fill="#0a0a0f"/><circle cx="60" cy="60" r="48" fill="none" stroke="#00D4FF" stroke-width="2" opacity="0.3" filter="url(#glow)"/><circle cx="60" cy="60" r="40" fill="none" stroke="#00D4FF" stroke-width="2" opacity="0.5" filter="url(#glow)"/><circle cx="60" cy="60" r="32" fill="none" stroke="#00D4FF" stroke-width="3" opacity="0.7" filter="url(#glow)"/><circle cx="60" cy="60" r="20" fill="url(#arcG)" filter="url(#glow)"/><circle cx="60" cy="60" r="10" fill="#FFFFFF" filter="url(#glow)"/><path d="M60 15 L60 25 M60 95 L60 105 M15 60 L25 60 M95 60 L105 60" stroke="#00D4FF" stroke-width="2" opacity="0.5"/></svg>`
+            },
+            {
+                id: 'ai_brain',
+                name: 'AI Brain',
+                tags: ['ai', 'brain', 'neural', 'thinking', 'jarvis'],
+                svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><linearGradient id="brainG" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#00D4FF"/><stop offset="100%" style="stop-color:#0066FF"/></linearGradient></defs><circle cx="60" cy="60" r="55" fill="#0a0a0f"/><ellipse cx="60" cy="55" rx="35" ry="30" fill="none" stroke="url(#brainG)" stroke-width="2"/><path d="M35 45 Q45 35, 55 45 Q65 35, 75 45 Q85 55, 75 65 Q85 75, 75 80 Q65 90, 55 80 Q45 90, 35 80 Q25 75, 35 65 Q25 55, 35 45" fill="none" stroke="#00D4FF" stroke-width="2"/><circle cx="45" cy="50" r="3" fill="#00D4FF"/><circle cx="65" cy="50" r="3" fill="#00D4FF"/><circle cx="55" cy="65" r="3" fill="#00D4FF"/><line x1="45" y1="50" x2="55" y2="65" stroke="#00D4FF" stroke-width="1"/><line x1="65" y1="50" x2="55" y2="65" stroke="#00D4FF" stroke-width="1"/><line x1="45" y1="50" x2="65" y2="50" stroke="#00D4FF" stroke-width="1"/><text x="60" y="100" text-anchor="middle" fill="#00D4FF" font-size="10" font-family="monospace">NEURAL</text></svg>`
+            },
+            {
+                id: 'hologram',
+                name: 'Hologram',
+                tags: ['holo', 'hologram', 'projection', 'future'],
+                svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><linearGradient id="holoG" x1="0%" y1="100%" x2="0%" y2="0%"><stop offset="0%" style="stop-color:#00D4FF;stop-opacity:0.1"/><stop offset="100%" style="stop-color:#00D4FF;stop-opacity:0.8"/></linearGradient></defs><rect width="120" height="120" fill="#0a0a0f"/><ellipse cx="60" cy="100" rx="40" ry="10" fill="#00D4FF" opacity="0.3"/><path d="M30 100 L50 30 L70 30 L90 100 Z" fill="url(#holoG)"/><circle cx="60" cy="50" r="15" fill="none" stroke="#00D4FF" stroke-width="2"/><circle cx="60" cy="50" r="10" fill="none" stroke="#00D4FF" stroke-width="1" opacity="0.5"/><circle cx="60" cy="50" r="5" fill="#00D4FF"/><line x1="45" y1="50" x2="75" y2="50" stroke="#00D4FF" stroke-width="1" opacity="0.5"/><line x1="60" y1="35" x2="60" y2="65" stroke="#00D4FF" stroke-width="1" opacity="0.5"/></svg>`
+            },
+            {
+                id: 'shield',
+                name: 'Shield Active',
+                tags: ['shield', 'protection', 'security', 'defense'],
+                svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><linearGradient id="shieldG" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" style="stop-color:#00D4FF"/><stop offset="100%" style="stop-color:#0044AA"/></linearGradient></defs><circle cx="60" cy="60" r="55" fill="#0a0a0f"/><path d="M60 15 L95 30 L95 60 Q95 90 60 105 Q25 90 25 60 L25 30 Z" fill="none" stroke="url(#shieldG)" stroke-width="3"/><path d="M60 25 L85 38 L85 58 Q85 82 60 95 Q35 82 35 58 L35 38 Z" fill="url(#shieldG)" opacity="0.3"/><path d="M50 55 L55 65 L75 45" stroke="#FFFFFF" stroke-width="4" fill="none" stroke-linecap="round"/><text x="60" y="115" text-anchor="middle" fill="#00D4FF" font-size="8" font-family="monospace">SECURE</text></svg>`
+            },
+            {
+                id: 'scan',
+                name: 'Scanning',
+                tags: ['scan', 'search', 'analyze', 'detect'],
+                svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><circle cx="60" cy="60" r="55" fill="#0a0a0f"/><circle cx="60" cy="60" r="40" fill="none" stroke="#00D4FF" stroke-width="1" opacity="0.3"/><circle cx="60" cy="60" r="30" fill="none" stroke="#00D4FF" stroke-width="1" opacity="0.5"/><circle cx="60" cy="60" r="20" fill="none" stroke="#00D4FF" stroke-width="1" opacity="0.7"/><circle cx="60" cy="60" r="10" fill="none" stroke="#00D4FF" stroke-width="2"/><line x1="60" y1="20" x2="60" y2="100" stroke="#00D4FF" stroke-width="1" opacity="0.3"/><line x1="20" y1="60" x2="100" y2="60" stroke="#00D4FF" stroke-width="1" opacity="0.3"/><path d="M60 20 L60 60" stroke="#00FF00" stroke-width="2"><animateTransform attributeName="transform" type="rotate" from="0 60 60" to="360 60 60" dur="2s" repeatCount="indefinite"/></path><circle cx="60" cy="60" r="5" fill="#00FF00"/></svg>`
+            },
+            {
+                id: 'power_up',
+                name: 'Power Up',
+                tags: ['power', 'energy', 'boost', 'charge'],
+                svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><linearGradient id="powerG" x1="0%" y1="100%" x2="0%" y2="0%"><stop offset="0%" style="stop-color:#FF6B00"/><stop offset="50%" style="stop-color:#FFD700"/><stop offset="100%" style="stop-color:#00D4FF"/></linearGradient></defs><circle cx="60" cy="60" r="55" fill="#0a0a0f"/><polygon points="60,15 75,50 65,50 70,75 50,45 60,45 55,20" fill="url(#powerG)"/><circle cx="60" cy="85" r="15" fill="none" stroke="#00D4FF" stroke-width="2"/><text x="60" y="90" text-anchor="middle" fill="#00D4FF" font-size="12" font-weight="bold">100%</text></svg>`
+            },
+            {
+                id: 'approved',
+                name: 'Approved',
+                tags: ['approved', 'yes', 'confirm', 'ok'],
+                svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><circle cx="60" cy="60" r="55" fill="#0a0a0f"/><circle cx="60" cy="60" r="45" fill="none" stroke="#00FF88" stroke-width="3"/><path d="M35 60 L52 77 L85 44" stroke="#00FF88" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><text x="60" y="105" text-anchor="middle" fill="#00FF88" font-size="10" font-family="monospace">APPROVED</text></svg>`
+            },
+            {
+                id: 'denied',
+                name: 'Denied',
+                tags: ['denied', 'no', 'reject', 'error'],
+                svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><circle cx="60" cy="60" r="55" fill="#0a0a0f"/><circle cx="60" cy="60" r="45" fill="none" stroke="#FF4444" stroke-width="3"/><line x1="35" y1="35" x2="85" y2="85" stroke="#FF4444" stroke-width="6" stroke-linecap="round"/><line x1="85" y1="35" x2="35" y2="85" stroke="#FF4444" stroke-width="6" stroke-linecap="round"/><text x="60" y="105" text-anchor="middle" fill="#FF4444" font-size="10" font-family="monospace">DENIED</text></svg>`
+            },
+            {
+                id: 'loading_ai',
+                name: 'Processing',
+                tags: ['loading', 'processing', 'wait', 'compute'],
+                svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><circle cx="60" cy="60" r="55" fill="#0a0a0f"/><circle cx="60" cy="60" r="35" fill="none" stroke="#00D4FF" stroke-width="4" stroke-dasharray="20 10" opacity="0.5"/><circle cx="60" cy="60" r="25" fill="none" stroke="#00D4FF" stroke-width="3" stroke-dasharray="15 8"/><circle cx="60" cy="60" r="15" fill="none" stroke="#00D4FF" stroke-width="2" stroke-dasharray="10 5" opacity="0.7"/><circle cx="60" cy="60" r="5" fill="#00D4FF"/><text x="60" y="105" text-anchor="middle" fill="#00D4FF" font-size="8" font-family="monospace">PROCESSING...</text></svg>`
+            },
+            {
+                id: 'satellite',
+                name: 'Satellite',
+                tags: ['satellite', 'signal', 'communication', 'space'],
+                svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><circle cx="60" cy="60" r="55" fill="#0a0a0f"/><ellipse cx="60" cy="55" rx="25" ry="8" fill="none" stroke="#00D4FF" stroke-width="1" transform="rotate(-30 60 55)"/><ellipse cx="60" cy="55" rx="25" ry="8" fill="none" stroke="#00D4FF" stroke-width="1" transform="rotate(30 60 55)"/><ellipse cx="60" cy="55" rx="25" ry="8" fill="none" stroke="#00D4FF" stroke-width="1" transform="rotate(90 60 55)"/><circle cx="60" cy="55" r="8" fill="#00D4FF"/><rect x="40" y="70" width="40" height="6" rx="2" fill="#0066FF"/><rect x="55" y="62" width="10" height="8" fill="#0066FF"/><path d="M30 90 Q45 75 60 80 Q75 75 90 90" stroke="#00D4FF" stroke-width="1" fill="none" stroke-dasharray="3 2"/></svg>`
+            },
+            {
+                id: 'voice_wave',
+                name: 'Voice Active',
+                tags: ['voice', 'sound', 'audio', 'speak', 'wave'],
+                svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="#0a0a0f"/><rect x="20" y="50" width="8" height="20" rx="2" fill="#00D4FF"/><rect x="35" y="35" width="8" height="50" rx="2" fill="#00D4FF"/><rect x="50" y="25" width="8" height="70" rx="2" fill="#00D4FF"/><rect x="65" y="40" width="8" height="40" rx="2" fill="#00D4FF"/><rect x="80" y="30" width="8" height="60" rx="2" fill="#00D4FF"/><rect x="95" y="45" width="8" height="30" rx="2" fill="#00D4FF"/><text x="60" y="110" text-anchor="middle" fill="#00D4FF" font-size="10" font-family="monospace">VOICE ACTIVE</text></svg>`
+            },
+            {
+                id: 'quantum',
+                name: 'Quantum',
+                tags: ['quantum', 'atom', 'science', 'physics'],
+                svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><circle cx="60" cy="60" r="55" fill="#0a0a0f"/><ellipse cx="60" cy="60" rx="40" ry="15" fill="none" stroke="#00D4FF" stroke-width="1.5"/><ellipse cx="60" cy="60" rx="40" ry="15" fill="none" stroke="#00D4FF" stroke-width="1.5" transform="rotate(60 60 60)"/><ellipse cx="60" cy="60" rx="40" ry="15" fill="none" stroke="#00D4FF" stroke-width="1.5" transform="rotate(-60 60 60)"/><circle cx="60" cy="60" r="8" fill="#00D4FF"/><circle cx="60" cy="20" r="4" fill="#FF6B00"/><circle cx="25" cy="80" r="4" fill="#00FF88"/><circle cx="95" cy="80" r="4" fill="#9966FF"/></svg>`
+            }
+        ]
+    },
     classic: {
         id: 'classic',
         name: 'Classic',

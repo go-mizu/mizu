@@ -1,5 +1,5 @@
-/* Future 3000 - Jarvis-Inspired Holographic UI Theme */
-/* Year 3000 Neural Interface - Advanced Human-AI Interaction */
+/* J.A.R.V.I.S. - Just A Rather Very Intelligent System */
+/* Advanced AI Interface Theme - Stark Industries Design Language */
 
 /* ============================================
    WEB FONTS - Futuristic Typography
@@ -169,6 +169,70 @@
 @keyframes hexHover {
     0%, 100% { transform: scale(1) rotate(0deg); }
     50% { transform: scale(1.05) rotate(3deg); }
+}
+
+/* J.A.R.V.I.S. Arc Reactor Pulse */
+@keyframes arcReactorPulse {
+    0%, 100% {
+        box-shadow: 0 0 20px rgba(0, 212, 255, 0.6),
+                    0 0 40px rgba(0, 212, 255, 0.4),
+                    0 0 60px rgba(0, 212, 255, 0.2),
+                    inset 0 0 20px rgba(0, 212, 255, 0.3);
+        transform: scale(1);
+    }
+    50% {
+        box-shadow: 0 0 30px rgba(0, 212, 255, 0.8),
+                    0 0 60px rgba(0, 212, 255, 0.5),
+                    0 0 90px rgba(0, 212, 255, 0.3),
+                    inset 0 0 30px rgba(0, 212, 255, 0.4);
+        transform: scale(1.02);
+    }
+}
+
+/* Holographic Scan Effect */
+@keyframes holoScan {
+    0% { top: -100%; opacity: 0; }
+    10% { opacity: 0.8; }
+    90% { opacity: 0.8; }
+    100% { top: 100%; opacity: 0; }
+}
+
+/* Neural Network Pulse */
+@keyframes neuralPulse {
+    0% { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: 100; }
+}
+
+/* AI Voice Wave */
+@keyframes voiceWave {
+    0%, 100% { transform: scaleY(0.3); }
+    50% { transform: scaleY(1); }
+}
+
+/* System Boot Animation */
+@keyframes systemBoot {
+    0% { opacity: 0; transform: translateY(10px); }
+    100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Orbital Ring */
+@keyframes orbitalRing {
+    from { transform: rotateX(60deg) rotateZ(0deg); }
+    to { transform: rotateX(60deg) rotateZ(360deg); }
+}
+
+/* Data Stream */
+@keyframes dataStream {
+    0% { transform: translateY(-100%); opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 1; }
+    100% { transform: translateY(100vh); opacity: 0; }
+}
+
+/* AI Thinking Animation */
+@keyframes aiThinking {
+    0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+    40% { opacity: 1; transform: scale(1); }
 }
 
 /* ============================================
@@ -2226,6 +2290,153 @@ h2 {
     font-size: 13px;
     color: var(--text-tertiary);
     max-width: 300px;
+}
+
+/* J.A.R.V.I.S. Arc Reactor Empty State */
+.neural-empty-icon.jarvis-arc-reactor {
+    width: 120px;
+    height: 120px;
+}
+
+.neural-empty-icon.jarvis-arc-reactor::before {
+    display: none;
+}
+
+.neural-empty-icon.jarvis-arc-reactor svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    animation: arcReactorPulse 3s ease-in-out infinite;
+    border-radius: 50%;
+}
+
+/* AI Avatar Styling */
+.neural-contact-avatar.ai-avatar {
+    position: relative;
+}
+
+.neural-contact-avatar.ai-avatar::before {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    background: conic-gradient(from 0deg, var(--holo-cyan), var(--holo-blue), var(--holo-teal), var(--holo-cyan));
+    animation: rotateRing 4s linear infinite;
+    opacity: 0.7;
+}
+
+.neural-contact-avatar.ai-avatar::after {
+    content: "AI";
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    font-size: 8px;
+    font-weight: 700;
+    background: var(--holo-cyan);
+    color: var(--void-black);
+    padding: 1px 3px;
+    border-radius: 3px;
+    z-index: 10;
+}
+
+/* Group Avatar Styling */
+.neural-contact-avatar.group-avatar {
+    position: relative;
+}
+
+.neural-contact-avatar.group-avatar::before {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border-radius: 50%;
+    border: 2px dashed var(--holo-orange);
+    animation: rotateRing 8s linear infinite reverse;
+    opacity: 0.5;
+}
+
+.neural-contact-avatar.group-avatar svg {
+    fill: var(--holo-orange);
+}
+
+/* Neural Loading Animation */
+.neural-loading {
+    width: 40px;
+    height: 40px;
+    margin: 0 auto;
+    position: relative;
+}
+
+.neural-loading::before,
+.neural-loading::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    border-top-color: var(--holo-cyan);
+    animation: rotateRing 1s linear infinite;
+}
+
+.neural-loading::after {
+    inset: 4px;
+    border-top-color: var(--holo-teal);
+    animation-direction: reverse;
+    animation-duration: 0.8s;
+}
+
+/* AI Thinking Dots */
+.ai-thinking-dots {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.ai-thinking-dots span {
+    width: 8px;
+    height: 8px;
+    background: var(--holo-cyan);
+    border-radius: 50%;
+    animation: aiThinking 1.4s infinite;
+}
+
+.ai-thinking-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.ai-thinking-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+/* Voice Wave Animation */
+.voice-wave-bars {
+    display: flex;
+    gap: 3px;
+    align-items: flex-end;
+    height: 24px;
+}
+
+.voice-wave-bars span {
+    width: 4px;
+    background: var(--holo-cyan);
+    border-radius: 2px;
+    animation: voiceWave 0.8s ease-in-out infinite;
+}
+
+.voice-wave-bars span:nth-child(1) { animation-delay: 0s; height: 60%; }
+.voice-wave-bars span:nth-child(2) { animation-delay: 0.1s; height: 100%; }
+.voice-wave-bars span:nth-child(3) { animation-delay: 0.2s; height: 40%; }
+.voice-wave-bars span:nth-child(4) { animation-delay: 0.3s; height: 80%; }
+.voice-wave-bars span:nth-child(5) { animation-delay: 0.4s; height: 50%; }
+
+/* Holographic Data Stream */
+.holo-data-stream {
+    position: fixed;
+    width: 1px;
+    background: linear-gradient(to bottom, transparent, var(--holo-cyan), transparent);
+    animation: dataStream 3s linear infinite;
+    pointer-events: none;
+    opacity: 0.3;
 }
 
 /* ============================================
