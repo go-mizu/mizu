@@ -36,12 +36,9 @@ func (s *Service) Create(ctx context.Context, userID string, in *CreateIn) (*Wor
 
 	now := time.Now()
 	workspace := &Workspace{
-		ID:          ulid.New(),
-		Slug:        in.Slug,
-		Name:        in.Name,
-		Description: in.Description,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:   ulid.New(),
+		Slug: in.Slug,
+		Name: in.Name,
 	}
 
 	if err := s.store.Create(ctx, workspace); err != nil {
@@ -50,7 +47,6 @@ func (s *Service) Create(ctx context.Context, userID string, in *CreateIn) (*Wor
 
 	// Add creator as owner
 	member := &Member{
-		ID:          ulid.New(),
 		WorkspaceID: workspace.ID,
 		UserID:      userID,
 		Role:        RoleOwner,
@@ -90,12 +86,11 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	return s.store.Delete(ctx, id)
 }
 
-func (s *Service) AddMember(ctx context.Context, workspaceID string, in *AddMemberIn) (*Member, error) {
+func (s *Service) AddMember(ctx context.Context, workspaceID, userID, role string) (*Member, error) {
 	member := &Member{
-		ID:          ulid.New(),
 		WorkspaceID: workspaceID,
-		UserID:      in.UserID,
-		Role:        in.Role,
+		UserID:      userID,
+		Role:        role,
 		JoinedAt:    time.Now(),
 	}
 
@@ -114,6 +109,6 @@ func (s *Service) ListMembers(ctx context.Context, workspaceID string) ([]*Membe
 	return s.store.ListMembers(ctx, workspaceID)
 }
 
-func (s *Service) RemoveMember(ctx context.Context, memberID string) error {
-	return s.store.RemoveMember(ctx, memberID)
+func (s *Service) RemoveMember(ctx context.Context, workspaceID, userID string) error {
+	return s.store.RemoveMember(ctx, workspaceID, userID)
 }

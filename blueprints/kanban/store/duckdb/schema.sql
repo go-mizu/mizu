@@ -1,202 +1,183 @@
--- Kanban Schema
--- A full-featured project management database schema
+-- schema.sql
+-- Minimal Kanban schema with one consistent vocabulary across all layers (UI/API/service/store/DB).
+-- Includes Cycles (planning periods) and a monday/GitHub-style Fields + Values system.
+--
+-- Core mental model (what users learn):
+--   Workspace → Team → Project (Board) → Columns → Cards
+-- Planning:
+--   Team → Cycles → Cards (optional attachment)
+-- Extensibility:
+--   Cards can have Fields, and each card stores Values for those fields.
 
--- Users table
+-- ============================================================
+-- Users and authentication
+-- ============================================================
+
 CREATE TABLE IF NOT EXISTS users (
-    id VARCHAR PRIMARY KEY,
-    email VARCHAR UNIQUE NOT NULL,
-    username VARCHAR UNIQUE NOT NULL,
-    display_name VARCHAR NOT NULL,
-    password_hash VARCHAR NOT NULL,
-    avatar_url VARCHAR,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id            VARCHAR PRIMARY KEY,
+    email         VARCHAR UNIQUE NOT NULL,
+    username      VARCHAR UNIQUE NOT NULL,
+    display_name  VARCHAR NOT NULL,
+    password_hash VARCHAR NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-
--- Sessions table
 CREATE TABLE IF NOT EXISTS sessions (
-    id VARCHAR PRIMARY KEY,
-    user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    id         VARCHAR PRIMARY KEY,
+    user_id    VARCHAR NOT NULL REFERENCES users(id),
     expires_at TIMESTAMP NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
+-- ============================================================
+-- Workspaces and membership
+-- ============================================================
 
--- Workspaces table
 CREATE TABLE IF NOT EXISTS workspaces (
-    id VARCHAR PRIMARY KEY,
+    id   VARCHAR PRIMARY KEY,
     slug VARCHAR UNIQUE NOT NULL,
-    name VARCHAR NOT NULL,
-    description VARCHAR,
-    avatar_url VARCHAR,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    name VARCHAR NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_workspaces_slug ON workspaces(slug);
-
--- Workspace members table
 CREATE TABLE IF NOT EXISTS workspace_members (
-    id VARCHAR PRIMARY KEY,
-    workspace_id VARCHAR NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-    user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    role VARCHAR NOT NULL DEFAULT 'member',
+    workspace_id VARCHAR NOT NULL REFERENCES workspaces(id),
+    user_id      VARCHAR NOT NULL REFERENCES users(id),
+    role         VARCHAR NOT NULL DEFAULT 'member',
+    joined_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (workspace_id, user_id)
+);
+
+-- ============================================================
+-- Teams
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS teams (
+    id           VARCHAR PRIMARY KEY,
+    workspace_id VARCHAR NOT NULL REFERENCES workspaces(id),
+    key          VARCHAR NOT NULL,
+    name         VARCHAR NOT NULL,
+    UNIQUE (workspace_id, key),
+    UNIQUE (workspace_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS team_members (
+    team_id   VARCHAR NOT NULL REFERENCES teams(id),
+    user_id   VARCHAR NOT NULL REFERENCES users(id),
+    role      VARCHAR NOT NULL DEFAULT 'member',
     joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(workspace_id, user_id)
+    PRIMARY KEY (team_id, user_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_workspace_members_workspace_id ON workspace_members(workspace_id);
-CREATE INDEX IF NOT EXISTS idx_workspace_members_user_id ON workspace_members(user_id);
+-- ============================================================
+-- Projects (Boards)
+-- ============================================================
 
--- Projects table
 CREATE TABLE IF NOT EXISTS projects (
-    id VARCHAR PRIMARY KEY,
-    workspace_id VARCHAR NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-    key VARCHAR NOT NULL,
-    name VARCHAR NOT NULL,
-    description VARCHAR,
-    color VARCHAR DEFAULT '#6366f1',
-    lead_id VARCHAR REFERENCES users(id) ON DELETE SET NULL,
-    status VARCHAR DEFAULT 'active',
-    issue_counter INTEGER DEFAULT 0,
-    start_date DATE,
-    target_date DATE,
+    id            VARCHAR PRIMARY KEY,
+    team_id       VARCHAR NOT NULL REFERENCES teams(id),
+    key           VARCHAR NOT NULL,
+    name          VARCHAR NOT NULL,
+    issue_counter INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (team_id, key)
+);
+
+-- ============================================================
+-- Columns (Kanban columns)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS columns (
+    id          VARCHAR PRIMARY KEY,
+    project_id  VARCHAR NOT NULL REFERENCES projects(id),
+    name        VARCHAR NOT NULL,
+    position    INTEGER NOT NULL DEFAULT 0,
+    is_default  BOOLEAN NOT NULL DEFAULT FALSE,
+    is_archived BOOLEAN NOT NULL DEFAULT FALSE,
+    UNIQUE (project_id, name)
+);
+
+-- ============================================================
+-- Cycles (planning periods)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS cycles (
+    id         VARCHAR PRIMARY KEY,
+    team_id    VARCHAR NOT NULL REFERENCES teams(id),
+    number     INTEGER NOT NULL,
+    name       VARCHAR NOT NULL,
+    status     VARCHAR NOT NULL DEFAULT 'planning',
+    start_date DATE NOT NULL,
+    end_date   DATE NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(workspace_id, key)
+    UNIQUE (team_id, number)
 );
 
-CREATE INDEX IF NOT EXISTS idx_projects_workspace_id ON projects(workspace_id);
-CREATE INDEX IF NOT EXISTS idx_projects_key ON projects(key);
+-- ============================================================
+-- Issues (Cards)
+-- ============================================================
 
--- Labels table
-CREATE TABLE IF NOT EXISTS labels (
-    id VARCHAR PRIMARY KEY,
-    project_id VARCHAR NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    name VARCHAR NOT NULL,
-    color VARCHAR NOT NULL,
-    description VARCHAR,
-    UNIQUE(project_id, name)
-);
-
-CREATE INDEX IF NOT EXISTS idx_labels_project_id ON labels(project_id);
-
--- Sprints table
-CREATE TABLE IF NOT EXISTS sprints (
-    id VARCHAR PRIMARY KEY,
-    project_id VARCHAR NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    name VARCHAR NOT NULL,
-    goal VARCHAR,
-    status VARCHAR DEFAULT 'planning',
-    start_date DATE,
-    end_date DATE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_sprints_project_id ON sprints(project_id);
-CREATE INDEX IF NOT EXISTS idx_sprints_status ON sprints(status);
-
--- Issues table
 CREATE TABLE IF NOT EXISTS issues (
-    id VARCHAR PRIMARY KEY,
-    project_id VARCHAR NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    number INTEGER NOT NULL,
-    key VARCHAR NOT NULL,
-    title VARCHAR NOT NULL,
-    description VARCHAR,
-    type VARCHAR DEFAULT 'task',
-    status VARCHAR DEFAULT 'backlog',
-    priority VARCHAR DEFAULT 'none',
-    parent_id VARCHAR REFERENCES issues(id) ON DELETE SET NULL,
-    creator_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    sprint_id VARCHAR REFERENCES sprints(id) ON DELETE SET NULL,
-    due_date DATE,
-    estimate INTEGER,
-    position INTEGER DEFAULT 0,
+    id         VARCHAR PRIMARY KEY,
+    project_id VARCHAR NOT NULL REFERENCES projects(id),
+    number     INTEGER NOT NULL,
+    key        VARCHAR NOT NULL,
+    title      VARCHAR NOT NULL,
+    column_id  VARCHAR NOT NULL REFERENCES columns(id),
+    position   INTEGER NOT NULL DEFAULT 0,
+    creator_id VARCHAR NOT NULL REFERENCES users(id),
+    cycle_id   VARCHAR REFERENCES cycles(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(project_id, number)
+    UNIQUE (project_id, number),
+    UNIQUE (project_id, key)
 );
 
-CREATE INDEX IF NOT EXISTS idx_issues_project_id ON issues(project_id);
-CREATE INDEX IF NOT EXISTS idx_issues_key ON issues(key);
-CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status);
-CREATE INDEX IF NOT EXISTS idx_issues_sprint_id ON issues(sprint_id);
-CREATE INDEX IF NOT EXISTS idx_issues_parent_id ON issues(parent_id);
-CREATE INDEX IF NOT EXISTS idx_issues_creator_id ON issues(creator_id);
-
--- Issue assignees junction table
 CREATE TABLE IF NOT EXISTS issue_assignees (
-    issue_id VARCHAR NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
-    user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    PRIMARY KEY(issue_id, user_id)
+    issue_id VARCHAR NOT NULL REFERENCES issues(id),
+    user_id  VARCHAR NOT NULL REFERENCES users(id),
+    PRIMARY KEY (issue_id, user_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_issue_assignees_user_id ON issue_assignees(user_id);
+-- ============================================================
+-- Comments (Discussion)
+-- ============================================================
 
--- Issue labels junction table
-CREATE TABLE IF NOT EXISTS issue_labels (
-    issue_id VARCHAR NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
-    label_id VARCHAR NOT NULL REFERENCES labels(id) ON DELETE CASCADE,
-    PRIMARY KEY(issue_id, label_id)
-);
-
--- Issue links table
-CREATE TABLE IF NOT EXISTS issue_links (
-    id VARCHAR PRIMARY KEY,
-    source_issue_id VARCHAR NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
-    target_issue_id VARCHAR NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
-    link_type VARCHAR NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_issue_links_source ON issue_links(source_issue_id);
-CREATE INDEX IF NOT EXISTS idx_issue_links_target ON issue_links(target_issue_id);
-
--- Comments table
 CREATE TABLE IF NOT EXISTS comments (
-    id VARCHAR PRIMARY KEY,
-    issue_id VARCHAR NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
-    author_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    content VARCHAR NOT NULL,
-    edited_at TIMESTAMP,
+    id         VARCHAR PRIMARY KEY,
+    issue_id   VARCHAR NOT NULL REFERENCES issues(id),
+    author_id  VARCHAR NOT NULL REFERENCES users(id),
+    content    VARCHAR NOT NULL,
+    edited_at  TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_comments_issue_id ON comments(issue_id);
-CREATE INDEX IF NOT EXISTS idx_comments_author_id ON comments(author_id);
+-- ============================================================
+-- Fields and Values (Custom columns)
+-- ============================================================
 
--- Activity log table
-CREATE TABLE IF NOT EXISTS activities (
-    id VARCHAR PRIMARY KEY,
-    issue_id VARCHAR NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
-    actor_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    action VARCHAR NOT NULL,
-    field VARCHAR,
-    old_value VARCHAR,
-    new_value VARCHAR,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS fields (
+    id            VARCHAR PRIMARY KEY,
+    project_id    VARCHAR NOT NULL REFERENCES projects(id),
+    key           VARCHAR NOT NULL,
+    name          VARCHAR NOT NULL,
+    kind          VARCHAR NOT NULL,
+    position      INTEGER NOT NULL DEFAULT 0,
+    is_required   BOOLEAN NOT NULL DEFAULT FALSE,
+    is_archived   BOOLEAN NOT NULL DEFAULT FALSE,
+    settings_json VARCHAR,
+    UNIQUE (project_id, key),
+    UNIQUE (project_id, name)
 );
 
-CREATE INDEX IF NOT EXISTS idx_activities_issue_id ON activities(issue_id);
-CREATE INDEX IF NOT EXISTS idx_activities_actor_id ON activities(actor_id);
-
--- Notifications table
-CREATE TABLE IF NOT EXISTS notifications (
-    id VARCHAR PRIMARY KEY,
-    user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    type VARCHAR NOT NULL,
-    issue_id VARCHAR REFERENCES issues(id) ON DELETE CASCADE,
-    actor_id VARCHAR REFERENCES users(id) ON DELETE SET NULL,
-    content VARCHAR NOT NULL,
-    read_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS field_values (
+    issue_id   VARCHAR NOT NULL REFERENCES issues(id),
+    field_id   VARCHAR NOT NULL REFERENCES fields(id),
+    value_text VARCHAR,
+    value_num  DOUBLE,
+    value_bool BOOLEAN,
+    value_date DATE,
+    value_ts   TIMESTAMP,
+    value_ref  VARCHAR,
+    value_json VARCHAR,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (issue_id, field_id)
 );
-
-CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
-CREATE INDEX IF NOT EXISTS idx_notifications_read_at ON notifications(read_at);

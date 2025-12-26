@@ -38,62 +38,24 @@ func (s *Service) Create(ctx context.Context, projectID, creatorID string, in *C
 		return nil, err
 	}
 
-	issueType := in.Type
-	if issueType == "" {
-		issueType = TypeTask
-	}
-
-	status := in.Status
-	if status == "" {
-		status = StatusBacklog
-	}
-
-	priority := in.Priority
-	if priority == "" {
-		priority = PriorityNone
-	}
-
 	now := time.Now()
 	issue := &Issue{
-		ID:          ulid.New(),
-		ProjectID:   projectID,
-		Number:      number,
-		Key:         fmt.Sprintf("%s-%d", project.Key, number),
-		Title:       in.Title,
-		Description: in.Description,
-		Type:        issueType,
-		Status:      status,
-		Priority:    priority,
-		ParentID:    in.ParentID,
-		CreatorID:   creatorID,
-		SprintID:    in.SprintID,
-		DueDate:     in.DueDate,
-		Estimate:    in.Estimate,
-		Position:    0,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:        ulid.New(),
+		ProjectID: projectID,
+		Number:    number,
+		Key:       fmt.Sprintf("%s-%d", project.Key, number),
+		Title:     in.Title,
+		ColumnID:  in.ColumnID,
+		CycleID:   in.CycleID,
+		CreatorID: creatorID,
+		Position:  0,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 
 	if err := s.store.Create(ctx, issue); err != nil {
 		return nil, err
 	}
-
-	// Add assignees
-	for _, userID := range in.AssigneeIDs {
-		if err := s.store.AddAssignee(ctx, issue.ID, userID); err != nil {
-			return nil, err
-		}
-	}
-
-	// Add labels
-	for _, labelID := range in.LabelIDs {
-		if err := s.store.AddLabel(ctx, issue.ID, labelID); err != nil {
-			return nil, err
-		}
-	}
-
-	issue.AssigneeIDs = in.AssigneeIDs
-	issue.LabelIDs = in.LabelIDs
 
 	return issue, nil
 }
@@ -106,11 +68,6 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Issue, error) {
 	if issue == nil {
 		return nil, ErrNotFound
 	}
-
-	// Load relations
-	issue.AssigneeIDs, _ = s.store.GetAssignees(ctx, id)
-	issue.LabelIDs, _ = s.store.GetLabels(ctx, id)
-
 	return issue, nil
 }
 
@@ -122,44 +79,19 @@ func (s *Service) GetByKey(ctx context.Context, key string) (*Issue, error) {
 	if issue == nil {
 		return nil, ErrNotFound
 	}
-
-	// Load relations
-	issue.AssigneeIDs, _ = s.store.GetAssignees(ctx, issue.ID)
-	issue.LabelIDs, _ = s.store.GetLabels(ctx, issue.ID)
-
 	return issue, nil
 }
 
-func (s *Service) ListByProject(ctx context.Context, projectID string, filter *Filter) ([]*Issue, error) {
-	issues, err := s.store.ListByProject(ctx, projectID, filter)
-	if err != nil {
-		return nil, err
-	}
-
-	// Load relations for each issue
-	for _, issue := range issues {
-		issue.AssigneeIDs, _ = s.store.GetAssignees(ctx, issue.ID)
-		issue.LabelIDs, _ = s.store.GetLabels(ctx, issue.ID)
-	}
-
-	return issues, nil
+func (s *Service) ListByProject(ctx context.Context, projectID string) ([]*Issue, error) {
+	return s.store.ListByProject(ctx, projectID)
 }
 
-func (s *Service) ListByStatus(ctx context.Context, projectID string) (map[string][]*Issue, error) {
-	result, err := s.store.ListByStatus(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
+func (s *Service) ListByColumn(ctx context.Context, columnID string) ([]*Issue, error) {
+	return s.store.ListByColumn(ctx, columnID)
+}
 
-	// Load relations for each issue
-	for _, issues := range result {
-		for _, issue := range issues {
-			issue.AssigneeIDs, _ = s.store.GetAssignees(ctx, issue.ID)
-			issue.LabelIDs, _ = s.store.GetLabels(ctx, issue.ID)
-		}
-	}
-
-	return result, nil
+func (s *Service) ListByCycle(ctx context.Context, cycleID string) ([]*Issue, error) {
+	return s.store.ListByCycle(ctx, cycleID)
 }
 
 func (s *Service) Update(ctx context.Context, id string, in *UpdateIn) (*Issue, error) {
@@ -169,31 +101,23 @@ func (s *Service) Update(ctx context.Context, id string, in *UpdateIn) (*Issue, 
 	return s.GetByID(ctx, id)
 }
 
-func (s *Service) Move(ctx context.Context, id string, in *MoveIn) (*Issue, error) {
-	if err := s.store.UpdatePosition(ctx, id, in.Status, in.Position); err != nil {
+func (s *Service) Move(ctx context.Context, id, columnID string, position int) (*Issue, error) {
+	if err := s.store.Move(ctx, id, columnID, position); err != nil {
 		return nil, err
 	}
 	return s.GetByID(ctx, id)
 }
 
+func (s *Service) AttachCycle(ctx context.Context, id, cycleID string) error {
+	return s.store.AttachCycle(ctx, id, cycleID)
+}
+
+func (s *Service) DetachCycle(ctx context.Context, id string) error {
+	return s.store.DetachCycle(ctx, id)
+}
+
 func (s *Service) Delete(ctx context.Context, id string) error {
 	return s.store.Delete(ctx, id)
-}
-
-func (s *Service) AddAssignee(ctx context.Context, issueID, userID string) error {
-	return s.store.AddAssignee(ctx, issueID, userID)
-}
-
-func (s *Service) RemoveAssignee(ctx context.Context, issueID, userID string) error {
-	return s.store.RemoveAssignee(ctx, issueID, userID)
-}
-
-func (s *Service) AddLabel(ctx context.Context, issueID, labelID string) error {
-	return s.store.AddLabel(ctx, issueID, labelID)
-}
-
-func (s *Service) RemoveLabel(ctx context.Context, issueID, labelID string) error {
-	return s.store.RemoveLabel(ctx, issueID, labelID)
 }
 
 func (s *Service) Search(ctx context.Context, projectID, query string, limit int) ([]*Issue, error) {
