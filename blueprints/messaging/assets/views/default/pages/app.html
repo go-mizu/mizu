@@ -140,7 +140,7 @@
                             rows="1"
                             placeholder="Type a message..."
                             class="w-full px-4 py-3 pr-20 bg-tertiary border border-default rounded-2xl text-primary placeholder-muted focus:outline-none focus:border-[#25D366] resize-none max-h-32"
-                            oninput="autoResize(this); sendTyping()"
+                            oninput="autoResize(this); sendTyping(); updateVoiceButtonVisibility()"
                             onkeydown="handleKeyDown(event)"
                         ></textarea>
                         <div class="absolute right-2 bottom-2 flex gap-1">
@@ -152,12 +152,21 @@
                             </button>
                         </div>
                     </div>
-                    <button type="submit" class="p-3 accent rounded-full text-white">
+                    <!-- Voice Record Button (shown when input is empty) -->
+                    <button type="button" id="voice-record-btn" class="voice-record-btn p-3 rounded-full text-secondary hover:text-primary hover:bg-hover" title="Record voice message" onclick="handleVoiceRecord()">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                        </svg>
+                    </button>
+                    <!-- Send Button (shown when input has text) -->
+                    <button type="submit" id="send-btn" class="p-3 accent rounded-full text-white hidden">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
                         </svg>
                     </button>
                 </form>
+                <!-- Voice Recording UI Container -->
+                <div id="voice-recording-container" class="hidden mt-3"></div>
             </div>
         </div>
     </main>
@@ -1509,8 +1518,26 @@ function renderMediaContent(msg) {
                     </video>
                 </div>
             `;
-        case 'audio':
         case 'voice':
+            // Use enhanced voice message renderer
+            if (window.MediaUpload?.renderVoiceMessage) {
+                const streamUrl = msg.media_url || `/api/v1/media/${msg.media_id}/stream`;
+                return window.MediaUpload.renderVoiceMessage(
+                    msg.media_id,
+                    streamUrl,
+                    msg.media_duration || 0,
+                    msg.media_waveform || '[]'
+                );
+            }
+            // Fallback to simple audio player
+            return `
+                <div class="message-media message-audio voice-message">
+                    <audio controls preload="metadata">
+                        <source src="${url}" type="${msg.media_content_type || 'audio/webm'}">
+                    </audio>
+                </div>
+            `;
+        case 'audio':
             return `
                 <div class="message-media message-audio">
                     <audio controls preload="metadata">
@@ -1556,7 +1583,125 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         initMediaDragDrop();
         initMediaClipboardPaste();
+        updateVoiceButtonVisibility();
     }, 100);
 });
+
+// =========================================
+// Voice Recording Features
+// =========================================
+
+let isRecordingVoice = false;
+
+// Update visibility of voice/send buttons based on input
+function updateVoiceButtonVisibility() {
+    const input = document.getElementById('message-input');
+    const voiceBtn = document.getElementById('voice-record-btn');
+    const sendBtn = document.getElementById('send-btn');
+
+    if (!input || !voiceBtn || !sendBtn) return;
+
+    const hasText = input.value.trim().length > 0;
+
+    if (hasText) {
+        voiceBtn.classList.add('hidden');
+        sendBtn.classList.remove('hidden');
+    } else {
+        voiceBtn.classList.remove('hidden');
+        sendBtn.classList.add('hidden');
+    }
+}
+
+// Handle voice record button click
+function handleVoiceRecord() {
+    if (!currentChat) {
+        showError('Please select a chat first');
+        return;
+    }
+
+    if (!window.MediaUpload?.supportsVoiceRecording()) {
+        showError('Voice recording is not supported in your browser');
+        return;
+    }
+
+    if (isRecordingVoice) return;
+    isRecordingVoice = true;
+
+    // Hide the regular input area
+    const form = document.getElementById('message-form');
+    const container = document.getElementById('voice-recording-container');
+    form.classList.add('hidden');
+    container.classList.remove('hidden');
+
+    window.MediaUpload.startVoiceRecording(
+        container,
+        async (blob, duration, waveform) => {
+            // Show form again
+            form.classList.remove('hidden');
+            container.classList.add('hidden');
+            isRecordingVoice = false;
+
+            try {
+                // Upload voice message
+                const media = await window.MediaUpload.uploadVoiceMessage(blob, duration, waveform);
+
+                // Send message with voice attachment
+                const res = await fetch(`/api/v1/chats/${currentChat.id}/messages`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'voice',
+                        content: '',
+                        media_id: media.id,
+                        media_url: media.url,
+                        media_type: 'voice',
+                        media_duration: duration,
+                        media_waveform: JSON.stringify(waveform)
+                    })
+                });
+
+                const data = await res.json();
+                if (data.success && data.data) {
+                    messages.push(data.data);
+                    renderMessages();
+                    scrollToBottom();
+                    currentChat.last_message = data.data;
+                    renderChatList();
+                }
+            } catch (err) {
+                console.error('Failed to send voice message:', err);
+                showError('Failed to send voice message');
+            }
+        },
+        (err) => {
+            // Error or cancel
+            form.classList.remove('hidden');
+            container.classList.add('hidden');
+            isRecordingVoice = false;
+
+            if (err && err.message) {
+                showError(err.message);
+            }
+        }
+    );
+}
+
+// Render voice message content
+function renderVoiceContent(msg) {
+    const url = msg.media_url || `/api/v1/media/${msg.media_id}/stream`;
+    const duration = msg.media_duration || 0;
+    const waveform = msg.media_waveform;
+
+    if (window.MediaUpload?.renderVoiceMessage) {
+        return window.MediaUpload.renderVoiceMessage(msg.media_id, url, duration, waveform);
+    }
+
+    // Fallback simple audio player
+    return `
+        <div class="voice-message">
+            <audio controls src="${url}" preload="metadata"></audio>
+        </div>
+    `;
+}
 </script>
 {{end}}

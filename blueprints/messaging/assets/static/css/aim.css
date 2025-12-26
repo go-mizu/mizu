@@ -1511,3 +1511,365 @@ select.win-input:focus {
     border: 3px dashed white;
     z-index: 100;
 }
+
+/* ============================================
+   VOICE RECORDING - Windows 98 Style
+   ============================================ */
+
+/* Voice Record Button */
+.voice-record-btn {
+    background: var(--win98-bg);
+    border: none;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        inset -2px -2px 0 var(--win98-button-shadow),
+        inset 2px 2px 0 var(--win98-button-light);
+    padding: 4px 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.voice-record-btn:hover {
+    background: #d0d0d0;
+}
+
+.voice-record-btn:active {
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-dark-shadow),
+        inset -2px -2px 0 var(--win98-button-light),
+        inset 2px 2px 0 var(--win98-button-shadow);
+}
+
+.voice-record-btn.recording {
+    background: #ff6666;
+}
+
+.voice-record-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Voice Recording Container */
+.voice-recording-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    background: var(--win98-bg);
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-shadow),
+        inset -2px -2px 0 var(--win98-button-light),
+        inset 2px 2px 0 var(--win98-button-dark-shadow);
+}
+
+/* Recording Indicator */
+.voice-recording-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.voice-recording-dot {
+    width: 8px;
+    height: 8px;
+    background: #ff0000;
+    animation: aim-voice-blink 1s ease-in-out infinite;
+}
+
+@keyframes aim-voice-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+.voice-recording-time {
+    font-size: 11px;
+    font-weight: bold;
+    color: var(--win98-text);
+    min-width: 40px;
+}
+
+/* Voice Live Waveform */
+.voice-live-waveform {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    height: 24px;
+    flex: 1;
+    padding: 2px;
+    background: #ffffff;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-shadow);
+}
+
+.voice-live-waveform-bar {
+    width: 2px;
+    background: var(--win98-highlight);
+    transition: height 0.1s ease;
+}
+
+/* Cancel and Send Buttons */
+.voice-cancel-btn,
+.voice-send-btn {
+    background: var(--win98-bg);
+    border: none;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        inset -2px -2px 0 var(--win98-button-shadow),
+        inset 2px 2px 0 var(--win98-button-light);
+    padding: 3px 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.voice-cancel-btn:hover,
+.voice-send-btn:hover {
+    background: #d0d0d0;
+}
+
+.voice-cancel-btn:active,
+.voice-send-btn:active {
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-dark-shadow);
+}
+
+.voice-cancel-btn svg,
+.voice-send-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* Slide to Cancel Hint */
+.voice-slide-hint {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--win98-button-shadow);
+    font-size: 10px;
+}
+
+.voice-slide-hint svg {
+    width: 12px;
+    height: 12px;
+    animation: aim-voice-slide 1.5s ease-in-out infinite;
+}
+
+@keyframes aim-voice-slide {
+    0%, 100% { transform: translateX(0); opacity: 1; }
+    50% { transform: translateX(-4px); opacity: 0.5; }
+}
+
+/* ============================================
+   VOICE MESSAGE PLAYBACK - Windows 98 Style
+   ============================================ */
+
+.voice-message {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px;
+    background: #ffffff;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-shadow),
+        inset -2px -2px 0 var(--win98-button-light),
+        inset 2px 2px 0 var(--win98-button-dark-shadow);
+    min-width: 180px;
+    max-width: 250px;
+}
+
+.voice-play-btn {
+    width: 28px;
+    height: 28px;
+    background: var(--win98-bg);
+    border: none;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        inset -2px -2px 0 var(--win98-button-shadow),
+        inset 2px 2px 0 var(--win98-button-light);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.voice-play-btn:hover {
+    background: #d0d0d0;
+}
+
+.voice-play-btn:active {
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-dark-shadow);
+}
+
+.voice-play-btn .icon-play,
+.voice-play-btn .icon-pause,
+.voice-play-btn .icon-loading {
+    width: 14px;
+    height: 14px;
+}
+
+.voice-play-btn .icon-loading {
+    animation: aim-voice-spin 1s linear infinite;
+}
+
+@keyframes aim-voice-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Hide non-active icons */
+.voice-play-btn .icon-pause,
+.voice-play-btn .icon-loading {
+    display: none;
+}
+
+.voice-play-btn.playing .icon-play { display: none; }
+.voice-play-btn.playing .icon-pause { display: block; }
+.voice-play-btn.loading .icon-play,
+.voice-play-btn.loading .icon-pause { display: none; }
+.voice-play-btn.loading .icon-loading { display: block; }
+
+/* Voice Waveform Container */
+.voice-waveform-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.voice-waveform {
+    height: 24px;
+    cursor: pointer;
+    position: relative;
+    background: #e0e0e0;
+}
+
+.voice-waveform-bars {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 100%;
+    gap: 1px;
+    padding: 2px;
+}
+
+.voice-waveform-bar {
+    flex: 1;
+    background: var(--win98-button-shadow);
+}
+
+.voice-waveform-bar.played {
+    background: var(--win98-highlight);
+}
+
+/* Voice Duration */
+.voice-duration {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--win98-button-shadow);
+}
+
+/* Voice Unplayed Indicator */
+.voice-unplayed-indicator {
+    display: none;
+    width: 6px;
+    height: 6px;
+    background: var(--win98-highlight);
+    flex-shrink: 0;
+}
+
+.voice-message.unplayed .voice-unplayed-indicator {
+    display: block;
+}
+
+/* Microphone Permission Modal - Windows 98 Dialog */
+.voice-permission-modal {
+    position: fixed;
+    inset: 0;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 300;
+}
+
+.voice-permission-content {
+    background: var(--win98-bg);
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        inset -2px -2px 0 var(--win98-button-shadow),
+        inset 2px 2px 0 var(--win98-button-light),
+        4px 4px 0 rgba(0, 0, 0, 0.5);
+    padding: 16px;
+    max-width: 300px;
+    text-align: center;
+}
+
+.voice-permission-icon {
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+}
+
+.voice-permission-icon svg {
+    width: 32px;
+    height: 32px;
+}
+
+.voice-permission-title {
+    font-size: 11px;
+    font-weight: bold;
+    color: var(--win98-text);
+    margin-bottom: 8px;
+}
+
+.voice-permission-text {
+    font-size: 11px;
+    color: var(--win98-text);
+    margin-bottom: 16px;
+    line-height: 1.4;
+}
+
+.voice-permission-btn {
+    background: var(--win98-bg);
+    border: none;
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-dark-shadow),
+        inset 1px 1px 0 var(--win98-button-highlight),
+        inset -2px -2px 0 var(--win98-button-shadow),
+        inset 2px 2px 0 var(--win98-button-light);
+    padding: 4px 16px;
+    font-size: 11px;
+    cursor: pointer;
+    min-width: 75px;
+}
+
+.voice-permission-btn:hover {
+    background: #d0d0d0;
+}
+
+.voice-permission-btn:active {
+    box-shadow:
+        inset -1px -1px 0 var(--win98-button-highlight),
+        inset 1px 1px 0 var(--win98-button-dark-shadow);
+}
