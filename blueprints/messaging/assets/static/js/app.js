@@ -376,7 +376,7 @@ function createReactionPicker(messageId, onReact) {
 
 // Render reaction badges for a message
 function renderReactions(reactions, messageId, currentUserId) {
-    if (!reactions || reactions.length === 0) return '';
+    if (!Array.isArray(reactions) || reactions.length === 0) return '';
 
     let html = '<div class="message-reactions">';
     reactions.forEach(r => {

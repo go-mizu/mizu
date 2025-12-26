@@ -397,7 +397,7 @@ function renderMessages() {
 
     if (messages.length === 0) {
         container.innerHTML = `
-            <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+            <div style="text-align: center; padding: 60px 20px;">
                 <p style="font-size: 11px; color: var(--os9-gray-600);">No messages yet. Say hello!</p>
             </div>
         `;
@@ -448,7 +448,7 @@ function renderMessages() {
 
 // Render reactions
 function renderReactions(msg) {
-    if (!msg.reactions || msg.reactions.length === 0) return '';
+    if (!Array.isArray(msg.reactions) || msg.reactions.length === 0) return '';
 
     const reactionCounts = {};
     msg.reactions.forEach(r => {

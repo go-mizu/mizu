@@ -634,7 +634,7 @@ function renderMessages() {
 
 // Render reactions for a message
 function renderReactions(msg) {
-    if (!msg.reactions || msg.reactions.length === 0) return '';
+    if (!Array.isArray(msg.reactions) || msg.reactions.length === 0) return '';
 
     const reactionCounts = {};
     msg.reactions.forEach(r => {
