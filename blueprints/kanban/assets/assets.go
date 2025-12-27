@@ -117,7 +117,7 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 	authLayoutContent := string(authLayoutBytes)
 
 	// Pages using the main layout
-	mainPages := []string{"home", "inbox", "board", "issues", "issue", "cycles", "team", "workspace-settings", "project-settings", "project-fields", "calendar", "gantt"}
+	mainPages := []string{"home", "inbox", "board", "issues", "issue", "cycles", "activities", "team", "workspace-settings", "project-settings", "project-fields", "calendar", "gantt"}
 	for _, name := range mainPages {
 		pageBytes, err := viewsFS.ReadFile("views/" + theme + "/pages/" + name + ".html")
 		if err != nil {

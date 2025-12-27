@@ -8,6 +8,8 @@ import (
 
 	"github.com/go-mizu/mizu"
 
+	"github.com/go-mizu/blueprints/kanban/feature/activities"
+	"github.com/go-mizu/blueprints/kanban/feature/assignees"
 	"github.com/go-mizu/blueprints/kanban/feature/columns"
 	"github.com/go-mizu/blueprints/kanban/feature/comments"
 	"github.com/go-mizu/blueprints/kanban/feature/cycles"
@@ -154,9 +156,11 @@ type IssueData struct {
 	Project         *projects.Project
 	Columns         []*columns.Column
 	Comments        []*comments.Comment
+	Activities      []*activities.ActivityWithContext
 	Cycles          []*cycles.Cycle
 	Fields          []*fields.Field
 	TeamMembers     []*users.User
+	Assignees       []string // User IDs of assigned users
 	ActiveTeamID    string
 	ActiveProjectID string
 	ActiveNav       string
@@ -175,6 +179,24 @@ type CyclesData struct {
 	Columns         []*columns.Column
 	TeamMembers     []*users.User
 	DefaultTeamID   string
+	ActiveTeamID    string
+	ActiveProjectID string
+	ActiveNav       string
+	Breadcrumbs     []Breadcrumb
+}
+
+// ActivitiesData holds data for the activities page.
+type ActivitiesData struct {
+	Title           string
+	User            *users.User
+	Workspace       *workspaces.Workspace
+	Workspaces      []*workspaces.Workspace
+	Teams           []*teams.Team
+	Projects        []*projects.Project
+	Activities      []*activities.ActivityWithContext
+	Columns         []*columns.Column
+	TeamMembers     []*users.User
+	Cycles          []*cycles.Cycle
 	ActiveTeamID    string
 	ActiveProjectID string
 	ActiveNav       string
@@ -406,6 +428,8 @@ type Page struct {
 	cycles     cycles.API
 	comments   comments.API
 	fields     fields.API
+	activities activities.API
+	assignees  assignees.API
 	getUserID  func(*mizu.Ctx) string
 }
 
@@ -421,6 +445,8 @@ func NewPage(
 	cycles cycles.API,
 	comments comments.API,
 	fields fields.API,
+	activities activities.API,
+	assigneesAPI assignees.API,
 	getUserID func(*mizu.Ctx) string,
 ) *Page {
 	return &Page{
@@ -434,6 +460,8 @@ func NewPage(
 		cycles:     cycles,
 		comments:   comments,
 		fields:     fields,
+		activities: activities,
+		assignees:  assigneesAPI,
 		getUserID:  getUserID,
 	}
 }
@@ -1239,6 +1267,13 @@ func (h *Page) Issue(c *mizu.Ctx) error {
 	project, _ := h.projects.GetByID(ctx, issue.ProjectID)
 	columnList, _ := h.columns.ListByProject(ctx, issue.ProjectID)
 	commentList, _ := h.comments.ListByIssue(ctx, issue.ID)
+	activityList, _ := h.activities.ListByIssue(ctx, issue.ID)
+
+	// Get assignees for this issue
+	var assigneeIDs []string
+	if h.assignees != nil {
+		assigneeIDs, _ = h.assignees.List(ctx, issue.ID)
+	}
 
 	// Get custom fields for project
 	fieldList, _ := h.fields.ListByProject(ctx, issue.ProjectID)
@@ -1248,6 +1283,7 @@ func (h *Page) Issue(c *mizu.Ctx) error {
 	var teamMembers []*users.User
 	var teamList []*teams.Team
 	var projectList []*projects.Project
+	userMap := make(map[string]*users.User)
 	if project != nil {
 		cycleList, _ = h.cycles.ListByTeam(ctx, project.TeamID)
 		members, _ := h.teams.ListMembers(ctx, project.TeamID)
@@ -1261,6 +1297,24 @@ func (h *Page) Issue(c *mizu.Ctx) error {
 				userIDs[i] = m.UserID
 			}
 			teamMembers, _ = h.users.GetByIDs(ctx, userIDs)
+			// Build user map for activity actor lookup
+			for _, u := range teamMembers {
+				userMap[u.ID] = u
+			}
+		}
+	}
+
+	// Enhance activities with actor names
+	activityWithContext := make([]*activities.ActivityWithContext, len(activityList))
+	for i, a := range activityList {
+		actorName := ""
+		if u, ok := userMap[a.ActorID]; ok {
+			actorName = u.DisplayName
+		}
+		activityWithContext[i] = &activities.ActivityWithContext{
+			Activity:  a,
+			ActorName: actorName,
+			IssueKey:  issue.Key,
 		}
 	}
 
@@ -1275,9 +1329,11 @@ func (h *Page) Issue(c *mizu.Ctx) error {
 		Project:         project,
 		Columns:         columnList,
 		Comments:        commentList,
+		Activities:      activityWithContext,
 		Cycles:          cycleList,
 		Fields:          fieldList,
 		TeamMembers:     teamMembers,
+		Assignees:       assigneeIDs,
 		ActiveProjectID: issue.ProjectID,
 		ActiveNav:       "issues",
 		Breadcrumbs: []Breadcrumb{
@@ -1345,6 +1401,69 @@ func (h *Page) Cycles(c *mizu.Ctx) error {
 		TeamMembers:   teamMembers,
 		DefaultTeamID: defaultTeamID,
 		ActiveNav:     "cycles",
+	})
+}
+
+// Activities renders the activities page.
+func (h *Page) Activities(c *mizu.Ctx) error {
+	userID := h.getUserID(c)
+	if userID == "" {
+		http.Redirect(c.Writer(), c.Request(), "/login", http.StatusFound)
+		return nil
+	}
+
+	ctx := c.Request().Context()
+	workspaceSlug := c.Param("workspace")
+
+	user, _ := h.users.GetByID(ctx, userID)
+	workspace, _ := h.workspaces.GetBySlug(ctx, workspaceSlug)
+	workspaceList, _ := h.workspaces.ListByUser(ctx, userID)
+
+	var activityList []*activities.ActivityWithContext
+	var teamList []*teams.Team
+	var projectList []*projects.Project
+	var columnList []*columns.Column
+	var cycleList []*cycles.Cycle
+	var teamMembers []*users.User
+
+	if workspace != nil {
+		// Get activities for this workspace
+		activityList, _ = h.activities.ListByWorkspace(ctx, workspace.ID, 100, 0)
+
+		teamList, _ = h.teams.ListByWorkspace(ctx, workspace.ID)
+		if len(teamList) > 0 {
+			projectList, _ = h.projects.ListByTeam(ctx, teamList[0].ID)
+			cycleList, _ = h.cycles.ListByTeam(ctx, teamList[0].ID)
+
+			// Get columns from first project for global create modal
+			if len(projectList) > 0 {
+				columnList, _ = h.columns.ListByProject(ctx, projectList[0].ID)
+			}
+
+			// Get team members
+			members, _ := h.teams.ListMembers(ctx, teamList[0].ID)
+			if len(members) > 0 {
+				userIDs := make([]string, len(members))
+				for i, m := range members {
+					userIDs[i] = m.UserID
+				}
+				teamMembers, _ = h.users.GetByIDs(ctx, userIDs)
+			}
+		}
+	}
+
+	return render(h, c, "activities", ActivitiesData{
+		Title:       "Activities",
+		User:        user,
+		Workspace:   workspace,
+		Workspaces:  workspaceList,
+		Teams:       teamList,
+		Projects:    projectList,
+		Activities:  activityList,
+		Columns:     columnList,
+		TeamMembers: teamMembers,
+		Cycles:      cycleList,
+		ActiveNav:   "activities",
 	})
 }
 
