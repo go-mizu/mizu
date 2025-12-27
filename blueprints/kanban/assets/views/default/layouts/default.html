@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{.Title}} - Kanban</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/default.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="dropdown" style="width: 100%;">
+          <button class="dropdown-trigger sidebar-logo" style="width: 100%; justify-content: flex-start; cursor: pointer; border: none; background: none; padding: 0;">
+            <svg width="24" height="24" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect width="32" height="32" fill="currentColor"/>
+              <rect x="6" y="8" width="6" height="16" fill="white"/>
+              <rect x="13" y="12" width="6" height="12" fill="white"/>
+              <rect x="20" y="6" width="6" height="18" fill="white"/>
+            </svg>
+            <span>{{if .Workspace}}{{.Workspace.Name}}{{else}}Kanban{{end}}</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left: auto; opacity: 0.5;">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </button>
+          <div class="dropdown-menu hidden" style="left: 0; right: auto; min-width: 200px;">
+            {{if .Workspaces}}
+            {{range .Workspaces}}
+            <a href="/w/{{.Slug}}" class="dropdown-item {{if eq $.Workspace.ID .ID}}active{{end}}">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="18" height="18" x="3" y="3"/>
+                <path d="M9 3v18"/>
+                <path d="M15 3v18"/>
+              </svg>
+              {{.Name}}
+            </a>
+            {{end}}
+            <div class="dropdown-divider"></div>
+            {{end}}
+            {{if .Workspace}}
+            <a href="/w/{{.Workspace.Slug}}/settings" class="dropdown-item">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+              Workspace Settings
+            </a>
+            {{end}}
+            <button class="dropdown-item" data-modal="create-workspace-modal">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12h14"/>
+                <path d="M12 5v14"/>
+              </svg>
+              New Workspace
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-section">
+          <a href="/w/{{.Workspace.Slug}}" class="nav-item {{if eq .ActiveNav "home"}}active{{end}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+            <span>Home</span>
+          </a>
+          <a href="/w/{{.Workspace.Slug}}/issues" class="nav-item {{if eq .ActiveNav "issues"}}active{{end}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" x2="12" y1="8" y2="12"/>
+              <line x1="12" x2="12.01" y1="16" y2="16"/>
+            </svg>
+            <span>Issues</span>
+          </a>
+          <a href="/w/{{.Workspace.Slug}}/cycles" class="nav-item {{if eq .ActiveNav "cycles"}}active{{end}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+            </svg>
+            <span>Cycles</span>
+          </a>
+        </div>
+
+        {{if .Teams}}
+        <div class="nav-section">
+          <div class="nav-section-title">Teams</div>
+          {{range .Teams}}
+          <a href="/w/{{$.Workspace.Slug}}/team/{{.ID}}" class="nav-item {{if eq $.ActiveTeamID .ID}}active{{end}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+            <span>{{.Name}}</span>
+          </a>
+          {{end}}
+        </div>
+        {{end}}
+
+        {{if .Projects}}
+        <div class="nav-section">
+          <div class="nav-section-title">Projects</div>
+          {{range .Projects}}
+          <div class="flex items-center" style="position: relative;">
+            <a href="/w/{{$.Workspace.Slug}}/board/{{.ID}}" class="nav-item {{if eq $.ActiveProjectID .ID}}active{{end}}" style="flex: 1;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="18" height="18" x="3" y="3"/>
+                <path d="M9 3v18"/>
+                <path d="M15 3v18"/>
+              </svg>
+              <span>{{.Name}}</span>
+            </a>
+            <a href="/w/{{$.Workspace.Slug}}/project/{{.ID}}/settings" class="btn btn-ghost btn-icon btn-sm" style="position: absolute; right: 0.25rem; opacity: 0.5;" title="Project Settings">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </a>
+          </div>
+          {{end}}
+        </div>
+        {{end}}
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="sidebar-toggle" title="Toggle sidebar">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect width="18" height="18" x="3" y="3" rx="2"/>
+            <path d="M9 3v18"/>
+          </svg>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <div class="main-wrapper">
+      <!-- Topbar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          {{if .Breadcrumbs}}
+          <nav class="breadcrumb">
+            {{range $i, $b := .Breadcrumbs}}
+            {{if $i}}<span class="breadcrumb-separator">/</span>{{end}}
+            {{if $b.URL}}
+            <a href="{{$b.URL}}">{{$b.Label}}</a>
+            {{else}}
+            <span class="breadcrumb-current">{{$b.Label}}</span>
+            {{end}}
+            {{end}}
+          </nav>
+          {{end}}
+        </div>
+
+        <div class="topbar-right">
+          <!-- Search / Command Palette Trigger -->
+          <button class="search-trigger">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/>
+              <path d="m21 21-4.3-4.3"/>
+            </svg>
+            <span>Search...</span>
+            <kbd>&#8984;K</kbd>
+          </button>
+
+          <!-- User Menu -->
+          <div class="dropdown">
+            <button class="dropdown-trigger avatar" title="{{.User.DisplayName}}">
+              {{slice .User.DisplayName 0 1}}
+            </button>
+            <div class="dropdown-menu hidden">
+              <div class="dropdown-item" style="pointer-events: none; opacity: 0.7;">
+                <span>{{.User.DisplayName}}</span>
+              </div>
+              <div class="dropdown-divider"></div>
+              <button class="dropdown-item" data-action="logout">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                  <polyline points="16 17 21 12 16 7"/>
+                  <line x1="21" x2="9" y1="12" y2="12"/>
+                </svg>
+                <span>Sign out</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Main Content -->
+      <main class="main-content">
+        {{template "content" .}}
+      </main>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
+
+{{define "content"}}{{end}}

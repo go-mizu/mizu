@@ -59,6 +59,14 @@ func (s *ColumnsStore) ListByProject(ctx context.Context, projectID string) ([]*
 	return list, rows.Err()
 }
 
+func (s *ColumnsStore) CountByProject(ctx context.Context, projectID string) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM columns WHERE project_id = $1 AND is_archived = FALSE
+	`, projectID).Scan(&count)
+	return count, err
+}
+
 func (s *ColumnsStore) Update(ctx context.Context, id string, in *columns.UpdateIn) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE columns SET name = COALESCE($2, name) WHERE id = $1

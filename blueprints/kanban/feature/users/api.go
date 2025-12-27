@@ -48,6 +48,7 @@ type API interface {
 	Login(ctx context.Context, in *LoginIn) (*User, *Session, error)
 	Logout(ctx context.Context, sessionID string) error
 	GetByID(ctx context.Context, id string) (*User, error)
+	GetByIDs(ctx context.Context, ids []string) ([]*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	GetBySession(ctx context.Context, sessionID string) (*User, error)
 	Update(ctx context.Context, id string, in *UpdateIn) (*User, error)
@@ -57,12 +58,14 @@ type API interface {
 type Store interface {
 	Create(ctx context.Context, u *User) error
 	GetByID(ctx context.Context, id string) (*User, error)
+	GetByIDs(ctx context.Context, ids []string) ([]*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	GetByUsername(ctx context.Context, username string) (*User, error)
 	Update(ctx context.Context, id string, in *UpdateIn) error
 	UpdatePassword(ctx context.Context, id string, passwordHash string) error
 	CreateSession(ctx context.Context, sess *Session) error
 	GetSession(ctx context.Context, id string) (*Session, error)
+	GetUserBySession(ctx context.Context, sessionID string) (*User, error)
 	DeleteSession(ctx context.Context, id string) error
 	DeleteExpiredSessions(ctx context.Context) error
 }

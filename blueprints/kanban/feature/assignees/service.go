@@ -21,15 +21,13 @@ func NewService(store Store) *Service {
 }
 
 func (s *Service) Add(ctx context.Context, issueID, userID string) error {
-	// Check if already assigned
-	assigned, err := s.store.List(ctx, issueID)
+	// Use efficient EXISTS query instead of loading all assignees
+	exists, err := s.store.Exists(ctx, issueID, userID)
 	if err != nil {
 		return err
 	}
-	for _, id := range assigned {
-		if id == userID {
-			return ErrAlreadyAssigned
-		}
+	if exists {
+		return ErrAlreadyAssigned
 	}
 
 	return s.store.Add(ctx, issueID, userID)

@@ -1,0 +1,222 @@
+{{define "content"}}
+<div class="page-header flex items-center justify-between">
+  <div>
+    <h1>Welcome back, {{.User.DisplayName}}</h1>
+    <p class="text-muted">Here's what's happening in your workspace</p>
+  </div>
+  <button class="btn btn-primary" data-modal="create-issue-modal">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 12h14"/>
+      <path d="M12 5v14"/>
+    </svg>
+    New Issue
+  </button>
+</div>
+
+<!-- Stats Cards -->
+<div class="stats-grid">
+  <div class="card stat-card">
+    <div class="stat-label">Open Issues</div>
+    <div class="stat-value text-2xl">{{.Stats.OpenIssues}}</div>
+  </div>
+  <div class="card stat-card">
+    <div class="stat-label">In Progress</div>
+    <div class="stat-value text-2xl">{{.Stats.InProgress}}</div>
+  </div>
+  <div class="card stat-card">
+    <div class="stat-label">Completed</div>
+    <div class="stat-value text-2xl">{{.Stats.Completed}}</div>
+  </div>
+</div>
+
+<!-- Active Cycle -->
+{{if .ActiveCycle}}
+<div class="mb-6">
+  <div class="section-header">
+    <h2>Active Cycle</h2>
+    <a href="/w/{{.Workspace.Slug}}/cycles" class="btn btn-ghost btn-sm">View all</a>
+  </div>
+  <div class="card">
+    <div class="card-content">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <h3 class="font-semibold">{{.ActiveCycle.Name}}</h3>
+          <p class="text-sm text-muted">{{.ActiveCycle.StartDate}} - {{.ActiveCycle.EndDate}}</p>
+        </div>
+        <span class="status-badge status-active">Active</span>
+      </div>
+      <div class="progress-bar mb-2">
+        <div class="progress-fill" style="width: {{mul (div (float64 .ActiveCycle.CompletedCount) (float64 .ActiveCycle.TotalCount)) 100}}%"></div>
+      </div>
+      <p class="text-sm text-muted">{{.ActiveCycle.CompletedCount}} of {{.ActiveCycle.TotalCount}} issues completed</p>
+    </div>
+  </div>
+</div>
+{{end}}
+
+<!-- Projects -->
+<div>
+  <div class="section-header">
+    <h2>Projects</h2>
+    <button class="btn btn-primary btn-sm" data-modal="create-project-modal">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12h14"/>
+        <path d="M12 5v14"/>
+      </svg>
+      New Project
+    </button>
+  </div>
+
+  {{if .Projects}}
+  <div class="projects-grid">
+    {{range .Projects}}
+    <a href="/w/{{$.Workspace.Slug}}/board/{{.ID}}" class="card card-link project-card">
+      <div class="project-key">{{.Key}}</div>
+      <div class="project-name">{{.Name}}</div>
+      <div class="project-meta">
+        <span>{{.IssueCount}} issues</span>
+      </div>
+    </a>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="empty-state card">
+    <svg class="empty-state-icon" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect width="18" height="18" x="3" y="3" rx="2"/>
+      <path d="M9 3v18"/>
+      <path d="M15 3v18"/>
+    </svg>
+    <div class="empty-state-title">No projects yet</div>
+    <div class="empty-state-description">Create your first project to start tracking issues</div>
+    <button class="btn btn-primary" data-modal="create-project-modal">
+      Create Project
+    </button>
+  </div>
+  {{end}}
+</div>
+
+<!-- Create Project Modal -->
+<div id="create-project-modal" class="modal hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Create Project</h2>
+      <button class="modal-close">&times;</button>
+    </div>
+    <form id="create-project-form" data-team-id="{{.DefaultTeamID}}">
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="project-name" class="label">Project Name</label>
+          <input type="text" id="project-name" name="name" class="input" placeholder="e.g., Mobile App" required>
+        </div>
+        <div class="form-group">
+          <label for="project-key" class="label">Project Key</label>
+          <input type="text" id="project-key" name="key" class="input" placeholder="e.g., MOBILE" pattern="[A-Z0-9]+" title="Uppercase letters and numbers only" required>
+          <p class="text-xs text-muted mt-1">Used as prefix for issue keys (e.g., MOBILE-1)</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create Project</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+document.getElementById('create-project-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const teamId = form.dataset.teamId;
+  const data = {
+    name: form.name.value,
+    key: form.key.value.toUpperCase(),
+  };
+
+  try {
+    await app.api.post(`/teams/${teamId}/projects`, data);
+    app.modals.close('create-project-modal');
+    location.reload();
+  } catch (error) {
+    alert(error.message || 'Failed to create project');
+  }
+});
+
+// Auto-generate key from name
+document.getElementById('project-name')?.addEventListener('input', (e) => {
+  const keyInput = document.getElementById('project-key');
+  if (keyInput && !keyInput.dataset.userModified) {
+    keyInput.value = e.target.value
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(0, 6);
+  }
+});
+
+document.getElementById('project-key')?.addEventListener('input', (e) => {
+  e.target.dataset.userModified = 'true';
+});
+</script>
+
+<!-- Create Issue Modal -->
+<div id="create-issue-modal" class="modal hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Create Issue</h2>
+      <button class="modal-close">&times;</button>
+    </div>
+    <form id="create-issue-form">
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="issue-title" class="label">Title</label>
+          <input type="text" id="issue-title" name="title" class="input" placeholder="Issue title" required autofocus>
+        </div>
+        <div class="form-group">
+          <label for="issue-description" class="label">Description</label>
+          <textarea id="issue-description" name="description" class="textarea" placeholder="Add a description..." rows="4"></textarea>
+        </div>
+        {{if .Projects}}
+        <div class="form-group">
+          <label for="issue-project" class="label">Project</label>
+          <select id="issue-project" name="project_id" class="select" required>
+            {{range .Projects}}
+            <option value="{{.ID}}">{{.Name}} ({{.Key}})</option>
+            {{end}}
+          </select>
+        </div>
+        {{end}}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create Issue</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+document.getElementById('create-issue-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const projectId = form.project_id?.value;
+  if (!projectId) {
+    alert('Please select a project');
+    return;
+  }
+
+  const data = {
+    title: form.title.value,
+    description: form.description?.value,
+  };
+
+  try {
+    const issue = await app.api.post(`/projects/${projectId}/issues`, data);
+    app.modals.close('create-issue-modal');
+    location.href = `/w/{{.Workspace.Slug}}/issue/${issue.key}`;
+  } catch (error) {
+    alert(error.message || 'Failed to create issue');
+  }
+});
+</script>
+{{end}}

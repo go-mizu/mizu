@@ -66,6 +66,7 @@ type Store interface {
 	GetByID(ctx context.Context, id string) (*Field, error)
 	GetByKey(ctx context.Context, projectID, key string) (*Field, error)
 	ListByProject(ctx context.Context, projectID string) ([]*Field, error)
+	CountByProject(ctx context.Context, projectID string) (int, error)
 	Update(ctx context.Context, id string, in *UpdateIn) error
 	UpdatePosition(ctx context.Context, id string, position int) error
 	Archive(ctx context.Context, id string) error

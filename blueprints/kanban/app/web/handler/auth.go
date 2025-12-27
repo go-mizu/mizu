@@ -48,6 +48,7 @@ func (h *Auth) Register(c *mizu.Ctx) error {
 	})
 
 	return c.JSON(http.StatusOK, map[string]any{
+		"success": true,
 		"user":    user,
 		"session": session,
 	})
@@ -79,6 +80,7 @@ func (h *Auth) Login(c *mizu.Ctx) error {
 	})
 
 	return c.JSON(http.StatusOK, map[string]any{
+		"success": true,
 		"user":    user,
 		"session": session,
 	})
@@ -101,6 +103,13 @@ func (h *Auth) Logout(c *mizu.Ctx) error {
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
+
+	// Redirect for form submissions, JSON for API calls
+	contentType := c.Request().Header.Get("Content-Type")
+	if contentType == "" || contentType == "application/x-www-form-urlencoded" {
+		http.Redirect(c.Writer(), c.Request(), "/login", http.StatusFound)
+		return nil
+	}
 
 	return c.JSON(http.StatusOK, map[string]string{
 		"message": "logged out",

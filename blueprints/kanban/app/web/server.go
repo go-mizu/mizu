@@ -67,6 +67,7 @@ type Server struct {
 	fieldHandlers     *handler.Field
 	valueHandlers     *handler.Value
 	assigneeHandlers  *handler.Assignee
+	pageHandlers      *handler.Page
 }
 
 // New creates a new server.
@@ -137,6 +138,12 @@ func New(cfg Config) (*Server, error) {
 		assignees:  assigneesSvc,
 	}
 
+	// Parse templates
+	templates, err := assets.Templates()
+	if err != nil {
+		return nil, fmt.Errorf("parse templates: %w", err)
+	}
+
 	// Create handlers
 	s.authHandlers = handler.NewAuth(usersSvc)
 	s.workspaceHandlers = handler.NewWorkspace(workspacesSvc, s.getUserID)
@@ -149,6 +156,19 @@ func New(cfg Config) (*Server, error) {
 	s.fieldHandlers = handler.NewField(fieldsSvc)
 	s.valueHandlers = handler.NewValue(valuesSvc)
 	s.assigneeHandlers = handler.NewAssignee(assigneesSvc)
+	s.pageHandlers = handler.NewPage(
+		templates,
+		usersSvc,
+		workspacesSvc,
+		teamsSvc,
+		projectsSvc,
+		columnsSvc,
+		issuesSvc,
+		cyclesSvc,
+		commentsSvc,
+		fieldsSvc,
+		s.getUserID,
+	)
 
 	s.setupRoutes()
 
@@ -261,6 +281,18 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/health", func(c *mizu.Ctx) error {
 		return c.JSON(200, map[string]string{"status": "ok"})
 	})
+
+	// Page routes (using /w/ prefix to avoid conflicts with /static/)
+	s.app.Get("/", s.pageHandlers.Home)
+	s.app.Get("/login", s.pageHandlers.Login)
+	s.app.Get("/register", s.pageHandlers.Register)
+	s.app.Get("/app", s.pageHandlers.Home)
+	s.app.Get("/w/{workspace}", s.pageHandlers.Home)
+	s.app.Get("/w/{workspace}/board/{projectID}", s.pageHandlers.Board)
+	s.app.Get("/w/{workspace}/issues", s.pageHandlers.Issues)
+	s.app.Get("/w/{workspace}/issue/{key}", s.pageHandlers.Issue)
+	s.app.Get("/w/{workspace}/cycles", s.pageHandlers.Cycles)
+	s.app.Get("/w/{workspace}/team/{teamID}", s.pageHandlers.Team)
 
 	// API routes
 	s.app.Group("/api/v1", func(api *mizu.Router) {

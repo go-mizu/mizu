@@ -1,0 +1,336 @@
+{{define "content"}}
+<div class="page-header flex items-center justify-between">
+  <div>
+    <h1>{{.Project.Name}}</h1>
+    <p class="text-muted">{{.Project.Key}} Board</p>
+  </div>
+  <div class="flex gap-2">
+    <button class="btn btn-secondary" data-modal="add-column-modal">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12h14"/>
+        <path d="M12 5v14"/>
+      </svg>
+      Add Column
+    </button>
+    <button class="btn btn-primary" data-modal="create-issue-modal">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12h14"/>
+        <path d="M12 5v14"/>
+      </svg>
+      New Issue
+    </button>
+  </div>
+</div>
+
+<!-- Kanban Board -->
+<div id="board" data-project-id="{{.Project.ID}}">
+  {{range .Columns}}
+  <div class="board-column" data-column-id="{{.ID}}">
+    <div class="column-header">
+      <div class="column-title">
+        <span>{{.Name}}</span>
+        <span class="column-count">{{len .Issues}}</span>
+      </div>
+      <div class="dropdown">
+        <button class="dropdown-trigger btn btn-ghost btn-icon btn-sm">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="1"/>
+            <circle cx="12" cy="5" r="1"/>
+            <circle cx="12" cy="19" r="1"/>
+          </svg>
+        </button>
+        <div class="dropdown-menu hidden">
+          <button class="dropdown-item" data-action="rename-column" data-column-id="{{.ID}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+            </svg>
+            Rename
+          </button>
+          {{if not .IsDefault}}
+          <button class="dropdown-item" data-action="set-default" data-column-id="{{.ID}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+            </svg>
+            Set as Default
+          </button>
+          {{end}}
+          <div class="dropdown-divider"></div>
+          <button class="dropdown-item destructive" data-action="delete-column" data-column-id="{{.ID}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h18"/>
+              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+            </svg>
+            Delete Column
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="column-body">
+      {{range .Issues}}
+      <div class="issue-card" draggable="true" data-issue-id="{{.ID}}" data-issue-key="{{.Key}}" data-position="{{.Position}}">
+        <div class="issue-card-header">
+          <span class="issue-key">{{.Key}}</span>
+          <div class="dropdown">
+            <button class="dropdown-trigger btn btn-ghost btn-icon btn-sm" onclick="event.stopPropagation()">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="1"/>
+                <circle cx="12" cy="5" r="1"/>
+                <circle cx="12" cy="19" r="1"/>
+              </svg>
+            </button>
+            <div class="dropdown-menu hidden">
+              <button class="dropdown-item" data-action="open-issue" data-issue-key="{{.Key}}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                  <polyline points="15 3 21 3 21 9"/>
+                  <line x1="10" x2="21" y1="14" y2="3"/>
+                </svg>
+                Open Issue
+              </button>
+              <div class="dropdown-divider"></div>
+              <button class="dropdown-item destructive" data-action="delete-issue" data-issue-key="{{.Key}}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 6h18"/>
+                  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                  <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                </svg>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="issue-card-title">{{.Title}}</div>
+        <div class="issue-card-meta"></div>
+      </div>
+      {{end}}
+    </div>
+
+    <div class="column-footer">
+      <form class="quick-add-form" data-column-id="{{.ID}}">
+        <input type="text" placeholder="Add issue..." name="title">
+      </form>
+    </div>
+  </div>
+  {{end}}
+
+  <!-- Add Column Button (at the end) -->
+  <div class="board-column" style="background: transparent; border: 2px dashed hsl(var(--border)); cursor: pointer;" data-modal="add-column-modal">
+    <div class="empty-state" style="padding: 2rem 1rem;">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: hsl(var(--muted-foreground));">
+        <path d="M5 12h14"/>
+        <path d="M12 5v14"/>
+      </svg>
+      <p class="text-sm text-muted mt-2">Add Column</p>
+    </div>
+  </div>
+</div>
+
+<!-- Create Issue Modal -->
+<div id="create-issue-modal" class="modal hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Create Issue</h2>
+      <button class="modal-close">&times;</button>
+    </div>
+    <form id="create-issue-form" data-project-id="{{.Project.ID}}">
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="issue-title" class="label">Title</label>
+          <input type="text" id="issue-title" name="title" class="input" placeholder="Issue title" required autofocus>
+        </div>
+        <div class="form-group">
+          <label for="issue-description" class="label">Description</label>
+          <textarea id="issue-description" name="description" class="textarea" placeholder="Add a description..." rows="4"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="issue-column" class="label">Column</label>
+          <select id="issue-column" name="column_id" class="select">
+            {{range .Columns}}
+            <option value="{{.ID}}" {{if .IsDefault}}selected{{end}}>{{.Name}}</option>
+            {{end}}
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create Issue</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Add Column Modal -->
+<div id="add-column-modal" class="modal hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Add Column</h2>
+      <button class="modal-close">&times;</button>
+    </div>
+    <form id="add-column-form" data-project-id="{{.Project.ID}}">
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="column-name" class="label">Column Name</label>
+          <input type="text" id="column-name" name="name" class="input" placeholder="e.g., In Review" required autofocus>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+        <button type="submit" class="btn btn-primary">Add Column</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Rename Column Modal -->
+<div id="rename-column-modal" class="modal hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Rename Column</h2>
+      <button class="modal-close">&times;</button>
+    </div>
+    <form id="rename-column-form">
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="rename-column-name" class="label">Column Name</label>
+          <input type="text" id="rename-column-name" name="name" class="input" placeholder="Column name" required autofocus>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+        <button type="submit" class="btn btn-primary">Rename</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Track column being renamed
+let columnToRename = null;
+
+// Column actions
+document.addEventListener('click', async (e) => {
+  const action = e.target.closest('[data-action]');
+  if (!action) return;
+
+  const actionType = action.dataset.action;
+  const columnId = action.dataset.columnId;
+  const issueKey = action.dataset.issueKey;
+
+  switch (actionType) {
+    case 'rename-column':
+      columnToRename = columnId;
+      // Get current column name
+      const column = document.querySelector(`.board-column[data-column-id="${columnId}"]`);
+      const currentName = column?.querySelector('.column-title span:first-child')?.textContent || '';
+      document.getElementById('rename-column-name').value = currentName;
+      app.modals.open('rename-column-modal');
+      break;
+
+    case 'delete-column':
+      if (confirm('Are you sure you want to delete this column? Issues will be moved to the default column.')) {
+        try {
+          await app.api.delete(`/columns/${columnId}`);
+          location.reload();
+        } catch (error) {
+          alert(error.message || 'Failed to delete column');
+        }
+      }
+      break;
+
+    case 'set-default':
+      try {
+        await app.api.post(`/projects/{{.Project.ID}}/columns/${columnId}/default`);
+        location.reload();
+      } catch (error) {
+        alert(error.message || 'Failed to set default column');
+      }
+      break;
+
+    case 'open-issue':
+      location.href = `/w/{{.Workspace.Slug}}/issue/${issueKey}`;
+      break;
+
+    case 'delete-issue':
+      if (confirm('Are you sure you want to delete this issue?')) {
+        try {
+          await app.api.delete(`/issues/${issueKey}`);
+          const card = document.querySelector(`[data-issue-key="${issueKey}"]`);
+          if (card) card.remove();
+          app.kanban.updateColumnCounts();
+        } catch (error) {
+          alert(error.message || 'Failed to delete issue');
+        }
+      }
+      break;
+  }
+});
+
+// Rename column form
+document.getElementById('rename-column-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!columnToRename) return;
+
+  const newName = document.getElementById('rename-column-name').value.trim();
+  if (!newName) return;
+
+  try {
+    await app.api.patch(`/columns/${columnToRename}`, { name: newName });
+    app.modals.close('rename-column-modal');
+    // Update column name in DOM
+    const column = document.querySelector(`.board-column[data-column-id="${columnToRename}"]`);
+    const nameSpan = column?.querySelector('.column-title span:first-child');
+    if (nameSpan) nameSpan.textContent = newName;
+    columnToRename = null;
+  } catch (error) {
+    alert(error.message || 'Failed to rename column');
+  }
+});
+
+// Quick add form handling
+document.querySelectorAll('.quick-add-form').forEach(form => {
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = form.querySelector('input[name="title"]');
+    const title = input.value.trim();
+    if (!title) return;
+
+    const columnId = form.dataset.columnId;
+
+    try {
+      const issue = await app.api.post(`/projects/{{.Project.ID}}/issues`, {
+        title,
+        column_id: columnId,
+      });
+
+      // Add card to column
+      const column = form.closest('.board-column');
+      const columnBody = column.querySelector('.column-body');
+
+      const card = document.createElement('div');
+      card.className = 'issue-card';
+      card.draggable = true;
+      card.dataset.issueId = issue.id;
+      card.dataset.issueKey = issue.key;
+      card.innerHTML = `
+        <div class="issue-card-header">
+          <span class="issue-key">${issue.key}</span>
+        </div>
+        <div class="issue-card-title">${title}</div>
+        <div class="issue-card-meta"></div>
+      `;
+      columnBody.appendChild(card);
+
+      input.value = '';
+      app.kanban.updateColumnCounts();
+    } catch (error) {
+      alert(error.message || 'Failed to create issue');
+    }
+  });
+});
+</script>
+{{end}}

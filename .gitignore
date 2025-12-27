@@ -112,3 +112,5 @@ coverage.out
 
 # Temporary, remove later
 CLAUDE.md
+
+node_modules/

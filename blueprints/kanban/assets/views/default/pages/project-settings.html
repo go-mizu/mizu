@@ -1,0 +1,314 @@
+{{define "content"}}
+<div class="page-header flex items-center justify-between">
+  <div>
+    <h1>Project Settings</h1>
+    <p class="text-muted">Configure {{.Project.Name}}</p>
+  </div>
+</div>
+
+<div class="grid gap-6" style="grid-template-columns: 1fr 1fr; max-width: 900px;">
+  <!-- General Settings -->
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">General</h3>
+    </div>
+    <div class="card-content">
+      <form id="project-settings-form" class="flex flex-col gap-4">
+        <div class="form-group">
+          <label for="project-name" class="label">Project Name</label>
+          <input type="text" id="project-name" name="name" class="input" value="{{.Project.Name}}" required>
+        </div>
+        <div class="form-group">
+          <label for="project-key" class="label">Project Key</label>
+          <input type="text" id="project-key" name="key" class="input" value="{{.Project.Key}}" disabled>
+          <span class="text-xs text-muted">Project key cannot be changed after creation</span>
+        </div>
+        <div class="form-group">
+          <label for="project-description" class="label">Description</label>
+          <textarea id="project-description" name="description" class="textarea" rows="3" placeholder="Optional project description">{{.Project.Description}}</textarea>
+        </div>
+        <div class="flex justify-end">
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Danger Zone -->
+  <div class="card" style="border-color: hsl(var(--destructive) / 0.3);">
+    <div class="card-header">
+      <h3 class="card-title text-destructive">Danger Zone</h3>
+    </div>
+    <div class="card-content">
+      <p class="text-sm text-muted mb-4">
+        Once you delete a project, there is no going back. All issues will be deleted.
+      </p>
+      <button class="btn btn-destructive" data-action="delete-project">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6h18"/>
+          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+        </svg>
+        Delete Project
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Columns Section -->
+<div class="mt-6" style="max-width: 900px;">
+  <div class="section-header">
+    <h2 class="section-title">Workflow Columns</h2>
+    <button class="btn btn-primary btn-sm" data-modal="create-column-modal">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12h14"/>
+        <path d="M12 5v14"/>
+      </svg>
+      Add Column
+    </button>
+  </div>
+
+  <div class="card">
+    <table class="table">
+      <thead>
+        <tr>
+          <th style="width: 40px;"></th>
+          <th>Name</th>
+          <th style="width: 100px;">Issues</th>
+          <th style="width: 60px;"></th>
+        </tr>
+      </thead>
+      <tbody id="columns-list">
+        {{range .Columns}}
+        <tr data-column-id="{{.ID}}">
+          <td>
+            <button class="btn btn-ghost btn-icon btn-sm" style="cursor: grab;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="9" cy="12" r="1"/>
+                <circle cx="9" cy="5" r="1"/>
+                <circle cx="9" cy="19" r="1"/>
+                <circle cx="15" cy="12" r="1"/>
+                <circle cx="15" cy="5" r="1"/>
+                <circle cx="15" cy="19" r="1"/>
+              </svg>
+            </button>
+          </td>
+          <td class="font-medium">{{.Name}}</td>
+          <td class="text-muted">{{.IssueCount}}</td>
+          <td>
+            <div class="dropdown">
+              <button class="dropdown-trigger btn btn-ghost btn-icon btn-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="1"/>
+                  <circle cx="12" cy="5" r="1"/>
+                  <circle cx="12" cy="19" r="1"/>
+                </svg>
+              </button>
+              <div class="dropdown-menu hidden">
+                <button class="dropdown-item" data-action="edit-column" data-column-id="{{.ID}}" data-column-name="{{.Name}}">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                  </svg>
+                  Edit
+                </button>
+                <div class="dropdown-divider"></div>
+                <button class="dropdown-item destructive" data-action="delete-column" data-column-id="{{.ID}}">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 6h18"/>
+                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                  </svg>
+                  Delete
+                </button>
+              </div>
+            </div>
+          </td>
+        </tr>
+        {{else}}
+        <tr>
+          <td colspan="4" class="text-center text-muted py-4">No columns defined</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Quick Links -->
+<div class="mt-6" style="max-width: 900px;">
+  <div class="section-header">
+    <h2 class="section-title">Quick Links</h2>
+  </div>
+  <div class="flex gap-4">
+    <a href="/w/{{.Workspace.Slug}}/project/{{.Project.ID}}/fields" class="card card-link" style="flex: 1; padding: 1rem;">
+      <div class="flex items-center gap-3">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+          <path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/>
+        </svg>
+        <div>
+          <div class="font-medium">Custom Fields</div>
+          <div class="text-sm text-muted">Manage custom fields for issues</div>
+        </div>
+      </div>
+    </a>
+    <a href="/w/{{.Workspace.Slug}}/board/{{.Project.ID}}" class="card card-link" style="flex: 1; padding: 1rem;">
+      <div class="flex items-center gap-3">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect width="18" height="18" x="3" y="3" rx="2"/>
+          <path d="M9 3v18"/>
+          <path d="M15 3v18"/>
+        </svg>
+        <div>
+          <div class="font-medium">Board</div>
+          <div class="text-sm text-muted">View the kanban board</div>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+
+<!-- Create Column Modal -->
+<div id="create-column-modal" class="modal hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Add Column</h2>
+      <button class="modal-close">&times;</button>
+    </div>
+    <form id="create-column-form">
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="column-name" class="label">Column Name</label>
+          <input type="text" id="column-name" name="name" class="input" placeholder="e.g., In Review" required autofocus>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+        <button type="submit" class="btn btn-primary">Add Column</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Edit Column Modal -->
+<div id="edit-column-modal" class="modal hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Edit Column</h2>
+      <button class="modal-close">&times;</button>
+    </div>
+    <form id="edit-column-form">
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="edit-column-name" class="label">Column Name</label>
+          <input type="text" id="edit-column-name" name="name" class="input" required>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+let columnToEdit = null;
+
+// Update project settings
+document.getElementById('project-settings-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+
+  const data = {
+    name: form.name.value,
+    description: form.description.value,
+  };
+
+  try {
+    await app.api.patch('/projects/{{.Project.ID}}', data);
+    alert('Settings saved successfully');
+  } catch (error) {
+    alert(error.message || 'Failed to save settings');
+  }
+});
+
+// Create column form
+document.getElementById('create-column-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+
+  const data = {
+    name: form.name.value,
+  };
+
+  try {
+    await app.api.post('/projects/{{.Project.ID}}/columns', data);
+    app.modals.close('create-column-modal');
+    location.reload();
+  } catch (error) {
+    alert(error.message || 'Failed to create column');
+  }
+});
+
+// Edit column form
+document.getElementById('edit-column-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!columnToEdit) return;
+
+  const form = e.target;
+  const data = {
+    name: form.name.value,
+  };
+
+  try {
+    await app.api.patch('/columns/' + columnToEdit, data);
+    app.modals.close('edit-column-modal');
+    location.reload();
+  } catch (error) {
+    alert(error.message || 'Failed to update column');
+  }
+});
+
+// Handle actions
+document.addEventListener('click', async (e) => {
+  const action = e.target.closest('[data-action]');
+  if (!action) return;
+
+  const actionType = action.dataset.action;
+
+  switch (actionType) {
+    case 'delete-project':
+      if (confirm('Are you sure you want to delete this project? All issues will be deleted. This action cannot be undone.')) {
+        try {
+          await app.api.delete('/projects/{{.Project.ID}}');
+          location.href = '/w/{{.Workspace.Slug}}';
+        } catch (error) {
+          alert(error.message || 'Failed to delete project');
+        }
+      }
+      break;
+
+    case 'edit-column':
+      columnToEdit = action.dataset.columnId;
+      document.getElementById('edit-column-name').value = action.dataset.columnName || '';
+      app.modals.open('edit-column-modal');
+      break;
+
+    case 'delete-column':
+      const columnId = action.dataset.columnId;
+      if (confirm('Are you sure you want to delete this column? Issues in this column will need to be moved first.')) {
+        try {
+          await app.api.delete('/columns/' + columnId);
+          location.reload();
+        } catch (error) {
+          alert(error.message || 'Failed to delete column');
+        }
+      }
+      break;
+  }
+});
+</script>
+{{end}}

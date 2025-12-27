@@ -83,6 +83,14 @@ func (s *FieldsStore) ListByProject(ctx context.Context, projectID string) ([]*f
 	return list, rows.Err()
 }
 
+func (s *FieldsStore) CountByProject(ctx context.Context, projectID string) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM fields WHERE project_id = $1 AND is_archived = FALSE
+	`, projectID).Scan(&count)
+	return count, err
+}
+
 func (s *FieldsStore) Update(ctx context.Context, id string, in *fields.UpdateIn) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE fields SET

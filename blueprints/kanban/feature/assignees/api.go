@@ -17,6 +17,7 @@ type API interface {
 type Store interface {
 	Add(ctx context.Context, issueID, userID string) error
 	Remove(ctx context.Context, issueID, userID string) error
+	Exists(ctx context.Context, issueID, userID string) (bool, error)
 	List(ctx context.Context, issueID string) ([]string, error)
 	ListByUser(ctx context.Context, userID string) ([]string, error)
 }
