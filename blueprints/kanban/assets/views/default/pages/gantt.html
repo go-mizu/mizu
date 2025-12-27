@@ -1,9 +1,9 @@
 {{define "content"}}
-<div class="page-header flex items-center justify-between mb-6">
+<div class="flex items-center justify-between mb-6">
   <div class="flex items-center gap-4">
-    <h1 class="page-title">Issues</h1>
-    <div class="view-switcher">
-      <a href="/w/{{.Workspace.Slug}}/issues?view=list" class="view-btn" title="List view">
+    <h1 class="text-2xl font-semibold text-zinc-900">Issues</h1>
+    <div class="flex items-center bg-zinc-100 rounded-lg p-1">
+      <a href="/w/{{.Workspace.Slug}}/issues?view=list" class="flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-white transition-colors" title="List view">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="8" x2="21" y1="6" y2="6"/>
           <line x1="8" x2="21" y1="12" y2="12"/>
@@ -14,14 +14,14 @@
         </svg>
       </a>
       {{if .DefaultProjectID}}
-      <a href="/w/{{.Workspace.Slug}}/board/{{.DefaultProjectID}}" class="view-btn" title="Board view">
+      <a href="/w/{{.Workspace.Slug}}/board/{{.DefaultProjectID}}" class="flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-white transition-colors" title="Board view">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect width="6" height="14" x="4" y="5" rx="2"/>
           <rect width="6" height="10" x="14" y="7" rx="2"/>
         </svg>
       </a>
       {{end}}
-      <a href="/w/{{.Workspace.Slug}}/issues?view=calendar" class="view-btn" title="Calendar view">
+      <a href="/w/{{.Workspace.Slug}}/issues?view=calendar" class="flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-white transition-colors" title="Calendar view">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M8 2v4"/>
           <path d="M16 2v4"/>
@@ -29,7 +29,7 @@
           <path d="M3 10h18"/>
         </svg>
       </a>
-      <a href="/w/{{.Workspace.Slug}}/issues?view=gantt" class="view-btn active" title="Gantt chart">
+      <a href="/w/{{.Workspace.Slug}}/issues?view=gantt" class="flex items-center justify-center w-8 h-8 rounded-md bg-white shadow-sm text-zinc-900" title="Gantt chart">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 3v18h18"/>
           <rect x="7" y="6" width="10" height="3"/>
@@ -40,36 +40,36 @@
     </div>
   </div>
   <div class="flex gap-2">
-    <div class="gantt-controls">
-      <div class="dropdown">
-        <button class="dropdown-trigger btn btn-secondary btn-sm">
+    <div class="flex items-center gap-2">
+      <div class="relative" id="scale-dropdown">
+        <button class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-zinc-700 bg-white border border-zinc-200 rounded-md hover:bg-zinc-50 transition-colors dropdown-trigger">
           Scale: {{.Scale}}
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="m6 9 6 6 6-6"/>
           </svg>
         </button>
-        <div class="dropdown-menu hidden">
-          <a href="?view=gantt&scale=day&group={{.GroupBy}}" class="dropdown-item {{if eq .Scale "day"}}active{{end}}">Day</a>
-          <a href="?view=gantt&scale=week&group={{.GroupBy}}" class="dropdown-item {{if eq .Scale "week"}}active{{end}}">Week</a>
-          <a href="?view=gantt&scale=month&group={{.GroupBy}}" class="dropdown-item {{if eq .Scale "month"}}active{{end}}">Month</a>
+        <div class="absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
+          <a href="?view=gantt&scale=day&group={{.GroupBy}}" class="block px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 {{if eq .Scale "day"}}bg-zinc-50 font-medium{{end}}">Day</a>
+          <a href="?view=gantt&scale=week&group={{.GroupBy}}" class="block px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 {{if eq .Scale "week"}}bg-zinc-50 font-medium{{end}}">Week</a>
+          <a href="?view=gantt&scale=month&group={{.GroupBy}}" class="block px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 {{if eq .Scale "month"}}bg-zinc-50 font-medium{{end}}">Month</a>
         </div>
       </div>
-      <div class="dropdown">
-        <button class="dropdown-trigger btn btn-secondary btn-sm">
+      <div class="relative" id="group-dropdown">
+        <button class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-zinc-700 bg-white border border-zinc-200 rounded-md hover:bg-zinc-50 transition-colors dropdown-trigger">
           Group: {{if eq .GroupBy "none"}}None{{else}}{{.GroupBy}}{{end}}
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="m6 9 6 6 6-6"/>
           </svg>
         </button>
-        <div class="dropdown-menu hidden">
-          <a href="?view=gantt&scale={{.Scale}}&group=none" class="dropdown-item {{if eq .GroupBy "none"}}active{{end}}">None</a>
-          <a href="?view=gantt&scale={{.Scale}}&group=project" class="dropdown-item {{if eq .GroupBy "project"}}active{{end}}">Project</a>
-          <a href="?view=gantt&scale={{.Scale}}&group=column" class="dropdown-item {{if eq .GroupBy "column"}}active{{end}}">Status</a>
+        <div class="absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
+          <a href="?view=gantt&scale={{.Scale}}&group=none" class="block px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 {{if eq .GroupBy "none"}}bg-zinc-50 font-medium{{end}}">None</a>
+          <a href="?view=gantt&scale={{.Scale}}&group=project" class="block px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 {{if eq .GroupBy "project"}}bg-zinc-50 font-medium{{end}}">Project</a>
+          <a href="?view=gantt&scale={{.Scale}}&group=column" class="block px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 {{if eq .GroupBy "column"}}bg-zinc-50 font-medium{{end}}">Status</a>
         </div>
       </div>
-      <a href="?view=gantt&scale={{.Scale}}&group={{.GroupBy}}" class="btn btn-secondary btn-sm">Today</a>
+      <a href="?view=gantt&scale={{.Scale}}&group={{.GroupBy}}" class="px-3 py-1.5 text-sm font-medium text-zinc-700 bg-white border border-zinc-200 rounded-md hover:bg-zinc-50 transition-colors">Today</a>
     </div>
-    <button class="btn btn-primary" data-modal="create-issue-modal">
+    <button class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors" data-modal="create-issue-modal">
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M5 12h14"/>
         <path d="M12 5v14"/>
@@ -79,99 +79,107 @@
   </div>
 </div>
 
-<div class="gantt-container" style="--timeline-days: {{.TimelineDays}};">
-  <div class="gantt-sidebar">
-    <div class="gantt-sidebar-header">
-      <span>Issue</span>
+<div class="flex bg-white rounded-lg shadow-sm border border-zinc-200 overflow-hidden" style="--timeline-days: {{.TimelineDays}};">
+  <!-- Sidebar -->
+  <div class="w-64 flex-shrink-0 border-r border-zinc-200">
+    <div class="px-4 py-3 bg-zinc-50 border-b border-zinc-200 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      Issue
     </div>
-    <div class="gantt-sidebar-body">
+    <div class="overflow-auto" style="max-height: calc(100vh - 250px);">
       {{range .Groups}}
       {{if .Name}}
-      <div class="gantt-group-header">
-        <span class="gantt-group-name">{{.Name}}</span>
-        <span class="gantt-group-count">{{len .Issues}}</span>
+      <div class="flex items-center justify-between px-4 py-2 bg-zinc-50 border-b border-zinc-100">
+        <span class="text-sm font-medium text-zinc-700">{{.Name}}</span>
+        <span class="text-xs text-zinc-400">{{len .Issues}}</span>
       </div>
       {{end}}
       {{range .Issues}}
-      <a href="/w/{{$.Workspace.Slug}}/issue/{{.Key}}" class="gantt-row-label" data-issue-key="{{.Key}}">
-        <span class="issue-key">{{.Key}}</span>
-        <span class="issue-title truncate">{{.Title}}</span>
+      <a href="/w/{{$.Workspace.Slug}}/issue/{{.Key}}" class="flex items-center gap-2 px-4 py-2 text-sm border-b border-zinc-100 hover:bg-zinc-50 transition-colors" data-issue-key="{{.Key}}">
+        <span class="text-xs font-semibold text-zinc-400 font-mono">{{.Key}}</span>
+        <span class="text-zinc-900 truncate">{{.Title}}</span>
       </a>
       {{end}}
       {{end}}
     </div>
   </div>
 
-  <div class="gantt-timeline">
-    <div class="gantt-timeline-header">
-      {{range .HeaderDates}}
-      <div class="gantt-date-marker {{if .IsToday}}today{{end}} {{if .IsWeekend}}weekend{{end}}"
-           style="left: {{printf "%.2f" .Offset}}%;">
-        <span class="gantt-date-label">{{.Label}}</span>
+  <!-- Timeline -->
+  <div class="flex-1 overflow-auto">
+    <div class="relative min-w-max">
+      <!-- Header with dates -->
+      <div class="sticky top-0 z-10 flex h-10 bg-zinc-50 border-b border-zinc-200">
+        {{range .HeaderDates}}
+        <div class="absolute flex items-center justify-center px-2 text-xs font-medium {{if .IsToday}}text-indigo-600{{else if .IsWeekend}}text-zinc-400{{else}}text-zinc-500{{end}}" style="left: {{printf "%.2f" .Offset}}%;">
+          {{.Label}}
+        </div>
+        {{end}}
       </div>
-      {{end}}
-    </div>
 
-    <div class="gantt-timeline-body">
-      <div class="gantt-today-line" style="left: {{printf "%.2f" .TodayOffset}}%;"></div>
+      <!-- Rows -->
+      <div class="relative">
+        <!-- Today line -->
+        <div class="absolute top-0 bottom-0 w-0.5 bg-indigo-500 z-10" style="left: {{printf "%.2f" .TodayOffset}}%;"></div>
 
-      {{range .Groups}}
-      {{if .Name}}
-      <div class="gantt-group-spacer"></div>
-      {{end}}
-      {{range .Issues}}
-      <div class="gantt-row">
-        <a href="/w/{{$.Workspace.Slug}}/issue/{{.Key}}"
-           class="gantt-bar {{if not .HasExplicitDates}}no-dates{{end}}"
-           style="left: {{printf "%.2f" .LeftOffset}}%; width: {{printf "%.2f" .Width}}%;"
-           data-issue-key="{{.Key}}"
-           title="{{.Title}}">
-          <span class="gantt-bar-title">{{.Title}}</span>
-        </a>
+        {{range .Groups}}
+        {{if .Name}}
+        <div class="h-10 bg-zinc-50 border-b border-zinc-100"></div>
+        {{end}}
+        {{range .Issues}}
+        <div class="relative h-10 border-b border-zinc-100">
+          <a href="/w/{{$.Workspace.Slug}}/issue/{{.Key}}"
+             class="absolute top-1.5 h-7 rounded px-2 flex items-center text-xs font-medium text-white truncate transition-colors {{if not .HasExplicitDates}}bg-zinc-300 hover:bg-zinc-400{{else}}bg-indigo-500 hover:bg-indigo-600{{end}}"
+             style="left: {{printf "%.2f" .LeftOffset}}%; width: {{printf "%.2f" .Width}}%;"
+             data-issue-key="{{.Key}}"
+             title="{{.Title}}">
+            {{.Title}}
+          </a>
+        </div>
+        {{end}}
+        {{end}}
       </div>
-      {{end}}
-      {{end}}
     </div>
   </div>
 </div>
 
 <!-- Create Issue Modal -->
-<div id="create-issue-modal" class="modal hidden">
-  <div class="modal-backdrop" data-close="create-issue-modal"></div>
-  <div class="modal-content">
-    <div class="modal-header">
-      <h2 class="modal-title">Create Issue</h2>
-      <button class="modal-close" data-close="create-issue-modal">&times;</button>
-    </div>
-    <form id="create-issue-form" class="modal-body">
-      <div class="form-group mb-4">
-        <label class="label" for="issue-title">Title</label>
-        <input type="text" id="issue-title" name="title" class="input" placeholder="Issue title" required>
+<div id="create-issue-modal" class="fixed inset-0 z-50 hidden">
+  <div class="fixed inset-0 bg-black/50" data-close="create-issue-modal"></div>
+  <div class="fixed inset-0 flex items-center justify-center p-4">
+    <div class="relative w-full max-w-lg bg-white rounded-xl shadow-xl">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
+        <h2 class="text-lg font-semibold text-zinc-900">Create Issue</h2>
+        <button class="text-zinc-400 hover:text-zinc-600 text-2xl transition-colors" data-close="create-issue-modal">&times;</button>
       </div>
-      {{if .Projects}}
-      <div class="form-group mb-4">
-        <label class="label" for="issue-project">Project</label>
-        <select id="issue-project" name="project_id" class="select">
-          {{range .Projects}}
-          <option value="{{.ID}}">{{.Name}}</option>
-          {{end}}
-        </select>
-      </div>
-      {{end}}
-      <div class="date-input-group">
-        <div class="form-group mb-4">
-          <label class="label" for="issue-start-date">Start Date</label>
-          <input type="date" id="issue-start-date" name="start_date" class="input">
+      <form id="create-issue-form" class="px-6 py-4 space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-zinc-700 mb-1" for="issue-title">Title</label>
+          <input type="text" id="issue-title" name="title" class="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent" placeholder="Issue title" required>
         </div>
-        <div class="form-group mb-4">
-          <label class="label" for="issue-end-date">End Date</label>
-          <input type="date" id="issue-end-date" name="end_date" class="input">
+        {{if .Projects}}
+        <div>
+          <label class="block text-sm font-medium text-zinc-700 mb-1" for="issue-project">Project</label>
+          <select id="issue-project" name="project_id" class="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+            {{range .Projects}}
+            <option value="{{.ID}}">{{.Name}}</option>
+            {{end}}
+          </select>
         </div>
+        {{end}}
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-zinc-700 mb-1" for="issue-start-date">Start Date</label>
+            <input type="date" id="issue-start-date" name="start_date" class="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-zinc-700 mb-1" for="issue-end-date">End Date</label>
+            <input type="date" id="issue-end-date" name="end_date" class="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+          </div>
+        </div>
+      </form>
+      <div class="flex items-center justify-end gap-2 px-6 py-4 bg-zinc-50 rounded-b-xl border-t border-zinc-100">
+        <button type="button" class="px-4 py-2 text-sm font-medium text-zinc-700 bg-white border border-zinc-200 rounded-md hover:bg-zinc-50 transition-colors" data-close="create-issue-modal">Cancel</button>
+        <button type="submit" form="create-issue-form" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 transition-colors">Create Issue</button>
       </div>
-    </form>
-    <div class="modal-footer">
-      <button type="button" class="btn btn-secondary" data-close="create-issue-modal">Cancel</button>
-      <button type="submit" form="create-issue-form" class="btn btn-primary">Create Issue</button>
     </div>
   </div>
 </div>
@@ -213,8 +221,8 @@ document.getElementById('create-issue-form').addEventListener('submit', async fu
 });
 
 // Sync sidebar and timeline scroll
-const timeline = document.querySelector('.gantt-timeline');
-const sidebar = document.querySelector('.gantt-sidebar-body');
+const timeline = document.querySelector('.flex-1.overflow-auto');
+const sidebar = document.querySelector('.w-64 .overflow-auto');
 if (timeline && sidebar) {
   timeline.addEventListener('scroll', function() {
     sidebar.scrollTop = this.scrollTop;

@@ -1,9 +1,9 @@
 {{define "content"}}
-<div class="page-header flex items-center justify-between mb-6">
+<div class="flex items-center justify-between mb-6">
   <div class="flex items-center gap-4">
-    <h1 class="page-title">Issues</h1>
-    <div class="view-switcher">
-      <a href="/w/{{.Workspace.Slug}}/issues?view=list" class="view-btn" title="List view">
+    <h1 class="text-2xl font-semibold text-zinc-900">Issues</h1>
+    <div class="flex items-center bg-zinc-100 rounded-lg p-1">
+      <a href="/w/{{.Workspace.Slug}}/issues?view=list" class="flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-white transition-colors" title="List view">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="8" x2="21" y1="6" y2="6"/>
           <line x1="8" x2="21" y1="12" y2="12"/>
@@ -14,14 +14,14 @@
         </svg>
       </a>
       {{if .DefaultProjectID}}
-      <a href="/w/{{.Workspace.Slug}}/board/{{.DefaultProjectID}}" class="view-btn" title="Board view">
+      <a href="/w/{{.Workspace.Slug}}/board/{{.DefaultProjectID}}" class="flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-white transition-colors" title="Board view">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect width="6" height="14" x="4" y="5" rx="2"/>
           <rect width="6" height="10" x="14" y="7" rx="2"/>
         </svg>
       </a>
       {{end}}
-      <a href="/w/{{.Workspace.Slug}}/issues?view=calendar" class="view-btn active" title="Calendar view">
+      <a href="/w/{{.Workspace.Slug}}/issues?view=calendar" class="flex items-center justify-center w-8 h-8 rounded-md bg-white shadow-sm text-zinc-900" title="Calendar view">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M8 2v4"/>
           <path d="M16 2v4"/>
@@ -29,7 +29,7 @@
           <path d="M3 10h18"/>
         </svg>
       </a>
-      <a href="/w/{{.Workspace.Slug}}/issues?view=gantt" class="view-btn" title="Gantt chart">
+      <a href="/w/{{.Workspace.Slug}}/issues?view=gantt" class="flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-white transition-colors" title="Gantt chart">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 3v18h18"/>
           <rect x="7" y="6" width="10" height="3"/>
@@ -40,21 +40,21 @@
     </div>
   </div>
   <div class="flex gap-2">
-    <div class="calendar-nav">
-      <a href="?view=calendar&month={{.PrevMonth}}" class="btn btn-ghost btn-icon btn-sm">
+    <div class="flex items-center gap-1">
+      <a href="?view=calendar&month={{.PrevMonth}}" class="inline-flex items-center justify-center w-8 h-8 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-md transition-colors">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="m15 18-6-6 6-6"/>
         </svg>
       </a>
-      <span class="calendar-month-label">{{.MonthName}} {{.Year}}</span>
-      <a href="?view=calendar&month={{.NextMonth}}" class="btn btn-ghost btn-icon btn-sm">
+      <span class="text-sm font-medium text-zinc-900 min-w-32 text-center">{{.MonthName}} {{.Year}}</span>
+      <a href="?view=calendar&month={{.NextMonth}}" class="inline-flex items-center justify-center w-8 h-8 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-md transition-colors">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="m9 18 6-6-6-6"/>
         </svg>
       </a>
-      <a href="?view=calendar" class="btn btn-secondary btn-sm">Today</a>
+      <a href="?view=calendar" class="ml-2 px-3 py-1.5 text-sm font-medium text-zinc-700 bg-white border border-zinc-200 rounded-md hover:bg-zinc-50 transition-colors">Today</a>
     </div>
-    <button class="btn btn-primary" data-modal="create-issue-modal">
+    <button class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors" data-modal="create-issue-modal">
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M5 12h14"/>
         <path d="M12 5v14"/>
@@ -64,40 +64,43 @@
   </div>
 </div>
 
-<div class="calendar-container">
-  <div class="calendar-header">
-    <div class="calendar-header-cell">Mon</div>
-    <div class="calendar-header-cell">Tue</div>
-    <div class="calendar-header-cell">Wed</div>
-    <div class="calendar-header-cell">Thu</div>
-    <div class="calendar-header-cell">Fri</div>
-    <div class="calendar-header-cell weekend">Sat</div>
-    <div class="calendar-header-cell weekend">Sun</div>
+<div class="bg-white rounded-lg shadow-sm border border-zinc-200 overflow-hidden">
+  <!-- Calendar Header -->
+  <div class="grid grid-cols-7 bg-zinc-50 border-b border-zinc-200">
+    <div class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 text-center">Mon</div>
+    <div class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 text-center">Tue</div>
+    <div class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 text-center">Wed</div>
+    <div class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 text-center">Thu</div>
+    <div class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 text-center">Fri</div>
+    <div class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400 text-center">Sat</div>
+    <div class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400 text-center">Sun</div>
   </div>
 
-  <div class="calendar-grid">
+  <!-- Calendar Grid -->
+  <div class="divide-y divide-zinc-100">
     {{range .Days}}
-    <div class="calendar-week">
+    <div class="grid grid-cols-7 divide-x divide-zinc-100">
       {{range .}}
-      <div class="calendar-day {{if .IsToday}}today{{end}} {{if .IsWeekend}}weekend{{end}} {{if .IsOtherMonth}}other-month{{end}}" data-date="{{.Date.Format "2006-01-02"}}">
-        <div class="calendar-day-header">
-          <span class="calendar-day-number">{{.Date.Day}}</span>
-          {{if .IsToday}}<span class="today-badge">Today</span>{{end}}
+      <div class="min-h-28 p-2 {{if .IsToday}}bg-indigo-50{{else if .IsWeekend}}bg-zinc-50{{else if .IsOtherMonth}}bg-zinc-50/50{{else}}bg-white{{end}} hover:bg-zinc-50 transition-colors cursor-pointer calendar-day" data-date="{{.Date.Format "2006-01-02"}}">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-sm font-medium {{if .IsToday}}text-indigo-600{{else if .IsOtherMonth}}text-zinc-300{{else if .IsWeekend}}text-zinc-400{{else}}text-zinc-700{{end}}">{{.Date.Day}}</span>
+          {{if .IsToday}}<span class="text-xs font-medium text-indigo-600">Today</span>{{end}}
         </div>
-        <div class="calendar-day-issues">
+        <div class="space-y-1">
           {{range $i, $issue := .Issues}}
           {{if lt $i 3}}
           <a href="/w/{{$.Workspace.Slug}}/issue/{{$issue.Key}}"
-             class="calendar-issue {{if $issue.IsOverdue}}overdue{{end}}"
-             data-issue-key="{{$issue.Key}}">
-            <span class="calendar-issue-key">{{$issue.Key}}</span>
-            <span class="calendar-issue-title">{{$issue.Title}}</span>
+             class="block px-2 py-1 text-xs rounded {{if $issue.IsOverdue}}bg-red-100 text-red-700 hover:bg-red-200{{else}}bg-zinc-100 text-zinc-700 hover:bg-zinc-200{{end}} transition-colors truncate"
+             data-issue-key="{{$issue.Key}}"
+             onclick="event.stopPropagation()">
+            <span class="font-medium">{{$issue.Key}}</span>
+            <span class="ml-1">{{$issue.Title}}</span>
           </a>
           {{end}}
           {{end}}
         </div>
         {{if gt (len .Issues) 3}}
-        <button class="calendar-more-btn" data-date="{{.Date.Format "2006-01-02"}}">
+        <button class="mt-1 text-xs text-indigo-600 hover:text-indigo-700 font-medium" data-date="{{.Date.Format "2006-01-02"}}" onclick="event.stopPropagation()">
           +{{sub (len .Issues) 3}} more
         </button>
         {{end}}
@@ -109,99 +112,105 @@
 </div>
 
 <!-- Create Issue Modal -->
-<div id="create-issue-modal" class="modal hidden">
-  <div class="modal-backdrop" data-close="create-issue-modal"></div>
-  <div class="modal-content modal-lg">
-    <div class="modal-header">
-      <h2 class="modal-title">Create Issue</h2>
-      <button class="modal-close" data-close="create-issue-modal">&times;</button>
-    </div>
-    <form id="create-issue-form">
-      <div class="modal-body">
-        {{if .Projects}}
-        <div class="form-group mb-4">
-          <label class="label" for="issue-project">Project</label>
-          <select id="issue-project" name="project_id" class="select">
-            {{range .Projects}}
-            <option value="{{.ID}}">{{.Name}}</option>
-            {{end}}
-          </select>
-        </div>
-        {{end}}
-        <input type="text" id="issue-title" name="title" class="create-box-title" placeholder="Issue title" required autofocus style="padding-left: 0;">
-        <textarea id="issue-description" name="description" class="create-box-description" placeholder="Add description..." rows="3" style="padding-left: 0;"></textarea>
-
-        <div class="create-box-properties" style="padding-left: 0;">
-          <div class="dropdown property-chip-dropdown" id="cal-status-dropdown">
-            <button type="button" class="property-chip dropdown-trigger" id="cal-status-chip">
-              <span class="status-badge backlog">
-                <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
-                <span class="chip-label">Backlog</span>
-              </span>
-            </button>
-            <div class="dropdown-menu property-dropdown hidden">
-              {{range .Columns}}
-              <button type="button" class="dropdown-item cal-status-option" data-column-id="{{.ID}}" data-column-name="{{.Name}}">
-                <span class="status-badge {{lower .Name}}">{{.Name}}</span>
-              </button>
+<div id="create-issue-modal" class="fixed inset-0 z-50 hidden">
+  <div class="fixed inset-0 bg-black/50" data-close="create-issue-modal"></div>
+  <div class="fixed inset-0 flex items-center justify-center p-4">
+    <div class="relative w-full max-w-lg bg-white rounded-xl shadow-xl">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
+        <h2 class="text-lg font-semibold text-zinc-900">Create Issue</h2>
+        <button class="text-zinc-400 hover:text-zinc-600 text-2xl transition-colors" data-close="create-issue-modal">&times;</button>
+      </div>
+      <form id="create-issue-form">
+        <div class="px-6 py-4 space-y-4">
+          {{if .Projects}}
+          <div>
+            <label class="block text-sm font-medium text-zinc-700 mb-1" for="issue-project">Project</label>
+            <select id="issue-project" name="project_id" class="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+              {{range .Projects}}
+              <option value="{{.ID}}">{{.Name}}</option>
               {{end}}
+            </select>
+          </div>
+          {{end}}
+          <div>
+            <input type="text" id="issue-title" name="title" class="w-full px-3 py-2 text-lg font-medium border-none bg-transparent outline-none text-zinc-900 placeholder-zinc-400" placeholder="Issue title" required autofocus>
+          </div>
+          <div>
+            <textarea id="issue-description" name="description" class="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent" placeholder="Add description..." rows="3"></textarea>
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <div class="relative" id="cal-status-dropdown">
+              <button type="button" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-md border border-zinc-200 bg-white hover:bg-zinc-50 transition-colors cursor-pointer dropdown-trigger" id="cal-status-chip">
+                <span class="inline-flex items-center gap-1.5 text-zinc-600">
+                  <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+                  <span class="chip-label">Backlog</span>
+                </span>
+              </button>
+              <div class="absolute left-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
+                {{range .Columns}}
+                <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors cal-status-option" data-column-id="{{.ID}}" data-column-name="{{.Name}}">
+                  <span class="inline-flex items-center gap-1.5 {{if eq (lower .Name) "done"}}text-green-600{{else if eq (lower .Name) "in-progress"}}text-blue-600{{else}}text-zinc-500{{end}}">{{.Name}}</span>
+                </button>
+                {{end}}
+              </div>
+            </div>
+            <div class="relative" id="cal-priority-dropdown">
+              <button type="button" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-md border border-zinc-200 bg-white hover:bg-zinc-50 transition-colors cursor-pointer dropdown-trigger" id="cal-priority-chip">
+                <span class="inline-flex items-center gap-1.5 text-zinc-500">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                  </svg>
+                  <span class="chip-label">No priority</span>
+                </span>
+              </button>
+              <div class="absolute left-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
+                <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors cal-priority-option" data-priority="0" data-priority-name="No priority">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400">
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                  </svg>
+                  <span>No priority</span>
+                </button>
+                <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors cal-priority-option" data-priority="1" data-priority-name="Urgent">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500">
+                    <path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/>
+                  </svg>
+                  <span>Urgent</span>
+                </button>
+                <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors cal-priority-option" data-priority="2" data-priority-name="High">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-orange-500">
+                    <path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/>
+                  </svg>
+                  <span>High</span>
+                </button>
+                <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors cal-priority-option" data-priority="3" data-priority-name="Medium">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-yellow-500">
+                    <path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/>
+                  </svg>
+                  <span>Medium</span>
+                </button>
+                <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors cal-priority-option" data-priority="4" data-priority-name="Low">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500">
+                    <path d="M2 20h.01"/><path d="M7 20v-4"/>
+                  </svg>
+                  <span>Low</span>
+                </button>
+              </div>
             </div>
           </div>
-          <div class="dropdown property-chip-dropdown" id="cal-priority-dropdown">
-            <button type="button" class="property-chip dropdown-trigger" id="cal-priority-chip">
-              <span class="priority-badge-chip">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon">
-                  <line x1="5" y1="12" x2="19" y2="12"/>
-                </svg>
-                <span class="chip-label">No priority</span>
-              </span>
-            </button>
-            <div class="dropdown-menu property-dropdown hidden">
-              <button type="button" class="dropdown-item cal-priority-option" data-priority="0" data-priority-name="No priority">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-none">
-                  <line x1="5" y1="12" x2="19" y2="12"/>
-                </svg>
-                <span>No priority</span>
-              </button>
-              <button type="button" class="dropdown-item cal-priority-option" data-priority="1" data-priority-name="Urgent">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-urgent">
-                  <path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/>
-                </svg>
-                <span>Urgent</span>
-              </button>
-              <button type="button" class="dropdown-item cal-priority-option" data-priority="2" data-priority-name="High">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-high">
-                  <path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/>
-                </svg>
-                <span>High</span>
-              </button>
-              <button type="button" class="dropdown-item cal-priority-option" data-priority="3" data-priority-name="Medium">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-medium">
-                  <path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/>
-                </svg>
-                <span>Medium</span>
-              </button>
-              <button type="button" class="dropdown-item cal-priority-option" data-priority="4" data-priority-name="Low">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-low">
-                  <path d="M2 20h.01"/><path d="M7 20v-4"/>
-                </svg>
-                <span>Low</span>
-              </button>
-            </div>
+          <div>
+            <label class="block text-sm font-medium text-zinc-700 mb-1" for="issue-due-date">Due Date</label>
+            <input type="date" id="issue-due-date" name="due_date" class="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
           </div>
+          <input type="hidden" name="column_id" id="cal-selected-column-id" value="">
+          <input type="hidden" name="priority" id="cal-selected-priority" value="0">
         </div>
-        <div class="form-group mt-4">
-          <label class="label" for="issue-due-date">Due Date</label>
-          <input type="date" id="issue-due-date" name="due_date" class="input">
+        <div class="flex items-center justify-end gap-2 px-6 py-4 bg-zinc-50 rounded-b-xl border-t border-zinc-100">
+          <button type="button" class="px-4 py-2 text-sm font-medium text-zinc-700 bg-white border border-zinc-200 rounded-md hover:bg-zinc-50 transition-colors" data-close="create-issue-modal">Cancel</button>
+          <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 transition-colors">Create Issue</button>
         </div>
-        <input type="hidden" name="column_id" id="cal-selected-column-id" value="">
-        <input type="hidden" name="priority" id="cal-selected-priority" value="0">
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-close="create-issue-modal">Cancel</button>
-        <button type="submit" class="btn btn-primary">Create Issue</button>
-      </div>
-    </form>
+      </form>
+    </div>
   </div>
 </div>
 
@@ -212,10 +221,10 @@ const calForm = {
   selectedPriority: 0
 };
 
-// Calendar day click handler - opens create issue modal with date pre-filled
+// Calendar day click handler
 document.querySelectorAll('.calendar-day').forEach(day => {
   day.addEventListener('click', (e) => {
-    if (e.target.closest('.calendar-issue') || e.target.closest('.calendar-more-btn')) {
+    if (e.target.closest('a') || e.target.closest('button[data-date]')) {
       return;
     }
 
@@ -237,16 +246,9 @@ document.querySelectorAll('.cal-status-option').forEach(opt => {
     e.stopPropagation();
     calForm.selectedColumnId = opt.dataset.columnId;
     document.getElementById('cal-selected-column-id').value = calForm.selectedColumnId;
-    const badge = opt.querySelector('.status-badge').cloneNode(true);
-    const label = document.createElement('span');
-    label.className = 'chip-label';
-    label.textContent = opt.dataset.columnName;
-    badge.innerHTML = '';
-    badge.appendChild(label);
     const chip = document.getElementById('cal-status-chip');
-    chip.innerHTML = '';
-    chip.appendChild(badge);
-    chip.classList.add('selected');
+    const label = chip.querySelector('.chip-label');
+    if (label) label.textContent = opt.dataset.columnName;
     document.getElementById('cal-status-dropdown').querySelector('.dropdown-menu').classList.add('hidden');
   });
 });
@@ -259,21 +261,8 @@ document.querySelectorAll('.cal-priority-option').forEach(opt => {
     calForm.selectedPriority = parseInt(opt.dataset.priority);
     document.getElementById('cal-selected-priority').value = calForm.selectedPriority;
     const chip = document.getElementById('cal-priority-chip');
-    const icon = opt.querySelector('.priority-icon').cloneNode(true);
-    const wrapper = document.createElement('span');
-    wrapper.className = 'priority-badge-chip';
-    wrapper.appendChild(icon);
-    const label = document.createElement('span');
-    label.className = 'chip-label';
-    label.textContent = opt.dataset.priorityName;
-    wrapper.appendChild(label);
-    chip.innerHTML = '';
-    chip.appendChild(wrapper);
-    if (calForm.selectedPriority > 0) {
-      chip.classList.add('selected');
-    } else {
-      chip.classList.remove('selected');
-    }
+    const label = chip.querySelector('.chip-label');
+    if (label) label.textContent = opt.dataset.priorityName;
     document.getElementById('cal-priority-dropdown').querySelector('.dropdown-menu').classList.add('hidden');
   });
 });

@@ -1,8 +1,8 @@
 {{define "content"}}
 <!-- Create Issue Box -->
-<div class="bg-white rounded-sm shadow-sm mb-6">
+<div class="bg-white rounded-lg shadow-sm border border-zinc-200 mb-6">
   <div class="flex items-center gap-2 px-4 py-3 text-sm text-zinc-500">
-    <div class="dropdown" id="header-project-dropdown">
+    <div class="relative" id="header-project-dropdown">
       <button type="button" class="inline-flex items-center gap-1.5 font-medium text-zinc-900 bg-transparent border-none cursor-pointer px-2 py-1 -mx-2 -my-1 rounded hover:bg-zinc-100 transition-colors dropdown-trigger" aria-haspopup="true" aria-expanded="false">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect width="6" height="14" x="4" y="5" rx="2"/>
@@ -13,9 +13,9 @@
           <path d="m6 9 6 6 6-6"/>
         </svg>
       </button>
-      <div class="dropdown-menu property-dropdown hidden">
+      <div class="absolute left-0 top-full mt-1 w-56 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
         {{range .Projects}}
-        <button type="button" class="dropdown-item header-project-option" data-project-id="{{.ID}}" data-project-name="{{.Name}}" data-project-key="{{.Key}}">
+        <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors header-project-option" data-project-id="{{.ID}}" data-project-name="{{.Name}}" data-project-key="{{.Key}}">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect width="6" height="14" x="4" y="5" rx="2"/>
             <rect width="6" height="10" x="14" y="7" rx="2"/>
@@ -24,7 +24,7 @@
           <span class="text-zinc-400 text-xs ml-auto">{{.Key}}</span>
         </button>
         {{else}}
-        <div class="dropdown-item text-zinc-400">No projects available</div>
+        <div class="px-3 py-2 text-sm text-zinc-400">No projects available</div>
         {{end}}
       </div>
     </div>
@@ -50,78 +50,78 @@
 
     <div class="flex flex-wrap gap-2 px-4 pb-4">
       <!-- Status Chip -->
-      <div class="dropdown property-chip-dropdown" id="status-dropdown">
-        <button type="button" class="property-chip dropdown-trigger" id="status-chip">
-          <span class="status-badge backlog">
-            <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+      <div class="relative" id="status-dropdown">
+        <button type="button" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-md border border-zinc-200 bg-white hover:bg-zinc-50 transition-colors cursor-pointer dropdown-trigger" id="status-chip">
+          <span class="inline-flex items-center gap-1.5 text-zinc-600">
+            <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
             <span class="chip-label">Backlog</span>
           </span>
         </button>
-        <div class="dropdown-menu property-dropdown hidden">
+        <div class="absolute left-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
           {{range .Columns}}
-          <button type="button" class="dropdown-item status-option" data-column-id="{{.ID}}" data-column-name="{{.Name}}">
-            <span class="status-badge {{lower .Name}}">
+          <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors status-option" data-column-id="{{.ID}}" data-column-name="{{.Name}}">
+            <span class="inline-flex items-center gap-1.5 {{if eq (lower .Name) "done"}}text-green-600{{else if eq (lower .Name) "in-progress"}}text-blue-600{{else if eq (lower .Name) "todo"}}text-zinc-600{{else}}text-zinc-500{{end}}">
               {{if eq (lower .Name) "backlog"}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
               {{else if eq (lower .Name) "todo"}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
               {{else if or (eq (lower .Name) "in-progress") (eq (lower .Name) "doing")}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
               {{else if or (eq (lower .Name) "done") (eq (lower .Name) "completed")}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
               {{else if or (eq (lower .Name) "canceled") (eq (lower .Name) "cancelled")}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
               {{else}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
               {{end}}
               {{.Name}}
             </span>
           </button>
           {{else}}
-          <div class="dropdown-item text-muted">No statuses available</div>
+          <div class="px-3 py-2 text-sm text-zinc-400">No statuses available</div>
           {{end}}
         </div>
       </div>
 
       <!-- Priority Chip -->
-      <div class="dropdown property-chip-dropdown" id="priority-dropdown">
-        <button type="button" class="property-chip dropdown-trigger" id="priority-chip">
-          <span class="priority-badge-chip">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon">
+      <div class="relative" id="priority-dropdown">
+        <button type="button" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-md border border-zinc-200 bg-white hover:bg-zinc-50 transition-colors cursor-pointer dropdown-trigger" id="priority-chip">
+          <span class="inline-flex items-center gap-1.5 text-zinc-500">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
             <span class="chip-label">No priority</span>
           </span>
         </button>
-        <div class="dropdown-menu property-dropdown hidden">
-          <button type="button" class="dropdown-item priority-option" data-priority="0" data-priority-name="No priority">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-none">
+        <div class="absolute left-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
+          <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors priority-option" data-priority="0" data-priority-name="No priority">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400">
               <line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
             <span>No priority</span>
           </button>
-          <button type="button" class="dropdown-item priority-option" data-priority="1" data-priority-name="Urgent">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-urgent">
+          <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors priority-option" data-priority="1" data-priority-name="Urgent">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500">
               <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
               <line x1="12" y1="9" x2="12" y2="13"/>
               <line x1="12" y1="17" x2="12.01" y2="17"/>
             </svg>
             <span>Urgent</span>
           </button>
-          <button type="button" class="dropdown-item priority-option" data-priority="2" data-priority-name="High">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-high">
+          <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors priority-option" data-priority="2" data-priority-name="High">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-orange-500">
               <path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/>
             </svg>
             <span>High</span>
           </button>
-          <button type="button" class="dropdown-item priority-option" data-priority="3" data-priority-name="Medium">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-medium">
+          <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors priority-option" data-priority="3" data-priority-name="Medium">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-yellow-500">
               <path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/>
             </svg>
             <span>Medium</span>
           </button>
-          <button type="button" class="dropdown-item priority-option" data-priority="4" data-priority-name="Low">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-low">
+          <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors priority-option" data-priority="4" data-priority-name="Low">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500">
               <path d="M2 20h.01"/><path d="M7 20v-4"/>
             </svg>
             <span>Low</span>
@@ -130,33 +130,33 @@
       </div>
 
       <!-- Assignee Chip -->
-      <div class="dropdown property-chip-dropdown" id="assignee-dropdown">
-        <button type="button" class="property-chip dropdown-trigger" id="assignee-chip">
-          <span class="assignee-badge-chip">
-            <span class="avatar avatar-xs" style="background: hsl(var(--muted)); color: hsl(var(--muted-foreground));">-</span>
+      <div class="relative" id="assignee-dropdown">
+        <button type="button" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-md border border-zinc-200 bg-white hover:bg-zinc-50 transition-colors cursor-pointer dropdown-trigger" id="assignee-chip">
+          <span class="inline-flex items-center gap-1.5 text-zinc-500">
+            <span class="w-5 h-5 rounded-full bg-zinc-200 text-zinc-500 text-xs flex items-center justify-center font-medium">-</span>
             <span class="chip-label">Unassigned</span>
           </span>
         </button>
-        <div class="dropdown-menu property-dropdown hidden">
-          <button type="button" class="dropdown-item assignee-option" data-assignee-id="" data-assignee-name="Unassigned">
-            <span class="avatar avatar-sm" style="background: hsl(var(--muted)); color: hsl(var(--muted-foreground));">-</span>
+        <div class="absolute left-0 top-full mt-1 w-56 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
+          <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors assignee-option" data-assignee-id="" data-assignee-name="Unassigned">
+            <span class="w-6 h-6 rounded-full bg-zinc-200 text-zinc-500 text-xs flex items-center justify-center font-medium">-</span>
             <span>Unassigned</span>
           </button>
           {{range .TeamMembers}}
-          <button type="button" class="dropdown-item assignee-option" data-assignee-id="{{.ID}}" data-assignee-name="{{.DisplayName}}">
-            <span class="avatar avatar-sm">{{slice .DisplayName 0 1}}</span>
+          <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors assignee-option" data-assignee-id="{{.ID}}" data-assignee-name="{{.DisplayName}}">
+            <span class="w-6 h-6 rounded-full bg-indigo-500 text-white text-xs flex items-center justify-center font-medium">{{slice .DisplayName 0 1}}</span>
             <span>{{.DisplayName}}</span>
           </button>
           {{else}}
-          <div class="dropdown-item text-muted">No team members</div>
+          <div class="px-3 py-2 text-sm text-zinc-400">No team members</div>
           {{end}}
         </div>
       </div>
 
       <!-- Sprint/Cycle Chip -->
-      <div class="dropdown property-chip-dropdown" id="cycle-dropdown">
-        <button type="button" class="property-chip dropdown-trigger" id="cycle-chip">
-          <span class="cycle-badge-chip">
+      <div class="relative" id="cycle-dropdown">
+        <button type="button" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-md border border-zinc-200 bg-white hover:bg-zinc-50 transition-colors cursor-pointer dropdown-trigger" id="cycle-chip">
+          <span class="inline-flex items-center gap-1.5 text-zinc-500">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M10 2h4"/>
               <path d="M12 14v-4"/>
@@ -166,24 +166,30 @@
             <span class="chip-label">No sprint</span>
           </span>
         </button>
-        <div class="dropdown-menu property-dropdown hidden">
-          <button type="button" class="dropdown-item cycle-option" data-cycle-id="" data-cycle-name="No sprint">
-            <span class="text-muted">No sprint</span>
+        <div class="absolute left-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
+          <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors cycle-option" data-cycle-id="" data-cycle-name="No sprint">
+            <span class="text-zinc-400">No sprint</span>
           </button>
           {{range .Cycles}}
-          <button type="button" class="dropdown-item cycle-option" data-cycle-id="{{.ID}}" data-cycle-name="{{.Name}}">
-            <span class="status-badge {{.Status}}">{{.Name}}</span>
+          <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors cycle-option" data-cycle-id="{{.ID}}" data-cycle-name="{{.Name}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500">
+              <path d="M10 2h4"/>
+              <path d="M12 14v-4"/>
+              <path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6"/>
+              <path d="M9 17H4v5"/>
+            </svg>
+            <span>{{.Name}}</span>
           </button>
           {{else}}
-          <div class="dropdown-item text-muted">No sprints available</div>
+          <div class="px-3 py-2 text-sm text-zinc-400">No sprints available</div>
           {{end}}
         </div>
       </div>
     </div>
 
-    <div class="flex items-center justify-between px-4 py-3 bg-zinc-50 rounded-b-sm">
+    <div class="flex items-center justify-between px-4 py-3 bg-zinc-50 rounded-b-lg border-t border-zinc-100">
       <div></div>
-      <button type="submit" class="btn btn-primary">
+      <button type="submit" class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 transition-colors">
         Create issue
       </button>
     </div>
@@ -218,7 +224,7 @@
 {{if .Issues}}
 <div class="mb-6">
   <div class="py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">{{.Label}}</div>
-  <div class="bg-white rounded-sm shadow-sm">
+  <div class="bg-white rounded-lg shadow-sm border border-zinc-200">
     <table class="w-full text-sm border-collapse">
       <thead>
         <tr class="bg-zinc-50">
@@ -236,14 +242,29 @@
           <td class="px-4 py-3"><span class="font-medium text-zinc-900">{{.Title}}</span></td>
           <td class="px-4 py-3">
             {{if .Column}}
-            <span class="status-badge {{lower .Column.Name}}">{{.Column.Name}}</span>
+            <span class="inline-flex items-center gap-1.5 text-xs font-medium {{if eq (lower .Column.Name) "done"}}text-green-600{{else if eq (lower .Column.Name) "in-progress"}}text-blue-600{{else if eq (lower .Column.Name) "todo"}}text-zinc-600{{else}}text-zinc-500{{end}}">
+              {{if eq (lower .Column.Name) "backlog"}}
+              <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+              {{else if eq (lower .Column.Name) "todo"}}
+              <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
+              {{else if or (eq (lower .Column.Name) "in-progress") (eq (lower .Column.Name) "doing")}}
+              <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
+              {{else if or (eq (lower .Column.Name) "done") (eq (lower .Column.Name) "completed")}}
+              <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              {{else if or (eq (lower .Column.Name) "canceled") (eq (lower .Column.Name) "cancelled")}}
+              <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+              {{else}}
+              <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
+              {{end}}
+              {{.Column.Name}}
+            </span>
             {{end}}
           </td>
           <td class="px-4 py-3">
             {{if .Assignees}}
             <div class="flex items-center gap-2">
               {{range .Assignees}}
-              <span class="avatar avatar-sm">{{slice .DisplayName 0 1}}</span>
+              <span class="w-6 h-6 rounded-full bg-indigo-500 text-white text-xs flex items-center justify-center font-medium">{{slice .DisplayName 0 1}}</span>
               {{end}}
             </div>
             {{else}}
@@ -260,7 +281,7 @@
 {{end}}
 {{end}}
 {{else}}
-<div class="flex flex-col items-center justify-center py-16 px-8 text-center bg-white rounded-sm shadow-sm">
+<div class="flex flex-col items-center justify-center py-16 px-8 text-center bg-white rounded-lg shadow-sm border border-zinc-200">
   <svg class="w-12 h-12 mb-5 text-zinc-300" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/>
     <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
@@ -292,6 +313,16 @@ const inboxForm = {
   init() {
     this.setupForm();
     this.setupDropdowns();
+    this.setupRowClicks();
+  },
+
+  setupRowClicks() {
+    document.querySelectorAll('tr[data-issue-key]').forEach(row => {
+      row.addEventListener('click', () => {
+        const key = row.dataset.issueKey;
+        location.href = `/w/${workspaceSlug}/issue/${key}`;
+      });
+    });
   },
 
   setupForm() {
@@ -301,7 +332,6 @@ const inboxForm = {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
 
-      // Validate project ID
       if (!this.selectedProjectId) {
         alert('Please select a project first');
         return;
@@ -336,7 +366,6 @@ const inboxForm = {
       try {
         const issue = await app.api.post(`/projects/${this.selectedProjectId}/issues`, data);
 
-        // Add assignee if selected
         if (this.selectedAssigneeId) {
           try {
             await app.api.post(`/issues/${issue.id}/assignees`, { user_id: this.selectedAssigneeId });
@@ -345,7 +374,6 @@ const inboxForm = {
           }
         }
 
-        // Navigate to the newly created issue
         location.href = `/w/${workspaceSlug}/issue/${issue.key}`;
       } catch (error) {
         alert(error.message || 'Failed to create issue');
@@ -353,25 +381,6 @@ const inboxForm = {
         submitBtn.textContent = 'Create issue';
       }
     });
-  },
-
-  resetSelections() {
-    this.selectedColumnId = '';
-    this.selectedCycleId = '';
-    this.selectedAssigneeId = '';
-    this.selectedPriority = 0;
-
-    document.getElementById('selected-column-id').value = '';
-    document.getElementById('selected-cycle-id').value = '';
-    document.getElementById('selected-assignee-id').value = '';
-    document.getElementById('selected-priority').value = '0';
-
-    document.querySelector('#status-chip span').textContent = 'Backlog';
-    document.querySelector('#priority-chip span').textContent = 'Priority';
-    document.querySelector('#assignee-chip span').textContent = 'Assignee';
-    document.querySelector('#cycle-chip span').textContent = 'Sprint';
-
-    document.querySelectorAll('.property-chip').forEach(c => c.classList.remove('selected'));
   },
 
   setupDropdowns() {
@@ -383,8 +392,6 @@ const inboxForm = {
         this.selectedProjectId = opt.dataset.projectId;
         document.getElementById('selected-project-id').value = this.selectedProjectId;
         document.getElementById('selected-project-name').textContent = opt.dataset.projectName;
-        const projectChip = document.querySelector('#project-chip span');
-        if (projectChip) projectChip.textContent = opt.dataset.projectKey;
         this.closeDropdown('header-project-dropdown');
       });
     });
@@ -396,17 +403,9 @@ const inboxForm = {
         e.stopPropagation();
         this.selectedColumnId = opt.dataset.columnId;
         document.getElementById('selected-column-id').value = this.selectedColumnId;
-        // Clone the status badge from dropdown to chip
-        const badge = opt.querySelector('.status-badge').cloneNode(true);
-        badge.querySelector('span')?.remove(); // Remove text span if exists
-        const label = document.createElement('span');
-        label.className = 'chip-label';
-        label.textContent = opt.dataset.columnName;
-        badge.appendChild(label);
         const chip = document.getElementById('status-chip');
-        chip.innerHTML = '';
-        chip.appendChild(badge);
-        chip.classList.add('selected');
+        const label = chip.querySelector('.chip-label');
+        if (label) label.textContent = opt.dataset.columnName;
         this.closeDropdown('status-dropdown');
       });
     });
@@ -419,23 +418,8 @@ const inboxForm = {
         this.selectedAssigneeId = opt.dataset.assigneeId;
         document.getElementById('selected-assignee-id').value = this.selectedAssigneeId;
         const chip = document.getElementById('assignee-chip');
-        const avatar = opt.querySelector('.avatar').cloneNode(true);
-        avatar.classList.remove('avatar-sm');
-        avatar.classList.add('avatar-xs');
-        const wrapper = document.createElement('span');
-        wrapper.className = 'assignee-badge-chip';
-        wrapper.appendChild(avatar);
-        const label = document.createElement('span');
-        label.className = 'chip-label';
-        label.textContent = opt.dataset.assigneeName;
-        wrapper.appendChild(label);
-        chip.innerHTML = '';
-        chip.appendChild(wrapper);
-        if (this.selectedAssigneeId) {
-          chip.classList.add('selected');
-        } else {
-          chip.classList.remove('selected');
-        }
+        const label = chip.querySelector('.chip-label');
+        if (label) label.textContent = opt.dataset.assigneeName;
         this.closeDropdown('assignee-dropdown');
       });
     });
@@ -448,21 +432,8 @@ const inboxForm = {
         this.selectedCycleId = opt.dataset.cycleId;
         document.getElementById('selected-cycle-id').value = this.selectedCycleId;
         const chip = document.getElementById('cycle-chip');
-        const wrapper = document.createElement('span');
-        wrapper.className = 'cycle-badge-chip';
-        wrapper.innerHTML = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M10 2h4"/><path d="M12 14v-4"/><path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6"/><path d="M9 17H4v5"/>
-          </svg>
-          <span class="chip-label">${opt.dataset.cycleName}</span>
-        `;
-        chip.innerHTML = '';
-        chip.appendChild(wrapper);
-        if (this.selectedCycleId) {
-          chip.classList.add('selected');
-        } else {
-          chip.classList.remove('selected');
-        }
+        const label = chip.querySelector('.chip-label');
+        if (label) label.textContent = opt.dataset.cycleName;
         this.closeDropdown('cycle-dropdown');
       });
     });
@@ -475,21 +446,8 @@ const inboxForm = {
         this.selectedPriority = parseInt(opt.dataset.priority);
         document.getElementById('selected-priority').value = this.selectedPriority;
         const chip = document.getElementById('priority-chip');
-        const icon = opt.querySelector('.priority-icon').cloneNode(true);
-        const wrapper = document.createElement('span');
-        wrapper.className = 'priority-badge-chip';
-        wrapper.appendChild(icon);
-        const label = document.createElement('span');
-        label.className = 'chip-label';
-        label.textContent = opt.dataset.priorityName;
-        wrapper.appendChild(label);
-        chip.innerHTML = '';
-        chip.appendChild(wrapper);
-        if (this.selectedPriority > 0) {
-          chip.classList.add('selected');
-        } else {
-          chip.classList.remove('selected');
-        }
+        const label = chip.querySelector('.chip-label');
+        if (label) label.textContent = opt.dataset.priorityName;
         this.closeDropdown('priority-dropdown');
       });
     });
@@ -503,15 +461,6 @@ const inboxForm = {
     }
   }
 };
-
-// Toast notification
-function showToast(message) {
-  const toast = document.createElement('div');
-  toast.className = 'toast-notification';
-  toast.textContent = message;
-  document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 3000);
-}
 
 inboxForm.init();
 </script>
