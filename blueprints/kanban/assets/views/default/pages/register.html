@@ -1,63 +1,69 @@
 {{define "content"}}
-<form class="auth-form" data-auth="register" method="POST">
+<form class="auth-form" data-auth="register" method="POST" novalidate>
   {{if .Error}}
-  <div class="alert alert-error">
+  <div class="alert alert-error" role="alert">
     {{.Error}}
   </div>
   {{end}}
 
-  <div class="alert alert-error hidden"></div>
+  <div class="alert alert-error hidden" role="alert" aria-live="polite"></div>
 
   <div class="form-group">
-    <label for="display_name" class="label">Display Name</label>
+    <label for="display_name" class="form-label">Display Name</label>
     <input
       type="text"
       id="display_name"
       name="display_name"
-      class="input"
+      class="form-control"
       placeholder="John Doe"
       required
       autofocus
+      autocomplete="name"
     >
   </div>
 
   <div class="form-group">
-    <label for="email" class="label">Email</label>
+    <label for="email" class="form-label">Email</label>
     <input
       type="email"
       id="email"
       name="email"
-      class="input"
+      class="form-control"
       placeholder="you@example.com"
       required
+      autocomplete="email"
     >
   </div>
 
   <div class="form-group">
-    <label for="username" class="label">Username</label>
+    <label for="username" class="form-label">Username</label>
     <input
       type="text"
       id="username"
       name="username"
-      class="input"
+      class="form-control"
       placeholder="johndoe"
       required
       pattern="[a-z0-9_-]+"
       title="Only lowercase letters, numbers, underscores, and hyphens"
+      autocomplete="username"
     >
+    <span class="form-hint">Only lowercase letters, numbers, underscores, and hyphens</span>
   </div>
 
   <div class="form-group">
-    <label for="password" class="label">Password</label>
+    <label for="password" class="form-label">Password</label>
     <input
       type="password"
       id="password"
       name="password"
-      class="input"
+      class="form-control"
       placeholder="Create a password"
       required
       minlength="8"
+      autocomplete="new-password"
     >
+    <span class="form-hint">At least 8 characters</span>
   </div>
 
   <button type="submit" class="btn btn-primary w-full">

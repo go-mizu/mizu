@@ -12,26 +12,26 @@
 <body>
   <div class="app-layout">
     <!-- Sidebar -->
-    <aside class="sidebar">
+    <aside class="sidebar" role="navigation" aria-label="Main navigation">
       <div class="sidebar-header">
-        <div class="dropdown" style="width: 100%;">
-          <button class="dropdown-trigger sidebar-logo" style="width: 100%; justify-content: flex-start; cursor: pointer; border: none; background: none; padding: 0;">
-            <svg width="24" height="24" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <div class="dropdown">
+          <button class="dropdown-trigger sidebar-logo" aria-haspopup="true" aria-expanded="false">
+            <svg width="24" height="24" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
               <rect width="32" height="32" fill="currentColor"/>
               <rect x="6" y="8" width="6" height="16" fill="white"/>
               <rect x="13" y="12" width="6" height="12" fill="white"/>
               <rect x="20" y="6" width="6" height="18" fill="white"/>
             </svg>
             <span>{{if .Workspace}}{{.Workspace.Name}}{{else}}Kanban{{end}}</span>
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left: auto; opacity: 0.5;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="dropdown-chevron" aria-hidden="true">
               <path d="m6 9 6 6 6-6"/>
             </svg>
           </button>
-          <div class="dropdown-menu hidden" style="left: 0; right: auto; min-width: 200px;">
+          <div class="dropdown-menu hidden">
             {{if .Workspaces}}
             {{range .Workspaces}}
-            <a href="/w/{{.Slug}}" class="dropdown-item {{if eq $.Workspace.ID .ID}}active{{end}}">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <a href="/w/{{.Slug}}" class="dropdown-item {{if eq $.Workspace.ID .ID}}is-active{{end}}">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <rect width="18" height="18" x="3" y="3"/>
                 <path d="M9 3v18"/>
                 <path d="M15 3v18"/>
@@ -43,7 +43,7 @@
             {{end}}
             {{if .Workspace}}
             <a href="/w/{{.Workspace.Slug}}/settings" class="dropdown-item">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
                 <circle cx="12" cy="12" r="3"/>
               </svg>
@@ -51,7 +51,7 @@
             </a>
             {{end}}
             <button class="dropdown-item" data-modal="create-workspace-modal">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M5 12h14"/>
                 <path d="M12 5v14"/>
               </svg>
@@ -63,22 +63,22 @@
 
       <nav class="sidebar-nav">
         <div class="nav-section">
-          <a href="/w/{{.Workspace.Slug}}/inbox" class="nav-item {{if eq .ActiveNav "inbox"}}active{{end}}">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <a href="/w/{{.Workspace.Slug}}/inbox" class="nav-item {{if eq .ActiveNav "inbox"}}is-active{{end}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/>
               <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
             </svg>
             <span>Inbox</span>
           </a>
-          <a href="/w/{{.Workspace.Slug}}/issues" class="nav-item {{if eq .ActiveNav "issues"}}active{{end}}">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <a href="/w/{{.Workspace.Slug}}/issues" class="nav-item {{if eq .ActiveNav "issues"}}is-active{{end}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <circle cx="12" cy="12" r="10"/>
               <circle cx="12" cy="12" r="1"/>
             </svg>
             <span>Issues</span>
           </a>
-          <a href="/w/{{.Workspace.Slug}}/cycles" class="nav-item {{if eq .ActiveNav "cycles"}}active{{end}}">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <a href="/w/{{.Workspace.Slug}}/cycles" class="nav-item {{if eq .ActiveNav "cycles"}}is-active{{end}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M10 2h4"/>
               <path d="M12 14v-4"/>
               <path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6"/>
@@ -92,8 +92,8 @@
         <div class="nav-section">
           <div class="nav-section-title">Teams</div>
           {{range .Teams}}
-          <a href="/w/{{$.Workspace.Slug}}/team/{{.ID}}" class="nav-item {{if eq $.ActiveTeamID .ID}}active{{end}}">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <a href="/w/{{$.Workspace.Slug}}/team/{{.ID}}" class="nav-item {{if eq $.ActiveTeamID .ID}}is-active{{end}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M18 21a8 8 0 0 0-16 0"/>
               <circle cx="10" cy="8" r="5"/>
               <path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/>
@@ -108,16 +108,16 @@
         <div class="nav-section">
           <div class="nav-section-title">Projects</div>
           {{range .Projects}}
-          <div class="flex items-center" style="position: relative;">
-            <a href="/w/{{$.Workspace.Slug}}/board/{{.ID}}" class="nav-item {{if eq $.ActiveProjectID .ID}}active{{end}}" style="flex: 1;">
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <div class="nav-item-wrapper">
+            <a href="/w/{{$.Workspace.Slug}}/board/{{.ID}}" class="nav-item {{if eq $.ActiveProjectID .ID}}is-active{{end}}">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <rect width="6" height="14" x="4" y="5" rx="2"/>
                 <rect width="6" height="10" x="14" y="7" rx="2"/>
               </svg>
               <span>{{.Name}}</span>
             </a>
-            <a href="/w/{{$.Workspace.Slug}}/project/{{.ID}}/settings" class="btn btn-ghost btn-icon btn-sm" style="position: absolute; right: 0.25rem; opacity: 0.5;" title="Project Settings">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <a href="/w/{{$.Workspace.Slug}}/project/{{.ID}}/settings" class="btn btn-ghost btn-icon btn-sm nav-item-action" title="Project Settings" aria-label="{{.Name}} settings">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
                 <circle cx="12" cy="12" r="3"/>
               </svg>
@@ -128,69 +128,52 @@
         {{end}}
       </nav>
 
+      <!-- Sidebar Footer with User Menu -->
       <div class="sidebar-footer">
-        <button class="sidebar-toggle" title="Toggle sidebar">
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect width="18" height="18" x="3" y="3" rx="2"/>
-            <path d="M9 3v18"/>
+        <!-- Search Trigger -->
+        <button class="sidebar-search-trigger" title="Search (Cmd+K)">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/>
+            <path d="m21 21-4.3-4.3"/>
           </svg>
+          <span>Search</span>
+          <kbd>⌘K</kbd>
         </button>
+
+        <!-- Create Button -->
+        <button class="sidebar-create-btn" id="global-create-btn" data-modal="global-create-issue-modal" title="Create Issue (C)">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14"/>
+            <path d="M12 5v14"/>
+          </svg>
+          <span>New Issue</span>
+        </button>
+
+        <!-- User Menu -->
+        <div class="dropdown sidebar-user-dropdown">
+          <button class="dropdown-trigger sidebar-user" title="{{.User.DisplayName}}">
+            <span class="sidebar-user-avatar">{{slice .User.DisplayName 0 1}}</span>
+            <span class="sidebar-user-name">{{.User.DisplayName}}</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="dropdown-chevron">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </button>
+          <div class="dropdown-menu hidden" style="bottom: 100%; top: auto; margin-bottom: 0.25rem;">
+            <button class="dropdown-item" data-action="logout">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" x2="9" y1="12" y2="12"/>
+              </svg>
+              <span>Sign out</span>
+            </button>
+          </div>
+        </div>
       </div>
     </aside>
 
     <!-- Main Content Area -->
     <div class="main-wrapper">
-      <!-- Topbar -->
-      <header class="topbar">
-        <div class="topbar-left">
-          {{if .Breadcrumbs}}
-          <nav class="breadcrumb">
-            {{range $i, $b := .Breadcrumbs}}
-            {{if $i}}<span class="breadcrumb-separator">/</span>{{end}}
-            {{if $b.URL}}
-            <a href="{{$b.URL}}">{{$b.Label}}</a>
-            {{else}}
-            <span class="breadcrumb-current">{{$b.Label}}</span>
-            {{end}}
-            {{end}}
-          </nav>
-          {{end}}
-        </div>
-
-        <div class="topbar-right">
-          <!-- Search / Command Palette Trigger -->
-          <button class="search-trigger">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="11" cy="11" r="8"/>
-              <path d="m21 21-4.3-4.3"/>
-            </svg>
-            <span>Search...</span>
-            <kbd>&#8984;K</kbd>
-          </button>
-
-          <!-- User Menu -->
-          <div class="dropdown">
-            <button class="dropdown-trigger avatar" title="{{.User.DisplayName}}">
-              {{slice .User.DisplayName 0 1}}
-            </button>
-            <div class="dropdown-menu hidden">
-              <div class="dropdown-item" style="pointer-events: none; opacity: 0.7;">
-                <span>{{.User.DisplayName}}</span>
-              </div>
-              <div class="dropdown-divider"></div>
-              <button class="dropdown-item" data-action="logout">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                  <polyline points="16 17 21 12 16 7"/>
-                  <line x1="21" x2="9" y1="12" y2="12"/>
-                </svg>
-                <span>Sign out</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
-
       <!-- Main Content -->
       <main class="main-content">
         {{template "content" .}}

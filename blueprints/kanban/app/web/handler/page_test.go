@@ -64,8 +64,8 @@ func TestRegisterTemplate(t *testing.T) {
 	}
 }
 
-// TestHomeTemplate tests the home template renders without errors
-func TestHomeTemplate(t *testing.T) {
+// TestInboxTemplate tests the inbox template renders without errors
+func TestInboxTemplate(t *testing.T) {
 	templates := loadTemplates(t)
 
 	user := &users.User{
@@ -91,25 +91,38 @@ func TestHomeTemplate(t *testing.T) {
 		Key:  "TEST",
 	}
 
-	data := HomeData{
-		Title:           "Dashboard",
-		User:            user,
-		Workspace:       workspace,
-		Workspaces:      []*workspaces.Workspace{workspace},
-		Teams:           []*teams.Team{team},
-		Projects:        []*projects.Project{project},
-		Stats:           Stats{OpenIssues: 5, InProgress: 3, Completed: 10},
-		DefaultTeamID:   "team-1",
-		ActiveTeamID:    "team-1",
-		ActiveProjectID: "proj-1",
-		ActiveNav:       "home",
-		Breadcrumbs:     []Breadcrumb{},
+	col := &columns.Column{
+		ID:   "col-1",
+		Name: "Backlog",
+	}
+
+	data := InboxData{
+		Title:            "Inbox",
+		User:             user,
+		Workspace:        workspace,
+		Workspaces:       []*workspaces.Workspace{workspace},
+		Teams:            []*teams.Team{team},
+		Projects:         []*projects.Project{project},
+		DefaultProject:   project,
+		DefaultProjectID: "proj-1",
+		DefaultTeamID:    "team-1",
+		IssueGroups:      []*IssueGroup{},
+		ActiveTab:        "assigned",
+		AssignedCount:    0,
+		CreatedCount:     0,
+		Columns:          []*columns.Column{col},
+		TeamMembers:      []*users.User{},
+		Cycles:           []*cycles.Cycle{},
+		ActiveTeamID:     "team-1",
+		ActiveProjectID:  "proj-1",
+		ActiveNav:        "inbox",
+		Breadcrumbs:      []Breadcrumb{},
 	}
 
 	var buf bytes.Buffer
-	err := templates["home"].Execute(&buf, data)
+	err := templates["inbox"].Execute(&buf, data)
 	if err != nil {
-		t.Errorf("Home template error: %v", err)
+		t.Errorf("Inbox template error: %v", err)
 	}
 }
 

@@ -3,13 +3,13 @@
 <div class="inbox-create-box">
   <div class="create-box-header">
     <div class="dropdown" id="header-project-dropdown">
-      <button type="button" class="create-box-project dropdown-trigger">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <button type="button" class="create-box-project dropdown-trigger" aria-haspopup="true" aria-expanded="false">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect width="6" height="14" x="4" y="5" rx="2"/>
           <rect width="6" height="10" x="14" y="7" rx="2"/>
         </svg>
         <span id="selected-project-name">{{if .DefaultProject}}{{.DefaultProject.Name}}{{else}}Select Project{{end}}</span>
-        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="dropdown-chevron" aria-hidden="true">
           <path d="m6 9 6 6 6-6"/>
         </svg>
       </button>
@@ -61,8 +61,22 @@
         <div class="dropdown-menu property-dropdown hidden">
           {{range .Columns}}
           <button type="button" class="dropdown-item status-option" data-column-id="{{.ID}}" data-column-name="{{.Name}}">
-            <span class="status-dot status-{{lower .Name}}"></span>
-            <span>{{.Name}}</span>
+            <span class="status-badge {{lower .Name}}">
+              {{if eq (lower .Name) "backlog"}}
+              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+              {{else if eq (lower .Name) "todo"}}
+              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
+              {{else if or (eq (lower .Name) "in-progress") (eq (lower .Name) "doing")}}
+              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
+              {{else if or (eq (lower .Name) "done") (eq (lower .Name) "completed")}}
+              <svg class="status-icon" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              {{else if or (eq (lower .Name) "canceled") (eq (lower .Name) "cancelled")}}
+              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+              {{else}}
+              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
+              {{end}}
+              {{.Name}}
+            </span>
           </button>
           {{else}}
           <div class="dropdown-item text-muted">No statuses available</div>
@@ -83,23 +97,35 @@
         </button>
         <div class="dropdown-menu property-dropdown hidden">
           <button type="button" class="dropdown-item priority-option" data-priority="0" data-priority-name="No priority">
-            <span class="priority-dot priority-none"></span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-none">
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
             <span>No priority</span>
           </button>
           <button type="button" class="dropdown-item priority-option" data-priority="1" data-priority-name="Urgent">
-            <span class="priority-dot priority-urgent"></span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-urgent">
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/>
+              <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
             <span>Urgent</span>
           </button>
           <button type="button" class="dropdown-item priority-option" data-priority="2" data-priority-name="High">
-            <span class="priority-dot priority-high"></span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-high">
+              <path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/>
+            </svg>
             <span>High</span>
           </button>
           <button type="button" class="dropdown-item priority-option" data-priority="3" data-priority-name="Medium">
-            <span class="priority-dot priority-medium"></span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-medium">
+              <path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/>
+            </svg>
             <span>Medium</span>
           </button>
           <button type="button" class="dropdown-item priority-option" data-priority="4" data-priority-name="Low">
-            <span class="priority-dot priority-low"></span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-low">
+              <path d="M2 20h.01"/><path d="M7 20v-4"/>
+            </svg>
             <span>Low</span>
           </button>
         </div>
@@ -126,30 +152,6 @@
           </button>
           {{else}}
           <div class="dropdown-item text-muted">No team members</div>
-          {{end}}
-        </div>
-      </div>
-
-      <!-- Project Chip -->
-      <div class="dropdown property-chip-dropdown" id="project-dropdown">
-        <button type="button" class="property-chip dropdown-trigger" id="project-chip">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>
-          </svg>
-          <span>{{if .DefaultProject}}{{.DefaultProject.Key}}{{else}}Project{{end}}</span>
-        </button>
-        <div class="dropdown-menu property-dropdown hidden">
-          {{range .Projects}}
-          <button type="button" class="dropdown-item project-option" data-project-id="{{.ID}}" data-project-name="{{.Name}}" data-project-key="{{.Key}}">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect width="6" height="14" x="4" y="5" rx="2"/>
-              <rect width="6" height="10" x="14" y="7" rx="2"/>
-            </svg>
-            <span>{{.Name}}</span>
-            <span class="text-muted text-xs ml-auto">{{.Key}}</span>
-          </button>
-          {{else}}
-          <div class="dropdown-item text-muted">No projects available</div>
           {{end}}
         </div>
       </div>
@@ -181,10 +183,7 @@
     </div>
 
     <div class="create-box-footer">
-      <label class="create-more-toggle">
-        <input type="checkbox" id="create-more-checkbox">
-        Create more
-      </label>
+      <div></div>
       <button type="submit" class="btn btn-primary">
         Create issue
       </button>
@@ -200,16 +199,16 @@
 </div>
 
 <!-- Tabs -->
-<div class="inbox-tabs">
-  <a href="/w/{{.Workspace.Slug}}/inbox?tab=assigned" class="inbox-tab {{if eq .ActiveTab "assigned"}}active{{end}}">
+<div class="inbox-tabs" role="tablist" aria-label="Issue filters">
+  <a href="/w/{{.Workspace.Slug}}/inbox?tab=assigned" class="inbox-tab {{if eq .ActiveTab "assigned"}}is-active{{end}}" role="tab" aria-selected="{{if eq .ActiveTab "assigned"}}true{{else}}false{{end}}">
     Assigned to me
     {{if .AssignedCount}}<span class="tab-count">{{.AssignedCount}}</span>{{end}}
   </a>
-  <a href="/w/{{.Workspace.Slug}}/inbox?tab=created" class="inbox-tab {{if eq .ActiveTab "created"}}active{{end}}">
+  <a href="/w/{{.Workspace.Slug}}/inbox?tab=created" class="inbox-tab {{if eq .ActiveTab "created"}}is-active{{end}}" role="tab" aria-selected="{{if eq .ActiveTab "created"}}true{{else}}false{{end}}">
     Created by me
     {{if .CreatedCount}}<span class="tab-count">{{.CreatedCount}}</span>{{end}}
   </a>
-  <a href="/w/{{.Workspace.Slug}}/inbox?tab=all" class="inbox-tab {{if eq .ActiveTab "all"}}active{{end}}">
+  <a href="/w/{{.Workspace.Slug}}/inbox?tab=all" class="inbox-tab {{if eq .ActiveTab "all"}}is-active{{end}}" role="tab" aria-selected="{{if eq .ActiveTab "all"}}true{{else}}false{{end}}">
     All issues
   </a>
 </div>
@@ -326,18 +325,8 @@ const inboxForm = {
           }
         }
 
-        const createMore = document.getElementById('create-more-checkbox')?.checked;
-        if (createMore) {
-          // Reset form
-          form.reset();
-          this.resetSelections();
-          submitBtn.disabled = false;
-          submitBtn.textContent = 'Create issue';
-          // Show toast notification
-          showToast('Issue created successfully');
-        } else {
-          location.href = `/w/${workspaceSlug}/issue/${issue.key}`;
-        }
+        // Navigate to the newly created issue
+        location.href = `/w/${workspaceSlug}/issue/${issue.key}`;
       } catch (error) {
         alert(error.message || 'Failed to create issue');
         submitBtn.disabled = false;
@@ -377,20 +366,6 @@ const inboxForm = {
         const projectChip = document.querySelector('#project-chip span');
         if (projectChip) projectChip.textContent = opt.dataset.projectKey;
         this.closeDropdown('header-project-dropdown');
-      });
-    });
-
-    // Project options (from chip)
-    document.querySelectorAll('#project-dropdown .project-option').forEach(opt => {
-      opt.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.selectedProjectId = opt.dataset.projectId;
-        document.getElementById('selected-project-id').value = this.selectedProjectId;
-        document.getElementById('selected-project-name').textContent = opt.dataset.projectName;
-        document.querySelector('#project-chip span').textContent = opt.dataset.projectKey;
-        document.getElementById('project-chip').classList.add('selected');
-        this.closeDropdown('project-dropdown');
       });
     });
 

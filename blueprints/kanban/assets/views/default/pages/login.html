@@ -1,35 +1,37 @@
 {{define "content"}}
-<form class="auth-form" data-auth="login" method="POST">
+<form class="auth-form" data-auth="login" method="POST" novalidate>
   {{if .Error}}
-  <div class="alert alert-error">
+  <div class="alert alert-error" role="alert">
     {{.Error}}
   </div>
   {{end}}
 
-  <div class="alert alert-error hidden"></div>
+  <div class="alert alert-error hidden" role="alert" aria-live="polite"></div>
 
   <div class="form-group">
-    <label for="email" class="label">Email</label>
+    <label for="email" class="form-label">Email</label>
     <input
       type="email"
       id="email"
       name="email"
-      class="input"
+      class="form-control"
       placeholder="you@example.com"
       required
       autofocus
+      autocomplete="email"
     >
   </div>
 
   <div class="form-group">
-    <label for="password" class="label">Password</label>
+    <label for="password" class="form-label">Password</label>
     <input
       type="password"
       id="password"
       name="password"
-      class="input"
+      class="form-control"
       placeholder="Enter your password"
       required
+      autocomplete="current-password"
     >
   </div>
 

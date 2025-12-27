@@ -5,15 +5,15 @@
     <p class="text-muted">{{.Project.Key}} Board</p>
   </div>
   <div class="flex gap-2">
-    <button class="btn btn-secondary" data-modal="add-column-modal">
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <button class="btn btn-secondary" data-modal="add-column-modal" aria-label="Add new column">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M5 12h14"/>
         <path d="M12 5v14"/>
       </svg>
       Add Column
     </button>
-    <button class="btn btn-primary" data-modal="create-issue-modal">
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <button class="btn btn-primary" data-modal="create-issue-modal" aria-label="Create new issue">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M5 12h14"/>
         <path d="M12 5v14"/>
       </svg>
@@ -108,9 +108,9 @@
 
     <div class="column-footer">
       <form class="quick-add-form" data-column-id="{{.ID}}">
-        <input type="text" placeholder="Add issue..." name="title">
-        <button type="submit" class="btn btn-ghost btn-icon btn-sm">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <input type="text" class="form-control form-control-sm" placeholder="Add issue..." name="title" aria-label="Quick add issue">
+        <button type="submit" class="btn btn-ghost btn-icon btn-sm" aria-label="Add issue">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M5 12h14"/>
             <path d="M12 5v14"/>
           </svg>
@@ -251,18 +251,18 @@
 
 
 <!-- Add Column Modal -->
-<div id="add-column-modal" class="modal hidden">
+<div id="add-column-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="add-column-title">
   <div class="modal-backdrop"></div>
   <div class="modal-content">
     <div class="modal-header">
-      <h2 class="modal-title">Add Column</h2>
-      <button class="modal-close">&times;</button>
+      <h2 id="add-column-title" class="modal-title">Add Column</h2>
+      <button class="modal-close" aria-label="Close modal">&times;</button>
     </div>
     <form id="add-column-form" data-project-id="{{.Project.ID}}">
       <div class="modal-body">
         <div class="form-group">
-          <label for="column-name" class="label">Column Name</label>
-          <input type="text" id="column-name" name="name" class="input" placeholder="e.g., In Review" required autofocus>
+          <label for="column-name" class="form-label">Column Name</label>
+          <input type="text" id="column-name" name="name" class="form-control" placeholder="e.g., In Review" required autofocus>
         </div>
       </div>
       <div class="modal-footer">
@@ -274,18 +274,18 @@
 </div>
 
 <!-- Rename Column Modal -->
-<div id="rename-column-modal" class="modal hidden">
+<div id="rename-column-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="rename-column-title">
   <div class="modal-backdrop"></div>
   <div class="modal-content">
     <div class="modal-header">
-      <h2 class="modal-title">Rename Column</h2>
-      <button class="modal-close">&times;</button>
+      <h2 id="rename-column-title" class="modal-title">Rename Column</h2>
+      <button class="modal-close" aria-label="Close modal">&times;</button>
     </div>
     <form id="rename-column-form">
       <div class="modal-body">
         <div class="form-group">
-          <label for="rename-column-name" class="label">Column Name</label>
-          <input type="text" id="rename-column-name" name="name" class="input" placeholder="Column name" required autofocus>
+          <label for="rename-column-name" class="form-label">Column Name</label>
+          <input type="text" id="rename-column-name" name="name" class="form-control" placeholder="Column name" required autofocus>
         </div>
       </div>
       <div class="modal-footer">

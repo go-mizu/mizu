@@ -1,7 +1,7 @@
 {{define "content"}}
 <div class="mb-4">
-  <a href="/w/{{.Workspace.Slug}}/issues" class="btn btn-ghost btn-icon" title="Back to issues">
-    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <a href="/w/{{.Workspace.Slug}}/issues" class="btn btn-ghost btn-icon" aria-label="Back to issues list">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <path d="m12 19-7-7 7-7"/>
       <path d="M19 12H5"/>
     </svg>
@@ -12,7 +12,15 @@
   <!-- Main Content -->
   <div class="issue-main">
     <div class="issue-header">
-      <div class="issue-key-badge issue-key">{{.Issue.Key}}</div>
+      <div class="flex items-center gap-2 mb-2">
+        <span class="issue-key">{{.Issue.Key}}</span>
+        <button class="btn btn-ghost btn-icon btn-sm" data-action="copy-link" title="Copy link">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+        </button>
+      </div>
       <h1
         id="issue-title"
         class="issue-title-editable"
@@ -36,43 +44,40 @@
 
     <!-- Activity / Comments -->
     <div class="activity-section">
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">Activity</h3>
-        </div>
-        <div class="card-content">
-          <!-- Comment Form -->
-          <form class="comment-form mb-4" data-issue-id="{{.Issue.ID}}">
-            <textarea
-              name="body"
-              class="textarea comment-input"
-              placeholder="Leave a comment..."
-              rows="3"
-            ></textarea>
-            <div class="comment-actions">
-              <button type="submit" class="btn btn-primary btn-sm">Comment</button>
-            </div>
-          </form>
+      <h3 class="text-sm font-medium mb-4">Activity</h3>
 
-          <!-- Comments List -->
-          <div class="comment-list">
-            {{range .Comments}}
-            <div class="comment-item flex gap-3">
-              <div class="avatar avatar-sm">{{slice .Author.DisplayName 0 1}}</div>
-              <div class="comment-content">
-                <div class="comment-header">
-                  <span class="comment-author">{{.Author.DisplayName}}</span>
-                  <span class="comment-time">{{.CreatedAt}}</span>
-                </div>
-                <div class="comment-body">{{.Content}}</div>
-              </div>
+      <!-- Comments List (above form) -->
+      <div class="comment-list mb-4">
+        {{range .Comments}}
+        <div class="comment-item">
+          <div class="avatar avatar-sm">{{slice .Author.DisplayName 0 1}}</div>
+          <div class="comment-content">
+            <div class="comment-header">
+              <span class="comment-author">{{.Author.DisplayName}}</span>
+              <span class="comment-time">{{.CreatedAt.Format "Jan 2, 2006"}}</span>
             </div>
-            {{else}}
-            <p class="text-muted text-sm">No comments yet. Be the first to comment!</p>
-            {{end}}
+            <div class="comment-body">{{.Content}}</div>
           </div>
         </div>
+        {{else}}
+        <p class="text-muted text-sm mb-4">No activity yet</p>
+        {{end}}
       </div>
+
+      <!-- Comment Form (bottom) -->
+      <form class="comment-form-inline" data-issue-id="{{.Issue.ID}}">
+        <div class="avatar avatar-sm">{{slice .User.DisplayName 0 1}}</div>
+        <div class="comment-input-wrapper">
+          <textarea
+            name="body"
+            class="comment-input-seamless"
+            placeholder="Write a comment..."
+            rows="1"
+            aria-label="Write a comment"
+          ></textarea>
+          <button type="submit" class="btn btn-primary btn-sm">Send</button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -81,9 +86,9 @@
     <!-- Status -->
     <div class="card property-card">
       <div class="property-label">Status</div>
-      <div class="property-chips status-chips" id="status-chips" data-issue-key="{{.Issue.Key}}">
+      <div class="property-chips status-chips" id="status-chips" data-issue-key="{{.Issue.Key}}" role="group" aria-label="Issue status">
         {{range .Columns}}
-        <button class="property-chip status-{{lower .Name}} {{if eq .ID $.Issue.ColumnID}}active{{end}}" data-value="{{.ID}}" title="{{.Name}}">
+        <button class="property-chip status-{{lower .Name}} {{if eq .ID $.Issue.ColumnID}}is-active{{end}}" data-value="{{.ID}}" title="{{.Name}}" aria-pressed="{{if eq .ID $.Issue.ColumnID}}true{{else}}false{{end}}">
           {{if eq (lower .Name) "backlog"}}
           <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
           {{else if eq (lower .Name) "todo"}}
@@ -106,33 +111,33 @@
     <!-- Priority -->
     <div class="card property-card">
       <div class="property-label">Priority</div>
-      <div class="property-chips" id="priority-chips" data-issue-key="{{.Issue.Key}}">
-        <button class="property-chip {{if eq .Issue.Priority 0}}active{{end}}" data-value="0" title="No priority">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <div class="property-chips" id="priority-chips" data-issue-key="{{.Issue.Key}}" role="group" aria-label="Issue priority">
+        <button class="property-chip {{if eq .Issue.Priority 0}}is-active{{end}}" data-value="0" title="No priority" aria-pressed="{{if eq .Issue.Priority 0}}true{{else}}false{{end}}">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M5 12h14"/>
           </svg>
           <span>None</span>
         </button>
-        <button class="property-chip priority-urgent {{if eq .Issue.Priority 1}}active{{end}}" data-value="1" title="Urgent">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <button class="property-chip priority-urgent {{if eq .Issue.Priority 1}}is-active{{end}}" data-value="1" title="Urgent" aria-pressed="{{if eq .Issue.Priority 1}}true{{else}}false{{end}}">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/>
           </svg>
           <span>Urgent</span>
         </button>
-        <button class="property-chip priority-high {{if eq .Issue.Priority 2}}active{{end}}" data-value="2" title="High">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <button class="property-chip priority-high {{if eq .Issue.Priority 2}}is-active{{end}}" data-value="2" title="High" aria-pressed="{{if eq .Issue.Priority 2}}true{{else}}false{{end}}">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/>
           </svg>
           <span>High</span>
         </button>
-        <button class="property-chip priority-medium {{if eq .Issue.Priority 3}}active{{end}}" data-value="3" title="Medium">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <button class="property-chip priority-medium {{if eq .Issue.Priority 3}}is-active{{end}}" data-value="3" title="Medium" aria-pressed="{{if eq .Issue.Priority 3}}true{{else}}false{{end}}">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/>
           </svg>
           <span>Medium</span>
         </button>
-        <button class="property-chip priority-low {{if eq .Issue.Priority 4}}active{{end}}" data-value="4" title="Low">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <button class="property-chip priority-low {{if eq .Issue.Priority 4}}is-active{{end}}" data-value="4" title="Low" aria-pressed="{{if eq .Issue.Priority 4}}true{{else}}false{{end}}">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M2 20h.01"/><path d="M7 20v-4"/>
           </svg>
           <span>Low</span>
@@ -184,23 +189,23 @@
     <div class="card property-card" data-field-id="{{.ID}}">
       <div class="property-label">{{.Name}}{{if .IsRequired}} *{{end}}</div>
       {{if eq .Kind "text"}}
-      <input type="text" class="input custom-field-input" data-field-id="{{.ID}}" data-kind="text" placeholder="Enter value...">
+      <input type="text" class="form-control custom-field-input" data-field-id="{{.ID}}" data-kind="text" placeholder="Enter value...">
       {{else if eq .Kind "number"}}
-      <input type="number" class="input custom-field-input" data-field-id="{{.ID}}" data-kind="number" placeholder="Enter number...">
+      <input type="number" class="form-control custom-field-input" data-field-id="{{.ID}}" data-kind="number" placeholder="Enter number...">
       {{else if eq .Kind "bool"}}
-      <label class="flex items-center gap-2 cursor-pointer">
-        <input type="checkbox" class="custom-field-input" data-field-id="{{.ID}}" data-kind="bool" style="width: 1rem; height: 1rem;">
+      <label class="form-check">
+        <input type="checkbox" class="custom-field-input" data-field-id="{{.ID}}" data-kind="bool">
         <span class="text-sm">Yes</span>
       </label>
       {{else if eq .Kind "date"}}
-      <input type="date" class="input custom-field-input" data-field-id="{{.ID}}" data-kind="date">
+      <input type="date" class="form-control custom-field-input" data-field-id="{{.ID}}" data-kind="date">
       {{else if eq .Kind "select"}}
-      <select class="select custom-field-input" data-field-id="{{.ID}}" data-kind="select">
+      <select class="form-control form-select custom-field-input" data-field-id="{{.ID}}" data-kind="select">
         <option value="">Select...</option>
         <!-- Options loaded from settings_json -->
       </select>
       {{else if eq .Kind "user"}}
-      <select class="select custom-field-input" data-field-id="{{.ID}}" data-kind="user">
+      <select class="form-control form-select custom-field-input" data-field-id="{{.ID}}" data-kind="user">
         <option value="">Select user...</option>
         {{range $.TeamMembers}}
         <option value="{{.ID}}">{{.DisplayName}}</option>
@@ -372,8 +377,12 @@ document.querySelectorAll('#status-chips .property-chip').forEach(chip => {
     try {
       await app.api.post(`/issues/{{.Issue.Key}}/move`, { column_id: columnId, position: 0 });
       // Update active state
-      document.querySelectorAll('#status-chips .property-chip').forEach(c => c.classList.remove('active'));
-      chip.classList.add('active');
+      document.querySelectorAll('#status-chips .property-chip').forEach(c => {
+        c.classList.remove('is-active');
+        c.setAttribute('aria-pressed', 'false');
+      });
+      chip.classList.add('is-active');
+      chip.setAttribute('aria-pressed', 'true');
     } catch (error) {
       console.error('Failed to update status:', error);
       alert(error.message || 'Failed to update status');
@@ -388,8 +397,12 @@ document.querySelectorAll('#priority-chips .property-chip').forEach(chip => {
     try {
       await app.api.patch(`/issues/{{.Issue.Key}}`, { priority: priority });
       // Update active state
-      document.querySelectorAll('#priority-chips .property-chip').forEach(c => c.classList.remove('active'));
-      chip.classList.add('active');
+      document.querySelectorAll('#priority-chips .property-chip').forEach(c => {
+        c.classList.remove('is-active');
+        c.setAttribute('aria-pressed', 'false');
+      });
+      chip.classList.add('is-active');
+      chip.setAttribute('aria-pressed', 'true');
     } catch (error) {
       console.error('Failed to update priority:', error);
       alert(error.message || 'Failed to update priority');

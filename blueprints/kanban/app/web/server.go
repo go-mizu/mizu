@@ -290,7 +290,7 @@ func (s *Server) setupRoutes() {
 	})
 	s.app.Get("/login", s.pageHandlers.Login)
 	s.app.Get("/register", s.pageHandlers.Register)
-	s.app.Get("/app", s.pageHandlers.Home) // Keep for backwards compatibility
+	s.app.Get("/app", s.pageHandlers.AppRedirect) // Redirect to first workspace inbox
 	s.app.Get("/w/{workspace}", func(c *mizu.Ctx) error {
 		// Redirect to inbox
 		workspace := c.Param("workspace")
