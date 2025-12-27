@@ -2,7 +2,7 @@
 <div class="flex items-center justify-between mb-6">
   <div>
     <h1 class="text-2xl font-semibold text-zinc-900">Sprints</h1>
-    <p class="text-sm text-zinc-500 mt-1">Plan and track your development cycles</p>
+    <p class="text-sm text-zinc-500 mt-1">{{len .Cycles}} sprint{{if ne (len .Cycles) 1}}s{{end}}</p>
   </div>
   <button class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 transition-colors" data-modal="create-cycle-modal">
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -15,97 +15,78 @@
 
 {{if .Cycles}}
 <div class="bg-white rounded-lg shadow-sm border border-zinc-200">
-  <table class="w-full">
-    <thead>
-      <tr class="border-b border-zinc-200">
-        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 bg-zinc-50">Sprint</th>
-        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 bg-zinc-50" style="width: 100px;">Status</th>
-        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 bg-zinc-50" style="width: 200px;">Duration</th>
-        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 bg-zinc-50" style="width: 150px;">Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {{range .Cycles}}
-      <tr class="border-b border-zinc-100 hover:bg-zinc-50 transition-colors" data-cycle-id="{{.ID}}">
-        <td class="px-4 py-3">
-          <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-full bg-zinc-700 text-white text-sm flex items-center justify-center font-medium">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M10 2h4"/>
-                <path d="M12 14v-4"/>
-                <path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6"/>
-                <path d="M9 17H4v5"/>
-              </svg>
-            </div>
-            <div>
-              <div class="font-medium text-zinc-900">{{.Name}}</div>
-              <a href="/w/{{$.Workspace.Slug}}/issues?cycle={{.ID}}" class="text-xs text-zinc-500 hover:text-zinc-700">View issues</a>
-            </div>
-          </div>
-        </td>
-        <td class="px-4 py-3">
-          <span class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full {{if eq .Status "planning"}}bg-zinc-100 text-zinc-600{{else if eq .Status "active"}}bg-green-100 text-green-700{{else}}bg-blue-100 text-blue-700{{end}}">
-            {{if eq .Status "planning"}}Planning{{else if eq .Status "active"}}Active{{else}}Completed{{end}}
-          </span>
-        </td>
-        <td class="px-4 py-3">
-          <span class="text-sm text-zinc-600">
-            {{if not .StartDate.IsZero}}{{.StartDate.Format "Jan 2"}}{{else}}TBD{{end}}
-            <span class="text-zinc-400 mx-1">→</span>
-            {{if not .EndDate.IsZero}}{{.EndDate.Format "Jan 2, 2006"}}{{else}}TBD{{end}}
-          </span>
-        </td>
-        <td class="px-4 py-3">
-          <div class="flex items-center gap-2">
-            {{if eq .Status "planning"}}
-            <button class="px-3 py-1.5 text-sm font-medium text-white bg-zinc-900 rounded hover:bg-zinc-800 transition-colors" data-action="start-cycle" data-cycle-id="{{.ID}}">Start</button>
-            {{else if eq .Status "active"}}
-            <button class="px-3 py-1.5 text-sm font-medium text-zinc-700 bg-white border border-zinc-200 rounded hover:bg-zinc-50 transition-colors" data-action="complete-cycle" data-cycle-id="{{.ID}}">Complete</button>
-            {{end}}
-            <div class="relative">
-              <button class="inline-flex items-center justify-center w-8 h-8 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 rounded transition-colors dropdown-trigger">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="1"/>
-                  <circle cx="12" cy="5" r="1"/>
-                  <circle cx="12" cy="19" r="1"/>
-                </svg>
-              </button>
-              <div class="absolute right-0 top-full mt-1 w-36 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
-                <button class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors" data-action="edit-cycle" data-cycle-id="{{.ID}}" data-cycle-name="{{.Name}}" data-start-date="{{if not .StartDate.IsZero}}{{.StartDate.Format "2006-01-02"}}{{end}}" data-end-date="{{if not .EndDate.IsZero}}{{.EndDate.Format "2006-01-02"}}{{end}}">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                  </svg>
-                  Edit
-                </button>
-                <div class="my-1 border-t border-zinc-100"></div>
-                <button class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-red-600 hover:bg-red-50 transition-colors" data-action="delete-cycle" data-cycle-id="{{.ID}}">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M3 6h18"/>
-                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                  </svg>
-                  Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        </td>
-      </tr>
+  {{range .Cycles}}
+  <div class="flex items-center gap-3 px-3 py-2.5 border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50 transition-colors cursor-pointer sprint-row" data-cycle-id="{{.ID}}">
+    <!-- Status Icon -->
+    <div class="w-5 flex-shrink-0">
+      {{if eq .Status "active"}}
+      <svg class="w-4 h-4 text-green-600" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
+      {{else if eq .Status "completed"}}
+      <svg class="w-4 h-4 text-green-600" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      {{else}}
+      <svg class="w-4 h-4 text-zinc-400" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
       {{end}}
-    </tbody>
-  </table>
+    </div>
+    <!-- Name -->
+    <span class="flex-1 text-sm font-medium text-zinc-900 truncate">{{.Name}}</span>
+    <!-- Status Badge -->
+    <span class="text-xs px-2 py-0.5 rounded-full {{if eq .Status "planning"}}bg-zinc-100 text-zinc-600{{else if eq .Status "active"}}bg-green-100 text-green-700{{else}}bg-blue-100 text-blue-700{{end}}">
+      {{if eq .Status "planning"}}Planning{{else if eq .Status "active"}}Active{{else}}Done{{end}}
+    </span>
+    <!-- Duration -->
+    <span class="text-xs text-zinc-400 w-32 text-right flex-shrink-0">
+      {{if not .StartDate.IsZero}}{{.StartDate.Format "Jan 2"}}{{else}}TBD{{end}}
+      <span class="mx-0.5">-</span>
+      {{if not .EndDate.IsZero}}{{.EndDate.Format "Jan 2"}}{{else}}TBD{{end}}
+    </span>
+    <!-- Actions -->
+    <div class="flex items-center gap-1 flex-shrink-0">
+      {{if eq .Status "planning"}}
+      <button class="px-2 py-1 text-xs font-medium text-white bg-zinc-900 rounded hover:bg-zinc-800 transition-colors" data-action="start-cycle" data-cycle-id="{{.ID}}" onclick="event.stopPropagation()">Start</button>
+      {{else if eq .Status "active"}}
+      <button class="px-2 py-1 text-xs font-medium text-zinc-600 bg-zinc-100 rounded hover:bg-zinc-200 transition-colors" data-action="complete-cycle" data-cycle-id="{{.ID}}" onclick="event.stopPropagation()">Complete</button>
+      {{end}}
+      <div class="relative">
+        <button class="inline-flex items-center justify-center w-7 h-7 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 rounded transition-colors dropdown-trigger" onclick="event.stopPropagation()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="1"/>
+            <circle cx="12" cy="5" r="1"/>
+            <circle cx="12" cy="19" r="1"/>
+          </svg>
+        </button>
+        <div class="absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
+          <button class="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left text-zinc-700 hover:bg-zinc-50 transition-colors" data-action="edit-cycle" data-cycle-id="{{.ID}}" data-cycle-name="{{.Name}}" data-start-date="{{if not .StartDate.IsZero}}{{.StartDate.Format "2006-01-02"}}{{end}}" data-end-date="{{if not .EndDate.IsZero}}{{.EndDate.Format "2006-01-02"}}{{end}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+            </svg>
+            Edit
+          </button>
+          <div class="my-1 border-t border-zinc-100"></div>
+          <button class="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left text-red-600 hover:bg-red-50 transition-colors" data-action="delete-cycle" data-cycle-id="{{.ID}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h18"/>
+              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+            </svg>
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  {{end}}
 </div>
 {{else}}
 <div class="flex flex-col items-center justify-center py-16 px-8 text-center bg-white rounded-lg shadow-sm border border-zinc-200">
-  <svg class="w-12 h-12 mb-5 text-zinc-300" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <svg class="w-10 h-10 mb-4 text-zinc-300" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M10 2h4"/>
     <path d="M12 14v-4"/>
     <path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6"/>
     <path d="M9 17H4v5"/>
   </svg>
-  <div class="text-base font-semibold mb-2 text-zinc-900">No sprints yet</div>
-  <div class="text-sm text-zinc-500 max-w-xs mb-5">Create a sprint to organize your work into time-boxed iterations</div>
-  <button class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 transition-colors" data-modal="create-cycle-modal">
+  <div class="text-sm font-medium mb-1 text-zinc-900">No sprints yet</div>
+  <div class="text-xs text-zinc-500 max-w-xs mb-4">Create a sprint to organize your work into time-boxed iterations</div>
+  <button class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 transition-colors" data-modal="create-cycle-modal">
     Create Sprint
   </button>
 </div>
@@ -115,31 +96,31 @@
 <div id="create-cycle-modal" class="fixed inset-0 z-50 hidden">
   <div class="fixed inset-0 bg-black/50 backdrop-blur-sm" data-close="create-cycle-modal"></div>
   <div class="fixed inset-0 flex items-center justify-center p-4">
-    <div class="relative w-full max-w-md bg-white shadow-xl border border-zinc-200">
+    <div class="relative w-full max-w-sm bg-white shadow-xl border border-zinc-200 rounded-lg">
       <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-100">
-        <h2 class="text-base font-semibold text-zinc-900">Create Sprint</h2>
+        <h2 class="text-sm font-semibold text-zinc-900">Create Sprint</h2>
         <button class="w-6 h-6 flex items-center justify-center text-zinc-400 hover:text-zinc-600 transition-colors" data-close="create-cycle-modal">&times;</button>
       </div>
       <form id="create-cycle-form">
-        <div class="px-4 py-4 space-y-4">
+        <div class="px-4 py-3 space-y-3">
           <div>
-            <label for="cycle-name" class="block text-sm font-medium text-zinc-700 mb-1">Sprint Name</label>
-            <input type="text" id="cycle-name" name="name" class="w-full px-3 py-2 text-sm border border-zinc-200 bg-white outline-none focus:border-zinc-400 transition-colors" placeholder="e.g., Sprint 1" required autofocus>
+            <label for="cycle-name" class="block text-xs font-medium text-zinc-700 mb-1">Sprint Name</label>
+            <input type="text" id="cycle-name" name="name" class="w-full px-3 py-1.5 text-sm border border-zinc-200 rounded bg-white outline-none focus:border-zinc-400 transition-colors" placeholder="e.g., Sprint 1" required autofocus>
           </div>
-          <div class="grid grid-cols-2 gap-4">
+          <div class="grid grid-cols-2 gap-3">
             <div>
-              <label for="cycle-start" class="block text-sm font-medium text-zinc-700 mb-1">Start Date</label>
-              <input type="date" id="cycle-start" name="start_date" class="w-full px-3 py-2 text-sm border border-zinc-200 bg-white outline-none focus:border-zinc-400 transition-colors">
+              <label for="cycle-start" class="block text-xs font-medium text-zinc-700 mb-1">Start Date</label>
+              <input type="date" id="cycle-start" name="start_date" class="w-full px-3 py-1.5 text-sm border border-zinc-200 rounded bg-white outline-none focus:border-zinc-400 transition-colors">
             </div>
             <div>
-              <label for="cycle-end" class="block text-sm font-medium text-zinc-700 mb-1">End Date</label>
-              <input type="date" id="cycle-end" name="end_date" class="w-full px-3 py-2 text-sm border border-zinc-200 bg-white outline-none focus:border-zinc-400 transition-colors">
+              <label for="cycle-end" class="block text-xs font-medium text-zinc-700 mb-1">End Date</label>
+              <input type="date" id="cycle-end" name="end_date" class="w-full px-3 py-1.5 text-sm border border-zinc-200 rounded bg-white outline-none focus:border-zinc-400 transition-colors">
             </div>
           </div>
         </div>
-        <div class="flex items-center justify-end gap-2 px-4 py-3 bg-zinc-50 border-t border-zinc-100">
-          <button type="button" class="px-4 py-2 text-sm font-medium text-zinc-700 bg-white border border-zinc-200 hover:bg-zinc-50 transition-colors" data-close="create-cycle-modal">Cancel</button>
-          <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 transition-colors">Create Sprint</button>
+        <div class="flex items-center justify-end gap-2 px-4 py-3 bg-zinc-50 border-t border-zinc-100 rounded-b-lg">
+          <button type="button" class="px-3 py-1.5 text-sm font-medium text-zinc-700 bg-white border border-zinc-200 rounded hover:bg-zinc-50 transition-colors" data-close="create-cycle-modal">Cancel</button>
+          <button type="submit" class="px-3 py-1.5 text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 rounded transition-colors">Create</button>
         </div>
       </form>
     </div>
@@ -150,31 +131,31 @@
 <div id="edit-cycle-modal" class="fixed inset-0 z-50 hidden">
   <div class="fixed inset-0 bg-black/50 backdrop-blur-sm" data-close="edit-cycle-modal"></div>
   <div class="fixed inset-0 flex items-center justify-center p-4">
-    <div class="relative w-full max-w-md bg-white shadow-xl border border-zinc-200">
+    <div class="relative w-full max-w-sm bg-white shadow-xl border border-zinc-200 rounded-lg">
       <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-100">
-        <h2 class="text-base font-semibold text-zinc-900">Edit Sprint</h2>
+        <h2 class="text-sm font-semibold text-zinc-900">Edit Sprint</h2>
         <button class="w-6 h-6 flex items-center justify-center text-zinc-400 hover:text-zinc-600 transition-colors" data-close="edit-cycle-modal">&times;</button>
       </div>
       <form id="edit-cycle-form">
-        <div class="px-4 py-4 space-y-4">
+        <div class="px-4 py-3 space-y-3">
           <div>
-            <label for="edit-cycle-name" class="block text-sm font-medium text-zinc-700 mb-1">Sprint Name</label>
-            <input type="text" id="edit-cycle-name" name="name" class="w-full px-3 py-2 text-sm border border-zinc-200 bg-white outline-none focus:border-zinc-400 transition-colors" placeholder="e.g., Sprint 1" required>
+            <label for="edit-cycle-name" class="block text-xs font-medium text-zinc-700 mb-1">Sprint Name</label>
+            <input type="text" id="edit-cycle-name" name="name" class="w-full px-3 py-1.5 text-sm border border-zinc-200 rounded bg-white outline-none focus:border-zinc-400 transition-colors" placeholder="e.g., Sprint 1" required>
           </div>
-          <div class="grid grid-cols-2 gap-4">
+          <div class="grid grid-cols-2 gap-3">
             <div>
-              <label for="edit-cycle-start" class="block text-sm font-medium text-zinc-700 mb-1">Start Date</label>
-              <input type="date" id="edit-cycle-start" name="start_date" class="w-full px-3 py-2 text-sm border border-zinc-200 bg-white outline-none focus:border-zinc-400 transition-colors">
+              <label for="edit-cycle-start" class="block text-xs font-medium text-zinc-700 mb-1">Start Date</label>
+              <input type="date" id="edit-cycle-start" name="start_date" class="w-full px-3 py-1.5 text-sm border border-zinc-200 rounded bg-white outline-none focus:border-zinc-400 transition-colors">
             </div>
             <div>
-              <label for="edit-cycle-end" class="block text-sm font-medium text-zinc-700 mb-1">End Date</label>
-              <input type="date" id="edit-cycle-end" name="end_date" class="w-full px-3 py-2 text-sm border border-zinc-200 bg-white outline-none focus:border-zinc-400 transition-colors">
+              <label for="edit-cycle-end" class="block text-xs font-medium text-zinc-700 mb-1">End Date</label>
+              <input type="date" id="edit-cycle-end" name="end_date" class="w-full px-3 py-1.5 text-sm border border-zinc-200 rounded bg-white outline-none focus:border-zinc-400 transition-colors">
             </div>
           </div>
         </div>
-        <div class="flex items-center justify-end gap-2 px-4 py-3 bg-zinc-50 border-t border-zinc-100">
-          <button type="button" class="px-4 py-2 text-sm font-medium text-zinc-700 bg-white border border-zinc-200 hover:bg-zinc-50 transition-colors" data-close="edit-cycle-modal">Cancel</button>
-          <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 transition-colors">Save Changes</button>
+        <div class="flex items-center justify-end gap-2 px-4 py-3 bg-zinc-50 border-t border-zinc-100 rounded-b-lg">
+          <button type="button" class="px-3 py-1.5 text-sm font-medium text-zinc-700 bg-white border border-zinc-200 rounded hover:bg-zinc-50 transition-colors" data-close="edit-cycle-modal">Cancel</button>
+          <button type="submit" class="px-3 py-1.5 text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 rounded transition-colors">Save</button>
         </div>
       </form>
     </div>
@@ -183,6 +164,14 @@
 
 <script>
 let cycleToEdit = null;
+
+// Row click to view issues
+document.querySelectorAll('.sprint-row').forEach(row => {
+  row.addEventListener('click', () => {
+    const cycleId = row.dataset.cycleId;
+    location.href = `/w/{{.Workspace.Slug}}/issues?cycle=${cycleId}`;
+  });
+});
 
 document.getElementById('create-cycle-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -243,9 +232,9 @@ document.addEventListener('click', async (e) => {
       if (confirm('Are you sure you want to delete this sprint? Issues will be unassigned from this sprint.')) {
         try {
           await app.api.delete(`/cycles/${cycleId}`);
-          const row = document.querySelector(`tr[data-cycle-id="${cycleId}"]`);
+          const row = document.querySelector(`.sprint-row[data-cycle-id="${cycleId}"]`);
           if (row) row.remove();
-          if (document.querySelectorAll('tr[data-cycle-id]').length === 0) {
+          if (document.querySelectorAll('.sprint-row').length === 0) {
             location.reload();
           }
         } catch (error) {

@@ -1,0 +1,179 @@
+{{define "content"}}
+<div class="max-w-3xl mx-auto">
+  <div class="mb-6">
+    <h1 class="text-xl font-semibold text-zinc-900">Activity Feed</h1>
+    <p class="text-sm text-zinc-500 mt-0.5">Recent changes across all issues</p>
+  </div>
+
+  {{if .Activities}}
+  <div id="activity-feed">
+    <!-- Activities data -->
+    <div class="hidden" id="activity-data">
+      {{range .Activities}}
+      <div class="activity-item"
+           data-date="{{.CreatedAt.Format "2006-01-02"}}"
+           data-date-display="{{.CreatedAt.Format "January 2, 2006"}}"
+           data-issue-key="{{.IssueKey}}"
+           data-actor="{{.ActorName}}"
+           data-action="{{.Action}}"
+           data-old-value="{{.OldValue}}"
+           data-new-value="{{.NewValue}}"
+           data-timestamp="{{.CreatedAt.Format "2006-01-02T15:04:05Z07:00"}}"
+           data-issue-url="/w/{{$.Workspace.Slug}}/issue/{{.IssueKey}}">
+      </div>
+      {{end}}
+    </div>
+
+    <!-- Rendered content -->
+    <div id="activity-content"></div>
+  </div>
+
+  <script>
+  (function() {
+    const container = document.getElementById('activity-content');
+    const items = document.querySelectorAll('.activity-item');
+
+    // Group by date
+    const grouped = {};
+
+    items.forEach(item => {
+      const date = item.dataset.date;
+      const dateDisplay = item.dataset.dateDisplay;
+
+      if (!grouped[date]) {
+        grouped[date] = { display: dateDisplay, activities: [] };
+      }
+      grouped[date].activities.push({
+        issueKey: item.dataset.issueKey,
+        actor: item.dataset.actor,
+        action: item.dataset.action,
+        oldValue: item.dataset.oldValue,
+        newValue: item.dataset.newValue,
+        timestamp: item.dataset.timestamp,
+        issueUrl: item.dataset.issueUrl
+      });
+    });
+
+    // Sort dates descending
+    const sortedDates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
+
+    // Get relative date label
+    function getDateLabel(dateStr, displayStr) {
+      const today = new Date().toISOString().split('T')[0];
+      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+      if (dateStr === today) return 'Today';
+      if (dateStr === yesterday) return 'Yesterday';
+      return displayStr;
+    }
+
+    // Format timestamp to local time
+    function formatTime(timestamp) {
+      const date = new Date(timestamp);
+      return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true });
+    }
+
+    // Get action icon and color
+    function getActionStyle(action) {
+      const styles = {
+        'issue_created': { bg: 'bg-emerald-100', text: 'text-emerald-600', icon: '<path d="M12 5v14"/><path d="M5 12h14"/>' },
+        'status_changed': { bg: 'bg-blue-100', text: 'text-blue-600', icon: '<polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>' },
+        'priority_changed': { bg: 'bg-amber-100', text: 'text-amber-600', icon: '<path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>' },
+        'assignee_added': { bg: 'bg-violet-100', text: 'text-violet-600', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/>' },
+        'assignee_removed': { bg: 'bg-rose-100', text: 'text-rose-500', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M17 11h6"/>' },
+        'cycle_attached': { bg: 'bg-indigo-100', text: 'text-indigo-600', icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/><path d="M9 16l2 2 4-4"/>' },
+        'cycle_detached': { bg: 'bg-slate-100', text: 'text-slate-500', icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>' },
+        'start_date_set': { bg: 'bg-cyan-100', text: 'text-cyan-600', icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>' },
+        'due_date_set': { bg: 'bg-cyan-100', text: 'text-cyan-600', icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>' },
+        'title_changed': { bg: 'bg-yellow-100', text: 'text-yellow-600', icon: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.375-9.375z"/>' },
+        'description_changed': { bg: 'bg-teal-100', text: 'text-teal-600', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>' },
+        'comment_added': { bg: 'bg-zinc-100', text: 'text-zinc-600', icon: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>' }
+      };
+      return styles[action] || { bg: 'bg-zinc-100', text: 'text-zinc-500', icon: '<circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>' };
+    }
+
+    // Get action text
+    function getActionText(action, oldVal, newVal) {
+      const texts = {
+        'issue_created': 'created',
+        'status_changed': newVal ? `moved to <span class="font-medium text-zinc-700">${newVal}</span>` : 'changed status',
+        'priority_changed': newVal ? `set priority to <span class="font-medium text-zinc-700">${newVal}</span>` : 'changed priority',
+        'assignee_added': newVal ? `assigned <span class="font-medium text-zinc-700">${newVal}</span>` : 'added assignee',
+        'assignee_removed': oldVal ? `removed <span class="font-medium text-zinc-700">${oldVal}</span>` : 'removed assignee',
+        'cycle_attached': newVal ? `added to <span class="font-medium text-zinc-700">${newVal}</span>` : 'added to sprint',
+        'cycle_detached': 'removed from sprint',
+        'start_date_set': newVal ? `set start <span class="font-medium text-zinc-700">${newVal}</span>` : 'set start date',
+        'start_date_cleared': 'cleared start date',
+        'due_date_set': newVal ? `set due <span class="font-medium text-zinc-700">${newVal}</span>` : 'set due date',
+        'due_date_cleared': 'cleared due date',
+        'title_changed': 'renamed',
+        'description_changed': 'edited description',
+        'comment_added': 'commented'
+      };
+      return texts[action] || 'updated';
+    }
+
+    // Build HTML
+    let html = '';
+
+    sortedDates.forEach(date => {
+      const dateData = grouped[date];
+      const dateLabel = getDateLabel(date, dateData.display);
+
+      html += `
+        <div class="mb-8">
+          <div class="flex items-center gap-3 mb-4">
+            <span class="text-xs font-medium text-zinc-400 uppercase tracking-wide">${dateLabel}</span>
+            <div class="flex-1 h-px bg-zinc-100"></div>
+          </div>
+          <div class="relative">
+            <!-- Timeline line -->
+            <div class="absolute left-[9px] top-2 bottom-2 w-px bg-zinc-200"></div>
+            <div class="space-y-0">
+      `;
+
+      dateData.activities.forEach(activity => {
+        const style = getActionStyle(activity.action);
+        const actionText = getActionText(activity.action, activity.oldValue, activity.newValue);
+
+        html += `
+              <a href="${activity.issueUrl}" class="relative flex items-center gap-3 py-2 group hover:bg-zinc-50 -mx-2 px-2 rounded-lg transition-colors">
+                <!-- Small action icon -->
+                <div class="relative z-10 w-[18px] h-[18px] rounded-full flex items-center justify-center flex-shrink-0 ${style.bg} ${style.text}">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${style.icon}</svg>
+                </div>
+                <!-- Activity content -->
+                <div class="flex-1 min-w-0 flex items-center gap-2 text-[13px] leading-tight">
+                  <span class="font-medium text-zinc-700 truncate">${activity.actor || 'Someone'}</span>
+                  <span class="text-zinc-500">${actionText}</span>
+                  <span class="inline-flex items-center px-1.5 py-0.5 text-[11px] font-mono bg-zinc-100 text-zinc-600 rounded font-medium">${activity.issueKey}</span>
+                </div>
+                <span class="text-[11px] text-zinc-400">${formatTime(activity.timestamp)}</span>
+              </a>
+        `;
+      });
+
+      html += `
+            </div>
+          </div>
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+  })();
+  </script>
+  {{else}}
+  <div class="flex flex-col items-center justify-center py-20 text-center">
+    <div class="w-12 h-12 mb-4 rounded-full bg-zinc-100 flex items-center justify-center">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400">
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+      </svg>
+    </div>
+    <h3 class="text-base font-medium text-zinc-900 mb-1">No activity yet</h3>
+    <p class="text-sm text-zinc-500 max-w-xs">
+      Activity will appear here when you create issues, change status, assign team members, and more.
+    </p>
+  </div>
+  {{end}}
+</div>
+{{end}}

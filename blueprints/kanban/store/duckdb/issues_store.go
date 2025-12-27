@@ -132,7 +132,7 @@ func (s *IssuesStore) Update(ctx context.Context, id string, in *issues.UpdateIn
 			end_date = COALESCE($7, end_date),
 			updated_at = $8
 		WHERE id = $1
-	`, id, in.Title, in.Description, in.Priority, nullTime(in.DueDate), nullTime(in.StartDate), nullTime(in.EndDate), time.Now())
+	`, id, nullStringPtr(in.Title), nullStringPtr(in.Description), nullIntPtr(in.Priority), nullTime(in.DueDate), nullTime(in.StartDate), nullTime(in.EndDate), time.Now())
 	return err
 }
 
@@ -215,6 +215,20 @@ func nullString(s string) sql.NullString {
 		return sql.NullString{}
 	}
 	return sql.NullString{String: s, Valid: true}
+}
+
+func nullStringPtr(s *string) sql.NullString {
+	if s == nil {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: *s, Valid: true}
+}
+
+func nullIntPtr(i *int) sql.NullInt64 {
+	if i == nil {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: int64(*i), Valid: true}
 }
 
 func nullTime(t *time.Time) sql.NullTime {

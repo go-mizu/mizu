@@ -1,32 +1,34 @@
 {{define "content"}}
 <div class="mb-4">
-  <a href="/w/{{.Workspace.Slug}}/issues" class="inline-flex items-center justify-center w-8 h-8 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-md transition-colors" aria-label="Back to issues list">
-    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <a href="/w/{{.Workspace.Slug}}/issues" class="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-900 transition-colors">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="m12 19-7-7 7-7"/>
       <path d="M19 12H5"/>
     </svg>
+    <span>Back to issues</span>
   </a>
 </div>
 
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-  <!-- Main Content -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+  <!-- Main Content - Borderless -->
   <div class="lg:col-span-2 space-y-6">
-    <div class="bg-white rounded-lg shadow-sm border border-zinc-200 p-6">
-      <div class="flex items-center gap-2 mb-3">
-        <span class="px-2 py-1 text-xs font-semibold text-zinc-500 bg-zinc-100 rounded font-mono">{{.Issue.Key}}</span>
-        <button class="inline-flex items-center justify-center w-7 h-7 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 rounded transition-colors copy-link-btn" data-action="copy-link" title="Copy link">
+    <!-- Header -->
+    <div>
+      <div class="flex items-center gap-2 mb-2">
+        <span class="text-sm text-zinc-400 font-mono">{{.Issue.Key}}</span>
+        <button class="inline-flex items-center justify-center w-6 h-6 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 rounded transition-colors" data-action="copy-link" title="Copy link">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="copy-icon">
             <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
             <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
           </svg>
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon hidden">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon hidden text-green-600">
             <polyline points="20 6 9 17 4 12"/>
           </svg>
         </button>
       </div>
       <h1
         id="issue-title"
-        class="text-xl font-semibold text-zinc-900 outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 rounded px-1 -mx-1"
+        class="text-2xl font-bold text-zinc-900 outline-none focus:bg-zinc-50 rounded px-1 -mx-1"
         contenteditable="true"
         data-issue-key="{{.Issue.Key}}"
         data-field="title"
@@ -34,269 +36,641 @@
     </div>
 
     <!-- Description -->
-    <div class="bg-white rounded-lg shadow-sm border border-zinc-200 p-6">
-      <h3 class="text-sm font-medium text-zinc-500 mb-3">Description</h3>
+    <div>
       <div
         id="issue-description"
-        class="text-sm text-zinc-700 min-h-[60px] outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 rounded px-1 -mx-1"
+        class="text-sm text-zinc-600 min-h-[40px] outline-none focus:bg-zinc-50 rounded px-1 -mx-1"
         contenteditable="true"
         data-issue-key="{{.Issue.Key}}"
         data-field="description"
-      >{{if .Issue.Description}}{{.Issue.Description}}{{else}}<span class="text-zinc-400">Add a description...</span>{{end}}</div>
+        data-placeholder="Add description..."
+      >{{if .Issue.Description}}{{.Issue.Description}}{{end}}</div>
     </div>
 
-    <!-- Activity / Comments -->
-    <div class="bg-white rounded-lg shadow-sm border border-zinc-200 p-6">
-      <h3 class="text-sm font-medium text-zinc-900 mb-4">Activity</h3>
+    <!-- Toolbar -->
+    <div class="flex items-center gap-3 pb-6 border-b border-zinc-100">
+      <button class="text-zinc-400 hover:text-zinc-600 transition-colors" title="Add emoji">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
+          <line x1="9" x2="9.01" y1="9" y2="9"/>
+          <line x1="15" x2="15.01" y1="9" y2="9"/>
+        </svg>
+      </button>
+      <div class="flex-1"></div>
+      <button class="text-zinc-400 hover:text-zinc-600 transition-colors" title="Attach file">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+        </svg>
+      </button>
+    </div>
 
-      <!-- Comments List -->
-      <div class="space-y-4 mb-6">
-        {{range .Comments}}
-        <div class="flex gap-3">
-          <div class="w-8 h-8 rounded-full bg-indigo-500 text-white text-sm flex items-center justify-center font-medium flex-shrink-0">{{slice .Author.DisplayName 0 1}}</div>
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2 mb-1">
-              <span class="text-sm font-medium text-zinc-900">{{.Author.DisplayName}}</span>
-              <span class="text-xs text-zinc-400">{{.CreatedAt.Format "Jan 2, 2006"}}</span>
-            </div>
-            <div class="text-sm text-zinc-700">{{.Content}}</div>
+    <!-- Sub-issues placeholder -->
+    <div class="pb-6 border-b border-zinc-100">
+      <button class="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-700 transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12h14"/>
+          <path d="M12 5v14"/>
+        </svg>
+        <span>Add sub-issues</span>
+      </button>
+    </div>
+
+    <!-- Activity -->
+    <div>
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-base font-semibold text-zinc-900">Activity</h3>
+        <div class="flex items-center gap-2">
+          <span class="text-sm text-zinc-500 hover:text-zinc-700 cursor-pointer">Unsubscribe</span>
+          <div class="w-7 h-7 rounded-full bg-emerald-500 text-white text-xs flex items-center justify-center font-medium">{{slice .User.DisplayName 0 1}}</div>
+        </div>
+      </div>
+
+      <!-- Timeline container with connecting line -->
+      <div class="relative space-y-0 mb-6">
+        <!-- Timeline line -->
+        <div class="absolute left-[9px] top-3 bottom-3 w-px bg-zinc-200"></div>
+
+        {{if .Activities}}
+        {{range .Activities}}
+        <div class="relative flex items-center gap-2.5 py-1.5 group">
+          <!-- Small action icon -->
+          <div class="relative z-10 w-[18px] h-[18px] rounded-full flex items-center justify-center flex-shrink-0
+            {{if eq .Action "issue_created"}}bg-emerald-100 text-emerald-600
+            {{else if eq .Action "status_changed"}}bg-blue-100 text-blue-600
+            {{else if eq .Action "priority_changed"}}bg-amber-100 text-amber-600
+            {{else if eq .Action "assignee_added"}}bg-violet-100 text-violet-600
+            {{else if eq .Action "assignee_removed"}}bg-rose-100 text-rose-500
+            {{else if eq .Action "cycle_attached"}}bg-indigo-100 text-indigo-600
+            {{else if eq .Action "cycle_detached"}}bg-slate-100 text-slate-500
+            {{else if or (eq .Action "start_date_set") (eq .Action "due_date_set")}}bg-cyan-100 text-cyan-600
+            {{else if or (eq .Action "start_date_cleared") (eq .Action "due_date_cleared")}}bg-zinc-100 text-zinc-500
+            {{else if eq .Action "title_changed"}}bg-yellow-100 text-yellow-600
+            {{else if eq .Action "description_changed"}}bg-teal-100 text-teal-600
+            {{else}}bg-zinc-100 text-zinc-500{{end}}">
+            {{if eq .Action "issue_created"}}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            {{else if eq .Action "status_changed"}}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            {{else if eq .Action "priority_changed"}}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 19h20L12 2zm0 3l7.5 13h-15L12 5z"/><rect x="11" y="10" width="2" height="4"/><rect x="11" y="15" width="2" height="2"/></svg>
+            {{else if eq .Action "assignee_added"}}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/></svg>
+            {{else if eq .Action "assignee_removed"}}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M17 11h6"/></svg>
+            {{else if eq .Action "cycle_attached"}}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h5"/><circle cx="18" cy="18" r="3"/><path d="M18 14v4"/></svg>
+            {{else if eq .Action "cycle_detached"}}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/><path d="M10 16l4-4"/></svg>
+            {{else if or (eq .Action "start_date_set") (eq .Action "due_date_set")}}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
+            {{else if or (eq .Action "start_date_cleared") (eq .Action "due_date_cleared")}}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/><path d="M9 15l6 0"/></svg>
+            {{else if eq .Action "title_changed"}}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.375-9.375z"/></svg>
+            {{else if eq .Action "description_changed"}}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            {{else}}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+            {{end}}
+          </div>
+          <!-- Compact activity text -->
+          <div class="flex-1 min-w-0 flex items-center gap-1.5 text-[13px] leading-tight">
+            {{if .ActorName}}<span class="font-medium text-zinc-700">{{.ActorName}}</span>{{end}}
+            <span class="text-zinc-500">
+              {{if eq .Action "issue_created"}}created this issue
+              {{else if eq .Action "status_changed"}}moved to <span class="font-medium text-zinc-700">{{.NewValue}}</span>
+              {{else if eq .Action "priority_changed"}}set priority to <span class="font-medium text-zinc-700">{{.NewValue}}</span>
+              {{else if eq .Action "assignee_added"}}assigned <span class="font-medium text-zinc-700">{{.NewValue}}</span>
+              {{else if eq .Action "assignee_removed"}}removed <span class="font-medium text-zinc-700">{{.OldValue}}</span>
+              {{else if eq .Action "cycle_attached"}}added to <span class="font-medium text-zinc-700">{{.NewValue}}</span>
+              {{else if eq .Action "cycle_detached"}}removed from sprint
+              {{else if eq .Action "start_date_set"}}set start <span class="font-medium text-zinc-700">{{.NewValue}}</span>
+              {{else if eq .Action "start_date_cleared"}}cleared start date
+              {{else if eq .Action "due_date_set"}}set due <span class="font-medium text-zinc-700">{{.NewValue}}</span>
+              {{else if eq .Action "due_date_cleared"}}cleared due date
+              {{else if eq .Action "title_changed"}}renamed issue
+              {{else if eq .Action "description_changed"}}edited description
+              {{else}}updated
+              {{end}}
+            </span>
+            <span class="text-zinc-400 text-xs ml-auto activity-time" data-timestamp="{{.CreatedAt.Format "2006-01-02T15:04:05Z07:00"}}"></span>
           </div>
         </div>
-        {{else}}
-        <p class="text-sm text-zinc-400 mb-4">No activity yet</p>
+        {{end}}
+        {{end}}
+
+        {{range .Comments}}
+        <div class="relative flex items-start gap-2.5 py-2 mt-1 group">
+          <!-- Comment avatar - larger than activity icons -->
+          <div class="relative z-10 w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 bg-zinc-600 text-white text-[10px] font-medium">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 text-[13px] mb-1">
+              <span class="font-medium text-zinc-700">Comment</span>
+              <span class="text-zinc-400 text-xs activity-time" data-timestamp="{{.CreatedAt.Format "2006-01-02T15:04:05Z07:00"}}"></span>
+            </div>
+            <div class="text-[13px] text-zinc-600 bg-zinc-50 rounded-lg px-3 py-2 border border-zinc-100">{{.Content}}</div>
+          </div>
+        </div>
+        {{end}}
+
+        {{if and (not .Activities) (not .Comments)}}
+        <div class="relative flex items-center gap-2.5 py-1.5">
+          <div class="relative z-10 w-[18px] h-[18px] rounded-full flex items-center justify-center flex-shrink-0 bg-emerald-100 text-emerald-600">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+          </div>
+          <div class="flex-1 min-w-0 flex items-center gap-1.5 text-[13px]">
+            <span class="font-medium text-zinc-700">{{.User.DisplayName}}</span>
+            <span class="text-zinc-500">created this issue</span>
+          </div>
+        </div>
         {{end}}
       </div>
 
-      <!-- Comment Form -->
-      <form class="flex gap-3" data-issue-id="{{.Issue.ID}}">
-        <div class="w-8 h-8 rounded-full bg-indigo-500 text-white text-sm flex items-center justify-center font-medium flex-shrink-0">{{slice .User.DisplayName 0 1}}</div>
-        <div class="flex-1 flex gap-2">
+      <!-- Comment Box - Linear style -->
+      <form id="comment-form" data-issue-id="{{.Issue.ID}}" class="relative">
+        <div class="border border-zinc-200 rounded-lg focus-within:border-zinc-300 focus-within:ring-1 focus-within:ring-zinc-200 transition-all">
           <textarea
             name="body"
-            class="flex-1 px-3 py-2 text-sm border border-zinc-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            placeholder="Write a comment..."
-            rows="1"
-            aria-label="Write a comment"
+            class="w-full px-4 py-3 text-sm bg-transparent border-none resize-none focus:outline-none placeholder-zinc-400"
+            placeholder="Leave a comment..."
+            rows="3"
           ></textarea>
-          <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">Send</button>
+          <div class="flex items-center justify-end gap-2 px-3 py-2 border-t border-zinc-100">
+            <button type="button" class="text-zinc-400 hover:text-zinc-600 transition-colors" title="Attach file">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+              </svg>
+            </button>
+            <button type="submit" class="w-8 h-8 flex items-center justify-center rounded-full bg-zinc-900 text-white hover:bg-zinc-800 transition-colors disabled:opacity-50">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 19V5"/>
+                <path d="m5 12 7-7 7 7"/>
+              </svg>
+            </button>
+          </div>
         </div>
       </form>
     </div>
   </div>
 
-  <!-- Sidebar -->
-  <div class="space-y-0 bg-white rounded-lg shadow-sm border border-zinc-200 divide-y divide-zinc-100">
+  <!-- Sidebar - Compact & Borderless -->
+  <div class="space-y-1">
     <!-- Status -->
-    <div class="p-4">
-      <div class="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-2">Status</div>
-      <div class="relative" id="status-dropdown-wrapper">
-        <button class="flex items-center justify-between w-full px-3 py-2 text-sm text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded-lg cursor-pointer transition-colors dropdown-trigger" id="status-trigger" data-issue-key="{{.Issue.Key}}">
-          <span class="flex items-center gap-2" id="current-status">
-            {{range .Columns}}{{if eq .ID $.Issue.ColumnID}}
-            <span class="inline-flex items-center gap-1.5 {{if eq (lower .Name) "done"}}text-green-600{{else if eq (lower .Name) "in-progress"}}text-blue-600{{else if eq (lower .Name) "todo"}}text-zinc-600{{else}}text-zinc-500{{end}}">
-              {{if eq (lower .Name) "backlog"}}
-              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
-              {{else if eq (lower .Name) "todo"}}
-              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
-              {{else if or (eq (lower .Name) "in-progress") (eq (lower .Name) "doing")}}
-              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
-              {{else if or (eq (lower .Name) "done") (eq (lower .Name) "completed")}}
-              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              {{else if or (eq (lower .Name) "canceled") (eq (lower .Name) "cancelled")}}
-              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
-              {{else}}
-              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
-              {{end}}
-              {{.Name}}
-            </span>
-            {{end}}{{end}}
+    <div class="dropdown relative group" id="status-dropdown">
+      <button class="dropdown-trigger flex items-center gap-3 w-full px-3 py-2 text-sm hover:bg-zinc-100 rounded-lg transition-colors">
+        <span class="w-20 text-xs font-medium text-zinc-400 uppercase tracking-wide flex-shrink-0">Status</span>
+        <span class="flex items-center gap-2 flex-1 text-zinc-900" id="current-status">
+          {{range .Columns}}{{if eq .ID $.Issue.ColumnID}}
+          <span class="inline-flex items-center gap-1.5 {{if eq (lower .Name) "done"}}text-green-600{{else if or (eq (lower .Name) "in-progress") (eq (lower .Name) "doing")}}text-blue-600{{else if eq (lower .Name) "todo"}}text-zinc-600{{else}}text-zinc-500{{end}}">
+            {{if eq (lower .Name) "backlog"}}
+            <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+            {{else if eq (lower .Name) "todo"}}
+            <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
+            {{else if or (eq (lower .Name) "in-progress") (eq (lower .Name) "doing")}}
+            <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
+            {{else if or (eq (lower .Name) "done") (eq (lower .Name) "completed")}}
+            <svg class="w-4 h-4" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            {{else if or (eq (lower .Name) "canceled") (eq (lower .Name) "cancelled")}}
+            <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+            {{else}}
+            <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
+            {{end}}
+            <span>{{.Name}}</span>
           </span>
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400">
-            <path d="m6 9 6 6 6-6"/>
-          </svg>
+          {{end}}{{end}}
+        </span>
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity">
+          <path d="m6 9 6 6 6-6"/>
+        </svg>
+      </button>
+      <div class="dropdown-menu hidden absolute left-0 right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50">
+        {{range .Columns}}
+        <button class="dropdown-item flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors issue-status-option {{if eq .ID $.Issue.ColumnID}}bg-zinc-50{{end}}" data-column-id="{{.ID}}" data-column-name="{{.Name}}">
+          <span class="inline-flex items-center gap-1.5 {{if eq (lower .Name) "done"}}text-green-600{{else if or (eq (lower .Name) "in-progress") (eq (lower .Name) "doing")}}text-blue-600{{else if eq (lower .Name) "todo"}}text-zinc-600{{else}}text-zinc-500{{end}}">
+            {{if eq (lower .Name) "backlog"}}
+            <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+            {{else if eq (lower .Name) "todo"}}
+            <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
+            {{else if or (eq (lower .Name) "in-progress") (eq (lower .Name) "doing")}}
+            <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
+            {{else if or (eq (lower .Name) "done") (eq (lower .Name) "completed")}}
+            <svg class="w-4 h-4" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            {{else if or (eq (lower .Name) "canceled") (eq (lower .Name) "cancelled")}}
+            <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+            {{else}}
+            <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
+            {{end}}
+            <span>{{.Name}}</span>
+          </span>
         </button>
-        <div class="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
-          {{range .Columns}}
-          <button class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors issue-status-option {{if eq .ID $.Issue.ColumnID}}bg-zinc-50{{end}}" data-column-id="{{.ID}}" data-column-name="{{.Name}}">
-            <span class="inline-flex items-center gap-1.5 {{if eq (lower .Name) "done"}}text-green-600{{else if eq (lower .Name) "in-progress"}}text-blue-600{{else if eq (lower .Name) "todo"}}text-zinc-600{{else}}text-zinc-500{{end}}">
-              {{if eq (lower .Name) "backlog"}}
-              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
-              {{else if eq (lower .Name) "todo"}}
-              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
-              {{else if or (eq (lower .Name) "in-progress") (eq (lower .Name) "doing")}}
-              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
-              {{else if or (eq (lower .Name) "done") (eq (lower .Name) "completed")}}
-              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              {{else if or (eq (lower .Name) "canceled") (eq (lower .Name) "cancelled")}}
-              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
-              {{else}}
-              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
-              {{end}}
-              {{.Name}}
-            </span>
-          </button>
-          {{end}}
-        </div>
+        {{end}}
       </div>
     </div>
 
     <!-- Priority -->
-    <div class="p-4">
-      <div class="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-2">Priority</div>
-      <div class="relative" id="priority-dropdown-wrapper">
-        <button class="flex items-center justify-between w-full px-3 py-2 text-sm text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded-lg cursor-pointer transition-colors dropdown-trigger" id="priority-trigger" data-issue-key="{{.Issue.Key}}">
-          <span class="flex items-center gap-2" id="current-priority">
-            {{if eq .Issue.Priority 0}}
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            <span>No priority</span>
-            {{else if eq .Issue.Priority 1}}
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/></svg>
-            <span>Urgent</span>
-            {{else if eq .Issue.Priority 2}}
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-orange-500"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/></svg>
-            <span>High</span>
-            {{else if eq .Issue.Priority 3}}
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-yellow-500"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/></svg>
-            <span>Medium</span>
-            {{else if eq .Issue.Priority 4}}
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M2 20h.01"/><path d="M7 20v-4"/></svg>
-            <span>Low</span>
-            {{end}}
+    <div class="dropdown relative group" id="priority-dropdown">
+      <button class="dropdown-trigger flex items-center gap-3 w-full px-3 py-2 text-sm hover:bg-zinc-100 rounded-lg transition-colors">
+        <span class="w-20 text-xs font-medium text-zinc-400 uppercase tracking-wide flex-shrink-0">Priority</span>
+        <span class="flex items-center gap-2 flex-1" id="current-priority">
+          {{if eq .Issue.Priority 0}}
+          <span class="inline-flex items-center gap-1.5 text-zinc-400">
+            <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="8" x2="13" y2="8"/></svg>
+            <span class="text-zinc-500">No priority</span>
           </span>
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400">
-            <path d="m6 9 6 6 6-6"/>
-          </svg>
-        </button>
-        <div class="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
-          <button class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors issue-priority-option {{if eq .Issue.Priority 0}}bg-zinc-50{{end}}" data-priority="0" data-priority-name="No priority">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            <span>No priority</span>
-          </button>
-          <button class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors issue-priority-option {{if eq .Issue.Priority 1}}bg-zinc-50{{end}}" data-priority="1" data-priority-name="Urgent">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/></svg>
+          {{else if eq .Issue.Priority 1}}
+          <span class="inline-flex items-center gap-1.5 text-red-500">
+            <svg class="w-4 h-4" viewBox="0 0 16 16"><rect x="1" y="1" width="4" height="14" fill="currentColor"/><rect x="6" y="1" width="4" height="14" fill="currentColor"/><rect x="11" y="1" width="4" height="14" fill="currentColor"/></svg>
             <span>Urgent</span>
-          </button>
-          <button class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors issue-priority-option {{if eq .Issue.Priority 2}}bg-zinc-50{{end}}" data-priority="2" data-priority-name="High">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-orange-500"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/></svg>
+          </span>
+          {{else if eq .Issue.Priority 2}}
+          <span class="inline-flex items-center gap-1.5 text-orange-500">
+            <svg class="w-4 h-4" viewBox="0 0 16 16"><rect x="1" y="4" width="4" height="11" fill="currentColor"/><rect x="6" y="4" width="4" height="11" fill="currentColor"/><rect x="11" y="7" width="4" height="8" fill="currentColor" opacity="0.4"/></svg>
             <span>High</span>
-          </button>
-          <button class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors issue-priority-option {{if eq .Issue.Priority 3}}bg-zinc-50{{end}}" data-priority="3" data-priority-name="Medium">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-yellow-500"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/></svg>
+          </span>
+          {{else if eq .Issue.Priority 3}}
+          <span class="inline-flex items-center gap-1.5 text-yellow-500">
+            <svg class="w-4 h-4" viewBox="0 0 16 16"><rect x="1" y="7" width="4" height="8" fill="currentColor"/><rect x="6" y="7" width="4" height="8" fill="currentColor" opacity="0.4"/><rect x="11" y="7" width="4" height="8" fill="currentColor" opacity="0.2"/></svg>
             <span>Medium</span>
-          </button>
-          <button class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors issue-priority-option {{if eq .Issue.Priority 4}}bg-zinc-50{{end}}" data-priority="4" data-priority-name="Low">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M2 20h.01"/><path d="M7 20v-4"/></svg>
+          </span>
+          {{else if eq .Issue.Priority 4}}
+          <span class="inline-flex items-center gap-1.5 text-blue-500">
+            <svg class="w-4 h-4" viewBox="0 0 16 16"><rect x="1" y="10" width="4" height="5" fill="currentColor"/><rect x="6" y="10" width="4" height="5" fill="currentColor" opacity="0.2"/><rect x="11" y="10" width="4" height="5" fill="currentColor" opacity="0.1"/></svg>
             <span>Low</span>
-          </button>
-        </div>
+          </span>
+          {{end}}
+        </span>
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity">
+          <path d="m6 9 6 6 6-6"/>
+        </svg>
+      </button>
+      <div class="dropdown-menu hidden absolute left-0 right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50">
+        <button class="dropdown-item flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors issue-priority-option {{if eq .Issue.Priority 0}}bg-zinc-50{{end}}" data-priority="0">
+          <span class="inline-flex items-center gap-1.5 text-zinc-400">
+            <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="8" x2="13" y2="8"/></svg>
+            <span class="text-zinc-500">No priority</span>
+          </span>
+        </button>
+        <button class="dropdown-item flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors issue-priority-option {{if eq .Issue.Priority 1}}bg-zinc-50{{end}}" data-priority="1">
+          <span class="inline-flex items-center gap-1.5 text-red-500">
+            <svg class="w-4 h-4" viewBox="0 0 16 16"><rect x="1" y="1" width="4" height="14" fill="currentColor"/><rect x="6" y="1" width="4" height="14" fill="currentColor"/><rect x="11" y="1" width="4" height="14" fill="currentColor"/></svg>
+            <span>Urgent</span>
+          </span>
+        </button>
+        <button class="dropdown-item flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors issue-priority-option {{if eq .Issue.Priority 2}}bg-zinc-50{{end}}" data-priority="2">
+          <span class="inline-flex items-center gap-1.5 text-orange-500">
+            <svg class="w-4 h-4" viewBox="0 0 16 16"><rect x="1" y="4" width="4" height="11" fill="currentColor"/><rect x="6" y="4" width="4" height="11" fill="currentColor"/><rect x="11" y="7" width="4" height="8" fill="currentColor" opacity="0.4"/></svg>
+            <span>High</span>
+          </span>
+        </button>
+        <button class="dropdown-item flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors issue-priority-option {{if eq .Issue.Priority 3}}bg-zinc-50{{end}}" data-priority="3">
+          <span class="inline-flex items-center gap-1.5 text-yellow-500">
+            <svg class="w-4 h-4" viewBox="0 0 16 16"><rect x="1" y="7" width="4" height="8" fill="currentColor"/><rect x="6" y="7" width="4" height="8" fill="currentColor" opacity="0.4"/><rect x="11" y="7" width="4" height="8" fill="currentColor" opacity="0.2"/></svg>
+            <span>Medium</span>
+          </span>
+        </button>
+        <button class="dropdown-item flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors issue-priority-option {{if eq .Issue.Priority 4}}bg-zinc-50{{end}}" data-priority="4">
+          <span class="inline-flex items-center gap-1.5 text-blue-500">
+            <svg class="w-4 h-4" viewBox="0 0 16 16"><rect x="1" y="10" width="4" height="5" fill="currentColor"/><rect x="6" y="10" width="4" height="5" fill="currentColor" opacity="0.2"/><rect x="11" y="10" width="4" height="5" fill="currentColor" opacity="0.1"/></svg>
+            <span>Low</span>
+          </span>
+        </button>
       </div>
     </div>
 
-    <!-- Sprint (Cycle) -->
-    <div class="p-4">
-      <div class="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-2">Sprint</div>
-      <div class="relative" id="cycle-dropdown">
-        <button class="flex items-center justify-between w-full px-3 py-2 text-sm text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded-lg cursor-pointer transition-colors dropdown-trigger" data-issue-key="{{.Issue.Key}}">
-          <span class="flex items-center gap-2">
-            {{if .Issue.CycleID}}
-              {{range .Cycles}}{{if eq .ID $.Issue.CycleID}}
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500">
-                  <path d="M10 2h4"/><path d="M12 14v-4"/><path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6"/><path d="M9 17H4v5"/>
-                </svg>
-                <span>{{.Name}}</span>
-              {{end}}{{end}}
-            {{else}}
-              <span class="text-zinc-400">No sprint</span>
-            {{end}}
+    <!-- Sprint/Cycle -->
+    <div class="dropdown relative group" id="cycle-dropdown">
+      <button class="dropdown-trigger flex items-center gap-3 w-full px-3 py-2 text-sm hover:bg-zinc-100 rounded-lg transition-colors">
+        <span class="w-20 text-xs font-medium text-zinc-400 uppercase tracking-wide flex-shrink-0">Sprint</span>
+        <span class="flex items-center gap-2 flex-1" id="current-cycle">
+          {{if .Issue.CycleID}}
+          {{range .Cycles}}{{if eq .ID $.Issue.CycleID}}
+          <span class="inline-flex items-center gap-1.5 text-indigo-500">
+            <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2 2"/></svg>
+            <span class="text-zinc-900">{{.Name}}</span>
           </span>
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400">
-            <path d="m6 9 6 6 6-6"/>
-          </svg>
-        </button>
-        <div class="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
-          <button class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors" data-action="set-cycle" data-cycle-id="">
-            <span class="text-zinc-400">No sprint</span>
-          </button>
-          {{range .Cycles}}
-          <button class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors {{if eq .ID $.Issue.CycleID}}bg-zinc-50{{end}}" data-action="set-cycle" data-cycle-id="{{.ID}}">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500">
-              <path d="M10 2h4"/><path d="M12 14v-4"/><path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6"/><path d="M9 17H4v5"/>
-            </svg>
-            <span>{{.Name}}</span>
-          </button>
+          {{end}}{{end}}
+          {{else}}
+          <span class="text-zinc-400">No sprint</span>
           {{end}}
-        </div>
+        </span>
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity">
+          <path d="m6 9 6 6 6-6"/>
+        </svg>
+      </button>
+      <div class="dropdown-menu hidden absolute left-0 right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50">
+        <button class="dropdown-item flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors issue-cycle-option {{if not .Issue.CycleID}}bg-zinc-50{{end}}" data-cycle-id="">
+          <span class="text-zinc-400">No sprint</span>
+        </button>
+        {{range .Cycles}}
+        <button class="dropdown-item flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors issue-cycle-option {{if eq .ID $.Issue.CycleID}}bg-zinc-50{{end}}" data-cycle-id="{{.ID}}" data-cycle-name="{{.Name}}">
+          <span class="inline-flex items-center gap-1.5 text-indigo-500">
+            <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2 2"/></svg>
+            <span class="text-zinc-900">{{.Name}}</span>
+          </span>
+        </button>
+        {{end}}
       </div>
     </div>
 
     <!-- Assignees -->
-    <div class="p-4">
-      <div class="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-2">Assignees</div>
-      <div class="relative" id="assignees-dropdown-wrapper">
-        <button class="flex items-center justify-between w-full px-3 py-2 text-sm text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded-lg cursor-pointer transition-colors dropdown-trigger" id="assignees-trigger" data-issue-key="{{.Issue.Key}}">
-          <span class="flex items-center gap-2" id="assignees-display">
-            <span class="text-zinc-400">Select assignees</span>
-          </span>
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400">
-            <path d="m6 9 6 6 6-6"/>
-          </svg>
-        </button>
-        <div class="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
-          {{range .TeamMembers}}
-          <label class="flex items-center gap-2 w-full px-3 py-2 text-sm cursor-pointer hover:bg-zinc-50 transition-colors">
-            <input type="checkbox" class="w-4 h-4 text-indigo-600 border-zinc-300 rounded focus:ring-indigo-500 assignee-checkbox" data-user-id="{{.ID}}" data-user-name="{{.DisplayName}}">
-            <span class="w-6 h-6 rounded-full bg-indigo-500 text-white text-xs flex items-center justify-center font-medium">{{slice .DisplayName 0 1}}</span>
-            <span>{{.DisplayName}}</span>
-          </label>
-          {{end}}
-        </div>
+    <div class="dropdown relative group" id="assignees-dropdown">
+      <button class="dropdown-trigger flex items-center gap-3 w-full px-3 py-2 text-sm hover:bg-zinc-100 rounded-lg transition-colors">
+        <span class="w-20 text-xs font-medium text-zinc-400 uppercase tracking-wide flex-shrink-0">Assignees</span>
+        <span class="flex items-center gap-2 flex-1" id="assignees-display">
+          <span class="text-zinc-400">Unassigned</span>
+        </span>
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity">
+          <path d="m6 9 6 6 6-6"/>
+        </svg>
+      </button>
+      <div class="dropdown-menu hidden absolute left-0 right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50">
+        {{range .TeamMembers}}
+        <label class="flex items-center gap-2 w-full px-3 py-2 text-sm cursor-pointer hover:bg-zinc-50 transition-colors">
+          <input type="checkbox" class="w-4 h-4 text-zinc-900 border-zinc-300 rounded focus:ring-zinc-500 assignee-checkbox" data-user-id="{{.ID}}" data-user-name="{{.DisplayName}}">
+          <span class="w-6 h-6 rounded-full bg-emerald-500 text-white text-xs flex items-center justify-center font-medium">{{slice .DisplayName 0 1}}</span>
+          <span class="text-zinc-900">{{.DisplayName}}</span>
+        </label>
+        {{end}}
       </div>
     </div>
 
     <!-- Start Date -->
-    <div class="p-4">
-      <div class="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-2">Start Date</div>
-      <input type="date" id="start-date-input" class="w-full px-3 py-2 text-sm text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded-lg cursor-pointer transition-colors border-none outline-none focus:ring-2 focus:ring-indigo-500" value="{{if .Issue.StartDate}}{{.Issue.StartDate.Format "2006-01-02"}}{{end}}" data-issue-key="{{.Issue.Key}}">
+    <div class="relative group" id="start-date-wrapper">
+      <button class="flex items-center gap-3 w-full px-3 py-2 text-sm hover:bg-zinc-100 rounded-lg transition-colors" id="start-date-trigger">
+        <span class="w-20 text-xs font-medium text-zinc-400 uppercase tracking-wide flex-shrink-0">Start</span>
+        <span class="flex items-center gap-2 flex-1" id="start-date-display">
+          {{if .Issue.StartDate}}
+          <svg class="w-4 h-4 text-zinc-400" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1"/><path d="M2 6h12"/><path d="M5 1v3"/><path d="M11 1v3"/></svg>
+          <span class="text-zinc-900">{{.Issue.StartDate.Format "Jan 2, 2006"}}</span>
+          {{else}}
+          <span class="text-zinc-400">No date</span>
+          {{end}}
+        </span>
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity">
+          <path d="m6 9 6 6 6-6"/>
+        </svg>
+      </button>
+      <div class="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-zinc-200 p-3 z-50 hidden calendar-dropdown" id="start-date-calendar">
+        <div class="calendar-container" data-field="start_date"></div>
+      </div>
     </div>
 
     <!-- Due Date -->
-    <div class="p-4">
-      <div class="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-2">Due Date</div>
-      <input type="date" id="due-date-input" class="w-full px-3 py-2 text-sm text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded-lg cursor-pointer transition-colors border-none outline-none focus:ring-2 focus:ring-indigo-500" value="{{if .Issue.DueDate}}{{.Issue.DueDate.Format "2006-01-02"}}{{end}}" data-issue-key="{{.Issue.Key}}">
-    </div>
-
-    <!-- Project -->
-    <div class="p-4">
-      <div class="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-2">Project</div>
-      <div class="text-sm text-zinc-900">
-        <a href="/w/{{.Workspace.Slug}}/board/{{.Project.ID}}" class="hover:text-indigo-600 transition-colors">
-          {{.Project.Name}}
-        </a>
+    <div class="relative group" id="due-date-wrapper">
+      <button class="flex items-center gap-3 w-full px-3 py-2 text-sm hover:bg-zinc-100 rounded-lg transition-colors" id="due-date-trigger">
+        <span class="w-20 text-xs font-medium text-zinc-400 uppercase tracking-wide flex-shrink-0">Due</span>
+        <span class="flex items-center gap-2 flex-1" id="due-date-display">
+          {{if .Issue.DueDate}}
+          <svg class="w-4 h-4 text-zinc-400" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1"/><path d="M2 6h12"/><path d="M5 1v3"/><path d="M11 1v3"/></svg>
+          <span class="text-zinc-900">{{.Issue.DueDate.Format "Jan 2, 2006"}}</span>
+          {{else}}
+          <span class="text-zinc-400">No date</span>
+          {{end}}
+        </span>
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity">
+          <path d="m6 9 6 6 6-6"/>
+        </svg>
+      </button>
+      <div class="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-zinc-200 p-3 z-50 hidden calendar-dropdown" id="due-date-calendar">
+        <div class="calendar-container" data-field="due_date"></div>
       </div>
     </div>
+
   </div>
 </div>
 
+<style>
+/* Description placeholder */
+#issue-description:empty:before {
+  content: attr(data-placeholder);
+  color: #a1a1aa;
+}
+/* Calendar styles */
+.calendar-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.calendar-header button { padding: 4px 8px; border: none; background: none; cursor: pointer; color: #71717a; border-radius: 4px; }
+.calendar-header button:hover { background: #f4f4f5; color: #18181b; }
+.calendar-title { font-size: 14px; font-weight: 500; color: #18181b; }
+.calendar-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0; margin-bottom: 4px; }
+.calendar-weekdays span { font-size: 11px; font-weight: 500; color: #a1a1aa; text-align: center; padding: 4px 0; }
+.calendar-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.calendar-day { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-size: 13px; border-radius: 6px; cursor: pointer; border: none; background: none; color: #18181b; }
+.calendar-day:hover { background: #f4f4f5; }
+.calendar-day.other-month { color: #d4d4d8; }
+.calendar-day.today { font-weight: 600; background: #18181b; color: white; }
+.calendar-day.today:hover { background: #27272a; }
+.calendar-day.selected { background: #10b981; color: white; }
+.calendar-day.selected:hover { background: #059669; }
+.calendar-clear { margin-top: 8px; padding: 6px 12px; font-size: 12px; color: #71717a; border: none; background: none; cursor: pointer; width: 100%; text-align: center; }
+.calendar-clear:hover { color: #ef4444; background: #fef2f2; border-radius: 4px; }
+</style>
+
 <script>
-// Start Date handler
-document.getElementById('start-date-input')?.addEventListener('change', async (e) => {
-  const value = e.target.value;
-  try {
-    await app.api.patch(`/issues/{{.Issue.Key}}`, { start_date: value || null });
-  } catch (error) {
-    console.error('Failed to update start date:', error);
-    alert(error.message || 'Failed to update start date');
+const issueKey = '{{.Issue.Key}}';
+const issueId = '{{.Issue.ID}}';
+
+// Format activity timestamps to local timezone
+document.querySelectorAll('.activity-time').forEach(el => {
+  const timestamp = el.dataset.timestamp;
+  if (timestamp) {
+    const date = new Date(timestamp);
+    el.textContent = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ', ' +
+                     date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true });
   }
 });
 
-// Due Date handler
-document.getElementById('due-date-input')?.addEventListener('change', async (e) => {
-  const value = e.target.value;
-  try {
-    await app.api.patch(`/issues/{{.Issue.Key}}`, { due_date: value || null });
-  } catch (error) {
-    console.error('Failed to update due date:', error);
-    alert(error.message || 'Failed to update due date');
+// Calendar Component
+class Calendar {
+  constructor(container, options = {}) {
+    this.container = container;
+    this.field = container.dataset.field;
+    this.currentDate = new Date();
+    this.selectedDate = options.selectedDate ? new Date(options.selectedDate) : null;
+    this.onSelect = options.onSelect || (() => {});
+    this.render();
+  }
+
+  formatRFC3339(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}T00:00:00Z`;
+  }
+
+  isSameDay(d1, d2) {
+    return d1.getFullYear() === d2.getFullYear() &&
+           d1.getMonth() === d2.getMonth() &&
+           d1.getDate() === d2.getDate();
+  }
+
+  render() {
+    const year = this.currentDate.getFullYear();
+    const month = this.currentDate.getMonth();
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const weekdays = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const startDay = firstDay.getDay();
+    const daysInMonth = lastDay.getDate();
+    const prevLastDay = new Date(year, month, 0).getDate();
+
+    let html = `
+      <div class="calendar-header">
+        <button type="button" class="prev-month">&larr;</button>
+        <span class="calendar-title">${monthNames[month]} ${year}</span>
+        <button type="button" class="next-month">&rarr;</button>
+      </div>
+      <div class="calendar-weekdays">
+        ${weekdays.map(d => `<span>${d}</span>`).join('')}
+      </div>
+      <div class="calendar-days">
+    `;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Previous month days
+    for (let i = startDay - 1; i >= 0; i--) {
+      const day = prevLastDay - i;
+      const date = new Date(year, month - 1, day);
+      html += `<button type="button" class="calendar-day other-month" data-date="${this.formatRFC3339(date)}">${day}</button>`;
+    }
+
+    // Current month days
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, month, day);
+      date.setHours(0, 0, 0, 0);
+      const isToday = date.getTime() === today.getTime();
+      const isSelected = this.selectedDate && this.isSameDay(date, this.selectedDate);
+      let classes = 'calendar-day';
+      if (isToday) classes += ' today';
+      if (isSelected) classes += ' selected';
+      html += `<button type="button" class="${classes}" data-date="${this.formatRFC3339(date)}">${day}</button>`;
+    }
+
+    // Next month days
+    const totalDays = startDay + daysInMonth;
+    const remaining = 42 - totalDays;
+    for (let day = 1; day <= remaining; day++) {
+      const date = new Date(year, month + 1, day);
+      html += `<button type="button" class="calendar-day other-month" data-date="${this.formatRFC3339(date)}">${day}</button>`;
+    }
+
+    html += `</div><button type="button" class="calendar-clear">Clear date</button>`;
+    this.container.innerHTML = html;
+
+    // Event listeners
+    this.container.querySelector('.prev-month').addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.currentDate.setMonth(this.currentDate.getMonth() - 1);
+      this.render();
+    });
+
+    this.container.querySelector('.next-month').addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.currentDate.setMonth(this.currentDate.getMonth() + 1);
+      this.render();
+    });
+
+    this.container.querySelectorAll('.calendar-day').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const dateStr = btn.dataset.date;
+        this.selectedDate = new Date(dateStr);
+        this.onSelect(dateStr);
+        this.render();
+      });
+    });
+
+    this.container.querySelector('.calendar-clear').addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.selectedDate = null;
+      this.onSelect(null);
+      this.render();
+    });
+  }
+}
+
+// Initialize calendars
+const startDateCalendar = new Calendar(
+  document.querySelector('#start-date-calendar .calendar-container'),
+  {
+    selectedDate: '{{if .Issue.StartDate}}{{.Issue.StartDate.Format "2006-01-02"}}{{end}}' || null,
+    onSelect: async (date) => {
+      try {
+        await app.api.patch(`/issues/${issueKey}`, { start_date: date });
+        updateDateDisplay('start-date-display', date);
+        document.getElementById('start-date-calendar').classList.add('hidden');
+      } catch (error) {
+        console.error('Failed to update start date:', error);
+        alert('Failed to update start date');
+      }
+    }
+  }
+);
+
+const dueDateCalendar = new Calendar(
+  document.querySelector('#due-date-calendar .calendar-container'),
+  {
+    selectedDate: '{{if .Issue.DueDate}}{{.Issue.DueDate.Format "2006-01-02"}}{{end}}' || null,
+    onSelect: async (date) => {
+      try {
+        await app.api.patch(`/issues/${issueKey}`, { due_date: date });
+        updateDateDisplay('due-date-display', date);
+        document.getElementById('due-date-calendar').classList.add('hidden');
+      } catch (error) {
+        console.error('Failed to update due date:', error);
+        alert('Failed to update due date');
+      }
+    }
+  }
+);
+
+function updateDateDisplay(elementId, dateStr) {
+  const el = document.getElementById(elementId);
+  if (dateStr) {
+    const date = new Date(dateStr);
+    const formatted = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    el.innerHTML = `
+      <svg class="w-4 h-4 text-zinc-400" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1"/><path d="M2 6h12"/><path d="M5 1v3"/><path d="M11 1v3"/></svg>
+      <span class="text-zinc-900">${formatted}</span>
+    `;
+  } else {
+    el.innerHTML = '<span class="text-zinc-400">No date</span>';
+  }
+}
+
+// Calendar trigger handlers
+document.getElementById('start-date-trigger').addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  app.dropdowns.closeAll();
+  document.getElementById('due-date-calendar').classList.add('hidden');
+  document.getElementById('start-date-calendar').classList.toggle('hidden');
+});
+
+document.getElementById('due-date-trigger').addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  app.dropdowns.closeAll();
+  document.getElementById('start-date-calendar').classList.add('hidden');
+  document.getElementById('due-date-calendar').classList.toggle('hidden');
+});
+
+// Close calendars on outside click
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#start-date-wrapper')) {
+    document.getElementById('start-date-calendar').classList.add('hidden');
+  }
+  if (!e.target.closest('#due-date-wrapper')) {
+    document.getElementById('due-date-calendar').classList.add('hidden');
   }
 });
 
@@ -321,47 +695,82 @@ document.querySelectorAll('[data-action="copy-link"]').forEach(btn => {
 
 // Status dropdown handler
 document.querySelectorAll('.issue-status-option').forEach(opt => {
-  opt.addEventListener('click', async () => {
+  opt.addEventListener('click', async (e) => {
+    e.preventDefault();
     const columnId = opt.dataset.columnId;
-    const columnName = opt.dataset.columnName;
     try {
-      await app.api.post(`/issues/{{.Issue.Key}}/move`, { column_id: columnId, position: 0 });
+      await app.api.post(`/issues/${issueKey}/move`, { column_id: columnId, position: 0 });
       location.reload();
     } catch (error) {
       console.error('Failed to update status:', error);
-      alert(error.message || 'Failed to update status');
+      alert('Failed to update status');
     }
   });
 });
 
 // Priority dropdown handler
 document.querySelectorAll('.issue-priority-option').forEach(opt => {
-  opt.addEventListener('click', async () => {
+  opt.addEventListener('click', async (e) => {
+    e.preventDefault();
     const priority = parseInt(opt.dataset.priority);
     try {
-      await app.api.patch(`/issues/{{.Issue.Key}}`, { priority: priority });
+      await app.api.patch(`/issues/${issueKey}`, { priority: priority });
       location.reload();
     } catch (error) {
       console.error('Failed to update priority:', error);
-      alert(error.message || 'Failed to update priority');
+      alert('Failed to update priority');
     }
   });
 });
 
-// Assignees dropdown handler
+// Cycle dropdown handler
+document.querySelectorAll('.issue-cycle-option').forEach(opt => {
+  opt.addEventListener('click', async (e) => {
+    e.preventDefault();
+    const cycleId = opt.dataset.cycleId;
+    try {
+      if (cycleId) {
+        await app.api.post(`/issues/${issueKey}/cycle`, { cycle_id: cycleId });
+      } else {
+        await app.api.delete(`/issues/${issueKey}/cycle`);
+      }
+      location.reload();
+    } catch (error) {
+      console.error('Failed to update cycle:', error);
+      alert('Failed to update cycle');
+    }
+  });
+});
+
+// Initialize assignees from server data
+const assignedUserIds = [{{range $i, $id := .Assignees}}{{if $i}},{{end}}"{{$id}}"{{end}}];
+
+// Pre-check assigned users and update display
 document.querySelectorAll('.assignee-checkbox').forEach(checkbox => {
+  if (assignedUserIds.includes(checkbox.dataset.userId)) {
+    checkbox.checked = true;
+  }
+});
+
+// Assignees checkbox handler (stop propagation to keep dropdown open)
+document.querySelectorAll('.assignee-checkbox').forEach(checkbox => {
+  checkbox.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+
   checkbox.addEventListener('change', async () => {
     const userId = checkbox.dataset.userId;
     try {
       if (checkbox.checked) {
-        await app.api.post(`/issues/{{.Issue.ID}}/assignees`, { user_id: userId });
+        await app.api.post(`/issues/${issueId}/assignees`, { user_id: userId });
       } else {
-        await app.api.delete(`/issues/{{.Issue.ID}}/assignees/${userId}`);
+        await app.api.delete(`/issues/${issueId}/assignees/${userId}`);
       }
       updateAssigneesDisplay();
     } catch (error) {
       checkbox.checked = !checkbox.checked;
-      alert(error.message || 'Failed to update assignee');
+      console.error('Failed to update assignee:', error);
+      alert('Failed to update assignee');
     }
   });
 });
@@ -370,32 +779,17 @@ function updateAssigneesDisplay() {
   const checked = document.querySelectorAll('.assignee-checkbox:checked');
   const display = document.getElementById('assignees-display');
   if (checked.length === 0) {
-    display.innerHTML = '<span class="text-zinc-400">Select assignees</span>';
+    display.innerHTML = '<span class="text-zinc-400">Unassigned</span>';
   } else {
     const avatars = Array.from(checked).map(c =>
-      `<span class="w-6 h-6 rounded-full bg-indigo-500 text-white text-xs flex items-center justify-center font-medium">${c.dataset.userName.charAt(0)}</span>`
+      `<span class="w-6 h-6 rounded-full bg-emerald-500 text-white text-xs flex items-center justify-center font-medium -ml-1 first:ml-0 ring-2 ring-white">${c.dataset.userName.charAt(0)}</span>`
     ).join('');
-    display.innerHTML = `<div class="flex items-center gap-1">${avatars}<span class="ml-1 text-zinc-600">${checked.length} assigned</span></div>`;
+    display.innerHTML = `<div class="flex items-center">${avatars}</div>`;
   }
 }
 
-// Cycle dropdown handler
-document.querySelectorAll('[data-action="set-cycle"]').forEach(item => {
-  item.addEventListener('click', async () => {
-    const cycleId = item.dataset.cycleId;
-    try {
-      if (cycleId) {
-        await app.api.post(`/issues/{{.Issue.Key}}/cycle`, { cycle_id: cycleId });
-      } else {
-        await app.api.delete(`/issues/{{.Issue.Key}}/cycle`);
-      }
-      location.reload();
-    } catch (error) {
-      console.error('Failed to update cycle:', error);
-      alert(error.message || 'Failed to update cycle');
-    }
-  });
-});
+// Initialize the display on page load
+updateAssigneesDisplay();
 
 // Inline editing for title
 const titleEl = document.getElementById('issue-title');
@@ -411,12 +805,12 @@ titleEl?.addEventListener('blur', async () => {
     titleEl.textContent = originalTitle;
     return;
   }
-
   try {
-    await app.api.patch(`/issues/{{.Issue.Key}}`, { title: newTitle });
+    await app.api.patch(`/issues/${issueKey}`, { title: newTitle });
   } catch (error) {
     titleEl.textContent = originalTitle;
-    alert(error.message || 'Failed to update title');
+    console.error('Failed to update title:', error);
+    alert('Failed to update title');
   }
 });
 
@@ -427,6 +821,46 @@ titleEl?.addEventListener('keydown', (e) => {
   } else if (e.key === 'Escape') {
     titleEl.textContent = originalTitle;
     titleEl.blur();
+  }
+});
+
+// Inline editing for description
+const descEl = document.getElementById('issue-description');
+let originalDesc = descEl?.textContent;
+
+descEl?.addEventListener('focus', () => {
+  originalDesc = descEl.textContent;
+});
+
+descEl?.addEventListener('blur', async () => {
+  const newDesc = descEl.textContent.trim();
+  if (newDesc === originalDesc) return;
+  try {
+    await app.api.patch(`/issues/${issueKey}`, { description: newDesc });
+  } catch (error) {
+    descEl.textContent = originalDesc;
+    console.error('Failed to update description:', error);
+    alert('Failed to update description');
+  }
+});
+
+// Comment form
+document.getElementById('comment-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const body = form.body.value.trim();
+  if (!body) return;
+
+  const submitBtn = form.querySelector('button[type="submit"]');
+  submitBtn.disabled = true;
+
+  try {
+    await app.api.post(`/issues/${issueId}/comments`, { content: body });
+    location.reload();
+  } catch (error) {
+    console.error('Failed to add comment:', error);
+    alert('Failed to add comment');
+    submitBtn.disabled = false;
   }
 });
 </script>

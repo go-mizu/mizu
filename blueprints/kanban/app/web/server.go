@@ -16,6 +16,7 @@ import (
 	"github.com/go-mizu/blueprints/kanban/app/web/handler"
 	"github.com/go-mizu/blueprints/kanban/app/web/handler/api"
 	"github.com/go-mizu/blueprints/kanban/assets"
+	"github.com/go-mizu/blueprints/kanban/feature/activities"
 	"github.com/go-mizu/blueprints/kanban/feature/assignees"
 	"github.com/go-mizu/blueprints/kanban/feature/columns"
 	"github.com/go-mizu/blueprints/kanban/feature/comments"
@@ -55,6 +56,7 @@ type Server struct {
 	fields     fields.API
 	values     values.API
 	assignees  assignees.API
+	activities activities.API
 
 	// Handlers
 	authHandlers       *api.Auth
@@ -68,6 +70,7 @@ type Server struct {
 	fieldHandlers      *api.Field
 	valueHandlers      *api.Value
 	assigneeHandlers   *api.Assignee
+	activityHandlers   *api.Activity
 	pageHandlers       *handler.Page
 	pageTrelloHandlers *handler.PageTrello
 }
@@ -109,6 +112,7 @@ func New(cfg Config) (*Server, error) {
 	fieldsStore := duckdb.NewFieldsStore(db)
 	valuesStore := duckdb.NewValuesStore(db)
 	assigneesStore := duckdb.NewAssigneesStore(db)
+	activitiesStore := duckdb.NewActivitiesStore(db)
 
 	// Create services with stores
 	usersSvc := users.NewService(usersStore)
@@ -122,6 +126,7 @@ func New(cfg Config) (*Server, error) {
 	fieldsSvc := fields.NewService(fieldsStore)
 	valuesSvc := values.NewService(valuesStore)
 	assigneesSvc := assignees.NewService(assigneesStore)
+	activitiesSvc := activities.NewService(activitiesStore)
 
 	s := &Server{
 		app:        mizu.New(),
@@ -138,6 +143,7 @@ func New(cfg Config) (*Server, error) {
 		fields:     fieldsSvc,
 		values:     valuesSvc,
 		assignees:  assigneesSvc,
+		activities: activitiesSvc,
 	}
 
 	// Parse templates
@@ -158,12 +164,13 @@ func New(cfg Config) (*Server, error) {
 	s.teamHandlers = api.NewTeam(teamsSvc, s.getUserID)
 	s.projectHandlers = api.NewProject(projectsSvc, s.getUserID)
 	s.columnHandlers = api.NewColumn(columnsSvc)
-	s.issueHandlers = api.NewIssue(issuesSvc, projectsSvc, s.getUserID)
+	s.issueHandlers = api.NewIssue(issuesSvc, projectsSvc, columnsSvc, cyclesSvc, activitiesSvc, s.getUserID)
 	s.cycleHandlers = api.NewCycle(cyclesSvc)
 	s.commentHandlers = api.NewComment(commentsSvc, s.getUserID)
 	s.fieldHandlers = api.NewField(fieldsSvc)
 	s.valueHandlers = api.NewValue(valuesSvc)
-	s.assigneeHandlers = api.NewAssignee(assigneesSvc)
+	s.assigneeHandlers = api.NewAssignee(assigneesSvc, usersSvc, activitiesSvc, s.getUserID)
+	s.activityHandlers = api.NewActivity(activitiesSvc, workspacesSvc, s.getUserID)
 	s.pageHandlers = handler.NewPage(
 		templates,
 		usersSvc,
@@ -175,6 +182,8 @@ func New(cfg Config) (*Server, error) {
 		cyclesSvc,
 		commentsSvc,
 		fieldsSvc,
+		activitiesSvc,
+		assigneesSvc,
 		s.getUserID,
 	)
 
@@ -325,6 +334,7 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/w/{workspace}/issues", s.pageHandlers.Issues)
 	s.app.Get("/w/{workspace}/issue/{key}", s.pageHandlers.Issue)
 	s.app.Get("/w/{workspace}/cycles", s.pageHandlers.Cycles)
+	s.app.Get("/w/{workspace}/activities", s.pageHandlers.Activities)
 	s.app.Get("/w/{workspace}/team/{teamID}", s.pageHandlers.Team)
 
 	// Trello-themed routes (/t/ prefix)
@@ -447,5 +457,11 @@ func (s *Server) setupRoutes() {
 		api.Get("/issues/{issueID}/assignees", s.authRequired(s.assigneeHandlers.List))
 		api.Post("/issues/{issueID}/assignees", s.authRequired(s.assigneeHandlers.Add))
 		api.Delete("/issues/{issueID}/assignees/{userID}", s.authRequired(s.assigneeHandlers.Remove))
+
+		// Activities (issue-scoped)
+		api.Get("/issues/{issueID}/activities", s.authRequired(s.activityHandlers.ListByIssue))
+
+		// Activities (workspace-scoped)
+		api.Get("/workspaces/{slug}/activities", s.authRequired(s.activityHandlers.ListByWorkspace))
 	})
 }

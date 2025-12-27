@@ -158,6 +158,22 @@ CREATE TABLE IF NOT EXISTS comments (
 );
 
 -- ============================================================
+-- Activities (Audit log)
+-- ============================================================
+
+-- Note: FK constraints removed to avoid DuckDB UPDATE issues (enforced at application level)
+CREATE TABLE IF NOT EXISTS activities (
+    id         VARCHAR PRIMARY KEY,
+    issue_id   VARCHAR NOT NULL,
+    actor_id   VARCHAR NOT NULL,
+    action     VARCHAR NOT NULL,
+    old_value  VARCHAR,
+    new_value  VARCHAR,
+    metadata   VARCHAR,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
 -- Fields and Values (Custom columns)
 -- ============================================================
 

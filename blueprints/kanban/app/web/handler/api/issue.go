@@ -3,20 +3,26 @@ package api
 import (
 	"github.com/go-mizu/mizu"
 
+	"github.com/go-mizu/blueprints/kanban/feature/activities"
+	"github.com/go-mizu/blueprints/kanban/feature/columns"
+	"github.com/go-mizu/blueprints/kanban/feature/cycles"
 	"github.com/go-mizu/blueprints/kanban/feature/issues"
 	"github.com/go-mizu/blueprints/kanban/feature/projects"
 )
 
 // Issue handles issue endpoints.
 type Issue struct {
-	issues    issues.API
-	projects  projects.API
-	getUserID func(*mizu.Ctx) string
+	issues     issues.API
+	projects   projects.API
+	columns    columns.API
+	cycles     cycles.API
+	activities activities.API
+	getUserID  func(*mizu.Ctx) string
 }
 
 // NewIssue creates a new issue handler.
-func NewIssue(issues issues.API, projects projects.API, getUserID func(*mizu.Ctx) string) *Issue {
-	return &Issue{issues: issues, projects: projects, getUserID: getUserID}
+func NewIssue(issues issues.API, projects projects.API, columns columns.API, cycles cycles.API, activities activities.API, getUserID func(*mizu.Ctx) string) *Issue {
+	return &Issue{issues: issues, projects: projects, columns: columns, cycles: cycles, activities: activities, getUserID: getUserID}
 }
 
 // List returns all issues in a project.
@@ -79,6 +85,12 @@ func (h *Issue) Create(c *mizu.Ctx) error {
 		return InternalError(c, "failed to create issue: "+err.Error())
 	}
 
+	// Log activity
+	h.activities.Create(c.Context(), issue.ID, userID, &activities.CreateIn{
+		Action:   activities.ActionIssueCreated,
+		NewValue: issue.Title,
+	})
+
 	return Created(c, issue)
 }
 
@@ -100,6 +112,7 @@ func (h *Issue) Get(c *mizu.Ctx) error {
 // Update updates an issue.
 func (h *Issue) Update(c *mizu.Ctx) error {
 	key := c.Param("key")
+	userID := h.getUserID(c)
 
 	issue, err := h.issues.GetByKey(c.Context(), key)
 	if err != nil {
@@ -114,9 +127,57 @@ func (h *Issue) Update(c *mizu.Ctx) error {
 		return BadRequest(c, "invalid request body")
 	}
 
+	// Track changes for activity logging
+	oldPriority := issue.Priority
+
 	updated, err := h.issues.Update(c.Context(), issue.ID, &in)
 	if err != nil {
 		return InternalError(c, "failed to update issue")
+	}
+
+	// Log activities for changes
+	ctx := c.Context()
+
+	// Priority change
+	if in.Priority != nil && *in.Priority != oldPriority {
+		priorityNames := map[int]string{0: "None", 1: "Urgent", 2: "High", 3: "Medium", 4: "Low"}
+		h.activities.Create(ctx, issue.ID, userID, &activities.CreateIn{
+			Action:   activities.ActionPriorityChanged,
+			OldValue: priorityNames[oldPriority],
+			NewValue: priorityNames[*in.Priority],
+		})
+	}
+
+	// Title change
+	if in.Title != nil && *in.Title != issue.Title {
+		h.activities.Create(ctx, issue.ID, userID, &activities.CreateIn{
+			Action:   activities.ActionTitleChanged,
+			OldValue: issue.Title,
+			NewValue: *in.Title,
+		})
+	}
+
+	// Description change
+	if in.Description != nil && *in.Description != issue.Description {
+		h.activities.Create(ctx, issue.ID, userID, &activities.CreateIn{
+			Action: activities.ActionDescChanged,
+		})
+	}
+
+	// Due date change
+	if in.DueDate != nil {
+		h.activities.Create(ctx, issue.ID, userID, &activities.CreateIn{
+			Action:   activities.ActionDueDateSet,
+			NewValue: in.DueDate.Format("Jan 2, 2006"),
+		})
+	}
+
+	// Start date change
+	if in.StartDate != nil {
+		h.activities.Create(ctx, issue.ID, userID, &activities.CreateIn{
+			Action:   activities.ActionStartDateSet,
+			NewValue: in.StartDate.Format("Jan 2, 2006"),
+		})
 	}
 
 	return OK(c, updated)
@@ -144,6 +205,7 @@ func (h *Issue) Delete(c *mizu.Ctx) error {
 // Move moves an issue to a new column/position.
 func (h *Issue) Move(c *mizu.Ctx) error {
 	key := c.Param("key")
+	userID := h.getUserID(c)
 
 	issue, err := h.issues.GetByKey(c.Context(), key)
 	if err != nil {
@@ -164,10 +226,29 @@ func (h *Issue) Move(c *mizu.Ctx) error {
 		return BadRequest(c, "column_id is required")
 	}
 
+	// Get old column name for activity
+	oldColumnName := ""
+	if oldCol, err := h.columns.GetByID(c.Context(), issue.ColumnID); err == nil && oldCol != nil {
+		oldColumnName = oldCol.Name
+	}
+
 	updated, err := h.issues.Move(c.Context(), issue.ID, &in)
 	if err != nil {
 		c.Logger().Error("failed to move issue", "key", key, "issueID", issue.ID, "columnID", in.ColumnID, "position", in.Position, "error", err)
 		return InternalError(c, "failed to move issue")
+	}
+
+	// Log status change activity if column changed
+	if in.ColumnID != issue.ColumnID {
+		newColumnName := ""
+		if newCol, err := h.columns.GetByID(c.Context(), in.ColumnID); err == nil && newCol != nil {
+			newColumnName = newCol.Name
+		}
+		h.activities.Create(c.Context(), issue.ID, userID, &activities.CreateIn{
+			Action:   activities.ActionStatusChanged,
+			OldValue: oldColumnName,
+			NewValue: newColumnName,
+		})
 	}
 
 	return OK(c, updated)
@@ -176,6 +257,7 @@ func (h *Issue) Move(c *mizu.Ctx) error {
 // AttachCycle attaches an issue to a cycle.
 func (h *Issue) AttachCycle(c *mizu.Ctx) error {
 	key := c.Param("key")
+	userID := h.getUserID(c)
 
 	issue, err := h.issues.GetByKey(c.Context(), key)
 	if err != nil {
@@ -196,12 +278,23 @@ func (h *Issue) AttachCycle(c *mizu.Ctx) error {
 		return InternalError(c, "failed to attach cycle")
 	}
 
+	// Log activity
+	cycleName := ""
+	if cycle, err := h.cycles.GetByID(c.Context(), in.CycleID); err == nil && cycle != nil {
+		cycleName = cycle.Name
+	}
+	h.activities.Create(c.Context(), issue.ID, userID, &activities.CreateIn{
+		Action:   activities.ActionCycleAttached,
+		NewValue: cycleName,
+	})
+
 	return OK(c, map[string]string{"message": "cycle attached"})
 }
 
 // DetachCycle detaches an issue from its cycle.
 func (h *Issue) DetachCycle(c *mizu.Ctx) error {
 	key := c.Param("key")
+	userID := h.getUserID(c)
 
 	issue, err := h.issues.GetByKey(c.Context(), key)
 	if err != nil {
@@ -211,9 +304,23 @@ func (h *Issue) DetachCycle(c *mizu.Ctx) error {
 		return InternalError(c, "failed to get issue")
 	}
 
+	// Get old cycle name for activity
+	oldCycleName := ""
+	if issue.CycleID != "" {
+		if cycle, err := h.cycles.GetByID(c.Context(), issue.CycleID); err == nil && cycle != nil {
+			oldCycleName = cycle.Name
+		}
+	}
+
 	if err := h.issues.DetachCycle(c.Context(), issue.ID); err != nil {
 		return InternalError(c, "failed to detach cycle")
 	}
+
+	// Log activity
+	h.activities.Create(c.Context(), issue.ID, userID, &activities.CreateIn{
+		Action:   activities.ActionCycleDetached,
+		OldValue: oldCycleName,
+	})
 
 	return OK(c, map[string]string{"message": "cycle detached"})
 }
