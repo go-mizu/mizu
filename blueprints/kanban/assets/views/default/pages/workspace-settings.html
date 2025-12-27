@@ -1,0 +1,234 @@
+{{define "content"}}
+<div class="page-header flex items-center justify-between">
+  <div>
+    <h1>Workspace Settings</h1>
+    <p class="text-muted">Manage workspace configuration and members</p>
+  </div>
+</div>
+
+<div class="grid gap-6" style="grid-template-columns: 1fr 1fr; max-width: 900px;">
+  <!-- General Settings -->
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">General</h3>
+    </div>
+    <div class="card-content">
+      <form id="workspace-settings-form" class="flex flex-col gap-4">
+        <div class="form-group">
+          <label for="workspace-name" class="label">Workspace Name</label>
+          <input type="text" id="workspace-name" name="name" class="input" value="{{.Workspace.Name}}" required>
+        </div>
+        <div class="form-group">
+          <label for="workspace-slug" class="label">Workspace Slug</label>
+          <input type="text" id="workspace-slug" name="slug" class="input" value="{{.Workspace.Slug}}" required pattern="[a-z0-9-]+">
+          <span class="text-xs text-muted">URL-friendly identifier (lowercase letters, numbers, hyphens only)</span>
+        </div>
+        <div class="flex justify-end">
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Danger Zone -->
+  <div class="card" style="border-color: hsl(var(--destructive) / 0.3);">
+    <div class="card-header">
+      <h3 class="card-title text-destructive">Danger Zone</h3>
+    </div>
+    <div class="card-content">
+      <p class="text-sm text-muted mb-4">
+        Once you delete a workspace, there is no going back. Please be certain.
+      </p>
+      <button class="btn btn-destructive" data-action="delete-workspace">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6h18"/>
+          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+        </svg>
+        Delete Workspace
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Members Section -->
+<div class="mt-6" style="max-width: 900px;">
+  <div class="section-header">
+    <h2 class="section-title">Members</h2>
+    <button class="btn btn-primary btn-sm" data-modal="invite-member-modal">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+        <circle cx="9" cy="7" r="4"/>
+        <line x1="19" x2="19" y1="8" y2="14"/>
+        <line x1="22" x2="16" y1="11" y2="11"/>
+      </svg>
+      Invite Member
+    </button>
+  </div>
+
+  <div class="members-list">
+    {{range .Members}}
+    <div class="member-item" data-member-id="{{.Member.ID}}">
+      <div class="avatar">{{slice .User.DisplayName 0 1}}</div>
+      <div class="member-info">
+        <div class="member-name">{{.User.DisplayName}}</div>
+        <div class="member-email">{{.User.Email}}</div>
+      </div>
+      <span class="role-badge {{if eq .Member.Role "owner"}}lead{{end}}">{{.Member.Role}}</span>
+      {{if ne .Member.Role "owner"}}
+      <div class="dropdown">
+        <button class="dropdown-trigger btn btn-ghost btn-icon btn-sm">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="1"/>
+            <circle cx="12" cy="5" r="1"/>
+            <circle cx="12" cy="19" r="1"/>
+          </svg>
+        </button>
+        <div class="dropdown-menu hidden">
+          <button class="dropdown-item" data-action="change-role" data-member-id="{{.Member.ID}}" data-role="admin">
+            Make Admin
+          </button>
+          <button class="dropdown-item" data-action="change-role" data-member-id="{{.Member.ID}}" data-role="member">
+            Make Member
+          </button>
+          <div class="dropdown-divider"></div>
+          <button class="dropdown-item destructive" data-action="remove-member" data-member-id="{{.Member.ID}}">
+            Remove
+          </button>
+        </div>
+      </div>
+      {{end}}
+    </div>
+    {{else}}
+    <div class="empty-state card">
+      <svg class="empty-state-icon" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+        <circle cx="9" cy="7" r="4"/>
+        <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+      </svg>
+      <div class="empty-state-title">No members yet</div>
+      <div class="empty-state-description">Invite team members to collaborate on this workspace</div>
+    </div>
+    {{end}}
+  </div>
+</div>
+
+<!-- Invite Member Modal -->
+<div id="invite-member-modal" class="modal hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Invite Member</h2>
+      <button class="modal-close">&times;</button>
+    </div>
+    <form id="invite-member-form">
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="invite-email" class="label">Email Address</label>
+          <input type="email" id="invite-email" name="email" class="input" placeholder="colleague@example.com" required autofocus>
+        </div>
+        <div class="form-group">
+          <label for="invite-role" class="label">Role</label>
+          <select id="invite-role" name="role" class="select">
+            <option value="member">Member</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+        <button type="submit" class="btn btn-primary">Send Invite</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Update workspace settings
+document.getElementById('workspace-settings-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+
+  const data = {
+    name: form.name.value,
+    slug: form.slug.value,
+  };
+
+  try {
+    await app.api.patch('/workspaces/{{.Workspace.Slug}}', data);
+    // Redirect to new slug if changed
+    if (data.slug !== '{{.Workspace.Slug}}') {
+      location.href = '/w/' + data.slug + '/settings';
+    } else {
+      alert('Settings saved successfully');
+    }
+  } catch (error) {
+    alert(error.message || 'Failed to save settings');
+  }
+});
+
+// Delete workspace
+document.addEventListener('click', async (e) => {
+  const action = e.target.closest('[data-action]');
+  if (!action) return;
+
+  const actionType = action.dataset.action;
+
+  switch (actionType) {
+    case 'delete-workspace':
+      if (confirm('Are you sure you want to delete this workspace? This action cannot be undone.')) {
+        try {
+          await app.api.delete('/workspaces/{{.Workspace.Slug}}');
+          location.href = '/app';
+        } catch (error) {
+          alert(error.message || 'Failed to delete workspace');
+        }
+      }
+      break;
+
+    case 'remove-member':
+      const memberId = action.dataset.memberId;
+      if (confirm('Are you sure you want to remove this member?')) {
+        try {
+          await app.api.delete('/workspaces/{{.Workspace.Slug}}/members/' + memberId);
+          location.reload();
+        } catch (error) {
+          alert(error.message || 'Failed to remove member');
+        }
+      }
+      break;
+
+    case 'change-role':
+      const memberIdToChange = action.dataset.memberId;
+      const newRole = action.dataset.role;
+      try {
+        await app.api.patch('/workspaces/{{.Workspace.Slug}}/members/' + memberIdToChange, { role: newRole });
+        location.reload();
+      } catch (error) {
+        alert(error.message || 'Failed to change role');
+      }
+      break;
+  }
+});
+
+// Invite member form
+document.getElementById('invite-member-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+
+  const data = {
+    email: form.email.value,
+    role: form.role.value,
+  };
+
+  try {
+    await app.api.post('/workspaces/{{.Workspace.Slug}}/members', data);
+    app.modals.close('invite-member-modal');
+    location.reload();
+  } catch (error) {
+    alert(error.message || 'Failed to invite member');
+  }
+});
+</script>
+{{end}}

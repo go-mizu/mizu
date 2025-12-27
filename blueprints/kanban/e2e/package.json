@@ -1,0 +1,23 @@
+{
+  "name": "kanban-e2e",
+  "version": "1.0.0",
+  "description": "End-to-end tests for Kanban UI",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "test:debug": "playwright test --debug",
+    "test:auth": "playwright test tests/auth.spec.ts",
+    "test:board": "playwright test tests/board.spec.ts",
+    "test:issues": "playwright test tests/issues.spec.ts",
+    "test:cycles": "playwright test tests/cycles.spec.ts",
+    "test:navigation": "playwright test tests/navigation.spec.ts",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0"
+  }
+}

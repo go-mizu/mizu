@@ -1,0 +1,246 @@
+{{define "content"}}
+<div class="page-header flex items-center justify-between">
+  <div>
+    <h1>Cycles</h1>
+    <p class="text-muted">Plan and track your sprints</p>
+  </div>
+  <button class="btn btn-primary" data-modal="create-cycle-modal">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 12h14"/>
+      <path d="M12 5v14"/>
+    </svg>
+    New Cycle
+  </button>
+</div>
+
+{{if .Cycles}}
+<div class="cycles-grid">
+  {{range .Cycles}}
+  <div class="card cycle-card" data-cycle-id="{{.ID}}">
+    <div class="cycle-header">
+      <h3 class="cycle-name">{{.Name}}</h3>
+      <div class="flex items-center gap-2">
+        <span class="status-badge status-{{lower .Status}}">{{.Status}}</span>
+        <div class="dropdown">
+          <button class="dropdown-trigger btn btn-ghost btn-icon btn-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="1"/>
+              <circle cx="12" cy="5" r="1"/>
+              <circle cx="12" cy="19" r="1"/>
+            </svg>
+          </button>
+          <div class="dropdown-menu hidden">
+            <button class="dropdown-item" data-action="edit-cycle" data-cycle-id="{{.ID}}" data-cycle-name="{{.Name}}" data-start-date="{{if not .StartDate.IsZero}}{{.StartDate.Format "2006-01-02"}}{{end}}" data-end-date="{{if not .EndDate.IsZero}}{{.EndDate.Format "2006-01-02"}}{{end}}">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+              </svg>
+              Edit
+            </button>
+            <div class="dropdown-divider"></div>
+            <button class="dropdown-item destructive" data-action="delete-cycle" data-cycle-id="{{.ID}}">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 6h18"/>
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+              </svg>
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="cycle-dates text-sm text-muted mt-2">
+      {{if not .StartDate.IsZero}}{{.StartDate.Format "Jan 2, 2006"}}{{else}}Not started{{end}} - {{if not .EndDate.IsZero}}{{.EndDate.Format "Jan 2, 2006"}}{{else}}No end date{{end}}
+    </div>
+    <div class="flex gap-2 mt-3">
+      {{if eq .Status "planning"}}
+      <button class="btn btn-primary btn-sm" data-action="start-cycle" data-cycle-id="{{.ID}}">Start Cycle</button>
+      {{else if eq .Status "active"}}
+      <button class="btn btn-secondary btn-sm" data-action="complete-cycle" data-cycle-id="{{.ID}}">Complete</button>
+      {{end}}
+      <a href="/w/{{$.Workspace.Slug}}/issues?cycle={{.ID}}" class="btn btn-ghost btn-sm">View Issues</a>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{else}}
+<div class="empty-state card">
+  <svg class="empty-state-icon" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+  </svg>
+  <div class="empty-state-title">No cycles yet</div>
+  <div class="empty-state-description">Create a cycle to organize your work into sprints</div>
+  <button class="btn btn-primary" data-modal="create-cycle-modal">
+    Create Cycle
+  </button>
+</div>
+{{end}}
+
+<!-- Create Cycle Modal -->
+<div id="create-cycle-modal" class="modal hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Create Cycle</h2>
+      <button class="modal-close">&times;</button>
+    </div>
+    <form id="create-cycle-form">
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="cycle-name" class="label">Cycle Name</label>
+          <input type="text" id="cycle-name" name="name" class="input" placeholder="e.g., Sprint 1" required autofocus>
+        </div>
+        <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label for="cycle-start" class="label">Start Date</label>
+            <input type="date" id="cycle-start" name="start_date" class="input">
+          </div>
+          <div class="form-group">
+            <label for="cycle-end" class="label">End Date</label>
+            <input type="date" id="cycle-end" name="end_date" class="input">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create Cycle</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Edit Cycle Modal -->
+<div id="edit-cycle-modal" class="modal hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Edit Cycle</h2>
+      <button class="modal-close">&times;</button>
+    </div>
+    <form id="edit-cycle-form">
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="edit-cycle-name" class="label">Cycle Name</label>
+          <input type="text" id="edit-cycle-name" name="name" class="input" placeholder="e.g., Sprint 1" required autofocus>
+        </div>
+        <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label for="edit-cycle-start" class="label">Start Date</label>
+            <input type="date" id="edit-cycle-start" name="start_date" class="input">
+          </div>
+          <div class="form-group">
+            <label for="edit-cycle-end" class="label">End Date</label>
+            <input type="date" id="edit-cycle-end" name="end_date" class="input">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Track cycle being edited
+let cycleToEdit = null;
+
+// Create cycle form
+document.getElementById('create-cycle-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+
+  const data = {
+    name: form.name.value,
+    start_date: form.start_date.value || null,
+    end_date: form.end_date.value || null,
+  };
+
+  try {
+    await app.api.post(`/teams/{{.DefaultTeamID}}/cycles`, data);
+    app.modals.close('create-cycle-modal');
+    location.reload();
+  } catch (error) {
+    alert(error.message || 'Failed to create cycle');
+  }
+});
+
+// Edit cycle form
+document.getElementById('edit-cycle-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!cycleToEdit) return;
+
+  const form = e.target;
+  const data = {
+    name: form.name.value,
+    start_date: form.start_date.value || null,
+    end_date: form.end_date.value || null,
+  };
+
+  try {
+    await app.api.patch(`/cycles/${cycleToEdit}`, data);
+    app.modals.close('edit-cycle-modal');
+    location.reload();
+  } catch (error) {
+    alert(error.message || 'Failed to update cycle');
+  }
+});
+
+// Handle cycle actions
+document.addEventListener('click', async (e) => {
+  const action = e.target.closest('[data-action]');
+  if (!action) return;
+
+  const actionType = action.dataset.action;
+  const cycleId = action.dataset.cycleId;
+
+  switch (actionType) {
+    case 'edit-cycle':
+      cycleToEdit = cycleId;
+      // Populate form with current values
+      document.getElementById('edit-cycle-name').value = action.dataset.cycleName || '';
+      document.getElementById('edit-cycle-start').value = action.dataset.startDate || '';
+      document.getElementById('edit-cycle-end').value = action.dataset.endDate || '';
+      app.modals.open('edit-cycle-modal');
+      break;
+
+    case 'delete-cycle':
+      if (confirm('Are you sure you want to delete this cycle? Issues will be unassigned from this cycle.')) {
+        try {
+          await app.api.delete(`/cycles/${cycleId}`);
+          // Remove from DOM
+          const card = document.querySelector(`.cycle-card[data-cycle-id="${cycleId}"]`);
+          if (card) card.remove();
+          // Check if no more cycles
+          if (document.querySelectorAll('.cycle-card').length === 0) {
+            location.reload(); // Reload to show empty state
+          }
+        } catch (error) {
+          alert(error.message || 'Failed to delete cycle');
+        }
+      }
+      break;
+
+    case 'start-cycle':
+      try {
+        await app.api.post(`/cycles/${cycleId}/status`, { status: 'active' });
+        location.reload();
+      } catch (error) {
+        alert(error.message || 'Failed to start cycle');
+      }
+      break;
+
+    case 'complete-cycle':
+      if (!confirm('Are you sure you want to complete this cycle?')) return;
+      try {
+        await app.api.post(`/cycles/${cycleId}/status`, { status: 'completed' });
+        location.reload();
+      } catch (error) {
+        alert(error.message || 'Failed to complete cycle');
+      }
+      break;
+  }
+});
+</script>
+{{end}}

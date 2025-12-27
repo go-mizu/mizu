@@ -1,0 +1,442 @@
+{{define "content"}}
+<div class="page-header flex items-center justify-between">
+  <div>
+    <h1>Issues</h1>
+    <p class="text-muted"><span id="visible-count">{{.TotalCount}}</span> issues</p>
+  </div>
+  <div class="flex gap-2">
+    <div class="dropdown">
+      <button class="dropdown-trigger btn btn-secondary" id="filter-btn">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+        </svg>
+        Filter
+        <span id="filter-count" class="filter-badge hidden">0</span>
+      </button>
+      <div class="dropdown-menu filter-menu hidden">
+        <div class="filter-section">
+          <div class="filter-section-title">Quick Filters</div>
+          <button class="dropdown-item" data-filter="my-issues">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+            </svg>
+            My Issues
+          </button>
+          <button class="dropdown-item" data-filter="unassigned">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="m4.93 4.93 14.14 14.14"/>
+            </svg>
+            Unassigned
+          </button>
+        </div>
+        <div class="dropdown-divider"></div>
+        <div class="filter-section">
+          <div class="filter-section-title">Status</div>
+          {{range .Columns}}
+          <label class="filter-checkbox">
+            <input type="checkbox" data-filter-type="status" value="{{.Name}}" checked>
+            <span class="status-badge {{lower .Name}}">{{.Name}}</span>
+          </label>
+          {{end}}
+        </div>
+        <div class="dropdown-divider"></div>
+        <div class="filter-actions">
+          <button class="btn btn-ghost btn-sm" id="clear-filters">Clear all</button>
+        </div>
+      </div>
+    </div>
+    <div class="search-input-wrapper">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/>
+        <path d="m21 21-4.3-4.3"/>
+      </svg>
+      <input type="text" id="issue-search" class="input search-input" placeholder="Search issues...">
+    </div>
+    <button class="btn btn-primary" data-modal="create-issue-modal">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12h14"/>
+        <path d="M12 5v14"/>
+      </svg>
+      New Issue
+    </button>
+  </div>
+</div>
+
+{{if .Issues}}
+<div class="card">
+  <table class="table table-clickable table-sortable" id="issues-table">
+    <thead>
+      <tr>
+        <th style="width: 100px;" data-sort="key" class="sortable">
+          Key
+          <svg class="sort-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>
+          </svg>
+        </th>
+        <th data-sort="title" class="sortable">
+          Title
+          <svg class="sort-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>
+          </svg>
+        </th>
+        <th style="width: 120px;" data-sort="status" class="sortable">
+          Status
+          <svg class="sort-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>
+          </svg>
+        </th>
+        <th style="width: 150px;" data-sort="assignee" class="sortable">
+          Assignee
+          <svg class="sort-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>
+          </svg>
+        </th>
+        <th style="width: 120px;" data-sort="updated" class="sortable">
+          Updated
+          <svg class="sort-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>
+          </svg>
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Issues}}
+      <tr data-issue-key="{{.Key}}" data-status="{{if .Column}}{{.Column.Name}}{{end}}" data-priority="{{.Priority}}" data-assignee="{{.CreatorID}}" data-assignee-name="" data-title="{{.Title}}" data-updated="{{.UpdatedAt}}">
+        <td>
+          <span class="issue-key">{{.Key}}</span>
+        </td>
+        <td>
+          <span class="font-medium">{{.Title}}</span>
+        </td>
+        <td>
+          {{if .Column}}
+          <span class="status-badge {{lower .Column.Name}}">{{.Column.Name}}</span>
+          {{else}}
+          <span class="text-muted">-</span>
+          {{end}}
+        </td>
+        <td>
+          <span class="text-muted">-</span>
+        </td>
+        <td>
+          <span class="text-sm text-muted">{{.UpdatedAt.Format "Jan 2, 2006"}}</span>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{else}}
+<div class="empty-state card">
+  <svg class="empty-state-icon" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"/>
+    <line x1="12" x2="12" y1="8" y2="12"/>
+    <line x1="12" x2="12.01" y1="16" y2="16"/>
+  </svg>
+  <div class="empty-state-title">No issues yet</div>
+  <div class="empty-state-description">Create your first issue to start tracking work</div>
+  <button class="btn btn-primary" data-modal="create-issue-modal">
+    Create Issue
+  </button>
+</div>
+{{end}}
+
+<!-- Create Issue Modal -->
+<div id="create-issue-modal" class="modal hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Create Issue</h2>
+      <button class="modal-close">&times;</button>
+    </div>
+    <form id="create-issue-form">
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="issue-title" class="label">Title</label>
+          <input type="text" id="issue-title" name="title" class="input" placeholder="Issue title" required autofocus>
+        </div>
+        <div class="form-group">
+          <label for="issue-description" class="label">Description</label>
+          <textarea id="issue-description" name="description" class="textarea" placeholder="Add a description..." rows="4"></textarea>
+        </div>
+        {{if .Projects}}
+        <div class="form-group">
+          <label for="issue-project" class="label">Project</label>
+          <select id="issue-project" name="project_id" class="select" required>
+            {{range .Projects}}
+            <option value="{{.ID}}">{{.Name}} ({{.Key}})</option>
+            {{end}}
+          </select>
+        </div>
+        {{end}}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create Issue</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Current user ID for "My Issues" filter
+const currentUserId = '{{.User.ID}}';
+
+// Row click navigation
+document.querySelectorAll('.table tbody tr[data-issue-key]').forEach(row => {
+  row.addEventListener('click', () => {
+    const key = row.dataset.issueKey;
+    location.href = `/w/{{.Workspace.Slug}}/issue/${key}`;
+  });
+});
+
+// Create issue form
+document.getElementById('create-issue-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const projectId = form.project_id?.value || '{{.DefaultProjectID}}';
+
+  const data = {
+    title: form.title.value,
+    description: form.description?.value,
+  };
+
+  try {
+    const issue = await app.api.post(`/projects/${projectId}/issues`, data);
+    app.modals.close('create-issue-modal');
+    location.href = `/w/{{.Workspace.Slug}}/issue/${issue.key}`;
+  } catch (error) {
+    alert(error.message || 'Failed to create issue');
+  }
+});
+
+// ========================================
+// Filter & Search Functionality
+// ========================================
+
+const issueFilter = {
+  searchQuery: '',
+  myIssuesOnly: false,
+  unassignedOnly: false,
+  statusFilters: new Set(),
+  sortColumn: null,
+  sortDirection: 'asc',
+
+  init() {
+    // Initialize with all filters checked
+    document.querySelectorAll('[data-filter-type="status"]').forEach(cb => {
+      if (cb.checked) this.statusFilters.add(cb.value);
+    });
+
+    // Search input
+    const searchInput = document.getElementById('issue-search');
+    searchInput?.addEventListener('input', (e) => {
+      this.searchQuery = e.target.value.toLowerCase();
+      this.applyFilters();
+    });
+
+    // Status checkboxes
+    document.querySelectorAll('[data-filter-type="status"]').forEach(cb => {
+      cb.addEventListener('change', (e) => {
+        if (e.target.checked) {
+          this.statusFilters.add(e.target.value);
+        } else {
+          this.statusFilters.delete(e.target.value);
+        }
+        this.applyFilters();
+      });
+    });
+
+    // Quick filters
+    document.querySelector('[data-filter="my-issues"]')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.myIssuesOnly = !this.myIssuesOnly;
+      this.unassignedOnly = false;
+      e.target.closest('.dropdown-item').classList.toggle('active', this.myIssuesOnly);
+      document.querySelector('[data-filter="unassigned"]')?.closest('.dropdown-item').classList.remove('active');
+      this.applyFilters();
+    });
+
+    document.querySelector('[data-filter="unassigned"]')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.unassignedOnly = !this.unassignedOnly;
+      this.myIssuesOnly = false;
+      e.target.closest('.dropdown-item').classList.toggle('active', this.unassignedOnly);
+      document.querySelector('[data-filter="my-issues"]')?.closest('.dropdown-item').classList.remove('active');
+      this.applyFilters();
+    });
+
+    // Clear filters
+    document.getElementById('clear-filters')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.clearAllFilters();
+    });
+
+    // Sortable headers
+    document.querySelectorAll('th.sortable').forEach(th => {
+      th.addEventListener('click', () => {
+        const column = th.dataset.sort;
+        if (this.sortColumn === column) {
+          this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+          this.sortColumn = column;
+          this.sortDirection = 'asc';
+        }
+        this.updateSortIndicators();
+        this.sortTable();
+      });
+    });
+  },
+
+  clearAllFilters() {
+    this.searchQuery = '';
+    this.myIssuesOnly = false;
+    this.unassignedOnly = false;
+
+    // Reset search input
+    const searchInput = document.getElementById('issue-search');
+    if (searchInput) searchInput.value = '';
+
+    // Check all status filters
+    document.querySelectorAll('[data-filter-type="status"]').forEach(cb => {
+      cb.checked = true;
+      this.statusFilters.add(cb.value);
+    });
+
+    // Remove active class from quick filters
+    document.querySelectorAll('[data-filter]').forEach(btn => {
+      btn.closest('.dropdown-item')?.classList.remove('active');
+    });
+
+    this.applyFilters();
+  },
+
+  applyFilters() {
+    const rows = document.querySelectorAll('#issues-table tbody tr');
+    let visibleCount = 0;
+
+    rows.forEach(row => {
+      let visible = true;
+
+      // Search filter
+      if (this.searchQuery) {
+        const title = (row.dataset.title || '').toLowerCase();
+        const key = (row.dataset.issueKey || '').toLowerCase();
+        if (!title.includes(this.searchQuery) && !key.includes(this.searchQuery)) {
+          visible = false;
+        }
+      }
+
+      // Status filter
+      if (visible && this.statusFilters.size > 0) {
+        const status = row.dataset.status || '';
+        if (!this.statusFilters.has(status)) {
+          visible = false;
+        }
+      }
+
+      // My Issues filter
+      if (visible && this.myIssuesOnly) {
+        const assignee = row.dataset.assignee || '';
+        if (assignee !== currentUserId) {
+          visible = false;
+        }
+      }
+
+      // Unassigned filter
+      if (visible && this.unassignedOnly) {
+        const assignee = row.dataset.assignee || '';
+        if (assignee !== '') {
+          visible = false;
+        }
+      }
+
+      row.style.display = visible ? '' : 'none';
+      if (visible) visibleCount++;
+    });
+
+    // Update count
+    document.getElementById('visible-count').textContent = visibleCount;
+    this.updateFilterBadge();
+  },
+
+  updateFilterBadge() {
+    const filterCount = document.getElementById('filter-count');
+    let activeFilters = 0;
+
+    if (this.searchQuery) activeFilters++;
+    if (this.myIssuesOnly) activeFilters++;
+    if (this.unassignedOnly) activeFilters++;
+
+    // Count unchecked status filters
+    const totalStatus = document.querySelectorAll('[data-filter-type="status"]').length;
+    if (this.statusFilters.size < totalStatus) activeFilters++;
+
+    if (activeFilters > 0) {
+      filterCount.textContent = activeFilters;
+      filterCount.classList.remove('hidden');
+    } else {
+      filterCount.classList.add('hidden');
+    }
+  },
+
+  updateSortIndicators() {
+    document.querySelectorAll('th.sortable').forEach(th => {
+      th.classList.remove('sort-asc', 'sort-desc');
+      if (th.dataset.sort === this.sortColumn) {
+        th.classList.add(this.sortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+      }
+    });
+  },
+
+  sortTable() {
+    const tbody = document.querySelector('#issues-table tbody');
+    if (!tbody) return;
+
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    rows.sort((a, b) => {
+      let aVal, bVal;
+
+      switch (this.sortColumn) {
+        case 'key':
+          aVal = a.dataset.issueKey || '';
+          bVal = b.dataset.issueKey || '';
+          break;
+        case 'title':
+          aVal = a.dataset.title || '';
+          bVal = b.dataset.title || '';
+          break;
+        case 'status':
+          aVal = a.dataset.status || '';
+          bVal = b.dataset.status || '';
+          break;
+        case 'assignee':
+          aVal = a.dataset.assigneeName || '';
+          bVal = b.dataset.assigneeName || '';
+          break;
+        case 'updated':
+          aVal = a.dataset.updated || '';
+          bVal = b.dataset.updated || '';
+          break;
+        default:
+          return 0;
+      }
+
+      let comparison = aVal.localeCompare(bVal);
+      return this.sortDirection === 'desc' ? -comparison : comparison;
+    });
+
+    rows.forEach(row => tbody.appendChild(row));
+  }
+};
+
+// Initialize on page load
+issueFilter.init();
+</script>
+{{end}}

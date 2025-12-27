@@ -135,6 +135,10 @@ func (s *Service) GetByID(ctx context.Context, id string) (*User, error) {
 	return user, nil
 }
 
+func (s *Service) GetByIDs(ctx context.Context, ids []string) ([]*User, error) {
+	return s.store.GetByIDs(ctx, ids)
+}
+
 func (s *Service) GetByEmail(ctx context.Context, email string) (*User, error) {
 	user, err := s.store.GetByEmail(ctx, email)
 	if err != nil {
@@ -147,15 +151,15 @@ func (s *Service) GetByEmail(ctx context.Context, email string) (*User, error) {
 }
 
 func (s *Service) GetBySession(ctx context.Context, sessionID string) (*User, error) {
-	session, err := s.store.GetSession(ctx, sessionID)
+	// Uses optimized JOIN query - single query instead of 2
+	user, err := s.store.GetUserBySession(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	if session == nil || session.ExpiresAt.Before(time.Now()) {
+	if user == nil {
 		return nil, ErrNotFound
 	}
-
-	return s.store.GetByID(ctx, session.UserID)
+	return user, nil
 }
 
 func (s *Service) Update(ctx context.Context, id string, in *UpdateIn) (*User, error) {

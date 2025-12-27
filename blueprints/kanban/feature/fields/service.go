@@ -35,15 +35,15 @@ func (s *Service) Create(ctx context.Context, projectID string, in *CreateIn) (*
 		return nil, ErrKeyExists
 	}
 
-	// Get existing fields to determine position
-	fields, err := s.store.ListByProject(ctx, projectID)
+	// Use count query instead of loading all fields (more efficient)
+	count, err := s.store.CountByProject(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
 
 	position := in.Position
-	if position == 0 && len(fields) > 0 {
-		position = len(fields)
+	if position == 0 && count > 0 {
+		position = count
 	}
 
 	field := &Field{

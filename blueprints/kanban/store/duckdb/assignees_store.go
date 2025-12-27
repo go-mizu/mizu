@@ -31,6 +31,14 @@ func (s *AssigneesStore) Remove(ctx context.Context, issueID, userID string) err
 	return err
 }
 
+func (s *AssigneesStore) Exists(ctx context.Context, issueID, userID string) (bool, error) {
+	var exists bool
+	err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM issue_assignees WHERE issue_id = $1 AND user_id = $2)
+	`, issueID, userID).Scan(&exists)
+	return exists, err
+}
+
 func (s *AssigneesStore) List(ctx context.Context, issueID string) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT user_id FROM issue_assignees WHERE issue_id = $1

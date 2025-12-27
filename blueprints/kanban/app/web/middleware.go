@@ -66,10 +66,23 @@ func (s *Server) optionalAuth(c *mizu.Ctx) *users.User {
 
 // getUserID returns the current user ID from context.
 func (s *Server) getUserID(c *mizu.Ctx) string {
+	// Check context store first (set by authRequired middleware)
 	if ctx, ok := contextStore.Load(c.Request()); ok {
 		return ctx.(*requestContext).userID
 	}
-	return ""
+
+	// Fall back to checking session directly (for page routes without middleware)
+	sessionID := s.getSessionID(c)
+	if sessionID == "" {
+		return ""
+	}
+
+	user, err := s.users.GetBySession(c.Context(), sessionID)
+	if err != nil || user == nil {
+		return ""
+	}
+
+	return user.ID
 }
 
 // getUser returns the current user from context.

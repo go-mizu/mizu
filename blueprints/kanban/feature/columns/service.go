@@ -22,22 +22,22 @@ func NewService(store Store) *Service {
 }
 
 func (s *Service) Create(ctx context.Context, projectID string, in *CreateIn) (*Column, error) {
-	// Get existing columns to determine if this should be default
-	existing, err := s.store.ListByProject(ctx, projectID)
+	// Use count query instead of loading all columns (more efficient)
+	count, err := s.store.CountByProject(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
 
 	isDefault := in.IsDefault
-	if len(existing) == 0 {
+	if count == 0 {
 		// First column is always default
 		isDefault = true
 	}
 
 	position := in.Position
-	if position == 0 && len(existing) > 0 {
+	if position == 0 && count > 0 {
 		// Default position is at the end
-		position = len(existing)
+		position = count
 	}
 
 	column := &Column{

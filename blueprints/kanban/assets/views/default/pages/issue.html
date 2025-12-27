@@ -1,0 +1,413 @@
+{{define "content"}}
+<div class="mb-4">
+  <a href="/w/{{.Workspace.Slug}}/issues" class="btn btn-ghost btn-icon" title="Back to issues">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m12 19-7-7 7-7"/>
+      <path d="M19 12H5"/>
+    </svg>
+  </a>
+</div>
+
+<div class="issue-detail">
+  <!-- Main Content -->
+  <div class="issue-main">
+    <div class="issue-header">
+      <div class="issue-key-badge issue-key">{{.Issue.Key}}</div>
+      <h1
+        id="issue-title"
+        class="issue-title-editable"
+        contenteditable="true"
+        data-issue-key="{{.Issue.Key}}"
+        data-field="title"
+      >{{.Issue.Title}}</h1>
+    </div>
+
+    <!-- Description -->
+    <div class="mb-6">
+      <h3 class="text-sm font-medium text-muted mb-2">Description</h3>
+      <div
+        id="issue-description"
+        class="issue-description prose"
+        contenteditable="true"
+        data-issue-key="{{.Issue.Key}}"
+        data-field="description"
+      ><span class="text-muted">Add a description...</span></div>
+    </div>
+
+    <!-- Activity / Comments -->
+    <div class="activity-section">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Activity</h3>
+        </div>
+        <div class="card-content">
+          <!-- Comment Form -->
+          <form class="comment-form mb-4" data-issue-id="{{.Issue.ID}}">
+            <textarea
+              name="body"
+              class="textarea comment-input"
+              placeholder="Leave a comment..."
+              rows="3"
+            ></textarea>
+            <div class="comment-actions">
+              <button type="submit" class="btn btn-primary btn-sm">Comment</button>
+            </div>
+          </form>
+
+          <!-- Comments List -->
+          <div class="comment-list">
+            {{range .Comments}}
+            <div class="comment-item flex gap-3">
+              <div class="avatar avatar-sm">{{slice .Author.DisplayName 0 1}}</div>
+              <div class="comment-content">
+                <div class="comment-header">
+                  <span class="comment-author">{{.Author.DisplayName}}</span>
+                  <span class="comment-time">{{.CreatedAt}}</span>
+                </div>
+                <div class="comment-body">{{.Content}}</div>
+              </div>
+            </div>
+            {{else}}
+            <p class="text-muted text-sm">No comments yet. Be the first to comment!</p>
+            {{end}}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="issue-sidebar">
+    <!-- Status -->
+    <div class="card property-card">
+      <div class="property-label">Status</div>
+      <select id="issue-status" class="select" data-issue-key="{{.Issue.Key}}">
+        {{range .Columns}}
+        <option value="{{.ID}}" {{if eq .ID $.Issue.ColumnID}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+    </div>
+
+    <!-- Priority -->
+    <div class="card property-card">
+      <div class="property-label">Priority</div>
+      <select id="issue-priority" class="select" data-issue-key="{{.Issue.Key}}">
+        <option value="" selected>No priority</option>
+        <option value="urgent">Urgent</option>
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+      </select>
+    </div>
+
+    <!-- Cycle -->
+    <div class="card property-card">
+      <div class="property-label">Cycle</div>
+      <select id="issue-cycle" class="select" data-issue-key="{{.Issue.Key}}">
+        <option value="">No cycle</option>
+        {{range .Cycles}}
+        <option value="{{.ID}}" {{if eq .ID $.Issue.CycleID}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+    </div>
+
+    <!-- Custom Fields -->
+    {{if .Fields}}
+    {{range .Fields}}
+    {{if not .IsArchived}}
+    <div class="card property-card" data-field-id="{{.ID}}">
+      <div class="property-label">{{.Name}}{{if .IsRequired}} *{{end}}</div>
+      {{if eq .Kind "text"}}
+      <input type="text" class="input custom-field-input" data-field-id="{{.ID}}" data-kind="text" placeholder="Enter value...">
+      {{else if eq .Kind "number"}}
+      <input type="number" class="input custom-field-input" data-field-id="{{.ID}}" data-kind="number" placeholder="Enter number...">
+      {{else if eq .Kind "bool"}}
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" class="custom-field-input" data-field-id="{{.ID}}" data-kind="bool" style="width: 1rem; height: 1rem;">
+        <span class="text-sm">Yes</span>
+      </label>
+      {{else if eq .Kind "date"}}
+      <input type="date" class="input custom-field-input" data-field-id="{{.ID}}" data-kind="date">
+      {{else if eq .Kind "select"}}
+      <select class="select custom-field-input" data-field-id="{{.ID}}" data-kind="select">
+        <option value="">Select...</option>
+        <!-- Options loaded from settings_json -->
+      </select>
+      {{else if eq .Kind "user"}}
+      <select class="select custom-field-input" data-field-id="{{.ID}}" data-kind="user">
+        <option value="">Select user...</option>
+        {{range $.TeamMembers}}
+        <option value="{{.ID}}">{{.DisplayName}}</option>
+        {{end}}
+      </select>
+      {{end}}
+    </div>
+    {{end}}
+    {{end}}
+    {{end}}
+
+    <!-- Assignees -->
+    <div class="card property-card">
+      <div class="property-label flex items-center justify-between">
+        <span>Assignees</span>
+        <button class="btn btn-ghost btn-icon btn-sm" data-modal="assign-modal">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14"/>
+            <path d="M12 5v14"/>
+          </svg>
+        </button>
+      </div>
+      <div class="property-value" id="assignees-list">
+        <span class="text-muted">No assignees</span>
+      </div>
+    </div>
+
+    <!-- Project -->
+    <div class="card property-card">
+      <div class="property-label">Project</div>
+      <div class="property-value">
+        <a href="/w/{{.Workspace.Slug}}/board/{{.Project.ID}}" class="text-sm hover:underline">
+          {{.Project.Name}}
+        </a>
+      </div>
+    </div>
+
+    <!-- Created -->
+    <div class="card property-card">
+      <div class="property-label">Created</div>
+      <div class="property-value text-sm text-muted">{{.Issue.CreatedAt}}</div>
+    </div>
+
+    <!-- Actions -->
+    <div class="card property-card">
+      <div class="dropdown w-full">
+        <button class="dropdown-trigger btn btn-secondary w-full">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="1"/>
+            <circle cx="12" cy="5" r="1"/>
+            <circle cx="12" cy="19" r="1"/>
+          </svg>
+          More Actions
+        </button>
+        <div class="dropdown-menu hidden" style="width: 100%; position: relative; margin-top: 0.5rem;">
+          <button class="dropdown-item" data-action="copy-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            </svg>
+            Copy Link
+          </button>
+          <div class="dropdown-divider"></div>
+          <button class="dropdown-item destructive" data-action="delete-issue" data-issue-key="{{.Issue.Key}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h18"/>
+              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+            </svg>
+            Delete Issue
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Assign Modal -->
+<div id="assign-modal" class="modal hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Add Assignee</h2>
+      <button class="modal-close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="label">Team Members</label>
+        <div class="members-list">
+          {{range .TeamMembers}}
+          <button class="member-item" data-action="assign" data-user-id="{{.ID}}">
+            <div class="avatar avatar-sm">{{slice .DisplayName 0 1}}</div>
+            <div class="member-info">
+              <div class="member-name">{{.DisplayName}}</div>
+              <div class="member-email">{{.Email}}</div>
+            </div>
+          </button>
+          {{end}}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Delete issue
+document.querySelector('[data-action="delete-issue"]')?.addEventListener('click', async () => {
+  if (!confirm('Are you sure you want to delete this issue?')) return;
+
+  try {
+    await app.api.delete(`/issues/{{.Issue.Key}}`);
+    location.href = `/w/{{.Workspace.Slug}}/issues`;
+  } catch (error) {
+    alert(error.message || 'Failed to delete issue');
+  }
+});
+
+// Copy link
+document.querySelector('[data-action="copy-link"]')?.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(location.href);
+    alert('Link copied to clipboard!');
+  } catch (error) {
+    console.error('Failed to copy:', error);
+  }
+});
+
+// Assign user
+document.querySelectorAll('[data-action="assign"]').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const userId = btn.dataset.userId;
+    try {
+      await app.api.post(`/issues/{{.Issue.ID}}/assignees`, { user_id: userId });
+      app.modals.close('assign-modal');
+      location.reload();
+    } catch (error) {
+      alert(error.message || 'Failed to assign user');
+    }
+  });
+});
+
+// Remove assignee
+document.querySelectorAll('.remove-assignee').forEach(btn => {
+  btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const userId = btn.dataset.userId;
+    try {
+      await app.api.delete(`/issues/{{.Issue.ID}}/assignees/${userId}`);
+      // Remove from DOM
+      const assigneeItem = btn.closest('.assignee-item');
+      if (assigneeItem) {
+        assigneeItem.remove();
+        // Check if no more assignees
+        const remaining = document.querySelectorAll('.assignee-item');
+        if (remaining.length === 0) {
+          document.getElementById('assignees-list').innerHTML = '<span class="text-muted">No assignees</span>';
+        }
+      }
+    } catch (error) {
+      alert(error.message || 'Failed to remove assignee');
+    }
+  });
+});
+
+// Status change
+document.getElementById('issue-status')?.addEventListener('change', async (e) => {
+  try {
+    await app.api.post(`/issues/{{.Issue.Key}}/move`, { column_id: e.target.value });
+  } catch (error) {
+    console.error('Failed to update status:', error);
+    alert(error.message || 'Failed to update status');
+  }
+});
+
+// Cycle change
+document.getElementById('issue-cycle')?.addEventListener('change', async (e) => {
+  const cycleId = e.target.value;
+  try {
+    if (cycleId) {
+      await app.api.post(`/issues/{{.Issue.Key}}/cycle`, { cycle_id: cycleId });
+    } else {
+      await app.api.delete(`/issues/{{.Issue.Key}}/cycle`);
+    }
+  } catch (error) {
+    console.error('Failed to update cycle:', error);
+    alert(error.message || 'Failed to update cycle');
+  }
+});
+
+// Priority change
+document.getElementById('issue-priority')?.addEventListener('change', async (e) => {
+  const priority = e.target.value;
+  try {
+    await app.api.patch(`/issues/{{.Issue.Key}}`, { priority: priority || null });
+  } catch (error) {
+    console.error('Failed to update priority:', error);
+    alert(error.message || 'Failed to update priority');
+  }
+});
+
+// Inline editing for title
+const titleEl = document.getElementById('issue-title');
+let originalTitle = titleEl?.textContent;
+
+titleEl?.addEventListener('focus', () => {
+  originalTitle = titleEl.textContent;
+});
+
+titleEl?.addEventListener('blur', async () => {
+  const newTitle = titleEl.textContent.trim();
+  if (newTitle === originalTitle || !newTitle) {
+    titleEl.textContent = originalTitle;
+    return;
+  }
+
+  try {
+    await app.api.patch(`/issues/{{.Issue.Key}}`, { title: newTitle });
+  } catch (error) {
+    titleEl.textContent = originalTitle;
+    alert(error.message || 'Failed to update title');
+  }
+});
+
+titleEl?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    titleEl.blur();
+  } else if (e.key === 'Escape') {
+    titleEl.textContent = originalTitle;
+    titleEl.blur();
+  }
+});
+
+// Custom field value updates
+document.querySelectorAll('.custom-field-input').forEach(input => {
+  const updateField = async () => {
+    const fieldId = input.dataset.fieldId;
+    const kind = input.dataset.kind;
+    let value = {};
+
+    switch (kind) {
+      case 'text':
+        value = { value_text: input.value || null };
+        break;
+      case 'number':
+        value = { value_num: input.value ? parseFloat(input.value) : null };
+        break;
+      case 'bool':
+        value = { value_bool: input.checked };
+        break;
+      case 'date':
+        value = { value_date: input.value || null };
+        break;
+      case 'select':
+      case 'user':
+        value = { value_ref: input.value || null };
+        break;
+    }
+
+    try {
+      await app.api.put(`/issues/{{.Issue.ID}}/values/${fieldId}`, value);
+    } catch (error) {
+      console.error('Failed to update field value:', error);
+    }
+  };
+
+  if (input.type === 'checkbox') {
+    input.addEventListener('change', updateField);
+  } else if (input.tagName === 'SELECT') {
+    input.addEventListener('change', updateField);
+  } else {
+    input.addEventListener('blur', updateField);
+  }
+});
+</script>
+{{end}}

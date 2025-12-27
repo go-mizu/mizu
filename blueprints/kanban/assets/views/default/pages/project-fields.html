@@ -1,0 +1,324 @@
+{{define "content"}}
+<div class="page-header flex items-center justify-between">
+  <div>
+    <h1>Custom Fields</h1>
+    <p class="text-muted">Manage custom fields for {{.Project.Name}}</p>
+  </div>
+  <button class="btn btn-primary" data-modal="create-field-modal">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 12h14"/>
+      <path d="M12 5v14"/>
+    </svg>
+    New Field
+  </button>
+</div>
+
+{{if .Fields}}
+<div class="card" style="max-width: 800px;">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Key</th>
+        <th>Type</th>
+        <th>Required</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="fields-list">
+      {{range .Fields}}
+      <tr data-field-id="{{.ID}}" {{if .IsArchived}}class="text-muted"{{end}}>
+        <td>
+          <span class="font-medium">{{.Name}}</span>
+          {{if .IsArchived}}<span class="text-xs text-muted ml-2">(archived)</span>{{end}}
+        </td>
+        <td><code class="text-xs">{{.Key}}</code></td>
+        <td>
+          <span class="status-badge">
+            {{if eq .Kind "text"}}Text{{end}}
+            {{if eq .Kind "number"}}Number{{end}}
+            {{if eq .Kind "bool"}}Checkbox{{end}}
+            {{if eq .Kind "date"}}Date{{end}}
+            {{if eq .Kind "ts"}}Timestamp{{end}}
+            {{if eq .Kind "select"}}Select{{end}}
+            {{if eq .Kind "user"}}User{{end}}
+            {{if eq .Kind "json"}}JSON{{end}}
+          </span>
+        </td>
+        <td>
+          {{if .IsRequired}}
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-success">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          {{else}}
+          <span class="text-muted">-</span>
+          {{end}}
+        </td>
+        <td>
+          <div class="dropdown">
+            <button class="dropdown-trigger btn btn-ghost btn-icon btn-sm">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="1"/>
+                <circle cx="12" cy="5" r="1"/>
+                <circle cx="12" cy="19" r="1"/>
+              </svg>
+            </button>
+            <div class="dropdown-menu hidden">
+              <button class="dropdown-item" data-action="edit-field" data-field-id="{{.ID}}" data-field-name="{{.Name}}" data-field-required="{{.IsRequired}}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                </svg>
+                Edit
+              </button>
+              {{if .IsArchived}}
+              <button class="dropdown-item" data-action="unarchive-field" data-field-id="{{.ID}}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect width="20" height="5" x="2" y="3" rx="1"/>
+                  <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/>
+                  <path d="m9.5 17 2.5-2.5 2.5 2.5"/>
+                  <path d="M12 14.5V10"/>
+                </svg>
+                Unarchive
+              </button>
+              {{else}}
+              <button class="dropdown-item" data-action="archive-field" data-field-id="{{.ID}}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect width="20" height="5" x="2" y="3" rx="1"/>
+                  <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/>
+                  <path d="M10 12h4"/>
+                </svg>
+                Archive
+              </button>
+              {{end}}
+              <div class="dropdown-divider"></div>
+              <button class="dropdown-item destructive" data-action="delete-field" data-field-id="{{.ID}}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 6h18"/>
+                  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                  <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                </svg>
+                Delete
+              </button>
+            </div>
+          </div>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{else}}
+<div class="empty-state card" style="max-width: 800px;">
+  <svg class="empty-state-icon" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+    <path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/>
+  </svg>
+  <div class="empty-state-title">No custom fields</div>
+  <div class="empty-state-description">Create custom fields to track additional information on issues</div>
+  <button class="btn btn-primary" data-modal="create-field-modal">
+    Create Field
+  </button>
+</div>
+{{end}}
+
+<!-- Create Field Modal -->
+<div id="create-field-modal" class="modal hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Create Custom Field</h2>
+      <button class="modal-close">&times;</button>
+    </div>
+    <form id="create-field-form">
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="field-name" class="label">Field Name</label>
+          <input type="text" id="field-name" name="name" class="input" placeholder="e.g., Story Points" required autofocus>
+        </div>
+        <div class="form-group">
+          <label for="field-key" class="label">Field Key</label>
+          <input type="text" id="field-key" name="key" class="input" placeholder="e.g., story_points" required pattern="[a-z_][a-z0-9_]*">
+          <span class="text-xs text-muted">Lowercase letters, numbers, and underscores only. Must start with a letter.</span>
+        </div>
+        <div class="form-group">
+          <label for="field-kind" class="label">Field Type</label>
+          <select id="field-kind" name="kind" class="select" required>
+            <option value="text">Text</option>
+            <option value="number">Number</option>
+            <option value="bool">Checkbox</option>
+            <option value="date">Date</option>
+            <option value="select">Select</option>
+            <option value="user">User</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="field-required" name="is_required" style="width: 1rem; height: 1rem;">
+            <span class="label" style="margin: 0;">Required field</span>
+          </label>
+        </div>
+        <div id="select-options-group" class="form-group hidden">
+          <label for="field-options" class="label">Options (one per line)</label>
+          <textarea id="field-options" name="options" class="textarea" rows="4" placeholder="Option 1&#10;Option 2&#10;Option 3"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create Field</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Edit Field Modal -->
+<div id="edit-field-modal" class="modal hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Edit Field</h2>
+      <button class="modal-close">&times;</button>
+    </div>
+    <form id="edit-field-form">
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="edit-field-name" class="label">Field Name</label>
+          <input type="text" id="edit-field-name" name="name" class="input" required>
+        </div>
+        <div class="form-group">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="edit-field-required" name="is_required" style="width: 1rem; height: 1rem;">
+            <span class="label" style="margin: 0;">Required field</span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+let fieldToEdit = null;
+
+// Show/hide select options based on field type
+document.getElementById('field-kind')?.addEventListener('change', (e) => {
+  const optionsGroup = document.getElementById('select-options-group');
+  if (e.target.value === 'select') {
+    optionsGroup.classList.remove('hidden');
+  } else {
+    optionsGroup.classList.add('hidden');
+  }
+});
+
+// Auto-generate key from name
+document.getElementById('field-name')?.addEventListener('input', (e) => {
+  const keyInput = document.getElementById('field-key');
+  if (keyInput && !keyInput.dataset.modified) {
+    keyInput.value = e.target.value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .replace(/^[0-9]/, '_$&');
+  }
+});
+
+document.getElementById('field-key')?.addEventListener('input', () => {
+  document.getElementById('field-key').dataset.modified = 'true';
+});
+
+// Create field form
+document.getElementById('create-field-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+
+  const data = {
+    name: form.name.value,
+    key: form.key.value,
+    kind: form.kind.value,
+    is_required: form.is_required.checked,
+  };
+
+  if (data.kind === 'select') {
+    const options = form.options.value.split('\n').filter(o => o.trim());
+    data.settings_json = JSON.stringify({ options });
+  }
+
+  try {
+    await app.api.post('/projects/{{.Project.ID}}/fields', data);
+    app.modals.close('create-field-modal');
+    location.reload();
+  } catch (error) {
+    alert(error.message || 'Failed to create field');
+  }
+});
+
+// Edit field form
+document.getElementById('edit-field-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!fieldToEdit) return;
+
+  const form = e.target;
+  const data = {
+    name: form.name.value,
+    is_required: form.is_required.checked,
+  };
+
+  try {
+    await app.api.patch('/fields/' + fieldToEdit, data);
+    app.modals.close('edit-field-modal');
+    location.reload();
+  } catch (error) {
+    alert(error.message || 'Failed to update field');
+  }
+});
+
+// Handle field actions
+document.addEventListener('click', async (e) => {
+  const action = e.target.closest('[data-action]');
+  if (!action) return;
+
+  const actionType = action.dataset.action;
+  const fieldId = action.dataset.fieldId;
+
+  switch (actionType) {
+    case 'edit-field':
+      fieldToEdit = fieldId;
+      document.getElementById('edit-field-name').value = action.dataset.fieldName || '';
+      document.getElementById('edit-field-required').checked = action.dataset.fieldRequired === 'true';
+      app.modals.open('edit-field-modal');
+      break;
+
+    case 'archive-field':
+      try {
+        await app.api.post('/fields/' + fieldId + '/archive', {});
+        location.reload();
+      } catch (error) {
+        alert(error.message || 'Failed to archive field');
+      }
+      break;
+
+    case 'unarchive-field':
+      try {
+        await app.api.post('/fields/' + fieldId + '/unarchive', {});
+        location.reload();
+      } catch (error) {
+        alert(error.message || 'Failed to unarchive field');
+      }
+      break;
+
+    case 'delete-field':
+      if (confirm('Are you sure you want to delete this field? All values will be lost.')) {
+        try {
+          await app.api.delete('/fields/' + fieldId);
+          location.reload();
+        } catch (error) {
+          alert(error.message || 'Failed to delete field');
+        }
+      }
+      break;
+  }
+});
+</script>
+{{end}}

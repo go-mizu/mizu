@@ -46,6 +46,7 @@ type Store interface {
 	Create(ctx context.Context, c *Column) error
 	GetByID(ctx context.Context, id string) (*Column, error)
 	ListByProject(ctx context.Context, projectID string) ([]*Column, error)
+	CountByProject(ctx context.Context, projectID string) (int, error)
 	Update(ctx context.Context, id string, in *UpdateIn) error
 	UpdatePosition(ctx context.Context, id string, position int) error
 	SetDefault(ctx context.Context, projectID, columnID string) error

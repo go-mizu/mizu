@@ -3,6 +3,8 @@ package duckdb
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/blueprints/kanban/feature/users"
@@ -36,6 +38,41 @@ func (s *UsersStore) GetByID(ctx context.Context, id string) (*users.User, error
 		return nil, nil
 	}
 	return u, err
+}
+
+func (s *UsersStore) GetByIDs(ctx context.Context, ids []string) ([]*users.User, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	// Build placeholders and args for IN clause
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+
+	query := fmt.Sprintf(`
+		SELECT id, email, username, display_name, password_hash
+		FROM users WHERE id IN (%s)
+	`, strings.Join(placeholders, ", "))
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []*users.User
+	for rows.Next() {
+		u := &users.User{}
+		if err := rows.Scan(&u.ID, &u.Email, &u.Username, &u.DisplayName, &u.PasswordHash); err != nil {
+			return nil, err
+		}
+		list = append(list, u)
+	}
+	return list, rows.Err()
 }
 
 func (s *UsersStore) GetByEmail(ctx context.Context, email string) (*users.User, error) {
@@ -106,4 +143,19 @@ func (s *UsersStore) DeleteSession(ctx context.Context, id string) error {
 func (s *UsersStore) DeleteExpiredSessions(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at < $1`, time.Now())
 	return err
+}
+
+// GetUserBySession retrieves a user by session ID using a JOIN (single query instead of 2).
+func (s *UsersStore) GetUserBySession(ctx context.Context, sessionID string) (*users.User, error) {
+	u := &users.User{}
+	err := s.db.QueryRowContext(ctx, `
+		SELECT u.id, u.email, u.username, u.display_name, u.password_hash
+		FROM users u
+		INNER JOIN sessions s ON s.user_id = u.id
+		WHERE s.id = $1 AND s.expires_at > $2
+	`, sessionID, time.Now()).Scan(&u.ID, &u.Email, &u.Username, &u.DisplayName, &u.PasswordHash)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return u, err
 }

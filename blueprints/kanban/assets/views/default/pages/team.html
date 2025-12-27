@@ -1,0 +1,203 @@
+{{define "content"}}
+<div class="page-header flex items-center justify-between">
+  <div>
+    <h1>{{.Team.Name}}</h1>
+    <p class="text-muted">{{len .Members}} members</p>
+  </div>
+  <button class="btn btn-primary" data-modal="add-member-modal">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+      <circle cx="9" cy="7" r="4"/>
+      <line x1="19" x2="19" y1="8" y2="14"/>
+      <line x1="22" x2="16" y1="11" y2="11"/>
+    </svg>
+    Add Member
+  </button>
+</div>
+
+<!-- Team Members -->
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Member</th>
+        <th style="width: 120px;">Role</th>
+        <th style="width: 150px;">Joined</th>
+        <th style="width: 100px;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Members}}
+      <tr>
+        <td>
+          <div class="flex items-center gap-3">
+            <div class="avatar">{{slice .User.DisplayName 0 1}}</div>
+            <div>
+              <div class="font-medium">{{.User.DisplayName}}</div>
+              <div class="text-sm text-muted">{{.User.Email}}</div>
+            </div>
+          </div>
+        </td>
+        <td>
+          <span class="role-badge {{if eq .Role "lead"}}lead{{end}}">{{.Role}}</span>
+        </td>
+        <td>
+          <span class="text-sm text-muted">{{.JoinedAt}}</span>
+        </td>
+        <td>
+          <div class="dropdown">
+            <button class="dropdown-trigger btn btn-ghost btn-icon btn-sm">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="1"/>
+                <circle cx="12" cy="5" r="1"/>
+                <circle cx="12" cy="19" r="1"/>
+              </svg>
+            </button>
+            <div class="dropdown-menu hidden">
+              {{if eq .Role "member"}}
+              <button class="dropdown-item" data-action="promote" data-user-id="{{.User.ID}}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m18 15-6-6-6 6"/>
+                </svg>
+                Make Lead
+              </button>
+              {{else}}
+              <button class="dropdown-item" data-action="demote" data-user-id="{{.User.ID}}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m6 9 6 6 6-6"/>
+                </svg>
+                Make Member
+              </button>
+              {{end}}
+              <div class="dropdown-divider"></div>
+              <button class="dropdown-item destructive" data-action="remove" data-user-id="{{.User.ID}}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                  <circle cx="9" cy="7" r="4"/>
+                  <line x1="17" x2="22" y1="11" y2="11"/>
+                </svg>
+                Remove
+              </button>
+            </div>
+          </div>
+        </td>
+      </tr>
+      {{else}}
+      <tr>
+        <td colspan="4" class="text-center text-muted py-6">
+          No members in this team yet.
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+
+<!-- Team Projects -->
+{{if .Projects}}
+<div class="mt-6">
+  <div class="section-header">
+    <h2>Projects</h2>
+  </div>
+  <div class="projects-grid">
+    {{range .Projects}}
+    <a href="/w/{{$.Workspace.Slug}}/board/{{.ID}}" class="card card-link project-card">
+      <div class="project-key">{{.Key}}</div>
+      <div class="project-name">{{.Name}}</div>
+    </a>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+<!-- Add Member Modal -->
+<div id="add-member-modal" class="modal hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Add Team Member</h2>
+      <button class="modal-close">&times;</button>
+    </div>
+    <form id="add-member-form">
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="member-email" class="label">Email or Username</label>
+          <input type="text" id="member-email" name="identifier" class="input" placeholder="Enter email or username" required autofocus>
+        </div>
+        <div class="form-group">
+          <label for="member-role" class="label">Role</label>
+          <select id="member-role" name="role" class="select">
+            <option value="member">Member</option>
+            <option value="lead">Lead</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+        <button type="submit" class="btn btn-primary">Add Member</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Add member form
+document.getElementById('add-member-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+
+  const data = {
+    identifier: form.identifier.value,
+    role: form.role.value,
+  };
+
+  try {
+    await app.api.post(`/teams/{{.Team.ID}}/members`, data);
+    app.modals.close('add-member-modal');
+    location.reload();
+  } catch (error) {
+    alert(error.message || 'Failed to add member');
+  }
+});
+
+// Role change actions
+document.querySelectorAll('[data-action="promote"]').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const userId = btn.dataset.userId;
+    try {
+      await app.api.patch(`/teams/{{.Team.ID}}/members/${userId}`, { role: 'lead' });
+      location.reload();
+    } catch (error) {
+      alert(error.message || 'Failed to update role');
+    }
+  });
+});
+
+document.querySelectorAll('[data-action="demote"]').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const userId = btn.dataset.userId;
+    try {
+      await app.api.patch(`/teams/{{.Team.ID}}/members/${userId}`, { role: 'member' });
+      location.reload();
+    } catch (error) {
+      alert(error.message || 'Failed to update role');
+    }
+  });
+});
+
+// Remove member
+document.querySelectorAll('[data-action="remove"]').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    if (!confirm('Are you sure you want to remove this member from the team?')) return;
+
+    const userId = btn.dataset.userId;
+    try {
+      await app.api.delete(`/teams/{{.Team.ID}}/members/${userId}`);
+      location.reload();
+    } catch (error) {
+      alert(error.message || 'Failed to remove member');
+    }
+  });
+});
+</script>
+{{end}}
