@@ -1016,6 +1016,97 @@ const logout = {
 };
 
 // ========================================
+// Global Create Issue Form
+// ========================================
+
+const globalCreateForm = {
+  selectedColumnId: '',
+  selectedPriority: 0,
+
+  init() {
+    const form = document.getElementById('global-create-issue-form');
+    if (!form) return;
+
+    // Status dropdown
+    document.querySelectorAll('.global-status-option').forEach(opt => {
+      opt.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.selectedColumnId = opt.dataset.columnId;
+        document.getElementById('global-selected-column-id').value = this.selectedColumnId;
+        document.querySelector('#global-status-chip span').textContent = opt.dataset.columnName;
+        document.getElementById('global-status-chip').classList.add('selected');
+        document.getElementById('global-status-dropdown').querySelector('.dropdown-menu').classList.add('hidden');
+      });
+    });
+
+    // Priority dropdown
+    document.querySelectorAll('.global-priority-option').forEach(opt => {
+      opt.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.selectedPriority = parseInt(opt.dataset.priority);
+        document.getElementById('global-selected-priority').value = this.selectedPriority;
+        const chipSpan = document.querySelector('#global-priority-chip span');
+        chipSpan.textContent = this.selectedPriority === 0 ? 'Priority' : opt.dataset.priorityName;
+        if (this.selectedPriority > 0) {
+          document.getElementById('global-priority-chip').classList.add('selected');
+        } else {
+          document.getElementById('global-priority-chip').classList.remove('selected');
+        }
+        document.getElementById('global-priority-dropdown').querySelector('.dropdown-menu').classList.add('hidden');
+      });
+    });
+
+    // Form submission
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const projectId = document.getElementById('global-issue-project').value;
+      const title = document.getElementById('global-issue-title').value.trim();
+      const description = document.getElementById('global-issue-description').value.trim();
+
+      if (!projectId) {
+        alert('Please select a project');
+        return;
+      }
+
+      if (!title) {
+        alert('Please enter a title');
+        document.getElementById('global-issue-title').focus();
+        return;
+      }
+
+      const data = { title, description };
+      if (this.selectedColumnId) data.column_id = this.selectedColumnId;
+      if (this.selectedPriority > 0) data.priority = this.selectedPriority;
+
+      const submitBtn = document.getElementById('global-create-issue-submit');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Creating...';
+
+      try {
+        const issue = await api.post(`/projects/${projectId}/issues`, data);
+        modals.close('global-create-issue-modal');
+
+        // Get workspace from URL
+        const path = location.pathname;
+        const match = path.match(/\/w\/([^\/]+)/);
+        if (match) {
+          location.href = `/w/${match[1]}/issue/${issue.key}`;
+        } else {
+          location.reload();
+        }
+      } catch (error) {
+        alert(error.message || 'Failed to create issue');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create issue';
+      }
+    });
+  }
+};
+
+// ========================================
 // Initialize Everything
 // ========================================
 
@@ -1034,6 +1125,7 @@ document.addEventListener('DOMContentLoaded', () => {
   keyboard.init();
   issueNavigation.init();
   logout.init();
+  globalCreateForm.init();
 });
 
 // Export for use in templates
