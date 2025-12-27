@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-mizu/mizu"
 
+	"github.com/go-mizu/blueprints/messaging/assets"
 	"github.com/go-mizu/blueprints/messaging/feature/accounts"
 	"github.com/go-mizu/blueprints/messaging/feature/chats"
 	"github.com/go-mizu/blueprints/messaging/feature/messages"
@@ -19,6 +20,7 @@ type Page struct {
 	messages     messages.API
 	getUserID    func(*mizu.Ctx) string
 	dev          bool
+	assetHashes  *assets.AssetHashes
 }
 
 // NewPage creates a new Page handler.
@@ -34,6 +36,7 @@ func NewPage(templates map[string]*template.Template, accounts accounts.API, cha
 		messages:     msgs,
 		getUserID:    getUserID,
 		dev:          dev,
+		assetHashes:  assets.ComputeAssetHashes(),
 	}
 }
 
@@ -46,6 +49,7 @@ func NewPageWithThemes(allTemplates map[string]map[string]*template.Template, ac
 		messages:     msgs,
 		getUserID:    getUserID,
 		dev:          dev,
+		assetHashes:  assets.ComputeAssetHashes(),
 	}
 }
 
@@ -167,6 +171,25 @@ func (h *Page) render(c *mizu.Ctx, name string, data any) error {
 		return c.Text(http.StatusInternalServerError, "Template not found: "+name)
 	}
 
+	// Get CSS hash for current theme (fall back to default if not found)
+	cssHash := h.assetHashes.CSS[theme]
+	if cssHash == "" {
+		cssHash = h.assetHashes.CSS["default"]
+	}
+
+	// Wrap data to include asset hashes for cache busting
+	viewData := map[string]any{
+		"Version":    h.assetHashes.AppJS,
+		"CSSVersion": cssHash,
+	}
+	if data != nil {
+		if m, ok := data.(map[string]any); ok {
+			for k, v := range m {
+				viewData[k] = v
+			}
+		}
+	}
+
 	c.Writer().Header().Set("Content-Type", "text/html; charset=utf-8")
-	return tmpl.Execute(c.Writer(), data)
+	return tmpl.Execute(c.Writer(), viewData)
 }

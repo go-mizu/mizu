@@ -507,6 +507,9 @@ const kanban = {
       const issueId = this.draggedCard.dataset.issueId;
       const issueKey = this.draggedCard.dataset.issueKey;
 
+      // Validate columnId before proceeding
+      if (!columnId) return;
+
       // Calculate position
       const indicator = columnBody.querySelector('.drop-indicator');
       let position = 0;

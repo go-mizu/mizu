@@ -30,12 +30,12 @@
 
                 <div class="neural-form-group">
                     <label class="neural-label" for="password">Access Key</label>
-                    <input type="password" id="password" name="password" class="neural-input" placeholder="Create a passkey" required autocomplete="new-password">
+                    <input type="password" id="password" name="password" class="neural-input" placeholder="Create a passkey" required>
                 </div>
 
                 <div class="neural-form-group">
                     <label class="neural-label" for="confirm-password">Confirm Access Key</label>
-                    <input type="password" id="confirm-password" name="confirm-password" class="neural-input" placeholder="Verify passkey" required autocomplete="new-password">
+                    <input type="password" id="confirm-password" name="confirm-password" class="neural-input" placeholder="Verify passkey" required>
                 </div>
 
                 <div id="error-message" class="neural-error" style="display: none;"></div>
@@ -96,32 +96,25 @@ function handleRegister(event) {
         return;
     }
 
-    if (password.length < 6) {
-        errorMessage.textContent = 'Access key must be at least 6 characters';
+    if (password.length < 8) {
+        errorMessage.textContent = 'Access key must be at least 8 characters';
         errorMessage.style.display = 'block';
         return;
     }
 
-    fetch('/api/register', {
+    fetch('/api/v1/auth/register', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ username, displayname, password }),
+        body: JSON.stringify({ username, display_name: displayname, password }),
     })
-    .then(response => {
-        if (!response.ok) {
-            return response.json().then(data => {
-                throw new Error(data.error || 'Identity creation failed');
-            });
-        }
-        return response.json();
-    })
+    .then(response => response.json())
     .then(data => {
-        if (data.token) {
-            localStorage.setItem('token', data.token);
-            localStorage.setItem('user', JSON.stringify(data.user));
+        if (data.success) {
             window.location.href = '/app';
+        } else {
+            throw new Error(data.error || 'Identity creation failed');
         }
     })
     .catch(error => {

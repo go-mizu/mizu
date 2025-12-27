@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MIZU - J.A.R.V.I.S. AI Interface</title>
-    <link rel="stylesheet" href="/static/css/jarvis.css">
+    <link rel="stylesheet" href="/static/css/jarvis.css?v={{.CSSVersion}}">
     <style>
         /* Inline critical styles for faster render */
         html, body { margin: 0; padding: 0; min-height: 100vh; background: #0a0a0f; }
@@ -12,6 +12,6 @@
 </head>
 <body>
     {{template "content" .}}
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v={{.Version}}"></script>
 </body>
 </html>

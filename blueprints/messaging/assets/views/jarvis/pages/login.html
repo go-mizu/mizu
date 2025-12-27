@@ -76,26 +76,19 @@ function handleLogin(event) {
 
     errorMessage.style.display = 'none';
 
-    fetch('/api/login', {
+    fetch('/api/v1/auth/login', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ login: username, password }),
     })
-    .then(response => {
-        if (!response.ok) {
-            return response.json().then(data => {
-                throw new Error(data.error || 'Authentication failed');
-            });
-        }
-        return response.json();
-    })
+    .then(response => response.json())
     .then(data => {
-        if (data.token) {
-            localStorage.setItem('token', data.token);
-            localStorage.setItem('user', JSON.stringify(data.user));
+        if (data.success) {
             window.location.href = '/app';
+        } else {
+            throw new Error(data.error || 'Authentication failed');
         }
     })
     .catch(error => {

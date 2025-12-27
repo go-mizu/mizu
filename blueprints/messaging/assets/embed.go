@@ -2,7 +2,9 @@
 package assets
 
 import (
+	"crypto/md5"
 	"embed"
+	"encoding/hex"
 	"html/template"
 	"io/fs"
 )
@@ -85,4 +87,48 @@ func AllTemplates() (map[string]map[string]*template.Template, error) {
 	}
 
 	return allTemplates, nil
+}
+
+// AssetHashes contains content-based hashes for cache busting.
+type AssetHashes struct {
+	AppJS string            // Hash for app.js
+	CSS   map[string]string // Theme -> CSS hash
+}
+
+// ComputeAssetHashes calculates MD5 hashes of static assets for cache busting.
+func ComputeAssetHashes() *AssetHashes {
+	hashes := &AssetHashes{
+		CSS: make(map[string]string),
+	}
+
+	// Hash app.js
+	if data, err := staticFS.ReadFile("static/js/app.js"); err == nil {
+		hashes.AppJS = hashContent(data)
+	}
+
+	// Hash CSS files for each theme
+	cssFiles := map[string]string{
+		"default": "static/css/default.css",
+		"aim1.0":  "static/css/aim.css",
+		"ymxp":    "static/css/ymxp.css",
+		"msn":     "static/css/msn.css",
+		"im26":    "static/css/imessage.css",
+		"imos9":   "static/css/imos9.css",
+		"imosx":   "static/css/imosx.css",
+		"team11":  "static/css/team11.css",
+		"jarvis":  "static/css/jarvis.css",
+	}
+
+	for theme, path := range cssFiles {
+		if data, err := staticFS.ReadFile(path); err == nil {
+			hashes.CSS[theme] = hashContent(data)
+		}
+	}
+
+	return hashes
+}
+
+func hashContent(data []byte) string {
+	h := md5.Sum(data)
+	return hex.EncodeToString(h[:8]) // Use first 8 bytes (16 hex chars)
 }
