@@ -1,4 +1,26 @@
 {{define "content"}}
+<style>
+  /* Drag and drop styles */
+  .issue-card.dragging {
+    opacity: 0.4;
+    cursor: grabbing;
+  }
+  .issue-card {
+    cursor: grab;
+  }
+  .column-body.drag-over {
+    background: rgba(0, 0, 0, 0.02);
+    border-radius: 8px;
+  }
+  .drop-placeholder {
+    background: rgba(24, 24, 27, 0.08);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    border: 2px dashed #d4d4d8;
+    transition: height 0.15s ease;
+  }
+</style>
+
 <div class="flex items-center justify-between mb-6">
   <div class="flex items-center gap-4">
     <h1 class="text-2xl font-semibold text-zinc-900">{{.Project.Name}}</h1>
@@ -65,9 +87,9 @@
       <span class="column-count text-xs text-zinc-400">{{len .Issues}}</span>
     </div>
 
-    <div class="column-body flex-1 space-y-2">
+    <div class="column-body flex-1 space-y-2 min-h-[100px] p-1 -m-1" data-column-id="{{.ID}}">
       {{range .Issues}}
-      <a href="/w/{{$.Workspace.Slug}}/issue/{{.Key}}" class="issue-card block bg-white rounded-lg border border-zinc-200 p-3 hover:border-zinc-300 hover:shadow-sm transition-all" draggable="true" data-issue-id="{{.ID}}" data-issue-key="{{.Key}}" data-position="{{.Position}}">
+      <div class="issue-card block bg-white rounded-lg border border-zinc-200 p-3 hover:border-zinc-300 hover:shadow-sm transition-all" data-issue-id="{{.ID}}" data-issue-key="{{.Key}}" data-position="{{.Position}}">
         <div class="flex items-start gap-2 mb-2">
           <!-- Priority indicator -->
           <div class="w-4 flex-shrink-0 mt-0.5">
@@ -107,7 +129,7 @@
             {{end}}
           </div>
         </div>
-      </a>
+      </div>
       {{end}}
     </div>
   </div>
@@ -232,83 +254,194 @@
 </div>
 
 <script>
-let columnToRename = null;
+// ==========================================
+// DRAG AND DROP
+// ==========================================
+let draggedCard = null;
+let draggedCardHeight = 40;
+let dragStartColumn = null;
+let currentPlaceholder = null;
+let lastTargetContainer = null;
+let lastAfterElement = null;
 
-document.addEventListener('click', async (e) => {
-  const action = e.target.closest('[data-action]');
-  if (!action) return;
+function createPlaceholder(height) {
+  const placeholder = document.createElement('div');
+  placeholder.className = 'drop-placeholder';
+  placeholder.style.height = height + 'px';
+  return placeholder;
+}
 
-  const actionType = action.dataset.action;
-  const columnId = action.dataset.columnId;
-  const issueKey = action.dataset.issueKey;
+function removePlaceholder() {
+  if (currentPlaceholder && currentPlaceholder.parentNode) {
+    currentPlaceholder.parentNode.removeChild(currentPlaceholder);
+  }
+  currentPlaceholder = null;
+}
 
-  switch (actionType) {
-    case 'rename-column':
-      columnToRename = columnId;
-      const column = document.querySelector(`.board-column[data-column-id="${columnId}"]`);
-      const currentName = column?.querySelector('.column-header span:nth-child(2)')?.textContent || '';
-      document.getElementById('rename-column-name').value = currentName;
-      app.modals.open('rename-column-modal');
-      break;
+function getDragAfterElement(container, y) {
+  const draggableElements = [...container.querySelectorAll('.issue-card:not(.dragging)')];
 
-    case 'delete-column':
-      if (confirm('Are you sure you want to delete this column? Issues will be moved to the default column.')) {
-        try {
-          await app.api.delete(`/columns/${columnId}`);
-          location.reload();
-        } catch (error) {
-          alert(error.message || 'Failed to delete column');
+  return draggableElements.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+
+    if (offset < 0 && offset > closest.offset) {
+      return { offset: offset, element: child };
+    } else {
+      return closest;
+    }
+  }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
+function updateColumnCounts() {
+  document.querySelectorAll('.board-column').forEach(column => {
+    const count = column.querySelectorAll('.issue-card').length;
+    const countEl = column.querySelector('.column-count');
+    if (countEl) countEl.textContent = count;
+  });
+}
+
+function initDragAndDrop() {
+  document.querySelectorAll('.issue-card').forEach(card => {
+    card.setAttribute('draggable', 'true');
+
+    card.addEventListener('dragstart', (e) => {
+      draggedCard = card;
+      draggedCardHeight = card.offsetHeight;
+      dragStartColumn = card.closest('.column-body');
+
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', card.dataset.issueKey);
+
+      requestAnimationFrame(() => {
+        card.classList.add('dragging');
+      });
+    });
+
+    card.addEventListener('dragend', (e) => {
+      card.classList.remove('dragging');
+      document.querySelectorAll('.column-body.drag-over').forEach(el => {
+        el.classList.remove('drag-over');
+      });
+      removePlaceholder();
+
+      draggedCard = null;
+      dragStartColumn = null;
+      lastTargetContainer = null;
+      lastAfterElement = null;
+    });
+
+    // Click to navigate
+    card.addEventListener('click', (e) => {
+      if (card.dataset.wasDragged === 'true') {
+        card.dataset.wasDragged = '';
+        return;
+      }
+      const key = card.dataset.issueKey;
+      if (key) {
+        location.href = `/w/{{.Workspace.Slug}}/issue/${key}`;
+      }
+    });
+  });
+
+  document.querySelectorAll('.column-body').forEach(container => {
+    container.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+
+      if (!draggedCard) return;
+
+      const afterElement = getDragAfterElement(container, e.clientY);
+
+      if (container === lastTargetContainer && afterElement === lastAfterElement) {
+        return;
+      }
+
+      lastTargetContainer = container;
+      lastAfterElement = afterElement;
+
+      document.querySelectorAll('.column-body.drag-over').forEach(el => {
+        if (el !== container) el.classList.remove('drag-over');
+      });
+      container.classList.add('drag-over');
+
+      removePlaceholder();
+      currentPlaceholder = createPlaceholder(draggedCardHeight);
+
+      if (afterElement) {
+        container.insertBefore(currentPlaceholder, afterElement);
+      } else {
+        container.appendChild(currentPlaceholder);
+      }
+    });
+
+    container.addEventListener('dragleave', (e) => {
+      const rect = container.getBoundingClientRect();
+      const x = e.clientX;
+      const y = e.clientY;
+
+      if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+        container.classList.remove('drag-over');
+        if (lastTargetContainer === container) {
+          removePlaceholder();
+          lastTargetContainer = null;
+          lastAfterElement = null;
         }
       }
-      break;
+    });
 
-    case 'set-default':
-      try {
-        await app.api.post(`/projects/{{.Project.ID}}/columns/${columnId}/default`);
-        location.reload();
-      } catch (error) {
-        alert(error.message || 'Failed to set default column');
+    container.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      container.classList.remove('drag-over');
+
+      const cardKey = e.dataTransfer.getData('text/plain');
+
+      const insertBeforeElement = currentPlaceholder ? currentPlaceholder.nextElementSibling : null;
+      removePlaceholder();
+
+      if (!draggedCard || !cardKey) return;
+
+      draggedCard.classList.remove('dragging');
+
+      if (insertBeforeElement) {
+        container.insertBefore(draggedCard, insertBeforeElement);
+      } else {
+        container.appendChild(draggedCard);
       }
-      break;
 
-    case 'open-issue':
-      location.href = `/w/{{.Workspace.Slug}}/issue/${issueKey}`;
-      break;
+      draggedCard.dataset.wasDragged = 'true';
 
-    case 'delete-issue':
-      if (confirm('Are you sure you want to delete this issue?')) {
+      const newColumnId = container.dataset.columnId;
+      const oldColumnId = dragStartColumn ? dragStartColumn.dataset.columnId : null;
+
+      updateColumnCounts();
+
+      if (newColumnId !== oldColumnId) {
         try {
-          await app.api.delete(`/issues/${issueKey}`);
-          const card = document.querySelector(`[data-issue-key="${issueKey}"]`);
-          if (card) card.remove();
-          app.kanban.updateColumnCounts();
-        } catch (error) {
-          alert(error.message || 'Failed to delete issue');
+          const res = await fetch('/api/v1/issues/' + cardKey + '/move', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ column_id: newColumnId })
+          });
+          const data = await res.json();
+          if (!data.success) {
+            console.error('Failed to move card:', data.error);
+            window.location.reload();
+          }
+        } catch (err) {
+          console.error('Failed to move card:', err);
+          window.location.reload();
         }
       }
-      break;
-  }
-});
+    });
+  });
+}
 
-document.getElementById('rename-column-form')?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  if (!columnToRename) return;
+initDragAndDrop();
 
-  const newName = document.getElementById('rename-column-name').value.trim();
-  if (!newName) return;
-
-  try {
-    await app.api.patch(`/columns/${columnToRename}`, { name: newName });
-    app.modals.close('rename-column-modal');
-    const column = document.querySelector(`.board-column[data-column-id="${columnToRename}"]`);
-    const nameSpan = column?.querySelector('.column-header span:nth-child(2)');
-    if (nameSpan) nameSpan.textContent = newName;
-    columnToRename = null;
-  } catch (error) {
-    alert(error.message || 'Failed to rename column');
-  }
-});
-
+// ==========================================
+// MODAL FORM
+// ==========================================
 const modalForm = {
   selectedColumnId: '',
   selectedPriority: 0,
