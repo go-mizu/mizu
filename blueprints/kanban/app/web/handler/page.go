@@ -236,6 +236,7 @@ type InboxIssue struct {
 	*issues.Issue
 	Project   *projects.Project
 	Column    *columns.Column
+	Assignees []*users.User
 	TimeGroup string // "today", "yesterday", "this_week", "older"
 }
 

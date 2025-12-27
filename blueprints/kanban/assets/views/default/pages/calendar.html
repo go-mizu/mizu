@@ -111,57 +111,170 @@
 <!-- Create Issue Modal -->
 <div id="create-issue-modal" class="modal hidden">
   <div class="modal-backdrop" data-close="create-issue-modal"></div>
-  <div class="modal-content">
+  <div class="modal-content modal-lg">
     <div class="modal-header">
       <h2 class="modal-title">Create Issue</h2>
       <button class="modal-close" data-close="create-issue-modal">&times;</button>
     </div>
-    <form id="create-issue-form" class="modal-body">
-      <div class="form-group mb-4">
-        <label class="label" for="issue-title">Title</label>
-        <input type="text" id="issue-title" name="title" class="input" placeholder="Issue title" required>
+    <form id="create-issue-form">
+      <div class="modal-body">
+        {{if .Projects}}
+        <div class="form-group mb-4">
+          <label class="label" for="issue-project">Project</label>
+          <select id="issue-project" name="project_id" class="select">
+            {{range .Projects}}
+            <option value="{{.ID}}">{{.Name}}</option>
+            {{end}}
+          </select>
+        </div>
+        {{end}}
+        <input type="text" id="issue-title" name="title" class="create-box-title" placeholder="Issue title" required autofocus style="padding-left: 0;">
+        <textarea id="issue-description" name="description" class="create-box-description" placeholder="Add description..." rows="3" style="padding-left: 0;"></textarea>
+
+        <div class="create-box-properties" style="padding-left: 0;">
+          <div class="dropdown property-chip-dropdown" id="cal-status-dropdown">
+            <button type="button" class="property-chip dropdown-trigger" id="cal-status-chip">
+              <span class="status-badge backlog">
+                <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+                <span class="chip-label">Backlog</span>
+              </span>
+            </button>
+            <div class="dropdown-menu property-dropdown hidden">
+              {{range .Columns}}
+              <button type="button" class="dropdown-item cal-status-option" data-column-id="{{.ID}}" data-column-name="{{.Name}}">
+                <span class="status-badge {{lower .Name}}">{{.Name}}</span>
+              </button>
+              {{end}}
+            </div>
+          </div>
+          <div class="dropdown property-chip-dropdown" id="cal-priority-dropdown">
+            <button type="button" class="property-chip dropdown-trigger" id="cal-priority-chip">
+              <span class="priority-badge-chip">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon">
+                  <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                <span class="chip-label">No priority</span>
+              </span>
+            </button>
+            <div class="dropdown-menu property-dropdown hidden">
+              <button type="button" class="dropdown-item cal-priority-option" data-priority="0" data-priority-name="No priority">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-none">
+                  <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                <span>No priority</span>
+              </button>
+              <button type="button" class="dropdown-item cal-priority-option" data-priority="1" data-priority-name="Urgent">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-urgent">
+                  <path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/>
+                </svg>
+                <span>Urgent</span>
+              </button>
+              <button type="button" class="dropdown-item cal-priority-option" data-priority="2" data-priority-name="High">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-high">
+                  <path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/>
+                </svg>
+                <span>High</span>
+              </button>
+              <button type="button" class="dropdown-item cal-priority-option" data-priority="3" data-priority-name="Medium">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-medium">
+                  <path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/>
+                </svg>
+                <span>Medium</span>
+              </button>
+              <button type="button" class="dropdown-item cal-priority-option" data-priority="4" data-priority-name="Low">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-low">
+                  <path d="M2 20h.01"/><path d="M7 20v-4"/>
+                </svg>
+                <span>Low</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="form-group mt-4">
+          <label class="label" for="issue-due-date">Due Date</label>
+          <input type="date" id="issue-due-date" name="due_date" class="input">
+        </div>
+        <input type="hidden" name="column_id" id="cal-selected-column-id" value="">
+        <input type="hidden" name="priority" id="cal-selected-priority" value="0">
       </div>
-      {{if .Projects}}
-      <div class="form-group mb-4">
-        <label class="label" for="issue-project">Project</label>
-        <select id="issue-project" name="project_id" class="select">
-          {{range .Projects}}
-          <option value="{{.ID}}">{{.Name}}</option>
-          {{end}}
-        </select>
-      </div>
-      {{end}}
-      <div class="form-group mb-4">
-        <label class="label" for="issue-due-date">Due Date</label>
-        <input type="date" id="issue-due-date" name="due_date" class="input">
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close="create-issue-modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create Issue</button>
       </div>
     </form>
-    <div class="modal-footer">
-      <button type="button" class="btn btn-secondary" data-close="create-issue-modal">Cancel</button>
-      <button type="submit" form="create-issue-form" class="btn btn-primary">Create Issue</button>
-    </div>
   </div>
 </div>
 
 <script>
+// Calendar form state
+const calForm = {
+  selectedColumnId: '',
+  selectedPriority: 0
+};
+
 // Calendar day click handler - opens create issue modal with date pre-filled
 document.querySelectorAll('.calendar-day').forEach(day => {
   day.addEventListener('click', (e) => {
-    // Don't trigger if clicking on an issue link or more button
     if (e.target.closest('.calendar-issue') || e.target.closest('.calendar-more-btn')) {
       return;
     }
 
     const date = day.dataset.date;
     if (date) {
-      // Pre-fill the due date in the modal
       const dueDateInput = document.getElementById('issue-due-date');
       if (dueDateInput) {
         dueDateInput.value = date;
       }
-      // Open the modal
       app.modals.open('create-issue-modal');
     }
+  });
+});
+
+// Status dropdown
+document.querySelectorAll('.cal-status-option').forEach(opt => {
+  opt.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    calForm.selectedColumnId = opt.dataset.columnId;
+    document.getElementById('cal-selected-column-id').value = calForm.selectedColumnId;
+    const badge = opt.querySelector('.status-badge').cloneNode(true);
+    const label = document.createElement('span');
+    label.className = 'chip-label';
+    label.textContent = opt.dataset.columnName;
+    badge.innerHTML = '';
+    badge.appendChild(label);
+    const chip = document.getElementById('cal-status-chip');
+    chip.innerHTML = '';
+    chip.appendChild(badge);
+    chip.classList.add('selected');
+    document.getElementById('cal-status-dropdown').querySelector('.dropdown-menu').classList.add('hidden');
+  });
+});
+
+// Priority dropdown
+document.querySelectorAll('.cal-priority-option').forEach(opt => {
+  opt.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    calForm.selectedPriority = parseInt(opt.dataset.priority);
+    document.getElementById('cal-selected-priority').value = calForm.selectedPriority;
+    const chip = document.getElementById('cal-priority-chip');
+    const icon = opt.querySelector('.priority-icon').cloneNode(true);
+    const wrapper = document.createElement('span');
+    wrapper.className = 'priority-badge-chip';
+    wrapper.appendChild(icon);
+    const label = document.createElement('span');
+    label.className = 'chip-label';
+    label.textContent = opt.dataset.priorityName;
+    wrapper.appendChild(label);
+    chip.innerHTML = '';
+    chip.appendChild(wrapper);
+    if (calForm.selectedPriority > 0) {
+      chip.classList.add('selected');
+    } else {
+      chip.classList.remove('selected');
+    }
+    document.getElementById('cal-priority-dropdown').querySelector('.dropdown-menu').classList.add('hidden');
   });
 });
 
@@ -169,13 +282,26 @@ document.getElementById('create-issue-form').addEventListener('submit', async fu
   e.preventDefault();
   const form = e.target;
   const projectId = form.querySelector('[name="project_id"]')?.value || '{{.DefaultProjectID}}';
-  const title = form.querySelector('[name="title"]').value;
-  const dueDate = form.querySelector('[name="due_date"]').value;
+  const title = document.getElementById('issue-title').value.trim();
+  const description = document.getElementById('issue-description')?.value?.trim() || '';
+  const dueDate = document.getElementById('issue-due-date').value;
+
+  if (!title) {
+    alert('Please enter a title');
+    document.getElementById('issue-title').focus();
+    return;
+  }
 
   try {
-    const body = { title };
+    const body = { title, description };
     if (dueDate) {
       body.due_date = new Date(dueDate).toISOString();
+    }
+    if (calForm.selectedColumnId) {
+      body.column_id = calForm.selectedColumnId;
+    }
+    if (calForm.selectedPriority > 0) {
+      body.priority = calForm.selectedPriority;
     }
 
     const res = await fetch(`/api/v1/projects/${projectId}/issues`, {

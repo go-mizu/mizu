@@ -1,15 +1,15 @@
 {{define "content"}}
 <!-- Create Issue Box -->
-<div class="inbox-create-box">
-  <div class="create-box-header">
+<div class="bg-white rounded-sm shadow-sm mb-6">
+  <div class="flex items-center gap-2 px-4 py-3 text-sm text-zinc-500">
     <div class="dropdown" id="header-project-dropdown">
-      <button type="button" class="create-box-project dropdown-trigger" aria-haspopup="true" aria-expanded="false">
+      <button type="button" class="inline-flex items-center gap-1.5 font-medium text-zinc-900 bg-transparent border-none cursor-pointer px-2 py-1 -mx-2 -my-1 rounded hover:bg-zinc-100 transition-colors dropdown-trigger" aria-haspopup="true" aria-expanded="false">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect width="6" height="14" x="4" y="5" rx="2"/>
           <rect width="6" height="10" x="14" y="7" rx="2"/>
         </svg>
         <span id="selected-project-name">{{if .DefaultProject}}{{.DefaultProject.Name}}{{else}}Select Project{{end}}</span>
-        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="dropdown-chevron" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opacity-50" aria-hidden="true">
           <path d="m6 9 6 6 6-6"/>
         </svg>
       </button>
@@ -21,42 +21,41 @@
             <rect width="6" height="10" x="14" y="7" rx="2"/>
           </svg>
           <span>{{.Name}}</span>
-          <span class="text-muted text-xs ml-auto">{{.Key}}</span>
+          <span class="text-zinc-400 text-xs ml-auto">{{.Key}}</span>
         </button>
         {{else}}
-        <div class="dropdown-item text-muted">No projects available</div>
+        <div class="dropdown-item text-zinc-400">No projects available</div>
         {{end}}
       </div>
     </div>
-    <span class="breadcrumb-separator">/</span>
-    <span class="text-muted">New issue</span>
+    <span class="text-zinc-300">/</span>
+    <span class="text-zinc-400">New issue</span>
   </div>
 
-  <form class="create-issue-form" id="inbox-create-form" data-default-project="{{.DefaultProjectID}}">
+  <form class="flex flex-col" id="inbox-create-form" data-default-project="{{.DefaultProjectID}}">
     <input
       type="text"
       name="title"
-      class="create-box-title"
+      class="w-full px-4 py-3 text-lg font-medium border-none bg-transparent outline-none text-zinc-900 placeholder-zinc-400"
       placeholder="Issue title"
       autocomplete="off"
       required
     >
     <textarea
       name="description"
-      class="create-box-description"
+      class="w-full px-4 pb-4 text-sm border-none bg-transparent outline-none resize-none text-zinc-900 placeholder-zinc-400"
       placeholder="Add description..."
       rows="2"
     ></textarea>
 
-    <div class="create-box-properties">
+    <div class="flex flex-wrap gap-2 px-4 pb-4">
       <!-- Status Chip -->
       <div class="dropdown property-chip-dropdown" id="status-dropdown">
         <button type="button" class="property-chip dropdown-trigger" id="status-chip">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/>
-            <circle cx="12" cy="12" r="1"/>
-          </svg>
-          <span>Backlog</span>
+          <span class="status-badge backlog">
+            <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+            <span class="chip-label">Backlog</span>
+          </span>
         </button>
         <div class="dropdown-menu property-dropdown hidden">
           {{range .Columns}}
@@ -87,13 +86,12 @@
       <!-- Priority Chip -->
       <div class="dropdown property-chip-dropdown" id="priority-dropdown">
         <button type="button" class="property-chip dropdown-trigger" id="priority-chip">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M2 20h.01"/>
-            <path d="M7 20v-4"/>
-            <path d="M12 20v-8"/>
-            <path d="M17 20V8"/>
-          </svg>
-          <span>Priority</span>
+          <span class="priority-badge-chip">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon">
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            <span class="chip-label">No priority</span>
+          </span>
         </button>
         <div class="dropdown-menu property-dropdown hidden">
           <button type="button" class="dropdown-item priority-option" data-priority="0" data-priority-name="No priority">
@@ -134,11 +132,10 @@
       <!-- Assignee Chip -->
       <div class="dropdown property-chip-dropdown" id="assignee-dropdown">
         <button type="button" class="property-chip dropdown-trigger" id="assignee-chip">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
-            <circle cx="12" cy="7" r="4"/>
-          </svg>
-          <span>Assignee</span>
+          <span class="assignee-badge-chip">
+            <span class="avatar avatar-xs" style="background: hsl(var(--muted)); color: hsl(var(--muted-foreground));">-</span>
+            <span class="chip-label">Unassigned</span>
+          </span>
         </button>
         <div class="dropdown-menu property-dropdown hidden">
           <button type="button" class="dropdown-item assignee-option" data-assignee-id="" data-assignee-name="Unassigned">
@@ -159,13 +156,15 @@
       <!-- Sprint/Cycle Chip -->
       <div class="dropdown property-chip-dropdown" id="cycle-dropdown">
         <button type="button" class="property-chip dropdown-trigger" id="cycle-chip">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M10 2h4"/>
-            <path d="M12 14v-4"/>
-            <path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6"/>
-            <path d="M9 17H4v5"/>
-          </svg>
-          <span>Sprint</span>
+          <span class="cycle-badge-chip">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10 2h4"/>
+              <path d="M12 14v-4"/>
+              <path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6"/>
+              <path d="M9 17H4v5"/>
+            </svg>
+            <span class="chip-label">No sprint</span>
+          </span>
         </button>
         <div class="dropdown-menu property-dropdown hidden">
           <button type="button" class="dropdown-item cycle-option" data-cycle-id="" data-cycle-name="No sprint">
@@ -182,7 +181,7 @@
       </div>
     </div>
 
-    <div class="create-box-footer">
+    <div class="flex items-center justify-between px-4 py-3 bg-zinc-50 rounded-b-sm">
       <div></div>
       <button type="submit" class="btn btn-primary">
         Create issue
@@ -199,16 +198,16 @@
 </div>
 
 <!-- Tabs -->
-<div class="inbox-tabs" role="tablist" aria-label="Issue filters">
-  <a href="/w/{{.Workspace.Slug}}/inbox?tab=assigned" class="inbox-tab {{if eq .ActiveTab "assigned"}}is-active{{end}}" role="tab" aria-selected="{{if eq .ActiveTab "assigned"}}true{{else}}false{{end}}">
+<div class="flex gap-0 mb-4 border-b border-zinc-200" role="tablist" aria-label="Issue filters">
+  <a href="/w/{{.Workspace.Slug}}/inbox?tab=assigned" class="flex items-center gap-2 px-4 py-3 text-sm {{if eq .ActiveTab "assigned"}}text-zinc-900 font-medium border-b-2 border-zinc-900{{else}}text-zinc-500 hover:text-zinc-900{{end}} -mb-px transition-colors" role="tab" aria-selected="{{if eq .ActiveTab "assigned"}}true{{else}}false{{end}}">
     Assigned to me
-    {{if .AssignedCount}}<span class="tab-count">{{.AssignedCount}}</span>{{end}}
+    {{if .AssignedCount}}<span class="inline-flex items-center justify-center min-w-5 h-5 px-1.5 text-xs bg-zinc-100 text-zinc-500 rounded-full">{{.AssignedCount}}</span>{{end}}
   </a>
-  <a href="/w/{{.Workspace.Slug}}/inbox?tab=created" class="inbox-tab {{if eq .ActiveTab "created"}}is-active{{end}}" role="tab" aria-selected="{{if eq .ActiveTab "created"}}true{{else}}false{{end}}">
+  <a href="/w/{{.Workspace.Slug}}/inbox?tab=created" class="flex items-center gap-2 px-4 py-3 text-sm {{if eq .ActiveTab "created"}}text-zinc-900 font-medium border-b-2 border-zinc-900{{else}}text-zinc-500 hover:text-zinc-900{{end}} -mb-px transition-colors" role="tab" aria-selected="{{if eq .ActiveTab "created"}}true{{else}}false{{end}}">
     Created by me
-    {{if .CreatedCount}}<span class="tab-count">{{.CreatedCount}}</span>{{end}}
+    {{if .CreatedCount}}<span class="inline-flex items-center justify-center min-w-5 h-5 px-1.5 text-xs bg-zinc-100 text-zinc-500 rounded-full">{{.CreatedCount}}</span>{{end}}
   </a>
-  <a href="/w/{{.Workspace.Slug}}/inbox?tab=all" class="inbox-tab {{if eq .ActiveTab "all"}}is-active{{end}}" role="tab" aria-selected="{{if eq .ActiveTab "all"}}true{{else}}false{{end}}">
+  <a href="/w/{{.Workspace.Slug}}/inbox?tab=all" class="flex items-center gap-2 px-4 py-3 text-sm {{if eq .ActiveTab "all"}}text-zinc-900 font-medium border-b-2 border-zinc-900{{else}}text-zinc-500 hover:text-zinc-900{{end}} -mb-px transition-colors" role="tab" aria-selected="{{if eq .ActiveTab "all"}}true{{else}}false{{end}}">
     All issues
   </a>
 </div>
@@ -217,36 +216,57 @@
 {{if .IssueGroups}}
 {{range .IssueGroups}}
 {{if .Issues}}
-<div class="issue-group">
-  <div class="group-header">{{.Label}}</div>
-  {{range .Issues}}
-  <a href="/w/{{$.Workspace.Slug}}/issue/{{.Key}}" class="inbox-issue">
-    <div class="issue-row">
-      <span class="issue-key">{{.Key}}</span>
-      <span class="issue-title">{{.Title}}</span>
-      <div class="issue-meta">
-        {{if .Column}}
-        <span class="status-badge {{lower .Column.Name}}">{{.Column.Name}}</span>
+<div class="mb-6">
+  <div class="py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">{{.Label}}</div>
+  <div class="bg-white rounded-sm shadow-sm">
+    <table class="w-full text-sm border-collapse">
+      <thead>
+        <tr class="bg-zinc-50">
+          <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400" style="width: 100px;">Key</th>
+          <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400">Title</th>
+          <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400" style="width: 120px;">Status</th>
+          <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400" style="width: 150px;">Assignee</th>
+          <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400" style="width: 100px;">Updated</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Issues}}
+        <tr data-issue-key="{{.Key}}" class="border-t border-zinc-100 hover:bg-zinc-50 cursor-pointer transition-colors">
+          <td class="px-4 py-3"><span class="text-xs font-semibold text-zinc-400 font-mono">{{.Key}}</span></td>
+          <td class="px-4 py-3"><span class="font-medium text-zinc-900">{{.Title}}</span></td>
+          <td class="px-4 py-3">
+            {{if .Column}}
+            <span class="status-badge {{lower .Column.Name}}">{{.Column.Name}}</span>
+            {{end}}
+          </td>
+          <td class="px-4 py-3">
+            {{if .Assignees}}
+            <div class="flex items-center gap-2">
+              {{range .Assignees}}
+              <span class="avatar avatar-sm">{{slice .DisplayName 0 1}}</span>
+              {{end}}
+            </div>
+            {{else}}
+            <span class="text-zinc-400">Unassigned</span>
+            {{end}}
+          </td>
+          <td class="px-4 py-3"><span class="text-zinc-400">{{.UpdatedAt.Format "Jan 2"}}</span></td>
+        </tr>
         {{end}}
-        {{if .Project}}
-        <span class="issue-project">{{.Project.Name}}</span>
-        {{end}}
-        <span class="issue-date">{{.UpdatedAt.Format "Jan 2"}}</span>
-      </div>
-    </div>
-  </a>
-  {{end}}
+      </tbody>
+    </table>
+  </div>
 </div>
 {{end}}
 {{end}}
 {{else}}
-<div class="empty-state card">
-  <svg class="empty-state-icon" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+<div class="flex flex-col items-center justify-center py-16 px-8 text-center bg-white rounded-sm shadow-sm">
+  <svg class="w-12 h-12 mb-5 text-zinc-300" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/>
     <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
   </svg>
-  <div class="empty-state-title">Your inbox is empty</div>
-  <div class="empty-state-description">
+  <div class="text-base font-semibold mb-2 text-zinc-900">Your inbox is empty</div>
+  <div class="text-sm text-zinc-500 max-w-xs">
     {{if eq .ActiveTab "assigned"}}
     No issues are assigned to you yet.
     {{else if eq .ActiveTab "created"}}
@@ -376,8 +396,17 @@ const inboxForm = {
         e.stopPropagation();
         this.selectedColumnId = opt.dataset.columnId;
         document.getElementById('selected-column-id').value = this.selectedColumnId;
-        document.querySelector('#status-chip span').textContent = opt.dataset.columnName;
-        document.getElementById('status-chip').classList.add('selected');
+        // Clone the status badge from dropdown to chip
+        const badge = opt.querySelector('.status-badge').cloneNode(true);
+        badge.querySelector('span')?.remove(); // Remove text span if exists
+        const label = document.createElement('span');
+        label.className = 'chip-label';
+        label.textContent = opt.dataset.columnName;
+        badge.appendChild(label);
+        const chip = document.getElementById('status-chip');
+        chip.innerHTML = '';
+        chip.appendChild(badge);
+        chip.classList.add('selected');
         this.closeDropdown('status-dropdown');
       });
     });
@@ -389,11 +418,23 @@ const inboxForm = {
         e.stopPropagation();
         this.selectedAssigneeId = opt.dataset.assigneeId;
         document.getElementById('selected-assignee-id').value = this.selectedAssigneeId;
-        document.querySelector('#assignee-chip span').textContent = opt.dataset.assigneeName;
+        const chip = document.getElementById('assignee-chip');
+        const avatar = opt.querySelector('.avatar').cloneNode(true);
+        avatar.classList.remove('avatar-sm');
+        avatar.classList.add('avatar-xs');
+        const wrapper = document.createElement('span');
+        wrapper.className = 'assignee-badge-chip';
+        wrapper.appendChild(avatar);
+        const label = document.createElement('span');
+        label.className = 'chip-label';
+        label.textContent = opt.dataset.assigneeName;
+        wrapper.appendChild(label);
+        chip.innerHTML = '';
+        chip.appendChild(wrapper);
         if (this.selectedAssigneeId) {
-          document.getElementById('assignee-chip').classList.add('selected');
+          chip.classList.add('selected');
         } else {
-          document.getElementById('assignee-chip').classList.remove('selected');
+          chip.classList.remove('selected');
         }
         this.closeDropdown('assignee-dropdown');
       });
@@ -406,11 +447,21 @@ const inboxForm = {
         e.stopPropagation();
         this.selectedCycleId = opt.dataset.cycleId;
         document.getElementById('selected-cycle-id').value = this.selectedCycleId;
-        document.querySelector('#cycle-chip span').textContent = opt.dataset.cycleName;
+        const chip = document.getElementById('cycle-chip');
+        const wrapper = document.createElement('span');
+        wrapper.className = 'cycle-badge-chip';
+        wrapper.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 2h4"/><path d="M12 14v-4"/><path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6"/><path d="M9 17H4v5"/>
+          </svg>
+          <span class="chip-label">${opt.dataset.cycleName}</span>
+        `;
+        chip.innerHTML = '';
+        chip.appendChild(wrapper);
         if (this.selectedCycleId) {
-          document.getElementById('cycle-chip').classList.add('selected');
+          chip.classList.add('selected');
         } else {
-          document.getElementById('cycle-chip').classList.remove('selected');
+          chip.classList.remove('selected');
         }
         this.closeDropdown('cycle-dropdown');
       });
@@ -423,16 +474,21 @@ const inboxForm = {
         e.stopPropagation();
         this.selectedPriority = parseInt(opt.dataset.priority);
         document.getElementById('selected-priority').value = this.selectedPriority;
-        const priorityName = opt.dataset.priorityName;
-        const chipSpan = document.querySelector('#priority-chip span');
-
-        if (chipSpan) {
-          chipSpan.textContent = this.selectedPriority === 0 ? 'Priority' : priorityName;
-        }
+        const chip = document.getElementById('priority-chip');
+        const icon = opt.querySelector('.priority-icon').cloneNode(true);
+        const wrapper = document.createElement('span');
+        wrapper.className = 'priority-badge-chip';
+        wrapper.appendChild(icon);
+        const label = document.createElement('span');
+        label.className = 'chip-label';
+        label.textContent = opt.dataset.priorityName;
+        wrapper.appendChild(label);
+        chip.innerHTML = '';
+        chip.appendChild(wrapper);
         if (this.selectedPriority > 0) {
-          document.getElementById('priority-chip')?.classList.add('selected');
+          chip.classList.add('selected');
         } else {
-          document.getElementById('priority-chip')?.classList.remove('selected');
+          chip.classList.remove('selected');
         }
         this.closeDropdown('priority-dropdown');
       });
