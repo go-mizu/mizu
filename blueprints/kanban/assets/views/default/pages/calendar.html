@@ -1,0 +1,178 @@
+{{define "content"}}
+<div class="page-header flex items-center justify-between mb-6">
+  <div class="flex items-center gap-4">
+    <h1 class="page-title">Issues</h1>
+    <div class="view-switcher">
+      <a href="/w/{{.Workspace.Slug}}/issues?view=list" class="view-btn" title="List view">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="8" x2="21" y1="6" y2="6"/>
+          <line x1="8" x2="21" y1="12" y2="12"/>
+          <line x1="8" x2="21" y1="18" y2="18"/>
+          <line x1="3" x2="3.01" y1="6" y2="6"/>
+          <line x1="3" x2="3.01" y1="12" y2="12"/>
+          <line x1="3" x2="3.01" y1="18" y2="18"/>
+        </svg>
+      </a>
+      {{if .DefaultProjectID}}
+      <a href="/w/{{.Workspace.Slug}}/board/{{.DefaultProjectID}}" class="view-btn" title="Board view">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect width="6" height="14" x="4" y="5" rx="2"/>
+          <rect width="6" height="10" x="14" y="7" rx="2"/>
+        </svg>
+      </a>
+      {{end}}
+      <a href="/w/{{.Workspace.Slug}}/issues?view=calendar" class="view-btn active" title="Calendar view">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 2v4"/>
+          <path d="M16 2v4"/>
+          <rect width="18" height="18" x="3" y="4" rx="2"/>
+          <path d="M3 10h18"/>
+        </svg>
+      </a>
+      <a href="/w/{{.Workspace.Slug}}/issues?view=gantt" class="view-btn" title="Gantt chart">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 3v18h18"/>
+          <rect x="7" y="6" width="10" height="3"/>
+          <rect x="5" y="12" width="8" height="3"/>
+          <rect x="9" y="18" width="6" height="3"/>
+        </svg>
+      </a>
+    </div>
+  </div>
+  <div class="flex gap-2">
+    <div class="calendar-nav">
+      <a href="?view=calendar&month={{.PrevMonth}}" class="btn btn-ghost btn-icon btn-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m15 18-6-6 6-6"/>
+        </svg>
+      </a>
+      <span class="calendar-month-label">{{.MonthName}} {{.Year}}</span>
+      <a href="?view=calendar&month={{.NextMonth}}" class="btn btn-ghost btn-icon btn-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m9 18 6-6-6-6"/>
+        </svg>
+      </a>
+      <a href="?view=calendar" class="btn btn-secondary btn-sm">Today</a>
+    </div>
+    <button class="btn btn-primary" data-modal="create-issue-modal">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12h14"/>
+        <path d="M12 5v14"/>
+      </svg>
+      New Issue
+    </button>
+  </div>
+</div>
+
+<div class="calendar-container">
+  <div class="calendar-header">
+    <div class="calendar-header-cell">Mon</div>
+    <div class="calendar-header-cell">Tue</div>
+    <div class="calendar-header-cell">Wed</div>
+    <div class="calendar-header-cell">Thu</div>
+    <div class="calendar-header-cell">Fri</div>
+    <div class="calendar-header-cell weekend">Sat</div>
+    <div class="calendar-header-cell weekend">Sun</div>
+  </div>
+
+  <div class="calendar-grid">
+    {{range .Days}}
+    <div class="calendar-week">
+      {{range .}}
+      <div class="calendar-day {{if .IsToday}}today{{end}} {{if .IsWeekend}}weekend{{end}} {{if .IsOtherMonth}}other-month{{end}}">
+        <div class="calendar-day-header">
+          <span class="calendar-day-number">{{.Date.Day}}</span>
+          {{if .IsToday}}<span class="today-badge">Today</span>{{end}}
+        </div>
+        <div class="calendar-day-issues">
+          {{range $i, $issue := .Issues}}
+          {{if lt $i 3}}
+          <a href="/w/{{$.Workspace.Slug}}/issue/{{$issue.Key}}"
+             class="calendar-issue {{if $issue.IsOverdue}}overdue{{end}}"
+             data-issue-key="{{$issue.Key}}">
+            <span class="calendar-issue-key">{{$issue.Key}}</span>
+            <span class="calendar-issue-title">{{$issue.Title}}</span>
+          </a>
+          {{end}}
+          {{end}}
+        </div>
+        {{if gt (len .Issues) 3}}
+        <button class="calendar-more-btn" data-date="{{.Date.Format "2006-01-02"}}">
+          +{{sub (len .Issues) 3}} more
+        </button>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+</div>
+
+<!-- Create Issue Modal -->
+<div id="create-issue-modal" class="modal hidden">
+  <div class="modal-backdrop" data-close="create-issue-modal"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Create Issue</h2>
+      <button class="modal-close" data-close="create-issue-modal">&times;</button>
+    </div>
+    <form id="create-issue-form" class="modal-body">
+      <div class="form-group mb-4">
+        <label class="label" for="issue-title">Title</label>
+        <input type="text" id="issue-title" name="title" class="input" placeholder="Issue title" required>
+      </div>
+      {{if .Projects}}
+      <div class="form-group mb-4">
+        <label class="label" for="issue-project">Project</label>
+        <select id="issue-project" name="project_id" class="select">
+          {{range .Projects}}
+          <option value="{{.ID}}">{{.Name}}</option>
+          {{end}}
+        </select>
+      </div>
+      {{end}}
+      <div class="form-group mb-4">
+        <label class="label" for="issue-due-date">Due Date</label>
+        <input type="date" id="issue-due-date" name="due_date" class="input">
+      </div>
+    </form>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" data-close="create-issue-modal">Cancel</button>
+      <button type="submit" form="create-issue-form" class="btn btn-primary">Create Issue</button>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('create-issue-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const form = e.target;
+  const projectId = form.querySelector('[name="project_id"]')?.value || '{{.DefaultProjectID}}';
+  const title = form.querySelector('[name="title"]').value;
+  const dueDate = form.querySelector('[name="due_date"]').value;
+
+  try {
+    const body = { title };
+    if (dueDate) {
+      body.due_date = new Date(dueDate).toISOString();
+    }
+
+    const res = await fetch(`/api/v1/projects/${projectId}/issues`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if (res.ok) {
+      window.location.reload();
+    } else {
+      const data = await res.json();
+      alert(data.error || 'Failed to create issue');
+    }
+  } catch (err) {
+    console.error('Error creating issue:', err);
+    alert('Failed to create issue');
+  }
+});
+</script>
+{{end}}

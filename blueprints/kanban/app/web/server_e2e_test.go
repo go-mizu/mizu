@@ -184,7 +184,8 @@ func (e *testEnv) createTestColumn(projectID, name string) *columns.Column {
 // createTestIssue creates a test issue
 func (e *testEnv) createTestIssue(projectID, creatorID, title string) *issues.Issue {
 	issue, err := e.issues.Create(context.Background(), projectID, creatorID, &issues.CreateIn{
-		Title: title,
+		Title:       title,
+		Description: "Test description for " + title,
 	})
 	if err != nil {
 		e.t.Fatalf("failed to create test issue: %v", err)
@@ -859,6 +860,221 @@ func TestComment_List(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// ============================================================================
+// Issue Creation Extended Tests
+// ============================================================================
+
+func TestIssue_CreateWithDescription(t *testing.T) {
+	env, cleanup := testServer(t)
+	defer cleanup()
+
+	user, token := env.createTestUser("testuser", "test@example.com", "password123")
+	ws := env.createTestWorkspace(user.ID, "test-ws", "Test Workspace")
+	team := env.createTestTeam(ws.ID, "ENG", "Engineering")
+	project := env.createTestProject(team.ID, "PROJ", "My Project")
+	env.createTestColumn(project.ID, "To Do")
+
+	body := map[string]string{
+		"title":       "Test Issue with Description",
+		"description": "This is a detailed description of the test issue.",
+	}
+
+	rec := doRequest(t, env.server.Handler(), "POST", "/api/v1/projects/"+project.ID+"/issues", body, token)
+
+	if rec.Code != http.StatusCreated {
+		t.Errorf("expected status 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Verify description is in response
+	var resp apiResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	var issue issues.Issue
+	if err := json.Unmarshal(resp.Data, &issue); err != nil {
+		t.Fatalf("failed to parse issue: %v", err)
+	}
+
+	if issue.Description != "This is a detailed description of the test issue." {
+		t.Errorf("expected description to be set, got: %s", issue.Description)
+	}
+}
+
+func TestIssue_CreateWithColumnID(t *testing.T) {
+	env, cleanup := testServer(t)
+	defer cleanup()
+
+	user, token := env.createTestUser("testuser", "test@example.com", "password123")
+	ws := env.createTestWorkspace(user.ID, "test-ws", "Test Workspace")
+	team := env.createTestTeam(ws.ID, "ENG", "Engineering")
+	project := env.createTestProject(team.ID, "PROJ", "My Project")
+	col := env.createTestColumn(project.ID, "In Progress")
+
+	body := map[string]string{
+		"title":     "Test Issue in Progress",
+		"column_id": col.ID,
+	}
+
+	rec := doRequest(t, env.server.Handler(), "POST", "/api/v1/projects/"+project.ID+"/issues", body, token)
+
+	if rec.Code != http.StatusCreated {
+		t.Errorf("expected status 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Verify column_id is set correctly
+	var resp apiResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	var issue issues.Issue
+	if err := json.Unmarshal(resp.Data, &issue); err != nil {
+		t.Fatalf("failed to parse issue: %v", err)
+	}
+
+	if issue.ColumnID != col.ID {
+		t.Errorf("expected column_id %s, got %s", col.ID, issue.ColumnID)
+	}
+}
+
+func TestIssue_CreateMissingTitle(t *testing.T) {
+	env, cleanup := testServer(t)
+	defer cleanup()
+
+	user, token := env.createTestUser("testuser", "test@example.com", "password123")
+	ws := env.createTestWorkspace(user.ID, "test-ws", "Test Workspace")
+	team := env.createTestTeam(ws.ID, "ENG", "Engineering")
+	project := env.createTestProject(team.ID, "PROJ", "My Project")
+	env.createTestColumn(project.ID, "To Do")
+
+	// Missing title
+	body := map[string]string{
+		"description": "Issue without title",
+	}
+
+	rec := doRequest(t, env.server.Handler(), "POST", "/api/v1/projects/"+project.ID+"/issues", body, token)
+
+	// Should fail - title is required
+	if rec.Code != http.StatusBadRequest && rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected status 400 or 500 for missing title, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestIssue_CreateInvalidProjectID(t *testing.T) {
+	env, cleanup := testServer(t)
+	defer cleanup()
+
+	_, token := env.createTestUser("testuser", "test@example.com", "password123")
+
+	body := map[string]string{
+		"title": "Test Issue",
+	}
+
+	// Use an invalid project ID
+	rec := doRequest(t, env.server.Handler(), "POST", "/api/v1/projects/invalid-project-id/issues", body, token)
+
+	// Should fail with 404 (project not found)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected status 404 for invalid project, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestIssue_CreateNoColumns(t *testing.T) {
+	env, cleanup := testServer(t)
+	defer cleanup()
+
+	user, token := env.createTestUser("testuser", "test@example.com", "password123")
+	ws := env.createTestWorkspace(user.ID, "test-ws", "Test Workspace")
+	team := env.createTestTeam(ws.ID, "ENG", "Engineering")
+	project := env.createTestProject(team.ID, "PROJ", "My Project")
+	// NOTE: Not creating any column - project has no columns
+
+	body := map[string]string{
+		"title": "Test Issue Without Columns",
+	}
+
+	rec := doRequest(t, env.server.Handler(), "POST", "/api/v1/projects/"+project.ID+"/issues", body, token)
+
+	// Should fail because project has no columns
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected status 500 for project without columns, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestIssue_Update(t *testing.T) {
+	env, cleanup := testServer(t)
+	defer cleanup()
+
+	user, token := env.createTestUser("testuser", "test@example.com", "password123")
+	ws := env.createTestWorkspace(user.ID, "test-ws", "Test Workspace")
+	team := env.createTestTeam(ws.ID, "ENG", "Engineering")
+	project := env.createTestProject(team.ID, "PROJ", "My Project")
+	env.createTestColumn(project.ID, "To Do")
+	issue := env.createTestIssue(project.ID, user.ID, "Original Title")
+
+	body := map[string]any{
+		"title":       "Updated Title",
+		"description": "Updated description",
+	}
+
+	rec := doRequest(t, env.server.Handler(), "PATCH", "/api/v1/issues/"+issue.Key, body, token)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestIssue_Move(t *testing.T) {
+	env, cleanup := testServer(t)
+	defer cleanup()
+
+	user, token := env.createTestUser("testuser", "test@example.com", "password123")
+	ws := env.createTestWorkspace(user.ID, "test-ws", "Test Workspace")
+	team := env.createTestTeam(ws.ID, "ENG", "Engineering")
+	project := env.createTestProject(team.ID, "PROJ", "My Project")
+	col1 := env.createTestColumn(project.ID, "To Do")
+	col2 := env.createTestColumn(project.ID, "In Progress")
+	issue := env.createTestIssue(project.ID, user.ID, "Test Issue")
+
+	// Move from first column (default) to col2
+	_ = col1 // Used implicitly as default
+	body := map[string]any{
+		"column_id": col2.ID,
+		"position":  0,
+	}
+
+	rec := doRequest(t, env.server.Handler(), "POST", "/api/v1/issues/"+issue.Key+"/move", body, token)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestIssue_Delete(t *testing.T) {
+	env, cleanup := testServer(t)
+	defer cleanup()
+
+	user, token := env.createTestUser("testuser", "test@example.com", "password123")
+	ws := env.createTestWorkspace(user.ID, "test-ws", "Test Workspace")
+	team := env.createTestTeam(ws.ID, "ENG", "Engineering")
+	project := env.createTestProject(team.ID, "PROJ", "My Project")
+	env.createTestColumn(project.ID, "To Do")
+	issue := env.createTestIssue(project.ID, user.ID, "Test Issue to Delete")
+
+	rec := doRequest(t, env.server.Handler(), "DELETE", "/api/v1/issues/"+issue.Key, nil, token)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Verify issue is deleted
+	rec2 := doRequest(t, env.server.Handler(), "GET", "/api/v1/issues/"+issue.Key, nil, token)
+	if rec2.Code != http.StatusNotFound {
+		t.Errorf("expected status 404 after deletion, got %d", rec2.Code)
 	}
 }
 

@@ -30,11 +30,38 @@ func (s *Store) DB() *sql.DB {
 	return s.db
 }
 
-// Ensure initializes the database schema.
+// Ensure initializes the database schema and runs migrations.
 func (s *Store) Ensure(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, schemaDDL); err != nil {
 		return fmt.Errorf("duckdb: schema: %w", err)
 	}
+
+	// Run migrations for existing databases
+	if err := s.migrate(ctx); err != nil {
+		return fmt.Errorf("duckdb: migrate: %w", err)
+	}
+
+	return nil
+}
+
+// migrate adds missing columns to existing tables.
+func (s *Store) migrate(ctx context.Context) error {
+	// Add missing columns to issues table (for databases created before these columns existed)
+	migrations := []string{
+		"ALTER TABLE issues ADD COLUMN IF NOT EXISTS description VARCHAR DEFAULT ''",
+		"ALTER TABLE issues ADD COLUMN IF NOT EXISTS due_date DATE",
+		"ALTER TABLE issues ADD COLUMN IF NOT EXISTS start_date DATE",
+		"ALTER TABLE issues ADD COLUMN IF NOT EXISTS end_date DATE",
+		"ALTER TABLE issues ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 0",
+	}
+
+	for _, m := range migrations {
+		if _, err := s.db.ExecContext(ctx, m); err != nil {
+			// Ignore errors (column might already exist in a different form)
+			continue
+		}
+	}
+
 	return nil
 }
 

@@ -15,6 +15,7 @@ type Workspace struct {
 
 // Member represents a workspace member.
 type Member struct {
+	ID          string    `json:"id"`
 	WorkspaceID string    `json:"workspace_id"`
 	UserID      string    `json:"user_id"`
 	Role        string    `json:"role"` // owner, admin, member, guest

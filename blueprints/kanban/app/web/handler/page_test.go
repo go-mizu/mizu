@@ -80,17 +80,30 @@ func TestHomeTemplate(t *testing.T) {
 		Slug: "test-workspace",
 	}
 
+	team := &teams.Team{
+		ID:   "team-1",
+		Name: "Engineering",
+	}
+
+	project := &projects.Project{
+		ID:   "proj-1",
+		Name: "Test Project",
+		Key:  "TEST",
+	}
+
 	data := HomeData{
-		Title:         "Dashboard",
-		User:          user,
-		Workspace:     workspace,
-		Workspaces:    []*workspaces.Workspace{workspace},
-		Teams:         []*teams.Team{},
-		Projects:      []*projects.Project{},
-		Stats:         Stats{OpenIssues: 0, InProgress: 0, Completed: 0},
-		DefaultTeamID: "",
-		ActiveNav:     "home",
-		Breadcrumbs:   []Breadcrumb{},
+		Title:           "Dashboard",
+		User:            user,
+		Workspace:       workspace,
+		Workspaces:      []*workspaces.Workspace{workspace},
+		Teams:           []*teams.Team{team},
+		Projects:        []*projects.Project{project},
+		Stats:           Stats{OpenIssues: 5, InProgress: 3, Completed: 10},
+		DefaultTeamID:   "team-1",
+		ActiveTeamID:    "team-1",
+		ActiveProjectID: "proj-1",
+		ActiveNav:       "home",
+		Breadcrumbs:     []Breadcrumb{},
 	}
 
 	var buf bytes.Buffer
@@ -113,6 +126,11 @@ func TestBoardTemplate(t *testing.T) {
 		ID:   "ws-1",
 		Name: "Test Workspace",
 		Slug: "test-workspace",
+	}
+
+	team := &teams.Team{
+		ID:   "team-1",
+		Name: "Engineering",
 	}
 
 	project := &projects.Project{
@@ -145,10 +163,11 @@ func TestBoardTemplate(t *testing.T) {
 		User:            user,
 		Workspace:       workspace,
 		Workspaces:      []*workspaces.Workspace{workspace},
-		Teams:           []*teams.Team{},
+		Teams:           []*teams.Team{team},
 		Projects:        []*projects.Project{project},
 		Project:         project,
 		Columns:         boardColumns,
+		ActiveTeamID:    "team-1",
 		ActiveProjectID: "proj-1",
 		ActiveNav:       "issues",
 		Breadcrumbs:     []Breadcrumb{{Label: "Test Project", URL: ""}},
@@ -174,6 +193,11 @@ func TestIssuesTemplate(t *testing.T) {
 		ID:   "ws-1",
 		Name: "Test Workspace",
 		Slug: "test-workspace",
+	}
+
+	team := &teams.Team{
+		ID:   "team-1",
+		Name: "Engineering",
 	}
 
 	col := &columns.Column{
@@ -209,11 +233,12 @@ func TestIssuesTemplate(t *testing.T) {
 		User:             user,
 		Workspace:        workspace,
 		Workspaces:       []*workspaces.Workspace{workspace},
-		Teams:            []*teams.Team{},
+		Teams:            []*teams.Team{team},
 		Issues:           issueViews,
 		Columns:          []*columns.Column{col},
 		Projects:         []*projects.Project{project},
 		DefaultProjectID: "proj-1",
+		ActiveTeamID:     "team-1",
 		ActiveProjectID:  "",
 		TotalCount:       1,
 		ActiveNav:        "issues",
@@ -242,6 +267,11 @@ func TestIssueDetailTemplate(t *testing.T) {
 		Slug: "test-workspace",
 	}
 
+	team := &teams.Team{
+		ID:   "team-1",
+		Name: "Engineering",
+	}
+
 	project := &projects.Project{
 		ID:   "proj-1",
 		Name: "Test Project",
@@ -268,7 +298,7 @@ func TestIssueDetailTemplate(t *testing.T) {
 		User:            user,
 		Workspace:       workspace,
 		Workspaces:      []*workspaces.Workspace{workspace},
-		Teams:           []*teams.Team{},
+		Teams:           []*teams.Team{team},
 		Projects:        []*projects.Project{project},
 		Issue:           issue,
 		Project:         project,
@@ -277,6 +307,7 @@ func TestIssueDetailTemplate(t *testing.T) {
 		Cycles:          []*cycles.Cycle{},
 		Fields:          []*fields.Field{},
 		TeamMembers:     []*users.User{},
+		ActiveTeamID:    "team-1",
 		ActiveProjectID: "proj-1",
 		ActiveNav:       "issues",
 		Breadcrumbs:     []Breadcrumb{{Label: "Issues", URL: "/issues"}, {Label: "TEST-1", URL: ""}},
@@ -304,6 +335,11 @@ func TestCyclesTemplate(t *testing.T) {
 		Slug: "test-workspace",
 	}
 
+	team := &teams.Team{
+		ID:   "team-1",
+		Name: "Engineering",
+	}
+
 	cycle := &cycles.Cycle{
 		ID:        "cycle-1",
 		Name:      "Sprint 1",
@@ -312,17 +348,25 @@ func TestCyclesTemplate(t *testing.T) {
 		EndDate:   time.Now().Add(14 * 24 * time.Hour),
 	}
 
+	project := &projects.Project{
+		ID:   "proj-1",
+		Name: "Test Project",
+		Key:  "TEST",
+	}
+
 	data := CyclesData{
-		Title:         "Cycles",
-		User:          user,
-		Workspace:     workspace,
-		Workspaces:    []*workspaces.Workspace{workspace},
-		Teams:         []*teams.Team{},
-		Projects:      []*projects.Project{},
-		Cycles:        []*cycles.Cycle{cycle},
-		DefaultTeamID: "team-1",
-		ActiveNav:     "cycles",
-		Breadcrumbs:   []Breadcrumb{},
+		Title:           "Cycles",
+		User:            user,
+		Workspace:       workspace,
+		Workspaces:      []*workspaces.Workspace{workspace},
+		Teams:           []*teams.Team{team},
+		Projects:        []*projects.Project{project},
+		Cycles:          []*cycles.Cycle{cycle},
+		DefaultTeamID:   "team-1",
+		ActiveTeamID:    "team-1",
+		ActiveProjectID: "proj-1",
+		ActiveNav:       "cycles",
+		Breadcrumbs:     []Breadcrumb{},
 	}
 
 	var buf bytes.Buffer
@@ -347,17 +391,30 @@ func TestCyclesEmptyTemplate(t *testing.T) {
 		Slug: "test-workspace",
 	}
 
+	team := &teams.Team{
+		ID:   "team-1",
+		Name: "Engineering",
+	}
+
+	project := &projects.Project{
+		ID:   "proj-1",
+		Name: "Test Project",
+		Key:  "TEST",
+	}
+
 	data := CyclesData{
-		Title:         "Cycles",
-		User:          user,
-		Workspace:     workspace,
-		Workspaces:    []*workspaces.Workspace{workspace},
-		Teams:         []*teams.Team{},
-		Projects:      []*projects.Project{},
-		Cycles:        []*cycles.Cycle{},
-		DefaultTeamID: "team-1",
-		ActiveNav:     "cycles",
-		Breadcrumbs:   []Breadcrumb{},
+		Title:           "Cycles",
+		User:            user,
+		Workspace:       workspace,
+		Workspaces:      []*workspaces.Workspace{workspace},
+		Teams:           []*teams.Team{team},
+		Projects:        []*projects.Project{project},
+		Cycles:          []*cycles.Cycle{},
+		DefaultTeamID:   "team-1",
+		ActiveTeamID:    "team-1",
+		ActiveProjectID: "proj-1",
+		ActiveNav:       "cycles",
+		Breadcrumbs:     []Breadcrumb{},
 	}
 
 	var buf bytes.Buffer
@@ -382,17 +439,29 @@ func TestIssuesEmptyTemplate(t *testing.T) {
 		Slug: "test-workspace",
 	}
 
+	team := &teams.Team{
+		ID:   "team-1",
+		Name: "Engineering",
+	}
+
+	project := &projects.Project{
+		ID:   "proj-1",
+		Name: "Test Project",
+		Key:  "TEST",
+	}
+
 	data := IssuesData{
 		Title:            "Issues",
 		User:             user,
 		Workspace:        workspace,
 		Workspaces:       []*workspaces.Workspace{workspace},
-		Teams:            []*teams.Team{},
+		Teams:            []*teams.Team{team},
 		Issues:           []*IssueView{},
 		Columns:          []*columns.Column{},
-		Projects:         []*projects.Project{},
-		DefaultProjectID: "",
-		ActiveProjectID:  "",
+		Projects:         []*projects.Project{project},
+		DefaultProjectID: "proj-1",
+		ActiveTeamID:     "team-1",
+		ActiveProjectID:  "proj-1",
 		TotalCount:       0,
 		ActiveNav:        "issues",
 		Breadcrumbs:      []Breadcrumb{},
@@ -513,5 +582,182 @@ func TestTeamEmptyTemplate(t *testing.T) {
 	err := templates["team"].Execute(&buf, data)
 	if err != nil {
 		t.Errorf("Team empty template error: %v", err)
+	}
+}
+
+// TestWorkspaceSettingsTemplate tests the workspace settings template renders without errors
+func TestWorkspaceSettingsTemplate(t *testing.T) {
+	templates := loadTemplates(t)
+
+	user := &users.User{
+		ID:          "user-1",
+		DisplayName: "Test User",
+		Email:       "test@example.com",
+	}
+
+	workspace := &workspaces.Workspace{
+		ID:   "ws-1",
+		Name: "Test Workspace",
+		Slug: "test-workspace",
+	}
+
+	team := &teams.Team{
+		ID:   "team-1",
+		Name: "Engineering",
+	}
+
+	project := &projects.Project{
+		ID:   "proj-1",
+		Name: "Test Project",
+		Key:  "TEST",
+	}
+
+	member := &workspaces.Member{
+		WorkspaceID: "ws-1",
+		UserID:      "user-1",
+		Role:        "admin",
+		JoinedAt:    time.Now(),
+	}
+
+	memberViews := []*WorkspaceMemberView{
+		{
+			Member: member,
+			User:   user,
+		},
+	}
+
+	data := WorkspaceSettingsData{
+		Title:           "Workspace Settings",
+		User:            user,
+		Workspace:       workspace,
+		Workspaces:      []*workspaces.Workspace{workspace},
+		Teams:           []*teams.Team{team},
+		Projects:        []*projects.Project{project},
+		Members:         memberViews,
+		ActiveTeamID:    "team-1",
+		ActiveProjectID: "proj-1",
+		ActiveNav:       "settings",
+		Breadcrumbs:     []Breadcrumb{},
+	}
+
+	var buf bytes.Buffer
+	err := templates["workspace-settings"].Execute(&buf, data)
+	if err != nil {
+		t.Errorf("Workspace settings template error: %v", err)
+	}
+}
+
+// TestProjectSettingsTemplate tests the project settings template renders without errors
+func TestProjectSettingsTemplate(t *testing.T) {
+	templates := loadTemplates(t)
+
+	user := &users.User{
+		ID:          "user-1",
+		DisplayName: "Test User",
+	}
+
+	workspace := &workspaces.Workspace{
+		ID:   "ws-1",
+		Name: "Test Workspace",
+		Slug: "test-workspace",
+	}
+
+	team := &teams.Team{
+		ID:   "team-1",
+		Name: "Engineering",
+	}
+
+	project := &projects.Project{
+		ID:   "proj-1",
+		Name: "Test Project",
+		Key:  "TEST",
+	}
+
+	col := &columns.Column{
+		ID:   "col-1",
+		Name: "To Do",
+	}
+
+	columnViews := []*ColumnView{
+		{
+			Column:     col,
+			IssueCount: 5,
+		},
+	}
+
+	data := ProjectSettingsData{
+		Title:           "Project Settings",
+		User:            user,
+		Workspace:       workspace,
+		Workspaces:      []*workspaces.Workspace{workspace},
+		Teams:           []*teams.Team{team},
+		Projects:        []*projects.Project{project},
+		Project:         project,
+		Columns:         columnViews,
+		ActiveTeamID:    "team-1",
+		ActiveProjectID: "proj-1",
+		ActiveNav:       "settings",
+		Breadcrumbs:     []Breadcrumb{{Label: "Test Project", URL: "/board/proj-1"}, {Label: "Settings", URL: ""}},
+	}
+
+	var buf bytes.Buffer
+	err := templates["project-settings"].Execute(&buf, data)
+	if err != nil {
+		t.Errorf("Project settings template error: %v", err)
+	}
+}
+
+// TestProjectFieldsTemplate tests the project fields template renders without errors
+func TestProjectFieldsTemplate(t *testing.T) {
+	templates := loadTemplates(t)
+
+	user := &users.User{
+		ID:          "user-1",
+		DisplayName: "Test User",
+	}
+
+	workspace := &workspaces.Workspace{
+		ID:   "ws-1",
+		Name: "Test Workspace",
+		Slug: "test-workspace",
+	}
+
+	team := &teams.Team{
+		ID:   "team-1",
+		Name: "Engineering",
+	}
+
+	project := &projects.Project{
+		ID:   "proj-1",
+		Name: "Test Project",
+		Key:  "TEST",
+	}
+
+	field := &fields.Field{
+		ID:        "field-1",
+		ProjectID: "proj-1",
+		Name:      "Priority",
+		Kind:      "select",
+	}
+
+	data := ProjectFieldsData{
+		Title:           "Custom Fields",
+		User:            user,
+		Workspace:       workspace,
+		Workspaces:      []*workspaces.Workspace{workspace},
+		Teams:           []*teams.Team{team},
+		Projects:        []*projects.Project{project},
+		Project:         project,
+		Fields:          []*fields.Field{field},
+		ActiveTeamID:    "team-1",
+		ActiveProjectID: "proj-1",
+		ActiveNav:       "settings",
+		Breadcrumbs:     []Breadcrumb{{Label: "Test Project", URL: "/board/proj-1"}, {Label: "Fields", URL: ""}},
+	}
+
+	var buf bytes.Buffer
+	err := templates["project-fields"].Execute(&buf, data)
+	if err != nil {
+		t.Errorf("Project fields template error: %v", err)
 	}
 }

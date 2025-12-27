@@ -8,15 +8,17 @@ import (
 
 // Cycle represents a planning period within a team.
 type Cycle struct {
-	ID        string    `json:"id"`
-	TeamID    string    `json:"team_id"`
-	Number    int       `json:"number"`
-	Name      string    `json:"name"`
-	Status    string    `json:"status"` // planning, active, completed
-	StartDate time.Time `json:"start_date"`
-	EndDate   time.Time `json:"end_date"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID             string    `json:"id"`
+	TeamID         string    `json:"team_id"`
+	Number         int       `json:"number"`
+	Name           string    `json:"name"`
+	Status         string    `json:"status"` // planning, active, completed
+	StartDate      time.Time `json:"start_date"`
+	EndDate        time.Time `json:"end_date"`
+	TotalCount     int       `json:"total_count"`     // Total issues in cycle
+	CompletedCount int       `json:"completed_count"` // Completed issues in cycle
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // Status constants

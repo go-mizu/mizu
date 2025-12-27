@@ -28,6 +28,11 @@ func NewService(store Store, projects projects.API, columns columns.API) *Servic
 }
 
 func (s *Service) Create(ctx context.Context, projectID, creatorID string, in *CreateIn) (*Issue, error) {
+	// Validate title is not empty
+	if in.Title == "" {
+		return nil, errors.New("title is required")
+	}
+
 	// Get project to generate issue key
 	project, err := s.projects.GetByID(ctx, projectID)
 	if err != nil {
@@ -37,11 +42,18 @@ func (s *Service) Create(ctx context.Context, projectID, creatorID string, in *C
 	// Determine column: use provided or get default
 	columnID := in.ColumnID
 	if columnID == "" {
+		// Try to get default column
 		col, err := s.columns.GetDefault(ctx, projectID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get default column: %w", err)
+			// Fallback: get first column
+			cols, listErr := s.columns.ListByProject(ctx, projectID)
+			if listErr != nil || len(cols) == 0 {
+				return nil, fmt.Errorf("no columns found for project: %w", err)
+			}
+			columnID = cols[0].ID
+		} else {
+			columnID = col.ID
 		}
-		columnID = col.ID
 	}
 
 	// Get next issue number
@@ -52,17 +64,19 @@ func (s *Service) Create(ctx context.Context, projectID, creatorID string, in *C
 
 	now := time.Now()
 	issue := &Issue{
-		ID:        ulid.New(),
-		ProjectID: projectID,
-		Number:    number,
-		Key:       fmt.Sprintf("%s-%d", project.Key, number),
-		Title:     in.Title,
-		ColumnID:  columnID,
-		CycleID:   in.CycleID,
-		CreatorID: creatorID,
-		Position:  0,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:          ulid.New(),
+		ProjectID:   projectID,
+		Number:      number,
+		Key:         fmt.Sprintf("%s-%d", project.Key, number),
+		Title:       in.Title,
+		Description: in.Description,
+		ColumnID:    columnID,
+		CycleID:     in.CycleID,
+		Priority:    in.Priority,
+		CreatorID:   creatorID,
+		Position:    0,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 
 	if err := s.store.Create(ctx, issue); err != nil {
