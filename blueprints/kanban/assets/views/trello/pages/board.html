@@ -13,7 +13,7 @@
 
   .board-header {
     height: var(--board-header-height);
-    background: rgba(0, 0, 0, 0.24);
+    background: rgba(0, 0, 0, 0.32);
     display: flex;
     align-items: center;
     padding: 12px 16px;
@@ -92,22 +92,21 @@
   .board-members {
     display: flex;
     align-items: center;
-    margin-left: 4px;
   }
 
   .board-member {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     background: var(--trello-neutral-0);
     color: var(--trello-neutral-700);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
-    margin-left: -8px;
-    border: 2px solid var(--trello-board-blue);
+    margin-left: -6px;
+    border: 2px solid #005a8f;
     cursor: pointer;
     text-transform: uppercase;
     transition: transform 0.1s;
@@ -122,32 +121,58 @@
     transform: translateY(-2px);
   }
 
-  .board-share-btn {
+  /* View Switcher */
+  .view-switcher {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--trello-neutral-900);
-    background: var(--trello-neutral-200);
-    border: none;
+    background: rgba(0, 0, 0, 0.2);
     border-radius: 4px;
+    padding: 2px;
+    margin-left: 8px;
+  }
+
+  .view-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 28px;
+    color: rgba(255, 255, 255, 0.7);
+    background: transparent;
+    border: none;
+    border-radius: 3px;
     cursor: pointer;
-    transition: background 0.15s ease;
+    transition: all 0.15s ease;
   }
 
-  .board-share-btn:hover {
-    background: var(--trello-neutral-0);
+  .view-btn:hover {
+    color: white;
+    background: rgba(255, 255, 255, 0.1);
   }
 
-  .board-share-btn svg {
+  .view-btn.active {
+    color: var(--trello-neutral-900);
+    background: white;
+  }
+
+  .view-btn svg {
     width: 16px;
     height: 16px;
     fill: currentColor;
   }
 
-  /* Board canvas - lists container */
+  /* View Containers */
+  .view-container {
+    display: none;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .view-container.active {
+    display: flex;
+  }
+
+  /* Board canvas - lists container (Kanban View) */
   .board-canvas {
     flex: 1;
     display: flex;
@@ -359,32 +384,6 @@
     fill: currentColor;
   }
 
-  .add-card-template-btn {
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    color: var(--trello-neutral-500);
-    margin-left: auto;
-    transition: background 0.15s;
-  }
-
-  .add-card-template-btn:hover {
-    background: var(--trello-neutral-300);
-    color: var(--trello-neutral-700);
-  }
-
-  .add-card-template-btn svg {
-    width: 16px;
-    height: 16px;
-    fill: currentColor;
-  }
-
   /* Card */
   .card {
     position: relative;
@@ -400,7 +399,6 @@
     background: var(--trello-neutral-100);
   }
 
-  /* Card edit pencil button */
   .card-edit-btn {
     position: absolute;
     top: 4px;
@@ -432,23 +430,6 @@
     fill: var(--trello-neutral-600);
   }
 
-  /* Card cover */
-  .card-cover {
-    height: 32px;
-    border-radius: var(--card-border-radius) var(--card-border-radius) 0 0;
-  }
-
-  .card-cover-green { background: var(--trello-success); }
-  .card-cover-yellow { background: var(--trello-warning); }
-  .card-cover-orange { background: var(--trello-orange); }
-  .card-cover-red { background: var(--trello-danger); }
-  .card-cover-purple { background: var(--trello-purple); }
-  .card-cover-blue { background: var(--trello-blue-300); }
-  .card-cover-sky { background: var(--trello-teal); }
-  .card-cover-lime { background: var(--trello-lime); }
-  .card-cover-pink { background: var(--trello-pink); }
-  .card-cover-black { background: var(--trello-neutral-700); }
-
   .card-labels {
     display: flex;
     flex-wrap: wrap;
@@ -467,7 +448,6 @@
     overflow: hidden;
   }
 
-  /* Labels expand on hover - Trello behavior */
   .card:hover .card-label {
     height: 16px;
     min-width: 56px;
@@ -695,128 +675,794 @@
     border: 2px dashed var(--trello-blue-300);
   }
 
-  /* Card modal */
-  .card-modal .modal {
-    max-width: 768px;
+  /* ==========================================
+     LIST VIEW STYLES
+     ========================================== */
+  .list-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--trello-neutral-100);
+    overflow: hidden;
+  }
+
+  .list-view-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: white;
+    border-bottom: 1px solid var(--trello-neutral-300);
+  }
+
+  .list-view-filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .list-view-filter select {
+    padding: 6px 12px;
+    font-size: 13px;
+    border: 1px solid var(--trello-neutral-300);
+    border-radius: 4px;
+    background: white;
+    color: var(--trello-neutral-700);
+    cursor: pointer;
+  }
+
+  .list-view-filter select:hover {
+    border-color: var(--trello-neutral-400);
+  }
+
+  .list-view-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border: 1px solid var(--trello-neutral-300);
+    border-radius: 4px;
+    background: white;
+    flex: 1;
+    max-width: 300px;
+  }
+
+  .list-view-search input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-size: 13px;
+    color: var(--trello-neutral-900);
+  }
+
+  .list-view-search input::placeholder {
+    color: var(--trello-neutral-500);
+  }
+
+  .list-view-search svg {
+    width: 16px;
+    height: 16px;
+    fill: var(--trello-neutral-500);
+  }
+
+  .list-view-content {
+    flex: 1;
+    overflow: auto;
+    padding: 0;
+  }
+
+  .list-view-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+  }
+
+  .list-view-table th {
+    position: sticky;
+    top: 0;
+    background: var(--trello-neutral-100);
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--trello-neutral-600);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--trello-neutral-300);
+    cursor: pointer;
+    user-select: none;
+    z-index: 10;
+  }
+
+  .list-view-table th:hover {
     background: var(--trello-neutral-200);
   }
 
-  .card-modal-header {
-    padding: 20px 48px 12px 56px;
+  .list-view-table th.sorted-asc::after {
+    content: ' ↑';
+  }
+
+  .list-view-table th.sorted-desc::after {
+    content: ' ↓';
+  }
+
+  .list-view-table th:first-child {
+    width: 40px;
+    padding-left: 16px;
+  }
+
+  .list-view-group-header {
+    background: var(--trello-neutral-100);
+    border-bottom: 1px solid var(--trello-neutral-300);
+  }
+
+  .list-view-group-header td {
+    padding: 10px 12px;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--trello-neutral-700);
+  }
+
+  .list-view-group-header td:first-child {
+    padding-left: 16px;
+  }
+
+  .list-view-group-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .list-view-group-toggle svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+    transition: transform 0.15s;
+  }
+
+  .list-view-group-toggle.collapsed svg {
+    transform: rotate(-90deg);
+  }
+
+  .list-view-group-count {
+    color: var(--trello-neutral-500);
+    font-weight: 400;
+    font-size: 12px;
+    margin-left: 4px;
+  }
+
+  .list-view-table tbody tr {
+    border-bottom: 1px solid var(--trello-neutral-200);
+    transition: background 0.1s;
+  }
+
+  .list-view-table tbody tr:hover {
+    background: var(--trello-blue-50);
+  }
+
+  .list-view-table tbody tr.selected {
+    background: var(--trello-blue-100);
+  }
+
+  .list-view-table td {
+    padding: 10px 12px;
+    font-size: 14px;
+    color: var(--trello-neutral-900);
+    vertical-align: middle;
+  }
+
+  .list-view-table td:first-child {
+    padding-left: 16px;
+  }
+
+  .list-view-checkbox {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--trello-blue-500);
+  }
+
+  .list-view-card-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .list-view-card-key {
+    font-size: 12px;
+    color: var(--trello-neutral-500);
+    font-weight: 500;
+  }
+
+  .list-view-card-text {
+    flex: 1;
+    cursor: pointer;
+    padding: 4px 8px;
+    margin: -4px -8px;
+    border-radius: 4px;
+    border: 2px solid transparent;
+  }
+
+  .list-view-card-text:hover {
+    background: var(--trello-neutral-100);
+  }
+
+  .list-view-card-text:focus {
+    background: white;
+    border-color: var(--trello-blue-300);
+    outline: none;
+  }
+
+  .list-view-list-cell {
     position: relative;
   }
 
-  .card-modal-icon {
-    position: absolute;
-    left: 20px;
-    top: 20px;
-    width: 32px;
-    height: 32px;
-    color: var(--trello-neutral-600);
+  .list-view-list-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    background: var(--trello-neutral-200);
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--trello-neutral-700);
+    cursor: pointer;
+    transition: background 0.1s;
   }
 
-  .card-modal-icon svg {
+  .list-view-list-badge:hover {
+    background: var(--trello-neutral-300);
+  }
+
+  .list-view-list-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    background: white;
+    border-radius: 8px;
+    box-shadow: var(--popup-shadow);
+    min-width: 180px;
+    z-index: 100;
+    padding: 8px 0;
+    margin-top: 4px;
+  }
+
+  .list-view-list-dropdown.is-open {
+    display: block;
+  }
+
+  .list-view-list-option {
+    padding: 8px 12px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+
+  .list-view-list-option:hover {
+    background: var(--trello-neutral-100);
+  }
+
+  .list-view-list-option.selected {
+    background: var(--trello-blue-50);
+    color: var(--trello-blue-500);
+  }
+
+  .list-view-labels {
+    display: flex;
+    gap: 4px;
+  }
+
+  .list-view-label {
+    width: 32px;
+    height: 8px;
+    border-radius: 4px;
+  }
+
+  .list-view-members {
+    display: flex;
+    gap: -4px;
+  }
+
+  .list-view-member {
     width: 24px;
     height: 24px;
-    fill: currentColor;
-  }
-
-  .card-modal-title {
-    font-size: 20px;
-    font-weight: 600;
-    color: var(--trello-neutral-900);
-    width: 100%;
-    padding: 6px 8px;
-    border: none;
-    background: transparent;
-    border-radius: 8px;
-    margin: -6px -8px;
-  }
-
-  .card-modal-title:hover {
+    border-radius: 50%;
     background: var(--trello-neutral-300);
-  }
-
-  .card-modal-title:focus {
-    background: var(--trello-neutral-0);
-    outline: none;
-    box-shadow: inset 0 0 0 2px var(--trello-blue-300);
-  }
-
-  .card-modal-list {
-    font-size: 14px;
-    color: var(--trello-neutral-600);
-    margin-top: 8px;
-  }
-
-  .card-modal-list a {
-    color: var(--trello-neutral-900);
-    text-decoration: underline;
-  }
-
-  .card-modal-body {
-    display: flex;
-    gap: 16px;
-    padding: 0 16px 24px 16px;
-  }
-
-  .card-modal-main {
-    flex: 1;
-    min-width: 0;
-    padding-left: 40px;
-  }
-
-  .card-modal-sidebar {
-    width: 168px;
-    min-width: 168px;
-  }
-
-  .card-modal-section {
-    margin-bottom: 24px;
-  }
-
-  .card-modal-section-header {
+    color: var(--trello-neutral-700);
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 12px;
-    color: var(--trello-neutral-900);
-    font-size: 14px;
+    justify-content: center;
+    font-size: 10px;
     font-weight: 600;
+    text-transform: uppercase;
+    margin-left: -4px;
+    border: 2px solid white;
   }
 
-  .card-modal-section-header svg {
-    width: 20px;
-    height: 20px;
-    fill: currentColor;
+  .list-view-member:first-child {
+    margin-left: 0;
   }
 
-  .sidebar-btn {
-    display: flex;
+  .list-view-due {
+    display: inline-flex;
     align-items: center;
-    gap: 8px;
-    width: 100%;
-    padding: 6px 12px;
-    font-size: 14px;
-    color: var(--trello-neutral-900);
-    background: var(--trello-neutral-300);
-    border: none;
+    gap: 4px;
+    padding: 2px 6px;
     border-radius: 4px;
+    font-size: 12px;
+  }
+
+  .list-view-due.overdue {
+    background: var(--trello-danger);
+    color: white;
+  }
+
+  .list-view-due.due-soon {
+    background: var(--trello-warning);
+    color: var(--trello-warning-bold);
+  }
+
+  .list-view-due svg {
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+  }
+
+  .list-view-add-row {
+    border-bottom: none !important;
+  }
+
+  .list-view-add-row td {
+    padding: 8px 12px;
+  }
+
+  .list-view-add-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--trello-neutral-500);
+    font-size: 13px;
     cursor: pointer;
-    text-align: left;
-    margin-bottom: 8px;
-    transition: background 0.15s;
+    padding: 6px 8px;
+    margin: -6px -8px;
+    border-radius: 4px;
+    transition: background 0.1s, color 0.1s;
   }
 
-  .sidebar-btn:hover {
-    background: var(--trello-neutral-400);
+  .list-view-add-btn:hover {
+    background: var(--trello-neutral-200);
+    color: var(--trello-neutral-700);
   }
 
-  .sidebar-btn svg {
+  .list-view-add-btn svg {
     width: 16px;
     height: 16px;
     fill: currentColor;
   }
+
+  .list-view-hidden {
+    display: none !important;
+  }
+
+  /* ==========================================
+     TIMELINE VIEW STYLES
+     ========================================== */
+  .timeline-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--trello-neutral-100);
+    overflow: hidden;
+  }
+
+  .timeline-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: white;
+    border-bottom: 1px solid var(--trello-neutral-300);
+  }
+
+  .timeline-toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .timeline-zoom-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--trello-neutral-300);
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--trello-neutral-600);
+    transition: all 0.1s;
+  }
+
+  .timeline-zoom-btn:hover {
+    background: var(--trello-neutral-100);
+    color: var(--trello-neutral-900);
+  }
+
+  .timeline-zoom-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+  }
+
+  .timeline-scale-select {
+    padding: 6px 12px;
+    font-size: 13px;
+    border: 1px solid var(--trello-neutral-300);
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+  }
+
+  .timeline-today-btn {
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--trello-blue-500);
+    background: var(--trello-blue-50);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+
+  .timeline-today-btn:hover {
+    background: var(--trello-blue-100);
+  }
+
+  .timeline-date-range {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--trello-neutral-700);
+    margin-left: auto;
+  }
+
+  .timeline-container {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+
+  .timeline-sidebar {
+    width: 250px;
+    min-width: 250px;
+    background: white;
+    border-right: 1px solid var(--trello-neutral-300);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .timeline-sidebar-header {
+    padding: 12px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--trello-neutral-600);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--trello-neutral-300);
+    background: var(--trello-neutral-100);
+  }
+
+  .timeline-sidebar-content {
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .timeline-sidebar-group {
+    border-bottom: 1px solid var(--trello-neutral-200);
+  }
+
+  .timeline-sidebar-group-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--trello-neutral-700);
+    background: var(--trello-neutral-50);
+    transition: background 0.1s;
+    user-select: none;
+  }
+
+  .timeline-sidebar-group-header:hover {
+    background: var(--trello-neutral-100);
+  }
+
+  .timeline-sidebar-group-header svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+    transition: transform 0.15s;
+  }
+
+  .timeline-sidebar-group-header.collapsed svg {
+    transform: rotate(-90deg);
+  }
+
+  .timeline-sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px 8px 32px;
+    font-size: 13px;
+    color: var(--trello-neutral-900);
+    cursor: pointer;
+    transition: background 0.1s;
+    border-left: 3px solid transparent;
+  }
+
+  .timeline-sidebar-item:hover {
+    background: var(--trello-blue-50);
+  }
+
+  .timeline-sidebar-item.no-dates {
+    color: var(--trello-neutral-500);
+    font-style: italic;
+  }
+
+  .timeline-sidebar-item-key {
+    font-size: 11px;
+    color: var(--trello-neutral-500);
+    font-weight: 500;
+  }
+
+  .timeline-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .timeline-header {
+    display: flex;
+    height: 48px;
+    background: var(--trello-neutral-100);
+    border-bottom: 1px solid var(--trello-neutral-300);
+    overflow: hidden;
+  }
+
+  .timeline-header-scroll {
+    display: flex;
+    overflow-x: hidden;
+  }
+
+  .timeline-date-cell {
+    flex: 0 0 auto;
+    width: var(--timeline-cell-width, 80px);
+    padding: 8px 4px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--trello-neutral-600);
+    border-right: 1px solid var(--trello-neutral-200);
+    position: relative;
+  }
+
+  .timeline-date-cell.weekend {
+    background: var(--trello-neutral-200);
+  }
+
+  .timeline-date-cell.today {
+    background: var(--trello-blue-50);
+    color: var(--trello-blue-500);
+    font-weight: 600;
+  }
+
+  .timeline-date-day {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+
+  .timeline-date-num {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--trello-neutral-900);
+  }
+
+  .timeline-date-cell.today .timeline-date-num {
+    color: var(--trello-blue-500);
+  }
+
+  .timeline-body {
+    flex: 1;
+    overflow: auto;
+    position: relative;
+  }
+
+  .timeline-grid {
+    position: relative;
+    min-height: 100%;
+  }
+
+  .timeline-grid-row {
+    display: flex;
+    height: var(--timeline-row-height, 44px);
+    border-bottom: 1px solid var(--trello-neutral-200);
+    position: relative;
+  }
+
+  .timeline-grid-row.group-header {
+    background: var(--trello-neutral-50);
+    height: 36px;
+  }
+
+  .timeline-grid-cell {
+    flex: 0 0 auto;
+    width: var(--timeline-cell-width, 80px);
+    border-right: 1px solid var(--trello-neutral-100);
+    position: relative;
+  }
+
+  .timeline-grid-cell.weekend {
+    background: rgba(0, 0, 0, 0.02);
+  }
+
+  .timeline-today-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--trello-danger);
+    z-index: 50;
+    pointer-events: none;
+  }
+
+  .timeline-today-line::before {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: -4px;
+    width: 10px;
+    height: 10px;
+    background: var(--trello-danger);
+    border-radius: 50%;
+  }
+
+  .timeline-card-bar {
+    position: absolute;
+    top: 6px;
+    height: calc(var(--timeline-row-height, 44px) - 12px);
+    background: var(--trello-blue-300);
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    font-size: 12px;
+    color: var(--trello-neutral-900);
+    font-weight: 500;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    z-index: 10;
+    transition: box-shadow 0.15s, transform 0.1s;
+    min-width: 20px;
+  }
+
+  .timeline-card-bar:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    z-index: 20;
+  }
+
+  .timeline-card-bar.overdue {
+    background: var(--trello-danger);
+    color: white;
+  }
+
+  .timeline-card-bar.due-soon {
+    background: var(--trello-warning);
+    color: var(--trello-warning-bold);
+  }
+
+  .timeline-card-bar.completed {
+    background: var(--trello-success);
+    color: var(--trello-success-bold);
+  }
+
+  .timeline-card-bar-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 8px;
+    cursor: ew-resize;
+    z-index: 5;
+  }
+
+  .timeline-card-bar-handle.left {
+    left: 0;
+    border-radius: 4px 0 0 4px;
+  }
+
+  .timeline-card-bar-handle.right {
+    right: 0;
+    border-radius: 0 4px 4px 0;
+  }
+
+  .timeline-card-bar-handle:hover {
+    background: rgba(0, 0, 0, 0.1);
+  }
+
+  .timeline-card-bar.dragging {
+    opacity: 0.8;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 100;
+  }
+
+  .timeline-unscheduled {
+    background: var(--trello-neutral-100);
+    border-bottom: 2px solid var(--trello-neutral-300);
+    padding: 8px 16px;
+  }
+
+  .timeline-unscheduled-header {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--trello-neutral-600);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
+
+  .timeline-unscheduled-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .timeline-unscheduled-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: white;
+    border: 1px solid var(--trello-neutral-300);
+    border-radius: 4px;
+    font-size: 13px;
+    color: var(--trello-neutral-700);
+    cursor: grab;
+    transition: all 0.1s;
+  }
+
+  .timeline-unscheduled-item:hover {
+    background: var(--trello-blue-50);
+    border-color: var(--trello-blue-300);
+  }
+
+  .timeline-unscheduled-item:active {
+    cursor: grabbing;
+  }
+
+  .timeline-unscheduled-key {
+    font-size: 11px;
+    color: var(--trello-neutral-500);
+    font-weight: 500;
+  }
+
+  /* Color-coded bars by list position */
+  .timeline-card-bar[data-list-index="0"] { background: #61bd4f; }
+  .timeline-card-bar[data-list-index="1"] { background: #f2d600; }
+  .timeline-card-bar[data-list-index="2"] { background: #ff9f1a; }
+  .timeline-card-bar[data-list-index="3"] { background: #eb5a46; }
+  .timeline-card-bar[data-list-index="4"] { background: #c377e0; }
+  .timeline-card-bar[data-list-index="5"] { background: var(--trello-blue-300); }
 </style>
 
 <div class="board-wrapper">
@@ -826,134 +1472,310 @@
       <button class="board-btn board-btn-icon" title="Star board">
         <svg viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
       </button>
-      <div class="board-divider"></div>
+
+      <!-- View Switcher -->
+      <div class="view-switcher">
+        <button class="view-btn active" data-view="kanban" title="Board view">
+          <svg viewBox="0 0 24 24"><path d="M4 4h4v16H4V4zm6 0h4v10h-4V4zm6 0h4v14h-4V4z"/></svg>
+        </button>
+        <button class="view-btn" data-view="list" title="List view">
+          <svg viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+        </button>
+        <button class="view-btn" data-view="timeline" title="Timeline view">
+          <svg viewBox="0 0 24 24"><path d="M2 5h20v2H2V5zm0 6h14v2H2v-2zm0 6h20v2H2v-2z"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="board-header-right">
       <div class="board-members">
         {{range .Members}}
         <div class="board-member" title="{{.DisplayName}}">{{slice .DisplayName 0 1}}</div>
         {{end}}
       </div>
     </div>
-    <div class="board-header-right">
+  </div>
+
+  <!-- Kanban View -->
+  <div class="view-container active" id="kanban-view">
+    <div class="board-canvas" id="board-canvas">
+      {{range .Lists}}
+      <div class="list" data-list-id="{{.ID}}">
+        <div class="list-header">
+          <textarea class="list-title" rows="1" data-list-id="{{.ID}}" data-original="{{.Name}}">{{.Name}}</textarea>
+          <div style="position: relative;">
+            <button class="list-menu-btn" data-list-id="{{.ID}}">
+              <svg viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+            </button>
+            <div class="list-menu" data-list-id="{{.ID}}">
+              <div class="list-menu-header">
+                List actions
+                <button class="list-menu-close">
+                  <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                </button>
+              </div>
+              <div class="list-menu-items">
+                <div class="list-menu-item" data-action="add-card">
+                  <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                  Add card
+                </div>
+                <div class="list-menu-item" data-action="copy-list">
+                  <svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                  Copy list
+                </div>
+                <div class="list-menu-item" data-action="move-list">
+                  <svg viewBox="0 0 24 24"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
+                  Move list
+                </div>
+                <div class="list-menu-divider"></div>
+                <div class="list-menu-item" data-action="sort-by-date">
+                  <svg viewBox="0 0 24 24"><path d="M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z"/></svg>
+                  Sort by date created
+                </div>
+                <div class="list-menu-divider"></div>
+                <div class="list-menu-item" data-action="archive-cards">
+                  <svg viewBox="0 0 24 24"><path d="M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5L6.5 12H10v-2h4v2h3.5L12 17.5zM5.12 5l.81-1h12l.94 1H5.12z"/></svg>
+                  Archive all cards
+                </div>
+                <div class="list-menu-item" data-action="archive-list" style="color: var(--trello-danger);">
+                  <svg viewBox="0 0 24 24" style="fill: var(--trello-danger);"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                  Archive this list
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="list-cards" data-list-id="{{.ID}}">
+          {{range .Cards}}
+          <div class="card" data-card-id="{{.ID}}" data-card-key="{{.Key}}" data-start-date="{{if .StartDate}}{{.StartDate.Format "2006-01-02"}}{{end}}" data-due-date="{{if .DueDate}}{{.DueDate.Format "2006-01-02"}}{{end}}" data-created-at="{{.CreatedAt.Format "2006-01-02"}}">
+            <button class="card-edit-btn" title="Edit card" onclick="event.stopPropagation();">
+              <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+            </button>
+            {{if .Labels}}
+            <div class="card-labels">
+              {{range .Labels}}
+              <div class="card-label card-label-{{.Color}}">{{.Name}}</div>
+              {{end}}
+            </div>
+            {{end}}
+            <div class="card-title">{{.Title}}</div>
+            {{if or .HasDueDate .CommentCount}}
+            <div class="card-badges">
+              {{if .HasDueDate}}
+              <span class="card-badge {{if .IsOverdue}}is-overdue{{else if .IsDueSoon}}is-due-soon{{end}}">
+                <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
+                {{if .DueDate}}{{.DueDate.Format "Jan 2"}}{{else}}Due{{end}}
+              </span>
+              {{end}}
+              {{if .CommentCount}}
+              <span class="card-badge">
+                <svg viewBox="0 0 24 24"><path d="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18z"/></svg>
+                {{.CommentCount}}
+              </span>
+              {{end}}
+            </div>
+            {{end}}
+            {{if .Members}}
+            <div class="card-members">
+              {{range .Members}}
+              <div class="card-member" title="{{.DisplayName}}">{{slice .DisplayName 0 1}}</div>
+              {{end}}
+            </div>
+            {{end}}
+          </div>
+          {{end}}
+        </div>
+        <div class="add-card-form" data-list-id="{{.ID}}">
+          <textarea placeholder="Enter a title for this card..." rows="3"></textarea>
+          <div class="add-card-actions">
+            <button class="btn btn-primary add-card-submit">Add card</button>
+            <button class="btn btn-icon add-card-cancel">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="list-footer">
+          <button class="add-card-btn" data-list-id="{{.ID}}">
+            <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+            Add a card
+          </button>
+        </div>
+      </div>
+      {{end}}
+
+      <div class="add-list">
+        <button class="add-list-btn" id="add-list-btn">
+          <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+          Add another list
+        </button>
+        <div class="add-list-form" id="add-list-form">
+          <input type="text" placeholder="Enter list title..." id="list-name-input">
+          <div class="add-list-actions">
+            <button class="btn btn-primary" id="add-list-submit">Add list</button>
+            <button class="btn btn-icon" id="add-list-cancel">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <div class="board-canvas" id="board-canvas">
-    {{range .Lists}}
-    <div class="list" data-list-id="{{.ID}}">
-      <div class="list-header">
-        <textarea class="list-title" rows="1" data-list-id="{{.ID}}" data-original="{{.Name}}">{{.Name}}</textarea>
-        <div style="position: relative;">
-          <button class="list-menu-btn" data-list-id="{{.ID}}">
-            <svg viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
-          </button>
-          <div class="list-menu" data-list-id="{{.ID}}">
-            <div class="list-menu-header">
-              List actions
-              <button class="list-menu-close">
-                <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-              </button>
-            </div>
-            <div class="list-menu-items">
-              <div class="list-menu-item" data-action="add-card">
-                <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-                Add card
-              </div>
-              <div class="list-menu-item" data-action="copy-list">
-                <svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
-                Copy list
-              </div>
-              <div class="list-menu-item" data-action="move-list">
-                <svg viewBox="0 0 24 24"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
-                Move list
-              </div>
-              <div class="list-menu-divider"></div>
-              <div class="list-menu-item" data-action="sort-by-date">
-                <svg viewBox="0 0 24 24"><path d="M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z"/></svg>
-                Sort by date created
-              </div>
-              <div class="list-menu-divider"></div>
-              <div class="list-menu-item" data-action="archive-cards">
-                <svg viewBox="0 0 24 24"><path d="M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5L6.5 12H10v-2h4v2h3.5L12 17.5zM5.12 5l.81-1h12l.94 1H5.12z"/></svg>
-                Archive all cards
-              </div>
-              <div class="list-menu-item" data-action="archive-list" style="color: var(--trello-danger);">
-                <svg viewBox="0 0 24 24" style="fill: var(--trello-danger);"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-                Archive this list
-              </div>
-            </div>
-          </div>
+  <!-- List View -->
+  <div class="view-container" id="list-view">
+    <div class="list-view">
+      <div class="list-view-toolbar">
+        <div class="list-view-search">
+          <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+          <input type="text" placeholder="Search cards..." id="list-view-search-input">
+        </div>
+        <div class="list-view-filter">
+          <select id="list-view-filter-list">
+            <option value="">All lists</option>
+            {{range .Lists}}
+            <option value="{{.ID}}">{{.Name}}</option>
+            {{end}}
+          </select>
+          <select id="list-view-filter-due">
+            <option value="">Any due date</option>
+            <option value="overdue">Overdue</option>
+            <option value="due-soon">Due soon</option>
+            <option value="no-date">No date</option>
+          </select>
         </div>
       </div>
-      <div class="list-cards" data-list-id="{{.ID}}">
-        {{range .Cards}}
-        <div class="card" data-card-id="{{.ID}}" data-card-key="{{.Key}}">
-          <button class="card-edit-btn" title="Edit card" onclick="event.stopPropagation();">
-            <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
-          </button>
-          {{if .Labels}}
-          <div class="card-labels">
-            {{range .Labels}}
-            <div class="card-label card-label-{{.Color}}">{{.Name}}</div>
+      <div class="list-view-content">
+        <table class="list-view-table">
+          <thead>
+            <tr>
+              <th><input type="checkbox" class="list-view-checkbox" id="list-view-select-all"></th>
+              <th data-sort="title">Card</th>
+              <th data-sort="list" style="width: 150px;">List</th>
+              <th style="width: 100px;">Labels</th>
+              <th style="width: 100px;">Members</th>
+              <th data-sort="due" style="width: 120px;">Due date</th>
+              <th data-sort="created" style="width: 100px;">Created</th>
+            </tr>
+          </thead>
+          <tbody id="list-view-body">
+            {{range $listIndex, $list := .Lists}}
+            <tr class="list-view-group-header" data-list-id="{{$list.ID}}">
+              <td colspan="7">
+                <div class="list-view-group-toggle" data-list-id="{{$list.ID}}">
+                  <svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5H7z"/></svg>
+                  {{$list.Name}}
+                  <span class="list-view-group-count">({{len $list.Cards}})</span>
+                </div>
+              </td>
+            </tr>
+            {{range $list.Cards}}
+            <tr data-card-id="{{.ID}}" data-card-key="{{.Key}}" data-list-id="{{$list.ID}}" data-start-date="{{if .StartDate}}{{.StartDate.Format "2006-01-02"}}{{end}}" data-due-date="{{if .DueDate}}{{.DueDate.Format "2006-01-02"}}{{end}}">
+              <td><input type="checkbox" class="list-view-checkbox list-view-row-checkbox"></td>
+              <td>
+                <div class="list-view-card-title">
+                  <span class="list-view-card-key">{{.Key}}</span>
+                  <span class="list-view-card-text" contenteditable="true" data-card-key="{{.Key}}">{{.Title}}</span>
+                </div>
+              </td>
+              <td class="list-view-list-cell">
+                <div class="list-view-list-badge" data-card-key="{{.Key}}">{{$list.Name}}</div>
+                <div class="list-view-list-dropdown" data-card-key="{{.Key}}">
+                  {{range $.Lists}}
+                  <div class="list-view-list-option{{if eq .ID $list.ID}} selected{{end}}" data-list-id="{{.ID}}">{{.Name}}</div>
+                  {{end}}
+                </div>
+              </td>
+              <td>
+                <div class="list-view-labels">
+                  {{range .Labels}}
+                  <div class="list-view-label card-label-{{.Color}}"></div>
+                  {{end}}
+                </div>
+              </td>
+              <td>
+                <div class="list-view-members">
+                  {{range .Members}}
+                  <div class="list-view-member" title="{{.DisplayName}}">{{slice .DisplayName 0 1}}</div>
+                  {{end}}
+                </div>
+              </td>
+              <td>
+                {{if .DueDate}}
+                <span class="list-view-due{{if .IsOverdue}} overdue{{else if .IsDueSoon}} due-soon{{end}}">
+                  <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
+                  {{.DueDate.Format "Jan 2"}}
+                </span>
+                {{end}}
+              </td>
+              <td>{{.CreatedAt.Format "Jan 2"}}</td>
+            </tr>
             {{end}}
-          </div>
-          {{end}}
-          <div class="card-title">{{.Title}}</div>
-          {{if or .HasDueDate .CommentCount}}
-          <div class="card-badges">
-            {{if .HasDueDate}}
-            <span class="card-badge {{if .IsOverdue}}is-overdue{{else if .IsDueSoon}}is-due-soon{{end}}">
-              <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
-              {{if .DueDate}}{{.DueDate.Format "Jan 2"}}{{else}}Due{{end}}
-            </span>
+            <tr class="list-view-add-row" data-list-id="{{$list.ID}}">
+              <td colspan="7">
+                <div class="list-view-add-btn" data-list-id="{{$list.ID}}">
+                  <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                  Add a card
+                </div>
+              </td>
+            </tr>
             {{end}}
-            {{if .CommentCount}}
-            <span class="card-badge">
-              <svg viewBox="0 0 24 24"><path d="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18z"/></svg>
-              {{.CommentCount}}
-            </span>
-            {{end}}
-          </div>
-          {{end}}
-          {{if .Members}}
-          <div class="card-members">
-            {{range .Members}}
-            <div class="card-member" title="{{.DisplayName}}">{{slice .DisplayName 0 1}}</div>
-            {{end}}
-          </div>
-          {{end}}
-        </div>
-        {{end}}
-      </div>
-      <div class="add-card-form" data-list-id="{{.ID}}">
-        <textarea placeholder="Enter a title for this card..." rows="3"></textarea>
-        <div class="add-card-actions">
-          <button class="btn btn-primary add-card-submit">Add card</button>
-          <button class="btn btn-icon add-card-cancel">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-          </button>
-        </div>
-      </div>
-      <div class="list-footer">
-        <button class="add-card-btn" data-list-id="{{.ID}}">
-          <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-          Add a card
-        </button>
+          </tbody>
+        </table>
       </div>
     </div>
-    {{end}}
+  </div>
 
-    <div class="add-list">
-      <button class="add-list-btn" id="add-list-btn">
-        <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-        Add another list
-      </button>
-      <div class="add-list-form" id="add-list-form">
-        <input type="text" placeholder="Enter list title..." id="list-name-input">
-        <div class="add-list-actions">
-          <button class="btn btn-primary" id="add-list-submit">Add list</button>
-          <button class="btn btn-icon" id="add-list-cancel">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+  <!-- Timeline View -->
+  <div class="view-container" id="timeline-view">
+    <div class="timeline-view">
+      <div class="timeline-toolbar">
+        <div class="timeline-toolbar-group">
+          <button class="timeline-zoom-btn" id="timeline-zoom-out" title="Zoom out">
+            <svg viewBox="0 0 24 24"><path d="M19 13H5v-2h14v2z"/></svg>
           </button>
+          <select class="timeline-scale-select" id="timeline-scale">
+            <option value="day">Day</option>
+            <option value="week">Week</option>
+            <option value="month">Month</option>
+          </select>
+          <button class="timeline-zoom-btn" id="timeline-zoom-in" title="Zoom in">
+            <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+          </button>
+        </div>
+        <button class="timeline-today-btn" id="timeline-today">Today</button>
+        <span class="timeline-date-range" id="timeline-date-range"></span>
+      </div>
+      <div class="timeline-container">
+        <div class="timeline-sidebar">
+          <div class="timeline-sidebar-header">Cards</div>
+          <div class="timeline-sidebar-content" id="timeline-sidebar-content">
+            {{range $listIndex, $list := .Lists}}
+            <div class="timeline-sidebar-group" data-list-id="{{$list.ID}}">
+              <div class="timeline-sidebar-group-header" data-list-id="{{$list.ID}}">
+                <svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5H7z"/></svg>
+                {{$list.Name}}
+              </div>
+              {{range $list.Cards}}
+              <div class="timeline-sidebar-item{{if not (or .StartDate .DueDate)}} no-dates{{end}}" data-card-id="{{.ID}}" data-card-key="{{.Key}}">
+                <span class="timeline-sidebar-item-key">{{.Key}}</span>
+                {{.Title}}
+              </div>
+              {{end}}
+            </div>
+            {{end}}
+          </div>
+        </div>
+        <div class="timeline-main">
+          <div class="timeline-header">
+            <div class="timeline-header-scroll" id="timeline-header-scroll">
+              <!-- Date cells rendered by JS -->
+            </div>
+          </div>
+          <div class="timeline-body" id="timeline-body">
+            <div class="timeline-grid" id="timeline-grid">
+              <!-- Grid rows and card bars rendered by JS -->
+            </div>
+            <div class="timeline-today-line" id="timeline-today-line"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -963,6 +1785,78 @@
 <script>
 const boardId = '{{.Board.ID}}';
 const workspaceSlug = '{{.Workspace.Slug}}';
+
+// Build cards data from template
+const listsData = [
+  {{range $listIndex, $list := .Lists}}
+  {
+    id: '{{$list.ID}}',
+    name: '{{$list.Name}}',
+    index: {{$listIndex}},
+    cards: [
+      {{range $list.Cards}}
+      {
+        id: '{{.ID}}',
+        key: '{{.Key}}',
+        title: '{{.Title}}',
+        listId: '{{$list.ID}}',
+        listName: '{{$list.Name}}',
+        listIndex: {{$listIndex}},
+        startDate: {{if .StartDate}}'{{.StartDate.Format "2006-01-02"}}'{{else}}null{{end}},
+        dueDate: {{if .DueDate}}'{{.DueDate.Format "2006-01-02"}}'{{else}}null{{end}},
+        createdAt: '{{.CreatedAt.Format "2006-01-02"}}',
+        isOverdue: {{.IsOverdue}},
+        isDueSoon: {{.IsDueSoon}},
+        members: [{{range .Members}}'{{.DisplayName}}',{{end}}],
+        labels: [{{range .Labels}}{color:'{{.Color}}',name:'{{.Name}}'},{{end}}]
+      },
+      {{end}}
+    ]
+  },
+  {{end}}
+];
+
+// ==========================================
+// VIEW SWITCHING
+// ==========================================
+
+const viewState = {
+  current: localStorage.getItem('kanban-view-' + boardId) || 'kanban'
+};
+
+function switchView(viewName) {
+  // Update buttons
+  document.querySelectorAll('.view-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === viewName);
+  });
+
+  // Update containers
+  document.querySelectorAll('.view-container').forEach(container => {
+    container.classList.toggle('active', container.id === viewName + '-view');
+  });
+
+  viewState.current = viewName;
+  localStorage.setItem('kanban-view-' + boardId, viewName);
+
+  // Initialize view-specific features
+  if (viewName === 'timeline') {
+    initTimeline();
+  }
+}
+
+// View button clicks
+document.querySelectorAll('.view-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchView(btn.dataset.view));
+});
+
+// Initialize with saved view
+document.addEventListener('DOMContentLoaded', () => {
+  switchView(viewState.current);
+});
+
+// ==========================================
+// KANBAN VIEW - ORIGINAL FUNCTIONALITY
+// ==========================================
 
 // Add list form toggle
 const addListBtn = document.getElementById('add-list-btn');
@@ -984,7 +1878,6 @@ addListCancel.addEventListener('click', () => {
 
 // List title inline editing
 document.querySelectorAll('.list-title').forEach(textarea => {
-  // Auto-resize on input
   const autoResize = () => {
     textarea.style.height = 'auto';
     textarea.style.height = textarea.scrollHeight + 'px';
@@ -992,7 +1885,6 @@ document.querySelectorAll('.list-title').forEach(textarea => {
   autoResize();
   textarea.addEventListener('input', autoResize);
 
-  // Save on blur
   textarea.addEventListener('blur', async function() {
     const listId = this.dataset.listId;
     const newName = this.value.trim();
@@ -1024,7 +1916,6 @@ document.querySelectorAll('.list-title').forEach(textarea => {
     }
   });
 
-  // Submit on Enter, cancel on Escape
   textarea.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -1043,7 +1934,6 @@ document.querySelectorAll('.list-menu-btn').forEach(btn => {
     const listId = btn.dataset.listId;
     const menu = document.querySelector(`.list-menu[data-list-id="${listId}"]`);
 
-    // Close all other menus
     document.querySelectorAll('.list-menu.is-open').forEach(m => {
       if (m !== menu) m.classList.remove('is-open');
     });
@@ -1099,7 +1989,6 @@ document.querySelectorAll('.list-menu-item').forEach(item => {
           alert('Failed to archive list: ' + err.message);
         }
         break;
-      // Other actions can be implemented as needed
     }
   });
 });
@@ -1175,9 +2064,8 @@ document.querySelectorAll('.add-card-submit').forEach(btn => {
 });
 
 // Card click - open card detail
-document.querySelectorAll('.card').forEach(card => {
+document.querySelectorAll('#kanban-view .card').forEach(card => {
   card.addEventListener('click', (e) => {
-    // Don't navigate if we just finished dragging
     if (card.dataset.wasDragged === 'true') {
       card.dataset.wasDragged = 'false';
       return;
@@ -1187,7 +2075,7 @@ document.querySelectorAll('.card').forEach(card => {
   });
 });
 
-// Drag and drop functionality with flicker prevention
+// Kanban drag and drop
 let draggedCard = null;
 let draggedCardHeight = 40;
 let dragStartList = null;
@@ -1209,9 +2097,8 @@ function removePlaceholder() {
   currentPlaceholder = null;
 }
 
-function initDragAndDrop() {
-  // Make cards draggable
-  document.querySelectorAll('.card').forEach(card => {
+function initKanbanDragAndDrop() {
+  document.querySelectorAll('#kanban-view .card').forEach(card => {
     card.setAttribute('draggable', 'true');
 
     card.addEventListener('dragstart', (e) => {
@@ -1222,7 +2109,6 @@ function initDragAndDrop() {
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', card.dataset.cardKey);
 
-      // Add dragging class after a tiny delay so drag image captures the card
       requestAnimationFrame(() => {
         card.classList.add('dragging');
       });
@@ -1230,8 +2116,6 @@ function initDragAndDrop() {
 
     card.addEventListener('dragend', (e) => {
       card.classList.remove('dragging');
-
-      // Remove all drag-over indicators
       document.querySelectorAll('.list-cards.drag-over').forEach(el => {
         el.classList.remove('drag-over');
       });
@@ -1244,7 +2128,6 @@ function initDragAndDrop() {
     });
   });
 
-  // Setup drop zones (list-cards containers)
   document.querySelectorAll('.list-cards').forEach(container => {
     container.addEventListener('dragover', (e) => {
       e.preventDefault();
@@ -1252,10 +2135,8 @@ function initDragAndDrop() {
 
       if (!draggedCard) return;
 
-      // Find the card we're hovering over to insert before
       const afterElement = getDragAfterElement(container, e.clientY);
 
-      // Only update if the target position changed (prevents flickering)
       if (container === lastTargetContainer && afterElement === lastAfterElement) {
         return;
       }
@@ -1263,16 +2144,12 @@ function initDragAndDrop() {
       lastTargetContainer = container;
       lastAfterElement = afterElement;
 
-      // Remove drag-over from other containers
       document.querySelectorAll('.list-cards.drag-over').forEach(el => {
         if (el !== container) el.classList.remove('drag-over');
       });
       container.classList.add('drag-over');
 
-      // Remove existing placeholder
       removePlaceholder();
-
-      // Create and insert placeholder
       currentPlaceholder = createPlaceholder(draggedCardHeight);
 
       if (afterElement) {
@@ -1283,12 +2160,10 @@ function initDragAndDrop() {
     });
 
     container.addEventListener('dragleave', (e) => {
-      // Use bounding rect to check if truly leaving the container
       const rect = container.getBoundingClientRect();
       const x = e.clientX;
       const y = e.clientY;
 
-      // Check if cursor is truly outside the container bounds
       if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
         container.classList.remove('drag-over');
         if (lastTargetContainer === container) {
@@ -1305,13 +2180,11 @@ function initDragAndDrop() {
 
       const cardKey = e.dataTransfer.getData('text/plain');
 
-      // Get position before removing placeholder
       const insertBeforeElement = currentPlaceholder ? currentPlaceholder.nextElementSibling : null;
       removePlaceholder();
 
       if (!draggedCard || !cardKey) return;
 
-      // Move the card in DOM
       draggedCard.classList.remove('dragging');
 
       if (insertBeforeElement) {
@@ -1320,15 +2193,12 @@ function initDragAndDrop() {
         container.appendChild(draggedCard);
       }
 
-      // Mark as dragged to prevent click navigation
       draggedCard.dataset.wasDragged = 'true';
 
-      // Check if we actually moved to a different list
       const newColumnId = container.dataset.listId;
       const oldColumnId = dragStartList ? dragStartList.dataset.listId : null;
 
       if (newColumnId !== oldColumnId) {
-        // Call API to move the card
         try {
           const res = await fetch('/api/v1/issues/' + cardKey + '/move', {
             method: 'POST',
@@ -1349,7 +2219,6 @@ function initDragAndDrop() {
   });
 }
 
-// Helper function to find the element after which to insert
 function getDragAfterElement(container, y) {
   const draggableElements = [...container.querySelectorAll('.card:not(.dragging)')];
 
@@ -1365,7 +2234,630 @@ function getDragAfterElement(container, y) {
   }, { offset: Number.NEGATIVE_INFINITY }).element;
 }
 
-// Initialize drag and drop
-initDragAndDrop();
+initKanbanDragAndDrop();
+
+// ==========================================
+// LIST VIEW FUNCTIONALITY
+// ==========================================
+
+// Search
+document.getElementById('list-view-search-input').addEventListener('input', (e) => {
+  const query = e.target.value.toLowerCase();
+  document.querySelectorAll('#list-view-body tr[data-card-id]').forEach(row => {
+    const title = row.querySelector('.list-view-card-text').textContent.toLowerCase();
+    const key = row.querySelector('.list-view-card-key').textContent.toLowerCase();
+    const matches = title.includes(query) || key.includes(query);
+    row.classList.toggle('list-view-hidden', !matches && query.length > 0);
+  });
+});
+
+// Filter by list
+document.getElementById('list-view-filter-list').addEventListener('change', (e) => {
+  const listId = e.target.value;
+  document.querySelectorAll('#list-view-body tr[data-list-id]').forEach(row => {
+    if (!listId) {
+      row.classList.remove('list-view-hidden');
+    } else {
+      const matches = row.dataset.listId === listId || row.classList.contains('list-view-group-header');
+      row.classList.toggle('list-view-hidden', !matches);
+    }
+  });
+});
+
+// Filter by due date
+document.getElementById('list-view-filter-due').addEventListener('change', (e) => {
+  const filter = e.target.value;
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  document.querySelectorAll('#list-view-body tr[data-card-id]').forEach(row => {
+    if (!filter) {
+      row.classList.remove('list-view-hidden');
+      return;
+    }
+
+    const dueDate = row.dataset.dueDate ? new Date(row.dataset.dueDate) : null;
+    let show = false;
+
+    switch (filter) {
+      case 'overdue':
+        show = dueDate && dueDate < now;
+        break;
+      case 'due-soon':
+        show = dueDate && dueDate >= now && dueDate <= tomorrow;
+        break;
+      case 'no-date':
+        show = !dueDate;
+        break;
+    }
+
+    row.classList.toggle('list-view-hidden', !show);
+  });
+});
+
+// Select all checkbox
+document.getElementById('list-view-select-all').addEventListener('change', (e) => {
+  document.querySelectorAll('.list-view-row-checkbox').forEach(cb => {
+    cb.checked = e.target.checked;
+    cb.closest('tr').classList.toggle('selected', e.target.checked);
+  });
+});
+
+// Row checkbox
+document.querySelectorAll('.list-view-row-checkbox').forEach(cb => {
+  cb.addEventListener('change', (e) => {
+    e.target.closest('tr').classList.toggle('selected', e.target.checked);
+  });
+});
+
+// Group toggle
+document.querySelectorAll('.list-view-group-toggle').forEach(toggle => {
+  toggle.addEventListener('click', () => {
+    const listId = toggle.dataset.listId;
+    toggle.classList.toggle('collapsed');
+
+    // Toggle visibility of rows in this group
+    const rows = document.querySelectorAll(`#list-view-body tr[data-list-id="${listId}"]:not(.list-view-group-header)`);
+    rows.forEach(row => {
+      row.classList.toggle('list-view-hidden', toggle.classList.contains('collapsed'));
+    });
+  });
+});
+
+// Inline edit card title
+document.querySelectorAll('.list-view-card-text').forEach(el => {
+  let originalValue = '';
+
+  el.addEventListener('focus', () => {
+    originalValue = el.textContent;
+  });
+
+  el.addEventListener('blur', async () => {
+    const newValue = el.textContent.trim();
+    if (newValue === originalValue || !newValue) {
+      el.textContent = originalValue;
+      return;
+    }
+
+    const cardKey = el.dataset.cardKey;
+    try {
+      const res = await fetch('/api/v1/issues/' + cardKey, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newValue })
+      });
+      const data = await res.json();
+      if (!data.success) {
+        el.textContent = originalValue;
+        alert(data.error || 'Failed to update card');
+      }
+    } catch (err) {
+      el.textContent = originalValue;
+      console.error('Failed to update card:', err);
+    }
+  });
+
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      el.blur();
+    } else if (e.key === 'Escape') {
+      el.textContent = originalValue;
+      el.blur();
+    }
+  });
+});
+
+// List dropdown in List view
+document.querySelectorAll('.list-view-list-badge').forEach(badge => {
+  badge.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const cardKey = badge.dataset.cardKey;
+    const dropdown = document.querySelector(`.list-view-list-dropdown[data-card-key="${cardKey}"]`);
+
+    document.querySelectorAll('.list-view-list-dropdown.is-open').forEach(d => {
+      if (d !== dropdown) d.classList.remove('is-open');
+    });
+
+    dropdown.classList.toggle('is-open');
+  });
+});
+
+document.querySelectorAll('.list-view-list-option').forEach(option => {
+  option.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const dropdown = option.closest('.list-view-list-dropdown');
+    const cardKey = dropdown.dataset.cardKey;
+    const newListId = option.dataset.listId;
+
+    dropdown.classList.remove('is-open');
+
+    // Update badge text
+    const badge = document.querySelector(`.list-view-list-badge[data-card-key="${cardKey}"]`);
+    badge.textContent = option.textContent;
+
+    // Move card via API
+    try {
+      const res = await fetch('/api/v1/issues/' + cardKey + '/move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ column_id: newListId })
+      });
+      const data = await res.json();
+      if (!data.success) {
+        alert(data.error || 'Failed to move card');
+        window.location.reload();
+      } else {
+        // Update the row's list ID and move it to the correct section
+        const row = document.querySelector(`#list-view-body tr[data-card-key="${cardKey}"]`);
+        if (row) {
+          row.dataset.listId = newListId;
+          // Find the add row for the new list and insert before it
+          const addRow = document.querySelector(`.list-view-add-row[data-list-id="${newListId}"]`);
+          if (addRow) {
+            addRow.parentNode.insertBefore(row, addRow);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to move card:', err);
+    }
+  });
+});
+
+// Close dropdown on outside click
+document.addEventListener('click', () => {
+  document.querySelectorAll('.list-view-list-dropdown.is-open').forEach(d => d.classList.remove('is-open'));
+});
+
+// Row click to open card
+document.querySelectorAll('#list-view-body tr[data-card-key]').forEach(row => {
+  row.addEventListener('click', (e) => {
+    // Don't navigate if clicking on editable, checkbox, or dropdown
+    if (e.target.closest('.list-view-card-text, .list-view-checkbox, .list-view-list-badge, .list-view-list-dropdown')) {
+      return;
+    }
+    const cardKey = row.dataset.cardKey;
+    window.location.href = '/t/' + workspaceSlug + '/c/' + cardKey;
+  });
+});
+
+// Add card in list view
+document.querySelectorAll('.list-view-add-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const listId = btn.dataset.listId;
+    const title = prompt('Enter card title:');
+    if (!title || !title.trim()) return;
+
+    fetch('/api/v1/projects/' + boardId + '/issues', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: title.trim(), column_id: listId })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        window.location.reload();
+      } else {
+        alert(data.error || 'Failed to create card');
+      }
+    })
+    .catch(err => alert('Failed to create card: ' + err.message));
+  });
+});
+
+// ==========================================
+// TIMELINE VIEW FUNCTIONALITY
+// ==========================================
+
+const timelineState = {
+  scale: localStorage.getItem('kanban-timeline-scale-' + boardId) || 'day',
+  startDate: new Date(),
+  cellWidth: 80,
+  rowHeight: 44,
+  daysVisible: 14,
+  initialized: false
+};
+
+function initTimeline() {
+  if (timelineState.initialized) {
+    renderTimeline();
+    return;
+  }
+
+  timelineState.initialized = true;
+
+  // Set start date to beginning of current week
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  timelineState.startDate = new Date(today);
+  timelineState.startDate.setDate(today.getDate() - 3); // Start 3 days before today
+
+  // Scale select
+  document.getElementById('timeline-scale').value = timelineState.scale;
+  document.getElementById('timeline-scale').addEventListener('change', (e) => {
+    timelineState.scale = e.target.value;
+    localStorage.setItem('kanban-timeline-scale-' + boardId, timelineState.scale);
+    updateTimelineScale();
+    renderTimeline();
+  });
+
+  // Today button
+  document.getElementById('timeline-today').addEventListener('click', () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    timelineState.startDate = new Date(today);
+    timelineState.startDate.setDate(today.getDate() - 3);
+    renderTimeline();
+  });
+
+  // Zoom buttons
+  document.getElementById('timeline-zoom-in').addEventListener('click', () => {
+    timelineState.cellWidth = Math.min(timelineState.cellWidth + 20, 150);
+    renderTimeline();
+  });
+
+  document.getElementById('timeline-zoom-out').addEventListener('click', () => {
+    timelineState.cellWidth = Math.max(timelineState.cellWidth - 20, 40);
+    renderTimeline();
+  });
+
+  // Sidebar group toggle
+  document.querySelectorAll('.timeline-sidebar-group-header').forEach(header => {
+    header.addEventListener('click', () => {
+      header.classList.toggle('collapsed');
+      const listId = header.dataset.listId;
+      const items = header.parentElement.querySelectorAll('.timeline-sidebar-item');
+      items.forEach(item => {
+        item.style.display = header.classList.contains('collapsed') ? 'none' : 'flex';
+      });
+    });
+  });
+
+  // Sidebar item click
+  document.querySelectorAll('.timeline-sidebar-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const cardKey = item.dataset.cardKey;
+      window.location.href = '/t/' + workspaceSlug + '/c/' + cardKey;
+    });
+  });
+
+  // Scroll sync
+  const timelineBody = document.getElementById('timeline-body');
+  const headerScroll = document.getElementById('timeline-header-scroll');
+
+  timelineBody.addEventListener('scroll', () => {
+    headerScroll.style.transform = `translateX(-${timelineBody.scrollLeft}px)`;
+    updateTodayLine();
+  });
+
+  updateTimelineScale();
+  renderTimeline();
+}
+
+function updateTimelineScale() {
+  switch (timelineState.scale) {
+    case 'day':
+      timelineState.daysVisible = 14;
+      timelineState.cellWidth = 80;
+      break;
+    case 'week':
+      timelineState.daysVisible = 56; // 8 weeks
+      timelineState.cellWidth = 40;
+      break;
+    case 'month':
+      timelineState.daysVisible = 180; // 6 months
+      timelineState.cellWidth = 20;
+      break;
+  }
+}
+
+function renderTimeline() {
+  const headerScroll = document.getElementById('timeline-header-scroll');
+  const grid = document.getElementById('timeline-grid');
+  const dateRange = document.getElementById('timeline-date-range');
+
+  // Update CSS variables
+  document.documentElement.style.setProperty('--timeline-cell-width', timelineState.cellWidth + 'px');
+  document.documentElement.style.setProperty('--timeline-row-height', timelineState.rowHeight + 'px');
+
+  // Generate date cells for header
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  let headerHTML = '';
+  const startDate = new Date(timelineState.startDate);
+  const endDate = new Date(startDate);
+  endDate.setDate(endDate.getDate() + timelineState.daysVisible);
+
+  for (let i = 0; i < timelineState.daysVisible; i++) {
+    const date = new Date(startDate);
+    date.setDate(date.getDate() + i);
+
+    const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+    const isToday = date.toDateString() === today.toDateString();
+
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    headerHTML += `
+      <div class="timeline-date-cell${isWeekend ? ' weekend' : ''}${isToday ? ' today' : ''}" data-date="${date.toISOString().split('T')[0]}">
+        <div class="timeline-date-day">${dayNames[date.getDay()]}</div>
+        <div class="timeline-date-num">${date.getDate()}</div>
+      </div>
+    `;
+  }
+  headerScroll.innerHTML = headerHTML;
+
+  // Update date range display
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  dateRange.textContent = `${monthNames[startDate.getMonth()]} ${startDate.getDate()} - ${monthNames[endDate.getMonth()]} ${endDate.getDate()}, ${endDate.getFullYear()}`;
+
+  // Generate grid rows
+  let gridHTML = '';
+  let rowIndex = 0;
+
+  // Build flat list of cards with their list context
+  const allCards = [];
+  listsData.forEach((list, listIndex) => {
+    allCards.push({ type: 'group-header', list, listIndex });
+    list.cards.forEach(card => {
+      allCards.push({ type: 'card', card, list, listIndex });
+    });
+  });
+
+  allCards.forEach(item => {
+    if (item.type === 'group-header') {
+      gridHTML += `<div class="timeline-grid-row group-header">`;
+      for (let i = 0; i < timelineState.daysVisible; i++) {
+        const date = new Date(startDate);
+        date.setDate(date.getDate() + i);
+        const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+        gridHTML += `<div class="timeline-grid-cell${isWeekend ? ' weekend' : ''}"></div>`;
+      }
+      gridHTML += `</div>`;
+    } else {
+      const card = item.card;
+      const cardStartDate = card.startDate ? new Date(card.startDate) : (card.dueDate ? new Date(card.dueDate) : null);
+      const cardEndDate = card.dueDate ? new Date(card.dueDate) : (cardStartDate ? new Date(cardStartDate) : null);
+
+      gridHTML += `<div class="timeline-grid-row" data-card-key="${card.key}" data-row-index="${rowIndex}">`;
+
+      for (let i = 0; i < timelineState.daysVisible; i++) {
+        const date = new Date(startDate);
+        date.setDate(date.getDate() + i);
+        const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+        gridHTML += `<div class="timeline-grid-cell${isWeekend ? ' weekend' : ''}" data-date="${date.toISOString().split('T')[0]}"></div>`;
+      }
+
+      // Add card bar if it has dates
+      if (cardStartDate && cardEndDate) {
+        const barStart = Math.max(0, Math.floor((cardStartDate - startDate) / (1000 * 60 * 60 * 24)));
+        const barEnd = Math.floor((cardEndDate - startDate) / (1000 * 60 * 60 * 24));
+
+        if (barEnd >= 0 && barStart < timelineState.daysVisible) {
+          const left = barStart * timelineState.cellWidth;
+          const width = Math.max(timelineState.cellWidth, (barEnd - barStart + 1) * timelineState.cellWidth);
+
+          let barClass = 'timeline-card-bar';
+          if (card.isOverdue) barClass += ' overdue';
+          else if (card.isDueSoon) barClass += ' due-soon';
+
+          gridHTML += `
+            <div class="${barClass}"
+                 data-card-key="${card.key}"
+                 data-list-index="${item.listIndex}"
+                 style="left: ${left}px; width: ${width}px;"
+                 title="${card.key}: ${card.title}">
+              <div class="timeline-card-bar-handle left"></div>
+              ${card.title}
+              <div class="timeline-card-bar-handle right"></div>
+            </div>
+          `;
+        }
+      }
+
+      gridHTML += `</div>`;
+      rowIndex++;
+    }
+  });
+
+  grid.innerHTML = gridHTML;
+
+  // Setup card bar interactions
+  setupTimelineBarInteractions();
+
+  // Update today line
+  updateTodayLine();
+}
+
+function updateTodayLine() {
+  const todayLine = document.getElementById('timeline-today-line');
+  const timelineBody = document.getElementById('timeline-body');
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const daysDiff = Math.floor((today - timelineState.startDate) / (1000 * 60 * 60 * 24));
+
+  if (daysDiff >= 0 && daysDiff < timelineState.daysVisible) {
+    const left = (daysDiff + 0.5) * timelineState.cellWidth - timelineBody.scrollLeft;
+    todayLine.style.left = left + 'px';
+    todayLine.style.display = 'block';
+  } else {
+    todayLine.style.display = 'none';
+  }
+}
+
+function setupTimelineBarInteractions() {
+  const grid = document.getElementById('timeline-grid');
+
+  // Card bar click to open card
+  grid.querySelectorAll('.timeline-card-bar').forEach(bar => {
+    bar.addEventListener('click', (e) => {
+      if (e.target.classList.contains('timeline-card-bar-handle')) return;
+      const cardKey = bar.dataset.cardKey;
+      window.location.href = '/t/' + workspaceSlug + '/c/' + cardKey;
+    });
+  });
+
+  // Drag to resize dates
+  let isDragging = false;
+  let dragType = null; // 'move', 'resize-left', 'resize-right'
+  let dragBar = null;
+  let dragStartX = 0;
+  let originalLeft = 0;
+  let originalWidth = 0;
+
+  grid.querySelectorAll('.timeline-card-bar-handle').forEach(handle => {
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      isDragging = true;
+      dragBar = handle.closest('.timeline-card-bar');
+      dragType = handle.classList.contains('left') ? 'resize-left' : 'resize-right';
+      dragStartX = e.clientX;
+      originalLeft = parseInt(dragBar.style.left);
+      originalWidth = parseInt(dragBar.style.width);
+
+      dragBar.classList.add('dragging');
+    });
+  });
+
+  grid.querySelectorAll('.timeline-card-bar').forEach(bar => {
+    bar.addEventListener('mousedown', (e) => {
+      if (e.target.classList.contains('timeline-card-bar-handle')) return;
+
+      e.preventDefault();
+      isDragging = true;
+      dragBar = bar;
+      dragType = 'move';
+      dragStartX = e.clientX;
+      originalLeft = parseInt(bar.style.left);
+      originalWidth = parseInt(bar.style.width);
+
+      bar.classList.add('dragging');
+    });
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging || !dragBar) return;
+
+    const deltaX = e.clientX - dragStartX;
+    const cellSnap = timelineState.cellWidth;
+
+    if (dragType === 'move') {
+      const newLeft = Math.round((originalLeft + deltaX) / cellSnap) * cellSnap;
+      dragBar.style.left = Math.max(0, newLeft) + 'px';
+    } else if (dragType === 'resize-left') {
+      const newLeft = Math.round((originalLeft + deltaX) / cellSnap) * cellSnap;
+      const maxLeft = originalLeft + originalWidth - cellSnap;
+      const clampedLeft = Math.max(0, Math.min(newLeft, maxLeft));
+      const newWidth = originalWidth + (originalLeft - clampedLeft);
+      dragBar.style.left = clampedLeft + 'px';
+      dragBar.style.width = newWidth + 'px';
+    } else if (dragType === 'resize-right') {
+      const newWidth = Math.round((originalWidth + deltaX) / cellSnap) * cellSnap;
+      dragBar.style.width = Math.max(cellSnap, newWidth) + 'px';
+    }
+  });
+
+  document.addEventListener('mouseup', async () => {
+    if (!isDragging || !dragBar) return;
+
+    dragBar.classList.remove('dragging');
+
+    const cardKey = dragBar.dataset.cardKey;
+    const newLeft = parseInt(dragBar.style.left);
+    const newWidth = parseInt(dragBar.style.width);
+
+    // Calculate new dates
+    const daysFromStart = Math.round(newLeft / timelineState.cellWidth);
+    const durationDays = Math.round(newWidth / timelineState.cellWidth);
+
+    const newStartDate = new Date(timelineState.startDate);
+    newStartDate.setDate(newStartDate.getDate() + daysFromStart);
+
+    const newDueDate = new Date(newStartDate);
+    newDueDate.setDate(newDueDate.getDate() + durationDays - 1);
+
+    // Update via API
+    try {
+      const res = await fetch('/api/v1/issues/' + cardKey, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          start_date: newStartDate.toISOString().split('T')[0],
+          due_date: newDueDate.toISOString().split('T')[0]
+        })
+      });
+      const data = await res.json();
+      if (!data.success) {
+        console.error('Failed to update card dates:', data.error);
+        // Revert visual change
+        dragBar.style.left = originalLeft + 'px';
+        dragBar.style.width = originalWidth + 'px';
+      }
+    } catch (err) {
+      console.error('Failed to update card dates:', err);
+      dragBar.style.left = originalLeft + 'px';
+      dragBar.style.width = originalWidth + 'px';
+    }
+
+    isDragging = false;
+    dragType = null;
+    dragBar = null;
+  });
+}
+
+// Keyboard shortcuts for timeline
+document.addEventListener('keydown', (e) => {
+  if (viewState.current !== 'timeline') return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+  const timelineBody = document.getElementById('timeline-body');
+
+  switch (e.key) {
+    case 'ArrowLeft':
+      timelineBody.scrollLeft -= timelineState.cellWidth;
+      break;
+    case 'ArrowRight':
+      timelineBody.scrollLeft += timelineState.cellWidth;
+      break;
+    case 't':
+    case 'T':
+      document.getElementById('timeline-today').click();
+      break;
+    case '+':
+    case '=':
+      document.getElementById('timeline-zoom-in').click();
+      break;
+    case '-':
+      document.getElementById('timeline-zoom-out').click();
+      break;
+  }
+});
 </script>
 {{end}}
