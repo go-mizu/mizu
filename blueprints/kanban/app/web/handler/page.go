@@ -172,6 +172,8 @@ type CyclesData struct {
 	Teams           []*teams.Team
 	Projects        []*projects.Project
 	Cycles          []*cycles.Cycle
+	Columns         []*columns.Column
+	TeamMembers     []*users.User
 	DefaultTeamID   string
 	ActiveTeamID    string
 	ActiveProjectID string
@@ -189,6 +191,9 @@ type TeamData struct {
 	Team            *teams.Team
 	Members         []*MemberView
 	Projects        []*projects.Project
+	Columns         []*columns.Column
+	TeamMembers     []*users.User
+	Cycles          []*cycles.Cycle
 	ActiveTeamID    string
 	ActiveProjectID string
 	ActiveNav       string
@@ -286,6 +291,8 @@ type CalendarData struct {
 	Today            time.Time
 	ActiveView       string
 	Columns          []*columns.Column
+	TeamMembers      []*users.User
+	Cycles           []*cycles.Cycle
 	DefaultProjectID string
 	ActiveTeamID     string
 	ActiveProjectID  string
@@ -341,6 +348,8 @@ type GanttData struct {
 	Groups           []*GanttGroup
 	ActiveView       string
 	Columns          []*columns.Column
+	TeamMembers      []*users.User
+	Cycles           []*cycles.Cycle
 	DefaultProjectID string
 	ActiveTeamID     string
 	ActiveProjectID  string
@@ -1015,6 +1024,8 @@ func (h *Page) IssuesCalendar(c *mizu.Ctx) error {
 	var projectList []*projects.Project
 	var teamList []*teams.Team
 	var columnList []*columns.Column
+	var cycleList []*cycles.Cycle
+	var teamMembers []*users.User
 	var allIssues []*issues.Issue
 	columnMap := make(map[string]*columns.Column)
 	projectMap := make(map[string]*projects.Project)
@@ -1043,6 +1054,19 @@ func (h *Page) IssuesCalendar(c *mizu.Ctx) error {
 			issueList, _ := h.issues.ListByProject(ctx, project.ID)
 			allIssues = append(allIssues, issueList...)
 		}
+
+		// Get cycles and team members from first team
+		if len(teamList) > 0 {
+			cycleList, _ = h.cycles.ListByTeam(ctx, teamList[0].ID)
+			members, _ := h.teams.ListMembers(ctx, teamList[0].ID)
+			if len(members) > 0 {
+				userIDs := make([]string, len(members))
+				for i, m := range members {
+					userIDs[i] = m.UserID
+				}
+				teamMembers, _ = h.users.GetByIDs(ctx, userIDs)
+			}
+		}
 	}
 
 	// Build calendar grid
@@ -1068,6 +1092,8 @@ func (h *Page) IssuesCalendar(c *mizu.Ctx) error {
 		Today:            time.Now(),
 		ActiveView:       "calendar",
 		Columns:          columnList,
+		TeamMembers:      teamMembers,
+		Cycles:           cycleList,
 		DefaultProjectID: defaultProjectID,
 		ActiveNav:        "issues",
 	})
@@ -1100,6 +1126,8 @@ func (h *Page) IssuesGantt(c *mizu.Ctx) error {
 	var projectList []*projects.Project
 	var teamList []*teams.Team
 	var columnList []*columns.Column
+	var cycleList []*cycles.Cycle
+	var teamMembers []*users.User
 	var allIssues []*issues.Issue
 	columnMap := make(map[string]*columns.Column)
 	projectMap := make(map[string]*projects.Project)
@@ -1127,6 +1155,19 @@ func (h *Page) IssuesGantt(c *mizu.Ctx) error {
 			}
 			issueList, _ := h.issues.ListByProject(ctx, project.ID)
 			allIssues = append(allIssues, issueList...)
+		}
+
+		// Get cycles and team members from first team
+		if len(teamList) > 0 {
+			cycleList, _ = h.cycles.ListByTeam(ctx, teamList[0].ID)
+			members, _ := h.teams.ListMembers(ctx, teamList[0].ID)
+			if len(members) > 0 {
+				userIDs := make([]string, len(members))
+				for i, m := range members {
+					userIDs[i] = m.UserID
+				}
+				teamMembers, _ = h.users.GetByIDs(ctx, userIDs)
+			}
 		}
 	}
 
@@ -1166,6 +1207,8 @@ func (h *Page) IssuesGantt(c *mizu.Ctx) error {
 		Groups:           groups,
 		ActiveView:       "gantt",
 		Columns:          columnList,
+		TeamMembers:      teamMembers,
+		Cycles:           cycleList,
 		DefaultProjectID: defaultProjectID,
 		ActiveNav:        "issues",
 	})
@@ -1262,6 +1305,8 @@ func (h *Page) Cycles(c *mizu.Ctx) error {
 	var cycleList []*cycles.Cycle
 	var teamList []*teams.Team
 	var projectList []*projects.Project
+	var columnList []*columns.Column
+	var teamMembers []*users.User
 	var defaultTeamID string
 
 	if workspace != nil {
@@ -1270,6 +1315,21 @@ func (h *Page) Cycles(c *mizu.Ctx) error {
 			defaultTeamID = teamList[0].ID
 			cycleList, _ = h.cycles.ListByTeam(ctx, teamList[0].ID)
 			projectList, _ = h.projects.ListByTeam(ctx, teamList[0].ID)
+
+			// Get columns from first project for global create modal
+			if len(projectList) > 0 {
+				columnList, _ = h.columns.ListByProject(ctx, projectList[0].ID)
+			}
+
+			// Get team members
+			members, _ := h.teams.ListMembers(ctx, teamList[0].ID)
+			if len(members) > 0 {
+				userIDs := make([]string, len(members))
+				for i, m := range members {
+					userIDs[i] = m.UserID
+				}
+				teamMembers, _ = h.users.GetByIDs(ctx, userIDs)
+			}
 		}
 	}
 
@@ -1281,6 +1341,8 @@ func (h *Page) Cycles(c *mizu.Ctx) error {
 		Teams:         teamList,
 		Projects:      projectList,
 		Cycles:        cycleList,
+		Columns:       columnList,
+		TeamMembers:   teamMembers,
 		DefaultTeamID: defaultTeamID,
 		ActiveNav:     "cycles",
 	})
@@ -1316,15 +1378,24 @@ func (h *Page) Team(c *mizu.Ctx) error {
 
 	members, _ := h.teams.ListMembers(ctx, teamID)
 	projectList, _ := h.projects.ListByTeam(ctx, teamID)
+	cycleList, _ := h.cycles.ListByTeam(ctx, teamID)
+
+	// Get columns from first project for global create modal
+	var columnList []*columns.Column
+	if len(projectList) > 0 {
+		columnList, _ = h.columns.ListByProject(ctx, projectList[0].ID)
+	}
 
 	// Batch load all users at once (1 query instead of N)
 	userMap := make(map[string]*users.User)
+	var teamMembers []*users.User
 	if len(members) > 0 {
 		userIDs := make([]string, len(members))
 		for i, m := range members {
 			userIDs[i] = m.UserID
 		}
 		userList, _ := h.users.GetByIDs(ctx, userIDs)
+		teamMembers = userList
 		for _, u := range userList {
 			userMap[u.ID] = u
 		}
@@ -1348,6 +1419,9 @@ func (h *Page) Team(c *mizu.Ctx) error {
 		Team:         team,
 		Members:      memberViews,
 		Projects:     projectList,
+		Columns:      columnList,
+		TeamMembers:  teamMembers,
+		Cycles:       cycleList,
 		ActiveTeamID: teamID,
 		ActiveNav:    "teams",
 		Breadcrumbs: []Breadcrumb{

@@ -2,9 +2,9 @@
 <div class="flex items-center justify-between mb-6">
   <div class="flex items-center gap-4">
     <h1 class="text-2xl font-semibold text-zinc-900">Issues</h1>
-    <div class="flex items-center bg-zinc-100 rounded-lg p-1">
-      <a href="/w/{{.Workspace.Slug}}/issues?view=list" class="flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-white transition-colors" title="List view">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <div class="flex items-center bg-zinc-100 rounded-lg p-1" role="group" aria-label="View options">
+      <a href="/w/{{.Workspace.Slug}}/issues?view=list" class="flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-white transition-colors" aria-label="List view">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <line x1="8" x2="21" y1="6" y2="6"/>
           <line x1="8" x2="21" y1="12" y2="12"/>
           <line x1="8" x2="21" y1="18" y2="18"/>
@@ -14,23 +14,23 @@
         </svg>
       </a>
       {{if .DefaultProjectID}}
-      <a href="/w/{{.Workspace.Slug}}/board/{{.DefaultProjectID}}" class="flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-white transition-colors" title="Board view">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <a href="/w/{{.Workspace.Slug}}/board/{{.DefaultProjectID}}" class="flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-white transition-colors" aria-label="Board view">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect width="6" height="14" x="4" y="5" rx="2"/>
           <rect width="6" height="10" x="14" y="7" rx="2"/>
         </svg>
       </a>
       {{end}}
-      <a href="/w/{{.Workspace.Slug}}/issues?view=calendar" class="flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-white transition-colors" title="Calendar view">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <a href="/w/{{.Workspace.Slug}}/issues?view=calendar" class="flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-white transition-colors" aria-label="Calendar view">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M8 2v4"/>
           <path d="M16 2v4"/>
           <rect width="18" height="18" x="3" y="4" rx="2"/>
           <path d="M3 10h18"/>
         </svg>
       </a>
-      <a href="/w/{{.Workspace.Slug}}/issues?view=gantt" class="flex items-center justify-center w-8 h-8 rounded-md bg-white shadow-sm text-zinc-900" title="Gantt chart">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <a href="/w/{{.Workspace.Slug}}/issues?view=gantt" class="flex items-center justify-center w-8 h-8 rounded-md bg-white shadow-sm text-zinc-900" aria-label="Gantt chart view" aria-current="page">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M3 3v18h18"/>
           <rect x="7" y="6" width="10" height="3"/>
           <rect x="5" y="12" width="8" height="3"/>
@@ -39,197 +39,142 @@
       </a>
     </div>
   </div>
-  <div class="flex gap-2">
-    <div class="flex items-center gap-2">
-      <div class="relative" id="scale-dropdown">
-        <button class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-zinc-700 bg-white border border-zinc-200 rounded-md hover:bg-zinc-50 transition-colors dropdown-trigger">
-          Scale: {{.Scale}}
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m6 9 6 6 6-6"/>
-          </svg>
-        </button>
-        <div class="absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
-          <a href="?view=gantt&scale=day&group={{.GroupBy}}" class="block px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 {{if eq .Scale "day"}}bg-zinc-50 font-medium{{end}}">Day</a>
-          <a href="?view=gantt&scale=week&group={{.GroupBy}}" class="block px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 {{if eq .Scale "week"}}bg-zinc-50 font-medium{{end}}">Week</a>
-          <a href="?view=gantt&scale=month&group={{.GroupBy}}" class="block px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 {{if eq .Scale "month"}}bg-zinc-50 font-medium{{end}}">Month</a>
-        </div>
+  <div class="flex items-center gap-2">
+    <div class="relative" id="scale-dropdown">
+      <button class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-zinc-700 bg-white border border-zinc-200 rounded-md hover:bg-zinc-50 transition-colors dropdown-trigger">
+        Scale: {{.Scale}}
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m6 9 6 6 6-6"/>
+        </svg>
+      </button>
+      <div class="absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
+        <a href="?view=gantt&scale=day&group={{.GroupBy}}" class="block px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 {{if eq .Scale "day"}}bg-zinc-50 font-medium{{end}}">Day</a>
+        <a href="?view=gantt&scale=week&group={{.GroupBy}}" class="block px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 {{if eq .Scale "week"}}bg-zinc-50 font-medium{{end}}">Week</a>
+        <a href="?view=gantt&scale=month&group={{.GroupBy}}" class="block px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 {{if eq .Scale "month"}}bg-zinc-50 font-medium{{end}}">Month</a>
       </div>
-      <div class="relative" id="group-dropdown">
-        <button class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-zinc-700 bg-white border border-zinc-200 rounded-md hover:bg-zinc-50 transition-colors dropdown-trigger">
-          Group: {{if eq .GroupBy "none"}}None{{else}}{{.GroupBy}}{{end}}
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m6 9 6 6 6-6"/>
-          </svg>
-        </button>
-        <div class="absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
-          <a href="?view=gantt&scale={{.Scale}}&group=none" class="block px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 {{if eq .GroupBy "none"}}bg-zinc-50 font-medium{{end}}">None</a>
-          <a href="?view=gantt&scale={{.Scale}}&group=project" class="block px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 {{if eq .GroupBy "project"}}bg-zinc-50 font-medium{{end}}">Project</a>
-          <a href="?view=gantt&scale={{.Scale}}&group=column" class="block px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 {{if eq .GroupBy "column"}}bg-zinc-50 font-medium{{end}}">Status</a>
-        </div>
-      </div>
-      <a href="?view=gantt&scale={{.Scale}}&group={{.GroupBy}}" class="px-3 py-1.5 text-sm font-medium text-zinc-700 bg-white border border-zinc-200 rounded-md hover:bg-zinc-50 transition-colors">Today</a>
     </div>
-    <button class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors" data-modal="create-issue-modal">
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M5 12h14"/>
-        <path d="M12 5v14"/>
-      </svg>
-      New Issue
-    </button>
+    <div class="relative" id="group-dropdown">
+      <button class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-zinc-700 bg-white border border-zinc-200 rounded-md hover:bg-zinc-50 transition-colors dropdown-trigger">
+        Group: {{if eq .GroupBy "none"}}None{{else}}{{.GroupBy}}{{end}}
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m6 9 6 6 6-6"/>
+        </svg>
+      </button>
+      <div class="absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
+        <a href="?view=gantt&scale={{.Scale}}&group=none" class="block px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 {{if eq .GroupBy "none"}}bg-zinc-50 font-medium{{end}}">None</a>
+        <a href="?view=gantt&scale={{.Scale}}&group=project" class="block px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 {{if eq .GroupBy "project"}}bg-zinc-50 font-medium{{end}}">Project</a>
+        <a href="?view=gantt&scale={{.Scale}}&group=column" class="block px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 {{if eq .GroupBy "column"}}bg-zinc-50 font-medium{{end}}">Status</a>
+      </div>
+    </div>
+    <a href="?view=gantt&scale={{.Scale}}&group={{.GroupBy}}" class="px-3 py-1.5 text-sm font-medium text-zinc-700 bg-white border border-zinc-200 rounded-md hover:bg-zinc-50 transition-colors">Today</a>
   </div>
 </div>
 
-<div class="flex bg-white rounded-lg shadow-sm border border-zinc-200 overflow-hidden" style="--timeline-days: {{.TimelineDays}};">
-  <!-- Sidebar -->
-  <div class="w-64 flex-shrink-0 border-r border-zinc-200">
-    <div class="px-4 py-3 bg-zinc-50 border-b border-zinc-200 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-      Issue
-    </div>
-    <div class="overflow-auto" style="max-height: calc(100vh - 250px);">
+{{if .Groups}}
+<div class="bg-white rounded-lg shadow-sm border border-zinc-200 overflow-hidden">
+  <div class="flex">
+    <!-- Sidebar with issues -->
+    <div class="w-64 flex-shrink-0 border-r border-zinc-200">
+      <div class="px-4 py-3 bg-zinc-50 border-b border-zinc-200 text-xs font-semibold uppercase tracking-wide text-zinc-500 h-10 flex items-center">
+        Issue
+      </div>
       {{range .Groups}}
       {{if .Name}}
-      <div class="flex items-center justify-between px-4 py-2 bg-zinc-50 border-b border-zinc-100">
+      <div class="flex items-center justify-between px-4 py-2 bg-zinc-50 border-b border-zinc-100 h-10">
         <span class="text-sm font-medium text-zinc-700">{{.Name}}</span>
         <span class="text-xs text-zinc-400">{{len .Issues}}</span>
       </div>
       {{end}}
       {{range .Issues}}
-      <a href="/w/{{$.Workspace.Slug}}/issue/{{.Key}}" class="flex items-center gap-2 px-4 py-2 text-sm border-b border-zinc-100 hover:bg-zinc-50 transition-colors" data-issue-key="{{.Key}}">
+      <a href="/w/{{$.Workspace.Slug}}/issue/{{.Key}}" class="flex items-center gap-2 px-4 py-2.5 h-10 text-sm border-b border-zinc-100 hover:bg-zinc-50 transition-colors gantt-sidebar-row" data-issue-key="{{.Key}}">
         <span class="text-xs font-semibold text-zinc-400 font-mono">{{.Key}}</span>
         <span class="text-zinc-900 truncate">{{.Title}}</span>
       </a>
       {{end}}
       {{end}}
     </div>
-  </div>
 
-  <!-- Timeline -->
-  <div class="flex-1 overflow-auto">
-    <div class="relative min-w-max">
-      <!-- Header with dates -->
-      <div class="sticky top-0 z-10 flex h-10 bg-zinc-50 border-b border-zinc-200">
-        {{range .HeaderDates}}
-        <div class="absolute flex items-center justify-center px-2 text-xs font-medium {{if .IsToday}}text-indigo-600{{else if .IsWeekend}}text-zinc-400{{else}}text-zinc-500{{end}}" style="left: {{printf "%.2f" .Offset}}%;">
-          {{.Label}}
+    <!-- Timeline -->
+    <div class="flex-1 overflow-x-auto">
+      <div class="relative" style="min-width: max-content;">
+        <!-- Header with dates -->
+        <div class="flex h-10 bg-zinc-50 border-b border-zinc-200">
+          {{range .HeaderDates}}
+          <div class="flex items-center justify-center px-2 text-xs font-medium whitespace-nowrap min-w-16 {{if .IsToday}}text-zinc-900 font-semibold{{else if .IsWeekend}}text-zinc-400{{else}}text-zinc-500{{end}}">
+            {{.Label}}
+          </div>
+          {{end}}
         </div>
-        {{end}}
-      </div>
 
-      <!-- Rows -->
-      <div class="relative">
-        <!-- Today line -->
-        <div class="absolute top-0 bottom-0 w-0.5 bg-indigo-500 z-10" style="left: {{printf "%.2f" .TodayOffset}}%;"></div>
+        <!-- Rows -->
+        <div class="relative">
+          <!-- Today line -->
+          <div class="absolute top-0 bottom-0 w-0.5 bg-zinc-400 z-10" style="left: {{printf "%.2f" .TodayOffset}}%;"></div>
 
-        {{range .Groups}}
-        {{if .Name}}
-        <div class="h-10 bg-zinc-50 border-b border-zinc-100"></div>
-        {{end}}
-        {{range .Issues}}
-        <div class="relative h-10 border-b border-zinc-100">
-          <a href="/w/{{$.Workspace.Slug}}/issue/{{.Key}}"
-             class="absolute top-1.5 h-7 rounded px-2 flex items-center text-xs font-medium text-white truncate transition-colors {{if not .HasExplicitDates}}bg-zinc-300 hover:bg-zinc-400{{else}}bg-indigo-500 hover:bg-indigo-600{{end}}"
-             style="left: {{printf "%.2f" .LeftOffset}}%; width: {{printf "%.2f" .Width}}%;"
-             data-issue-key="{{.Key}}"
-             title="{{.Title}}">
-            {{.Title}}
-          </a>
+          {{range .Groups}}
+          {{if .Name}}
+          <div class="h-10 bg-zinc-50 border-b border-zinc-100"></div>
+          {{end}}
+          {{range .Issues}}
+          <div class="relative h-10 border-b border-zinc-100 gantt-row" data-issue-key="{{.Key}}">
+            <a href="/w/{{$.Workspace.Slug}}/issue/{{.Key}}"
+               class="absolute top-1.5 h-7 rounded px-2 flex items-center text-xs font-medium text-white truncate transition-colors {{if not .HasExplicitDates}}bg-zinc-400 hover:bg-zinc-500{{else}}bg-zinc-700 hover:bg-zinc-800{{end}}"
+               style="left: {{printf "%.2f" .LeftOffset}}%; width: {{printf "%.2f" .Width}}%;"
+               data-issue-key="{{.Key}}"
+               title="{{.Title}}">
+              {{.Title}}
+            </a>
+          </div>
+          {{end}}
+          {{end}}
         </div>
-        {{end}}
-        {{end}}
       </div>
     </div>
   </div>
 </div>
-
-<!-- Create Issue Modal -->
-<div id="create-issue-modal" class="fixed inset-0 z-50 hidden">
-  <div class="fixed inset-0 bg-black/50" data-close="create-issue-modal"></div>
-  <div class="fixed inset-0 flex items-center justify-center p-4">
-    <div class="relative w-full max-w-lg bg-white rounded-xl shadow-xl">
-      <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
-        <h2 class="text-lg font-semibold text-zinc-900">Create Issue</h2>
-        <button class="text-zinc-400 hover:text-zinc-600 text-2xl transition-colors" data-close="create-issue-modal">&times;</button>
-      </div>
-      <form id="create-issue-form" class="px-6 py-4 space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-zinc-700 mb-1" for="issue-title">Title</label>
-          <input type="text" id="issue-title" name="title" class="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent" placeholder="Issue title" required>
-        </div>
-        {{if .Projects}}
-        <div>
-          <label class="block text-sm font-medium text-zinc-700 mb-1" for="issue-project">Project</label>
-          <select id="issue-project" name="project_id" class="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
-            {{range .Projects}}
-            <option value="{{.ID}}">{{.Name}}</option>
-            {{end}}
-          </select>
-        </div>
-        {{end}}
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-medium text-zinc-700 mb-1" for="issue-start-date">Start Date</label>
-            <input type="date" id="issue-start-date" name="start_date" class="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-zinc-700 mb-1" for="issue-end-date">End Date</label>
-            <input type="date" id="issue-end-date" name="end_date" class="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
-          </div>
-        </div>
-      </form>
-      <div class="flex items-center justify-end gap-2 px-6 py-4 bg-zinc-50 rounded-b-xl border-t border-zinc-100">
-        <button type="button" class="px-4 py-2 text-sm font-medium text-zinc-700 bg-white border border-zinc-200 rounded-md hover:bg-zinc-50 transition-colors" data-close="create-issue-modal">Cancel</button>
-        <button type="submit" form="create-issue-form" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 transition-colors">Create Issue</button>
-      </div>
-    </div>
-  </div>
+{{else}}
+<div class="flex flex-col items-center justify-center py-16 px-8 text-center bg-white rounded-lg shadow-sm border border-zinc-200">
+  <svg class="w-12 h-12 mb-5 text-zinc-300" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 3v18h18"/>
+    <rect x="7" y="6" width="10" height="3"/>
+    <rect x="5" y="12" width="8" height="3"/>
+    <rect x="9" y="18" width="6" height="3"/>
+  </svg>
+  <div class="text-base font-semibold mb-2 text-zinc-900">No issues to display</div>
+  <div class="text-sm text-zinc-500 max-w-xs">Create issues with start and end dates to see them on the timeline</div>
 </div>
+{{end}}
 
 <script>
-document.getElementById('create-issue-form').addEventListener('submit', async function(e) {
-  e.preventDefault();
-  const form = e.target;
-  const projectId = form.querySelector('[name="project_id"]')?.value || '{{.DefaultProjectID}}';
-  const title = form.querySelector('[name="title"]').value;
-  const startDate = form.querySelector('[name="start_date"]').value;
-  const endDate = form.querySelector('[name="end_date"]').value;
-
-  try {
-    const body = { title };
-    if (startDate) {
-      body.start_date = new Date(startDate).toISOString();
-    }
-    if (endDate) {
-      body.end_date = new Date(endDate).toISOString();
-    }
-
-    const res = await fetch(`/api/v1/projects/${projectId}/issues`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-
-    if (res.ok) {
-      window.location.reload();
-    } else {
-      const data = await res.json();
-      alert(data.error || 'Failed to create issue');
-    }
-  } catch (err) {
-    console.error('Error creating issue:', err);
-    alert('Failed to create issue');
-  }
+// Highlight corresponding rows on hover
+document.querySelectorAll('.gantt-row').forEach(row => {
+  row.addEventListener('mouseenter', () => {
+    const key = row.dataset.issueKey;
+    const sidebarRow = document.querySelector(`.gantt-sidebar-row[data-issue-key="${key}"]`);
+    if (sidebarRow) sidebarRow.classList.add('bg-zinc-100');
+    row.classList.add('bg-zinc-50');
+  });
+  row.addEventListener('mouseleave', () => {
+    const key = row.dataset.issueKey;
+    const sidebarRow = document.querySelector(`.gantt-sidebar-row[data-issue-key="${key}"]`);
+    if (sidebarRow) sidebarRow.classList.remove('bg-zinc-100');
+    row.classList.remove('bg-zinc-50');
+  });
 });
 
-// Sync sidebar and timeline scroll
-const timeline = document.querySelector('.flex-1.overflow-auto');
-const sidebar = document.querySelector('.w-64 .overflow-auto');
-if (timeline && sidebar) {
-  timeline.addEventListener('scroll', function() {
-    sidebar.scrollTop = this.scrollTop;
+document.querySelectorAll('.gantt-sidebar-row').forEach(row => {
+  row.addEventListener('mouseenter', () => {
+    const key = row.dataset.issueKey;
+    const ganttRow = document.querySelector(`.gantt-row[data-issue-key="${key}"]`);
+    if (ganttRow) ganttRow.classList.add('bg-zinc-50');
+    row.classList.add('bg-zinc-100');
   });
-  sidebar.addEventListener('scroll', function() {
-    timeline.scrollTop = this.scrollTop;
+  row.addEventListener('mouseleave', () => {
+    const key = row.dataset.issueKey;
+    const ganttRow = document.querySelector(`.gantt-row[data-issue-key="${key}"]`);
+    if (ganttRow) ganttRow.classList.remove('bg-zinc-50');
+    row.classList.remove('bg-zinc-100');
   });
-}
+});
 </script>
 {{end}}
