@@ -1,0 +1,344 @@
+{{define "content"}}
+<style>
+  .boards-page {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 40px 16px;
+  }
+
+  .boards-section {
+    margin-bottom: 32px;
+  }
+
+  .boards-section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    color: var(--trello-neutral-800);
+    font-weight: 700;
+  }
+
+  .boards-section-header svg {
+    width: 24px;
+    height: 24px;
+    fill: currentColor;
+  }
+
+  .boards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(194px, 1fr));
+    gap: 16px;
+  }
+
+  .board-tile {
+    position: relative;
+    height: 96px;
+    border-radius: 3px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    text-decoration: none;
+    color: white;
+    font-weight: 700;
+    font-size: 16px;
+    transition: filter 0.1s;
+    overflow: hidden;
+  }
+
+  .board-tile:hover {
+    filter: brightness(0.9);
+  }
+
+  .board-tile-title {
+    position: relative;
+    z-index: 1;
+    word-break: break-word;
+    line-height: 1.3;
+  }
+
+  .board-tile-bg {
+    position: absolute;
+    inset: 0;
+  }
+
+  .create-board-tile {
+    background: rgba(9, 30, 66, 0.04);
+    color: var(--trello-neutral-800);
+    font-weight: 400;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border: none;
+    font-size: 14px;
+  }
+
+  .create-board-tile:hover {
+    background: rgba(9, 30, 66, 0.08);
+    filter: none;
+  }
+
+  /* Board colors */
+  .bg-blue { background: #0079bf; }
+  .bg-orange { background: #d29034; }
+  .bg-green { background: #519839; }
+  .bg-red { background: #b04632; }
+  .bg-purple { background: #89609e; }
+  .bg-pink { background: #cd5a91; }
+  .bg-lime { background: #4bbf6b; }
+  .bg-sky { background: #00c2e0; }
+  .bg-gray { background: #838c91; }
+
+  .workspace-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 32px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--trello-neutral-40);
+  }
+
+  .workspace-avatar {
+    width: 60px;
+    height: 60px;
+    border-radius: 3px;
+    background: linear-gradient(180deg, #0079bf 0%, #055a8c 100%);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    font-weight: 700;
+  }
+
+  .workspace-info h1 {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--trello-neutral-800);
+    margin-bottom: 4px;
+  }
+
+  .workspace-info p {
+    color: var(--trello-neutral-500);
+    font-size: 14px;
+  }
+
+  /* Create Board Modal */
+  .create-board-modal .modal {
+    max-width: 400px;
+    padding: 24px;
+    background: var(--trello-neutral-0);
+  }
+
+  .create-board-modal h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: var(--trello-neutral-800);
+  }
+
+  .form-group {
+    margin-bottom: 16px;
+  }
+
+  .form-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--trello-neutral-500);
+    margin-bottom: 4px;
+  }
+
+  .form-input {
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 14px;
+    border: 2px solid var(--trello-neutral-40);
+    border-radius: 3px;
+    background: var(--trello-neutral-20);
+    color: var(--trello-neutral-800);
+    transition: border-color 0.2s, background 0.2s;
+  }
+
+  .form-input:focus {
+    outline: none;
+    border-color: var(--trello-blue-500);
+    background: var(--trello-neutral-0);
+  }
+
+  .form-select {
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 14px;
+    border: 2px solid var(--trello-neutral-40);
+    border-radius: 3px;
+    background: var(--trello-neutral-20);
+    color: var(--trello-neutral-800);
+    cursor: pointer;
+  }
+
+  .color-picker {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .color-option {
+    width: 40px;
+    height: 32px;
+    border-radius: 3px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: border-color 0.1s;
+  }
+
+  .color-option:hover {
+    border-color: var(--trello-neutral-800);
+  }
+
+  .color-option.selected {
+    border-color: var(--trello-neutral-800);
+  }
+</style>
+
+<div class="boards-page">
+  <div class="workspace-header">
+    <div class="workspace-avatar">
+      {{if .Workspace}}{{slice .Workspace.Name 0 1}}{{end}}
+    </div>
+    <div class="workspace-info">
+      <h1>{{if .Workspace}}{{.Workspace.Name}}{{end}}</h1>
+      <p>{{if .Teams}}{{len .Teams}} team{{if gt (len .Teams) 1}}s{{end}}{{end}}</p>
+    </div>
+  </div>
+
+  {{if .Recent}}
+  <section class="boards-section">
+    <div class="boards-section-header">
+      <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
+      Recently viewed
+    </div>
+    <div class="boards-grid">
+      {{range .Recent}}
+      <a href="/t/{{$.Workspace.Slug}}/b/{{.ID}}" class="board-tile bg-blue">
+        <span class="board-tile-title">{{.Name}}</span>
+      </a>
+      {{end}}
+    </div>
+  </section>
+  {{end}}
+
+  <section class="boards-section">
+    <div class="boards-section-header">
+      <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+      Your boards
+    </div>
+    <div class="boards-grid">
+      {{range $i, $p := .All}}
+      <a href="/t/{{$.Workspace.Slug}}/b/{{$p.ID}}" class="board-tile bg-{{if eq (mod $i 9) 0}}blue{{else if eq (mod $i 9) 1}}orange{{else if eq (mod $i 9) 2}}green{{else if eq (mod $i 9) 3}}red{{else if eq (mod $i 9) 4}}purple{{else if eq (mod $i 9) 5}}pink{{else if eq (mod $i 9) 6}}lime{{else if eq (mod $i 9) 7}}sky{{else}}gray{{end}}">
+        <span class="board-tile-title">{{$p.Name}}</span>
+      </a>
+      {{end}}
+      <button class="board-tile create-board-tile" id="create-board-tile">
+        Create new board
+      </button>
+    </div>
+  </section>
+</div>
+
+<!-- Create Board Modal -->
+<div class="modal-overlay create-board-modal" id="create-board-modal">
+  <div class="modal">
+    <button class="modal-close" data-close="create-board-modal">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+    </button>
+    <h2>Create board</h2>
+    <form id="create-board-form">
+      <div class="form-group">
+        <label class="form-label">Background</label>
+        <div class="color-picker">
+          <div class="color-option selected bg-blue" data-color="blue"></div>
+          <div class="color-option bg-orange" data-color="orange"></div>
+          <div class="color-option bg-green" data-color="green"></div>
+          <div class="color-option bg-red" data-color="red"></div>
+          <div class="color-option bg-purple" data-color="purple"></div>
+          <div class="color-option bg-pink" data-color="pink"></div>
+          <div class="color-option bg-lime" data-color="lime"></div>
+          <div class="color-option bg-sky" data-color="sky"></div>
+          <div class="color-option bg-gray" data-color="gray"></div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="board-name">Board title <span style="color: var(--trello-danger);">*</span></label>
+        <input type="text" id="board-name" name="name" class="form-input" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="board-team">Team</label>
+        <select id="board-team" name="team_id" class="form-select">
+          {{range .Teams}}
+          <option value="{{.ID}}">{{.Name}}</option>
+          {{end}}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width: 100%;">Create</button>
+    </form>
+  </div>
+</div>
+
+<script>
+  // Create board modal
+  const createModal = document.getElementById('create-board-modal');
+  document.getElementById('create-board-tile').addEventListener('click', () => {
+    createModal.classList.add('is-open');
+  });
+  document.getElementById('create-board-btn').addEventListener('click', () => {
+    createModal.classList.add('is-open');
+  });
+  document.querySelectorAll('[data-close="create-board-modal"]').forEach(el => {
+    el.addEventListener('click', () => {
+      createModal.classList.remove('is-open');
+    });
+  });
+  createModal.addEventListener('click', (e) => {
+    if (e.target === createModal) {
+      createModal.classList.remove('is-open');
+    }
+  });
+
+  // Color picker
+  document.querySelectorAll('.color-option').forEach(el => {
+    el.addEventListener('click', () => {
+      document.querySelectorAll('.color-option').forEach(o => o.classList.remove('selected'));
+      el.classList.add('selected');
+    });
+  });
+
+  // Create board form
+  document.getElementById('create-board-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const name = form.name.value;
+    const teamId = form.team_id.value;
+
+    // Generate key from name
+    const key = name.toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 4);
+
+    try {
+      const res = await fetch('/api/v1/teams/' + teamId + '/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, key })
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        window.location.href = '/t/{{.Workspace.Slug}}/b/' + data.data.id;
+      } else {
+        alert(data.error || 'Failed to create board');
+      }
+    } catch (err) {
+      alert('Failed to create board: ' + err.message);
+    }
+  });
+</script>
+{{end}}

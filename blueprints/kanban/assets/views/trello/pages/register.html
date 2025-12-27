@@ -1,0 +1,60 @@
+{{define "content"}}
+<div class="auth-card">
+  <h1 class="auth-title">Create a Kanban Account</h1>
+
+  {{if .Error}}
+  <div class="error-message">{{.Error}}</div>
+  {{end}}
+
+  <form class="auth-form" id="register-form">
+    <div class="form-group">
+      <label class="form-label" for="name">Full Name</label>
+      <input type="text" id="name" name="name" class="form-input" placeholder="Enter your full name" required>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="email">Email</label>
+      <input type="email" id="email" name="email" class="form-input" placeholder="Enter your email" required>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="password">Password</label>
+      <input type="password" id="password" name="password" class="form-input" placeholder="Create a password" required minlength="6">
+    </div>
+
+    <button type="submit" class="btn btn-primary btn-full">Create Account</button>
+  </form>
+
+  <div class="auth-divider">OR</div>
+
+  <div class="auth-link">
+    <a href="/t/login">Already have an account? Log in</a>
+  </div>
+</div>
+
+<script>
+document.getElementById('register-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const form = e.target;
+  const displayName = form.name.value;
+  const email = form.email.value;
+  const password = form.password.value;
+
+  try {
+    const res = await fetch('/api/v1/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_name: displayName, email, password })
+    });
+    const data = await res.json();
+    if (data.success) {
+      window.location.href = '/t/';
+    } else {
+      alert(data.error || 'Registration failed');
+    }
+  } catch (err) {
+    alert('Registration failed: ' + err.message);
+  }
+});
+</script>
+{{end}}

@@ -1,0 +1,741 @@
+{{define "content"}}
+<style>
+  .board-wrapper {
+    position: fixed;
+    top: var(--header-height);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    background: #0079bf;
+  }
+
+  .board-header {
+    height: var(--board-header-height);
+    background: rgba(0, 0, 0, 0.15);
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    gap: 4px;
+  }
+
+  .board-header-left {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+  }
+
+  .board-header-right {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .board-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: white;
+    padding: 4px 8px;
+    background: transparent;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .board-title:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  .board-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    font-size: 14px;
+    font-weight: 400;
+    color: white;
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+
+  .board-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+
+  .board-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+  }
+
+  .board-members {
+    display: flex;
+    align-items: center;
+    margin-left: 8px;
+  }
+
+  .board-member {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #dfe1e6;
+    color: var(--trello-neutral-800);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    margin-left: -4px;
+    border: 2px solid transparent;
+    cursor: pointer;
+  }
+
+  .board-member:first-child {
+    margin-left: 0;
+  }
+
+  .board-member:hover {
+    border-color: white;
+    z-index: 1;
+  }
+
+  /* Board canvas - lists container */
+  .board-canvas {
+    flex: 1;
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 8px 4px 8px 8px;
+    gap: 8px;
+  }
+
+  /* List */
+  .list {
+    width: var(--list-width);
+    min-width: var(--list-width);
+    max-height: 100%;
+    background: var(--trello-neutral-30);
+    border-radius: var(--list-border-radius);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .list-header {
+    padding: 8px;
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .list-title {
+    flex: 1;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--trello-neutral-800);
+    padding: 4px 8px;
+    background: transparent;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    word-break: break-word;
+  }
+
+  .list-title:hover {
+    background: rgba(9, 30, 66, 0.08);
+  }
+
+  .list-menu-btn {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    color: var(--trello-neutral-500);
+  }
+
+  .list-menu-btn:hover {
+    background: rgba(9, 30, 66, 0.08);
+    color: var(--trello-neutral-800);
+  }
+
+  .list-menu-btn svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+  }
+
+  .list-cards {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0 4px;
+    min-height: 1px;
+  }
+
+  .list-footer {
+    padding: 4px 8px 8px;
+  }
+
+  .add-card-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    padding: 8px;
+    font-size: 14px;
+    color: var(--trello-neutral-500);
+    background: transparent;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .add-card-btn:hover {
+    background: rgba(9, 30, 66, 0.08);
+    color: var(--trello-neutral-800);
+  }
+
+  .add-card-btn svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+  }
+
+  /* Card */
+  .card {
+    background: var(--trello-neutral-0);
+    border-radius: var(--card-border-radius);
+    box-shadow: var(--card-shadow);
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+
+  .card:hover {
+    background: var(--trello-neutral-20);
+  }
+
+  .card-labels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 4px 8px 0;
+  }
+
+  .card-label {
+    width: 40px;
+    height: 8px;
+    border-radius: 4px;
+  }
+
+  .card-label-green { background: #61bd4f; }
+  .card-label-yellow { background: #f2d600; }
+  .card-label-orange { background: #ff9f1a; }
+  .card-label-red { background: #eb5a46; }
+  .card-label-purple { background: #c377e0; }
+  .card-label-blue { background: #0079bf; }
+  .card-label-sky { background: #00c2e0; }
+  .card-label-lime { background: #51e898; }
+  .card-label-pink { background: #ff78cb; }
+  .card-label-black { background: #344563; }
+
+  .card-title {
+    padding: 6px 8px 2px;
+    font-size: 14px;
+    color: var(--trello-neutral-800);
+    word-break: break-word;
+  }
+
+  .card-badges {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px 6px;
+  }
+
+  .card-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px 4px;
+    font-size: 12px;
+    color: var(--trello-neutral-500);
+    border-radius: 3px;
+  }
+
+  .card-badge svg {
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+  }
+
+  .card-badge.is-due-soon {
+    background: #f2d600;
+    color: var(--trello-neutral-800);
+  }
+
+  .card-badge.is-overdue {
+    background: #eb5a46;
+    color: white;
+  }
+
+  .card-members {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0 8px 6px;
+    gap: 2px;
+  }
+
+  .card-member {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #dfe1e6;
+    color: var(--trello-neutral-800);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  /* Add list */
+  .add-list {
+    width: var(--list-width);
+    min-width: var(--list-width);
+  }
+
+  .add-list-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    padding: 12px;
+    font-size: 14px;
+    color: white;
+    background: rgba(255, 255, 255, 0.24);
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.1s;
+  }
+
+  .add-list-btn:hover {
+    background: rgba(255, 255, 255, 0.32);
+  }
+
+  .add-list-btn svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+  }
+
+  .add-list-form {
+    display: none;
+    background: var(--trello-neutral-30);
+    border-radius: 3px;
+    padding: 4px;
+  }
+
+  .add-list-form.is-open {
+    display: block;
+  }
+
+  .add-list-form input {
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 14px;
+    border: 2px solid var(--trello-blue-500);
+    border-radius: 3px;
+    margin-bottom: 8px;
+    background: var(--trello-neutral-0);
+  }
+
+  .add-list-form input:focus {
+    outline: none;
+  }
+
+  .add-list-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* Add card form */
+  .add-card-form {
+    display: none;
+    padding: 0 4px 8px;
+  }
+
+  .add-card-form.is-open {
+    display: block;
+  }
+
+  .add-card-form textarea {
+    width: 100%;
+    min-height: 54px;
+    padding: 8px 12px;
+    font-size: 14px;
+    font-family: var(--font-family);
+    border: none;
+    border-radius: 3px;
+    resize: none;
+    background: var(--trello-neutral-0);
+    box-shadow: var(--card-shadow);
+    margin-bottom: 8px;
+  }
+
+  .add-card-form textarea:focus {
+    outline: none;
+  }
+
+  .add-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* Card modal */
+  .card-modal .modal {
+    max-width: 768px;
+    background: var(--trello-neutral-20);
+  }
+
+  .card-modal-header {
+    padding: 16px 40px 8px 56px;
+    position: relative;
+  }
+
+  .card-modal-icon {
+    position: absolute;
+    left: 16px;
+    top: 16px;
+    width: 32px;
+    height: 32px;
+    color: var(--trello-neutral-500);
+  }
+
+  .card-modal-icon svg {
+    width: 24px;
+    height: 24px;
+    fill: currentColor;
+  }
+
+  .card-modal-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--trello-neutral-800);
+    width: 100%;
+    padding: 4px 8px;
+    border: none;
+    background: transparent;
+    border-radius: 3px;
+    margin: -4px -8px;
+  }
+
+  .card-modal-title:hover {
+    background: rgba(9, 30, 66, 0.04);
+  }
+
+  .card-modal-title:focus {
+    background: var(--trello-neutral-0);
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--trello-blue-500);
+  }
+
+  .card-modal-list {
+    font-size: 14px;
+    color: var(--trello-neutral-500);
+    margin-top: 4px;
+  }
+
+  .card-modal-list a {
+    color: var(--trello-neutral-800);
+    text-decoration: underline;
+  }
+
+  .card-modal-body {
+    display: flex;
+    gap: 16px;
+    padding: 0 8px 16px 8px;
+  }
+
+  .card-modal-main {
+    flex: 1;
+    min-width: 0;
+    padding-left: 48px;
+  }
+
+  .card-modal-sidebar {
+    width: 168px;
+    min-width: 168px;
+  }
+
+  .card-modal-section {
+    margin-bottom: 24px;
+  }
+
+  .card-modal-section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    color: var(--trello-neutral-800);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .card-modal-section-header svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+  }
+
+  .sidebar-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 6px 12px;
+    font-size: 14px;
+    color: var(--trello-neutral-800);
+    background: rgba(9, 30, 66, 0.04);
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    text-align: left;
+    margin-bottom: 8px;
+    transition: background 0.1s;
+  }
+
+  .sidebar-btn:hover {
+    background: rgba(9, 30, 66, 0.08);
+  }
+
+  .sidebar-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+  }
+</style>
+
+<div class="board-wrapper">
+  <div class="board-header">
+    <div class="board-header-left">
+      <h1 class="board-title">{{.Board.Name}}</h1>
+      <button class="board-btn">
+        <svg viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+      </button>
+      <div class="board-members">
+        {{range .Members}}
+        <div class="board-member" title="{{.DisplayName}}">{{slice .DisplayName 0 1}}</div>
+        {{end}}
+      </div>
+    </div>
+    <div class="board-header-right">
+      <button class="board-btn">
+        <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+        Filter
+      </button>
+      <button class="board-btn">
+        <svg viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+        Show menu
+      </button>
+    </div>
+  </div>
+
+  <div class="board-canvas" id="board-canvas">
+    {{range .Lists}}
+    <div class="list" data-list-id="{{.ID}}">
+      <div class="list-header">
+        <h2 class="list-title">{{.Name}}</h2>
+        <button class="list-menu-btn">
+          <svg viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+        </button>
+      </div>
+      <div class="list-cards" data-list-id="{{.ID}}">
+        {{range .Cards}}
+        <div class="card" data-card-id="{{.ID}}" data-card-key="{{.Key}}">
+          {{if .Labels}}
+          <div class="card-labels">
+            {{range .Labels}}
+            <div class="card-label card-label-{{.Color}}"></div>
+            {{end}}
+          </div>
+          {{end}}
+          <div class="card-title">{{.Title}}</div>
+          {{if or .HasDueDate .CommentCount}}
+          <div class="card-badges">
+            {{if .HasDueDate}}
+            <span class="card-badge {{if .IsOverdue}}is-overdue{{else if .IsDueSoon}}is-due-soon{{end}}">
+              <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
+              Due
+            </span>
+            {{end}}
+            {{if .CommentCount}}
+            <span class="card-badge">
+              <svg viewBox="0 0 24 24"><path d="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18z"/></svg>
+              {{.CommentCount}}
+            </span>
+            {{end}}
+          </div>
+          {{end}}
+          {{if .Members}}
+          <div class="card-members">
+            {{range .Members}}
+            <div class="card-member">{{slice .DisplayName 0 1}}</div>
+            {{end}}
+          </div>
+          {{end}}
+        </div>
+        {{end}}
+      </div>
+      <div class="add-card-form" data-list-id="{{.ID}}">
+        <textarea placeholder="Enter a title for this card..." rows="3"></textarea>
+        <div class="add-card-actions">
+          <button class="btn btn-primary add-card-submit">Add card</button>
+          <button class="btn btn-icon add-card-cancel">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="list-footer">
+        <button class="add-card-btn" data-list-id="{{.ID}}">
+          <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+          Add a card
+        </button>
+      </div>
+    </div>
+    {{end}}
+
+    <div class="add-list">
+      <button class="add-list-btn" id="add-list-btn">
+        <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+        Add another list
+      </button>
+      <div class="add-list-form" id="add-list-form">
+        <input type="text" placeholder="Enter list title..." id="list-name-input">
+        <div class="add-list-actions">
+          <button class="btn btn-primary" id="add-list-submit">Add list</button>
+          <button class="btn btn-icon" id="add-list-cancel">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const boardId = '{{.Board.ID}}';
+const workspaceSlug = '{{.Workspace.Slug}}';
+
+// Add list form toggle
+const addListBtn = document.getElementById('add-list-btn');
+const addListForm = document.getElementById('add-list-form');
+const addListCancel = document.getElementById('add-list-cancel');
+const listNameInput = document.getElementById('list-name-input');
+
+addListBtn.addEventListener('click', () => {
+  addListBtn.style.display = 'none';
+  addListForm.classList.add('is-open');
+  listNameInput.focus();
+});
+
+addListCancel.addEventListener('click', () => {
+  addListForm.classList.remove('is-open');
+  addListBtn.style.display = 'flex';
+  listNameInput.value = '';
+});
+
+// Add list submit
+document.getElementById('add-list-submit').addEventListener('click', async () => {
+  const name = listNameInput.value.trim();
+  if (!name) return;
+
+  try {
+    const res = await fetch('/api/v1/projects/' + boardId + '/columns', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+    const data = await res.json();
+    if (data.success) {
+      window.location.reload();
+    } else {
+      alert(data.error || 'Failed to create list');
+    }
+  } catch (err) {
+    alert('Failed to create list: ' + err.message);
+  }
+});
+
+// Add card form toggle
+document.querySelectorAll('.add-card-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const listId = btn.dataset.listId;
+    const form = document.querySelector(`.add-card-form[data-list-id="${listId}"]`);
+    const footer = btn.parentElement;
+    footer.style.display = 'none';
+    form.classList.add('is-open');
+    form.querySelector('textarea').focus();
+  });
+});
+
+document.querySelectorAll('.add-card-cancel').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const form = btn.closest('.add-card-form');
+    const listId = form.dataset.listId;
+    const footer = form.nextElementSibling;
+    form.classList.remove('is-open');
+    form.querySelector('textarea').value = '';
+    footer.style.display = 'block';
+  });
+});
+
+document.querySelectorAll('.add-card-submit').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const form = btn.closest('.add-card-form');
+    const listId = form.dataset.listId;
+    const title = form.querySelector('textarea').value.trim();
+    if (!title) return;
+
+    try {
+      const res = await fetch('/api/v1/projects/' + boardId + '/issues', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, column_id: listId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        window.location.reload();
+      } else {
+        alert(data.error || 'Failed to create card');
+      }
+    } catch (err) {
+      alert('Failed to create card: ' + err.message);
+    }
+  });
+});
+
+// Card click - open card detail
+document.querySelectorAll('.card').forEach(card => {
+  card.addEventListener('click', () => {
+    const cardKey = card.dataset.cardKey;
+    window.location.href = '/t/' + workspaceSlug + '/c/' + cardKey;
+  });
+});
+</script>
+{{end}}
