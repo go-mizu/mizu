@@ -30,7 +30,7 @@ var staticFS embed.FS
 var viewsFS embed.FS
 
 // Available themes
-var Themes = []string{"default"}
+var Themes = []string{"default", "trello"}
 
 // Static returns the static files filesystem.
 func Static() fs.FS {
@@ -88,6 +88,9 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 		},
 		"sub": func(a, b int) int {
 			return a - b
+		},
+		"mod": func(a, b int) int {
+			return a % b
 		},
 	}
 
@@ -159,6 +162,63 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 		}
 
 		templates[name] = tmpl
+	}
+
+	// Trello theme templates (if theme is trello or loading all)
+	if theme == "trello" {
+		// Trello auth layout
+		trelloAuthLayoutBytes, err := viewsFS.ReadFile("views/trello/layouts/auth.html")
+		if err == nil {
+			trelloAuthLayoutContent := string(trelloAuthLayoutBytes)
+
+			// Trello auth pages
+			trelloAuthPages := []string{"login", "register"}
+			for _, name := range trelloAuthPages {
+				pageBytes, err := viewsFS.ReadFile("views/trello/pages/" + name + ".html")
+				if err != nil {
+					continue
+				}
+
+				tmpl, err := template.New("trello-" + name).Funcs(funcMap).Parse(trelloAuthLayoutContent)
+				if err != nil {
+					return nil, err
+				}
+
+				tmpl, err = tmpl.Parse(string(pageBytes))
+				if err != nil {
+					return nil, err
+				}
+
+				templates["trello-"+name] = tmpl
+			}
+		}
+
+		// Trello main layout
+		trelloLayoutBytes, err := viewsFS.ReadFile("views/trello/layouts/default.html")
+		if err == nil {
+			trelloLayoutContent := string(trelloLayoutBytes)
+
+			// Trello main pages
+			trelloMainPages := []string{"boards", "board", "card"}
+			for _, name := range trelloMainPages {
+				pageBytes, err := viewsFS.ReadFile("views/trello/pages/" + name + ".html")
+				if err != nil {
+					continue
+				}
+
+				tmpl, err := template.New("trello-" + name).Funcs(funcMap).Parse(trelloLayoutContent)
+				if err != nil {
+					return nil, err
+				}
+
+				tmpl, err = tmpl.Parse(string(pageBytes))
+				if err != nil {
+					return nil, err
+				}
+
+				templates["trello-"+name] = tmpl
+			}
+		}
 	}
 
 	return templates, nil

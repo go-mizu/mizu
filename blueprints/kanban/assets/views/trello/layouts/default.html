@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{.Title}}</title>
+  <style>
+    :root {
+      --trello-blue-100: #e4f0f6;
+      --trello-blue-200: #bcd9ea;
+      --trello-blue-300: #8bbdd9;
+      --trello-blue-400: #5ba4cf;
+      --trello-blue-500: #0079bf;
+      --trello-blue-600: #026aa7;
+      --trello-blue-700: #055a8c;
+      --trello-neutral-0: #ffffff;
+      --trello-neutral-10: #fafbfc;
+      --trello-neutral-20: #f4f5f7;
+      --trello-neutral-30: #ebecf0;
+      --trello-neutral-40: #dfe1e6;
+      --trello-neutral-100: #c1c7d0;
+      --trello-neutral-200: #a5adba;
+      --trello-neutral-500: #5e6c84;
+      --trello-neutral-800: #172b4d;
+      --trello-success: #61bd4f;
+      --trello-warning: #f2d600;
+      --trello-danger: #eb5a46;
+      --header-height: 44px;
+      --board-header-height: 52px;
+      --list-width: 272px;
+      --card-border-radius: 3px;
+      --list-border-radius: 3px;
+      --card-shadow: 0 1px 0 rgba(9,30,66,.25);
+      --popup-shadow: 0 8px 16px -4px rgba(9,30,66,.25), 0 0 0 1px rgba(9,30,66,.08);
+      --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans', Ubuntu, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-family);
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--trello-neutral-800);
+      background: var(--trello-neutral-20);
+      min-height: 100vh;
+    }
+
+    /* Header */
+    .header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: var(--header-height);
+      background: rgba(0, 0, 0, 0.32);
+      backdrop-filter: blur(6px);
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      z-index: 100;
+    }
+
+    .header-left, .header-center, .header-right {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .header-left {
+      flex: 1;
+    }
+
+    .header-center {
+      flex: 0 0 auto;
+    }
+
+    .header-right {
+      flex: 1;
+      justify-content: flex-end;
+    }
+
+    .header-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      border: none;
+      border-radius: 3px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.1s;
+      text-decoration: none;
+    }
+
+    .header-btn:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .header-btn-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+    }
+
+    .header-btn svg {
+      width: 16px;
+      height: 16px;
+      fill: currentColor;
+    }
+
+    .header-logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 8px;
+      color: white;
+      text-decoration: none;
+    }
+
+    .header-logo svg {
+      width: 24px;
+      height: 24px;
+    }
+
+    .header-logo-text {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .header-search {
+      display: flex;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+      padding: 6px 10px;
+      width: 200px;
+      transition: width 0.2s, background 0.1s;
+    }
+
+    .header-search:focus-within {
+      background: var(--trello-neutral-0);
+      width: 400px;
+    }
+
+    .header-search input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      font-size: 14px;
+      color: white;
+      outline: none;
+    }
+
+    .header-search:focus-within input {
+      color: var(--trello-neutral-800);
+    }
+
+    .header-search input::placeholder {
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .header-search:focus-within input::placeholder {
+      color: var(--trello-neutral-500);
+    }
+
+    .header-search svg {
+      width: 16px;
+      height: 16px;
+      fill: rgba(255, 255, 255, 0.7);
+      margin-right: 8px;
+    }
+
+    .header-search:focus-within svg {
+      fill: var(--trello-neutral-500);
+    }
+
+    .user-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--trello-blue-600);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    /* Main content */
+    .main-content {
+      padding-top: var(--header-height);
+      min-height: 100vh;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 6px 12px;
+      font-size: 14px;
+      font-weight: 400;
+      font-family: var(--font-family);
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: background 0.1s, filter 0.1s;
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      background: var(--trello-blue-500);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--trello-blue-600);
+    }
+
+    .btn-secondary {
+      background: rgba(9, 30, 66, 0.04);
+      color: var(--trello-neutral-800);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(9, 30, 66, 0.08);
+    }
+
+    .btn-icon {
+      padding: 6px;
+    }
+
+    .btn svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    /* Dropdowns */
+    .dropdown {
+      position: relative;
+    }
+
+    .dropdown-menu {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      background: var(--trello-neutral-0);
+      border-radius: 3px;
+      box-shadow: var(--popup-shadow);
+      min-width: 200px;
+      padding: 8px 0;
+      z-index: 200;
+    }
+
+    .dropdown-menu.is-open {
+      display: block;
+    }
+
+    .dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      color: var(--trello-neutral-800);
+      font-size: 14px;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .dropdown-item:hover {
+      background: rgba(9, 30, 66, 0.04);
+    }
+
+    .dropdown-divider {
+      height: 1px;
+      background: var(--trello-neutral-30);
+      margin: 8px 0;
+    }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.64);
+      z-index: 300;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 48px 8px;
+      overflow-y: auto;
+    }
+
+    .modal-overlay.is-open {
+      display: flex;
+    }
+
+    .modal {
+      background: var(--trello-neutral-20);
+      border-radius: 3px;
+      width: 100%;
+      max-width: 768px;
+      position: relative;
+    }
+
+    .modal-close {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: none;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      color: var(--trello-neutral-500);
+    }
+
+    .modal-close:hover {
+      background: rgba(9, 30, 66, 0.08);
+      color: var(--trello-neutral-800);
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: rgba(9, 30, 66, 0.08);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(9, 30, 66, 0.24);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(9, 30, 66, 0.36);
+    }
+
+    /* Workspace dropdown */
+    .workspace-dropdown {
+      position: relative;
+    }
+
+    .workspace-dropdown .dropdown-menu {
+      left: 0;
+      margin-top: 4px;
+    }
+
+    /* User dropdown */
+    .user-dropdown {
+      position: relative;
+    }
+
+    .user-dropdown .dropdown-menu {
+      right: 0;
+      left: auto;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-left">
+      <a href="/t/" class="header-logo">
+        <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="32" height="32" rx="4" fill="currentColor"/>
+          <rect x="4" y="4" width="10" height="20" rx="1.5" fill="#0079bf"/>
+          <rect x="18" y="4" width="10" height="12" rx="1.5" fill="#0079bf"/>
+        </svg>
+        <span class="header-logo-text">Kanban</span>
+      </a>
+
+      <div class="workspace-dropdown dropdown">
+        <button class="header-btn" id="workspace-trigger">
+          Workspaces
+          <svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5H7z"/></svg>
+        </button>
+        <div class="dropdown-menu" id="workspace-menu">
+          {{range .Workspaces}}
+          <a href="/t/{{.Slug}}" class="dropdown-item">{{.Name}}</a>
+          {{end}}
+        </div>
+      </div>
+
+      <button class="header-btn">
+        Recent
+        <svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5H7z"/></svg>
+      </button>
+
+      <button class="header-btn btn-primary" id="create-board-btn">Create</button>
+    </div>
+
+    <div class="header-center">
+      <div class="header-search">
+        <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 001.48-5.34c-.47-2.78-2.79-5-5.59-5.34a6.505 6.505 0 00-7.27 7.27c.34 2.8 2.56 5.12 5.34 5.59a6.5 6.5 0 005.34-1.48l.27.28v.79l4.25 4.25c.41.41 1.08.41 1.49 0 .41-.41.41-1.08 0-1.49L15.5 14zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+        <input type="text" placeholder="Search">
+      </div>
+    </div>
+
+    <div class="header-right">
+      <button class="header-btn header-btn-icon" title="Notifications">
+        <svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+      </button>
+
+      <div class="user-dropdown dropdown">
+        <div class="user-avatar" id="user-trigger">{{if .User}}{{slice .User.DisplayName 0 1}}{{end}}</div>
+        <div class="dropdown-menu" id="user-menu">
+          <div style="padding: 8px 12px; border-bottom: 1px solid var(--trello-neutral-30);">
+            <div style="font-weight: 700;">{{if .User}}{{.User.DisplayName}}{{end}}</div>
+            <div style="font-size: 12px; color: var(--trello-neutral-500);">{{if .User}}{{.User.Email}}{{end}}</div>
+          </div>
+          <a href="#" class="dropdown-item" data-action="logout">Log out</a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-content">
+    {{template "content" .}}
+  </main>
+
+  <script>
+    // Dropdown toggle
+    document.querySelectorAll('.dropdown').forEach(dropdown => {
+      const trigger = dropdown.querySelector('[id$="-trigger"]');
+      const menu = dropdown.querySelector('.dropdown-menu');
+      if (trigger && menu) {
+        trigger.addEventListener('click', (e) => {
+          e.stopPropagation();
+          document.querySelectorAll('.dropdown-menu.is-open').forEach(m => {
+            if (m !== menu) m.classList.remove('is-open');
+          });
+          menu.classList.toggle('is-open');
+        });
+      }
+    });
+
+    // Close dropdowns on outside click
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.dropdown-menu.is-open').forEach(m => {
+        m.classList.remove('is-open');
+      });
+    });
+
+    // Logout
+    document.querySelectorAll('[data-action="logout"]').forEach(el => {
+      el.addEventListener('click', async (e) => {
+        e.preventDefault();
+        await fetch('/api/v1/auth/logout', { method: 'POST' });
+        window.location.href = '/t/login';
+      });
+    });
+  </script>
+</body>
+</html>
+
+{{define "content"}}{{end}}

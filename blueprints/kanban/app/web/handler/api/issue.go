@@ -1,4 +1,4 @@
-package handler
+package api
 
 import (
 	"github.com/go-mizu/mizu"
@@ -76,7 +76,7 @@ func (h *Issue) Create(c *mizu.Ctx) error {
 	issue, err := h.issues.Create(c.Context(), projectID, userID, &in)
 	if err != nil {
 		c.Logger().Error("failed to create issue", "projectID", projectID, "userID", userID, "title", in.Title, "error", err)
-		return InternalError(c, "failed to create issue: " + err.Error())
+		return InternalError(c, "failed to create issue: "+err.Error())
 	}
 
 	return Created(c, issue)

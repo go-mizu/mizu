@@ -14,6 +14,7 @@ import (
 	"github.com/go-mizu/mizu"
 
 	"github.com/go-mizu/blueprints/kanban/app/web/handler"
+	"github.com/go-mizu/blueprints/kanban/app/web/handler/api"
 	"github.com/go-mizu/blueprints/kanban/assets"
 	"github.com/go-mizu/blueprints/kanban/feature/assignees"
 	"github.com/go-mizu/blueprints/kanban/feature/columns"
@@ -56,18 +57,19 @@ type Server struct {
 	assignees  assignees.API
 
 	// Handlers
-	authHandlers      *handler.Auth
-	workspaceHandlers *handler.Workspace
-	teamHandlers      *handler.Team
-	projectHandlers   *handler.Project
-	columnHandlers    *handler.Column
-	issueHandlers     *handler.Issue
-	cycleHandlers     *handler.Cycle
-	commentHandlers   *handler.Comment
-	fieldHandlers     *handler.Field
-	valueHandlers     *handler.Value
-	assigneeHandlers  *handler.Assignee
-	pageHandlers      *handler.Page
+	authHandlers       *api.Auth
+	workspaceHandlers  *api.Workspace
+	teamHandlers       *api.Team
+	projectHandlers    *api.Project
+	columnHandlers     *api.Column
+	issueHandlers      *api.Issue
+	cycleHandlers      *api.Cycle
+	commentHandlers    *api.Comment
+	fieldHandlers      *api.Field
+	valueHandlers      *api.Value
+	assigneeHandlers   *api.Assignee
+	pageHandlers       *handler.Page
+	pageTrelloHandlers *handler.PageTrello
 }
 
 // New creates a new server.
@@ -144,20 +146,40 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("parse templates: %w", err)
 	}
 
+	// Parse Trello templates
+	trelloTemplates, err := assets.TemplatesForTheme("trello")
+	if err != nil {
+		return nil, fmt.Errorf("parse trello templates: %w", err)
+	}
+
 	// Create handlers
-	s.authHandlers = handler.NewAuth(usersSvc)
-	s.workspaceHandlers = handler.NewWorkspace(workspacesSvc, s.getUserID)
-	s.teamHandlers = handler.NewTeam(teamsSvc, s.getUserID)
-	s.projectHandlers = handler.NewProject(projectsSvc, s.getUserID)
-	s.columnHandlers = handler.NewColumn(columnsSvc)
-	s.issueHandlers = handler.NewIssue(issuesSvc, projectsSvc, s.getUserID)
-	s.cycleHandlers = handler.NewCycle(cyclesSvc)
-	s.commentHandlers = handler.NewComment(commentsSvc, s.getUserID)
-	s.fieldHandlers = handler.NewField(fieldsSvc)
-	s.valueHandlers = handler.NewValue(valuesSvc)
-	s.assigneeHandlers = handler.NewAssignee(assigneesSvc)
+	s.authHandlers = api.NewAuth(usersSvc)
+	s.workspaceHandlers = api.NewWorkspace(workspacesSvc, s.getUserID)
+	s.teamHandlers = api.NewTeam(teamsSvc, s.getUserID)
+	s.projectHandlers = api.NewProject(projectsSvc, s.getUserID)
+	s.columnHandlers = api.NewColumn(columnsSvc)
+	s.issueHandlers = api.NewIssue(issuesSvc, projectsSvc, s.getUserID)
+	s.cycleHandlers = api.NewCycle(cyclesSvc)
+	s.commentHandlers = api.NewComment(commentsSvc, s.getUserID)
+	s.fieldHandlers = api.NewField(fieldsSvc)
+	s.valueHandlers = api.NewValue(valuesSvc)
+	s.assigneeHandlers = api.NewAssignee(assigneesSvc)
 	s.pageHandlers = handler.NewPage(
 		templates,
+		usersSvc,
+		workspacesSvc,
+		teamsSvc,
+		projectsSvc,
+		columnsSvc,
+		issuesSvc,
+		cyclesSvc,
+		commentsSvc,
+		fieldsSvc,
+		s.getUserID,
+	)
+
+	s.pageTrelloHandlers = handler.NewPageTrello(
+		trelloTemplates,
 		usersSvc,
 		workspacesSvc,
 		teamsSvc,
@@ -303,6 +325,14 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/w/{workspace}/issue/{key}", s.pageHandlers.Issue)
 	s.app.Get("/w/{workspace}/cycles", s.pageHandlers.Cycles)
 	s.app.Get("/w/{workspace}/team/{teamID}", s.pageHandlers.Team)
+
+	// Trello-themed routes (/t/ prefix)
+	s.app.Get("/t/", s.pageTrelloHandlers.Home)
+	s.app.Get("/t/login", s.pageTrelloHandlers.Login)
+	s.app.Get("/t/register", s.pageTrelloHandlers.Register)
+	s.app.Get("/t/{workspace}", s.pageTrelloHandlers.Boards)
+	s.app.Get("/t/{workspace}/b/{boardID}", s.pageTrelloHandlers.Board)
+	s.app.Get("/t/{workspace}/c/{cardKey}", s.pageTrelloHandlers.Card)
 
 	// API routes
 	s.app.Group("/api/v1", func(api *mizu.Router) {
