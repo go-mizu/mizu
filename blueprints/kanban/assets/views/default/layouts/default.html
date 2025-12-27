@@ -208,67 +208,171 @@
   <!-- Global Create Issue Modal -->
   <div id="global-create-issue-modal" class="hidden fixed inset-0 z-50">
     <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" data-close="global-create-issue-modal"></div>
-    <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-xl bg-white rounded-lg shadow-xl">
-      <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-200">
-        <span class="font-medium">Create Issue</span>
-        <button class="w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 rounded transition-colors" data-close="global-create-issue-modal">&times;</button>
-      </div>
-      <form id="global-create-issue-form">
-        <div class="p-4">
-          <div class="mb-4">
-            <label class="block text-sm font-medium text-zinc-700 mb-1" for="global-issue-project">Project</label>
-            <select id="global-issue-project" name="project_id" class="w-full px-3 py-2 text-sm border border-zinc-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent">
-              {{range .Projects}}
-              <option value="{{.ID}}">{{.Name}}</option>
-              {{end}}
-            </select>
+    <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-xl bg-white border border-zinc-200 shadow-xl">
+      <!-- Header with Project Selector -->
+      <div class="flex items-center gap-2 px-4 py-3 text-sm text-zinc-500 border-b border-zinc-100">
+        <div class="relative dropdown" id="global-project-dropdown">
+          <button type="button" class="inline-flex items-center gap-1.5 font-medium text-zinc-900 bg-transparent border-none cursor-pointer px-2 py-1 -mx-2 -my-1 hover:bg-zinc-100 transition-colors dropdown-trigger" aria-haspopup="true" aria-expanded="false">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect width="6" height="14" x="4" y="5" rx="2"/>
+              <rect width="6" height="10" x="14" y="7" rx="2"/>
+            </svg>
+            <span id="global-selected-project-name">{{if .Projects}}{{(index .Projects 0).Name}}{{else}}Select Project{{end}}</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opacity-50" aria-hidden="true">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </button>
+          <div class="absolute left-0 top-full mt-1 w-56 bg-white shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
+            {{range .Projects}}
+            <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors global-project-option" data-project-id="{{.ID}}" data-project-name="{{.Name}}" data-project-key="{{.Key}}">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="6" height="14" x="4" y="5" rx="2"/>
+                <rect width="6" height="10" x="14" y="7" rx="2"/>
+              </svg>
+              <span>{{.Name}}</span>
+              <span class="text-zinc-400 text-xs ml-auto">{{.Key}}</span>
+            </button>
+            {{else}}
+            <div class="px-3 py-2 text-sm text-zinc-400">No projects available</div>
+            {{end}}
           </div>
-          <input type="text" id="global-issue-title" name="title" class="w-full text-lg font-medium border-none outline-none placeholder-zinc-400 mb-2" placeholder="Issue title" required autofocus>
-          <textarea id="global-issue-description" name="description" class="w-full text-sm border-none outline-none resize-none placeholder-zinc-400 mb-4" placeholder="Add description..." rows="3"></textarea>
-
-          <div class="flex flex-wrap gap-2">
-            <div class="relative" id="global-status-dropdown">
-              <button type="button" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm bg-zinc-100 hover:bg-zinc-200 rounded-full transition-colors" id="global-status-chip">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="10"/>
-                  <circle cx="12" cy="12" r="1"/>
-                </svg>
-                <span>Backlog</span>
-              </button>
-              <div class="dropdown-menu hidden absolute left-0 top-full mt-1 min-w-48 bg-white border border-zinc-200 rounded-md shadow-lg py-1 z-50">
-                {{range .Columns}}
-                <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-100 global-status-option" data-column-id="{{.ID}}" data-column-name="{{.Name}}">
-                  {{.Name}}
-                </button>
-                {{end}}
-              </div>
-            </div>
-            <div class="relative" id="global-priority-dropdown">
-              <button type="button" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm bg-zinc-100 hover:bg-zinc-200 rounded-full transition-colors" id="global-priority-chip">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M2 20h.01"/>
-                  <path d="M7 20v-4"/>
-                  <path d="M12 20v-8"/>
-                  <path d="M17 20V8"/>
-                </svg>
-                <span>Priority</span>
-              </button>
-              <div class="dropdown-menu hidden absolute left-0 top-full mt-1 min-w-48 bg-white border border-zinc-200 rounded-md shadow-lg py-1 z-50">
-                <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-100 global-priority-option" data-priority="0" data-priority-name="No priority">No priority</button>
-                <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-100 global-priority-option" data-priority="1" data-priority-name="Urgent"><span class="text-red-500">Urgent</span></button>
-                <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-100 global-priority-option" data-priority="2" data-priority-name="High"><span class="text-orange-500">High</span></button>
-                <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-100 global-priority-option" data-priority="3" data-priority-name="Medium"><span class="text-yellow-500">Medium</span></button>
-                <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-100 global-priority-option" data-priority="4" data-priority-name="Low"><span class="text-blue-500">Low</span></button>
-              </div>
-            </div>
-          </div>
-
-          <input type="hidden" name="column_id" id="global-selected-column-id" value="">
-          <input type="hidden" name="priority" id="global-selected-priority" value="0">
         </div>
-        <div class="flex items-center justify-end gap-2 px-4 py-3 border-t border-zinc-200 bg-zinc-50 rounded-b-lg">
-          <button type="button" class="px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-200 rounded-md transition-colors" data-close="global-create-issue-modal">Cancel</button>
-          <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 rounded-md transition-colors" id="global-create-issue-submit">Create issue</button>
+        <span class="text-zinc-300">/</span>
+        <span class="text-zinc-400">New issue</span>
+        <button class="ml-auto w-6 h-6 flex items-center justify-center text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 transition-colors" data-close="global-create-issue-modal">&times;</button>
+      </div>
+
+      <form id="global-create-issue-form" class="flex flex-col">
+        <input type="text" id="global-issue-title" name="title" class="w-full px-4 py-3 text-lg font-medium border-none bg-transparent outline-none text-zinc-900 placeholder-zinc-400" placeholder="Issue title" required autofocus>
+        <textarea id="global-issue-description" name="description" class="w-full px-4 pb-4 text-sm border-none bg-transparent outline-none resize-none text-zinc-900 placeholder-zinc-400" placeholder="Add description..." rows="2"></textarea>
+
+        <div class="flex flex-wrap items-center gap-1 px-4 pb-4">
+          <!-- Status Chip -->
+          <div class="relative dropdown" id="global-status-dropdown">
+            <button type="button" class="inline-flex items-center gap-1.5 px-2 py-1 text-sm text-zinc-500 hover:bg-zinc-100 transition-colors cursor-pointer dropdown-trigger" id="global-status-chip">
+              <span class="chip-icon text-zinc-400">
+                <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+              </span>
+              <span class="chip-label">Backlog</span>
+            </button>
+            <div class="absolute left-0 top-full mt-1 w-44 bg-white shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
+              {{range .Columns}}
+              <button type="button" class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-zinc-50 transition-colors global-status-option" data-column-id="{{.ID}}" data-column-name="{{.Name}}">
+                <span class="{{if eq (lower .Name) "done"}}text-green-600{{else if or (eq (lower .Name) "in-progress") (eq (lower .Name) "doing")}}text-blue-600{{else if eq (lower .Name) "todo"}}text-zinc-600{{else}}text-zinc-400{{end}}">
+                  {{if eq (lower .Name) "backlog"}}
+                  <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+                  {{else if eq (lower .Name) "todo"}}
+                  <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
+                  {{else if or (eq (lower .Name) "in-progress") (eq (lower .Name) "doing")}}
+                  <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
+                  {{else if or (eq (lower .Name) "done") (eq (lower .Name) "completed")}}
+                  <svg class="w-4 h-4" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  {{else if or (eq (lower .Name) "canceled") (eq (lower .Name) "cancelled")}}
+                  <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+                  {{else}}
+                  <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
+                  {{end}}
+                </span>
+                <span class="text-zinc-700">{{.Name}}</span>
+              </button>
+              {{else}}
+              <div class="px-3 py-2 text-sm text-zinc-400">No statuses</div>
+              {{end}}
+            </div>
+          </div>
+
+          <!-- Priority Chip -->
+          <div class="relative dropdown" id="global-priority-dropdown">
+            <button type="button" class="inline-flex items-center gap-1.5 px-2 py-1 text-sm text-zinc-500 hover:bg-zinc-100 transition-colors cursor-pointer dropdown-trigger" id="global-priority-chip">
+              <span class="chip-icon text-zinc-400">
+                <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="8" x2="13" y2="8"/></svg>
+              </span>
+              <span class="chip-label">No priority</span>
+            </button>
+            <div class="absolute left-0 top-full mt-1 w-40 bg-white shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
+              <button type="button" class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-zinc-50 transition-colors global-priority-option" data-priority="0" data-priority-name="No priority">
+                <span class="text-zinc-400"><svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="8" x2="13" y2="8"/></svg></span>
+                <span class="text-zinc-700">No priority</span>
+              </button>
+              <button type="button" class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-zinc-50 transition-colors global-priority-option" data-priority="1" data-priority-name="Urgent">
+                <span class="text-red-500"><svg class="w-4 h-4" viewBox="0 0 16 16"><rect x="1" y="1" width="4" height="14" fill="currentColor"/><rect x="6" y="1" width="4" height="14" fill="currentColor"/><rect x="11" y="1" width="4" height="14" fill="currentColor"/></svg></span>
+                <span class="text-zinc-700">Urgent</span>
+              </button>
+              <button type="button" class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-zinc-50 transition-colors global-priority-option" data-priority="2" data-priority-name="High">
+                <span class="text-orange-500"><svg class="w-4 h-4" viewBox="0 0 16 16"><rect x="1" y="4" width="4" height="11" fill="currentColor"/><rect x="6" y="4" width="4" height="11" fill="currentColor"/><rect x="11" y="7" width="4" height="8" fill="currentColor" opacity="0.4"/></svg></span>
+                <span class="text-zinc-700">High</span>
+              </button>
+              <button type="button" class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-zinc-50 transition-colors global-priority-option" data-priority="3" data-priority-name="Medium">
+                <span class="text-yellow-500"><svg class="w-4 h-4" viewBox="0 0 16 16"><rect x="1" y="7" width="4" height="8" fill="currentColor"/><rect x="6" y="7" width="4" height="8" fill="currentColor" opacity="0.4"/><rect x="11" y="7" width="4" height="8" fill="currentColor" opacity="0.2"/></svg></span>
+                <span class="text-zinc-700">Medium</span>
+              </button>
+              <button type="button" class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-zinc-50 transition-colors global-priority-option" data-priority="4" data-priority-name="Low">
+                <span class="text-blue-500"><svg class="w-4 h-4" viewBox="0 0 16 16"><rect x="1" y="10" width="4" height="5" fill="currentColor"/><rect x="6" y="10" width="4" height="5" fill="currentColor" opacity="0.2"/><rect x="11" y="10" width="4" height="5" fill="currentColor" opacity="0.1"/></svg></span>
+                <span class="text-zinc-700">Low</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Assignee Chip -->
+          <div class="relative dropdown" id="global-assignee-dropdown">
+            <button type="button" class="inline-flex items-center gap-1.5 px-2 py-1 text-sm text-zinc-500 hover:bg-zinc-100 transition-colors cursor-pointer dropdown-trigger" id="global-assignee-chip">
+              <span class="w-4 h-4 rounded-full bg-zinc-300 text-zinc-600 text-[10px] flex items-center justify-center font-medium" id="global-assignee-avatar">-</span>
+              <span class="chip-label">Assignee</span>
+            </button>
+            <div class="absolute left-0 top-full mt-1 w-52 bg-white shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu" id="global-assignee-menu">
+              <div class="px-3 py-1.5 text-xs font-medium text-zinc-400 uppercase tracking-wide">Assignees</div>
+              <button type="button" class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-zinc-50 transition-colors global-assignee-option" data-assignee-id="" data-assignee-name="Unassigned">
+                <span class="w-5 h-5 rounded-full bg-zinc-200 text-zinc-500 text-xs flex items-center justify-center font-medium">-</span>
+                <span class="text-zinc-700">Unassigned</span>
+                <svg class="w-4 h-4 ml-auto text-zinc-900 hidden check-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/></svg>
+              </button>
+              {{range .TeamMembers}}
+              <button type="button" class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-zinc-50 transition-colors global-assignee-option" data-assignee-id="{{.ID}}" data-assignee-name="{{.DisplayName}}">
+                <span class="w-5 h-5 rounded-full bg-zinc-700 text-white text-xs flex items-center justify-center font-medium">{{slice .DisplayName 0 1}}</span>
+                <span class="text-zinc-700">{{.DisplayName}}</span>
+                <svg class="w-4 h-4 ml-auto text-zinc-900 hidden check-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/></svg>
+              </button>
+              {{else}}
+              <div class="px-3 py-2 text-sm text-zinc-400">No team members</div>
+              {{end}}
+            </div>
+          </div>
+
+          <!-- Sprint/Cycle Chip -->
+          <div class="relative dropdown" id="global-cycle-dropdown">
+            <button type="button" class="inline-flex items-center gap-1.5 px-2 py-1 text-sm text-zinc-500 hover:bg-zinc-100 transition-colors cursor-pointer dropdown-trigger" id="global-cycle-chip">
+              <span class="chip-icon text-zinc-400">
+                <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2 2"/></svg>
+              </span>
+              <span class="chip-label">Sprint</span>
+            </button>
+            <div class="absolute left-0 top-full mt-1 w-44 bg-white shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
+              <button type="button" class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-zinc-50 transition-colors global-cycle-option" data-cycle-id="" data-cycle-name="No sprint">
+                <span class="text-zinc-400"><svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2 2"/></svg></span>
+                <span class="text-zinc-500">No sprint</span>
+              </button>
+              {{range .Cycles}}
+              <button type="button" class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-zinc-50 transition-colors global-cycle-option" data-cycle-id="{{.ID}}" data-cycle-name="{{.Name}}">
+                <span class="text-blue-500"><svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2 2"/></svg></span>
+                <span class="text-zinc-700">{{.Name}}</span>
+              </button>
+              {{else}}
+              <div class="px-3 py-2 text-sm text-zinc-400">No sprints</div>
+              {{end}}
+            </div>
+          </div>
+        </div>
+
+        <!-- Hidden fields -->
+        <input type="hidden" name="project_id" id="global-selected-project-id" value="{{if .Projects}}{{(index .Projects 0).ID}}{{end}}">
+        <input type="hidden" name="column_id" id="global-selected-column-id" value="">
+        <input type="hidden" name="cycle_id" id="global-selected-cycle-id" value="">
+        <input type="hidden" name="assignee_ids" id="global-selected-assignee-ids" value="">
+        <input type="hidden" name="priority" id="global-selected-priority" value="0">
+
+        <div class="flex items-center justify-between px-4 py-3 bg-zinc-50 border-t border-zinc-100">
+          <div></div>
+          <button type="submit" class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 transition-colors" id="global-create-issue-submit">Create issue</button>
         </div>
       </form>
     </div>

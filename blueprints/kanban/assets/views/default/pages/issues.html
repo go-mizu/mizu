@@ -109,97 +109,179 @@
 
 <span id="visible-count" class="hidden">{{.TotalCount}}</span>
 
-{{if .Issues}}
-<div class="bg-white rounded-lg shadow-sm border border-zinc-200">
-  <table class="w-full text-sm border-collapse" id="issues-table">
-    <thead>
-      <tr class="bg-zinc-50">
-        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400 cursor-pointer hover:text-zinc-600 transition-colors" style="width: 100px;" data-sort="key">
-          <div class="flex items-center gap-1">
-            Key
-            <svg class="w-3.5 h-3.5 opacity-50" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>
-            </svg>
-          </div>
-        </th>
-        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400 cursor-pointer hover:text-zinc-600 transition-colors" data-sort="title">
-          <div class="flex items-center gap-1">
-            Title
-            <svg class="w-3.5 h-3.5 opacity-50" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>
-            </svg>
-          </div>
-        </th>
-        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400 cursor-pointer hover:text-zinc-600 transition-colors" style="width: 120px;" data-sort="status">
-          <div class="flex items-center gap-1">
-            Status
-            <svg class="w-3.5 h-3.5 opacity-50" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>
-            </svg>
-          </div>
-        </th>
-        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400 cursor-pointer hover:text-zinc-600 transition-colors" style="width: 150px;" data-sort="assignee">
-          <div class="flex items-center gap-1">
-            Assignee
-            <svg class="w-3.5 h-3.5 opacity-50" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>
-            </svg>
-          </div>
-        </th>
-        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400 cursor-pointer hover:text-zinc-600 transition-colors" style="width: 120px;" data-sort="updated">
-          <div class="flex items-center gap-1">
-            Updated
-            <svg class="w-3.5 h-3.5 opacity-50" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>
-            </svg>
-          </div>
-        </th>
-      </tr>
-    </thead>
-    <tbody>
+<!-- Issues List (Linear-inspired, grouped by Status) -->
+{{if .IssuesByStatus}}
+<div id="issues-container">
+  {{range .IssuesByStatus}}
+  {{if .Issues}}
+  <div class="mb-4 issue-group" data-group="{{.Status}}">
+    <!-- Group Header (collapsible) -->
+    <button type="button" class="flex items-center gap-2 w-full py-2 text-left group-toggle" data-expanded="true">
+      <svg class="w-4 h-4 text-zinc-400 transition-transform group-chevron" style="transform: rotate(90deg);" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+      <!-- Status Icon -->
+      <span class="{{if eq (lower .Status) "done"}}text-green-600{{else if eq (lower .Status) "in-progress"}}text-blue-600{{else if eq (lower .Status) "todo"}}text-zinc-600{{else}}text-zinc-400{{end}}">
+        {{if eq (lower .Status) "backlog"}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+        {{else if eq (lower .Status) "todo"}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
+        {{else if or (eq (lower .Status) "in-progress") (eq (lower .Status) "doing")}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
+        {{else if or (eq (lower .Status) "done") (eq (lower .Status) "completed")}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        {{else if or (eq (lower .Status) "canceled") (eq (lower .Status) "cancelled")}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+        {{else}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
+        {{end}}
+      </span>
+      <span class="text-sm font-medium text-zinc-700">{{.Status}}</span>
+      <span class="text-xs text-zinc-400">{{len .Issues}}</span>
+    </button>
+    <!-- Group Items -->
+    <div class="group-content">
       {{range .Issues}}
-      <tr data-issue-key="{{.Key}}" data-status="{{if .Column}}{{.Column.Name}}{{end}}" data-priority="{{.Priority}}" data-assignee="{{.CreatorID}}" data-assignee-name="" data-title="{{.Title}}" data-updated="{{.UpdatedAt}}" class="border-t border-zinc-100 hover:bg-zinc-50 cursor-pointer transition-colors">
-        <td class="px-4 py-3">
-          <span class="text-xs font-semibold text-zinc-400 font-mono">{{.Key}}</span>
-        </td>
-        <td class="px-4 py-3">
-          <span class="font-medium text-zinc-900">{{.Title}}</span>
-        </td>
-        <td class="px-4 py-3">
-          {{if .Column}}
-          <span class="inline-flex items-center gap-1.5 text-xs font-medium {{if eq (lower .Column.Name) "done"}}text-green-600{{else if eq (lower .Column.Name) "in-progress"}}text-blue-600{{else if eq (lower .Column.Name) "todo"}}text-zinc-600{{else}}text-zinc-500{{end}}">
-            {{if eq (lower .Column.Name) "backlog"}}
-            <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
-            {{else if eq (lower .Column.Name) "todo"}}
-            <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
-            {{else if or (eq (lower .Column.Name) "in-progress") (eq (lower .Column.Name) "doing")}}
-            <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
-            {{else if or (eq (lower .Column.Name) "done") (eq (lower .Column.Name) "completed")}}
-            <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            {{else if or (eq (lower .Column.Name) "canceled") (eq (lower .Column.Name) "cancelled")}}
-            <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
-            {{else}}
-            <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
-            {{end}}
-            {{.Column.Name}}
-          </span>
+      <div data-issue-key="{{.Key}}" data-status="{{if .Column}}{{.Column.Name}}{{end}}" data-priority="{{.Issue.Priority}}" data-title="{{.Title}}" class="flex items-center gap-3 px-2 py-2.5 hover:bg-zinc-100 cursor-pointer transition-colors issue-row">
+        <!-- Priority indicator -->
+        <div class="w-4 flex-shrink-0">
+          {{if eq .Issue.Priority 1}}
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500" title="Urgent">
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          {{else if eq .Issue.Priority 2}}
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" class="text-orange-500" title="High"><rect x="2" y="2" width="3" height="12" fill="currentColor"/><rect x="6.5" y="5" width="3" height="9" fill="currentColor"/><rect x="11" y="8" width="3" height="6" fill="currentColor"/></svg>
+          {{else if eq .Issue.Priority 3}}
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" class="text-yellow-500" title="Medium"><rect x="2" y="5" width="3" height="9" fill="currentColor"/><rect x="6.5" y="8" width="3" height="6" fill="currentColor"/></svg>
+          {{else if eq .Issue.Priority 4}}
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" class="text-blue-500" title="Low"><rect x="2" y="8" width="3" height="6" fill="currentColor"/></svg>
           {{else}}
-          <span class="text-zinc-400">-</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-300"><line x1="5" y1="12" x2="19" y2="12"/></svg>
           {{end}}
-        </td>
-        <td class="px-4 py-3">
-          <span class="text-zinc-400">-</span>
-        </td>
-        <td class="px-4 py-3">
-          <span class="text-zinc-400">{{.UpdatedAt.Format "Jan 2, 2006"}}</span>
-        </td>
-      </tr>
+        </div>
+        <!-- Key -->
+        <span class="text-xs font-medium text-zinc-400 font-mono w-16 flex-shrink-0">{{.Key}}</span>
+        <!-- Title -->
+        <span class="flex-1 text-sm text-zinc-900 truncate">{{.Title}}</span>
+        <!-- Assignee -->
+        <div class="flex items-center -space-x-1 flex-shrink-0 w-8">
+          {{if .Assignees}}
+          {{range .Assignees}}
+          <span class="w-5 h-5 rounded-full bg-zinc-700 text-white text-xs flex items-center justify-center font-medium ring-2 ring-white" title="{{.DisplayName}}">{{slice .DisplayName 0 1}}</span>
+          {{end}}
+          {{end}}
+        </div>
+        <!-- Updated -->
+        <span class="text-xs text-zinc-400 w-20 text-right flex-shrink-0">{{.UpdatedAt.Format "Jan 2, 2006"}}</span>
+      </div>
       {{end}}
-    </tbody>
-  </table>
+    </div>
+  </div>
+  {{end}}
+  {{end}}
+</div>
+
+<!-- Fallback flat list for search/filter -->
+<div id="issues-flat" class="hidden">
+  {{range .Issues}}
+  <div data-issue-key="{{.Key}}" data-status="{{if .Column}}{{.Column.Name}}{{end}}" data-priority="{{.Issue.Priority}}" data-title="{{.Title}}" class="flex items-center gap-3 px-2 py-2.5 hover:bg-zinc-100 cursor-pointer transition-colors issue-row">
+    <div class="w-4 flex-shrink-0">
+      {{if eq .Issue.Priority 1}}
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      {{else if eq .Issue.Priority 2}}
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" class="text-orange-500"><rect x="2" y="2" width="3" height="12" fill="currentColor"/><rect x="6.5" y="5" width="3" height="9" fill="currentColor"/><rect x="11" y="8" width="3" height="6" fill="currentColor"/></svg>
+      {{else if eq .Issue.Priority 3}}
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" class="text-yellow-500"><rect x="2" y="5" width="3" height="9" fill="currentColor"/><rect x="6.5" y="8" width="3" height="6" fill="currentColor"/></svg>
+      {{else if eq .Issue.Priority 4}}
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" class="text-blue-500"><rect x="2" y="8" width="3" height="6" fill="currentColor"/></svg>
+      {{else}}
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-300"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      {{end}}
+    </div>
+    <div class="w-4 flex-shrink-0">
+      {{if .Column}}
+      <span class="{{if eq (lower .Column.Name) "done"}}text-green-600{{else if eq (lower .Column.Name) "in-progress"}}text-blue-600{{else if eq (lower .Column.Name) "todo"}}text-zinc-600{{else}}text-zinc-400{{end}}">
+        {{if eq (lower .Column.Name) "backlog"}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+        {{else if eq (lower .Column.Name) "todo"}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
+        {{else if or (eq (lower .Column.Name) "in-progress") (eq (lower .Column.Name) "doing")}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
+        {{else if or (eq (lower .Column.Name) "done") (eq (lower .Column.Name) "completed")}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        {{else if or (eq (lower .Column.Name) "canceled") (eq (lower .Column.Name) "cancelled")}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+        {{else}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
+        {{end}}
+      </span>
+      {{end}}
+    </div>
+    <span class="text-xs font-medium text-zinc-400 font-mono w-16 flex-shrink-0">{{.Key}}</span>
+    <span class="flex-1 text-sm text-zinc-900 truncate">{{.Title}}</span>
+    <div class="flex items-center -space-x-1 flex-shrink-0 w-8">
+      {{if .Assignees}}
+      {{range .Assignees}}
+      <span class="w-5 h-5 rounded-full bg-zinc-700 text-white text-xs flex items-center justify-center font-medium ring-2 ring-white" title="{{.DisplayName}}">{{slice .DisplayName 0 1}}</span>
+      {{end}}
+      {{end}}
+    </div>
+    <span class="text-xs text-zinc-400 w-20 text-right flex-shrink-0">{{.UpdatedAt.Format "Jan 2, 2006"}}</span>
+  </div>
+  {{end}}
+</div>
+{{else if .Issues}}
+<!-- Fallback if IssuesByStatus not available -->
+<div id="issues-container">
+  {{range .Issues}}
+  <div data-issue-key="{{.Key}}" data-status="{{if .Column}}{{.Column.Name}}{{end}}" data-priority="{{.Issue.Priority}}" data-title="{{.Title}}" class="flex items-center gap-3 px-2 py-2.5 hover:bg-zinc-100 cursor-pointer transition-colors issue-row">
+    <div class="w-4 flex-shrink-0">
+      {{if eq .Issue.Priority 1}}
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      {{else if eq .Issue.Priority 2}}
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" class="text-orange-500"><rect x="2" y="2" width="3" height="12" fill="currentColor"/><rect x="6.5" y="5" width="3" height="9" fill="currentColor"/><rect x="11" y="8" width="3" height="6" fill="currentColor"/></svg>
+      {{else if eq .Issue.Priority 3}}
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" class="text-yellow-500"><rect x="2" y="5" width="3" height="9" fill="currentColor"/><rect x="6.5" y="8" width="3" height="6" fill="currentColor"/></svg>
+      {{else if eq .Issue.Priority 4}}
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" class="text-blue-500"><rect x="2" y="8" width="3" height="6" fill="currentColor"/></svg>
+      {{else}}
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-300"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      {{end}}
+    </div>
+    <div class="w-4 flex-shrink-0">
+      {{if .Column}}
+      <span class="{{if eq (lower .Column.Name) "done"}}text-green-600{{else if eq (lower .Column.Name) "in-progress"}}text-blue-600{{else if eq (lower .Column.Name) "todo"}}text-zinc-600{{else}}text-zinc-400{{end}}">
+        {{if eq (lower .Column.Name) "backlog"}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+        {{else if eq (lower .Column.Name) "todo"}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
+        {{else if or (eq (lower .Column.Name) "in-progress") (eq (lower .Column.Name) "doing")}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
+        {{else if or (eq (lower .Column.Name) "done") (eq (lower .Column.Name) "completed")}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        {{else if or (eq (lower .Column.Name) "canceled") (eq (lower .Column.Name) "cancelled")}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+        {{else}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
+        {{end}}
+      </span>
+      {{end}}
+    </div>
+    <span class="text-xs font-medium text-zinc-400 font-mono w-16 flex-shrink-0">{{.Key}}</span>
+    <span class="flex-1 text-sm text-zinc-900 truncate">{{.Title}}</span>
+    <div class="flex items-center -space-x-1 flex-shrink-0 w-8">
+      {{if .Assignees}}
+      {{range .Assignees}}
+      <span class="w-5 h-5 rounded-full bg-zinc-700 text-white text-xs flex items-center justify-center font-medium ring-2 ring-white" title="{{.DisplayName}}">{{slice .DisplayName 0 1}}</span>
+      {{end}}
+      {{end}}
+    </div>
+    <span class="text-xs text-zinc-400 w-20 text-right flex-shrink-0">{{.UpdatedAt.Format "Jan 2, 2006"}}</span>
+  </div>
+  {{end}}
 </div>
 {{else}}
-<div class="flex flex-col items-center justify-center py-16 px-8 text-center bg-white rounded-lg shadow-sm border border-zinc-200">
+<div class="flex flex-col items-center justify-center py-16 px-8 text-center">
   <svg class="w-12 h-12 mb-5 text-zinc-300" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <circle cx="12" cy="12" r="10"/>
     <line x1="12" x2="12" y1="8" y2="12"/>
@@ -207,7 +289,7 @@
   </svg>
   <div class="text-base font-semibold mb-2 text-zinc-900">No issues yet</div>
   <div class="text-sm text-zinc-500 max-w-xs mb-5">Create your first issue to start tracking work</div>
-  <button class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 transition-colors" data-modal="create-issue-modal">
+  <button class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 transition-colors" data-modal="create-issue-modal">
     Create Issue
   </button>
 </div>
@@ -359,12 +441,33 @@
 
 <script>
 const currentUserId = '{{.User.ID}}';
+const workspaceSlug = '{{.Workspace.Slug}}';
 
 // Row click navigation
-document.querySelectorAll('#issues-table tbody tr[data-issue-key]').forEach(row => {
+document.querySelectorAll('.issue-row[data-issue-key]').forEach(row => {
   row.addEventListener('click', () => {
     const key = row.dataset.issueKey;
-    location.href = `/w/{{.Workspace.Slug}}/issue/${key}`;
+    location.href = `/w/${workspaceSlug}/issue/${key}`;
+  });
+});
+
+// Group toggle functionality
+document.querySelectorAll('.group-toggle').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const group = btn.closest('.issue-group');
+    const content = group.querySelector('.group-content');
+    const chevron = btn.querySelector('.group-chevron');
+    const isExpanded = btn.dataset.expanded === 'true';
+
+    if (isExpanded) {
+      content.style.display = 'none';
+      chevron.style.transform = 'rotate(0deg)';
+      btn.dataset.expanded = 'false';
+    } else {
+      content.style.display = 'block';
+      chevron.style.transform = 'rotate(90deg)';
+      btn.dataset.expanded = 'true';
+    }
   });
 });
 

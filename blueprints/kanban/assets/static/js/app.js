@@ -99,6 +99,14 @@ const modals = {
           modals.close(modal.id);
         }
       }
+      // Support for data-close attribute
+      const closeBtn = e.target.closest('[data-close]');
+      if (closeBtn) {
+        const modalId = closeBtn.dataset.close;
+        if (modalId) {
+          modals.close(modalId);
+        }
+      }
     });
 
     // Backdrop click
@@ -1020,12 +1028,33 @@ const logout = {
 // ========================================
 
 const globalCreateForm = {
+  selectedProjectId: '',
   selectedColumnId: '',
+  selectedCycleId: '',
+  selectedAssigneeIds: [],
   selectedPriority: 0,
 
   init() {
     const form = document.getElementById('global-create-issue-form');
     if (!form) return;
+
+    // Initialize project ID from hidden field
+    const projectField = document.getElementById('global-selected-project-id');
+    if (projectField) {
+      this.selectedProjectId = projectField.value;
+    }
+
+    // Project dropdown
+    document.querySelectorAll('.global-project-option').forEach(opt => {
+      opt.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.selectedProjectId = opt.dataset.projectId;
+        document.getElementById('global-selected-project-id').value = this.selectedProjectId;
+        document.getElementById('global-selected-project-name').textContent = opt.dataset.projectName;
+        this.closeDropdown('global-project-dropdown');
+      });
+    });
 
     // Status dropdown
     document.querySelectorAll('.global-status-option').forEach(opt => {
@@ -1034,9 +1063,17 @@ const globalCreateForm = {
         e.stopPropagation();
         this.selectedColumnId = opt.dataset.columnId;
         document.getElementById('global-selected-column-id').value = this.selectedColumnId;
-        document.querySelector('#global-status-chip span').textContent = opt.dataset.columnName;
-        document.getElementById('global-status-chip').classList.add('selected');
-        document.getElementById('global-status-dropdown').querySelector('.dropdown-menu').classList.add('hidden');
+        const chip = document.getElementById('global-status-chip');
+        const label = chip.querySelector('.chip-label');
+        const iconContainer = chip.querySelector('.chip-icon');
+        if (label) label.textContent = opt.dataset.columnName;
+        // Copy icon and color from selected option
+        const optIcon = opt.querySelector('span:first-child');
+        if (iconContainer && optIcon) {
+          iconContainer.innerHTML = optIcon.innerHTML;
+          iconContainer.className = optIcon.className;
+        }
+        this.closeDropdown('global-status-dropdown');
       });
     });
 
@@ -1047,14 +1084,71 @@ const globalCreateForm = {
         e.stopPropagation();
         this.selectedPriority = parseInt(opt.dataset.priority);
         document.getElementById('global-selected-priority').value = this.selectedPriority;
-        const chipSpan = document.querySelector('#global-priority-chip span');
-        chipSpan.textContent = this.selectedPriority === 0 ? 'Priority' : opt.dataset.priorityName;
-        if (this.selectedPriority > 0) {
-          document.getElementById('global-priority-chip').classList.add('selected');
-        } else {
-          document.getElementById('global-priority-chip').classList.remove('selected');
+        const chip = document.getElementById('global-priority-chip');
+        const label = chip.querySelector('.chip-label');
+        const iconContainer = chip.querySelector('.chip-icon');
+        if (label) label.textContent = opt.dataset.priorityName;
+        // Copy icon and color from selected option
+        const optIcon = opt.querySelector('span:first-child');
+        if (iconContainer && optIcon) {
+          iconContainer.innerHTML = optIcon.innerHTML;
+          iconContainer.className = optIcon.className;
         }
-        document.getElementById('global-priority-dropdown').querySelector('.dropdown-menu').classList.add('hidden');
+        this.closeDropdown('global-priority-dropdown');
+      });
+    });
+
+    // Assignee dropdown (multi-select)
+    document.querySelectorAll('.global-assignee-option').forEach(opt => {
+      opt.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const assigneeId = opt.dataset.assigneeId;
+        const checkIcon = opt.querySelector('.check-icon');
+
+        if (assigneeId === '') {
+          // Unassigned - clear all
+          this.selectedAssigneeIds = [];
+          document.querySelectorAll('.global-assignee-option .check-icon').forEach(icon => icon.classList.add('hidden'));
+          checkIcon.classList.remove('hidden');
+        } else {
+          // Remove unassigned check
+          document.querySelector('.global-assignee-option[data-assignee-id=""] .check-icon')?.classList.add('hidden');
+
+          const idx = this.selectedAssigneeIds.indexOf(assigneeId);
+          if (idx > -1) {
+            this.selectedAssigneeIds.splice(idx, 1);
+            checkIcon.classList.add('hidden');
+          } else {
+            this.selectedAssigneeIds.push(assigneeId);
+            checkIcon.classList.remove('hidden');
+          }
+        }
+
+        document.getElementById('global-selected-assignee-ids').value = this.selectedAssigneeIds.join(',');
+        this.updateAssigneeChip();
+      });
+    });
+
+    // Cycle dropdown
+    document.querySelectorAll('.global-cycle-option').forEach(opt => {
+      opt.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.selectedCycleId = opt.dataset.cycleId;
+        document.getElementById('global-selected-cycle-id').value = this.selectedCycleId;
+        const chip = document.getElementById('global-cycle-chip');
+        const label = chip.querySelector('.chip-label');
+        const iconContainer = chip.querySelector('.chip-icon');
+        if (label) label.textContent = opt.dataset.cycleName || 'Sprint';
+        // Copy icon and color from selected option
+        const optIcon = opt.querySelector('span:first-child');
+        if (iconContainer && optIcon) {
+          iconContainer.innerHTML = optIcon.innerHTML;
+          iconContainer.className = optIcon.className;
+        }
+        this.closeDropdown('global-cycle-dropdown');
       });
     });
 
@@ -1062,14 +1156,13 @@ const globalCreateForm = {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
 
-      const projectId = document.getElementById('global-issue-project').value;
-      const title = document.getElementById('global-issue-title').value.trim();
-      const description = document.getElementById('global-issue-description').value.trim();
-
-      if (!projectId) {
+      if (!this.selectedProjectId) {
         alert('Please select a project');
         return;
       }
+
+      const title = document.getElementById('global-issue-title').value.trim();
+      const description = document.getElementById('global-issue-description').value.trim();
 
       if (!title) {
         alert('Please enter a title');
@@ -1079,6 +1172,7 @@ const globalCreateForm = {
 
       const data = { title, description };
       if (this.selectedColumnId) data.column_id = this.selectedColumnId;
+      if (this.selectedCycleId) data.cycle_id = this.selectedCycleId;
       if (this.selectedPriority > 0) data.priority = this.selectedPriority;
 
       const submitBtn = document.getElementById('global-create-issue-submit');
@@ -1086,7 +1180,19 @@ const globalCreateForm = {
       submitBtn.textContent = 'Creating...';
 
       try {
-        const issue = await api.post(`/projects/${projectId}/issues`, data);
+        const issue = await api.post(`/projects/${this.selectedProjectId}/issues`, data);
+
+        // Add multiple assignees
+        for (const assigneeId of this.selectedAssigneeIds) {
+          if (assigneeId) {
+            try {
+              await api.post(`/issues/${issue.id}/assignees`, { user_id: assigneeId });
+            } catch (assigneeError) {
+              console.warn('Failed to add assignee:', assigneeError);
+            }
+          }
+        }
+
         modals.close('global-create-issue-modal');
 
         // Get workspace from URL
@@ -1103,6 +1209,115 @@ const globalCreateForm = {
         submitBtn.textContent = 'Create issue';
       }
     });
+
+    // Reset form when modal opens
+    const modal = document.getElementById('global-create-issue-modal');
+    if (modal) {
+      modal.addEventListener('modal:open', () => {
+        this.resetForm();
+      });
+    }
+  },
+
+  updateAssigneeChip() {
+    const chip = document.getElementById('global-assignee-chip');
+    const label = chip.querySelector('.chip-label');
+    const avatar = document.getElementById('global-assignee-avatar');
+
+    if (this.selectedAssigneeIds.length === 0) {
+      if (label) label.textContent = 'Assignee';
+      if (avatar) {
+        avatar.textContent = '-';
+        avatar.className = 'w-4 h-4 rounded-full bg-zinc-300 text-zinc-600 text-[10px] flex items-center justify-center font-medium';
+      }
+    } else if (this.selectedAssigneeIds.length === 1) {
+      const opt = document.querySelector(`.global-assignee-option[data-assignee-id="${this.selectedAssigneeIds[0]}"]`);
+      if (label) label.textContent = opt?.dataset.assigneeName || 'Assigned';
+      if (avatar) {
+        const initial = opt?.dataset.assigneeName?.charAt(0) || 'A';
+        avatar.textContent = initial;
+        avatar.className = 'w-4 h-4 rounded-full bg-zinc-700 text-white text-[10px] flex items-center justify-center font-medium';
+      }
+    } else {
+      if (label) label.textContent = `${this.selectedAssigneeIds.length} assignees`;
+      if (avatar) {
+        avatar.textContent = this.selectedAssigneeIds.length;
+        avatar.className = 'w-4 h-4 rounded-full bg-zinc-700 text-white text-[10px] flex items-center justify-center font-medium';
+      }
+    }
+  },
+
+  closeDropdown(id) {
+    const dropdown = document.getElementById(id);
+    if (dropdown) {
+      const menu = dropdown.querySelector('.dropdown-menu');
+      if (menu) menu.classList.add('hidden');
+    }
+  },
+
+  resetForm() {
+    // Reset values
+    this.selectedColumnId = '';
+    this.selectedCycleId = '';
+    this.selectedAssigneeIds = [];
+    this.selectedPriority = 0;
+
+    // Reset hidden fields
+    document.getElementById('global-selected-column-id').value = '';
+    document.getElementById('global-selected-cycle-id').value = '';
+    document.getElementById('global-selected-assignee-ids').value = '';
+    document.getElementById('global-selected-priority').value = '0';
+
+    // Reset chip labels
+    const statusChip = document.getElementById('global-status-chip');
+    if (statusChip) {
+      const label = statusChip.querySelector('.chip-label');
+      const icon = statusChip.querySelector('.chip-icon');
+      if (label) label.textContent = 'Backlog';
+      if (icon) {
+        icon.className = 'chip-icon text-zinc-400';
+        icon.innerHTML = '<svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>';
+      }
+    }
+
+    const priorityChip = document.getElementById('global-priority-chip');
+    if (priorityChip) {
+      const label = priorityChip.querySelector('.chip-label');
+      const icon = priorityChip.querySelector('.chip-icon');
+      if (label) label.textContent = 'No priority';
+      if (icon) {
+        icon.className = 'chip-icon text-zinc-400';
+        icon.innerHTML = '<svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="8" x2="13" y2="8"/></svg>';
+      }
+    }
+
+    const cycleChip = document.getElementById('global-cycle-chip');
+    if (cycleChip) {
+      const label = cycleChip.querySelector('.chip-label');
+      const icon = cycleChip.querySelector('.chip-icon');
+      if (label) label.textContent = 'Sprint';
+      if (icon) {
+        icon.className = 'chip-icon text-zinc-400';
+        icon.innerHTML = '<svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2 2"/></svg>';
+      }
+    }
+
+    // Reset assignee chip
+    this.updateAssigneeChip();
+
+    // Reset assignee checkmarks
+    document.querySelectorAll('.global-assignee-option .check-icon').forEach(icon => icon.classList.add('hidden'));
+
+    // Clear form inputs
+    document.getElementById('global-issue-title').value = '';
+    document.getElementById('global-issue-description').value = '';
+
+    // Reset submit button
+    const submitBtn = document.getElementById('global-create-issue-submit');
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Create issue';
+    }
   }
 };
 
