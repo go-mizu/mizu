@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-mizu/mizu"
 
+	"github.com/go-mizu/blueprints/kanban/feature/assignees"
 	"github.com/go-mizu/blueprints/kanban/feature/columns"
 	"github.com/go-mizu/blueprints/kanban/feature/comments"
 	"github.com/go-mizu/blueprints/kanban/feature/cycles"
@@ -120,6 +121,7 @@ type PageTrello struct {
 	cycles     cycles.API
 	comments   comments.API
 	fields     fields.API
+	assignees  assignees.API
 	getUserID  func(*mizu.Ctx) string
 }
 
@@ -135,6 +137,7 @@ func NewPageTrello(
 	cycles cycles.API,
 	comments comments.API,
 	fields fields.API,
+	assignees assignees.API,
 	getUserID func(*mizu.Ctx) string,
 ) *PageTrello {
 	return &PageTrello{
@@ -148,6 +151,7 @@ func NewPageTrello(
 		cycles:     cycles,
 		comments:   comments,
 		fields:     fields,
+		assignees:  assignees,
 		getUserID:  getUserID,
 	}
 }
@@ -312,6 +316,27 @@ func (h *PageTrello) Board(c *mizu.Ctx) error {
 		issuesByColumn[issue.ColumnID] = append(issuesByColumn[issue.ColumnID], issue)
 	}
 
+	// Build a map of user IDs to users for quick lookup
+	userMap := make(map[string]*users.User)
+	for _, u := range teamMembers {
+		userMap[u.ID] = u
+	}
+
+	// Load assignees for all issues
+	assigneeMap := make(map[string][]*users.User)
+	for _, issue := range allIssues {
+		assigneeIDs, _ := h.assignees.List(ctx, issue.ID)
+		if len(assigneeIDs) > 0 {
+			assignees := make([]*users.User, 0, len(assigneeIDs))
+			for _, uid := range assigneeIDs {
+				if u, ok := userMap[uid]; ok {
+					assignees = append(assignees, u)
+				}
+			}
+			assigneeMap[issue.ID] = assignees
+		}
+	}
+
 	// Build TrelloLists
 	now := time.Now()
 	lists := make([]*TrelloList, len(columnList))
@@ -320,9 +345,12 @@ func (h *PageTrello) Board(c *mizu.Ctx) error {
 		for _, issue := range issuesByColumn[col.ID] {
 			card := &TrelloCard{
 				Issue:      issue,
-				Labels:     [](*TrelloLabel){},
-				Members:    [](*users.User){},
+				Labels:     []*TrelloLabel{},
+				Members:    assigneeMap[issue.ID],
 				HasDueDate: issue.DueDate != nil,
+			}
+			if card.Members == nil {
+				card.Members = []*users.User{}
 			}
 			if issue.DueDate != nil {
 				card.IsOverdue = issue.DueDate.Before(now)
@@ -414,7 +442,7 @@ func (h *PageTrello) Card(c *mizu.Ctx) error {
 		}
 	}
 
-	// Build user map for comments
+	// Build user map for comments and assignees
 	userMap := make(map[string]*users.User)
 	for _, u := range teamMembers {
 		userMap[u.ID] = u
@@ -427,6 +455,21 @@ func (h *PageTrello) Card(c *mizu.Ctx) error {
 			Comment: cmt,
 			User:    userMap[cmt.AuthorID],
 		}
+	}
+
+	// Get card assignees (Members)
+	var cardMembers []*users.User
+	assigneeIDs, _ := h.assignees.List(ctx, card.ID)
+	if len(assigneeIDs) > 0 {
+		cardMembers = make([]*users.User, 0, len(assigneeIDs))
+		for _, uid := range assigneeIDs {
+			if u, ok := userMap[uid]; ok {
+				cardMembers = append(cardMembers, u)
+			}
+		}
+	}
+	if cardMembers == nil {
+		cardMembers = []*users.User{}
 	}
 
 	// Get cycles for this team
@@ -455,6 +498,7 @@ func (h *PageTrello) Card(c *mizu.Ctx) error {
 		List:        currentList,
 		Lists:       columnList,
 		AllLabels:   defaultLabels,
+		Members:     cardMembers,
 		AllMembers:  teamMembers,
 		Comments:    commentList,
 		Cycles:      cycleList,

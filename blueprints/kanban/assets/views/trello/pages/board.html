@@ -8,63 +8,63 @@
     bottom: 0;
     display: flex;
     flex-direction: column;
-    background: #0079bf;
+    background: var(--trello-board-blue);
   }
 
   .board-header {
     height: var(--board-header-height);
-    background: rgba(0, 0, 0, 0.15);
+    background: rgba(0, 0, 0, 0.24);
     display: flex;
     align-items: center;
-    padding: 0 8px;
-    gap: 4px;
+    padding: 12px 16px;
+    gap: 8px;
   }
 
   .board-header-left {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 8px;
     flex: 1;
   }
 
   .board-header-right {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 8px;
   }
 
   .board-title {
     font-size: 18px;
     font-weight: 700;
     color: white;
-    padding: 4px 8px;
+    padding: 6px 10px;
     background: transparent;
     border: none;
-    border-radius: 3px;
+    border-radius: 4px;
     cursor: pointer;
   }
 
   .board-title:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.16);
   }
 
   .board-btn {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     padding: 6px 12px;
     font-size: 14px;
-    font-weight: 400;
+    font-weight: 500;
     color: white;
     background: rgba(255, 255, 255, 0.2);
     border: none;
-    border-radius: 3px;
+    border-radius: 4px;
     cursor: pointer;
-    transition: background 0.1s;
+    transition: background 0.15s ease;
   }
 
   .board-btn:hover {
-    background: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.32);
   }
 
   .board-btn svg {
@@ -73,26 +73,44 @@
     fill: currentColor;
   }
 
+  .board-btn-icon {
+    padding: 6px;
+    background: transparent;
+  }
+
+  .board-btn-icon:hover {
+    background: rgba(255, 255, 255, 0.16);
+  }
+
+  .board-divider {
+    width: 1px;
+    height: 20px;
+    background: rgba(255, 255, 255, 0.24);
+    margin: 0 4px;
+  }
+
   .board-members {
     display: flex;
     align-items: center;
-    margin-left: 8px;
+    margin-left: 4px;
   }
 
   .board-member {
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
-    background: #dfe1e6;
-    color: var(--trello-neutral-800);
+    background: var(--trello-neutral-0);
+    color: var(--trello-neutral-700);
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 12px;
-    font-weight: 700;
-    margin-left: -4px;
-    border: 2px solid transparent;
+    font-weight: 600;
+    margin-left: -8px;
+    border: 2px solid var(--trello-board-blue);
     cursor: pointer;
+    text-transform: uppercase;
+    transition: transform 0.1s;
   }
 
   .board-member:first-child {
@@ -100,8 +118,33 @@
   }
 
   .board-member:hover {
-    border-color: white;
     z-index: 1;
+    transform: translateY(-2px);
+  }
+
+  .board-share-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--trello-neutral-900);
+    background: var(--trello-neutral-200);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+
+  .board-share-btn:hover {
+    background: var(--trello-neutral-0);
+  }
+
+  .board-share-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
   }
 
   /* Board canvas - lists container */
@@ -110,8 +153,8 @@
     display: flex;
     overflow-x: auto;
     overflow-y: hidden;
-    padding: 8px 4px 8px 8px;
-    gap: 8px;
+    padding: 12px 8px 12px 12px;
+    gap: 12px;
   }
 
   /* List */
@@ -119,14 +162,15 @@
     width: var(--list-width);
     min-width: var(--list-width);
     max-height: 100%;
-    background: var(--trello-neutral-30);
+    background: var(--trello-neutral-200);
     border-radius: var(--list-border-radius);
     display: flex;
     flex-direction: column;
+    box-shadow: 0 1px 1px rgba(9,30,66,.15);
   }
 
   .list-header {
-    padding: 8px;
+    padding: 8px 8px 0;
     display: flex;
     align-items: flex-start;
     gap: 4px;
@@ -136,35 +180,49 @@
     flex: 1;
     font-size: 14px;
     font-weight: 600;
-    color: var(--trello-neutral-800);
-    padding: 4px 8px;
+    color: var(--trello-neutral-900);
+    padding: 6px 8px;
     background: transparent;
-    border: none;
-    border-radius: 3px;
+    border: 2px solid transparent;
+    border-radius: 8px;
     cursor: pointer;
     word-break: break-word;
+    resize: none;
+    overflow: hidden;
+    font-family: var(--font-family);
+    min-height: 32px;
+    line-height: 1.4;
   }
 
   .list-title:hover {
-    background: rgba(9, 30, 66, 0.08);
+    background: var(--trello-neutral-300);
+  }
+
+  .list-title:focus {
+    background: var(--trello-neutral-0);
+    border-color: var(--trello-blue-300);
+    outline: none;
+    cursor: text;
+    box-shadow: 0 0 0 1px var(--trello-blue-300);
   }
 
   .list-menu-btn {
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;
     background: transparent;
     border: none;
-    border-radius: 3px;
+    border-radius: 8px;
     cursor: pointer;
-    color: var(--trello-neutral-500);
+    color: var(--trello-neutral-600);
+    transition: background 0.15s ease;
   }
 
   .list-menu-btn:hover {
-    background: rgba(9, 30, 66, 0.08);
-    color: var(--trello-neutral-800);
+    background: var(--trello-neutral-300);
+    color: var(--trello-neutral-900);
   }
 
   .list-menu-btn svg {
@@ -173,87 +231,270 @@
     fill: currentColor;
   }
 
+  /* List menu dropdown */
+  .list-menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background: var(--trello-neutral-0);
+    border-radius: 8px;
+    box-shadow: var(--popup-shadow);
+    width: 304px;
+    z-index: 100;
+    margin-top: 4px;
+  }
+
+  .list-menu.is-open {
+    display: block;
+  }
+
+  .list-menu-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 32px;
+    border-bottom: 1px solid var(--trello-neutral-300);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--trello-neutral-600);
+    position: relative;
+  }
+
+  .list-menu-close {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--trello-neutral-600);
+    transition: background 0.15s;
+  }
+
+  .list-menu-close:hover {
+    background: var(--trello-neutral-200);
+  }
+
+  .list-menu-close svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+  }
+
+  .list-menu-items {
+    padding: 8px 0;
+  }
+
+  .list-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    font-size: 14px;
+    color: var(--trello-neutral-900);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .list-menu-item:hover {
+    background: var(--trello-neutral-100);
+  }
+
+  .list-menu-item svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+  }
+
+  .list-menu-divider {
+    height: 1px;
+    background: var(--trello-neutral-300);
+    margin: 8px 0;
+  }
+
   .list-cards {
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 0 4px;
+    padding: 2px 8px;
     min-height: 1px;
   }
 
   .list-footer {
-    padding: 4px 8px 8px;
+    padding: 8px;
   }
 
   .add-card-btn {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 8px;
     width: 100%;
     padding: 8px;
     font-size: 14px;
-    color: var(--trello-neutral-500);
+    color: var(--trello-neutral-600);
     background: transparent;
     border: none;
-    border-radius: 3px;
+    border-radius: 8px;
     cursor: pointer;
     text-align: left;
+    transition: background 0.15s, color 0.15s;
   }
 
   .add-card-btn:hover {
-    background: rgba(9, 30, 66, 0.08);
-    color: var(--trello-neutral-800);
+    background: var(--trello-neutral-300);
+    color: var(--trello-neutral-900);
   }
 
   .add-card-btn svg {
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+  }
+
+  .add-card-template-btn {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--trello-neutral-500);
+    margin-left: auto;
+    transition: background 0.15s;
+  }
+
+  .add-card-template-btn:hover {
+    background: var(--trello-neutral-300);
+    color: var(--trello-neutral-700);
+  }
+
+  .add-card-template-btn svg {
+    width: 16px;
+    height: 16px;
     fill: currentColor;
   }
 
   /* Card */
   .card {
+    position: relative;
     background: var(--trello-neutral-0);
     border-radius: var(--card-border-radius);
     box-shadow: var(--card-shadow);
     margin-bottom: 8px;
     cursor: pointer;
-    transition: background 0.1s;
+    transition: background 0.1s ease, transform 0.1s ease, opacity 0.1s ease;
   }
 
   .card:hover {
-    background: var(--trello-neutral-20);
+    background: var(--trello-neutral-100);
   }
+
+  /* Card edit pencil button */
+  .card-edit-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 28px;
+    height: 28px;
+    background: var(--trello-neutral-200);
+    border: none;
+    border-radius: 50%;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 10;
+    transition: background 0.15s;
+  }
+
+  .card:hover .card-edit-btn {
+    display: flex;
+  }
+
+  .card-edit-btn:hover {
+    background: var(--trello-neutral-300);
+  }
+
+  .card-edit-btn svg {
+    width: 14px;
+    height: 14px;
+    fill: var(--trello-neutral-600);
+  }
+
+  /* Card cover */
+  .card-cover {
+    height: 32px;
+    border-radius: var(--card-border-radius) var(--card-border-radius) 0 0;
+  }
+
+  .card-cover-green { background: var(--trello-success); }
+  .card-cover-yellow { background: var(--trello-warning); }
+  .card-cover-orange { background: var(--trello-orange); }
+  .card-cover-red { background: var(--trello-danger); }
+  .card-cover-purple { background: var(--trello-purple); }
+  .card-cover-blue { background: var(--trello-blue-300); }
+  .card-cover-sky { background: var(--trello-teal); }
+  .card-cover-lime { background: var(--trello-lime); }
+  .card-cover-pink { background: var(--trello-pink); }
+  .card-cover-black { background: var(--trello-neutral-700); }
 
   .card-labels {
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
-    padding: 4px 8px 0;
+    padding: 8px 8px 0;
   }
 
   .card-label {
-    width: 40px;
+    min-width: 40px;
     height: 8px;
+    padding: 0;
     border-radius: 4px;
+    font-size: 0;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    overflow: hidden;
   }
 
-  .card-label-green { background: #61bd4f; }
-  .card-label-yellow { background: #f2d600; }
-  .card-label-orange { background: #ff9f1a; }
-  .card-label-red { background: #eb5a46; }
-  .card-label-purple { background: #c377e0; }
-  .card-label-blue { background: #0079bf; }
-  .card-label-sky { background: #00c2e0; }
-  .card-label-lime { background: #51e898; }
-  .card-label-pink { background: #ff78cb; }
-  .card-label-black { background: #344563; }
+  /* Labels expand on hover - Trello behavior */
+  .card:hover .card-label {
+    height: 16px;
+    min-width: 56px;
+    padding: 0 8px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    color: var(--trello-neutral-900);
+  }
+
+  .card-label-green { background: var(--trello-success); }
+  .card-label-yellow { background: var(--trello-warning); }
+  .card-label-orange { background: var(--trello-orange); }
+  .card-label-red { background: var(--trello-danger); }
+  .card-label-purple { background: var(--trello-purple); }
+  .card-label-blue { background: var(--trello-blue-300); }
+  .card-label-sky { background: var(--trello-teal); }
+  .card-label-lime { background: var(--trello-lime); }
+  .card-label-pink { background: var(--trello-pink); }
+  .card-label-black { background: var(--trello-neutral-500); }
 
   .card-title {
-    padding: 6px 8px 2px;
+    padding: 8px 8px 4px;
     font-size: 14px;
-    color: var(--trello-neutral-800);
+    color: var(--trello-neutral-900);
     word-break: break-word;
+    line-height: 1.4;
   }
 
   .card-badges {
@@ -261,17 +502,17 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 4px;
-    padding: 4px 8px 6px;
+    padding: 4px 8px 8px;
   }
 
   .card-badge {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
-    padding: 2px 4px;
+    gap: 4px;
+    padding: 2px 6px;
     font-size: 12px;
-    color: var(--trello-neutral-500);
-    border-radius: 3px;
+    color: var(--trello-neutral-600);
+    border-radius: 4px;
   }
 
   .card-badge svg {
@@ -281,33 +522,39 @@
   }
 
   .card-badge.is-due-soon {
-    background: #f2d600;
-    color: var(--trello-neutral-800);
+    background: var(--trello-warning);
+    color: var(--trello-warning-bold);
   }
 
   .card-badge.is-overdue {
-    background: #eb5a46;
+    background: var(--trello-danger);
     color: white;
+  }
+
+  .card-badge.is-due-complete {
+    background: var(--trello-success);
+    color: var(--trello-success-bold);
   }
 
   .card-members {
     display: flex;
     justify-content: flex-end;
-    padding: 0 8px 6px;
-    gap: 2px;
+    padding: 0 8px 8px;
+    gap: 4px;
   }
 
   .card-member {
     width: 24px;
     height: 24px;
     border-radius: 50%;
-    background: #dfe1e6;
-    color: var(--trello-neutral-800);
+    background: var(--trello-neutral-300);
+    color: var(--trello-neutral-700);
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 10px;
-    font-weight: 700;
+    font-weight: 600;
+    text-transform: uppercase;
   }
 
   /* Add list */
@@ -319,34 +566,35 @@
   .add-list-btn {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 8px;
     width: 100%;
-    padding: 12px;
+    padding: 12px 14px;
     font-size: 14px;
+    font-weight: 500;
     color: white;
     background: rgba(255, 255, 255, 0.24);
     border: none;
-    border-radius: 3px;
+    border-radius: var(--list-border-radius);
     cursor: pointer;
     text-align: left;
-    transition: background 0.1s;
+    transition: background 0.15s;
   }
 
   .add-list-btn:hover {
-    background: rgba(255, 255, 255, 0.32);
+    background: rgba(255, 255, 255, 0.36);
   }
 
   .add-list-btn svg {
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
     fill: currentColor;
   }
 
   .add-list-form {
     display: none;
-    background: var(--trello-neutral-30);
-    border-radius: 3px;
-    padding: 4px;
+    background: var(--trello-neutral-200);
+    border-radius: var(--list-border-radius);
+    padding: 8px;
   }
 
   .add-list-form.is-open {
@@ -355,28 +603,34 @@
 
   .add-list-form input {
     width: 100%;
-    padding: 8px 12px;
+    padding: 10px 12px;
     font-size: 14px;
-    border: 2px solid var(--trello-blue-500);
-    border-radius: 3px;
+    border: 2px solid var(--trello-blue-300);
+    border-radius: 8px;
     margin-bottom: 8px;
     background: var(--trello-neutral-0);
+    color: var(--trello-neutral-900);
   }
 
   .add-list-form input:focus {
     outline: none;
+    box-shadow: 0 0 0 1px var(--trello-blue-300);
+  }
+
+  .add-list-form input::placeholder {
+    color: var(--trello-neutral-500);
   }
 
   .add-list-actions {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 8px;
   }
 
   /* Add card form */
   .add-card-form {
     display: none;
-    padding: 0 4px 8px;
+    padding: 0 8px 8px;
   }
 
   .add-card-form.is-open {
@@ -385,46 +639,80 @@
 
   .add-card-form textarea {
     width: 100%;
-    min-height: 54px;
-    padding: 8px 12px;
+    min-height: 56px;
+    padding: 10px 12px;
     font-size: 14px;
     font-family: var(--font-family);
+    line-height: 1.4;
     border: none;
-    border-radius: 3px;
+    border-radius: var(--card-border-radius);
     resize: none;
     background: var(--trello-neutral-0);
     box-shadow: var(--card-shadow);
     margin-bottom: 8px;
+    color: var(--trello-neutral-900);
   }
 
   .add-card-form textarea:focus {
-    outline: none;
+    outline: 2px solid var(--trello-blue-300);
+    outline-offset: 0;
+  }
+
+  .add-card-form textarea::placeholder {
+    color: var(--trello-neutral-500);
   }
 
   .add-card-actions {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 8px;
+  }
+
+  .add-card-actions .btn-primary {
+    background: var(--trello-blue-500);
+    color: white;
+  }
+
+  .add-card-actions .btn-primary:hover {
+    background: var(--trello-blue-600);
+  }
+
+  /* Drag and drop styles */
+  .card.dragging {
+    opacity: 0.4;
+  }
+
+  .list-cards.drag-over {
+    background: rgba(0, 0, 0, 0.04);
+    border-radius: 8px;
+  }
+
+  .drop-placeholder {
+    background: rgba(0, 121, 191, 0.2);
+    border-radius: var(--card-border-radius);
+    margin-bottom: 8px;
+    min-height: 40px;
+    border: 2px dashed var(--trello-blue-300);
   }
 
   /* Card modal */
   .card-modal .modal {
     max-width: 768px;
-    background: var(--trello-neutral-20);
+    background: var(--trello-neutral-200);
   }
 
   .card-modal-header {
-    padding: 16px 40px 8px 56px;
+    padding: 20px 48px 12px 56px;
     position: relative;
   }
 
   .card-modal-icon {
     position: absolute;
-    left: 16px;
-    top: 16px;
+    left: 20px;
+    top: 20px;
     width: 32px;
     height: 32px;
-    color: var(--trello-neutral-500);
+    color: var(--trello-neutral-600);
   }
 
   .card-modal-icon svg {
@@ -436,46 +724,46 @@
   .card-modal-title {
     font-size: 20px;
     font-weight: 600;
-    color: var(--trello-neutral-800);
+    color: var(--trello-neutral-900);
     width: 100%;
-    padding: 4px 8px;
+    padding: 6px 8px;
     border: none;
     background: transparent;
-    border-radius: 3px;
-    margin: -4px -8px;
+    border-radius: 8px;
+    margin: -6px -8px;
   }
 
   .card-modal-title:hover {
-    background: rgba(9, 30, 66, 0.04);
+    background: var(--trello-neutral-300);
   }
 
   .card-modal-title:focus {
     background: var(--trello-neutral-0);
     outline: none;
-    box-shadow: inset 0 0 0 2px var(--trello-blue-500);
+    box-shadow: inset 0 0 0 2px var(--trello-blue-300);
   }
 
   .card-modal-list {
     font-size: 14px;
-    color: var(--trello-neutral-500);
-    margin-top: 4px;
+    color: var(--trello-neutral-600);
+    margin-top: 8px;
   }
 
   .card-modal-list a {
-    color: var(--trello-neutral-800);
+    color: var(--trello-neutral-900);
     text-decoration: underline;
   }
 
   .card-modal-body {
     display: flex;
     gap: 16px;
-    padding: 0 8px 16px 8px;
+    padding: 0 16px 24px 16px;
   }
 
   .card-modal-main {
     flex: 1;
     min-width: 0;
-    padding-left: 48px;
+    padding-left: 40px;
   }
 
   .card-modal-sidebar {
@@ -491,9 +779,9 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 8px;
-    color: var(--trello-neutral-800);
-    font-size: 12px;
+    margin-bottom: 12px;
+    color: var(--trello-neutral-900);
+    font-size: 14px;
     font-weight: 600;
   }
 
@@ -506,22 +794,22 @@
   .sidebar-btn {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     width: 100%;
     padding: 6px 12px;
     font-size: 14px;
-    color: var(--trello-neutral-800);
-    background: rgba(9, 30, 66, 0.04);
+    color: var(--trello-neutral-900);
+    background: var(--trello-neutral-300);
     border: none;
-    border-radius: 3px;
+    border-radius: 4px;
     cursor: pointer;
     text-align: left;
     margin-bottom: 8px;
-    transition: background 0.1s;
+    transition: background 0.15s;
   }
 
   .sidebar-btn:hover {
-    background: rgba(9, 30, 66, 0.08);
+    background: var(--trello-neutral-400);
   }
 
   .sidebar-btn svg {
@@ -535,9 +823,10 @@
   <div class="board-header">
     <div class="board-header-left">
       <h1 class="board-title">{{.Board.Name}}</h1>
-      <button class="board-btn">
+      <button class="board-btn board-btn-icon" title="Star board">
         <svg viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
       </button>
+      <div class="board-divider"></div>
       <div class="board-members">
         {{range .Members}}
         <div class="board-member" title="{{.DisplayName}}">{{slice .DisplayName 0 1}}</div>
@@ -545,14 +834,6 @@
       </div>
     </div>
     <div class="board-header-right">
-      <button class="board-btn">
-        <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
-        Filter
-      </button>
-      <button class="board-btn">
-        <svg viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
-        Show menu
-      </button>
     </div>
   </div>
 
@@ -560,18 +841,59 @@
     {{range .Lists}}
     <div class="list" data-list-id="{{.ID}}">
       <div class="list-header">
-        <h2 class="list-title">{{.Name}}</h2>
-        <button class="list-menu-btn">
-          <svg viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
-        </button>
+        <textarea class="list-title" rows="1" data-list-id="{{.ID}}" data-original="{{.Name}}">{{.Name}}</textarea>
+        <div style="position: relative;">
+          <button class="list-menu-btn" data-list-id="{{.ID}}">
+            <svg viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+          </button>
+          <div class="list-menu" data-list-id="{{.ID}}">
+            <div class="list-menu-header">
+              List actions
+              <button class="list-menu-close">
+                <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+              </button>
+            </div>
+            <div class="list-menu-items">
+              <div class="list-menu-item" data-action="add-card">
+                <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                Add card
+              </div>
+              <div class="list-menu-item" data-action="copy-list">
+                <svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                Copy list
+              </div>
+              <div class="list-menu-item" data-action="move-list">
+                <svg viewBox="0 0 24 24"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
+                Move list
+              </div>
+              <div class="list-menu-divider"></div>
+              <div class="list-menu-item" data-action="sort-by-date">
+                <svg viewBox="0 0 24 24"><path d="M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z"/></svg>
+                Sort by date created
+              </div>
+              <div class="list-menu-divider"></div>
+              <div class="list-menu-item" data-action="archive-cards">
+                <svg viewBox="0 0 24 24"><path d="M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5L6.5 12H10v-2h4v2h3.5L12 17.5zM5.12 5l.81-1h12l.94 1H5.12z"/></svg>
+                Archive all cards
+              </div>
+              <div class="list-menu-item" data-action="archive-list" style="color: var(--trello-danger);">
+                <svg viewBox="0 0 24 24" style="fill: var(--trello-danger);"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                Archive this list
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="list-cards" data-list-id="{{.ID}}">
         {{range .Cards}}
         <div class="card" data-card-id="{{.ID}}" data-card-key="{{.Key}}">
+          <button class="card-edit-btn" title="Edit card" onclick="event.stopPropagation();">
+            <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+          </button>
           {{if .Labels}}
           <div class="card-labels">
             {{range .Labels}}
-            <div class="card-label card-label-{{.Color}}"></div>
+            <div class="card-label card-label-{{.Color}}">{{.Name}}</div>
             {{end}}
           </div>
           {{end}}
@@ -581,7 +903,7 @@
             {{if .HasDueDate}}
             <span class="card-badge {{if .IsOverdue}}is-overdue{{else if .IsDueSoon}}is-due-soon{{end}}">
               <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
-              Due
+              {{if .DueDate}}{{.DueDate.Format "Jan 2"}}{{else}}Due{{end}}
             </span>
             {{end}}
             {{if .CommentCount}}
@@ -595,7 +917,7 @@
           {{if .Members}}
           <div class="card-members">
             {{range .Members}}
-            <div class="card-member">{{slice .DisplayName 0 1}}</div>
+            <div class="card-member" title="{{.DisplayName}}">{{slice .DisplayName 0 1}}</div>
             {{end}}
           </div>
           {{end}}
@@ -658,6 +980,128 @@ addListCancel.addEventListener('click', () => {
   addListForm.classList.remove('is-open');
   addListBtn.style.display = 'flex';
   listNameInput.value = '';
+});
+
+// List title inline editing
+document.querySelectorAll('.list-title').forEach(textarea => {
+  // Auto-resize on input
+  const autoResize = () => {
+    textarea.style.height = 'auto';
+    textarea.style.height = textarea.scrollHeight + 'px';
+  };
+  autoResize();
+  textarea.addEventListener('input', autoResize);
+
+  // Save on blur
+  textarea.addEventListener('blur', async function() {
+    const listId = this.dataset.listId;
+    const newName = this.value.trim();
+    const originalName = this.dataset.original;
+
+    if (!newName) {
+      this.value = originalName;
+      return;
+    }
+
+    if (newName === originalName) return;
+
+    try {
+      const res = await fetch('/api/v1/columns/' + listId, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName })
+      });
+      const data = await res.json();
+      if (data.success) {
+        this.dataset.original = newName;
+      } else {
+        this.value = originalName;
+        alert(data.error || 'Failed to update list name');
+      }
+    } catch (err) {
+      this.value = originalName;
+      console.error('Failed to update list name:', err);
+    }
+  });
+
+  // Submit on Enter, cancel on Escape
+  textarea.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      this.blur();
+    } else if (e.key === 'Escape') {
+      this.value = this.dataset.original;
+      this.blur();
+    }
+  });
+});
+
+// List menu toggle
+document.querySelectorAll('.list-menu-btn').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const listId = btn.dataset.listId;
+    const menu = document.querySelector(`.list-menu[data-list-id="${listId}"]`);
+
+    // Close all other menus
+    document.querySelectorAll('.list-menu.is-open').forEach(m => {
+      if (m !== menu) m.classList.remove('is-open');
+    });
+
+    menu.classList.toggle('is-open');
+  });
+});
+
+// Close list menu on outside click
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.list-menu') && !e.target.closest('.list-menu-btn')) {
+    document.querySelectorAll('.list-menu.is-open').forEach(m => m.classList.remove('is-open'));
+  }
+});
+
+// List menu close buttons
+document.querySelectorAll('.list-menu-close').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    btn.closest('.list-menu').classList.remove('is-open');
+  });
+});
+
+// List menu item actions
+document.querySelectorAll('.list-menu-item').forEach(item => {
+  item.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const action = item.dataset.action;
+    const menu = item.closest('.list-menu');
+    const listId = menu.dataset.listId;
+    const list = document.querySelector(`.list[data-list-id="${listId}"]`);
+
+    menu.classList.remove('is-open');
+
+    switch (action) {
+      case 'add-card':
+        const addCardBtn = list.querySelector('.add-card-btn');
+        if (addCardBtn) addCardBtn.click();
+        break;
+      case 'archive-list':
+        if (!confirm('Are you sure you want to archive this list?')) return;
+        try {
+          const res = await fetch('/api/v1/columns/' + listId, {
+            method: 'DELETE'
+          });
+          const data = await res.json();
+          if (data.success) {
+            list.remove();
+          } else {
+            alert(data.error || 'Failed to archive list');
+          }
+        } catch (err) {
+          alert('Failed to archive list: ' + err.message);
+        }
+        break;
+      // Other actions can be implemented as needed
+    }
+  });
 });
 
 // Add list submit
@@ -732,10 +1176,196 @@ document.querySelectorAll('.add-card-submit').forEach(btn => {
 
 // Card click - open card detail
 document.querySelectorAll('.card').forEach(card => {
-  card.addEventListener('click', () => {
+  card.addEventListener('click', (e) => {
+    // Don't navigate if we just finished dragging
+    if (card.dataset.wasDragged === 'true') {
+      card.dataset.wasDragged = 'false';
+      return;
+    }
     const cardKey = card.dataset.cardKey;
     window.location.href = '/t/' + workspaceSlug + '/c/' + cardKey;
   });
 });
+
+// Drag and drop functionality with flicker prevention
+let draggedCard = null;
+let draggedCardHeight = 40;
+let dragStartList = null;
+let currentPlaceholder = null;
+let lastTargetContainer = null;
+let lastAfterElement = null;
+
+function createPlaceholder(height) {
+  const placeholder = document.createElement('div');
+  placeholder.className = 'drop-placeholder';
+  placeholder.style.height = height + 'px';
+  return placeholder;
+}
+
+function removePlaceholder() {
+  if (currentPlaceholder && currentPlaceholder.parentNode) {
+    currentPlaceholder.parentNode.removeChild(currentPlaceholder);
+  }
+  currentPlaceholder = null;
+}
+
+function initDragAndDrop() {
+  // Make cards draggable
+  document.querySelectorAll('.card').forEach(card => {
+    card.setAttribute('draggable', 'true');
+
+    card.addEventListener('dragstart', (e) => {
+      draggedCard = card;
+      draggedCardHeight = card.offsetHeight;
+      dragStartList = card.closest('.list-cards');
+
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', card.dataset.cardKey);
+
+      // Add dragging class after a tiny delay so drag image captures the card
+      requestAnimationFrame(() => {
+        card.classList.add('dragging');
+      });
+    });
+
+    card.addEventListener('dragend', (e) => {
+      card.classList.remove('dragging');
+
+      // Remove all drag-over indicators
+      document.querySelectorAll('.list-cards.drag-over').forEach(el => {
+        el.classList.remove('drag-over');
+      });
+      removePlaceholder();
+
+      draggedCard = null;
+      dragStartList = null;
+      lastTargetContainer = null;
+      lastAfterElement = null;
+    });
+  });
+
+  // Setup drop zones (list-cards containers)
+  document.querySelectorAll('.list-cards').forEach(container => {
+    container.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+
+      if (!draggedCard) return;
+
+      // Find the card we're hovering over to insert before
+      const afterElement = getDragAfterElement(container, e.clientY);
+
+      // Only update if the target position changed (prevents flickering)
+      if (container === lastTargetContainer && afterElement === lastAfterElement) {
+        return;
+      }
+
+      lastTargetContainer = container;
+      lastAfterElement = afterElement;
+
+      // Remove drag-over from other containers
+      document.querySelectorAll('.list-cards.drag-over').forEach(el => {
+        if (el !== container) el.classList.remove('drag-over');
+      });
+      container.classList.add('drag-over');
+
+      // Remove existing placeholder
+      removePlaceholder();
+
+      // Create and insert placeholder
+      currentPlaceholder = createPlaceholder(draggedCardHeight);
+
+      if (afterElement) {
+        container.insertBefore(currentPlaceholder, afterElement);
+      } else {
+        container.appendChild(currentPlaceholder);
+      }
+    });
+
+    container.addEventListener('dragleave', (e) => {
+      // Use bounding rect to check if truly leaving the container
+      const rect = container.getBoundingClientRect();
+      const x = e.clientX;
+      const y = e.clientY;
+
+      // Check if cursor is truly outside the container bounds
+      if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+        container.classList.remove('drag-over');
+        if (lastTargetContainer === container) {
+          removePlaceholder();
+          lastTargetContainer = null;
+          lastAfterElement = null;
+        }
+      }
+    });
+
+    container.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      container.classList.remove('drag-over');
+
+      const cardKey = e.dataTransfer.getData('text/plain');
+
+      // Get position before removing placeholder
+      const insertBeforeElement = currentPlaceholder ? currentPlaceholder.nextElementSibling : null;
+      removePlaceholder();
+
+      if (!draggedCard || !cardKey) return;
+
+      // Move the card in DOM
+      draggedCard.classList.remove('dragging');
+
+      if (insertBeforeElement) {
+        container.insertBefore(draggedCard, insertBeforeElement);
+      } else {
+        container.appendChild(draggedCard);
+      }
+
+      // Mark as dragged to prevent click navigation
+      draggedCard.dataset.wasDragged = 'true';
+
+      // Check if we actually moved to a different list
+      const newColumnId = container.dataset.listId;
+      const oldColumnId = dragStartList ? dragStartList.dataset.listId : null;
+
+      if (newColumnId !== oldColumnId) {
+        // Call API to move the card
+        try {
+          const res = await fetch('/api/v1/issues/' + cardKey + '/move', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ column_id: newColumnId })
+          });
+          const data = await res.json();
+          if (!data.success) {
+            console.error('Failed to move card:', data.error);
+            window.location.reload();
+          }
+        } catch (err) {
+          console.error('Failed to move card:', err);
+          window.location.reload();
+        }
+      }
+    });
+  });
+}
+
+// Helper function to find the element after which to insert
+function getDragAfterElement(container, y) {
+  const draggableElements = [...container.querySelectorAll('.card:not(.dragging)')];
+
+  return draggableElements.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+
+    if (offset < 0 && offset > closest.offset) {
+      return { offset: offset, element: child };
+    } else {
+      return closest;
+    }
+  }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
+// Initialize drag and drop
+initDragAndDrop();
 </script>
 {{end}}

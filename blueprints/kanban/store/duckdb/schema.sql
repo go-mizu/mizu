@@ -136,9 +136,10 @@ CREATE TABLE IF NOT EXISTS issues (
     UNIQUE (project_id, key)
 );
 
+-- Note: FK constraints removed to avoid DuckDB UPDATE issues (enforced at application level)
 CREATE TABLE IF NOT EXISTS issue_assignees (
-    issue_id VARCHAR NOT NULL REFERENCES issues(id),
-    user_id  VARCHAR NOT NULL REFERENCES users(id),
+    issue_id VARCHAR NOT NULL,
+    user_id  VARCHAR NOT NULL,
     PRIMARY KEY (issue_id, user_id)
 );
 
@@ -146,10 +147,11 @@ CREATE TABLE IF NOT EXISTS issue_assignees (
 -- Comments (Discussion)
 -- ============================================================
 
+-- Note: FK constraints removed to avoid DuckDB UPDATE issues (enforced at application level)
 CREATE TABLE IF NOT EXISTS comments (
     id         VARCHAR PRIMARY KEY,
-    issue_id   VARCHAR NOT NULL REFERENCES issues(id),
-    author_id  VARCHAR NOT NULL REFERENCES users(id),
+    issue_id   VARCHAR NOT NULL,
+    author_id  VARCHAR NOT NULL,
     content    VARCHAR NOT NULL,
     edited_at  TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -173,9 +175,10 @@ CREATE TABLE IF NOT EXISTS fields (
     UNIQUE (project_id, name)
 );
 
+-- Note: FK constraints removed to avoid DuckDB UPDATE issues (enforced at application level)
 CREATE TABLE IF NOT EXISTS field_values (
-    issue_id   VARCHAR NOT NULL REFERENCES issues(id),
-    field_id   VARCHAR NOT NULL REFERENCES fields(id),
+    issue_id   VARCHAR NOT NULL,
+    field_id   VARCHAR NOT NULL,
     value_text VARCHAR,
     value_num  DOUBLE,
     value_bool BOOLEAN,
