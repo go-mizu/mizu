@@ -107,6 +107,8 @@ type BoardData struct {
 	Projects        []*projects.Project
 	Project         *projects.Project
 	Columns         []*BoardColumn
+	TeamMembers     []*users.User
+	Cycles          []*cycles.Cycle
 	ActiveTeamID    string
 	ActiveProjectID string
 	ActiveNav       string
@@ -130,6 +132,8 @@ type IssuesData struct {
 	IssuesByStatus   []*IssueStatusGroup
 	Columns          []*columns.Column
 	Projects         []*projects.Project
+	TeamMembers      []*users.User
+	Cycles           []*cycles.Cycle
 	DefaultProjectID string
 	ActiveTeamID     string
 	ActiveProjectID  string
@@ -792,6 +796,22 @@ func (h *Page) Board(c *mizu.Ctx) error {
 		}
 	}
 
+	// Get team members and cycles for the create issue modal
+	var teamMembers []*users.User
+	var cycleList []*cycles.Cycle
+	if project != nil {
+		members, _ := h.teams.ListMembers(ctx, project.TeamID)
+		cycleList, _ = h.cycles.ListByTeam(ctx, project.TeamID)
+
+		if len(members) > 0 {
+			userIDs := make([]string, len(members))
+			for i, m := range members {
+				userIDs[i] = m.UserID
+			}
+			teamMembers, _ = h.users.GetByIDs(ctx, userIDs)
+		}
+	}
+
 	return render(h, c, "board", BoardData{
 		Title:           project.Name,
 		User:            user,
@@ -801,6 +821,8 @@ func (h *Page) Board(c *mizu.Ctx) error {
 		Projects:        projectList,
 		Project:         project,
 		Columns:         boardColumns,
+		TeamMembers:     teamMembers,
+		Cycles:          cycleList,
 		ActiveProjectID: projectID,
 		ActiveNav:       "issues",
 		Breadcrumbs: []Breadcrumb{
@@ -885,6 +907,22 @@ func (h *Page) IssuesList(c *mizu.Ctx) error {
 	// Group issues by status (column name)
 	issuesByStatus := groupIssuesByStatus(issueViews, columnList)
 
+	// Get team members and cycles for the create issue modal
+	var teamMembers []*users.User
+	var cycleList []*cycles.Cycle
+	if len(teamList) > 0 {
+		members, _ := h.teams.ListMembers(ctx, teamList[0].ID)
+		cycleList, _ = h.cycles.ListByTeam(ctx, teamList[0].ID)
+
+		if len(members) > 0 {
+			userIDs := make([]string, len(members))
+			for i, m := range members {
+				userIDs[i] = m.UserID
+			}
+			teamMembers, _ = h.users.GetByIDs(ctx, userIDs)
+		}
+	}
+
 	return render(h, c, "issues", IssuesData{
 		Title:            "Issues",
 		User:             user,
@@ -895,6 +933,8 @@ func (h *Page) IssuesList(c *mizu.Ctx) error {
 		IssuesByStatus:   issuesByStatus,
 		Columns:          columnList,
 		Projects:         projectList,
+		TeamMembers:      teamMembers,
+		Cycles:           cycleList,
 		DefaultProjectID: defaultProjectID,
 		TotalCount:       len(issueViews),
 		ActiveNav:        "issues",
