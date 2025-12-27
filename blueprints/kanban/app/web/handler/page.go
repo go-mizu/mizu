@@ -113,6 +113,12 @@ type BoardData struct {
 	Breadcrumbs     []Breadcrumb
 }
 
+// IssueStatusGroup groups issues by status for the issues list view.
+type IssueStatusGroup struct {
+	Status string
+	Issues []*IssueView
+}
+
 // IssuesData holds data for the issues list page.
 type IssuesData struct {
 	Title            string
@@ -121,6 +127,7 @@ type IssuesData struct {
 	Workspaces       []*workspaces.Workspace
 	Teams            []*teams.Team
 	Issues           []*IssueView
+	IssuesByStatus   []*IssueStatusGroup
 	Columns          []*columns.Column
 	Projects         []*projects.Project
 	DefaultProjectID string
@@ -875,6 +882,9 @@ func (h *Page) IssuesList(c *mizu.Ctx) error {
 		}
 	}
 
+	// Group issues by status (column name)
+	issuesByStatus := groupIssuesByStatus(issueViews, columnList)
+
 	return render(h, c, "issues", IssuesData{
 		Title:            "Issues",
 		User:             user,
@@ -882,12 +892,54 @@ func (h *Page) IssuesList(c *mizu.Ctx) error {
 		Workspaces:       workspaceList,
 		Teams:            teamList,
 		Issues:           issueViews,
+		IssuesByStatus:   issuesByStatus,
 		Columns:          columnList,
 		Projects:         projectList,
 		DefaultProjectID: defaultProjectID,
 		TotalCount:       len(issueViews),
 		ActiveNav:        "issues",
 	})
+}
+
+// groupIssuesByStatus groups issues by their column/status.
+func groupIssuesByStatus(issueViews []*IssueView, columnList []*columns.Column) []*IssueStatusGroup {
+	// Create a map to hold issues by status
+	statusMap := make(map[string][]*IssueView)
+	statusOrder := []string{}
+
+	// First, establish order from column list
+	for _, col := range columnList {
+		if _, exists := statusMap[col.Name]; !exists {
+			statusMap[col.Name] = []*IssueView{}
+			statusOrder = append(statusOrder, col.Name)
+		}
+	}
+
+	// Group issues
+	for _, iv := range issueViews {
+		status := "Unknown"
+		if iv.Column != nil {
+			status = iv.Column.Name
+		}
+		if _, exists := statusMap[status]; !exists {
+			statusMap[status] = []*IssueView{}
+			statusOrder = append(statusOrder, status)
+		}
+		statusMap[status] = append(statusMap[status], iv)
+	}
+
+	// Build result in order
+	result := make([]*IssueStatusGroup, 0, len(statusOrder))
+	for _, status := range statusOrder {
+		if issues, ok := statusMap[status]; ok && len(issues) > 0 {
+			result = append(result, &IssueStatusGroup{
+				Status: status,
+				Issues: issues,
+			})
+		}
+	}
+
+	return result
 }
 
 // IssuesCalendar renders the calendar view.
