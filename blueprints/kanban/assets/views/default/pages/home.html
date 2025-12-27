@@ -45,10 +45,14 @@
         </div>
         <span class="status-badge status-active">Active</span>
       </div>
+      {{if gt .ActiveCycle.TotalCount 0}}
       <div class="progress-bar mb-2">
-        <div class="progress-fill" style="width: {{mul (div (float64 .ActiveCycle.CompletedCount) (float64 .ActiveCycle.TotalCount)) 100}}%"></div>
+        <div class="progress-fill" style="width: {{mul (div .ActiveCycle.CompletedCount .ActiveCycle.TotalCount) 100}}%"></div>
       </div>
       <p class="text-sm text-muted">{{.ActiveCycle.CompletedCount}} of {{.ActiveCycle.TotalCount}} issues completed</p>
+      {{else}}
+      <p class="text-sm text-muted">No issues in this cycle yet</p>
+      {{end}}
     </div>
   </div>
 </div>

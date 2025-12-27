@@ -1,0 +1,227 @@
+{{define "content"}}
+<div class="page-header flex items-center justify-between mb-6">
+  <div class="flex items-center gap-4">
+    <h1 class="page-title">Issues</h1>
+    <div class="view-switcher">
+      <a href="/w/{{.Workspace.Slug}}/issues?view=list" class="view-btn" title="List view">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="8" x2="21" y1="6" y2="6"/>
+          <line x1="8" x2="21" y1="12" y2="12"/>
+          <line x1="8" x2="21" y1="18" y2="18"/>
+          <line x1="3" x2="3.01" y1="6" y2="6"/>
+          <line x1="3" x2="3.01" y1="12" y2="12"/>
+          <line x1="3" x2="3.01" y1="18" y2="18"/>
+        </svg>
+      </a>
+      {{if .DefaultProjectID}}
+      <a href="/w/{{.Workspace.Slug}}/board/{{.DefaultProjectID}}" class="view-btn" title="Board view">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect width="6" height="14" x="4" y="5" rx="2"/>
+          <rect width="6" height="10" x="14" y="7" rx="2"/>
+        </svg>
+      </a>
+      {{end}}
+      <a href="/w/{{.Workspace.Slug}}/issues?view=calendar" class="view-btn" title="Calendar view">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 2v4"/>
+          <path d="M16 2v4"/>
+          <rect width="18" height="18" x="3" y="4" rx="2"/>
+          <path d="M3 10h18"/>
+        </svg>
+      </a>
+      <a href="/w/{{.Workspace.Slug}}/issues?view=gantt" class="view-btn active" title="Gantt chart">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 3v18h18"/>
+          <rect x="7" y="6" width="10" height="3"/>
+          <rect x="5" y="12" width="8" height="3"/>
+          <rect x="9" y="18" width="6" height="3"/>
+        </svg>
+      </a>
+    </div>
+  </div>
+  <div class="flex gap-2">
+    <div class="gantt-controls">
+      <div class="dropdown">
+        <button class="dropdown-trigger btn btn-secondary btn-sm">
+          Scale: {{.Scale}}
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m6 9 6 6 6-6"/>
+          </svg>
+        </button>
+        <div class="dropdown-menu hidden">
+          <a href="?view=gantt&scale=day&group={{.GroupBy}}" class="dropdown-item {{if eq .Scale "day"}}active{{end}}">Day</a>
+          <a href="?view=gantt&scale=week&group={{.GroupBy}}" class="dropdown-item {{if eq .Scale "week"}}active{{end}}">Week</a>
+          <a href="?view=gantt&scale=month&group={{.GroupBy}}" class="dropdown-item {{if eq .Scale "month"}}active{{end}}">Month</a>
+        </div>
+      </div>
+      <div class="dropdown">
+        <button class="dropdown-trigger btn btn-secondary btn-sm">
+          Group: {{if eq .GroupBy "none"}}None{{else}}{{.GroupBy}}{{end}}
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m6 9 6 6 6-6"/>
+          </svg>
+        </button>
+        <div class="dropdown-menu hidden">
+          <a href="?view=gantt&scale={{.Scale}}&group=none" class="dropdown-item {{if eq .GroupBy "none"}}active{{end}}">None</a>
+          <a href="?view=gantt&scale={{.Scale}}&group=project" class="dropdown-item {{if eq .GroupBy "project"}}active{{end}}">Project</a>
+          <a href="?view=gantt&scale={{.Scale}}&group=column" class="dropdown-item {{if eq .GroupBy "column"}}active{{end}}">Status</a>
+        </div>
+      </div>
+      <a href="?view=gantt&scale={{.Scale}}&group={{.GroupBy}}" class="btn btn-secondary btn-sm">Today</a>
+    </div>
+    <button class="btn btn-primary" data-modal="create-issue-modal">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12h14"/>
+        <path d="M12 5v14"/>
+      </svg>
+      New Issue
+    </button>
+  </div>
+</div>
+
+<div class="gantt-container" style="--timeline-days: {{.TimelineDays}};">
+  <div class="gantt-sidebar">
+    <div class="gantt-sidebar-header">
+      <span>Issue</span>
+    </div>
+    <div class="gantt-sidebar-body">
+      {{range .Groups}}
+      {{if .Name}}
+      <div class="gantt-group-header">
+        <span class="gantt-group-name">{{.Name}}</span>
+        <span class="gantt-group-count">{{len .Issues}}</span>
+      </div>
+      {{end}}
+      {{range .Issues}}
+      <a href="/w/{{$.Workspace.Slug}}/issue/{{.Key}}" class="gantt-row-label" data-issue-key="{{.Key}}">
+        <span class="issue-key">{{.Key}}</span>
+        <span class="issue-title truncate">{{.Title}}</span>
+      </a>
+      {{end}}
+      {{end}}
+    </div>
+  </div>
+
+  <div class="gantt-timeline">
+    <div class="gantt-timeline-header">
+      {{range .HeaderDates}}
+      <div class="gantt-date-marker {{if .IsToday}}today{{end}} {{if .IsWeekend}}weekend{{end}}"
+           style="left: {{printf "%.2f" .Offset}}%;">
+        <span class="gantt-date-label">{{.Label}}</span>
+      </div>
+      {{end}}
+    </div>
+
+    <div class="gantt-timeline-body">
+      <div class="gantt-today-line" style="left: {{printf "%.2f" .TodayOffset}}%;"></div>
+
+      {{range .Groups}}
+      {{if .Name}}
+      <div class="gantt-group-spacer"></div>
+      {{end}}
+      {{range .Issues}}
+      <div class="gantt-row">
+        <a href="/w/{{$.Workspace.Slug}}/issue/{{.Key}}"
+           class="gantt-bar {{if not .HasExplicitDates}}no-dates{{end}}"
+           style="left: {{printf "%.2f" .LeftOffset}}%; width: {{printf "%.2f" .Width}}%;"
+           data-issue-key="{{.Key}}"
+           title="{{.Title}}">
+          <span class="gantt-bar-title">{{.Title}}</span>
+        </a>
+      </div>
+      {{end}}
+      {{end}}
+    </div>
+  </div>
+</div>
+
+<!-- Create Issue Modal -->
+<div id="create-issue-modal" class="modal hidden">
+  <div class="modal-backdrop" data-close="create-issue-modal"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Create Issue</h2>
+      <button class="modal-close" data-close="create-issue-modal">&times;</button>
+    </div>
+    <form id="create-issue-form" class="modal-body">
+      <div class="form-group mb-4">
+        <label class="label" for="issue-title">Title</label>
+        <input type="text" id="issue-title" name="title" class="input" placeholder="Issue title" required>
+      </div>
+      {{if .Projects}}
+      <div class="form-group mb-4">
+        <label class="label" for="issue-project">Project</label>
+        <select id="issue-project" name="project_id" class="select">
+          {{range .Projects}}
+          <option value="{{.ID}}">{{.Name}}</option>
+          {{end}}
+        </select>
+      </div>
+      {{end}}
+      <div class="date-input-group">
+        <div class="form-group mb-4">
+          <label class="label" for="issue-start-date">Start Date</label>
+          <input type="date" id="issue-start-date" name="start_date" class="input">
+        </div>
+        <div class="form-group mb-4">
+          <label class="label" for="issue-end-date">End Date</label>
+          <input type="date" id="issue-end-date" name="end_date" class="input">
+        </div>
+      </div>
+    </form>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" data-close="create-issue-modal">Cancel</button>
+      <button type="submit" form="create-issue-form" class="btn btn-primary">Create Issue</button>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('create-issue-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const form = e.target;
+  const projectId = form.querySelector('[name="project_id"]')?.value || '{{.DefaultProjectID}}';
+  const title = form.querySelector('[name="title"]').value;
+  const startDate = form.querySelector('[name="start_date"]').value;
+  const endDate = form.querySelector('[name="end_date"]').value;
+
+  try {
+    const body = { title };
+    if (startDate) {
+      body.start_date = new Date(startDate).toISOString();
+    }
+    if (endDate) {
+      body.end_date = new Date(endDate).toISOString();
+    }
+
+    const res = await fetch(`/api/v1/projects/${projectId}/issues`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if (res.ok) {
+      window.location.reload();
+    } else {
+      const data = await res.json();
+      alert(data.error || 'Failed to create issue');
+    }
+  } catch (err) {
+    console.error('Error creating issue:', err);
+    alert('Failed to create issue');
+  }
+});
+
+// Sync sidebar and timeline scroll
+const timeline = document.querySelector('.gantt-timeline');
+const sidebar = document.querySelector('.gantt-sidebar-body');
+if (timeline && sidebar) {
+  timeline.addEventListener('scroll', function() {
+    sidebar.scrollTop = this.scrollTop;
+  });
+  sidebar.addEventListener('scroll', function() {
+    timeline.scrollTop = this.scrollTop;
+  });
+}
+</script>
+{{end}}

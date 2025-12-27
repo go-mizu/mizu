@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"fmt"
 	"html/template"
 	"net/http"
+	"time"
 
 	"github.com/go-mizu/mizu"
 
@@ -80,17 +82,19 @@ type RegisterData struct {
 
 // HomeData holds data for the home/dashboard page.
 type HomeData struct {
-	Title         string
-	User          *users.User
-	Workspace     *workspaces.Workspace
-	Workspaces    []*workspaces.Workspace
-	Teams         []*teams.Team
-	Projects      []*projects.Project
-	ActiveCycle   *cycles.Cycle
-	Stats         Stats
-	DefaultTeamID string
-	ActiveNav     string
-	Breadcrumbs   []Breadcrumb
+	Title           string
+	User            *users.User
+	Workspace       *workspaces.Workspace
+	Workspaces      []*workspaces.Workspace
+	Teams           []*teams.Team
+	Projects        []*projects.Project
+	ActiveCycle     *cycles.Cycle
+	Stats           Stats
+	DefaultTeamID   string
+	ActiveTeamID    string
+	ActiveProjectID string
+	ActiveNav       string
+	Breadcrumbs     []Breadcrumb
 }
 
 // BoardData holds data for the kanban board page.
@@ -103,6 +107,7 @@ type BoardData struct {
 	Projects        []*projects.Project
 	Project         *projects.Project
 	Columns         []*BoardColumn
+	ActiveTeamID    string
 	ActiveProjectID string
 	ActiveNav       string
 	Breadcrumbs     []Breadcrumb
@@ -119,6 +124,7 @@ type IssuesData struct {
 	Columns          []*columns.Column
 	Projects         []*projects.Project
 	DefaultProjectID string
+	ActiveTeamID     string
 	ActiveProjectID  string
 	TotalCount       int
 	ActiveNav        string
@@ -140,6 +146,7 @@ type IssueData struct {
 	Cycles          []*cycles.Cycle
 	Fields          []*fields.Field
 	TeamMembers     []*users.User
+	ActiveTeamID    string
 	ActiveProjectID string
 	ActiveNav       string
 	Breadcrumbs     []Breadcrumb
@@ -147,16 +154,18 @@ type IssueData struct {
 
 // CyclesData holds data for the cycles page.
 type CyclesData struct {
-	Title         string
-	User          *users.User
-	Workspace     *workspaces.Workspace
-	Workspaces    []*workspaces.Workspace
-	Teams         []*teams.Team
-	Projects      []*projects.Project
-	Cycles        []*cycles.Cycle
-	DefaultTeamID string
-	ActiveNav     string
-	Breadcrumbs   []Breadcrumb
+	Title           string
+	User            *users.User
+	Workspace       *workspaces.Workspace
+	Workspaces      []*workspaces.Workspace
+	Teams           []*teams.Team
+	Projects        []*projects.Project
+	Cycles          []*cycles.Cycle
+	DefaultTeamID   string
+	ActiveTeamID    string
+	ActiveProjectID string
+	ActiveNav       string
+	Breadcrumbs     []Breadcrumb
 }
 
 // TeamData holds data for the team page.
@@ -177,15 +186,17 @@ type TeamData struct {
 
 // WorkspaceSettingsData holds data for the workspace settings page.
 type WorkspaceSettingsData struct {
-	Title       string
-	User        *users.User
-	Workspace   *workspaces.Workspace
-	Workspaces  []*workspaces.Workspace
-	Teams       []*teams.Team
-	Projects    []*projects.Project
-	Members     []*WorkspaceMemberView
-	ActiveNav   string
-	Breadcrumbs []Breadcrumb
+	Title           string
+	User            *users.User
+	Workspace       *workspaces.Workspace
+	Workspaces      []*workspaces.Workspace
+	Teams           []*teams.Team
+	Projects        []*projects.Project
+	Members         []*WorkspaceMemberView
+	ActiveTeamID    string
+	ActiveProjectID string
+	ActiveNav       string
+	Breadcrumbs     []Breadcrumb
 }
 
 // ProjectSettingsData holds data for the project settings page.
@@ -198,6 +209,7 @@ type ProjectSettingsData struct {
 	Projects        []*projects.Project
 	Project         *projects.Project
 	Columns         []*ColumnView
+	ActiveTeamID    string
 	ActiveProjectID string
 	ActiveNav       string
 	Breadcrumbs     []Breadcrumb
@@ -213,6 +225,149 @@ type ProjectFieldsData struct {
 	Projects        []*projects.Project
 	Project         *projects.Project
 	Fields          []*fields.Field
+	ActiveTeamID    string
+	ActiveProjectID string
+	ActiveNav       string
+	Breadcrumbs     []Breadcrumb
+}
+
+// InboxIssue wraps an issue with inbox-specific metadata.
+type InboxIssue struct {
+	*issues.Issue
+	Project   *projects.Project
+	Column    *columns.Column
+	TimeGroup string // "today", "yesterday", "this_week", "older"
+}
+
+// CalendarDay represents a single day in the calendar.
+type CalendarDay struct {
+	Date         time.Time
+	Issues       []*CalendarIssue
+	IsToday      bool
+	IsWeekend    bool
+	IsOtherMonth bool
+}
+
+// CalendarIssue wraps an issue with calendar-specific metadata.
+type CalendarIssue struct {
+	*issues.Issue
+	Project      *projects.Project
+	Column       *columns.Column
+	DaysUntilDue int
+	IsOverdue    bool
+}
+
+// CalendarData holds data for the calendar page.
+type CalendarData struct {
+	Title            string
+	User             *users.User
+	Workspace        *workspaces.Workspace
+	Workspaces       []*workspaces.Workspace
+	Teams            []*teams.Team
+	Projects         []*projects.Project
+	Year             int
+	Month            time.Month
+	MonthName        string
+	Days             [][]CalendarDay
+	PrevMonth        string
+	NextMonth        string
+	Today            time.Time
+	ActiveView       string
+	Columns          []*columns.Column
+	DefaultProjectID string
+	ActiveTeamID     string
+	ActiveProjectID  string
+	ActiveNav        string
+	Breadcrumbs      []Breadcrumb
+}
+
+// GanttIssue wraps an issue with Gantt-specific metadata.
+type GanttIssue struct {
+	*issues.Issue
+	Project          *projects.Project
+	Column           *columns.Column
+	LeftOffset       float64
+	Width            float64
+	Row              int
+	EffectiveStart   time.Time
+	EffectiveEnd     time.Time
+	HasExplicitDates bool
+}
+
+// GanttHeaderDate represents a date marker in the timeline header.
+type GanttHeaderDate struct {
+	Date      time.Time
+	Label     string
+	Offset    float64
+	IsToday   bool
+	IsWeekend bool
+}
+
+// GanttGroup represents a group of issues.
+type GanttGroup struct {
+	ID     string
+	Name   string
+	Issues []*GanttIssue
+}
+
+// GanttData holds data for the Gantt chart page.
+type GanttData struct {
+	Title            string
+	User             *users.User
+	Workspace        *workspaces.Workspace
+	Workspaces       []*workspaces.Workspace
+	Teams            []*teams.Team
+	Projects         []*projects.Project
+	Issues           []*GanttIssue
+	TimelineStart    time.Time
+	TimelineEnd      time.Time
+	TimelineDays     int
+	TodayOffset      float64
+	Scale            string
+	HeaderDates      []GanttHeaderDate
+	GroupBy          string
+	Groups           []*GanttGroup
+	ActiveView       string
+	Columns          []*columns.Column
+	DefaultProjectID string
+	ActiveTeamID     string
+	ActiveProjectID  string
+	ActiveNav        string
+	Breadcrumbs      []Breadcrumb
+}
+
+// IssueGroup groups issues by time.
+type IssueGroup struct {
+	Label  string // "Today", "Yesterday", "This Week", "Older"
+	Key    string // "today", "yesterday", "this_week", "older"
+	Issues []*InboxIssue
+}
+
+// InboxData holds data for the inbox page.
+type InboxData struct {
+	Title            string
+	User             *users.User
+	Workspace        *workspaces.Workspace
+	Workspaces       []*workspaces.Workspace
+	Teams            []*teams.Team
+	Projects         []*projects.Project
+	DefaultProject   *projects.Project
+	DefaultProjectID string
+	DefaultTeamID    string
+
+	// Inbox-specific
+	IssueGroups   []*IssueGroup
+	ActiveTab     string // "assigned", "created", "all"
+	AssignedCount int
+	CreatedCount  int
+
+	// For create issue form
+	Columns     []*columns.Column
+	TeamMembers []*users.User
+	Cycles      []*cycles.Cycle
+
+	// Standard fields
+	ActiveTeamID    string
 	ActiveProjectID string
 	ActiveNav       string
 	Breadcrumbs     []Breadcrumb
@@ -377,6 +532,185 @@ func (h *Page) Home(c *mizu.Ctx) error {
 	})
 }
 
+// Inbox renders the inbox page with issue list and create form.
+func (h *Page) Inbox(c *mizu.Ctx) error {
+	userID := h.getUserID(c)
+	if userID == "" {
+		http.Redirect(c.Writer(), c.Request(), "/login", http.StatusFound)
+		return nil
+	}
+
+	ctx := c.Request().Context()
+	tab := c.Query("tab")
+	if tab == "" {
+		tab = "assigned"
+	}
+	workspaceSlug := c.Param("workspace")
+
+	user, _ := h.users.GetByID(ctx, userID)
+	workspace, _ := h.workspaces.GetBySlug(ctx, workspaceSlug)
+	workspaceList, _ := h.workspaces.ListByUser(ctx, userID)
+
+	// Get teams and projects
+	var teamList []*teams.Team
+	var projectList []*projects.Project
+	var defaultProjectID string
+	var defaultTeamID string
+	var defaultProject *projects.Project
+
+	if workspace != nil {
+		teamList, _ = h.teams.ListByWorkspace(ctx, workspace.ID)
+		if len(teamList) > 0 {
+			defaultTeamID = teamList[0].ID
+			projectList, _ = h.projects.ListByTeam(ctx, teamList[0].ID)
+			if len(projectList) > 0 {
+				defaultProjectID = projectList[0].ID
+				defaultProject = projectList[0]
+			}
+		}
+	}
+
+	// Pre-fetch all columns and projects for lookup
+	columnMap := make(map[string]*columns.Column)
+	projectMap := make(map[string]*projects.Project)
+	for _, project := range projectList {
+		projectMap[project.ID] = project
+		cols, _ := h.columns.ListByProject(ctx, project.ID)
+		for _, col := range cols {
+			columnMap[col.ID] = col
+		}
+	}
+
+	// Fetch all issues from workspace
+	var allIssues []*issues.Issue
+	for _, project := range projectList {
+		issueList, _ := h.issues.ListByProject(ctx, project.ID)
+		allIssues = append(allIssues, issueList...)
+	}
+
+	// Filter issues based on tab
+	var filteredIssues []*issues.Issue
+	var assignedCount, createdCount int
+
+	for _, issue := range allIssues {
+		isCreator := issue.CreatorID == userID
+		// TODO: Check assignees when assignee API is available
+		isAssigned := isCreator // Fallback: show creator's issues as assigned
+
+		if isAssigned {
+			assignedCount++
+		}
+		if isCreator {
+			createdCount++
+		}
+
+		switch tab {
+		case "assigned":
+			if isAssigned {
+				filteredIssues = append(filteredIssues, issue)
+			}
+		case "created":
+			if isCreator {
+				filteredIssues = append(filteredIssues, issue)
+			}
+		case "all":
+			filteredIssues = append(filteredIssues, issue)
+		}
+	}
+
+	// Group issues by time
+	issueGroups := groupIssuesByTime(filteredIssues, columnMap, projectMap)
+
+	// Get columns for default project (for create form)
+	var columnList []*columns.Column
+	if defaultProjectID != "" {
+		columnList, _ = h.columns.ListByProject(ctx, defaultProjectID)
+	}
+
+	// Get cycles for default team
+	var cycleList []*cycles.Cycle
+	if defaultTeamID != "" {
+		cycleList, _ = h.cycles.ListByTeam(ctx, defaultTeamID)
+	}
+
+	// Get team members
+	var teamMembers []*users.User
+	if defaultTeamID != "" {
+		members, _ := h.teams.ListMembers(ctx, defaultTeamID)
+		if len(members) > 0 {
+			userIDs := make([]string, len(members))
+			for i, m := range members {
+				userIDs[i] = m.UserID
+			}
+			teamMembers, _ = h.users.GetByIDs(ctx, userIDs)
+		}
+	}
+
+	return render(h, c, "inbox", InboxData{
+		Title:            "Inbox",
+		User:             user,
+		Workspace:        workspace,
+		Workspaces:       workspaceList,
+		Teams:            teamList,
+		Projects:         projectList,
+		DefaultProject:   defaultProject,
+		DefaultProjectID: defaultProjectID,
+		DefaultTeamID:    defaultTeamID,
+		IssueGroups:      issueGroups,
+		ActiveTab:        tab,
+		AssignedCount:    assignedCount,
+		CreatedCount:     createdCount,
+		Columns:          columnList,
+		TeamMembers:      teamMembers,
+		Cycles:           cycleList,
+		ActiveNav:        "inbox",
+	})
+}
+
+// groupIssuesByTime groups issues into time-based sections.
+func groupIssuesByTime(issueList []*issues.Issue, columnMap map[string]*columns.Column, projectMap map[string]*projects.Project) []*IssueGroup {
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	yesterday := today.AddDate(0, 0, -1)
+	weekAgo := today.AddDate(0, 0, -7)
+
+	groups := map[string]*IssueGroup{
+		"today":     {Label: "Today", Key: "today", Issues: []*InboxIssue{}},
+		"yesterday": {Label: "Yesterday", Key: "yesterday", Issues: []*InboxIssue{}},
+		"this_week": {Label: "This Week", Key: "this_week", Issues: []*InboxIssue{}},
+		"older":     {Label: "Older", Key: "older", Issues: []*InboxIssue{}},
+	}
+
+	for _, issue := range issueList {
+		var groupKey string
+		if issue.UpdatedAt.After(today) || issue.UpdatedAt.Equal(today) {
+			groupKey = "today"
+		} else if issue.UpdatedAt.After(yesterday) || issue.UpdatedAt.Equal(yesterday) {
+			groupKey = "yesterday"
+		} else if issue.UpdatedAt.After(weekAgo) {
+			groupKey = "this_week"
+		} else {
+			groupKey = "older"
+		}
+
+		inboxIssue := &InboxIssue{
+			Issue:     issue,
+			Column:    columnMap[issue.ColumnID],
+			Project:   projectMap[issue.ProjectID],
+			TimeGroup: groupKey,
+		}
+		groups[groupKey].Issues = append(groups[groupKey].Issues, inboxIssue)
+	}
+
+	// Return in order
+	return []*IssueGroup{
+		groups["today"],
+		groups["yesterday"],
+		groups["this_week"],
+		groups["older"],
+	}
+}
+
 // Board renders the kanban board page.
 func (h *Page) Board(c *mizu.Ctx) error {
 	userID := h.getUserID(c)
@@ -444,8 +778,21 @@ func (h *Page) Board(c *mizu.Ctx) error {
 	})
 }
 
-// Issues renders the issues list page.
+// Issues renders the issues page with different view modes.
 func (h *Page) Issues(c *mizu.Ctx) error {
+	view := c.Query("view")
+	switch view {
+	case "calendar":
+		return h.IssuesCalendar(c)
+	case "gantt":
+		return h.IssuesGantt(c)
+	default:
+		return h.IssuesList(c)
+	}
+}
+
+// IssuesList renders the issues list view.
+func (h *Page) IssuesList(c *mizu.Ctx) error {
 	userID := h.getUserID(c)
 	if userID == "" {
 		http.Redirect(c.Writer(), c.Request(), "/login", http.StatusFound)
@@ -515,6 +862,195 @@ func (h *Page) Issues(c *mizu.Ctx) error {
 		Projects:         projectList,
 		DefaultProjectID: defaultProjectID,
 		TotalCount:       len(issueViews),
+		ActiveNav:        "issues",
+	})
+}
+
+// IssuesCalendar renders the calendar view.
+func (h *Page) IssuesCalendar(c *mizu.Ctx) error {
+	userID := h.getUserID(c)
+	if userID == "" {
+		http.Redirect(c.Writer(), c.Request(), "/login", http.StatusFound)
+		return nil
+	}
+
+	ctx := c.Request().Context()
+	workspaceSlug := c.Param("workspace")
+
+	// Parse month parameter or use current
+	monthStr := c.Query("month")
+	var year int
+	var month time.Month
+	if monthStr != "" {
+		t, err := time.Parse("2006-01", monthStr)
+		if err == nil {
+			year, month = t.Year(), t.Month()
+		}
+	}
+	if year == 0 {
+		now := time.Now()
+		year, month = now.Year(), now.Month()
+	}
+
+	user, _ := h.users.GetByID(ctx, userID)
+	workspace, _ := h.workspaces.GetBySlug(ctx, workspaceSlug)
+	workspaceList, _ := h.workspaces.ListByUser(ctx, userID)
+
+	var projectList []*projects.Project
+	var teamList []*teams.Team
+	var columnList []*columns.Column
+	var allIssues []*issues.Issue
+	columnMap := make(map[string]*columns.Column)
+	projectMap := make(map[string]*projects.Project)
+	var defaultProjectID string
+
+	if workspace != nil {
+		teamList, _ = h.teams.ListByWorkspace(ctx, workspace.ID)
+		for _, team := range teamList {
+			teamProjects, _ := h.projects.ListByTeam(ctx, team.ID)
+			projectList = append(projectList, teamProjects...)
+		}
+
+		if len(projectList) > 0 {
+			defaultProjectID = projectList[0].ID
+		}
+
+		for _, project := range projectList {
+			projectMap[project.ID] = project
+			cols, _ := h.columns.ListByProject(ctx, project.ID)
+			for _, col := range cols {
+				columnMap[col.ID] = col
+			}
+			if len(columnList) == 0 {
+				columnList = cols
+			}
+			issueList, _ := h.issues.ListByProject(ctx, project.ID)
+			allIssues = append(allIssues, issueList...)
+		}
+	}
+
+	// Build calendar grid
+	days := buildCalendarGrid(year, month, allIssues, columnMap, projectMap)
+
+	// Calculate prev/next months
+	prevMonth := time.Date(year, month-1, 1, 0, 0, 0, 0, time.UTC)
+	nextMonth := time.Date(year, month+1, 1, 0, 0, 0, 0, time.UTC)
+
+	return render(h, c, "calendar", CalendarData{
+		Title:            "Calendar",
+		User:             user,
+		Workspace:        workspace,
+		Workspaces:       workspaceList,
+		Teams:            teamList,
+		Projects:         projectList,
+		Year:             year,
+		Month:            month,
+		MonthName:        month.String(),
+		Days:             days,
+		PrevMonth:        prevMonth.Format("2006-01"),
+		NextMonth:        nextMonth.Format("2006-01"),
+		Today:            time.Now(),
+		ActiveView:       "calendar",
+		Columns:          columnList,
+		DefaultProjectID: defaultProjectID,
+		ActiveNav:        "issues",
+	})
+}
+
+// IssuesGantt renders the Gantt chart view.
+func (h *Page) IssuesGantt(c *mizu.Ctx) error {
+	userID := h.getUserID(c)
+	if userID == "" {
+		http.Redirect(c.Writer(), c.Request(), "/login", http.StatusFound)
+		return nil
+	}
+
+	ctx := c.Request().Context()
+	workspaceSlug := c.Param("workspace")
+
+	scale := c.Query("scale")
+	if scale == "" {
+		scale = "week"
+	}
+	groupBy := c.Query("group")
+	if groupBy == "" {
+		groupBy = "none"
+	}
+
+	user, _ := h.users.GetByID(ctx, userID)
+	workspace, _ := h.workspaces.GetBySlug(ctx, workspaceSlug)
+	workspaceList, _ := h.workspaces.ListByUser(ctx, userID)
+
+	var projectList []*projects.Project
+	var teamList []*teams.Team
+	var columnList []*columns.Column
+	var allIssues []*issues.Issue
+	columnMap := make(map[string]*columns.Column)
+	projectMap := make(map[string]*projects.Project)
+	var defaultProjectID string
+
+	if workspace != nil {
+		teamList, _ = h.teams.ListByWorkspace(ctx, workspace.ID)
+		for _, team := range teamList {
+			teamProjects, _ := h.projects.ListByTeam(ctx, team.ID)
+			projectList = append(projectList, teamProjects...)
+		}
+
+		if len(projectList) > 0 {
+			defaultProjectID = projectList[0].ID
+		}
+
+		for _, project := range projectList {
+			projectMap[project.ID] = project
+			cols, _ := h.columns.ListByProject(ctx, project.ID)
+			for _, col := range cols {
+				columnMap[col.ID] = col
+			}
+			if len(columnList) == 0 {
+				columnList = cols
+			}
+			issueList, _ := h.issues.ListByProject(ctx, project.ID)
+			allIssues = append(allIssues, issueList...)
+		}
+	}
+
+	// Calculate timeline range (default: 4 weeks before and after today)
+	now := time.Now()
+	timelineStart := now.AddDate(0, 0, -28)
+	timelineEnd := now.AddDate(0, 0, 28)
+	timelineDays := int(timelineEnd.Sub(timelineStart).Hours() / 24)
+
+	// Build Gantt issues
+	ganttIssues := buildGanttIssues(allIssues, columnMap, projectMap, timelineStart, timelineEnd)
+
+	// Build header dates
+	headerDates := buildGanttHeaderDates(timelineStart, timelineEnd, scale)
+
+	// Calculate today offset
+	todayOffset := float64(now.Sub(timelineStart).Hours()/24) / float64(timelineDays) * 100
+
+	// Group issues if needed
+	groups := groupGanttIssues(ganttIssues, groupBy, projectMap, columnMap)
+
+	return render(h, c, "gantt", GanttData{
+		Title:            "Gantt Chart",
+		User:             user,
+		Workspace:        workspace,
+		Workspaces:       workspaceList,
+		Teams:            teamList,
+		Projects:         projectList,
+		Issues:           ganttIssues,
+		TimelineStart:    timelineStart,
+		TimelineEnd:      timelineEnd,
+		TimelineDays:     timelineDays,
+		TodayOffset:      todayOffset,
+		Scale:            scale,
+		HeaderDates:      headerDates,
+		GroupBy:          groupBy,
+		Groups:           groups,
+		ActiveView:       "gantt",
+		Columns:          columnList,
+		DefaultProjectID: defaultProjectID,
 		ActiveNav:        "issues",
 	})
 }
@@ -867,4 +1403,219 @@ func (h *Page) ProjectFields(c *mizu.Ctx) error {
 			{Label: "Fields", URL: ""},
 		},
 	})
+}
+
+// buildCalendarGrid creates a 6x7 grid of days for the calendar view.
+func buildCalendarGrid(year int, month time.Month, allIssues []*issues.Issue, columnMap map[string]*columns.Column, projectMap map[string]*projects.Project) [][]CalendarDay {
+	// Get first day of month and calculate grid start (Monday-based week)
+	firstOfMonth := time.Date(year, month, 1, 0, 0, 0, 0, time.Local)
+	weekday := int(firstOfMonth.Weekday())
+	if weekday == 0 {
+		weekday = 7 // Sunday
+	}
+	gridStart := firstOfMonth.AddDate(0, 0, -(weekday - 1))
+
+	// Index issues by due date for quick lookup
+	issuesByDate := make(map[string][]*CalendarIssue)
+	now := time.Now()
+	for _, issue := range allIssues {
+		if issue.DueDate != nil {
+			key := issue.DueDate.Format("2006-01-02")
+			daysUntil := int(issue.DueDate.Sub(now).Hours() / 24)
+			issuesByDate[key] = append(issuesByDate[key], &CalendarIssue{
+				Issue:        issue,
+				Project:      projectMap[issue.ProjectID],
+				Column:       columnMap[issue.ColumnID],
+				DaysUntilDue: daysUntil,
+				IsOverdue:    issue.DueDate.Before(now),
+			})
+		}
+	}
+
+	// Build 6 weeks of days
+	weeks := make([][]CalendarDay, 6)
+	today := time.Now().Truncate(24 * time.Hour)
+
+	for w := 0; w < 6; w++ {
+		weeks[w] = make([]CalendarDay, 7)
+		for d := 0; d < 7; d++ {
+			date := gridStart.AddDate(0, 0, w*7+d)
+			dateKey := date.Format("2006-01-02")
+
+			weeks[w][d] = CalendarDay{
+				Date:         date,
+				Issues:       issuesByDate[dateKey],
+				IsToday:      date.Year() == today.Year() && date.YearDay() == today.YearDay(),
+				IsWeekend:    d >= 5,
+				IsOtherMonth: date.Month() != month,
+			}
+		}
+	}
+
+	return weeks
+}
+
+// buildGanttIssues creates GanttIssue wrappers with position calculations.
+func buildGanttIssues(allIssues []*issues.Issue, columnMap map[string]*columns.Column, projectMap map[string]*projects.Project, timelineStart, timelineEnd time.Time) []*GanttIssue {
+	totalDays := timelineEnd.Sub(timelineStart).Hours() / 24
+	result := make([]*GanttIssue, 0, len(allIssues))
+
+	for i, issue := range allIssues {
+		gi := &GanttIssue{
+			Issue:   issue,
+			Project: projectMap[issue.ProjectID],
+			Column:  columnMap[issue.ColumnID],
+			Row:     i,
+		}
+
+		// Determine effective dates
+		if issue.StartDate != nil {
+			gi.EffectiveStart = *issue.StartDate
+			gi.HasExplicitDates = true
+		} else {
+			gi.EffectiveStart = issue.CreatedAt
+		}
+
+		if issue.EndDate != nil {
+			gi.EffectiveEnd = *issue.EndDate
+			gi.HasExplicitDates = gi.HasExplicitDates && true
+		} else if issue.DueDate != nil {
+			gi.EffectiveEnd = *issue.DueDate
+		} else {
+			// Default to 7 days after start
+			gi.EffectiveEnd = gi.EffectiveStart.AddDate(0, 0, 7)
+		}
+
+		// Calculate position
+		gi.LeftOffset, gi.Width = calculateGanttPosition(gi.EffectiveStart, gi.EffectiveEnd, timelineStart, timelineEnd, totalDays)
+
+		result = append(result, gi)
+	}
+
+	return result
+}
+
+// calculateGanttPosition computes the left offset and width for a Gantt bar.
+func calculateGanttPosition(start, end, timelineStart, timelineEnd time.Time, totalDays float64) (leftOffset, width float64) {
+	startDays := start.Sub(timelineStart).Hours() / 24
+	endDays := end.Sub(timelineStart).Hours() / 24
+
+	leftOffset = (startDays / totalDays) * 100
+	width = ((endDays - startDays) / totalDays) * 100
+
+	// Clamp to visible range
+	if leftOffset < 0 {
+		width += leftOffset
+		leftOffset = 0
+	}
+	if leftOffset+width > 100 {
+		width = 100 - leftOffset
+	}
+
+	// Minimum 1% width for visibility
+	if width < 1 {
+		width = 1
+	}
+
+	return leftOffset, width
+}
+
+// buildGanttHeaderDates creates date markers for the Gantt timeline header.
+func buildGanttHeaderDates(timelineStart, timelineEnd time.Time, scale string) []GanttHeaderDate {
+	totalDays := timelineEnd.Sub(timelineStart).Hours() / 24
+	var dates []GanttHeaderDate
+	today := time.Now().Truncate(24 * time.Hour)
+
+	current := timelineStart
+	for current.Before(timelineEnd) {
+		offset := (current.Sub(timelineStart).Hours() / 24 / totalDays) * 100
+
+		var label string
+		switch scale {
+		case "day":
+			label = current.Format("Mon 2")
+		case "week":
+			_, week := current.ISOWeek()
+			label = fmt.Sprintf("W%d", week)
+		case "month":
+			label = current.Format("Jan")
+		default:
+			label = current.Format("Mon 2")
+		}
+
+		dates = append(dates, GanttHeaderDate{
+			Date:      current,
+			Label:     label,
+			Offset:    offset,
+			IsToday:   current.Year() == today.Year() && current.YearDay() == today.YearDay(),
+			IsWeekend: current.Weekday() == time.Saturday || current.Weekday() == time.Sunday,
+		})
+
+		// Move to next marker based on scale
+		switch scale {
+		case "day":
+			current = current.AddDate(0, 0, 1)
+		case "week":
+			current = current.AddDate(0, 0, 7)
+		case "month":
+			current = current.AddDate(0, 1, 0)
+		default:
+			current = current.AddDate(0, 0, 1)
+		}
+	}
+
+	return dates
+}
+
+// groupGanttIssues groups issues by the specified field.
+func groupGanttIssues(ganttIssues []*GanttIssue, groupBy string, projectMap map[string]*projects.Project, columnMap map[string]*columns.Column) []*GanttGroup {
+	if groupBy == "none" || groupBy == "" {
+		return []*GanttGroup{{
+			ID:     "",
+			Name:   "",
+			Issues: ganttIssues,
+		}}
+	}
+
+	groupsMap := make(map[string]*GanttGroup)
+	var order []string
+
+	for _, gi := range ganttIssues {
+		var groupID, groupName string
+
+		switch groupBy {
+		case "project":
+			if gi.Project != nil {
+				groupID = gi.Project.ID
+				groupName = gi.Project.Name
+			}
+		case "column":
+			if gi.Column != nil {
+				groupID = gi.Column.ID
+				groupName = gi.Column.Name
+			}
+		}
+
+		if groupID == "" {
+			groupID = "ungrouped"
+			groupName = "Ungrouped"
+		}
+
+		if _, exists := groupsMap[groupID]; !exists {
+			groupsMap[groupID] = &GanttGroup{
+				ID:     groupID,
+				Name:   groupName,
+				Issues: []*GanttIssue{},
+			}
+			order = append(order, groupID)
+		}
+		groupsMap[groupID].Issues = append(groupsMap[groupID].Issues, gi)
+	}
+
+	result := make([]*GanttGroup, 0, len(order))
+	for _, id := range order {
+		result = append(result, groupsMap[id])
+	}
+
+	return result
 }

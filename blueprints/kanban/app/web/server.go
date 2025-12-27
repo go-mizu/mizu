@@ -283,11 +283,21 @@ func (s *Server) setupRoutes() {
 	})
 
 	// Page routes (using /w/ prefix to avoid conflicts with /static/)
-	s.app.Get("/", s.pageHandlers.Home)
+	s.app.Get("/", func(c *mizu.Ctx) error {
+		// Redirect root to login or first workspace
+		http.Redirect(c.Writer(), c.Request(), "/login", http.StatusFound)
+		return nil
+	})
 	s.app.Get("/login", s.pageHandlers.Login)
 	s.app.Get("/register", s.pageHandlers.Register)
-	s.app.Get("/app", s.pageHandlers.Home)
-	s.app.Get("/w/{workspace}", s.pageHandlers.Home)
+	s.app.Get("/app", s.pageHandlers.Home) // Keep for backwards compatibility
+	s.app.Get("/w/{workspace}", func(c *mizu.Ctx) error {
+		// Redirect to inbox
+		workspace := c.Param("workspace")
+		http.Redirect(c.Writer(), c.Request(), "/w/"+workspace+"/inbox", http.StatusFound)
+		return nil
+	})
+	s.app.Get("/w/{workspace}/inbox", s.pageHandlers.Inbox)
 	s.app.Get("/w/{workspace}/board/{projectID}", s.pageHandlers.Board)
 	s.app.Get("/w/{workspace}/issues", s.pageHandlers.Issues)
 	s.app.Get("/w/{workspace}/issue/{key}", s.pageHandlers.Issue)

@@ -42,7 +42,7 @@
           <span class="role-badge {{if eq .Role "lead"}}lead{{end}}">{{.Role}}</span>
         </td>
         <td>
-          <span class="text-sm text-muted">{{.JoinedAt}}</span>
+          <span class="text-sm text-muted">{{.JoinedAt.Format "Jan 2, 2006"}}</span>
         </td>
         <td>
           <div class="dropdown">

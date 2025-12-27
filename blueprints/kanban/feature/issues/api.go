@@ -8,30 +8,42 @@ import (
 
 // Issue represents an issue (card) within a project board.
 type Issue struct {
-	ID        string    `json:"id"`
-	ProjectID string    `json:"project_id"`
-	Number    int       `json:"number"`
-	Key       string    `json:"key"`
-	Title     string    `json:"title"`
-	ColumnID  string    `json:"column_id"`
-	Position  int       `json:"position"`
-	CreatorID string    `json:"creator_id"`
-	CycleID   string    `json:"cycle_id,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          string     `json:"id"`
+	ProjectID   string     `json:"project_id"`
+	Number      int        `json:"number"`
+	Key         string     `json:"key"`
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	ColumnID    string     `json:"column_id"`
+	Position    int        `json:"position"`
+	Priority    int        `json:"priority"`
+	CreatorID   string     `json:"creator_id"`
+	CycleID     string     `json:"cycle_id,omitempty"`
+	DueDate     *time.Time `json:"due_date,omitempty"`
+	StartDate   *time.Time `json:"start_date,omitempty"`
+	EndDate     *time.Time `json:"end_date,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
 // CreateIn contains input for creating an issue.
 type CreateIn struct {
-	Title    string `json:"title"`
-	ColumnID string `json:"column_id,omitempty"` // optional, uses default column if not set
-	CycleID  string `json:"cycle_id,omitempty"`
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
+	ColumnID    string `json:"column_id,omitempty"` // optional, uses default column if not set
+	CycleID     string `json:"cycle_id,omitempty"`
+	Priority    int    `json:"priority,omitempty"` // 0=none, 1=urgent, 2=high, 3=medium, 4=low
 }
 
 // UpdateIn contains input for updating an issue.
 type UpdateIn struct {
-	Title   *string `json:"title,omitempty"`
-	CycleID *string `json:"cycle_id,omitempty"`
+	Title       *string    `json:"title,omitempty"`
+	Description *string    `json:"description,omitempty"`
+	CycleID     *string    `json:"cycle_id,omitempty"`
+	Priority    *int       `json:"priority,omitempty"` // 0=none, 1=urgent, 2=high, 3=medium, 4=low
+	DueDate     *time.Time `json:"due_date,omitempty"`
+	StartDate   *time.Time `json:"start_date,omitempty"`
+	EndDate     *time.Time `json:"end_date,omitempty"`
 }
 
 // MoveIn contains input for moving an issue.

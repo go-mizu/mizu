@@ -1,8 +1,46 @@
 {{define "content"}}
 <div class="page-header flex items-center justify-between">
-  <div>
-    <h1>Issues</h1>
-    <p class="text-muted"><span id="visible-count">{{.TotalCount}}</span> issues</p>
+  <div class="flex items-center gap-4">
+    <div>
+      <h1>Issues</h1>
+      <p class="text-muted"><span id="visible-count">{{.TotalCount}}</span> issues</p>
+    </div>
+    <div class="view-switcher">
+      <a href="/w/{{.Workspace.Slug}}/issues?view=list" class="view-btn active" title="List view">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="8" x2="21" y1="6" y2="6"/>
+          <line x1="8" x2="21" y1="12" y2="12"/>
+          <line x1="8" x2="21" y1="18" y2="18"/>
+          <line x1="3" x2="3.01" y1="6" y2="6"/>
+          <line x1="3" x2="3.01" y1="12" y2="12"/>
+          <line x1="3" x2="3.01" y1="18" y2="18"/>
+        </svg>
+      </a>
+      {{if .DefaultProjectID}}
+      <a href="/w/{{.Workspace.Slug}}/board/{{.DefaultProjectID}}" class="view-btn" title="Board view">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect width="6" height="14" x="4" y="5" rx="2"/>
+          <rect width="6" height="10" x="14" y="7" rx="2"/>
+        </svg>
+      </a>
+      {{end}}
+      <a href="/w/{{.Workspace.Slug}}/issues?view=calendar" class="view-btn" title="Calendar view">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 2v4"/>
+          <path d="M16 2v4"/>
+          <rect width="18" height="18" x="3" y="4" rx="2"/>
+          <path d="M3 10h18"/>
+        </svg>
+      </a>
+      <a href="/w/{{.Workspace.Slug}}/issues?view=gantt" class="view-btn" title="Gantt chart">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 3v18h18"/>
+          <rect x="7" y="6" width="10" height="3"/>
+          <rect x="5" y="12" width="8" height="3"/>
+          <rect x="9" y="18" width="6" height="3"/>
+        </svg>
+      </a>
+    </div>
   </div>
   <div class="flex gap-2">
     <div class="dropdown">
@@ -146,39 +184,130 @@
 <!-- Create Issue Modal -->
 <div id="create-issue-modal" class="modal hidden">
   <div class="modal-backdrop"></div>
-  <div class="modal-content">
+  <div class="modal-content modal-lg">
     <div class="modal-header">
-      <h2 class="modal-title">Create Issue</h2>
+      <div class="flex items-center gap-2">
+        <span class="font-medium">New issue</span>
+      </div>
       <button class="modal-close">&times;</button>
     </div>
     <form id="create-issue-form">
       <div class="modal-body">
-        <div class="form-group">
-          <label for="issue-title" class="label">Title</label>
-          <input type="text" id="issue-title" name="title" class="input" placeholder="Issue title" required autofocus>
+        <input type="text" id="issue-title" name="title" class="create-box-title" placeholder="Issue title" required autofocus style="padding-left: 0;">
+        <textarea id="issue-description" name="description" class="create-box-description" placeholder="Add description..." rows="3" style="padding-left: 0;"></textarea>
+
+        <div class="create-box-properties" style="padding-left: 0;">
+          <button type="button" class="property-chip" data-property="status" id="issues-status-chip">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <circle cx="12" cy="12" r="1"/>
+            </svg>
+            <span>Backlog</span>
+          </button>
+          <button type="button" class="property-chip" data-property="priority" id="issues-priority-chip">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 20h.01"/>
+              <path d="M7 20v-4"/>
+              <path d="M12 20v-8"/>
+              <path d="M17 20V8"/>
+            </svg>
+            <span>Priority</span>
+          </button>
+          {{if .Projects}}
+          <button type="button" class="property-chip" data-property="project" id="issues-project-chip">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>
+            </svg>
+            <span>Project</span>
+          </button>
+          {{end}}
         </div>
-        <div class="form-group">
-          <label for="issue-description" class="label">Description</label>
-          <textarea id="issue-description" name="description" class="textarea" placeholder="Add a description..." rows="4"></textarea>
-        </div>
-        {{if .Projects}}
-        <div class="form-group">
-          <label for="issue-project" class="label">Project</label>
-          <select id="issue-project" name="project_id" class="select" required>
-            {{range .Projects}}
-            <option value="{{.ID}}">{{.Name}} ({{.Key}})</option>
-            {{end}}
-          </select>
-        </div>
-        {{end}}
+
+        <!-- Hidden fields -->
+        <input type="hidden" name="project_id" id="issues-project-id" value="{{.DefaultProjectID}}">
+        <input type="hidden" name="column_id" id="issues-column-id" value="">
+        <input type="hidden" name="priority" id="issues-priority" value="0">
       </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary modal-close">Cancel</button>
-        <button type="submit" class="btn btn-primary">Create Issue</button>
+      <div class="modal-footer has-toggle">
+        <label class="create-more-toggle">
+          <input type="checkbox" id="issues-create-more">
+          Create more
+        </label>
+        <div class="flex gap-2">
+          <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="create-issue-submit">Create issue</button>
+        </div>
       </div>
     </form>
   </div>
 </div>
+
+<!-- Issues Status Dropdown -->
+{{if .Columns}}
+<div id="issues-status-selector" class="dropdown-menu property-dropdown hidden">
+  {{range .Columns}}
+  <button type="button" class="dropdown-item issues-status-option" data-column-id="{{.ID}}" data-column-name="{{.Name}}">
+    <span class="status-badge {{lower .Name}}" style="margin-right: 0.5rem;">{{.Name}}</span>
+  </button>
+  {{end}}
+</div>
+{{end}}
+
+<!-- Issues Priority Dropdown -->
+<div id="issues-priority-selector" class="dropdown-menu property-dropdown hidden">
+  <button type="button" class="dropdown-item issues-priority-option" data-priority="0" data-priority-name="No priority">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+    <span>No priority</span>
+  </button>
+  <button type="button" class="dropdown-item issues-priority-option" data-priority="1" data-priority-name="Urgent">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-urgent-icon">
+      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+      <line x1="12" y1="9" x2="12" y2="13"/>
+      <line x1="12" y1="17" x2="12.01" y2="17"/>
+    </svg>
+    <span>Urgent</span>
+  </button>
+  <button type="button" class="dropdown-item issues-priority-option" data-priority="2" data-priority-name="High">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-high-icon">
+      <rect x="3" y="3" width="6" height="18" rx="1"/>
+      <rect x="9" y="8" width="6" height="13" rx="1"/>
+      <rect x="15" y="13" width="6" height="8" rx="1"/>
+    </svg>
+    <span>High</span>
+  </button>
+  <button type="button" class="dropdown-item issues-priority-option" data-priority="3" data-priority-name="Medium">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-medium-icon">
+      <rect x="3" y="8" width="6" height="13" rx="1"/>
+      <rect x="9" y="13" width="6" height="8" rx="1"/>
+    </svg>
+    <span>Medium</span>
+  </button>
+  <button type="button" class="dropdown-item issues-priority-option" data-priority="4" data-priority-name="Low">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-low-icon">
+      <rect x="3" y="13" width="6" height="8" rx="1"/>
+    </svg>
+    <span>Low</span>
+  </button>
+</div>
+
+
+<!-- Issues Project Dropdown -->
+{{if .Projects}}
+<div id="issues-project-selector" class="dropdown-menu property-dropdown hidden">
+  {{range .Projects}}
+  <button type="button" class="dropdown-item issues-project-option" data-project-id="{{.ID}}" data-project-name="{{.Name}}" data-project-key="{{.Key}}">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect width="6" height="14" x="4" y="5" rx="2"/>
+      <rect width="6" height="10" x="14" y="7" rx="2"/>
+    </svg>
+    {{.Name}}
+    <span class="text-muted text-xs ml-auto">{{.Key}}</span>
+  </button>
+  {{end}}
+</div>
+{{end}}
 
 <script>
 // Current user ID for "My Issues" filter
@@ -192,25 +321,161 @@ document.querySelectorAll('.table tbody tr[data-issue-key]').forEach(row => {
   });
 });
 
-// Create issue form
-document.getElementById('create-issue-form')?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const form = e.target;
-  const projectId = form.project_id?.value || '{{.DefaultProjectID}}';
+// Issues modal form state
+const issuesModalForm = {
+  selectedProjectId: '{{.DefaultProjectID}}',
+  selectedColumnId: '',
+  selectedPriority: 0,
 
-  const data = {
-    title: form.title.value,
-    description: form.description?.value,
-  };
+  init() {
+    this.setupChips();
+    this.setupDropdowns();
+    this.setupForm();
+  },
 
-  try {
-    const issue = await app.api.post(`/projects/${projectId}/issues`, data);
-    app.modals.close('create-issue-modal');
-    location.href = `/w/{{.Workspace.Slug}}/issue/${issue.key}`;
-  } catch (error) {
-    alert(error.message || 'Failed to create issue');
+  setupChips() {
+    document.getElementById('issues-status-chip')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.showDropdown('issues-status-selector', e.currentTarget);
+    });
+    document.getElementById('issues-priority-chip')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.showDropdown('issues-priority-selector', e.currentTarget);
+    });
+    document.getElementById('issues-project-chip')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.showDropdown('issues-project-selector', e.currentTarget);
+    });
+  },
+
+  setupDropdowns() {
+    // Project options
+    document.querySelectorAll('.issues-project-option').forEach(opt => {
+      opt.addEventListener('click', () => {
+        this.selectedProjectId = opt.dataset.projectId;
+        document.getElementById('issues-project-id').value = this.selectedProjectId;
+        document.querySelector('#issues-project-chip span').textContent = opt.dataset.projectKey;
+        document.getElementById('issues-project-chip').classList.add('selected');
+        this.hideAllDropdowns();
+      });
+    });
+
+    // Status options
+    document.querySelectorAll('.issues-status-option').forEach(opt => {
+      opt.addEventListener('click', () => {
+        this.selectedColumnId = opt.dataset.columnId;
+        document.getElementById('issues-column-id').value = this.selectedColumnId;
+        document.querySelector('#issues-status-chip span').textContent = opt.dataset.columnName;
+        document.getElementById('issues-status-chip').classList.add('selected');
+        this.hideAllDropdowns();
+      });
+    });
+
+    // Priority options
+    document.querySelectorAll('.issues-priority-option').forEach(opt => {
+      opt.addEventListener('click', () => {
+        this.selectedPriority = parseInt(opt.dataset.priority);
+        document.getElementById('issues-priority').value = this.selectedPriority;
+        const chipSpan = document.querySelector('#issues-priority-chip span');
+        if (chipSpan) {
+          chipSpan.textContent = this.selectedPriority === 0 ? 'Priority' : opt.dataset.priorityName;
+        }
+        if (this.selectedPriority > 0) {
+          document.getElementById('issues-priority-chip')?.classList.add('selected');
+        } else {
+          document.getElementById('issues-priority-chip')?.classList.remove('selected');
+        }
+        this.hideAllDropdowns();
+      });
+    });
+
+    // Close dropdowns on outside click
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.property-chip') && !e.target.closest('.property-dropdown')) {
+        this.hideAllDropdowns();
+      }
+    });
+  },
+
+  setupForm() {
+    const form = document.getElementById('create-issue-form');
+    if (!form) return;
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const submitBtn = document.getElementById('create-issue-submit');
+      const title = form.title.value.trim();
+
+      // Validate project ID
+      if (!this.selectedProjectId) {
+        alert('Please select a project');
+        return;
+      }
+
+      if (!title) {
+        alert('Please enter a title');
+        form.title.focus();
+        return;
+      }
+
+      const data = {
+        title,
+        description: form.description?.value?.trim() || '',
+      };
+
+      if (this.selectedColumnId) {
+        data.column_id = this.selectedColumnId;
+      }
+      if (this.selectedPriority > 0) {
+        data.priority = this.selectedPriority;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Creating...';
+
+      try {
+        const issue = await app.api.post(`/projects/${this.selectedProjectId}/issues`, data);
+
+        const createMore = document.getElementById('issues-create-more')?.checked;
+        if (createMore) {
+          form.reset();
+          this.selectedColumnId = '';
+          this.selectedPriority = 0;
+          document.querySelector('#issues-status-chip span').textContent = 'Backlog';
+          document.querySelector('#issues-priority-chip span').textContent = 'Priority';
+          document.querySelectorAll('#create-issue-form .property-chip').forEach(c => c.classList.remove('selected'));
+          location.reload();
+        } else {
+          location.href = `/w/{{.Workspace.Slug}}/issue/${issue.key}`;
+        }
+      } catch (error) {
+        alert(error.message || 'Failed to create issue');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create issue';
+      }
+    });
+  },
+
+  showDropdown(id, anchor) {
+    this.hideAllDropdowns();
+    const dropdown = document.getElementById(id);
+    if (!dropdown) return;
+
+    const rect = anchor.getBoundingClientRect();
+    dropdown.style.position = 'fixed';
+    dropdown.style.top = `${rect.bottom + 4}px`;
+    dropdown.style.left = `${rect.left}px`;
+    dropdown.style.minWidth = '200px';
+    dropdown.classList.remove('hidden');
+  },
+
+  hideAllDropdowns() {
+    document.querySelectorAll('.property-dropdown').forEach(d => d.classList.add('hidden'));
   }
-});
+};
+
+issuesModalForm.init();
 
 // ========================================
 // Filter & Search Functionality

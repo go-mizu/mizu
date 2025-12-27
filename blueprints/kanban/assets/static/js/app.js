@@ -867,7 +867,7 @@ const issueProperties = {
 const deleteIssue = {
   init() {
     document.addEventListener('click', async (e) => {
-      const btn = e.target.closest('button:has-text("Delete"), [data-action="delete-issue"]');
+      const btn = e.target.closest('[data-action="delete-issue"]');
       if (!btn) return;
 
       const issueKey = btn.dataset.issueKey;
@@ -996,7 +996,7 @@ const issueNavigation = {
 const logout = {
   init() {
     document.addEventListener('click', async (e) => {
-      const btn = e.target.closest('[data-action="logout"], button:has-text("Sign out")');
+      const btn = e.target.closest('[data-action="logout"]');
       if (!btn) return;
 
       e.preventDefault();

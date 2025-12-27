@@ -1,0 +1,487 @@
+{{define "content"}}
+<!-- Create Issue Box -->
+<div class="inbox-create-box">
+  <div class="create-box-header">
+    <div class="dropdown" id="header-project-dropdown">
+      <button type="button" class="create-box-project dropdown-trigger">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect width="6" height="14" x="4" y="5" rx="2"/>
+          <rect width="6" height="10" x="14" y="7" rx="2"/>
+        </svg>
+        <span id="selected-project-name">{{if .DefaultProject}}{{.DefaultProject.Name}}{{else}}Select Project{{end}}</span>
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m6 9 6 6 6-6"/>
+        </svg>
+      </button>
+      <div class="dropdown-menu property-dropdown hidden">
+        {{range .Projects}}
+        <button type="button" class="dropdown-item header-project-option" data-project-id="{{.ID}}" data-project-name="{{.Name}}" data-project-key="{{.Key}}">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect width="6" height="14" x="4" y="5" rx="2"/>
+            <rect width="6" height="10" x="14" y="7" rx="2"/>
+          </svg>
+          <span>{{.Name}}</span>
+          <span class="text-muted text-xs ml-auto">{{.Key}}</span>
+        </button>
+        {{else}}
+        <div class="dropdown-item text-muted">No projects available</div>
+        {{end}}
+      </div>
+    </div>
+    <span class="breadcrumb-separator">/</span>
+    <span class="text-muted">New issue</span>
+  </div>
+
+  <form class="create-issue-form" id="inbox-create-form" data-default-project="{{.DefaultProjectID}}">
+    <input
+      type="text"
+      name="title"
+      class="create-box-title"
+      placeholder="Issue title"
+      autocomplete="off"
+      required
+    >
+    <textarea
+      name="description"
+      class="create-box-description"
+      placeholder="Add description..."
+      rows="2"
+    ></textarea>
+
+    <div class="create-box-properties">
+      <!-- Status Chip -->
+      <div class="dropdown property-chip-dropdown" id="status-dropdown">
+        <button type="button" class="property-chip dropdown-trigger" id="status-chip">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <circle cx="12" cy="12" r="1"/>
+          </svg>
+          <span>Backlog</span>
+        </button>
+        <div class="dropdown-menu property-dropdown hidden">
+          {{range .Columns}}
+          <button type="button" class="dropdown-item status-option" data-column-id="{{.ID}}" data-column-name="{{.Name}}">
+            <span class="status-dot status-{{lower .Name}}"></span>
+            <span>{{.Name}}</span>
+          </button>
+          {{else}}
+          <div class="dropdown-item text-muted">No statuses available</div>
+          {{end}}
+        </div>
+      </div>
+
+      <!-- Priority Chip -->
+      <div class="dropdown property-chip-dropdown" id="priority-dropdown">
+        <button type="button" class="property-chip dropdown-trigger" id="priority-chip">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 20h.01"/>
+            <path d="M7 20v-4"/>
+            <path d="M12 20v-8"/>
+            <path d="M17 20V8"/>
+          </svg>
+          <span>Priority</span>
+        </button>
+        <div class="dropdown-menu property-dropdown hidden">
+          <button type="button" class="dropdown-item priority-option" data-priority="0" data-priority-name="No priority">
+            <span class="priority-dot priority-none"></span>
+            <span>No priority</span>
+          </button>
+          <button type="button" class="dropdown-item priority-option" data-priority="1" data-priority-name="Urgent">
+            <span class="priority-dot priority-urgent"></span>
+            <span>Urgent</span>
+          </button>
+          <button type="button" class="dropdown-item priority-option" data-priority="2" data-priority-name="High">
+            <span class="priority-dot priority-high"></span>
+            <span>High</span>
+          </button>
+          <button type="button" class="dropdown-item priority-option" data-priority="3" data-priority-name="Medium">
+            <span class="priority-dot priority-medium"></span>
+            <span>Medium</span>
+          </button>
+          <button type="button" class="dropdown-item priority-option" data-priority="4" data-priority-name="Low">
+            <span class="priority-dot priority-low"></span>
+            <span>Low</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Assignee Chip -->
+      <div class="dropdown property-chip-dropdown" id="assignee-dropdown">
+        <button type="button" class="property-chip dropdown-trigger" id="assignee-chip">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
+            <circle cx="12" cy="7" r="4"/>
+          </svg>
+          <span>Assignee</span>
+        </button>
+        <div class="dropdown-menu property-dropdown hidden">
+          <button type="button" class="dropdown-item assignee-option" data-assignee-id="" data-assignee-name="Unassigned">
+            <span class="avatar avatar-sm" style="background: hsl(var(--muted)); color: hsl(var(--muted-foreground));">-</span>
+            <span>Unassigned</span>
+          </button>
+          {{range .TeamMembers}}
+          <button type="button" class="dropdown-item assignee-option" data-assignee-id="{{.ID}}" data-assignee-name="{{.DisplayName}}">
+            <span class="avatar avatar-sm">{{slice .DisplayName 0 1}}</span>
+            <span>{{.DisplayName}}</span>
+          </button>
+          {{else}}
+          <div class="dropdown-item text-muted">No team members</div>
+          {{end}}
+        </div>
+      </div>
+
+      <!-- Project Chip -->
+      <div class="dropdown property-chip-dropdown" id="project-dropdown">
+        <button type="button" class="property-chip dropdown-trigger" id="project-chip">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>
+          </svg>
+          <span>{{if .DefaultProject}}{{.DefaultProject.Key}}{{else}}Project{{end}}</span>
+        </button>
+        <div class="dropdown-menu property-dropdown hidden">
+          {{range .Projects}}
+          <button type="button" class="dropdown-item project-option" data-project-id="{{.ID}}" data-project-name="{{.Name}}" data-project-key="{{.Key}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect width="6" height="14" x="4" y="5" rx="2"/>
+              <rect width="6" height="10" x="14" y="7" rx="2"/>
+            </svg>
+            <span>{{.Name}}</span>
+            <span class="text-muted text-xs ml-auto">{{.Key}}</span>
+          </button>
+          {{else}}
+          <div class="dropdown-item text-muted">No projects available</div>
+          {{end}}
+        </div>
+      </div>
+
+      <!-- Sprint/Cycle Chip -->
+      <div class="dropdown property-chip-dropdown" id="cycle-dropdown">
+        <button type="button" class="property-chip dropdown-trigger" id="cycle-chip">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 2h4"/>
+            <path d="M12 14v-4"/>
+            <path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6"/>
+            <path d="M9 17H4v5"/>
+          </svg>
+          <span>Sprint</span>
+        </button>
+        <div class="dropdown-menu property-dropdown hidden">
+          <button type="button" class="dropdown-item cycle-option" data-cycle-id="" data-cycle-name="No sprint">
+            <span class="text-muted">No sprint</span>
+          </button>
+          {{range .Cycles}}
+          <button type="button" class="dropdown-item cycle-option" data-cycle-id="{{.ID}}" data-cycle-name="{{.Name}}">
+            <span class="status-badge {{.Status}}">{{.Name}}</span>
+          </button>
+          {{else}}
+          <div class="dropdown-item text-muted">No sprints available</div>
+          {{end}}
+        </div>
+      </div>
+    </div>
+
+    <div class="create-box-footer">
+      <label class="create-more-toggle">
+        <input type="checkbox" id="create-more-checkbox">
+        Create more
+      </label>
+      <button type="submit" class="btn btn-primary">
+        Create issue
+      </button>
+    </div>
+
+    <!-- Hidden fields for selected values -->
+    <input type="hidden" name="project_id" id="selected-project-id" value="{{.DefaultProjectID}}">
+    <input type="hidden" name="column_id" id="selected-column-id" value="">
+    <input type="hidden" name="cycle_id" id="selected-cycle-id" value="">
+    <input type="hidden" name="assignee_id" id="selected-assignee-id" value="">
+    <input type="hidden" name="priority" id="selected-priority" value="0">
+  </form>
+</div>
+
+<!-- Tabs -->
+<div class="inbox-tabs">
+  <a href="/w/{{.Workspace.Slug}}/inbox?tab=assigned" class="inbox-tab {{if eq .ActiveTab "assigned"}}active{{end}}">
+    Assigned to me
+    {{if .AssignedCount}}<span class="tab-count">{{.AssignedCount}}</span>{{end}}
+  </a>
+  <a href="/w/{{.Workspace.Slug}}/inbox?tab=created" class="inbox-tab {{if eq .ActiveTab "created"}}active{{end}}">
+    Created by me
+    {{if .CreatedCount}}<span class="tab-count">{{.CreatedCount}}</span>{{end}}
+  </a>
+  <a href="/w/{{.Workspace.Slug}}/inbox?tab=all" class="inbox-tab {{if eq .ActiveTab "all"}}active{{end}}">
+    All issues
+  </a>
+</div>
+
+<!-- Issue List -->
+{{if .IssueGroups}}
+{{range .IssueGroups}}
+{{if .Issues}}
+<div class="issue-group">
+  <div class="group-header">{{.Label}}</div>
+  {{range .Issues}}
+  <a href="/w/{{$.Workspace.Slug}}/issue/{{.Key}}" class="inbox-issue">
+    <div class="issue-row">
+      <span class="issue-key">{{.Key}}</span>
+      <span class="issue-title">{{.Title}}</span>
+      <div class="issue-meta">
+        {{if .Column}}
+        <span class="status-badge {{lower .Column.Name}}">{{.Column.Name}}</span>
+        {{end}}
+        {{if .Project}}
+        <span class="issue-project">{{.Project.Name}}</span>
+        {{end}}
+        <span class="issue-date">{{.UpdatedAt.Format "Jan 2"}}</span>
+      </div>
+    </div>
+  </a>
+  {{end}}
+</div>
+{{end}}
+{{end}}
+{{else}}
+<div class="empty-state card">
+  <svg class="empty-state-icon" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/>
+    <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
+  </svg>
+  <div class="empty-state-title">Your inbox is empty</div>
+  <div class="empty-state-description">
+    {{if eq .ActiveTab "assigned"}}
+    No issues are assigned to you yet.
+    {{else if eq .ActiveTab "created"}}
+    You haven't created any issues yet.
+    {{else}}
+    No issues found in this workspace.
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+<script>
+const workspaceSlug = '{{.Workspace.Slug}}';
+
+// Inbox create form
+const inboxForm = {
+  selectedProjectId: '{{.DefaultProjectID}}',
+  selectedColumnId: '',
+  selectedCycleId: '',
+  selectedAssigneeId: '',
+  selectedPriority: 0,
+
+  init() {
+    this.setupForm();
+    this.setupDropdowns();
+  },
+
+  setupForm() {
+    const form = document.getElementById('inbox-create-form');
+    if (!form) return;
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      // Validate project ID
+      if (!this.selectedProjectId) {
+        alert('Please select a project first');
+        return;
+      }
+
+      const title = form.title.value.trim();
+      if (!title) {
+        alert('Please enter a title');
+        form.title.focus();
+        return;
+      }
+
+      const data = {
+        title: title,
+        description: form.description?.value?.trim() || '',
+      };
+
+      if (this.selectedColumnId) {
+        data.column_id = this.selectedColumnId;
+      }
+      if (this.selectedCycleId) {
+        data.cycle_id = this.selectedCycleId;
+      }
+      if (this.selectedPriority > 0) {
+        data.priority = this.selectedPriority;
+      }
+
+      const submitBtn = form.querySelector('button[type="submit"]');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Creating...';
+
+      try {
+        const issue = await app.api.post(`/projects/${this.selectedProjectId}/issues`, data);
+
+        // Add assignee if selected
+        if (this.selectedAssigneeId) {
+          try {
+            await app.api.post(`/issues/${issue.id}/assignees`, { user_id: this.selectedAssigneeId });
+          } catch (assigneeError) {
+            console.warn('Failed to add assignee:', assigneeError);
+          }
+        }
+
+        const createMore = document.getElementById('create-more-checkbox')?.checked;
+        if (createMore) {
+          // Reset form
+          form.reset();
+          this.resetSelections();
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Create issue';
+          // Show toast notification
+          showToast('Issue created successfully');
+        } else {
+          location.href = `/w/${workspaceSlug}/issue/${issue.key}`;
+        }
+      } catch (error) {
+        alert(error.message || 'Failed to create issue');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create issue';
+      }
+    });
+  },
+
+  resetSelections() {
+    this.selectedColumnId = '';
+    this.selectedCycleId = '';
+    this.selectedAssigneeId = '';
+    this.selectedPriority = 0;
+
+    document.getElementById('selected-column-id').value = '';
+    document.getElementById('selected-cycle-id').value = '';
+    document.getElementById('selected-assignee-id').value = '';
+    document.getElementById('selected-priority').value = '0';
+
+    document.querySelector('#status-chip span').textContent = 'Backlog';
+    document.querySelector('#priority-chip span').textContent = 'Priority';
+    document.querySelector('#assignee-chip span').textContent = 'Assignee';
+    document.querySelector('#cycle-chip span').textContent = 'Sprint';
+
+    document.querySelectorAll('.property-chip').forEach(c => c.classList.remove('selected'));
+  },
+
+  setupDropdowns() {
+    // Header project options
+    document.querySelectorAll('.header-project-option').forEach(opt => {
+      opt.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.selectedProjectId = opt.dataset.projectId;
+        document.getElementById('selected-project-id').value = this.selectedProjectId;
+        document.getElementById('selected-project-name').textContent = opt.dataset.projectName;
+        const projectChip = document.querySelector('#project-chip span');
+        if (projectChip) projectChip.textContent = opt.dataset.projectKey;
+        this.closeDropdown('header-project-dropdown');
+      });
+    });
+
+    // Project options (from chip)
+    document.querySelectorAll('#project-dropdown .project-option').forEach(opt => {
+      opt.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.selectedProjectId = opt.dataset.projectId;
+        document.getElementById('selected-project-id').value = this.selectedProjectId;
+        document.getElementById('selected-project-name').textContent = opt.dataset.projectName;
+        document.querySelector('#project-chip span').textContent = opt.dataset.projectKey;
+        document.getElementById('project-chip').classList.add('selected');
+        this.closeDropdown('project-dropdown');
+      });
+    });
+
+    // Status options
+    document.querySelectorAll('.status-option').forEach(opt => {
+      opt.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.selectedColumnId = opt.dataset.columnId;
+        document.getElementById('selected-column-id').value = this.selectedColumnId;
+        document.querySelector('#status-chip span').textContent = opt.dataset.columnName;
+        document.getElementById('status-chip').classList.add('selected');
+        this.closeDropdown('status-dropdown');
+      });
+    });
+
+    // Assignee options
+    document.querySelectorAll('.assignee-option').forEach(opt => {
+      opt.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.selectedAssigneeId = opt.dataset.assigneeId;
+        document.getElementById('selected-assignee-id').value = this.selectedAssigneeId;
+        document.querySelector('#assignee-chip span').textContent = opt.dataset.assigneeName;
+        if (this.selectedAssigneeId) {
+          document.getElementById('assignee-chip').classList.add('selected');
+        } else {
+          document.getElementById('assignee-chip').classList.remove('selected');
+        }
+        this.closeDropdown('assignee-dropdown');
+      });
+    });
+
+    // Cycle options
+    document.querySelectorAll('.cycle-option').forEach(opt => {
+      opt.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.selectedCycleId = opt.dataset.cycleId;
+        document.getElementById('selected-cycle-id').value = this.selectedCycleId;
+        document.querySelector('#cycle-chip span').textContent = opt.dataset.cycleName;
+        if (this.selectedCycleId) {
+          document.getElementById('cycle-chip').classList.add('selected');
+        } else {
+          document.getElementById('cycle-chip').classList.remove('selected');
+        }
+        this.closeDropdown('cycle-dropdown');
+      });
+    });
+
+    // Priority options
+    document.querySelectorAll('.priority-option').forEach(opt => {
+      opt.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.selectedPriority = parseInt(opt.dataset.priority);
+        document.getElementById('selected-priority').value = this.selectedPriority;
+        const priorityName = opt.dataset.priorityName;
+        const chipSpan = document.querySelector('#priority-chip span');
+
+        if (chipSpan) {
+          chipSpan.textContent = this.selectedPriority === 0 ? 'Priority' : priorityName;
+        }
+        if (this.selectedPriority > 0) {
+          document.getElementById('priority-chip')?.classList.add('selected');
+        } else {
+          document.getElementById('priority-chip')?.classList.remove('selected');
+        }
+        this.closeDropdown('priority-dropdown');
+      });
+    });
+  },
+
+  closeDropdown(id) {
+    const dropdown = document.getElementById(id);
+    if (dropdown) {
+      const menu = dropdown.querySelector('.dropdown-menu');
+      if (menu) menu.classList.add('hidden');
+    }
+  }
+};
+
+// Toast notification
+function showToast(message) {
+  const toast = document.createElement('div');
+  toast.className = 'toast-notification';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+inboxForm.init();
+</script>
+{{end}}

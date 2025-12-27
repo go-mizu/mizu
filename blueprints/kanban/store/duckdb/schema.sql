@@ -116,17 +116,22 @@ CREATE TABLE IF NOT EXISTS cycles (
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS issues (
-    id         VARCHAR PRIMARY KEY,
-    project_id VARCHAR NOT NULL REFERENCES projects(id),
-    number     INTEGER NOT NULL,
-    key        VARCHAR NOT NULL,
-    title      VARCHAR NOT NULL,
-    column_id  VARCHAR NOT NULL REFERENCES columns(id),
-    position   INTEGER NOT NULL DEFAULT 0,
-    creator_id VARCHAR NOT NULL REFERENCES users(id),
-    cycle_id   VARCHAR REFERENCES cycles(id),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    id          VARCHAR PRIMARY KEY,
+    project_id  VARCHAR NOT NULL REFERENCES projects(id),
+    number      INTEGER NOT NULL,
+    key         VARCHAR NOT NULL,
+    title       VARCHAR NOT NULL,
+    description VARCHAR DEFAULT '',
+    column_id   VARCHAR NOT NULL REFERENCES columns(id),
+    position    INTEGER NOT NULL DEFAULT 0,
+    priority    INTEGER NOT NULL DEFAULT 0,
+    creator_id  VARCHAR NOT NULL REFERENCES users(id),
+    cycle_id    VARCHAR REFERENCES cycles(id),
+    due_date    DATE,
+    start_date  DATE,
+    end_date    DATE,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (project_id, number),
     UNIQUE (project_id, key)
 );

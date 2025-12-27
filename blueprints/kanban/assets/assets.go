@@ -7,6 +7,22 @@ import (
 	"io/fs"
 )
 
+// toFloat64 converts various numeric types to float64.
+func toFloat64(v interface{}) float64 {
+	switch n := v.(type) {
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
+	case float64:
+		return n
+	case float32:
+		return float64(n)
+	default:
+		return 0
+	}
+}
+
 //go:embed static/*
 var staticFS embed.FS
 
@@ -56,17 +72,22 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 			}
 			return s[start:end]
 		},
-		"div": func(a, b int) float64 {
-			if b == 0 {
+		"div": func(a, b interface{}) float64 {
+			af := toFloat64(a)
+			bf := toFloat64(b)
+			if bf == 0 {
 				return 0
 			}
-			return float64(a) / float64(b)
+			return af / bf
 		},
-		"mul": func(a, b float64) float64 {
-			return a * b
+		"mul": func(a, b interface{}) float64 {
+			return toFloat64(a) * toFloat64(b)
 		},
-		"float64": func(i int) float64 {
-			return float64(i)
+		"float64": func(i interface{}) float64 {
+			return toFloat64(i)
+		},
+		"sub": func(a, b int) int {
+			return a - b
 		},
 	}
 
@@ -93,7 +114,7 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 	authLayoutContent := string(authLayoutBytes)
 
 	// Pages using the main layout
-	mainPages := []string{"home", "board", "issues", "issue", "cycles", "team"}
+	mainPages := []string{"home", "inbox", "board", "issues", "issue", "cycles", "team", "workspace-settings", "project-settings", "project-fields", "calendar", "gantt"}
 	for _, name := range mainPages {
 		pageBytes, err := viewsFS.ReadFile("views/" + theme + "/pages/" + name + ".html")
 		if err != nil {

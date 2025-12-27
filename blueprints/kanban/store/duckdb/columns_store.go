@@ -68,9 +68,12 @@ func (s *ColumnsStore) CountByProject(ctx context.Context, projectID string) (in
 }
 
 func (s *ColumnsStore) Update(ctx context.Context, id string, in *columns.UpdateIn) error {
+	if in.Name == nil {
+		return nil // Nothing to update
+	}
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE columns SET name = COALESCE($2, name) WHERE id = $1
-	`, id, in.Name)
+		UPDATE columns SET name = $2 WHERE id = $1
+	`, id, *in.Name)
 	return err
 }
 

@@ -62,12 +62,21 @@ func (h *Issue) Create(c *mizu.Ctx) error {
 
 	var in issues.CreateIn
 	if err := c.BindJSON(&in, 1<<20); err != nil {
+		c.Logger().Error("failed to bind JSON", "error", err)
 		return BadRequest(c, "invalid request body")
+	}
+
+	// Validate project exists
+	project, err := h.projects.GetByID(c.Context(), projectID)
+	if err != nil || project == nil {
+		c.Logger().Error("project not found", "projectID", projectID, "error", err)
+		return NotFound(c, "project not found")
 	}
 
 	issue, err := h.issues.Create(c.Context(), projectID, userID, &in)
 	if err != nil {
-		return InternalError(c, "failed to create issue")
+		c.Logger().Error("failed to create issue", "projectID", projectID, "userID", userID, "title", in.Title, "error", err)
+		return InternalError(c, "failed to create issue: " + err.Error())
 	}
 
 	return Created(c, issue)

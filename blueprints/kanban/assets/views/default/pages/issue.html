@@ -81,34 +81,87 @@
     <!-- Status -->
     <div class="card property-card">
       <div class="property-label">Status</div>
-      <select id="issue-status" class="select" data-issue-key="{{.Issue.Key}}">
+      <div class="property-chips status-chips" id="status-chips" data-issue-key="{{.Issue.Key}}">
         {{range .Columns}}
-        <option value="{{.ID}}" {{if eq .ID $.Issue.ColumnID}}selected{{end}}>{{.Name}}</option>
+        <button class="property-chip {{if eq .ID $.Issue.ColumnID}}active{{end}}" data-value="{{.ID}}" title="{{.Name}}">
+          <span>{{.Name}}</span>
+        </button>
         {{end}}
-      </select>
+      </div>
     </div>
 
     <!-- Priority -->
     <div class="card property-card">
       <div class="property-label">Priority</div>
-      <select id="issue-priority" class="select" data-issue-key="{{.Issue.Key}}">
-        <option value="" selected>No priority</option>
-        <option value="urgent">Urgent</option>
-        <option value="high">High</option>
-        <option value="medium">Medium</option>
-        <option value="low">Low</option>
-      </select>
+      <div class="property-chips" id="priority-chips" data-issue-key="{{.Issue.Key}}">
+        <button class="property-chip {{if eq .Issue.Priority 0}}active{{end}}" data-value="0" title="No priority">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14"/>
+          </svg>
+          <span>None</span>
+        </button>
+        <button class="property-chip priority-urgent {{if eq .Issue.Priority 1}}active{{end}}" data-value="1" title="Urgent">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/>
+          </svg>
+          <span>Urgent</span>
+        </button>
+        <button class="property-chip priority-high {{if eq .Issue.Priority 2}}active{{end}}" data-value="2" title="High">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/>
+          </svg>
+          <span>High</span>
+        </button>
+        <button class="property-chip priority-medium {{if eq .Issue.Priority 3}}active{{end}}" data-value="3" title="Medium">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/>
+          </svg>
+          <span>Medium</span>
+        </button>
+        <button class="property-chip priority-low {{if eq .Issue.Priority 4}}active{{end}}" data-value="4" title="Low">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 20h.01"/><path d="M7 20v-4"/>
+          </svg>
+          <span>Low</span>
+        </button>
+      </div>
     </div>
 
-    <!-- Cycle -->
+    <!-- Sprint (Cycle) -->
     <div class="card property-card">
-      <div class="property-label">Cycle</div>
-      <select id="issue-cycle" class="select" data-issue-key="{{.Issue.Key}}">
-        <option value="">No cycle</option>
-        {{range .Cycles}}
-        <option value="{{.ID}}" {{if eq .ID $.Issue.CycleID}}selected{{end}}>{{.Name}}</option>
-        {{end}}
-      </select>
+      <div class="property-label">Sprint</div>
+      <div class="dropdown w-full" id="cycle-dropdown">
+        <button class="dropdown-trigger property-select w-full" data-issue-key="{{.Issue.Key}}">
+          <span class="property-select-value">
+            {{if .Issue.CycleID}}
+              {{range .Cycles}}{{if eq .ID $.Issue.CycleID}}
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M10 2h4"/><path d="M12 14v-4"/><path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6"/><path d="M9 17H4v5"/>
+                </svg>
+                <span>{{.Name}}</span>
+              {{end}}{{end}}
+            {{else}}
+              <span class="text-muted">No sprint</span>
+            {{end}}
+          </span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m6 9 6 6 6-6"/>
+          </svg>
+        </button>
+        <div class="dropdown-menu hidden" style="width: 100%; margin-top: 0.25rem;">
+          <button class="dropdown-item" data-action="set-cycle" data-cycle-id="">
+            <span class="text-muted">No sprint</span>
+          </button>
+          {{range .Cycles}}
+          <button class="dropdown-item {{if eq .ID $.Issue.CycleID}}active{{end}}" data-action="set-cycle" data-cycle-id="{{.ID}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10 2h4"/><path d="M12 14v-4"/><path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6"/><path d="M9 17H4v5"/>
+            </svg>
+            <span>{{.Name}}</span>
+          </button>
+          {{end}}
+        </div>
+      </div>
     </div>
 
     <!-- Custom Fields -->
@@ -299,39 +352,78 @@ document.querySelectorAll('.remove-assignee').forEach(btn => {
   });
 });
 
-// Status change
-document.getElementById('issue-status')?.addEventListener('change', async (e) => {
-  try {
-    await app.api.post(`/issues/{{.Issue.Key}}/move`, { column_id: e.target.value });
-  } catch (error) {
-    console.error('Failed to update status:', error);
-    alert(error.message || 'Failed to update status');
-  }
-});
-
-// Cycle change
-document.getElementById('issue-cycle')?.addEventListener('change', async (e) => {
-  const cycleId = e.target.value;
-  try {
-    if (cycleId) {
-      await app.api.post(`/issues/{{.Issue.Key}}/cycle`, { cycle_id: cycleId });
-    } else {
-      await app.api.delete(`/issues/{{.Issue.Key}}/cycle`);
+// Status chips click handler
+document.querySelectorAll('#status-chips .property-chip').forEach(chip => {
+  chip.addEventListener('click', async () => {
+    const columnId = chip.dataset.value;
+    try {
+      await app.api.post(`/issues/{{.Issue.Key}}/move`, { column_id: columnId, position: 0 });
+      // Update active state
+      document.querySelectorAll('#status-chips .property-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+    } catch (error) {
+      console.error('Failed to update status:', error);
+      alert(error.message || 'Failed to update status');
     }
-  } catch (error) {
-    console.error('Failed to update cycle:', error);
-    alert(error.message || 'Failed to update cycle');
-  }
+  });
 });
 
-// Priority change
-document.getElementById('issue-priority')?.addEventListener('change', async (e) => {
-  const priority = e.target.value;
-  try {
-    await app.api.patch(`/issues/{{.Issue.Key}}`, { priority: priority || null });
-  } catch (error) {
-    console.error('Failed to update priority:', error);
-    alert(error.message || 'Failed to update priority');
+// Priority chips click handler
+document.querySelectorAll('#priority-chips .property-chip').forEach(chip => {
+  chip.addEventListener('click', async () => {
+    const priority = parseInt(chip.dataset.value);
+    try {
+      await app.api.patch(`/issues/{{.Issue.Key}}`, { priority: priority });
+      // Update active state
+      document.querySelectorAll('#priority-chips .property-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+    } catch (error) {
+      console.error('Failed to update priority:', error);
+      alert(error.message || 'Failed to update priority');
+    }
+  });
+});
+
+// Cycle dropdown handler
+const cycleDropdown = document.getElementById('cycle-dropdown');
+cycleDropdown?.querySelector('.dropdown-trigger')?.addEventListener('click', () => {
+  const menu = cycleDropdown.querySelector('.dropdown-menu');
+  menu.classList.toggle('hidden');
+});
+
+document.querySelectorAll('[data-action="set-cycle"]').forEach(item => {
+  item.addEventListener('click', async () => {
+    const cycleId = item.dataset.cycleId;
+    const menu = cycleDropdown.querySelector('.dropdown-menu');
+    try {
+      if (cycleId) {
+        await app.api.post(`/issues/{{.Issue.Key}}/cycle`, { cycle_id: cycleId });
+      } else {
+        await app.api.delete(`/issues/{{.Issue.Key}}/cycle`);
+      }
+      // Update UI
+      const valueSpan = cycleDropdown.querySelector('.property-select-value');
+      if (cycleId) {
+        const selectedItem = item.cloneNode(true);
+        valueSpan.innerHTML = selectedItem.innerHTML;
+      } else {
+        valueSpan.innerHTML = '<span class="text-muted">No sprint</span>';
+      }
+      // Update active state
+      document.querySelectorAll('[data-action="set-cycle"]').forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+      menu.classList.add('hidden');
+    } catch (error) {
+      console.error('Failed to update cycle:', error);
+      alert(error.message || 'Failed to update cycle');
+    }
+  });
+});
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  if (!cycleDropdown?.contains(e.target)) {
+    cycleDropdown?.querySelector('.dropdown-menu')?.classList.add('hidden');
   }
 });
 

@@ -11,7 +11,9 @@ type Project struct {
 	TeamID       string `json:"team_id"`
 	Key          string `json:"key"`
 	Name         string `json:"name"`
+	Description  string `json:"description"`
 	IssueCounter int    `json:"issue_counter"`
+	IssueCount   int    `json:"issue_count"` // Current number of issues in project
 }
 
 // CreateIn contains input for creating a project.
