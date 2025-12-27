@@ -204,13 +204,15 @@ func New(cfg Config) (*Server, error) {
 
 	s.setupRoutes()
 
-	// Serve static files
+	// Serve static files with caching
 	staticHandler := http.StripPrefix("/static/", http.FileServer(http.FS(assets.Static())))
 	s.app.Get("/static/{path...}", func(c *mizu.Ctx) error {
 		ext := filepath.Ext(c.Request().URL.Path)
 		if contentType := mime.TypeByExtension(ext); contentType != "" {
 			c.Writer().Header().Set("Content-Type", contentType)
 		}
+		// Cache static assets for 1 year (immutable since embedded)
+		c.Writer().Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		staticHandler.ServeHTTP(c.Writer(), c.Request())
 		return nil
 	})
