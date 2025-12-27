@@ -1,135 +1,117 @@
 {{define "content"}}
 <div class="flex items-center justify-between mb-6">
-  <div>
-    <h1 class="text-xl font-semibold">{{.Project.Name}}</h1>
-    <p class="text-sm text-zinc-500">{{.Project.Key}} Board</p>
+  <div class="flex items-center gap-4">
+    <h1 class="text-2xl font-semibold text-zinc-900">{{.Project.Name}}</h1>
+    <div class="flex items-center bg-zinc-100 rounded-lg p-1" role="group" aria-label="View options">
+      <a href="/w/{{.Workspace.Slug}}/issues?view=list" class="flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-white transition-colors" aria-label="List view">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="8" x2="21" y1="6" y2="6"/>
+          <line x1="8" x2="21" y1="12" y2="12"/>
+          <line x1="8" x2="21" y1="18" y2="18"/>
+          <line x1="3" x2="3.01" y1="6" y2="6"/>
+          <line x1="3" x2="3.01" y1="12" y2="12"/>
+          <line x1="3" x2="3.01" y1="18" y2="18"/>
+        </svg>
+      </a>
+      <span class="flex items-center justify-center w-8 h-8 rounded-md bg-white shadow-sm text-zinc-900" aria-label="Board view" aria-current="page">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect width="6" height="14" x="4" y="5"/>
+          <rect width="6" height="10" x="14" y="7"/>
+        </svg>
+      </span>
+      <a href="/w/{{.Workspace.Slug}}/issues?view=calendar" class="flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-white transition-colors" aria-label="Calendar view">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 2v4"/>
+          <path d="M16 2v4"/>
+          <rect width="18" height="18" x="3" y="4"/>
+          <path d="M3 10h18"/>
+        </svg>
+      </a>
+      <a href="/w/{{.Workspace.Slug}}/issues?view=gantt" class="flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-white transition-colors" aria-label="Gantt chart view">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 3v18h18"/>
+          <rect x="7" y="6" width="10" height="3"/>
+          <rect x="5" y="12" width="8" height="3"/>
+          <rect x="9" y="18" width="6" height="3"/>
+        </svg>
+      </a>
+    </div>
   </div>
-  <div class="flex gap-2">
-    <button class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 bg-white border border-zinc-300 hover:bg-zinc-50 rounded-md transition-colors" data-modal="add-column-modal" aria-label="Add new column">
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M5 12h14"/>
-        <path d="M12 5v14"/>
-      </svg>
-      Add Column
-    </button>
-    <button class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 rounded-md transition-colors" data-modal="create-issue-modal" aria-label="Create new issue">
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M5 12h14"/>
-        <path d="M12 5v14"/>
-      </svg>
-      New Issue
-    </button>
-  </div>
+  <p class="text-sm text-zinc-500">{{.Project.Key}} Board</p>
 </div>
 
 <!-- Kanban Board -->
-<div id="board" class="flex gap-4 overflow-x-auto pb-4" data-project-id="{{.Project.ID}}">
+<div id="board" class="flex gap-6 overflow-x-auto pb-4" data-project-id="{{.Project.ID}}">
   {{range .Columns}}
-  <div class="board-column flex-shrink-0 w-72 bg-zinc-100 rounded-lg flex flex-col max-h-[calc(100vh-180px)]" data-column-id="{{.ID}}">
-    <div class="column-header flex items-center justify-between px-3 py-2.5 border-b border-zinc-200">
-      <div class="column-title flex items-center gap-2">
-        <span class="font-medium text-sm">{{.Name}}</span>
-        <span class="column-count text-xs text-zinc-500 bg-zinc-200 px-1.5 py-0.5 rounded-full">{{len .Issues}}</span>
-      </div>
-      <div class="column-actions flex items-center gap-1">
-        <button class="w-7 h-7 flex items-center justify-center text-zinc-400 hover:text-zinc-600 hover:bg-zinc-200 rounded transition-colors column-add-btn" data-column-id="{{.ID}}" title="Add issue">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M5 12h14"/>
-            <path d="M12 5v14"/>
-          </svg>
-        </button>
-        <div class="dropdown relative">
-          <button class="dropdown-trigger w-7 h-7 flex items-center justify-center text-zinc-400 hover:text-zinc-600 hover:bg-zinc-200 rounded transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="1"/>
-              <circle cx="12" cy="5" r="1"/>
-              <circle cx="12" cy="19" r="1"/>
+  <div class="board-column flex-shrink-0 w-72 flex flex-col" data-column-id="{{.ID}}">
+    <div class="column-header flex items-center gap-2 px-1 py-2 mb-3">
+      <!-- Status Icon -->
+      <span class="{{if eq (lower .Name) "done"}}text-green-600{{else if or (eq (lower .Name) "in-progress") (eq (lower .Name) "doing")}}text-blue-600{{else if eq (lower .Name) "todo"}}text-zinc-600{{else}}text-zinc-400{{end}}">
+        {{if eq (lower .Name) "backlog"}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+        {{else if eq (lower .Name) "todo"}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
+        {{else if or (eq (lower .Name) "in-progress") (eq (lower .Name) "doing")}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
+        {{else if or (eq (lower .Name) "done") (eq (lower .Name) "completed")}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        {{else if or (eq (lower .Name) "canceled") (eq (lower .Name) "cancelled")}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+        {{else}}
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
+        {{end}}
+      </span>
+      <span class="font-medium text-sm text-zinc-700">{{.Name}}</span>
+      <span class="column-count text-xs text-zinc-400">{{len .Issues}}</span>
+    </div>
+
+    <div class="column-body flex-1 space-y-2">
+      {{range .Issues}}
+      <a href="/w/{{$.Workspace.Slug}}/issue/{{.Key}}" class="issue-card block bg-white rounded-lg border border-zinc-200 p-3 hover:border-zinc-300 hover:shadow-sm transition-all" draggable="true" data-issue-id="{{.ID}}" data-issue-key="{{.Key}}" data-position="{{.Position}}">
+        <div class="flex items-start gap-2 mb-2">
+          <!-- Priority indicator -->
+          <div class="w-4 flex-shrink-0 mt-0.5">
+            {{if eq .Priority 1}}
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500" title="Urgent">
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/>
+              <line x1="12" y1="17" x2="12.01" y2="17"/>
             </svg>
-          </button>
-          <div class="dropdown-menu hidden absolute right-0 top-full mt-1 w-44 bg-white border border-zinc-200 rounded-md shadow-lg py-1 z-50">
-            <button class="dropdown-item flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-100" data-action="rename-column" data-column-id="{{.ID}}">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-              </svg>
-              Rename
-            </button>
-            {{if not .IsDefault}}
-            <button class="dropdown-item flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-100" data-action="set-default" data-column-id="{{.ID}}">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-              </svg>
-              Set as Default
-            </button>
+            {{else if eq .Priority 2}}
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" class="text-orange-500" title="High"><rect x="2" y="2" width="3" height="12" fill="currentColor"/><rect x="6.5" y="5" width="3" height="9" fill="currentColor"/><rect x="11" y="8" width="3" height="6" fill="currentColor"/></svg>
+            {{else if eq .Priority 3}}
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" class="text-yellow-500" title="Medium"><rect x="2" y="5" width="3" height="9" fill="currentColor"/><rect x="6.5" y="8" width="3" height="6" fill="currentColor"/></svg>
+            {{else if eq .Priority 4}}
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" class="text-blue-500" title="Low"><rect x="2" y="8" width="3" height="6" fill="currentColor"/></svg>
+            {{else}}
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-300"><line x1="5" y1="12" x2="19" y2="12"/></svg>
             {{end}}
-            <div class="dropdown-divider border-t border-zinc-200 my-1"></div>
-            <button class="dropdown-item destructive flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-red-600 hover:bg-red-50" data-action="delete-column" data-column-id="{{.ID}}">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 6h18"/>
-                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-              </svg>
-              Delete Column
-            </button>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="issue-card-title text-sm font-medium text-zinc-900 line-clamp-2">{{.Title}}</div>
           </div>
         </div>
-      </div>
-    </div>
-
-    <div class="column-body flex-1 overflow-y-auto p-2 space-y-2 scrollbar-thin">
-      {{range .Issues}}
-      <div class="issue-card bg-white rounded-md shadow-sm border border-zinc-200 p-3 cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all" draggable="true" data-issue-id="{{.ID}}" data-issue-key="{{.Key}}" data-position="{{.Position}}">
-        <div class="issue-card-header flex items-center justify-between mb-1">
-          <span class="issue-key text-xs text-zinc-500 font-medium">{{.Key}}</span>
+        <div class="flex items-center justify-between text-xs">
+          <span class="font-medium text-zinc-400 font-mono">{{.Key}}</span>
+          <div class="flex items-center gap-2">
+            {{if .DueDate}}
+            <span class="flex items-center gap-1 text-zinc-400" title="Due {{.DueDate.Format "Jan 2, 2006"}}">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M8 2v4"/>
+                <path d="M16 2v4"/>
+                <rect width="18" height="18" x="3" y="4" rx="2"/>
+                <path d="M3 10h18"/>
+              </svg>
+              {{.DueDate.Format "Jan 2"}}
+            </span>
+            {{end}}
+          </div>
         </div>
-        <div class="issue-card-title text-sm font-medium text-zinc-900 line-clamp-2">{{.Title}}</div>
-        <div class="issue-card-meta flex items-center gap-2 mt-2">
-          {{if gt .Priority 0}}
-          <span class="card-priority flex items-center text-xs {{if eq .Priority 1}}text-red-500{{else if eq .Priority 2}}text-orange-500{{else if eq .Priority 3}}text-yellow-500{{else}}text-blue-500{{end}}" title="Priority">
-            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M2 20h.01"/><path d="M7 20v-4"/>{{if ge .Priority 3}}<path d="M12 20v-8"/>{{end}}{{if ge .Priority 2}}<path d="M17 20V8"/>{{end}}{{if eq .Priority 1}}<path d="M22 4v16"/>{{end}}
-            </svg>
-          </span>
-          {{end}}
-          {{if .DueDate}}
-          <span class="card-due-date flex items-center gap-1 text-xs text-zinc-500" title="Due {{.DueDate.Format "Jan 2, 2006"}}">
-            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M8 2v4"/>
-              <path d="M16 2v4"/>
-              <rect width="18" height="18" x="3" y="4" rx="2"/>
-              <path d="M3 10h18"/>
-            </svg>
-            {{.DueDate.Format "Jan 2"}}
-          </span>
-          {{end}}
-        </div>
-      </div>
+      </a>
       {{end}}
-    </div>
-
-    <div class="column-footer p-2 border-t border-zinc-200">
-      <form class="quick-add-form flex items-center gap-2" data-column-id="{{.ID}}">
-        <input type="text" class="flex-1 px-2 py-1.5 text-sm bg-transparent border-none outline-none placeholder-zinc-400" placeholder="Add issue..." name="title" aria-label="Quick add issue">
-        <button type="submit" class="w-7 h-7 flex items-center justify-center text-zinc-400 hover:text-zinc-600 hover:bg-zinc-200 rounded transition-colors" aria-label="Add issue">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14"/>
-            <path d="M12 5v14"/>
-          </svg>
-        </button>
-      </form>
     </div>
   </div>
   {{end}}
-
-  <!-- Add Column Button -->
-  <div class="flex-shrink-0 w-72 min-h-48 bg-transparent border-2 border-dashed border-zinc-300 rounded-lg cursor-pointer flex items-center justify-center hover:border-zinc-400 hover:bg-zinc-50 transition-colors" data-modal="add-column-modal">
-    <div class="empty-state flex flex-col items-center gap-2 text-zinc-400 p-8">
-      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M5 12h14"/>
-        <path d="M12 5v14"/>
-      </svg>
-      <span class="text-sm">Add Column</span>
-    </div>
-  </div>
 </div>
 
 <!-- Create Issue Modal -->
@@ -264,7 +246,7 @@ document.addEventListener('click', async (e) => {
     case 'rename-column':
       columnToRename = columnId;
       const column = document.querySelector(`.board-column[data-column-id="${columnId}"]`);
-      const currentName = column?.querySelector('.column-title span:first-child')?.textContent || '';
+      const currentName = column?.querySelector('.column-header span:nth-child(2)')?.textContent || '';
       document.getElementById('rename-column-name').value = currentName;
       app.modals.open('rename-column-modal');
       break;
@@ -319,52 +301,12 @@ document.getElementById('rename-column-form')?.addEventListener('submit', async 
     await app.api.patch(`/columns/${columnToRename}`, { name: newName });
     app.modals.close('rename-column-modal');
     const column = document.querySelector(`.board-column[data-column-id="${columnToRename}"]`);
-    const nameSpan = column?.querySelector('.column-title span:first-child');
+    const nameSpan = column?.querySelector('.column-header span:nth-child(2)');
     if (nameSpan) nameSpan.textContent = newName;
     columnToRename = null;
   } catch (error) {
     alert(error.message || 'Failed to rename column');
   }
-});
-
-document.querySelectorAll('.quick-add-form').forEach(form => {
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const input = form.querySelector('input[name="title"]');
-    const title = input.value.trim();
-    if (!title) return;
-
-    const columnId = form.dataset.columnId;
-
-    try {
-      const issue = await app.api.post(`/projects/{{.Project.ID}}/issues`, {
-        title,
-        column_id: columnId,
-      });
-
-      const column = form.closest('.board-column');
-      const columnBody = column.querySelector('.column-body');
-
-      const card = document.createElement('div');
-      card.className = 'issue-card bg-white rounded-md shadow-sm border border-zinc-200 p-3 cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all';
-      card.draggable = true;
-      card.dataset.issueId = issue.id;
-      card.dataset.issueKey = issue.key;
-      card.innerHTML = `
-        <div class="issue-card-header flex items-center justify-between mb-1">
-          <span class="issue-key text-xs text-zinc-500 font-medium">${issue.key}</span>
-        </div>
-        <div class="issue-card-title text-sm font-medium text-zinc-900 line-clamp-2">${title}</div>
-        <div class="issue-card-meta flex items-center gap-2 mt-2"></div>
-      `;
-      columnBody.appendChild(card);
-
-      input.value = '';
-      app.kanban.updateColumnCounts();
-    } catch (error) {
-      alert(error.message || 'Failed to create issue');
-    }
-  });
 });
 
 const modalForm = {
@@ -490,28 +432,5 @@ const modalForm = {
 };
 
 modalForm.init();
-
-document.querySelectorAll('.column-add-btn').forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const columnId = btn.dataset.columnId;
-    const column = document.querySelector(`.board-column[data-column-id="${columnId}"]`);
-    const input = column?.querySelector('.quick-add-form input');
-    if (input) {
-      input.focus();
-      input.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  });
-});
-
-document.querySelectorAll('.issue-card').forEach(card => {
-  card.addEventListener('click', (e) => {
-    if (e.target.closest('.dropdown')) return;
-    const key = card.dataset.issueKey;
-    if (key) {
-      location.href = `/w/{{.Workspace.Slug}}/issue/${key}`;
-    }
-  });
-});
 </script>
 {{end}}
