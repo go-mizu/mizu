@@ -1,9 +1,9 @@
 {{define "content"}}
-<div class="page-header flex items-center justify-between mb-6">
+<div class="flex items-center justify-between mb-6">
   <div class="flex items-center gap-4">
-    <h1 class="page-title">Issues</h1>
-    <div class="view-switcher" role="group" aria-label="View options">
-      <a href="/w/{{.Workspace.Slug}}/issues?view=list" class="view-btn is-active" aria-label="List view" aria-current="page">
+    <h1 class="text-2xl font-semibold text-zinc-900">Issues</h1>
+    <div class="flex items-center bg-zinc-100 rounded-lg p-1" role="group" aria-label="View options">
+      <a href="/w/{{.Workspace.Slug}}/issues?view=list" class="flex items-center justify-center w-8 h-8 rounded-md bg-white shadow-sm text-zinc-900" aria-label="List view" aria-current="page">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <line x1="8" x2="21" y1="6" y2="6"/>
           <line x1="8" x2="21" y1="12" y2="12"/>
@@ -14,14 +14,14 @@
         </svg>
       </a>
       {{if .DefaultProjectID}}
-      <a href="/w/{{.Workspace.Slug}}/board/{{.DefaultProjectID}}" class="view-btn" aria-label="Board view">
+      <a href="/w/{{.Workspace.Slug}}/board/{{.DefaultProjectID}}" class="flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-white transition-colors" aria-label="Board view">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect width="6" height="14" x="4" y="5"/>
           <rect width="6" height="10" x="14" y="7"/>
         </svg>
       </a>
       {{end}}
-      <a href="/w/{{.Workspace.Slug}}/issues?view=calendar" class="view-btn" aria-label="Calendar view">
+      <a href="/w/{{.Workspace.Slug}}/issues?view=calendar" class="flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-white transition-colors" aria-label="Calendar view">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M8 2v4"/>
           <path d="M16 2v4"/>
@@ -29,7 +29,7 @@
           <path d="M3 10h18"/>
         </svg>
       </a>
-      <a href="/w/{{.Workspace.Slug}}/issues?view=gantt" class="view-btn" aria-label="Gantt chart view">
+      <a href="/w/{{.Workspace.Slug}}/issues?view=gantt" class="flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-white transition-colors" aria-label="Gantt chart view">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M3 3v18h18"/>
           <rect x="7" y="6" width="10" height="3"/>
@@ -40,32 +40,32 @@
     </div>
   </div>
   <div class="flex items-center gap-3">
-    <div class="search-input-wrapper">
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <div class="relative">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">
         <circle cx="11" cy="11" r="8"/>
         <path d="m21 21-4.3-4.3"/>
       </svg>
-      <input type="text" id="issue-search" class="input search-input" placeholder="Search issues...">
+      <input type="text" id="issue-search" class="w-64 pl-9 pr-4 py-2 text-sm border border-zinc-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent" placeholder="Search issues...">
     </div>
-    <div class="dropdown">
-      <button class="dropdown-trigger btn btn-secondary" id="filter-btn">
+    <div class="relative" id="filter-dropdown">
+      <button class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 bg-white border border-zinc-200 rounded-lg hover:bg-zinc-50 transition-colors dropdown-trigger" id="filter-btn">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
         </svg>
         Filter
-        <span id="filter-count" class="filter-badge hidden">0</span>
+        <span id="filter-count" class="hidden min-w-5 h-5 px-1.5 text-xs font-medium text-white bg-indigo-600 rounded-full flex items-center justify-center">0</span>
       </button>
-      <div class="dropdown-menu filter-menu hidden">
-        <div class="filter-section">
-          <div class="filter-section-title">Quick Filters</div>
-          <button class="dropdown-item" data-filter="my-issues">
+      <div class="absolute right-0 top-full mt-1 w-64 bg-white rounded-lg shadow-lg border border-zinc-200 py-2 z-50 hidden dropdown-menu">
+        <div class="px-3 py-2">
+          <div class="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-2">Quick Filters</div>
+          <button class="flex items-center gap-2 w-full px-2 py-1.5 text-sm text-left text-zinc-700 hover:bg-zinc-50 rounded transition-colors" data-filter="my-issues">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
               <circle cx="12" cy="7" r="4"/>
             </svg>
             My Issues
           </button>
-          <button class="dropdown-item" data-filter="unassigned">
+          <button class="flex items-center gap-2 w-full px-2 py-1.5 text-sm text-left text-zinc-700 hover:bg-zinc-50 rounded transition-colors" data-filter="unassigned">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="10"/>
               <path d="m4.93 4.93 14.14 14.14"/>
@@ -73,34 +73,34 @@
             Unassigned
           </button>
         </div>
-        <div class="dropdown-divider"></div>
-        <div class="filter-section">
-          <div class="filter-section-title">Status</div>
+        <div class="border-t border-zinc-100 my-2"></div>
+        <div class="px-3 py-2">
+          <div class="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-2">Status</div>
           {{range .Columns}}
-          <label class="filter-checkbox">
-            <input type="checkbox" data-filter-type="status" value="{{.Name}}" checked>
-            <span class="status-badge {{lower .Name}}">
+          <label class="flex items-center gap-2 px-2 py-1.5 cursor-pointer hover:bg-zinc-50 rounded transition-colors">
+            <input type="checkbox" data-filter-type="status" value="{{.Name}}" checked class="w-4 h-4 text-indigo-600 border-zinc-300 rounded focus:ring-indigo-500">
+            <span class="inline-flex items-center gap-1.5 text-sm {{if eq (lower .Name) "done"}}text-green-600{{else if eq (lower .Name) "in-progress"}}text-blue-600{{else if eq (lower .Name) "todo"}}text-zinc-600{{else}}text-zinc-500{{end}}">
               {{if eq (lower .Name) "backlog"}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
               {{else if eq (lower .Name) "todo"}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
               {{else if or (eq (lower .Name) "in-progress") (eq (lower .Name) "doing")}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
               {{else if or (eq (lower .Name) "done") (eq (lower .Name) "completed")}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
               {{else if or (eq (lower .Name) "canceled") (eq (lower .Name) "cancelled")}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
               {{else}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
               {{end}}
               {{.Name}}
             </span>
           </label>
           {{end}}
         </div>
-        <div class="dropdown-divider"></div>
-        <div class="filter-actions">
-          <button class="btn btn-ghost btn-sm" id="clear-filters">Clear all</button>
+        <div class="border-t border-zinc-100 my-2"></div>
+        <div class="px-3 py-2">
+          <button class="text-sm text-zinc-500 hover:text-zinc-700 transition-colors" id="clear-filters">Clear all</button>
         </div>
       </div>
     </div>
@@ -110,39 +110,49 @@
 <span id="visible-count" class="hidden">{{.TotalCount}}</span>
 
 {{if .Issues}}
-<div class="bg-white rounded-sm shadow-sm">
-  <table class="w-full text-sm border-collapse table-sortable" id="issues-table">
+<div class="bg-white rounded-lg shadow-sm border border-zinc-200">
+  <table class="w-full text-sm border-collapse" id="issues-table">
     <thead>
       <tr class="bg-zinc-50">
-        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400 sortable" style="width: 100px;" data-sort="key">
-          Key
-          <svg class="sort-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>
-          </svg>
+        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400 cursor-pointer hover:text-zinc-600 transition-colors" style="width: 100px;" data-sort="key">
+          <div class="flex items-center gap-1">
+            Key
+            <svg class="w-3.5 h-3.5 opacity-50" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>
+            </svg>
+          </div>
         </th>
-        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400 sortable" data-sort="title">
-          Title
-          <svg class="sort-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>
-          </svg>
+        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400 cursor-pointer hover:text-zinc-600 transition-colors" data-sort="title">
+          <div class="flex items-center gap-1">
+            Title
+            <svg class="w-3.5 h-3.5 opacity-50" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>
+            </svg>
+          </div>
         </th>
-        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400 sortable" style="width: 120px;" data-sort="status">
-          Status
-          <svg class="sort-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>
-          </svg>
+        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400 cursor-pointer hover:text-zinc-600 transition-colors" style="width: 120px;" data-sort="status">
+          <div class="flex items-center gap-1">
+            Status
+            <svg class="w-3.5 h-3.5 opacity-50" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>
+            </svg>
+          </div>
         </th>
-        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400 sortable" style="width: 150px;" data-sort="assignee">
-          Assignee
-          <svg class="sort-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>
-          </svg>
+        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400 cursor-pointer hover:text-zinc-600 transition-colors" style="width: 150px;" data-sort="assignee">
+          <div class="flex items-center gap-1">
+            Assignee
+            <svg class="w-3.5 h-3.5 opacity-50" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>
+            </svg>
+          </div>
         </th>
-        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400 sortable" style="width: 120px;" data-sort="updated">
-          Updated
-          <svg class="sort-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>
-          </svg>
+        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400 cursor-pointer hover:text-zinc-600 transition-colors" style="width: 120px;" data-sort="updated">
+          <div class="flex items-center gap-1">
+            Updated
+            <svg class="w-3.5 h-3.5 opacity-50" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>
+            </svg>
+          </div>
         </th>
       </tr>
     </thead>
@@ -157,19 +167,19 @@
         </td>
         <td class="px-4 py-3">
           {{if .Column}}
-          <span class="status-badge {{lower .Column.Name}}">
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium {{if eq (lower .Column.Name) "done"}}text-green-600{{else if eq (lower .Column.Name) "in-progress"}}text-blue-600{{else if eq (lower .Column.Name) "todo"}}text-zinc-600{{else}}text-zinc-500{{end}}">
             {{if eq (lower .Column.Name) "backlog"}}
-            <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+            <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
             {{else if eq (lower .Column.Name) "todo"}}
-            <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
+            <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
             {{else if or (eq (lower .Column.Name) "in-progress") (eq (lower .Column.Name) "doing")}}
-            <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
+            <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
             {{else if or (eq (lower .Column.Name) "done") (eq (lower .Column.Name) "completed")}}
-            <svg class="status-icon" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
             {{else if or (eq (lower .Column.Name) "canceled") (eq (lower .Column.Name) "cancelled")}}
-            <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+            <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
             {{else}}
-            <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
+            <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
             {{end}}
             {{.Column.Name}}
           </span>
@@ -189,7 +199,7 @@
   </table>
 </div>
 {{else}}
-<div class="flex flex-col items-center justify-center py-16 px-8 text-center bg-white rounded-sm shadow-sm">
+<div class="flex flex-col items-center justify-center py-16 px-8 text-center bg-white rounded-lg shadow-sm border border-zinc-200">
   <svg class="w-12 h-12 mb-5 text-zinc-300" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <circle cx="12" cy="12" r="10"/>
     <line x1="12" x2="12" y1="8" y2="12"/>
@@ -197,91 +207,93 @@
   </svg>
   <div class="text-base font-semibold mb-2 text-zinc-900">No issues yet</div>
   <div class="text-sm text-zinc-500 max-w-xs mb-5">Create your first issue to start tracking work</div>
-  <button class="btn btn-primary" data-modal="create-issue-modal">
+  <button class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 transition-colors" data-modal="create-issue-modal">
     Create Issue
   </button>
 </div>
 {{end}}
 
 <!-- Create Issue Modal -->
-<div id="create-issue-modal" class="modal hidden">
-  <div class="modal-backdrop"></div>
-  <div class="modal-content modal-lg">
-    <div class="modal-header">
-      <div class="flex items-center gap-2">
-        <span class="font-medium">New issue</span>
+<div id="create-issue-modal" class="fixed inset-0 z-50 hidden">
+  <div class="fixed inset-0 bg-black/50" data-close="create-issue-modal"></div>
+  <div class="fixed inset-0 flex items-center justify-center p-4">
+    <div class="relative w-full max-w-lg bg-white rounded-xl shadow-xl">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
+        <div class="flex items-center gap-2">
+          <span class="font-medium text-zinc-900">New issue</span>
+        </div>
+        <button class="text-zinc-400 hover:text-zinc-600 transition-colors" data-close="create-issue-modal">&times;</button>
       </div>
-      <button class="modal-close">&times;</button>
+      <form id="create-issue-form">
+        <div class="px-6 py-4">
+          <input type="text" id="issue-title" name="title" class="w-full py-2 text-lg font-medium border-none bg-transparent outline-none text-zinc-900 placeholder-zinc-400" placeholder="Issue title" required autofocus>
+          <textarea id="issue-description" name="description" class="w-full py-2 text-sm border-none bg-transparent outline-none resize-none text-zinc-900 placeholder-zinc-400" placeholder="Add description..." rows="3"></textarea>
+
+          <div class="flex flex-wrap gap-2 pt-2">
+            <button type="button" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-md border border-zinc-200 bg-white hover:bg-zinc-50 transition-colors cursor-pointer" data-property="status" id="issues-status-chip">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-500">
+                <circle cx="12" cy="12" r="10"/>
+                <circle cx="12" cy="12" r="1"/>
+              </svg>
+              <span>Backlog</span>
+            </button>
+            <button type="button" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-md border border-zinc-200 bg-white hover:bg-zinc-50 transition-colors cursor-pointer" data-property="priority" id="issues-priority-chip">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-500">
+                <path d="M2 20h.01"/>
+                <path d="M7 20v-4"/>
+                <path d="M12 20v-8"/>
+                <path d="M17 20V8"/>
+              </svg>
+              <span>Priority</span>
+            </button>
+            {{if .Projects}}
+            <button type="button" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-md border border-zinc-200 bg-white hover:bg-zinc-50 transition-colors cursor-pointer" data-property="project" id="issues-project-chip">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-500">
+                <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>
+              </svg>
+              <span>Project</span>
+            </button>
+            {{end}}
+          </div>
+
+          <!-- Hidden fields -->
+          <input type="hidden" name="project_id" id="issues-project-id" value="{{.DefaultProjectID}}">
+          <input type="hidden" name="column_id" id="issues-column-id" value="">
+          <input type="hidden" name="priority" id="issues-priority" value="0">
+        </div>
+        <div class="flex items-center justify-between px-6 py-4 bg-zinc-50 rounded-b-xl border-t border-zinc-100">
+          <label class="flex items-center gap-2 text-sm text-zinc-600 cursor-pointer">
+            <input type="checkbox" id="issues-create-more" class="w-4 h-4 text-indigo-600 border-zinc-300 rounded focus:ring-indigo-500">
+            Create more
+          </label>
+          <div class="flex gap-2">
+            <button type="button" class="px-4 py-2 text-sm font-medium text-zinc-700 bg-white border border-zinc-200 rounded-md hover:bg-zinc-50 transition-colors" data-close="create-issue-modal">Cancel</button>
+            <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 transition-colors" id="create-issue-submit">Create issue</button>
+          </div>
+        </div>
+      </form>
     </div>
-    <form id="create-issue-form">
-      <div class="modal-body">
-        <input type="text" id="issue-title" name="title" class="w-full py-3 text-lg font-medium border-none bg-transparent outline-none text-zinc-900 placeholder-zinc-400" placeholder="Issue title" required autofocus>
-        <textarea id="issue-description" name="description" class="w-full pb-4 text-sm border-none bg-transparent outline-none resize-none text-zinc-900 placeholder-zinc-400" placeholder="Add description..." rows="3"></textarea>
-
-        <div class="flex flex-wrap gap-2 pb-4">
-          <button type="button" class="property-chip" data-property="status" id="issues-status-chip">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"/>
-              <circle cx="12" cy="12" r="1"/>
-            </svg>
-            <span>Backlog</span>
-          </button>
-          <button type="button" class="property-chip" data-property="priority" id="issues-priority-chip">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M2 20h.01"/>
-              <path d="M7 20v-4"/>
-              <path d="M12 20v-8"/>
-              <path d="M17 20V8"/>
-            </svg>
-            <span>Priority</span>
-          </button>
-          {{if .Projects}}
-          <button type="button" class="property-chip" data-property="project" id="issues-project-chip">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>
-            </svg>
-            <span>Project</span>
-          </button>
-          {{end}}
-        </div>
-
-        <!-- Hidden fields -->
-        <input type="hidden" name="project_id" id="issues-project-id" value="{{.DefaultProjectID}}">
-        <input type="hidden" name="column_id" id="issues-column-id" value="">
-        <input type="hidden" name="priority" id="issues-priority" value="0">
-      </div>
-      <div class="modal-footer has-toggle">
-        <label class="create-more-toggle">
-          <input type="checkbox" id="issues-create-more">
-          Create more
-        </label>
-        <div class="flex gap-2">
-          <button type="button" class="btn btn-secondary modal-close">Cancel</button>
-          <button type="submit" class="btn btn-primary" id="create-issue-submit">Create issue</button>
-        </div>
-      </div>
-    </form>
   </div>
 </div>
 
 <!-- Issues Status Dropdown -->
 {{if .Columns}}
-<div id="issues-status-selector" class="dropdown-menu property-dropdown hidden">
+<div id="issues-status-selector" class="fixed bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-[60] hidden" style="min-width: 200px;">
   {{range .Columns}}
-  <button type="button" class="dropdown-item issues-status-option" data-column-id="{{.ID}}" data-column-name="{{.Name}}">
-    <span class="status-badge {{lower .Name}}">
+  <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors issues-status-option" data-column-id="{{.ID}}" data-column-name="{{.Name}}">
+    <span class="inline-flex items-center gap-1.5 {{if eq (lower .Name) "done"}}text-green-600{{else if eq (lower .Name) "in-progress"}}text-blue-600{{else if eq (lower .Name) "todo"}}text-zinc-600{{else}}text-zinc-500{{end}}">
       {{if eq (lower .Name) "backlog"}}
-      <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+      <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
       {{else if eq (lower .Name) "todo"}}
-      <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
+      <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
       {{else if or (eq (lower .Name) "in-progress") (eq (lower .Name) "doing")}}
-      <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
+      <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
       {{else if or (eq (lower .Name) "done") (eq (lower .Name) "completed")}}
-      <svg class="status-icon" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg class="w-4 h-4" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
       {{else if or (eq (lower .Name) "canceled") (eq (lower .Name) "cancelled")}}
-      <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+      <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
       {{else}}
-      <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
+      <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
       {{end}}
       {{.Name}}
     </span>
@@ -291,67 +303,65 @@
 {{end}}
 
 <!-- Issues Priority Dropdown -->
-<div id="issues-priority-selector" class="dropdown-menu property-dropdown hidden">
-  <button type="button" class="dropdown-item issues-priority-option" data-priority="0" data-priority-name="No priority">
-    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+<div id="issues-priority-selector" class="fixed bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-[60] hidden" style="min-width: 200px;">
+  <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors issues-priority-option" data-priority="0" data-priority-name="No priority">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400">
       <line x1="5" y1="12" x2="19" y2="12"/>
     </svg>
     <span>No priority</span>
   </button>
-  <button type="button" class="dropdown-item issues-priority-option" data-priority="1" data-priority-name="Urgent">
-    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-urgent-icon">
+  <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors issues-priority-option" data-priority="1" data-priority-name="Urgent">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500">
       <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
       <line x1="12" y1="9" x2="12" y2="13"/>
       <line x1="12" y1="17" x2="12.01" y2="17"/>
     </svg>
     <span>Urgent</span>
   </button>
-  <button type="button" class="dropdown-item issues-priority-option" data-priority="2" data-priority-name="High">
-    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-high-icon">
+  <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors issues-priority-option" data-priority="2" data-priority-name="High">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-orange-500">
       <rect x="3" y="3" width="6" height="18" rx="1"/>
       <rect x="9" y="8" width="6" height="13" rx="1"/>
       <rect x="15" y="13" width="6" height="8" rx="1"/>
     </svg>
     <span>High</span>
   </button>
-  <button type="button" class="dropdown-item issues-priority-option" data-priority="3" data-priority-name="Medium">
-    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-medium-icon">
+  <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors issues-priority-option" data-priority="3" data-priority-name="Medium">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-yellow-500">
       <rect x="3" y="8" width="6" height="13" rx="1"/>
       <rect x="9" y="13" width="6" height="8" rx="1"/>
     </svg>
     <span>Medium</span>
   </button>
-  <button type="button" class="dropdown-item issues-priority-option" data-priority="4" data-priority-name="Low">
-    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-low-icon">
+  <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors issues-priority-option" data-priority="4" data-priority-name="Low">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500">
       <rect x="3" y="13" width="6" height="8" rx="1"/>
     </svg>
     <span>Low</span>
   </button>
 </div>
 
-
 <!-- Issues Project Dropdown -->
 {{if .Projects}}
-<div id="issues-project-selector" class="dropdown-menu property-dropdown hidden">
+<div id="issues-project-selector" class="fixed bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-[60] hidden" style="min-width: 200px;">
   {{range .Projects}}
-  <button type="button" class="dropdown-item issues-project-option" data-project-id="{{.ID}}" data-project-name="{{.Name}}" data-project-key="{{.Key}}">
-    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <button type="button" class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 transition-colors issues-project-option" data-project-id="{{.ID}}" data-project-name="{{.Name}}" data-project-key="{{.Key}}">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-500">
       <rect width="6" height="14" x="4" y="5" rx="2"/>
       <rect width="6" height="10" x="14" y="7" rx="2"/>
     </svg>
     {{.Name}}
-    <span class="text-muted text-xs ml-auto">{{.Key}}</span>
+    <span class="text-zinc-400 text-xs ml-auto">{{.Key}}</span>
   </button>
   {{end}}
 </div>
 {{end}}
 
 <script>
-// Current user ID for "My Issues" filter
 const currentUserId = '{{.User.ID}}';
 
 // Row click navigation
-document.querySelectorAll('.table tbody tr[data-issue-key]').forEach(row => {
+document.querySelectorAll('#issues-table tbody tr[data-issue-key]').forEach(row => {
   row.addEventListener('click', () => {
     const key = row.dataset.issueKey;
     location.href = `/w/{{.Workspace.Slug}}/issue/${key}`;
@@ -392,7 +402,6 @@ const issuesModalForm = {
         this.selectedProjectId = opt.dataset.projectId;
         document.getElementById('issues-project-id').value = this.selectedProjectId;
         document.querySelector('#issues-project-chip span').textContent = opt.dataset.projectKey;
-        document.getElementById('issues-project-chip').classList.add('selected');
         this.hideAllDropdowns();
       });
     });
@@ -403,7 +412,6 @@ const issuesModalForm = {
         this.selectedColumnId = opt.dataset.columnId;
         document.getElementById('issues-column-id').value = this.selectedColumnId;
         document.querySelector('#issues-status-chip span').textContent = opt.dataset.columnName;
-        document.getElementById('issues-status-chip').classList.add('selected');
         this.hideAllDropdowns();
       });
     });
@@ -417,18 +425,13 @@ const issuesModalForm = {
         if (chipSpan) {
           chipSpan.textContent = this.selectedPriority === 0 ? 'Priority' : opt.dataset.priorityName;
         }
-        if (this.selectedPriority > 0) {
-          document.getElementById('issues-priority-chip')?.classList.add('selected');
-        } else {
-          document.getElementById('issues-priority-chip')?.classList.remove('selected');
-        }
         this.hideAllDropdowns();
       });
     });
 
     // Close dropdowns on outside click
     document.addEventListener('click', (e) => {
-      if (!e.target.closest('.property-chip') && !e.target.closest('.property-dropdown')) {
+      if (!e.target.closest('[data-property]') && !e.target.closest('[id$="-selector"]')) {
         this.hideAllDropdowns();
       }
     });
@@ -443,7 +446,6 @@ const issuesModalForm = {
       const submitBtn = document.getElementById('create-issue-submit');
       const title = form.title.value.trim();
 
-      // Validate project ID
       if (!this.selectedProjectId) {
         alert('Please select a project');
         return;
@@ -480,7 +482,6 @@ const issuesModalForm = {
           this.selectedPriority = 0;
           document.querySelector('#issues-status-chip span').textContent = 'Backlog';
           document.querySelector('#issues-priority-chip span').textContent = 'Priority';
-          document.querySelectorAll('#create-issue-form .property-chip').forEach(c => c.classList.remove('selected'));
           location.reload();
         } else {
           location.href = `/w/{{.Workspace.Slug}}/issue/${issue.key}`;
@@ -500,24 +501,19 @@ const issuesModalForm = {
     if (!dropdown) return;
 
     const rect = anchor.getBoundingClientRect();
-    dropdown.style.position = 'fixed';
     dropdown.style.top = `${rect.bottom + 4}px`;
     dropdown.style.left = `${rect.left}px`;
-    dropdown.style.minWidth = '200px';
     dropdown.classList.remove('hidden');
   },
 
   hideAllDropdowns() {
-    document.querySelectorAll('.property-dropdown').forEach(d => d.classList.add('hidden'));
+    document.querySelectorAll('[id$="-selector"]').forEach(d => d.classList.add('hidden'));
   }
 };
 
 issuesModalForm.init();
 
-// ========================================
 // Filter & Search Functionality
-// ========================================
-
 const issueFilter = {
   searchQuery: '',
   myIssuesOnly: false,
@@ -527,19 +523,16 @@ const issueFilter = {
   sortDirection: 'asc',
 
   init() {
-    // Initialize with all filters checked
     document.querySelectorAll('[data-filter-type="status"]').forEach(cb => {
       if (cb.checked) this.statusFilters.add(cb.value);
     });
 
-    // Search input
     const searchInput = document.getElementById('issue-search');
     searchInput?.addEventListener('input', (e) => {
       this.searchQuery = e.target.value.toLowerCase();
       this.applyFilters();
     });
 
-    // Status checkboxes
     document.querySelectorAll('[data-filter-type="status"]').forEach(cb => {
       cb.addEventListener('change', (e) => {
         if (e.target.checked) {
@@ -551,14 +544,14 @@ const issueFilter = {
       });
     });
 
-    // Quick filters
     document.querySelector('[data-filter="my-issues"]')?.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       this.myIssuesOnly = !this.myIssuesOnly;
       this.unassignedOnly = false;
-      e.target.closest('.dropdown-item').classList.toggle('active', this.myIssuesOnly);
-      document.querySelector('[data-filter="unassigned"]')?.closest('.dropdown-item').classList.remove('active');
+      e.target.closest('button').classList.toggle('bg-indigo-50', this.myIssuesOnly);
+      e.target.closest('button').classList.toggle('text-indigo-600', this.myIssuesOnly);
+      document.querySelector('[data-filter="unassigned"]')?.classList.remove('bg-indigo-50', 'text-indigo-600');
       this.applyFilters();
     });
 
@@ -567,20 +560,19 @@ const issueFilter = {
       e.stopPropagation();
       this.unassignedOnly = !this.unassignedOnly;
       this.myIssuesOnly = false;
-      e.target.closest('.dropdown-item').classList.toggle('active', this.unassignedOnly);
-      document.querySelector('[data-filter="my-issues"]')?.closest('.dropdown-item').classList.remove('active');
+      e.target.closest('button').classList.toggle('bg-indigo-50', this.unassignedOnly);
+      e.target.closest('button').classList.toggle('text-indigo-600', this.unassignedOnly);
+      document.querySelector('[data-filter="my-issues"]')?.classList.remove('bg-indigo-50', 'text-indigo-600');
       this.applyFilters();
     });
 
-    // Clear filters
     document.getElementById('clear-filters')?.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       this.clearAllFilters();
     });
 
-    // Sortable headers
-    document.querySelectorAll('th.sortable').forEach(th => {
+    document.querySelectorAll('th[data-sort]').forEach(th => {
       th.addEventListener('click', () => {
         const column = th.dataset.sort;
         if (this.sortColumn === column) {
@@ -589,7 +581,6 @@ const issueFilter = {
           this.sortColumn = column;
           this.sortDirection = 'asc';
         }
-        this.updateSortIndicators();
         this.sortTable();
       });
     });
@@ -600,19 +591,16 @@ const issueFilter = {
     this.myIssuesOnly = false;
     this.unassignedOnly = false;
 
-    // Reset search input
     const searchInput = document.getElementById('issue-search');
     if (searchInput) searchInput.value = '';
 
-    // Check all status filters
     document.querySelectorAll('[data-filter-type="status"]').forEach(cb => {
       cb.checked = true;
       this.statusFilters.add(cb.value);
     });
 
-    // Remove active class from quick filters
     document.querySelectorAll('[data-filter]').forEach(btn => {
-      btn.closest('.dropdown-item')?.classList.remove('active');
+      btn.classList.remove('bg-indigo-50', 'text-indigo-600');
     });
 
     this.applyFilters();
@@ -625,7 +613,6 @@ const issueFilter = {
     rows.forEach(row => {
       let visible = true;
 
-      // Search filter
       if (this.searchQuery) {
         const title = (row.dataset.title || '').toLowerCase();
         const key = (row.dataset.issueKey || '').toLowerCase();
@@ -634,7 +621,6 @@ const issueFilter = {
         }
       }
 
-      // Status filter
       if (visible && this.statusFilters.size > 0) {
         const status = row.dataset.status || '';
         if (!this.statusFilters.has(status)) {
@@ -642,7 +628,6 @@ const issueFilter = {
         }
       }
 
-      // My Issues filter
       if (visible && this.myIssuesOnly) {
         const assignee = row.dataset.assignee || '';
         if (assignee !== currentUserId) {
@@ -650,7 +635,6 @@ const issueFilter = {
         }
       }
 
-      // Unassigned filter
       if (visible && this.unassignedOnly) {
         const assignee = row.dataset.assignee || '';
         if (assignee !== '') {
@@ -662,7 +646,6 @@ const issueFilter = {
       if (visible) visibleCount++;
     });
 
-    // Update count
     document.getElementById('visible-count').textContent = visibleCount;
     this.updateFilterBadge();
   },
@@ -675,25 +658,17 @@ const issueFilter = {
     if (this.myIssuesOnly) activeFilters++;
     if (this.unassignedOnly) activeFilters++;
 
-    // Count unchecked status filters
     const totalStatus = document.querySelectorAll('[data-filter-type="status"]').length;
     if (this.statusFilters.size < totalStatus) activeFilters++;
 
     if (activeFilters > 0) {
       filterCount.textContent = activeFilters;
       filterCount.classList.remove('hidden');
+      filterCount.classList.add('flex');
     } else {
       filterCount.classList.add('hidden');
+      filterCount.classList.remove('flex');
     }
-  },
-
-  updateSortIndicators() {
-    document.querySelectorAll('th.sortable').forEach(th => {
-      th.classList.remove('sort-asc', 'sort-desc');
-      if (th.dataset.sort === this.sortColumn) {
-        th.classList.add(this.sortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
-      }
-    });
   },
 
   sortTable() {
@@ -738,7 +713,6 @@ const issueFilter = {
   }
 };
 
-// Initialize on page load
 issueFilter.init();
 </script>
 {{end}}

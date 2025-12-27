@@ -1,6 +1,6 @@
 {{define "content"}}
 <div class="mb-4">
-  <a href="/w/{{.Workspace.Slug}}/issues" class="btn btn-ghost btn-icon" aria-label="Back to issues list">
+  <a href="/w/{{.Workspace.Slug}}/issues" class="inline-flex items-center justify-center w-8 h-8 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-md transition-colors" aria-label="Back to issues list">
     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <path d="m12 19-7-7 7-7"/>
       <path d="M19 12H5"/>
@@ -8,13 +8,13 @@
   </a>
 </div>
 
-<div class="issue-detail">
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
   <!-- Main Content -->
-  <div class="issue-main">
-    <div class="issue-header">
-      <div class="flex items-center gap-2 mb-2">
-        <span class="issue-key-badge">{{.Issue.Key}}</span>
-        <button class="btn btn-ghost btn-icon btn-sm copy-link-btn" data-action="copy-link" title="Copy link">
+  <div class="lg:col-span-2 space-y-6">
+    <div class="bg-white rounded-lg shadow-sm border border-zinc-200 p-6">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="px-2 py-1 text-xs font-semibold text-zinc-500 bg-zinc-100 rounded font-mono">{{.Issue.Key}}</span>
+        <button class="inline-flex items-center justify-center w-7 h-7 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 rounded transition-colors copy-link-btn" data-action="copy-link" title="Copy link">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="copy-icon">
             <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
             <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
@@ -26,7 +26,7 @@
       </div>
       <h1
         id="issue-title"
-        class="issue-title-editable"
+        class="text-xl font-semibold text-zinc-900 outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 rounded px-1 -mx-1"
         contenteditable="true"
         data-issue-key="{{.Issue.Key}}"
         data-field="title"
@@ -34,103 +34,103 @@
     </div>
 
     <!-- Description -->
-    <div class="mb-6">
-      <h3 class="text-sm font-medium text-muted mb-2">Description</h3>
+    <div class="bg-white rounded-lg shadow-sm border border-zinc-200 p-6">
+      <h3 class="text-sm font-medium text-zinc-500 mb-3">Description</h3>
       <div
         id="issue-description"
-        class="issue-description prose"
+        class="text-sm text-zinc-700 min-h-[60px] outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 rounded px-1 -mx-1"
         contenteditable="true"
         data-issue-key="{{.Issue.Key}}"
         data-field="description"
-      ><span class="text-muted">Add a description...</span></div>
+      >{{if .Issue.Description}}{{.Issue.Description}}{{else}}<span class="text-zinc-400">Add a description...</span>{{end}}</div>
     </div>
 
     <!-- Activity / Comments -->
-    <div class="activity-section">
-      <h3 class="text-sm font-medium mb-4">Activity</h3>
+    <div class="bg-white rounded-lg shadow-sm border border-zinc-200 p-6">
+      <h3 class="text-sm font-medium text-zinc-900 mb-4">Activity</h3>
 
-      <!-- Comments List (above form) -->
-      <div class="comment-list mb-4">
+      <!-- Comments List -->
+      <div class="space-y-4 mb-6">
         {{range .Comments}}
-        <div class="comment-item">
-          <div class="avatar avatar-sm">{{slice .Author.DisplayName 0 1}}</div>
-          <div class="comment-content">
-            <div class="comment-header">
-              <span class="comment-author">{{.Author.DisplayName}}</span>
-              <span class="comment-time">{{.CreatedAt.Format "Jan 2, 2006"}}</span>
+        <div class="flex gap-3">
+          <div class="w-8 h-8 rounded-full bg-indigo-500 text-white text-sm flex items-center justify-center font-medium flex-shrink-0">{{slice .Author.DisplayName 0 1}}</div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-sm font-medium text-zinc-900">{{.Author.DisplayName}}</span>
+              <span class="text-xs text-zinc-400">{{.CreatedAt.Format "Jan 2, 2006"}}</span>
             </div>
-            <div class="comment-body">{{.Content}}</div>
+            <div class="text-sm text-zinc-700">{{.Content}}</div>
           </div>
         </div>
         {{else}}
-        <p class="text-muted text-sm mb-4">No activity yet</p>
+        <p class="text-sm text-zinc-400 mb-4">No activity yet</p>
         {{end}}
       </div>
 
-      <!-- Comment Form (bottom) -->
-      <form class="comment-form-inline" data-issue-id="{{.Issue.ID}}">
-        <div class="avatar avatar-sm">{{slice .User.DisplayName 0 1}}</div>
-        <div class="comment-input-wrapper">
+      <!-- Comment Form -->
+      <form class="flex gap-3" data-issue-id="{{.Issue.ID}}">
+        <div class="w-8 h-8 rounded-full bg-indigo-500 text-white text-sm flex items-center justify-center font-medium flex-shrink-0">{{slice .User.DisplayName 0 1}}</div>
+        <div class="flex-1 flex gap-2">
           <textarea
             name="body"
-            class="comment-input-seamless"
+            class="flex-1 px-3 py-2 text-sm border border-zinc-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             placeholder="Write a comment..."
             rows="1"
             aria-label="Write a comment"
           ></textarea>
-          <button type="submit" class="btn btn-primary btn-sm">Send</button>
+          <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">Send</button>
         </div>
       </form>
     </div>
   </div>
 
   <!-- Sidebar -->
-  <div class="flex flex-col gap-0 p-4 bg-white border border-zinc-200">
+  <div class="space-y-0 bg-white rounded-lg shadow-sm border border-zinc-200 divide-y divide-zinc-100">
     <!-- Status -->
-    <div class="py-3">
+    <div class="p-4">
       <div class="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-2">Status</div>
-      <div class="dropdown w-full" id="status-dropdown-wrapper">
-        <button class="dropdown-trigger flex items-center justify-between w-full px-3 py-2 text-sm text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded cursor-pointer transition-colors" id="status-trigger" data-issue-key="{{.Issue.Key}}">
+      <div class="relative" id="status-dropdown-wrapper">
+        <button class="flex items-center justify-between w-full px-3 py-2 text-sm text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded-lg cursor-pointer transition-colors dropdown-trigger" id="status-trigger" data-issue-key="{{.Issue.Key}}">
           <span class="flex items-center gap-2" id="current-status">
             {{range .Columns}}{{if eq .ID $.Issue.ColumnID}}
-            <span class="status-badge {{lower .Name}}">
+            <span class="inline-flex items-center gap-1.5 {{if eq (lower .Name) "done"}}text-green-600{{else if eq (lower .Name) "in-progress"}}text-blue-600{{else if eq (lower .Name) "todo"}}text-zinc-600{{else}}text-zinc-500{{end}}">
               {{if eq (lower .Name) "backlog"}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
               {{else if eq (lower .Name) "todo"}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
               {{else if or (eq (lower .Name) "in-progress") (eq (lower .Name) "doing")}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
               {{else if or (eq (lower .Name) "done") (eq (lower .Name) "completed")}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
               {{else if or (eq (lower .Name) "canceled") (eq (lower .Name) "cancelled")}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
               {{else}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
               {{end}}
               {{.Name}}
             </span>
             {{end}}{{end}}
           </span>
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400">
             <path d="m6 9 6 6 6-6"/>
           </svg>
         </button>
-        <div class="dropdown-menu property-dropdown hidden">
+        <div class="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
           {{range .Columns}}
-          <button class="dropdown-item issue-status-option {{if eq .ID $.Issue.ColumnID}}active{{end}}" data-column-id="{{.ID}}" data-column-name="{{.Name}}">
-            <span class="status-badge {{lower .Name}}">
+          <button class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors issue-status-option {{if eq .ID $.Issue.ColumnID}}bg-zinc-50{{end}}" data-column-id="{{.ID}}" data-column-name="{{.Name}}">
+            <span class="inline-flex items-center gap-1.5 {{if eq (lower .Name) "done"}}text-green-600{{else if eq (lower .Name) "in-progress"}}text-blue-600{{else if eq (lower .Name) "todo"}}text-zinc-600{{else}}text-zinc-500{{end}}">
               {{if eq (lower .Name) "backlog"}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
               {{else if eq (lower .Name) "todo"}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
               {{else if or (eq (lower .Name) "in-progress") (eq (lower .Name) "doing")}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
               {{else if or (eq (lower .Name) "done") (eq (lower .Name) "completed")}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
               {{else if or (eq (lower .Name) "canceled") (eq (lower .Name) "cancelled")}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
               {{else}}
-              <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
               {{end}}
               {{.Name}}
             </span>
@@ -141,51 +141,51 @@
     </div>
 
     <!-- Priority -->
-    <div class="py-3">
+    <div class="p-4">
       <div class="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-2">Priority</div>
-      <div class="dropdown w-full" id="priority-dropdown-wrapper">
-        <button class="dropdown-trigger flex items-center justify-between w-full px-3 py-2 text-sm text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded cursor-pointer transition-colors" id="priority-trigger" data-issue-key="{{.Issue.Key}}">
+      <div class="relative" id="priority-dropdown-wrapper">
+        <button class="flex items-center justify-between w-full px-3 py-2 text-sm text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded-lg cursor-pointer transition-colors dropdown-trigger" id="priority-trigger" data-issue-key="{{.Issue.Key}}">
           <span class="flex items-center gap-2" id="current-priority">
             {{if eq .Issue.Priority 0}}
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-none"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400"><line x1="5" y1="12" x2="19" y2="12"/></svg>
             <span>No priority</span>
             {{else if eq .Issue.Priority 1}}
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-urgent"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/></svg>
             <span>Urgent</span>
             {{else if eq .Issue.Priority 2}}
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-high"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-orange-500"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/></svg>
             <span>High</span>
             {{else if eq .Issue.Priority 3}}
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-medium"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-yellow-500"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/></svg>
             <span>Medium</span>
             {{else if eq .Issue.Priority 4}}
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-low"><path d="M2 20h.01"/><path d="M7 20v-4"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M2 20h.01"/><path d="M7 20v-4"/></svg>
             <span>Low</span>
             {{end}}
           </span>
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400">
             <path d="m6 9 6 6 6-6"/>
           </svg>
         </button>
-        <div class="dropdown-menu property-dropdown hidden">
-          <button class="dropdown-item issue-priority-option {{if eq .Issue.Priority 0}}active{{end}}" data-priority="0" data-priority-name="No priority">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-none"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <div class="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
+          <button class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors issue-priority-option {{if eq .Issue.Priority 0}}bg-zinc-50{{end}}" data-priority="0" data-priority-name="No priority">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400"><line x1="5" y1="12" x2="19" y2="12"/></svg>
             <span>No priority</span>
           </button>
-          <button class="dropdown-item issue-priority-option {{if eq .Issue.Priority 1}}active{{end}}" data-priority="1" data-priority-name="Urgent">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-urgent"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/></svg>
+          <button class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors issue-priority-option {{if eq .Issue.Priority 1}}bg-zinc-50{{end}}" data-priority="1" data-priority-name="Urgent">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/></svg>
             <span>Urgent</span>
           </button>
-          <button class="dropdown-item issue-priority-option {{if eq .Issue.Priority 2}}active{{end}}" data-priority="2" data-priority-name="High">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-high"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/></svg>
+          <button class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors issue-priority-option {{if eq .Issue.Priority 2}}bg-zinc-50{{end}}" data-priority="2" data-priority-name="High">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-orange-500"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/></svg>
             <span>High</span>
           </button>
-          <button class="dropdown-item issue-priority-option {{if eq .Issue.Priority 3}}active{{end}}" data-priority="3" data-priority-name="Medium">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-medium"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/></svg>
+          <button class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors issue-priority-option {{if eq .Issue.Priority 3}}bg-zinc-50{{end}}" data-priority="3" data-priority-name="Medium">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-yellow-500"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/></svg>
             <span>Medium</span>
           </button>
-          <button class="dropdown-item issue-priority-option {{if eq .Issue.Priority 4}}active{{end}}" data-priority="4" data-priority-name="Low">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="priority-icon priority-low"><path d="M2 20h.01"/><path d="M7 20v-4"/></svg>
+          <button class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors issue-priority-option {{if eq .Issue.Priority 4}}bg-zinc-50{{end}}" data-priority="4" data-priority-name="Low">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M2 20h.01"/><path d="M7 20v-4"/></svg>
             <span>Low</span>
           </button>
         </div>
@@ -193,33 +193,33 @@
     </div>
 
     <!-- Sprint (Cycle) -->
-    <div class="py-3">
+    <div class="p-4">
       <div class="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-2">Sprint</div>
-      <div class="dropdown w-full" id="cycle-dropdown">
-        <button class="dropdown-trigger flex items-center justify-between w-full px-3 py-2 text-sm text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded cursor-pointer transition-colors" data-issue-key="{{.Issue.Key}}">
+      <div class="relative" id="cycle-dropdown">
+        <button class="flex items-center justify-between w-full px-3 py-2 text-sm text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded-lg cursor-pointer transition-colors dropdown-trigger" data-issue-key="{{.Issue.Key}}">
           <span class="flex items-center gap-2">
             {{if .Issue.CycleID}}
               {{range .Cycles}}{{if eq .ID $.Issue.CycleID}}
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500">
                   <path d="M10 2h4"/><path d="M12 14v-4"/><path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6"/><path d="M9 17H4v5"/>
                 </svg>
                 <span>{{.Name}}</span>
               {{end}}{{end}}
             {{else}}
-              <span class="text-muted">No sprint</span>
+              <span class="text-zinc-400">No sprint</span>
             {{end}}
           </span>
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400">
             <path d="m6 9 6 6 6-6"/>
           </svg>
         </button>
-        <div class="dropdown-menu hidden" style="width: 100%; margin-top: 0.25rem;">
-          <button class="dropdown-item" data-action="set-cycle" data-cycle-id="">
-            <span class="text-muted">No sprint</span>
+        <div class="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
+          <button class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors" data-action="set-cycle" data-cycle-id="">
+            <span class="text-zinc-400">No sprint</span>
           </button>
           {{range .Cycles}}
-          <button class="dropdown-item {{if eq .ID $.Issue.CycleID}}active{{end}}" data-action="set-cycle" data-cycle-id="{{.ID}}">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors {{if eq .ID $.Issue.CycleID}}bg-zinc-50{{end}}" data-action="set-cycle" data-cycle-id="{{.ID}}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500">
               <path d="M10 2h4"/><path d="M12 14v-4"/><path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6"/><path d="M9 17H4v5"/>
             </svg>
             <span>{{.Name}}</span>
@@ -229,58 +229,23 @@
       </div>
     </div>
 
-    <!-- Custom Fields -->
-    {{if .Fields}}
-    {{range .Fields}}
-    {{if not .IsArchived}}
-    <div class="card property-card" data-field-id="{{.ID}}">
-      <div class="property-label">{{.Name}}{{if .IsRequired}} *{{end}}</div>
-      {{if eq .Kind "text"}}
-      <input type="text" class="form-control custom-field-input" data-field-id="{{.ID}}" data-kind="text" placeholder="Enter value...">
-      {{else if eq .Kind "number"}}
-      <input type="number" class="form-control custom-field-input" data-field-id="{{.ID}}" data-kind="number" placeholder="Enter number...">
-      {{else if eq .Kind "bool"}}
-      <label class="form-check">
-        <input type="checkbox" class="custom-field-input" data-field-id="{{.ID}}" data-kind="bool">
-        <span class="text-sm">Yes</span>
-      </label>
-      {{else if eq .Kind "date"}}
-      <input type="date" class="form-control custom-field-input" data-field-id="{{.ID}}" data-kind="date">
-      {{else if eq .Kind "select"}}
-      <select class="form-control form-select custom-field-input" data-field-id="{{.ID}}" data-kind="select">
-        <option value="">Select...</option>
-        <!-- Options loaded from settings_json -->
-      </select>
-      {{else if eq .Kind "user"}}
-      <select class="form-control form-select custom-field-input" data-field-id="{{.ID}}" data-kind="user">
-        <option value="">Select user...</option>
-        {{range $.TeamMembers}}
-        <option value="{{.ID}}">{{.DisplayName}}</option>
-        {{end}}
-      </select>
-      {{end}}
-    </div>
-    {{end}}
-    {{end}}
-    {{end}}
-
     <!-- Assignees -->
-    <div class="py-3">
+    <div class="p-4">
       <div class="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-2">Assignees</div>
-      <div class="dropdown w-full" id="assignees-dropdown-wrapper">
-        <button class="dropdown-trigger flex items-center justify-between w-full px-3 py-2 text-sm text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded cursor-pointer transition-colors" id="assignees-trigger" data-issue-key="{{.Issue.Key}}">
+      <div class="relative" id="assignees-dropdown-wrapper">
+        <button class="flex items-center justify-between w-full px-3 py-2 text-sm text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded-lg cursor-pointer transition-colors dropdown-trigger" id="assignees-trigger" data-issue-key="{{.Issue.Key}}">
           <span class="flex items-center gap-2" id="assignees-display">
-            <span class="text-muted">Select assignees</span>
+            <span class="text-zinc-400">Select assignees</span>
           </span>
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400">
             <path d="m6 9 6 6 6-6"/>
           </svg>
         </button>
-        <div class="dropdown-menu property-dropdown hidden">
+        <div class="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50 hidden dropdown-menu">
           {{range .TeamMembers}}
-          <label class="dropdown-item assignee-checkbox-item">
-            <input type="checkbox" class="assignee-checkbox" data-user-id="{{.ID}}" data-user-name="{{.DisplayName}}">
-            <span class="avatar avatar-sm">{{slice .DisplayName 0 1}}</span>
+          <label class="flex items-center gap-2 w-full px-3 py-2 text-sm cursor-pointer hover:bg-zinc-50 transition-colors">
+            <input type="checkbox" class="w-4 h-4 text-indigo-600 border-zinc-300 rounded focus:ring-indigo-500 assignee-checkbox" data-user-id="{{.ID}}" data-user-name="{{.DisplayName}}">
+            <span class="w-6 h-6 rounded-full bg-indigo-500 text-white text-xs flex items-center justify-center font-medium">{{slice .DisplayName 0 1}}</span>
             <span>{{.DisplayName}}</span>
           </label>
           {{end}}
@@ -289,55 +254,24 @@
     </div>
 
     <!-- Start Date -->
-    <div class="py-3">
+    <div class="p-4">
       <div class="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-2">Start Date</div>
-      <div class="relative">
-        <input type="date" id="start-date-input" class="w-full px-3 py-2 text-sm text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded cursor-pointer transition-colors border-none outline-none" value="{{if .Issue.StartDate}}{{.Issue.StartDate.Format "2006-01-02"}}{{end}}" data-issue-key="{{.Issue.Key}}">
-      </div>
+      <input type="date" id="start-date-input" class="w-full px-3 py-2 text-sm text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded-lg cursor-pointer transition-colors border-none outline-none focus:ring-2 focus:ring-indigo-500" value="{{if .Issue.StartDate}}{{.Issue.StartDate.Format "2006-01-02"}}{{end}}" data-issue-key="{{.Issue.Key}}">
     </div>
 
     <!-- Due Date -->
-    <div class="py-3">
+    <div class="p-4">
       <div class="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-2">Due Date</div>
-      <div class="relative">
-        <input type="date" id="due-date-input" class="w-full px-3 py-2 text-sm text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded cursor-pointer transition-colors border-none outline-none" value="{{if .Issue.DueDate}}{{.Issue.DueDate.Format "2006-01-02"}}{{end}}" data-issue-key="{{.Issue.Key}}">
-      </div>
+      <input type="date" id="due-date-input" class="w-full px-3 py-2 text-sm text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded-lg cursor-pointer transition-colors border-none outline-none focus:ring-2 focus:ring-indigo-500" value="{{if .Issue.DueDate}}{{.Issue.DueDate.Format "2006-01-02"}}{{end}}" data-issue-key="{{.Issue.Key}}">
     </div>
 
     <!-- Project -->
-    <div class="py-3">
+    <div class="p-4">
       <div class="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-2">Project</div>
       <div class="text-sm text-zinc-900">
-        <a href="/w/{{.Workspace.Slug}}/board/{{.Project.ID}}" class="hover:underline">
+        <a href="/w/{{.Workspace.Slug}}/board/{{.Project.ID}}" class="hover:text-indigo-600 transition-colors">
           {{.Project.Name}}
         </a>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Assign Modal -->
-<div id="assign-modal" class="modal hidden">
-  <div class="modal-backdrop"></div>
-  <div class="modal-content">
-    <div class="modal-header">
-      <h2 class="modal-title">Add Assignee</h2>
-      <button class="modal-close">&times;</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-group">
-        <label class="label">Team Members</label>
-        <div class="members-list">
-          {{range .TeamMembers}}
-          <button class="member-item" data-action="assign" data-user-id="{{.ID}}">
-            <div class="avatar avatar-sm">{{slice .DisplayName 0 1}}</div>
-            <div class="member-info">
-              <div class="member-name">{{.DisplayName}}</div>
-              <div class="member-email">{{.Email}}</div>
-            </div>
-          </button>
-          {{end}}
-        </div>
       </div>
     </div>
   </div>
@@ -366,54 +300,21 @@ document.getElementById('due-date-input')?.addEventListener('change', async (e) 
   }
 });
 
-// Copy link - show toast instead of alert
+// Copy link
 document.querySelectorAll('[data-action="copy-link"]').forEach(btn => {
   btn.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(location.href);
-      // Show check icon instead of copy icon
-      btn.classList.add('copied');
-      // Reset after 2 seconds
-      setTimeout(() => btn.classList.remove('copied'), 2000);
+      const copyIcon = btn.querySelector('.copy-icon');
+      const checkIcon = btn.querySelector('.check-icon');
+      copyIcon.classList.add('hidden');
+      checkIcon.classList.remove('hidden');
+      setTimeout(() => {
+        copyIcon.classList.remove('hidden');
+        checkIcon.classList.add('hidden');
+      }, 2000);
     } catch (error) {
       console.error('Failed to copy:', error);
-    }
-  });
-});
-
-// Assign user
-document.querySelectorAll('[data-action="assign"]').forEach(btn => {
-  btn.addEventListener('click', async () => {
-    const userId = btn.dataset.userId;
-    try {
-      await app.api.post(`/issues/{{.Issue.ID}}/assignees`, { user_id: userId });
-      app.modals.close('assign-modal');
-      location.reload();
-    } catch (error) {
-      alert(error.message || 'Failed to assign user');
-    }
-  });
-});
-
-// Remove assignee
-document.querySelectorAll('.remove-assignee').forEach(btn => {
-  btn.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const userId = btn.dataset.userId;
-    try {
-      await app.api.delete(`/issues/{{.Issue.ID}}/assignees/${userId}`);
-      // Remove from DOM
-      const assigneeItem = btn.closest('.assignee-item');
-      if (assigneeItem) {
-        assigneeItem.remove();
-        // Check if no more assignees
-        const remaining = document.querySelectorAll('.assignee-item');
-        if (remaining.length === 0) {
-          document.getElementById('assignees-list').innerHTML = '<span class="text-muted">No assignees</span>';
-        }
-      }
-    } catch (error) {
-      alert(error.message || 'Failed to remove assignee');
     }
   });
 });
@@ -425,15 +326,7 @@ document.querySelectorAll('.issue-status-option').forEach(opt => {
     const columnName = opt.dataset.columnName;
     try {
       await app.api.post(`/issues/{{.Issue.Key}}/move`, { column_id: columnId, position: 0 });
-      // Update the current status display
-      const badge = opt.querySelector('.status-badge').cloneNode(true);
-      document.getElementById('current-status').innerHTML = '';
-      document.getElementById('current-status').appendChild(badge);
-      // Update active state in dropdown
-      document.querySelectorAll('.issue-status-option').forEach(o => o.classList.remove('active'));
-      opt.classList.add('active');
-      // Close dropdown
-      document.querySelector('#status-dropdown-wrapper .dropdown-menu').classList.add('hidden');
+      location.reload();
     } catch (error) {
       console.error('Failed to update status:', error);
       alert(error.message || 'Failed to update status');
@@ -447,15 +340,7 @@ document.querySelectorAll('.issue-priority-option').forEach(opt => {
     const priority = parseInt(opt.dataset.priority);
     try {
       await app.api.patch(`/issues/{{.Issue.Key}}`, { priority: priority });
-      // Update the current priority display
-      const content = opt.cloneNode(true);
-      content.classList.remove('dropdown-item', 'issue-priority-option', 'active');
-      document.getElementById('current-priority').innerHTML = content.innerHTML;
-      // Update active state in dropdown
-      document.querySelectorAll('.issue-priority-option').forEach(o => o.classList.remove('active'));
-      opt.classList.add('active');
-      // Close dropdown
-      document.querySelector('#priority-dropdown-wrapper .dropdown-menu').classList.add('hidden');
+      location.reload();
     } catch (error) {
       console.error('Failed to update priority:', error);
       alert(error.message || 'Failed to update priority');
@@ -467,17 +352,15 @@ document.querySelectorAll('.issue-priority-option').forEach(opt => {
 document.querySelectorAll('.assignee-checkbox').forEach(checkbox => {
   checkbox.addEventListener('change', async () => {
     const userId = checkbox.dataset.userId;
-    const userName = checkbox.dataset.userName;
     try {
       if (checkbox.checked) {
         await app.api.post(`/issues/{{.Issue.ID}}/assignees`, { user_id: userId });
       } else {
         await app.api.delete(`/issues/{{.Issue.ID}}/assignees/${userId}`);
       }
-      // Update display
       updateAssigneesDisplay();
     } catch (error) {
-      checkbox.checked = !checkbox.checked; // Revert
+      checkbox.checked = !checkbox.checked;
       alert(error.message || 'Failed to update assignee');
     }
   });
@@ -487,54 +370,31 @@ function updateAssigneesDisplay() {
   const checked = document.querySelectorAll('.assignee-checkbox:checked');
   const display = document.getElementById('assignees-display');
   if (checked.length === 0) {
-    display.innerHTML = '<span class="text-muted">Select assignees</span>';
+    display.innerHTML = '<span class="text-zinc-400">Select assignees</span>';
   } else {
-    const names = Array.from(checked).map(c => c.dataset.userName);
-    display.innerHTML = `<div class="flex items-center gap-2">${Array.from(checked).map(c => `<span class="avatar avatar-xs">${c.dataset.userName.charAt(0)}</span>`).join('')}<span>${names.length} assigned</span></div>`;
+    const avatars = Array.from(checked).map(c =>
+      `<span class="w-6 h-6 rounded-full bg-indigo-500 text-white text-xs flex items-center justify-center font-medium">${c.dataset.userName.charAt(0)}</span>`
+    ).join('');
+    display.innerHTML = `<div class="flex items-center gap-1">${avatars}<span class="ml-1 text-zinc-600">${checked.length} assigned</span></div>`;
   }
 }
 
 // Cycle dropdown handler
-const cycleDropdown = document.getElementById('cycle-dropdown');
-cycleDropdown?.querySelector('.dropdown-trigger')?.addEventListener('click', () => {
-  const menu = cycleDropdown.querySelector('.dropdown-menu');
-  menu.classList.toggle('hidden');
-});
-
 document.querySelectorAll('[data-action="set-cycle"]').forEach(item => {
   item.addEventListener('click', async () => {
     const cycleId = item.dataset.cycleId;
-    const menu = cycleDropdown.querySelector('.dropdown-menu');
     try {
       if (cycleId) {
         await app.api.post(`/issues/{{.Issue.Key}}/cycle`, { cycle_id: cycleId });
       } else {
         await app.api.delete(`/issues/{{.Issue.Key}}/cycle`);
       }
-      // Update UI
-      const valueSpan = cycleDropdown.querySelector('.property-select-value');
-      if (cycleId) {
-        const selectedItem = item.cloneNode(true);
-        valueSpan.innerHTML = selectedItem.innerHTML;
-      } else {
-        valueSpan.innerHTML = '<span class="text-muted">No sprint</span>';
-      }
-      // Update active state
-      document.querySelectorAll('[data-action="set-cycle"]').forEach(i => i.classList.remove('active'));
-      item.classList.add('active');
-      menu.classList.add('hidden');
+      location.reload();
     } catch (error) {
       console.error('Failed to update cycle:', error);
       alert(error.message || 'Failed to update cycle');
     }
   });
-});
-
-// Close dropdown when clicking outside
-document.addEventListener('click', (e) => {
-  if (!cycleDropdown?.contains(e.target)) {
-    cycleDropdown?.querySelector('.dropdown-menu')?.classList.add('hidden');
-  }
 });
 
 // Inline editing for title
@@ -567,48 +427,6 @@ titleEl?.addEventListener('keydown', (e) => {
   } else if (e.key === 'Escape') {
     titleEl.textContent = originalTitle;
     titleEl.blur();
-  }
-});
-
-// Custom field value updates
-document.querySelectorAll('.custom-field-input').forEach(input => {
-  const updateField = async () => {
-    const fieldId = input.dataset.fieldId;
-    const kind = input.dataset.kind;
-    let value = {};
-
-    switch (kind) {
-      case 'text':
-        value = { value_text: input.value || null };
-        break;
-      case 'number':
-        value = { value_num: input.value ? parseFloat(input.value) : null };
-        break;
-      case 'bool':
-        value = { value_bool: input.checked };
-        break;
-      case 'date':
-        value = { value_date: input.value || null };
-        break;
-      case 'select':
-      case 'user':
-        value = { value_ref: input.value || null };
-        break;
-    }
-
-    try {
-      await app.api.put(`/issues/{{.Issue.ID}}/values/${fieldId}`, value);
-    } catch (error) {
-      console.error('Failed to update field value:', error);
-    }
-  };
-
-  if (input.type === 'checkbox') {
-    input.addEventListener('change', updateField);
-  } else if (input.tagName === 'SELECT') {
-    input.addEventListener('change', updateField);
-  } else {
-    input.addEventListener('blur', updateField);
   }
 });
 </script>
