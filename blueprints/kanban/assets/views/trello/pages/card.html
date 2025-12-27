@@ -4,28 +4,72 @@
     max-width: 768px;
     margin: 0 auto;
     padding: 48px 8px;
-    background: var(--trello-neutral-20);
+    background: var(--trello-neutral-200);
     min-height: calc(100vh - var(--header-height));
   }
 
-  .card-cover {
+  /* Card cover colors */
+  .card-detail-cover {
     height: 116px;
-    background: var(--trello-blue-500);
-    border-radius: 3px 3px 0 0;
+    border-radius: 12px 12px 0 0;
     position: relative;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    padding: 12px;
+  }
+
+  .card-detail-cover.has-cover {
+    display: flex;
+  }
+
+  .card-detail-cover-green { background: var(--trello-success); }
+  .card-detail-cover-yellow { background: var(--trello-warning); }
+  .card-detail-cover-orange { background: var(--trello-orange); }
+  .card-detail-cover-red { background: var(--trello-danger); }
+  .card-detail-cover-purple { background: var(--trello-purple); }
+  .card-detail-cover-blue { background: var(--trello-blue-300); }
+  .card-detail-cover-sky { background: var(--trello-teal); }
+  .card-detail-cover-lime { background: var(--trello-lime); }
+  .card-detail-cover-pink { background: var(--trello-pink); }
+  .card-detail-cover-black { background: var(--trello-neutral-700); }
+
+  .cover-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: rgba(0, 0, 0, 0.24);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .cover-btn:hover {
+    background: rgba(0, 0, 0, 0.4);
+  }
+
+  .cover-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
   }
 
   .card-header {
-    padding: 16px 48px 8px 56px;
+    padding: 20px 48px 12px 56px;
     position: relative;
     background: var(--trello-neutral-0);
   }
 
   .card-header-icon {
     position: absolute;
-    left: 16px;
-    top: 20px;
-    color: var(--trello-neutral-500);
+    left: 20px;
+    top: 24px;
+    color: var(--trello-neutral-600);
   }
 
   .card-header-icon svg {
@@ -37,45 +81,46 @@
   .card-title-input {
     font-size: 20px;
     font-weight: 600;
-    color: var(--trello-neutral-800);
+    color: var(--trello-neutral-900);
     width: 100%;
-    padding: 4px 8px;
-    margin: -4px -8px;
+    padding: 6px 10px;
+    margin: -6px -10px;
     border: none;
     background: transparent;
-    border-radius: 3px;
+    border-radius: 8px;
     font-family: var(--font-family);
     resize: none;
     overflow: hidden;
+    line-height: 1.4;
   }
 
   .card-title-input:hover {
-    background: rgba(9, 30, 66, 0.04);
+    background: var(--trello-neutral-200);
   }
 
   .card-title-input:focus {
     background: var(--trello-neutral-0);
     outline: none;
-    box-shadow: inset 0 0 0 2px var(--trello-blue-500);
+    box-shadow: inset 0 0 0 2px var(--trello-blue-300);
   }
 
   .card-list-info {
     font-size: 14px;
-    color: var(--trello-neutral-500);
+    color: var(--trello-neutral-600);
     margin-top: 8px;
   }
 
   .card-list-info a {
-    color: var(--trello-neutral-800);
+    color: var(--trello-neutral-900);
     text-decoration: underline;
   }
 
   .card-body {
     display: flex;
     gap: 16px;
-    padding: 16px;
+    padding: 20px;
     background: var(--trello-neutral-0);
-    border-radius: 0 0 3px 3px;
+    border-radius: 0 0 12px 12px;
   }
 
   .card-main {
@@ -89,14 +134,14 @@
   }
 
   .card-section {
-    margin-bottom: 24px;
+    margin-bottom: 28px;
   }
 
   .card-section-header {
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-bottom: 8px;
+    margin-bottom: 12px;
     padding-left: 40px;
     position: relative;
   }
@@ -108,13 +153,13 @@
     transform: translateY(-50%);
     width: 24px;
     height: 24px;
-    fill: var(--trello-neutral-500);
+    fill: var(--trello-neutral-600);
   }
 
   .card-section-title {
     font-size: 16px;
     font-weight: 600;
-    color: var(--trello-neutral-800);
+    color: var(--trello-neutral-900);
   }
 
   .card-section-content {
@@ -125,28 +170,33 @@
   .card-labels-list {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: 6px;
   }
 
   .card-label-chip {
     display: inline-flex;
     align-items: center;
     height: 32px;
-    min-width: 48px;
+    min-width: 56px;
     padding: 0 12px;
-    border-radius: 3px;
+    border-radius: 4px;
     font-size: 14px;
-    font-weight: 600;
-    color: white;
+    font-weight: 500;
+    color: var(--trello-neutral-900);
     cursor: pointer;
+    transition: filter 0.15s;
   }
 
-  .card-label-green { background: #61bd4f; }
-  .card-label-yellow { background: #f2d600; color: var(--trello-neutral-800); }
-  .card-label-orange { background: #ff9f1a; }
-  .card-label-red { background: #eb5a46; }
-  .card-label-purple { background: #c377e0; }
-  .card-label-blue { background: #0079bf; }
+  .card-label-chip:hover {
+    filter: brightness(0.95);
+  }
+
+  .card-label-green { background: var(--trello-success); }
+  .card-label-yellow { background: var(--trello-warning); }
+  .card-label-orange { background: var(--trello-orange); }
+  .card-label-red { background: var(--trello-danger); }
+  .card-label-purple { background: var(--trello-purple); }
+  .card-label-blue { background: var(--trello-blue-300); }
 
   .add-label-btn {
     display: inline-flex;
@@ -154,128 +204,147 @@
     justify-content: center;
     height: 32px;
     width: 32px;
-    background: rgba(9, 30, 66, 0.04);
+    background: var(--trello-neutral-200);
     border: none;
-    border-radius: 3px;
+    border-radius: 4px;
     cursor: pointer;
+    transition: background 0.15s;
   }
 
   .add-label-btn:hover {
-    background: rgba(9, 30, 66, 0.08);
+    background: var(--trello-neutral-300);
   }
 
   .add-label-btn svg {
     width: 20px;
     height: 20px;
-    fill: var(--trello-neutral-500);
+    fill: var(--trello-neutral-600);
   }
 
   /* Members section */
   .card-members-list {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: 6px;
   }
 
   .card-member-avatar {
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background: #dfe1e6;
-    color: var(--trello-neutral-800);
+    background: var(--trello-neutral-300);
+    color: var(--trello-neutral-700);
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 14px;
-    font-weight: 700;
+    font-weight: 600;
     cursor: pointer;
+    text-transform: uppercase;
+  }
+
+  .card-member-avatar:hover {
+    background: var(--trello-neutral-400);
   }
 
   /* Description */
   .description-placeholder {
     min-height: 56px;
-    background: rgba(9, 30, 66, 0.04);
-    border-radius: 3px;
-    padding: 8px 12px;
-    color: var(--trello-neutral-500);
+    background: var(--trello-neutral-200);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: var(--trello-neutral-600);
     cursor: pointer;
+    transition: background 0.15s;
   }
 
   .description-placeholder:hover {
-    background: rgba(9, 30, 66, 0.08);
+    background: var(--trello-neutral-300);
   }
 
   .description-content {
     font-size: 14px;
     line-height: 1.6;
-    color: var(--trello-neutral-800);
+    color: var(--trello-neutral-900);
     white-space: pre-wrap;
   }
 
   .description-textarea {
     width: 100%;
     min-height: 108px;
-    padding: 8px 12px;
+    padding: 10px 14px;
     font-size: 14px;
     font-family: var(--font-family);
     line-height: 1.6;
     border: none;
-    border-radius: 3px;
+    border-radius: 8px;
     background: var(--trello-neutral-0);
-    box-shadow: inset 0 0 0 2px var(--trello-blue-500);
+    box-shadow: inset 0 0 0 2px var(--trello-blue-300);
     resize: vertical;
     margin-bottom: 8px;
+    color: var(--trello-neutral-900);
   }
 
   .description-textarea:focus {
     outline: none;
   }
 
+  .description-textarea::placeholder {
+    color: var(--trello-neutral-500);
+  }
+
   .description-actions {
     display: flex;
-    gap: 4px;
+    gap: 8px;
   }
 
   /* Activity / Comments */
   .activity-input-wrapper {
     display: flex;
-    gap: 8px;
+    gap: 10px;
     align-items: flex-start;
-    margin-bottom: 16px;
+    margin-bottom: 20px;
   }
 
   .activity-avatar {
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background: var(--trello-blue-600);
+    background: var(--trello-blue-500);
     color: white;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 14px;
-    font-weight: 700;
+    font-weight: 600;
     flex-shrink: 0;
+    text-transform: uppercase;
   }
 
   .activity-input {
     flex: 1;
-    padding: 8px 12px;
+    padding: 10px 14px;
     font-size: 14px;
     border: none;
-    border-radius: 3px;
+    border-radius: 8px;
     background: var(--trello-neutral-0);
-    box-shadow: 0 1px 2px rgba(9, 30, 66, 0.25);
+    box-shadow: var(--card-shadow);
+    color: var(--trello-neutral-900);
+    transition: box-shadow 0.15s;
+  }
+
+  .activity-input::placeholder {
+    color: var(--trello-neutral-500);
   }
 
   .activity-input:focus {
     outline: none;
-    box-shadow: inset 0 0 0 2px var(--trello-blue-500);
+    box-shadow: inset 0 0 0 2px var(--trello-blue-300);
   }
 
   .comment-item {
     display: flex;
-    gap: 8px;
+    gap: 10px;
     margin-bottom: 16px;
   }
 
@@ -287,40 +356,41 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
   }
 
   .comment-author {
     font-size: 14px;
     font-weight: 600;
-    color: var(--trello-neutral-800);
+    color: var(--trello-neutral-900);
   }
 
   .comment-date {
     font-size: 12px;
-    color: var(--trello-neutral-500);
+    color: var(--trello-neutral-600);
   }
 
   .comment-text {
     font-size: 14px;
     line-height: 1.5;
-    color: var(--trello-neutral-800);
+    color: var(--trello-neutral-900);
     background: var(--trello-neutral-0);
-    padding: 8px 12px;
-    border-radius: 3px;
-    box-shadow: 0 1px 2px rgba(9, 30, 66, 0.25);
+    padding: 10px 14px;
+    border-radius: 8px;
+    box-shadow: var(--card-shadow);
   }
 
   /* Sidebar */
   .sidebar-section {
-    margin-bottom: 16px;
+    margin-bottom: 20px;
   }
 
   .sidebar-section-title {
     font-size: 12px;
     font-weight: 600;
-    color: var(--trello-neutral-500);
+    color: var(--trello-neutral-600);
     text-transform: uppercase;
+    letter-spacing: 0.04em;
     margin-bottom: 8px;
   }
 
@@ -332,24 +402,227 @@
     padding: 6px 12px;
     font-size: 14px;
     font-family: var(--font-family);
-    color: var(--trello-neutral-800);
-    background: rgba(9, 30, 66, 0.04);
+    color: var(--trello-neutral-900);
+    background: var(--trello-neutral-200);
     border: none;
-    border-radius: 3px;
+    border-radius: 4px;
     cursor: pointer;
     text-align: left;
     margin-bottom: 8px;
-    transition: background 0.1s;
+    transition: background 0.15s;
   }
 
   .sidebar-btn:hover {
-    background: rgba(9, 30, 66, 0.08);
+    background: var(--trello-neutral-300);
   }
 
   .sidebar-btn svg {
     width: 16px;
     height: 16px;
     fill: currentColor;
+  }
+
+  /* Popover */
+  .popover {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    background: var(--trello-neutral-0);
+    border-radius: 8px;
+    box-shadow: var(--popup-shadow);
+    min-width: 304px;
+    z-index: 100;
+  }
+
+  .popover.is-open {
+    display: block;
+  }
+
+  .popover-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 32px;
+    border-bottom: 1px solid var(--trello-neutral-300);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--trello-neutral-600);
+    position: relative;
+  }
+
+  .popover-close {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--trello-neutral-600);
+    transition: background 0.15s;
+  }
+
+  .popover-close:hover {
+    background: var(--trello-neutral-200);
+  }
+
+  .popover-close svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+  }
+
+  .popover-content {
+    padding: 12px;
+  }
+
+  .popover-search {
+    margin-bottom: 12px;
+  }
+
+  .popover-search input {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 14px;
+    border: 2px solid var(--trello-neutral-300);
+    border-radius: 8px;
+    background: var(--trello-neutral-100);
+    color: var(--trello-neutral-900);
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  .popover-search input::placeholder {
+    color: var(--trello-neutral-500);
+  }
+
+  .popover-search input:focus {
+    outline: none;
+    border-color: var(--trello-blue-300);
+    background: var(--trello-neutral-0);
+  }
+
+  .popover-section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--trello-neutral-600);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .popover-list {
+    max-height: 300px;
+    overflow-y: auto;
+  }
+
+  .popover-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .popover-item:hover {
+    background: var(--trello-neutral-100);
+  }
+
+  .popover-item .member-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--trello-neutral-300);
+    color: var(--trello-neutral-700);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 600;
+    flex-shrink: 0;
+    text-transform: uppercase;
+  }
+
+  .popover-item .member-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .popover-item .member-name {
+    font-size: 14px;
+    color: var(--trello-neutral-900);
+  }
+
+  .popover-item .check-icon {
+    width: 20px;
+    height: 20px;
+    display: none;
+    fill: var(--trello-blue-300);
+  }
+
+  .popover-item.selected .check-icon {
+    display: block;
+  }
+
+  /* Date picker popover */
+  .date-picker-content {
+    padding: 12px;
+  }
+
+  .date-input-group {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .date-input {
+    flex: 1;
+    padding: 10px 12px;
+    font-size: 14px;
+    border: 2px solid var(--trello-neutral-300);
+    border-radius: 8px;
+    background: var(--trello-neutral-100);
+    color: var(--trello-neutral-900);
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  .date-input:focus {
+    outline: none;
+    border-color: var(--trello-blue-300);
+    background: var(--trello-neutral-0);
+  }
+
+  .date-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  /* Move card popover */
+  .move-popover select {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 14px;
+    border: 2px solid var(--trello-neutral-300);
+    border-radius: 8px;
+    background: var(--trello-neutral-100);
+    color: var(--trello-neutral-900);
+    margin-bottom: 12px;
+    cursor: pointer;
+  }
+
+  .move-popover select:focus {
+    outline: none;
+    border-color: var(--trello-blue-300);
+    background: var(--trello-neutral-0);
   }
 
   /* Back button */
@@ -360,14 +633,16 @@
     padding: 8px 12px;
     margin-bottom: 16px;
     font-size: 14px;
-    color: var(--trello-neutral-500);
+    font-weight: 500;
+    color: var(--trello-neutral-600);
     text-decoration: none;
-    border-radius: 3px;
+    border-radius: 8px;
+    transition: background 0.15s, color 0.15s;
   }
 
   .back-link:hover {
-    background: rgba(9, 30, 66, 0.04);
-    color: var(--trello-neutral-800);
+    background: var(--trello-neutral-300);
+    color: var(--trello-neutral-900);
   }
 
   .back-link svg {
@@ -383,7 +658,7 @@
     Back to board
   </a>
 
-  <div style="background: var(--trello-neutral-0); border-radius: 3px; box-shadow: 0 1px 2px rgba(9,30,66,.25);">
+  <div style="background: var(--trello-neutral-0); border-radius: 12px; box-shadow: var(--card-shadow);">
     <div class="card-header">
       <div class="card-header-icon">
         <svg viewBox="0 0 24 24"><path d="M19 5v14H5V5h14m0-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/><rect x="7" y="7" width="10" height="2"/><rect x="7" y="11" width="10" height="2"/><rect x="7" y="15" width="7" height="2"/></svg>
@@ -407,9 +682,6 @@
               {{range .Labels}}
               <div class="card-label-chip card-label-{{.Color}}">{{.Name}}</div>
               {{end}}
-              <button class="add-label-btn">
-                <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-              </button>
             </div>
           </div>
         </div>
@@ -426,9 +698,6 @@
               {{range .Members}}
               <div class="card-member-avatar" title="{{.DisplayName}}">{{slice .DisplayName 0 1}}</div>
               {{end}}
-              <button class="add-label-btn">
-                <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-              </button>
             </div>
           </div>
         </div>
@@ -487,28 +756,90 @@
       <div class="card-sidebar">
         <div class="sidebar-section">
           <div class="sidebar-section-title">Add to card</div>
-          <button class="sidebar-btn">
-            <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-            Members
-          </button>
-          <button class="sidebar-btn">
-            <svg viewBox="0 0 24 24"><path d="M17.63 5.84C17.27 5.33 16.67 5 16 5L5 5.01C3.9 5.01 3 5.9 3 7v10c0 1.1.9 1.99 2 1.99L16 19c.67 0 1.27-.33 1.63-.84L22 12l-4.37-6.16z"/></svg>
-            Labels
-          </button>
-          <button class="sidebar-btn">
-            <svg viewBox="0 0 24 24"><path d="M9 11H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2zm2-7h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11z"/></svg>
-            Dates
-          </button>
+          <div style="position: relative;">
+            <button class="sidebar-btn" id="members-btn">
+              <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+              Members
+            </button>
+            <div class="popover" id="members-popover">
+              <div class="popover-header">
+                Members
+                <button class="popover-close" data-close="members-popover">
+                  <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                </button>
+              </div>
+              <div class="popover-content">
+                <div class="popover-search">
+                  <input type="text" placeholder="Search members" id="member-search">
+                </div>
+                <div class="popover-section-title">Board members</div>
+                <div class="popover-list" id="members-list">
+                  {{range .AllMembers}}
+                  <div class="popover-item" data-user-id="{{.ID}}" data-name="{{.DisplayName}}">
+                    <div class="member-avatar">{{slice .DisplayName 0 1}}</div>
+                    <div class="member-info">
+                      <div class="member-name">{{.DisplayName}}</div>
+                    </div>
+                    <svg class="check-icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                  </div>
+                  {{end}}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="position: relative;">
+            <button class="sidebar-btn" id="dates-btn">
+              <svg viewBox="0 0 24 24"><path d="M9 11H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2zm2-7h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11z"/></svg>
+              Dates
+            </button>
+            <div class="popover" id="dates-popover">
+              <div class="popover-header">
+                Dates
+                <button class="popover-close" data-close="dates-popover">
+                  <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                </button>
+              </div>
+              <div class="date-picker-content">
+                <div class="popover-section-title">Due date</div>
+                <div class="date-input-group">
+                  <input type="date" class="date-input" id="due-date-input" value="{{if .Card.DueDate}}{{.Card.DueDate.Format "2006-01-02"}}{{end}}">
+                </div>
+                <div class="date-actions">
+                  <button class="btn btn-primary" id="save-due-date">Save</button>
+                  <button class="btn btn-secondary" id="remove-due-date">Remove</button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="sidebar-section">
           <div class="sidebar-section-title">Actions</div>
-          <button class="sidebar-btn">
-            <svg viewBox="0 0 24 24"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
-            Move
-          </button>
-          <button class="sidebar-btn" id="delete-card-btn">
-            <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+          <div style="position: relative;">
+            <button class="sidebar-btn" id="move-btn">
+              <svg viewBox="0 0 24 24"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
+              Move
+            </button>
+            <div class="popover" id="move-popover">
+              <div class="popover-header">
+                Move card
+                <button class="popover-close" data-close="move-popover">
+                  <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                </button>
+              </div>
+              <div class="popover-content move-popover">
+                <div class="popover-section-title">List</div>
+                <select id="move-list-select">
+                  {{range .Lists}}
+                  <option value="{{.ID}}" {{if eq .ID $.List.ID}}selected{{end}}>{{.Name}}</option>
+                  {{end}}
+                </select>
+                <button class="btn btn-primary" id="move-card-submit" style="width: 100%;">Move</button>
+              </div>
+            </div>
+          </div>
+          <button class="sidebar-btn" id="delete-card-btn" style="color: var(--trello-danger-bold);">
+            <svg viewBox="0 0 24 24" style="fill: var(--trello-danger-bold);"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
             Delete
           </button>
         </div>
@@ -623,5 +954,199 @@ document.getElementById('delete-card-btn').addEventListener('click', async funct
     alert('Failed to delete card: ' + err.message);
   }
 });
+
+// Popover functionality
+function initPopovers() {
+  // Close all popovers when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.popover') && !e.target.closest('.sidebar-btn')) {
+      document.querySelectorAll('.popover.is-open').forEach(p => p.classList.remove('is-open'));
+    }
+  });
+
+  // Close buttons
+  document.querySelectorAll('.popover-close').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const popoverId = btn.dataset.close;
+      document.getElementById(popoverId).classList.remove('is-open');
+    });
+  });
+
+  // Members popover
+  document.getElementById('members-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeAllPopovers();
+    document.getElementById('members-popover').classList.toggle('is-open');
+  });
+
+  // Dates popover
+  document.getElementById('dates-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeAllPopovers();
+    document.getElementById('dates-popover').classList.toggle('is-open');
+  });
+
+  // Move popover
+  document.getElementById('move-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeAllPopovers();
+    document.getElementById('move-popover').classList.toggle('is-open');
+  });
+}
+
+function closeAllPopovers() {
+  document.querySelectorAll('.popover.is-open').forEach(p => p.classList.remove('is-open'));
+}
+
+// Members management
+const currentMembers = new Set([{{range .Members}}'{{.ID}}',{{end}}]);
+
+document.querySelectorAll('#members-list .popover-item').forEach(item => {
+  // Mark currently assigned members
+  if (currentMembers.has(item.dataset.userId)) {
+    item.classList.add('selected');
+  }
+
+  item.addEventListener('click', async () => {
+    const userId = item.dataset.userId;
+    const isSelected = item.classList.contains('selected');
+
+    try {
+      if (isSelected) {
+        // Remove assignee
+        const res = await fetch('/api/v1/issues/' + cardId + '/assignees/' + userId, {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (data.success) {
+          item.classList.remove('selected');
+          currentMembers.delete(userId);
+          updateMembersDisplay();
+        } else {
+          alert(data.error || 'Failed to remove member');
+        }
+      } else {
+        // Add assignee
+        const res = await fetch('/api/v1/issues/' + cardId + '/assignees', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: userId })
+        });
+        const data = await res.json();
+        if (data.success) {
+          item.classList.add('selected');
+          currentMembers.add(userId);
+          updateMembersDisplay();
+        } else {
+          alert(data.error || 'Failed to add member');
+        }
+      }
+    } catch (err) {
+      alert('Failed to update member: ' + err.message);
+    }
+  });
+});
+
+function updateMembersDisplay() {
+  const membersContainer = document.querySelector('.card-members-list');
+  if (!membersContainer) return;
+
+  // Clear existing (except add button)
+  const addBtn = membersContainer.querySelector('.add-label-btn');
+  membersContainer.innerHTML = '';
+
+  // Add member avatars
+  document.querySelectorAll('#members-list .popover-item.selected').forEach(item => {
+    const name = item.dataset.name;
+    const avatar = document.createElement('div');
+    avatar.className = 'card-member-avatar';
+    avatar.title = name;
+    avatar.textContent = name.charAt(0);
+    membersContainer.appendChild(avatar);
+  });
+
+  // Re-add the add button
+  if (addBtn) {
+    membersContainer.appendChild(addBtn);
+  }
+}
+
+// Member search
+document.getElementById('member-search').addEventListener('input', (e) => {
+  const query = e.target.value.toLowerCase();
+  document.querySelectorAll('#members-list .popover-item').forEach(item => {
+    const name = item.dataset.name.toLowerCase();
+    item.style.display = name.includes(query) ? 'flex' : 'none';
+  });
+});
+
+// Due date management
+document.getElementById('save-due-date').addEventListener('click', async () => {
+  const dateInput = document.getElementById('due-date-input');
+  const dueDate = dateInput.value ? new Date(dateInput.value).toISOString() : null;
+
+  try {
+    const res = await fetch('/api/v1/issues/' + cardKey, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ due_date: dueDate })
+    });
+    const data = await res.json();
+    if (data.success) {
+      closeAllPopovers();
+      window.location.reload();
+    } else {
+      alert(data.error || 'Failed to update due date');
+    }
+  } catch (err) {
+    alert('Failed to update due date: ' + err.message);
+  }
+});
+
+document.getElementById('remove-due-date').addEventListener('click', async () => {
+  try {
+    const res = await fetch('/api/v1/issues/' + cardKey, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ due_date: null })
+    });
+    const data = await res.json();
+    if (data.success) {
+      closeAllPopovers();
+      window.location.reload();
+    } else {
+      alert(data.error || 'Failed to remove due date');
+    }
+  } catch (err) {
+    alert('Failed to remove due date: ' + err.message);
+  }
+});
+
+// Move card
+document.getElementById('move-card-submit').addEventListener('click', async () => {
+  const listSelect = document.getElementById('move-list-select');
+  const newColumnId = listSelect.value;
+
+  try {
+    const res = await fetch('/api/v1/issues/' + cardKey + '/move', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ column_id: newColumnId })
+    });
+    const data = await res.json();
+    if (data.success) {
+      closeAllPopovers();
+      window.location.reload();
+    } else {
+      alert(data.error || 'Failed to move card');
+    }
+  } catch (err) {
+    alert('Failed to move card: ' + err.message);
+  }
+});
+
+// Initialize popovers
+initPopovers();
 </script>
 {{end}}

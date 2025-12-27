@@ -6,32 +6,53 @@
   <title>{{.Title}}</title>
   <style>
     :root {
-      --trello-blue-100: #e4f0f6;
-      --trello-blue-200: #bcd9ea;
-      --trello-blue-300: #8bbdd9;
-      --trello-blue-400: #5ba4cf;
-      --trello-blue-500: #0079bf;
-      --trello-blue-600: #026aa7;
-      --trello-blue-700: #055a8c;
+      /* Modern Trello color palette */
+      --trello-blue-50: #e9f2ff;
+      --trello-blue-100: #cce0ff;
+      --trello-blue-200: #85b8ff;
+      --trello-blue-300: #579dff;
+      --trello-blue-400: #388bff;
+      --trello-blue-500: #0c66e4;
+      --trello-blue-600: #0055cc;
+      --trello-blue-700: #09326c;
+      --trello-board-blue: #0079bf;
       --trello-neutral-0: #ffffff;
       --trello-neutral-10: #fafbfc;
-      --trello-neutral-20: #f4f5f7;
-      --trello-neutral-30: #ebecf0;
-      --trello-neutral-40: #dfe1e6;
-      --trello-neutral-100: #c1c7d0;
-      --trello-neutral-200: #a5adba;
-      --trello-neutral-500: #5e6c84;
-      --trello-neutral-800: #172b4d;
-      --trello-success: #61bd4f;
-      --trello-warning: #f2d600;
-      --trello-danger: #eb5a46;
-      --header-height: 44px;
-      --board-header-height: 52px;
+      --trello-neutral-100: #f7f8f9;
+      --trello-neutral-200: #f1f2f4;
+      --trello-neutral-300: #dcdfe4;
+      --trello-neutral-400: #b3b9c4;
+      --trello-neutral-500: #8c9bab;
+      --trello-neutral-600: #626f86;
+      --trello-neutral-700: #44546f;
+      --trello-neutral-800: #2c3e5d;
+      --trello-neutral-900: #172b4d;
+      --trello-dark-100: #282e33;
+      --trello-dark-200: #22272b;
+      --trello-dark-300: #1d2125;
+      --trello-success: #4bce97;
+      --trello-success-bold: #1f845a;
+      --trello-warning: #f5cd47;
+      --trello-warning-bold: #946f00;
+      --trello-danger: #f87168;
+      --trello-danger-bold: #c9372c;
+      --trello-purple: #9f8fef;
+      --trello-purple-bold: #6e5dc6;
+      --trello-teal: #6cc3e0;
+      --trello-teal-bold: #227d9b;
+      --trello-lime: #94c748;
+      --trello-lime-bold: #5b7f24;
+      --trello-pink: #e774bb;
+      --trello-pink-bold: #ae4787;
+      --trello-orange: #faa53d;
+      --trello-orange-bold: #b65c02;
+      --header-height: 48px;
+      --board-header-height: 56px;
       --list-width: 272px;
-      --card-border-radius: 3px;
-      --list-border-radius: 3px;
-      --card-shadow: 0 1px 0 rgba(9,30,66,.25);
-      --popup-shadow: 0 8px 16px -4px rgba(9,30,66,.25), 0 0 0 1px rgba(9,30,66,.08);
+      --card-border-radius: 8px;
+      --list-border-radius: 12px;
+      --card-shadow: 0 1px 1px rgba(9,30,66,.25), 0 0 1px rgba(9,30,66,.31);
+      --popup-shadow: 0 8px 12px rgba(9,30,66,.15), 0 0 1px rgba(9,30,66,.31);
       --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans', Ubuntu, sans-serif;
     }
 
@@ -45,27 +66,26 @@
       font-family: var(--font-family);
       font-size: 14px;
       line-height: 1.5;
-      color: var(--trello-neutral-800);
-      background: var(--trello-neutral-20);
+      color: var(--trello-neutral-900);
+      background: var(--trello-neutral-200);
       min-height: 100vh;
     }
 
-    /* Header */
+    /* Header - matches board header style */
     .header {
       position: fixed;
       top: 0;
       left: 0;
       right: 0;
       height: var(--header-height);
-      background: rgba(0, 0, 0, 0.32);
-      backdrop-filter: blur(6px);
+      background: #026aa7;
       display: flex;
       align-items: center;
       padding: 0 8px;
       z-index: 100;
     }
 
-    .header-left, .header-center, .header-right {
+    .header-left, .header-right {
       display: flex;
       align-items: center;
       gap: 4px;
@@ -73,10 +93,6 @@
 
     .header-left {
       flex: 1;
-    }
-
-    .header-center {
-      flex: 0 0 auto;
     }
 
     .header-right {
@@ -90,19 +106,20 @@
       justify-content: center;
       gap: 6px;
       padding: 6px 12px;
-      background: rgba(255, 255, 255, 0.2);
-      color: white;
+      background: rgba(255, 255, 255, 0.16);
+      color: #b6c2cf;
       border: none;
       border-radius: 3px;
       font-size: 14px;
-      font-weight: 700;
+      font-weight: 500;
       cursor: pointer;
-      transition: background 0.1s;
+      transition: background 0.1s, color 0.1s;
       text-decoration: none;
     }
 
     .header-btn:hover {
-      background: rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.24);
+      color: #dee4ea;
     }
 
     .header-btn-icon {
@@ -112,6 +129,11 @@
       width: 32px;
       height: 32px;
       padding: 0;
+      background: transparent;
+    }
+
+    .header-btn-icon:hover {
+      background: rgba(255, 255, 255, 0.16);
     }
 
     .header-btn svg {
@@ -127,6 +149,11 @@
       padding: 4px 8px;
       color: white;
       text-decoration: none;
+      border-radius: 3px;
+    }
+
+    .header-logo:hover {
+      background: rgba(255, 255, 255, 0.16);
     }
 
     .header-logo svg {
@@ -135,70 +162,35 @@
     }
 
     .header-logo-text {
-      font-size: 20px;
+      font-size: 18px;
       font-weight: 700;
       letter-spacing: -0.5px;
     }
 
-    .header-search {
-      display: flex;
-      align-items: center;
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 3px;
-      padding: 6px 10px;
-      width: 200px;
-      transition: width 0.2s, background 0.1s;
+    .header-create-btn {
+      background: var(--trello-blue-300);
+      color: var(--trello-blue-700);
+      font-weight: 500;
     }
 
-    .header-search:focus-within {
-      background: var(--trello-neutral-0);
-      width: 400px;
-    }
-
-    .header-search input {
-      flex: 1;
-      background: transparent;
-      border: none;
-      font-size: 14px;
-      color: white;
-      outline: none;
-    }
-
-    .header-search:focus-within input {
-      color: var(--trello-neutral-800);
-    }
-
-    .header-search input::placeholder {
-      color: rgba(255, 255, 255, 0.7);
-    }
-
-    .header-search:focus-within input::placeholder {
-      color: var(--trello-neutral-500);
-    }
-
-    .header-search svg {
-      width: 16px;
-      height: 16px;
-      fill: rgba(255, 255, 255, 0.7);
-      margin-right: 8px;
-    }
-
-    .header-search:focus-within svg {
-      fill: var(--trello-neutral-500);
+    .header-create-btn:hover {
+      background: var(--trello-blue-200);
+      color: var(--trello-blue-700);
     }
 
     .user-avatar {
-      width: 32px;
-      height: 32px;
+      width: 28px;
+      height: 28px;
       border-radius: 50%;
-      background: var(--trello-blue-600);
+      background: var(--trello-blue-500);
       color: white;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 14px;
-      font-weight: 700;
+      font-size: 12px;
+      font-weight: 600;
       cursor: pointer;
+      text-transform: uppercase;
     }
 
     /* Main content */
@@ -215,31 +207,31 @@
       gap: 6px;
       padding: 6px 12px;
       font-size: 14px;
-      font-weight: 400;
+      font-weight: 500;
       font-family: var(--font-family);
       border: none;
       border-radius: 3px;
       cursor: pointer;
-      transition: background 0.1s, filter 0.1s;
+      transition: background 0.15s ease;
       text-decoration: none;
     }
 
     .btn-primary {
-      background: var(--trello-blue-500);
-      color: white;
+      background: var(--trello-blue-300);
+      color: var(--trello-blue-700);
     }
 
     .btn-primary:hover {
-      background: var(--trello-blue-600);
+      background: var(--trello-blue-200);
     }
 
     .btn-secondary {
-      background: rgba(9, 30, 66, 0.04);
-      color: var(--trello-neutral-800);
+      background: var(--trello-neutral-200);
+      color: var(--trello-neutral-700);
     }
 
     .btn-secondary:hover {
-      background: rgba(9, 30, 66, 0.08);
+      background: var(--trello-neutral-300);
     }
 
     .btn-icon {
@@ -262,11 +254,12 @@
       top: 100%;
       left: 0;
       background: var(--trello-neutral-0);
-      border-radius: 3px;
+      border-radius: 8px;
       box-shadow: var(--popup-shadow);
-      min-width: 200px;
+      min-width: 220px;
       padding: 8px 0;
       z-index: 200;
+      margin-top: 4px;
     }
 
     .dropdown-menu.is-open {
@@ -277,20 +270,21 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 6px 12px;
-      color: var(--trello-neutral-800);
+      padding: 8px 12px;
+      color: var(--trello-neutral-900);
       font-size: 14px;
       text-decoration: none;
       cursor: pointer;
+      transition: background 0.1s;
     }
 
     .dropdown-item:hover {
-      background: rgba(9, 30, 66, 0.04);
+      background: var(--trello-neutral-100);
     }
 
     .dropdown-divider {
       height: 1px;
-      background: var(--trello-neutral-30);
+      background: var(--trello-neutral-300);
       margin: 8px 0;
     }
 
@@ -299,7 +293,7 @@
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.64);
+      background: rgba(0, 0, 0, 0.54);
       z-index: 300;
       justify-content: center;
       align-items: flex-start;
@@ -312,8 +306,8 @@
     }
 
     .modal {
-      background: var(--trello-neutral-20);
-      border-radius: 3px;
+      background: var(--trello-neutral-200);
+      border-radius: 12px;
       width: 100%;
       max-width: 768px;
       position: relative;
@@ -321,8 +315,8 @@
 
     .modal-close {
       position: absolute;
-      top: 8px;
-      right: 8px;
+      top: 12px;
+      right: 12px;
       width: 32px;
       height: 32px;
       display: flex;
@@ -332,12 +326,13 @@
       border: none;
       border-radius: 50%;
       cursor: pointer;
-      color: var(--trello-neutral-500);
+      color: var(--trello-neutral-600);
+      transition: background 0.1s;
     }
 
     .modal-close:hover {
-      background: rgba(9, 30, 66, 0.08);
-      color: var(--trello-neutral-800);
+      background: var(--trello-neutral-300);
+      color: var(--trello-neutral-900);
     }
 
     /* Scrollbar */
@@ -405,34 +400,18 @@
           {{end}}
         </div>
       </div>
-
-      <button class="header-btn">
-        Recent
-        <svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5H7z"/></svg>
-      </button>
-
-      <button class="header-btn btn-primary" id="create-board-btn">Create</button>
     </div>
 
-    <div class="header-center">
-      <div class="header-search">
-        <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 001.48-5.34c-.47-2.78-2.79-5-5.59-5.34a6.505 6.505 0 00-7.27 7.27c.34 2.8 2.56 5.12 5.34 5.59a6.5 6.5 0 005.34-1.48l.27.28v.79l4.25 4.25c.41.41 1.08.41 1.49 0 .41-.41.41-1.08 0-1.49L15.5 14zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-        <input type="text" placeholder="Search">
-      </div>
-    </div>
 
     <div class="header-right">
-      <button class="header-btn header-btn-icon" title="Notifications">
-        <svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
-      </button>
-
       <div class="user-dropdown dropdown">
         <div class="user-avatar" id="user-trigger">{{if .User}}{{slice .User.DisplayName 0 1}}{{end}}</div>
         <div class="dropdown-menu" id="user-menu">
-          <div style="padding: 8px 12px; border-bottom: 1px solid var(--trello-neutral-30);">
-            <div style="font-weight: 700;">{{if .User}}{{.User.DisplayName}}{{end}}</div>
-            <div style="font-size: 12px; color: var(--trello-neutral-500);">{{if .User}}{{.User.Email}}{{end}}</div>
+          <div style="padding: 12px; border-bottom: 1px solid var(--trello-neutral-300);">
+            <div style="font-weight: 600; color: var(--trello-neutral-900);">{{if .User}}{{.User.DisplayName}}{{end}}</div>
+            <div style="font-size: 12px; color: var(--trello-neutral-600); margin-top: 2px;">{{if .User}}{{.User.Email}}{{end}}</div>
           </div>
+          <div class="dropdown-divider"></div>
           <a href="#" class="dropdown-item" data-action="logout">Log out</a>
         </div>
       </div>

@@ -189,6 +189,7 @@ func New(cfg Config) (*Server, error) {
 		cyclesSvc,
 		commentsSvc,
 		fieldsSvc,
+		assigneesSvc,
 		s.getUserID,
 	)
 
