@@ -66,6 +66,12 @@ type ColumnView struct {
 	IssueCount int
 }
 
+// CommentView wraps a comment with author info for template rendering.
+type CommentView struct {
+	*comments.Comment
+	AuthorName string
+}
+
 // LoginData holds data for the login page.
 type LoginData struct {
 	Title      string
@@ -155,7 +161,7 @@ type IssueData struct {
 	Issue           *issues.Issue
 	Project         *projects.Project
 	Columns         []*columns.Column
-	Comments        []*comments.Comment
+	Comments        []*CommentView
 	Activities      []*activities.ActivityWithContext
 	Cycles          []*cycles.Cycle
 	Fields          []*fields.Field
@@ -1318,6 +1324,19 @@ func (h *Page) Issue(c *mizu.Ctx) error {
 		}
 	}
 
+	// Enhance comments with author names
+	commentViews := make([]*CommentView, len(commentList))
+	for i, c := range commentList {
+		authorName := "Someone"
+		if u, ok := userMap[c.AuthorID]; ok {
+			authorName = u.DisplayName
+		}
+		commentViews[i] = &CommentView{
+			Comment:    c,
+			AuthorName: authorName,
+		}
+	}
+
 	return render(h, c, "issue", IssueData{
 		Title:           issue.Key,
 		User:            user,
@@ -1328,7 +1347,7 @@ func (h *Page) Issue(c *mizu.Ctx) error {
 		Issue:           issue,
 		Project:         project,
 		Columns:         columnList,
-		Comments:        commentList,
+		Comments:        commentViews,
 		Activities:      activityWithContext,
 		Cycles:          cycleList,
 		Fields:          fieldList,

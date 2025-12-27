@@ -47,23 +47,8 @@
       >{{if .Issue.Description}}{{.Issue.Description}}{{end}}</div>
     </div>
 
-    <!-- Toolbar -->
-    <div class="flex items-center gap-3 pb-6 border-b border-zinc-100">
-      <button class="text-zinc-400 hover:text-zinc-600 transition-colors" title="Add emoji">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"/>
-          <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
-          <line x1="9" x2="9.01" y1="9" y2="9"/>
-          <line x1="15" x2="15.01" y1="9" y2="9"/>
-        </svg>
-      </button>
-      <div class="flex-1"></div>
-      <button class="text-zinc-400 hover:text-zinc-600 transition-colors" title="Attach file">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-        </svg>
-      </button>
-    </div>
+    <!-- Divider -->
+    <div class="pb-6 border-b border-zinc-100"></div>
 
     <!-- Sub-issues placeholder -->
     <div class="pb-6 border-b border-zinc-100">
@@ -80,10 +65,6 @@
     <div>
       <div class="flex items-center justify-between mb-4">
         <h3 class="text-base font-semibold text-zinc-900">Activity</h3>
-        <div class="flex items-center gap-2">
-          <span class="text-sm text-zinc-500 hover:text-zinc-700 cursor-pointer">Unsubscribe</span>
-          <div class="w-7 h-7 rounded-full bg-emerald-500 text-white text-xs flex items-center justify-center font-medium">{{slice .User.DisplayName 0 1}}</div>
-        </div>
       </div>
 
       <!-- Timeline container with connecting line -->
@@ -162,16 +143,18 @@
 
         {{range .Comments}}
         <div class="relative flex items-start gap-2.5 py-2 mt-1 group">
-          <!-- Comment avatar - larger than activity icons -->
-          <div class="relative z-10 w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 bg-zinc-600 text-white text-[10px] font-medium">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <!-- Comment avatar -->
+          <div class="relative z-10 w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 bg-emerald-500 text-white text-[10px] font-medium">
+            {{slice .AuthorName 0 1}}
           </div>
           <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2 text-[13px] mb-1">
-              <span class="font-medium text-zinc-700">Comment</span>
-              <span class="text-zinc-400 text-xs activity-time" data-timestamp="{{.CreatedAt.Format "2006-01-02T15:04:05Z07:00"}}"></span>
+            <div class="bg-zinc-50 rounded-lg px-3 py-2.5 border border-zinc-200 shadow-sm">
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="font-medium text-zinc-800 text-[13px]">{{.AuthorName}}</span>
+                <span class="text-zinc-400 text-xs activity-time" data-timestamp="{{.CreatedAt.Format "2006-01-02T15:04:05Z07:00"}}"></span>
+              </div>
+              <div class="text-[13px] text-zinc-600 leading-relaxed">{{.Content}}</div>
             </div>
-            <div class="text-[13px] text-zinc-600 bg-zinc-50 rounded-lg px-3 py-2 border border-zinc-100">{{.Content}}</div>
           </div>
         </div>
         {{end}}
@@ -471,13 +454,37 @@
 const issueKey = '{{.Issue.Key}}';
 const issueId = '{{.Issue.ID}}';
 
-// Format activity timestamps to local timezone
+// Format activity timestamps to "time ago" format
+function formatTimeAgo(date) {
+  const now = new Date();
+  const seconds = Math.floor((now - date) / 1000);
+
+  if (seconds < 60) return 'just now';
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return minutes === 1 ? '1 min ago' : `${minutes} mins ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours === 1 ? '1 hour ago' : `${hours} hours ago`;
+
+  const days = Math.floor(hours / 24);
+  if (days < 7) return days === 1 ? '1 day ago' : `${days} days ago`;
+
+  const weeks = Math.floor(days / 7);
+  if (weeks < 4) return weeks === 1 ? '1 week ago' : `${weeks} weeks ago`;
+
+  const months = Math.floor(days / 30);
+  if (months < 12) return months === 1 ? '1 month ago' : `${months} months ago`;
+
+  const years = Math.floor(days / 365);
+  return years === 1 ? '1 year ago' : `${years} years ago`;
+}
+
 document.querySelectorAll('.activity-time').forEach(el => {
   const timestamp = el.dataset.timestamp;
   if (timestamp) {
     const date = new Date(timestamp);
-    el.textContent = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ', ' +
-                     date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true });
+    el.textContent = formatTimeAgo(date);
   }
 });
 
