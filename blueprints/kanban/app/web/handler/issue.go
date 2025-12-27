@@ -158,6 +158,10 @@ func (h *Issue) Move(c *mizu.Ctx) error {
 		return BadRequest(c, "invalid request body")
 	}
 
+	if in.ColumnID == "" {
+		return BadRequest(c, "column_id is required")
+	}
+
 	updated, err := h.issues.Move(c.Context(), issue.ID, &in)
 	if err != nil {
 		return InternalError(c, "failed to move issue")

@@ -157,7 +157,7 @@ func New(cfg Config) (*Server, error) {
 		fileStore:  fileStore,
 		// Create per-instance rate limiters for test isolation
 		loginLimiter:    middleware.NewRateLimiter(5, time.Minute),     // 5 per minute
-		registerLimiter: middleware.NewRateLimiter(3, 10*time.Minute), // 3 per 10 minutes
+		registerLimiter: middleware.NewRateLimiter(20, 10*time.Minute), // 20 per 10 minutes
 	}
 
 	// Configure WebSocket upgrader with origin validation
@@ -670,7 +670,7 @@ func (s *Server) rateLimitLogin(next mizu.Handler) mizu.Handler {
 }
 
 // rateLimitRegister applies rate limiting to registration attempts.
-// Limits: 3 attempts per IP per 10 minutes.
+// Limits: 20 attempts per IP per 10 minutes.
 func (s *Server) rateLimitRegister(next mizu.Handler) mizu.Handler {
 	return func(c *mizu.Ctx) error {
 		ip := getClientIP(c.Request())

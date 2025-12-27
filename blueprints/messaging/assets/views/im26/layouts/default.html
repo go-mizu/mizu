@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Messages</title>
-    <link rel="stylesheet" href="/static/css/imessage.css">
+    <link rel="stylesheet" href="/static/css/imessage.css?v={{.CSSVersion}}">
     <style>
         /* Page-specific overrides */
         html, body {
@@ -17,6 +17,6 @@
 </head>
 <body>
     {{template "content" .}}
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v={{.Version}}"></script>
 </body>
 </html>

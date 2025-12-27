@@ -190,7 +190,22 @@
 <div id="modal-status-selector" class="dropdown-menu property-dropdown hidden">
   {{range .Columns}}
   <button type="button" class="dropdown-item modal-status-option" data-column-id="{{.ID}}" data-column-name="{{.Name}}">
-    <span class="status-badge {{lower .Name}}" style="margin-right: 0.5rem;">{{.Name}}</span>
+    <span class="status-badge {{lower .Name}}">
+      {{if eq (lower .Name) "backlog"}}
+      <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2 2"/></svg>
+      {{else if eq (lower .Name) "todo"}}
+      <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
+      {{else if or (eq (lower .Name) "in-progress") (eq (lower .Name) "doing")}}
+      <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 1 6 6" stroke-width="2"/></svg>
+      {{else if or (eq (lower .Name) "done") (eq (lower .Name) "completed")}}
+      <svg class="status-icon" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/><path d="M5.5 8l2 2 3.5-3.5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      {{else if or (eq (lower .Name) "canceled") (eq (lower .Name) "cancelled")}}
+      <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+      {{else}}
+      <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
+      {{end}}
+      {{.Name}}
+    </span>
   </button>
   {{end}}
 </div>
