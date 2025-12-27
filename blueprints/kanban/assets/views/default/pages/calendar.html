@@ -79,7 +79,7 @@
     {{range .Days}}
     <div class="calendar-week">
       {{range .}}
-      <div class="calendar-day {{if .IsToday}}today{{end}} {{if .IsWeekend}}weekend{{end}} {{if .IsOtherMonth}}other-month{{end}}">
+      <div class="calendar-day {{if .IsToday}}today{{end}} {{if .IsWeekend}}weekend{{end}} {{if .IsOtherMonth}}other-month{{end}}" data-date="{{.Date.Format "2006-01-02"}}">
         <div class="calendar-day-header">
           <span class="calendar-day-number">{{.Date.Day}}</span>
           {{if .IsToday}}<span class="today-badge">Today</span>{{end}}
@@ -144,6 +144,27 @@
 </div>
 
 <script>
+// Calendar day click handler - opens create issue modal with date pre-filled
+document.querySelectorAll('.calendar-day').forEach(day => {
+  day.addEventListener('click', (e) => {
+    // Don't trigger if clicking on an issue link or more button
+    if (e.target.closest('.calendar-issue') || e.target.closest('.calendar-more-btn')) {
+      return;
+    }
+
+    const date = day.dataset.date;
+    if (date) {
+      // Pre-fill the due date in the modal
+      const dueDateInput = document.getElementById('issue-due-date');
+      if (dueDateInput) {
+        dueDateInput.value = date;
+      }
+      // Open the modal
+      app.modals.open('create-issue-modal');
+    }
+  });
+});
+
 document.getElementById('create-issue-form').addEventListener('submit', async function(e) {
   e.preventDefault();
   const form = e.target;

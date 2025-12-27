@@ -532,6 +532,29 @@ func (h *Page) Home(c *mizu.Ctx) error {
 	})
 }
 
+// AppRedirect redirects /app to the first workspace's inbox.
+func (h *Page) AppRedirect(c *mizu.Ctx) error {
+	userID := h.getUserID(c)
+	if userID == "" {
+		http.Redirect(c.Writer(), c.Request(), "/login", http.StatusFound)
+		return nil
+	}
+
+	ctx := c.Request().Context()
+
+	// Get user's workspaces
+	workspaceList, _ := h.workspaces.ListByUser(ctx, userID)
+	if len(workspaceList) > 0 {
+		// Redirect to first workspace's inbox
+		http.Redirect(c.Writer(), c.Request(), fmt.Sprintf("/w/%s/inbox", workspaceList[0].Slug), http.StatusFound)
+		return nil
+	}
+
+	// No workspaces, redirect to login
+	http.Redirect(c.Writer(), c.Request(), "/login", http.StatusFound)
+	return nil
+}
+
 // Inbox renders the inbox page with issue list and create form.
 func (h *Page) Inbox(c *mizu.Ctx) error {
 	userID := h.getUserID(c)

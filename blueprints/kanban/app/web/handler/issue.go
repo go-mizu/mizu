@@ -150,11 +150,13 @@ func (h *Issue) Move(c *mizu.Ctx) error {
 		if err == issues.ErrNotFound {
 			return NotFound(c, "issue not found")
 		}
+		c.Logger().Error("failed to get issue for move", "key", key, "error", err)
 		return InternalError(c, "failed to get issue")
 	}
 
 	var in issues.MoveIn
 	if err := c.BindJSON(&in, 1<<20); err != nil {
+		c.Logger().Error("failed to bind move JSON", "key", key, "error", err)
 		return BadRequest(c, "invalid request body")
 	}
 
@@ -164,6 +166,7 @@ func (h *Issue) Move(c *mizu.Ctx) error {
 
 	updated, err := h.issues.Move(c.Context(), issue.ID, &in)
 	if err != nil {
+		c.Logger().Error("failed to move issue", "key", key, "issueID", issue.ID, "columnID", in.ColumnID, "position", in.Position, "error", err)
 		return InternalError(c, "failed to move issue")
 	}
 
