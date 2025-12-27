@@ -26,6 +26,9 @@
       .scrollbar-thin::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 3px; }
       .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
     }
+    /* Prevent flicker on page load */
+    body { opacity: 0; }
+    body.ready { opacity: 1; transition: opacity 0.1s ease-in; }
     @layer components {
       .status-icon { width: 14px; height: 14px; flex-shrink: 0; }
       .priority-urgent { color: #ef4444; }
@@ -385,6 +388,7 @@
   </div>
 
   <script src="/static/js/app.js"></script>
+  <script>document.body.classList.add('ready');</script>
 </body>
 </html>
 
