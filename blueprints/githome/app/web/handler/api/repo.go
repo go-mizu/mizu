@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/blueprints/githome/feature/repos"
 )
 
 // RepoHandler handles repository endpoints
@@ -26,15 +26,14 @@ func (h *RepoHandler) ListAuthenticatedUserRepos(w http.ResponseWriter, r *http.
 
 	pagination := GetPaginationParams(r)
 	opts := &repos.ListOpts{
-		Page:       pagination.Page,
-		PerPage:    pagination.PerPage,
-		Type:       QueryParam(r, "type"),
-		Sort:       QueryParam(r, "sort"),
-		Direction:  QueryParam(r, "direction"),
-		Visibility: QueryParam(r, "visibility"),
+		Page:      pagination.Page,
+		PerPage:   pagination.PerPage,
+		Type:      QueryParam(r, "type"),
+		Sort:      QueryParam(r, "sort"),
+		Direction: QueryParam(r, "direction"),
 	}
 
-	repoList, err := h.repos.ListForUser(r.Context(), user.Login, opts)
+	repoList, err := h.repos.ListForAuthenticatedUser(r.Context(), user.ID, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -59,12 +58,11 @@ func (h *RepoHandler) CreateAuthenticatedUserRepo(w http.ResponseWriter, r *http
 
 	repo, err := h.repos.Create(r.Context(), user.ID, &in)
 	if err != nil {
-		switch err {
-		case repos.ErrExists:
+		if err == repos.ErrRepoExists {
 			WriteConflict(w, "Repository already exists")
-		default:
-			WriteError(w, http.StatusInternalServerError, err.Error())
+			return
 		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -129,16 +127,17 @@ func (h *RepoHandler) CreateOrgRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo, err := h.repos.CreateForOrg(r.Context(), org, user.ID, &in)
+	repo, err := h.repos.CreateForOrg(r.Context(), org, &in)
 	if err != nil {
-		switch err {
-		case repos.ErrExists:
+		if err == repos.ErrRepoExists {
 			WriteConflict(w, "Repository already exists")
-		case repos.ErrNotFound:
-			WriteNotFound(w, "Organization")
-		default:
-			WriteError(w, http.StatusInternalServerError, err.Error())
+			return
 		}
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Organization")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -150,7 +149,7 @@ func (h *RepoHandler) GetRepo(w http.ResponseWriter, r *http.Request) {
 	owner := PathParam(r, "owner")
 	repoName := PathParam(r, "repo")
 
-	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
+	repo, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -174,24 +173,18 @@ func (h *RepoHandler) UpdateRepo(w http.ResponseWriter, r *http.Request) {
 	owner := PathParam(r, "owner")
 	repoName := PathParam(r, "repo")
 
-	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
-	if err != nil {
-		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
-		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
 	var in repos.UpdateIn
 	if err := DecodeJSON(r, &in); err != nil {
 		WriteBadRequest(w, "Invalid request body")
 		return
 	}
 
-	updated, err := h.repos.Update(r.Context(), repo.ID, &in)
+	updated, err := h.repos.Update(r.Context(), owner, repoName, &in)
 	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -210,17 +203,11 @@ func (h *RepoHandler) DeleteRepo(w http.ResponseWriter, r *http.Request) {
 	owner := PathParam(r, "owner")
 	repoName := PathParam(r, "repo")
 
-	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
-	if err != nil {
+	if err := h.repos.Delete(r.Context(), owner, repoName); err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
 			return
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	if err := h.repos.Delete(r.Context(), repo.ID); err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -233,18 +220,12 @@ func (h *RepoHandler) ListRepoTopics(w http.ResponseWriter, r *http.Request) {
 	owner := PathParam(r, "owner")
 	repoName := PathParam(r, "repo")
 
-	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
+	topics, err := h.repos.ListTopics(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
 			return
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	topics, err := h.repos.ListTopics(r.Context(), repo.ID)
-	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -263,16 +244,6 @@ func (h *RepoHandler) ReplaceRepoTopics(w http.ResponseWriter, r *http.Request) 
 	owner := PathParam(r, "owner")
 	repoName := PathParam(r, "repo")
 
-	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
-	if err != nil {
-		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
-		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
 	var in struct {
 		Names []string `json:"names"`
 	}
@@ -281,21 +252,7 @@ func (h *RepoHandler) ReplaceRepoTopics(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.repos.ReplaceTopics(r.Context(), repo.ID, in.Names); err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	topics, _ := h.repos.ListTopics(r.Context(), repo.ID)
-	WriteJSON(w, http.StatusOK, map[string][]string{"names": topics})
-}
-
-// ListRepoLanguages handles GET /repos/{owner}/{repo}/languages
-func (h *RepoHandler) ListRepoLanguages(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-
-	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
+	topics, err := h.repos.ReplaceTopics(r.Context(), owner, repoName, in.Names)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -305,8 +262,20 @@ func (h *RepoHandler) ListRepoLanguages(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	languages, err := h.repos.ListLanguages(r.Context(), repo.ID)
+	WriteJSON(w, http.StatusOK, map[string][]string{"names": topics})
+}
+
+// ListRepoLanguages handles GET /repos/{owner}/{repo}/languages
+func (h *RepoHandler) ListRepoLanguages(w http.ResponseWriter, r *http.Request) {
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	languages, err := h.repos.ListLanguages(r.Context(), owner, repoName)
 	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -319,59 +288,23 @@ func (h *RepoHandler) ListRepoContributors(w http.ResponseWriter, r *http.Reques
 	owner := PathParam(r, "owner")
 	repoName := PathParam(r, "repo")
 
-	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
-	if err != nil {
-		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
-		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
 	pagination := GetPaginationParams(r)
 	opts := &repos.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	contributors, err := h.repos.ListContributors(r.Context(), repo.ID, opts)
+	contributors, err := h.repos.ListContributors(r.Context(), owner, repoName, opts)
 	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	WriteJSON(w, http.StatusOK, contributors)
-}
-
-// ListRepoTags handles GET /repos/{owner}/{repo}/tags
-func (h *RepoHandler) ListRepoTags(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-
-	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
-	if err != nil {
-		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
-		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	pagination := GetPaginationParams(r)
-	opts := &repos.ListOpts{
-		Page:    pagination.Page,
-		PerPage: pagination.PerPage,
-	}
-
-	tags, err := h.repos.ListTags(r.Context(), repo.ID, opts)
-	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	WriteJSON(w, http.StatusOK, tags)
 }
 
 // TransferRepo handles POST /repos/{owner}/{repo}/transfer
@@ -385,7 +318,13 @@ func (h *RepoHandler) TransferRepo(w http.ResponseWriter, r *http.Request) {
 	owner := PathParam(r, "owner")
 	repoName := PathParam(r, "repo")
 
-	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
+	var in repos.TransferIn
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
+	}
+
+	updated, err := h.repos.Transfer(r.Context(), owner, repoName, &in)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -395,45 +334,7 @@ func (h *RepoHandler) TransferRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var in struct {
-		NewOwner string  `json:"new_owner"`
-		TeamIDs  []int64 `json:"team_ids,omitempty"`
-	}
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
-	}
-
-	updated, err := h.repos.Transfer(r.Context(), repo.ID, in.NewOwner)
-	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
 	WriteAccepted(w, updated)
-}
-
-// ListPublicRepos handles GET /repositories
-func (h *RepoHandler) ListPublicRepos(w http.ResponseWriter, r *http.Request) {
-	pagination := GetPaginationParams(r)
-	opts := &repos.ListOpts{
-		Page:    pagination.Page,
-		PerPage: pagination.PerPage,
-	}
-
-	if since := QueryParam(r, "since"); since != "" {
-		if n, err := PathParamInt64(r, "since"); err == nil {
-			opts.Since = n
-		}
-	}
-
-	repoList, err := h.repos.ListPublic(r.Context(), opts)
-	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	WriteJSON(w, http.StatusOK, repoList)
 }
 
 // GetRepoReadme handles GET /repos/{owner}/{repo}/readme
@@ -462,7 +363,7 @@ func (h *RepoHandler) GetRepoContent(w http.ResponseWriter, r *http.Request) {
 	path := PathParam(r, "path")
 	ref := QueryParam(r, "ref")
 
-	content, err := h.repos.GetContent(r.Context(), owner, repoName, path, ref)
+	content, err := h.repos.GetContents(r.Context(), owner, repoName, path, ref)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Content")
@@ -487,15 +388,25 @@ func (h *RepoHandler) CreateOrUpdateFileContent(w http.ResponseWriter, r *http.R
 	repoName := PathParam(r, "repo")
 	path := PathParam(r, "path")
 
-	var in repos.CreateFileIn
+	var in struct {
+		Message   string             `json:"message"`
+		Content   string             `json:"content"`
+		SHA       string             `json:"sha,omitempty"`
+		Branch    string             `json:"branch,omitempty"`
+		Committer *repos.CommitAuthor `json:"committer,omitempty"`
+		Author    *repos.CommitAuthor `json:"author,omitempty"`
+	}
 	if err := DecodeJSON(r, &in); err != nil {
 		WriteBadRequest(w, "Invalid request body")
 		return
 	}
-	in.Path = path
 
-	result, err := h.repos.CreateOrUpdateFile(r.Context(), owner, repoName, &in)
+	result, err := h.repos.CreateOrUpdateFile(r.Context(), owner, repoName, path, in.Message, in.Content, in.SHA, in.Branch, in.Author)
 	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -519,15 +430,24 @@ func (h *RepoHandler) DeleteFileContent(w http.ResponseWriter, r *http.Request) 
 	repoName := PathParam(r, "repo")
 	path := PathParam(r, "path")
 
-	var in repos.DeleteFileIn
+	var in struct {
+		Message   string             `json:"message"`
+		SHA       string             `json:"sha"`
+		Branch    string             `json:"branch,omitempty"`
+		Committer *repos.CommitAuthor `json:"committer,omitempty"`
+		Author    *repos.CommitAuthor `json:"author,omitempty"`
+	}
 	if err := DecodeJSON(r, &in); err != nil {
 		WriteBadRequest(w, "Invalid request body")
 		return
 	}
-	in.Path = path
 
-	result, err := h.repos.DeleteFile(r.Context(), owner, repoName, &in)
+	result, err := h.repos.DeleteFile(r.Context(), owner, repoName, path, in.Message, in.SHA, in.Branch, in.Author)
 	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "File")
+			return
+		}
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -547,15 +467,19 @@ func (h *RepoHandler) ForkRepo(w http.ResponseWriter, r *http.Request) {
 	repoName := PathParam(r, "repo")
 
 	var in struct {
-		Organization    string `json:"organization,omitempty"`
-		Name            string `json:"name,omitempty"`
+		Organization      string `json:"organization,omitempty"`
+		Name              string `json:"name,omitempty"`
 		DefaultBranchOnly bool   `json:"default_branch_only,omitempty"`
 	}
 	// Body is optional
 	DecodeJSON(r, &in)
 
-	fork, err := h.repos.Fork(r.Context(), owner, repoName, user.ID, in.Organization, in.Name)
+	fork, err := h.repos.CreateFork(r.Context(), owner, repoName, in.Organization, in.Name)
 	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -568,16 +492,6 @@ func (h *RepoHandler) ListForks(w http.ResponseWriter, r *http.Request) {
 	owner := PathParam(r, "owner")
 	repoName := PathParam(r, "repo")
 
-	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
-	if err != nil {
-		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
-		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
 	pagination := GetPaginationParams(r)
 	opts := &repos.ListOpts{
 		Page:      pagination.Page,
@@ -586,8 +500,12 @@ func (h *RepoHandler) ListForks(w http.ResponseWriter, r *http.Request) {
 		Direction: QueryParam(r, "direction"),
 	}
 
-	forks, err := h.repos.ListForks(r.Context(), repo.ID, opts)
+	forks, err := h.repos.ListForks(r.Context(), owner, repoName, opts)
 	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

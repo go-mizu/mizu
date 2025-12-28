@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/orgs"
+	"github.com/go-mizu/blueprints/githome/feature/orgs"
 )
 
 // OrgHandler handles organization endpoints
@@ -43,7 +43,7 @@ func (h *OrgHandler) ListOrgs(w http.ResponseWriter, r *http.Request) {
 func (h *OrgHandler) GetOrg(w http.ResponseWriter, r *http.Request) {
 	orgLogin := PathParam(r, "org")
 
-	org, err := h.orgs.GetByLogin(r.Context(), orgLogin)
+	org, err := h.orgs.Get(r.Context(), orgLogin)
 	if err != nil {
 		if err == orgs.ErrNotFound {
 			WriteNotFound(w, "Organization")
@@ -66,24 +66,18 @@ func (h *OrgHandler) UpdateOrg(w http.ResponseWriter, r *http.Request) {
 
 	orgLogin := PathParam(r, "org")
 
-	org, err := h.orgs.GetByLogin(r.Context(), orgLogin)
-	if err != nil {
-		if err == orgs.ErrNotFound {
-			WriteNotFound(w, "Organization")
-			return
-		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
 	var in orgs.UpdateIn
 	if err := DecodeJSON(r, &in); err != nil {
 		WriteBadRequest(w, "Invalid request body")
 		return
 	}
 
-	updated, err := h.orgs.Update(r.Context(), org.ID, &in)
+	updated, err := h.orgs.Update(r.Context(), orgLogin, &in)
 	if err != nil {
+		if err == orgs.ErrNotFound {
+			WriteNotFound(w, "Organization")
+			return
+		}
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -136,11 +130,13 @@ func (h *OrgHandler) ListUserOrgs(w http.ResponseWriter, r *http.Request) {
 func (h *OrgHandler) ListOrgMembers(w http.ResponseWriter, r *http.Request) {
 	orgLogin := PathParam(r, "org")
 	pagination := GetPaginationParams(r)
-	opts := &orgs.MemberListOpts{
-		Page:    pagination.Page,
-		PerPage: pagination.PerPage,
-		Filter:  QueryParam(r, "filter"),
-		Role:    QueryParam(r, "role"),
+	opts := &orgs.ListMembersOpts{
+		ListOpts: orgs.ListOpts{
+			Page:    pagination.Page,
+			PerPage: pagination.PerPage,
+		},
+		Filter: QueryParam(r, "filter"),
+		Role:   QueryParam(r, "role"),
 	}
 
 	members, err := h.orgs.ListMembers(r.Context(), orgLogin, opts)
@@ -268,7 +264,7 @@ func (h *OrgHandler) RemoveOrgMembership(w http.ResponseWriter, r *http.Request)
 	orgLogin := PathParam(r, "org")
 	username := PathParam(r, "username")
 
-	if err := h.orgs.RemoveMembership(r.Context(), orgLogin, username); err != nil {
+	if err := h.orgs.RemoveMember(r.Context(), orgLogin, username); err != nil {
 		if err == orgs.ErrNotFound {
 			WriteNotFound(w, "Membership")
 			return
@@ -280,23 +276,16 @@ func (h *OrgHandler) RemoveOrgMembership(w http.ResponseWriter, r *http.Request)
 	WriteNoContent(w)
 }
 
-// ListOutsideCollaborators handles GET /orgs/{org}/outside_collaborators
-func (h *OrgHandler) ListOutsideCollaborators(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
-	if user == nil {
-		WriteUnauthorized(w)
-		return
-	}
-
+// ListPublicOrgMembers handles GET /orgs/{org}/public_members
+func (h *OrgHandler) ListPublicOrgMembers(w http.ResponseWriter, r *http.Request) {
 	orgLogin := PathParam(r, "org")
 	pagination := GetPaginationParams(r)
-	opts := &orgs.MemberListOpts{
+	opts := &orgs.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
-		Filter:  QueryParam(r, "filter"),
 	}
 
-	collaborators, err := h.orgs.ListOutsideCollaborators(r.Context(), orgLogin, opts)
+	members, err := h.orgs.ListPublicMembers(r.Context(), orgLogin, opts)
 	if err != nil {
 		if err == orgs.ErrNotFound {
 			WriteNotFound(w, "Organization")
@@ -306,7 +295,75 @@ func (h *OrgHandler) ListOutsideCollaborators(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	WriteJSON(w, http.StatusOK, collaborators)
+	WriteJSON(w, http.StatusOK, members)
+}
+
+// CheckPublicOrgMember handles GET /orgs/{org}/public_members/{username}
+func (h *OrgHandler) CheckPublicOrgMember(w http.ResponseWriter, r *http.Request) {
+	orgLogin := PathParam(r, "org")
+	username := PathParam(r, "username")
+
+	isPublic, err := h.orgs.IsPublicMember(r.Context(), orgLogin, username)
+	if err != nil {
+		if err == orgs.ErrNotFound {
+			WriteNotFound(w, "Organization")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if isPublic {
+		WriteNoContent(w)
+	} else {
+		WriteNotFound(w, "Member")
+	}
+}
+
+// PublicizeMembership handles PUT /orgs/{org}/public_members/{username}
+func (h *OrgHandler) PublicizeMembership(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	orgLogin := PathParam(r, "org")
+	username := PathParam(r, "username")
+
+	if err := h.orgs.PublicizeMembership(r.Context(), orgLogin, username); err != nil {
+		if err == orgs.ErrNotFound {
+			WriteNotFound(w, "Membership")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteNoContent(w)
+}
+
+// ConcealMembership handles DELETE /orgs/{org}/public_members/{username}
+func (h *OrgHandler) ConcealMembership(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	orgLogin := PathParam(r, "org")
+	username := PathParam(r, "username")
+
+	if err := h.orgs.ConcealMembership(r.Context(), orgLogin, username); err != nil {
+		if err == orgs.ErrNotFound {
+			WriteNotFound(w, "Membership")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteNoContent(w)
 }
 
 // GetAuthenticatedUserOrgMembership handles GET /user/memberships/orgs/{org}
@@ -350,7 +407,9 @@ func (h *OrgHandler) UpdateAuthenticatedUserOrgMembership(w http.ResponseWriter,
 		return
 	}
 
-	membership, err := h.orgs.UpdateMembershipState(r.Context(), orgLogin, user.Login, in.State)
+	// Use SetMembership - when accepting an invite, state becomes "active"
+	// The API accepts state to transition pending -> active
+	membership, err := h.orgs.SetMembership(r.Context(), orgLogin, user.Login, "member")
 	if err != nil {
 		if err == orgs.ErrNotFound {
 			WriteNotFound(w, "Membership")

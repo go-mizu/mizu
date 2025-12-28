@@ -1,10 +1,11 @@
 package api
 
 import (
+	"io"
 	"net/http"
 
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/releases"
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/blueprints/githome/feature/releases"
+	"github.com/go-mizu/blueprints/githome/feature/repos"
 )
 
 // ReleaseHandler handles release endpoints
@@ -18,16 +19,12 @@ func NewReleaseHandler(releases releases.API, repos repos.API) *ReleaseHandler {
 	return &ReleaseHandler{releases: releases, repos: repos}
 }
 
-// getRepoFromPath gets repository from path parameters
-func (h *ReleaseHandler) getRepoFromPath(r *http.Request) (*repos.Repository, error) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	return h.repos.GetByFullName(r.Context(), owner, repoName)
-}
-
 // ListReleases handles GET /repos/{owner}/{repo}/releases
 func (h *ReleaseHandler) ListReleases(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -43,7 +40,7 @@ func (h *ReleaseHandler) ListReleases(w http.ResponseWriter, r *http.Request) {
 		PerPage: pagination.PerPage,
 	}
 
-	releaseList, err := h.releases.ListForRepo(r.Context(), repo.ID, opts)
+	releaseList, err := h.releases.List(r.Context(), owner, repoName, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -54,7 +51,10 @@ func (h *ReleaseHandler) ListReleases(w http.ResponseWriter, r *http.Request) {
 
 // GetRelease handles GET /repos/{owner}/{repo}/releases/{release_id}
 func (h *ReleaseHandler) GetRelease(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -70,7 +70,7 @@ func (h *ReleaseHandler) GetRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	release, err := h.releases.GetByID(r.Context(), repo.ID, releaseID)
+	release, err := h.releases.Get(r.Context(), owner, repoName, releaseID)
 	if err != nil {
 		if err == releases.ErrNotFound {
 			WriteNotFound(w, "Release")
@@ -85,7 +85,10 @@ func (h *ReleaseHandler) GetRelease(w http.ResponseWriter, r *http.Request) {
 
 // GetLatestRelease handles GET /repos/{owner}/{repo}/releases/latest
 func (h *ReleaseHandler) GetLatestRelease(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -95,7 +98,7 @@ func (h *ReleaseHandler) GetLatestRelease(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	release, err := h.releases.GetLatest(r.Context(), repo.ID)
+	release, err := h.releases.GetLatest(r.Context(), owner, repoName)
 	if err != nil {
 		if err == releases.ErrNotFound {
 			WriteNotFound(w, "Release")
@@ -110,7 +113,10 @@ func (h *ReleaseHandler) GetLatestRelease(w http.ResponseWriter, r *http.Request
 
 // GetReleaseByTag handles GET /repos/{owner}/{repo}/releases/tags/{tag}
 func (h *ReleaseHandler) GetReleaseByTag(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -122,7 +128,7 @@ func (h *ReleaseHandler) GetReleaseByTag(w http.ResponseWriter, r *http.Request)
 
 	tag := PathParam(r, "tag")
 
-	release, err := h.releases.GetByTag(r.Context(), repo.ID, tag)
+	release, err := h.releases.GetByTag(r.Context(), owner, repoName, tag)
 	if err != nil {
 		if err == releases.ErrNotFound {
 			WriteNotFound(w, "Release")
@@ -143,7 +149,10 @@ func (h *ReleaseHandler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -159,8 +168,12 @@ func (h *ReleaseHandler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	release, err := h.releases.Create(r.Context(), repo.ID, user.ID, &in)
+	release, err := h.releases.Create(r.Context(), owner, repoName, user.ID, &in)
 	if err != nil {
+		if err == releases.ErrReleaseExists {
+			WriteBadRequest(w, "Release already exists")
+			return
+		}
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -176,7 +189,10 @@ func (h *ReleaseHandler) UpdateRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -192,24 +208,18 @@ func (h *ReleaseHandler) UpdateRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	release, err := h.releases.GetByID(r.Context(), repo.ID, releaseID)
-	if err != nil {
-		if err == releases.ErrNotFound {
-			WriteNotFound(w, "Release")
-			return
-		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
 	var in releases.UpdateIn
 	if err := DecodeJSON(r, &in); err != nil {
 		WriteBadRequest(w, "Invalid request body")
 		return
 	}
 
-	updated, err := h.releases.Update(r.Context(), release.ID, &in)
+	updated, err := h.releases.Update(r.Context(), owner, repoName, releaseID, &in)
 	if err != nil {
+		if err == releases.ErrNotFound {
+			WriteNotFound(w, "Release")
+			return
+		}
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -225,7 +235,10 @@ func (h *ReleaseHandler) DeleteRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -241,7 +254,7 @@ func (h *ReleaseHandler) DeleteRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.releases.Delete(r.Context(), repo.ID, releaseID); err != nil {
+	if err := h.releases.Delete(r.Context(), owner, repoName, releaseID); err != nil {
 		if err == releases.ErrNotFound {
 			WriteNotFound(w, "Release")
 			return
@@ -261,7 +274,10 @@ func (h *ReleaseHandler) GenerateReleaseNotes(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -277,7 +293,7 @@ func (h *ReleaseHandler) GenerateReleaseNotes(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	notes, err := h.releases.GenerateNotes(r.Context(), repo.ID, &in)
+	notes, err := h.releases.GenerateNotes(r.Context(), owner, repoName, &in)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -288,7 +304,10 @@ func (h *ReleaseHandler) GenerateReleaseNotes(w http.ResponseWriter, r *http.Req
 
 // ListReleaseAssets handles GET /repos/{owner}/{repo}/releases/{release_id}/assets
 func (h *ReleaseHandler) ListReleaseAssets(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -310,7 +329,7 @@ func (h *ReleaseHandler) ListReleaseAssets(w http.ResponseWriter, r *http.Reques
 		PerPage: pagination.PerPage,
 	}
 
-	assets, err := h.releases.ListAssets(r.Context(), repo.ID, releaseID, opts)
+	assets, err := h.releases.ListAssets(r.Context(), owner, repoName, releaseID, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -321,7 +340,10 @@ func (h *ReleaseHandler) ListReleaseAssets(w http.ResponseWriter, r *http.Reques
 
 // GetReleaseAsset handles GET /repos/{owner}/{repo}/releases/assets/{asset_id}
 func (h *ReleaseHandler) GetReleaseAsset(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -337,9 +359,9 @@ func (h *ReleaseHandler) GetReleaseAsset(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	asset, err := h.releases.GetAsset(r.Context(), repo.ID, assetID)
+	asset, err := h.releases.GetAsset(r.Context(), owner, repoName, assetID)
 	if err != nil {
-		if err == releases.ErrNotFound {
+		if err == releases.ErrAssetNotFound {
 			WriteNotFound(w, "Asset")
 			return
 		}
@@ -358,7 +380,10 @@ func (h *ReleaseHandler) UpdateReleaseAsset(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -380,9 +405,9 @@ func (h *ReleaseHandler) UpdateReleaseAsset(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	asset, err := h.releases.UpdateAsset(r.Context(), repo.ID, assetID, &in)
+	asset, err := h.releases.UpdateAsset(r.Context(), owner, repoName, assetID, &in)
 	if err != nil {
-		if err == releases.ErrNotFound {
+		if err == releases.ErrAssetNotFound {
 			WriteNotFound(w, "Asset")
 			return
 		}
@@ -401,7 +426,10 @@ func (h *ReleaseHandler) DeleteReleaseAsset(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -417,8 +445,8 @@ func (h *ReleaseHandler) DeleteReleaseAsset(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if err := h.releases.DeleteAsset(r.Context(), repo.ID, assetID); err != nil {
-		if err == releases.ErrNotFound {
+	if err := h.releases.DeleteAsset(r.Context(), owner, repoName, assetID); err != nil {
+		if err == releases.ErrAssetNotFound {
 			WriteNotFound(w, "Asset")
 			return
 		}
@@ -437,7 +465,10 @@ func (h *ReleaseHandler) UploadReleaseAsset(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -454,13 +485,61 @@ func (h *ReleaseHandler) UploadReleaseAsset(w http.ResponseWriter, r *http.Reque
 	}
 
 	name := QueryParam(r, "name")
-	label := QueryParam(r, "label")
+	if name == "" {
+		WriteBadRequest(w, "Asset name is required")
+		return
+	}
 
-	asset, err := h.releases.UploadAsset(r.Context(), repo.ID, releaseID, name, label, r.Body, r.ContentLength)
+	contentType := r.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	asset, err := h.releases.UploadAsset(r.Context(), owner, repoName, releaseID, user.ID, name, contentType, r.Body)
 	if err != nil {
+		if err == releases.ErrNotFound {
+			WriteNotFound(w, "Release")
+			return
+		}
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	WriteCreated(w, asset)
+}
+
+// DownloadReleaseAsset handles GET /repos/{owner}/{repo}/releases/assets/{asset_id}/download
+func (h *ReleaseHandler) DownloadReleaseAsset(w http.ResponseWriter, r *http.Request) {
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	assetID, err := PathParamInt64(r, "asset_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid asset ID")
+		return
+	}
+
+	reader, contentType, err := h.releases.DownloadAsset(r.Context(), owner, repoName, assetID)
+	if err != nil {
+		if err == releases.ErrAssetNotFound {
+			WriteNotFound(w, "Asset")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer reader.Close()
+
+	w.Header().Set("Content-Type", contentType)
+	io.Copy(w, reader)
 }

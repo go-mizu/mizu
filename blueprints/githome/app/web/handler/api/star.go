@@ -3,8 +3,8 @@ package api
 import (
 	"net/http"
 
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/repos"
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/stars"
+	"github.com/go-mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/blueprints/githome/feature/stars"
 )
 
 // StarHandler handles star endpoints
@@ -18,16 +18,12 @@ func NewStarHandler(stars stars.API, repos repos.API) *StarHandler {
 	return &StarHandler{stars: stars, repos: repos}
 }
 
-// getRepoFromPath gets repository from path parameters
-func (h *StarHandler) getRepoFromPath(r *http.Request) (*repos.Repository, error) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	return h.repos.GetByFullName(r.Context(), owner, repoName)
-}
-
 // ListStargazers handles GET /repos/{owner}/{repo}/stargazers
 func (h *StarHandler) ListStargazers(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -43,7 +39,19 @@ func (h *StarHandler) ListStargazers(w http.ResponseWriter, r *http.Request) {
 		PerPage: pagination.PerPage,
 	}
 
-	stargazers, err := h.stars.ListStargazers(r.Context(), repo.ID, opts)
+	// Check if timestamps are requested via Accept header
+	accept := r.Header.Get("Accept")
+	if accept == "application/vnd.github.v3.star+json" {
+		stargazers, err := h.stars.ListStargazersWithTimestamps(r.Context(), owner, repoName, opts)
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		WriteJSON(w, http.StatusOK, stargazers)
+		return
+	}
+
+	stargazers, err := h.stars.ListStargazers(r.Context(), owner, repoName, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -63,7 +71,19 @@ func (h *StarHandler) ListStarredRepos(w http.ResponseWriter, r *http.Request) {
 		Direction: QueryParam(r, "direction"),
 	}
 
-	repoList, err := h.stars.ListStarredByUser(r.Context(), username, opts)
+	// Check if timestamps are requested via Accept header
+	accept := r.Header.Get("Accept")
+	if accept == "application/vnd.github.v3.star+json" {
+		repoList, err := h.stars.ListForUserWithTimestamps(r.Context(), username, opts)
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		WriteJSON(w, http.StatusOK, repoList)
+		return
+	}
+
+	repoList, err := h.stars.ListForUser(r.Context(), username, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -88,7 +108,19 @@ func (h *StarHandler) ListAuthenticatedUserStarredRepos(w http.ResponseWriter, r
 		Direction: QueryParam(r, "direction"),
 	}
 
-	repoList, err := h.stars.ListStarredByUser(r.Context(), user.Login, opts)
+	// Check if timestamps are requested via Accept header
+	accept := r.Header.Get("Accept")
+	if accept == "application/vnd.github.v3.star+json" {
+		repoList, err := h.stars.ListForAuthenticatedUserWithTimestamps(r.Context(), user.ID, opts)
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		WriteJSON(w, http.StatusOK, repoList)
+		return
+	}
+
+	repoList, err := h.stars.ListForAuthenticatedUser(r.Context(), user.ID, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -105,7 +137,10 @@ func (h *StarHandler) CheckRepoStarred(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -115,7 +150,7 @@ func (h *StarHandler) CheckRepoStarred(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isStarred, err := h.stars.IsStarred(r.Context(), user.ID, repo.ID)
+	isStarred, err := h.stars.IsStarred(r.Context(), user.ID, owner, repoName)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -136,7 +171,10 @@ func (h *StarHandler) StarRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -146,7 +184,7 @@ func (h *StarHandler) StarRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.stars.Star(r.Context(), user.ID, repo.ID); err != nil {
+	if err := h.stars.Star(r.Context(), user.ID, owner, repoName); err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -162,7 +200,10 @@ func (h *StarHandler) UnstarRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -172,7 +213,7 @@ func (h *StarHandler) UnstarRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.stars.Unstar(r.Context(), user.ID, repo.ID); err != nil {
+	if err := h.stars.Unstar(r.Context(), user.ID, owner, repoName); err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

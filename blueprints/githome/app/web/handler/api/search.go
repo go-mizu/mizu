@@ -2,8 +2,9 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/search"
+	"github.com/go-mizu/blueprints/githome/feature/search"
 )
 
 // SearchHandler handles search endpoints
@@ -25,15 +26,14 @@ func (h *SearchHandler) SearchRepositories(w http.ResponseWriter, r *http.Reques
 	}
 
 	pagination := GetPaginationParams(r)
-	opts := &search.RepoSearchOpts{
-		Query:     q,
-		Page:      pagination.Page,
-		PerPage:   pagination.PerPage,
-		Sort:      QueryParam(r, "sort"),
-		Order:     QueryParam(r, "order"),
+	opts := &search.SearchReposOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+		Sort:    QueryParam(r, "sort"),
+		Order:   QueryParam(r, "order"),
 	}
 
-	results, err := h.search.SearchRepositories(r.Context(), opts)
+	results, err := h.search.Repositories(r.Context(), q, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -51,15 +51,14 @@ func (h *SearchHandler) SearchCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pagination := GetPaginationParams(r)
-	opts := &search.CodeSearchOpts{
-		Query:   q,
+	opts := &search.SearchCodeOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 		Sort:    QueryParam(r, "sort"),
 		Order:   QueryParam(r, "order"),
 	}
 
-	results, err := h.search.SearchCode(r.Context(), opts)
+	results, err := h.search.Code(r.Context(), q, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -77,15 +76,14 @@ func (h *SearchHandler) SearchCommits(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pagination := GetPaginationParams(r)
-	opts := &search.CommitSearchOpts{
-		Query:   q,
+	opts := &search.SearchOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 		Sort:    QueryParam(r, "sort"),
 		Order:   QueryParam(r, "order"),
 	}
 
-	results, err := h.search.SearchCommits(r.Context(), opts)
+	results, err := h.search.Commits(r.Context(), q, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -103,15 +101,14 @@ func (h *SearchHandler) SearchIssues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pagination := GetPaginationParams(r)
-	opts := &search.IssueSearchOpts{
-		Query:   q,
+	opts := &search.SearchIssuesOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 		Sort:    QueryParam(r, "sort"),
 		Order:   QueryParam(r, "order"),
 	}
 
-	results, err := h.search.SearchIssues(r.Context(), opts)
+	results, err := h.search.IssuesAndPullRequests(r.Context(), q, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -129,15 +126,14 @@ func (h *SearchHandler) SearchUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pagination := GetPaginationParams(r)
-	opts := &search.UserSearchOpts{
-		Query:   q,
+	opts := &search.SearchUsersOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 		Sort:    QueryParam(r, "sort"),
 		Order:   QueryParam(r, "order"),
 	}
 
-	results, err := h.search.SearchUsers(r.Context(), opts)
+	results, err := h.search.Users(r.Context(), q, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -160,23 +156,21 @@ func (h *SearchHandler) SearchLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repoID, err := PathParamInt64(r, "repository_id")
+	repoID, err := strconv.ParseInt(repositoryID, 10, 64)
 	if err != nil {
 		WriteBadRequest(w, "Invalid repository_id")
 		return
 	}
 
 	pagination := GetPaginationParams(r)
-	opts := &search.LabelSearchOpts{
-		Query:        q,
-		RepositoryID: repoID,
-		Page:         pagination.Page,
-		PerPage:      pagination.PerPage,
-		Sort:         QueryParam(r, "sort"),
-		Order:        QueryParam(r, "order"),
+	opts := &search.SearchOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+		Sort:    QueryParam(r, "sort"),
+		Order:   QueryParam(r, "order"),
 	}
 
-	results, err := h.search.SearchLabels(r.Context(), opts)
+	results, err := h.search.Labels(r.Context(), repoID, q, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -194,13 +188,12 @@ func (h *SearchHandler) SearchTopics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pagination := GetPaginationParams(r)
-	opts := &search.TopicSearchOpts{
-		Query:   q,
+	opts := &search.SearchOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	results, err := h.search.SearchTopics(r.Context(), opts)
+	results, err := h.search.Topics(r.Context(), q, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return

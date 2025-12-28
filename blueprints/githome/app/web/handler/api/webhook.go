@@ -3,8 +3,8 @@ package api
 import (
 	"net/http"
 
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/repos"
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/webhooks"
+	"github.com/go-mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/blueprints/githome/feature/webhooks"
 )
 
 // WebhookHandler handles webhook endpoints
@@ -18,13 +18,6 @@ func NewWebhookHandler(webhooks webhooks.API, repos repos.API) *WebhookHandler {
 	return &WebhookHandler{webhooks: webhooks, repos: repos}
 }
 
-// getRepoFromPath gets repository from path parameters
-func (h *WebhookHandler) getRepoFromPath(r *http.Request) (*repos.Repository, error) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	return h.repos.GetByFullName(r.Context(), owner, repoName)
-}
-
 // ListRepoWebhooks handles GET /repos/{owner}/{repo}/hooks
 func (h *WebhookHandler) ListRepoWebhooks(w http.ResponseWriter, r *http.Request) {
 	user := GetUser(r.Context())
@@ -33,7 +26,10 @@ func (h *WebhookHandler) ListRepoWebhooks(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -49,7 +45,7 @@ func (h *WebhookHandler) ListRepoWebhooks(w http.ResponseWriter, r *http.Request
 		PerPage: pagination.PerPage,
 	}
 
-	hookList, err := h.webhooks.ListForRepo(r.Context(), repo.ID, opts)
+	hookList, err := h.webhooks.ListForRepo(r.Context(), owner, repoName, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -66,7 +62,10 @@ func (h *WebhookHandler) GetRepoWebhook(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -82,7 +81,7 @@ func (h *WebhookHandler) GetRepoWebhook(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	hook, err := h.webhooks.GetByID(r.Context(), repo.ID, hookID)
+	hook, err := h.webhooks.GetForRepo(r.Context(), owner, repoName, hookID)
 	if err != nil {
 		if err == webhooks.ErrNotFound {
 			WriteNotFound(w, "Hook")
@@ -103,7 +102,10 @@ func (h *WebhookHandler) CreateRepoWebhook(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -119,7 +121,7 @@ func (h *WebhookHandler) CreateRepoWebhook(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	hook, err := h.webhooks.CreateForRepo(r.Context(), repo.ID, &in)
+	hook, err := h.webhooks.CreateForRepo(r.Context(), owner, repoName, &in)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -136,7 +138,10 @@ func (h *WebhookHandler) UpdateRepoWebhook(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -158,7 +163,7 @@ func (h *WebhookHandler) UpdateRepoWebhook(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	hook, err := h.webhooks.Update(r.Context(), repo.ID, hookID, &in)
+	hook, err := h.webhooks.UpdateForRepo(r.Context(), owner, repoName, hookID, &in)
 	if err != nil {
 		if err == webhooks.ErrNotFound {
 			WriteNotFound(w, "Hook")
@@ -179,7 +184,10 @@ func (h *WebhookHandler) DeleteRepoWebhook(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -195,7 +203,7 @@ func (h *WebhookHandler) DeleteRepoWebhook(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := h.webhooks.Delete(r.Context(), repo.ID, hookID); err != nil {
+	if err := h.webhooks.DeleteForRepo(r.Context(), owner, repoName, hookID); err != nil {
 		if err == webhooks.ErrNotFound {
 			WriteNotFound(w, "Hook")
 			return
@@ -215,7 +223,10 @@ func (h *WebhookHandler) PingRepoWebhook(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -231,7 +242,7 @@ func (h *WebhookHandler) PingRepoWebhook(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.webhooks.Ping(r.Context(), repo.ID, hookID); err != nil {
+	if err := h.webhooks.PingRepo(r.Context(), owner, repoName, hookID); err != nil {
 		if err == webhooks.ErrNotFound {
 			WriteNotFound(w, "Hook")
 			return
@@ -251,7 +262,10 @@ func (h *WebhookHandler) TestRepoWebhook(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -267,7 +281,7 @@ func (h *WebhookHandler) TestRepoWebhook(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.webhooks.Test(r.Context(), repo.ID, hookID); err != nil {
+	if err := h.webhooks.TestRepo(r.Context(), owner, repoName, hookID); err != nil {
 		if err == webhooks.ErrNotFound {
 			WriteNotFound(w, "Hook")
 			return
@@ -287,7 +301,10 @@ func (h *WebhookHandler) ListWebhookDeliveries(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -309,7 +326,7 @@ func (h *WebhookHandler) ListWebhookDeliveries(w http.ResponseWriter, r *http.Re
 		PerPage: pagination.PerPage,
 	}
 
-	deliveries, err := h.webhooks.ListDeliveries(r.Context(), repo.ID, hookID, opts)
+	deliveries, err := h.webhooks.ListDeliveriesForRepo(r.Context(), owner, repoName, hookID, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -326,7 +343,10 @@ func (h *WebhookHandler) GetWebhookDelivery(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -348,9 +368,9 @@ func (h *WebhookHandler) GetWebhookDelivery(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	delivery, err := h.webhooks.GetDelivery(r.Context(), repo.ID, hookID, deliveryID)
+	delivery, err := h.webhooks.GetDeliveryForRepo(r.Context(), owner, repoName, hookID, deliveryID)
 	if err != nil {
-		if err == webhooks.ErrNotFound {
+		if err == webhooks.ErrDeliveryNotFound {
 			WriteNotFound(w, "Delivery")
 			return
 		}
@@ -369,7 +389,10 @@ func (h *WebhookHandler) RedeliverWebhook(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -391,8 +414,9 @@ func (h *WebhookHandler) RedeliverWebhook(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.webhooks.Redeliver(r.Context(), repo.ID, hookID, deliveryID); err != nil {
-		if err == webhooks.ErrNotFound {
+	delivery, err := h.webhooks.RedeliverForRepo(r.Context(), owner, repoName, hookID, deliveryID)
+	if err != nil {
+		if err == webhooks.ErrDeliveryNotFound {
 			WriteNotFound(w, "Delivery")
 			return
 		}
@@ -400,7 +424,7 @@ func (h *WebhookHandler) RedeliverWebhook(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	WriteAccepted(w, map[string]string{"message": "Redelivery triggered"})
+	WriteAccepted(w, delivery)
 }
 
 // ListOrgWebhooks handles GET /orgs/{org}/hooks
@@ -442,7 +466,7 @@ func (h *WebhookHandler) GetOrgWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hook, err := h.webhooks.GetOrgHook(r.Context(), org, hookID)
+	hook, err := h.webhooks.GetForOrg(r.Context(), org, hookID)
 	if err != nil {
 		if err == webhooks.ErrNotFound {
 			WriteNotFound(w, "Hook")
@@ -501,7 +525,7 @@ func (h *WebhookHandler) UpdateOrgWebhook(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	hook, err := h.webhooks.UpdateOrgHook(r.Context(), org, hookID, &in)
+	hook, err := h.webhooks.UpdateForOrg(r.Context(), org, hookID, &in)
 	if err != nil {
 		if err == webhooks.ErrNotFound {
 			WriteNotFound(w, "Hook")
@@ -529,7 +553,7 @@ func (h *WebhookHandler) DeleteOrgWebhook(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.webhooks.DeleteOrgHook(r.Context(), org, hookID); err != nil {
+	if err := h.webhooks.DeleteForOrg(r.Context(), org, hookID); err != nil {
 		if err == webhooks.ErrNotFound {
 			WriteNotFound(w, "Hook")
 			return
@@ -556,7 +580,7 @@ func (h *WebhookHandler) PingOrgWebhook(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.webhooks.PingOrgHook(r.Context(), org, hookID); err != nil {
+	if err := h.webhooks.PingOrg(r.Context(), org, hookID); err != nil {
 		if err == webhooks.ErrNotFound {
 			WriteNotFound(w, "Hook")
 			return
@@ -566,4 +590,102 @@ func (h *WebhookHandler) PingOrgWebhook(w http.ResponseWriter, r *http.Request) 
 	}
 
 	WriteNoContent(w)
+}
+
+// ListOrgWebhookDeliveries handles GET /orgs/{org}/hooks/{hook_id}/deliveries
+func (h *WebhookHandler) ListOrgWebhookDeliveries(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	org := PathParam(r, "org")
+	hookID, err := PathParamInt64(r, "hook_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid hook ID")
+		return
+	}
+
+	pagination := GetPaginationParams(r)
+	opts := &webhooks.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+	}
+
+	deliveries, err := h.webhooks.ListDeliveriesForOrg(r.Context(), org, hookID, opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, deliveries)
+}
+
+// GetOrgWebhookDelivery handles GET /orgs/{org}/hooks/{hook_id}/deliveries/{delivery_id}
+func (h *WebhookHandler) GetOrgWebhookDelivery(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	org := PathParam(r, "org")
+	hookID, err := PathParamInt64(r, "hook_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid hook ID")
+		return
+	}
+
+	deliveryID, err := PathParamInt64(r, "delivery_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid delivery ID")
+		return
+	}
+
+	delivery, err := h.webhooks.GetDeliveryForOrg(r.Context(), org, hookID, deliveryID)
+	if err != nil {
+		if err == webhooks.ErrDeliveryNotFound {
+			WriteNotFound(w, "Delivery")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, delivery)
+}
+
+// RedeliverOrgWebhook handles POST /orgs/{org}/hooks/{hook_id}/deliveries/{delivery_id}/attempts
+func (h *WebhookHandler) RedeliverOrgWebhook(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	org := PathParam(r, "org")
+	hookID, err := PathParamInt64(r, "hook_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid hook ID")
+		return
+	}
+
+	deliveryID, err := PathParamInt64(r, "delivery_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid delivery ID")
+		return
+	}
+
+	delivery, err := h.webhooks.RedeliverForOrg(r.Context(), org, hookID, deliveryID)
+	if err != nil {
+		if err == webhooks.ErrDeliveryNotFound {
+			WriteNotFound(w, "Delivery")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteAccepted(w, delivery)
 }

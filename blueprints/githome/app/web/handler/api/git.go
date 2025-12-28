@@ -3,8 +3,8 @@ package api
 import (
 	"net/http"
 
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/git"
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/blueprints/githome/feature/git"
+	"github.com/go-mizu/blueprints/githome/feature/repos"
 )
 
 // GitHandler handles low-level Git data endpoints
@@ -16,13 +16,6 @@ type GitHandler struct {
 // NewGitHandler creates a new git handler
 func NewGitHandler(gitAPI git.API, repos repos.API) *GitHandler {
 	return &GitHandler{git: gitAPI, repos: repos}
-}
-
-// getRepoFromPath gets repository from path parameters
-func (h *GitHandler) getRepoFromPath(r *http.Request) (*repos.Repository, error) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	return h.repos.GetByFullName(r.Context(), owner, repoName)
 }
 
 // GetBlob handles GET /repos/{owner}/{repo}/git/blobs/{file_sha}

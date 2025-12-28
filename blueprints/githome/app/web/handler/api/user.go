@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/users"
+	"github.com/go-mizu/blueprints/githome/feature/users"
 )
 
 // UserHandler handles user endpoints

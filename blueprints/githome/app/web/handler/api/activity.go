@@ -3,8 +3,8 @@ package api
 import (
 	"net/http"
 
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/activities"
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/blueprints/githome/feature/activities"
+	"github.com/go-mizu/blueprints/githome/feature/repos"
 )
 
 // ActivityHandler handles activity/event endpoints
@@ -18,13 +18,6 @@ func NewActivityHandler(activities activities.API, repos repos.API) *ActivityHan
 	return &ActivityHandler{activities: activities, repos: repos}
 }
 
-// getRepoFromPath gets repository from path parameters
-func (h *ActivityHandler) getRepoFromPath(r *http.Request) (*repos.Repository, error) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	return h.repos.GetByFullName(r.Context(), owner, repoName)
-}
-
 // ListPublicEvents handles GET /events
 func (h *ActivityHandler) ListPublicEvents(w http.ResponseWriter, r *http.Request) {
 	pagination := GetPaginationParams(r)
@@ -33,7 +26,7 @@ func (h *ActivityHandler) ListPublicEvents(w http.ResponseWriter, r *http.Reques
 		PerPage: pagination.PerPage,
 	}
 
-	events, err := h.activities.ListPublicEvents(r.Context(), opts)
+	events, err := h.activities.ListPublic(r.Context(), opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -44,7 +37,10 @@ func (h *ActivityHandler) ListPublicEvents(w http.ResponseWriter, r *http.Reques
 
 // ListRepoEvents handles GET /repos/{owner}/{repo}/events
 func (h *ActivityHandler) ListRepoEvents(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -60,7 +56,7 @@ func (h *ActivityHandler) ListRepoEvents(w http.ResponseWriter, r *http.Request)
 		PerPage: pagination.PerPage,
 	}
 
-	events, err := h.activities.ListRepoEvents(r.Context(), repo.ID, opts)
+	events, err := h.activities.ListForRepo(r.Context(), owner, repoName, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -71,7 +67,10 @@ func (h *ActivityHandler) ListRepoEvents(w http.ResponseWriter, r *http.Request)
 
 // ListRepoNetworkEvents handles GET /networks/{owner}/{repo}/events
 func (h *ActivityHandler) ListRepoNetworkEvents(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -87,7 +86,7 @@ func (h *ActivityHandler) ListRepoNetworkEvents(w http.ResponseWriter, r *http.R
 		PerPage: pagination.PerPage,
 	}
 
-	events, err := h.activities.ListNetworkEvents(r.Context(), repo.ID, opts)
+	events, err := h.activities.ListNetworkEvents(r.Context(), owner, repoName, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -106,7 +105,7 @@ func (h *ActivityHandler) ListOrgEvents(w http.ResponseWriter, r *http.Request) 
 		PerPage: pagination.PerPage,
 	}
 
-	events, err := h.activities.ListOrgEvents(r.Context(), org, opts)
+	events, err := h.activities.ListForOrg(r.Context(), org, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -144,7 +143,7 @@ func (h *ActivityHandler) ListUserReceivedPublicEvents(w http.ResponseWriter, r 
 		PerPage: pagination.PerPage,
 	}
 
-	events, err := h.activities.ListReceivedPublicEvents(r.Context(), username, opts)
+	events, err := h.activities.ListPublicReceivedEvents(r.Context(), username, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -163,7 +162,7 @@ func (h *ActivityHandler) ListUserEvents(w http.ResponseWriter, r *http.Request)
 		PerPage: pagination.PerPage,
 	}
 
-	events, err := h.activities.ListUserEvents(r.Context(), username, opts)
+	events, err := h.activities.ListForUser(r.Context(), username, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -182,7 +181,7 @@ func (h *ActivityHandler) ListUserPublicEvents(w http.ResponseWriter, r *http.Re
 		PerPage: pagination.PerPage,
 	}
 
-	events, err := h.activities.ListUserPublicEvents(r.Context(), username, opts)
+	events, err := h.activities.ListPublicForUser(r.Context(), username, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -208,7 +207,7 @@ func (h *ActivityHandler) ListUserOrgEvents(w http.ResponseWriter, r *http.Reque
 		PerPage: pagination.PerPage,
 	}
 
-	events, err := h.activities.ListUserOrgEvents(r.Context(), username, org, opts)
+	events, err := h.activities.ListOrgEventsForUser(r.Context(), username, org, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -231,7 +230,7 @@ func (h *ActivityHandler) ListAuthenticatedUserEvents(w http.ResponseWriter, r *
 		PerPage: pagination.PerPage,
 	}
 
-	events, err := h.activities.ListUserEvents(r.Context(), user.Login, opts)
+	events, err := h.activities.ListForUser(r.Context(), user.Login, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -249,7 +248,7 @@ func (h *ActivityHandler) ListFeeds(w http.ResponseWriter, r *http.Request) {
 		userID = user.ID
 	}
 
-	feeds, err := h.activities.ListFeeds(r.Context(), userID)
+	feeds, err := h.activities.GetFeeds(r.Context(), userID)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return

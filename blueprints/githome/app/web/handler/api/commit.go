@@ -3,8 +3,8 @@ package api
 import (
 	"net/http"
 
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/commits"
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/blueprints/githome/feature/commits"
+	"github.com/go-mizu/blueprints/githome/feature/repos"
 )
 
 // CommitHandler handles commit endpoints
@@ -16,13 +16,6 @@ type CommitHandler struct {
 // NewCommitHandler creates a new commit handler
 func NewCommitHandler(commits commits.API, repos repos.API) *CommitHandler {
 	return &CommitHandler{commits: commits, repos: repos}
-}
-
-// getRepoFromPath gets repository from path parameters
-func (h *CommitHandler) getRepoFromPath(r *http.Request) (*repos.Repository, error) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	return h.repos.GetByFullName(r.Context(), owner, repoName)
 }
 
 // ListCommits handles GET /repos/{owner}/{repo}/commits

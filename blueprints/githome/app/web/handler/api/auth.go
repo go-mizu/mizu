@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/users"
+	"github.com/go-mizu/blueprints/githome/feature/users"
 )
 
 // contextKey is a type for context keys
