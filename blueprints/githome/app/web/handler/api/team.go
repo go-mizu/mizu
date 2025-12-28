@@ -1,625 +1,467 @@
 package api
 
 import (
-	"strconv"
+	"net/http"
 
-	"github.com/go-mizu/blueprints/githome/feature/orgs"
-	"github.com/go-mizu/blueprints/githome/feature/repos"
-	"github.com/go-mizu/blueprints/githome/feature/teams"
-	"github.com/go-mizu/blueprints/githome/feature/users"
-	"github.com/go-mizu/mizu"
+	"github.com/mizu-framework/mizu/blueprints/githome/feature/teams"
 )
 
-// Team handles team endpoints
-type Team struct {
-	teams     teams.API
-	orgs      orgs.API
-	repos     repos.API
-	users     users.API
-	getUserID func(*mizu.Ctx) string
+// TeamHandler handles team endpoints
+type TeamHandler struct {
+	teams teams.API
 }
 
-// NewTeam creates a new team handler
-func NewTeam(teams teams.API, orgs orgs.API, repos repos.API, users users.API, getUserID func(*mizu.Ctx) string) *Team {
-	return &Team{
-		teams:     teams,
-		orgs:      orgs,
-		repos:     repos,
-		users:     users,
-		getUserID: getUserID,
-	}
+// NewTeamHandler creates a new team handler
+func NewTeamHandler(teams teams.API) *TeamHandler {
+	return &TeamHandler{teams: teams}
 }
 
-func (h *Team) getOrg(c *mizu.Ctx) (*orgs.Organization, error) {
-	slug := c.Param("org")
-	return h.orgs.GetBySlug(c.Context(), slug)
-}
-
-// List lists teams for an organization
-func (h *Team) List(c *mizu.Ctx) error {
-	org, err := h.getOrg(c)
-	if err != nil {
-		return NotFound(c, "organization not found")
-	}
-
-	page, _ := strconv.Atoi(c.Query("page"))
-	perPage, _ := strconv.Atoi(c.Query("per_page"))
-	if page < 1 {
-		page = 1
-	}
-	if perPage < 1 || perPage > 100 {
-		perPage = 30
-	}
-
+// ListOrgTeams handles GET /orgs/{org}/teams
+func (h *TeamHandler) ListOrgTeams(w http.ResponseWriter, r *http.Request) {
+	org := PathParam(r, "org")
+	pagination := GetPaginationParams(r)
 	opts := &teams.ListOpts{
-		Limit:  perPage,
-		Offset: (page - 1) * perPage,
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
 	}
 
-	teamList, err := h.teams.List(c.Context(), org.ID, opts)
+	teamList, err := h.teams.ListForOrg(r.Context(), org, opts)
 	if err != nil {
-		return InternalError(c, "failed to list teams")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, teamList)
+	WriteJSON(w, http.StatusOK, teamList)
 }
 
-// Create creates a new team
-func (h *Team) Create(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
+// GetOrgTeam handles GET /orgs/{org}/teams/{team_slug}
+func (h *TeamHandler) GetOrgTeam(w http.ResponseWriter, r *http.Request) {
+	org := PathParam(r, "org")
+	teamSlug := PathParam(r, "team_slug")
 
-	org, err := h.getOrg(c)
+	team, err := h.teams.GetBySlug(r.Context(), org, teamSlug)
 	if err != nil {
-		return NotFound(c, "organization not found")
+		if err == teams.ErrNotFound {
+			WriteNotFound(w, "Team")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check if user is owner or admin
-	member, _ := h.orgs.GetMember(c.Context(), org.ID, userID)
-	if member == nil || (member.Role != orgs.RoleOwner && member.Role != orgs.RoleAdmin) {
-		return Forbidden(c, "insufficient permissions")
+	WriteJSON(w, http.StatusOK, team)
+}
+
+// CreateTeam handles POST /orgs/{org}/teams
+func (h *TeamHandler) CreateTeam(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
+
+	org := PathParam(r, "org")
 
 	var in teams.CreateIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
 	}
 
-	team, err := h.teams.Create(c.Context(), org.ID, &in)
+	team, err := h.teams.Create(r.Context(), org, &in)
 	if err != nil {
-		switch err {
-		case teams.ErrExists:
-			return Conflict(c, "team already exists")
-		case teams.ErrMissingName:
-			return BadRequest(c, "team name is required")
-		default:
-			return InternalError(c, "failed to create team")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteCreated(w, team)
+}
+
+// UpdateTeam handles PATCH /orgs/{org}/teams/{team_slug}
+func (h *TeamHandler) UpdateTeam(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	org := PathParam(r, "org")
+	teamSlug := PathParam(r, "team_slug")
+
+	team, err := h.teams.GetBySlug(r.Context(), org, teamSlug)
+	if err != nil {
+		if err == teams.ErrNotFound {
+			WriteNotFound(w, "Team")
+			return
 		}
-	}
-
-	return Created(c, team)
-}
-
-// Get retrieves a team by slug
-func (h *Team) Get(c *mizu.Ctx) error {
-	org, err := h.getOrg(c)
-	if err != nil {
-		return NotFound(c, "organization not found")
-	}
-
-	teamSlug := c.Param("team")
-	if teamSlug == "" {
-		return BadRequest(c, "team slug is required")
-	}
-
-	team, err := h.teams.GetBySlug(c.Context(), org.ID, teamSlug)
-	if err != nil {
-		return NotFound(c, "team not found")
-	}
-
-	return OK(c, team)
-}
-
-// Update updates a team
-func (h *Team) Update(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	org, err := h.getOrg(c)
-	if err != nil {
-		return NotFound(c, "organization not found")
-	}
-
-	// Check if user is owner or admin
-	member, _ := h.orgs.GetMember(c.Context(), org.ID, userID)
-	if member == nil || (member.Role != orgs.RoleOwner && member.Role != orgs.RoleAdmin) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	teamSlug := c.Param("team")
-	team, err := h.teams.GetBySlug(c.Context(), org.ID, teamSlug)
-	if err != nil {
-		return NotFound(c, "team not found")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	var in teams.UpdateIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
 	}
 
-	team, err = h.teams.Update(c.Context(), team.ID, &in)
+	updated, err := h.teams.Update(r.Context(), team.ID, &in)
 	if err != nil {
-		return InternalError(c, "failed to update team")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, team)
+	WriteJSON(w, http.StatusOK, updated)
 }
 
-// Delete deletes a team
-func (h *Team) Delete(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// DeleteTeam handles DELETE /orgs/{org}/teams/{team_slug}
+func (h *TeamHandler) DeleteTeam(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	org, err := h.getOrg(c)
+	org := PathParam(r, "org")
+	teamSlug := PathParam(r, "team_slug")
+
+	team, err := h.teams.GetBySlug(r.Context(), org, teamSlug)
 	if err != nil {
-		return NotFound(c, "organization not found")
-	}
-
-	// Check if user is owner
-	isOwner, _ := h.orgs.IsOwner(c.Context(), org.ID, userID)
-	if !isOwner {
-		return Forbidden(c, "only owners can delete teams")
-	}
-
-	teamSlug := c.Param("team")
-	team, err := h.teams.GetBySlug(c.Context(), org.ID, teamSlug)
-	if err != nil {
-		return NotFound(c, "team not found")
-	}
-
-	if err := h.teams.Delete(c.Context(), team.ID); err != nil {
-		return InternalError(c, "failed to delete team")
-	}
-
-	return NoContent(c)
-}
-
-// ListMembers lists members of a team
-func (h *Team) ListMembers(c *mizu.Ctx) error {
-	org, err := h.getOrg(c)
-	if err != nil {
-		return NotFound(c, "organization not found")
-	}
-
-	teamSlug := c.Param("team")
-	team, err := h.teams.GetBySlug(c.Context(), org.ID, teamSlug)
-	if err != nil {
-		return NotFound(c, "team not found")
-	}
-
-	page, _ := strconv.Atoi(c.Query("page"))
-	perPage, _ := strconv.Atoi(c.Query("per_page"))
-	if page < 1 {
-		page = 1
-	}
-	if perPage < 1 || perPage > 100 {
-		perPage = 30
-	}
-
-	opts := &teams.ListOpts{
-		Limit:  perPage,
-		Offset: (page - 1) * perPage,
-	}
-
-	members, err := h.teams.ListMembers(c.Context(), team.ID, opts)
-	if err != nil {
-		return InternalError(c, "failed to list members")
-	}
-
-	return OK(c, members)
-}
-
-// GetMember retrieves a team member
-func (h *Team) GetMember(c *mizu.Ctx) error {
-	org, err := h.getOrg(c)
-	if err != nil {
-		return NotFound(c, "organization not found")
-	}
-
-	teamSlug := c.Param("team")
-	team, err := h.teams.GetBySlug(c.Context(), org.ID, teamSlug)
-	if err != nil {
-		return NotFound(c, "team not found")
-	}
-
-	username := c.Param("username")
-	user, err := h.users.GetByUsername(c.Context(), username)
-	if err != nil {
-		return NotFound(c, "user not found")
-	}
-
-	member, err := h.teams.GetMember(c.Context(), team.ID, user.ID)
-	if err != nil {
-		return NotFound(c, "member not found")
-	}
-
-	return OK(c, member)
-}
-
-// AddMember adds a member to a team
-func (h *Team) AddMember(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	org, err := h.getOrg(c)
-	if err != nil {
-		return NotFound(c, "organization not found")
-	}
-
-	// Check if user is owner or admin
-	member, _ := h.orgs.GetMember(c.Context(), org.ID, userID)
-	if member == nil || (member.Role != orgs.RoleOwner && member.Role != orgs.RoleAdmin) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	teamSlug := c.Param("team")
-	team, err := h.teams.GetBySlug(c.Context(), org.ID, teamSlug)
-	if err != nil {
-		return NotFound(c, "team not found")
-	}
-
-	username := c.Param("username")
-	user, err := h.users.GetByUsername(c.Context(), username)
-	if err != nil {
-		return NotFound(c, "user not found")
-	}
-
-	role := c.Query("role")
-	if role == "" {
-		role = teams.RoleMember
-	}
-
-	if err := h.teams.AddMember(c.Context(), team.ID, user.ID, role); err != nil {
-		switch err {
-		case teams.ErrMemberExists:
-			return Conflict(c, "member already exists")
-		default:
-			return InternalError(c, "failed to add member")
+		if err == teams.ErrNotFound {
+			WriteNotFound(w, "Team")
+			return
 		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return NoContent(c)
+	if err := h.teams.Delete(r.Context(), team.ID); err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteNoContent(w)
 }
 
-// UpdateMemberRole updates a team member's role
-func (h *Team) UpdateMemberRole(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
+// ListTeamMembers handles GET /orgs/{org}/teams/{team_slug}/members
+func (h *TeamHandler) ListTeamMembers(w http.ResponseWriter, r *http.Request) {
+	org := PathParam(r, "org")
+	teamSlug := PathParam(r, "team_slug")
 
-	org, err := h.getOrg(c)
+	team, err := h.teams.GetBySlug(r.Context(), org, teamSlug)
 	if err != nil {
-		return NotFound(c, "organization not found")
+		if err == teams.ErrNotFound {
+			WriteNotFound(w, "Team")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check if user is owner or admin
-	member, _ := h.orgs.GetMember(c.Context(), org.ID, userID)
-	if member == nil || (member.Role != orgs.RoleOwner && member.Role != orgs.RoleAdmin) {
-		return Forbidden(c, "insufficient permissions")
+	pagination := GetPaginationParams(r)
+	opts := &teams.MemberListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+		Role:    QueryParam(r, "role"),
 	}
 
-	teamSlug := c.Param("team")
-	team, err := h.teams.GetBySlug(c.Context(), org.ID, teamSlug)
+	members, err := h.teams.ListMembers(r.Context(), team.ID, opts)
 	if err != nil {
-		return NotFound(c, "team not found")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	username := c.Param("username")
-	user, err := h.users.GetByUsername(c.Context(), username)
+	WriteJSON(w, http.StatusOK, members)
+}
+
+// GetTeamMembership handles GET /orgs/{org}/teams/{team_slug}/memberships/{username}
+func (h *TeamHandler) GetTeamMembership(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	org := PathParam(r, "org")
+	teamSlug := PathParam(r, "team_slug")
+	username := PathParam(r, "username")
+
+	team, err := h.teams.GetBySlug(r.Context(), org, teamSlug)
 	if err != nil {
-		return NotFound(c, "user not found")
+		if err == teams.ErrNotFound {
+			WriteNotFound(w, "Team")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	membership, err := h.teams.GetMembership(r.Context(), team.ID, username)
+	if err != nil {
+		if err == teams.ErrNotFound {
+			WriteNotFound(w, "Membership")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, membership)
+}
+
+// AddTeamMember handles PUT /orgs/{org}/teams/{team_slug}/memberships/{username}
+func (h *TeamHandler) AddTeamMember(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	org := PathParam(r, "org")
+	teamSlug := PathParam(r, "team_slug")
+	username := PathParam(r, "username")
+
+	team, err := h.teams.GetBySlug(r.Context(), org, teamSlug)
+	if err != nil {
+		if err == teams.ErrNotFound {
+			WriteNotFound(w, "Team")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	var in struct {
-		Role string `json:"role"`
+		Role string `json:"role,omitempty"`
 	}
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	DecodeJSON(r, &in) // optional
+
+	if in.Role == "" {
+		in.Role = "member"
 	}
 
-	if err := h.teams.UpdateMemberRole(c.Context(), team.ID, user.ID, in.Role); err != nil {
-		return InternalError(c, "failed to update member role")
+	membership, err := h.teams.AddMember(r.Context(), team.ID, username, in.Role)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return NoContent(c)
+	WriteJSON(w, http.StatusOK, membership)
 }
 
-// RemoveMember removes a member from a team
-func (h *Team) RemoveMember(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// RemoveTeamMember handles DELETE /orgs/{org}/teams/{team_slug}/memberships/{username}
+func (h *TeamHandler) RemoveTeamMember(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	org, err := h.getOrg(c)
+	org := PathParam(r, "org")
+	teamSlug := PathParam(r, "team_slug")
+	username := PathParam(r, "username")
+
+	team, err := h.teams.GetBySlug(r.Context(), org, teamSlug)
 	if err != nil {
-		return NotFound(c, "organization not found")
-	}
-
-	// Check if user is owner or admin
-	member, _ := h.orgs.GetMember(c.Context(), org.ID, userID)
-	if member == nil || (member.Role != orgs.RoleOwner && member.Role != orgs.RoleAdmin) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	teamSlug := c.Param("team")
-	team, err := h.teams.GetBySlug(c.Context(), org.ID, teamSlug)
-	if err != nil {
-		return NotFound(c, "team not found")
-	}
-
-	username := c.Param("username")
-	user, err := h.users.GetByUsername(c.Context(), username)
-	if err != nil {
-		return NotFound(c, "user not found")
-	}
-
-	if err := h.teams.RemoveMember(c.Context(), team.ID, user.ID); err != nil {
-		switch err {
-		case teams.ErrMemberNotFound:
-			return NotFound(c, "member not found")
-		default:
-			return InternalError(c, "failed to remove member")
+		if err == teams.ErrNotFound {
+			WriteNotFound(w, "Team")
+			return
 		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return NoContent(c)
+	if err := h.teams.RemoveMember(r.Context(), team.ID, username); err != nil {
+		if err == teams.ErrNotFound {
+			WriteNotFound(w, "Membership")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteNoContent(w)
 }
 
-// ListRepos lists repositories accessible to a team
-func (h *Team) ListRepos(c *mizu.Ctx) error {
-	org, err := h.getOrg(c)
+// ListTeamRepos handles GET /orgs/{org}/teams/{team_slug}/repos
+func (h *TeamHandler) ListTeamRepos(w http.ResponseWriter, r *http.Request) {
+	org := PathParam(r, "org")
+	teamSlug := PathParam(r, "team_slug")
+
+	team, err := h.teams.GetBySlug(r.Context(), org, teamSlug)
 	if err != nil {
-		return NotFound(c, "organization not found")
+		if err == teams.ErrNotFound {
+			WriteNotFound(w, "Team")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	teamSlug := c.Param("team")
-	team, err := h.teams.GetBySlug(c.Context(), org.ID, teamSlug)
-	if err != nil {
-		return NotFound(c, "team not found")
-	}
-
-	page, _ := strconv.Atoi(c.Query("page"))
-	perPage, _ := strconv.Atoi(c.Query("per_page"))
-	if page < 1 {
-		page = 1
-	}
-	if perPage < 1 || perPage > 100 {
-		perPage = 30
-	}
-
+	pagination := GetPaginationParams(r)
 	opts := &teams.ListOpts{
-		Limit:  perPage,
-		Offset: (page - 1) * perPage,
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
 	}
 
-	teamRepos, err := h.teams.ListRepos(c.Context(), team.ID, opts)
+	repos, err := h.teams.ListRepos(r.Context(), team.ID, opts)
 	if err != nil {
-		return InternalError(c, "failed to list repositories")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, teamRepos)
+	WriteJSON(w, http.StatusOK, repos)
 }
 
-// GetRepoAccess gets team access to a repository
-func (h *Team) GetRepoAccess(c *mizu.Ctx) error {
-	org, err := h.getOrg(c)
+// CheckTeamRepoPermission handles GET /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
+func (h *TeamHandler) CheckTeamRepoPermission(w http.ResponseWriter, r *http.Request) {
+	org := PathParam(r, "org")
+	teamSlug := PathParam(r, "team_slug")
+	owner := PathParam(r, "owner")
+	repo := PathParam(r, "repo")
+
+	team, err := h.teams.GetBySlug(r.Context(), org, teamSlug)
 	if err != nil {
-		return NotFound(c, "organization not found")
-	}
-
-	teamSlug := c.Param("team")
-	team, err := h.teams.GetBySlug(c.Context(), org.ID, teamSlug)
-	if err != nil {
-		return NotFound(c, "team not found")
-	}
-
-	owner := c.Param("owner")
-	repoName := c.Param("repo")
-	ownerUser, err := h.users.GetByUsername(c.Context(), owner)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	repo, err := h.repos.GetByOwnerAndName(c.Context(), ownerUser.ID, "user", repoName)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	teamRepo, err := h.teams.GetRepoAccess(c.Context(), team.ID, repo.ID)
-	if err != nil {
-		return NotFound(c, "team does not have access to this repository")
-	}
-
-	return OK(c, teamRepo)
-}
-
-// AddRepo adds a repository to a team
-func (h *Team) AddRepo(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	org, err := h.getOrg(c)
-	if err != nil {
-		return NotFound(c, "organization not found")
-	}
-
-	// Check if user is owner or admin
-	member, _ := h.orgs.GetMember(c.Context(), org.ID, userID)
-	if member == nil || (member.Role != orgs.RoleOwner && member.Role != orgs.RoleAdmin) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	teamSlug := c.Param("team")
-	team, err := h.teams.GetBySlug(c.Context(), org.ID, teamSlug)
-	if err != nil {
-		return NotFound(c, "team not found")
-	}
-
-	owner := c.Param("owner")
-	repoName := c.Param("repo")
-	ownerUser, err := h.users.GetByUsername(c.Context(), owner)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	repo, err := h.repos.GetByOwnerAndName(c.Context(), ownerUser.ID, "user", repoName)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	permission := c.Query("permission")
-	if permission == "" {
-		permission = teams.PermissionRead
-	}
-
-	if err := h.teams.AddRepo(c.Context(), team.ID, repo.ID, permission); err != nil {
-		switch err {
-		case teams.ErrRepoExists:
-			return Conflict(c, "repository already added to team")
-		default:
-			return InternalError(c, "failed to add repository")
+		if err == teams.ErrNotFound {
+			WriteNotFound(w, "Team")
+			return
 		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return NoContent(c)
+	repoPerms, err := h.teams.GetRepoPermission(r.Context(), team.ID, owner, repo)
+	if err != nil {
+		if err == teams.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, repoPerms)
 }
 
-// UpdateRepoPermission updates team permission for a repository
-func (h *Team) UpdateRepoPermission(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// AddTeamRepo handles PUT /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
+func (h *TeamHandler) AddTeamRepo(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	org, err := h.getOrg(c)
+	org := PathParam(r, "org")
+	teamSlug := PathParam(r, "team_slug")
+	owner := PathParam(r, "owner")
+	repo := PathParam(r, "repo")
+
+	team, err := h.teams.GetBySlug(r.Context(), org, teamSlug)
 	if err != nil {
-		return NotFound(c, "organization not found")
-	}
-
-	// Check if user is owner or admin
-	member, _ := h.orgs.GetMember(c.Context(), org.ID, userID)
-	if member == nil || (member.Role != orgs.RoleOwner && member.Role != orgs.RoleAdmin) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	teamSlug := c.Param("team")
-	team, err := h.teams.GetBySlug(c.Context(), org.ID, teamSlug)
-	if err != nil {
-		return NotFound(c, "team not found")
-	}
-
-	owner := c.Param("owner")
-	repoName := c.Param("repo")
-	ownerUser, err := h.users.GetByUsername(c.Context(), owner)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	repo, err := h.repos.GetByOwnerAndName(c.Context(), ownerUser.ID, "user", repoName)
-	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == teams.ErrNotFound {
+			WriteNotFound(w, "Team")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	var in struct {
-		Permission string `json:"permission"`
+		Permission string `json:"permission,omitempty"`
 	}
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	DecodeJSON(r, &in) // optional
+
+	if in.Permission == "" {
+		in.Permission = "push"
 	}
 
-	if err := h.teams.UpdateRepoPermission(c.Context(), team.ID, repo.ID, in.Permission); err != nil {
-		return InternalError(c, "failed to update repository permission")
+	if err := h.teams.AddRepo(r.Context(), team.ID, owner, repo, in.Permission); err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return NoContent(c)
+	WriteNoContent(w)
 }
 
-// RemoveRepo removes a repository from a team
-func (h *Team) RemoveRepo(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// RemoveTeamRepo handles DELETE /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
+func (h *TeamHandler) RemoveTeamRepo(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	org, err := h.getOrg(c)
+	org := PathParam(r, "org")
+	teamSlug := PathParam(r, "team_slug")
+	owner := PathParam(r, "owner")
+	repo := PathParam(r, "repo")
+
+	team, err := h.teams.GetBySlug(r.Context(), org, teamSlug)
 	if err != nil {
-		return NotFound(c, "organization not found")
-	}
-
-	// Check if user is owner or admin
-	member, _ := h.orgs.GetMember(c.Context(), org.ID, userID)
-	if member == nil || (member.Role != orgs.RoleOwner && member.Role != orgs.RoleAdmin) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	teamSlug := c.Param("team")
-	team, err := h.teams.GetBySlug(c.Context(), org.ID, teamSlug)
-	if err != nil {
-		return NotFound(c, "team not found")
-	}
-
-	owner := c.Param("owner")
-	repoName := c.Param("repo")
-	ownerUser, err := h.users.GetByUsername(c.Context(), owner)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	repo, err := h.repos.GetByOwnerAndName(c.Context(), ownerUser.ID, "user", repoName)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	if err := h.teams.RemoveRepo(c.Context(), team.ID, repo.ID); err != nil {
-		switch err {
-		case teams.ErrRepoNotFound:
-			return NotFound(c, "repository not found in team")
-		default:
-			return InternalError(c, "failed to remove repository")
+		if err == teams.ErrNotFound {
+			WriteNotFound(w, "Team")
+			return
 		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return NoContent(c)
+	if err := h.teams.RemoveRepo(r.Context(), team.ID, owner, repo); err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteNoContent(w)
 }
 
-// ListUserTeams lists teams for the current user in an organization
-func (h *Team) ListUserTeams(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
+// ListChildTeams handles GET /orgs/{org}/teams/{team_slug}/teams
+func (h *TeamHandler) ListChildTeams(w http.ResponseWriter, r *http.Request) {
+	org := PathParam(r, "org")
+	teamSlug := PathParam(r, "team_slug")
 
-	org, err := h.getOrg(c)
+	team, err := h.teams.GetBySlug(r.Context(), org, teamSlug)
 	if err != nil {
-		return NotFound(c, "organization not found")
+		if err == teams.ErrNotFound {
+			WriteNotFound(w, "Team")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	teamList, err := h.teams.ListUserTeams(c.Context(), org.ID, userID)
+	pagination := GetPaginationParams(r)
+	opts := &teams.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+	}
+
+	children, err := h.teams.ListChildren(r.Context(), team.ID, opts)
 	if err != nil {
-		return InternalError(c, "failed to list teams")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, teamList)
+	WriteJSON(w, http.StatusOK, children)
+}
+
+// ListAuthenticatedUserTeams handles GET /user/teams
+func (h *TeamHandler) ListAuthenticatedUserTeams(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	pagination := GetPaginationParams(r)
+	opts := &teams.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+	}
+
+	teamList, err := h.teams.ListForUser(r.Context(), user.Login, opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, teamList)
 }

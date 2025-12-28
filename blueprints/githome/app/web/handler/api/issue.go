@@ -1,710 +1,654 @@
 package api
 
 import (
+	"net/http"
 	"strconv"
 
-	"github.com/go-mizu/blueprints/githome/feature/issues"
-	"github.com/go-mizu/blueprints/githome/feature/repos"
-	"github.com/go-mizu/blueprints/githome/feature/users"
-	"github.com/go-mizu/mizu"
+	"github.com/mizu-framework/mizu/blueprints/githome/feature/issues"
+	"github.com/mizu-framework/mizu/blueprints/githome/feature/repos"
 )
 
-// Issue handles issue endpoints
-type Issue struct {
-	issues    issues.API
-	repos     repos.API
-	users     users.API
-	getUserID func(*mizu.Ctx) string
+// IssueHandler handles issue endpoints
+type IssueHandler struct {
+	issues issues.API
+	repos  repos.API
 }
 
-// NewIssue creates a new issue handler
-func NewIssue(issues issues.API, repos repos.API, users users.API, getUserID func(*mizu.Ctx) string) *Issue {
-	return &Issue{
-		issues:    issues,
-		repos:     repos,
-		users:     users,
-		getUserID: getUserID,
-	}
+// NewIssueHandler creates a new issue handler
+func NewIssueHandler(issues issues.API, repos repos.API) *IssueHandler {
+	return &IssueHandler{issues: issues, repos: repos}
 }
 
-func (h *Issue) getRepo(c *mizu.Ctx) (*repos.Repository, error) {
-	owner := c.Param("owner")
-	name := c.Param("repo")
+// getRepoFromPath gets repository from path parameters
+func (h *IssueHandler) getRepoFromPath(r *http.Request) (*repos.Repository, error) {
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+	return h.repos.GetByFullName(r.Context(), owner, repoName)
+}
 
-	// Get owner user
-	user, err := h.users.GetByUsername(c.Context(), owner)
+// ListRepoIssues handles GET /repos/{owner}/{repo}/issues
+func (h *IssueHandler) ListRepoIssues(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return nil, repos.ErrNotFound
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return h.repos.GetByOwnerAndName(c.Context(), user.ID, "user", name)
-}
-
-// List lists issues for a repository
-func (h *Issue) List(c *mizu.Ctx) error {
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	page, _ := strconv.Atoi(c.Query("page"))
-	perPage, _ := strconv.Atoi(c.Query("per_page"))
-	if page < 1 {
-		page = 1
-	}
-	if perPage < 1 || perPage > 100 {
-		perPage = 30
-	}
-
+	pagination := GetPaginationParams(r)
 	opts := &issues.ListOpts{
-		State:  c.Query("state"),
-		Sort:   c.Query("sort"),
-		Limit:  perPage,
-		Offset: (page - 1) * perPage,
+		Page:      pagination.Page,
+		PerPage:   pagination.PerPage,
+		State:     QueryParam(r, "state"),
+		Sort:      QueryParam(r, "sort"),
+		Direction: QueryParam(r, "direction"),
+		Labels:    QueryParam(r, "labels"),
+		Milestone: QueryParam(r, "milestone"),
+		Assignee:  QueryParam(r, "assignee"),
+		Creator:   QueryParam(r, "creator"),
+		Mentioned: QueryParam(r, "mentioned"),
 	}
 
-	issueList, total, err := h.issues.List(c.Context(), repo.ID, opts)
+	issueList, err := h.issues.ListForRepo(r.Context(), repo.ID, opts)
 	if err != nil {
-		return InternalError(c, "failed to list issues")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OKList(c, issueList, total, page, perPage)
+	WriteJSON(w, http.StatusOK, issueList)
 }
 
-// Create creates a new issue
-func (h *Issue) Create(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
+// GetIssue handles GET /repos/{owner}/{repo}/issues/{issue_number}
+func (h *IssueHandler) GetIssue(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
+	issueNumber, err := PathParamInt(r, "issue_number")
+	if err != nil {
+		WriteBadRequest(w, "Invalid issue number")
+		return
+	}
+
+	issue, err := h.issues.GetByNumber(r.Context(), repo.ID, issueNumber)
+	if err != nil {
+		if err == issues.ErrNotFound {
+			WriteNotFound(w, "Issue")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, issue)
+}
+
+// CreateIssue handles POST /repos/{owner}/{repo}/issues
+func (h *IssueHandler) CreateIssue(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	var in issues.CreateIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
 	}
 
-	issue, err := h.issues.Create(c.Context(), repo.ID, userID, &in)
+	issue, err := h.issues.Create(r.Context(), repo.ID, user.ID, &in)
 	if err != nil {
-		switch err {
-		case issues.ErrMissingTitle:
-			return BadRequest(c, "issue title is required")
-		default:
-			return InternalError(c, "failed to create issue")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteCreated(w, issue)
+}
+
+// UpdateIssue handles PATCH /repos/{owner}/{repo}/issues/{issue_number}
+func (h *IssueHandler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
 		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return Created(c, issue)
-}
-
-// Get retrieves an issue
-func (h *Issue) Get(c *mizu.Ctx) error {
-	repo, err := h.getRepo(c)
+	issueNumber, err := PathParamInt(r, "issue_number")
 	if err != nil {
-		return NotFound(c, "repository not found")
+		WriteBadRequest(w, "Invalid issue number")
+		return
 	}
 
-	number, err := strconv.Atoi(c.Param("number"))
+	issue, err := h.issues.GetByNumber(r.Context(), repo.ID, issueNumber)
 	if err != nil {
-		return BadRequest(c, "invalid issue number")
-	}
-
-	issue, err := h.issues.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "issue not found")
-	}
-
-	return OK(c, issue)
-}
-
-// Update updates an issue
-func (h *Issue) Update(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid issue number")
-	}
-
-	issue, err := h.issues.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "issue not found")
-	}
-
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
+		if err == issues.ErrNotFound {
+			WriteNotFound(w, "Issue")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	var in issues.UpdateIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
 	}
 
-	issue, err = h.issues.Update(c.Context(), issue.ID, &in)
+	updated, err := h.issues.Update(r.Context(), issue.ID, &in)
 	if err != nil {
-		return InternalError(c, "failed to update issue")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, issue)
+	WriteJSON(w, http.StatusOK, updated)
 }
 
-// Delete deletes an issue
-func (h *Issue) Delete(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// LockIssue handles PUT /repos/{owner}/{repo}/issues/{issue_number}/lock
+func (h *IssueHandler) LockIssue(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	repo, err := h.getRepo(c)
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid issue number")
-	}
-
-	issue, err := h.issues.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "issue not found")
-	}
-
-	// Check admin permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionAdmin) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	if err := h.issues.Delete(c.Context(), issue.ID); err != nil {
-		return InternalError(c, "failed to delete issue")
-	}
-
-	return NoContent(c)
-}
-
-// Close closes an issue
-func (h *Issue) Close(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid issue number")
-	}
-
-	issue, err := h.issues.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "issue not found")
-	}
-
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	var in struct {
-		StateReason string `json:"state_reason"`
-	}
-	c.BindJSON(&in, 1<<20) // Optional body
-
-	if err := h.issues.Close(c.Context(), issue.ID, userID, in.StateReason); err != nil {
-		return InternalError(c, "failed to close issue")
-	}
-
-	// Fetch updated issue
-	issue, _ = h.issues.GetByID(c.Context(), issue.ID)
-	return OK(c, issue)
-}
-
-// Reopen reopens an issue
-func (h *Issue) Reopen(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid issue number")
-	}
-
-	issue, err := h.issues.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "issue not found")
-	}
-
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	if err := h.issues.Reopen(c.Context(), issue.ID); err != nil {
-		return InternalError(c, "failed to reopen issue")
-	}
-
-	// Fetch updated issue
-	issue, _ = h.issues.GetByID(c.Context(), issue.ID)
-	return OK(c, issue)
-}
-
-// Lock locks an issue
-func (h *Issue) Lock(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid issue number")
-	}
-
-	issue, err := h.issues.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "issue not found")
-	}
-
-	// Check maintain permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionMaintain) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	reason := c.Query("lock_reason")
-	if err := h.issues.Lock(c.Context(), issue.ID, reason); err != nil {
-		return InternalError(c, "failed to lock issue")
-	}
-
-	return NoContent(c)
-}
-
-// Unlock unlocks an issue
-func (h *Issue) Unlock(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid issue number")
-	}
-
-	issue, err := h.issues.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "issue not found")
-	}
-
-	// Check maintain permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionMaintain) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	if err := h.issues.Unlock(c.Context(), issue.ID); err != nil {
-		return InternalError(c, "failed to unlock issue")
-	}
-
-	return NoContent(c)
-}
-
-// ListLabels lists labels for an issue
-func (h *Issue) ListLabels(c *mizu.Ctx) error {
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid issue number")
-	}
-
-	issue, err := h.issues.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "issue not found")
-	}
-
-	return OK(c, issue.Labels)
-}
-
-// AddLabels adds labels to an issue
-func (h *Issue) AddLabels(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid issue number")
-	}
-
-	issue, err := h.issues.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "issue not found")
-	}
-
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	var in struct {
-		Labels []string `json:"labels"`
-	}
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
-	}
-
-	if err := h.issues.AddLabels(c.Context(), issue.ID, in.Labels); err != nil {
-		return InternalError(c, "failed to add labels")
-	}
-
-	return OK(c, in.Labels)
-}
-
-// SetLabels replaces all labels on an issue
-func (h *Issue) SetLabels(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid issue number")
-	}
-
-	issue, err := h.issues.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "issue not found")
-	}
-
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	var in struct {
-		Labels []string `json:"labels"`
-	}
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
-	}
-
-	if err := h.issues.SetLabels(c.Context(), issue.ID, in.Labels); err != nil {
-		return InternalError(c, "failed to set labels")
-	}
-
-	return OK(c, in.Labels)
-}
-
-// RemoveLabel removes a label from an issue
-func (h *Issue) RemoveLabel(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid issue number")
-	}
-
-	issue, err := h.issues.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "issue not found")
-	}
-
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	label := c.Param("label")
-	if err := h.issues.RemoveLabel(c.Context(), issue.ID, label); err != nil {
-		return InternalError(c, "failed to remove label")
-	}
-
-	return NoContent(c)
-}
-
-// AddAssignees adds assignees to an issue
-func (h *Issue) AddAssignees(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid issue number")
-	}
-
-	issue, err := h.issues.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "issue not found")
-	}
-
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	var in struct {
-		Assignees []string `json:"assignees"`
-	}
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
-	}
-
-	if err := h.issues.AddAssignees(c.Context(), issue.ID, in.Assignees); err != nil {
-		return InternalError(c, "failed to add assignees")
-	}
-
-	// Fetch updated issue
-	issue, _ = h.issues.GetByID(c.Context(), issue.ID)
-	return OK(c, issue)
-}
-
-// RemoveAssignees removes assignees from an issue
-func (h *Issue) RemoveAssignees(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid issue number")
-	}
-
-	issue, err := h.issues.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "issue not found")
-	}
-
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	var in struct {
-		Assignees []string `json:"assignees"`
-	}
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
-	}
-
-	if err := h.issues.RemoveAssignees(c.Context(), issue.ID, in.Assignees); err != nil {
-		return InternalError(c, "failed to remove assignees")
-	}
-
-	// Fetch updated issue
-	issue, _ = h.issues.GetByID(c.Context(), issue.ID)
-	return OK(c, issue)
-}
-
-// ListComments lists comments for an issue
-func (h *Issue) ListComments(c *mizu.Ctx) error {
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid issue number")
-	}
-
-	issue, err := h.issues.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "issue not found")
-	}
-
-	comments, err := h.issues.ListComments(c.Context(), issue.ID)
-	if err != nil {
-		return InternalError(c, "failed to list comments")
-	}
-
-	return OK(c, comments)
-}
-
-// AddComment adds a comment to an issue
-func (h *Issue) AddComment(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid issue number")
-	}
-
-	issue, err := h.issues.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "issue not found")
-	}
-
-	var in struct {
-		Body string `json:"body"`
-	}
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
-	}
-
-	comment, err := h.issues.AddComment(c.Context(), issue.ID, userID, in.Body)
-	if err != nil {
-		if err == issues.ErrLocked {
-			return Forbidden(c, "issue is locked")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
 		}
-		return InternalError(c, "failed to add comment")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return Created(c, comment)
-}
-
-// UpdateComment updates a comment on an issue
-func (h *Issue) UpdateComment(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
+	issueNumber, err := PathParamInt(r, "issue_number")
 	if err != nil {
-		return NotFound(c, "repository not found")
+		WriteBadRequest(w, "Invalid issue number")
+		return
 	}
 
-	number, err := strconv.Atoi(c.Param("number"))
+	issue, err := h.issues.GetByNumber(r.Context(), repo.ID, issueNumber)
 	if err != nil {
-		return BadRequest(c, "invalid issue number")
+		if err == issues.ErrNotFound {
+			WriteNotFound(w, "Issue")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
-
-	_, err = h.issues.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "issue not found")
-	}
-
-	commentID := c.Param("id")
 
 	var in struct {
-		Body string `json:"body"`
+		LockReason string `json:"lock_reason,omitempty"`
 	}
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	DecodeJSON(r, &in) // optional body
+
+	if err := h.issues.Lock(r.Context(), issue.ID, in.LockReason); err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	comment, err := h.issues.UpdateComment(c.Context(), commentID, in.Body)
-	if err != nil {
-		return InternalError(c, "failed to update comment")
-	}
-
-	return OK(c, comment)
+	WriteNoContent(w)
 }
 
-// DeleteComment deletes a comment on an issue
-func (h *Issue) DeleteComment(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// UnlockIssue handles DELETE /repos/{owner}/{repo}/issues/{issue_number}/lock
+func (h *IssueHandler) UnlockIssue(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	repo, err := h.getRepo(c)
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	number, err := strconv.Atoi(c.Param("number"))
+	issueNumber, err := PathParamInt(r, "issue_number")
 	if err != nil {
-		return BadRequest(c, "invalid issue number")
+		WriteBadRequest(w, "Invalid issue number")
+		return
 	}
 
-	_, err = h.issues.GetByNumber(c.Context(), repo.ID, number)
+	issue, err := h.issues.GetByNumber(r.Context(), repo.ID, issueNumber)
 	if err != nil {
-		return NotFound(c, "issue not found")
+		if err == issues.ErrNotFound {
+			WriteNotFound(w, "Issue")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check admin permission for deleting comments
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionAdmin) {
-		return Forbidden(c, "insufficient permissions")
+	if err := h.issues.Unlock(r.Context(), issue.ID); err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	commentID := c.Param("id")
+	WriteNoContent(w)
+}
 
-	if err := h.issues.DeleteComment(c.Context(), commentID); err != nil {
-		return InternalError(c, "failed to delete comment")
+// ListIssueAssignees handles GET /repos/{owner}/{repo}/assignees
+func (h *IssueHandler) ListIssueAssignees(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return NoContent(c)
+	pagination := GetPaginationParams(r)
+	opts := &issues.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+	}
+
+	assignees, err := h.issues.ListAssignees(r.Context(), repo.ID, opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, assignees)
+}
+
+// CheckAssignee handles GET /repos/{owner}/{repo}/assignees/{assignee}
+func (h *IssueHandler) CheckAssignee(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	assignee := PathParam(r, "assignee")
+
+	isAssignable, err := h.issues.CheckAssignee(r.Context(), repo.ID, assignee)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if isAssignable {
+		WriteNoContent(w)
+	} else {
+		WriteNotFound(w, "Assignee")
+	}
+}
+
+// AddAssignees handles POST /repos/{owner}/{repo}/issues/{issue_number}/assignees
+func (h *IssueHandler) AddAssignees(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	issueNumber, err := PathParamInt(r, "issue_number")
+	if err != nil {
+		WriteBadRequest(w, "Invalid issue number")
+		return
+	}
+
+	issue, err := h.issues.GetByNumber(r.Context(), repo.ID, issueNumber)
+	if err != nil {
+		if err == issues.ErrNotFound {
+			WriteNotFound(w, "Issue")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var in struct {
+		Assignees []string `json:"assignees"`
+	}
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
+	}
+
+	updated, err := h.issues.AddAssignees(r.Context(), issue.ID, in.Assignees)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteCreated(w, updated)
+}
+
+// RemoveAssignees handles DELETE /repos/{owner}/{repo}/issues/{issue_number}/assignees
+func (h *IssueHandler) RemoveAssignees(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	issueNumber, err := PathParamInt(r, "issue_number")
+	if err != nil {
+		WriteBadRequest(w, "Invalid issue number")
+		return
+	}
+
+	issue, err := h.issues.GetByNumber(r.Context(), repo.ID, issueNumber)
+	if err != nil {
+		if err == issues.ErrNotFound {
+			WriteNotFound(w, "Issue")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var in struct {
+		Assignees []string `json:"assignees"`
+	}
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
+	}
+
+	updated, err := h.issues.RemoveAssignees(r.Context(), issue.ID, in.Assignees)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, updated)
+}
+
+// ListAuthenticatedUserIssues handles GET /user/issues
+func (h *IssueHandler) ListAuthenticatedUserIssues(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	pagination := GetPaginationParams(r)
+	opts := &issues.ListOpts{
+		Page:      pagination.Page,
+		PerPage:   pagination.PerPage,
+		State:     QueryParam(r, "state"),
+		Filter:    QueryParam(r, "filter"),
+		Labels:    QueryParam(r, "labels"),
+		Sort:      QueryParam(r, "sort"),
+		Direction: QueryParam(r, "direction"),
+	}
+
+	issueList, err := h.issues.ListForUser(r.Context(), user.ID, opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, issueList)
+}
+
+// ListIssues handles GET /issues (global issues for authenticated user)
+func (h *IssueHandler) ListIssues(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	pagination := GetPaginationParams(r)
+	opts := &issues.ListOpts{
+		Page:      pagination.Page,
+		PerPage:   pagination.PerPage,
+		State:     QueryParam(r, "state"),
+		Filter:    QueryParam(r, "filter"),
+		Labels:    QueryParam(r, "labels"),
+		Sort:      QueryParam(r, "sort"),
+		Direction: QueryParam(r, "direction"),
+	}
+
+	issueList, err := h.issues.ListForUser(r.Context(), user.ID, opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, issueList)
+}
+
+// ListOrgIssues handles GET /orgs/{org}/issues
+func (h *IssueHandler) ListOrgIssues(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	org := PathParam(r, "org")
+	pagination := GetPaginationParams(r)
+	opts := &issues.ListOpts{
+		Page:      pagination.Page,
+		PerPage:   pagination.PerPage,
+		State:     QueryParam(r, "state"),
+		Filter:    QueryParam(r, "filter"),
+		Labels:    QueryParam(r, "labels"),
+		Sort:      QueryParam(r, "sort"),
+		Direction: QueryParam(r, "direction"),
+	}
+
+	issueList, err := h.issues.ListForOrg(r.Context(), org, opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, issueList)
+}
+
+// ListIssueEvents handles GET /repos/{owner}/{repo}/issues/{issue_number}/events
+func (h *IssueHandler) ListIssueEvents(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	issueNumber, err := PathParamInt(r, "issue_number")
+	if err != nil {
+		WriteBadRequest(w, "Invalid issue number")
+		return
+	}
+
+	issue, err := h.issues.GetByNumber(r.Context(), repo.ID, issueNumber)
+	if err != nil {
+		if err == issues.ErrNotFound {
+			WriteNotFound(w, "Issue")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pagination := GetPaginationParams(r)
+	opts := &issues.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+	}
+
+	events, err := h.issues.ListEvents(r.Context(), issue.ID, opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, events)
+}
+
+// GetIssueEvent handles GET /repos/{owner}/{repo}/issues/events/{event_id}
+func (h *IssueHandler) GetIssueEvent(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	eventID, err := PathParamInt64(r, "event_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid event ID")
+		return
+	}
+
+	event, err := h.issues.GetEvent(r.Context(), repo.ID, eventID)
+	if err != nil {
+		if err == issues.ErrNotFound {
+			WriteNotFound(w, "Event")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, event)
+}
+
+// ListRepoIssueEvents handles GET /repos/{owner}/{repo}/issues/events
+func (h *IssueHandler) ListRepoIssueEvents(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pagination := GetPaginationParams(r)
+	opts := &issues.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+	}
+
+	events, err := h.issues.ListRepoEvents(r.Context(), repo.ID, opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, events)
+}
+
+// ListIssueTimeline handles GET /repos/{owner}/{repo}/issues/{issue_number}/timeline
+func (h *IssueHandler) ListIssueTimeline(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	issueNumber, err := PathParamInt(r, "issue_number")
+	if err != nil {
+		WriteBadRequest(w, "Invalid issue number")
+		return
+	}
+
+	issue, err := h.issues.GetByNumber(r.Context(), repo.ID, issueNumber)
+	if err != nil {
+		if err == issues.ErrNotFound {
+			WriteNotFound(w, "Issue")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pagination := GetPaginationParams(r)
+	opts := &issues.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+	}
+
+	timeline, err := h.issues.ListTimeline(r.Context(), issue.ID, opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, timeline)
+}
+
+// parseIssueNumber parses issue number from string
+func parseIssueNumber(s string) (int, error) {
+	return strconv.Atoi(s)
 }

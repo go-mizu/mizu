@@ -4,274 +4,360 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/mizu-framework/mizu/blueprints/githome/feature/users"
 )
 
-// Errors
 var (
-	ErrNotFound        = errors.New("pull request not found")
-	ErrInvalidInput    = errors.New("invalid input")
-	ErrMissingTitle    = errors.New("pull request title is required")
-	ErrAccessDenied    = errors.New("access denied")
-	ErrLocked          = errors.New("pull request is locked")
-	ErrAlreadyMerged   = errors.New("pull request is already merged")
-	ErrNotMergeable    = errors.New("pull request is not mergeable")
-	ErrAlreadyClosed   = errors.New("pull request is already closed")
-	ErrAlreadyOpen     = errors.New("pull request is already open")
-	ErrReviewNotFound  = errors.New("review not found")
-	ErrCommentNotFound = errors.New("comment not found")
+	ErrNotFound       = errors.New("pull request not found")
+	ErrAccessDenied   = errors.New("access denied")
+	ErrNotMergeable   = errors.New("pull request is not mergeable")
+	ErrAlreadyMerged  = errors.New("pull request is already merged")
 )
 
-// States
-const (
-	StateOpen   = "open"
-	StateClosed = "closed"
-	StateMerged = "merged"
-)
-
-// Merge methods
-const (
-	MergeMethodMerge  = "merge"
-	MergeMethodSquash = "squash"
-	MergeMethodRebase = "rebase"
-)
-
-// Review states
-const (
-	ReviewPending          = "pending"
-	ReviewApproved         = "approved"
-	ReviewChangesRequested = "changes_requested"
-	ReviewCommented        = "commented"
-	ReviewDismissed        = "dismissed"
-)
-
-// PullRequest represents a pull request
+// PullRequest represents a GitHub pull request
 type PullRequest struct {
-	ID             string     `json:"id"`
-	RepoID         string     `json:"repo_id"`
-	Number         int        `json:"number"`
-	Title          string     `json:"title"`
-	Body           string     `json:"body"`
-	AuthorID       string     `json:"author_id"`
-	HeadRepoID     string     `json:"head_repo_id,omitempty"`
-	HeadBranch     string     `json:"head_branch"`
-	HeadSHA        string     `json:"head_sha"`
-	BaseBranch     string     `json:"base_branch"`
-	BaseSHA        string     `json:"base_sha"`
-	State          string     `json:"state"`
-	IsDraft        bool       `json:"is_draft"`
-	IsLocked       bool       `json:"is_locked"`
-	LockReason     string     `json:"lock_reason,omitempty"`
-	Mergeable      bool       `json:"mergeable"`
-	MergeableState string     `json:"mergeable_state"`
-	MergeMethod    string     `json:"merge_method,omitempty"`
-	MergeCommitSHA string     `json:"merge_commit_sha,omitempty"`
-	MergeMessage   string     `json:"merge_message,omitempty"`
-	MergedAt       *time.Time `json:"merged_at,omitempty"`
-	MergedByID     string     `json:"merged_by_id,omitempty"`
-	Additions      int        `json:"additions"`
-	Deletions      int        `json:"deletions"`
-	ChangedFiles   int        `json:"changed_files"`
-	CommentCount   int        `json:"comment_count"`
-	ReviewComments int        `json:"review_comments"`
-	Commits        int        `json:"commits"`
-	MilestoneID    string     `json:"milestone_id,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
-	ClosedAt       *time.Time `json:"closed_at,omitempty"`
-
-	// Populated from joins
-	Labels    []string `json:"labels,omitempty"`
-	Assignees []string `json:"assignees,omitempty"`
-	Reviewers []string `json:"reviewers,omitempty"`
+	ID                  int64             `json:"id"`
+	NodeID              string            `json:"node_id"`
+	URL                 string            `json:"url"`
+	HTMLURL             string            `json:"html_url"`
+	DiffURL             string            `json:"diff_url"`
+	PatchURL            string            `json:"patch_url"`
+	IssueURL            string            `json:"issue_url"`
+	CommitsURL          string            `json:"commits_url"`
+	ReviewCommentsURL   string            `json:"review_comments_url"`
+	ReviewCommentURL    string            `json:"review_comment_url"`
+	CommentsURL         string            `json:"comments_url"`
+	StatusesURL         string            `json:"statuses_url"`
+	Number              int               `json:"number"`
+	State               string            `json:"state"` // open, closed
+	Locked              bool              `json:"locked"`
+	Title               string            `json:"title"`
+	User                *users.SimpleUser `json:"user"`
+	Body                string            `json:"body,omitempty"`
+	Labels              []*Label          `json:"labels"`
+	Milestone           *Milestone        `json:"milestone,omitempty"`
+	ActiveLockReason    string            `json:"active_lock_reason,omitempty"`
+	CreatedAt           time.Time         `json:"created_at"`
+	UpdatedAt           time.Time         `json:"updated_at"`
+	ClosedAt            *time.Time        `json:"closed_at"`
+	MergedAt            *time.Time        `json:"merged_at"`
+	MergeCommitSHA      string            `json:"merge_commit_sha,omitempty"`
+	Assignee            *users.SimpleUser `json:"assignee,omitempty"`
+	Assignees           []*users.SimpleUser `json:"assignees"`
+	RequestedReviewers  []*users.SimpleUser `json:"requested_reviewers"`
+	RequestedTeams      []*TeamSimple     `json:"requested_teams"`
+	Head                *PRBranch         `json:"head"`
+	Base                *PRBranch         `json:"base"`
+	Draft               bool              `json:"draft"`
+	Merged              bool              `json:"merged"`
+	Mergeable           *bool             `json:"mergeable"`
+	Rebaseable          *bool             `json:"rebaseable"`
+	MergeableState      string            `json:"mergeable_state"`
+	MergedBy            *users.SimpleUser `json:"merged_by,omitempty"`
+	Comments            int               `json:"comments"`
+	ReviewComments      int               `json:"review_comments"`
+	MaintainerCanModify bool              `json:"maintainer_can_modify"`
+	Commits             int               `json:"commits"`
+	Additions           int               `json:"additions"`
+	Deletions           int               `json:"deletions"`
+	ChangedFiles        int               `json:"changed_files"`
+	AuthorAssociation   string            `json:"author_association"`
+	// Internal
+	RepoID    int64 `json:"-"`
+	CreatorID int64 `json:"-"`
 }
 
-// Review represents a pull request review
+// PRBranch represents head/base branch info
+type PRBranch struct {
+	Label string            `json:"label"`
+	Ref   string            `json:"ref"`
+	SHA   string            `json:"sha"`
+	User  *users.SimpleUser `json:"user"`
+	Repo  *RepoRef          `json:"repo"`
+}
+
+// RepoRef is a minimal repository reference
+type RepoRef struct {
+	ID       int64  `json:"id"`
+	NodeID   string `json:"node_id"`
+	Name     string `json:"name"`
+	FullName string `json:"full_name"`
+	HTMLURL  string `json:"html_url"`
+}
+
+// Label is a minimal label reference
+type Label struct {
+	ID          int64  `json:"id"`
+	NodeID      string `json:"node_id"`
+	URL         string `json:"url"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Color       string `json:"color"`
+	Default     bool   `json:"default"`
+}
+
+// Milestone is a minimal milestone reference
+type Milestone struct {
+	ID     int64  `json:"id"`
+	NodeID string `json:"node_id"`
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	State  string `json:"state"`
+}
+
+// TeamSimple is a minimal team reference
+type TeamSimple struct {
+	ID          int64  `json:"id"`
+	NodeID      string `json:"node_id"`
+	URL         string `json:"url"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	Description string `json:"description,omitempty"`
+}
+
+// Review represents a PR review
 type Review struct {
-	ID          string     `json:"id"`
-	PRID        string     `json:"pr_id"`
-	UserID      string     `json:"user_id"`
-	Body        string     `json:"body"`
-	State       string     `json:"state"`
-	CommitSHA   string     `json:"commit_sha"`
-	CreatedAt   time.Time  `json:"created_at"`
-	SubmittedAt *time.Time `json:"submitted_at,omitempty"`
+	ID                int64             `json:"id"`
+	NodeID            string            `json:"node_id"`
+	User              *users.SimpleUser `json:"user"`
+	Body              string            `json:"body,omitempty"`
+	State             string            `json:"state"` // APPROVED, CHANGES_REQUESTED, COMMENTED, PENDING, DISMISSED
+	HTMLURL           string            `json:"html_url"`
+	PullRequestURL    string            `json:"pull_request_url"`
+	CommitID          string            `json:"commit_id"`
+	SubmittedAt       time.Time         `json:"submitted_at"`
+	AuthorAssociation string            `json:"author_association"`
 }
 
-// ReviewComment represents a comment on a pull request review
+// ReviewComment represents a PR review comment
 type ReviewComment struct {
-	ID               string    `json:"id"`
-	ReviewID         string    `json:"review_id"`
-	PRID             string    `json:"pr_id"`
-	UserID           string    `json:"user_id"`
-	Path             string    `json:"path"`
-	Position         int       `json:"position,omitempty"`
-	OriginalPosition int       `json:"original_position,omitempty"`
-	DiffHunk         string    `json:"diff_hunk,omitempty"`
-	Line             int       `json:"line,omitempty"`
-	OriginalLine     int       `json:"original_line,omitempty"`
-	Side             string    `json:"side"`
-	Body             string    `json:"body"`
-	InReplyToID      string    `json:"in_reply_to_id,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ID                  int64             `json:"id"`
+	NodeID              string            `json:"node_id"`
+	URL                 string            `json:"url"`
+	PullRequestReviewID int64             `json:"pull_request_review_id"`
+	DiffHunk            string            `json:"diff_hunk"`
+	Path                string            `json:"path"`
+	Position            int               `json:"position,omitempty"`
+	OriginalPosition    int               `json:"original_position,omitempty"`
+	CommitID            string            `json:"commit_id"`
+	OriginalCommitID    string            `json:"original_commit_id"`
+	InReplyToID         int64             `json:"in_reply_to_id,omitempty"`
+	User                *users.SimpleUser `json:"user"`
+	Body                string            `json:"body"`
+	CreatedAt           time.Time         `json:"created_at"`
+	UpdatedAt           time.Time         `json:"updated_at"`
+	HTMLURL             string            `json:"html_url"`
+	PullRequestURL      string            `json:"pull_request_url"`
+	AuthorAssociation   string            `json:"author_association"`
+	Line                int               `json:"line,omitempty"`
+	OriginalLine        int               `json:"original_line,omitempty"`
+	StartLine           int               `json:"start_line,omitempty"`
+	OriginalStartLine   int               `json:"original_start_line,omitempty"`
+	Side                string            `json:"side,omitempty"` // LEFT, RIGHT
+	StartSide           string            `json:"start_side,omitempty"`
 }
 
-// PRLabel represents the association between a PR and a label
-// Uses composite PK (pr_id, label_id) - no ID field
-type PRLabel struct {
-	PRID      string    `json:"pr_id"`
-	LabelID   string    `json:"label_id"`
-	CreatedAt time.Time `json:"created_at"`
+// PRFile represents a file in a PR
+type PRFile struct {
+	SHA         string `json:"sha"`
+	Filename    string `json:"filename"`
+	Status      string `json:"status"` // added, removed, modified, renamed, copied, changed, unchanged
+	Additions   int    `json:"additions"`
+	Deletions   int    `json:"deletions"`
+	Changes     int    `json:"changes"`
+	BlobURL     string `json:"blob_url"`
+	RawURL      string `json:"raw_url"`
+	ContentsURL string `json:"contents_url"`
+	Patch       string `json:"patch,omitempty"`
 }
 
-// PRAssignee represents the association between a PR and an assignee
-// Uses composite PK (pr_id, user_id) - no ID field
-type PRAssignee struct {
-	PRID      string    `json:"pr_id"`
-	UserID    string    `json:"user_id"`
-	CreatedAt time.Time `json:"created_at"`
+// MergeResult represents the result of a merge operation
+type MergeResult struct {
+	SHA     string `json:"sha"`
+	Merged  bool   `json:"merged"`
+	Message string `json:"message"`
 }
 
-// PRReviewer represents a requested reviewer
-// Uses composite PK (pr_id, user_id) - no ID field
-type PRReviewer struct {
-	PRID      string    `json:"pr_id"`
-	UserID    string    `json:"user_id"`
-	State     string    `json:"state"` // pending, reviewed
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// CreateIn is the input for creating a pull request
+// CreateIn represents input for creating a PR
 type CreateIn struct {
-	Title      string   `json:"title"`
-	Body       string   `json:"body"`
-	HeadBranch string   `json:"head_branch"`
-	BaseBranch string   `json:"base_branch"`
-	HeadRepoID string   `json:"head_repo_id,omitempty"`
-	IsDraft    bool     `json:"is_draft"`
-	Assignees  []string `json:"assignees,omitempty"`
-	Labels     []string `json:"labels,omitempty"`
-	Reviewers  []string `json:"reviewers,omitempty"`
+	Title               string `json:"title"`
+	Body                string `json:"body,omitempty"`
+	Head                string `json:"head"` // branch name or owner:branch
+	Base                string `json:"base"`
+	Draft               bool   `json:"draft,omitempty"`
+	MaintainerCanModify bool   `json:"maintainer_can_modify,omitempty"`
 }
 
-// UpdateIn is the input for updating a pull request
+// UpdateIn represents input for updating a PR
 type UpdateIn struct {
-	Title       *string   `json:"title,omitempty"`
-	Body        *string   `json:"body,omitempty"`
-	BaseBranch  *string   `json:"base_branch,omitempty"`
-	MilestoneID *string   `json:"milestone_id,omitempty"`
-	Assignees   *[]string `json:"assignees,omitempty"`
-	Labels      *[]string `json:"labels,omitempty"`
+	Title               *string `json:"title,omitempty"`
+	Body                *string `json:"body,omitempty"`
+	State               *string `json:"state,omitempty"` // open, closed
+	Base                *string `json:"base,omitempty"`
+	MaintainerCanModify *bool   `json:"maintainer_can_modify,omitempty"`
 }
 
-// CreateReviewIn is the input for creating a review
+// MergeIn represents input for merging a PR
+type MergeIn struct {
+	CommitTitle   string `json:"commit_title,omitempty"`
+	CommitMessage string `json:"commit_message,omitempty"`
+	SHA           string `json:"sha,omitempty"`
+	MergeMethod   string `json:"merge_method,omitempty"` // merge, squash, rebase
+}
+
+// CreateReviewIn represents input for creating a review
 type CreateReviewIn struct {
-	Body      string                    `json:"body"`
-	CommitSHA string                    `json:"commit_sha"`
-	Event     string                    `json:"event"` // APPROVE, REQUEST_CHANGES, COMMENT
-	Comments  []*CreateReviewCommentIn `json:"comments,omitempty"`
+	CommitID string           `json:"commit_id,omitempty"`
+	Body     string           `json:"body,omitempty"`
+	Event    string           `json:"event,omitempty"` // APPROVE, REQUEST_CHANGES, COMMENT
+	Comments []*ReviewComment `json:"comments,omitempty"`
 }
 
-// CreateReviewCommentIn is the input for creating a review comment
-type CreateReviewCommentIn struct {
-	Path     string `json:"path"`
-	Position int    `json:"position,omitempty"`
-	Line     int    `json:"line,omitempty"`
-	Side     string `json:"side,omitempty"`
-	Body     string `json:"body"`
+// SubmitReviewIn represents input for submitting a review
+type SubmitReviewIn struct {
+	Body  string `json:"body,omitempty"`
+	Event string `json:"event"` // APPROVE, REQUEST_CHANGES, COMMENT
 }
 
-// ListOpts are options for listing pull requests
+// ListOpts contains options for listing PRs
 type ListOpts struct {
-	State     string // open, closed, all
-	Sort      string // created, updated, popularity
-	Direction string // asc, desc
-	Head      string
-	Base      string
-	Limit     int
-	Offset    int
+	Page      int    `json:"page,omitempty"`
+	PerPage   int    `json:"per_page,omitempty"`
+	State     string `json:"state,omitempty"`     // open, closed, all
+	Head      string `json:"head,omitempty"`
+	Base      string `json:"base,omitempty"`
+	Sort      string `json:"sort,omitempty"`      // created, updated, popularity, long-running
+	Direction string `json:"direction,omitempty"` // asc, desc
 }
 
-// API is the pulls service interface
+// API defines the pulls service interface
 type API interface {
-	// CRUD
-	Create(ctx context.Context, repoID, authorID string, in *CreateIn) (*PullRequest, error)
-	GetByID(ctx context.Context, id string) (*PullRequest, error)
-	GetByNumber(ctx context.Context, repoID string, number int) (*PullRequest, error)
-	Update(ctx context.Context, id string, in *UpdateIn) (*PullRequest, error)
-	List(ctx context.Context, repoID string, opts *ListOpts) ([]*PullRequest, int, error)
+	// List returns PRs for a repository
+	List(ctx context.Context, owner, repo string, opts *ListOpts) ([]*PullRequest, error)
 
-	// State management
-	Close(ctx context.Context, id string) error
-	Reopen(ctx context.Context, id string) error
-	Merge(ctx context.Context, id, userID string, method string, commitMessage string) error
-	MarkReady(ctx context.Context, id string) error
-	Lock(ctx context.Context, id, reason string) error
-	Unlock(ctx context.Context, id string) error
+	// Get retrieves a PR by number
+	Get(ctx context.Context, owner, repo string, number int) (*PullRequest, error)
 
-	// Labels
-	AddLabels(ctx context.Context, id string, labelIDs []string) error
-	RemoveLabel(ctx context.Context, id, labelID string) error
-	SetLabels(ctx context.Context, id string, labelIDs []string) error
+	// Create creates a new PR
+	Create(ctx context.Context, owner, repo string, creatorID int64, in *CreateIn) (*PullRequest, error)
 
-	// Assignees
-	AddAssignees(ctx context.Context, id string, userIDs []string) error
-	RemoveAssignees(ctx context.Context, id string, userIDs []string) error
+	// Update updates a PR
+	Update(ctx context.Context, owner, repo string, number int, in *UpdateIn) (*PullRequest, error)
 
-	// Reviewers
-	RequestReview(ctx context.Context, id string, userIDs []string) error
-	RemoveReviewRequest(ctx context.Context, id string, userIDs []string) error
+	// ListCommits returns commits in a PR
+	ListCommits(ctx context.Context, owner, repo string, number int, opts *ListOpts) ([]*Commit, error)
+
+	// ListFiles returns files in a PR
+	ListFiles(ctx context.Context, owner, repo string, number int, opts *ListOpts) ([]*PRFile, error)
+
+	// IsMerged checks if a PR is merged
+	IsMerged(ctx context.Context, owner, repo string, number int) (bool, error)
+
+	// Merge merges a PR
+	Merge(ctx context.Context, owner, repo string, number int, in *MergeIn) (*MergeResult, error)
+
+	// UpdateBranch updates a PR branch
+	UpdateBranch(ctx context.Context, owner, repo string, number int) error
 
 	// Reviews
-	CreateReview(ctx context.Context, prID, userID string, in *CreateReviewIn) (*Review, error)
-	GetReview(ctx context.Context, id string) (*Review, error)
-	SubmitReview(ctx context.Context, reviewID, event string) (*Review, error)
-	DismissReview(ctx context.Context, reviewID, message string) error
-	ListReviews(ctx context.Context, prID string) ([]*Review, error)
+	ListReviews(ctx context.Context, owner, repo string, number int, opts *ListOpts) ([]*Review, error)
+	GetReview(ctx context.Context, owner, repo string, number int, reviewID int64) (*Review, error)
+	CreateReview(ctx context.Context, owner, repo string, number int, userID int64, in *CreateReviewIn) (*Review, error)
+	UpdateReview(ctx context.Context, owner, repo string, number int, reviewID int64, body string) (*Review, error)
+	SubmitReview(ctx context.Context, owner, repo string, number int, reviewID int64, in *SubmitReviewIn) (*Review, error)
+	DismissReview(ctx context.Context, owner, repo string, number int, reviewID int64, message string) (*Review, error)
 
-	// Review Comments
-	CreateReviewComment(ctx context.Context, prID, reviewID, userID string, in *CreateReviewCommentIn) (*ReviewComment, error)
-	UpdateReviewComment(ctx context.Context, commentID, body string) (*ReviewComment, error)
-	DeleteReviewComment(ctx context.Context, commentID string) error
-	ListReviewComments(ctx context.Context, prID string) ([]*ReviewComment, error)
+	// Review comments
+	ListReviewComments(ctx context.Context, owner, repo string, number int, opts *ListOpts) ([]*ReviewComment, error)
+	CreateReviewComment(ctx context.Context, owner, repo string, number int, userID int64, in *CreateReviewCommentIn) (*ReviewComment, error)
+
+	// Reviewers
+	RequestReviewers(ctx context.Context, owner, repo string, number int, reviewers, teamReviewers []string) (*PullRequest, error)
+	RemoveReviewers(ctx context.Context, owner, repo string, number int, reviewers, teamReviewers []string) (*PullRequest, error)
 }
 
-// Store is the pulls data store interface
+// CreateReviewCommentIn represents input for creating a review comment
+type CreateReviewCommentIn struct {
+	Body      string `json:"body"`
+	CommitID  string `json:"commit_id"`
+	Path      string `json:"path"`
+	Position  int    `json:"position,omitempty"`
+	Side      string `json:"side,omitempty"`
+	Line      int    `json:"line,omitempty"`
+	StartLine int    `json:"start_line,omitempty"`
+	StartSide string `json:"start_side,omitempty"`
+	InReplyTo int64  `json:"in_reply_to,omitempty"`
+}
+
+// Commit represents a commit in a PR
+type Commit struct {
+	SHA       string            `json:"sha"`
+	NodeID    string            `json:"node_id"`
+	Commit    *CommitData       `json:"commit"`
+	URL       string            `json:"url"`
+	HTMLURL   string            `json:"html_url"`
+	Author    *users.SimpleUser `json:"author"`
+	Committer *users.SimpleUser `json:"committer"`
+	Parents   []*CommitRef      `json:"parents"`
+}
+
+// CommitData contains commit details
+type CommitData struct {
+	Author    *CommitAuthor `json:"author"`
+	Committer *CommitAuthor `json:"committer"`
+	Message   string        `json:"message"`
+	Tree      *CommitRef    `json:"tree"`
+	URL       string        `json:"url"`
+}
+
+// CommitAuthor represents a commit author
+type CommitAuthor struct {
+	Name  string    `json:"name"`
+	Email string    `json:"email"`
+	Date  time.Time `json:"date"`
+}
+
+// CommitRef represents a commit reference
+type CommitRef struct {
+	SHA string `json:"sha"`
+	URL string `json:"url"`
+}
+
+// Store defines the data access interface for pulls
 type Store interface {
-	// PR CRUD
 	Create(ctx context.Context, pr *PullRequest) error
-	GetByID(ctx context.Context, id string) (*PullRequest, error)
-	GetByNumber(ctx context.Context, repoID string, number int) (*PullRequest, error)
-	Update(ctx context.Context, pr *PullRequest) error
-	Delete(ctx context.Context, id string) error
-	List(ctx context.Context, repoID string, state string, limit, offset int) ([]*PullRequest, int, error)
-	GetNextNumber(ctx context.Context, repoID string) (int, error)
+	GetByID(ctx context.Context, id int64) (*PullRequest, error)
+	GetByNumber(ctx context.Context, repoID int64, number int) (*PullRequest, error)
+	Update(ctx context.Context, id int64, in *UpdateIn) error
+	Delete(ctx context.Context, id int64) error
+	List(ctx context.Context, repoID int64, opts *ListOpts) ([]*PullRequest, error)
+	NextNumber(ctx context.Context, repoID int64) (int, error)
 
-	// Labels
-	AddLabel(ctx context.Context, pl *PRLabel) error
-	RemoveLabel(ctx context.Context, prID, labelID string) error
-	ListLabels(ctx context.Context, prID string) ([]string, error)
-
-	// Assignees
-	AddAssignee(ctx context.Context, pa *PRAssignee) error
-	RemoveAssignee(ctx context.Context, prID, userID string) error
-	ListAssignees(ctx context.Context, prID string) ([]string, error)
-
-	// Reviewers
-	AddReviewer(ctx context.Context, pr *PRReviewer) error
-	RemoveReviewer(ctx context.Context, prID, userID string) error
-	ListReviewers(ctx context.Context, prID string) ([]*PRReviewer, error)
+	// Merge
+	SetMerged(ctx context.Context, id int64, mergedAt time.Time, mergeCommitSHA string, mergedByID int64) error
 
 	// Reviews
-	CreateReview(ctx context.Context, r *Review) error
-	GetReview(ctx context.Context, id string) (*Review, error)
-	UpdateReview(ctx context.Context, r *Review) error
-	ListReviews(ctx context.Context, prID string) ([]*Review, error)
+	CreateReview(ctx context.Context, review *Review) error
+	GetReviewByID(ctx context.Context, id int64) (*Review, error)
+	UpdateReview(ctx context.Context, id int64, body string) error
+	SetReviewState(ctx context.Context, id int64, state string) error
+	ListReviews(ctx context.Context, prID int64, opts *ListOpts) ([]*Review, error)
 
-	// Review Comments
-	CreateReviewComment(ctx context.Context, rc *ReviewComment) error
-	GetReviewComment(ctx context.Context, id string) (*ReviewComment, error)
-	UpdateReviewComment(ctx context.Context, rc *ReviewComment) error
-	DeleteReviewComment(ctx context.Context, id string) error
-	ListReviewComments(ctx context.Context, prID string) ([]*ReviewComment, error)
+	// Review comments
+	CreateReviewComment(ctx context.Context, comment *ReviewComment) error
+	GetReviewCommentByID(ctx context.Context, id int64) (*ReviewComment, error)
+	UpdateReviewComment(ctx context.Context, id int64, body string) error
+	DeleteReviewComment(ctx context.Context, id int64) error
+	ListReviewComments(ctx context.Context, prID int64, opts *ListOpts) ([]*ReviewComment, error)
+
+	// Requested reviewers
+	AddRequestedReviewer(ctx context.Context, prID, userID int64) error
+	RemoveRequestedReviewer(ctx context.Context, prID, userID int64) error
+	ListRequestedReviewers(ctx context.Context, prID int64) ([]*users.SimpleUser, error)
+
+	// Requested teams
+	AddRequestedTeam(ctx context.Context, prID, teamID int64) error
+	RemoveRequestedTeam(ctx context.Context, prID, teamID int64) error
+	ListRequestedTeams(ctx context.Context, prID int64) ([]*TeamSimple, error)
 }

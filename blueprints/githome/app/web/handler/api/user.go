@@ -1,257 +1,274 @@
 package api
 
 import (
-	"strconv"
+	"net/http"
 
-	"github.com/go-mizu/blueprints/githome/feature/repos"
-	"github.com/go-mizu/blueprints/githome/feature/users"
-	"github.com/go-mizu/mizu"
+	"github.com/mizu-framework/mizu/blueprints/githome/feature/users"
 )
 
-// User handles user endpoints
-type User struct {
-	users     users.API
-	repos     repos.API
-	getUserID func(*mizu.Ctx) string
+// UserHandler handles user endpoints
+type UserHandler struct {
+	users users.API
 }
 
-// NewUser creates a new user handler
-func NewUser(users users.API, repos repos.API, getUserID func(*mizu.Ctx) string) *User {
-	return &User{
-		users:     users,
-		repos:     repos,
-		getUserID: getUserID,
-	}
+// NewUserHandler creates a new user handler
+func NewUserHandler(users users.API) *UserHandler {
+	return &UserHandler{users: users}
 }
 
-// GetCurrent returns the current authenticated user
-func (h *User) GetCurrent(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// GetAuthenticatedUser handles GET /user
+func (h *UserHandler) GetAuthenticatedUser(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
-
-	user, err := h.users.GetByID(c.Context(), userID)
-	if err != nil {
-		return NotFound(c, "user not found")
-	}
-
-	return OK(c, user)
+	WriteJSON(w, http.StatusOK, user)
 }
 
-// UpdateCurrent updates the current user's profile
-func (h *User) UpdateCurrent(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// UpdateAuthenticatedUser handles PATCH /user
+func (h *UserHandler) UpdateAuthenticatedUser(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
 	var in users.UpdateIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
 	}
 
-	user, err := h.users.Update(c.Context(), userID, &in)
+	updated, err := h.users.Update(r.Context(), user.ID, &in)
 	if err != nil {
-		return InternalError(c, "failed to update user")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, user)
+	WriteJSON(w, http.StatusOK, updated)
 }
 
-// Delete deletes the current user's account
-func (h *User) Delete(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// ListUsers handles GET /users
+func (h *UserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
+	pagination := GetPaginationParams(r)
+	opts := &users.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
 	}
 
-	if err := h.users.Delete(c.Context(), userID); err != nil {
-		return InternalError(c, "failed to delete user")
-	}
-
-	return NoContent(c)
-}
-
-// ChangePassword changes the current user's password
-func (h *User) ChangePassword(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	var in users.ChangePasswordIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
-	}
-
-	if err := h.users.ChangePassword(c.Context(), userID, &in); err != nil {
-		switch err {
-		case users.ErrInvalidPassword:
-			return BadRequest(c, "current password is incorrect")
-		case users.ErrPasswordTooShort:
-			return BadRequest(c, "new password must be at least 8 characters")
-		default:
-			return InternalError(c, "failed to change password")
+	if since := QueryParam(r, "since"); since != "" {
+		if n, err := PathParamInt64(r, "since"); err == nil {
+			opts.Since = n
 		}
 	}
 
-	return OK(c, map[string]string{"message": "password changed"})
+	userList, err := h.users.List(r.Context(), opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, userList)
 }
 
-// GetByUsername returns a user by username
-func (h *User) GetByUsername(c *mizu.Ctx) error {
-	username := c.Param("username")
+// GetUser handles GET /users/{username}
+func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
+	username := PathParam(r, "username")
 	if username == "" {
-		return BadRequest(c, "username is required")
+		WriteBadRequest(w, "username is required")
+		return
 	}
 
-	user, err := h.users.GetByUsername(c.Context(), username)
+	user, err := h.users.GetByLogin(r.Context(), username)
 	if err != nil {
-		return NotFound(c, "user not found")
-	}
-
-	return OK(c, user)
-}
-
-// GetByEmail returns a user by email
-func (h *User) GetByEmail(c *mizu.Ctx) error {
-	email := c.Param("email")
-	if email == "" {
-		return BadRequest(c, "email is required")
-	}
-
-	user, err := h.users.GetByEmail(c.Context(), email)
-	if err != nil {
-		return NotFound(c, "user not found")
-	}
-
-	return OK(c, user)
-}
-
-// List lists all users with pagination
-func (h *User) List(c *mizu.Ctx) error {
-	page, _ := strconv.Atoi(c.Query("page"))
-	perPage, _ := strconv.Atoi(c.Query("per_page"))
-	if page < 1 {
-		page = 1
-	}
-	if perPage < 1 || perPage > 100 {
-		perPage = 30
-	}
-
-	userList, err := h.users.List(c.Context(), perPage, (page-1)*perPage)
-	if err != nil {
-		return InternalError(c, "failed to list users")
-	}
-
-	return OK(c, userList)
-}
-
-// ListRepos lists the current user's repositories
-func (h *User) ListRepos(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	page, _ := strconv.Atoi(c.Query("page"))
-	perPage, _ := strconv.Atoi(c.Query("per_page"))
-	if page < 1 {
-		page = 1
-	}
-	if perPage < 1 || perPage > 100 {
-		perPage = 30
-	}
-
-	opts := &repos.ListOpts{
-		Type:   c.Query("type"),
-		Sort:   c.Query("sort"),
-		Limit:  perPage,
-		Offset: (page - 1) * perPage,
-	}
-
-	repoList, err := h.repos.ListByOwner(c.Context(), userID, "user", opts)
-	if err != nil {
-		return InternalError(c, "failed to list repositories")
-	}
-
-	return OK(c, repoList)
-}
-
-// ListUserRepos lists a user's public repositories
-func (h *User) ListUserRepos(c *mizu.Ctx) error {
-	username := c.Param("username")
-	if username == "" {
-		return BadRequest(c, "username is required")
-	}
-
-	user, err := h.users.GetByUsername(c.Context(), username)
-	if err != nil {
-		return NotFound(c, "user not found")
-	}
-
-	page, _ := strconv.Atoi(c.Query("page"))
-	perPage, _ := strconv.Atoi(c.Query("per_page"))
-	if page < 1 {
-		page = 1
-	}
-	if perPage < 1 || perPage > 100 {
-		perPage = 30
-	}
-
-	opts := &repos.ListOpts{
-		Type:   c.Query("type"),
-		Sort:   c.Query("sort"),
-		Limit:  perPage,
-		Offset: (page - 1) * perPage,
-	}
-
-	repoList, err := h.repos.ListByOwner(c.Context(), user.ID, "user", opts)
-	if err != nil {
-		return InternalError(c, "failed to list repositories")
-	}
-
-	// Filter out private repos if not the owner
-	currentUserID := h.getUserID(c)
-	if currentUserID != user.ID {
-		var publicRepos []*repos.Repository
-		for _, repo := range repoList {
-			if !repo.IsPrivate {
-				publicRepos = append(publicRepos, repo)
-			}
+		if err == users.ErrNotFound {
+			WriteNotFound(w, "User")
+			return
 		}
-		repoList = publicRepos
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, repoList)
+	WriteJSON(w, http.StatusOK, user)
 }
 
-// ListStarred lists repositories starred by the current user
-func (h *User) ListStarred(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// ListFollowers handles GET /users/{username}/followers
+func (h *UserHandler) ListFollowers(w http.ResponseWriter, r *http.Request) {
+	username := PathParam(r, "username")
+	pagination := GetPaginationParams(r)
+	opts := &users.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
 	}
 
-	page, _ := strconv.Atoi(c.Query("page"))
-	perPage, _ := strconv.Atoi(c.Query("per_page"))
-	if page < 1 {
-		page = 1
-	}
-	if perPage < 1 || perPage > 100 {
-		perPage = 30
-	}
-
-	opts := &repos.ListOpts{
-		Limit:  perPage,
-		Offset: (page - 1) * perPage,
-	}
-
-	repoList, err := h.repos.ListStarred(c.Context(), userID, opts)
+	followers, err := h.users.ListFollowers(r.Context(), username, opts)
 	if err != nil {
-		return InternalError(c, "failed to list starred repositories")
+		if err == users.ErrNotFound {
+			WriteNotFound(w, "User")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, repoList)
+	WriteJSON(w, http.StatusOK, followers)
+}
+
+// ListFollowing handles GET /users/{username}/following
+func (h *UserHandler) ListFollowing(w http.ResponseWriter, r *http.Request) {
+	username := PathParam(r, "username")
+	pagination := GetPaginationParams(r)
+	opts := &users.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+	}
+
+	following, err := h.users.ListFollowing(r.Context(), username, opts)
+	if err != nil {
+		if err == users.ErrNotFound {
+			WriteNotFound(w, "User")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, following)
+}
+
+// CheckFollowing handles GET /users/{username}/following/{target_user}
+func (h *UserHandler) CheckFollowing(w http.ResponseWriter, r *http.Request) {
+	username := PathParam(r, "username")
+	target := PathParam(r, "target_user")
+
+	isFollowing, err := h.users.IsFollowing(r.Context(), username, target)
+	if err != nil {
+		if err == users.ErrNotFound {
+			WriteNotFound(w, "User")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if isFollowing {
+		WriteNoContent(w)
+	} else {
+		WriteNotFound(w, "Follow")
+	}
+}
+
+// ListAuthenticatedUserFollowers handles GET /user/followers
+func (h *UserHandler) ListAuthenticatedUserFollowers(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	pagination := GetPaginationParams(r)
+	opts := &users.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+	}
+
+	followers, err := h.users.ListFollowers(r.Context(), user.Login, opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, followers)
+}
+
+// ListAuthenticatedUserFollowing handles GET /user/following
+func (h *UserHandler) ListAuthenticatedUserFollowing(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	pagination := GetPaginationParams(r)
+	opts := &users.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+	}
+
+	following, err := h.users.ListFollowing(r.Context(), user.Login, opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, following)
+}
+
+// CheckAuthenticatedUserFollowing handles GET /user/following/{username}
+func (h *UserHandler) CheckAuthenticatedUserFollowing(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	target := PathParam(r, "username")
+	isFollowing, err := h.users.IsFollowing(r.Context(), user.Login, target)
+	if err != nil {
+		if err == users.ErrNotFound {
+			WriteNotFound(w, "User")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if isFollowing {
+		WriteNoContent(w)
+	} else {
+		WriteNotFound(w, "Follow")
+	}
+}
+
+// FollowUser handles PUT /user/following/{username}
+func (h *UserHandler) FollowUser(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	target := PathParam(r, "username")
+	if err := h.users.Follow(r.Context(), user.ID, target); err != nil {
+		if err == users.ErrNotFound {
+			WriteNotFound(w, "User")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteNoContent(w)
+}
+
+// UnfollowUser handles DELETE /user/following/{username}
+func (h *UserHandler) UnfollowUser(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	target := PathParam(r, "username")
+	if err := h.users.Unfollow(r.Context(), user.ID, target); err != nil {
+		if err == users.ErrNotFound {
+			WriteNotFound(w, "User")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteNoContent(w)
 }
