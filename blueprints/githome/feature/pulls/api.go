@@ -128,6 +128,9 @@ type Review struct {
 	CommitID          string            `json:"commit_id"`
 	SubmittedAt       time.Time         `json:"submitted_at"`
 	AuthorAssociation string            `json:"author_association"`
+	// Internal
+	PRID   int64 `json:"-"`
+	UserID int64 `json:"-"`
 }
 
 // ReviewComment represents a PR review comment
@@ -156,6 +159,10 @@ type ReviewComment struct {
 	OriginalStartLine   int               `json:"original_start_line,omitempty"`
 	Side                string            `json:"side,omitempty"` // LEFT, RIGHT
 	StartSide           string            `json:"start_side,omitempty"`
+	// Internal
+	PRID     int64  `json:"-"`
+	ReviewID *int64 `json:"-"`
+	UserID   int64  `json:"-"`
 }
 
 // PRFile represents a file in a PR
