@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"html/template"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-mizu/blueprints/githome/feature/issues"
 	"github.com/go-mizu/blueprints/githome/feature/repos"
@@ -10,58 +12,189 @@ import (
 	"github.com/go-mizu/mizu"
 )
 
+// pathParts extracts path segments from the request URL
+func pathParts(c *mizu.Ctx) []string {
+	path := strings.Trim(c.Request().URL.Path, "/")
+	if path == "" {
+		return nil
+	}
+	return strings.Split(path, "/")
+}
+
 // Page handles HTML page rendering
 type Page struct {
-	users   users.API
-	repos   repos.API
-	issues  issues.API
-	getUser func(*mizu.Ctx) *users.User
+	users     users.API
+	repos     repos.API
+	issues    issues.API
+	getUser   func(*mizu.Ctx) *users.User
+	templates map[string]*template.Template
 }
 
 // NewPage creates a new page handler
-func NewPage(users users.API, repos repos.API, issues issues.API, getUser func(*mizu.Ctx) *users.User) *Page {
+func NewPage(users users.API, repos repos.API, issues issues.API, getUser func(*mizu.Ctx) *users.User, templates map[string]*template.Template) *Page {
 	return &Page{
-		users:   users,
-		repos:   repos,
-		issues:  issues,
-		getUser: getUser,
+		users:     users,
+		repos:     repos,
+		issues:    issues,
+		getUser:   getUser,
+		templates: templates,
 	}
+}
+
+// ============================================
+// Template Data Types
+// ============================================
+
+// LoginData is data for the login page
+type LoginData struct {
+	Title string
+	Error string
+}
+
+// RegisterData is data for the register page
+type RegisterData struct {
+	Title string
+	Error string
+}
+
+// HomeData is data for the home page
+type HomeData struct {
+	Title        string
+	User         *users.User
+	Repositories []*repos.Repository
+}
+
+// ExploreData is data for the explore page
+type ExploreData struct {
+	Title        string
+	User         *users.User
+	Repositories []*repos.Repository
+	Query        string
+}
+
+// NewRepoData is data for the new repository page
+type NewRepoData struct {
+	Title string
+	User  *users.User
+	Error string
+}
+
+// UserProfileData is data for the user profile page
+type UserProfileData struct {
+	Title        string
+	User         *users.User
+	Profile      *users.User
+	Repositories []*repos.Repository
+	IsOwner      bool
+}
+
+// RepoHomeData is data for the repository home page
+type RepoHomeData struct {
+	Title      string
+	User       *users.User
+	Owner      *users.User
+	Repository *repos.Repository
+	IsStarred  bool
+	CanEdit    bool
+}
+
+// RepoIssuesData is data for the repository issues page
+type RepoIssuesData struct {
+	Title      string
+	User       *users.User
+	Owner      *users.User
+	Repository *repos.Repository
+	Issues     []*issues.Issue
+	Total      int
+	State      string
+}
+
+// IssueViewData is data for the issue view page
+type IssueViewData struct {
+	Title      string
+	User       *users.User
+	Owner      *users.User
+	Repository *repos.Repository
+	Issue      *issues.Issue
+	Author     *users.User
+	Comments   []*issues.Comment
+	CanEdit    bool
+}
+
+// NewIssueData is data for the new issue page
+type NewIssueData struct {
+	Title      string
+	User       *users.User
+	Owner      *users.User
+	Repository *repos.Repository
+}
+
+// RepoSettingsData is data for the repository settings page
+type RepoSettingsData struct {
+	Title         string
+	User          *users.User
+	Owner         *users.User
+	Repository    *repos.Repository
+	Collaborators []*repos.Collaborator
+}
+
+// NotFoundData is data for the 404 page
+type NotFoundData struct {
+	Title   string
+	User    *users.User
+	Message string
+}
+
+// ============================================
+// Page Handlers
+// ============================================
+
+// render executes a template with data
+func (h *Page) render(c *mizu.Ctx, name string, data interface{}) error {
+	tmpl, ok := h.templates[name]
+	if !ok {
+		// Fallback to JSON if template not found
+		return c.JSON(http.StatusOK, data)
+	}
+
+	c.Writer().Header().Set("Content-Type", "text/html; charset=utf-8")
+	return tmpl.Execute(c.Writer(), data)
 }
 
 // Home renders the home page
 func (h *Page) Home(c *mizu.Ctx) error {
 	user := h.getUser(c)
 
+	var repoList []*repos.Repository
 	if user != nil {
-		// Authenticated: show dashboard
-		repoList, _ := h.repos.ListAccessible(c.Context(), user.ID, &repos.ListOpts{Limit: 10})
-		return c.JSON(http.StatusOK, map[string]any{
-			"page":         "dashboard",
-			"user":         user,
-			"repositories": repoList,
-		})
+		repoList, _ = h.repos.ListAccessible(c.Context(), user.ID, &repos.ListOpts{Limit: 10})
+	} else {
+		repoList, _ = h.repos.ListPublic(c.Context(), &repos.ListOpts{Limit: 10})
 	}
 
-	// Not authenticated: show public repos
-	repoList, _ := h.repos.ListPublic(c.Context(), &repos.ListOpts{Limit: 10})
-	return c.JSON(http.StatusOK, map[string]any{
-		"page":         "home",
-		"repositories": repoList,
-	})
+	data := HomeData{
+		Title:        "Home",
+		User:         user,
+		Repositories: repoList,
+	}
+
+	return h.render(c, "home", data)
 }
 
 // Login renders the login page
 func (h *Page) Login(c *mizu.Ctx) error {
-	return c.JSON(http.StatusOK, map[string]any{
-		"page": "login",
-	})
+	data := LoginData{
+		Title: "Sign in",
+	}
+	return h.render(c, "login", data)
 }
 
 // Register renders the register page
 func (h *Page) Register(c *mizu.Ctx) error {
-	return c.JSON(http.StatusOK, map[string]any{
-		"page": "register",
-	})
+	data := RegisterData{
+		Title: "Sign up",
+	}
+	return h.render(c, "register", data)
 }
 
 // Explore renders the explore page
@@ -69,11 +202,14 @@ func (h *Page) Explore(c *mizu.Ctx) error {
 	user := h.getUser(c)
 	repoList, _ := h.repos.ListPublic(c.Context(), &repos.ListOpts{Limit: 30})
 
-	return c.JSON(http.StatusOK, map[string]any{
-		"page":         "explore",
-		"user":         user,
-		"repositories": repoList,
-	})
+	data := ExploreData{
+		Title:        "Explore",
+		User:         user,
+		Repositories: repoList,
+		Query:        c.Query("q"),
+	}
+
+	return h.render(c, "explore", data)
 }
 
 // NewRepo renders the new repository page
@@ -83,23 +219,32 @@ func (h *Page) NewRepo(c *mizu.Ctx) error {
 		return c.Redirect(http.StatusFound, "/login")
 	}
 
-	return c.JSON(http.StatusOK, map[string]any{
-		"page": "new_repo",
-		"user": user,
-	})
+	data := NewRepoData{
+		Title: "Create a new repository",
+		User:  user,
+	}
+
+	return h.render(c, "new_repo", data)
 }
 
 // UserProfile renders a user's profile page
 func (h *Page) UserProfile(c *mizu.Ctx) error {
-	username := c.Param("username")
+	parts := pathParts(c)
+	if len(parts) < 1 {
+		return h.notFound(c, nil, "User not found")
+	}
+	username := parts[0]
 	currentUser := h.getUser(c)
 
 	profileUser, err := h.users.GetByUsername(c.Context(), username)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]any{
-			"page":  "not_found",
-			"error": "User not found",
-		})
+		data := NotFoundData{
+			Title:   "Not Found",
+			User:    currentUser,
+			Message: "User not found",
+		}
+		c.Writer().WriteHeader(http.StatusNotFound)
+		return h.render(c, "home", data)
 	}
 
 	repoList, _ := h.repos.ListByOwner(c.Context(), profileUser.ID, "user", &repos.ListOpts{Limit: 30})
@@ -115,34 +260,37 @@ func (h *Page) UserProfile(c *mizu.Ctx) error {
 		repoList = publicRepos
 	}
 
-	return c.JSON(http.StatusOK, map[string]any{
-		"page":         "user_profile",
-		"user":         currentUser,
-		"profile":      profileUser,
-		"repositories": repoList,
-	})
+	isOwner := currentUser != nil && currentUser.ID == profileUser.ID
+
+	data := UserProfileData{
+		Title:        profileUser.Username,
+		User:         currentUser,
+		Profile:      profileUser,
+		Repositories: repoList,
+		IsOwner:      isOwner,
+	}
+
+	return h.render(c, "user_profile", data)
 }
 
 // RepoHome renders a repository's home page
 func (h *Page) RepoHome(c *mizu.Ctx) error {
-	owner := c.Param("owner")
-	repoName := c.Param("repo")
+	parts := pathParts(c)
+	if len(parts) < 2 {
+		return h.notFound(c, nil, "Repository not found")
+	}
+	owner := parts[0]
+	repoName := parts[1]
 	user := h.getUser(c)
 
 	ownerUser, err := h.users.GetByUsername(c.Context(), owner)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]any{
-			"page":  "not_found",
-			"error": "Repository not found",
-		})
+		return h.notFound(c, user, "Repository not found")
 	}
 
 	repo, err := h.repos.GetByOwnerAndName(c.Context(), ownerUser.ID, "user", repoName)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]any{
-			"page":  "not_found",
-			"error": "Repository not found",
-		})
+		return h.notFound(c, user, "Repository not found")
 	}
 
 	// Check access
@@ -152,10 +300,7 @@ func (h *Page) RepoHome(c *mizu.Ctx) error {
 			userID = user.ID
 		}
 		if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionRead) {
-			return c.JSON(http.StatusNotFound, map[string]any{
-				"page":  "not_found",
-				"error": "Repository not found",
-			})
+			return h.notFound(c, user, "Repository not found")
 		}
 	}
 
@@ -167,35 +312,42 @@ func (h *Page) RepoHome(c *mizu.Ctx) error {
 		isStarred, _ = h.repos.IsStarred(c.Context(), user.ID, repo.ID)
 	}
 
-	return c.JSON(http.StatusOK, map[string]any{
-		"page":       "repo_home",
-		"user":       user,
-		"owner":      ownerUser,
-		"repository": repo,
-		"is_starred": isStarred,
-	})
+	// Check if can edit
+	canEdit := false
+	if user != nil {
+		canEdit = h.repos.CanAccess(c.Context(), repo.ID, user.ID, repos.PermissionWrite)
+	}
+
+	data := RepoHomeData{
+		Title:      repo.Name,
+		User:       user,
+		Owner:      ownerUser,
+		Repository: repo,
+		IsStarred:  isStarred,
+		CanEdit:    canEdit,
+	}
+
+	return h.render(c, "repo_home", data)
 }
 
 // RepoIssues renders a repository's issues page
 func (h *Page) RepoIssues(c *mizu.Ctx) error {
-	owner := c.Param("owner")
-	repoName := c.Param("repo")
+	parts := pathParts(c)
+	if len(parts) < 3 {
+		return h.notFound(c, nil, "Repository not found")
+	}
+	owner := parts[0]
+	repoName := parts[1]
 	user := h.getUser(c)
 
 	ownerUser, err := h.users.GetByUsername(c.Context(), owner)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]any{
-			"page":  "not_found",
-			"error": "Repository not found",
-		})
+		return h.notFound(c, user, "Repository not found")
 	}
 
 	repo, err := h.repos.GetByOwnerAndName(c.Context(), ownerUser.ID, "user", repoName)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]any{
-			"page":  "not_found",
-			"error": "Repository not found",
-		})
+		return h.notFound(c, user, "Repository not found")
 	}
 
 	repo.OwnerName = ownerUser.Username
@@ -210,48 +362,45 @@ func (h *Page) RepoIssues(c *mizu.Ctx) error {
 		Limit: 30,
 	})
 
-	return c.JSON(http.StatusOK, map[string]any{
-		"page":       "repo_issues",
-		"user":       user,
-		"owner":      ownerUser,
-		"repository": repo,
-		"issues":     issueList,
-		"total":      total,
-		"state":      state,
-	})
+	data := RepoIssuesData{
+		Title:      "Issues",
+		User:       user,
+		Owner:      ownerUser,
+		Repository: repo,
+		Issues:     issueList,
+		Total:      total,
+		State:      state,
+	}
+
+	return h.render(c, "repo_issues", data)
 }
 
 // IssueView renders a single issue page
 func (h *Page) IssueView(c *mizu.Ctx) error {
-	owner := c.Param("owner")
-	repoName := c.Param("repo")
-	number, _ := strconv.Atoi(c.Param("number"))
+	parts := pathParts(c)
+	if len(parts) < 4 {
+		return h.notFound(c, nil, "Issue not found")
+	}
+	owner := parts[0]
+	repoName := parts[1]
+	number, _ := strconv.Atoi(parts[3])
 	user := h.getUser(c)
 
 	ownerUser, err := h.users.GetByUsername(c.Context(), owner)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]any{
-			"page":  "not_found",
-			"error": "Repository not found",
-		})
+		return h.notFound(c, user, "Repository not found")
 	}
 
 	repo, err := h.repos.GetByOwnerAndName(c.Context(), ownerUser.ID, "user", repoName)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]any{
-			"page":  "not_found",
-			"error": "Repository not found",
-		})
+		return h.notFound(c, user, "Repository not found")
 	}
 
 	repo.OwnerName = ownerUser.Username
 
 	issue, err := h.issues.GetByNumber(c.Context(), repo.ID, number)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]any{
-			"page":  "not_found",
-			"error": "Issue not found",
-		})
+		return h.notFound(c, user, "Issue not found")
 	}
 
 	// Get author
@@ -259,21 +408,34 @@ func (h *Page) IssueView(c *mizu.Ctx) error {
 
 	comments, _ := h.issues.ListComments(c.Context(), issue.ID)
 
-	return c.JSON(http.StatusOK, map[string]any{
-		"page":       "issue_view",
-		"user":       user,
-		"owner":      ownerUser,
-		"repository": repo,
-		"issue":      issue,
-		"author":     author,
-		"comments":   comments,
-	})
+	// Check if can edit
+	canEdit := false
+	if user != nil {
+		canEdit = h.repos.CanAccess(c.Context(), repo.ID, user.ID, repos.PermissionWrite)
+	}
+
+	data := IssueViewData{
+		Title:      issue.Title,
+		User:       user,
+		Owner:      ownerUser,
+		Repository: repo,
+		Issue:      issue,
+		Author:     author,
+		Comments:   comments,
+		CanEdit:    canEdit,
+	}
+
+	return h.render(c, "issue_view", data)
 }
 
 // NewIssue renders the new issue page
 func (h *Page) NewIssue(c *mizu.Ctx) error {
-	owner := c.Param("owner")
-	repoName := c.Param("repo")
+	parts := pathParts(c)
+	if len(parts) < 4 {
+		return h.notFound(c, nil, "Repository not found")
+	}
+	owner := parts[0]
+	repoName := parts[1]
 	user := h.getUser(c)
 
 	if user == nil {
@@ -282,34 +444,34 @@ func (h *Page) NewIssue(c *mizu.Ctx) error {
 
 	ownerUser, err := h.users.GetByUsername(c.Context(), owner)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]any{
-			"page":  "not_found",
-			"error": "Repository not found",
-		})
+		return h.notFound(c, user, "Repository not found")
 	}
 
 	repo, err := h.repos.GetByOwnerAndName(c.Context(), ownerUser.ID, "user", repoName)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]any{
-			"page":  "not_found",
-			"error": "Repository not found",
-		})
+		return h.notFound(c, user, "Repository not found")
 	}
 
 	repo.OwnerName = ownerUser.Username
 
-	return c.JSON(http.StatusOK, map[string]any{
-		"page":       "new_issue",
-		"user":       user,
-		"owner":      ownerUser,
-		"repository": repo,
-	})
+	data := NewIssueData{
+		Title:      "New Issue",
+		User:       user,
+		Owner:      ownerUser,
+		Repository: repo,
+	}
+
+	return h.render(c, "new_issue", data)
 }
 
 // RepoSettings renders the repository settings page
 func (h *Page) RepoSettings(c *mizu.Ctx) error {
-	owner := c.Param("owner")
-	repoName := c.Param("repo")
+	parts := pathParts(c)
+	if len(parts) < 3 {
+		return h.notFound(c, nil, "Repository not found")
+	}
+	owner := parts[0]
+	repoName := parts[1]
 	user := h.getUser(c)
 
 	if user == nil {
@@ -318,37 +480,42 @@ func (h *Page) RepoSettings(c *mizu.Ctx) error {
 
 	ownerUser, err := h.users.GetByUsername(c.Context(), owner)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]any{
-			"page":  "not_found",
-			"error": "Repository not found",
-		})
+		return h.notFound(c, user, "Repository not found")
 	}
 
 	repo, err := h.repos.GetByOwnerAndName(c.Context(), ownerUser.ID, "user", repoName)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]any{
-			"page":  "not_found",
-			"error": "Repository not found",
-		})
+		return h.notFound(c, user, "Repository not found")
 	}
 
 	repo.OwnerName = ownerUser.Username
 
 	// Check admin access
 	if !h.repos.CanAccess(c.Context(), repo.ID, user.ID, repos.PermissionAdmin) {
-		return c.JSON(http.StatusForbidden, map[string]any{
-			"page":  "forbidden",
-			"error": "You don't have permission to access this page",
-		})
+		return h.notFound(c, user, "You don't have permission to access this page")
 	}
 
 	collabs, _ := h.repos.ListCollaborators(c.Context(), repo.ID)
 
-	return c.JSON(http.StatusOK, map[string]any{
-		"page":          "repo_settings",
-		"user":          user,
-		"owner":         ownerUser,
-		"repository":    repo,
-		"collaborators": collabs,
-	})
+	data := RepoSettingsData{
+		Title:         "Settings",
+		User:          user,
+		Owner:         ownerUser,
+		Repository:    repo,
+		Collaborators: collabs,
+	}
+
+	return h.render(c, "repo_settings", data)
+}
+
+// notFound renders a not found response
+func (h *Page) notFound(c *mizu.Ctx, user *users.User, message string) error {
+	c.Writer().WriteHeader(http.StatusNotFound)
+
+	data := HomeData{
+		Title: "Not Found",
+		User:  user,
+	}
+
+	return h.render(c, "home", data)
 }

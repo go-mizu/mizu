@@ -7,7 +7,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
-	"os"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/blueprints/githome/app/web/handler"
@@ -103,18 +103,19 @@ func New(cfg Config) (*Server, error) {
 		return user
 	}
 
+	// Parse templates
+	templates, err := assets.Templates()
+	if err != nil {
+		slog.Warn("failed to parse templates", "error", err)
+		templates = make(map[string]*template.Template)
+	}
+
 	// Create handlers
 	authHandler := handler.NewAuth(usersSvc)
 	userHandler := handler.NewUser(usersSvc, reposSvc, getUserID)
 	repoHandler := handler.NewRepo(reposSvc, usersSvc, getUserID)
 	issueHandler := handler.NewIssue(issuesSvc, reposSvc, getUserID)
-	pageHandler := handler.NewPage(usersSvc, reposSvc, issuesSvc, getUser)
-
-	// Parse templates
-	templates, err := parseTemplates(cfg.Dev)
-	if err != nil {
-		slog.Warn("failed to parse templates", "error", err)
-	}
+	pageHandler := handler.NewPage(usersSvc, reposSvc, issuesSvc, getUser, templates)
 
 	// Create Mizu app
 	app := mizu.New()
@@ -139,14 +140,23 @@ func New(cfg Config) (*Server, error) {
 	return srv, nil
 }
 
+// reservedPaths are paths that cannot be used as usernames
+var reservedPaths = map[string]bool{
+	"api":      true,
+	"static":   true,
+	"login":    true,
+	"register": true,
+	"explore":  true,
+	"new":      true,
+	"livez":    true,
+	"readyz":   true,
+	"settings": true,
+}
+
 func (s *Server) setupRoutes() {
-	// Static files
-	staticSub, _ := assets.StaticFS()
-	staticHandler := http.StripPrefix("/static/", http.FileServer(http.FS(staticSub)))
-	s.app.Get("/static/{path...}", func(c *mizu.Ctx) error {
-		staticHandler.ServeHTTP(c.Writer(), c.Request())
-		return nil
-	})
+	// Static files - served via custom handler to avoid route conflicts
+	staticFS := assets.Static()
+	staticHandler := http.StripPrefix("/static/", http.FileServer(http.FS(staticFS)))
 
 	// API routes
 	s.app.Group("/api/v1", func(api *mizu.Router) {
@@ -202,19 +212,6 @@ func (s *Server) setupRoutes() {
 		api.Post("/repos/{owner}/{repo}/issues/{number}/comments", s.issueHandler.AddComment)
 	})
 
-	// HTML pages
-	s.app.Get("/", s.pageHandler.Home)
-	s.app.Get("/login", s.pageHandler.Login)
-	s.app.Get("/register", s.pageHandler.Register)
-	s.app.Get("/explore", s.pageHandler.Explore)
-	s.app.Get("/new", s.pageHandler.NewRepo)
-	s.app.Get("/{username}", s.pageHandler.UserProfile)
-	s.app.Get("/{owner}/{repo}", s.pageHandler.RepoHome)
-	s.app.Get("/{owner}/{repo}/issues", s.pageHandler.RepoIssues)
-	s.app.Get("/{owner}/{repo}/issues/new", s.pageHandler.NewIssue)
-	s.app.Get("/{owner}/{repo}/issues/{number}", s.pageHandler.IssueView)
-	s.app.Get("/{owner}/{repo}/settings", s.pageHandler.RepoSettings)
-
 	// Health checks
 	s.app.Get("/livez", func(c *mizu.Ctx) error {
 		return c.Text(http.StatusOK, "ok")
@@ -224,6 +221,68 @@ func (s *Server) setupRoutes() {
 			return c.Text(http.StatusServiceUnavailable, "database unavailable")
 		}
 		return c.Text(http.StatusOK, "ok")
+	})
+
+	// Catch-all handler for all HTML pages
+	// This handles: /, /static/*, /login, /register, /explore, /new, /{username}, /{owner}/{repo}, etc.
+	s.app.Get("/{path...}", func(c *mizu.Ctx) error {
+		path := c.Request().URL.Path
+		parts := strings.Split(strings.Trim(path, "/"), "/")
+
+		// Handle root path
+		if len(parts) == 0 || (len(parts) == 1 && parts[0] == "") {
+			return s.pageHandler.Home(c)
+		}
+
+		// Handle static files
+		if parts[0] == "static" {
+			staticHandler.ServeHTTP(c.Writer(), c.Request())
+			return nil
+		}
+
+		// Handle reserved/static HTML pages
+		if len(parts) == 1 {
+			switch parts[0] {
+			case "login":
+				return s.pageHandler.Login(c)
+			case "register":
+				return s.pageHandler.Register(c)
+			case "explore":
+				return s.pageHandler.Explore(c)
+			case "new":
+				return s.pageHandler.NewRepo(c)
+			default:
+				// /{username}
+				return s.pageHandler.UserProfile(c)
+			}
+		}
+
+		// Route based on path structure
+		switch len(parts) {
+		case 2:
+			// /{owner}/{repo}
+			return s.pageHandler.RepoHome(c)
+		case 3:
+			// /{owner}/{repo}/issues or /{owner}/{repo}/settings
+			switch parts[2] {
+			case "issues":
+				return s.pageHandler.RepoIssues(c)
+			case "settings":
+				return s.pageHandler.RepoSettings(c)
+			}
+		case 4:
+			// /{owner}/{repo}/issues/new or /{owner}/{repo}/issues/{number}
+			if parts[2] == "issues" {
+				if parts[3] == "new" {
+					return s.pageHandler.NewIssue(c)
+				}
+				return s.pageHandler.IssueView(c)
+			}
+		}
+
+		// Not found
+		c.Writer().WriteHeader(http.StatusNotFound)
+		return c.Text(http.StatusNotFound, "Not Found")
 	})
 }
 
@@ -237,64 +296,6 @@ func (s *Server) Close() error {
 	return s.db.Close()
 }
 
-func parseTemplates(dev bool) (map[string]*template.Template, error) {
-	templates := make(map[string]*template.Template)
-
-	funcMap := template.FuncMap{
-		"formatTime": func(t time.Time) string {
-			return t.Format("Jan 2, 2006")
-		},
-		"timeAgo": func(t time.Time) string {
-			d := time.Since(t)
-			if d < time.Minute {
-				return "just now"
-			}
-			if d < time.Hour {
-				return fmt.Sprintf("%d minutes ago", int(d.Minutes()))
-			}
-			if d < 24*time.Hour {
-				return fmt.Sprintf("%d hours ago", int(d.Hours()))
-			}
-			if d < 7*24*time.Hour {
-				return fmt.Sprintf("%d days ago", int(d.Hours()/24))
-			}
-			return t.Format("Jan 2, 2006")
-		},
-		"add": func(a, b int) int {
-			return a + b
-		},
-		"sub": func(a, b int) int {
-			return a - b
-		},
-	}
-
-	// In development, load from filesystem
-	if dev {
-		viewsDir := "./assets/views"
-		if _, err := os.Stat(viewsDir); os.IsNotExist(err) {
-			return templates, nil
-		}
-
-		// Load each page template
-		pages := []string{
-			"home", "login", "register", "explore", "new_repo",
-			"user_profile", "repo_home", "repo_issues", "issue_view", "new_issue", "repo_settings",
-		}
-
-		for _, page := range pages {
-			tmpl := template.New(page).Funcs(funcMap)
-			// Parse base layout
-			tmpl, err := tmpl.ParseFiles(
-				viewsDir+"/layouts/base.html",
-				viewsDir+"/"+page+".html",
-			)
-			if err != nil {
-				slog.Warn("failed to parse template", "page", page, "error", err)
-				continue
-			}
-			templates[page] = tmpl
-		}
-	}
-
-	return templates, nil
-}
+// Unused imports placeholder to avoid compile errors
+var _ = time.Now
+var _ = fmt.Sprintf
