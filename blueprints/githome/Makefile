@@ -63,14 +63,15 @@ deps: ## Download dependencies
 	@GOWORK=off $(GO) mod tidy
 	@GOWORK=off $(GO) mod download
 
+.PHONY: update
+update: ## Update dependencies
+	@rm -f go.sum
+	@$(GO) get -u ./...
+	@$(GO) mod tidy
+
 .PHONY: help
 help: ## Show available commands
 	@echo ""
-	@echo "GitHome Blueprint - GitHub-style repository hosting"
-	@echo ""
-	@echo "  Binary:   $(BINARY)"
-	@echo "  Data:     $(DATA_DIR)"
-	@echo ""
-	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
-	  awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_\-]+:.*?## ' $(MAKEFILE_LIST) | \
+	  sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 	@echo ""
