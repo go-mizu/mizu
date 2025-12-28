@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -12,8 +13,8 @@ var (
 	Commit    = "unknown"
 	BuildTime = "unknown"
 
-	dataDir = "./data"
-	reposDir = "./data/repos"
+	dataDir  = os.Getenv("HOME") + "/data/blueprint/githome"
+	reposDir = dataDir + "/repos"
 )
 
 func Execute(ctx context.Context) error {
@@ -25,8 +26,8 @@ It provides repository hosting, issues, pull requests, and more.`,
 		Version: fmt.Sprintf("%s (commit: %s, built: %s)", Version, Commit, BuildTime),
 	}
 
-	rootCmd.PersistentFlags().StringVar(&dataDir, "data-dir", "./data", "Data directory path")
-	rootCmd.PersistentFlags().StringVar(&reposDir, "repos-dir", "./data/repos", "Git repositories directory path")
+	rootCmd.PersistentFlags().StringVar(&dataDir, "data-dir", dataDir, "Data directory path")
+	rootCmd.PersistentFlags().StringVar(&reposDir, "repos-dir", dataDir+"/repos", "Git repositories directory path")
 
 	rootCmd.AddCommand(
 		newServeCmd(),

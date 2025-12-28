@@ -204,6 +204,9 @@ CREATE TABLE IF NOT EXISTS repositories (
     size_kb             INTEGER DEFAULT 0,
     license             VARCHAR DEFAULT '',
 
+    language            VARCHAR DEFAULT '',
+    language_color      VARCHAR DEFAULT '',
+
     has_issues          BOOLEAN DEFAULT TRUE,
     has_wiki            BOOLEAN DEFAULT FALSE,
     has_projects        BOOLEAN DEFAULT FALSE,
