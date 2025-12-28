@@ -86,16 +86,26 @@ func (s *IssuesStore) GetByNumber(ctx context.Context, repoID int64, number int)
 }
 
 func (s *IssuesStore) Update(ctx context.Context, id int64, in *issues.UpdateIn) error {
+	now := time.Now()
+	// Set closed_at when state changes to "closed", clear it when state changes to "open"
+	var closedAt sql.NullTime
+	if in.State != nil {
+		if *in.State == "closed" {
+			closedAt = sql.NullTime{Time: now, Valid: true}
+		}
+		// If reopening, closed_at will be set to NULL (Valid: false)
+	}
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE issues SET
 			title = COALESCE($2, title),
 			body = COALESCE($3, body),
 			state = COALESCE($4, state),
 			state_reason = COALESCE($5, state_reason),
-			updated_at = $6
+			closed_at = CASE WHEN $4 IS NOT NULL THEN $6 ELSE closed_at END,
+			updated_at = $7
 		WHERE id = $1
 	`, id, nullStringPtr(in.Title), nullStringPtr(in.Body), nullStringPtr(in.State),
-		nullStringPtr(in.StateReason), time.Now())
+		nullStringPtr(in.StateReason), closedAt, now)
 	return err
 }
 

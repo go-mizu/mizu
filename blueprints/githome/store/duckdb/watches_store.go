@@ -95,9 +95,11 @@ func (s *WatchesStore) ListWatchedRepos(ctx context.Context, userID int64, opts 
 	}
 
 	query := `
-		SELECT r.id, r.node_id, r.name, r.full_name, r.owner_id, r.private, r.description
+		SELECT r.id, r.node_id, r.name, r.full_name, r.owner_id, r.private, r.description,
+			u.id, u.login, u.node_id, u.avatar_url, u.type
 		FROM repositories r
 		JOIN watches w ON w.repo_id = r.id
+		JOIN users u ON u.id = r.owner_id
 		WHERE w.user_id = $1 AND w.subscribed = TRUE
 		ORDER BY w.created_at DESC`
 	query = applyPagination(query, page, perPage)
@@ -111,9 +113,13 @@ func (s *WatchesStore) ListWatchedRepos(ctx context.Context, userID int64, opts 
 	var list []*watches.Repository
 	for rows.Next() {
 		repo := &watches.Repository{}
-		if err := rows.Scan(&repo.ID, &repo.NodeID, &repo.Name, &repo.FullName, &repo.Owner, &repo.Private, &repo.Description); err != nil {
+		owner := &users.SimpleUser{}
+		var ownerID int64
+		if err := rows.Scan(&repo.ID, &repo.NodeID, &repo.Name, &repo.FullName, &ownerID, &repo.Private, &repo.Description,
+			&owner.ID, &owner.Login, &owner.NodeID, &owner.AvatarURL, &owner.Type); err != nil {
 			return nil, err
 		}
+		repo.Owner = owner
 		list = append(list, repo)
 	}
 	return list, rows.Err()
