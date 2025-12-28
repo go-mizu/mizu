@@ -807,6 +807,8 @@ func (s *Service) CreateReviewComment(ctx context.Context, owner, repo string, n
 
 	now := time.Now()
 	comment := &ReviewComment{
+		PRID:              pr.ID,
+		UserID:            userID,
 		Body:              in.Body,
 		Path:              in.Path,
 		Position:          in.Position,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/blueprints/githome/feature/repos"
@@ -147,30 +148,49 @@ func (s *ReposStore) GetByFullName(ctx context.Context, owner, name string) (*re
 }
 
 func (s *ReposStore) Update(ctx context.Context, id int64, in *repos.UpdateIn) error {
+	// If name is being changed, we also need to update full_name
+	// First get current repo to find owner
+	if in.Name != nil {
+		var ownerType, currentFullName string
+		var ownerID int64
+		err := s.db.QueryRowContext(ctx, `SELECT owner_id, owner_type, full_name FROM repositories WHERE id = $1`, id).Scan(&ownerID, &ownerType, &currentFullName)
+		if err != nil {
+			return err
+		}
+		// Extract owner login from current full_name
+		parts := strings.SplitN(currentFullName, "/", 2)
+		if len(parts) == 2 {
+			newFullName := parts[0] + "/" + *in.Name
+			_, err = s.db.ExecContext(ctx, `UPDATE repositories SET name = $2, full_name = $3, updated_at = $4 WHERE id = $1`,
+				id, *in.Name, newFullName, time.Now())
+			if err != nil {
+				return err
+			}
+		}
+	}
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE repositories SET
-			name = COALESCE($2, name),
-			description = COALESCE($3, description),
-			homepage = COALESCE($4, homepage),
-			private = COALESCE($5, private),
-			visibility = COALESCE($6, visibility),
-			has_issues = COALESCE($7, has_issues),
-			has_projects = COALESCE($8, has_projects),
-			has_wiki = COALESCE($9, has_wiki),
-			has_discussions = COALESCE($10, has_discussions),
-			is_template = COALESCE($11, is_template),
-			default_branch = COALESCE($12, default_branch),
-			allow_squash_merge = COALESCE($13, allow_squash_merge),
-			allow_merge_commit = COALESCE($14, allow_merge_commit),
-			allow_rebase_merge = COALESCE($15, allow_rebase_merge),
-			allow_auto_merge = COALESCE($16, allow_auto_merge),
-			delete_branch_on_merge = COALESCE($17, delete_branch_on_merge),
-			allow_forking = COALESCE($18, allow_forking),
-			archived = COALESCE($19, archived),
-			web_commit_signoff_required = COALESCE($20, web_commit_signoff_required),
-			updated_at = $21
+			description = COALESCE($2, description),
+			homepage = COALESCE($3, homepage),
+			private = COALESCE($4, private),
+			visibility = COALESCE($5, visibility),
+			has_issues = COALESCE($6, has_issues),
+			has_projects = COALESCE($7, has_projects),
+			has_wiki = COALESCE($8, has_wiki),
+			has_discussions = COALESCE($9, has_discussions),
+			is_template = COALESCE($10, is_template),
+			default_branch = COALESCE($11, default_branch),
+			allow_squash_merge = COALESCE($12, allow_squash_merge),
+			allow_merge_commit = COALESCE($13, allow_merge_commit),
+			allow_rebase_merge = COALESCE($14, allow_rebase_merge),
+			allow_auto_merge = COALESCE($15, allow_auto_merge),
+			delete_branch_on_merge = COALESCE($16, delete_branch_on_merge),
+			allow_forking = COALESCE($17, allow_forking),
+			archived = COALESCE($18, archived),
+			web_commit_signoff_required = COALESCE($19, web_commit_signoff_required),
+			updated_at = $20
 		WHERE id = $1
-	`, id, nullStringPtr(in.Name), nullStringPtr(in.Description), nullStringPtr(in.Homepage),
+	`, id, nullStringPtr(in.Description), nullStringPtr(in.Homepage),
 		nullBoolPtr(in.Private), nullStringPtr(in.Visibility), nullBoolPtr(in.HasIssues),
 		nullBoolPtr(in.HasProjects), nullBoolPtr(in.HasWiki), nullBoolPtr(in.HasDiscussions),
 		nullBoolPtr(in.IsTemplate), nullStringPtr(in.DefaultBranch), nullBoolPtr(in.AllowSquashMerge),

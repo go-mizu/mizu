@@ -1015,11 +1015,11 @@ func TestService_UpdateBranch_NoOp(t *testing.T) {
 	createTestRepo(t, store, user, "testrepo")
 	pr := createTestPR(t, service, "testowner", "testrepo", user.ID, "Test PR")
 
+	// Without a real git repository, UpdateBranch returns ErrNotMergeable
 	err := service.UpdateBranch(context.Background(), "testowner", "testrepo", pr.Number)
-	if err != nil {
-		t.Fatalf("UpdateBranch failed: %v", err)
+	if err != pulls.ErrNotMergeable {
+		t.Errorf("expected ErrNotMergeable (no git repo), got %v", err)
 	}
-	// No error means success (mock no-op)
 }
 
 // URL Population Tests

@@ -124,9 +124,11 @@ func (s *StarsStore) ListStarredRepos(ctx context.Context, userID int64, opts *s
 	}
 
 	query := `
-		SELECT r.id, r.node_id, r.name, r.full_name, r.owner_id, r.private, r.description
+		SELECT r.id, r.node_id, r.name, r.full_name, r.owner_id, r.private, r.description,
+			u.id, u.login, u.node_id, u.avatar_url, u.type
 		FROM repositories r
 		JOIN stars s ON s.repo_id = r.id
+		JOIN users u ON u.id = r.owner_id
 		WHERE s.user_id = $1
 		ORDER BY s.created_at DESC`
 	query = applyPagination(query, page, perPage)
@@ -140,9 +142,13 @@ func (s *StarsStore) ListStarredRepos(ctx context.Context, userID int64, opts *s
 	var list []*stars.Repository
 	for rows.Next() {
 		repo := &stars.Repository{}
-		if err := rows.Scan(&repo.ID, &repo.NodeID, &repo.Name, &repo.FullName, &repo.Owner, &repo.Private, &repo.Description); err != nil {
+		owner := &users.SimpleUser{}
+		var ownerID int64
+		if err := rows.Scan(&repo.ID, &repo.NodeID, &repo.Name, &repo.FullName, &ownerID, &repo.Private, &repo.Description,
+			&owner.ID, &owner.Login, &owner.NodeID, &owner.AvatarURL, &owner.Type); err != nil {
 			return nil, err
 		}
+		repo.Owner = owner
 		list = append(list, repo)
 	}
 	return list, rows.Err()
@@ -160,9 +166,11 @@ func (s *StarsStore) ListStarredReposWithTimestamps(ctx context.Context, userID 
 	}
 
 	query := `
-		SELECT r.id, r.node_id, r.name, r.full_name, r.owner_id, r.private, r.description, s.created_at
+		SELECT r.id, r.node_id, r.name, r.full_name, r.owner_id, r.private, r.description, s.created_at,
+			u.id, u.login, u.node_id, u.avatar_url, u.type
 		FROM repositories r
 		JOIN stars s ON s.repo_id = r.id
+		JOIN users u ON u.id = r.owner_id
 		WHERE s.user_id = $1
 		ORDER BY s.created_at DESC`
 	query = applyPagination(query, page, perPage)
@@ -176,11 +184,15 @@ func (s *StarsStore) ListStarredReposWithTimestamps(ctx context.Context, userID 
 	var list []*stars.StarredRepo
 	for rows.Next() {
 		sr := &stars.StarredRepo{Repository: &stars.Repository{}}
+		owner := &users.SimpleUser{}
+		var ownerID int64
 		if err := rows.Scan(&sr.Repository.ID, &sr.Repository.NodeID, &sr.Repository.Name,
-			&sr.Repository.FullName, &sr.Repository.Owner, &sr.Repository.Private,
-			&sr.Repository.Description, &sr.StarredAt); err != nil {
+			&sr.Repository.FullName, &ownerID, &sr.Repository.Private,
+			&sr.Repository.Description, &sr.StarredAt,
+			&owner.ID, &owner.Login, &owner.NodeID, &owner.AvatarURL, &owner.Type); err != nil {
 			return nil, err
 		}
+		sr.Repository.Owner = owner
 		list = append(list, sr)
 	}
 	return list, rows.Err()
