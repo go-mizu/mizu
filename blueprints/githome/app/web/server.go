@@ -1,6 +1,8 @@
 package web
 
 import (
+	"database/sql"
+	"fmt"
 	"net/http"
 
 	"github.com/go-mizu/blueprints/githome/app/web/handler/api"
@@ -25,8 +27,127 @@ import (
 	"github.com/go-mizu/blueprints/githome/feature/users"
 	"github.com/go-mizu/blueprints/githome/feature/watches"
 	"github.com/go-mizu/blueprints/githome/feature/webhooks"
+	"github.com/go-mizu/blueprints/githome/store/duckdb"
 	"github.com/go-mizu/mizu"
+
+	_ "github.com/duckdb/duckdb-go/v2"
 )
+
+// Config contains server configuration.
+type Config struct {
+	Addr     string
+	DataDir  string
+	ReposDir string
+	Dev      bool
+}
+
+// App wraps the server and database.
+type App struct {
+	server *Server
+	db     *sql.DB
+	config Config
+}
+
+// New creates a new App with all dependencies wired up.
+func New(cfg Config) (*App, error) {
+	// Open database
+	dbPath := cfg.DataDir + "/githome.db"
+	db, err := sql.Open("duckdb", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+
+	// Create stores
+	usersStore := duckdb.NewUsersStore(db)
+	orgsStore := duckdb.NewOrgsStore(db)
+	reposStore := duckdb.NewReposStore(db)
+	issuesStore := duckdb.NewIssuesStore(db)
+	pullsStore := duckdb.NewPullsStore(db)
+	labelsStore := duckdb.NewLabelsStore(db)
+	milestonesStore := duckdb.NewMilestonesStore(db)
+	commentsStore := duckdb.NewCommentsStore(db)
+	teamsStore := duckdb.NewTeamsStore(db)
+	releasesStore := duckdb.NewReleasesStore(db)
+	starsStore := duckdb.NewStarsStore(db)
+	watchesStore := duckdb.NewWatchesStore(db)
+	webhooksStore := duckdb.NewWebhooksStore(db)
+	notificationsStore := duckdb.NewNotificationsStore(db)
+	reactionsStore := duckdb.NewReactionsStore(db)
+	collaboratorsStore := duckdb.NewCollaboratorsStore(db)
+	branchesStore := duckdb.NewBranchesStore(db)
+	commitsStore := duckdb.NewCommitsStore(db)
+	gitStore := duckdb.NewGitStore(db)
+	searchStore := duckdb.NewSearchStore(db)
+	activitiesStore := duckdb.NewActivitiesStore(db)
+
+	// Base URL
+	baseURL := fmt.Sprintf("http://localhost%s", cfg.Addr)
+
+	// Create services
+	usersSvc := users.NewService(usersStore, baseURL)
+	orgsSvc := orgs.NewService(orgsStore, usersStore, baseURL)
+	reposSvc := repos.NewService(reposStore, usersStore, orgsStore, baseURL, cfg.ReposDir)
+	issuesSvc := issues.NewService(issuesStore, reposStore, usersStore, orgsStore, collaboratorsStore, baseURL)
+	pullsSvc := pulls.NewService(pullsStore, reposStore, usersStore, baseURL, cfg.ReposDir)
+	labelsSvc := labels.NewService(labelsStore, reposStore, issuesStore, milestonesStore, baseURL)
+	milestonesSvc := milestones.NewService(milestonesStore, reposStore, usersStore, baseURL)
+	commentsSvc := comments.NewService(commentsStore, reposStore, issuesStore, usersStore, baseURL)
+	teamsSvc := teams.NewService(teamsStore, orgsStore, reposStore, usersStore, baseURL)
+	releasesSvc := releases.NewService(releasesStore, reposStore, usersStore, baseURL, cfg.ReposDir)
+	starsSvc := stars.NewService(starsStore, reposStore, usersStore, baseURL)
+	watchesSvc := watches.NewService(watchesStore, reposStore, usersStore, baseURL)
+	webhooksSvc := webhooks.NewService(webhooksStore, reposStore, orgsStore, baseURL)
+	notificationsSvc := notifications.NewService(notificationsStore, reposStore, baseURL)
+	reactionsSvc := reactions.NewService(reactionsStore, reposStore, issuesStore, commentsStore, baseURL)
+	collaboratorsSvc := collaborators.NewService(collaboratorsStore, reposStore, usersStore, baseURL)
+	branchesSvc := branches.NewService(branchesStore, reposStore, baseURL, cfg.ReposDir)
+	commitsSvc := commits.NewService(commitsStore, reposStore, usersStore, baseURL, cfg.ReposDir)
+	gitSvc := git.NewService(gitStore, reposStore, baseURL, cfg.ReposDir)
+	searchSvc := search.NewService(searchStore, baseURL)
+	activitiesSvc := activities.NewService(activitiesStore, reposStore, orgsStore, usersStore, baseURL)
+
+	services := &Services{
+		Users:         usersSvc,
+		Orgs:          orgsSvc,
+		Repos:         reposSvc,
+		Issues:        issuesSvc,
+		Pulls:         pullsSvc,
+		Labels:        labelsSvc,
+		Milestones:    milestonesSvc,
+		Comments:      commentsSvc,
+		Teams:         teamsSvc,
+		Releases:      releasesSvc,
+		Stars:         starsSvc,
+		Watches:       watchesSvc,
+		Webhooks:      webhooksSvc,
+		Notifications: notificationsSvc,
+		Reactions:     reactionsSvc,
+		Collaborators: collaboratorsSvc,
+		Branches:      branchesSvc,
+		Commits:       commitsSvc,
+		Git:           gitSvc,
+		Search:        searchSvc,
+		Activities:    activitiesSvc,
+	}
+
+	server := NewServer(services)
+
+	return &App{
+		server: server,
+		db:     db,
+		config: cfg,
+	}, nil
+}
+
+// Run starts the HTTP server.
+func (a *App) Run() error {
+	return http.ListenAndServe(a.config.Addr, a.server.Handler())
+}
+
+// Close closes the database connection.
+func (a *App) Close() error {
+	return a.db.Close()
+}
 
 // Services contains all service dependencies
 type Services struct {

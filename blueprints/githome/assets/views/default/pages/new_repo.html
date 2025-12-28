@@ -1,0 +1,10 @@
+{{define "content"}}
+<div class="new-repo">
+    <h1>Create a new repository</h1>
+    <form method="POST" action="/user/repos">
+        <input type="text" name="name" placeholder="Repository name" required>
+        <textarea name="description" placeholder="Description (optional)"></textarea>
+        <button type="submit">Create repository</button>
+    </form>
+</div>
+{{end}}
