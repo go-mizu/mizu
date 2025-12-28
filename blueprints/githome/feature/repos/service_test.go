@@ -32,7 +32,7 @@ func setupTestService(t *testing.T) (*repos.Service, *duckdb.Store, func()) {
 		t.Fatalf("failed to ensure schema: %v", err)
 	}
 
-	service := repos.NewService(store.Repos(), store.Users(), nil, "https://api.example.com")
+	service := repos.NewService(store.Repos(), store.Users(), nil, "https://api.example.com", "")
 
 	cleanup := func() {
 		store.Close()

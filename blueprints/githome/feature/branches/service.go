@@ -3,8 +3,11 @@ package branches
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/go-mizu/blueprints/githome/feature/repos"
+	pkggit "github.com/go-mizu/blueprints/githome/pkg/git"
 )
 
 // Service implements the branches API
@@ -12,15 +15,28 @@ type Service struct {
 	store     Store
 	repoStore repos.Store
 	baseURL   string
+	reposDir  string
 }
 
 // NewService creates a new branches service
-func NewService(store Store, repoStore repos.Store, baseURL string) *Service {
+func NewService(store Store, repoStore repos.Store, baseURL, reposDir string) *Service {
 	return &Service{
 		store:     store,
 		repoStore: repoStore,
 		baseURL:   baseURL,
+		reposDir:  reposDir,
 	}
+}
+
+// getRepoPath returns the filesystem path for a repository
+func (s *Service) getRepoPath(owner, repo string) string {
+	return filepath.Join(s.reposDir, owner, repo+".git")
+}
+
+// openRepo opens a git repository
+func (s *Service) openRepo(owner, repo string) (*pkggit.Repository, error) {
+	path := s.getRepoPath(owner, repo)
+	return pkggit.Open(path)
 }
 
 // List returns branches for a repository
@@ -33,18 +49,81 @@ func (s *Service) List(ctx context.Context, owner, repo string, opts *ListOpts) 
 		return nil, repos.ErrNotFound
 	}
 
-	// Would integrate with git to list branches
-	// For now return default branch
-	return []*Branch{
-		{
-			Name: r.DefaultBranch,
+	if opts == nil {
+		opts = &ListOpts{PerPage: 30}
+	}
+	if opts.PerPage == 0 {
+		opts.PerPage = 30
+	}
+	if opts.PerPage > 100 {
+		opts.PerPage = 100
+	}
+	if opts.Page < 1 {
+		opts.Page = 1
+	}
+
+	// Try to open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			// No git repo yet, return default branch placeholder
+			return []*Branch{
+				{
+					Name: r.DefaultBranch,
+					Commit: &CommitRef{
+						SHA: "",
+						URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/HEAD", s.baseURL, owner, repo),
+					},
+					Protected: false,
+				},
+			}, nil
+		}
+		return nil, err
+	}
+
+	// List all branch refs from git
+	refs, err := gitRepo.ListRefs("heads")
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to branches
+	branches := make([]*Branch, 0, len(refs))
+	for _, ref := range refs {
+		branchName := strings.TrimPrefix(ref.Name, "refs/heads/")
+
+		// Check if protected
+		protection, _ := s.store.GetProtection(ctx, r.ID, branchName)
+		isProtected := protection != nil && protection.Enabled
+
+		// Filter by protected if requested
+		if opts.Protected != nil {
+			if *opts.Protected != isProtected {
+				continue
+			}
+		}
+
+		branches = append(branches, &Branch{
+			Name: branchName,
 			Commit: &CommitRef{
-				SHA: "HEAD",
-				URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/HEAD", s.baseURL, owner, repo),
+				SHA: ref.SHA,
+				URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/%s", s.baseURL, owner, repo, ref.SHA),
 			},
-			Protected: false,
-		},
-	}, nil
+			Protected: isProtected,
+		})
+	}
+
+	// Apply pagination
+	start := (opts.Page - 1) * opts.PerPage
+	end := start + opts.PerPage
+	if start > len(branches) {
+		return []*Branch{}, nil
+	}
+	if end > len(branches) {
+		end = len(branches)
+	}
+
+	return branches[start:end], nil
 }
 
 // Get retrieves a branch by name
@@ -57,14 +136,51 @@ func (s *Service) Get(ctx context.Context, owner, repo, branch string) (*Branch,
 		return nil, repos.ErrNotFound
 	}
 
-	// Would integrate with git to get branch
 	protection, _ := s.store.GetProtection(ctx, r.ID, branch)
+
+	// Try to open git repository
+	if s.reposDir == "" {
+		// No reposDir configured - return placeholder
+		return &Branch{
+			Name: branch,
+			Commit: &CommitRef{
+				SHA: "",
+				URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/HEAD", s.baseURL, owner, repo),
+			},
+			Protected: protection != nil && protection.Enabled,
+		}, nil
+	}
+
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			// No git repo - return placeholder
+			return &Branch{
+				Name: branch,
+				Commit: &CommitRef{
+					SHA: "",
+					URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/HEAD", s.baseURL, owner, repo),
+				},
+				Protected: protection != nil && protection.Enabled,
+			}, nil
+		}
+		return nil, err
+	}
+
+	// Get the branch ref
+	ref, err := gitRepo.GetRef("refs/heads/" + branch)
+	if err != nil {
+		if err == pkggit.ErrRefNotFound {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
 
 	return &Branch{
 		Name: branch,
 		Commit: &CommitRef{
-			SHA: "HEAD",
-			URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/HEAD", s.baseURL, owner, repo),
+			SHA: ref.SHA,
+			URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/%s", s.baseURL, owner, repo, ref.SHA),
 		},
 		Protected: protection != nil && protection.Enabled,
 	}, nil
@@ -80,13 +196,64 @@ func (s *Service) Rename(ctx context.Context, owner, repo, branch, newName strin
 		return nil, repos.ErrNotFound
 	}
 
-	// Would integrate with git to rename branch
+	// Try to open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Get the old branch ref
+	oldRef, err := gitRepo.GetRef("refs/heads/" + branch)
+	if err != nil {
+		if err == pkggit.ErrRefNotFound {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Check if branch is protected
+	protection, _ := s.store.GetProtection(ctx, r.ID, branch)
+	if protection != nil && protection.Enabled {
+		return nil, ErrProtected
+	}
+
+	// Check if new branch already exists
+	_, err = gitRepo.GetRef("refs/heads/" + newName)
+	if err == nil {
+		return nil, ErrBranchExists
+	}
+	if err != pkggit.ErrRefNotFound {
+		return nil, err
+	}
+
+	// Create new branch ref pointing to same commit
+	if err := gitRepo.CreateRef("refs/heads/"+newName, oldRef.SHA); err != nil {
+		return nil, err
+	}
+
+	// Delete old branch ref
+	if err := gitRepo.DeleteRef("refs/heads/" + branch); err != nil {
+		// Try to clean up the new ref if delete fails
+		_ = gitRepo.DeleteRef("refs/heads/" + newName)
+		return nil, err
+	}
+
+	// Move protection settings if they exist
+	if protection != nil {
+		_ = s.store.SetProtection(ctx, r.ID, newName, protection)
+		_ = s.store.DeleteProtection(ctx, r.ID, branch)
+	}
+
 	return &Branch{
 		Name: newName,
 		Commit: &CommitRef{
-			SHA: "HEAD",
-			URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/HEAD", s.baseURL, owner, repo),
+			SHA: oldRef.SHA,
+			URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/%s", s.baseURL, owner, repo, oldRef.SHA),
 		},
+		Protected: protection != nil && protection.Enabled,
 	}, nil
 }
 

@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/blueprints/githome/feature/repos"
 	"github.com/go-mizu/blueprints/githome/feature/users"
+	pkggit "github.com/go-mizu/blueprints/githome/pkg/git"
 )
 
 // Service implements the commits API
@@ -16,16 +19,29 @@ type Service struct {
 	repoStore repos.Store
 	userStore users.Store
 	baseURL   string
+	reposDir  string
 }
 
 // NewService creates a new commits service
-func NewService(store Store, repoStore repos.Store, userStore users.Store, baseURL string) *Service {
+func NewService(store Store, repoStore repos.Store, userStore users.Store, baseURL, reposDir string) *Service {
 	return &Service{
 		store:     store,
 		repoStore: repoStore,
 		userStore: userStore,
 		baseURL:   baseURL,
+		reposDir:  reposDir,
 	}
+}
+
+// getRepoPath returns the filesystem path for a repository
+func (s *Service) getRepoPath(owner, repo string) string {
+	return filepath.Join(s.reposDir, owner, repo+".git")
+}
+
+// openRepo opens a git repository
+func (s *Service) openRepo(owner, repo string) (*pkggit.Repository, error) {
+	path := s.getRepoPath(owner, repo)
+	return pkggit.Open(path)
 }
 
 // List returns commits for a repository
@@ -48,9 +64,92 @@ func (s *Service) List(ctx context.Context, owner, repo string, opts *ListOpts) 
 		opts.PerPage = 100
 	}
 
-	// Would integrate with git to list commits
-	// For now return empty list
-	return []*Commit{}, nil
+	// Try to open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return []*Commit{}, nil
+		}
+		return nil, err
+	}
+
+	// Determine starting ref
+	ref := opts.SHA
+	if ref == "" {
+		ref = r.DefaultBranch
+	}
+
+	// Get commit log
+	gitCommits, err := gitRepo.Log(ref, opts.PerPage)
+	if err != nil {
+		if err == pkggit.ErrRefNotFound || err == pkggit.ErrEmptyRepository {
+			return []*Commit{}, nil
+		}
+		return nil, err
+	}
+
+	// Filter commits if needed
+	commits := make([]*Commit, 0, len(gitCommits))
+	for _, gc := range gitCommits {
+		// Apply author filter
+		if opts.Author != "" && !strings.Contains(gc.Author.Email, opts.Author) && !strings.Contains(gc.Author.Name, opts.Author) {
+			continue
+		}
+
+		// Apply time filters
+		if !opts.Since.IsZero() && gc.Author.When.Before(opts.Since) {
+			continue
+		}
+		if !opts.Until.IsZero() && gc.Author.When.After(opts.Until) {
+			continue
+		}
+
+		parents := make([]*CommitRef, 0, len(gc.Parents))
+		for _, p := range gc.Parents {
+			parents = append(parents, &CommitRef{
+				SHA: p,
+				URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/%s", s.baseURL, owner, repo, p),
+			})
+		}
+
+		commit := &Commit{
+			SHA:    gc.SHA,
+			NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Commit:%s", gc.SHA))),
+			Commit: &CommitData{
+				Message: gc.Message,
+				Author: &CommitAuthor{
+					Name:  gc.Author.Name,
+					Email: gc.Author.Email,
+					Date:  gc.Author.When,
+				},
+				Committer: &CommitAuthor{
+					Name:  gc.Committer.Name,
+					Email: gc.Committer.Email,
+					Date:  gc.Committer.When,
+				},
+				Tree: &TreeRef{
+					SHA: gc.TreeSHA,
+					URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/git/trees/%s", s.baseURL, owner, repo, gc.TreeSHA),
+				},
+			},
+			Parents: parents,
+		}
+
+		// Try to find matching user by email
+		author, _ := s.userStore.GetByEmail(ctx, gc.Author.Email)
+		if author != nil {
+			commit.Author = author.ToSimple()
+		}
+		committer, _ := s.userStore.GetByEmail(ctx, gc.Committer.Email)
+		if committer != nil {
+			commit.Committer = committer.ToSimple()
+		}
+
+		s.populateURLs(commit, owner, repo)
+		commits = append(commits, commit)
+	}
+
+	return commits, nil
 }
 
 // Get retrieves a commit by ref
@@ -63,25 +162,76 @@ func (s *Service) Get(ctx context.Context, owner, repo, ref string) (*Commit, er
 		return nil, repos.ErrNotFound
 	}
 
-	// Would integrate with git to get commit
-	// For now return placeholder
+	// Try to open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Resolve ref to SHA if needed (could be branch name, tag, etc.)
+	sha := ref
+	if len(ref) != 40 {
+		resolvedSHA, err := gitRepo.ResolveRef(ref)
+		if err != nil {
+			if err == pkggit.ErrRefNotFound {
+				return nil, ErrNotFound
+			}
+			return nil, err
+		}
+		sha = resolvedSHA
+	}
+
+	// Get the commit
+	gc, err := gitRepo.GetCommit(sha)
+	if err != nil {
+		if err == pkggit.ErrNotFound || err == pkggit.ErrInvalidSHA {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	parents := make([]*CommitRef, 0, len(gc.Parents))
+	for _, p := range gc.Parents {
+		parents = append(parents, &CommitRef{
+			SHA: p,
+			URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/%s", s.baseURL, owner, repo, p),
+		})
+	}
+
 	commit := &Commit{
-		SHA:    ref,
-		NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Commit:%s", ref))),
+		SHA:    gc.SHA,
+		NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Commit:%s", gc.SHA))),
 		Commit: &CommitData{
-			Message: "Commit message",
+			Message: gc.Message,
 			Author: &CommitAuthor{
-				Name:  "Author",
-				Email: "author@example.com",
-				Date:  time.Now(),
+				Name:  gc.Author.Name,
+				Email: gc.Author.Email,
+				Date:  gc.Author.When,
 			},
 			Committer: &CommitAuthor{
-				Name:  "Committer",
-				Email: "committer@example.com",
-				Date:  time.Now(),
+				Name:  gc.Committer.Name,
+				Email: gc.Committer.Email,
+				Date:  gc.Committer.When,
+			},
+			Tree: &TreeRef{
+				SHA: gc.TreeSHA,
+				URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/git/trees/%s", s.baseURL, owner, repo, gc.TreeSHA),
 			},
 		},
-		Parents: []*CommitRef{},
+		Parents: parents,
+	}
+
+	// Try to find matching user by email
+	author, _ := s.userStore.GetByEmail(ctx, gc.Author.Email)
+	if author != nil {
+		commit.Author = author.ToSimple()
+	}
+	committer, _ := s.userStore.GetByEmail(ctx, gc.Committer.Email)
+	if committer != nil {
+		commit.Committer = committer.ToSimple()
 	}
 
 	s.populateURLs(commit, owner, repo)
@@ -98,14 +248,120 @@ func (s *Service) Compare(ctx context.Context, owner, repo, base, head string) (
 		return nil, repos.ErrNotFound
 	}
 
-	// Would integrate with git to compare commits
+	// Try to open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Resolve base and head refs
+	baseSHA := base
+	if len(base) != 40 {
+		resolvedSHA, err := gitRepo.ResolveRef(base)
+		if err != nil {
+			if err == pkggit.ErrRefNotFound {
+				return nil, ErrNotFound
+			}
+			return nil, err
+		}
+		baseSHA = resolvedSHA
+	}
+
+	headSHA := head
+	if len(head) != 40 {
+		resolvedSHA, err := gitRepo.ResolveRef(head)
+		if err != nil {
+			if err == pkggit.ErrRefNotFound {
+				return nil, ErrNotFound
+			}
+			return nil, err
+		}
+		headSHA = resolvedSHA
+	}
+
+	// Get base commit
+	baseCommit, err := s.Get(ctx, owner, repo, baseSHA)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get commits between base and head
+	// Get log from head and count until we hit base
+	headCommits, err := gitRepo.Log(headSHA, 250) // Limit to 250 commits
+	if err != nil {
+		return nil, err
+	}
+
+	// Find commits ahead of base
+	commits := make([]*Commit, 0)
+	aheadBy := 0
+	for _, gc := range headCommits {
+		if gc.SHA == baseSHA {
+			break
+		}
+		aheadBy++
+
+		parents := make([]*CommitRef, 0, len(gc.Parents))
+		for _, p := range gc.Parents {
+			parents = append(parents, &CommitRef{
+				SHA: p,
+				URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/%s", s.baseURL, owner, repo, p),
+			})
+		}
+
+		commit := &Commit{
+			SHA:    gc.SHA,
+			NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Commit:%s", gc.SHA))),
+			Commit: &CommitData{
+				Message: gc.Message,
+				Author: &CommitAuthor{
+					Name:  gc.Author.Name,
+					Email: gc.Author.Email,
+					Date:  gc.Author.When,
+				},
+				Committer: &CommitAuthor{
+					Name:  gc.Committer.Name,
+					Email: gc.Committer.Email,
+					Date:  gc.Committer.When,
+				},
+				Tree: &TreeRef{
+					SHA: gc.TreeSHA,
+					URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/git/trees/%s", s.baseURL, owner, repo, gc.TreeSHA),
+				},
+			},
+			Parents: parents,
+		}
+		s.populateURLs(commit, owner, repo)
+		commits = append(commits, commit)
+	}
+
+	// Determine status
+	status := "ahead"
+	if aheadBy == 0 {
+		status = "identical"
+	}
+
+	// Get diff to find files
+	files := make([]*CommitFile, 0)
+	if baseSHA != headSHA {
+		diff, err := gitRepo.Diff(baseSHA, headSHA)
+		if err == nil && diff != "" {
+			// Parse diff for file info (simplified)
+			files = s.parseDiffFiles(diff, owner, repo)
+		}
+	}
+
 	comparison := &Comparison{
-		Status:       "ahead",
-		AheadBy:      0,
-		BehindBy:     0,
-		TotalCommits: 0,
-		Commits:      []*Commit{},
-		Files:        []*CommitFile{},
+		Status:       status,
+		AheadBy:      aheadBy,
+		BehindBy:     0, // Would need additional logic to compute
+		TotalCommits: aheadBy,
+		Commits:      commits,
+		Files:        files,
+		BaseCommit:   baseCommit,
 	}
 
 	comparison.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/compare/%s...%s", s.baseURL, owner, repo, base, head)
@@ -115,6 +371,48 @@ func (s *Service) Compare(ctx context.Context, owner, repo, base, head string) (
 	comparison.PatchURL = fmt.Sprintf("%s/%s/%s/compare/%s...%s.patch", s.baseURL, owner, repo, base, head)
 
 	return comparison, nil
+}
+
+// parseDiffFiles parses a diff string to extract file information
+func (s *Service) parseDiffFiles(diff, owner, repo string) []*CommitFile {
+	files := make([]*CommitFile, 0)
+	lines := strings.Split(diff, "\n")
+
+	var currentFile *CommitFile
+	for _, line := range lines {
+		if strings.HasPrefix(line, "diff --git") {
+			if currentFile != nil {
+				files = append(files, currentFile)
+			}
+			// Parse filename from "diff --git a/file b/file"
+			parts := strings.Split(line, " ")
+			if len(parts) >= 4 {
+				filename := strings.TrimPrefix(parts[3], "b/")
+				currentFile = &CommitFile{
+					Filename:    filename,
+					Status:      "modified",
+					ContentsURL: fmt.Sprintf("%s/api/v3/repos/%s/%s/contents/%s", s.baseURL, owner, repo, filename),
+				}
+			}
+		} else if currentFile != nil {
+			if strings.HasPrefix(line, "new file") {
+				currentFile.Status = "added"
+			} else if strings.HasPrefix(line, "deleted file") {
+				currentFile.Status = "removed"
+			} else if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+				currentFile.Additions++
+				currentFile.Changes++
+			} else if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
+				currentFile.Deletions++
+				currentFile.Changes++
+			}
+		}
+	}
+	if currentFile != nil {
+		files = append(files, currentFile)
+	}
+
+	return files
 }
 
 // ListBranchesForHead returns branches containing the commit
@@ -127,11 +425,52 @@ func (s *Service) ListBranchesForHead(ctx context.Context, owner, repo, sha stri
 		return nil, repos.ErrNotFound
 	}
 
-	// Would integrate with git to find branches
-	return []*Branch{}, nil
+	// Try to open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return []*Branch{}, nil
+		}
+		return nil, err
+	}
+
+	// Get all branch refs
+	refs, err := gitRepo.ListRefs("heads")
+	if err != nil {
+		return nil, err
+	}
+
+	// Check which branches contain the commit
+	branches := make([]*Branch, 0)
+	for _, ref := range refs {
+		branchName := strings.TrimPrefix(ref.Name, "refs/heads/")
+
+		// Check if this branch contains the commit by walking its history
+		commits, err := gitRepo.Log(ref.SHA, 100)
+		if err != nil {
+			continue
+		}
+
+		for _, c := range commits {
+			if c.SHA == sha {
+				branches = append(branches, &Branch{
+					Name: branchName,
+					Commit: &CommitRef{
+						SHA: ref.SHA,
+						URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/%s", s.baseURL, owner, repo, ref.SHA),
+					},
+				})
+				break
+			}
+		}
+	}
+
+	return branches, nil
 }
 
 // ListPullsForCommit returns PRs associated with a commit
+// Note: This requires the pulls store to be injected for full functionality.
+// Currently returns empty as pulls store is not a dependency.
 func (s *Service) ListPullsForCommit(ctx context.Context, owner, repo, sha string, opts *ListOpts) ([]*PullRequest, error) {
 	r, err := s.repoStore.GetByFullName(ctx, owner, repo)
 	if err != nil {
@@ -141,7 +480,9 @@ func (s *Service) ListPullsForCommit(ctx context.Context, owner, repo, sha strin
 		return nil, repos.ErrNotFound
 	}
 
-	// Would search PRs by commit SHA
+	// To implement fully, would need pulls.Store as a dependency
+	// For now, return empty list as this would require adding pulls.Store
+	// which could introduce circular dependencies
 	return []*PullRequest{}, nil
 }
 

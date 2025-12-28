@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/blueprints/githome/feature/repos"
 	"github.com/go-mizu/blueprints/githome/feature/users"
+	pkggit "github.com/go-mizu/blueprints/githome/pkg/git"
 )
 
 // Service implements the pulls API
@@ -16,16 +19,29 @@ type Service struct {
 	repoStore repos.Store
 	userStore users.Store
 	baseURL   string
+	reposDir  string
 }
 
 // NewService creates a new pulls service
-func NewService(store Store, repoStore repos.Store, userStore users.Store, baseURL string) *Service {
+func NewService(store Store, repoStore repos.Store, userStore users.Store, baseURL, reposDir string) *Service {
 	return &Service{
 		store:     store,
 		repoStore: repoStore,
 		userStore: userStore,
 		baseURL:   baseURL,
+		reposDir:  reposDir,
 	}
+}
+
+// getRepoPath returns the filesystem path for a repository
+func (s *Service) getRepoPath(owner, repo string) string {
+	return filepath.Join(s.reposDir, owner, repo+".git")
+}
+
+// openRepo opens a git repository
+func (s *Service) openRepo(owner, repo string) (*pkggit.Repository, error) {
+	path := s.getRepoPath(owner, repo)
+	return pkggit.Open(path)
 }
 
 // List returns PRs for a repository
@@ -187,8 +203,112 @@ func (s *Service) ListCommits(ctx context.Context, owner, repo string, number in
 		return nil, ErrNotFound
 	}
 
-	// Would integrate with git to list commits between base and head
-	return []*Commit{}, nil
+	if opts == nil {
+		opts = &ListOpts{PerPage: 30}
+	}
+	if opts.PerPage == 0 {
+		opts.PerPage = 30
+	}
+	if opts.PerPage > 100 {
+		opts.PerPage = 100
+	}
+
+	// Need head and base refs to find commits
+	if pr.Head == nil || pr.Base == nil {
+		return []*Commit{}, nil
+	}
+
+	// Try to open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return []*Commit{}, nil
+		}
+		return nil, err
+	}
+
+	// Resolve head ref
+	headSHA := pr.Head.SHA
+	if headSHA == "" {
+		resolvedSHA, err := gitRepo.ResolveRef(pr.Head.Ref)
+		if err != nil {
+			return []*Commit{}, nil
+		}
+		headSHA = resolvedSHA
+	}
+
+	// Resolve base ref
+	baseSHA := pr.Base.SHA
+	if baseSHA == "" {
+		resolvedSHA, err := gitRepo.ResolveRef(pr.Base.Ref)
+		if err != nil {
+			return []*Commit{}, nil
+		}
+		baseSHA = resolvedSHA
+	}
+
+	// Get commits from head, stopping at base
+	gitCommits, err := gitRepo.Log(headSHA, opts.PerPage+50) // Extra to find base
+	if err != nil {
+		return []*Commit{}, nil
+	}
+
+	commits := make([]*Commit, 0)
+	for _, gc := range gitCommits {
+		if gc.SHA == baseSHA {
+			break
+		}
+		if len(commits) >= opts.PerPage {
+			break
+		}
+
+		parents := make([]*CommitRef, 0, len(gc.Parents))
+		for _, p := range gc.Parents {
+			parents = append(parents, &CommitRef{
+				SHA: p,
+				URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/%s", s.baseURL, owner, repo, p),
+			})
+		}
+
+		commit := &Commit{
+			SHA:    gc.SHA,
+			NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Commit:%s", gc.SHA))),
+			Commit: &CommitData{
+				Message: gc.Message,
+				Author: &CommitAuthor{
+					Name:  gc.Author.Name,
+					Email: gc.Author.Email,
+					Date:  gc.Author.When,
+				},
+				Committer: &CommitAuthor{
+					Name:  gc.Committer.Name,
+					Email: gc.Committer.Email,
+					Date:  gc.Committer.When,
+				},
+				Tree: &CommitRef{
+					SHA: gc.TreeSHA,
+					URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/git/trees/%s", s.baseURL, owner, repo, gc.TreeSHA),
+				},
+			},
+			Parents: parents,
+			URL:     fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/%s", s.baseURL, owner, repo, gc.SHA),
+			HTMLURL: fmt.Sprintf("%s/%s/%s/commit/%s", s.baseURL, owner, repo, gc.SHA),
+		}
+
+		// Try to find matching user by email
+		author, _ := s.userStore.GetByEmail(ctx, gc.Author.Email)
+		if author != nil {
+			commit.Author = author.ToSimple()
+		}
+		committer, _ := s.userStore.GetByEmail(ctx, gc.Committer.Email)
+		if committer != nil {
+			commit.Committer = committer.ToSimple()
+		}
+
+		commits = append(commits, commit)
+	}
+
+	return commits, nil
 }
 
 // ListFiles returns files in a PR
@@ -209,8 +329,132 @@ func (s *Service) ListFiles(ctx context.Context, owner, repo string, number int,
 		return nil, ErrNotFound
 	}
 
-	// Would integrate with git to list changed files
-	return []*PRFile{}, nil
+	if opts == nil {
+		opts = &ListOpts{PerPage: 30}
+	}
+	if opts.PerPage == 0 {
+		opts.PerPage = 30
+	}
+	if opts.PerPage > 100 {
+		opts.PerPage = 100
+	}
+
+	// Need head and base refs to diff
+	if pr.Head == nil || pr.Base == nil {
+		return []*PRFile{}, nil
+	}
+
+	// Try to open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return []*PRFile{}, nil
+		}
+		return nil, err
+	}
+
+	// Resolve head ref
+	headSHA := pr.Head.SHA
+	if headSHA == "" {
+		resolvedSHA, err := gitRepo.ResolveRef(pr.Head.Ref)
+		if err != nil {
+			return []*PRFile{}, nil
+		}
+		headSHA = resolvedSHA
+	}
+
+	// Resolve base ref
+	baseSHA := pr.Base.SHA
+	if baseSHA == "" {
+		resolvedSHA, err := gitRepo.ResolveRef(pr.Base.Ref)
+		if err != nil {
+			return []*PRFile{}, nil
+		}
+		baseSHA = resolvedSHA
+	}
+
+	// Get diff between base and head
+	diff, err := gitRepo.Diff(baseSHA, headSHA)
+	if err != nil {
+		return []*PRFile{}, nil
+	}
+
+	// Parse diff to extract file info
+	files := s.parseDiffFiles(diff, owner, repo)
+
+	// Apply pagination
+	start := 0
+	if opts.Page > 1 {
+		start = (opts.Page - 1) * opts.PerPage
+	}
+	end := start + opts.PerPage
+	if start > len(files) {
+		return []*PRFile{}, nil
+	}
+	if end > len(files) {
+		end = len(files)
+	}
+
+	return files[start:end], nil
+}
+
+// parseDiffFiles parses a diff string to extract file information
+func (s *Service) parseDiffFiles(diff, owner, repo string) []*PRFile {
+	files := make([]*PRFile, 0)
+	lines := strings.Split(diff, "\n")
+
+	var currentFile *PRFile
+	var patchLines []string
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "diff --git") {
+			// Save previous file
+			if currentFile != nil {
+				if len(patchLines) > 0 {
+					currentFile.Patch = strings.Join(patchLines, "\n")
+				}
+				files = append(files, currentFile)
+			}
+			// Parse filename from "diff --git a/file b/file"
+			parts := strings.Split(line, " ")
+			if len(parts) >= 4 {
+				filename := strings.TrimPrefix(parts[3], "b/")
+				currentFile = &PRFile{
+					Filename:    filename,
+					Status:      "modified",
+					ContentsURL: fmt.Sprintf("%s/api/v3/repos/%s/%s/contents/%s", s.baseURL, owner, repo, filename),
+				}
+				patchLines = []string{}
+			}
+		} else if currentFile != nil {
+			if strings.HasPrefix(line, "new file") {
+				currentFile.Status = "added"
+			} else if strings.HasPrefix(line, "deleted file") {
+				currentFile.Status = "removed"
+			} else if strings.HasPrefix(line, "rename from") {
+				currentFile.Status = "renamed"
+			} else if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+				currentFile.Additions++
+				currentFile.Changes++
+			} else if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
+				currentFile.Deletions++
+				currentFile.Changes++
+			}
+			// Collect patch content
+			if strings.HasPrefix(line, "@@") || strings.HasPrefix(line, "+") || strings.HasPrefix(line, "-") || strings.HasPrefix(line, " ") {
+				patchLines = append(patchLines, line)
+			}
+		}
+	}
+	// Save last file
+	if currentFile != nil {
+		if len(patchLines) > 0 {
+			currentFile.Patch = strings.Join(patchLines, "\n")
+		}
+		files = append(files, currentFile)
+	}
+
+	return files
 }
 
 // IsMerged checks if a PR is merged
@@ -280,7 +524,7 @@ func (s *Service) Merge(ctx context.Context, owner, repo string, number int, in 
 	}, nil
 }
 
-// UpdateBranch updates a PR branch
+// UpdateBranch updates a PR branch by merging the base into head
 func (s *Service) UpdateBranch(ctx context.Context, owner, repo string, number int) error {
 	r, err := s.repoStore.GetByFullName(ctx, owner, repo)
 	if err != nil {
@@ -298,7 +542,83 @@ func (s *Service) UpdateBranch(ctx context.Context, owner, repo string, number i
 		return ErrNotFound
 	}
 
-	// Would integrate with git to update branch
+	// Need head and base refs
+	if pr.Head == nil || pr.Base == nil {
+		return ErrNotMergeable
+	}
+
+	// Try to open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return ErrNotMergeable
+		}
+		return err
+	}
+
+	// Resolve base ref to get latest commit
+	baseSHA, err := gitRepo.ResolveRef(pr.Base.Ref)
+	if err != nil {
+		return ErrNotMergeable
+	}
+
+	// Resolve head ref
+	headSHA := pr.Head.SHA
+	if headSHA == "" {
+		resolvedSHA, err := gitRepo.ResolveRef(pr.Head.Ref)
+		if err != nil {
+			return ErrNotMergeable
+		}
+		headSHA = resolvedSHA
+	}
+
+	// Verify base commit exists
+	if _, err := gitRepo.GetCommit(baseSHA); err != nil {
+		return ErrNotMergeable
+	}
+
+	// Get head commit
+	headCommit, err := gitRepo.GetCommit(headSHA)
+	if err != nil {
+		return ErrNotMergeable
+	}
+
+	// Create merge commit on head branch
+	// This is a simplified merge - just creates a commit with two parents
+	mergeMessage := fmt.Sprintf("Merge branch '%s' into %s", pr.Base.Ref, pr.Head.Ref)
+
+	now := time.Now()
+	mergeSHA, err := gitRepo.CreateCommit(&pkggit.CreateCommitOpts{
+		Message: mergeMessage,
+		TreeSHA: headCommit.TreeSHA, // Use head tree (simplified - real merge would combine trees)
+		Parents: []string{headSHA, baseSHA},
+		Author: pkggit.Signature{
+			Name:  "System",
+			Email: "system@githome.local",
+			When:  now,
+		},
+		Committer: pkggit.Signature{
+			Name:  "System",
+			Email: "system@githome.local",
+			When:  now,
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	// Update head branch ref to point to merge commit
+	if err := gitRepo.UpdateRef(pr.Head.Ref, mergeSHA, true); err != nil {
+		return err
+	}
+
+	// Update PR head SHA
+	pr.Head.SHA = mergeSHA
+	state := "open"
+	if err := s.store.Update(ctx, pr.ID, &UpdateIn{State: &state}); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -377,6 +697,8 @@ func (s *Service) CreateReview(ctx context.Context, owner, repo string, number i
 	}
 
 	review := &Review{
+		PRID:              pr.ID,
+		UserID:            user.ID,
 		User:              user.ToSimple(),
 		Body:              in.Body,
 		State:             state,

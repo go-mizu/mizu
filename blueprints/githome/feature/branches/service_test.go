@@ -33,7 +33,7 @@ func setupTestService(t *testing.T) (*branches.Service, *duckdb.Store, func()) {
 	}
 
 	branchesStore := duckdb.NewBranchesStore(db)
-	service := branches.NewService(branchesStore, store.Repos(), "https://api.example.com")
+	service := branches.NewService(branchesStore, store.Repos(), "https://api.example.com", "")
 
 	cleanup := func() {
 		store.Close()

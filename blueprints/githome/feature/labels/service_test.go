@@ -34,7 +34,8 @@ func setupTestService(t *testing.T) (*labels.Service, *duckdb.Store, func()) {
 
 	labelsStore := duckdb.NewLabelsStore(db)
 	issuesStore := duckdb.NewIssuesStore(db)
-	service := labels.NewService(labelsStore, store.Repos(), issuesStore, "https://api.example.com")
+	milestonesStore := duckdb.NewMilestonesStore(db)
+	service := labels.NewService(labelsStore, store.Repos(), issuesStore, milestonesStore, "https://api.example.com")
 
 	cleanup := func() {
 		store.Close()

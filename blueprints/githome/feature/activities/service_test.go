@@ -62,7 +62,7 @@ func createTestUser(t *testing.T, store *duckdb.Store, login string) *users.User
 func createTestRepo(t *testing.T, store *duckdb.Store, ownerID int64, name string) *repos.Repository {
 	t.Helper()
 	orgsStore := duckdb.NewOrgsStore(store.DB())
-	repoService := repos.NewService(store.Repos(), store.Users(), orgsStore, "https://api.example.com")
+	repoService := repos.NewService(store.Repos(), store.Users(), orgsStore, "https://api.example.com", "")
 	repo, err := repoService.Create(context.Background(), ownerID, &repos.CreateIn{
 		Name:        name,
 		Description: "Test repository",
@@ -137,7 +137,7 @@ func TestService_Create_WithOrg(t *testing.T) {
 
 	// Create repo in org
 	orgsStore := duckdb.NewOrgsStore(store.DB())
-	repoService := repos.NewService(store.Repos(), store.Users(), orgsStore, "https://api.example.com")
+	repoService := repos.NewService(store.Repos(), store.Users(), orgsStore, "https://api.example.com", "")
 	repo, err := repoService.CreateForOrg(context.Background(), org.Login, &repos.CreateIn{
 		Name:        "orgrepo",
 		Description: "Org repository",
@@ -369,7 +369,7 @@ func TestService_ListForOrg_Success(t *testing.T) {
 
 	// Create repo in org
 	orgsStore := duckdb.NewOrgsStore(store.DB())
-	repoService := repos.NewService(store.Repos(), store.Users(), orgsStore, "https://api.example.com")
+	repoService := repos.NewService(store.Repos(), store.Users(), orgsStore, "https://api.example.com", "")
 	repo, _ := repoService.CreateForOrg(context.Background(), org.Login, &repos.CreateIn{
 		Name: "orgrepo",
 	})
@@ -409,7 +409,7 @@ func TestService_ListPublicForOrg_Success(t *testing.T) {
 
 	// Create repo in org
 	orgsStore := duckdb.NewOrgsStore(store.DB())
-	repoService := repos.NewService(store.Repos(), store.Users(), orgsStore, "https://api.example.com")
+	repoService := repos.NewService(store.Repos(), store.Users(), orgsStore, "https://api.example.com", "")
 	repo, _ := repoService.CreateForOrg(context.Background(), org.Login, &repos.CreateIn{
 		Name: "orgrepo",
 	})

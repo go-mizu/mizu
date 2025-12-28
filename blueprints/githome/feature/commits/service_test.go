@@ -33,7 +33,7 @@ func setupTestService(t *testing.T) (*commits.Service, *duckdb.Store, func()) {
 	}
 
 	commitsStore := duckdb.NewCommitsStore(db)
-	service := commits.NewService(commitsStore, store.Repos(), store.Users(), "https://api.example.com")
+	service := commits.NewService(commitsStore, store.Repos(), store.Users(), "https://api.example.com", "")
 
 	cleanup := func() {
 		store.Close()
