@@ -51,7 +51,7 @@ func (s *Service) Create(ctx context.Context, ownerID string, in *CreateIn) (*Re
 	now := time.Now()
 	repo := &Repository{
 		ID:            ulid.New(),
-		OwnerID:       ownerID,
+		OwnerActorID:  ownerID, // ownerID is the actor ID
 		OwnerType:     "user",
 		Name:          in.Name,
 		Slug:          repoSlug,

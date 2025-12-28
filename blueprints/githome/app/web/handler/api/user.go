@@ -1,4 +1,4 @@
-package handler
+package api
 
 import (
 	"strconv"
@@ -59,6 +59,46 @@ func (h *User) UpdateCurrent(c *mizu.Ctx) error {
 	return OK(c, user)
 }
 
+// Delete deletes the current user's account
+func (h *User) Delete(c *mizu.Ctx) error {
+	userID := h.getUserID(c)
+	if userID == "" {
+		return Unauthorized(c, "not authenticated")
+	}
+
+	if err := h.users.Delete(c.Context(), userID); err != nil {
+		return InternalError(c, "failed to delete user")
+	}
+
+	return NoContent(c)
+}
+
+// ChangePassword changes the current user's password
+func (h *User) ChangePassword(c *mizu.Ctx) error {
+	userID := h.getUserID(c)
+	if userID == "" {
+		return Unauthorized(c, "not authenticated")
+	}
+
+	var in users.ChangePasswordIn
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "invalid request body")
+	}
+
+	if err := h.users.ChangePassword(c.Context(), userID, &in); err != nil {
+		switch err {
+		case users.ErrInvalidPassword:
+			return BadRequest(c, "current password is incorrect")
+		case users.ErrPasswordTooShort:
+			return BadRequest(c, "new password must be at least 8 characters")
+		default:
+			return InternalError(c, "failed to change password")
+		}
+	}
+
+	return OK(c, map[string]string{"message": "password changed"})
+}
+
 // GetByUsername returns a user by username
 func (h *User) GetByUsername(c *mizu.Ctx) error {
 	username := c.Param("username")
@@ -72,6 +112,40 @@ func (h *User) GetByUsername(c *mizu.Ctx) error {
 	}
 
 	return OK(c, user)
+}
+
+// GetByEmail returns a user by email
+func (h *User) GetByEmail(c *mizu.Ctx) error {
+	email := c.Param("email")
+	if email == "" {
+		return BadRequest(c, "email is required")
+	}
+
+	user, err := h.users.GetByEmail(c.Context(), email)
+	if err != nil {
+		return NotFound(c, "user not found")
+	}
+
+	return OK(c, user)
+}
+
+// List lists all users with pagination
+func (h *User) List(c *mizu.Ctx) error {
+	page, _ := strconv.Atoi(c.Query("page"))
+	perPage, _ := strconv.Atoi(c.Query("per_page"))
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 || perPage > 100 {
+		perPage = 30
+	}
+
+	userList, err := h.users.List(c.Context(), perPage, (page-1)*perPage)
+	if err != nil {
+		return InternalError(c, "failed to list users")
+	}
+
+	return OK(c, userList)
 }
 
 // ListRepos lists the current user's repositories
