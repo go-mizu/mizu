@@ -5,18 +5,35 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"os"
 
 	"github.com/go-mizu/blueprints/githome/feature/repos"
 	"github.com/go-mizu/blueprints/githome/feature/users"
+	"github.com/go-mizu/blueprints/githome/pkg/seed/local"
 	"github.com/go-mizu/blueprints/githome/pkg/ulid"
 	"github.com/go-mizu/blueprints/githome/store/duckdb"
 	"github.com/spf13/cobra"
 )
 
 func newSeedCmd() *cobra.Command {
-	return &cobra.Command{
+	seedCmd := &cobra.Command{
 		Use:   "seed",
-		Short: "Seed demo data",
+		Short: "Seed data into GitHome",
+		Long:  "Seed demo data or import repositories from various sources",
+	}
+
+	seedCmd.AddCommand(
+		newSeedDemoCmd(),
+		newSeedLocalCmd(),
+	)
+
+	return seedCmd
+}
+
+func newSeedDemoCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "demo",
+		Short: "Seed demo data (users, repos, issues)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dbPath := dataDir + "/githome.db"
 			db, err := sql.Open("duckdb", dbPath)
@@ -180,8 +197,89 @@ func newSeedCmd() *cobra.Command {
 				reposStore.Update(ctx, helloRepo)
 			}
 
-			slog.Info("seeding complete")
+			slog.Info("demo seeding complete")
 			return nil
 		},
 	}
+}
+
+func newSeedLocalCmd() *cobra.Command {
+	var scanDir string
+	var isPublic bool
+
+	cmd := &cobra.Command{
+		Use:   "local",
+		Short: "Import local git repositories from $HOME/github",
+		Long: `Scan a directory for git repositories in the format $ORG/$REPO and import them into GitHome.
+
+By default, scans $HOME/github for repositories organized as:
+  $HOME/github/
+    org1/
+      repo1/
+      repo2/
+    org2/
+      repo3/
+
+Each unique org directory becomes an organization in GitHome,
+and each repository is linked (not copied) to its local path.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dbPath := dataDir + "/githome.db"
+			db, err := sql.Open("duckdb", dbPath)
+			if err != nil {
+				return fmt.Errorf("open database: %w", err)
+			}
+			defer db.Close()
+
+			_, err = duckdb.New(db)
+			if err != nil {
+				return fmt.Errorf("create store: %w", err)
+			}
+
+			ctx := context.Background()
+
+			// Ensure admin user exists
+			usersStore := duckdb.NewUsersStore(db)
+			actorsStore := duckdb.NewActorsStore(db)
+			adminUserID, adminActorID, err := local.EnsureAdminUser(ctx, usersStore, actorsStore)
+			if err != nil {
+				return fmt.Errorf("ensure admin user: %w", err)
+			}
+
+			// Create seeder
+			seeder := local.NewSeeder(db, local.Config{
+				ScanDir:      scanDir,
+				AdminUserID:  adminUserID,
+				AdminActorID: adminActorID,
+				IsPublic:     isPublic,
+			})
+
+			// Run seeding
+			result, err := seeder.Seed(ctx)
+			if err != nil {
+				return fmt.Errorf("seed local: %w", err)
+			}
+
+			slog.Info("local seeding complete",
+				"orgs_created", result.OrgsCreated,
+				"repos_created", result.ReposCreated,
+				"repos_skipped", result.ReposSkipped)
+
+			if len(result.Errors) > 0 {
+				slog.Warn("some errors occurred during seeding", "count", len(result.Errors))
+				for _, e := range result.Errors {
+					slog.Warn("seed error", "error", e)
+				}
+			}
+
+			return nil
+		},
+	}
+
+	// Default scan directory
+	defaultScanDir := os.Getenv("HOME") + "/github"
+
+	cmd.Flags().StringVar(&scanDir, "scan-dir", defaultScanDir, "Directory to scan for git repositories")
+	cmd.Flags().BoolVar(&isPublic, "public", true, "Make imported repositories public")
+
+	return cmd
 }
