@@ -1,547 +1,596 @@
 package api
 
 import (
-	"strconv"
+	"net/http"
 
-	"github.com/go-mizu/blueprints/githome/feature/repos"
-	"github.com/go-mizu/blueprints/githome/feature/users"
-	"github.com/go-mizu/blueprints/githome/store/duckdb"
-	"github.com/go-mizu/mizu"
+	"github.com/mizu-framework/mizu/blueprints/githome/feature/repos"
 )
 
-// Repo handles repository endpoints
-type Repo struct {
-	repos     repos.API
-	users     users.API
-	actors    *duckdb.ActorsStore
-	getUserID func(*mizu.Ctx) string
+// RepoHandler handles repository endpoints
+type RepoHandler struct {
+	repos repos.API
 }
 
-// NewRepo creates a new repo handler
-func NewRepo(repos repos.API, users users.API, actors *duckdb.ActorsStore, getUserID func(*mizu.Ctx) string) *Repo {
-	return &Repo{
-		repos:     repos,
-		users:     users,
-		actors:    actors,
-		getUserID: getUserID,
-	}
+// NewRepoHandler creates a new repo handler
+func NewRepoHandler(repos repos.API) *RepoHandler {
+	return &RepoHandler{repos: repos}
 }
 
-// getRepoByOwnerName looks up a repository by owner username and repo name
-func (h *Repo) getRepoByOwnerName(c *mizu.Ctx) (*repos.Repository, *users.User, error) {
-	owner := c.Param("owner")
-	name := c.Param("repo")
-
-	// Get owner user
-	user, err := h.users.GetByUsername(c.Context(), owner)
-	if err != nil || user == nil {
-		return nil, nil, repos.ErrNotFound
+// ListAuthenticatedUserRepos handles GET /user/repos
+func (h *RepoHandler) ListAuthenticatedUserRepos(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	// Get actor for the owner
-	actor, err := h.actors.GetByUserID(c.Context(), user.ID)
-	if err != nil || actor == nil {
-		return nil, nil, repos.ErrNotFound
-	}
-
-	repo, err := h.repos.GetByOwnerAndName(c.Context(), actor.ID, "user", name)
-	if err != nil || repo == nil {
-		return nil, nil, repos.ErrNotFound
-	}
-
-	return repo, user, nil
-}
-
-// ListPublic lists public repositories
-func (h *Repo) ListPublic(c *mizu.Ctx) error {
-	page, _ := strconv.Atoi(c.Query("page"))
-	perPage, _ := strconv.Atoi(c.Query("per_page"))
-	if page < 1 {
-		page = 1
-	}
-	if perPage < 1 || perPage > 100 {
-		perPage = 30
-	}
-
+	pagination := GetPaginationParams(r)
 	opts := &repos.ListOpts{
-		Sort:   c.Query("sort"),
-		Limit:  perPage,
-		Offset: (page - 1) * perPage,
+		Page:       pagination.Page,
+		PerPage:    pagination.PerPage,
+		Type:       QueryParam(r, "type"),
+		Sort:       QueryParam(r, "sort"),
+		Direction:  QueryParam(r, "direction"),
+		Visibility: QueryParam(r, "visibility"),
 	}
 
-	repoList, err := h.repos.ListPublic(c.Context(), opts)
+	repoList, err := h.repos.ListForUser(r.Context(), user.Login, opts)
 	if err != nil {
-		return InternalError(c, "failed to list repositories")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, repoList)
+	WriteJSON(w, http.StatusOK, repoList)
 }
 
-// ListAccessible lists repositories accessible to the current user
-func (h *Repo) ListAccessible(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	page, _ := strconv.Atoi(c.Query("page"))
-	perPage, _ := strconv.Atoi(c.Query("per_page"))
-	if page < 1 {
-		page = 1
-	}
-	if perPage < 1 || perPage > 100 {
-		perPage = 30
-	}
-
-	opts := &repos.ListOpts{
-		Sort:   c.Query("sort"),
-		Limit:  perPage,
-		Offset: (page - 1) * perPage,
-	}
-
-	repoList, err := h.repos.ListAccessible(c.Context(), userID, opts)
-	if err != nil {
-		return InternalError(c, "failed to list repositories")
-	}
-
-	return OK(c, repoList)
-}
-
-// Create creates a new repository
-func (h *Repo) Create(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	// Get or create actor for the user
-	actor, err := h.actors.GetOrCreateForUser(c.Context(), userID)
-	if err != nil {
-		return InternalError(c, "failed to get user actor")
+// CreateAuthenticatedUserRepo handles POST /user/repos
+func (h *RepoHandler) CreateAuthenticatedUserRepo(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
 	var in repos.CreateIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
 	}
 
-	repo, err := h.repos.Create(c.Context(), actor.ID, &in)
+	repo, err := h.repos.Create(r.Context(), user.ID, &in)
 	if err != nil {
 		switch err {
 		case repos.ErrExists:
-			return Conflict(c, "repository already exists")
-		case repos.ErrMissingName:
-			return BadRequest(c, "repository name is required")
-		case repos.ErrInvalidInput:
-			return BadRequest(c, "invalid repository name")
+			WriteConflict(w, "Repository already exists")
 		default:
-			return InternalError(c, "failed to create repository")
+			WriteError(w, http.StatusInternalServerError, err.Error())
 		}
+		return
 	}
 
-	return Created(c, repo)
+	WriteCreated(w, repo)
 }
 
-// Get retrieves a repository
-func (h *Repo) Get(c *mizu.Ctx) error {
-	repo, user, err := h.getRepoByOwnerName(c)
+// ListUserRepos handles GET /users/{username}/repos
+func (h *RepoHandler) ListUserRepos(w http.ResponseWriter, r *http.Request) {
+	username := PathParam(r, "username")
+	pagination := GetPaginationParams(r)
+	opts := &repos.ListOpts{
+		Page:      pagination.Page,
+		PerPage:   pagination.PerPage,
+		Type:      QueryParam(r, "type"),
+		Sort:      QueryParam(r, "sort"),
+		Direction: QueryParam(r, "direction"),
+	}
+
+	repoList, err := h.repos.ListForUser(r.Context(), username, opts)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check access for private repos
-	if repo.IsPrivate {
-		currentUserID := h.getUserID(c)
-		if !h.repos.CanAccess(c.Context(), repo.ID, currentUserID, repos.PermissionRead) {
-			return NotFound(c, "repository not found")
-		}
-	}
-
-	repo.OwnerName = user.Username
-	return OK(c, repo)
+	WriteJSON(w, http.StatusOK, repoList)
 }
 
-// Update updates a repository
-func (h *Repo) Update(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// ListOrgRepos handles GET /orgs/{org}/repos
+func (h *RepoHandler) ListOrgRepos(w http.ResponseWriter, r *http.Request) {
+	org := PathParam(r, "org")
+	pagination := GetPaginationParams(r)
+	opts := &repos.ListOpts{
+		Page:      pagination.Page,
+		PerPage:   pagination.PerPage,
+		Type:      QueryParam(r, "type"),
+		Sort:      QueryParam(r, "sort"),
+		Direction: QueryParam(r, "direction"),
 	}
 
-	repo, _, err := h.getRepoByOwnerName(c)
+	repoList, err := h.repos.ListForOrg(r.Context(), org, opts)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check admin permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionAdmin) {
-		return Forbidden(c, "insufficient permissions")
+	WriteJSON(w, http.StatusOK, repoList)
+}
+
+// CreateOrgRepo handles POST /orgs/{org}/repos
+func (h *RepoHandler) CreateOrgRepo(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	org := PathParam(r, "org")
+
+	var in repos.CreateIn
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
+	}
+
+	repo, err := h.repos.CreateForOrg(r.Context(), org, user.ID, &in)
+	if err != nil {
+		switch err {
+		case repos.ErrExists:
+			WriteConflict(w, "Repository already exists")
+		case repos.ErrNotFound:
+			WriteNotFound(w, "Organization")
+		default:
+			WriteError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+
+	WriteCreated(w, repo)
+}
+
+// GetRepo handles GET /repos/{owner}/{repo}
+func (h *RepoHandler) GetRepo(w http.ResponseWriter, r *http.Request) {
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, repo)
+}
+
+// UpdateRepo handles PATCH /repos/{owner}/{repo}
+func (h *RepoHandler) UpdateRepo(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	var in repos.UpdateIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
 	}
 
-	repo, err = h.repos.Update(c.Context(), repo.ID, &in)
+	updated, err := h.repos.Update(r.Context(), repo.ID, &in)
 	if err != nil {
-		return InternalError(c, "failed to update repository")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, repo)
+	WriteJSON(w, http.StatusOK, updated)
 }
 
-// Delete deletes a repository
-func (h *Repo) Delete(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// DeleteRepo handles DELETE /repos/{owner}/{repo}
+func (h *RepoHandler) DeleteRepo(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	repo, _, err := h.getRepoByOwnerName(c)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check admin permission (owners have admin)
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionAdmin) {
-		return Forbidden(c, "only the owner can delete a repository")
+	if err := h.repos.Delete(r.Context(), repo.ID); err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	if err := h.repos.Delete(c.Context(), repo.ID); err != nil {
-		return InternalError(c, "failed to delete repository")
-	}
-
-	return NoContent(c)
+	WriteNoContent(w)
 }
 
-// Fork forks a repository
-func (h *Repo) Fork(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
+// ListRepoTopics handles GET /repos/{owner}/{repo}/topics
+func (h *RepoHandler) ListRepoTopics(w http.ResponseWriter, r *http.Request) {
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
 
-	owner := c.Param("owner")
-	name := c.Param("repo")
-
-	// Get owner user
-	user, err := h.users.GetByUsername(c.Context(), owner)
+	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	repo, err := h.repos.GetByOwnerAndName(c.Context(), user.ID, "user", name)
+	topics, err := h.repos.ListTopics(r.Context(), repo.ID)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	var in repos.ForkIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		// Optional body, use default name
-		in.Name = ""
+	WriteJSON(w, http.StatusOK, map[string][]string{"names": topics})
+}
+
+// ReplaceRepoTopics handles PUT /repos/{owner}/{repo}/topics
+func (h *RepoHandler) ReplaceRepoTopics(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	forked, err := h.repos.Fork(c.Context(), userID, repo.ID, &in)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
 	if err != nil {
-		switch err {
-		case repos.ErrExists:
-			return Conflict(c, "repository already exists")
-		default:
-			return InternalError(c, "failed to fork repository")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var in struct {
+		Names []string `json:"names"`
+	}
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
+	}
+
+	if err := h.repos.ReplaceTopics(r.Context(), repo.ID, in.Names); err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	topics, _ := h.repos.ListTopics(r.Context(), repo.ID)
+	WriteJSON(w, http.StatusOK, map[string][]string{"names": topics})
+}
+
+// ListRepoLanguages handles GET /repos/{owner}/{repo}/languages
+func (h *RepoHandler) ListRepoLanguages(w http.ResponseWriter, r *http.Request) {
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	languages, err := h.repos.ListLanguages(r.Context(), repo.ID)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, languages)
+}
+
+// ListRepoContributors handles GET /repos/{owner}/{repo}/contributors
+func (h *RepoHandler) ListRepoContributors(w http.ResponseWriter, r *http.Request) {
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pagination := GetPaginationParams(r)
+	opts := &repos.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+	}
+
+	contributors, err := h.repos.ListContributors(r.Context(), repo.ID, opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, contributors)
+}
+
+// ListRepoTags handles GET /repos/{owner}/{repo}/tags
+func (h *RepoHandler) ListRepoTags(w http.ResponseWriter, r *http.Request) {
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pagination := GetPaginationParams(r)
+	opts := &repos.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+	}
+
+	tags, err := h.repos.ListTags(r.Context(), repo.ID, opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, tags)
+}
+
+// TransferRepo handles POST /repos/{owner}/{repo}/transfer
+func (h *RepoHandler) TransferRepo(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var in struct {
+		NewOwner string  `json:"new_owner"`
+		TeamIDs  []int64 `json:"team_ids,omitempty"`
+	}
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
+	}
+
+	updated, err := h.repos.Transfer(r.Context(), repo.ID, in.NewOwner)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteAccepted(w, updated)
+}
+
+// ListPublicRepos handles GET /repositories
+func (h *RepoHandler) ListPublicRepos(w http.ResponseWriter, r *http.Request) {
+	pagination := GetPaginationParams(r)
+	opts := &repos.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+	}
+
+	if since := QueryParam(r, "since"); since != "" {
+		if n, err := PathParamInt64(r, "since"); err == nil {
+			opts.Since = n
 		}
 	}
 
-	return Created(c, forked)
+	repoList, err := h.repos.ListPublic(r.Context(), opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, repoList)
 }
 
-// ListForks lists forks of a repository
-func (h *Repo) ListForks(c *mizu.Ctx) error {
-	owner := c.Param("owner")
-	name := c.Param("repo")
+// GetRepoReadme handles GET /repos/{owner}/{repo}/readme
+func (h *RepoHandler) GetRepoReadme(w http.ResponseWriter, r *http.Request) {
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+	ref := QueryParam(r, "ref")
 
-	// Get owner user
-	user, err := h.users.GetByUsername(c.Context(), owner)
+	content, err := h.repos.GetReadme(r.Context(), owner, repoName, ref)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "README")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	repo, err := h.repos.GetByOwnerAndName(c.Context(), user.ID, "user", name)
+	WriteJSON(w, http.StatusOK, content)
+}
+
+// GetRepoContent handles GET /repos/{owner}/{repo}/contents/{path}
+func (h *RepoHandler) GetRepoContent(w http.ResponseWriter, r *http.Request) {
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+	path := PathParam(r, "path")
+	ref := QueryParam(r, "ref")
+
+	content, err := h.repos.GetContent(r.Context(), owner, repoName, path, ref)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Content")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	page, _ := strconv.Atoi(c.Query("page"))
-	perPage, _ := strconv.Atoi(c.Query("per_page"))
-	if page < 1 {
-		page = 1
-	}
-	if perPage < 1 || perPage > 100 {
-		perPage = 30
+	WriteJSON(w, http.StatusOK, content)
+}
+
+// CreateOrUpdateFileContent handles PUT /repos/{owner}/{repo}/contents/{path}
+func (h *RepoHandler) CreateOrUpdateFileContent(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+	path := PathParam(r, "path")
+
+	var in repos.CreateFileIn
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
+	}
+	in.Path = path
+
+	result, err := h.repos.CreateOrUpdateFile(r.Context(), owner, repoName, &in)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if in.SHA != "" {
+		WriteJSON(w, http.StatusOK, result)
+	} else {
+		WriteCreated(w, result)
+	}
+}
+
+// DeleteFileContent handles DELETE /repos/{owner}/{repo}/contents/{path}
+func (h *RepoHandler) DeleteFileContent(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+	path := PathParam(r, "path")
+
+	var in repos.DeleteFileIn
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
+	}
+	in.Path = path
+
+	result, err := h.repos.DeleteFile(r.Context(), owner, repoName, &in)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, result)
+}
+
+// ForkRepo handles POST /repos/{owner}/{repo}/forks
+func (h *RepoHandler) ForkRepo(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	var in struct {
+		Organization    string `json:"organization,omitempty"`
+		Name            string `json:"name,omitempty"`
+		DefaultBranchOnly bool   `json:"default_branch_only,omitempty"`
+	}
+	// Body is optional
+	DecodeJSON(r, &in)
+
+	fork, err := h.repos.Fork(r.Context(), owner, repoName, user.ID, in.Organization, in.Name)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteAccepted(w, fork)
+}
+
+// ListForks handles GET /repos/{owner}/{repo}/forks
+func (h *RepoHandler) ListForks(w http.ResponseWriter, r *http.Request) {
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pagination := GetPaginationParams(r)
 	opts := &repos.ListOpts{
-		Limit:  perPage,
-		Offset: (page - 1) * perPage,
+		Page:      pagination.Page,
+		PerPage:   pagination.PerPage,
+		Sort:      QueryParam(r, "sort"),
+		Direction: QueryParam(r, "direction"),
 	}
 
-	forks, err := h.repos.ListForks(c.Context(), repo.ID, opts)
+	forks, err := h.repos.ListForks(r.Context(), repo.ID, opts)
 	if err != nil {
-		return InternalError(c, "failed to list forks")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, forks)
-}
-
-// Star stars a repository
-func (h *Repo) Star(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	owner := c.Param("owner")
-	name := c.Param("repo")
-
-	// Get owner user
-	user, err := h.users.GetByUsername(c.Context(), owner)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	repo, err := h.repos.GetByOwnerAndName(c.Context(), user.ID, "user", name)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	if err := h.repos.Star(c.Context(), userID, repo.ID); err != nil {
-		return InternalError(c, "failed to star repository")
-	}
-
-	return NoContent(c)
-}
-
-// Unstar removes a star from a repository
-func (h *Repo) Unstar(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	owner := c.Param("owner")
-	name := c.Param("repo")
-
-	// Get owner user
-	user, err := h.users.GetByUsername(c.Context(), owner)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	repo, err := h.repos.GetByOwnerAndName(c.Context(), user.ID, "user", name)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	if err := h.repos.Unstar(c.Context(), userID, repo.ID); err != nil {
-		return InternalError(c, "failed to unstar repository")
-	}
-
-	return NoContent(c)
-}
-
-// CheckStarred checks if the current user has starred a repository
-func (h *Repo) CheckStarred(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	owner := c.Param("owner")
-	name := c.Param("repo")
-
-	// Get owner user
-	user, err := h.users.GetByUsername(c.Context(), owner)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	repo, err := h.repos.GetByOwnerAndName(c.Context(), user.ID, "user", name)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	starred, err := h.repos.IsStarred(c.Context(), userID, repo.ID)
-	if err != nil {
-		return InternalError(c, "failed to check starred status")
-	}
-
-	if !starred {
-		return NotFound(c, "not starred")
-	}
-
-	return NoContent(c)
-}
-
-// ListStargazers lists users who starred a repository
-func (h *Repo) ListStargazers(c *mizu.Ctx) error {
-	owner := c.Param("owner")
-	name := c.Param("repo")
-
-	// Get owner user
-	user, err := h.users.GetByUsername(c.Context(), owner)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	repo, err := h.repos.GetByOwnerAndName(c.Context(), user.ID, "user", name)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	// TODO: Implement ListStargazers in repos.API
-	_ = repo
-	return OK(c, []any{})
-}
-
-// GetPermission returns the permission level of a user for a repository
-func (h *Repo) GetPermission(c *mizu.Ctx) error {
-	owner := c.Param("owner")
-	name := c.Param("repo")
-	username := c.Param("username")
-
-	// Get owner user
-	ownerUser, err := h.users.GetByUsername(c.Context(), owner)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	repo, err := h.repos.GetByOwnerAndName(c.Context(), ownerUser.ID, "user", name)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	// Get target user
-	targetUser, err := h.users.GetByUsername(c.Context(), username)
-	if err != nil {
-		return NotFound(c, "user not found")
-	}
-
-	perm, err := h.repos.GetPermission(c.Context(), repo.ID, targetUser.ID)
-	if err != nil {
-		return NotFound(c, "no permission")
-	}
-
-	return OK(c, map[string]any{
-		"permission": perm,
-	})
-}
-
-// ListCollaborators lists repository collaborators
-func (h *Repo) ListCollaborators(c *mizu.Ctx) error {
-	owner := c.Param("owner")
-	name := c.Param("repo")
-
-	// Get owner user
-	user, err := h.users.GetByUsername(c.Context(), owner)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	repo, err := h.repos.GetByOwnerAndName(c.Context(), user.ID, "user", name)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	collabs, err := h.repos.ListCollaborators(c.Context(), repo.ID)
-	if err != nil {
-		return InternalError(c, "failed to list collaborators")
-	}
-
-	return OK(c, collabs)
-}
-
-// AddCollaborator adds a collaborator to a repository
-func (h *Repo) AddCollaborator(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	owner := c.Param("owner")
-	name := c.Param("repo")
-	username := c.Param("username")
-
-	// Get owner user
-	ownerUser, err := h.users.GetByUsername(c.Context(), owner)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	repo, err := h.repos.GetByOwnerAndName(c.Context(), ownerUser.ID, "user", name)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	// Check admin permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionAdmin) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	// Get collaborator user
-	collabUser, err := h.users.GetByUsername(c.Context(), username)
-	if err != nil {
-		return NotFound(c, "user not found")
-	}
-
-	// Get permission from query or body
-	perm := repos.Permission(c.Query("permission"))
-	if perm == "" {
-		perm = repos.PermissionWrite
-	}
-
-	if err := h.repos.AddCollaborator(c.Context(), repo.ID, collabUser.ID, perm); err != nil {
-		return InternalError(c, "failed to add collaborator")
-	}
-
-	return NoContent(c)
-}
-
-// RemoveCollaborator removes a collaborator from a repository
-func (h *Repo) RemoveCollaborator(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	owner := c.Param("owner")
-	name := c.Param("repo")
-	username := c.Param("username")
-
-	// Get owner user
-	ownerUser, err := h.users.GetByUsername(c.Context(), owner)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	repo, err := h.repos.GetByOwnerAndName(c.Context(), ownerUser.ID, "user", name)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	// Check admin permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionAdmin) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	// Get collaborator user
-	collabUser, err := h.users.GetByUsername(c.Context(), username)
-	if err != nil {
-		return NotFound(c, "user not found")
-	}
-
-	if err := h.repos.RemoveCollaborator(c.Context(), repo.ID, collabUser.ID); err != nil {
-		return InternalError(c, "failed to remove collaborator")
-	}
-
-	return NoContent(c)
+	WriteJSON(w, http.StatusOK, forks)
 }

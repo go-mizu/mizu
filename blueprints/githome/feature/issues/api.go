@@ -4,174 +4,246 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/mizu-framework/mizu/blueprints/githome/feature/users"
 )
 
-// Errors
 var (
 	ErrNotFound     = errors.New("issue not found")
-	ErrInvalidInput = errors.New("invalid input")
 	ErrAccessDenied = errors.New("access denied")
 	ErrLocked       = errors.New("issue is locked")
-	ErrMissingTitle = errors.New("issue title is required")
 )
 
 // Issue represents a GitHub issue
 type Issue struct {
-	ID             string     `json:"id"`
-	RepoID         string     `json:"repo_id"`
-	Number         int        `json:"number"`
-	Title          string     `json:"title"`
-	Body           string     `json:"body"`
-	AuthorID       string     `json:"author_id"`
-	State          string     `json:"state"` // open, closed
-	StateReason    string     `json:"state_reason,omitempty"`
-	IsLocked       bool       `json:"is_locked"`
-	LockReason     string     `json:"lock_reason,omitempty"`
-	MilestoneID    string     `json:"milestone_id,omitempty"`
-	CommentCount   int        `json:"comment_count"`
-	ReactionsCount int        `json:"reactions_count"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
-	ClosedAt       *time.Time `json:"closed_at,omitempty"`
-	ClosedByID     string     `json:"closed_by_id,omitempty"`
-
-	// Populated from joins
-	Labels    []*Label `json:"labels,omitempty"`
-	Assignees []string `json:"assignees,omitempty"` // From issue_assignees table
+	ID                int64             `json:"id"`
+	NodeID            string            `json:"node_id"`
+	URL               string            `json:"url"`
+	RepositoryURL     string            `json:"repository_url"`
+	LabelsURL         string            `json:"labels_url"`
+	CommentsURL       string            `json:"comments_url"`
+	EventsURL         string            `json:"events_url"`
+	HTMLURL           string            `json:"html_url"`
+	Number            int               `json:"number"`
+	State             string            `json:"state"` // open, closed
+	StateReason       string            `json:"state_reason,omitempty"` // completed, reopened, not_planned
+	Title             string            `json:"title"`
+	Body              string            `json:"body,omitempty"`
+	User              *users.SimpleUser `json:"user"`
+	Labels            []*Label          `json:"labels"`
+	Assignee          *users.SimpleUser `json:"assignee,omitempty"`
+	Assignees         []*users.SimpleUser `json:"assignees"`
+	Milestone         *Milestone        `json:"milestone,omitempty"`
+	Locked            bool              `json:"locked"`
+	ActiveLockReason  string            `json:"active_lock_reason,omitempty"`
+	Comments          int               `json:"comments"`
+	PullRequest       *IssuePR          `json:"pull_request,omitempty"`
+	ClosedAt          *time.Time        `json:"closed_at"`
+	CreatedAt         time.Time         `json:"created_at"`
+	UpdatedAt         time.Time         `json:"updated_at"`
+	ClosedBy          *users.SimpleUser `json:"closed_by,omitempty"`
+	AuthorAssociation string            `json:"author_association"`
+	Reactions         *Reactions        `json:"reactions,omitempty"`
+	// Internal fields
+	RepoID    int64  `json:"-"`
+	CreatorID int64  `json:"-"`
 }
 
-// Label represents an issue label
+// Label represents a GitHub label (lightweight for issues)
 type Label struct {
-	ID          string    `json:"id"`
-	RepoID      string    `json:"repo_id"`
-	Name        string    `json:"name"`
-	Color       string    `json:"color"`
-	Description string    `json:"description"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID          int64  `json:"id"`
+	NodeID      string `json:"node_id"`
+	URL         string `json:"url"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Color       string `json:"color"`
+	Default     bool   `json:"default"`
 }
 
-// Milestone represents a milestone
+// Milestone represents a GitHub milestone (lightweight for issues)
 type Milestone struct {
-	ID          string     `json:"id"`
-	RepoID      string     `json:"repo_id"`
-	Number      int        `json:"number"`
-	Title       string     `json:"title"`
-	Description string     `json:"description"`
-	State       string     `json:"state"` // open, closed
-	DueDate     *time.Time `json:"due_date,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	ClosedAt    *time.Time `json:"closed_at,omitempty"`
+	ID           int64             `json:"id"`
+	NodeID       string            `json:"node_id"`
+	URL          string            `json:"url"`
+	HTMLURL      string            `json:"html_url"`
+	LabelsURL    string            `json:"labels_url"`
+	Number       int               `json:"number"`
+	State        string            `json:"state"`
+	Title        string            `json:"title"`
+	Description  string            `json:"description,omitempty"`
+	Creator      *users.SimpleUser `json:"creator"`
+	OpenIssues   int               `json:"open_issues"`
+	ClosedIssues int               `json:"closed_issues"`
+	CreatedAt    time.Time         `json:"created_at"`
+	UpdatedAt    time.Time         `json:"updated_at"`
+	ClosedAt     *time.Time        `json:"closed_at"`
+	DueOn        *time.Time        `json:"due_on"`
 }
 
-// Comment represents a comment on an issue
-type Comment struct {
-	ID         string    `json:"id"`
-	TargetType string    `json:"target_type"` // issue, pull_request
-	TargetID   string    `json:"target_id"`
-	UserID     string    `json:"user_id"`
-	Body       string    `json:"body"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+// IssuePR contains PR info if issue is associated with a PR
+type IssuePR struct {
+	URL      string     `json:"url"`
+	HTMLURL  string     `json:"html_url"`
+	DiffURL  string     `json:"diff_url"`
+	PatchURL string     `json:"patch_url"`
+	MergedAt *time.Time `json:"merged_at,omitempty"`
 }
 
-// IssueLabel represents the association between an issue and a label
-// Uses composite PK (issue_id, label_id) - no ID field
-type IssueLabel struct {
-	IssueID   string    `json:"issue_id"`
-	LabelID   string    `json:"label_id"`
-	CreatedAt time.Time `json:"created_at"`
+// Reactions represents reaction counts
+type Reactions struct {
+	URL        string `json:"url"`
+	TotalCount int    `json:"total_count"`
+	PlusOne    int    `json:"+1"`
+	MinusOne   int    `json:"-1"`
+	Laugh      int    `json:"laugh"`
+	Confused   int    `json:"confused"`
+	Heart      int    `json:"heart"`
+	Hooray     int    `json:"hooray"`
+	Rocket     int    `json:"rocket"`
+	Eyes       int    `json:"eyes"`
 }
 
-// IssueAssignee represents the association between an issue and an assignee
-// Uses composite PK (issue_id, user_id) - no ID field
-type IssueAssignee struct {
-	IssueID   string    `json:"issue_id"`
-	UserID    string    `json:"user_id"`
-	CreatedAt time.Time `json:"created_at"`
+// IssueEvent represents an issue event
+type IssueEvent struct {
+	ID             int64             `json:"id"`
+	NodeID         string            `json:"node_id"`
+	URL            string            `json:"url"`
+	Actor          *users.SimpleUser `json:"actor"`
+	Event          string            `json:"event"`
+	CommitID       string            `json:"commit_id,omitempty"`
+	CommitURL      string            `json:"commit_url,omitempty"`
+	CreatedAt      time.Time         `json:"created_at"`
+	Label          *Label            `json:"label,omitempty"`
+	Assignee       *users.SimpleUser `json:"assignee,omitempty"`
+	Assigner       *users.SimpleUser `json:"assigner,omitempty"`
+	Milestone      *Milestone        `json:"milestone,omitempty"`
+	Rename         *Rename           `json:"rename,omitempty"`
 }
 
-// CreateIn is the input for creating an issue
+// Rename represents a rename event
+type Rename struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+// CreateIn represents the input for creating an issue
 type CreateIn struct {
-	Title       string   `json:"title"`
-	Body        string   `json:"body"`
-	Assignees   []string `json:"assignees,omitempty"`
-	Labels      []string `json:"labels,omitempty"`
-	MilestoneID string   `json:"milestone_id,omitempty"`
+	Title     string   `json:"title"`
+	Body      string   `json:"body,omitempty"`
+	Assignee  string   `json:"assignee,omitempty"`
+	Assignees []string `json:"assignees,omitempty"`
+	Milestone *int     `json:"milestone,omitempty"`
+	Labels    []string `json:"labels,omitempty"`
 }
 
-// UpdateIn is the input for updating an issue
+// UpdateIn represents the input for updating an issue
 type UpdateIn struct {
-	Title       *string   `json:"title,omitempty"`
-	Body        *string   `json:"body,omitempty"`
-	State       *string   `json:"state,omitempty"`
-	StateReason *string   `json:"state_reason,omitempty"`
-	Assignees   *[]string `json:"assignees,omitempty"`
-	Labels      *[]string `json:"labels,omitempty"`
-	MilestoneID *string   `json:"milestone_id,omitempty"`
+	Title       *string  `json:"title,omitempty"`
+	Body        *string  `json:"body,omitempty"`
+	State       *string  `json:"state,omitempty"`
+	StateReason *string  `json:"state_reason,omitempty"`
+	Assignee    *string  `json:"assignee,omitempty"`
+	Assignees   []string `json:"assignees,omitempty"`
+	Milestone   *int     `json:"milestone,omitempty"`
+	Labels      []string `json:"labels,omitempty"`
 }
 
-// ListOpts are options for listing issues
+// ListOpts contains options for listing issues
 type ListOpts struct {
-	State       string // open, closed, all
-	Sort        string // created, updated, comments
-	Direction   string // asc, desc
-	Labels      []string
-	Assignee    string
-	MilestoneID string
-	Limit       int
-	Offset      int
+	Page      int       `json:"page,omitempty"`
+	PerPage   int       `json:"per_page,omitempty"`
+	State     string    `json:"state,omitempty"`     // open, closed, all
+	Sort      string    `json:"sort,omitempty"`      // created, updated, comments
+	Direction string    `json:"direction,omitempty"` // asc, desc
+	Since     time.Time `json:"since,omitempty"`
+	Labels    string    `json:"labels,omitempty"`
+	Milestone string    `json:"milestone,omitempty"` // number, none, *
+	Assignee  string    `json:"assignee,omitempty"`
+	Creator   string    `json:"creator,omitempty"`
+	Mentioned string    `json:"mentioned,omitempty"`
 }
 
-// API is the issues service interface
+// API defines the issues service interface
 type API interface {
-	// CRUD
-	Create(ctx context.Context, repoID, authorID string, in *CreateIn) (*Issue, error)
-	GetByID(ctx context.Context, id string) (*Issue, error)
-	GetByNumber(ctx context.Context, repoID string, number int) (*Issue, error)
-	Update(ctx context.Context, id string, in *UpdateIn) (*Issue, error)
-	Delete(ctx context.Context, id string) error
-	List(ctx context.Context, repoID string, opts *ListOpts) ([]*Issue, int, error)
+	// Create creates a new issue
+	Create(ctx context.Context, owner, repo string, creatorID int64, in *CreateIn) (*Issue, error)
 
-	// State management
-	Close(ctx context.Context, id, userID, reason string) error
-	Reopen(ctx context.Context, id string) error
-	Lock(ctx context.Context, id, reason string) error
-	Unlock(ctx context.Context, id string) error
+	// Get retrieves an issue by number
+	Get(ctx context.Context, owner, repo string, number int) (*Issue, error)
 
-	// Labels
-	AddLabels(ctx context.Context, id string, labelIDs []string) error
-	RemoveLabel(ctx context.Context, id, labelID string) error
-	SetLabels(ctx context.Context, id string, labelIDs []string) error
+	// GetByID retrieves an issue by ID
+	GetByID(ctx context.Context, id int64) (*Issue, error)
 
-	// Assignees
-	AddAssignees(ctx context.Context, id string, userIDs []string) error
-	RemoveAssignees(ctx context.Context, id string, userIDs []string) error
+	// Update updates an issue
+	Update(ctx context.Context, owner, repo string, number int, in *UpdateIn) (*Issue, error)
 
-	// Comments
-	AddComment(ctx context.Context, issueID, userID, body string) (*Comment, error)
-	UpdateComment(ctx context.Context, commentID, body string) (*Comment, error)
-	DeleteComment(ctx context.Context, commentID string) error
-	ListComments(ctx context.Context, issueID string) ([]*Comment, error)
+	// Lock locks an issue
+	Lock(ctx context.Context, owner, repo string, number int, reason string) error
+
+	// Unlock unlocks an issue
+	Unlock(ctx context.Context, owner, repo string, number int) error
+
+	// ListForRepo returns issues for a repository
+	ListForRepo(ctx context.Context, owner, repo string, opts *ListOpts) ([]*Issue, error)
+
+	// ListForOrg returns issues for an organization
+	ListForOrg(ctx context.Context, org string, opts *ListOpts) ([]*Issue, error)
+
+	// ListForUser returns issues assigned to/created by the authenticated user
+	ListForUser(ctx context.Context, userID int64, opts *ListOpts) ([]*Issue, error)
+
+	// ListAssignees returns users who can be assigned to issues
+	ListAssignees(ctx context.Context, owner, repo string) ([]*users.SimpleUser, error)
+
+	// CheckAssignee checks if a user can be assigned
+	CheckAssignee(ctx context.Context, owner, repo, assignee string) (bool, error)
+
+	// AddAssignees adds assignees to an issue
+	AddAssignees(ctx context.Context, owner, repo string, number int, assignees []string) (*Issue, error)
+
+	// RemoveAssignees removes assignees from an issue
+	RemoveAssignees(ctx context.Context, owner, repo string, number int, assignees []string) (*Issue, error)
+
+	// ListEvents returns events for an issue
+	ListEvents(ctx context.Context, owner, repo string, number int, opts *ListOpts) ([]*IssueEvent, error)
+
+	// CreateEvent creates an event (internal use)
+	CreateEvent(ctx context.Context, issueID, actorID int64, eventType string, data map[string]interface{}) (*IssueEvent, error)
 }
 
-// Store is the issues data store interface
+// Store defines the data access interface for issues
 type Store interface {
-	Create(ctx context.Context, i interface{}) error
-	GetByID(ctx context.Context, id string) (*Issue, error)
-	GetByNumber(ctx context.Context, repoID string, number int) (*Issue, error)
-	Update(ctx context.Context, i *Issue) error
-	Delete(ctx context.Context, id string) error
-	List(ctx context.Context, repoID string, state string, limit, offset int) ([]*Issue, int, error)
-	GetNextNumber(ctx context.Context, repoID string) (int, error)
+	Create(ctx context.Context, issue *Issue) error
+	GetByID(ctx context.Context, id int64) (*Issue, error)
+	GetByNumber(ctx context.Context, repoID int64, number int) (*Issue, error)
+	Update(ctx context.Context, id int64, in *UpdateIn) error
+	Delete(ctx context.Context, id int64) error
+	List(ctx context.Context, repoID int64, opts *ListOpts) ([]*Issue, error)
+	ListForOrg(ctx context.Context, orgID int64, opts *ListOpts) ([]*Issue, error)
+	ListForUser(ctx context.Context, userID int64, opts *ListOpts) ([]*Issue, error)
+	NextNumber(ctx context.Context, repoID int64) (int, error)
 
-	// Labels
-	AddLabel(ctx context.Context, il *IssueLabel) error
-	RemoveLabel(ctx context.Context, issueID, labelID string) error
-	ListLabels(ctx context.Context, issueID string) ([]string, error)
+	// Lock/unlock
+	SetLocked(ctx context.Context, id int64, locked bool, reason string) error
 
 	// Assignees
-	AddAssignee(ctx context.Context, ia *IssueAssignee) error
-	RemoveAssignee(ctx context.Context, issueID, userID string) error
-	ListAssignees(ctx context.Context, issueID string) ([]string, error)
+	AddAssignee(ctx context.Context, issueID, userID int64) error
+	RemoveAssignee(ctx context.Context, issueID, userID int64) error
+	ListAssignees(ctx context.Context, issueID int64) ([]*users.SimpleUser, error)
+
+	// Labels
+	AddLabel(ctx context.Context, issueID, labelID int64) error
+	RemoveLabel(ctx context.Context, issueID, labelID int64) error
+	ListLabels(ctx context.Context, issueID int64) ([]*Label, error)
+	SetLabels(ctx context.Context, issueID int64, labelIDs []int64) error
+
+	// Milestone
+	SetMilestone(ctx context.Context, issueID int64, milestoneID *int64) error
+
+	// Events
+	CreateEvent(ctx context.Context, event *IssueEvent) error
+	ListEvents(ctx context.Context, issueID int64, opts *ListOpts) ([]*IssueEvent, error)
+
+	// Comments count
+	IncrementComments(ctx context.Context, issueID int64, delta int) error
 }

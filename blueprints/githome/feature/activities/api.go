@@ -6,93 +6,122 @@ import (
 	"time"
 )
 
-// Errors
 var (
-	ErrNotFound     = errors.New("activity not found")
-	ErrInvalidInput = errors.New("invalid input")
+	ErrNotFound = errors.New("event not found")
 )
+
+// Event represents an activity event
+type Event struct {
+	ID        string      `json:"id"`
+	Type      string      `json:"type"`
+	Actor     *Actor      `json:"actor"`
+	Repo      *EventRepo  `json:"repo"`
+	Org       *Actor      `json:"org,omitempty"`
+	Payload   interface{} `json:"payload"`
+	Public    bool        `json:"public"`
+	CreatedAt time.Time   `json:"created_at"`
+}
+
+// Actor represents an event actor
+type Actor struct {
+	ID           int64  `json:"id"`
+	Login        string `json:"login"`
+	DisplayLogin string `json:"display_login,omitempty"`
+	GravatarID   string `json:"gravatar_id"`
+	URL          string `json:"url"`
+	AvatarURL    string `json:"avatar_url"`
+}
+
+// EventRepo represents an event repository
+type EventRepo struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
+// Feeds represents activity feeds
+type Feeds struct {
+	TimelineURL                 string `json:"timeline_url"`
+	UserURL                     string `json:"user_url"`
+	CurrentUserPublicURL        string `json:"current_user_public_url,omitempty"`
+	CurrentUserURL              string `json:"current_user_url,omitempty"`
+	CurrentUserActorURL         string `json:"current_user_actor_url,omitempty"`
+	CurrentUserOrganizationURL  string `json:"current_user_organization_url,omitempty"`
+	CurrentUserOrganizationsURL []string `json:"current_user_organization_urls,omitempty"`
+}
 
 // Event types
 const (
-	EventPush          = "push"
-	EventCreate        = "create"
-	EventDelete        = "delete"
-	EventFork          = "fork"
-	EventStar          = "star"
-	EventWatch         = "watch"
-	EventIssueOpen     = "issue_open"
-	EventIssueClose    = "issue_close"
-	EventIssueReopen   = "issue_reopen"
-	EventIssueComment  = "issue_comment"
-	EventPROpen        = "pr_open"
-	EventPRClose       = "pr_close"
-	EventPRMerge       = "pr_merge"
-	EventPRReopen      = "pr_reopen"
-	EventPRComment     = "pr_comment"
-	EventPRReview      = "pr_review"
-	EventRelease       = "release"
-	EventMember        = "member"
-	EventPublic        = "public"
-	EventCommitComment = "commit_comment"
+	EventCommitComment            = "CommitCommentEvent"
+	EventCreate                   = "CreateEvent"
+	EventDelete                   = "DeleteEvent"
+	EventFork                     = "ForkEvent"
+	EventGollum                   = "GollumEvent"
+	EventIssueComment             = "IssueCommentEvent"
+	EventIssues                   = "IssuesEvent"
+	EventMember                   = "MemberEvent"
+	EventPublic                   = "PublicEvent"
+	EventPullRequest              = "PullRequestEvent"
+	EventPullRequestReview        = "PullRequestReviewEvent"
+	EventPullRequestReviewComment = "PullRequestReviewCommentEvent"
+	EventPush                     = "PushEvent"
+	EventRelease                  = "ReleaseEvent"
+	EventSponsor                  = "SponsorshipEvent"
+	EventWatch                    = "WatchEvent"
 )
 
-// Ref types
-const (
-	RefTypeBranch = "branch"
-	RefTypeTag    = "tag"
-)
-
-// Activity represents a user activity event
-type Activity struct {
-	ID         string    `json:"id"`
-	ActorID    string    `json:"actor_id"`
-	EventType  string    `json:"event_type"`
-	RepoID     string    `json:"repo_id,omitempty"`
-	TargetType string    `json:"target_type,omitempty"`
-	TargetID   string    `json:"target_id,omitempty"`
-	Ref        string    `json:"ref,omitempty"`
-	RefType    string    `json:"ref_type,omitempty"`
-	Payload    string    `json:"payload"`
-	IsPublic   bool      `json:"is_public"`
-	CreatedAt  time.Time `json:"created_at"`
-}
-
-// RecordIn is the input for recording an activity
-type RecordIn struct {
-	ActorID    string `json:"actor_id"`
-	EventType  string `json:"event_type"`
-	RepoID     string `json:"repo_id,omitempty"`
-	TargetType string `json:"target_type,omitempty"`
-	TargetID   string `json:"target_id,omitempty"`
-	Ref        string `json:"ref,omitempty"`
-	RefType    string `json:"ref_type,omitempty"`
-	Payload    string `json:"payload,omitempty"`
-	IsPublic   bool   `json:"is_public"`
-}
-
-// ListOpts are options for listing activities
+// ListOpts contains options for listing events
 type ListOpts struct {
-	Limit  int
-	Offset int
+	Page    int `json:"page,omitempty"`
+	PerPage int `json:"per_page,omitempty"`
 }
 
-// API is the activities service interface
+// API defines the activities service interface
 type API interface {
-	Record(ctx context.Context, in *RecordIn) (*Activity, error)
-	GetByID(ctx context.Context, id string) (*Activity, error)
-	ListByUser(ctx context.Context, userID string, opts *ListOpts) ([]*Activity, error)
-	ListByRepo(ctx context.Context, repoID string, opts *ListOpts) ([]*Activity, error)
-	ListPublic(ctx context.Context, opts *ListOpts) ([]*Activity, error)
-	ListFeed(ctx context.Context, userID string, opts *ListOpts) ([]*Activity, error)
-	Delete(ctx context.Context, id string) error
+	// ListPublic returns public events
+	ListPublic(ctx context.Context, opts *ListOpts) ([]*Event, error)
+
+	// ListForRepo returns events for a repository
+	ListForRepo(ctx context.Context, owner, repo string, opts *ListOpts) ([]*Event, error)
+
+	// ListNetworkEvents returns events for a repo's network
+	ListNetworkEvents(ctx context.Context, owner, repo string, opts *ListOpts) ([]*Event, error)
+
+	// ListForOrg returns events for an organization
+	ListForOrg(ctx context.Context, org string, opts *ListOpts) ([]*Event, error)
+
+	// ListPublicForOrg returns public events for an organization
+	ListPublicForOrg(ctx context.Context, org string, opts *ListOpts) ([]*Event, error)
+
+	// ListForUser returns events performed by a user
+	ListForUser(ctx context.Context, username string, opts *ListOpts) ([]*Event, error)
+
+	// ListPublicForUser returns public events performed by a user
+	ListPublicForUser(ctx context.Context, username string, opts *ListOpts) ([]*Event, error)
+
+	// ListOrgEventsForUser returns org events for a user
+	ListOrgEventsForUser(ctx context.Context, username, org string, opts *ListOpts) ([]*Event, error)
+
+	// ListReceivedEvents returns events received by a user
+	ListReceivedEvents(ctx context.Context, username string, opts *ListOpts) ([]*Event, error)
+
+	// ListPublicReceivedEvents returns public events received by a user
+	ListPublicReceivedEvents(ctx context.Context, username string, opts *ListOpts) ([]*Event, error)
+
+	// GetFeeds returns feed URLs for the authenticated user
+	GetFeeds(ctx context.Context, userID int64) (*Feeds, error)
+
+	// Create creates an event (internal use)
+	Create(ctx context.Context, eventType string, actorID, repoID int64, orgID *int64, payload interface{}, public bool) (*Event, error)
 }
 
-// Store is the activities data store interface
+// Store defines the data access interface for activities
 type Store interface {
-	Create(ctx context.Context, a *Activity) error
-	GetByID(ctx context.Context, id string) (*Activity, error)
-	ListByUser(ctx context.Context, userID string, limit, offset int) ([]*Activity, error)
-	ListByRepo(ctx context.Context, repoID string, limit, offset int) ([]*Activity, error)
-	ListPublic(ctx context.Context, limit, offset int) ([]*Activity, error)
-	Delete(ctx context.Context, id string) error
+	Create(ctx context.Context, e *Event) error
+	GetByID(ctx context.Context, id string) (*Event, error)
+	ListPublic(ctx context.Context, opts *ListOpts) ([]*Event, error)
+	ListForRepo(ctx context.Context, repoID int64, opts *ListOpts) ([]*Event, error)
+	ListForOrg(ctx context.Context, orgID int64, opts *ListOpts) ([]*Event, error)
+	ListForUser(ctx context.Context, userID int64, opts *ListOpts) ([]*Event, error)
+	ListReceivedByUser(ctx context.Context, userID int64, opts *ListOpts) ([]*Event, error)
 }

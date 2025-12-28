@@ -1,491 +1,569 @@
 package api
 
 import (
-	"strconv"
+	"net/http"
 
-	"github.com/go-mizu/blueprints/githome/feature/orgs"
-	"github.com/go-mizu/blueprints/githome/feature/repos"
-	"github.com/go-mizu/blueprints/githome/feature/users"
-	"github.com/go-mizu/blueprints/githome/feature/webhooks"
-	"github.com/go-mizu/mizu"
+	"github.com/mizu-framework/mizu/blueprints/githome/feature/repos"
+	"github.com/mizu-framework/mizu/blueprints/githome/feature/webhooks"
 )
 
-// Webhook handles webhook endpoints
-type Webhook struct {
-	webhooks  webhooks.API
-	repos     repos.API
-	orgs      orgs.API
-	users     users.API
-	getUserID func(*mizu.Ctx) string
+// WebhookHandler handles webhook endpoints
+type WebhookHandler struct {
+	webhooks webhooks.API
+	repos    repos.API
 }
 
-// NewWebhook creates a new webhook handler
-func NewWebhook(webhooks webhooks.API, repos repos.API, orgs orgs.API, users users.API, getUserID func(*mizu.Ctx) string) *Webhook {
-	return &Webhook{
-		webhooks:  webhooks,
-		repos:     repos,
-		orgs:      orgs,
-		users:     users,
-		getUserID: getUserID,
+// NewWebhookHandler creates a new webhook handler
+func NewWebhookHandler(webhooks webhooks.API, repos repos.API) *WebhookHandler {
+	return &WebhookHandler{webhooks: webhooks, repos: repos}
+}
+
+// getRepoFromPath gets repository from path parameters
+func (h *WebhookHandler) getRepoFromPath(r *http.Request) (*repos.Repository, error) {
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+	return h.repos.GetByFullName(r.Context(), owner, repoName)
+}
+
+// ListRepoWebhooks handles GET /repos/{owner}/{repo}/hooks
+func (h *WebhookHandler) ListRepoWebhooks(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
-}
 
-func (h *Webhook) getRepo(c *mizu.Ctx) (*repos.Repository, error) {
-	owner := c.Param("owner")
-	name := c.Param("repo")
-
-	user, err := h.users.GetByUsername(c.Context(), owner)
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return nil, repos.ErrNotFound
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return h.repos.GetByOwnerAndName(c.Context(), user.ID, "user", name)
-}
-
-// ListByRepo lists webhooks for a repository
-func (h *Webhook) ListByRepo(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	// Check admin permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionAdmin) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	page, _ := strconv.Atoi(c.Query("page"))
-	perPage, _ := strconv.Atoi(c.Query("per_page"))
-	if page < 1 {
-		page = 1
-	}
-	if perPage < 1 || perPage > 100 {
-		perPage = 30
-	}
-
+	pagination := GetPaginationParams(r)
 	opts := &webhooks.ListOpts{
-		Limit:  perPage,
-		Offset: (page - 1) * perPage,
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
 	}
 
-	webhookList, err := h.webhooks.ListByRepo(c.Context(), repo.ID, opts)
+	hookList, err := h.webhooks.ListForRepo(r.Context(), repo.ID, opts)
 	if err != nil {
-		return InternalError(c, "failed to list webhooks")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, webhookList)
+	WriteJSON(w, http.StatusOK, hookList)
 }
 
-// ListByOrg lists webhooks for an organization
-func (h *Webhook) ListByOrg(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// GetRepoWebhook handles GET /repos/{owner}/{repo}/hooks/{hook_id}
+func (h *WebhookHandler) GetRepoWebhook(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	slug := c.Param("org")
-	org, err := h.orgs.GetBySlug(c.Context(), slug)
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "organization not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check if user is owner or admin
-	member, _ := h.orgs.GetMember(c.Context(), org.ID, userID)
-	if member == nil || (member.Role != orgs.RoleOwner && member.Role != orgs.RoleAdmin) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	page, _ := strconv.Atoi(c.Query("page"))
-	perPage, _ := strconv.Atoi(c.Query("per_page"))
-	if page < 1 {
-		page = 1
-	}
-	if perPage < 1 || perPage > 100 {
-		perPage = 30
-	}
-
-	opts := &webhooks.ListOpts{
-		Limit:  perPage,
-		Offset: (page - 1) * perPage,
-	}
-
-	webhookList, err := h.webhooks.ListByOrg(c.Context(), org.ID, opts)
+	hookID, err := PathParamInt64(r, "hook_id")
 	if err != nil {
-		return InternalError(c, "failed to list webhooks")
+		WriteBadRequest(w, "Invalid hook ID")
+		return
 	}
 
-	return OK(c, webhookList)
+	hook, err := h.webhooks.GetByID(r.Context(), repo.ID, hookID)
+	if err != nil {
+		if err == webhooks.ErrNotFound {
+			WriteNotFound(w, "Hook")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, hook)
 }
 
-// CreateForRepo creates a webhook for a repository
-func (h *Webhook) CreateForRepo(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// CreateRepoWebhook handles POST /repos/{owner}/{repo}/hooks
+func (h *WebhookHandler) CreateRepoWebhook(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	repo, err := h.getRepo(c)
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	// Check admin permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionAdmin) {
-		return Forbidden(c, "insufficient permissions")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	var in webhooks.CreateIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
 	}
 
-	in.RepoID = repo.ID
-
-	webhook, err := h.webhooks.Create(c.Context(), &in)
+	hook, err := h.webhooks.CreateForRepo(r.Context(), repo.ID, &in)
 	if err != nil {
-		switch err {
-		case webhooks.ErrMissingURL:
-			return BadRequest(c, "webhook URL is required")
-		default:
-			return InternalError(c, "failed to create webhook")
-		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return Created(c, webhook)
+	WriteCreated(w, hook)
 }
 
-// CreateForOrg creates a webhook for an organization
-func (h *Webhook) CreateForOrg(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// UpdateRepoWebhook handles PATCH /repos/{owner}/{repo}/hooks/{hook_id}
+func (h *WebhookHandler) UpdateRepoWebhook(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	slug := c.Param("org")
-	org, err := h.orgs.GetBySlug(c.Context(), slug)
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "organization not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check if user is owner or admin
-	member, _ := h.orgs.GetMember(c.Context(), org.ID, userID)
-	if member == nil || (member.Role != orgs.RoleOwner && member.Role != orgs.RoleAdmin) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	var in webhooks.CreateIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
-	}
-
-	in.OrgID = org.ID
-
-	webhook, err := h.webhooks.Create(c.Context(), &in)
+	hookID, err := PathParamInt64(r, "hook_id")
 	if err != nil {
-		switch err {
-		case webhooks.ErrMissingURL:
-			return BadRequest(c, "webhook URL is required")
-		default:
-			return InternalError(c, "failed to create webhook")
-		}
-	}
-
-	return Created(c, webhook)
-}
-
-// Get retrieves a webhook
-func (h *Webhook) Get(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	webhookID := c.Param("id")
-
-	webhook, err := h.webhooks.GetByID(c.Context(), webhookID)
-	if err != nil {
-		return NotFound(c, "webhook not found")
-	}
-
-	// Check permission based on webhook type
-	if webhook.RepoID != "" {
-		if !h.repos.CanAccess(c.Context(), webhook.RepoID, userID, repos.PermissionAdmin) {
-			return Forbidden(c, "insufficient permissions")
-		}
-	} else if webhook.OrgID != "" {
-		member, _ := h.orgs.GetMember(c.Context(), webhook.OrgID, userID)
-		if member == nil || (member.Role != orgs.RoleOwner && member.Role != orgs.RoleAdmin) {
-			return Forbidden(c, "insufficient permissions")
-		}
-	}
-
-	return OK(c, webhook)
-}
-
-// Update updates a webhook
-func (h *Webhook) Update(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	webhookID := c.Param("id")
-
-	webhook, err := h.webhooks.GetByID(c.Context(), webhookID)
-	if err != nil {
-		return NotFound(c, "webhook not found")
-	}
-
-	// Check permission based on webhook type
-	if webhook.RepoID != "" {
-		if !h.repos.CanAccess(c.Context(), webhook.RepoID, userID, repos.PermissionAdmin) {
-			return Forbidden(c, "insufficient permissions")
-		}
-	} else if webhook.OrgID != "" {
-		member, _ := h.orgs.GetMember(c.Context(), webhook.OrgID, userID)
-		if member == nil || (member.Role != orgs.RoleOwner && member.Role != orgs.RoleAdmin) {
-			return Forbidden(c, "insufficient permissions")
-		}
+		WriteBadRequest(w, "Invalid hook ID")
+		return
 	}
 
 	var in webhooks.UpdateIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
 	}
 
-	webhook, err = h.webhooks.Update(c.Context(), webhookID, &in)
+	hook, err := h.webhooks.Update(r.Context(), repo.ID, hookID, &in)
 	if err != nil {
-		return InternalError(c, "failed to update webhook")
+		if err == webhooks.ErrNotFound {
+			WriteNotFound(w, "Hook")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, webhook)
+	WriteJSON(w, http.StatusOK, hook)
 }
 
-// Delete deletes a webhook
-func (h *Webhook) Delete(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// DeleteRepoWebhook handles DELETE /repos/{owner}/{repo}/hooks/{hook_id}
+func (h *WebhookHandler) DeleteRepoWebhook(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	webhookID := c.Param("id")
-
-	webhook, err := h.webhooks.GetByID(c.Context(), webhookID)
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "webhook not found")
-	}
-
-	// Check permission based on webhook type
-	if webhook.RepoID != "" {
-		if !h.repos.CanAccess(c.Context(), webhook.RepoID, userID, repos.PermissionAdmin) {
-			return Forbidden(c, "insufficient permissions")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
 		}
-	} else if webhook.OrgID != "" {
-		member, _ := h.orgs.GetMember(c.Context(), webhook.OrgID, userID)
-		if member == nil || (member.Role != orgs.RoleOwner && member.Role != orgs.RoleAdmin) {
-			return Forbidden(c, "insufficient permissions")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	hookID, err := PathParamInt64(r, "hook_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid hook ID")
+		return
+	}
+
+	if err := h.webhooks.Delete(r.Context(), repo.ID, hookID); err != nil {
+		if err == webhooks.ErrNotFound {
+			WriteNotFound(w, "Hook")
+			return
 		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	if err := h.webhooks.Delete(c.Context(), webhookID); err != nil {
-		return InternalError(c, "failed to delete webhook")
-	}
-
-	return NoContent(c)
+	WriteNoContent(w)
 }
 
-// Ping sends a ping event to a webhook
-func (h *Webhook) Ping(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// PingRepoWebhook handles POST /repos/{owner}/{repo}/hooks/{hook_id}/pings
+func (h *WebhookHandler) PingRepoWebhook(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	webhookID := c.Param("id")
-
-	webhook, err := h.webhooks.GetByID(c.Context(), webhookID)
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "webhook not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check permission based on webhook type
-	if webhook.RepoID != "" {
-		if !h.repos.CanAccess(c.Context(), webhook.RepoID, userID, repos.PermissionAdmin) {
-			return Forbidden(c, "insufficient permissions")
-		}
-	} else if webhook.OrgID != "" {
-		member, _ := h.orgs.GetMember(c.Context(), webhook.OrgID, userID)
-		if member == nil || (member.Role != orgs.RoleOwner && member.Role != orgs.RoleAdmin) {
-			return Forbidden(c, "insufficient permissions")
-		}
-	}
-
-	delivery, err := h.webhooks.Ping(c.Context(), webhookID)
+	hookID, err := PathParamInt64(r, "hook_id")
 	if err != nil {
-		return InternalError(c, "failed to ping webhook")
+		WriteBadRequest(w, "Invalid hook ID")
+		return
 	}
 
-	return OK(c, delivery)
+	if err := h.webhooks.Ping(r.Context(), repo.ID, hookID); err != nil {
+		if err == webhooks.ErrNotFound {
+			WriteNotFound(w, "Hook")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteNoContent(w)
 }
 
-// Test sends a test event to a webhook
-func (h *Webhook) Test(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// TestRepoWebhook handles POST /repos/{owner}/{repo}/hooks/{hook_id}/tests
+func (h *WebhookHandler) TestRepoWebhook(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	webhookID := c.Param("id")
-
-	webhook, err := h.webhooks.GetByID(c.Context(), webhookID)
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "webhook not found")
-	}
-
-	// Check permission based on webhook type
-	if webhook.RepoID != "" {
-		if !h.repos.CanAccess(c.Context(), webhook.RepoID, userID, repos.PermissionAdmin) {
-			return Forbidden(c, "insufficient permissions")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
 		}
-	} else if webhook.OrgID != "" {
-		member, _ := h.orgs.GetMember(c.Context(), webhook.OrgID, userID)
-		if member == nil || (member.Role != orgs.RoleOwner && member.Role != orgs.RoleAdmin) {
-			return Forbidden(c, "insufficient permissions")
-		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	event := c.Query("event")
-	if event == "" {
-		event = "push"
-	}
-
-	delivery, err := h.webhooks.Test(c.Context(), webhookID, event)
+	hookID, err := PathParamInt64(r, "hook_id")
 	if err != nil {
-		return InternalError(c, "failed to test webhook")
+		WriteBadRequest(w, "Invalid hook ID")
+		return
 	}
 
-	return OK(c, delivery)
+	if err := h.webhooks.Test(r.Context(), repo.ID, hookID); err != nil {
+		if err == webhooks.ErrNotFound {
+			WriteNotFound(w, "Hook")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteNoContent(w)
 }
 
-// ListDeliveries lists deliveries for a webhook
-func (h *Webhook) ListDeliveries(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// ListWebhookDeliveries handles GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries
+func (h *WebhookHandler) ListWebhookDeliveries(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	webhookID := c.Param("id")
-
-	webhook, err := h.webhooks.GetByID(c.Context(), webhookID)
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "webhook not found")
-	}
-
-	// Check permission based on webhook type
-	if webhook.RepoID != "" {
-		if !h.repos.CanAccess(c.Context(), webhook.RepoID, userID, repos.PermissionAdmin) {
-			return Forbidden(c, "insufficient permissions")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
 		}
-	} else if webhook.OrgID != "" {
-		member, _ := h.orgs.GetMember(c.Context(), webhook.OrgID, userID)
-		if member == nil || (member.Role != orgs.RoleOwner && member.Role != orgs.RoleAdmin) {
-			return Forbidden(c, "insufficient permissions")
-		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	page, _ := strconv.Atoi(c.Query("page"))
-	perPage, _ := strconv.Atoi(c.Query("per_page"))
-	if page < 1 {
-		page = 1
-	}
-	if perPage < 1 || perPage > 100 {
-		perPage = 30
+	hookID, err := PathParamInt64(r, "hook_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid hook ID")
+		return
 	}
 
+	pagination := GetPaginationParams(r)
 	opts := &webhooks.ListOpts{
-		Limit:  perPage,
-		Offset: (page - 1) * perPage,
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
 	}
 
-	deliveries, err := h.webhooks.ListDeliveries(c.Context(), webhookID, opts)
+	deliveries, err := h.webhooks.ListDeliveries(r.Context(), repo.ID, hookID, opts)
 	if err != nil {
-		return InternalError(c, "failed to list deliveries")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, deliveries)
+	WriteJSON(w, http.StatusOK, deliveries)
 }
 
-// GetDelivery retrieves a delivery
-func (h *Webhook) GetDelivery(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// GetWebhookDelivery handles GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id}
+func (h *WebhookHandler) GetWebhookDelivery(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	webhookID := c.Param("id")
-	deliveryID := c.Param("did")
-
-	webhook, err := h.webhooks.GetByID(c.Context(), webhookID)
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "webhook not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check permission based on webhook type
-	if webhook.RepoID != "" {
-		if !h.repos.CanAccess(c.Context(), webhook.RepoID, userID, repos.PermissionAdmin) {
-			return Forbidden(c, "insufficient permissions")
-		}
-	} else if webhook.OrgID != "" {
-		member, _ := h.orgs.GetMember(c.Context(), webhook.OrgID, userID)
-		if member == nil || (member.Role != orgs.RoleOwner && member.Role != orgs.RoleAdmin) {
-			return Forbidden(c, "insufficient permissions")
-		}
-	}
-
-	delivery, err := h.webhooks.GetDelivery(c.Context(), deliveryID)
+	hookID, err := PathParamInt64(r, "hook_id")
 	if err != nil {
-		return NotFound(c, "delivery not found")
+		WriteBadRequest(w, "Invalid hook ID")
+		return
 	}
 
-	return OK(c, delivery)
+	deliveryID, err := PathParamInt64(r, "delivery_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid delivery ID")
+		return
+	}
+
+	delivery, err := h.webhooks.GetDelivery(r.Context(), repo.ID, hookID, deliveryID)
+	if err != nil {
+		if err == webhooks.ErrNotFound {
+			WriteNotFound(w, "Delivery")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, delivery)
 }
 
-// Redeliver redelivers a webhook delivery
-func (h *Webhook) Redeliver(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// RedeliverWebhook handles POST /repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id}/attempts
+func (h *WebhookHandler) RedeliverWebhook(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	webhookID := c.Param("id")
-	deliveryID := c.Param("did")
-
-	webhook, err := h.webhooks.GetByID(c.Context(), webhookID)
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "webhook not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check permission based on webhook type
-	if webhook.RepoID != "" {
-		if !h.repos.CanAccess(c.Context(), webhook.RepoID, userID, repos.PermissionAdmin) {
-			return Forbidden(c, "insufficient permissions")
-		}
-	} else if webhook.OrgID != "" {
-		member, _ := h.orgs.GetMember(c.Context(), webhook.OrgID, userID)
-		if member == nil || (member.Role != orgs.RoleOwner && member.Role != orgs.RoleAdmin) {
-			return Forbidden(c, "insufficient permissions")
-		}
-	}
-
-	delivery, err := h.webhooks.Redeliver(c.Context(), deliveryID)
+	hookID, err := PathParamInt64(r, "hook_id")
 	if err != nil {
-		return InternalError(c, "failed to redeliver webhook")
+		WriteBadRequest(w, "Invalid hook ID")
+		return
 	}
 
-	return OK(c, delivery)
+	deliveryID, err := PathParamInt64(r, "delivery_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid delivery ID")
+		return
+	}
+
+	if err := h.webhooks.Redeliver(r.Context(), repo.ID, hookID, deliveryID); err != nil {
+		if err == webhooks.ErrNotFound {
+			WriteNotFound(w, "Delivery")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteAccepted(w, map[string]string{"message": "Redelivery triggered"})
+}
+
+// ListOrgWebhooks handles GET /orgs/{org}/hooks
+func (h *WebhookHandler) ListOrgWebhooks(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	org := PathParam(r, "org")
+	pagination := GetPaginationParams(r)
+	opts := &webhooks.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+	}
+
+	hookList, err := h.webhooks.ListForOrg(r.Context(), org, opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, hookList)
+}
+
+// GetOrgWebhook handles GET /orgs/{org}/hooks/{hook_id}
+func (h *WebhookHandler) GetOrgWebhook(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	org := PathParam(r, "org")
+	hookID, err := PathParamInt64(r, "hook_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid hook ID")
+		return
+	}
+
+	hook, err := h.webhooks.GetOrgHook(r.Context(), org, hookID)
+	if err != nil {
+		if err == webhooks.ErrNotFound {
+			WriteNotFound(w, "Hook")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, hook)
+}
+
+// CreateOrgWebhook handles POST /orgs/{org}/hooks
+func (h *WebhookHandler) CreateOrgWebhook(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	org := PathParam(r, "org")
+
+	var in webhooks.CreateIn
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
+	}
+
+	hook, err := h.webhooks.CreateForOrg(r.Context(), org, &in)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteCreated(w, hook)
+}
+
+// UpdateOrgWebhook handles PATCH /orgs/{org}/hooks/{hook_id}
+func (h *WebhookHandler) UpdateOrgWebhook(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	org := PathParam(r, "org")
+	hookID, err := PathParamInt64(r, "hook_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid hook ID")
+		return
+	}
+
+	var in webhooks.UpdateIn
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
+	}
+
+	hook, err := h.webhooks.UpdateOrgHook(r.Context(), org, hookID, &in)
+	if err != nil {
+		if err == webhooks.ErrNotFound {
+			WriteNotFound(w, "Hook")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, hook)
+}
+
+// DeleteOrgWebhook handles DELETE /orgs/{org}/hooks/{hook_id}
+func (h *WebhookHandler) DeleteOrgWebhook(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	org := PathParam(r, "org")
+	hookID, err := PathParamInt64(r, "hook_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid hook ID")
+		return
+	}
+
+	if err := h.webhooks.DeleteOrgHook(r.Context(), org, hookID); err != nil {
+		if err == webhooks.ErrNotFound {
+			WriteNotFound(w, "Hook")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteNoContent(w)
+}
+
+// PingOrgWebhook handles POST /orgs/{org}/hooks/{hook_id}/pings
+func (h *WebhookHandler) PingOrgWebhook(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	org := PathParam(r, "org")
+	hookID, err := PathParamInt64(r, "hook_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid hook ID")
+		return
+	}
+
+	if err := h.webhooks.PingOrgHook(r.Context(), org, hookID); err != nil {
+		if err == webhooks.ErrNotFound {
+			WriteNotFound(w, "Hook")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteNoContent(w)
 }

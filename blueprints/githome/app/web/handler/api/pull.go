@@ -1,898 +1,1163 @@
 package api
 
 import (
-	"strconv"
+	"net/http"
 
-	"github.com/go-mizu/blueprints/githome/feature/pulls"
-	"github.com/go-mizu/blueprints/githome/feature/repos"
-	"github.com/go-mizu/blueprints/githome/feature/users"
-	"github.com/go-mizu/mizu"
+	"github.com/mizu-framework/mizu/blueprints/githome/feature/pulls"
+	"github.com/mizu-framework/mizu/blueprints/githome/feature/repos"
 )
 
-// Pull handles pull request endpoints
-type Pull struct {
-	pulls     pulls.API
-	repos     repos.API
-	users     users.API
-	getUserID func(*mizu.Ctx) string
+// PullHandler handles pull request endpoints
+type PullHandler struct {
+	pulls pulls.API
+	repos repos.API
 }
 
-// NewPull creates a new pull handler
-func NewPull(pulls pulls.API, repos repos.API, users users.API, getUserID func(*mizu.Ctx) string) *Pull {
-	return &Pull{
-		pulls:     pulls,
-		repos:     repos,
-		users:     users,
-		getUserID: getUserID,
-	}
+// NewPullHandler creates a new pull handler
+func NewPullHandler(pulls pulls.API, repos repos.API) *PullHandler {
+	return &PullHandler{pulls: pulls, repos: repos}
 }
 
-func (h *Pull) getRepo(c *mizu.Ctx) (*repos.Repository, error) {
-	owner := c.Param("owner")
-	name := c.Param("repo")
+// getRepoFromPath gets repository from path parameters
+func (h *PullHandler) getRepoFromPath(r *http.Request) (*repos.Repository, error) {
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+	return h.repos.GetByFullName(r.Context(), owner, repoName)
+}
 
-	user, err := h.users.GetByUsername(c.Context(), owner)
+// ListPulls handles GET /repos/{owner}/{repo}/pulls
+func (h *PullHandler) ListPulls(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return nil, repos.ErrNotFound
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return h.repos.GetByOwnerAndName(c.Context(), user.ID, "user", name)
-}
-
-// List lists pull requests for a repository
-func (h *Pull) List(c *mizu.Ctx) error {
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	page, _ := strconv.Atoi(c.Query("page"))
-	perPage, _ := strconv.Atoi(c.Query("per_page"))
-	if page < 1 {
-		page = 1
-	}
-	if perPage < 1 || perPage > 100 {
-		perPage = 30
-	}
-
+	pagination := GetPaginationParams(r)
 	opts := &pulls.ListOpts{
-		State:  c.Query("state"),
-		Sort:   c.Query("sort"),
-		Head:   c.Query("head"),
-		Base:   c.Query("base"),
-		Limit:  perPage,
-		Offset: (page - 1) * perPage,
+		Page:      pagination.Page,
+		PerPage:   pagination.PerPage,
+		State:     QueryParam(r, "state"),
+		Head:      QueryParam(r, "head"),
+		Base:      QueryParam(r, "base"),
+		Sort:      QueryParam(r, "sort"),
+		Direction: QueryParam(r, "direction"),
 	}
 
-	prList, total, err := h.pulls.List(c.Context(), repo.ID, opts)
+	pullList, err := h.pulls.ListForRepo(r.Context(), repo.ID, opts)
 	if err != nil {
-		return InternalError(c, "failed to list pull requests")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OKList(c, prList, total, page, perPage)
+	WriteJSON(w, http.StatusOK, pullList)
 }
 
-// Create creates a new pull request
-func (h *Pull) Create(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
+// GetPull handles GET /repos/{owner}/{repo}/pulls/{pull_number}
+func (h *PullHandler) GetPull(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
+	pullNumber, err := PathParamInt(r, "pull_number")
+	if err != nil {
+		WriteBadRequest(w, "Invalid pull number")
+		return
+	}
+
+	pull, err := h.pulls.GetByNumber(r.Context(), repo.ID, pullNumber)
+	if err != nil {
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Pull Request")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, pull)
+}
+
+// CreatePull handles POST /repos/{owner}/{repo}/pulls
+func (h *PullHandler) CreatePull(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	var in pulls.CreateIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
 	}
 
-	pr, err := h.pulls.Create(c.Context(), repo.ID, userID, &in)
+	pull, err := h.pulls.Create(r.Context(), repo.ID, user.ID, &in)
 	if err != nil {
-		switch err {
-		case pulls.ErrMissingTitle:
-			return BadRequest(c, "pull request title is required")
-		default:
-			return InternalError(c, "failed to create pull request")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteCreated(w, pull)
+}
+
+// UpdatePull handles PATCH /repos/{owner}/{repo}/pulls/{pull_number}
+func (h *PullHandler) UpdatePull(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
 		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return Created(c, pr)
-}
-
-// Get retrieves a pull request
-func (h *Pull) Get(c *mizu.Ctx) error {
-	repo, err := h.getRepo(c)
+	pullNumber, err := PathParamInt(r, "pull_number")
 	if err != nil {
-		return NotFound(c, "repository not found")
+		WriteBadRequest(w, "Invalid pull number")
+		return
 	}
 
-	number, err := strconv.Atoi(c.Param("number"))
+	pull, err := h.pulls.GetByNumber(r.Context(), repo.ID, pullNumber)
 	if err != nil {
-		return BadRequest(c, "invalid pull request number")
-	}
-
-	pr, err := h.pulls.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "pull request not found")
-	}
-
-	return OK(c, pr)
-}
-
-// Update updates a pull request
-func (h *Pull) Update(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid pull request number")
-	}
-
-	pr, err := h.pulls.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "pull request not found")
-	}
-
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Pull Request")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	var in pulls.UpdateIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
 	}
 
-	pr, err = h.pulls.Update(c.Context(), pr.ID, &in)
+	updated, err := h.pulls.Update(r.Context(), pull.ID, &in)
 	if err != nil {
-		return InternalError(c, "failed to update pull request")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, pr)
+	WriteJSON(w, http.StatusOK, updated)
 }
 
-// Merge merges a pull request
-func (h *Pull) Merge(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
+// ListPullCommits handles GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
+func (h *PullHandler) ListPullCommits(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid pull request number")
-	}
-
-	pr, err := h.pulls.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "pull request not found")
-	}
-
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	var in struct {
-		MergeMethod   string `json:"merge_method"`
-		CommitMessage string `json:"commit_message"`
-	}
-	c.BindJSON(&in, 1<<20)
-
-	if in.MergeMethod == "" {
-		in.MergeMethod = pulls.MergeMethodMerge
-	}
-
-	if err := h.pulls.Merge(c.Context(), pr.ID, userID, in.MergeMethod, in.CommitMessage); err != nil {
-		switch err {
-		case pulls.ErrAlreadyMerged:
-			return Conflict(c, "pull request is already merged")
-		case pulls.ErrNotMergeable:
-			return Conflict(c, "pull request is not mergeable")
-		default:
-			return InternalError(c, "failed to merge pull request")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
 		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, map[string]bool{"merged": true})
-}
-
-// MarkReady marks a draft pull request as ready for review
-func (h *Pull) MarkReady(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
+	pullNumber, err := PathParamInt(r, "pull_number")
 	if err != nil {
-		return NotFound(c, "repository not found")
+		WriteBadRequest(w, "Invalid pull number")
+		return
 	}
 
-	number, err := strconv.Atoi(c.Param("number"))
+	pull, err := h.pulls.GetByNumber(r.Context(), repo.ID, pullNumber)
 	if err != nil {
-		return BadRequest(c, "invalid pull request number")
-	}
-
-	pr, err := h.pulls.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "pull request not found")
-	}
-
-	if err := h.pulls.MarkReady(c.Context(), pr.ID); err != nil {
-		return InternalError(c, "failed to mark pull request as ready")
-	}
-
-	pr, _ = h.pulls.GetByID(c.Context(), pr.ID)
-	return OK(c, pr)
-}
-
-// Close closes a pull request
-func (h *Pull) Close(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid pull request number")
-	}
-
-	pr, err := h.pulls.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "pull request not found")
-	}
-
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	if err := h.pulls.Close(c.Context(), pr.ID); err != nil {
-		switch err {
-		case pulls.ErrAlreadyClosed:
-			return Conflict(c, "pull request is already closed")
-		default:
-			return InternalError(c, "failed to close pull request")
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Pull Request")
+			return
 		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	pr, _ = h.pulls.GetByID(c.Context(), pr.ID)
-	return OK(c, pr)
+	pagination := GetPaginationParams(r)
+	opts := &pulls.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+	}
+
+	commits, err := h.pulls.ListCommits(r.Context(), pull.ID, opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, commits)
 }
 
-// Reopen reopens a closed pull request
-func (h *Pull) Reopen(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
+// ListPullFiles handles GET /repos/{owner}/{repo}/pulls/{pull_number}/files
+func (h *PullHandler) ListPullFiles(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid pull request number")
-	}
-
-	pr, err := h.pulls.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "pull request not found")
-	}
-
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	if err := h.pulls.Reopen(c.Context(), pr.ID); err != nil {
-		switch err {
-		case pulls.ErrAlreadyOpen:
-			return Conflict(c, "pull request is already open")
-		default:
-			return InternalError(c, "failed to reopen pull request")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
 		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	pr, _ = h.pulls.GetByID(c.Context(), pr.ID)
-	return OK(c, pr)
+	pullNumber, err := PathParamInt(r, "pull_number")
+	if err != nil {
+		WriteBadRequest(w, "Invalid pull number")
+		return
+	}
+
+	pull, err := h.pulls.GetByNumber(r.Context(), repo.ID, pullNumber)
+	if err != nil {
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Pull Request")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pagination := GetPaginationParams(r)
+	opts := &pulls.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+	}
+
+	files, err := h.pulls.ListFiles(r.Context(), pull.ID, opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, files)
 }
 
-// Lock locks a pull request
-func (h *Pull) Lock(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
+// CheckPullMerged handles GET /repos/{owner}/{repo}/pulls/{pull_number}/merge
+func (h *PullHandler) CheckPullMerged(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	number, err := strconv.Atoi(c.Param("number"))
+	pullNumber, err := PathParamInt(r, "pull_number")
 	if err != nil {
-		return BadRequest(c, "invalid pull request number")
+		WriteBadRequest(w, "Invalid pull number")
+		return
 	}
 
-	pr, err := h.pulls.GetByNumber(c.Context(), repo.ID, number)
+	pull, err := h.pulls.GetByNumber(r.Context(), repo.ID, pullNumber)
 	if err != nil {
-		return NotFound(c, "pull request not found")
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Pull Request")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check maintain permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionMaintain) {
-		return Forbidden(c, "insufficient permissions")
+	if pull.Merged {
+		WriteNoContent(w)
+	} else {
+		WriteNotFound(w, "Pull Request not merged")
 	}
-
-	reason := c.Query("lock_reason")
-	if err := h.pulls.Lock(c.Context(), pr.ID, reason); err != nil {
-		return InternalError(c, "failed to lock pull request")
-	}
-
-	return NoContent(c)
 }
 
-// Unlock unlocks a pull request
-func (h *Pull) Unlock(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// MergePull handles PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge
+func (h *PullHandler) MergePull(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	repo, err := h.getRepo(c)
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	number, err := strconv.Atoi(c.Param("number"))
+	pullNumber, err := PathParamInt(r, "pull_number")
 	if err != nil {
-		return BadRequest(c, "invalid pull request number")
+		WriteBadRequest(w, "Invalid pull number")
+		return
 	}
 
-	pr, err := h.pulls.GetByNumber(c.Context(), repo.ID, number)
+	pull, err := h.pulls.GetByNumber(r.Context(), repo.ID, pullNumber)
 	if err != nil {
-		return NotFound(c, "pull request not found")
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Pull Request")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check maintain permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionMaintain) {
-		return Forbidden(c, "insufficient permissions")
+	var in pulls.MergeIn
+	DecodeJSON(r, &in) // optional body
+
+	result, err := h.pulls.Merge(r.Context(), pull.ID, user.ID, &in)
+	if err != nil {
+		if err == pulls.ErrNotMergeable {
+			WriteError(w, http.StatusMethodNotAllowed, "Pull Request is not mergeable")
+			return
+		}
+		if err == pulls.ErrAlreadyMerged {
+			WriteError(w, http.StatusMethodNotAllowed, "Pull Request already merged")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	if err := h.pulls.Unlock(c.Context(), pr.ID); err != nil {
-		return InternalError(c, "failed to unlock pull request")
-	}
-
-	return NoContent(c)
+	WriteJSON(w, http.StatusOK, result)
 }
 
-// ListLabels lists labels for a pull request
-func (h *Pull) ListLabels(c *mizu.Ctx) error {
-	repo, err := h.getRepo(c)
+// UpdatePullBranch handles PUT /repos/{owner}/{repo}/pulls/{pull_number}/update-branch
+func (h *PullHandler) UpdatePullBranch(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	number, err := strconv.Atoi(c.Param("number"))
+	pullNumber, err := PathParamInt(r, "pull_number")
 	if err != nil {
-		return BadRequest(c, "invalid pull request number")
+		WriteBadRequest(w, "Invalid pull number")
+		return
 	}
 
-	pr, err := h.pulls.GetByNumber(c.Context(), repo.ID, number)
+	pull, err := h.pulls.GetByNumber(r.Context(), repo.ID, pullNumber)
 	if err != nil {
-		return NotFound(c, "pull request not found")
-	}
-
-	return OK(c, pr.Labels)
-}
-
-// AddLabels adds labels to a pull request
-func (h *Pull) AddLabels(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid pull request number")
-	}
-
-	pr, err := h.pulls.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "pull request not found")
-	}
-
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Pull Request")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	var in struct {
-		Labels []string `json:"labels"`
+		ExpectedHeadSHA string `json:"expected_head_sha,omitempty"`
 	}
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	DecodeJSON(r, &in) // optional
+
+	if err := h.pulls.UpdateBranch(r.Context(), pull.ID, in.ExpectedHeadSHA); err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	if err := h.pulls.AddLabels(c.Context(), pr.ID, in.Labels); err != nil {
-		return InternalError(c, "failed to add labels")
-	}
-
-	return OK(c, in.Labels)
+	WriteAccepted(w, map[string]string{"message": "Updating branch"})
 }
 
-// RemoveLabel removes a label from a pull request
-func (h *Pull) RemoveLabel(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
+// ListPullReviews handles GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews
+func (h *PullHandler) ListPullReviews(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	number, err := strconv.Atoi(c.Param("number"))
+	pullNumber, err := PathParamInt(r, "pull_number")
 	if err != nil {
-		return BadRequest(c, "invalid pull request number")
+		WriteBadRequest(w, "Invalid pull number")
+		return
 	}
 
-	pr, err := h.pulls.GetByNumber(c.Context(), repo.ID, number)
+	pull, err := h.pulls.GetByNumber(r.Context(), repo.ID, pullNumber)
 	if err != nil {
-		return NotFound(c, "pull request not found")
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Pull Request")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
+	pagination := GetPaginationParams(r)
+	opts := &pulls.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
 	}
 
-	label := c.Param("label")
-	if err := h.pulls.RemoveLabel(c.Context(), pr.ID, label); err != nil {
-		return InternalError(c, "failed to remove label")
+	reviews, err := h.pulls.ListReviews(r.Context(), pull.ID, opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return NoContent(c)
+	WriteJSON(w, http.StatusOK, reviews)
 }
 
-// AddAssignees adds assignees to a pull request
-func (h *Pull) AddAssignees(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
+// GetPullReview handles GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
+func (h *PullHandler) GetPullReview(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	number, err := strconv.Atoi(c.Param("number"))
+	pullNumber, err := PathParamInt(r, "pull_number")
 	if err != nil {
-		return BadRequest(c, "invalid pull request number")
+		WriteBadRequest(w, "Invalid pull number")
+		return
 	}
 
-	pr, err := h.pulls.GetByNumber(c.Context(), repo.ID, number)
+	pull, err := h.pulls.GetByNumber(r.Context(), repo.ID, pullNumber)
 	if err != nil {
-		return NotFound(c, "pull request not found")
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Pull Request")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
+	reviewID, err := PathParamInt64(r, "review_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid review ID")
+		return
 	}
 
-	var in struct {
-		Assignees []string `json:"assignees"`
-	}
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	review, err := h.pulls.GetReview(r.Context(), pull.ID, reviewID)
+	if err != nil {
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Review")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	if err := h.pulls.AddAssignees(c.Context(), pr.ID, in.Assignees); err != nil {
-		return InternalError(c, "failed to add assignees")
-	}
-
-	pr, _ = h.pulls.GetByID(c.Context(), pr.ID)
-	return OK(c, pr)
+	WriteJSON(w, http.StatusOK, review)
 }
 
-// RemoveAssignees removes assignees from a pull request
-func (h *Pull) RemoveAssignees(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// CreatePullReview handles POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews
+func (h *PullHandler) CreatePullReview(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	repo, err := h.getRepo(c)
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	number, err := strconv.Atoi(c.Param("number"))
+	pullNumber, err := PathParamInt(r, "pull_number")
 	if err != nil {
-		return BadRequest(c, "invalid pull request number")
+		WriteBadRequest(w, "Invalid pull number")
+		return
 	}
 
-	pr, err := h.pulls.GetByNumber(c.Context(), repo.ID, number)
+	pull, err := h.pulls.GetByNumber(r.Context(), repo.ID, pullNumber)
 	if err != nil {
-		return NotFound(c, "pull request not found")
-	}
-
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	var in struct {
-		Assignees []string `json:"assignees"`
-	}
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
-	}
-
-	if err := h.pulls.RemoveAssignees(c.Context(), pr.ID, in.Assignees); err != nil {
-		return InternalError(c, "failed to remove assignees")
-	}
-
-	pr, _ = h.pulls.GetByID(c.Context(), pr.ID)
-	return OK(c, pr)
-}
-
-// RequestReview requests reviewers for a pull request
-func (h *Pull) RequestReview(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid pull request number")
-	}
-
-	pr, err := h.pulls.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "pull request not found")
-	}
-
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	var in struct {
-		Reviewers []string `json:"reviewers"`
-	}
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
-	}
-
-	if err := h.pulls.RequestReview(c.Context(), pr.ID, in.Reviewers); err != nil {
-		return InternalError(c, "failed to request review")
-	}
-
-	pr, _ = h.pulls.GetByID(c.Context(), pr.ID)
-	return OK(c, pr)
-}
-
-// RemoveReviewRequest removes review requests
-func (h *Pull) RemoveReviewRequest(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid pull request number")
-	}
-
-	pr, err := h.pulls.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "pull request not found")
-	}
-
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	var in struct {
-		Reviewers []string `json:"reviewers"`
-	}
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
-	}
-
-	if err := h.pulls.RemoveReviewRequest(c.Context(), pr.ID, in.Reviewers); err != nil {
-		return InternalError(c, "failed to remove review request")
-	}
-
-	return NoContent(c)
-}
-
-// ListReviews lists reviews for a pull request
-func (h *Pull) ListReviews(c *mizu.Ctx) error {
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid pull request number")
-	}
-
-	pr, err := h.pulls.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "pull request not found")
-	}
-
-	reviews, err := h.pulls.ListReviews(c.Context(), pr.ID)
-	if err != nil {
-		return InternalError(c, "failed to list reviews")
-	}
-
-	return OK(c, reviews)
-}
-
-// CreateReview creates a review for a pull request
-func (h *Pull) CreateReview(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid pull request number")
-	}
-
-	pr, err := h.pulls.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "pull request not found")
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Pull Request")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	var in pulls.CreateReviewIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
 	}
 
-	review, err := h.pulls.CreateReview(c.Context(), pr.ID, userID, &in)
+	review, err := h.pulls.CreateReview(r.Context(), pull.ID, user.ID, &in)
 	if err != nil {
-		return InternalError(c, "failed to create review")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return Created(c, review)
+	WriteJSON(w, http.StatusOK, review)
 }
 
-// GetReview retrieves a review
-func (h *Pull) GetReview(c *mizu.Ctx) error {
-	reviewID := c.Param("id")
+// UpdatePullReview handles PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
+func (h *PullHandler) UpdatePullReview(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
 
-	review, err := h.pulls.GetReview(c.Context(), reviewID)
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "review not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, review)
-}
-
-// SubmitReview submits a pending review
-func (h *Pull) SubmitReview(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	reviewID := c.Param("id")
-
-	var in struct {
-		Event string `json:"event"`
-	}
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
-	}
-
-	review, err := h.pulls.SubmitReview(c.Context(), reviewID, in.Event)
+	pullNumber, err := PathParamInt(r, "pull_number")
 	if err != nil {
-		return InternalError(c, "failed to submit review")
+		WriteBadRequest(w, "Invalid pull number")
+		return
 	}
 
-	return OK(c, review)
-}
-
-// DismissReview dismisses a review
-func (h *Pull) DismissReview(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
+	pull, err := h.pulls.GetByNumber(r.Context(), repo.ID, pullNumber)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Pull Request")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check maintain permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionMaintain) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	reviewID := c.Param("id")
-
-	var in struct {
-		Message string `json:"message"`
-	}
-	c.BindJSON(&in, 1<<20)
-
-	if err := h.pulls.DismissReview(c.Context(), reviewID, in.Message); err != nil {
-		return InternalError(c, "failed to dismiss review")
-	}
-
-	return NoContent(c)
-}
-
-// ListReviewComments lists review comments for a pull request
-func (h *Pull) ListReviewComments(c *mizu.Ctx) error {
-	repo, err := h.getRepo(c)
+	reviewID, err := PathParamInt64(r, "review_id")
 	if err != nil {
-		return NotFound(c, "repository not found")
+		WriteBadRequest(w, "Invalid review ID")
+		return
 	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid pull request number")
-	}
-
-	pr, err := h.pulls.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "pull request not found")
-	}
-
-	comments, err := h.pulls.ListReviewComments(c.Context(), pr.ID)
-	if err != nil {
-		return InternalError(c, "failed to list review comments")
-	}
-
-	return OK(c, comments)
-}
-
-// CreateReviewComment creates a review comment
-func (h *Pull) CreateReviewComment(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid pull request number")
-	}
-
-	pr, err := h.pulls.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "pull request not found")
-	}
-
-	var in pulls.CreateReviewCommentIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
-	}
-
-	comment, err := h.pulls.CreateReviewComment(c.Context(), pr.ID, "", userID, &in)
-	if err != nil {
-		return InternalError(c, "failed to create review comment")
-	}
-
-	return Created(c, comment)
-}
-
-// UpdateReviewComment updates a review comment
-func (h *Pull) UpdateReviewComment(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	commentID := c.Param("id")
 
 	var in struct {
 		Body string `json:"body"`
 	}
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
 	}
 
-	comment, err := h.pulls.UpdateReviewComment(c.Context(), commentID, in.Body)
+	review, err := h.pulls.UpdateReview(r.Context(), pull.ID, reviewID, in.Body)
 	if err != nil {
-		return InternalError(c, "failed to update review comment")
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Review")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, comment)
+	WriteJSON(w, http.StatusOK, review)
 }
 
-// DeleteReviewComment deletes a review comment
-func (h *Pull) DeleteReviewComment(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// DeletePullReview handles DELETE /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
+func (h *PullHandler) DeletePullReview(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	repo, err := h.getRepo(c)
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check admin permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionAdmin) {
-		return Forbidden(c, "insufficient permissions")
+	pullNumber, err := PathParamInt(r, "pull_number")
+	if err != nil {
+		WriteBadRequest(w, "Invalid pull number")
+		return
 	}
 
-	commentID := c.Param("id")
-
-	if err := h.pulls.DeleteReviewComment(c.Context(), commentID); err != nil {
-		return InternalError(c, "failed to delete review comment")
+	pull, err := h.pulls.GetByNumber(r.Context(), repo.ID, pullNumber)
+	if err != nil {
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Pull Request")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return NoContent(c)
+	reviewID, err := PathParamInt64(r, "review_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid review ID")
+		return
+	}
+
+	if err := h.pulls.DeleteReview(r.Context(), pull.ID, reviewID); err != nil {
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Review")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]string{"message": "Review deleted"})
+}
+
+// SubmitPullReview handles POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/events
+func (h *PullHandler) SubmitPullReview(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pullNumber, err := PathParamInt(r, "pull_number")
+	if err != nil {
+		WriteBadRequest(w, "Invalid pull number")
+		return
+	}
+
+	pull, err := h.pulls.GetByNumber(r.Context(), repo.ID, pullNumber)
+	if err != nil {
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Pull Request")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	reviewID, err := PathParamInt64(r, "review_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid review ID")
+		return
+	}
+
+	var in struct {
+		Body  string `json:"body,omitempty"`
+		Event string `json:"event"` // APPROVE, REQUEST_CHANGES, COMMENT
+	}
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
+	}
+
+	review, err := h.pulls.SubmitReview(r.Context(), pull.ID, reviewID, in.Event, in.Body)
+	if err != nil {
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Review")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, review)
+}
+
+// DismissPullReview handles PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/dismissals
+func (h *PullHandler) DismissPullReview(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pullNumber, err := PathParamInt(r, "pull_number")
+	if err != nil {
+		WriteBadRequest(w, "Invalid pull number")
+		return
+	}
+
+	pull, err := h.pulls.GetByNumber(r.Context(), repo.ID, pullNumber)
+	if err != nil {
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Pull Request")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	reviewID, err := PathParamInt64(r, "review_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid review ID")
+		return
+	}
+
+	var in struct {
+		Message string `json:"message"`
+	}
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
+	}
+
+	review, err := h.pulls.DismissReview(r.Context(), pull.ID, reviewID, in.Message)
+	if err != nil {
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Review")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, review)
+}
+
+// ListReviewComments handles GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments
+func (h *PullHandler) ListReviewComments(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pullNumber, err := PathParamInt(r, "pull_number")
+	if err != nil {
+		WriteBadRequest(w, "Invalid pull number")
+		return
+	}
+
+	pull, err := h.pulls.GetByNumber(r.Context(), repo.ID, pullNumber)
+	if err != nil {
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Pull Request")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	reviewID, err := PathParamInt64(r, "review_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid review ID")
+		return
+	}
+
+	pagination := GetPaginationParams(r)
+	opts := &pulls.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+	}
+
+	comments, err := h.pulls.ListReviewComments(r.Context(), pull.ID, reviewID, opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, comments)
+}
+
+// ListPullReviewComments handles GET /repos/{owner}/{repo}/pulls/{pull_number}/comments
+func (h *PullHandler) ListPullReviewComments(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pullNumber, err := PathParamInt(r, "pull_number")
+	if err != nil {
+		WriteBadRequest(w, "Invalid pull number")
+		return
+	}
+
+	pull, err := h.pulls.GetByNumber(r.Context(), repo.ID, pullNumber)
+	if err != nil {
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Pull Request")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pagination := GetPaginationParams(r)
+	opts := &pulls.ListOpts{
+		Page:      pagination.Page,
+		PerPage:   pagination.PerPage,
+		Sort:      QueryParam(r, "sort"),
+		Direction: QueryParam(r, "direction"),
+	}
+
+	comments, err := h.pulls.ListPullComments(r.Context(), pull.ID, opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, comments)
+}
+
+// CreatePullReviewComment handles POST /repos/{owner}/{repo}/pulls/{pull_number}/comments
+func (h *PullHandler) CreatePullReviewComment(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pullNumber, err := PathParamInt(r, "pull_number")
+	if err != nil {
+		WriteBadRequest(w, "Invalid pull number")
+		return
+	}
+
+	pull, err := h.pulls.GetByNumber(r.Context(), repo.ID, pullNumber)
+	if err != nil {
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Pull Request")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var in pulls.CreateCommentIn
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
+	}
+
+	comment, err := h.pulls.CreateComment(r.Context(), pull.ID, user.ID, &in)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteCreated(w, comment)
+}
+
+// GetPullReviewComment handles GET /repos/{owner}/{repo}/pulls/comments/{comment_id}
+func (h *PullHandler) GetPullReviewComment(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	commentID, err := PathParamInt64(r, "comment_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid comment ID")
+		return
+	}
+
+	comment, err := h.pulls.GetComment(r.Context(), repo.ID, commentID)
+	if err != nil {
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Comment")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, comment)
+}
+
+// UpdatePullReviewComment handles PATCH /repos/{owner}/{repo}/pulls/comments/{comment_id}
+func (h *PullHandler) UpdatePullReviewComment(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	commentID, err := PathParamInt64(r, "comment_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid comment ID")
+		return
+	}
+
+	var in struct {
+		Body string `json:"body"`
+	}
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
+	}
+
+	comment, err := h.pulls.UpdateComment(r.Context(), repo.ID, commentID, in.Body)
+	if err != nil {
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Comment")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, comment)
+}
+
+// DeletePullReviewComment handles DELETE /repos/{owner}/{repo}/pulls/comments/{comment_id}
+func (h *PullHandler) DeletePullReviewComment(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	commentID, err := PathParamInt64(r, "comment_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid comment ID")
+		return
+	}
+
+	if err := h.pulls.DeleteComment(r.Context(), repo.ID, commentID); err != nil {
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Comment")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteNoContent(w)
+}
+
+// ListRequestedReviewers handles GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
+func (h *PullHandler) ListRequestedReviewers(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pullNumber, err := PathParamInt(r, "pull_number")
+	if err != nil {
+		WriteBadRequest(w, "Invalid pull number")
+		return
+	}
+
+	pull, err := h.pulls.GetByNumber(r.Context(), repo.ID, pullNumber)
+	if err != nil {
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Pull Request")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	reviewers, err := h.pulls.ListRequestedReviewers(r.Context(), pull.ID)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, reviewers)
+}
+
+// RequestReviewers handles POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
+func (h *PullHandler) RequestReviewers(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pullNumber, err := PathParamInt(r, "pull_number")
+	if err != nil {
+		WriteBadRequest(w, "Invalid pull number")
+		return
+	}
+
+	pull, err := h.pulls.GetByNumber(r.Context(), repo.ID, pullNumber)
+	if err != nil {
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Pull Request")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var in struct {
+		Reviewers     []string `json:"reviewers,omitempty"`
+		TeamReviewers []string `json:"team_reviewers,omitempty"`
+	}
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
+	}
+
+	updated, err := h.pulls.RequestReviewers(r.Context(), pull.ID, in.Reviewers, in.TeamReviewers)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteCreated(w, updated)
+}
+
+// RemoveRequestedReviewers handles DELETE /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
+func (h *PullHandler) RemoveRequestedReviewers(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pullNumber, err := PathParamInt(r, "pull_number")
+	if err != nil {
+		WriteBadRequest(w, "Invalid pull number")
+		return
+	}
+
+	pull, err := h.pulls.GetByNumber(r.Context(), repo.ID, pullNumber)
+	if err != nil {
+		if err == pulls.ErrNotFound {
+			WriteNotFound(w, "Pull Request")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var in struct {
+		Reviewers     []string `json:"reviewers,omitempty"`
+		TeamReviewers []string `json:"team_reviewers,omitempty"`
+	}
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
+	}
+
+	if err := h.pulls.RemoveRequestedReviewers(r.Context(), pull.ID, in.Reviewers, in.TeamReviewers); err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]string{"message": "Reviewers removed"})
 }

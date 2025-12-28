@@ -1,360 +1,466 @@
 package api
 
 import (
-	"strconv"
+	"net/http"
 
-	"github.com/go-mizu/blueprints/githome/feature/releases"
-	"github.com/go-mizu/blueprints/githome/feature/repos"
-	"github.com/go-mizu/blueprints/githome/feature/users"
-	"github.com/go-mizu/mizu"
+	"github.com/mizu-framework/mizu/blueprints/githome/feature/releases"
+	"github.com/mizu-framework/mizu/blueprints/githome/feature/repos"
 )
 
-// Release handles release endpoints
-type Release struct {
-	releases  releases.API
-	repos     repos.API
-	users     users.API
-	getUserID func(*mizu.Ctx) string
+// ReleaseHandler handles release endpoints
+type ReleaseHandler struct {
+	releases releases.API
+	repos    repos.API
 }
 
-// NewRelease creates a new release handler
-func NewRelease(releases releases.API, repos repos.API, users users.API, getUserID func(*mizu.Ctx) string) *Release {
-	return &Release{
-		releases:  releases,
-		repos:     repos,
-		users:     users,
-		getUserID: getUserID,
-	}
+// NewReleaseHandler creates a new release handler
+func NewReleaseHandler(releases releases.API, repos repos.API) *ReleaseHandler {
+	return &ReleaseHandler{releases: releases, repos: repos}
 }
 
-func (h *Release) getRepo(c *mizu.Ctx) (*repos.Repository, error) {
-	owner := c.Param("owner")
-	name := c.Param("repo")
+// getRepoFromPath gets repository from path parameters
+func (h *ReleaseHandler) getRepoFromPath(r *http.Request) (*repos.Repository, error) {
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+	return h.repos.GetByFullName(r.Context(), owner, repoName)
+}
 
-	user, err := h.users.GetByUsername(c.Context(), owner)
+// ListReleases handles GET /repos/{owner}/{repo}/releases
+func (h *ReleaseHandler) ListReleases(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return nil, repos.ErrNotFound
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return h.repos.GetByOwnerAndName(c.Context(), user.ID, "user", name)
-}
-
-// List lists releases for a repository
-func (h *Release) List(c *mizu.Ctx) error {
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	page, _ := strconv.Atoi(c.Query("page"))
-	perPage, _ := strconv.Atoi(c.Query("per_page"))
-	if page < 1 {
-		page = 1
-	}
-	if perPage < 1 || perPage > 100 {
-		perPage = 30
-	}
-
+	pagination := GetPaginationParams(r)
 	opts := &releases.ListOpts{
-		Limit:  perPage,
-		Offset: (page - 1) * perPage,
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
 	}
 
-	releaseList, err := h.releases.List(c.Context(), repo.ID, opts)
+	releaseList, err := h.releases.ListForRepo(r.Context(), repo.ID, opts)
 	if err != nil {
-		return InternalError(c, "failed to list releases")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, releaseList)
+	WriteJSON(w, http.StatusOK, releaseList)
 }
 
-// Create creates a new release
-func (h *Release) Create(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
+// GetRelease handles GET /repos/{owner}/{repo}/releases/{release_id}
+func (h *ReleaseHandler) GetRelease(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
+	releaseID, err := PathParamInt64(r, "release_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid release ID")
+		return
+	}
+
+	release, err := h.releases.GetByID(r.Context(), repo.ID, releaseID)
+	if err != nil {
+		if err == releases.ErrNotFound {
+			WriteNotFound(w, "Release")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, release)
+}
+
+// GetLatestRelease handles GET /repos/{owner}/{repo}/releases/latest
+func (h *ReleaseHandler) GetLatestRelease(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	release, err := h.releases.GetLatest(r.Context(), repo.ID)
+	if err != nil {
+		if err == releases.ErrNotFound {
+			WriteNotFound(w, "Release")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, release)
+}
+
+// GetReleaseByTag handles GET /repos/{owner}/{repo}/releases/tags/{tag}
+func (h *ReleaseHandler) GetReleaseByTag(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	tag := PathParam(r, "tag")
+
+	release, err := h.releases.GetByTag(r.Context(), repo.ID, tag)
+	if err != nil {
+		if err == releases.ErrNotFound {
+			WriteNotFound(w, "Release")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, release)
+}
+
+// CreateRelease handles POST /repos/{owner}/{repo}/releases
+func (h *ReleaseHandler) CreateRelease(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	var in releases.CreateIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
 	}
 
-	release, err := h.releases.Create(c.Context(), repo.ID, userID, &in)
+	release, err := h.releases.Create(r.Context(), repo.ID, user.ID, &in)
 	if err != nil {
-		switch err {
-		case releases.ErrExists:
-			return Conflict(c, "release with this tag already exists")
-		case releases.ErrMissingTag:
-			return BadRequest(c, "tag name is required")
-		default:
-			return InternalError(c, "failed to create release")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteCreated(w, release)
+}
+
+// UpdateRelease handles PATCH /repos/{owner}/{repo}/releases/{release_id}
+func (h *ReleaseHandler) UpdateRelease(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
 		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return Created(c, release)
-}
-
-// Get retrieves a release by ID
-func (h *Release) Get(c *mizu.Ctx) error {
-	releaseID := c.Param("id")
-
-	release, err := h.releases.GetByID(c.Context(), releaseID)
+	releaseID, err := PathParamInt64(r, "release_id")
 	if err != nil {
-		return NotFound(c, "release not found")
+		WriteBadRequest(w, "Invalid release ID")
+		return
 	}
 
-	return OK(c, release)
-}
-
-// GetByTag retrieves a release by tag name
-func (h *Release) GetByTag(c *mizu.Ctx) error {
-	repo, err := h.getRepo(c)
+	release, err := h.releases.GetByID(r.Context(), repo.ID, releaseID)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == releases.ErrNotFound {
+			WriteNotFound(w, "Release")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
-
-	tag := c.Param("tag")
-	if tag == "" {
-		return BadRequest(c, "tag is required")
-	}
-
-	release, err := h.releases.GetByTag(c.Context(), repo.ID, tag)
-	if err != nil {
-		return NotFound(c, "release not found")
-	}
-
-	return OK(c, release)
-}
-
-// GetLatest retrieves the latest release
-func (h *Release) GetLatest(c *mizu.Ctx) error {
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	release, err := h.releases.GetLatest(c.Context(), repo.ID)
-	if err != nil {
-		return NotFound(c, "no releases found")
-	}
-
-	return OK(c, release)
-}
-
-// Update updates a release
-func (h *Release) Update(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	releaseID := c.Param("id")
 
 	var in releases.UpdateIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
 	}
 
-	release, err := h.releases.Update(c.Context(), releaseID, &in)
+	updated, err := h.releases.Update(r.Context(), release.ID, &in)
 	if err != nil {
-		return InternalError(c, "failed to update release")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, release)
+	WriteJSON(w, http.StatusOK, updated)
 }
 
-// Delete deletes a release
-func (h *Release) Delete(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// DeleteRelease handles DELETE /repos/{owner}/{repo}/releases/{release_id}
+func (h *ReleaseHandler) DeleteRelease(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	repo, err := h.getRepo(c)
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	// Check admin permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionAdmin) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	releaseID := c.Param("id")
-
-	if err := h.releases.Delete(c.Context(), releaseID); err != nil {
-		return InternalError(c, "failed to delete release")
-	}
-
-	return NoContent(c)
-}
-
-// Publish publishes a draft release
-func (h *Release) Publish(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	releaseID := c.Param("id")
-
-	release, err := h.releases.Publish(c.Context(), releaseID)
-	if err != nil {
-		switch err {
-		case releases.ErrAlreadyPublished:
-			return Conflict(c, "release is already published")
-		default:
-			return InternalError(c, "failed to publish release")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
 		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, release)
+	releaseID, err := PathParamInt64(r, "release_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid release ID")
+		return
+	}
+
+	if err := h.releases.Delete(r.Context(), repo.ID, releaseID); err != nil {
+		if err == releases.ErrNotFound {
+			WriteNotFound(w, "Release")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteNoContent(w)
 }
 
-// ListAssets lists assets for a release
-func (h *Release) ListAssets(c *mizu.Ctx) error {
-	releaseID := c.Param("id")
-
-	assets, err := h.releases.ListAssets(c.Context(), releaseID)
-	if err != nil {
-		return InternalError(c, "failed to list assets")
+// GenerateReleaseNotes handles POST /repos/{owner}/{repo}/releases/generate-notes
+func (h *ReleaseHandler) GenerateReleaseNotes(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	return OK(c, assets)
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var in releases.GenerateNotesIn
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
+	}
+
+	notes, err := h.releases.GenerateNotes(r.Context(), repo.ID, &in)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, notes)
 }
 
-// UploadAsset uploads an asset to a release
-func (h *Release) UploadAsset(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
+// ListReleaseAssets handles GET /repos/{owner}/{repo}/releases/{release_id}/assets
+func (h *ReleaseHandler) ListReleaseAssets(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	releaseID := c.Param("id")
-
-	var in releases.UploadAssetIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
-	}
-
-	asset, err := h.releases.UploadAsset(c.Context(), releaseID, userID, &in)
+	releaseID, err := PathParamInt64(r, "release_id")
 	if err != nil {
-		return InternalError(c, "failed to upload asset")
+		WriteBadRequest(w, "Invalid release ID")
+		return
 	}
 
-	return Created(c, asset)
+	pagination := GetPaginationParams(r)
+	opts := &releases.ListOpts{
+		Page:    pagination.Page,
+		PerPage: pagination.PerPage,
+	}
+
+	assets, err := h.releases.ListAssets(r.Context(), repo.ID, releaseID, opts)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, assets)
 }
 
-// GetAsset retrieves an asset
-func (h *Release) GetAsset(c *mizu.Ctx) error {
-	assetID := c.Param("assetId")
-
-	asset, err := h.releases.GetAsset(c.Context(), assetID)
+// GetReleaseAsset handles GET /repos/{owner}/{repo}/releases/assets/{asset_id}
+func (h *ReleaseHandler) GetReleaseAsset(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "asset not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, asset)
+	assetID, err := PathParamInt64(r, "asset_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid asset ID")
+		return
+	}
+
+	asset, err := h.releases.GetAsset(r.Context(), repo.ID, assetID)
+	if err != nil {
+		if err == releases.ErrNotFound {
+			WriteNotFound(w, "Asset")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, asset)
 }
 
-// UpdateAsset updates an asset
-func (h *Release) UpdateAsset(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// UpdateReleaseAsset handles PATCH /repos/{owner}/{repo}/releases/assets/{asset_id}
+func (h *ReleaseHandler) UpdateReleaseAsset(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	repo, err := h.getRepo(c)
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	assetID := c.Param("assetId")
-
-	var in struct {
-		Name  string `json:"name"`
-		Label string `json:"label"`
-	}
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
-	}
-
-	asset, err := h.releases.UpdateAsset(c.Context(), assetID, in.Name, in.Label)
+	assetID, err := PathParamInt64(r, "asset_id")
 	if err != nil {
-		return InternalError(c, "failed to update asset")
+		WriteBadRequest(w, "Invalid asset ID")
+		return
 	}
 
-	return OK(c, asset)
+	var in releases.UpdateAssetIn
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
+	}
+
+	asset, err := h.releases.UpdateAsset(r.Context(), repo.ID, assetID, &in)
+	if err != nil {
+		if err == releases.ErrNotFound {
+			WriteNotFound(w, "Asset")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, asset)
 }
 
-// DeleteAsset deletes an asset
-func (h *Release) DeleteAsset(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// DeleteReleaseAsset handles DELETE /repos/{owner}/{repo}/releases/assets/{asset_id}
+func (h *ReleaseHandler) DeleteReleaseAsset(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	repo, err := h.getRepo(c)
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
+	assetID, err := PathParamInt64(r, "asset_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid asset ID")
+		return
 	}
 
-	assetID := c.Param("assetId")
-
-	if err := h.releases.DeleteAsset(c.Context(), assetID); err != nil {
-		return InternalError(c, "failed to delete asset")
+	if err := h.releases.DeleteAsset(r.Context(), repo.ID, assetID); err != nil {
+		if err == releases.ErrNotFound {
+			WriteNotFound(w, "Asset")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return NoContent(c)
+	WriteNoContent(w)
+}
+
+// UploadReleaseAsset handles POST /repos/{owner}/{repo}/releases/{release_id}/assets
+func (h *ReleaseHandler) UploadReleaseAsset(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	releaseID, err := PathParamInt64(r, "release_id")
+	if err != nil {
+		WriteBadRequest(w, "Invalid release ID")
+		return
+	}
+
+	name := QueryParam(r, "name")
+	label := QueryParam(r, "label")
+
+	asset, err := h.releases.UploadAsset(r.Context(), repo.ID, releaseID, name, label, r.Body, r.ContentLength)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteCreated(w, asset)
 }

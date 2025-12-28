@@ -6,136 +6,135 @@ import (
 	"time"
 )
 
-// Errors
 var (
-	ErrNotFound         = errors.New("webhook not found")
-	ErrInvalidInput     = errors.New("invalid input")
-	ErrMissingURL       = errors.New("webhook URL is required")
+	ErrNotFound       = errors.New("webhook not found")
+	ErrWebhookExists  = errors.New("webhook already exists")
 	ErrDeliveryNotFound = errors.New("delivery not found")
-	ErrAccessDenied     = errors.New("access denied")
 )
 
-// Event types
-const (
-	EventPush             = "push"
-	EventCreate           = "create"
-	EventDelete           = "delete"
-	EventFork             = "fork"
-	EventIssues           = "issues"
-	EventIssueComment     = "issue_comment"
-	EventPullRequest      = "pull_request"
-	EventPullRequestReview = "pull_request_review"
-	EventRelease          = "release"
-	EventStar             = "star"
-	EventWatch            = "watch"
-	EventMember           = "member"
-	EventPublic           = "public"
-	EventPing             = "ping"
-	EventWildcard         = "*"
-)
-
-// Content types
-const (
-	ContentTypeJSON = "json"
-	ContentTypeForm = "form"
-)
-
-// Webhook represents a webhook configuration
+// Webhook represents a webhook
 type Webhook struct {
-	ID               string     `json:"id"`
-	RepoID           string     `json:"repo_id,omitempty"`
-	OrgID            string     `json:"org_id,omitempty"`
-	URL              string     `json:"url"`
-	Secret           string     `json:"-"`
-	ContentType      string     `json:"content_type"`
-	Events           []string   `json:"events"`
-	Active           bool       `json:"active"`
-	InsecureSSL      bool       `json:"insecure_ssl"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
-	LastResponseCode int        `json:"last_response_code,omitempty"`
-	LastResponseAt   *time.Time `json:"last_response_at,omitempty"`
+	ID        int64          `json:"id"`
+	NodeID    string         `json:"node_id"`
+	URL       string         `json:"url"`
+	TestURL   string         `json:"test_url"`
+	PingURL   string         `json:"ping_url"`
+	Name      string         `json:"name"`
+	Events    []string       `json:"events"`
+	Config    *Config        `json:"config"`
+	Active    bool           `json:"active"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	// Internal
+	OwnerID   int64  `json:"-"`
+	OwnerType string `json:"-"` // repo, org
 }
 
-// Delivery represents a webhook delivery attempt
+// Config represents webhook configuration
+type Config struct {
+	URL         string `json:"url"`
+	ContentType string `json:"content_type"` // json, form
+	Secret      string `json:"secret,omitempty"`
+	InsecureSSL string `json:"insecure_ssl"` // 0, 1
+}
+
+// Delivery represents a webhook delivery
 type Delivery struct {
-	ID              string    `json:"id"`
-	WebhookID       string    `json:"webhook_id"`
-	Event           string    `json:"event"`
-	GUID            string    `json:"guid"`
-	Payload         string    `json:"payload"`
-	RequestHeaders  string    `json:"request_headers"`
-	ResponseHeaders string    `json:"response_headers"`
-	ResponseBody    string    `json:"response_body"`
-	StatusCode      int       `json:"status_code"`
-	Delivered       bool      `json:"delivered"`
-	DurationMS      int       `json:"duration_ms"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID             int64     `json:"id"`
+	GUID           string    `json:"guid"`
+	DeliveredAt    time.Time `json:"delivered_at"`
+	Redelivery     bool      `json:"redelivery"`
+	Duration       float64   `json:"duration"`
+	Status         string    `json:"status"`
+	StatusCode     int       `json:"status_code"`
+	Event          string    `json:"event"`
+	Action         string    `json:"action,omitempty"`
+	InstallationID int64     `json:"installation_id,omitempty"`
+	RepositoryID   int64     `json:"repository_id,omitempty"`
+	URL            string    `json:"url"`
+	// Full delivery details
+	Request  *DeliveryRequest  `json:"request,omitempty"`
+	Response *DeliveryResponse `json:"response,omitempty"`
 }
 
-// CreateIn is the input for creating a webhook
+// DeliveryRequest represents the request of a delivery
+type DeliveryRequest struct {
+	Headers map[string]string `json:"headers"`
+	Payload interface{}       `json:"payload"`
+}
+
+// DeliveryResponse represents the response of a delivery
+type DeliveryResponse struct {
+	Headers map[string]string `json:"headers"`
+	Payload string            `json:"payload"`
+}
+
+// CreateIn represents input for creating a webhook
 type CreateIn struct {
-	RepoID      string   `json:"repo_id,omitempty"`
-	OrgID       string   `json:"org_id,omitempty"`
-	URL         string   `json:"url"`
-	Secret      string   `json:"secret,omitempty"`
-	ContentType string   `json:"content_type"`
-	Events      []string `json:"events"`
-	Active      bool     `json:"active"`
-	InsecureSSL bool     `json:"insecure_ssl"`
+	Name   string   `json:"name,omitempty"` // should be "web"
+	Config *Config  `json:"config"`
+	Events []string `json:"events,omitempty"`
+	Active *bool    `json:"active,omitempty"`
 }
 
-// UpdateIn is the input for updating a webhook
+// UpdateIn represents input for updating a webhook
 type UpdateIn struct {
-	URL         *string   `json:"url,omitempty"`
-	Secret      *string   `json:"secret,omitempty"`
-	ContentType *string   `json:"content_type,omitempty"`
-	Events      *[]string `json:"events,omitempty"`
-	Active      *bool     `json:"active,omitempty"`
-	InsecureSSL *bool     `json:"insecure_ssl,omitempty"`
+	Config        *Config  `json:"config,omitempty"`
+	Events        []string `json:"events,omitempty"`
+	AddEvents     []string `json:"add_events,omitempty"`
+	RemoveEvents  []string `json:"remove_events,omitempty"`
+	Active        *bool    `json:"active,omitempty"`
 }
 
-// ListOpts are options for listing
+// ListOpts contains pagination options
 type ListOpts struct {
-	Limit  int
-	Offset int
+	Page    int `json:"page,omitempty"`
+	PerPage int `json:"per_page,omitempty"`
 }
 
-// API is the webhooks service interface
+// API defines the webhooks service interface
 type API interface {
-	// Webhook CRUD
-	Create(ctx context.Context, in *CreateIn) (*Webhook, error)
-	GetByID(ctx context.Context, id string) (*Webhook, error)
-	Update(ctx context.Context, id string, in *UpdateIn) (*Webhook, error)
-	Delete(ctx context.Context, id string) error
-	ListByRepo(ctx context.Context, repoID string, opts *ListOpts) ([]*Webhook, error)
-	ListByOrg(ctx context.Context, orgID string, opts *ListOpts) ([]*Webhook, error)
+	// Repository webhooks
+	ListForRepo(ctx context.Context, owner, repo string, opts *ListOpts) ([]*Webhook, error)
+	GetForRepo(ctx context.Context, owner, repo string, hookID int64) (*Webhook, error)
+	CreateForRepo(ctx context.Context, owner, repo string, in *CreateIn) (*Webhook, error)
+	UpdateForRepo(ctx context.Context, owner, repo string, hookID int64, in *UpdateIn) (*Webhook, error)
+	DeleteForRepo(ctx context.Context, owner, repo string, hookID int64) error
+	PingRepo(ctx context.Context, owner, repo string, hookID int64) error
+	TestRepo(ctx context.Context, owner, repo string, hookID int64) error
 
-	// Operations
-	Ping(ctx context.Context, id string) (*Delivery, error)
-	Test(ctx context.Context, id string, event string) (*Delivery, error)
+	// Repository webhook deliveries
+	ListDeliveriesForRepo(ctx context.Context, owner, repo string, hookID int64, opts *ListOpts) ([]*Delivery, error)
+	GetDeliveryForRepo(ctx context.Context, owner, repo string, hookID int64, deliveryID int64) (*Delivery, error)
+	RedeliverForRepo(ctx context.Context, owner, repo string, hookID int64, deliveryID int64) (*Delivery, error)
 
-	// Deliveries
-	RecordDelivery(ctx context.Context, d *Delivery) error
-	GetDelivery(ctx context.Context, id string) (*Delivery, error)
-	ListDeliveries(ctx context.Context, webhookID string, opts *ListOpts) ([]*Delivery, error)
-	Redeliver(ctx context.Context, deliveryID string) (*Delivery, error)
+	// Organization webhooks
+	ListForOrg(ctx context.Context, org string, opts *ListOpts) ([]*Webhook, error)
+	GetForOrg(ctx context.Context, org string, hookID int64) (*Webhook, error)
+	CreateForOrg(ctx context.Context, org string, in *CreateIn) (*Webhook, error)
+	UpdateForOrg(ctx context.Context, org string, hookID int64, in *UpdateIn) (*Webhook, error)
+	DeleteForOrg(ctx context.Context, org string, hookID int64) error
+	PingOrg(ctx context.Context, org string, hookID int64) error
+
+	// Organization webhook deliveries
+	ListDeliveriesForOrg(ctx context.Context, org string, hookID int64, opts *ListOpts) ([]*Delivery, error)
+	GetDeliveryForOrg(ctx context.Context, org string, hookID int64, deliveryID int64) (*Delivery, error)
+	RedeliverForOrg(ctx context.Context, org string, hookID int64, deliveryID int64) (*Delivery, error)
+
+	// Dispatch a webhook event (internal use)
+	Dispatch(ctx context.Context, hookID int64, event string, payload interface{}) (*Delivery, error)
 }
 
-// Store is the webhooks data store interface
+// Store defines the data access interface for webhooks
 type Store interface {
-	// Webhooks
 	Create(ctx context.Context, w *Webhook) error
-	GetByID(ctx context.Context, id string) (*Webhook, error)
-	Update(ctx context.Context, w *Webhook) error
-	Delete(ctx context.Context, id string) error
-	ListByRepo(ctx context.Context, repoID string, limit, offset int) ([]*Webhook, error)
-	ListByOrg(ctx context.Context, orgID string, limit, offset int) ([]*Webhook, error)
-	ListByEvent(ctx context.Context, repoID, event string) ([]*Webhook, error)
+	GetByID(ctx context.Context, id int64) (*Webhook, error)
+	Update(ctx context.Context, id int64, in *UpdateIn) error
+	Delete(ctx context.Context, id int64) error
+	ListByOwner(ctx context.Context, ownerID int64, ownerType string, opts *ListOpts) ([]*Webhook, error)
 
 	// Deliveries
 	CreateDelivery(ctx context.Context, d *Delivery) error
-	GetDelivery(ctx context.Context, id string) (*Delivery, error)
-	UpdateDelivery(ctx context.Context, d *Delivery) error
-	ListDeliveries(ctx context.Context, webhookID string, limit, offset int) ([]*Delivery, error)
+	GetDeliveryByID(ctx context.Context, id int64) (*Delivery, error)
+	ListDeliveries(ctx context.Context, hookID int64, opts *ListOpts) ([]*Delivery, error)
 }

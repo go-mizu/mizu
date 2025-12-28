@@ -2,50 +2,60 @@ package orgs
 
 import (
 	"context"
-	"strings"
+	"encoding/base64"
+	"fmt"
 	"time"
 
-	"github.com/go-mizu/blueprints/githome/pkg/slug"
-	"github.com/go-mizu/blueprints/githome/pkg/ulid"
+	"github.com/mizu-framework/mizu/blueprints/githome/feature/users"
 )
 
 // Service implements the orgs API
 type Service struct {
-	store Store
+	store     Store
+	userStore users.Store
+	baseURL   string
 }
 
 // NewService creates a new orgs service
-func NewService(store Store) *Service {
-	return &Service{store: store}
+func NewService(store Store, userStore users.Store, baseURL string) *Service {
+	return &Service{store: store, userStore: userStore, baseURL: baseURL}
 }
 
 // Create creates a new organization
-func (s *Service) Create(ctx context.Context, creatorID string, in *CreateIn) (*Organization, error) {
-	if in.Name == "" {
-		return nil, ErrMissingName
+func (s *Service) Create(ctx context.Context, creatorID int64, in *CreateIn) (*Organization, error) {
+	// Check if org exists
+	existing, err := s.store.GetByLogin(ctx, in.Login)
+	if err != nil {
+		return nil, err
 	}
-
-	orgSlug := slug.Make(in.Name)
-	if orgSlug == "" {
-		return nil, ErrInvalidInput
-	}
-
-	// Check if exists
-	existing, _ := s.store.GetBySlug(ctx, orgSlug)
 	if existing != nil {
-		return nil, ErrExists
+		return nil, ErrOrgExists
+	}
+
+	// Also check if a user with this login exists
+	existingUser, err := s.userStore.GetByLogin(ctx, in.Login)
+	if err != nil {
+		return nil, err
+	}
+	if existingUser != nil {
+		return nil, ErrOrgExists
 	}
 
 	now := time.Now()
 	org := &Organization{
-		ID:          ulid.New(),
-		Name:        strings.TrimSpace(in.Name),
-		Slug:        orgSlug,
-		DisplayName: in.DisplayName,
-		Description: in.Description,
-		Email:       in.Email,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		Login:                        in.Login,
+		Name:                         in.Name,
+		Description:                  in.Description,
+		Email:                        in.Email,
+		Type:                         "Organization",
+		HasOrganizationProjects:      true,
+		HasRepositoryProjects:        true,
+		MembersCanCreateRepositories: true,
+		MembersCanCreatePublicRepositories: true,
+		MembersCanCreatePrivateRepositories: true,
+		DefaultRepositoryPermission:  "read",
+		CreatedAt:                    now,
+		UpdatedAt:                    now,
 	}
 
 	if err := s.store.Create(ctx, org); err != nil {
@@ -53,23 +63,29 @@ func (s *Service) Create(ctx context.Context, creatorID string, in *CreateIn) (*
 	}
 
 	// Add creator as owner
-	member := &Member{
-		OrgID:     org.ID,
-		UserID:    creatorID,
-		Role:      RoleOwner,
-		CreatedAt: now,
-	}
-	if err := s.store.AddMember(ctx, member); err != nil {
-		// Cleanup org on failure
-		s.store.Delete(ctx, org.ID)
+	if err := s.store.AddMember(ctx, org.ID, creatorID, "admin", true); err != nil {
 		return nil, err
 	}
 
+	s.populateURLs(org)
+	return org, nil
+}
+
+// Get retrieves an organization by login
+func (s *Service) Get(ctx context.Context, login string) (*Organization, error) {
+	org, err := s.store.GetByLogin(ctx, login)
+	if err != nil {
+		return nil, err
+	}
+	if org == nil {
+		return nil, ErrNotFound
+	}
+	s.populateURLs(org)
 	return org, nil
 }
 
 // GetByID retrieves an organization by ID
-func (s *Service) GetByID(ctx context.Context, id string) (*Organization, error) {
+func (s *Service) GetByID(ctx context.Context, id int64) (*Organization, error) {
 	org, err := s.store.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -77,24 +93,13 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Organization, error)
 	if org == nil {
 		return nil, ErrNotFound
 	}
-	return org, nil
-}
-
-// GetBySlug retrieves an organization by slug
-func (s *Service) GetBySlug(ctx context.Context, slug string) (*Organization, error) {
-	org, err := s.store.GetBySlug(ctx, slug)
-	if err != nil {
-		return nil, err
-	}
-	if org == nil {
-		return nil, ErrNotFound
-	}
+	s.populateURLs(org)
 	return org, nil
 }
 
 // Update updates an organization
-func (s *Service) Update(ctx context.Context, id string, in *UpdateIn) (*Organization, error) {
-	org, err := s.store.GetByID(ctx, id)
+func (s *Service) Update(ctx context.Context, login string, in *UpdateIn) (*Organization, error) {
+	org, err := s.store.GetByLogin(ctx, login)
 	if err != nil {
 		return nil, err
 	}
@@ -102,183 +107,298 @@ func (s *Service) Update(ctx context.Context, id string, in *UpdateIn) (*Organiz
 		return nil, ErrNotFound
 	}
 
-	if in.DisplayName != nil {
-		org.DisplayName = *in.DisplayName
-	}
-	if in.Description != nil {
-		org.Description = *in.Description
-	}
-	if in.AvatarURL != nil {
-		org.AvatarURL = *in.AvatarURL
-	}
-	if in.Location != nil {
-		org.Location = *in.Location
-	}
-	if in.Website != nil {
-		org.Website = *in.Website
-	}
-	if in.Email != nil {
-		org.Email = *in.Email
-	}
-
-	org.UpdatedAt = time.Now()
-
-	if err := s.store.Update(ctx, org); err != nil {
+	if err := s.store.Update(ctx, org.ID, in); err != nil {
 		return nil, err
 	}
 
-	return org, nil
+	return s.Get(ctx, login)
 }
 
-// Delete deletes an organization
-func (s *Service) Delete(ctx context.Context, id string) error {
-	org, err := s.store.GetByID(ctx, id)
+// Delete removes an organization
+func (s *Service) Delete(ctx context.Context, login string) error {
+	org, err := s.store.GetByLogin(ctx, login)
 	if err != nil {
 		return err
 	}
 	if org == nil {
 		return ErrNotFound
 	}
-	return s.store.Delete(ctx, id)
+	return s.store.Delete(ctx, org.ID)
 }
 
-// List lists organizations
-func (s *Service) List(ctx context.Context, opts *ListOpts) ([]*Organization, error) {
-	limit, offset := s.getPageParams(opts)
-	return s.store.List(ctx, limit, offset)
-}
-
-// AddMember adds a member to an organization
-func (s *Service) AddMember(ctx context.Context, orgID, userID string, role string) error {
-	// Validate role
-	if role != RoleOwner && role != RoleAdmin && role != RoleMember {
-		return ErrInvalidInput
+// List returns all organizations with pagination
+func (s *Service) List(ctx context.Context, opts *ListOpts) ([]*OrgSimple, error) {
+	if opts == nil {
+		opts = &ListOpts{PerPage: 30}
 	}
+	if opts.PerPage == 0 {
+		opts.PerPage = 30
+	}
+	if opts.PerPage > 100 {
+		opts.PerPage = 100
+	}
+	return s.store.List(ctx, opts)
+}
 
-	// Check if already a member
-	existing, err := s.store.GetMember(ctx, orgID, userID)
+// ListForUser returns organizations for a specific user
+func (s *Service) ListForUser(ctx context.Context, username string, opts *ListOpts) ([]*OrgSimple, error) {
+	user, err := s.userStore.GetByLogin(ctx, username)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if existing != nil {
-		return ErrMemberExists
-	}
-
-	member := &Member{
-		OrgID:     orgID,
-		UserID:    userID,
-		Role:      role,
-		CreatedAt: time.Now(),
+	if user == nil {
+		return nil, users.ErrNotFound
 	}
 
-	return s.store.AddMember(ctx, member)
+	if opts == nil {
+		opts = &ListOpts{PerPage: 30}
+	}
+	return s.store.ListForUser(ctx, user.ID, opts)
 }
 
-// RemoveMember removes a member from an organization
-func (s *Service) RemoveMember(ctx context.Context, orgID, userID string) error {
-	member, err := s.store.GetMember(ctx, orgID, userID)
+// ListMembers returns members of an organization
+func (s *Service) ListMembers(ctx context.Context, org string, opts *ListMembersOpts) ([]*users.SimpleUser, error) {
+	o, err := s.store.GetByLogin(ctx, org)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if member == nil {
-		return ErrMemberNotFound
-	}
-
-	// Check if this is the last owner
-	if member.Role == RoleOwner {
-		count, err := s.store.CountOwners(ctx, orgID)
-		if err != nil {
-			return err
-		}
-		if count <= 1 {
-			return ErrLastOwner
-		}
+	if o == nil {
+		return nil, ErrNotFound
 	}
 
-	return s.store.RemoveMember(ctx, orgID, userID)
+	if opts == nil {
+		opts = &ListMembersOpts{ListOpts: ListOpts{PerPage: 30}}
+	}
+	return s.store.ListMembers(ctx, o.ID, opts)
 }
 
-// UpdateMemberRole updates a member's role
-func (s *Service) UpdateMemberRole(ctx context.Context, orgID, userID string, role string) error {
-	// Validate role
-	if role != RoleOwner && role != RoleAdmin && role != RoleMember {
-		return ErrInvalidInput
-	}
-
-	member, err := s.store.GetMember(ctx, orgID, userID)
+// IsMember checks if a user is a member of an organization
+func (s *Service) IsMember(ctx context.Context, org, username string) (bool, error) {
+	o, err := s.store.GetByLogin(ctx, org)
 	if err != nil {
-		return err
+		return false, err
 	}
-	if member == nil {
-		return ErrMemberNotFound
-	}
-
-	// Check if demoting the last owner
-	if member.Role == RoleOwner && role != RoleOwner {
-		count, err := s.store.CountOwners(ctx, orgID)
-		if err != nil {
-			return err
-		}
-		if count <= 1 {
-			return ErrLastOwner
-		}
+	if o == nil {
+		return false, ErrNotFound
 	}
 
-	member.Role = role
-	return s.store.UpdateMember(ctx, member)
+	user, err := s.userStore.GetByLogin(ctx, username)
+	if err != nil {
+		return false, err
+	}
+	if user == nil {
+		return false, nil
+	}
+
+	return s.store.IsMember(ctx, o.ID, user.ID)
 }
 
-// GetMember gets a member
-func (s *Service) GetMember(ctx context.Context, orgID, userID string) (*Member, error) {
-	member, err := s.store.GetMember(ctx, orgID, userID)
+// GetMembership retrieves a user's membership in an organization
+func (s *Service) GetMembership(ctx context.Context, org, username string) (*Membership, error) {
+	o, err := s.store.GetByLogin(ctx, org)
+	if err != nil {
+		return nil, err
+	}
+	if o == nil {
+		return nil, ErrNotFound
+	}
+
+	user, err := s.userStore.GetByLogin(ctx, username)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, users.ErrNotFound
+	}
+
+	member, err := s.store.GetMember(ctx, o.ID, user.ID)
 	if err != nil {
 		return nil, err
 	}
 	if member == nil {
-		return nil, ErrMemberNotFound
+		return nil, ErrNotMember
 	}
-	return member, nil
+
+	return &Membership{
+		URL:             fmt.Sprintf("%s/api/v3/orgs/%s/memberships/%s", s.baseURL, org, username),
+		State:           "active",
+		Role:            member.Role,
+		OrganizationURL: fmt.Sprintf("%s/api/v3/orgs/%s", s.baseURL, org),
+		Organization:    o.ToSimple(),
+		User:            member.SimpleUser,
+	}, nil
 }
 
-// ListMembers lists members of an organization
-func (s *Service) ListMembers(ctx context.Context, orgID string, opts *ListOpts) ([]*Member, error) {
-	limit, offset := s.getPageParams(opts)
-	return s.store.ListMembers(ctx, orgID, limit, offset)
+// SetMembership sets a user's membership in an organization
+func (s *Service) SetMembership(ctx context.Context, org, username, role string) (*Membership, error) {
+	o, err := s.store.GetByLogin(ctx, org)
+	if err != nil {
+		return nil, err
+	}
+	if o == nil {
+		return nil, ErrNotFound
+	}
+
+	user, err := s.userStore.GetByLogin(ctx, username)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, users.ErrNotFound
+	}
+
+	// Check if already a member
+	isMember, err := s.store.IsMember(ctx, o.ID, user.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	if isMember {
+		// Update role
+		if err := s.store.UpdateMemberRole(ctx, o.ID, user.ID, role); err != nil {
+			return nil, err
+		}
+	} else {
+		// Add as member
+		if err := s.store.AddMember(ctx, o.ID, user.ID, role, false); err != nil {
+			return nil, err
+		}
+	}
+
+	return s.GetMembership(ctx, org, username)
 }
 
-// ListUserOrgs lists organizations a user belongs to
-func (s *Service) ListUserOrgs(ctx context.Context, userID string) ([]*Organization, error) {
-	return s.store.ListByUser(ctx, userID)
+// RemoveMember removes a user from an organization
+func (s *Service) RemoveMember(ctx context.Context, org, username string) error {
+	o, err := s.store.GetByLogin(ctx, org)
+	if err != nil {
+		return err
+	}
+	if o == nil {
+		return ErrNotFound
+	}
+
+	user, err := s.userStore.GetByLogin(ctx, username)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return users.ErrNotFound
+	}
+
+	// Check if this is the last owner
+	member, err := s.store.GetMember(ctx, o.ID, user.ID)
+	if err != nil {
+		return err
+	}
+	if member == nil {
+		return nil // Not a member, no-op
+	}
+
+	if member.Role == "admin" {
+		count, err := s.store.CountOwners(ctx, o.ID)
+		if err != nil {
+			return err
+		}
+		if count <= 1 {
+			return ErrLastOwner
+		}
+	}
+
+	return s.store.RemoveMember(ctx, o.ID, user.ID)
 }
 
-// IsMember checks if a user is a member of an organization
-func (s *Service) IsMember(ctx context.Context, orgID, userID string) (bool, error) {
-	member, err := s.store.GetMember(ctx, orgID, userID)
+// ListPublicMembers returns public members of an organization
+func (s *Service) ListPublicMembers(ctx context.Context, org string, opts *ListOpts) ([]*users.SimpleUser, error) {
+	o, err := s.store.GetByLogin(ctx, org)
+	if err != nil {
+		return nil, err
+	}
+	if o == nil {
+		return nil, ErrNotFound
+	}
+
+	if opts == nil {
+		opts = &ListOpts{PerPage: 30}
+	}
+	return s.store.ListPublicMembers(ctx, o.ID, opts)
+}
+
+// IsPublicMember checks if a user is a public member
+func (s *Service) IsPublicMember(ctx context.Context, org, username string) (bool, error) {
+	o, err := s.store.GetByLogin(ctx, org)
 	if err != nil {
 		return false, err
 	}
-	return member != nil, nil
-}
+	if o == nil {
+		return false, ErrNotFound
+	}
 
-// IsOwner checks if a user is an owner of an organization
-func (s *Service) IsOwner(ctx context.Context, orgID, userID string) (bool, error) {
-	member, err := s.store.GetMember(ctx, orgID, userID)
+	user, err := s.userStore.GetByLogin(ctx, username)
 	if err != nil {
 		return false, err
 	}
-	return member != nil && member.Role == RoleOwner, nil
+	if user == nil {
+		return false, nil
+	}
+
+	return s.store.IsPublicMember(ctx, o.ID, user.ID)
 }
 
-func (s *Service) getPageParams(opts *ListOpts) (int, int) {
-	limit := 30
-	offset := 0
-	if opts != nil {
-		if opts.Limit > 0 && opts.Limit <= 100 {
-			limit = opts.Limit
-		}
-		if opts.Offset >= 0 {
-			offset = opts.Offset
-		}
+// PublicizeMembership makes membership public
+func (s *Service) PublicizeMembership(ctx context.Context, org, username string) error {
+	o, err := s.store.GetByLogin(ctx, org)
+	if err != nil {
+		return err
 	}
-	return limit, offset
+	if o == nil {
+		return ErrNotFound
+	}
+
+	user, err := s.userStore.GetByLogin(ctx, username)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return users.ErrNotFound
+	}
+
+	return s.store.SetMemberPublicity(ctx, o.ID, user.ID, true)
+}
+
+// ConcealMembership hides membership
+func (s *Service) ConcealMembership(ctx context.Context, org, username string) error {
+	o, err := s.store.GetByLogin(ctx, org)
+	if err != nil {
+		return err
+	}
+	if o == nil {
+		return ErrNotFound
+	}
+
+	user, err := s.userStore.GetByLogin(ctx, username)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return users.ErrNotFound
+	}
+
+	return s.store.SetMemberPublicity(ctx, o.ID, user.ID, false)
+}
+
+// populateURLs fills in the URL fields for an organization
+func (s *Service) populateURLs(o *Organization) {
+	o.NodeID = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Organization:%d", o.ID)))
+	o.URL = fmt.Sprintf("%s/api/v3/orgs/%s", s.baseURL, o.Login)
+	o.HTMLURL = fmt.Sprintf("%s/%s", s.baseURL, o.Login)
+	o.ReposURL = fmt.Sprintf("%s/api/v3/orgs/%s/repos", s.baseURL, o.Login)
+	o.EventsURL = fmt.Sprintf("%s/api/v3/orgs/%s/events", s.baseURL, o.Login)
+	o.HooksURL = fmt.Sprintf("%s/api/v3/orgs/%s/hooks", s.baseURL, o.Login)
+	o.IssuesURL = fmt.Sprintf("%s/api/v3/orgs/%s/issues", s.baseURL, o.Login)
+	o.MembersURL = fmt.Sprintf("%s/api/v3/orgs/%s/members{/member}", s.baseURL, o.Login)
+	o.PublicMembersURL = fmt.Sprintf("%s/api/v3/orgs/%s/public_members{/member}", s.baseURL, o.Login)
+	if o.AvatarURL == "" {
+		o.AvatarURL = fmt.Sprintf("%s/avatars/%s", s.baseURL, o.Login)
+	}
 }

@@ -1,190 +1,211 @@
 package api
 
 import (
-	"strconv"
+	"net/http"
 
-	"github.com/go-mizu/blueprints/githome/feature/milestones"
-	"github.com/go-mizu/blueprints/githome/feature/repos"
-	"github.com/go-mizu/blueprints/githome/feature/users"
-	"github.com/go-mizu/mizu"
+	"github.com/mizu-framework/mizu/blueprints/githome/feature/milestones"
+	"github.com/mizu-framework/mizu/blueprints/githome/feature/repos"
 )
 
-// Milestone handles milestone endpoints
-type Milestone struct {
+// MilestoneHandler handles milestone endpoints
+type MilestoneHandler struct {
 	milestones milestones.API
 	repos      repos.API
-	users      users.API
-	getUserID  func(*mizu.Ctx) string
 }
 
-// NewMilestone creates a new milestone handler
-func NewMilestone(milestones milestones.API, repos repos.API, users users.API, getUserID func(*mizu.Ctx) string) *Milestone {
-	return &Milestone{
-		milestones: milestones,
-		repos:      repos,
-		users:      users,
-		getUserID:  getUserID,
-	}
+// NewMilestoneHandler creates a new milestone handler
+func NewMilestoneHandler(milestones milestones.API, repos repos.API) *MilestoneHandler {
+	return &MilestoneHandler{milestones: milestones, repos: repos}
 }
 
-func (h *Milestone) getRepo(c *mizu.Ctx) (*repos.Repository, error) {
-	owner := c.Param("owner")
-	name := c.Param("repo")
+// getRepoFromPath gets repository from path parameters
+func (h *MilestoneHandler) getRepoFromPath(r *http.Request) (*repos.Repository, error) {
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+	return h.repos.GetByFullName(r.Context(), owner, repoName)
+}
 
-	user, err := h.users.GetByUsername(c.Context(), owner)
+// ListMilestones handles GET /repos/{owner}/{repo}/milestones
+func (h *MilestoneHandler) ListMilestones(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return nil, repos.ErrNotFound
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return h.repos.GetByOwnerAndName(c.Context(), user.ID, "user", name)
-}
-
-// List lists milestones for a repository
-func (h *Milestone) List(c *mizu.Ctx) error {
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
+	pagination := GetPaginationParams(r)
 	opts := &milestones.ListOpts{
-		State:     c.Query("state"),
-		Sort:      c.Query("sort"),
-		Direction: c.Query("direction"),
+		Page:      pagination.Page,
+		PerPage:   pagination.PerPage,
+		State:     QueryParam(r, "state"),
+		Sort:      QueryParam(r, "sort"),
+		Direction: QueryParam(r, "direction"),
 	}
 
-	milestoneList, err := h.milestones.List(c.Context(), repo.ID, opts)
+	milestoneList, err := h.milestones.ListForRepo(r.Context(), repo.ID, opts)
 	if err != nil {
-		return InternalError(c, "failed to list milestones")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, milestoneList)
+	WriteJSON(w, http.StatusOK, milestoneList)
 }
 
-// Create creates a new milestone
-func (h *Milestone) Create(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
+// GetMilestone handles GET /repos/{owner}/{repo}/milestones/{milestone_number}
+func (h *MilestoneHandler) GetMilestone(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
+	milestoneNumber, err := PathParamInt(r, "milestone_number")
+	if err != nil {
+		WriteBadRequest(w, "Invalid milestone number")
+		return
+	}
+
+	milestone, err := h.milestones.GetByNumber(r.Context(), repo.ID, milestoneNumber)
+	if err != nil {
+		if err == milestones.ErrNotFound {
+			WriteNotFound(w, "Milestone")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, milestone)
+}
+
+// CreateMilestone handles POST /repos/{owner}/{repo}/milestones
+func (h *MilestoneHandler) CreateMilestone(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	var in milestones.CreateIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
 	}
 
-	milestone, err := h.milestones.Create(c.Context(), repo.ID, &in)
+	milestone, err := h.milestones.Create(r.Context(), repo.ID, user.ID, &in)
 	if err != nil {
-		switch err {
-		case milestones.ErrMissingTitle:
-			return BadRequest(c, "milestone title is required")
-		default:
-			return InternalError(c, "failed to create milestone")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteCreated(w, milestone)
+}
+
+// UpdateMilestone handles PATCH /repos/{owner}/{repo}/milestones/{milestone_number}
+func (h *MilestoneHandler) UpdateMilestone(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
+	}
+
+	repo, err := h.getRepoFromPath(r)
+	if err != nil {
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
 		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return Created(c, milestone)
-}
-
-// Get retrieves a milestone by number
-func (h *Milestone) Get(c *mizu.Ctx) error {
-	repo, err := h.getRepo(c)
+	milestoneNumber, err := PathParamInt(r, "milestone_number")
 	if err != nil {
-		return NotFound(c, "repository not found")
+		WriteBadRequest(w, "Invalid milestone number")
+		return
 	}
 
-	number, err := strconv.Atoi(c.Param("number"))
+	milestone, err := h.milestones.GetByNumber(r.Context(), repo.ID, milestoneNumber)
 	if err != nil {
-		return BadRequest(c, "invalid milestone number")
-	}
-
-	milestone, err := h.milestones.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "milestone not found")
-	}
-
-	return OK(c, milestone)
-}
-
-// Update updates a milestone
-func (h *Milestone) Update(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
-	}
-
-	repo, err := h.getRepo(c)
-	if err != nil {
-		return NotFound(c, "repository not found")
-	}
-
-	// Check write permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionWrite) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
-	if err != nil {
-		return BadRequest(c, "invalid milestone number")
-	}
-
-	milestone, err := h.milestones.GetByNumber(c.Context(), repo.ID, number)
-	if err != nil {
-		return NotFound(c, "milestone not found")
+		if err == milestones.ErrNotFound {
+			WriteNotFound(w, "Milestone")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	var in milestones.UpdateIn
-	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return BadRequest(c, "invalid request body")
+	if err := DecodeJSON(r, &in); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
 	}
 
-	milestone, err = h.milestones.Update(c.Context(), milestone.ID, &in)
+	updated, err := h.milestones.Update(r.Context(), milestone.ID, &in)
 	if err != nil {
-		return InternalError(c, "failed to update milestone")
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return OK(c, milestone)
+	WriteJSON(w, http.StatusOK, updated)
 }
 
-// Delete deletes a milestone
-func (h *Milestone) Delete(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return Unauthorized(c, "not authenticated")
+// DeleteMilestone handles DELETE /repos/{owner}/{repo}/milestones/{milestone_number}
+func (h *MilestoneHandler) DeleteMilestone(w http.ResponseWriter, r *http.Request) {
+	user := GetUser(r.Context())
+	if user == nil {
+		WriteUnauthorized(w)
+		return
 	}
 
-	repo, err := h.getRepo(c)
+	repo, err := h.getRepoFromPath(r)
 	if err != nil {
-		return NotFound(c, "repository not found")
+		if err == repos.ErrNotFound {
+			WriteNotFound(w, "Repository")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	// Check admin permission
-	if !h.repos.CanAccess(c.Context(), repo.ID, userID, repos.PermissionAdmin) {
-		return Forbidden(c, "insufficient permissions")
-	}
-
-	number, err := strconv.Atoi(c.Param("number"))
+	milestoneNumber, err := PathParamInt(r, "milestone_number")
 	if err != nil {
-		return BadRequest(c, "invalid milestone number")
+		WriteBadRequest(w, "Invalid milestone number")
+		return
 	}
 
-	milestone, err := h.milestones.GetByNumber(c.Context(), repo.ID, number)
+	milestone, err := h.milestones.GetByNumber(r.Context(), repo.ID, milestoneNumber)
 	if err != nil {
-		return NotFound(c, "milestone not found")
+		if err == milestones.ErrNotFound {
+			WriteNotFound(w, "Milestone")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	if err := h.milestones.Delete(c.Context(), milestone.ID); err != nil {
-		return InternalError(c, "failed to delete milestone")
+	if err := h.milestones.Delete(r.Context(), milestone.ID); err != nil {
+		WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return NoContent(c)
+	WriteNoContent(w)
 }

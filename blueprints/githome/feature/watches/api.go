@@ -4,54 +4,70 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/mizu-framework/mizu/blueprints/githome/feature/users"
 )
 
-// Errors
 var (
-	ErrNotFound     = errors.New("watch not found")
-	ErrInvalidInput = errors.New("invalid input")
-	ErrInvalidLevel = errors.New("invalid watch level")
+	ErrNotFound = errors.New("not found")
 )
 
-// Watch levels
-const (
-	LevelWatching     = "watching"
-	LevelReleasesOnly = "releases_only"
-	LevelIgnoring     = "ignoring"
-)
-
-// Watch represents a repository watch subscription
-// Uses composite PK (user_id, repo_id) - no ID field
-type Watch struct {
-	UserID    string    `json:"user_id"`
-	RepoID    string    `json:"repo_id"`
-	Level     string    `json:"level"`
-	CreatedAt time.Time `json:"created_at"`
+// Subscription represents a watch subscription
+type Subscription struct {
+	Subscribed    bool      `json:"subscribed"`
+	Ignored       bool      `json:"ignored"`
+	Reason        string    `json:"reason,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	URL           string    `json:"url"`
+	RepositoryURL string    `json:"repository_url"`
 }
 
-// ListOpts are options for listing watches
+// Repository is a minimal repo reference
+type Repository struct {
+	ID          int64             `json:"id"`
+	NodeID      string            `json:"node_id"`
+	Name        string            `json:"name"`
+	FullName    string            `json:"full_name"`
+	Owner       *users.SimpleUser `json:"owner"`
+	Private     bool              `json:"private"`
+	HTMLURL     string            `json:"html_url"`
+	Description string            `json:"description,omitempty"`
+	URL         string            `json:"url"`
+}
+
+// ListOpts contains pagination options
 type ListOpts struct {
-	Limit  int
-	Offset int
+	Page    int `json:"page,omitempty"`
+	PerPage int `json:"per_page,omitempty"`
 }
 
-// API is the watches service interface
+// API defines the watches service interface
 type API interface {
-	Watch(ctx context.Context, userID, repoID string, level string) error
-	Unwatch(ctx context.Context, userID, repoID string) error
-	GetWatchStatus(ctx context.Context, userID, repoID string) (*Watch, error)
-	ListWatchers(ctx context.Context, repoID string, opts *ListOpts) ([]*Watch, int, error)
-	ListWatching(ctx context.Context, userID string, opts *ListOpts) ([]*Watch, int, error)
-	GetCount(ctx context.Context, repoID string) (int, error)
+	// ListWatchers returns users watching a repo
+	ListWatchers(ctx context.Context, owner, repo string, opts *ListOpts) ([]*users.SimpleUser, error)
+
+	// ListForAuthenticatedUser returns watched repos for authenticated user
+	ListForAuthenticatedUser(ctx context.Context, userID int64, opts *ListOpts) ([]*Repository, error)
+
+	// ListForUser returns watched repos for a user
+	ListForUser(ctx context.Context, username string, opts *ListOpts) ([]*Repository, error)
+
+	// GetSubscription returns the user's subscription for a repo
+	GetSubscription(ctx context.Context, userID int64, owner, repo string) (*Subscription, error)
+
+	// SetSubscription sets the user's subscription for a repo
+	SetSubscription(ctx context.Context, userID int64, owner, repo string, subscribed, ignored bool) (*Subscription, error)
+
+	// DeleteSubscription removes the user's subscription for a repo
+	DeleteSubscription(ctx context.Context, userID int64, owner, repo string) error
 }
 
-// Store is the watches data store interface
+// Store defines the data access interface for watches
 type Store interface {
-	Create(ctx context.Context, w *Watch) error
-	Update(ctx context.Context, w *Watch) error
-	Delete(ctx context.Context, userID, repoID string) error
-	Get(ctx context.Context, userID, repoID string) (*Watch, error)
-	ListByRepo(ctx context.Context, repoID string, limit, offset int) ([]*Watch, int, error)
-	ListByUser(ctx context.Context, userID string, limit, offset int) ([]*Watch, int, error)
-	Count(ctx context.Context, repoID string) (int, error)
+	Create(ctx context.Context, userID, repoID int64, subscribed, ignored bool) error
+	Update(ctx context.Context, userID, repoID int64, subscribed, ignored bool) error
+	Delete(ctx context.Context, userID, repoID int64) error
+	Get(ctx context.Context, userID, repoID int64) (*Subscription, error)
+	ListWatchers(ctx context.Context, repoID int64, opts *ListOpts) ([]*users.SimpleUser, error)
+	ListWatchedRepos(ctx context.Context, userID int64, opts *ListOpts) ([]*Repository, error)
 }
