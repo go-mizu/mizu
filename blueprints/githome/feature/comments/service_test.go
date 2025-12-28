@@ -17,6 +17,8 @@ import (
 type testEnv struct {
 	service     *comments.Service
 	store       *duckdb.Store
+	usersStore  users.Store
+	reposStore  repos.Store
 	issuesStore issues.Store
 	db          *sql.DB
 }
@@ -42,7 +44,9 @@ func setupTestService(t *testing.T) (*testEnv, func()) {
 
 	commentsStore := duckdb.NewCommentsStore(db)
 	issuesStore := duckdb.NewIssuesStore(db)
-	service := comments.NewService(commentsStore, store.Repos(), issuesStore, store.Users(), "https://api.example.com")
+	usersStore := duckdb.NewUsersStore(db)
+	reposStore := duckdb.NewReposStore(db)
+	service := comments.NewService(commentsStore, reposStore, issuesStore, usersStore, "https://api.example.com")
 
 	cleanup := func() {
 		store.Close()
@@ -51,6 +55,8 @@ func setupTestService(t *testing.T) (*testEnv, func()) {
 	return &testEnv{
 		service:     service,
 		store:       store,
+		usersStore:  usersStore,
+		reposStore:  reposStore,
 		issuesStore: issuesStore,
 		db:          db,
 	}, cleanup
@@ -65,7 +71,7 @@ func createTestUser(t *testing.T, env *testEnv, login, email string) *users.User
 		PasswordHash: "hash",
 		Type:         "User",
 	}
-	if err := env.store.Users().Create(context.Background(), user); err != nil {
+	if err := env.usersStore.Create(context.Background(), user); err != nil {
 		t.Fatalf("failed to create test user: %v", err)
 	}
 	return user
@@ -81,7 +87,7 @@ func createTestRepo(t *testing.T, env *testEnv, owner *users.User, name string) 
 		Visibility:    "public",
 		DefaultBranch: "main",
 	}
-	if err := env.store.Repos().Create(context.Background(), repo); err != nil {
+	if err := env.reposStore.Create(context.Background(), repo); err != nil {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
 	return repo

@@ -18,7 +18,7 @@ import (
 
 // Test setup helpers using real DuckDB store
 
-func setupTestService(t *testing.T) (*git.Service, *duckdb.Store, string, func()) {
+func setupTestService(t *testing.T) (*git.Service, *duckdb.GitStore, *duckdb.ReposStore, string, func()) {
 	t.Helper()
 
 	// Create temp directory for test repos
@@ -47,14 +47,17 @@ func setupTestService(t *testing.T) (*git.Service, *duckdb.Store, string, func()
 		t.Fatalf("failed to ensure schema: %v", err)
 	}
 
-	service := git.NewService(store.Git(), store.Repos(), "https://api.example.com", tmpDir)
+	gitStore := duckdb.NewGitStore(db)
+	reposStore := duckdb.NewReposStore(db)
+
+	service := git.NewService(gitStore, reposStore, "https://api.example.com", tmpDir)
 
 	cleanup := func() {
 		store.Close()
 		os.RemoveAll(tmpDir)
 	}
 
-	return service, store, tmpDir, cleanup
+	return service, gitStore, reposStore, tmpDir, cleanup
 }
 
 func setupTestRepo(t *testing.T, tmpDir, owner, repoName string) (*pkggit.Repository, string) {
@@ -79,7 +82,7 @@ func setupTestRepo(t *testing.T, tmpDir, owner, repoName string) (*pkggit.Reposi
 	return gitRepo, commitSHA
 }
 
-func addTestRepo(t *testing.T, store *duckdb.Store, owner, name string) *repos.Repository {
+func addTestRepo(t *testing.T, reposStore *duckdb.ReposStore, owner, name string) *repos.Repository {
 	t.Helper()
 
 	r := &repos.Repository{
@@ -95,7 +98,7 @@ func addTestRepo(t *testing.T, store *duckdb.Store, owner, name string) *repos.R
 		HasDownloads:  true,
 	}
 
-	if err := store.Repos().Create(context.Background(), r); err != nil {
+	if err := reposStore.Create(context.Background(), r); err != nil {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
 
@@ -105,11 +108,11 @@ func addTestRepo(t *testing.T, store *duckdb.Store, owner, name string) *repos.R
 // Blob Tests
 
 func TestService_GetBlob(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	gitRepo, _ := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	// Create a test blob
 	content := []byte("Hello, World!")
@@ -142,7 +145,7 @@ func TestService_GetBlob(t *testing.T) {
 }
 
 func TestService_GetBlob_RepoNotFound(t *testing.T) {
-	service, _, _, cleanup := setupTestService(t)
+	service, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.GetBlob(context.Background(), "unknown", "repo", "abcd1234abcd1234abcd1234abcd1234abcd1234")
@@ -152,11 +155,11 @@ func TestService_GetBlob_RepoNotFound(t *testing.T) {
 }
 
 func TestService_GetBlob_NotFound(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	_, err := service.GetBlob(context.Background(), "testowner", "testrepo", "0000000000000000000000000000000000000000")
 	if err != git.ErrNotFound {
@@ -165,11 +168,11 @@ func TestService_GetBlob_NotFound(t *testing.T) {
 }
 
 func TestService_GetBlob_FromCache(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, gitStore, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	gitRepo, _ := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	repo := addTestRepo(t, store, "testowner", "testrepo")
+	repo := addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	// Create blob in git
 	content := []byte("Cached content")
@@ -185,7 +188,7 @@ func TestService_GetBlob_FromCache(t *testing.T) {
 	}
 
 	// Verify it was cached
-	cached, err := store.Git().GetCachedBlob(context.Background(), repo.ID, sha)
+	cached, err := gitStore.GetCachedBlob(context.Background(), repo.ID, sha)
 	if err != nil {
 		t.Fatalf("GetCachedBlob failed: %v", err)
 	}
@@ -205,11 +208,11 @@ func TestService_GetBlob_FromCache(t *testing.T) {
 }
 
 func TestService_CreateBlob(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	in := &git.CreateBlobIn{
 		Content:  "Test content",
@@ -233,7 +236,7 @@ func TestService_CreateBlob(t *testing.T) {
 }
 
 func TestService_CreateBlob_RepoNotFound(t *testing.T) {
-	service, _, _, cleanup := setupTestService(t)
+	service, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	in := &git.CreateBlobIn{Content: "test"}
@@ -244,11 +247,11 @@ func TestService_CreateBlob_RepoNotFound(t *testing.T) {
 }
 
 func TestService_CreateBlob_UTF8Default(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	in := &git.CreateBlobIn{
 		Content: "Test content",
@@ -266,11 +269,11 @@ func TestService_CreateBlob_UTF8Default(t *testing.T) {
 }
 
 func TestService_CreateBlob_Base64(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	// Base64 encoded "Hello"
 	in := &git.CreateBlobIn{
@@ -291,11 +294,11 @@ func TestService_CreateBlob_Base64(t *testing.T) {
 // Commit Tests
 
 func TestService_GetGitCommit(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, commitSHA := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	commit, err := service.GetGitCommit(context.Background(), "testowner", "testrepo", commitSHA)
 	if err != nil {
@@ -326,7 +329,7 @@ func TestService_GetGitCommit(t *testing.T) {
 }
 
 func TestService_GetGitCommit_RepoNotFound(t *testing.T) {
-	service, _, _, cleanup := setupTestService(t)
+	service, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.GetGitCommit(context.Background(), "unknown", "repo", "abcd1234abcd1234abcd1234abcd1234abcd1234")
@@ -336,11 +339,11 @@ func TestService_GetGitCommit_RepoNotFound(t *testing.T) {
 }
 
 func TestService_GetGitCommit_NotFound(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	_, err := service.GetGitCommit(context.Background(), "testowner", "testrepo", "0000000000000000000000000000000000000000")
 	if err != git.ErrNotFound {
@@ -349,11 +352,11 @@ func TestService_GetGitCommit_NotFound(t *testing.T) {
 }
 
 func TestService_CreateGitCommit(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	gitRepo, initialCommit := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	// Get the tree SHA from initial commit
 	commit, _ := gitRepo.GetCommit(initialCommit)
@@ -387,11 +390,11 @@ func TestService_CreateGitCommit(t *testing.T) {
 }
 
 func TestService_CreateGitCommit_DefaultAuthor(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	gitRepo, initialCommit := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	commit, _ := gitRepo.GetCommit(initialCommit)
 	treeSHA := commit.TreeSHA
@@ -417,11 +420,11 @@ func TestService_CreateGitCommit_DefaultAuthor(t *testing.T) {
 }
 
 func TestService_CreateGitCommit_CommitterFromAuthor(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	gitRepo, initialCommit := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	commit, _ := gitRepo.GetCommit(initialCommit)
 	treeSHA := commit.TreeSHA
@@ -451,11 +454,11 @@ func TestService_CreateGitCommit_CommitterFromAuthor(t *testing.T) {
 // Reference Tests
 
 func TestService_GetRef(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	ref, err := service.GetRef(context.Background(), "testowner", "testrepo", "heads/main")
 	if err != nil {
@@ -477,7 +480,7 @@ func TestService_GetRef(t *testing.T) {
 }
 
 func TestService_GetRef_RepoNotFound(t *testing.T) {
-	service, _, _, cleanup := setupTestService(t)
+	service, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.GetRef(context.Background(), "unknown", "repo", "heads/main")
@@ -487,11 +490,11 @@ func TestService_GetRef_RepoNotFound(t *testing.T) {
 }
 
 func TestService_GetRef_NotFound(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	_, err := service.GetRef(context.Background(), "testowner", "testrepo", "heads/nonexistent")
 	if err != git.ErrNotFound {
@@ -500,11 +503,11 @@ func TestService_GetRef_NotFound(t *testing.T) {
 }
 
 func TestService_ListMatchingRefs(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	gitRepo, commitSHA := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	// Create additional refs
 	gitRepo.CreateRef("refs/heads/feature-1", commitSHA)
@@ -521,11 +524,11 @@ func TestService_ListMatchingRefs(t *testing.T) {
 }
 
 func TestService_ListMatchingRefs_Empty(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	refs, err := service.ListMatchingRefs(context.Background(), "testowner", "testrepo", "tags/")
 	if err != nil {
@@ -538,11 +541,11 @@ func TestService_ListMatchingRefs_Empty(t *testing.T) {
 }
 
 func TestService_CreateRef(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, commitSHA := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	in := &git.CreateRefIn{
 		Ref: "refs/heads/new-branch",
@@ -560,11 +563,11 @@ func TestService_CreateRef(t *testing.T) {
 }
 
 func TestService_CreateRef_Exists(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, commitSHA := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	in := &git.CreateRefIn{
 		Ref: "refs/heads/main", // Already exists
@@ -578,11 +581,11 @@ func TestService_CreateRef_Exists(t *testing.T) {
 }
 
 func TestService_UpdateRef(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	gitRepo, initialCommit := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	// Create a new commit
 	commit, _ := gitRepo.GetCommit(initialCommit)
@@ -613,11 +616,11 @@ func TestService_UpdateRef(t *testing.T) {
 }
 
 func TestService_UpdateRef_Force(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	gitRepo, initialCommit := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	// Create a new commit (not parent of current)
 	commit, _ := gitRepo.GetCommit(initialCommit)
@@ -648,11 +651,11 @@ func TestService_UpdateRef_Force(t *testing.T) {
 }
 
 func TestService_DeleteRef(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	gitRepo, commitSHA := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	// Create a branch to delete
 	gitRepo.CreateRef("refs/heads/to-delete", commitSHA)
@@ -672,11 +675,11 @@ func TestService_DeleteRef(t *testing.T) {
 // Tree Tests
 
 func TestService_GetTree(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	gitRepo, commitSHA := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	// Get tree SHA from commit
 	commit, _ := gitRepo.GetCommit(commitSHA)
@@ -695,11 +698,11 @@ func TestService_GetTree(t *testing.T) {
 }
 
 func TestService_GetTree_Recursive(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	gitRepo, commitSHA := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	commit, _ := gitRepo.GetCommit(commitSHA)
 
@@ -714,7 +717,7 @@ func TestService_GetTree_Recursive(t *testing.T) {
 }
 
 func TestService_GetTree_RepoNotFound(t *testing.T) {
-	service, _, _, cleanup := setupTestService(t)
+	service, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.GetTree(context.Background(), "unknown", "repo", "abcd1234abcd1234abcd1234abcd1234abcd1234", false)
@@ -724,11 +727,11 @@ func TestService_GetTree_RepoNotFound(t *testing.T) {
 }
 
 func TestService_CreateTree(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	gitRepo, _ := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	// Create a blob first
 	blobSHA, _ := gitRepo.CreateBlob([]byte("file content"))
@@ -758,11 +761,11 @@ func TestService_CreateTree(t *testing.T) {
 }
 
 func TestService_CreateTree_WithBase(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	gitRepo, commitSHA := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	commit, _ := gitRepo.GetCommit(commitSHA)
 	blobSHA, _ := gitRepo.CreateBlob([]byte("new content"))
@@ -792,11 +795,11 @@ func TestService_CreateTree_WithBase(t *testing.T) {
 // Tag Tests
 
 func TestService_GetTag(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	gitRepo, commitSHA := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	// Create an annotated tag
 	tagSHA, err := gitRepo.CreateTag(&pkggit.CreateTagOpts{
@@ -834,7 +837,7 @@ func TestService_GetTag(t *testing.T) {
 }
 
 func TestService_GetTag_RepoNotFound(t *testing.T) {
-	service, _, _, cleanup := setupTestService(t)
+	service, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.GetTag(context.Background(), "unknown", "repo", "abcd1234abcd1234abcd1234abcd1234abcd1234")
@@ -844,11 +847,11 @@ func TestService_GetTag_RepoNotFound(t *testing.T) {
 }
 
 func TestService_GetTag_NotFound(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	_, err := service.GetTag(context.Background(), "testowner", "testrepo", "0000000000000000000000000000000000000000")
 	if err != git.ErrNotFound {
@@ -857,11 +860,11 @@ func TestService_GetTag_NotFound(t *testing.T) {
 }
 
 func TestService_CreateTag(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, commitSHA := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	in := &git.CreateTagIn{
 		Tag:     "v2.0.0",
@@ -889,11 +892,11 @@ func TestService_CreateTag(t *testing.T) {
 }
 
 func TestService_CreateTag_DefaultTagger(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, commitSHA := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	in := &git.CreateTagIn{
 		Tag:     "v3.0.0",
@@ -914,11 +917,11 @@ func TestService_CreateTag_DefaultTagger(t *testing.T) {
 }
 
 func TestService_ListTags(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	gitRepo, commitSHA := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	// Create some tags
 	gitRepo.CreateRef("refs/tags/v1.0.0", commitSHA)
@@ -935,11 +938,11 @@ func TestService_ListTags(t *testing.T) {
 }
 
 func TestService_ListTags_Pagination(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	gitRepo, commitSHA := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	// Create multiple tags
 	for i := 0; i < 5; i++ {
@@ -960,11 +963,11 @@ func TestService_ListTags_Pagination(t *testing.T) {
 }
 
 func TestService_ListTags_MaxPerPage(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	// Request more than max
 	_, err := service.ListTags(context.Background(), "testowner", "testrepo", &git.ListOpts{
@@ -979,11 +982,11 @@ func TestService_ListTags_MaxPerPage(t *testing.T) {
 // URL Population Tests
 
 func TestService_PopulateURLs(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	gitRepo, commitSHA := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	// Test blob URL
 	blobSHA, _ := gitRepo.CreateBlob([]byte("test"))
@@ -1011,11 +1014,11 @@ func TestService_PopulateURLs(t *testing.T) {
 // Integration-style tests
 
 func TestService_FullWorkflow(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	gitRepo, initialCommit := setupTestRepo(t, tmpDir, "testowner", "testrepo")
-	addTestRepo(t, store, "testowner", "testrepo")
+	addTestRepo(t, reposStore, "testowner", "testrepo")
 
 	ctx := context.Background()
 
@@ -1108,14 +1111,14 @@ func TestService_FullWorkflow(t *testing.T) {
 // Test with multiple repos to ensure isolation
 
 func TestService_MultipleRepos(t *testing.T) {
-	service, store, tmpDir, cleanup := setupTestService(t)
+	service, _, reposStore, tmpDir, cleanup := setupTestService(t)
 	defer cleanup()
 
 	// Setup two repos
 	gitRepo1, commitSHA1 := setupTestRepo(t, tmpDir, "owner1", "repo1")
 	gitRepo2, commitSHA2 := setupTestRepo(t, tmpDir, "owner2", "repo2")
-	addTestRepo(t, store, "owner1", "repo1")
-	addTestRepo(t, store, "owner2", "repo2")
+	addTestRepo(t, reposStore, "owner1", "repo1")
+	addTestRepo(t, reposStore, "owner2", "repo2")
 
 	ctx := context.Background()
 

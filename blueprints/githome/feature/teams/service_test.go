@@ -1,8 +1,3 @@
-//go:build ignore
-// +build ignore
-
-// This test file is excluded from build until teams store is implemented in duckdb store.
-
 package teams_test
 
 import (
@@ -19,9 +14,15 @@ import (
 	"github.com/go-mizu/blueprints/githome/store/duckdb"
 )
 
-func setupTestService(t *testing.T) (*teams.Service, *duckdb.Store, func()) {
+type testStores struct {
+	users *duckdb.UsersStore
+	repos *duckdb.ReposStore
+	orgs  *duckdb.OrgsStore
+	teams *duckdb.TeamsStore
+}
+
+func setupTestService(t *testing.T) (*teams.Service, *testStores, func()) {
 	t.Helper()
-	t.Skip("teams store not yet implemented in duckdb store")
 
 	db, err := sql.Open("duckdb", "")
 	if err != nil {
@@ -39,16 +40,28 @@ func setupTestService(t *testing.T) (*teams.Service, *duckdb.Store, func()) {
 		t.Fatalf("failed to ensure schema: %v", err)
 	}
 
-	service := teams.NewService(store.Teams(), store.Orgs(), store.Repos(), store.Users(), "https://api.example.com")
+	usersStore := duckdb.NewUsersStore(db)
+	reposStore := duckdb.NewReposStore(db)
+	orgsStore := duckdb.NewOrgsStore(db)
+	teamsStore := duckdb.NewTeamsStore(db)
+
+	stores := &testStores{
+		users: usersStore,
+		repos: reposStore,
+		orgs:  orgsStore,
+		teams: teamsStore,
+	}
+
+	service := teams.NewService(teamsStore, orgsStore, reposStore, usersStore, "https://api.example.com")
 
 	cleanup := func() {
 		store.Close()
 	}
 
-	return service, store, cleanup
+	return service, stores, cleanup
 }
 
-func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *users.User {
+func createTestUser(t *testing.T, stores *testStores, login, email string) *users.User {
 	t.Helper()
 	user := &users.User{
 		Login:        login,
@@ -57,13 +70,13 @@ func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *use
 		PasswordHash: "hash",
 		Type:         "User",
 	}
-	if err := store.Users().Create(context.Background(), user); err != nil {
+	if err := stores.users.Create(context.Background(), user); err != nil {
 		t.Fatalf("failed to create test user: %v", err)
 	}
 	return user
 }
 
-func createTestOrg(t *testing.T, store *duckdb.Store, login string) *users.User {
+func createTestOrg(t *testing.T, stores *testStores, login string) *users.User {
 	t.Helper()
 	org := &users.User{
 		Login:        login,
@@ -72,11 +85,11 @@ func createTestOrg(t *testing.T, store *duckdb.Store, login string) *users.User 
 		PasswordHash: "",
 		Type:         "Organization",
 	}
-	if err := store.Users().Create(context.Background(), org); err != nil {
+	if err := stores.users.Create(context.Background(), org); err != nil {
 		t.Fatalf("failed to create test org: %v", err)
 	}
 	// Also create in orgs store if needed
-	_ = store.Orgs().Create(context.Background(), &orgs.Organization{
+	_ = stores.orgs.Create(context.Background(), &orgs.Organization{
 		ID:    org.ID,
 		Login: login,
 		Email: login + "@example.com",
@@ -85,7 +98,7 @@ func createTestOrg(t *testing.T, store *duckdb.Store, login string) *users.User 
 	return org
 }
 
-func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name string) *repos.Repository {
+func createTestRepo(t *testing.T, stores *testStores, owner *users.User, name string) *repos.Repository {
 	t.Helper()
 	repo := &repos.Repository{
 		Name:          name,
@@ -95,7 +108,7 @@ func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name s
 		Visibility:    "public",
 		DefaultBranch: "main",
 	}
-	if err := store.Repos().Create(context.Background(), repo); err != nil {
+	if err := stores.repos.Create(context.Background(), repo); err != nil {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
 	return repo
@@ -116,10 +129,10 @@ func createTestTeam(t *testing.T, service *teams.Service, org, name string) *tea
 // Team Creation Tests
 
 func TestService_Create_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 
 	team, err := service.Create(context.Background(), "testorg", &teams.CreateIn{
 		Name:        "Engineering",
@@ -153,10 +166,10 @@ func TestService_Create_Success(t *testing.T) {
 }
 
 func TestService_Create_DuplicateName(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 	createTestTeam(t, service, "testorg", "Engineering")
 
 	_, err := service.Create(context.Background(), "testorg", &teams.CreateIn{
@@ -180,10 +193,10 @@ func TestService_Create_OrgNotFound(t *testing.T) {
 }
 
 func TestService_Create_WithPrivacyAndPermission(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 
 	team, err := service.Create(context.Background(), "testorg", &teams.CreateIn{
 		Name:       "Engineering",
@@ -203,12 +216,12 @@ func TestService_Create_WithPrivacyAndPermission(t *testing.T) {
 }
 
 func TestService_Create_WithMaintainers(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
-	createTestUser(t, store, "maintainer1", "m1@example.com")
-	createTestUser(t, store, "maintainer2", "m2@example.com")
+	createTestOrg(t, stores, "testorg")
+	createTestUser(t, stores, "maintainer1", "m1@example.com")
+	createTestUser(t, stores, "maintainer2", "m2@example.com")
 
 	team, err := service.Create(context.Background(), "testorg", &teams.CreateIn{
 		Name:        "Engineering",
@@ -226,10 +239,10 @@ func TestService_Create_WithMaintainers(t *testing.T) {
 // Team Retrieval Tests
 
 func TestService_GetBySlug_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 	created := createTestTeam(t, service, "testorg", "Engineering")
 
 	team, err := service.GetBySlug(context.Background(), "testorg", "engineering")
@@ -243,10 +256,10 @@ func TestService_GetBySlug_Success(t *testing.T) {
 }
 
 func TestService_GetBySlug_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 
 	_, err := service.GetBySlug(context.Background(), "testorg", "nonexistent")
 	if err != teams.ErrNotFound {
@@ -255,10 +268,10 @@ func TestService_GetBySlug_NotFound(t *testing.T) {
 }
 
 func TestService_GetByID_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 	created := createTestTeam(t, service, "testorg", "Engineering")
 
 	team, err := service.GetByID(context.Background(), created.ID)
@@ -282,10 +295,10 @@ func TestService_GetByID_NotFound(t *testing.T) {
 }
 
 func TestService_List(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 	createTestTeam(t, service, "testorg", "Engineering")
 	createTestTeam(t, service, "testorg", "Design")
 	createTestTeam(t, service, "testorg", "Product")
@@ -301,10 +314,10 @@ func TestService_List(t *testing.T) {
 }
 
 func TestService_List_Pagination(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 	for i := 0; i < 5; i++ {
 		createTestTeam(t, service, "testorg", "Team"+string(rune('a'+i)))
 	}
@@ -325,10 +338,10 @@ func TestService_List_Pagination(t *testing.T) {
 // Team Update Tests
 
 func TestService_Update_Name(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 	createTestTeam(t, service, "testorg", "Engineering")
 
 	newName := "Platform"
@@ -348,10 +361,10 @@ func TestService_Update_Name(t *testing.T) {
 }
 
 func TestService_Update_Description(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 	createTestTeam(t, service, "testorg", "Engineering")
 
 	newDesc := "Updated description"
@@ -368,10 +381,10 @@ func TestService_Update_Description(t *testing.T) {
 }
 
 func TestService_Update_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 
 	newName := "newname"
 	_, err := service.Update(context.Background(), "testorg", "nonexistent", &teams.UpdateIn{
@@ -385,10 +398,10 @@ func TestService_Update_NotFound(t *testing.T) {
 // Team Delete Tests
 
 func TestService_Delete_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 	createTestTeam(t, service, "testorg", "Engineering")
 
 	err := service.Delete(context.Background(), "testorg", "engineering")
@@ -404,10 +417,10 @@ func TestService_Delete_Success(t *testing.T) {
 }
 
 func TestService_Delete_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 
 	err := service.Delete(context.Background(), "testorg", "nonexistent")
 	if err != teams.ErrNotFound {
@@ -418,12 +431,12 @@ func TestService_Delete_NotFound(t *testing.T) {
 // Membership Tests
 
 func TestService_AddMembership_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 	createTestTeam(t, service, "testorg", "Engineering")
-	createTestUser(t, store, "member1", "member1@example.com")
+	createTestUser(t, stores, "member1", "member1@example.com")
 
 	membership, err := service.AddMembership(context.Background(), "testorg", "engineering", "member1", "member")
 	if err != nil {
@@ -436,12 +449,12 @@ func TestService_AddMembership_Success(t *testing.T) {
 }
 
 func TestService_AddMembership_Maintainer(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 	createTestTeam(t, service, "testorg", "Engineering")
-	createTestUser(t, store, "member1", "member1@example.com")
+	createTestUser(t, stores, "member1", "member1@example.com")
 
 	membership, err := service.AddMembership(context.Background(), "testorg", "engineering", "member1", "maintainer")
 	if err != nil {
@@ -454,12 +467,12 @@ func TestService_AddMembership_Maintainer(t *testing.T) {
 }
 
 func TestService_AddMembership_DefaultRole(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 	createTestTeam(t, service, "testorg", "Engineering")
-	createTestUser(t, store, "member1", "member1@example.com")
+	createTestUser(t, stores, "member1", "member1@example.com")
 
 	membership, err := service.AddMembership(context.Background(), "testorg", "engineering", "member1", "")
 	if err != nil {
@@ -472,13 +485,13 @@ func TestService_AddMembership_DefaultRole(t *testing.T) {
 }
 
 func TestService_AddMembership_UpdatesCounter(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 	team := createTestTeam(t, service, "testorg", "Engineering")
-	createTestUser(t, store, "member1", "member1@example.com")
-	createTestUser(t, store, "member2", "member2@example.com")
+	createTestUser(t, stores, "member1", "member1@example.com")
+	createTestUser(t, stores, "member2", "member2@example.com")
 
 	_, _ = service.AddMembership(context.Background(), "testorg", "engineering", "member1", "member")
 	_, _ = service.AddMembership(context.Background(), "testorg", "engineering", "member2", "member")
@@ -491,10 +504,10 @@ func TestService_AddMembership_UpdatesCounter(t *testing.T) {
 }
 
 func TestService_AddMembership_UserNotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 	createTestTeam(t, service, "testorg", "Engineering")
 
 	_, err := service.AddMembership(context.Background(), "testorg", "engineering", "unknown", "member")
@@ -504,12 +517,12 @@ func TestService_AddMembership_UserNotFound(t *testing.T) {
 }
 
 func TestService_GetMembership_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 	createTestTeam(t, service, "testorg", "Engineering")
-	createTestUser(t, store, "member1", "member1@example.com")
+	createTestUser(t, stores, "member1", "member1@example.com")
 
 	_, _ = service.AddMembership(context.Background(), "testorg", "engineering", "member1", "maintainer")
 
@@ -527,12 +540,12 @@ func TestService_GetMembership_Success(t *testing.T) {
 }
 
 func TestService_GetMembership_NotMember(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 	createTestTeam(t, service, "testorg", "Engineering")
-	createTestUser(t, store, "nonmember", "nonmember@example.com")
+	createTestUser(t, stores, "nonmember", "nonmember@example.com")
 
 	_, err := service.GetMembership(context.Background(), "testorg", "engineering", "nonmember")
 	if err != teams.ErrNotMember {
@@ -541,12 +554,12 @@ func TestService_GetMembership_NotMember(t *testing.T) {
 }
 
 func TestService_RemoveMembership_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 	team := createTestTeam(t, service, "testorg", "Engineering")
-	createTestUser(t, store, "member1", "member1@example.com")
+	createTestUser(t, stores, "member1", "member1@example.com")
 
 	_, _ = service.AddMembership(context.Background(), "testorg", "engineering", "member1", "member")
 
@@ -569,13 +582,13 @@ func TestService_RemoveMembership_Success(t *testing.T) {
 }
 
 func TestService_ListMembers(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 	createTestTeam(t, service, "testorg", "Engineering")
-	createTestUser(t, store, "member1", "member1@example.com")
-	createTestUser(t, store, "member2", "member2@example.com")
+	createTestUser(t, stores, "member1", "member1@example.com")
+	createTestUser(t, stores, "member2", "member2@example.com")
 
 	_, _ = service.AddMembership(context.Background(), "testorg", "engineering", "member1", "member")
 	_, _ = service.AddMembership(context.Background(), "testorg", "engineering", "member2", "maintainer")
@@ -593,12 +606,12 @@ func TestService_ListMembers(t *testing.T) {
 // Repository Tests
 
 func TestService_AddRepo_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	org := createTestOrg(t, store, "testorg")
+	org := createTestOrg(t, stores, "testorg")
 	team := createTestTeam(t, service, "testorg", "Engineering")
-	createTestRepo(t, store, org, "testrepo")
+	createTestRepo(t, stores, org, "testrepo")
 
 	err := service.AddRepo(context.Background(), "testorg", "engineering", "testorg", "testrepo", "push")
 	if err != nil {
@@ -613,12 +626,12 @@ func TestService_AddRepo_Success(t *testing.T) {
 }
 
 func TestService_AddRepo_DefaultPermission(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	org := createTestOrg(t, store, "testorg")
+	org := createTestOrg(t, stores, "testorg")
 	createTestTeam(t, service, "testorg", "Engineering")
-	createTestRepo(t, store, org, "testrepo")
+	createTestRepo(t, stores, org, "testrepo")
 
 	err := service.AddRepo(context.Background(), "testorg", "engineering", "testorg", "testrepo", "")
 	if err != nil {
@@ -636,10 +649,10 @@ func TestService_AddRepo_DefaultPermission(t *testing.T) {
 }
 
 func TestService_AddRepo_RepoNotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 	createTestTeam(t, service, "testorg", "Engineering")
 
 	err := service.AddRepo(context.Background(), "testorg", "engineering", "testorg", "unknown", "push")
@@ -649,12 +662,12 @@ func TestService_AddRepo_RepoNotFound(t *testing.T) {
 }
 
 func TestService_RemoveRepo_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	org := createTestOrg(t, store, "testorg")
+	org := createTestOrg(t, stores, "testorg")
 	team := createTestTeam(t, service, "testorg", "Engineering")
-	createTestRepo(t, store, org, "testrepo")
+	createTestRepo(t, stores, org, "testrepo")
 
 	_ = service.AddRepo(context.Background(), "testorg", "engineering", "testorg", "testrepo", "push")
 
@@ -671,12 +684,12 @@ func TestService_RemoveRepo_Success(t *testing.T) {
 }
 
 func TestService_CheckRepoPermission(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	org := createTestOrg(t, store, "testorg")
+	org := createTestOrg(t, stores, "testorg")
 	createTestTeam(t, service, "testorg", "Engineering")
-	createTestRepo(t, store, org, "testrepo")
+	createTestRepo(t, stores, org, "testrepo")
 
 	_ = service.AddRepo(context.Background(), "testorg", "engineering", "testorg", "testrepo", "admin")
 
@@ -691,13 +704,13 @@ func TestService_CheckRepoPermission(t *testing.T) {
 }
 
 func TestService_ListRepos(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	org := createTestOrg(t, store, "testorg")
+	org := createTestOrg(t, stores, "testorg")
 	createTestTeam(t, service, "testorg", "Engineering")
-	createTestRepo(t, store, org, "repo1")
-	createTestRepo(t, store, org, "repo2")
+	createTestRepo(t, stores, org, "repo1")
+	createTestRepo(t, stores, org, "repo2")
 
 	_ = service.AddRepo(context.Background(), "testorg", "engineering", "testorg", "repo1", "push")
 	_ = service.AddRepo(context.Background(), "testorg", "engineering", "testorg", "repo2", "pull")
@@ -715,10 +728,10 @@ func TestService_ListRepos(t *testing.T) {
 // Child Teams Tests
 
 func TestService_ListChildren(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 	parent := createTestTeam(t, service, "testorg", "Engineering")
 
 	// Create child teams
@@ -744,10 +757,10 @@ func TestService_ListChildren(t *testing.T) {
 // URL Population Tests
 
 func TestService_PopulateURLs(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 	team := createTestTeam(t, service, "testorg", "Engineering")
 
 	if team.URL != "https://api.example.com/api/v3/orgs/testorg/teams/engineering" {
@@ -770,11 +783,11 @@ func TestService_PopulateURLs(t *testing.T) {
 // Integration Test - Teams Across Orgs
 
 func TestService_TeamsAcrossOrgs(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "org1")
-	createTestOrg(t, store, "org2")
+	createTestOrg(t, stores, "org1")
+	createTestOrg(t, stores, "org2")
 
 	// Same team name in different orgs should work
 	team1 := createTestTeam(t, service, "org1", "Engineering")

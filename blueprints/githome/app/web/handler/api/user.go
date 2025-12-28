@@ -2,8 +2,10 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/go-mizu/blueprints/githome/feature/users"
+	"github.com/go-mizu/mizu"
 )
 
 // UserHandler handles user endpoints
@@ -17,258 +19,229 @@ func NewUserHandler(users users.API) *UserHandler {
 }
 
 // GetAuthenticatedUser handles GET /user
-func (h *UserHandler) GetAuthenticatedUser(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *UserHandler) GetAuthenticatedUser(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
-	WriteJSON(w, http.StatusOK, user)
+	return c.JSON(http.StatusOK, user)
 }
 
 // UpdateAuthenticatedUser handles PATCH /user
-func (h *UserHandler) UpdateAuthenticatedUser(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *UserHandler) UpdateAuthenticatedUser(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
 	var in users.UpdateIn
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	updated, err := h.users.Update(r.Context(), user.ID, &in)
+	updated, err := h.users.Update(c.Context(), user.ID, &in)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, updated)
+	return c.JSON(http.StatusOK, updated)
 }
 
 // ListUsers handles GET /users
-func (h *UserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
-	pagination := GetPaginationParams(r)
+func (h *UserHandler) ListUsers(c *mizu.Ctx) error {
+	pagination := GetPagination(c)
 	opts := &users.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	if since := QueryParam(r, "since"); since != "" {
-		if n, err := PathParamInt64(r, "since"); err == nil {
+	if since := c.Query("since"); since != "" {
+		if n, err := strconv.ParseInt(since, 10, 64); err == nil {
 			opts.Since = n
 		}
 	}
 
-	userList, err := h.users.List(r.Context(), opts)
+	userList, err := h.users.List(c.Context(), opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, userList)
+	return c.JSON(http.StatusOK, userList)
 }
 
 // GetUser handles GET /users/{username}
-func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
-	username := PathParam(r, "username")
+func (h *UserHandler) GetUser(c *mizu.Ctx) error {
+	username := c.Param("username")
 	if username == "" {
-		WriteBadRequest(w, "username is required")
-		return
+		return BadRequest(c, "username is required")
 	}
 
-	user, err := h.users.GetByLogin(r.Context(), username)
+	user, err := h.users.GetByLogin(c.Context(), username)
 	if err != nil {
 		if err == users.ErrNotFound {
-			WriteNotFound(w, "User")
-			return
+			return NotFound(c, "User")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, user)
+	return c.JSON(http.StatusOK, user)
 }
 
 // ListFollowers handles GET /users/{username}/followers
-func (h *UserHandler) ListFollowers(w http.ResponseWriter, r *http.Request) {
-	username := PathParam(r, "username")
-	pagination := GetPaginationParams(r)
+func (h *UserHandler) ListFollowers(c *mizu.Ctx) error {
+	username := c.Param("username")
+	pagination := GetPagination(c)
 	opts := &users.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	followers, err := h.users.ListFollowers(r.Context(), username, opts)
+	followers, err := h.users.ListFollowers(c.Context(), username, opts)
 	if err != nil {
 		if err == users.ErrNotFound {
-			WriteNotFound(w, "User")
-			return
+			return NotFound(c, "User")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, followers)
+	return c.JSON(http.StatusOK, followers)
 }
 
 // ListFollowing handles GET /users/{username}/following
-func (h *UserHandler) ListFollowing(w http.ResponseWriter, r *http.Request) {
-	username := PathParam(r, "username")
-	pagination := GetPaginationParams(r)
+func (h *UserHandler) ListFollowing(c *mizu.Ctx) error {
+	username := c.Param("username")
+	pagination := GetPagination(c)
 	opts := &users.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	following, err := h.users.ListFollowing(r.Context(), username, opts)
+	following, err := h.users.ListFollowing(c.Context(), username, opts)
 	if err != nil {
 		if err == users.ErrNotFound {
-			WriteNotFound(w, "User")
-			return
+			return NotFound(c, "User")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, following)
+	return c.JSON(http.StatusOK, following)
 }
 
 // CheckFollowing handles GET /users/{username}/following/{target_user}
-func (h *UserHandler) CheckFollowing(w http.ResponseWriter, r *http.Request) {
-	username := PathParam(r, "username")
-	target := PathParam(r, "target_user")
+func (h *UserHandler) CheckFollowing(c *mizu.Ctx) error {
+	username := c.Param("username")
+	target := c.Param("target_user")
 
-	isFollowing, err := h.users.IsFollowing(r.Context(), username, target)
+	isFollowing, err := h.users.IsFollowing(c.Context(), username, target)
 	if err != nil {
 		if err == users.ErrNotFound {
-			WriteNotFound(w, "User")
-			return
+			return NotFound(c, "User")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
 	if isFollowing {
-		WriteNoContent(w)
-	} else {
-		WriteNotFound(w, "Follow")
+		return NoContent(c)
 	}
+	return NotFound(c, "Follow")
 }
 
 // ListAuthenticatedUserFollowers handles GET /user/followers
-func (h *UserHandler) ListAuthenticatedUserFollowers(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *UserHandler) ListAuthenticatedUserFollowers(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &users.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	followers, err := h.users.ListFollowers(r.Context(), user.Login, opts)
+	followers, err := h.users.ListFollowers(c.Context(), user.Login, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, followers)
+	return c.JSON(http.StatusOK, followers)
 }
 
 // ListAuthenticatedUserFollowing handles GET /user/following
-func (h *UserHandler) ListAuthenticatedUserFollowing(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *UserHandler) ListAuthenticatedUserFollowing(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &users.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	following, err := h.users.ListFollowing(r.Context(), user.Login, opts)
+	following, err := h.users.ListFollowing(c.Context(), user.Login, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, following)
+	return c.JSON(http.StatusOK, following)
 }
 
 // CheckAuthenticatedUserFollowing handles GET /user/following/{username}
-func (h *UserHandler) CheckAuthenticatedUserFollowing(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *UserHandler) CheckAuthenticatedUserFollowing(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	target := PathParam(r, "username")
-	isFollowing, err := h.users.IsFollowing(r.Context(), user.Login, target)
+	target := c.Param("username")
+	isFollowing, err := h.users.IsFollowing(c.Context(), user.Login, target)
 	if err != nil {
 		if err == users.ErrNotFound {
-			WriteNotFound(w, "User")
-			return
+			return NotFound(c, "User")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
 	if isFollowing {
-		WriteNoContent(w)
-	} else {
-		WriteNotFound(w, "Follow")
+		return NoContent(c)
 	}
+	return NotFound(c, "Follow")
 }
 
 // FollowUser handles PUT /user/following/{username}
-func (h *UserHandler) FollowUser(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *UserHandler) FollowUser(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	target := PathParam(r, "username")
-	if err := h.users.Follow(r.Context(), user.ID, target); err != nil {
+	target := c.Param("username")
+	if err := h.users.Follow(c.Context(), user.ID, target); err != nil {
 		if err == users.ErrNotFound {
-			WriteNotFound(w, "User")
-			return
+			return NotFound(c, "User")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // UnfollowUser handles DELETE /user/following/{username}
-func (h *UserHandler) UnfollowUser(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *UserHandler) UnfollowUser(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	target := PathParam(r, "username")
-	if err := h.users.Unfollow(r.Context(), user.ID, target); err != nil {
+	target := c.Param("username")
+	if err := h.users.Unfollow(c.Context(), user.ID, target); err != nil {
 		if err == users.ErrNotFound {
-			WriteNotFound(w, "User")
-			return
+			return NotFound(c, "User")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }

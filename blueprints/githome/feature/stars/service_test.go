@@ -13,7 +13,7 @@ import (
 	"github.com/go-mizu/blueprints/githome/store/duckdb"
 )
 
-func setupTestService(t *testing.T) (*stars.Service, *duckdb.Store, func()) {
+func setupTestService(t *testing.T) (*stars.Service, *duckdb.UsersStore, *duckdb.ReposStore, func()) {
 	t.Helper()
 
 	db, err := sql.Open("duckdb", "")
@@ -32,17 +32,19 @@ func setupTestService(t *testing.T) (*stars.Service, *duckdb.Store, func()) {
 		t.Fatalf("failed to ensure schema: %v", err)
 	}
 
+	usersStore := duckdb.NewUsersStore(db)
+	reposStore := duckdb.NewReposStore(db)
 	starsStore := duckdb.NewStarsStore(db)
-	service := stars.NewService(starsStore, store.Repos(), store.Users(), "https://api.example.com")
+	service := stars.NewService(starsStore, reposStore, usersStore, "https://api.example.com")
 
 	cleanup := func() {
 		store.Close()
 	}
 
-	return service, store, cleanup
+	return service, usersStore, reposStore, cleanup
 }
 
-func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *users.User {
+func createTestUser(t *testing.T, usersStore *duckdb.UsersStore, login, email string) *users.User {
 	t.Helper()
 	user := &users.User{
 		Login:        login,
@@ -51,13 +53,13 @@ func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *use
 		PasswordHash: "hash",
 		Type:         "User",
 	}
-	if err := store.Users().Create(context.Background(), user); err != nil {
+	if err := usersStore.Create(context.Background(), user); err != nil {
 		t.Fatalf("failed to create test user: %v", err)
 	}
 	return user
 }
 
-func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name string) *repos.Repository {
+func createTestRepo(t *testing.T, reposStore *duckdb.ReposStore, owner *users.User, name string) *repos.Repository {
 	t.Helper()
 	repo := &repos.Repository{
 		Name:          name,
@@ -67,7 +69,7 @@ func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name s
 		Visibility:    "public",
 		DefaultBranch: "main",
 	}
-	if err := store.Repos().Create(context.Background(), repo); err != nil {
+	if err := reposStore.Create(context.Background(), repo); err != nil {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
 	return repo
@@ -76,12 +78,12 @@ func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name s
 // Star/Unstar Tests
 
 func TestService_Star_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	starrer := createTestUser(t, store, "starrer", "starrer@example.com")
-	repo := createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	starrer := createTestUser(t, usersStore, "starrer", "starrer@example.com")
+	repo := createTestRepo(t, reposStore, owner, "testrepo")
 
 	err := service.Star(context.Background(), starrer.ID, "owner", "testrepo")
 	if err != nil {
@@ -98,19 +100,19 @@ func TestService_Star_Success(t *testing.T) {
 	}
 
 	// Verify counter incremented
-	updatedRepo, _ := store.Repos().GetByID(context.Background(), repo.ID)
+	updatedRepo, _ := reposStore.GetByID(context.Background(), repo.ID)
 	if updatedRepo.StargazersCount != 1 {
 		t.Errorf("expected stargazers_count 1, got %d", updatedRepo.StargazersCount)
 	}
 }
 
 func TestService_Star_AlreadyStarred(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	starrer := createTestUser(t, store, "starrer", "starrer@example.com")
-	repo := createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	starrer := createTestUser(t, usersStore, "starrer", "starrer@example.com")
+	repo := createTestRepo(t, reposStore, owner, "testrepo")
 
 	// First star
 	_ = service.Star(context.Background(), starrer.ID, "owner", "testrepo")
@@ -122,17 +124,17 @@ func TestService_Star_AlreadyStarred(t *testing.T) {
 	}
 
 	// Counter should still be 1
-	updatedRepo, _ := store.Repos().GetByID(context.Background(), repo.ID)
+	updatedRepo, _ := reposStore.GetByID(context.Background(), repo.ID)
 	if updatedRepo.StargazersCount != 1 {
 		t.Errorf("expected stargazers_count 1, got %d", updatedRepo.StargazersCount)
 	}
 }
 
 func TestService_Star_RepoNotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	starrer := createTestUser(t, store, "starrer", "starrer@example.com")
+	starrer := createTestUser(t, usersStore, "starrer", "starrer@example.com")
 
 	err := service.Star(context.Background(), starrer.ID, "unknown", "repo")
 	if err != repos.ErrNotFound {
@@ -141,12 +143,12 @@ func TestService_Star_RepoNotFound(t *testing.T) {
 }
 
 func TestService_Unstar_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	starrer := createTestUser(t, store, "starrer", "starrer@example.com")
-	repo := createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	starrer := createTestUser(t, usersStore, "starrer", "starrer@example.com")
+	repo := createTestRepo(t, reposStore, owner, "testrepo")
 
 	// First star
 	_ = service.Star(context.Background(), starrer.ID, "owner", "testrepo")
@@ -164,19 +166,19 @@ func TestService_Unstar_Success(t *testing.T) {
 	}
 
 	// Verify counter decremented
-	updatedRepo, _ := store.Repos().GetByID(context.Background(), repo.ID)
+	updatedRepo, _ := reposStore.GetByID(context.Background(), repo.ID)
 	if updatedRepo.StargazersCount != 0 {
 		t.Errorf("expected stargazers_count 0, got %d", updatedRepo.StargazersCount)
 	}
 }
 
 func TestService_Unstar_NotStarred(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	starrer := createTestUser(t, store, "starrer", "starrer@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	starrer := createTestUser(t, usersStore, "starrer", "starrer@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	// Unstar without starring should be idempotent
 	err := service.Unstar(context.Background(), starrer.ID, "owner", "testrepo")
@@ -186,10 +188,10 @@ func TestService_Unstar_NotStarred(t *testing.T) {
 }
 
 func TestService_Unstar_RepoNotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	starrer := createTestUser(t, store, "starrer", "starrer@example.com")
+	starrer := createTestUser(t, usersStore, "starrer", "starrer@example.com")
 
 	err := service.Unstar(context.Background(), starrer.ID, "unknown", "repo")
 	if err != repos.ErrNotFound {
@@ -200,12 +202,12 @@ func TestService_Unstar_RepoNotFound(t *testing.T) {
 // IsStarred Tests
 
 func TestService_IsStarred_True(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	starrer := createTestUser(t, store, "starrer", "starrer@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	starrer := createTestUser(t, usersStore, "starrer", "starrer@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	_ = service.Star(context.Background(), starrer.ID, "owner", "testrepo")
 
@@ -219,12 +221,12 @@ func TestService_IsStarred_True(t *testing.T) {
 }
 
 func TestService_IsStarred_False(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	starrer := createTestUser(t, store, "starrer", "starrer@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	starrer := createTestUser(t, usersStore, "starrer", "starrer@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	isStarred, err := service.IsStarred(context.Background(), starrer.ID, "owner", "testrepo")
 	if err != nil {
@@ -236,10 +238,10 @@ func TestService_IsStarred_False(t *testing.T) {
 }
 
 func TestService_IsStarred_RepoNotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	starrer := createTestUser(t, store, "starrer", "starrer@example.com")
+	starrer := createTestUser(t, usersStore, "starrer", "starrer@example.com")
 
 	_, err := service.IsStarred(context.Background(), starrer.ID, "unknown", "repo")
 	if err != repos.ErrNotFound {
@@ -250,13 +252,13 @@ func TestService_IsStarred_RepoNotFound(t *testing.T) {
 // List Stargazers Tests
 
 func TestService_ListStargazers(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	starrer1 := createTestUser(t, store, "starrer1", "starrer1@example.com")
-	starrer2 := createTestUser(t, store, "starrer2", "starrer2@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	starrer1 := createTestUser(t, usersStore, "starrer1", "starrer1@example.com")
+	starrer2 := createTestUser(t, usersStore, "starrer2", "starrer2@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	_ = service.Star(context.Background(), starrer1.ID, "owner", "testrepo")
 	_ = service.Star(context.Background(), starrer2.ID, "owner", "testrepo")
@@ -272,15 +274,15 @@ func TestService_ListStargazers(t *testing.T) {
 }
 
 func TestService_ListStargazers_Pagination(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	// Create multiple starrers
 	for i := 0; i < 5; i++ {
-		starrer := createTestUser(t, store, "starrer"+string(rune('a'+i)), "starrer"+string(rune('a'+i))+"@example.com")
+		starrer := createTestUser(t, usersStore, "starrer"+string(rune('a'+i)), "starrer"+string(rune('a'+i))+"@example.com")
 		_ = service.Star(context.Background(), starrer.ID, "owner", "testrepo")
 	}
 
@@ -298,7 +300,7 @@ func TestService_ListStargazers_Pagination(t *testing.T) {
 }
 
 func TestService_ListStargazers_RepoNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.ListStargazers(context.Background(), "unknown", "repo", nil)
@@ -308,12 +310,12 @@ func TestService_ListStargazers_RepoNotFound(t *testing.T) {
 }
 
 func TestService_ListStargazersWithTimestamps(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	starrer := createTestUser(t, store, "starrer", "starrer@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	starrer := createTestUser(t, usersStore, "starrer", "starrer@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	_ = service.Star(context.Background(), starrer.ID, "owner", "testrepo")
 
@@ -333,13 +335,13 @@ func TestService_ListStargazersWithTimestamps(t *testing.T) {
 // List Starred Repos Tests
 
 func TestService_ListForUser(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	starrer := createTestUser(t, store, "starrer", "starrer@example.com")
-	createTestRepo(t, store, owner, "repo1")
-	createTestRepo(t, store, owner, "repo2")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	starrer := createTestUser(t, usersStore, "starrer", "starrer@example.com")
+	createTestRepo(t, reposStore, owner, "repo1")
+	createTestRepo(t, reposStore, owner, "repo2")
 
 	_ = service.Star(context.Background(), starrer.ID, "owner", "repo1")
 	_ = service.Star(context.Background(), starrer.ID, "owner", "repo2")
@@ -355,7 +357,7 @@ func TestService_ListForUser(t *testing.T) {
 }
 
 func TestService_ListForUser_UserNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.ListForUser(context.Background(), "unknown", nil)
@@ -365,12 +367,12 @@ func TestService_ListForUser_UserNotFound(t *testing.T) {
 }
 
 func TestService_ListForAuthenticatedUser(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	starrer := createTestUser(t, store, "starrer", "starrer@example.com")
-	createTestRepo(t, store, owner, "repo1")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	starrer := createTestUser(t, usersStore, "starrer", "starrer@example.com")
+	createTestRepo(t, reposStore, owner, "repo1")
 
 	_ = service.Star(context.Background(), starrer.ID, "owner", "repo1")
 
@@ -385,12 +387,12 @@ func TestService_ListForAuthenticatedUser(t *testing.T) {
 }
 
 func TestService_ListForAuthenticatedUserWithTimestamps(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	starrer := createTestUser(t, store, "starrer", "starrer@example.com")
-	createTestRepo(t, store, owner, "repo1")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	starrer := createTestUser(t, usersStore, "starrer", "starrer@example.com")
+	createTestRepo(t, reposStore, owner, "repo1")
 
 	_ = service.Star(context.Background(), starrer.ID, "owner", "repo1")
 
@@ -410,20 +412,20 @@ func TestService_ListForAuthenticatedUserWithTimestamps(t *testing.T) {
 // Integration Test - Multiple Users Starring
 
 func TestService_MultipleUsersStarring(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	repo := createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	repo := createTestRepo(t, reposStore, owner, "testrepo")
 
 	// Multiple users star the repo
 	for i := 0; i < 3; i++ {
-		starrer := createTestUser(t, store, "starrer"+string(rune('a'+i)), "starrer"+string(rune('a'+i))+"@example.com")
+		starrer := createTestUser(t, usersStore, "starrer"+string(rune('a'+i)), "starrer"+string(rune('a'+i))+"@example.com")
 		_ = service.Star(context.Background(), starrer.ID, "owner", "testrepo")
 	}
 
 	// Verify counter
-	updatedRepo, _ := store.Repos().GetByID(context.Background(), repo.ID)
+	updatedRepo, _ := reposStore.GetByID(context.Background(), repo.ID)
 	if updatedRepo.StargazersCount != 3 {
 		t.Errorf("expected stargazers_count 3, got %d", updatedRepo.StargazersCount)
 	}

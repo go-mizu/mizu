@@ -13,7 +13,7 @@ import (
 	"github.com/go-mizu/blueprints/githome/store/duckdb"
 )
 
-func setupTestService(t *testing.T) (*watches.Service, *duckdb.Store, func()) {
+func setupTestService(t *testing.T) (*watches.Service, *duckdb.UsersStore, *duckdb.ReposStore, func()) {
 	t.Helper()
 
 	db, err := sql.Open("duckdb", "")
@@ -32,17 +32,19 @@ func setupTestService(t *testing.T) (*watches.Service, *duckdb.Store, func()) {
 		t.Fatalf("failed to ensure schema: %v", err)
 	}
 
+	usersStore := duckdb.NewUsersStore(db)
+	reposStore := duckdb.NewReposStore(db)
 	watchesStore := duckdb.NewWatchesStore(db)
-	service := watches.NewService(watchesStore, store.Repos(), store.Users(), "https://api.example.com")
+	service := watches.NewService(watchesStore, reposStore, usersStore, "https://api.example.com")
 
 	cleanup := func() {
 		store.Close()
 	}
 
-	return service, store, cleanup
+	return service, usersStore, reposStore, cleanup
 }
 
-func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *users.User {
+func createTestUser(t *testing.T, usersStore *duckdb.UsersStore, login, email string) *users.User {
 	t.Helper()
 	user := &users.User{
 		Login:        login,
@@ -51,13 +53,13 @@ func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *use
 		PasswordHash: "hash",
 		Type:         "User",
 	}
-	if err := store.Users().Create(context.Background(), user); err != nil {
+	if err := usersStore.Create(context.Background(), user); err != nil {
 		t.Fatalf("failed to create test user: %v", err)
 	}
 	return user
 }
 
-func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name string) *repos.Repository {
+func createTestRepo(t *testing.T, reposStore *duckdb.ReposStore, owner *users.User, name string) *repos.Repository {
 	t.Helper()
 	repo := &repos.Repository{
 		Name:          name,
@@ -67,7 +69,7 @@ func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name s
 		Visibility:    "public",
 		DefaultBranch: "main",
 	}
-	if err := store.Repos().Create(context.Background(), repo); err != nil {
+	if err := reposStore.Create(context.Background(), repo); err != nil {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
 	return repo
@@ -76,12 +78,12 @@ func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name s
 // Subscription Tests
 
 func TestService_SetSubscription_Subscribe(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	watcher := createTestUser(t, store, "watcher", "watcher@example.com")
-	repo := createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	watcher := createTestUser(t, usersStore, "watcher", "watcher@example.com")
+	repo := createTestRepo(t, reposStore, owner, "testrepo")
 
 	sub, err := service.SetSubscription(context.Background(), watcher.ID, "owner", "testrepo", true, false)
 	if err != nil {
@@ -99,19 +101,19 @@ func TestService_SetSubscription_Subscribe(t *testing.T) {
 	}
 
 	// Verify counter incremented
-	updatedRepo, _ := store.Repos().GetByID(context.Background(), repo.ID)
+	updatedRepo, _ := reposStore.GetByID(context.Background(), repo.ID)
 	if updatedRepo.WatchersCount != 1 {
 		t.Errorf("expected watchers_count 1, got %d", updatedRepo.WatchersCount)
 	}
 }
 
 func TestService_SetSubscription_Ignore(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	watcher := createTestUser(t, store, "watcher", "watcher@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	watcher := createTestUser(t, usersStore, "watcher", "watcher@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	sub, err := service.SetSubscription(context.Background(), watcher.ID, "owner", "testrepo", false, true)
 	if err != nil {
@@ -127,12 +129,12 @@ func TestService_SetSubscription_Ignore(t *testing.T) {
 }
 
 func TestService_SetSubscription_Update(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	watcher := createTestUser(t, store, "watcher", "watcher@example.com")
-	repo := createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	watcher := createTestUser(t, usersStore, "watcher", "watcher@example.com")
+	repo := createTestRepo(t, reposStore, owner, "testrepo")
 
 	// First subscribe
 	_, _ = service.SetSubscription(context.Background(), watcher.ID, "owner", "testrepo", true, false)
@@ -151,17 +153,17 @@ func TestService_SetSubscription_Update(t *testing.T) {
 	}
 
 	// Counter should be decremented
-	updatedRepo, _ := store.Repos().GetByID(context.Background(), repo.ID)
+	updatedRepo, _ := reposStore.GetByID(context.Background(), repo.ID)
 	if updatedRepo.WatchersCount != 0 {
 		t.Errorf("expected watchers_count 0, got %d", updatedRepo.WatchersCount)
 	}
 }
 
 func TestService_SetSubscription_RepoNotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	watcher := createTestUser(t, store, "watcher", "watcher@example.com")
+	watcher := createTestUser(t, usersStore, "watcher", "watcher@example.com")
 
 	_, err := service.SetSubscription(context.Background(), watcher.ID, "unknown", "repo", true, false)
 	if err != repos.ErrNotFound {
@@ -172,12 +174,12 @@ func TestService_SetSubscription_RepoNotFound(t *testing.T) {
 // Get Subscription Tests
 
 func TestService_GetSubscription_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	watcher := createTestUser(t, store, "watcher", "watcher@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	watcher := createTestUser(t, usersStore, "watcher", "watcher@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	// Set subscription first
 	_, _ = service.SetSubscription(context.Background(), watcher.ID, "owner", "testrepo", true, false)
@@ -193,12 +195,12 @@ func TestService_GetSubscription_Success(t *testing.T) {
 }
 
 func TestService_GetSubscription_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	watcher := createTestUser(t, store, "watcher", "watcher@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	watcher := createTestUser(t, usersStore, "watcher", "watcher@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	_, err := service.GetSubscription(context.Background(), watcher.ID, "owner", "testrepo")
 	if err != watches.ErrNotFound {
@@ -209,12 +211,12 @@ func TestService_GetSubscription_NotFound(t *testing.T) {
 // Delete Subscription Tests
 
 func TestService_DeleteSubscription_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	watcher := createTestUser(t, store, "watcher", "watcher@example.com")
-	repo := createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	watcher := createTestUser(t, usersStore, "watcher", "watcher@example.com")
+	repo := createTestRepo(t, reposStore, owner, "testrepo")
 
 	// Subscribe first
 	_, _ = service.SetSubscription(context.Background(), watcher.ID, "owner", "testrepo", true, false)
@@ -232,19 +234,19 @@ func TestService_DeleteSubscription_Success(t *testing.T) {
 	}
 
 	// Counter should be decremented
-	updatedRepo, _ := store.Repos().GetByID(context.Background(), repo.ID)
+	updatedRepo, _ := reposStore.GetByID(context.Background(), repo.ID)
 	if updatedRepo.WatchersCount != 0 {
 		t.Errorf("expected watchers_count 0, got %d", updatedRepo.WatchersCount)
 	}
 }
 
 func TestService_DeleteSubscription_NotSubscribed(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	watcher := createTestUser(t, store, "watcher", "watcher@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	watcher := createTestUser(t, usersStore, "watcher", "watcher@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	// Delete without subscribing should be idempotent
 	err := service.DeleteSubscription(context.Background(), watcher.ID, "owner", "testrepo")
@@ -256,13 +258,13 @@ func TestService_DeleteSubscription_NotSubscribed(t *testing.T) {
 // List Watchers Tests
 
 func TestService_ListWatchers(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	watcher1 := createTestUser(t, store, "watcher1", "watcher1@example.com")
-	watcher2 := createTestUser(t, store, "watcher2", "watcher2@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	watcher1 := createTestUser(t, usersStore, "watcher1", "watcher1@example.com")
+	watcher2 := createTestUser(t, usersStore, "watcher2", "watcher2@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	_, _ = service.SetSubscription(context.Background(), watcher1.ID, "owner", "testrepo", true, false)
 	_, _ = service.SetSubscription(context.Background(), watcher2.ID, "owner", "testrepo", true, false)
@@ -278,15 +280,15 @@ func TestService_ListWatchers(t *testing.T) {
 }
 
 func TestService_ListWatchers_Pagination(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	// Create multiple watchers
 	for i := 0; i < 5; i++ {
-		watcher := createTestUser(t, store, "watcher"+string(rune('a'+i)), "watcher"+string(rune('a'+i))+"@example.com")
+		watcher := createTestUser(t, usersStore, "watcher"+string(rune('a'+i)), "watcher"+string(rune('a'+i))+"@example.com")
 		_, _ = service.SetSubscription(context.Background(), watcher.ID, "owner", "testrepo", true, false)
 	}
 
@@ -304,7 +306,7 @@ func TestService_ListWatchers_Pagination(t *testing.T) {
 }
 
 func TestService_ListWatchers_RepoNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.ListWatchers(context.Background(), "unknown", "repo", nil)
@@ -316,13 +318,13 @@ func TestService_ListWatchers_RepoNotFound(t *testing.T) {
 // List Watched Repos Tests
 
 func TestService_ListForUser(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	watcher := createTestUser(t, store, "watcher", "watcher@example.com")
-	createTestRepo(t, store, owner, "repo1")
-	createTestRepo(t, store, owner, "repo2")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	watcher := createTestUser(t, usersStore, "watcher", "watcher@example.com")
+	createTestRepo(t, reposStore, owner, "repo1")
+	createTestRepo(t, reposStore, owner, "repo2")
 
 	_, _ = service.SetSubscription(context.Background(), watcher.ID, "owner", "repo1", true, false)
 	_, _ = service.SetSubscription(context.Background(), watcher.ID, "owner", "repo2", true, false)
@@ -338,7 +340,7 @@ func TestService_ListForUser(t *testing.T) {
 }
 
 func TestService_ListForUser_UserNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.ListForUser(context.Background(), "unknown", nil)
@@ -348,12 +350,12 @@ func TestService_ListForUser_UserNotFound(t *testing.T) {
 }
 
 func TestService_ListForAuthenticatedUser(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	watcher := createTestUser(t, store, "watcher", "watcher@example.com")
-	createTestRepo(t, store, owner, "repo1")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	watcher := createTestUser(t, usersStore, "watcher", "watcher@example.com")
+	createTestRepo(t, reposStore, owner, "repo1")
 
 	_, _ = service.SetSubscription(context.Background(), watcher.ID, "owner", "repo1", true, false)
 
@@ -370,12 +372,12 @@ func TestService_ListForAuthenticatedUser(t *testing.T) {
 // URL Population Tests
 
 func TestService_PopulateURLs(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	watcher := createTestUser(t, store, "watcher", "watcher@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	watcher := createTestUser(t, usersStore, "watcher", "watcher@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	sub, _ := service.SetSubscription(context.Background(), watcher.ID, "owner", "testrepo", true, false)
 
@@ -390,20 +392,20 @@ func TestService_PopulateURLs(t *testing.T) {
 // Integration Test - Multiple Users Watching
 
 func TestService_MultipleUsersWatching(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	repo := createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	repo := createTestRepo(t, reposStore, owner, "testrepo")
 
 	// Multiple users watch the repo
 	for i := 0; i < 3; i++ {
-		watcher := createTestUser(t, store, "watcher"+string(rune('a'+i)), "watcher"+string(rune('a'+i))+"@example.com")
+		watcher := createTestUser(t, usersStore, "watcher"+string(rune('a'+i)), "watcher"+string(rune('a'+i))+"@example.com")
 		_, _ = service.SetSubscription(context.Background(), watcher.ID, "owner", "testrepo", true, false)
 	}
 
 	// Verify counter
-	updatedRepo, _ := store.Repos().GetByID(context.Background(), repo.ID)
+	updatedRepo, _ := reposStore.GetByID(context.Background(), repo.ID)
 	if updatedRepo.WatchersCount != 3 {
 		t.Errorf("expected watchers_count 3, got %d", updatedRepo.WatchersCount)
 	}

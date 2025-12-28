@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-mizu/blueprints/githome/feature/reactions"
 	"github.com/go-mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/mizu"
 )
 
 // ReactionHandler handles reaction endpoints
@@ -19,651 +20,561 @@ func NewReactionHandler(reactions reactions.API, repos repos.API) *ReactionHandl
 }
 
 // ListIssueReactions handles GET /repos/{owner}/{repo}/issues/{issue_number}/reactions
-func (h *ReactionHandler) ListIssueReactions(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *ReactionHandler) ListIssueReactions(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	issueNumber, err := PathParamInt(r, "issue_number")
+	issueNumber, err := ParamInt(c, "issue_number")
 	if err != nil {
-		WriteBadRequest(w, "Invalid issue number")
-		return
+		return BadRequest(c, "Invalid issue number")
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &reactions.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
-		Content: QueryParam(r, "content"),
+		Content: c.Query("content"),
 	}
 
-	reactionList, err := h.reactions.ListForIssue(r.Context(), owner, repoName, issueNumber, opts)
+	reactionList, err := h.reactions.ListForIssue(c.Context(), owner, repoName, issueNumber, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, reactionList)
+	return c.JSON(http.StatusOK, reactionList)
 }
 
 // CreateIssueReaction handles POST /repos/{owner}/{repo}/issues/{issue_number}/reactions
-func (h *ReactionHandler) CreateIssueReaction(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *ReactionHandler) CreateIssueReaction(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	issueNumber, err := PathParamInt(r, "issue_number")
+	issueNumber, err := ParamInt(c, "issue_number")
 	if err != nil {
-		WriteBadRequest(w, "Invalid issue number")
-		return
+		return BadRequest(c, "Invalid issue number")
 	}
 
 	var in struct {
 		Content string `json:"content"`
 	}
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	reaction, err := h.reactions.CreateForIssue(r.Context(), owner, repoName, issueNumber, user.ID, in.Content)
+	reaction, err := h.reactions.CreateForIssue(c.Context(), owner, repoName, issueNumber, user.ID, in.Content)
 	if err != nil {
 		if err == reactions.ErrInvalidContent {
-			WriteBadRequest(w, "Invalid reaction content")
-			return
+			return BadRequest(c, "Invalid reaction content")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteCreated(w, reaction)
+	return Created(c, reaction)
 }
 
 // DeleteIssueReaction handles DELETE /repos/{owner}/{repo}/issues/{issue_number}/reactions/{reaction_id}
-func (h *ReactionHandler) DeleteIssueReaction(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *ReactionHandler) DeleteIssueReaction(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	issueNumber, err := PathParamInt(r, "issue_number")
+	issueNumber, err := ParamInt(c, "issue_number")
 	if err != nil {
-		WriteBadRequest(w, "Invalid issue number")
-		return
+		return BadRequest(c, "Invalid issue number")
 	}
 
-	reactionID, err := PathParamInt64(r, "reaction_id")
+	reactionID, err := ParamInt64(c, "reaction_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid reaction ID")
-		return
+		return BadRequest(c, "Invalid reaction ID")
 	}
 
-	if err := h.reactions.DeleteForIssue(r.Context(), owner, repoName, issueNumber, reactionID); err != nil {
+	if err := h.reactions.DeleteForIssue(c.Context(), owner, repoName, issueNumber, reactionID); err != nil {
 		if err == reactions.ErrNotFound {
-			WriteNotFound(w, "Reaction")
-			return
+			return NotFound(c, "Reaction")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // ListIssueCommentReactions handles GET /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions
-func (h *ReactionHandler) ListIssueCommentReactions(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *ReactionHandler) ListIssueCommentReactions(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	commentID, err := PathParamInt64(r, "comment_id")
+	commentID, err := ParamInt64(c, "comment_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid comment ID")
-		return
+		return BadRequest(c, "Invalid comment ID")
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &reactions.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
-		Content: QueryParam(r, "content"),
+		Content: c.Query("content"),
 	}
 
-	reactionList, err := h.reactions.ListForIssueComment(r.Context(), owner, repoName, commentID, opts)
+	reactionList, err := h.reactions.ListForIssueComment(c.Context(), owner, repoName, commentID, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, reactionList)
+	return c.JSON(http.StatusOK, reactionList)
 }
 
 // CreateIssueCommentReaction handles POST /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions
-func (h *ReactionHandler) CreateIssueCommentReaction(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *ReactionHandler) CreateIssueCommentReaction(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	commentID, err := PathParamInt64(r, "comment_id")
+	commentID, err := ParamInt64(c, "comment_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid comment ID")
-		return
+		return BadRequest(c, "Invalid comment ID")
 	}
 
 	var in struct {
 		Content string `json:"content"`
 	}
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	reaction, err := h.reactions.CreateForIssueComment(r.Context(), owner, repoName, commentID, user.ID, in.Content)
+	reaction, err := h.reactions.CreateForIssueComment(c.Context(), owner, repoName, commentID, user.ID, in.Content)
 	if err != nil {
 		if err == reactions.ErrInvalidContent {
-			WriteBadRequest(w, "Invalid reaction content")
-			return
+			return BadRequest(c, "Invalid reaction content")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteCreated(w, reaction)
+	return Created(c, reaction)
 }
 
 // DeleteIssueCommentReaction handles DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}
-func (h *ReactionHandler) DeleteIssueCommentReaction(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *ReactionHandler) DeleteIssueCommentReaction(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	commentID, err := PathParamInt64(r, "comment_id")
+	commentID, err := ParamInt64(c, "comment_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid comment ID")
-		return
+		return BadRequest(c, "Invalid comment ID")
 	}
 
-	reactionID, err := PathParamInt64(r, "reaction_id")
+	reactionID, err := ParamInt64(c, "reaction_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid reaction ID")
-		return
+		return BadRequest(c, "Invalid reaction ID")
 	}
 
-	if err := h.reactions.DeleteForIssueComment(r.Context(), owner, repoName, commentID, reactionID); err != nil {
+	if err := h.reactions.DeleteForIssueComment(c.Context(), owner, repoName, commentID, reactionID); err != nil {
 		if err == reactions.ErrNotFound {
-			WriteNotFound(w, "Reaction")
-			return
+			return NotFound(c, "Reaction")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // ListPullReviewCommentReactions handles GET /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions
-func (h *ReactionHandler) ListPullReviewCommentReactions(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *ReactionHandler) ListPullReviewCommentReactions(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	commentID, err := PathParamInt64(r, "comment_id")
+	commentID, err := ParamInt64(c, "comment_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid comment ID")
-		return
+		return BadRequest(c, "Invalid comment ID")
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &reactions.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
-		Content: QueryParam(r, "content"),
+		Content: c.Query("content"),
 	}
 
-	reactionList, err := h.reactions.ListForPullReviewComment(r.Context(), owner, repoName, commentID, opts)
+	reactionList, err := h.reactions.ListForPullReviewComment(c.Context(), owner, repoName, commentID, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, reactionList)
+	return c.JSON(http.StatusOK, reactionList)
 }
 
 // CreatePullReviewCommentReaction handles POST /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions
-func (h *ReactionHandler) CreatePullReviewCommentReaction(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *ReactionHandler) CreatePullReviewCommentReaction(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	commentID, err := PathParamInt64(r, "comment_id")
+	commentID, err := ParamInt64(c, "comment_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid comment ID")
-		return
+		return BadRequest(c, "Invalid comment ID")
 	}
 
 	var in struct {
 		Content string `json:"content"`
 	}
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	reaction, err := h.reactions.CreateForPullReviewComment(r.Context(), owner, repoName, commentID, user.ID, in.Content)
+	reaction, err := h.reactions.CreateForPullReviewComment(c.Context(), owner, repoName, commentID, user.ID, in.Content)
 	if err != nil {
 		if err == reactions.ErrInvalidContent {
-			WriteBadRequest(w, "Invalid reaction content")
-			return
+			return BadRequest(c, "Invalid reaction content")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteCreated(w, reaction)
+	return Created(c, reaction)
 }
 
 // DeletePullReviewCommentReaction handles DELETE /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions/{reaction_id}
-func (h *ReactionHandler) DeletePullReviewCommentReaction(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *ReactionHandler) DeletePullReviewCommentReaction(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	commentID, err := PathParamInt64(r, "comment_id")
+	commentID, err := ParamInt64(c, "comment_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid comment ID")
-		return
+		return BadRequest(c, "Invalid comment ID")
 	}
 
-	reactionID, err := PathParamInt64(r, "reaction_id")
+	reactionID, err := ParamInt64(c, "reaction_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid reaction ID")
-		return
+		return BadRequest(c, "Invalid reaction ID")
 	}
 
-	if err := h.reactions.DeleteForPullReviewComment(r.Context(), owner, repoName, commentID, reactionID); err != nil {
+	if err := h.reactions.DeleteForPullReviewComment(c.Context(), owner, repoName, commentID, reactionID); err != nil {
 		if err == reactions.ErrNotFound {
-			WriteNotFound(w, "Reaction")
-			return
+			return NotFound(c, "Reaction")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // ListCommitCommentReactions handles GET /repos/{owner}/{repo}/comments/{comment_id}/reactions
-func (h *ReactionHandler) ListCommitCommentReactions(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *ReactionHandler) ListCommitCommentReactions(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	commentID, err := PathParamInt64(r, "comment_id")
+	commentID, err := ParamInt64(c, "comment_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid comment ID")
-		return
+		return BadRequest(c, "Invalid comment ID")
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &reactions.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
-		Content: QueryParam(r, "content"),
+		Content: c.Query("content"),
 	}
 
-	reactionList, err := h.reactions.ListForCommitComment(r.Context(), owner, repoName, commentID, opts)
+	reactionList, err := h.reactions.ListForCommitComment(c.Context(), owner, repoName, commentID, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, reactionList)
+	return c.JSON(http.StatusOK, reactionList)
 }
 
 // CreateCommitCommentReaction handles POST /repos/{owner}/{repo}/comments/{comment_id}/reactions
-func (h *ReactionHandler) CreateCommitCommentReaction(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *ReactionHandler) CreateCommitCommentReaction(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	commentID, err := PathParamInt64(r, "comment_id")
+	commentID, err := ParamInt64(c, "comment_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid comment ID")
-		return
+		return BadRequest(c, "Invalid comment ID")
 	}
 
 	var in struct {
 		Content string `json:"content"`
 	}
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	reaction, err := h.reactions.CreateForCommitComment(r.Context(), owner, repoName, commentID, user.ID, in.Content)
+	reaction, err := h.reactions.CreateForCommitComment(c.Context(), owner, repoName, commentID, user.ID, in.Content)
 	if err != nil {
 		if err == reactions.ErrInvalidContent {
-			WriteBadRequest(w, "Invalid reaction content")
-			return
+			return BadRequest(c, "Invalid reaction content")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteCreated(w, reaction)
+	return Created(c, reaction)
 }
 
 // DeleteCommitCommentReaction handles DELETE /repos/{owner}/{repo}/comments/{comment_id}/reactions/{reaction_id}
-func (h *ReactionHandler) DeleteCommitCommentReaction(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *ReactionHandler) DeleteCommitCommentReaction(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	commentID, err := PathParamInt64(r, "comment_id")
+	commentID, err := ParamInt64(c, "comment_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid comment ID")
-		return
+		return BadRequest(c, "Invalid comment ID")
 	}
 
-	reactionID, err := PathParamInt64(r, "reaction_id")
+	reactionID, err := ParamInt64(c, "reaction_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid reaction ID")
-		return
+		return BadRequest(c, "Invalid reaction ID")
 	}
 
-	if err := h.reactions.DeleteForCommitComment(r.Context(), owner, repoName, commentID, reactionID); err != nil {
+	if err := h.reactions.DeleteForCommitComment(c.Context(), owner, repoName, commentID, reactionID); err != nil {
 		if err == reactions.ErrNotFound {
-			WriteNotFound(w, "Reaction")
-			return
+			return NotFound(c, "Reaction")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // ListReleaseReactions handles GET /repos/{owner}/{repo}/releases/{release_id}/reactions
-func (h *ReactionHandler) ListReleaseReactions(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *ReactionHandler) ListReleaseReactions(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	releaseID, err := PathParamInt64(r, "release_id")
+	releaseID, err := ParamInt64(c, "release_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid release ID")
-		return
+		return BadRequest(c, "Invalid release ID")
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &reactions.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
-		Content: QueryParam(r, "content"),
+		Content: c.Query("content"),
 	}
 
-	reactionList, err := h.reactions.ListForRelease(r.Context(), owner, repoName, releaseID, opts)
+	reactionList, err := h.reactions.ListForRelease(c.Context(), owner, repoName, releaseID, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, reactionList)
+	return c.JSON(http.StatusOK, reactionList)
 }
 
 // CreateReleaseReaction handles POST /repos/{owner}/{repo}/releases/{release_id}/reactions
-func (h *ReactionHandler) CreateReleaseReaction(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *ReactionHandler) CreateReleaseReaction(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	releaseID, err := PathParamInt64(r, "release_id")
+	releaseID, err := ParamInt64(c, "release_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid release ID")
-		return
+		return BadRequest(c, "Invalid release ID")
 	}
 
 	var in struct {
 		Content string `json:"content"`
 	}
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	reaction, err := h.reactions.CreateForRelease(r.Context(), owner, repoName, releaseID, user.ID, in.Content)
+	reaction, err := h.reactions.CreateForRelease(c.Context(), owner, repoName, releaseID, user.ID, in.Content)
 	if err != nil {
 		if err == reactions.ErrInvalidContent {
-			WriteBadRequest(w, "Invalid reaction content")
-			return
+			return BadRequest(c, "Invalid reaction content")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteCreated(w, reaction)
+	return Created(c, reaction)
 }
 
 // DeleteReleaseReaction handles DELETE /repos/{owner}/{repo}/releases/{release_id}/reactions/{reaction_id}
-func (h *ReactionHandler) DeleteReleaseReaction(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *ReactionHandler) DeleteReleaseReaction(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	releaseID, err := PathParamInt64(r, "release_id")
+	releaseID, err := ParamInt64(c, "release_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid release ID")
-		return
+		return BadRequest(c, "Invalid release ID")
 	}
 
-	reactionID, err := PathParamInt64(r, "reaction_id")
+	reactionID, err := ParamInt64(c, "reaction_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid reaction ID")
-		return
+		return BadRequest(c, "Invalid reaction ID")
 	}
 
-	if err := h.reactions.DeleteForRelease(r.Context(), owner, repoName, releaseID, reactionID); err != nil {
+	if err := h.reactions.DeleteForRelease(c.Context(), owner, repoName, releaseID, reactionID); err != nil {
 		if err == reactions.ErrNotFound {
-			WriteNotFound(w, "Reaction")
-			return
+			return NotFound(c, "Reaction")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }

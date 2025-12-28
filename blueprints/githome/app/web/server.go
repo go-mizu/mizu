@@ -25,6 +25,7 @@ import (
 	"github.com/go-mizu/blueprints/githome/feature/users"
 	"github.com/go-mizu/blueprints/githome/feature/watches"
 	"github.com/go-mizu/blueprints/githome/feature/webhooks"
+	"github.com/go-mizu/mizu"
 )
 
 // Services contains all service dependencies
@@ -54,14 +55,14 @@ type Services struct {
 
 // Server represents the HTTP server
 type Server struct {
-	mux      *http.ServeMux
+	app      *mizu.App
 	services *Services
 }
 
 // NewServer creates a new server with all routes configured
 func NewServer(services *Services) *Server {
 	s := &Server{
-		mux:      http.NewServeMux(),
+		app:      mizu.New(),
 		services: services,
 	}
 	s.setupRoutes()
@@ -70,7 +71,12 @@ func NewServer(services *Services) *Server {
 
 // Handler returns the HTTP handler
 func (s *Server) Handler() http.Handler {
-	return s.mux
+	return s.app
+}
+
+// App returns the mizu application
+func (s *Server) App() *mizu.App {
+	return s.app
 }
 
 // setupRoutes configures all API routes
@@ -99,366 +105,375 @@ func (s *Server) setupRoutes() {
 	searchHandler := api.NewSearchHandler(s.services.Search)
 	activityHandler := api.NewActivityHandler(s.services.Activities, s.services.Repos)
 
-	// Helper to wrap with auth middleware
-	requireAuth := authHandler.RequireAuth
-	optionalAuth := authHandler.OptionalAuth
+	// Auth middleware
+	requireAuth := api.RequireAuth(s.services.Users)
+	optionalAuth := api.OptionalAuth(s.services.Users)
+
+	r := s.app.Router
+	auth := r.With(requireAuth)
+	optAuth := r.With(optionalAuth)
 
 	// ==========================================================================
 	// Authentication
 	// ==========================================================================
-	s.mux.HandleFunc("POST /login", authHandler.Login)
-	s.mux.HandleFunc("POST /register", authHandler.Register)
+	r.Post("/login", authHandler.Login)
+	r.Post("/register", authHandler.Register)
 
 	// ==========================================================================
 	// Users
 	// ==========================================================================
-	s.mux.Handle("GET /user", requireAuth(http.HandlerFunc(userHandler.GetAuthenticatedUser)))
-	s.mux.Handle("PATCH /user", requireAuth(http.HandlerFunc(userHandler.UpdateAuthenticatedUser)))
-	s.mux.HandleFunc("GET /users", userHandler.ListUsers)
-	s.mux.HandleFunc("GET /users/{username}", userHandler.GetUser)
-	s.mux.HandleFunc("GET /users/{username}/followers", userHandler.ListFollowers)
-	s.mux.HandleFunc("GET /users/{username}/following", userHandler.ListFollowing)
-	s.mux.HandleFunc("GET /users/{username}/following/{target_user}", userHandler.CheckFollowing)
-	s.mux.Handle("GET /user/followers", requireAuth(http.HandlerFunc(userHandler.ListAuthenticatedUserFollowers)))
-	s.mux.Handle("GET /user/following", requireAuth(http.HandlerFunc(userHandler.ListAuthenticatedUserFollowing)))
-	s.mux.Handle("GET /user/following/{username}", requireAuth(http.HandlerFunc(userHandler.CheckAuthenticatedUserFollowing)))
-	s.mux.Handle("PUT /user/following/{username}", requireAuth(http.HandlerFunc(userHandler.FollowUser)))
-	s.mux.Handle("DELETE /user/following/{username}", requireAuth(http.HandlerFunc(userHandler.UnfollowUser)))
+	auth.Get("/user", userHandler.GetAuthenticatedUser)
+	auth.Patch("/user", userHandler.UpdateAuthenticatedUser)
+	r.Get("/users", userHandler.ListUsers)
+	r.Get("/users/{username}", userHandler.GetUser)
+	r.Get("/users/{username}/followers", userHandler.ListFollowers)
+	r.Get("/users/{username}/following", userHandler.ListFollowing)
+	r.Get("/users/{username}/following/{target_user}", userHandler.CheckFollowing)
+	auth.Get("/user/followers", userHandler.ListAuthenticatedUserFollowers)
+	auth.Get("/user/following", userHandler.ListAuthenticatedUserFollowing)
+	auth.Get("/user/following/{username}", userHandler.CheckAuthenticatedUserFollowing)
+	auth.Put("/user/following/{username}", userHandler.FollowUser)
+	auth.Delete("/user/following/{username}", userHandler.UnfollowUser)
 
 	// ==========================================================================
 	// Organizations
 	// ==========================================================================
-	s.mux.HandleFunc("GET /organizations", orgHandler.ListOrgs)
-	s.mux.HandleFunc("GET /orgs/{org}", orgHandler.GetOrg)
-	s.mux.Handle("PATCH /orgs/{org}", requireAuth(http.HandlerFunc(orgHandler.UpdateOrg)))
-	s.mux.Handle("GET /user/orgs", requireAuth(http.HandlerFunc(orgHandler.ListAuthenticatedUserOrgs)))
-	s.mux.HandleFunc("GET /users/{username}/orgs", orgHandler.ListUserOrgs)
-	s.mux.HandleFunc("GET /orgs/{org}/members", orgHandler.ListOrgMembers)
-	s.mux.HandleFunc("GET /orgs/{org}/members/{username}", orgHandler.CheckOrgMember)
-	s.mux.Handle("DELETE /orgs/{org}/members/{username}", requireAuth(http.HandlerFunc(orgHandler.RemoveOrgMember)))
-	s.mux.Handle("GET /orgs/{org}/memberships/{username}", requireAuth(http.HandlerFunc(orgHandler.GetOrgMembership)))
-	s.mux.Handle("PUT /orgs/{org}/memberships/{username}", requireAuth(http.HandlerFunc(orgHandler.SetOrgMembership)))
-	s.mux.Handle("DELETE /orgs/{org}/memberships/{username}", requireAuth(http.HandlerFunc(orgHandler.RemoveOrgMembership)))
-	s.mux.Handle("GET /orgs/{org}/outside_collaborators", requireAuth(http.HandlerFunc(orgHandler.ListOutsideCollaborators)))
-	s.mux.Handle("GET /user/memberships/orgs/{org}", requireAuth(http.HandlerFunc(orgHandler.GetAuthenticatedUserOrgMembership)))
-	s.mux.Handle("PATCH /user/memberships/orgs/{org}", requireAuth(http.HandlerFunc(orgHandler.UpdateAuthenticatedUserOrgMembership)))
+	r.Get("/organizations", orgHandler.ListOrgs)
+	r.Get("/orgs/{org}", orgHandler.GetOrg)
+	auth.Patch("/orgs/{org}", orgHandler.UpdateOrg)
+	auth.Get("/user/orgs", orgHandler.ListAuthenticatedUserOrgs)
+	r.Get("/users/{username}/orgs", orgHandler.ListUserOrgs)
+	r.Get("/orgs/{org}/members", orgHandler.ListOrgMembers)
+	r.Get("/orgs/{org}/members/{username}", orgHandler.CheckOrgMember)
+	auth.Delete("/orgs/{org}/members/{username}", orgHandler.RemoveOrgMember)
+	auth.Get("/orgs/{org}/memberships/{username}", orgHandler.GetOrgMembership)
+	auth.Put("/orgs/{org}/memberships/{username}", orgHandler.SetOrgMembership)
+	auth.Delete("/orgs/{org}/memberships/{username}", orgHandler.RemoveOrgMembership)
+	auth.Get("/orgs/{org}/outside_collaborators", orgHandler.ListOutsideCollaborators)
+	r.Get("/orgs/{org}/public_members", orgHandler.ListPublicOrgMembers)
+	r.Get("/orgs/{org}/public_members/{username}", orgHandler.CheckPublicOrgMember)
+	auth.Put("/orgs/{org}/public_members/{username}", orgHandler.PublicizeMembership)
+	auth.Delete("/orgs/{org}/public_members/{username}", orgHandler.ConcealMembership)
+	auth.Get("/user/memberships/orgs/{org}", orgHandler.GetAuthenticatedUserOrgMembership)
+	auth.Patch("/user/memberships/orgs/{org}", orgHandler.UpdateAuthenticatedUserOrgMembership)
 
 	// ==========================================================================
 	// Repositories
 	// ==========================================================================
-	s.mux.HandleFunc("GET /repositories", repoHandler.ListPublicRepos)
-	s.mux.Handle("GET /user/repos", requireAuth(http.HandlerFunc(repoHandler.ListAuthenticatedUserRepos)))
-	s.mux.Handle("POST /user/repos", requireAuth(http.HandlerFunc(repoHandler.CreateAuthenticatedUserRepo)))
-	s.mux.HandleFunc("GET /users/{username}/repos", repoHandler.ListUserRepos)
-	s.mux.HandleFunc("GET /orgs/{org}/repos", repoHandler.ListOrgRepos)
-	s.mux.Handle("POST /orgs/{org}/repos", requireAuth(http.HandlerFunc(repoHandler.CreateOrgRepo)))
-	s.mux.Handle("GET /repos/{owner}/{repo}", optionalAuth(http.HandlerFunc(repoHandler.GetRepo)))
-	s.mux.Handle("PATCH /repos/{owner}/{repo}", requireAuth(http.HandlerFunc(repoHandler.UpdateRepo)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}", requireAuth(http.HandlerFunc(repoHandler.DeleteRepo)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/topics", repoHandler.ListRepoTopics)
-	s.mux.Handle("PUT /repos/{owner}/{repo}/topics", requireAuth(http.HandlerFunc(repoHandler.ReplaceRepoTopics)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/languages", repoHandler.ListRepoLanguages)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/contributors", repoHandler.ListRepoContributors)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/tags", repoHandler.ListRepoTags)
-	s.mux.Handle("POST /repos/{owner}/{repo}/transfer", requireAuth(http.HandlerFunc(repoHandler.TransferRepo)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/readme", repoHandler.GetRepoReadme)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/contents/{path...}", repoHandler.GetRepoContent)
-	s.mux.Handle("PUT /repos/{owner}/{repo}/contents/{path...}", requireAuth(http.HandlerFunc(repoHandler.CreateOrUpdateFileContent)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/contents/{path...}", requireAuth(http.HandlerFunc(repoHandler.DeleteFileContent)))
-	s.mux.Handle("POST /repos/{owner}/{repo}/forks", requireAuth(http.HandlerFunc(repoHandler.ForkRepo)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/forks", repoHandler.ListForks)
+	r.Get("/repositories", repoHandler.ListPublicRepos)
+	auth.Get("/user/repos", repoHandler.ListAuthenticatedUserRepos)
+	auth.Post("/user/repos", repoHandler.CreateAuthenticatedUserRepo)
+	r.Get("/users/{username}/repos", repoHandler.ListUserRepos)
+	r.Get("/orgs/{org}/repos", repoHandler.ListOrgRepos)
+	auth.Post("/orgs/{org}/repos", repoHandler.CreateOrgRepo)
+	optAuth.Get("/repos/{owner}/{repo}", repoHandler.GetRepo)
+	auth.Patch("/repos/{owner}/{repo}", repoHandler.UpdateRepo)
+	auth.Delete("/repos/{owner}/{repo}", repoHandler.DeleteRepo)
+	r.Get("/repos/{owner}/{repo}/topics", repoHandler.ListRepoTopics)
+	auth.Put("/repos/{owner}/{repo}/topics", repoHandler.ReplaceRepoTopics)
+	r.Get("/repos/{owner}/{repo}/languages", repoHandler.ListRepoLanguages)
+	r.Get("/repos/{owner}/{repo}/contributors", repoHandler.ListRepoContributors)
+	r.Get("/repos/{owner}/{repo}/tags", repoHandler.ListRepoTags)
+	auth.Post("/repos/{owner}/{repo}/transfer", repoHandler.TransferRepo)
+	r.Get("/repos/{owner}/{repo}/readme", repoHandler.GetRepoReadme)
+	r.Get("/repos/{owner}/{repo}/contents/{path...}", repoHandler.GetRepoContent)
+	auth.Put("/repos/{owner}/{repo}/contents/{path...}", repoHandler.CreateOrUpdateFileContent)
+	auth.Delete("/repos/{owner}/{repo}/contents/{path...}", repoHandler.DeleteFileContent)
+	auth.Post("/repos/{owner}/{repo}/forks", repoHandler.ForkRepo)
+	r.Get("/repos/{owner}/{repo}/forks", repoHandler.ListForks)
 
 	// ==========================================================================
 	// Issues
 	// ==========================================================================
-	s.mux.Handle("GET /issues", requireAuth(http.HandlerFunc(issueHandler.ListIssues)))
-	s.mux.Handle("GET /user/issues", requireAuth(http.HandlerFunc(issueHandler.ListAuthenticatedUserIssues)))
-	s.mux.Handle("GET /orgs/{org}/issues", requireAuth(http.HandlerFunc(issueHandler.ListOrgIssues)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/issues", issueHandler.ListRepoIssues)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/issues/{issue_number}", issueHandler.GetIssue)
-	s.mux.Handle("POST /repos/{owner}/{repo}/issues", requireAuth(http.HandlerFunc(issueHandler.CreateIssue)))
-	s.mux.Handle("PATCH /repos/{owner}/{repo}/issues/{issue_number}", requireAuth(http.HandlerFunc(issueHandler.UpdateIssue)))
-	s.mux.Handle("PUT /repos/{owner}/{repo}/issues/{issue_number}/lock", requireAuth(http.HandlerFunc(issueHandler.LockIssue)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/issues/{issue_number}/lock", requireAuth(http.HandlerFunc(issueHandler.UnlockIssue)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/assignees", issueHandler.ListIssueAssignees)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/assignees/{assignee}", issueHandler.CheckAssignee)
-	s.mux.Handle("POST /repos/{owner}/{repo}/issues/{issue_number}/assignees", requireAuth(http.HandlerFunc(issueHandler.AddAssignees)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/issues/{issue_number}/assignees", requireAuth(http.HandlerFunc(issueHandler.RemoveAssignees)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/issues/{issue_number}/events", issueHandler.ListIssueEvents)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/issues/events/{event_id}", issueHandler.GetIssueEvent)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/issues/events", issueHandler.ListRepoIssueEvents)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/issues/{issue_number}/timeline", issueHandler.ListIssueTimeline)
+	auth.Get("/issues", issueHandler.ListIssues)
+	auth.Get("/user/issues", issueHandler.ListAuthenticatedUserIssues)
+	auth.Get("/orgs/{org}/issues", issueHandler.ListOrgIssues)
+	r.Get("/repos/{owner}/{repo}/issues", issueHandler.ListRepoIssues)
+	r.Get("/repos/{owner}/{repo}/issues/{issue_number}", issueHandler.GetIssue)
+	auth.Post("/repos/{owner}/{repo}/issues", issueHandler.CreateIssue)
+	auth.Patch("/repos/{owner}/{repo}/issues/{issue_number}", issueHandler.UpdateIssue)
+	auth.Put("/repos/{owner}/{repo}/issues/{issue_number}/lock", issueHandler.LockIssue)
+	auth.Delete("/repos/{owner}/{repo}/issues/{issue_number}/lock", issueHandler.UnlockIssue)
+	r.Get("/repos/{owner}/{repo}/assignees", issueHandler.ListIssueAssignees)
+	r.Get("/repos/{owner}/{repo}/assignees/{assignee}", issueHandler.CheckAssignee)
+	auth.Post("/repos/{owner}/{repo}/issues/{issue_number}/assignees", issueHandler.AddAssignees)
+	auth.Delete("/repos/{owner}/{repo}/issues/{issue_number}/assignees", issueHandler.RemoveAssignees)
+	r.Get("/repos/{owner}/{repo}/issues/{issue_number}/events", issueHandler.ListIssueEvents)
+	r.Get("/repos/{owner}/{repo}/issues/events/{event_id}", issueHandler.GetIssueEvent)
+	r.Get("/repos/{owner}/{repo}/issues/events", issueHandler.ListRepoIssueEvents)
+	r.Get("/repos/{owner}/{repo}/issues/{issue_number}/timeline", issueHandler.ListIssueTimeline)
 
 	// ==========================================================================
 	// Pull Requests
 	// ==========================================================================
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/pulls", pullHandler.ListPulls)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/pulls/{pull_number}", pullHandler.GetPull)
-	s.mux.Handle("POST /repos/{owner}/{repo}/pulls", requireAuth(http.HandlerFunc(pullHandler.CreatePull)))
-	s.mux.Handle("PATCH /repos/{owner}/{repo}/pulls/{pull_number}", requireAuth(http.HandlerFunc(pullHandler.UpdatePull)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/pulls/{pull_number}/commits", pullHandler.ListPullCommits)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/pulls/{pull_number}/files", pullHandler.ListPullFiles)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/pulls/{pull_number}/merge", pullHandler.CheckPullMerged)
-	s.mux.Handle("PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge", requireAuth(http.HandlerFunc(pullHandler.MergePull)))
-	s.mux.Handle("PUT /repos/{owner}/{repo}/pulls/{pull_number}/update-branch", requireAuth(http.HandlerFunc(pullHandler.UpdatePullBranch)))
+	r.Get("/repos/{owner}/{repo}/pulls", pullHandler.ListPulls)
+	r.Get("/repos/{owner}/{repo}/pulls/{pull_number}", pullHandler.GetPull)
+	auth.Post("/repos/{owner}/{repo}/pulls", pullHandler.CreatePull)
+	auth.Patch("/repos/{owner}/{repo}/pulls/{pull_number}", pullHandler.UpdatePull)
+	r.Get("/repos/{owner}/{repo}/pulls/{pull_number}/commits", pullHandler.ListPullCommits)
+	r.Get("/repos/{owner}/{repo}/pulls/{pull_number}/files", pullHandler.ListPullFiles)
+	r.Get("/repos/{owner}/{repo}/pulls/{pull_number}/merge", pullHandler.CheckPullMerged)
+	auth.Put("/repos/{owner}/{repo}/pulls/{pull_number}/merge", pullHandler.MergePull)
+	auth.Put("/repos/{owner}/{repo}/pulls/{pull_number}/update-branch", pullHandler.UpdatePullBranch)
 
 	// Pull Request Reviews
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews", pullHandler.ListPullReviews)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}", pullHandler.GetPullReview)
-	s.mux.Handle("POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews", requireAuth(http.HandlerFunc(pullHandler.CreatePullReview)))
-	s.mux.Handle("PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}", requireAuth(http.HandlerFunc(pullHandler.UpdatePullReview)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}", requireAuth(http.HandlerFunc(pullHandler.DeletePullReview)))
-	s.mux.Handle("POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/events", requireAuth(http.HandlerFunc(pullHandler.SubmitPullReview)))
-	s.mux.Handle("PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/dismissals", requireAuth(http.HandlerFunc(pullHandler.DismissPullReview)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments", pullHandler.ListReviewComments)
+	r.Get("/repos/{owner}/{repo}/pulls/{pull_number}/reviews", pullHandler.ListPullReviews)
+	r.Get("/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}", pullHandler.GetPullReview)
+	auth.Post("/repos/{owner}/{repo}/pulls/{pull_number}/reviews", pullHandler.CreatePullReview)
+	auth.Put("/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}", pullHandler.UpdatePullReview)
+	auth.Delete("/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}", pullHandler.DeletePullReview)
+	auth.Post("/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/events", pullHandler.SubmitPullReview)
+	auth.Put("/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/dismissals", pullHandler.DismissPullReview)
+	r.Get("/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments", pullHandler.ListReviewComments)
 
 	// Pull Request Review Comments
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/pulls/{pull_number}/comments", pullHandler.ListPullReviewComments)
-	s.mux.Handle("POST /repos/{owner}/{repo}/pulls/{pull_number}/comments", requireAuth(http.HandlerFunc(pullHandler.CreatePullReviewComment)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/pulls/comments/{comment_id}", pullHandler.GetPullReviewComment)
-	s.mux.Handle("PATCH /repos/{owner}/{repo}/pulls/comments/{comment_id}", requireAuth(http.HandlerFunc(pullHandler.UpdatePullReviewComment)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/pulls/comments/{comment_id}", requireAuth(http.HandlerFunc(pullHandler.DeletePullReviewComment)))
+	r.Get("/repos/{owner}/{repo}/pulls/{pull_number}/comments", pullHandler.ListPullReviewComments)
+	auth.Post("/repos/{owner}/{repo}/pulls/{pull_number}/comments", pullHandler.CreatePullReviewComment)
+	r.Get("/repos/{owner}/{repo}/pulls/comments/{comment_id}", pullHandler.GetPullReviewComment)
+	auth.Patch("/repos/{owner}/{repo}/pulls/comments/{comment_id}", pullHandler.UpdatePullReviewComment)
+	auth.Delete("/repos/{owner}/{repo}/pulls/comments/{comment_id}", pullHandler.DeletePullReviewComment)
 
 	// Requested Reviewers
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers", pullHandler.ListRequestedReviewers)
-	s.mux.Handle("POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers", requireAuth(http.HandlerFunc(pullHandler.RequestReviewers)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers", requireAuth(http.HandlerFunc(pullHandler.RemoveRequestedReviewers)))
+	r.Get("/repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers", pullHandler.ListRequestedReviewers)
+	auth.Post("/repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers", pullHandler.RequestReviewers)
+	auth.Delete("/repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers", pullHandler.RemoveRequestedReviewers)
 
 	// ==========================================================================
 	// Labels
 	// ==========================================================================
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/labels", labelHandler.ListRepoLabels)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/labels/{name}", labelHandler.GetLabel)
-	s.mux.Handle("POST /repos/{owner}/{repo}/labels", requireAuth(http.HandlerFunc(labelHandler.CreateLabel)))
-	s.mux.Handle("PATCH /repos/{owner}/{repo}/labels/{name}", requireAuth(http.HandlerFunc(labelHandler.UpdateLabel)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/labels/{name}", requireAuth(http.HandlerFunc(labelHandler.DeleteLabel)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/issues/{issue_number}/labels", labelHandler.ListIssueLabels)
-	s.mux.Handle("POST /repos/{owner}/{repo}/issues/{issue_number}/labels", requireAuth(http.HandlerFunc(labelHandler.AddIssueLabels)))
-	s.mux.Handle("PUT /repos/{owner}/{repo}/issues/{issue_number}/labels", requireAuth(http.HandlerFunc(labelHandler.SetIssueLabels)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels", requireAuth(http.HandlerFunc(labelHandler.RemoveAllIssueLabels)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}", requireAuth(http.HandlerFunc(labelHandler.RemoveIssueLabel)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/milestones/{milestone_number}/labels", labelHandler.ListLabelsForMilestone)
+	r.Get("/repos/{owner}/{repo}/labels", labelHandler.ListRepoLabels)
+	r.Get("/repos/{owner}/{repo}/labels/{name}", labelHandler.GetLabel)
+	auth.Post("/repos/{owner}/{repo}/labels", labelHandler.CreateLabel)
+	auth.Patch("/repos/{owner}/{repo}/labels/{name}", labelHandler.UpdateLabel)
+	auth.Delete("/repos/{owner}/{repo}/labels/{name}", labelHandler.DeleteLabel)
+	r.Get("/repos/{owner}/{repo}/issues/{issue_number}/labels", labelHandler.ListIssueLabels)
+	auth.Post("/repos/{owner}/{repo}/issues/{issue_number}/labels", labelHandler.AddIssueLabels)
+	auth.Put("/repos/{owner}/{repo}/issues/{issue_number}/labels", labelHandler.SetIssueLabels)
+	auth.Delete("/repos/{owner}/{repo}/issues/{issue_number}/labels", labelHandler.RemoveAllIssueLabels)
+	auth.Delete("/repos/{owner}/{repo}/issues/{issue_number}/labels/{name}", labelHandler.RemoveIssueLabel)
+	r.Get("/repos/{owner}/{repo}/milestones/{milestone_number}/labels", labelHandler.ListLabelsForMilestone)
 
 	// ==========================================================================
 	// Milestones
 	// ==========================================================================
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/milestones", milestoneHandler.ListMilestones)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/milestones/{milestone_number}", milestoneHandler.GetMilestone)
-	s.mux.Handle("POST /repos/{owner}/{repo}/milestones", requireAuth(http.HandlerFunc(milestoneHandler.CreateMilestone)))
-	s.mux.Handle("PATCH /repos/{owner}/{repo}/milestones/{milestone_number}", requireAuth(http.HandlerFunc(milestoneHandler.UpdateMilestone)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/milestones/{milestone_number}", requireAuth(http.HandlerFunc(milestoneHandler.DeleteMilestone)))
+	r.Get("/repos/{owner}/{repo}/milestones", milestoneHandler.ListMilestones)
+	r.Get("/repos/{owner}/{repo}/milestones/{milestone_number}", milestoneHandler.GetMilestone)
+	auth.Post("/repos/{owner}/{repo}/milestones", milestoneHandler.CreateMilestone)
+	auth.Patch("/repos/{owner}/{repo}/milestones/{milestone_number}", milestoneHandler.UpdateMilestone)
+	auth.Delete("/repos/{owner}/{repo}/milestones/{milestone_number}", milestoneHandler.DeleteMilestone)
 
 	// ==========================================================================
 	// Comments (Issue & Commit)
 	// ==========================================================================
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/issues/{issue_number}/comments", commentHandler.ListIssueComments)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/issues/comments/{comment_id}", commentHandler.GetIssueComment)
-	s.mux.Handle("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", requireAuth(http.HandlerFunc(commentHandler.CreateIssueComment)))
-	s.mux.Handle("PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}", requireAuth(http.HandlerFunc(commentHandler.UpdateIssueComment)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}", requireAuth(http.HandlerFunc(commentHandler.DeleteIssueComment)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/issues/comments", commentHandler.ListRepoComments)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/commits/{commit_sha}/comments", commentHandler.ListCommitComments)
-	s.mux.Handle("POST /repos/{owner}/{repo}/commits/{commit_sha}/comments", requireAuth(http.HandlerFunc(commentHandler.CreateCommitComment)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/comments/{comment_id}", commentHandler.GetCommitComment)
-	s.mux.Handle("PATCH /repos/{owner}/{repo}/comments/{comment_id}", requireAuth(http.HandlerFunc(commentHandler.UpdateCommitComment)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/comments/{comment_id}", requireAuth(http.HandlerFunc(commentHandler.DeleteCommitComment)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/comments", commentHandler.ListRepoCommitComments)
+	r.Get("/repos/{owner}/{repo}/issues/{issue_number}/comments", commentHandler.ListIssueComments)
+	r.Get("/repos/{owner}/{repo}/issues/comments/{comment_id}", commentHandler.GetIssueComment)
+	auth.Post("/repos/{owner}/{repo}/issues/{issue_number}/comments", commentHandler.CreateIssueComment)
+	auth.Patch("/repos/{owner}/{repo}/issues/comments/{comment_id}", commentHandler.UpdateIssueComment)
+	auth.Delete("/repos/{owner}/{repo}/issues/comments/{comment_id}", commentHandler.DeleteIssueComment)
+	r.Get("/repos/{owner}/{repo}/issues/comments", commentHandler.ListRepoComments)
+	r.Get("/repos/{owner}/{repo}/commits/{commit_sha}/comments", commentHandler.ListCommitComments)
+	auth.Post("/repos/{owner}/{repo}/commits/{commit_sha}/comments", commentHandler.CreateCommitComment)
+	r.Get("/repos/{owner}/{repo}/comments/{comment_id}", commentHandler.GetCommitComment)
+	auth.Patch("/repos/{owner}/{repo}/comments/{comment_id}", commentHandler.UpdateCommitComment)
+	auth.Delete("/repos/{owner}/{repo}/comments/{comment_id}", commentHandler.DeleteCommitComment)
+	r.Get("/repos/{owner}/{repo}/comments", commentHandler.ListRepoCommitComments)
 
 	// ==========================================================================
 	// Teams
 	// ==========================================================================
-	s.mux.HandleFunc("GET /orgs/{org}/teams", teamHandler.ListOrgTeams)
-	s.mux.HandleFunc("GET /orgs/{org}/teams/{team_slug}", teamHandler.GetOrgTeam)
-	s.mux.Handle("POST /orgs/{org}/teams", requireAuth(http.HandlerFunc(teamHandler.CreateTeam)))
-	s.mux.Handle("PATCH /orgs/{org}/teams/{team_slug}", requireAuth(http.HandlerFunc(teamHandler.UpdateTeam)))
-	s.mux.Handle("DELETE /orgs/{org}/teams/{team_slug}", requireAuth(http.HandlerFunc(teamHandler.DeleteTeam)))
-	s.mux.HandleFunc("GET /orgs/{org}/teams/{team_slug}/members", teamHandler.ListTeamMembers)
-	s.mux.Handle("GET /orgs/{org}/teams/{team_slug}/memberships/{username}", requireAuth(http.HandlerFunc(teamHandler.GetTeamMembership)))
-	s.mux.Handle("PUT /orgs/{org}/teams/{team_slug}/memberships/{username}", requireAuth(http.HandlerFunc(teamHandler.AddTeamMember)))
-	s.mux.Handle("DELETE /orgs/{org}/teams/{team_slug}/memberships/{username}", requireAuth(http.HandlerFunc(teamHandler.RemoveTeamMember)))
-	s.mux.HandleFunc("GET /orgs/{org}/teams/{team_slug}/repos", teamHandler.ListTeamRepos)
-	s.mux.HandleFunc("GET /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", teamHandler.CheckTeamRepoPermission)
-	s.mux.Handle("PUT /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", requireAuth(http.HandlerFunc(teamHandler.AddTeamRepo)))
-	s.mux.Handle("DELETE /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", requireAuth(http.HandlerFunc(teamHandler.RemoveTeamRepo)))
-	s.mux.HandleFunc("GET /orgs/{org}/teams/{team_slug}/teams", teamHandler.ListChildTeams)
-	s.mux.Handle("GET /user/teams", requireAuth(http.HandlerFunc(teamHandler.ListAuthenticatedUserTeams)))
+	r.Get("/orgs/{org}/teams", teamHandler.ListOrgTeams)
+	r.Get("/orgs/{org}/teams/{team_slug}", teamHandler.GetOrgTeam)
+	auth.Post("/orgs/{org}/teams", teamHandler.CreateTeam)
+	auth.Patch("/orgs/{org}/teams/{team_slug}", teamHandler.UpdateTeam)
+	auth.Delete("/orgs/{org}/teams/{team_slug}", teamHandler.DeleteTeam)
+	r.Get("/orgs/{org}/teams/{team_slug}/members", teamHandler.ListTeamMembers)
+	auth.Get("/orgs/{org}/teams/{team_slug}/memberships/{username}", teamHandler.GetTeamMembership)
+	auth.Put("/orgs/{org}/teams/{team_slug}/memberships/{username}", teamHandler.AddTeamMember)
+	auth.Delete("/orgs/{org}/teams/{team_slug}/memberships/{username}", teamHandler.RemoveTeamMember)
+	r.Get("/orgs/{org}/teams/{team_slug}/repos", teamHandler.ListTeamRepos)
+	r.Get("/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", teamHandler.CheckTeamRepoPermission)
+	auth.Put("/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", teamHandler.AddTeamRepo)
+	auth.Delete("/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", teamHandler.RemoveTeamRepo)
+	r.Get("/orgs/{org}/teams/{team_slug}/teams", teamHandler.ListChildTeams)
+	auth.Get("/user/teams", teamHandler.ListAuthenticatedUserTeams)
 
 	// ==========================================================================
 	// Releases
 	// ==========================================================================
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/releases", releaseHandler.ListReleases)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/releases/{release_id}", releaseHandler.GetRelease)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/releases/latest", releaseHandler.GetLatestRelease)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/releases/tags/{tag}", releaseHandler.GetReleaseByTag)
-	s.mux.Handle("POST /repos/{owner}/{repo}/releases", requireAuth(http.HandlerFunc(releaseHandler.CreateRelease)))
-	s.mux.Handle("PATCH /repos/{owner}/{repo}/releases/{release_id}", requireAuth(http.HandlerFunc(releaseHandler.UpdateRelease)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/releases/{release_id}", requireAuth(http.HandlerFunc(releaseHandler.DeleteRelease)))
-	s.mux.Handle("POST /repos/{owner}/{repo}/releases/generate-notes", requireAuth(http.HandlerFunc(releaseHandler.GenerateReleaseNotes)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/releases/{release_id}/assets", releaseHandler.ListReleaseAssets)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/releases/assets/{asset_id}", releaseHandler.GetReleaseAsset)
-	s.mux.Handle("PATCH /repos/{owner}/{repo}/releases/assets/{asset_id}", requireAuth(http.HandlerFunc(releaseHandler.UpdateReleaseAsset)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/releases/assets/{asset_id}", requireAuth(http.HandlerFunc(releaseHandler.DeleteReleaseAsset)))
-	s.mux.Handle("POST /repos/{owner}/{repo}/releases/{release_id}/assets", requireAuth(http.HandlerFunc(releaseHandler.UploadReleaseAsset)))
+	r.Get("/repos/{owner}/{repo}/releases", releaseHandler.ListReleases)
+	r.Get("/repos/{owner}/{repo}/releases/{release_id}", releaseHandler.GetRelease)
+	r.Get("/repos/{owner}/{repo}/releases/latest", releaseHandler.GetLatestRelease)
+	r.Get("/repos/{owner}/{repo}/releases/tags/{tag}", releaseHandler.GetReleaseByTag)
+	auth.Post("/repos/{owner}/{repo}/releases", releaseHandler.CreateRelease)
+	auth.Patch("/repos/{owner}/{repo}/releases/{release_id}", releaseHandler.UpdateRelease)
+	auth.Delete("/repos/{owner}/{repo}/releases/{release_id}", releaseHandler.DeleteRelease)
+	auth.Post("/repos/{owner}/{repo}/releases/generate-notes", releaseHandler.GenerateReleaseNotes)
+	r.Get("/repos/{owner}/{repo}/releases/{release_id}/assets", releaseHandler.ListReleaseAssets)
+	r.Get("/repos/{owner}/{repo}/releases/assets/{asset_id}", releaseHandler.GetReleaseAsset)
+	auth.Patch("/repos/{owner}/{repo}/releases/assets/{asset_id}", releaseHandler.UpdateReleaseAsset)
+	auth.Delete("/repos/{owner}/{repo}/releases/assets/{asset_id}", releaseHandler.DeleteReleaseAsset)
+	auth.Post("/repos/{owner}/{repo}/releases/{release_id}/assets", releaseHandler.UploadReleaseAsset)
+	r.Get("/repos/{owner}/{repo}/releases/assets/{asset_id}/download", releaseHandler.DownloadReleaseAsset)
 
 	// ==========================================================================
 	// Stars
 	// ==========================================================================
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/stargazers", starHandler.ListStargazers)
-	s.mux.HandleFunc("GET /users/{username}/starred", starHandler.ListStarredRepos)
-	s.mux.Handle("GET /user/starred", requireAuth(http.HandlerFunc(starHandler.ListAuthenticatedUserStarredRepos)))
-	s.mux.Handle("GET /user/starred/{owner}/{repo}", requireAuth(http.HandlerFunc(starHandler.CheckRepoStarred)))
-	s.mux.Handle("PUT /user/starred/{owner}/{repo}", requireAuth(http.HandlerFunc(starHandler.StarRepo)))
-	s.mux.Handle("DELETE /user/starred/{owner}/{repo}", requireAuth(http.HandlerFunc(starHandler.UnstarRepo)))
+	r.Get("/repos/{owner}/{repo}/stargazers", starHandler.ListStargazers)
+	r.Get("/users/{username}/starred", starHandler.ListStarredRepos)
+	auth.Get("/user/starred", starHandler.ListAuthenticatedUserStarredRepos)
+	auth.Get("/user/starred/{owner}/{repo}", starHandler.CheckRepoStarred)
+	auth.Put("/user/starred/{owner}/{repo}", starHandler.StarRepo)
+	auth.Delete("/user/starred/{owner}/{repo}", starHandler.UnstarRepo)
 
 	// ==========================================================================
 	// Watches (Subscriptions)
 	// ==========================================================================
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/subscribers", watchHandler.ListWatchers)
-	s.mux.Handle("GET /repos/{owner}/{repo}/subscription", requireAuth(http.HandlerFunc(watchHandler.GetSubscription)))
-	s.mux.Handle("PUT /repos/{owner}/{repo}/subscription", requireAuth(http.HandlerFunc(watchHandler.SetSubscription)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/subscription", requireAuth(http.HandlerFunc(watchHandler.DeleteSubscription)))
-	s.mux.HandleFunc("GET /users/{username}/subscriptions", watchHandler.ListWatchedRepos)
-	s.mux.Handle("GET /user/subscriptions", requireAuth(http.HandlerFunc(watchHandler.ListAuthenticatedUserWatchedRepos)))
+	r.Get("/repos/{owner}/{repo}/subscribers", watchHandler.ListWatchers)
+	auth.Get("/repos/{owner}/{repo}/subscription", watchHandler.GetSubscription)
+	auth.Put("/repos/{owner}/{repo}/subscription", watchHandler.SetSubscription)
+	auth.Delete("/repos/{owner}/{repo}/subscription", watchHandler.DeleteSubscription)
+	r.Get("/users/{username}/subscriptions", watchHandler.ListWatchedRepos)
+	auth.Get("/user/subscriptions", watchHandler.ListAuthenticatedUserWatchedRepos)
 
 	// ==========================================================================
 	// Webhooks
 	// ==========================================================================
-	s.mux.Handle("GET /repos/{owner}/{repo}/hooks", requireAuth(http.HandlerFunc(webhookHandler.ListRepoWebhooks)))
-	s.mux.Handle("GET /repos/{owner}/{repo}/hooks/{hook_id}", requireAuth(http.HandlerFunc(webhookHandler.GetRepoWebhook)))
-	s.mux.Handle("POST /repos/{owner}/{repo}/hooks", requireAuth(http.HandlerFunc(webhookHandler.CreateRepoWebhook)))
-	s.mux.Handle("PATCH /repos/{owner}/{repo}/hooks/{hook_id}", requireAuth(http.HandlerFunc(webhookHandler.UpdateRepoWebhook)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/hooks/{hook_id}", requireAuth(http.HandlerFunc(webhookHandler.DeleteRepoWebhook)))
-	s.mux.Handle("POST /repos/{owner}/{repo}/hooks/{hook_id}/pings", requireAuth(http.HandlerFunc(webhookHandler.PingRepoWebhook)))
-	s.mux.Handle("POST /repos/{owner}/{repo}/hooks/{hook_id}/tests", requireAuth(http.HandlerFunc(webhookHandler.TestRepoWebhook)))
-	s.mux.Handle("GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries", requireAuth(http.HandlerFunc(webhookHandler.ListWebhookDeliveries)))
-	s.mux.Handle("GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id}", requireAuth(http.HandlerFunc(webhookHandler.GetWebhookDelivery)))
-	s.mux.Handle("POST /repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id}/attempts", requireAuth(http.HandlerFunc(webhookHandler.RedeliverWebhook)))
-	s.mux.Handle("GET /orgs/{org}/hooks", requireAuth(http.HandlerFunc(webhookHandler.ListOrgWebhooks)))
-	s.mux.Handle("GET /orgs/{org}/hooks/{hook_id}", requireAuth(http.HandlerFunc(webhookHandler.GetOrgWebhook)))
-	s.mux.Handle("POST /orgs/{org}/hooks", requireAuth(http.HandlerFunc(webhookHandler.CreateOrgWebhook)))
-	s.mux.Handle("PATCH /orgs/{org}/hooks/{hook_id}", requireAuth(http.HandlerFunc(webhookHandler.UpdateOrgWebhook)))
-	s.mux.Handle("DELETE /orgs/{org}/hooks/{hook_id}", requireAuth(http.HandlerFunc(webhookHandler.DeleteOrgWebhook)))
-	s.mux.Handle("POST /orgs/{org}/hooks/{hook_id}/pings", requireAuth(http.HandlerFunc(webhookHandler.PingOrgWebhook)))
+	auth.Get("/repos/{owner}/{repo}/hooks", webhookHandler.ListRepoWebhooks)
+	auth.Get("/repos/{owner}/{repo}/hooks/{hook_id}", webhookHandler.GetRepoWebhook)
+	auth.Post("/repos/{owner}/{repo}/hooks", webhookHandler.CreateRepoWebhook)
+	auth.Patch("/repos/{owner}/{repo}/hooks/{hook_id}", webhookHandler.UpdateRepoWebhook)
+	auth.Delete("/repos/{owner}/{repo}/hooks/{hook_id}", webhookHandler.DeleteRepoWebhook)
+	auth.Post("/repos/{owner}/{repo}/hooks/{hook_id}/pings", webhookHandler.PingRepoWebhook)
+	auth.Post("/repos/{owner}/{repo}/hooks/{hook_id}/tests", webhookHandler.TestRepoWebhook)
+	auth.Get("/repos/{owner}/{repo}/hooks/{hook_id}/deliveries", webhookHandler.ListWebhookDeliveries)
+	auth.Get("/repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id}", webhookHandler.GetWebhookDelivery)
+	auth.Post("/repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id}/attempts", webhookHandler.RedeliverWebhook)
+	auth.Get("/orgs/{org}/hooks", webhookHandler.ListOrgWebhooks)
+	auth.Get("/orgs/{org}/hooks/{hook_id}", webhookHandler.GetOrgWebhook)
+	auth.Post("/orgs/{org}/hooks", webhookHandler.CreateOrgWebhook)
+	auth.Patch("/orgs/{org}/hooks/{hook_id}", webhookHandler.UpdateOrgWebhook)
+	auth.Delete("/orgs/{org}/hooks/{hook_id}", webhookHandler.DeleteOrgWebhook)
+	auth.Post("/orgs/{org}/hooks/{hook_id}/pings", webhookHandler.PingOrgWebhook)
+	auth.Get("/orgs/{org}/hooks/{hook_id}/deliveries", webhookHandler.ListOrgWebhookDeliveries)
+	auth.Get("/orgs/{org}/hooks/{hook_id}/deliveries/{delivery_id}", webhookHandler.GetOrgWebhookDelivery)
+	auth.Post("/orgs/{org}/hooks/{hook_id}/deliveries/{delivery_id}/attempts", webhookHandler.RedeliverOrgWebhook)
 
 	// ==========================================================================
 	// Notifications
 	// ==========================================================================
-	s.mux.Handle("GET /notifications", requireAuth(http.HandlerFunc(notificationHandler.ListNotifications)))
-	s.mux.Handle("PUT /notifications", requireAuth(http.HandlerFunc(notificationHandler.MarkAllAsRead)))
-	s.mux.Handle("GET /notifications/threads/{thread_id}", requireAuth(http.HandlerFunc(notificationHandler.GetThread)))
-	s.mux.Handle("PATCH /notifications/threads/{thread_id}", requireAuth(http.HandlerFunc(notificationHandler.MarkThreadAsRead)))
-	s.mux.Handle("DELETE /notifications/threads/{thread_id}", requireAuth(http.HandlerFunc(notificationHandler.MarkThreadAsDone)))
-	s.mux.Handle("GET /notifications/threads/{thread_id}/subscription", requireAuth(http.HandlerFunc(notificationHandler.GetThreadSubscription)))
-	s.mux.Handle("PUT /notifications/threads/{thread_id}/subscription", requireAuth(http.HandlerFunc(notificationHandler.SetThreadSubscription)))
-	s.mux.Handle("DELETE /notifications/threads/{thread_id}/subscription", requireAuth(http.HandlerFunc(notificationHandler.DeleteThreadSubscription)))
-	s.mux.Handle("GET /repos/{owner}/{repo}/notifications", requireAuth(http.HandlerFunc(notificationHandler.ListRepoNotifications)))
-	s.mux.Handle("PUT /repos/{owner}/{repo}/notifications", requireAuth(http.HandlerFunc(notificationHandler.MarkRepoNotificationsAsRead)))
+	auth.Get("/notifications", notificationHandler.ListNotifications)
+	auth.Put("/notifications", notificationHandler.MarkAllAsRead)
+	auth.Get("/notifications/threads/{thread_id}", notificationHandler.GetThread)
+	auth.Patch("/notifications/threads/{thread_id}", notificationHandler.MarkThreadAsRead)
+	auth.Delete("/notifications/threads/{thread_id}", notificationHandler.MarkThreadAsDone)
+	auth.Get("/notifications/threads/{thread_id}/subscription", notificationHandler.GetThreadSubscription)
+	auth.Put("/notifications/threads/{thread_id}/subscription", notificationHandler.SetThreadSubscription)
+	auth.Delete("/notifications/threads/{thread_id}/subscription", notificationHandler.DeleteThreadSubscription)
+	auth.Get("/repos/{owner}/{repo}/notifications", notificationHandler.ListRepoNotifications)
+	auth.Put("/repos/{owner}/{repo}/notifications", notificationHandler.MarkRepoNotificationsAsRead)
 
 	// ==========================================================================
 	// Reactions
 	// ==========================================================================
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/issues/{issue_number}/reactions", reactionHandler.ListIssueReactions)
-	s.mux.Handle("POST /repos/{owner}/{repo}/issues/{issue_number}/reactions", requireAuth(http.HandlerFunc(reactionHandler.CreateIssueReaction)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/issues/{issue_number}/reactions/{reaction_id}", requireAuth(http.HandlerFunc(reactionHandler.DeleteIssueReaction)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions", reactionHandler.ListIssueCommentReactions)
-	s.mux.Handle("POST /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions", requireAuth(http.HandlerFunc(reactionHandler.CreateIssueCommentReaction)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}", requireAuth(http.HandlerFunc(reactionHandler.DeleteIssueCommentReaction)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions", reactionHandler.ListPullReviewCommentReactions)
-	s.mux.Handle("POST /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions", requireAuth(http.HandlerFunc(reactionHandler.CreatePullReviewCommentReaction)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions/{reaction_id}", requireAuth(http.HandlerFunc(reactionHandler.DeletePullReviewCommentReaction)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/comments/{comment_id}/reactions", reactionHandler.ListCommitCommentReactions)
-	s.mux.Handle("POST /repos/{owner}/{repo}/comments/{comment_id}/reactions", requireAuth(http.HandlerFunc(reactionHandler.CreateCommitCommentReaction)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/comments/{comment_id}/reactions/{reaction_id}", requireAuth(http.HandlerFunc(reactionHandler.DeleteCommitCommentReaction)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/releases/{release_id}/reactions", reactionHandler.ListReleaseReactions)
-	s.mux.Handle("POST /repos/{owner}/{repo}/releases/{release_id}/reactions", requireAuth(http.HandlerFunc(reactionHandler.CreateReleaseReaction)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/releases/{release_id}/reactions/{reaction_id}", requireAuth(http.HandlerFunc(reactionHandler.DeleteReleaseReaction)))
+	r.Get("/repos/{owner}/{repo}/issues/{issue_number}/reactions", reactionHandler.ListIssueReactions)
+	auth.Post("/repos/{owner}/{repo}/issues/{issue_number}/reactions", reactionHandler.CreateIssueReaction)
+	auth.Delete("/repos/{owner}/{repo}/issues/{issue_number}/reactions/{reaction_id}", reactionHandler.DeleteIssueReaction)
+	r.Get("/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions", reactionHandler.ListIssueCommentReactions)
+	auth.Post("/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions", reactionHandler.CreateIssueCommentReaction)
+	auth.Delete("/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}", reactionHandler.DeleteIssueCommentReaction)
+	r.Get("/repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions", reactionHandler.ListPullReviewCommentReactions)
+	auth.Post("/repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions", reactionHandler.CreatePullReviewCommentReaction)
+	auth.Delete("/repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions/{reaction_id}", reactionHandler.DeletePullReviewCommentReaction)
+	r.Get("/repos/{owner}/{repo}/comments/{comment_id}/reactions", reactionHandler.ListCommitCommentReactions)
+	auth.Post("/repos/{owner}/{repo}/comments/{comment_id}/reactions", reactionHandler.CreateCommitCommentReaction)
+	auth.Delete("/repos/{owner}/{repo}/comments/{comment_id}/reactions/{reaction_id}", reactionHandler.DeleteCommitCommentReaction)
+	r.Get("/repos/{owner}/{repo}/releases/{release_id}/reactions", reactionHandler.ListReleaseReactions)
+	auth.Post("/repos/{owner}/{repo}/releases/{release_id}/reactions", reactionHandler.CreateReleaseReaction)
+	auth.Delete("/repos/{owner}/{repo}/releases/{release_id}/reactions/{reaction_id}", reactionHandler.DeleteReleaseReaction)
 
 	// ==========================================================================
 	// Collaborators
 	// ==========================================================================
-	s.mux.Handle("GET /repos/{owner}/{repo}/collaborators", requireAuth(http.HandlerFunc(collaboratorHandler.ListCollaborators)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/collaborators/{username}", collaboratorHandler.CheckCollaborator)
-	s.mux.Handle("PUT /repos/{owner}/{repo}/collaborators/{username}", requireAuth(http.HandlerFunc(collaboratorHandler.AddCollaborator)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/collaborators/{username}", requireAuth(http.HandlerFunc(collaboratorHandler.RemoveCollaborator)))
-	s.mux.Handle("GET /repos/{owner}/{repo}/collaborators/{username}/permission", requireAuth(http.HandlerFunc(collaboratorHandler.GetCollaboratorPermission)))
-	s.mux.Handle("GET /repos/{owner}/{repo}/invitations", requireAuth(http.HandlerFunc(collaboratorHandler.ListInvitations)))
-	s.mux.Handle("PATCH /repos/{owner}/{repo}/invitations/{invitation_id}", requireAuth(http.HandlerFunc(collaboratorHandler.UpdateInvitation)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/invitations/{invitation_id}", requireAuth(http.HandlerFunc(collaboratorHandler.DeleteInvitation)))
-	s.mux.Handle("GET /user/repository_invitations", requireAuth(http.HandlerFunc(collaboratorHandler.ListUserInvitations)))
-	s.mux.Handle("PATCH /user/repository_invitations/{invitation_id}", requireAuth(http.HandlerFunc(collaboratorHandler.AcceptInvitation)))
-	s.mux.Handle("DELETE /user/repository_invitations/{invitation_id}", requireAuth(http.HandlerFunc(collaboratorHandler.DeclineInvitation)))
+	auth.Get("/repos/{owner}/{repo}/collaborators", collaboratorHandler.ListCollaborators)
+	r.Get("/repos/{owner}/{repo}/collaborators/{username}", collaboratorHandler.CheckCollaborator)
+	auth.Put("/repos/{owner}/{repo}/collaborators/{username}", collaboratorHandler.AddCollaborator)
+	auth.Delete("/repos/{owner}/{repo}/collaborators/{username}", collaboratorHandler.RemoveCollaborator)
+	auth.Get("/repos/{owner}/{repo}/collaborators/{username}/permission", collaboratorHandler.GetCollaboratorPermission)
+	auth.Get("/repos/{owner}/{repo}/invitations", collaboratorHandler.ListInvitations)
+	auth.Patch("/repos/{owner}/{repo}/invitations/{invitation_id}", collaboratorHandler.UpdateInvitation)
+	auth.Delete("/repos/{owner}/{repo}/invitations/{invitation_id}", collaboratorHandler.DeleteInvitation)
+	auth.Get("/user/repository_invitations", collaboratorHandler.ListUserInvitations)
+	auth.Patch("/user/repository_invitations/{invitation_id}", collaboratorHandler.AcceptInvitation)
+	auth.Delete("/user/repository_invitations/{invitation_id}", collaboratorHandler.DeclineInvitation)
 
 	// ==========================================================================
 	// Branches
 	// ==========================================================================
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/branches", branchHandler.ListBranches)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/branches/{branch}", branchHandler.GetBranch)
-	s.mux.Handle("POST /repos/{owner}/{repo}/branches/{branch}/rename", requireAuth(http.HandlerFunc(branchHandler.RenameBranch)))
-	s.mux.Handle("POST /repos/{owner}/{repo}/merge-upstream", requireAuth(http.HandlerFunc(branchHandler.SyncFork)))
-	s.mux.Handle("GET /repos/{owner}/{repo}/branches/{branch}/protection", requireAuth(http.HandlerFunc(branchHandler.GetBranchProtection)))
-	s.mux.Handle("PUT /repos/{owner}/{repo}/branches/{branch}/protection", requireAuth(http.HandlerFunc(branchHandler.UpdateBranchProtection)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/branches/{branch}/protection", requireAuth(http.HandlerFunc(branchHandler.DeleteBranchProtection)))
-	s.mux.Handle("GET /repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks", requireAuth(http.HandlerFunc(branchHandler.GetRequiredStatusChecks)))
-	s.mux.Handle("PATCH /repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks", requireAuth(http.HandlerFunc(branchHandler.UpdateRequiredStatusChecks)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks", requireAuth(http.HandlerFunc(branchHandler.DeleteRequiredStatusChecks)))
-	s.mux.Handle("GET /repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews", requireAuth(http.HandlerFunc(branchHandler.GetRequiredPullRequestReviews)))
-	s.mux.Handle("PATCH /repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews", requireAuth(http.HandlerFunc(branchHandler.UpdateRequiredPullRequestReviews)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews", requireAuth(http.HandlerFunc(branchHandler.DeleteRequiredPullRequestReviews)))
-	s.mux.Handle("GET /repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins", requireAuth(http.HandlerFunc(branchHandler.GetAdminEnforcement)))
-	s.mux.Handle("POST /repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins", requireAuth(http.HandlerFunc(branchHandler.SetAdminEnforcement)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins", requireAuth(http.HandlerFunc(branchHandler.DeleteAdminEnforcement)))
+	r.Get("/repos/{owner}/{repo}/branches", branchHandler.ListBranches)
+	r.Get("/repos/{owner}/{repo}/branches/{branch}", branchHandler.GetBranch)
+	auth.Post("/repos/{owner}/{repo}/branches/{branch}/rename", branchHandler.RenameBranch)
+	auth.Get("/repos/{owner}/{repo}/branches/{branch}/protection", branchHandler.GetBranchProtection)
+	auth.Put("/repos/{owner}/{repo}/branches/{branch}/protection", branchHandler.UpdateBranchProtection)
+	auth.Delete("/repos/{owner}/{repo}/branches/{branch}/protection", branchHandler.DeleteBranchProtection)
+	auth.Get("/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks", branchHandler.GetRequiredStatusChecks)
+	auth.Patch("/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks", branchHandler.UpdateRequiredStatusChecks)
+	auth.Delete("/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks", branchHandler.DeleteRequiredStatusChecks)
+	auth.Get("/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures", branchHandler.GetRequiredSignatures)
+	auth.Post("/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures", branchHandler.CreateRequiredSignatures)
+	auth.Delete("/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures", branchHandler.DeleteRequiredSignatures)
 
 	// ==========================================================================
 	// Commits
 	// ==========================================================================
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/commits", commitHandler.ListCommits)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/commits/{ref}", commitHandler.GetCommit)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/compare/{basehead}", commitHandler.CompareCommits)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/commits/{commit_sha}/branches-where-head", commitHandler.ListBranchesForHead)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls", commitHandler.ListPullsForCommit)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/commits/{ref}/status", commitHandler.GetCombinedStatus)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/commits/{ref}/statuses", commitHandler.ListStatuses)
-	s.mux.Handle("POST /repos/{owner}/{repo}/statuses/{sha}", requireAuth(http.HandlerFunc(commitHandler.CreateStatus)))
+	r.Get("/repos/{owner}/{repo}/commits", commitHandler.ListCommits)
+	r.Get("/repos/{owner}/{repo}/commits/{ref}", commitHandler.GetCommit)
+	r.Get("/repos/{owner}/{repo}/compare/{basehead}", commitHandler.CompareCommits)
+	r.Get("/repos/{owner}/{repo}/commits/{commit_sha}/branches-where-head", commitHandler.ListBranchesForHead)
+	r.Get("/repos/{owner}/{repo}/commits/{commit_sha}/pulls", commitHandler.ListPullsForCommit)
+	r.Get("/repos/{owner}/{repo}/commits/{ref}/status", commitHandler.GetCombinedStatus)
+	r.Get("/repos/{owner}/{repo}/commits/{ref}/statuses", commitHandler.ListStatuses)
+	auth.Post("/repos/{owner}/{repo}/statuses/{sha}", commitHandler.CreateStatus)
 
 	// ==========================================================================
 	// Git Data (Low-level)
 	// ==========================================================================
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/git/blobs/{file_sha}", gitHandler.GetBlob)
-	s.mux.Handle("POST /repos/{owner}/{repo}/git/blobs", requireAuth(http.HandlerFunc(gitHandler.CreateBlob)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/git/commits/{commit_sha}", gitHandler.GetGitCommit)
-	s.mux.Handle("POST /repos/{owner}/{repo}/git/commits", requireAuth(http.HandlerFunc(gitHandler.CreateGitCommit)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/git/ref/{ref...}", gitHandler.GetRef)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/git/matching-refs/{ref...}", gitHandler.ListMatchingRefs)
-	s.mux.Handle("POST /repos/{owner}/{repo}/git/refs", requireAuth(http.HandlerFunc(gitHandler.CreateRef)))
-	s.mux.Handle("PATCH /repos/{owner}/{repo}/git/refs/{ref...}", requireAuth(http.HandlerFunc(gitHandler.UpdateRef)))
-	s.mux.Handle("DELETE /repos/{owner}/{repo}/git/refs/{ref...}", requireAuth(http.HandlerFunc(gitHandler.DeleteRef)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/git/trees/{tree_sha}", gitHandler.GetTree)
-	s.mux.Handle("POST /repos/{owner}/{repo}/git/trees", requireAuth(http.HandlerFunc(gitHandler.CreateTree)))
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/git/tags/{tag_sha}", gitHandler.GetTag)
-	s.mux.Handle("POST /repos/{owner}/{repo}/git/tags", requireAuth(http.HandlerFunc(gitHandler.CreateTag)))
+	r.Get("/repos/{owner}/{repo}/git/blobs/{file_sha}", gitHandler.GetBlob)
+	auth.Post("/repos/{owner}/{repo}/git/blobs", gitHandler.CreateBlob)
+	r.Get("/repos/{owner}/{repo}/git/commits/{commit_sha}", gitHandler.GetGitCommit)
+	auth.Post("/repos/{owner}/{repo}/git/commits", gitHandler.CreateGitCommit)
+	r.Get("/repos/{owner}/{repo}/git/ref/{ref...}", gitHandler.GetRef)
+	r.Get("/repos/{owner}/{repo}/git/matching-refs/{ref...}", gitHandler.ListMatchingRefs)
+	auth.Post("/repos/{owner}/{repo}/git/refs", gitHandler.CreateRef)
+	auth.Patch("/repos/{owner}/{repo}/git/refs/{ref...}", gitHandler.UpdateRef)
+	auth.Delete("/repos/{owner}/{repo}/git/refs/{ref...}", gitHandler.DeleteRef)
+	r.Get("/repos/{owner}/{repo}/git/trees/{tree_sha}", gitHandler.GetTree)
+	auth.Post("/repos/{owner}/{repo}/git/trees", gitHandler.CreateTree)
+	r.Get("/repos/{owner}/{repo}/git/tags/{tag_sha}", gitHandler.GetTag)
+	auth.Post("/repos/{owner}/{repo}/git/tags", gitHandler.CreateTag)
+	r.Get("/repos/{owner}/{repo}/git/tags", gitHandler.ListTags)
 
 	// ==========================================================================
 	// Search
 	// ==========================================================================
-	s.mux.HandleFunc("GET /search/repositories", searchHandler.SearchRepositories)
-	s.mux.HandleFunc("GET /search/code", searchHandler.SearchCode)
-	s.mux.HandleFunc("GET /search/commits", searchHandler.SearchCommits)
-	s.mux.HandleFunc("GET /search/issues", searchHandler.SearchIssues)
-	s.mux.HandleFunc("GET /search/users", searchHandler.SearchUsers)
-	s.mux.HandleFunc("GET /search/labels", searchHandler.SearchLabels)
-	s.mux.HandleFunc("GET /search/topics", searchHandler.SearchTopics)
+	r.Get("/search/repositories", searchHandler.SearchRepositories)
+	r.Get("/search/code", searchHandler.SearchCode)
+	r.Get("/search/commits", searchHandler.SearchCommits)
+	r.Get("/search/issues", searchHandler.SearchIssues)
+	r.Get("/search/users", searchHandler.SearchUsers)
+	r.Get("/search/labels", searchHandler.SearchLabels)
+	r.Get("/search/topics", searchHandler.SearchTopics)
 
 	// ==========================================================================
 	// Activity (Events & Feeds)
 	// ==========================================================================
-	s.mux.HandleFunc("GET /events", activityHandler.ListPublicEvents)
-	s.mux.HandleFunc("GET /repos/{owner}/{repo}/events", activityHandler.ListRepoEvents)
-	s.mux.HandleFunc("GET /networks/{owner}/{repo}/events", activityHandler.ListRepoNetworkEvents)
-	s.mux.HandleFunc("GET /orgs/{org}/events", activityHandler.ListOrgEvents)
-	s.mux.HandleFunc("GET /users/{username}/received_events", activityHandler.ListUserReceivedEvents)
-	s.mux.HandleFunc("GET /users/{username}/received_events/public", activityHandler.ListUserReceivedPublicEvents)
-	s.mux.HandleFunc("GET /users/{username}/events", activityHandler.ListUserEvents)
-	s.mux.HandleFunc("GET /users/{username}/events/public", activityHandler.ListUserPublicEvents)
-	s.mux.Handle("GET /users/{username}/events/orgs/{org}", requireAuth(http.HandlerFunc(activityHandler.ListUserOrgEvents)))
-	s.mux.Handle("GET /feeds", optionalAuth(http.HandlerFunc(activityHandler.ListFeeds)))
+	r.Get("/events", activityHandler.ListPublicEvents)
+	r.Get("/repos/{owner}/{repo}/events", activityHandler.ListRepoEvents)
+	r.Get("/networks/{owner}/{repo}/events", activityHandler.ListRepoNetworkEvents)
+	r.Get("/orgs/{org}/events", activityHandler.ListOrgEvents)
+	r.Get("/users/{username}/received_events", activityHandler.ListUserReceivedEvents)
+	r.Get("/users/{username}/received_events/public", activityHandler.ListUserReceivedPublicEvents)
+	r.Get("/users/{username}/events", activityHandler.ListUserEvents)
+	r.Get("/users/{username}/events/public", activityHandler.ListUserPublicEvents)
+	auth.Get("/users/{username}/events/orgs/{org}", activityHandler.ListUserOrgEvents)
+	optAuth.Get("/feeds", activityHandler.ListFeeds)
 }

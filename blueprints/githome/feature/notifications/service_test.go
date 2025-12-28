@@ -14,7 +14,7 @@ import (
 	"github.com/go-mizu/blueprints/githome/store/duckdb"
 )
 
-func setupTestService(t *testing.T) (*notifications.Service, *duckdb.Store, func()) {
+func setupTestService(t *testing.T) (*notifications.Service, *sql.DB, *duckdb.UsersStore, *duckdb.ReposStore, func()) {
 	t.Helper()
 
 	db, err := sql.Open("duckdb", "")
@@ -33,19 +33,21 @@ func setupTestService(t *testing.T) (*notifications.Service, *duckdb.Store, func
 		t.Fatalf("failed to ensure schema: %v", err)
 	}
 
+	usersStore := duckdb.NewUsersStore(db)
+	reposStore := duckdb.NewReposStore(db)
 	notificationsStore := duckdb.NewNotificationsStore(db)
-	service := notifications.NewService(notificationsStore, store.Repos(), "https://api.example.com")
+	service := notifications.NewService(notificationsStore, reposStore, "https://api.example.com")
 
 	cleanup := func() {
 		store.Close()
 	}
 
-	return service, store, cleanup
+	return service, db, usersStore, reposStore, cleanup
 }
 
-func createTestUser(t *testing.T, store *duckdb.Store, login string) *users.User {
+func createTestUser(t *testing.T, usersStore *duckdb.UsersStore, login string) *users.User {
 	t.Helper()
-	userService := users.NewService(store.Users(), "https://api.example.com")
+	userService := users.NewService(usersStore, "https://api.example.com")
 	user, err := userService.Create(context.Background(), &users.CreateIn{
 		Login:    login,
 		Email:    login + "@example.com",
@@ -58,10 +60,10 @@ func createTestUser(t *testing.T, store *duckdb.Store, login string) *users.User
 	return user
 }
 
-func createTestRepo(t *testing.T, store *duckdb.Store, ownerID int64, name string) *repos.Repository {
+func createTestRepo(t *testing.T, db *sql.DB, usersStore *duckdb.UsersStore, reposStore *duckdb.ReposStore, ownerID int64, name string) *repos.Repository {
 	t.Helper()
-	orgsStore := duckdb.NewOrgsStore(store.DB())
-	repoService := repos.NewService(store.Repos(), store.Users(), orgsStore, "https://api.example.com", "")
+	orgsStore := duckdb.NewOrgsStore(db)
+	repoService := repos.NewService(reposStore, usersStore, orgsStore, "https://api.example.com", "")
 	repo, err := repoService.Create(context.Background(), ownerID, &repos.CreateIn{
 		Name:        name,
 		Description: "Test repository",
@@ -75,11 +77,11 @@ func createTestRepo(t *testing.T, store *duckdb.Store, ownerID int64, name strin
 // Create Tests
 
 func TestService_Create_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo := createTestRepo(t, store, user.ID, "testrepo")
+	user := createTestUser(t, usersStore, "testuser")
+	repo := createTestRepo(t, db, usersStore, reposStore, user.ID, "testrepo")
 
 	n, err := service.Create(context.Background(), user.ID, repo.ID, "assign", "Issue", "Test Issue #1", "https://api.example.com/repos/testuser/testrepo/issues/1")
 	if err != nil {
@@ -113,10 +115,10 @@ func TestService_Create_Success(t *testing.T) {
 }
 
 func TestService_Create_NonExistentRepo(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
+	user := createTestUser(t, usersStore, "testuser")
 
 	_, err := service.Create(context.Background(), user.ID, 9999, "assign", "Issue", "Test Issue", "https://example.com")
 	if err != repos.ErrNotFound {
@@ -125,11 +127,11 @@ func TestService_Create_NonExistentRepo(t *testing.T) {
 }
 
 func TestService_Create_PopulatesURLs(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo := createTestRepo(t, store, user.ID, "testrepo")
+	user := createTestUser(t, usersStore, "testuser")
+	repo := createTestRepo(t, db, usersStore, reposStore, user.ID, "testrepo")
 
 	n, err := service.Create(context.Background(), user.ID, repo.ID, "mention", "PullRequest", "Fix bug", "https://api.example.com/repos/testuser/testrepo/pulls/1")
 	if err != nil {
@@ -153,10 +155,10 @@ func TestService_Create_PopulatesURLs(t *testing.T) {
 // List Tests
 
 func TestService_List_EmptyList(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
+	user := createTestUser(t, usersStore, "testuser")
 
 	list, err := service.List(context.Background(), user.ID, nil)
 	if err != nil {
@@ -169,11 +171,11 @@ func TestService_List_EmptyList(t *testing.T) {
 }
 
 func TestService_List_UnreadOnly(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo := createTestRepo(t, store, user.ID, "testrepo")
+	user := createTestUser(t, usersStore, "testuser")
+	repo := createTestRepo(t, db, usersStore, reposStore, user.ID, "testrepo")
 
 	// Create multiple notifications
 	for i := 1; i <= 3; i++ {
@@ -195,11 +197,11 @@ func TestService_List_UnreadOnly(t *testing.T) {
 }
 
 func TestService_List_AllNotifications(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo := createTestRepo(t, store, user.ID, "testrepo")
+	user := createTestUser(t, usersStore, "testuser")
+	repo := createTestRepo(t, db, usersStore, reposStore, user.ID, "testrepo")
 
 	// Create notifications
 	n1, _ := service.Create(context.Background(), user.ID, repo.ID, "mention", "Issue", "Issue 1", "https://example.com")
@@ -230,11 +232,11 @@ func TestService_List_AllNotifications(t *testing.T) {
 }
 
 func TestService_List_Pagination(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo := createTestRepo(t, store, user.ID, "testrepo")
+	user := createTestUser(t, usersStore, "testuser")
+	repo := createTestRepo(t, db, usersStore, reposStore, user.ID, "testrepo")
 
 	// Create 5 notifications
 	for i := 1; i <= 5; i++ {
@@ -253,10 +255,10 @@ func TestService_List_Pagination(t *testing.T) {
 }
 
 func TestService_List_PerPageMax(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
+	user := createTestUser(t, usersStore, "testuser")
 
 	// Request more than max - should succeed even with PerPage > 100 (capped internally)
 	_, err := service.List(context.Background(), user.ID, &notifications.ListOpts{PerPage: 200})
@@ -267,11 +269,11 @@ func TestService_List_PerPageMax(t *testing.T) {
 }
 
 func TestService_List_PopulatesURLs(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo := createTestRepo(t, store, user.ID, "testrepo")
+	user := createTestUser(t, usersStore, "testuser")
+	repo := createTestRepo(t, db, usersStore, reposStore, user.ID, "testrepo")
 
 	service.Create(context.Background(), user.ID, repo.ID, "mention", "Issue", "Issue 1", "https://example.com")
 
@@ -296,12 +298,12 @@ func TestService_List_PopulatesURLs(t *testing.T) {
 // ListForRepo Tests
 
 func TestService_ListForRepo_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo1 := createTestRepo(t, store, user.ID, "repo1")
-	repo2 := createTestRepo(t, store, user.ID, "repo2")
+	user := createTestUser(t, usersStore, "testuser")
+	repo1 := createTestRepo(t, db, usersStore, reposStore, user.ID, "repo1")
+	repo2 := createTestRepo(t, db, usersStore, reposStore, user.ID, "repo2")
 
 	// Create notifications for different repos
 	service.Create(context.Background(), user.ID, repo1.ID, "mention", "Issue", "Issue in repo1", "https://example.com")
@@ -320,10 +322,10 @@ func TestService_ListForRepo_Success(t *testing.T) {
 }
 
 func TestService_ListForRepo_NonExistentRepo(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
+	user := createTestUser(t, usersStore, "testuser")
 
 	_, err := service.ListForRepo(context.Background(), user.ID, "testuser", "nonexistent", nil)
 	if err != repos.ErrNotFound {
@@ -332,12 +334,12 @@ func TestService_ListForRepo_NonExistentRepo(t *testing.T) {
 }
 
 func TestService_ListForRepo_Isolation(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user1 := createTestUser(t, store, "user1")
-	user2 := createTestUser(t, store, "user2")
-	repo := createTestRepo(t, store, user1.ID, "repo")
+	user1 := createTestUser(t, usersStore, "user1")
+	user2 := createTestUser(t, usersStore, "user2")
+	repo := createTestRepo(t, db, usersStore, reposStore, user1.ID, "repo")
 
 	// Create notification for user1
 	service.Create(context.Background(), user1.ID, repo.ID, "mention", "Issue", "Issue 1", "https://example.com")
@@ -356,11 +358,11 @@ func TestService_ListForRepo_Isolation(t *testing.T) {
 // MarkAsRead Tests
 
 func TestService_MarkAsRead_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo := createTestRepo(t, store, user.ID, "testrepo")
+	user := createTestUser(t, usersStore, "testuser")
+	repo := createTestRepo(t, db, usersStore, reposStore, user.ID, "testrepo")
 
 	// Create notifications
 	service.Create(context.Background(), user.ID, repo.ID, "mention", "Issue", "Issue 1", "https://example.com")
@@ -384,11 +386,11 @@ func TestService_MarkAsRead_Success(t *testing.T) {
 }
 
 func TestService_MarkAsRead_WithTimestamp(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo := createTestRepo(t, store, user.ID, "testrepo")
+	user := createTestUser(t, usersStore, "testuser")
+	repo := createTestRepo(t, db, usersStore, reposStore, user.ID, "testrepo")
 
 	service.Create(context.Background(), user.ID, repo.ID, "mention", "Issue", "Issue 1", "https://example.com")
 
@@ -412,12 +414,12 @@ func TestService_MarkAsRead_WithTimestamp(t *testing.T) {
 // MarkRepoAsRead Tests
 
 func TestService_MarkRepoAsRead_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo1 := createTestRepo(t, store, user.ID, "repo1")
-	repo2 := createTestRepo(t, store, user.ID, "repo2")
+	user := createTestUser(t, usersStore, "testuser")
+	repo1 := createTestRepo(t, db, usersStore, reposStore, user.ID, "repo1")
+	repo2 := createTestRepo(t, db, usersStore, reposStore, user.ID, "repo2")
 
 	// Create notifications for both repos
 	service.Create(context.Background(), user.ID, repo1.ID, "mention", "Issue", "In repo1", "https://example.com")
@@ -443,10 +445,10 @@ func TestService_MarkRepoAsRead_Success(t *testing.T) {
 }
 
 func TestService_MarkRepoAsRead_NonExistentRepo(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
+	user := createTestUser(t, usersStore, "testuser")
 
 	err := service.MarkRepoAsRead(context.Background(), user.ID, "testuser", "nonexistent", time.Time{})
 	if err != repos.ErrNotFound {
@@ -457,11 +459,11 @@ func TestService_MarkRepoAsRead_NonExistentRepo(t *testing.T) {
 // GetThread Tests
 
 func TestService_GetThread_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo := createTestRepo(t, store, user.ID, "testrepo")
+	user := createTestUser(t, usersStore, "testuser")
+	repo := createTestRepo(t, db, usersStore, reposStore, user.ID, "testrepo")
 
 	created, _ := service.Create(context.Background(), user.ID, repo.ID, "mention", "Issue", "Test Issue", "https://example.com")
 
@@ -479,10 +481,10 @@ func TestService_GetThread_Success(t *testing.T) {
 }
 
 func TestService_GetThread_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
+	user := createTestUser(t, usersStore, "testuser")
 
 	_, err := service.GetThread(context.Background(), user.ID, "nonexistent")
 	if err != notifications.ErrNotFound {
@@ -491,12 +493,12 @@ func TestService_GetThread_NotFound(t *testing.T) {
 }
 
 func TestService_GetThread_WrongUser(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user1 := createTestUser(t, store, "user1")
-	user2 := createTestUser(t, store, "user2")
-	repo := createTestRepo(t, store, user1.ID, "repo")
+	user1 := createTestUser(t, usersStore, "user1")
+	user2 := createTestUser(t, usersStore, "user2")
+	repo := createTestRepo(t, db, usersStore, reposStore, user1.ID, "repo")
 
 	created, _ := service.Create(context.Background(), user1.ID, repo.ID, "mention", "Issue", "Test Issue", "https://example.com")
 
@@ -508,11 +510,11 @@ func TestService_GetThread_WrongUser(t *testing.T) {
 }
 
 func TestService_GetThread_PopulatesURLs(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo := createTestRepo(t, store, user.ID, "testrepo")
+	user := createTestUser(t, usersStore, "testuser")
+	repo := createTestRepo(t, db, usersStore, reposStore, user.ID, "testrepo")
 
 	created, _ := service.Create(context.Background(), user.ID, repo.ID, "mention", "Issue", "Test Issue", "https://example.com")
 
@@ -532,11 +534,11 @@ func TestService_GetThread_PopulatesURLs(t *testing.T) {
 // MarkThreadAsRead Tests
 
 func TestService_MarkThreadAsRead_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo := createTestRepo(t, store, user.ID, "testrepo")
+	user := createTestUser(t, usersStore, "testuser")
+	repo := createTestRepo(t, db, usersStore, reposStore, user.ID, "testrepo")
 
 	created, _ := service.Create(context.Background(), user.ID, repo.ID, "mention", "Issue", "Test Issue", "https://example.com")
 
@@ -553,10 +555,10 @@ func TestService_MarkThreadAsRead_Success(t *testing.T) {
 }
 
 func TestService_MarkThreadAsRead_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
+	user := createTestUser(t, usersStore, "testuser")
 
 	err := service.MarkThreadAsRead(context.Background(), user.ID, "nonexistent")
 	if err != notifications.ErrNotFound {
@@ -565,11 +567,11 @@ func TestService_MarkThreadAsRead_NotFound(t *testing.T) {
 }
 
 func TestService_MarkThreadAsRead_Idempotent(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo := createTestRepo(t, store, user.ID, "testrepo")
+	user := createTestUser(t, usersStore, "testuser")
+	repo := createTestRepo(t, db, usersStore, reposStore, user.ID, "testrepo")
 
 	created, _ := service.Create(context.Background(), user.ID, repo.ID, "mention", "Issue", "Test Issue", "https://example.com")
 
@@ -588,11 +590,11 @@ func TestService_MarkThreadAsRead_Idempotent(t *testing.T) {
 // MarkThreadAsDone Tests
 
 func TestService_MarkThreadAsDone_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo := createTestRepo(t, store, user.ID, "testrepo")
+	user := createTestUser(t, usersStore, "testuser")
+	repo := createTestRepo(t, db, usersStore, reposStore, user.ID, "testrepo")
 
 	created, _ := service.Create(context.Background(), user.ID, repo.ID, "mention", "Issue", "Test Issue", "https://example.com")
 
@@ -609,10 +611,10 @@ func TestService_MarkThreadAsDone_Success(t *testing.T) {
 }
 
 func TestService_MarkThreadAsDone_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
+	user := createTestUser(t, usersStore, "testuser")
 
 	err := service.MarkThreadAsDone(context.Background(), user.ID, "nonexistent")
 	if err != notifications.ErrNotFound {
@@ -623,11 +625,11 @@ func TestService_MarkThreadAsDone_NotFound(t *testing.T) {
 // GetThreadSubscription Tests
 
 func TestService_GetThreadSubscription_Default(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo := createTestRepo(t, store, user.ID, "testrepo")
+	user := createTestUser(t, usersStore, "testuser")
+	repo := createTestRepo(t, db, usersStore, reposStore, user.ID, "testrepo")
 
 	created, _ := service.Create(context.Background(), user.ID, repo.ID, "mention", "Issue", "Test Issue", "https://example.com")
 
@@ -652,10 +654,10 @@ func TestService_GetThreadSubscription_Default(t *testing.T) {
 }
 
 func TestService_GetThreadSubscription_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
+	user := createTestUser(t, usersStore, "testuser")
 
 	_, err := service.GetThreadSubscription(context.Background(), user.ID, "nonexistent")
 	if err != notifications.ErrNotFound {
@@ -666,11 +668,11 @@ func TestService_GetThreadSubscription_NotFound(t *testing.T) {
 // SetThreadSubscription Tests
 
 func TestService_SetThreadSubscription_IgnoreTrue(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo := createTestRepo(t, store, user.ID, "testrepo")
+	user := createTestUser(t, usersStore, "testuser")
+	repo := createTestRepo(t, db, usersStore, reposStore, user.ID, "testrepo")
 
 	created, _ := service.Create(context.Background(), user.ID, repo.ID, "mention", "Issue", "Test Issue", "https://example.com")
 
@@ -688,11 +690,11 @@ func TestService_SetThreadSubscription_IgnoreTrue(t *testing.T) {
 }
 
 func TestService_SetThreadSubscription_IgnoreFalse(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo := createTestRepo(t, store, user.ID, "testrepo")
+	user := createTestUser(t, usersStore, "testuser")
+	repo := createTestRepo(t, db, usersStore, reposStore, user.ID, "testrepo")
 
 	created, _ := service.Create(context.Background(), user.ID, repo.ID, "mention", "Issue", "Test Issue", "https://example.com")
 
@@ -711,10 +713,10 @@ func TestService_SetThreadSubscription_IgnoreFalse(t *testing.T) {
 }
 
 func TestService_SetThreadSubscription_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
+	user := createTestUser(t, usersStore, "testuser")
 
 	_, err := service.SetThreadSubscription(context.Background(), user.ID, "nonexistent", true)
 	if err != notifications.ErrNotFound {
@@ -723,11 +725,11 @@ func TestService_SetThreadSubscription_NotFound(t *testing.T) {
 }
 
 func TestService_SetThreadSubscription_PopulatesURLs(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo := createTestRepo(t, store, user.ID, "testrepo")
+	user := createTestUser(t, usersStore, "testuser")
+	repo := createTestRepo(t, db, usersStore, reposStore, user.ID, "testrepo")
 
 	created, _ := service.Create(context.Background(), user.ID, repo.ID, "mention", "Issue", "Test Issue", "https://example.com")
 
@@ -747,11 +749,11 @@ func TestService_SetThreadSubscription_PopulatesURLs(t *testing.T) {
 // DeleteThreadSubscription Tests
 
 func TestService_DeleteThreadSubscription_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo := createTestRepo(t, store, user.ID, "testrepo")
+	user := createTestUser(t, usersStore, "testuser")
+	repo := createTestRepo(t, db, usersStore, reposStore, user.ID, "testrepo")
 
 	created, _ := service.Create(context.Background(), user.ID, repo.ID, "mention", "Issue", "Test Issue", "https://example.com")
 
@@ -780,10 +782,10 @@ func TestService_DeleteThreadSubscription_Success(t *testing.T) {
 }
 
 func TestService_DeleteThreadSubscription_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
+	user := createTestUser(t, usersStore, "testuser")
 
 	err := service.DeleteThreadSubscription(context.Background(), user.ID, "nonexistent")
 	if err != notifications.ErrNotFound {
@@ -794,12 +796,12 @@ func TestService_DeleteThreadSubscription_NotFound(t *testing.T) {
 // User Isolation Tests
 
 func TestService_UserIsolation(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user1 := createTestUser(t, store, "user1")
-	user2 := createTestUser(t, store, "user2")
-	repo := createTestRepo(t, store, user1.ID, "repo")
+	user1 := createTestUser(t, usersStore, "user1")
+	user2 := createTestUser(t, usersStore, "user2")
+	repo := createTestRepo(t, db, usersStore, reposStore, user1.ID, "repo")
 
 	// Create notifications for both users
 	n1, _ := service.Create(context.Background(), user1.ID, repo.ID, "mention", "Issue", "For user1", "https://example.com")
@@ -827,11 +829,11 @@ func TestService_UserIsolation(t *testing.T) {
 // Various Reason Types Tests
 
 func TestService_Create_DifferentReasons(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo := createTestRepo(t, store, user.ID, "testrepo")
+	user := createTestUser(t, usersStore, "testuser")
+	repo := createTestRepo(t, db, usersStore, reposStore, user.ID, "testrepo")
 
 	reasons := []string{"assign", "author", "comment", "invitation", "manual", "mention", "review_requested", "security_alert", "state_change", "subscribed", "team_mention"}
 
@@ -849,11 +851,11 @@ func TestService_Create_DifferentReasons(t *testing.T) {
 // Subject Types Tests
 
 func TestService_Create_DifferentSubjectTypes(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, db, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser")
-	repo := createTestRepo(t, store, user.ID, "testrepo")
+	user := createTestUser(t, usersStore, "testuser")
+	repo := createTestRepo(t, db, usersStore, reposStore, user.ID, "testrepo")
 
 	types := []string{"Issue", "PullRequest", "Commit", "Release"}
 

@@ -14,7 +14,7 @@ import (
 	"github.com/go-mizu/blueprints/githome/store/duckdb"
 )
 
-func setupTestService(t *testing.T) (*milestones.Service, *duckdb.Store, func()) {
+func setupTestService(t *testing.T) (*milestones.Service, *duckdb.UsersStore, *duckdb.ReposStore, func()) {
 	t.Helper()
 
 	db, err := sql.Open("duckdb", "")
@@ -33,17 +33,19 @@ func setupTestService(t *testing.T) (*milestones.Service, *duckdb.Store, func())
 		t.Fatalf("failed to ensure schema: %v", err)
 	}
 
+	usersStore := duckdb.NewUsersStore(db)
+	reposStore := duckdb.NewReposStore(db)
 	milestonesStore := duckdb.NewMilestonesStore(db)
-	service := milestones.NewService(milestonesStore, store.Repos(), store.Users(), "https://api.example.com")
+	service := milestones.NewService(milestonesStore, reposStore, usersStore, "https://api.example.com")
 
 	cleanup := func() {
 		store.Close()
 	}
 
-	return service, store, cleanup
+	return service, usersStore, reposStore, cleanup
 }
 
-func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *users.User {
+func createTestUser(t *testing.T, usersStore *duckdb.UsersStore, login, email string) *users.User {
 	t.Helper()
 	user := &users.User{
 		Login:        login,
@@ -52,13 +54,13 @@ func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *use
 		PasswordHash: "hash",
 		Type:         "User",
 	}
-	if err := store.Users().Create(context.Background(), user); err != nil {
+	if err := usersStore.Create(context.Background(), user); err != nil {
 		t.Fatalf("failed to create test user: %v", err)
 	}
 	return user
 }
 
-func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name string) *repos.Repository {
+func createTestRepo(t *testing.T, reposStore *duckdb.ReposStore, owner *users.User, name string) *repos.Repository {
 	t.Helper()
 	repo := &repos.Repository{
 		Name:          name,
@@ -68,7 +70,7 @@ func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name s
 		Visibility:    "public",
 		DefaultBranch: "main",
 	}
-	if err := store.Repos().Create(context.Background(), repo); err != nil {
+	if err := reposStore.Create(context.Background(), repo); err != nil {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
 	return repo
@@ -89,11 +91,11 @@ func createTestMilestone(t *testing.T, service *milestones.Service, owner, repo 
 // Milestone Creation Tests
 
 func TestService_Create_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	dueOn := time.Now().Add(7 * 24 * time.Hour)
 	m, err := service.Create(context.Background(), "owner", "testrepo", owner.ID, &milestones.CreateIn{
@@ -135,11 +137,11 @@ func TestService_Create_Success(t *testing.T) {
 }
 
 func TestService_Create_DuplicateTitle(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	createTestMilestone(t, service, "owner", "testrepo", owner.ID, "v1.0")
 
@@ -152,10 +154,10 @@ func TestService_Create_DuplicateTitle(t *testing.T) {
 }
 
 func TestService_Create_RepoNotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
 
 	_, err := service.Create(context.Background(), "owner", "unknown", owner.ID, &milestones.CreateIn{
 		Title: "v1.0",
@@ -166,11 +168,11 @@ func TestService_Create_RepoNotFound(t *testing.T) {
 }
 
 func TestService_Create_WithState(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	m, err := service.Create(context.Background(), "owner", "testrepo", owner.ID, &milestones.CreateIn{
 		Title: "v1.0",
@@ -188,11 +190,11 @@ func TestService_Create_WithState(t *testing.T) {
 // Milestone Retrieval Tests
 
 func TestService_Get_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	created := createTestMilestone(t, service, "owner", "testrepo", owner.ID, "v1.0")
 
 	m, err := service.Get(context.Background(), "owner", "testrepo", created.Number)
@@ -209,11 +211,11 @@ func TestService_Get_Success(t *testing.T) {
 }
 
 func TestService_Get_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	_, err := service.Get(context.Background(), "owner", "testrepo", 999)
 	if err != milestones.ErrNotFound {
@@ -222,7 +224,7 @@ func TestService_Get_NotFound(t *testing.T) {
 }
 
 func TestService_Get_RepoNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.Get(context.Background(), "unknown", "repo", 1)
@@ -232,11 +234,11 @@ func TestService_Get_RepoNotFound(t *testing.T) {
 }
 
 func TestService_GetByID_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	created := createTestMilestone(t, service, "owner", "testrepo", owner.ID, "v1.0")
 
 	m, err := service.GetByID(context.Background(), created.ID)
@@ -250,7 +252,7 @@ func TestService_GetByID_Success(t *testing.T) {
 }
 
 func TestService_GetByID_NotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.GetByID(context.Background(), 99999)
@@ -260,11 +262,11 @@ func TestService_GetByID_NotFound(t *testing.T) {
 }
 
 func TestService_List(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	createTestMilestone(t, service, "owner", "testrepo", owner.ID, "v1.0")
 	createTestMilestone(t, service, "owner", "testrepo", owner.ID, "v1.1")
@@ -281,11 +283,11 @@ func TestService_List(t *testing.T) {
 }
 
 func TestService_List_Pagination(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	for i := 0; i < 5; i++ {
 		createTestMilestone(t, service, "owner", "testrepo", owner.ID, "v"+string(rune('a'+i)))
@@ -305,11 +307,11 @@ func TestService_List_Pagination(t *testing.T) {
 }
 
 func TestService_List_ByState(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	// Create open milestones
 	createTestMilestone(t, service, "owner", "testrepo", owner.ID, "v1.0")
@@ -350,7 +352,7 @@ func TestService_List_ByState(t *testing.T) {
 }
 
 func TestService_List_RepoNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.List(context.Background(), "unknown", "repo", nil)
@@ -362,11 +364,11 @@ func TestService_List_RepoNotFound(t *testing.T) {
 // Milestone Update Tests
 
 func TestService_Update_Title(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	created := createTestMilestone(t, service, "owner", "testrepo", owner.ID, "v1.0")
 
 	newTitle := "v1.0-final"
@@ -383,11 +385,11 @@ func TestService_Update_Title(t *testing.T) {
 }
 
 func TestService_Update_Description(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	created := createTestMilestone(t, service, "owner", "testrepo", owner.ID, "v1.0")
 
 	newDesc := "Updated description"
@@ -404,11 +406,11 @@ func TestService_Update_Description(t *testing.T) {
 }
 
 func TestService_Update_State(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	created := createTestMilestone(t, service, "owner", "testrepo", owner.ID, "v1.0")
 
 	newState := "closed"
@@ -425,11 +427,11 @@ func TestService_Update_State(t *testing.T) {
 }
 
 func TestService_Update_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	newTitle := "newname"
 	_, err := service.Update(context.Background(), "owner", "testrepo", 999, &milestones.UpdateIn{
@@ -443,11 +445,11 @@ func TestService_Update_NotFound(t *testing.T) {
 // Milestone Delete Tests
 
 func TestService_Delete_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	created := createTestMilestone(t, service, "owner", "testrepo", owner.ID, "v1.0")
 
 	err := service.Delete(context.Background(), "owner", "testrepo", created.Number)
@@ -463,11 +465,11 @@ func TestService_Delete_Success(t *testing.T) {
 }
 
 func TestService_Delete_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	err := service.Delete(context.Background(), "owner", "testrepo", 999)
 	if err != milestones.ErrNotFound {
@@ -478,11 +480,11 @@ func TestService_Delete_NotFound(t *testing.T) {
 // Counter Tests
 
 func TestService_IncrementOpenIssues(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	created := createTestMilestone(t, service, "owner", "testrepo", owner.ID, "v1.0")
 
 	// Increment open issues
@@ -506,11 +508,11 @@ func TestService_IncrementOpenIssues(t *testing.T) {
 }
 
 func TestService_IncrementClosedIssues(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	created := createTestMilestone(t, service, "owner", "testrepo", owner.ID, "v1.0")
 
 	// Increment closed issues
@@ -527,11 +529,11 @@ func TestService_IncrementClosedIssues(t *testing.T) {
 }
 
 func TestService_DecrementOpenIssues(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	created := createTestMilestone(t, service, "owner", "testrepo", owner.ID, "v1.0")
 
 	// First increment
@@ -553,11 +555,11 @@ func TestService_DecrementOpenIssues(t *testing.T) {
 // URL Population Tests
 
 func TestService_PopulateURLs(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	m := createTestMilestone(t, service, "owner", "testrepo", owner.ID, "v1.0")
 
 	if m.URL != "https://api.example.com/api/v3/repos/owner/testrepo/milestones/1" {
@@ -577,11 +579,11 @@ func TestService_PopulateURLs(t *testing.T) {
 // Number Sequence Tests
 
 func TestService_NumberSequence(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	m1 := createTestMilestone(t, service, "owner", "testrepo", owner.ID, "v1.0")
 	m2 := createTestMilestone(t, service, "owner", "testrepo", owner.ID, "v1.1")
@@ -601,12 +603,12 @@ func TestService_NumberSequence(t *testing.T) {
 // Integration Test - Milestones Across Repos
 
 func TestService_MilestonesAcrossRepos(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "repo1")
-	createTestRepo(t, store, owner, "repo2")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "repo1")
+	createTestRepo(t, reposStore, owner, "repo2")
 
 	// Same title in different repos should work
 	m1 := createTestMilestone(t, service, "owner", "repo1", owner.ID, "v1.0")

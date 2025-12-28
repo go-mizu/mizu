@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-mizu/blueprints/githome/feature/notifications"
 	"github.com/go-mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/mizu"
 )
 
 // NotificationHandler handles notification endpoints
@@ -20,283 +21,252 @@ func NewNotificationHandler(notifications notifications.API, repos repos.API) *N
 }
 
 // ListNotifications handles GET /notifications
-func (h *NotificationHandler) ListNotifications(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *NotificationHandler) ListNotifications(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &notifications.ListOpts{
 		Page:          pagination.Page,
 		PerPage:       pagination.PerPage,
-		All:           QueryParamBool(r, "all"),
-		Participating: QueryParamBool(r, "participating"),
+		All:           QueryBool(c, "all"),
+		Participating: QueryBool(c, "participating"),
 	}
 
-	if since := QueryParam(r, "since"); since != "" {
+	if since := c.Query("since"); since != "" {
 		if t, err := time.Parse(time.RFC3339, since); err == nil {
 			opts.Since = t
 		}
 	}
 
-	if before := QueryParam(r, "before"); before != "" {
+	if before := c.Query("before"); before != "" {
 		if t, err := time.Parse(time.RFC3339, before); err == nil {
 			opts.Before = t
 		}
 	}
 
-	notificationList, err := h.notifications.List(r.Context(), user.ID, opts)
+	notificationList, err := h.notifications.List(c.Context(), user.ID, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, notificationList)
+	return c.JSON(http.StatusOK, notificationList)
 }
 
 // MarkAllAsRead handles PUT /notifications
-func (h *NotificationHandler) MarkAllAsRead(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *NotificationHandler) MarkAllAsRead(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
 	var in struct {
 		LastReadAt time.Time `json:"last_read_at,omitempty"`
 		Read       bool      `json:"read,omitempty"`
 	}
-	DecodeJSON(r, &in) // optional
+	c.BindJSON(&in, 1<<20) // optional
 
 	if in.LastReadAt.IsZero() {
 		in.LastReadAt = time.Now()
 	}
 
-	if err := h.notifications.MarkAsRead(r.Context(), user.ID, in.LastReadAt); err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+	if err := h.notifications.MarkAsRead(c.Context(), user.ID, in.LastReadAt); err != nil {
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteAccepted(w, map[string]string{"message": "Notifications marked as read"})
+	return Accepted(c, map[string]string{"message": "Notifications marked as read"})
 }
 
 // GetThread handles GET /notifications/threads/{thread_id}
-func (h *NotificationHandler) GetThread(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *NotificationHandler) GetThread(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	threadID := PathParam(r, "thread_id")
+	threadID := c.Param("thread_id")
 
-	thread, err := h.notifications.GetThread(r.Context(), user.ID, threadID)
+	thread, err := h.notifications.GetThread(c.Context(), user.ID, threadID)
 	if err != nil {
 		if err == notifications.ErrNotFound {
-			WriteNotFound(w, "Thread")
-			return
+			return NotFound(c, "Thread")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, thread)
+	return c.JSON(http.StatusOK, thread)
 }
 
 // MarkThreadAsRead handles PATCH /notifications/threads/{thread_id}
-func (h *NotificationHandler) MarkThreadAsRead(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *NotificationHandler) MarkThreadAsRead(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	threadID := PathParam(r, "thread_id")
+	threadID := c.Param("thread_id")
 
-	if err := h.notifications.MarkThreadAsRead(r.Context(), user.ID, threadID); err != nil {
+	if err := h.notifications.MarkThreadAsRead(c.Context(), user.ID, threadID); err != nil {
 		if err == notifications.ErrNotFound {
-			WriteNotFound(w, "Thread")
-			return
+			return NotFound(c, "Thread")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // MarkThreadAsDone handles DELETE /notifications/threads/{thread_id}
-func (h *NotificationHandler) MarkThreadAsDone(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *NotificationHandler) MarkThreadAsDone(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	threadID := PathParam(r, "thread_id")
+	threadID := c.Param("thread_id")
 
-	if err := h.notifications.MarkThreadAsDone(r.Context(), user.ID, threadID); err != nil {
+	if err := h.notifications.MarkThreadAsDone(c.Context(), user.ID, threadID); err != nil {
 		if err == notifications.ErrNotFound {
-			WriteNotFound(w, "Thread")
-			return
+			return NotFound(c, "Thread")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // GetThreadSubscription handles GET /notifications/threads/{thread_id}/subscription
-func (h *NotificationHandler) GetThreadSubscription(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *NotificationHandler) GetThreadSubscription(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	threadID := PathParam(r, "thread_id")
+	threadID := c.Param("thread_id")
 
-	subscription, err := h.notifications.GetThreadSubscription(r.Context(), user.ID, threadID)
+	subscription, err := h.notifications.GetThreadSubscription(c.Context(), user.ID, threadID)
 	if err != nil {
 		if err == notifications.ErrNotFound {
-			WriteNotFound(w, "Subscription")
-			return
+			return NotFound(c, "Subscription")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, subscription)
+	return c.JSON(http.StatusOK, subscription)
 }
 
 // SetThreadSubscription handles PUT /notifications/threads/{thread_id}/subscription
-func (h *NotificationHandler) SetThreadSubscription(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *NotificationHandler) SetThreadSubscription(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	threadID := PathParam(r, "thread_id")
+	threadID := c.Param("thread_id")
 
 	var in struct {
 		Ignored bool `json:"ignored"`
 	}
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	subscription, err := h.notifications.SetThreadSubscription(r.Context(), user.ID, threadID, in.Ignored)
+	subscription, err := h.notifications.SetThreadSubscription(c.Context(), user.ID, threadID, in.Ignored)
 	if err != nil {
 		if err == notifications.ErrNotFound {
-			WriteNotFound(w, "Thread")
-			return
+			return NotFound(c, "Thread")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, subscription)
+	return c.JSON(http.StatusOK, subscription)
 }
 
 // DeleteThreadSubscription handles DELETE /notifications/threads/{thread_id}/subscription
-func (h *NotificationHandler) DeleteThreadSubscription(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *NotificationHandler) DeleteThreadSubscription(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	threadID := PathParam(r, "thread_id")
+	threadID := c.Param("thread_id")
 
-	if err := h.notifications.DeleteThreadSubscription(r.Context(), user.ID, threadID); err != nil {
+	if err := h.notifications.DeleteThreadSubscription(c.Context(), user.ID, threadID); err != nil {
 		if err == notifications.ErrNotFound {
-			WriteNotFound(w, "Subscription")
-			return
+			return NotFound(c, "Subscription")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // ListRepoNotifications handles GET /repos/{owner}/{repo}/notifications
-func (h *NotificationHandler) ListRepoNotifications(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *NotificationHandler) ListRepoNotifications(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &notifications.ListOpts{
 		Page:          pagination.Page,
 		PerPage:       pagination.PerPage,
-		All:           QueryParamBool(r, "all"),
-		Participating: QueryParamBool(r, "participating"),
+		All:           QueryBool(c, "all"),
+		Participating: QueryBool(c, "participating"),
 	}
 
-	notificationList, err := h.notifications.ListForRepo(r.Context(), user.ID, owner, repoName, opts)
+	notificationList, err := h.notifications.ListForRepo(c.Context(), user.ID, owner, repoName, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, notificationList)
+	return c.JSON(http.StatusOK, notificationList)
 }
 
 // MarkRepoNotificationsAsRead handles PUT /repos/{owner}/{repo}/notifications
-func (h *NotificationHandler) MarkRepoNotificationsAsRead(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *NotificationHandler) MarkRepoNotificationsAsRead(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
 	var in struct {
 		LastReadAt time.Time `json:"last_read_at,omitempty"`
 	}
-	DecodeJSON(r, &in) // optional
+	c.BindJSON(&in, 1<<20) // optional
 
 	if in.LastReadAt.IsZero() {
 		in.LastReadAt = time.Now()
 	}
 
-	if err := h.notifications.MarkRepoAsRead(r.Context(), user.ID, owner, repoName, in.LastReadAt); err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+	if err := h.notifications.MarkRepoAsRead(c.Context(), user.ID, owner, repoName, in.LastReadAt); err != nil {
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteAccepted(w, map[string]string{"message": "Notifications marked as read"})
+	return Accepted(c, map[string]string{"message": "Notifications marked as read"})
 }

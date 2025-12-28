@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-mizu/blueprints/githome/feature/milestones"
 	"github.com/go-mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/mizu"
 )
 
 // MilestoneHandler handles milestone endpoints
@@ -19,189 +20,163 @@ func NewMilestoneHandler(milestones milestones.API, repos repos.API) *MilestoneH
 }
 
 // ListMilestones handles GET /repos/{owner}/{repo}/milestones
-func (h *MilestoneHandler) ListMilestones(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *MilestoneHandler) ListMilestones(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &milestones.ListOpts{
 		Page:      pagination.Page,
 		PerPage:   pagination.PerPage,
-		State:     QueryParam(r, "state"),
-		Sort:      QueryParam(r, "sort"),
-		Direction: QueryParam(r, "direction"),
+		State:     c.Query("state"),
+		Sort:      c.Query("sort"),
+		Direction: c.Query("direction"),
 	}
 
-	milestoneList, err := h.milestones.List(r.Context(), owner, repoName, opts)
+	milestoneList, err := h.milestones.List(c.Context(), owner, repoName, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, milestoneList)
+	return c.JSON(http.StatusOK, milestoneList)
 }
 
 // GetMilestone handles GET /repos/{owner}/{repo}/milestones/{milestone_number}
-func (h *MilestoneHandler) GetMilestone(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *MilestoneHandler) GetMilestone(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	milestoneNumber, err := PathParamInt(r, "milestone_number")
+	milestoneNumber, err := ParamInt(c, "milestone_number")
 	if err != nil {
-		WriteBadRequest(w, "Invalid milestone number")
-		return
+		return BadRequest(c, "Invalid milestone number")
 	}
 
-	milestone, err := h.milestones.Get(r.Context(), owner, repoName, milestoneNumber)
+	milestone, err := h.milestones.Get(c.Context(), owner, repoName, milestoneNumber)
 	if err != nil {
 		if err == milestones.ErrNotFound {
-			WriteNotFound(w, "Milestone")
-			return
+			return NotFound(c, "Milestone")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, milestone)
+	return c.JSON(http.StatusOK, milestone)
 }
 
 // CreateMilestone handles POST /repos/{owner}/{repo}/milestones
-func (h *MilestoneHandler) CreateMilestone(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *MilestoneHandler) CreateMilestone(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
 	var in milestones.CreateIn
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	milestone, err := h.milestones.Create(r.Context(), owner, repoName, user.ID, &in)
+	milestone, err := h.milestones.Create(c.Context(), owner, repoName, user.ID, &in)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteCreated(w, milestone)
+	return Created(c, milestone)
 }
 
 // UpdateMilestone handles PATCH /repos/{owner}/{repo}/milestones/{milestone_number}
-func (h *MilestoneHandler) UpdateMilestone(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *MilestoneHandler) UpdateMilestone(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	milestoneNumber, err := PathParamInt(r, "milestone_number")
+	milestoneNumber, err := ParamInt(c, "milestone_number")
 	if err != nil {
-		WriteBadRequest(w, "Invalid milestone number")
-		return
+		return BadRequest(c, "Invalid milestone number")
 	}
 
 	var in milestones.UpdateIn
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	updated, err := h.milestones.Update(r.Context(), owner, repoName, milestoneNumber, &in)
+	updated, err := h.milestones.Update(c.Context(), owner, repoName, milestoneNumber, &in)
 	if err != nil {
 		if err == milestones.ErrNotFound {
-			WriteNotFound(w, "Milestone")
-			return
+			return NotFound(c, "Milestone")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, updated)
+	return c.JSON(http.StatusOK, updated)
 }
 
 // DeleteMilestone handles DELETE /repos/{owner}/{repo}/milestones/{milestone_number}
-func (h *MilestoneHandler) DeleteMilestone(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *MilestoneHandler) DeleteMilestone(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	milestoneNumber, err := PathParamInt(r, "milestone_number")
+	milestoneNumber, err := ParamInt(c, "milestone_number")
 	if err != nil {
-		WriteBadRequest(w, "Invalid milestone number")
-		return
+		return BadRequest(c, "Invalid milestone number")
 	}
 
-	if err := h.milestones.Delete(r.Context(), owner, repoName, milestoneNumber); err != nil {
+	if err := h.milestones.Delete(c.Context(), owner, repoName, milestoneNumber); err != nil {
 		if err == milestones.ErrNotFound {
-			WriteNotFound(w, "Milestone")
-			return
+			return NotFound(c, "Milestone")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }

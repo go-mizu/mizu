@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-mizu/blueprints/githome/feature/git"
 	"github.com/go-mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/mizu"
 )
 
 // GitHandler handles low-level Git data endpoints
@@ -19,324 +20,289 @@ func NewGitHandler(gitAPI git.API, repos repos.API) *GitHandler {
 }
 
 // GetBlob handles GET /repos/{owner}/{repo}/git/blobs/{file_sha}
-func (h *GitHandler) GetBlob(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	fileSHA := PathParam(r, "file_sha")
+func (h *GitHandler) GetBlob(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	fileSHA := c.Param("file_sha")
 
-	blob, err := h.git.GetBlob(r.Context(), owner, repoName, fileSHA)
+	blob, err := h.git.GetBlob(c.Context(), owner, repoName, fileSHA)
 	if err != nil {
 		if err == git.ErrNotFound {
-			WriteNotFound(w, "Blob")
-			return
+			return NotFound(c, "Blob")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, blob)
+	return c.JSON(http.StatusOK, blob)
 }
 
 // CreateBlob handles POST /repos/{owner}/{repo}/git/blobs
-func (h *GitHandler) CreateBlob(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *GitHandler) CreateBlob(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
 	var in git.CreateBlobIn
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	blob, err := h.git.CreateBlob(r.Context(), owner, repoName, &in)
+	blob, err := h.git.CreateBlob(c.Context(), owner, repoName, &in)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteCreated(w, blob)
+	return Created(c, blob)
 }
 
 // GetGitCommit handles GET /repos/{owner}/{repo}/git/commits/{commit_sha}
-func (h *GitHandler) GetGitCommit(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	commitSHA := PathParam(r, "commit_sha")
+func (h *GitHandler) GetGitCommit(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	commitSHA := c.Param("commit_sha")
 
-	commit, err := h.git.GetGitCommit(r.Context(), owner, repoName, commitSHA)
+	commit, err := h.git.GetGitCommit(c.Context(), owner, repoName, commitSHA)
 	if err != nil {
 		if err == git.ErrNotFound {
-			WriteNotFound(w, "Commit")
-			return
+			return NotFound(c, "Commit")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, commit)
+	return c.JSON(http.StatusOK, commit)
 }
 
 // CreateGitCommit handles POST /repos/{owner}/{repo}/git/commits
-func (h *GitHandler) CreateGitCommit(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *GitHandler) CreateGitCommit(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
 	var in git.CreateGitCommitIn
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	commit, err := h.git.CreateGitCommit(r.Context(), owner, repoName, &in)
+	commit, err := h.git.CreateGitCommit(c.Context(), owner, repoName, &in)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteCreated(w, commit)
+	return Created(c, commit)
 }
 
 // GetRef handles GET /repos/{owner}/{repo}/git/ref/{ref}
-func (h *GitHandler) GetRef(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	ref := PathParam(r, "ref")
+func (h *GitHandler) GetRef(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	ref := c.Param("ref")
 
-	reference, err := h.git.GetRef(r.Context(), owner, repoName, ref)
+	reference, err := h.git.GetRef(c.Context(), owner, repoName, ref)
 	if err != nil {
 		if err == git.ErrNotFound {
-			WriteNotFound(w, "Reference")
-			return
+			return NotFound(c, "Reference")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, reference)
+	return c.JSON(http.StatusOK, reference)
 }
 
 // ListMatchingRefs handles GET /repos/{owner}/{repo}/git/matching-refs/{ref}
-func (h *GitHandler) ListMatchingRefs(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	ref := PathParam(r, "ref")
+func (h *GitHandler) ListMatchingRefs(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	ref := c.Param("ref")
 
-	refs, err := h.git.ListMatchingRefs(r.Context(), owner, repoName, ref)
+	refs, err := h.git.ListMatchingRefs(c.Context(), owner, repoName, ref)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, refs)
+	return c.JSON(http.StatusOK, refs)
 }
 
 // CreateRef handles POST /repos/{owner}/{repo}/git/refs
-func (h *GitHandler) CreateRef(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *GitHandler) CreateRef(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
 	var in git.CreateRefIn
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	reference, err := h.git.CreateRef(r.Context(), owner, repoName, &in)
+	reference, err := h.git.CreateRef(c.Context(), owner, repoName, &in)
 	if err != nil {
 		if err == git.ErrRefExists {
-			WriteConflict(w, "Reference already exists")
-			return
+			return Conflict(c, "Reference already exists")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteCreated(w, reference)
+	return Created(c, reference)
 }
 
 // UpdateRef handles PATCH /repos/{owner}/{repo}/git/refs/{ref}
-func (h *GitHandler) UpdateRef(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *GitHandler) UpdateRef(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	ref := PathParam(r, "ref")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	ref := c.Param("ref")
 
 	var in struct {
 		SHA   string `json:"sha"`
 		Force bool   `json:"force,omitempty"`
 	}
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	reference, err := h.git.UpdateRef(r.Context(), owner, repoName, ref, in.SHA, in.Force)
+	reference, err := h.git.UpdateRef(c.Context(), owner, repoName, ref, in.SHA, in.Force)
 	if err != nil {
 		if err == git.ErrNotFound {
-			WriteNotFound(w, "Reference")
-			return
+			return NotFound(c, "Reference")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, reference)
+	return c.JSON(http.StatusOK, reference)
 }
 
 // DeleteRef handles DELETE /repos/{owner}/{repo}/git/refs/{ref}
-func (h *GitHandler) DeleteRef(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *GitHandler) DeleteRef(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	ref := PathParam(r, "ref")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	ref := c.Param("ref")
 
-	if err := h.git.DeleteRef(r.Context(), owner, repoName, ref); err != nil {
+	if err := h.git.DeleteRef(c.Context(), owner, repoName, ref); err != nil {
 		if err == git.ErrNotFound {
-			WriteNotFound(w, "Reference")
-			return
+			return NotFound(c, "Reference")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // GetTree handles GET /repos/{owner}/{repo}/git/trees/{tree_sha}
-func (h *GitHandler) GetTree(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	treeSHA := PathParam(r, "tree_sha")
-	recursive := QueryParamBool(r, "recursive")
+func (h *GitHandler) GetTree(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	treeSHA := c.Param("tree_sha")
+	recursive := QueryBool(c, "recursive")
 
-	tree, err := h.git.GetTree(r.Context(), owner, repoName, treeSHA, recursive)
+	tree, err := h.git.GetTree(c.Context(), owner, repoName, treeSHA, recursive)
 	if err != nil {
 		if err == git.ErrNotFound {
-			WriteNotFound(w, "Tree")
-			return
+			return NotFound(c, "Tree")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, tree)
+	return c.JSON(http.StatusOK, tree)
 }
 
 // CreateTree handles POST /repos/{owner}/{repo}/git/trees
-func (h *GitHandler) CreateTree(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *GitHandler) CreateTree(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
 	var in git.CreateTreeIn
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	tree, err := h.git.CreateTree(r.Context(), owner, repoName, &in)
+	tree, err := h.git.CreateTree(c.Context(), owner, repoName, &in)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteCreated(w, tree)
+	return Created(c, tree)
 }
 
 // GetTag handles GET /repos/{owner}/{repo}/git/tags/{tag_sha}
-func (h *GitHandler) GetTag(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	tagSHA := PathParam(r, "tag_sha")
+func (h *GitHandler) GetTag(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	tagSHA := c.Param("tag_sha")
 
-	tag, err := h.git.GetTag(r.Context(), owner, repoName, tagSHA)
+	tag, err := h.git.GetTag(c.Context(), owner, repoName, tagSHA)
 	if err != nil {
 		if err == git.ErrNotFound {
-			WriteNotFound(w, "Tag")
-			return
+			return NotFound(c, "Tag")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, tag)
+	return c.JSON(http.StatusOK, tag)
 }
 
 // CreateTag handles POST /repos/{owner}/{repo}/git/tags
-func (h *GitHandler) CreateTag(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *GitHandler) CreateTag(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
 	var in git.CreateTagIn
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	tag, err := h.git.CreateTag(r.Context(), owner, repoName, &in)
+	tag, err := h.git.CreateTag(c.Context(), owner, repoName, &in)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteCreated(w, tag)
+	return Created(c, tag)
 }
 
 // ListTags handles GET /repos/{owner}/{repo}/git/tags (lightweight tags list)
-func (h *GitHandler) ListTags(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *GitHandler) ListTags(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &git.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	tags, err := h.git.ListTags(r.Context(), owner, repoName, opts)
+	tags, err := h.git.ListTags(c.Context(), owner, repoName, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, tags)
+	return c.JSON(http.StatusOK, tags)
 }
