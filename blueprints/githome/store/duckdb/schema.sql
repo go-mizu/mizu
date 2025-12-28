@@ -629,3 +629,23 @@ CREATE TABLE IF NOT EXISTS git_blobs (
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (repo_id, sha)
 );
+
+-- ============================================================
+-- Commit Statuses
+-- ============================================================
+
+CREATE SEQUENCE IF NOT EXISTS seq_commit_statuses;
+
+CREATE TABLE IF NOT EXISTS commit_statuses (
+    id            BIGINT PRIMARY KEY DEFAULT nextval('seq_commit_statuses'),
+    node_id       VARCHAR NOT NULL DEFAULT '',
+    repo_id       BIGINT NOT NULL,
+    sha           VARCHAR NOT NULL,
+    state         VARCHAR NOT NULL DEFAULT 'pending',
+    target_url    VARCHAR NOT NULL DEFAULT '',
+    description   VARCHAR NOT NULL DEFAULT '',
+    context       VARCHAR NOT NULL DEFAULT 'default',
+    creator_id    BIGINT NOT NULL,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
