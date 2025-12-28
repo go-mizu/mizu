@@ -53,7 +53,6 @@ func (s *Service) Create(ctx context.Context, repoID, authorID string, in *Creat
 	// Add labels
 	for _, labelID := range in.Labels {
 		il := &IssueLabel{
-			ID:        ulid.New(),
 			IssueID:   issue.ID,
 			LabelID:   labelID,
 			CreatedAt: now,
@@ -64,7 +63,6 @@ func (s *Service) Create(ctx context.Context, repoID, authorID string, in *Creat
 	// Add assignees
 	for _, userID := range in.Assignees {
 		ia := &IssueAssignee{
-			ID:        ulid.New(),
 			IssueID:   issue.ID,
 			UserID:    userID,
 			CreatedAt: now,
@@ -295,7 +293,6 @@ func (s *Service) AddLabels(ctx context.Context, id string, labelIDs []string) e
 	now := time.Now()
 	for _, labelID := range labelIDs {
 		il := &IssueLabel{
-			ID:        ulid.New(),
 			IssueID:   id,
 			LabelID:   labelID,
 			CreatedAt: now,
@@ -336,7 +333,6 @@ func (s *Service) AddAssignees(ctx context.Context, id string, userIDs []string)
 	now := time.Now()
 	for _, userID := range userIDs {
 		ia := &IssueAssignee{
-			ID:        ulid.New(),
 			IssueID:   id,
 			UserID:    userID,
 			CreatedAt: now,

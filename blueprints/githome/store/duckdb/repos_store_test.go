@@ -2,6 +2,7 @@ package duckdb
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
@@ -10,13 +11,26 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
-func createTestRepo(t *testing.T, reposStore *ReposStore, ownerID string) *repos.Repository {
+// createActorForUser creates an actor for a user and returns the actor ID
+func createActorForUser(t *testing.T, db *sql.DB, userID string) string {
+	t.Helper()
+	actorID := ulid.Make().String()
+	_, err := db.Exec(`
+		INSERT INTO actors (id, actor_type, user_id, created_at)
+		VALUES (?, 'user', ?, CURRENT_TIMESTAMP)
+	`, actorID, userID)
+	if err != nil {
+		t.Fatalf("failed to create actor for user: %v", err)
+	}
+	return actorID
+}
+
+func createTestRepo(t *testing.T, reposStore *ReposStore, ownerActorID string) *repos.Repository {
 	t.Helper()
 	id := ulid.Make().String()
 	r := &repos.Repository{
 		ID:             id,
-		OwnerID:        ownerID,
-		OwnerType:      "user",
+		OwnerActorID:   ownerActorID,
 		Name:           "repo-" + id[len(id)-12:],
 		Slug:           "repo-" + id[len(id)-12:],
 		Description:    "A test repository",
@@ -71,10 +85,10 @@ func TestReposStore_Create(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
 	r := &repos.Repository{
 		ID:            ulid.Make().String(),
-		OwnerID:       owner.ID,
-		OwnerType:     "user",
+		OwnerActorID:  actorID,
 		Name:          "my-repo",
 		Slug:          "my-repo",
 		Description:   "Test repository",
@@ -110,10 +124,10 @@ func TestReposStore_Create_WithTopics(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
 	r := &repos.Repository{
 		ID:            ulid.Make().String(),
-		OwnerID:       owner.ID,
-		OwnerType:     "user",
+		OwnerActorID:  actorID,
 		Name:          "topic-repo",
 		Slug:          "topic-repo",
 		Topics:        []string{"golang", "database", "testing"},
@@ -144,13 +158,14 @@ func TestReposStore_Create_WithFork(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
-	original := createTestRepo(t, reposStore, owner.ID)
+	ownerActorID := createActorForUser(t, store.DB(), owner.ID)
+	original := createTestRepo(t, reposStore, ownerActorID)
 
 	forker := createTestUser(t, usersStore)
+	forkerActorID := createActorForUser(t, store.DB(), forker.ID)
 	fork := &repos.Repository{
 		ID:            ulid.Make().String(),
-		OwnerID:       forker.ID,
-		OwnerType:     "user",
+		OwnerActorID:  forkerActorID,
 		Name:          "forked-repo",
 		Slug:          "forked-repo",
 		IsFork:        true,
@@ -182,7 +197,8 @@ func TestReposStore_GetByID(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
-	r := createTestRepo(t, reposStore, owner.ID)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
+	r := createTestRepo(t, reposStore, actorID)
 
 	got, err := reposStore.GetByID(context.Background(), r.ID)
 	if err != nil {
@@ -219,9 +235,10 @@ func TestReposStore_GetByOwnerAndName(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
-	r := createTestRepo(t, reposStore, owner.ID)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
+	r := createTestRepo(t, reposStore, actorID)
 
-	got, err := reposStore.GetByOwnerAndName(context.Background(), owner.ID, "user", r.Slug)
+	got, err := reposStore.GetByOwnerAndName(context.Background(), actorID, "user", r.Slug)
 	if err != nil {
 		t.Fatalf("GetByOwnerAndName failed: %v", err)
 	}
@@ -256,7 +273,8 @@ func TestReposStore_Update(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
-	r := createTestRepo(t, reposStore, owner.ID)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
+	r := createTestRepo(t, reposStore, actorID)
 
 	r.Description = "Updated description"
 	r.IsPrivate = true
@@ -287,7 +305,8 @@ func TestReposStore_Update_UpdatesTimestamp(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
-	r := createTestRepo(t, reposStore, owner.ID)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
+	r := createTestRepo(t, reposStore, actorID)
 	originalUpdatedAt := r.UpdatedAt
 
 	time.Sleep(10 * time.Millisecond)
@@ -309,7 +328,8 @@ func TestReposStore_Delete(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
-	r := createTestRepo(t, reposStore, owner.ID)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
+	r := createTestRepo(t, reposStore, actorID)
 
 	err := reposStore.Delete(context.Background(), r.ID)
 	if err != nil {
@@ -330,18 +350,20 @@ func TestReposStore_ListByOwner(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner1 := createTestUser(t, usersStore)
+	actor1ID := createActorForUser(t, store.DB(), owner1.ID)
 	owner2 := createTestUser(t, usersStore)
+	actor2ID := createActorForUser(t, store.DB(), owner2.ID)
 
 	// Create repos for owner1
 	for i := 0; i < 3; i++ {
-		createTestRepo(t, reposStore, owner1.ID)
+		createTestRepo(t, reposStore, actor1ID)
 	}
 	// Create repos for owner2
 	for i := 0; i < 2; i++ {
-		createTestRepo(t, reposStore, owner2.ID)
+		createTestRepo(t, reposStore, actor2ID)
 	}
 
-	repos, err := reposStore.ListByOwner(context.Background(), owner1.ID, "user", 10, 0)
+	repos, err := reposStore.ListByOwner(context.Background(), actor1ID, "user", 10, 0)
 	if err != nil {
 		t.Fatalf("ListByOwner failed: %v", err)
 	}
@@ -358,12 +380,13 @@ func TestReposStore_ListByOwner_Pagination(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
 	for i := 0; i < 10; i++ {
-		createTestRepo(t, reposStore, owner.ID)
+		createTestRepo(t, reposStore, actorID)
 	}
 
-	page1, _ := reposStore.ListByOwner(context.Background(), owner.ID, "user", 3, 0)
-	page2, _ := reposStore.ListByOwner(context.Background(), owner.ID, "user", 3, 3)
+	page1, _ := reposStore.ListByOwner(context.Background(), actorID, "user", 3, 0)
+	page2, _ := reposStore.ListByOwner(context.Background(), actorID, "user", 3, 3)
 
 	if len(page1) != 3 {
 		t.Errorf("got %d repos on page 1, want 3", len(page1))
@@ -384,10 +407,11 @@ func TestReposStore_ListPublic(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
 
 	// Create public repos
 	for i := 0; i < 3; i++ {
-		r := createTestRepo(t, reposStore, owner.ID)
+		r := createTestRepo(t, reposStore, actorID)
 		r.IsPrivate = false
 		reposStore.Update(context.Background(), r)
 	}
@@ -395,8 +419,7 @@ func TestReposStore_ListPublic(t *testing.T) {
 	// Create private repo
 	private := &repos.Repository{
 		ID:            ulid.Make().String(),
-		OwnerID:       owner.ID,
-		OwnerType:     "user",
+		OwnerActorID:  actorID,
 		Name:          "private-repo",
 		Slug:          "private-repo",
 		IsPrivate:     true,
@@ -427,9 +450,10 @@ func TestReposStore_ListByIDs(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
-	r1 := createTestRepo(t, reposStore, owner.ID)
-	r2 := createTestRepo(t, reposStore, owner.ID)
-	createTestRepo(t, reposStore, owner.ID) // r3 not in query
+	actorID := createActorForUser(t, store.DB(), owner.ID)
+	r1 := createTestRepo(t, reposStore, actorID)
+	r2 := createTestRepo(t, reposStore, actorID)
+	createTestRepo(t, reposStore, actorID) // r3 not in query
 
 	repos, err := reposStore.ListByIDs(context.Background(), []string{r1.ID, r2.ID})
 	if err != nil {
@@ -467,11 +491,11 @@ func TestReposStore_AddCollaborator(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
 	collaborator := createTestUser(t, usersStore)
-	r := createTestRepo(t, reposStore, owner.ID)
+	r := createTestRepo(t, reposStore, actorID)
 
 	collab := &repos.Collaborator{
-		ID:         ulid.Make().String(),
 		RepoID:     r.ID,
 		UserID:     collaborator.ID,
 		Permission: repos.PermissionWrite,
@@ -515,11 +539,11 @@ func TestReposStore_RemoveCollaborator(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
 	collaborator := createTestUser(t, usersStore)
-	r := createTestRepo(t, reposStore, owner.ID)
+	r := createTestRepo(t, reposStore, actorID)
 
 	collab := &repos.Collaborator{
-		ID:         ulid.Make().String(),
 		RepoID:     r.ID,
 		UserID:     collaborator.ID,
 		Permission: repos.PermissionWrite,
@@ -546,13 +570,13 @@ func TestReposStore_ListCollaborators(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
-	r := createTestRepo(t, reposStore, owner.ID)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
+	r := createTestRepo(t, reposStore, actorID)
 
 	// Add multiple collaborators
 	for i := 0; i < 3; i++ {
 		collaborator := createTestUser(t, usersStore)
 		collab := &repos.Collaborator{
-			ID:         ulid.Make().String(),
 			RepoID:     r.ID,
 			UserID:     collaborator.ID,
 			Permission: repos.PermissionRead,
@@ -578,7 +602,8 @@ func TestReposStore_ListCollaborators_Empty(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
-	r := createTestRepo(t, reposStore, owner.ID)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
+	r := createTestRepo(t, reposStore, actorID)
 
 	collabs, err := reposStore.ListCollaborators(context.Background(), r.ID)
 	if err != nil {
@@ -597,7 +622,8 @@ func TestReposStore_Collaborator_AllPermissionLevels(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
-	r := createTestRepo(t, reposStore, owner.ID)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
+	r := createTestRepo(t, reposStore, actorID)
 
 	permissions := []repos.Permission{
 		repos.PermissionRead,
@@ -610,7 +636,6 @@ func TestReposStore_Collaborator_AllPermissionLevels(t *testing.T) {
 	for _, perm := range permissions {
 		collaborator := createTestUser(t, usersStore)
 		collab := &repos.Collaborator{
-			ID:         ulid.Make().String(),
 			RepoID:     r.ID,
 			UserID:     collaborator.ID,
 			Permission: perm,
@@ -639,11 +664,11 @@ func TestReposStore_Star(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
 	starrer := createTestUser(t, usersStore)
-	r := createTestRepo(t, reposStore, owner.ID)
+	r := createTestRepo(t, reposStore, actorID)
 
 	star := &repos.Star{
-		ID:        ulid.Make().String(),
 		UserID:    starrer.ID,
 		RepoID:    r.ID,
 		CreatedAt: time.Now(),
@@ -671,8 +696,9 @@ func TestReposStore_IsStarred_NotStarred(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
 	user := createTestUser(t, usersStore)
-	r := createTestRepo(t, reposStore, owner.ID)
+	r := createTestRepo(t, reposStore, actorID)
 
 	isStarred, err := reposStore.IsStarred(context.Background(), user.ID, r.ID)
 	if err != nil {
@@ -691,11 +717,11 @@ func TestReposStore_Unstar(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
 	starrer := createTestUser(t, usersStore)
-	r := createTestRepo(t, reposStore, owner.ID)
+	r := createTestRepo(t, reposStore, actorID)
 
 	star := &repos.Star{
-		ID:        ulid.Make().String(),
 		UserID:    starrer.ID,
 		RepoID:    r.ID,
 		CreatedAt: time.Now(),
@@ -721,13 +747,13 @@ func TestReposStore_ListStarredByUser(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
 	starrer := createTestUser(t, usersStore)
 
 	// Create and star multiple repos
 	for i := 0; i < 3; i++ {
-		r := createTestRepo(t, reposStore, owner.ID)
+		r := createTestRepo(t, reposStore, actorID)
 		star := &repos.Star{
-			ID:        ulid.Make().String(),
 			UserID:    starrer.ID,
 			RepoID:    r.ID,
 			CreatedAt: time.Now(),
@@ -770,13 +796,13 @@ func TestReposStore_ListStarredByUser_Pagination(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
 	starrer := createTestUser(t, usersStore)
 
 	// Create and star 10 repos
 	for i := 0; i < 10; i++ {
-		r := createTestRepo(t, reposStore, owner.ID)
+		r := createTestRepo(t, reposStore, actorID)
 		star := &repos.Star{
-			ID:        ulid.Make().String(),
 			UserID:    starrer.ID,
 			RepoID:    r.ID,
 			CreatedAt: time.Now(),
@@ -811,11 +837,11 @@ func TestReposStore_DeleteRepoRemovesCollaborators(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
 	collaborator := createTestUser(t, usersStore)
-	r := createTestRepo(t, reposStore, owner.ID)
+	r := createTestRepo(t, reposStore, actorID)
 
 	collab := &repos.Collaborator{
-		ID:         ulid.Make().String(),
 		RepoID:     r.ID,
 		UserID:     collaborator.ID,
 		Permission: repos.PermissionWrite,
@@ -842,15 +868,16 @@ func TestReposStore_UserWithMultipleRepos(t *testing.T) {
 	reposStore := NewReposStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
 
 	// User can own multiple repos
 	repos := make([]*repos.Repository, 5)
 	for i := 0; i < 5; i++ {
-		repos[i] = createTestRepo(t, reposStore, owner.ID)
+		repos[i] = createTestRepo(t, reposStore, actorID)
 	}
 
 	// Verify all repos belong to owner
-	owned, _ := reposStore.ListByOwner(context.Background(), owner.ID, "user", 10, 0)
+	owned, _ := reposStore.ListByOwner(context.Background(), actorID, "user", 10, 0)
 	if len(owned) != 5 {
 		t.Errorf("got %d repos, want 5", len(owned))
 	}
@@ -861,12 +888,21 @@ func TestReposStore_OrgTypeOwner(t *testing.T) {
 	defer cleanup()
 
 	reposStore := NewReposStore(store.DB())
+	orgsStore := NewOrgsStore(store.DB())
+
+	// Create an org first
+	org := createTestOrg(t, orgsStore)
+	// Create an actor for the org
+	actorID := ulid.Make().String()
+	store.DB().Exec(`
+		INSERT INTO actors (id, actor_type, org_id, created_at)
+		VALUES (?, 'org', ?, CURRENT_TIMESTAMP)
+	`, actorID, org.ID)
 
 	// Create org-owned repo
 	r := &repos.Repository{
 		ID:            ulid.Make().String(),
-		OwnerID:       "org-123",
-		OwnerType:     "org",
+		OwnerActorID:  actorID,
 		Name:          "org-repo",
 		Slug:          "org-repo",
 		DefaultBranch: "main",
@@ -875,19 +911,13 @@ func TestReposStore_OrgTypeOwner(t *testing.T) {
 	}
 	reposStore.Create(context.Background(), r)
 
-	// Should find by org owner type
-	got, _ := reposStore.GetByOwnerAndName(context.Background(), "org-123", "org", "org-repo")
+	// Should find by actor ID
+	got, _ := reposStore.GetByOwnerAndName(context.Background(), actorID, "org", "org-repo")
 	if got == nil {
 		t.Fatal("expected org repo")
 	}
-	if got.OwnerType != "org" {
-		t.Errorf("got owner_type %q, want %q", got.OwnerType, "org")
-	}
-
-	// Should not find with wrong owner type
-	notFound, _ := reposStore.GetByOwnerAndName(context.Background(), "org-123", "user", "org-repo")
-	if notFound != nil {
-		t.Error("expected nil for wrong owner type")
+	if got.OwnerActorID != actorID {
+		t.Errorf("got owner_actor_id %q, want %q", got.OwnerActorID, actorID)
 	}
 }
 

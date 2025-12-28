@@ -3,8 +3,6 @@ package stars
 import (
 	"context"
 	"time"
-
-	"github.com/go-mizu/blueprints/githome/pkg/ulid"
 )
 
 // Service implements the stars API
@@ -33,7 +31,6 @@ func (s *Service) Star(ctx context.Context, userID, repoID string) error {
 	}
 
 	star := &Star{
-		ID:        ulid.New(),
 		UserID:    userID,
 		RepoID:    repoID,
 		CreatedAt: time.Now(),

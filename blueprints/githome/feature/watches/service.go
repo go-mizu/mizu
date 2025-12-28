@@ -3,8 +3,6 @@ package watches
 import (
 	"context"
 	"time"
-
-	"github.com/go-mizu/blueprints/githome/pkg/ulid"
 )
 
 // Service implements the watches API
@@ -41,7 +39,6 @@ func (s *Service) Watch(ctx context.Context, userID, repoID string, level string
 	}
 
 	watch := &Watch{
-		ID:        ulid.New(),
 		UserID:    userID,
 		RepoID:    repoID,
 		Level:     level,

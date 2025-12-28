@@ -6,13 +6,11 @@ import (
 	"time"
 
 	"github.com/go-mizu/blueprints/githome/feature/stars"
-	"github.com/oklog/ulid/v2"
 )
 
 func createTestStar(t *testing.T, store *StarsStore, userID, repoID string) *stars.Star {
 	t.Helper()
 	s := &stars.Star{
-		ID:        ulid.Make().String(),
 		UserID:    userID,
 		RepoID:    repoID,
 		CreatedAt: time.Now(),
@@ -35,7 +33,6 @@ func TestStarsStore_Create(t *testing.T) {
 	starsStore := NewStarsStore(store.DB())
 
 	s := &stars.Star{
-		ID:        ulid.Make().String(),
 		UserID:    userID,
 		RepoID:    repoID,
 		CreatedAt: time.Now(),

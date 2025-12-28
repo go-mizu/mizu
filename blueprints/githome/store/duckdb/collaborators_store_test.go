@@ -6,13 +6,11 @@ import (
 	"time"
 
 	"github.com/go-mizu/blueprints/githome/feature/collaborators"
-	"github.com/oklog/ulid/v2"
 )
 
 func createTestCollaborator(t *testing.T, store *CollaboratorsStore, repoID, userID string) *collaborators.Collaborator {
 	t.Helper()
 	c := &collaborators.Collaborator{
-		ID:         ulid.Make().String(),
 		RepoID:     repoID,
 		UserID:     userID,
 		Permission: "write",
@@ -33,16 +31,13 @@ func TestCollaboratorsStore_Create(t *testing.T) {
 	defer cleanup()
 
 	usersStore := NewUsersStore(store.DB())
-	reposStore := NewReposStore(store.DB())
 	collaboratorsStore := NewCollaboratorsStore(store.DB())
 
-	owner := createTestUser(t, usersStore)
-	repo := createTestRepo(t, reposStore, owner.ID)
+	repoID, _ := createRepoAndUser(t, store)
 	collaborator := createTestUser(t, usersStore)
 
 	c := &collaborators.Collaborator{
-		ID:         ulid.Make().String(),
-		RepoID:     repo.ID,
+		RepoID:     repoID,
 		UserID:     collaborator.ID,
 		Permission: "write",
 		CreatedAt:  time.Now(),
@@ -53,7 +48,7 @@ func TestCollaboratorsStore_Create(t *testing.T) {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	got, err := collaboratorsStore.Get(context.Background(), repo.ID, collaborator.ID)
+	got, err := collaboratorsStore.Get(context.Background(), repoID, collaborator.ID)
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}
@@ -70,26 +65,23 @@ func TestCollaboratorsStore_Create_DifferentPermissions(t *testing.T) {
 	defer cleanup()
 
 	usersStore := NewUsersStore(store.DB())
-	reposStore := NewReposStore(store.DB())
 	collaboratorsStore := NewCollaboratorsStore(store.DB())
 
-	owner := createTestUser(t, usersStore)
-	repo := createTestRepo(t, reposStore, owner.ID)
+	repoID, _ := createRepoAndUser(t, store)
 
 	permissions := []string{"read", "triage", "write", "maintain", "admin"}
 
 	for _, perm := range permissions {
 		user := createTestUser(t, usersStore)
 		c := &collaborators.Collaborator{
-			ID:         ulid.Make().String(),
-			RepoID:     repo.ID,
+			RepoID:     repoID,
 			UserID:     user.ID,
 			Permission: perm,
 			CreatedAt:  time.Now(),
 		}
 		collaboratorsStore.Create(context.Background(), c)
 
-		got, _ := collaboratorsStore.Get(context.Background(), repo.ID, user.ID)
+		got, _ := collaboratorsStore.Get(context.Background(), repoID, user.ID)
 		if got.Permission != perm {
 			t.Errorf("got permission %q, want %q", got.Permission, perm)
 		}
@@ -265,8 +257,9 @@ func TestCollaboratorsStore_List_PerRepo(t *testing.T) {
 	collaboratorsStore := NewCollaboratorsStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
-	repo1 := createTestRepo(t, reposStore, owner.ID)
-	repo2 := createTestRepo(t, reposStore, owner.ID)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
+	repo1 := createTestRepo(t, reposStore, actorID)
+	repo2 := createTestRepo(t, reposStore, actorID)
 
 	// Add 3 collaborators to repo1
 	for i := 0; i < 3; i++ {
@@ -304,11 +297,12 @@ func TestCollaboratorsStore_ListByUser(t *testing.T) {
 	collaboratorsStore := NewCollaboratorsStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
 	collaborator := createTestUser(t, usersStore)
 
 	// Add collaborator to 5 repos
 	for i := 0; i < 5; i++ {
-		repo := createTestRepo(t, reposStore, owner.ID)
+		repo := createTestRepo(t, reposStore, actorID)
 		createTestCollaborator(t, collaboratorsStore, repo.ID, collaborator.ID)
 	}
 
@@ -330,10 +324,11 @@ func TestCollaboratorsStore_ListByUser_Pagination(t *testing.T) {
 	collaboratorsStore := NewCollaboratorsStore(store.DB())
 
 	owner := createTestUser(t, usersStore)
+	actorID := createActorForUser(t, store.DB(), owner.ID)
 	collaborator := createTestUser(t, usersStore)
 
 	for i := 0; i < 10; i++ {
-		repo := createTestRepo(t, reposStore, owner.ID)
+		repo := createTestRepo(t, reposStore, actorID)
 		createTestCollaborator(t, collaboratorsStore, repo.ID, collaborator.ID)
 	}
 

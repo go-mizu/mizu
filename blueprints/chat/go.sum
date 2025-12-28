@@ -69,8 +69,8 @@ github.com/duckdb/duckdb-go/mapping v0.0.27 h1:QEta+qPEKmfhd89U8vnm4MVslj1Uscmky
 github.com/duckdb/duckdb-go/mapping v0.0.27/go.mod h1:7C4QWJWG6UOV9b0iWanfF5ML1ivJPX45Kz+VmlvRlTA=
 github.com/duckdb/duckdb-go/v2 v2.5.4 h1:+ip+wPCwf7Eu/dXxp19aLCxwpLUaeOy2UV/peBphXK0=
 github.com/duckdb/duckdb-go/v2 v2.5.4/go.mod h1:CeobOFmWpf7MTDb+MW08/zIWP8TQ2jbPbMgGo5761tY=
-github.com/go-mizu/mizu v0.5.5 h1:NIwNCZ6EjMjy89uRv/5ZyKcDCRJHxLKOIcvUUJR1g7I=
-github.com/go-mizu/mizu v0.5.5/go.mod h1:uAB/VeZxmEhPueqTi4THbitXEHRi3kTIYXwYbXivsIc=
+github.com/go-mizu/mizu v0.5.7 h1:9jOLoIrCy4pCin52nI/fXlN89A9x6d2yqpvRViOsRiY=
+github.com/go-mizu/mizu v0.5.7/go.mod h1:uAB/VeZxmEhPueqTi4THbitXEHRi3kTIYXwYbXivsIc=
 github.com/go-viper/mapstructure/v2 v2.4.0 h1:EBsztssimR/CONLSZZ04E8qAkxNYq4Qp9LvH92wZUgs=
 github.com/go-viper/mapstructure/v2 v2.4.0/go.mod h1:oJDH3BJKyqBA2TXFhDsKDGDTlndYOZ6rGS0BRZIxGhM=
 github.com/goccy/go-json v0.10.5 h1:Fq85nIqj+gXn/S5ahsiTlK3TmC85qgirsdTP/+DeaC4=
@@ -80,6 +80,7 @@ github.com/golang/snappy v1.0.0/go.mod h1:/XxbfmMg8lxefKM7IXC3fBNl/7bRcc72aCRzEW
 github.com/google/flatbuffers v25.12.19+incompatible h1:haMV2JRRJCe1998HeW/p0X9UaMTK6SDo0ffLn2+DbLs=
 github.com/google/flatbuffers v25.12.19+incompatible/go.mod h1:1AeVuKshWv4vARoZatz6mlQ0JxURH0Kv5+zNeJKJCa8=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
+github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
 github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=

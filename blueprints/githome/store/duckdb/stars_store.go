@@ -17,12 +17,12 @@ func NewStarsStore(db *sql.DB) *StarsStore {
 	return &StarsStore{db: db}
 }
 
-// Create creates a new star
+// Create creates a new star - uses composite PK (user_id, repo_id)
 func (s *StarsStore) Create(ctx context.Context, star *stars.Star) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO stars (id, user_id, repo_id, created_at)
-		VALUES ($1, $2, $3, $4)
-	`, star.ID, star.UserID, star.RepoID, star.CreatedAt)
+		INSERT INTO stars (user_id, repo_id, created_at)
+		VALUES ($1, $2, $3)
+	`, star.UserID, star.RepoID, star.CreatedAt)
 	return err
 }
 
@@ -36,9 +36,9 @@ func (s *StarsStore) Delete(ctx context.Context, userID, repoID string) error {
 func (s *StarsStore) Get(ctx context.Context, userID, repoID string) (*stars.Star, error) {
 	star := &stars.Star{}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, user_id, repo_id, created_at
+		SELECT user_id, repo_id, created_at
 		FROM stars WHERE user_id = $1 AND repo_id = $2
-	`, userID, repoID).Scan(&star.ID, &star.UserID, &star.RepoID, &star.CreatedAt)
+	`, userID, repoID).Scan(&star.UserID, &star.RepoID, &star.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -58,7 +58,7 @@ func (s *StarsStore) ListByRepo(ctx context.Context, repoID string, limit, offse
 
 	// Get stars
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, user_id, repo_id, created_at
+		SELECT user_id, repo_id, created_at
 		FROM stars WHERE repo_id = $1
 		ORDER BY created_at DESC
 		LIMIT $2 OFFSET $3
@@ -71,7 +71,7 @@ func (s *StarsStore) ListByRepo(ctx context.Context, repoID string, limit, offse
 	var list []*stars.Star
 	for rows.Next() {
 		star := &stars.Star{}
-		if err := rows.Scan(&star.ID, &star.UserID, &star.RepoID, &star.CreatedAt); err != nil {
+		if err := rows.Scan(&star.UserID, &star.RepoID, &star.CreatedAt); err != nil {
 			return nil, 0, err
 		}
 		list = append(list, star)
@@ -92,7 +92,7 @@ func (s *StarsStore) ListByUser(ctx context.Context, userID string, limit, offse
 
 	// Get stars
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, user_id, repo_id, created_at
+		SELECT user_id, repo_id, created_at
 		FROM stars WHERE user_id = $1
 		ORDER BY created_at DESC
 		LIMIT $2 OFFSET $3
@@ -105,7 +105,7 @@ func (s *StarsStore) ListByUser(ctx context.Context, userID string, limit, offse
 	var list []*stars.Star
 	for rows.Next() {
 		star := &stars.Star{}
-		if err := rows.Scan(&star.ID, &star.UserID, &star.RepoID, &star.CreatedAt); err != nil {
+		if err := rows.Scan(&star.UserID, &star.RepoID, &star.CreatedAt); err != nil {
 			return nil, 0, err
 		}
 		list = append(list, star)

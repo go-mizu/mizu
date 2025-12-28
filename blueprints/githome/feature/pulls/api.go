@@ -63,7 +63,9 @@ type PullRequest struct {
 	LockReason     string     `json:"lock_reason,omitempty"`
 	Mergeable      bool       `json:"mergeable"`
 	MergeableState string     `json:"mergeable_state"`
+	MergeMethod    string     `json:"merge_method,omitempty"`
 	MergeCommitSHA string     `json:"merge_commit_sha,omitempty"`
+	MergeMessage   string     `json:"merge_message,omitempty"`
 	MergedAt       *time.Time `json:"merged_at,omitempty"`
 	MergedByID     string     `json:"merged_by_id,omitempty"`
 	Additions      int        `json:"additions"`
@@ -115,24 +117,24 @@ type ReviewComment struct {
 }
 
 // PRLabel represents the association between a PR and a label
+// Uses composite PK (pr_id, label_id) - no ID field
 type PRLabel struct {
-	ID        string    `json:"id"`
 	PRID      string    `json:"pr_id"`
 	LabelID   string    `json:"label_id"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 // PRAssignee represents the association between a PR and an assignee
+// Uses composite PK (pr_id, user_id) - no ID field
 type PRAssignee struct {
-	ID        string    `json:"id"`
 	PRID      string    `json:"pr_id"`
 	UserID    string    `json:"user_id"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 // PRReviewer represents a requested reviewer
+// Uses composite PK (pr_id, user_id) - no ID field
 type PRReviewer struct {
-	ID        string    `json:"id"`
 	PRID      string    `json:"pr_id"`
 	UserID    string    `json:"user_id"`
 	State     string    `json:"state"` // pending, reviewed

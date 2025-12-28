@@ -54,7 +54,6 @@ func (s *Service) Create(ctx context.Context, creatorID string, in *CreateIn) (*
 
 	// Add creator as owner
 	member := &Member{
-		ID:        ulid.New(),
 		OrgID:     org.ID,
 		UserID:    creatorID,
 		Role:      RoleOwner,
@@ -166,7 +165,6 @@ func (s *Service) AddMember(ctx context.Context, orgID, userID string, role stri
 	}
 
 	member := &Member{
-		ID:        ulid.New(),
 		OrgID:     orgID,
 		UserID:    userID,
 		Role:      role,

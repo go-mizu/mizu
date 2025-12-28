@@ -51,14 +51,15 @@ clean: ## Remove binary and data directory
 	@rm -rf $(DATA_DIR)
 	@echo "Cleaned: $(BINARY), $(DATA_DIR)"
 
+.PHONY: update
+update: ## Update dependencies
+	@rm -f go.sum
+	@$(GO) get -u ./...
+	@$(GO) mod tidy
+
 .PHONY: help
 help: ## Show available commands
 	@echo ""
-	@echo "Kanban Blueprint - Linear/Jira-style project management"
-	@echo ""
-	@echo "  Binary:   $(BINARY)"
-	@echo "  Data:     $(DATA_DIR)"
-	@echo ""
-	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
-	  awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_\-]+:.*?## ' $(MAKEFILE_LIST) | \
+	  sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 	@echo ""

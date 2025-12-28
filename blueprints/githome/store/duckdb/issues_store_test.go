@@ -39,7 +39,8 @@ func createRepoAndUser(t *testing.T, store *Store) (repoID, userID string) {
 	reposStore := NewReposStore(store.DB())
 
 	user := createTestUser(t, usersStore)
-	repo := createTestRepo(t, reposStore, user.ID)
+	actorID := createActorForUser(t, store.DB(), user.ID)
+	repo := createTestRepo(t, reposStore, actorID)
 
 	return repo.ID, user.ID
 }
@@ -102,7 +103,6 @@ func TestIssuesStore_Create_WithAllFields(t *testing.T) {
 		Title:          "Complete Issue",
 		Body:           "Full issue with all fields",
 		AuthorID:       userID,
-		AssigneeID:     userID,
 		State:          "closed",
 		StateReason:    "completed",
 		IsLocked:       true,
@@ -634,7 +634,6 @@ func TestIssuesStore_AddLabel(t *testing.T) {
 	issue := createTestIssue(t, issuesStore, repoID, userID, 1)
 
 	issueLabel := &issues.IssueLabel{
-		ID:        ulid.Make().String(),
 		IssueID:   issue.ID,
 		LabelID:   "label-123",
 		CreatedAt: time.Now(),
@@ -666,7 +665,6 @@ func TestIssuesStore_AddLabel_Multiple(t *testing.T) {
 	labelIDs := []string{"bug", "priority-high", "help-wanted"}
 	for _, labelID := range labelIDs {
 		issueLabel := &issues.IssueLabel{
-			ID:        ulid.Make().String(),
 			IssueID:   issue.ID,
 			LabelID:   labelID,
 			CreatedAt: time.Now(),
@@ -690,7 +688,6 @@ func TestIssuesStore_RemoveLabel(t *testing.T) {
 	issue := createTestIssue(t, issuesStore, repoID, userID, 1)
 
 	issueLabel := &issues.IssueLabel{
-		ID:        ulid.Make().String(),
 		IssueID:   issue.ID,
 		LabelID:   "to-remove",
 		CreatedAt: time.Now(),
@@ -742,7 +739,6 @@ func TestIssuesStore_AddAssignee(t *testing.T) {
 	assignee := createTestUser(t, usersStore)
 
 	issueAssignee := &issues.IssueAssignee{
-		ID:        ulid.Make().String(),
 		IssueID:   issue.ID,
 		UserID:    assignee.ID,
 		CreatedAt: time.Now(),
@@ -775,7 +771,6 @@ func TestIssuesStore_AddAssignee_Multiple(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		assignee := createTestUser(t, usersStore)
 		issueAssignee := &issues.IssueAssignee{
-			ID:        ulid.Make().String(),
 			IssueID:   issue.ID,
 			UserID:    assignee.ID,
 			CreatedAt: time.Now(),
@@ -801,7 +796,6 @@ func TestIssuesStore_RemoveAssignee(t *testing.T) {
 	assignee := createTestUser(t, usersStore)
 
 	issueAssignee := &issues.IssueAssignee{
-		ID:        ulid.Make().String(),
 		IssueID:   issue.ID,
 		UserID:    assignee.ID,
 		CreatedAt: time.Now(),
@@ -852,7 +846,6 @@ func TestIssuesStore_DeleteIssueRemovesLabels(t *testing.T) {
 
 	// Add labels
 	issueLabel := &issues.IssueLabel{
-		ID:        ulid.Make().String(),
 		IssueID:   issue.ID,
 		LabelID:   "label-to-orphan",
 		CreatedAt: time.Now(),
@@ -882,7 +875,6 @@ func TestIssuesStore_DeleteIssueRemovesAssignees(t *testing.T) {
 
 	// Add assignee
 	issueAssignee := &issues.IssueAssignee{
-		ID:        ulid.Make().String(),
 		IssueID:   issue.ID,
 		UserID:    assignee.ID,
 		CreatedAt: time.Now(),
@@ -923,7 +915,6 @@ func TestIssuesStore_IssueLifecycle(t *testing.T) {
 	// 2. Add labels
 	for _, label := range []string{"bug", "priority-high"} {
 		issueLabel := &issues.IssueLabel{
-			ID:        ulid.Make().String(),
 			IssueID:   issue.ID,
 			LabelID:   label,
 			CreatedAt: time.Now(),
@@ -934,7 +925,6 @@ func TestIssuesStore_IssueLifecycle(t *testing.T) {
 	// 3. Add assignee
 	assignee := createTestUser(t, usersStore)
 	issueAssignee := &issues.IssueAssignee{
-		ID:        ulid.Make().String(),
 		IssueID:   issue.ID,
 		UserID:    assignee.ID,
 		CreatedAt: time.Now(),

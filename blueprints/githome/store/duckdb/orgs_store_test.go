@@ -243,7 +243,6 @@ func TestOrgsStore_AddMember(t *testing.T) {
 	org := createTestOrg(t, orgsStore)
 
 	member := &orgs.Member{
-		ID:        ulid.Make().String(),
 		OrgID:     org.ID,
 		UserID:    user.ID,
 		Role:      "member",
@@ -275,7 +274,6 @@ func TestOrgsStore_GetMember(t *testing.T) {
 	org := createTestOrg(t, orgsStore)
 
 	member := &orgs.Member{
-		ID:        ulid.Make().String(),
 		OrgID:     org.ID,
 		UserID:    user.ID,
 		Role:      "admin",
@@ -321,7 +319,6 @@ func TestOrgsStore_UpdateMember(t *testing.T) {
 	org := createTestOrg(t, orgsStore)
 
 	member := &orgs.Member{
-		ID:        ulid.Make().String(),
 		OrgID:     org.ID,
 		UserID:    user.ID,
 		Role:      "member",
@@ -352,7 +349,6 @@ func TestOrgsStore_RemoveMember(t *testing.T) {
 	org := createTestOrg(t, orgsStore)
 
 	member := &orgs.Member{
-		ID:        ulid.Make().String(),
 		OrgID:     org.ID,
 		UserID:    user.ID,
 		Role:      "member",
@@ -383,7 +379,6 @@ func TestOrgsStore_ListMembers(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		user := createTestUser(t, usersStore)
 		member := &orgs.Member{
-			ID:        ulid.Make().String(),
 			OrgID:     org.ID,
 			UserID:    user.ID,
 			Role:      "member",
@@ -413,7 +408,6 @@ func TestOrgsStore_ListByUser(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		org := createTestOrg(t, orgsStore)
 		member := &orgs.Member{
-			ID:        ulid.Make().String(),
 			OrgID:     org.ID,
 			UserID:    user.ID,
 			Role:      "member",

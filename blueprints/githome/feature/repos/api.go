@@ -29,9 +29,10 @@ const (
 // Repository represents a Git repository
 type Repository struct {
 	ID             string    `json:"id"`
-	OwnerID        string    `json:"owner_id"`
-	OwnerType      string    `json:"owner_type"` // user, org
-	OwnerName      string    `json:"owner_name,omitempty"`
+	OwnerActorID   string    `json:"owner_actor_id"`           // FK to actors table
+	OwnerID        string    `json:"owner_id,omitempty"`       // Populated from actor join
+	OwnerType      string    `json:"owner_type,omitempty"`     // user or org, from actor
+	OwnerName      string    `json:"owner_name,omitempty"`     // Populated from user/org join
 	Name           string    `json:"name"`
 	Slug           string    `json:"slug"`
 	Description    string    `json:"description"`
@@ -41,7 +42,7 @@ type Repository struct {
 	IsArchived     bool      `json:"is_archived"`
 	IsTemplate     bool      `json:"is_template"`
 	IsFork         bool      `json:"is_fork"`
-	ForkedFromID   string    `json:"forked_from_id,omitempty"`
+	ForkedFromID   string    `json:"forked_from_id,omitempty"` // forked_from_repo_id
 	StarCount      int       `json:"star_count"`
 	ForkCount      int       `json:"fork_count"`
 	WatcherCount   int       `json:"watcher_count"`
@@ -59,8 +60,8 @@ type Repository struct {
 }
 
 // Collaborator represents a repository collaborator
+// Uses composite PK (repo_id, user_id) - no ID field
 type Collaborator struct {
-	ID         string     `json:"id"`
 	RepoID     string     `json:"repo_id"`
 	UserID     string     `json:"user_id"`
 	Permission Permission `json:"permission"`
@@ -68,8 +69,8 @@ type Collaborator struct {
 }
 
 // Star represents a repository star
+// Uses composite PK (user_id, repo_id) - no ID field
 type Star struct {
-	ID        string    `json:"id"`
 	UserID    string    `json:"user_id"`
 	RepoID    string    `json:"repo_id"`
 	CreatedAt time.Time `json:"created_at"`

@@ -31,9 +31,9 @@ func (s *IssuesStore) Create(ctx context.Context, i interface{}) error {
 			closedByID = issue.ClosedByID
 		}
 		_, err := s.db.ExecContext(ctx, `
-			INSERT INTO issues (id, repo_id, number, title, body, author_id, assignee_id, state, state_reason, is_locked, lock_reason, milestone_id, comment_count, reactions_count, created_at, updated_at, closed_at, closed_by_id)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-		`, issue.ID, issue.RepoID, issue.Number, issue.Title, issue.Body, issue.AuthorID, nullString(issue.AssigneeID), issue.State, issue.StateReason, issue.IsLocked, issue.LockReason, nullString(issue.MilestoneID), issue.CommentCount, issue.ReactionsCount, issue.CreatedAt, issue.UpdatedAt, closedAt, closedByID)
+			INSERT INTO issues (id, repo_id, number, title, body, author_id, state, state_reason, is_locked, lock_reason, milestone_id, comment_count, reactions_count, created_at, updated_at, closed_at, closed_by_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		`, issue.ID, issue.RepoID, issue.Number, issue.Title, issue.Body, issue.AuthorID, issue.State, issue.StateReason, issue.IsLocked, issue.LockReason, nullString(issue.MilestoneID), issue.CommentCount, issue.ReactionsCount, issue.CreatedAt, issue.UpdatedAt, closedAt, closedByID)
 		return err
 	default:
 		// Handle the seed struct type
@@ -68,20 +68,17 @@ func nullString(s string) interface{} {
 // GetByID retrieves an issue by ID
 func (s *IssuesStore) GetByID(ctx context.Context, id string) (*issues.Issue, error) {
 	i := &issues.Issue{}
-	var assigneeID, milestoneID, closedByID sql.NullString
+	var milestoneID, closedByID sql.NullString
 	var closedAt sql.NullTime
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, repo_id, number, title, body, author_id, assignee_id, state, state_reason, is_locked, lock_reason, milestone_id, comment_count, reactions_count, created_at, updated_at, closed_at, closed_by_id
+		SELECT id, repo_id, number, title, body, author_id, state, state_reason, is_locked, lock_reason, milestone_id, comment_count, reactions_count, created_at, updated_at, closed_at, closed_by_id
 		FROM issues WHERE id = $1
-	`, id).Scan(&i.ID, &i.RepoID, &i.Number, &i.Title, &i.Body, &i.AuthorID, &assigneeID, &i.State, &i.StateReason, &i.IsLocked, &i.LockReason, &milestoneID, &i.CommentCount, &i.ReactionsCount, &i.CreatedAt, &i.UpdatedAt, &closedAt, &closedByID)
+	`, id).Scan(&i.ID, &i.RepoID, &i.Number, &i.Title, &i.Body, &i.AuthorID, &i.State, &i.StateReason, &i.IsLocked, &i.LockReason, &milestoneID, &i.CommentCount, &i.ReactionsCount, &i.CreatedAt, &i.UpdatedAt, &closedAt, &closedByID)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
-	}
-	if assigneeID.Valid {
-		i.AssigneeID = assigneeID.String
 	}
 	if milestoneID.Valid {
 		i.MilestoneID = milestoneID.String
@@ -98,20 +95,17 @@ func (s *IssuesStore) GetByID(ctx context.Context, id string) (*issues.Issue, er
 // GetByNumber retrieves an issue by repo ID and number
 func (s *IssuesStore) GetByNumber(ctx context.Context, repoID string, number int) (*issues.Issue, error) {
 	i := &issues.Issue{}
-	var assigneeID, milestoneID, closedByID sql.NullString
+	var milestoneID, closedByID sql.NullString
 	var closedAt sql.NullTime
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, repo_id, number, title, body, author_id, assignee_id, state, state_reason, is_locked, lock_reason, milestone_id, comment_count, reactions_count, created_at, updated_at, closed_at, closed_by_id
+		SELECT id, repo_id, number, title, body, author_id, state, state_reason, is_locked, lock_reason, milestone_id, comment_count, reactions_count, created_at, updated_at, closed_at, closed_by_id
 		FROM issues WHERE repo_id = $1 AND number = $2
-	`, repoID, number).Scan(&i.ID, &i.RepoID, &i.Number, &i.Title, &i.Body, &i.AuthorID, &assigneeID, &i.State, &i.StateReason, &i.IsLocked, &i.LockReason, &milestoneID, &i.CommentCount, &i.ReactionsCount, &i.CreatedAt, &i.UpdatedAt, &closedAt, &closedByID)
+	`, repoID, number).Scan(&i.ID, &i.RepoID, &i.Number, &i.Title, &i.Body, &i.AuthorID, &i.State, &i.StateReason, &i.IsLocked, &i.LockReason, &milestoneID, &i.CommentCount, &i.ReactionsCount, &i.CreatedAt, &i.UpdatedAt, &closedAt, &closedByID)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
-	}
-	if assigneeID.Valid {
-		i.AssigneeID = assigneeID.String
 	}
 	if milestoneID.Valid {
 		i.MilestoneID = milestoneID.String
@@ -136,9 +130,9 @@ func (s *IssuesStore) Update(ctx context.Context, i *issues.Issue) error {
 		closedByID = i.ClosedByID
 	}
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE issues SET title = $2, body = $3, assignee_id = $4, state = $5, state_reason = $6, is_locked = $7, lock_reason = $8, milestone_id = $9, comment_count = $10, reactions_count = $11, updated_at = $12, closed_at = $13, closed_by_id = $14
+		UPDATE issues SET title = $2, body = $3, state = $4, state_reason = $5, is_locked = $6, lock_reason = $7, milestone_id = $8, comment_count = $9, reactions_count = $10, updated_at = $11, closed_at = $12, closed_by_id = $13
 		WHERE id = $1
-	`, i.ID, i.Title, i.Body, nullString(i.AssigneeID), i.State, i.StateReason, i.IsLocked, i.LockReason, nullString(i.MilestoneID), i.CommentCount, i.ReactionsCount, i.UpdatedAt, closedAt, closedByID)
+	`, i.ID, i.Title, i.Body, i.State, i.StateReason, i.IsLocked, i.LockReason, nullString(i.MilestoneID), i.CommentCount, i.ReactionsCount, i.UpdatedAt, closedAt, closedByID)
 	return err
 }
 
@@ -164,7 +158,7 @@ func (s *IssuesStore) List(ctx context.Context, repoID string, state string, lim
 
 	// Get issues
 	query := `
-		SELECT id, repo_id, number, title, body, author_id, assignee_id, state, state_reason, is_locked, lock_reason, milestone_id, comment_count, reactions_count, created_at, updated_at, closed_at, closed_by_id
+		SELECT id, repo_id, number, title, body, author_id, state, state_reason, is_locked, lock_reason, milestone_id, comment_count, reactions_count, created_at, updated_at, closed_at, closed_by_id
 		FROM issues WHERE repo_id = $1`
 	if state != "" && state != "all" {
 		query += ` AND state = $2 ORDER BY created_at DESC LIMIT $3 OFFSET $4`
@@ -183,13 +177,10 @@ func (s *IssuesStore) List(ctx context.Context, repoID string, state string, lim
 	var list []*issues.Issue
 	for rows.Next() {
 		i := &issues.Issue{}
-		var assigneeID, milestoneID, closedByID sql.NullString
+		var milestoneID, closedByID sql.NullString
 		var closedAt sql.NullTime
-		if err := rows.Scan(&i.ID, &i.RepoID, &i.Number, &i.Title, &i.Body, &i.AuthorID, &assigneeID, &i.State, &i.StateReason, &i.IsLocked, &i.LockReason, &milestoneID, &i.CommentCount, &i.ReactionsCount, &i.CreatedAt, &i.UpdatedAt, &closedAt, &closedByID); err != nil {
+		if err := rows.Scan(&i.ID, &i.RepoID, &i.Number, &i.Title, &i.Body, &i.AuthorID, &i.State, &i.StateReason, &i.IsLocked, &i.LockReason, &milestoneID, &i.CommentCount, &i.ReactionsCount, &i.CreatedAt, &i.UpdatedAt, &closedAt, &closedByID); err != nil {
 			return nil, 0, err
-		}
-		if assigneeID.Valid {
-			i.AssigneeID = assigneeID.String
 		}
 		if milestoneID.Valid {
 			i.MilestoneID = milestoneID.String
@@ -220,12 +211,12 @@ func (s *IssuesStore) GetNextNumber(ctx context.Context, repoID string) (int, er
 	return int(maxNum.Int64) + 1, nil
 }
 
-// AddLabel adds a label to an issue
+// AddLabel adds a label to an issue - uses composite PK (issue_id, label_id)
 func (s *IssuesStore) AddLabel(ctx context.Context, issueLabel *issues.IssueLabel) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO issue_labels (id, issue_id, label_id, created_at)
-		VALUES ($1, $2, $3, $4)
-	`, issueLabel.ID, issueLabel.IssueID, issueLabel.LabelID, issueLabel.CreatedAt)
+		INSERT INTO issue_labels (issue_id, label_id, created_at)
+		VALUES ($1, $2, $3)
+	`, issueLabel.IssueID, issueLabel.LabelID, issueLabel.CreatedAt)
 	return err
 }
 
@@ -256,12 +247,12 @@ func (s *IssuesStore) ListLabels(ctx context.Context, issueID string) ([]string,
 	return labels, rows.Err()
 }
 
-// AddAssignee adds an assignee to an issue
+// AddAssignee adds an assignee to an issue - uses composite PK (issue_id, user_id)
 func (s *IssuesStore) AddAssignee(ctx context.Context, issueAssignee *issues.IssueAssignee) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO issue_assignees (id, issue_id, user_id, created_at)
-		VALUES ($1, $2, $3, $4)
-	`, issueAssignee.ID, issueAssignee.IssueID, issueAssignee.UserID, issueAssignee.CreatedAt)
+		INSERT INTO issue_assignees (issue_id, user_id, created_at)
+		VALUES ($1, $2, $3)
+	`, issueAssignee.IssueID, issueAssignee.UserID, issueAssignee.CreatedAt)
 	return err
 }
 

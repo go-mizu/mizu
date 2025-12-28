@@ -23,7 +23,6 @@ type Issue struct {
 	Title          string     `json:"title"`
 	Body           string     `json:"body"`
 	AuthorID       string     `json:"author_id"`
-	AssigneeID     string     `json:"assignee_id,omitempty"`
 	State          string     `json:"state"` // open, closed
 	StateReason    string     `json:"state_reason,omitempty"`
 	IsLocked       bool       `json:"is_locked"`
@@ -38,7 +37,7 @@ type Issue struct {
 
 	// Populated from joins
 	Labels    []*Label `json:"labels,omitempty"`
-	Assignees []string `json:"assignees,omitempty"`
+	Assignees []string `json:"assignees,omitempty"` // From issue_assignees table
 }
 
 // Label represents an issue label
@@ -77,16 +76,16 @@ type Comment struct {
 }
 
 // IssueLabel represents the association between an issue and a label
+// Uses composite PK (issue_id, label_id) - no ID field
 type IssueLabel struct {
-	ID        string    `json:"id"`
 	IssueID   string    `json:"issue_id"`
 	LabelID   string    `json:"label_id"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 // IssueAssignee represents the association between an issue and an assignee
+// Uses composite PK (issue_id, user_id) - no ID field
 type IssueAssignee struct {
-	ID        string    `json:"id"`
 	IssueID   string    `json:"issue_id"`
 	UserID    string    `json:"user_id"`
 	CreatedAt time.Time `json:"created_at"`

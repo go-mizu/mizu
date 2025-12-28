@@ -196,7 +196,6 @@ func (s *Service) ListAccessible(ctx context.Context, userID string, opts *ListO
 // AddCollaborator adds a collaborator to a repository
 func (s *Service) AddCollaborator(ctx context.Context, repoID, userID string, perm Permission) error {
 	collab := &Collaborator{
-		ID:         ulid.New(),
 		RepoID:     repoID,
 		UserID:     userID,
 		Permission: perm,
@@ -268,7 +267,6 @@ func (s *Service) Star(ctx context.Context, userID, repoID string) error {
 	}
 
 	star := &Star{
-		ID:        ulid.New(),
 		UserID:    userID,
 		RepoID:    repoID,
 		CreatedAt: time.Now(),

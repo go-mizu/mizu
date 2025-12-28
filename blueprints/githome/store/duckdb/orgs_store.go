@@ -92,12 +92,12 @@ func (s *OrgsStore) List(ctx context.Context, limit, offset int) ([]*orgs.Organi
 	return list, rows.Err()
 }
 
-// AddMember adds a member to an organization
+// AddMember adds a member to an organization - uses composite PK (org_id, user_id)
 func (s *OrgsStore) AddMember(ctx context.Context, m *orgs.Member) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO org_members (id, org_id, user_id, role, created_at)
-		VALUES ($1, $2, $3, $4, $5)
-	`, m.ID, m.OrgID, m.UserID, m.Role, m.CreatedAt)
+		INSERT INTO org_members (org_id, user_id, role, created_at)
+		VALUES ($1, $2, $3, $4)
+	`, m.OrgID, m.UserID, m.Role, m.CreatedAt)
 	return err
 }
 
@@ -116,13 +116,13 @@ func (s *OrgsStore) UpdateMember(ctx context.Context, m *orgs.Member) error {
 	return err
 }
 
-// GetMember retrieves a member
+// GetMember retrieves a member - uses composite PK lookup
 func (s *OrgsStore) GetMember(ctx context.Context, orgID, userID string) (*orgs.Member, error) {
 	m := &orgs.Member{}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, org_id, user_id, role, created_at
+		SELECT org_id, user_id, role, created_at
 		FROM org_members WHERE org_id = $1 AND user_id = $2
-	`, orgID, userID).Scan(&m.ID, &m.OrgID, &m.UserID, &m.Role, &m.CreatedAt)
+	`, orgID, userID).Scan(&m.OrgID, &m.UserID, &m.Role, &m.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -132,7 +132,7 @@ func (s *OrgsStore) GetMember(ctx context.Context, orgID, userID string) (*orgs.
 // ListMembers lists members of an organization
 func (s *OrgsStore) ListMembers(ctx context.Context, orgID string, limit, offset int) ([]*orgs.Member, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, org_id, user_id, role, created_at
+		SELECT org_id, user_id, role, created_at
 		FROM org_members WHERE org_id = $1
 		ORDER BY created_at ASC
 		LIMIT $2 OFFSET $3
@@ -145,7 +145,7 @@ func (s *OrgsStore) ListMembers(ctx context.Context, orgID string, limit, offset
 	var list []*orgs.Member
 	for rows.Next() {
 		m := &orgs.Member{}
-		if err := rows.Scan(&m.ID, &m.OrgID, &m.UserID, &m.Role, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.OrgID, &m.UserID, &m.Role, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, m)

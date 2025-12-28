@@ -48,8 +48,8 @@ type Team struct {
 }
 
 // TeamMember represents a team member
+// Uses composite PK (team_id, user_id) - no ID field
 type TeamMember struct {
-	ID        string    `json:"id"`
 	TeamID    string    `json:"team_id"`
 	UserID    string    `json:"user_id"`
 	Role      string    `json:"role"`
@@ -57,8 +57,8 @@ type TeamMember struct {
 }
 
 // TeamRepo represents a team's access to a repository
+// Uses composite PK (team_id, repo_id) - no ID field
 type TeamRepo struct {
-	ID         string    `json:"id"`
 	TeamID     string    `json:"team_id"`
 	RepoID     string    `json:"repo_id"`
 	Permission string    `json:"permission"`
