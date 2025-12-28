@@ -3,13 +3,18 @@ package commits_test
 import (
 	"context"
 	"database/sql"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 
 	"github.com/go-mizu/blueprints/githome/feature/commits"
 	"github.com/go-mizu/blueprints/githome/feature/repos"
 	"github.com/go-mizu/blueprints/githome/feature/users"
+	pkggit "github.com/go-mizu/blueprints/githome/pkg/git"
 	"github.com/go-mizu/blueprints/githome/store/duckdb"
 )
 
@@ -40,6 +45,68 @@ func setupTestService(t *testing.T) (*commits.Service, *duckdb.Store, func()) {
 	}
 
 	return service, store, cleanup
+}
+
+// setupTestServiceWithGit creates a test service with a real git repository
+func setupTestServiceWithGit(t *testing.T) (*commits.Service, *duckdb.Store, string, func()) {
+	t.Helper()
+
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		t.Fatalf("failed to open duckdb: %v", err)
+	}
+
+	store, err := duckdb.New(db)
+	if err != nil {
+		db.Close()
+		t.Fatalf("failed to create store: %v", err)
+	}
+
+	if err := store.Ensure(context.Background()); err != nil {
+		store.Close()
+		t.Fatalf("failed to ensure schema: %v", err)
+	}
+
+	// Create temp directory for git repos
+	reposDir, err := os.MkdirTemp("", "commits-test-*")
+	if err != nil {
+		store.Close()
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+
+	commitsStore := duckdb.NewCommitsStore(db)
+	service := commits.NewService(commitsStore, store.Repos(), store.Users(), "https://api.example.com", reposDir)
+
+	cleanup := func() {
+		store.Close()
+		os.RemoveAll(reposDir)
+	}
+
+	return service, store, reposDir, cleanup
+}
+
+// createGitRepo creates a bare git repository with an initial commit and returns the commit SHA
+func createGitRepo(t *testing.T, reposDir, owner, repoName string) string {
+	t.Helper()
+
+	// Create owner directory
+	ownerDir := filepath.Join(reposDir, owner)
+	if err := os.MkdirAll(ownerDir, 0755); err != nil {
+		t.Fatalf("failed to create owner dir: %v", err)
+	}
+
+	// Create bare repo at owner/repo.git
+	repoPath := filepath.Join(ownerDir, repoName+".git")
+	_, commitSHA, err := pkggit.InitWithCommit(repoPath, pkggit.Signature{
+		Name:  "Test Author",
+		Email: "test@example.com",
+		When:  time.Now(),
+	}, "Initial commit")
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	return commitSHA
 }
 
 func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *users.User {
@@ -553,7 +620,82 @@ func TestService_ListPullsForCommit_RepoNotFound(t *testing.T) {
 // URL Population Tests
 
 func TestService_PopulateURLs(t *testing.T) {
-	t.Skip("requires real git repository to test URL population")
+	service, store, reposDir, cleanup := setupTestServiceWithGit(t)
+	defer cleanup()
+
+	user := createTestUser(t, store, "testowner", "owner@example.com")
+	repo := createTestRepo(t, store, user, "testrepo")
+
+	// Create git repository with a commit
+	commitSHA := createGitRepo(t, reposDir, user.Login, repo.Name)
+
+	// Get the commit
+	commit, err := service.Get(context.Background(), user.Login, repo.Name, commitSHA)
+	if err != nil {
+		t.Fatalf("Get commit failed: %v", err)
+	}
+
+	// Verify URLs are populated
+	expectedURL := "https://api.example.com/api/v3/repos/testowner/testrepo/commits/" + commitSHA
+	if commit.URL != expectedURL {
+		t.Errorf("expected URL %q, got %q", expectedURL, commit.URL)
+	}
+
+	expectedHTMLURL := "https://api.example.com/testowner/testrepo/commit/" + commitSHA
+	if commit.HTMLURL != expectedHTMLURL {
+		t.Errorf("expected HTMLURL %q, got %q", expectedHTMLURL, commit.HTMLURL)
+	}
+
+	expectedCommentsURL := "https://api.example.com/api/v3/repos/testowner/testrepo/commits/" + commitSHA + "/comments"
+	if commit.CommentsURL != expectedCommentsURL {
+		t.Errorf("expected CommentsURL %q, got %q", expectedCommentsURL, commit.CommentsURL)
+	}
+
+	if commit.NodeID == "" {
+		t.Error("expected NodeID to be populated")
+	}
+
+	// Verify commit data URL
+	if commit.Commit == nil {
+		t.Fatal("expected Commit data to be set")
+	}
+	if commit.Commit.URL != expectedURL {
+		t.Errorf("expected Commit.URL %q, got %q", expectedURL, commit.Commit.URL)
+	}
+}
+
+func TestService_PopulateURLs_InList(t *testing.T) {
+	service, store, reposDir, cleanup := setupTestServiceWithGit(t)
+	defer cleanup()
+
+	user := createTestUser(t, store, "testowner", "owner@example.com")
+	repo := createTestRepo(t, store, user, "testrepo")
+
+	// Create git repository
+	createGitRepo(t, reposDir, user.Login, repo.Name)
+
+	// List commits
+	commitList, err := service.List(context.Background(), user.Login, repo.Name, nil)
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+
+	if len(commitList) == 0 {
+		t.Fatal("expected at least one commit")
+	}
+
+	// Verify URLs are populated for each commit in list
+	for _, commit := range commitList {
+		if commit.URL == "" {
+			t.Error("expected URL to be populated in list")
+		}
+		if !strings.Contains(commit.URL, commit.SHA) {
+			t.Error("URL should contain commit SHA")
+		}
+		if commit.HTMLURL == "" {
+			t.Error("expected HTMLURL to be populated in list")
+		}
+	}
 }
 
 func TestService_PopulateStatusURLs(t *testing.T) {
