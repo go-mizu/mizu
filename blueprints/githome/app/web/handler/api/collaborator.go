@@ -3,8 +3,8 @@ package api
 import (
 	"net/http"
 
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/collaborators"
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/blueprints/githome/feature/collaborators"
+	"github.com/go-mizu/blueprints/githome/feature/repos"
 )
 
 // CollaboratorHandler handles collaborator endpoints
@@ -18,13 +18,6 @@ func NewCollaboratorHandler(collaborators collaborators.API, repos repos.API) *C
 	return &CollaboratorHandler{collaborators: collaborators, repos: repos}
 }
 
-// getRepoFromPath gets repository from path parameters
-func (h *CollaboratorHandler) getRepoFromPath(r *http.Request) (*repos.Repository, error) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	return h.repos.GetByFullName(r.Context(), owner, repoName)
-}
-
 // ListCollaborators handles GET /repos/{owner}/{repo}/collaborators
 func (h *CollaboratorHandler) ListCollaborators(w http.ResponseWriter, r *http.Request) {
 	user := GetUser(r.Context())
@@ -33,7 +26,10 @@ func (h *CollaboratorHandler) ListCollaborators(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -51,7 +47,7 @@ func (h *CollaboratorHandler) ListCollaborators(w http.ResponseWriter, r *http.R
 		Permission:  QueryParam(r, "permission"),
 	}
 
-	collabList, err := h.collaborators.ListForRepo(r.Context(), repo.ID, opts)
+	collabList, err := h.collaborators.List(r.Context(), owner, repoName, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -62,7 +58,10 @@ func (h *CollaboratorHandler) ListCollaborators(w http.ResponseWriter, r *http.R
 
 // CheckCollaborator handles GET /repos/{owner}/{repo}/collaborators/{username}
 func (h *CollaboratorHandler) CheckCollaborator(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -74,7 +73,7 @@ func (h *CollaboratorHandler) CheckCollaborator(w http.ResponseWriter, r *http.R
 
 	username := PathParam(r, "username")
 
-	isCollaborator, err := h.collaborators.IsCollaborator(r.Context(), repo.ID, username)
+	isCollaborator, err := h.collaborators.IsCollaborator(r.Context(), owner, repoName, username)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -95,7 +94,10 @@ func (h *CollaboratorHandler) AddCollaborator(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -116,7 +118,7 @@ func (h *CollaboratorHandler) AddCollaborator(w http.ResponseWriter, r *http.Req
 		in.Permission = "push"
 	}
 
-	invitation, err := h.collaborators.Add(r.Context(), repo.ID, username, in.Permission)
+	invitation, err := h.collaborators.Add(r.Context(), owner, repoName, username, in.Permission)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -137,7 +139,10 @@ func (h *CollaboratorHandler) RemoveCollaborator(w http.ResponseWriter, r *http.
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -149,7 +154,7 @@ func (h *CollaboratorHandler) RemoveCollaborator(w http.ResponseWriter, r *http.
 
 	username := PathParam(r, "username")
 
-	if err := h.collaborators.Remove(r.Context(), repo.ID, username); err != nil {
+	if err := h.collaborators.Remove(r.Context(), owner, repoName, username); err != nil {
 		if err == collaborators.ErrNotFound {
 			WriteNotFound(w, "Collaborator")
 			return
@@ -169,7 +174,10 @@ func (h *CollaboratorHandler) GetCollaboratorPermission(w http.ResponseWriter, r
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -181,7 +189,7 @@ func (h *CollaboratorHandler) GetCollaboratorPermission(w http.ResponseWriter, r
 
 	username := PathParam(r, "username")
 
-	permission, err := h.collaborators.GetPermission(r.Context(), repo.ID, username)
+	permission, err := h.collaborators.GetPermission(r.Context(), owner, repoName, username)
 	if err != nil {
 		if err == collaborators.ErrNotFound {
 			WriteNotFound(w, "User")
@@ -202,7 +210,10 @@ func (h *CollaboratorHandler) ListInvitations(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -218,7 +229,7 @@ func (h *CollaboratorHandler) ListInvitations(w http.ResponseWriter, r *http.Req
 		PerPage: pagination.PerPage,
 	}
 
-	invitations, err := h.collaborators.ListInvitations(r.Context(), repo.ID, opts)
+	invitations, err := h.collaborators.ListInvitations(r.Context(), owner, repoName, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -235,7 +246,10 @@ func (h *CollaboratorHandler) UpdateInvitation(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -259,7 +273,7 @@ func (h *CollaboratorHandler) UpdateInvitation(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	invitation, err := h.collaborators.UpdateInvitation(r.Context(), repo.ID, invitationID, in.Permissions)
+	invitation, err := h.collaborators.UpdateInvitation(r.Context(), owner, repoName, invitationID, in.Permissions)
 	if err != nil {
 		if err == collaborators.ErrNotFound {
 			WriteNotFound(w, "Invitation")
@@ -280,7 +294,10 @@ func (h *CollaboratorHandler) DeleteInvitation(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -296,7 +313,7 @@ func (h *CollaboratorHandler) DeleteInvitation(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if err := h.collaborators.DeleteInvitation(r.Context(), repo.ID, invitationID); err != nil {
+	if err := h.collaborators.DeleteInvitation(r.Context(), owner, repoName, invitationID); err != nil {
 		if err == collaborators.ErrNotFound {
 			WriteNotFound(w, "Invitation")
 			return

@@ -3,8 +3,8 @@ package api
 import (
 	"net/http"
 
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/repos"
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/watches"
+	"github.com/go-mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/blueprints/githome/feature/watches"
 )
 
 // WatchHandler handles watch/subscription endpoints
@@ -18,16 +18,12 @@ func NewWatchHandler(watches watches.API, repos repos.API) *WatchHandler {
 	return &WatchHandler{watches: watches, repos: repos}
 }
 
-// getRepoFromPath gets repository from path parameters
-func (h *WatchHandler) getRepoFromPath(r *http.Request) (*repos.Repository, error) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	return h.repos.GetByFullName(r.Context(), owner, repoName)
-}
-
 // ListWatchers handles GET /repos/{owner}/{repo}/subscribers
 func (h *WatchHandler) ListWatchers(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -43,7 +39,7 @@ func (h *WatchHandler) ListWatchers(w http.ResponseWriter, r *http.Request) {
 		PerPage: pagination.PerPage,
 	}
 
-	watchers, err := h.watches.ListWatchers(r.Context(), repo.ID, opts)
+	watchers, err := h.watches.ListWatchers(r.Context(), owner, repoName, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -60,7 +56,10 @@ func (h *WatchHandler) GetSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -70,7 +69,7 @@ func (h *WatchHandler) GetSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subscription, err := h.watches.GetSubscription(r.Context(), user.ID, repo.ID)
+	subscription, err := h.watches.GetSubscription(r.Context(), user.ID, owner, repoName)
 	if err != nil {
 		if err == watches.ErrNotFound {
 			WriteNotFound(w, "Subscription")
@@ -91,7 +90,10 @@ func (h *WatchHandler) SetSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -101,13 +103,16 @@ func (h *WatchHandler) SetSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var in watches.SetSubscriptionIn
+	var in struct {
+		Subscribed bool `json:"subscribed"`
+		Ignored    bool `json:"ignored"`
+	}
 	if err := DecodeJSON(r, &in); err != nil {
 		WriteBadRequest(w, "Invalid request body")
 		return
 	}
 
-	subscription, err := h.watches.SetSubscription(r.Context(), user.ID, repo.ID, &in)
+	subscription, err := h.watches.SetSubscription(r.Context(), user.ID, owner, repoName, in.Subscribed, in.Ignored)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -124,7 +129,10 @@ func (h *WatchHandler) DeleteSubscription(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -134,7 +142,7 @@ func (h *WatchHandler) DeleteSubscription(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.watches.DeleteSubscription(r.Context(), user.ID, repo.ID); err != nil {
+	if err := h.watches.DeleteSubscription(r.Context(), user.ID, owner, repoName); err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -151,7 +159,7 @@ func (h *WatchHandler) ListWatchedRepos(w http.ResponseWriter, r *http.Request) 
 		PerPage: pagination.PerPage,
 	}
 
-	repoList, err := h.watches.ListWatchedByUser(r.Context(), username, opts)
+	repoList, err := h.watches.ListForUser(r.Context(), username, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -174,7 +182,7 @@ func (h *WatchHandler) ListAuthenticatedUserWatchedRepos(w http.ResponseWriter, 
 		PerPage: pagination.PerPage,
 	}
 
-	repoList, err := h.watches.ListWatchedByUser(r.Context(), user.Login, opts)
+	repoList, err := h.watches.ListForAuthenticatedUser(r.Context(), user.ID, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return

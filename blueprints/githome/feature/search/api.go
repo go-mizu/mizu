@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/users"
+	"github.com/go-mizu/blueprints/githome/feature/users"
 )
 
 // Result is a generic search result

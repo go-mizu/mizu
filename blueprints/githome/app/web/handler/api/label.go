@@ -3,8 +3,8 @@ package api
 import (
 	"net/http"
 
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/labels"
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/blueprints/githome/feature/labels"
+	"github.com/go-mizu/blueprints/githome/feature/repos"
 )
 
 // LabelHandler handles label endpoints
@@ -18,16 +18,12 @@ func NewLabelHandler(labels labels.API, repos repos.API) *LabelHandler {
 	return &LabelHandler{labels: labels, repos: repos}
 }
 
-// getRepoFromPath gets repository from path parameters
-func (h *LabelHandler) getRepoFromPath(r *http.Request) (*repos.Repository, error) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	return h.repos.GetByFullName(r.Context(), owner, repoName)
-}
-
 // ListRepoLabels handles GET /repos/{owner}/{repo}/labels
 func (h *LabelHandler) ListRepoLabels(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -43,7 +39,7 @@ func (h *LabelHandler) ListRepoLabels(w http.ResponseWriter, r *http.Request) {
 		PerPage: pagination.PerPage,
 	}
 
-	labelList, err := h.labels.ListForRepo(r.Context(), repo.ID, opts)
+	labelList, err := h.labels.List(r.Context(), owner, repoName, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -54,7 +50,10 @@ func (h *LabelHandler) ListRepoLabels(w http.ResponseWriter, r *http.Request) {
 
 // GetLabel handles GET /repos/{owner}/{repo}/labels/{name}
 func (h *LabelHandler) GetLabel(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -66,7 +65,7 @@ func (h *LabelHandler) GetLabel(w http.ResponseWriter, r *http.Request) {
 
 	name := PathParam(r, "name")
 
-	label, err := h.labels.GetByName(r.Context(), repo.ID, name)
+	label, err := h.labels.Get(r.Context(), owner, repoName, name)
 	if err != nil {
 		if err == labels.ErrNotFound {
 			WriteNotFound(w, "Label")
@@ -87,7 +86,10 @@ func (h *LabelHandler) CreateLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -103,9 +105,9 @@ func (h *LabelHandler) CreateLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	label, err := h.labels.Create(r.Context(), repo.ID, &in)
+	label, err := h.labels.Create(r.Context(), owner, repoName, &in)
 	if err != nil {
-		if err == labels.ErrExists {
+		if err == labels.ErrLabelExists {
 			WriteConflict(w, "Label already exists")
 			return
 		}
@@ -124,7 +126,10 @@ func (h *LabelHandler) UpdateLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -136,24 +141,18 @@ func (h *LabelHandler) UpdateLabel(w http.ResponseWriter, r *http.Request) {
 
 	name := PathParam(r, "name")
 
-	label, err := h.labels.GetByName(r.Context(), repo.ID, name)
-	if err != nil {
-		if err == labels.ErrNotFound {
-			WriteNotFound(w, "Label")
-			return
-		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
 	var in labels.UpdateIn
 	if err := DecodeJSON(r, &in); err != nil {
 		WriteBadRequest(w, "Invalid request body")
 		return
 	}
 
-	updated, err := h.labels.Update(r.Context(), label.ID, &in)
+	updated, err := h.labels.Update(r.Context(), owner, repoName, name, &in)
 	if err != nil {
+		if err == labels.ErrNotFound {
+			WriteNotFound(w, "Label")
+			return
+		}
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -169,7 +168,10 @@ func (h *LabelHandler) DeleteLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -181,17 +183,11 @@ func (h *LabelHandler) DeleteLabel(w http.ResponseWriter, r *http.Request) {
 
 	name := PathParam(r, "name")
 
-	label, err := h.labels.GetByName(r.Context(), repo.ID, name)
-	if err != nil {
+	if err := h.labels.Delete(r.Context(), owner, repoName, name); err != nil {
 		if err == labels.ErrNotFound {
 			WriteNotFound(w, "Label")
 			return
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	if err := h.labels.Delete(r.Context(), label.ID); err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -201,7 +197,10 @@ func (h *LabelHandler) DeleteLabel(w http.ResponseWriter, r *http.Request) {
 
 // ListIssueLabels handles GET /repos/{owner}/{repo}/issues/{issue_number}/labels
 func (h *LabelHandler) ListIssueLabels(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -223,7 +222,7 @@ func (h *LabelHandler) ListIssueLabels(w http.ResponseWriter, r *http.Request) {
 		PerPage: pagination.PerPage,
 	}
 
-	labelList, err := h.labels.ListForIssue(r.Context(), repo.ID, issueNumber, opts)
+	labelList, err := h.labels.ListForIssue(r.Context(), owner, repoName, issueNumber, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -240,7 +239,10 @@ func (h *LabelHandler) AddIssueLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -264,7 +266,7 @@ func (h *LabelHandler) AddIssueLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	labelList, err := h.labels.AddToIssue(r.Context(), repo.ID, issueNumber, in.Labels)
+	labelList, err := h.labels.AddToIssue(r.Context(), owner, repoName, issueNumber, in.Labels)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -281,7 +283,10 @@ func (h *LabelHandler) SetIssueLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -305,7 +310,7 @@ func (h *LabelHandler) SetIssueLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	labelList, err := h.labels.SetForIssue(r.Context(), repo.ID, issueNumber, in.Labels)
+	labelList, err := h.labels.SetForIssue(r.Context(), owner, repoName, issueNumber, in.Labels)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -322,7 +327,10 @@ func (h *LabelHandler) RemoveAllIssueLabels(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -338,7 +346,7 @@ func (h *LabelHandler) RemoveAllIssueLabels(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if err := h.labels.RemoveAllFromIssue(r.Context(), repo.ID, issueNumber); err != nil {
+	if err := h.labels.RemoveAllFromIssue(r.Context(), owner, repoName, issueNumber); err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -354,7 +362,10 @@ func (h *LabelHandler) RemoveIssueLabel(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -372,8 +383,7 @@ func (h *LabelHandler) RemoveIssueLabel(w http.ResponseWriter, r *http.Request) 
 
 	name := PathParam(r, "name")
 
-	labelList, err := h.labels.RemoveFromIssue(r.Context(), repo.ID, issueNumber, name)
-	if err != nil {
+	if err := h.labels.RemoveFromIssue(r.Context(), owner, repoName, issueNumber, name); err != nil {
 		if err == labels.ErrNotFound {
 			WriteNotFound(w, "Label")
 			return
@@ -382,12 +392,15 @@ func (h *LabelHandler) RemoveIssueLabel(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	WriteJSON(w, http.StatusOK, labelList)
+	WriteNoContent(w)
 }
 
 // ListLabelsForMilestone handles GET /repos/{owner}/{repo}/milestones/{milestone_number}/labels
 func (h *LabelHandler) ListLabelsForMilestone(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -409,7 +422,7 @@ func (h *LabelHandler) ListLabelsForMilestone(w http.ResponseWriter, r *http.Req
 		PerPage: pagination.PerPage,
 	}
 
-	labelList, err := h.labels.ListForMilestone(r.Context(), repo.ID, milestoneNumber, opts)
+	labelList, err := h.labels.ListForMilestone(r.Context(), owner, repoName, milestoneNumber, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return

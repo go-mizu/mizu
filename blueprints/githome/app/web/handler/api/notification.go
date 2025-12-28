@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/notifications"
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/blueprints/githome/feature/notifications"
+	"github.com/go-mizu/blueprints/githome/feature/repos"
 )
 
 // NotificationHandler handles notification endpoints
@@ -74,7 +74,7 @@ func (h *NotificationHandler) MarkAllAsRead(w http.ResponseWriter, r *http.Reque
 		in.LastReadAt = time.Now()
 	}
 
-	if err := h.notifications.MarkAllAsRead(r.Context(), user.ID, in.LastReadAt); err != nil {
+	if err := h.notifications.MarkAsRead(r.Context(), user.ID, in.LastReadAt); err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -90,11 +90,7 @@ func (h *NotificationHandler) GetThread(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	threadID, err := PathParamInt64(r, "thread_id")
-	if err != nil {
-		WriteBadRequest(w, "Invalid thread ID")
-		return
-	}
+	threadID := PathParam(r, "thread_id")
 
 	thread, err := h.notifications.GetThread(r.Context(), user.ID, threadID)
 	if err != nil {
@@ -117,11 +113,7 @@ func (h *NotificationHandler) MarkThreadAsRead(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	threadID, err := PathParamInt64(r, "thread_id")
-	if err != nil {
-		WriteBadRequest(w, "Invalid thread ID")
-		return
-	}
+	threadID := PathParam(r, "thread_id")
 
 	if err := h.notifications.MarkThreadAsRead(r.Context(), user.ID, threadID); err != nil {
 		if err == notifications.ErrNotFound {
@@ -143,11 +135,7 @@ func (h *NotificationHandler) MarkThreadAsDone(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	threadID, err := PathParamInt64(r, "thread_id")
-	if err != nil {
-		WriteBadRequest(w, "Invalid thread ID")
-		return
-	}
+	threadID := PathParam(r, "thread_id")
 
 	if err := h.notifications.MarkThreadAsDone(r.Context(), user.ID, threadID); err != nil {
 		if err == notifications.ErrNotFound {
@@ -169,11 +157,7 @@ func (h *NotificationHandler) GetThreadSubscription(w http.ResponseWriter, r *ht
 		return
 	}
 
-	threadID, err := PathParamInt64(r, "thread_id")
-	if err != nil {
-		WriteBadRequest(w, "Invalid thread ID")
-		return
-	}
+	threadID := PathParam(r, "thread_id")
 
 	subscription, err := h.notifications.GetThreadSubscription(r.Context(), user.ID, threadID)
 	if err != nil {
@@ -196,11 +180,7 @@ func (h *NotificationHandler) SetThreadSubscription(w http.ResponseWriter, r *ht
 		return
 	}
 
-	threadID, err := PathParamInt64(r, "thread_id")
-	if err != nil {
-		WriteBadRequest(w, "Invalid thread ID")
-		return
-	}
+	threadID := PathParam(r, "thread_id")
 
 	var in struct {
 		Ignored bool `json:"ignored"`
@@ -231,11 +211,7 @@ func (h *NotificationHandler) DeleteThreadSubscription(w http.ResponseWriter, r 
 		return
 	}
 
-	threadID, err := PathParamInt64(r, "thread_id")
-	if err != nil {
-		WriteBadRequest(w, "Invalid thread ID")
-		return
-	}
+	threadID := PathParam(r, "thread_id")
 
 	if err := h.notifications.DeleteThreadSubscription(r.Context(), user.ID, threadID); err != nil {
 		if err == notifications.ErrNotFound {
@@ -260,7 +236,7 @@ func (h *NotificationHandler) ListRepoNotifications(w http.ResponseWriter, r *ht
 	owner := PathParam(r, "owner")
 	repoName := PathParam(r, "repo")
 
-	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -278,7 +254,7 @@ func (h *NotificationHandler) ListRepoNotifications(w http.ResponseWriter, r *ht
 		Participating: QueryParamBool(r, "participating"),
 	}
 
-	notificationList, err := h.notifications.ListForRepo(r.Context(), user.ID, repo.ID, opts)
+	notificationList, err := h.notifications.ListForRepo(r.Context(), user.ID, owner, repoName, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -298,7 +274,7 @@ func (h *NotificationHandler) MarkRepoNotificationsAsRead(w http.ResponseWriter,
 	owner := PathParam(r, "owner")
 	repoName := PathParam(r, "repo")
 
-	repo, err := h.repos.GetByFullName(r.Context(), owner, repoName)
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -317,7 +293,7 @@ func (h *NotificationHandler) MarkRepoNotificationsAsRead(w http.ResponseWriter,
 		in.LastReadAt = time.Now()
 	}
 
-	if err := h.notifications.MarkRepoAsRead(r.Context(), user.ID, repo.ID, in.LastReadAt); err != nil {
+	if err := h.notifications.MarkRepoAsRead(r.Context(), user.ID, owner, repoName, in.LastReadAt); err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

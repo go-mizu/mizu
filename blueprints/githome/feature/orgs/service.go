@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/users"
+	"github.com/go-mizu/blueprints/githome/feature/users"
 )
 
 // Service implements the orgs API

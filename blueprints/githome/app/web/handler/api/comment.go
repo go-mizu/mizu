@@ -3,8 +3,8 @@ package api
 import (
 	"net/http"
 
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/comments"
-	"github.com/mizu-framework/mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/blueprints/githome/feature/comments"
+	"github.com/go-mizu/blueprints/githome/feature/repos"
 )
 
 // CommentHandler handles comment endpoints
@@ -18,16 +18,12 @@ func NewCommentHandler(comments comments.API, repos repos.API) *CommentHandler {
 	return &CommentHandler{comments: comments, repos: repos}
 }
 
-// getRepoFromPath gets repository from path parameters
-func (h *CommentHandler) getRepoFromPath(r *http.Request) (*repos.Repository, error) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	return h.repos.GetByFullName(r.Context(), owner, repoName)
-}
-
 // ListIssueComments handles GET /repos/{owner}/{repo}/issues/{issue_number}/comments
 func (h *CommentHandler) ListIssueComments(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -49,7 +45,7 @@ func (h *CommentHandler) ListIssueComments(w http.ResponseWriter, r *http.Reques
 		PerPage: pagination.PerPage,
 	}
 
-	commentList, err := h.comments.ListForIssue(r.Context(), repo.ID, issueNumber, opts)
+	commentList, err := h.comments.ListForIssue(r.Context(), owner, repoName, issueNumber, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -60,7 +56,10 @@ func (h *CommentHandler) ListIssueComments(w http.ResponseWriter, r *http.Reques
 
 // GetIssueComment handles GET /repos/{owner}/{repo}/issues/comments/{comment_id}
 func (h *CommentHandler) GetIssueComment(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -76,7 +75,7 @@ func (h *CommentHandler) GetIssueComment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	comment, err := h.comments.GetByID(r.Context(), repo.ID, commentID)
+	comment, err := h.comments.GetIssueComment(r.Context(), owner, repoName, commentID)
 	if err != nil {
 		if err == comments.ErrNotFound {
 			WriteNotFound(w, "Comment")
@@ -97,7 +96,10 @@ func (h *CommentHandler) CreateIssueComment(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -113,13 +115,15 @@ func (h *CommentHandler) CreateIssueComment(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	var in comments.CreateIn
+	var in struct {
+		Body string `json:"body"`
+	}
 	if err := DecodeJSON(r, &in); err != nil {
 		WriteBadRequest(w, "Invalid request body")
 		return
 	}
 
-	comment, err := h.comments.CreateForIssue(r.Context(), repo.ID, issueNumber, user.ID, &in)
+	comment, err := h.comments.CreateIssueComment(r.Context(), owner, repoName, issueNumber, user.ID, in.Body)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -136,7 +140,10 @@ func (h *CommentHandler) UpdateIssueComment(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -152,13 +159,15 @@ func (h *CommentHandler) UpdateIssueComment(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	var in comments.UpdateIn
+	var in struct {
+		Body string `json:"body"`
+	}
 	if err := DecodeJSON(r, &in); err != nil {
 		WriteBadRequest(w, "Invalid request body")
 		return
 	}
 
-	comment, err := h.comments.Update(r.Context(), repo.ID, commentID, &in)
+	comment, err := h.comments.UpdateIssueComment(r.Context(), owner, repoName, commentID, in.Body)
 	if err != nil {
 		if err == comments.ErrNotFound {
 			WriteNotFound(w, "Comment")
@@ -179,7 +188,10 @@ func (h *CommentHandler) DeleteIssueComment(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -195,7 +207,7 @@ func (h *CommentHandler) DeleteIssueComment(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if err := h.comments.Delete(r.Context(), repo.ID, commentID); err != nil {
+	if err := h.comments.DeleteIssueComment(r.Context(), owner, repoName, commentID); err != nil {
 		if err == comments.ErrNotFound {
 			WriteNotFound(w, "Comment")
 			return
@@ -209,7 +221,10 @@ func (h *CommentHandler) DeleteIssueComment(w http.ResponseWriter, r *http.Reque
 
 // ListRepoComments handles GET /repos/{owner}/{repo}/issues/comments
 func (h *CommentHandler) ListRepoComments(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -227,7 +242,7 @@ func (h *CommentHandler) ListRepoComments(w http.ResponseWriter, r *http.Request
 		Direction: QueryParam(r, "direction"),
 	}
 
-	commentList, err := h.comments.ListForRepo(r.Context(), repo.ID, opts)
+	commentList, err := h.comments.ListForRepo(r.Context(), owner, repoName, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -238,7 +253,10 @@ func (h *CommentHandler) ListRepoComments(w http.ResponseWriter, r *http.Request
 
 // ListCommitComments handles GET /repos/{owner}/{repo}/commits/{commit_sha}/comments
 func (h *CommentHandler) ListCommitComments(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -256,7 +274,7 @@ func (h *CommentHandler) ListCommitComments(w http.ResponseWriter, r *http.Reque
 		PerPage: pagination.PerPage,
 	}
 
-	commentList, err := h.comments.ListForCommit(r.Context(), repo.ID, commitSHA, opts)
+	commentList, err := h.comments.ListForCommit(r.Context(), owner, repoName, commitSHA, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -273,7 +291,10 @@ func (h *CommentHandler) CreateCommitComment(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -291,7 +312,7 @@ func (h *CommentHandler) CreateCommitComment(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	comment, err := h.comments.CreateForCommit(r.Context(), repo.ID, commitSHA, user.ID, &in)
+	comment, err := h.comments.CreateCommitComment(r.Context(), owner, repoName, commitSHA, user.ID, &in)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -302,7 +323,10 @@ func (h *CommentHandler) CreateCommitComment(w http.ResponseWriter, r *http.Requ
 
 // GetCommitComment handles GET /repos/{owner}/{repo}/comments/{comment_id}
 func (h *CommentHandler) GetCommitComment(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -318,7 +342,7 @@ func (h *CommentHandler) GetCommitComment(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	comment, err := h.comments.GetCommitComment(r.Context(), repo.ID, commentID)
+	comment, err := h.comments.GetCommitComment(r.Context(), owner, repoName, commentID)
 	if err != nil {
 		if err == comments.ErrNotFound {
 			WriteNotFound(w, "Comment")
@@ -339,7 +363,10 @@ func (h *CommentHandler) UpdateCommitComment(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -355,13 +382,15 @@ func (h *CommentHandler) UpdateCommitComment(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var in comments.UpdateIn
+	var in struct {
+		Body string `json:"body"`
+	}
 	if err := DecodeJSON(r, &in); err != nil {
 		WriteBadRequest(w, "Invalid request body")
 		return
 	}
 
-	comment, err := h.comments.UpdateCommitComment(r.Context(), repo.ID, commentID, &in)
+	comment, err := h.comments.UpdateCommitComment(r.Context(), owner, repoName, commentID, in.Body)
 	if err != nil {
 		if err == comments.ErrNotFound {
 			WriteNotFound(w, "Comment")
@@ -382,7 +411,10 @@ func (h *CommentHandler) DeleteCommitComment(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -398,7 +430,7 @@ func (h *CommentHandler) DeleteCommitComment(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := h.comments.DeleteCommitComment(r.Context(), repo.ID, commentID); err != nil {
+	if err := h.comments.DeleteCommitComment(r.Context(), owner, repoName, commentID); err != nil {
 		if err == comments.ErrNotFound {
 			WriteNotFound(w, "Comment")
 			return
@@ -412,7 +444,10 @@ func (h *CommentHandler) DeleteCommitComment(w http.ResponseWriter, r *http.Requ
 
 // ListRepoCommitComments handles GET /repos/{owner}/{repo}/comments
 func (h *CommentHandler) ListRepoCommitComments(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.getRepoFromPath(r)
+	owner := PathParam(r, "owner")
+	repoName := PathParam(r, "repo")
+
+	_, err := h.repos.Get(r.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
 			WriteNotFound(w, "Repository")
@@ -428,7 +463,7 @@ func (h *CommentHandler) ListRepoCommitComments(w http.ResponseWriter, r *http.R
 		PerPage: pagination.PerPage,
 	}
 
-	commentList, err := h.comments.ListCommitCommentsForRepo(r.Context(), repo.ID, opts)
+	commentList, err := h.comments.ListCommitCommentsForRepo(r.Context(), owner, repoName, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
