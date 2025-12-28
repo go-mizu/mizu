@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/go-mizu/blueprints/githome/feature/repos"
+	pkggit "github.com/go-mizu/blueprints/githome/pkg/git"
 )
 
 // Service implements the git API
@@ -14,15 +16,28 @@ type Service struct {
 	store     Store
 	repoStore repos.Store
 	baseURL   string
+	reposDir  string // Base directory for git repositories
 }
 
 // NewService creates a new git service
-func NewService(store Store, repoStore repos.Store, baseURL string) *Service {
+func NewService(store Store, repoStore repos.Store, baseURL, reposDir string) *Service {
 	return &Service{
 		store:     store,
 		repoStore: repoStore,
 		baseURL:   baseURL,
+		reposDir:  reposDir,
 	}
+}
+
+// getRepoPath returns the filesystem path for a repository
+func (s *Service) getRepoPath(owner, repo string) string {
+	return filepath.Join(s.reposDir, owner, repo+".git")
+}
+
+// openRepo opens a git repository
+func (s *Service) openRepo(owner, repo string) (*pkggit.Repository, error) {
+	path := s.getRepoPath(owner, repo)
+	return pkggit.Open(path)
 }
 
 // GetBlob retrieves a blob by SHA
@@ -45,8 +60,39 @@ func (s *Service) GetBlob(ctx context.Context, owner, repo, sha string) (*Blob, 
 		return blob, nil
 	}
 
-	// Would integrate with git to get blob
-	return nil, ErrNotFound
+	// Get from git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	gitBlob, err := gitRepo.GetBlob(sha)
+	if err != nil {
+		if err == pkggit.ErrNotFound {
+			return nil, ErrNotFound
+		}
+		if err == pkggit.ErrInvalidSHA {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	blob = &Blob{
+		SHA:      gitBlob.SHA,
+		NodeID:   base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Blob:%s", sha))),
+		Size:     int(gitBlob.Size),
+		Content:  string(gitBlob.Content),
+		Encoding: "utf-8",
+	}
+
+	// Cache the blob
+	_ = s.store.CacheBlob(ctx, r.ID, blob)
+
+	s.populateBlobURLs(blob, owner, repo)
+	return blob, nil
 }
 
 // CreateBlob creates a new blob
@@ -64,13 +110,35 @@ func (s *Service) CreateBlob(ctx context.Context, owner, repo string, in *Create
 		encoding = "utf-8"
 	}
 
-	// Would integrate with git to create blob
-	// For now return placeholder
-	sha := fmt.Sprintf("blob_%d", time.Now().UnixNano())
+	// Decode content if base64
+	content := []byte(in.Content)
+	if encoding == "base64" {
+		decoded, err := base64.StdEncoding.DecodeString(in.Content)
+		if err != nil {
+			return nil, fmt.Errorf("invalid base64 content: %w", err)
+		}
+		content = decoded
+	}
+
+	// Open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, repos.ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Create blob in git
+	sha, err := gitRepo.CreateBlob(content)
+	if err != nil {
+		return nil, fmt.Errorf("create blob: %w", err)
+	}
+
 	blob := &Blob{
 		SHA:      sha,
 		NodeID:   base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Blob:%s", sha))),
-		Size:     len(in.Content),
+		Size:     len(content),
 		Content:  in.Content,
 		Encoding: encoding,
 	}
@@ -94,23 +162,47 @@ func (s *Service) GetGitCommit(ctx context.Context, owner, repo, sha string) (*G
 		return nil, repos.ErrNotFound
 	}
 
-	// Would integrate with git to get commit
-	// For now return placeholder
+	// Open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	gitCommit, err := gitRepo.GetCommit(sha)
+	if err != nil {
+		if err == pkggit.ErrNotFound {
+			return nil, ErrNotFound
+		}
+		if err == pkggit.ErrInvalidSHA {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	parents := make([]*TreeRef, 0, len(gitCommit.Parents))
+	for _, p := range gitCommit.Parents {
+		parents = append(parents, &TreeRef{SHA: p})
+	}
+
 	commit := &GitCommit{
 		SHA:     sha,
 		NodeID:  base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("GitCommit:%s", sha))),
-		Message: "Commit message",
+		Message: gitCommit.Message,
 		Author: &CommitAuthor{
-			Name:  "Author",
-			Email: "author@example.com",
-			Date:  time.Now(),
+			Name:  gitCommit.Author.Name,
+			Email: gitCommit.Author.Email,
+			Date:  gitCommit.Author.When,
 		},
 		Committer: &CommitAuthor{
-			Name:  "Committer",
-			Email: "committer@example.com",
-			Date:  time.Now(),
+			Name:  gitCommit.Committer.Name,
+			Email: gitCommit.Committer.Email,
+			Date:  gitCommit.Committer.When,
 		},
-		Parents: []*TreeRef{},
+		Tree:    &TreeRef{SHA: gitCommit.TreeSHA},
+		Parents: parents,
 	}
 
 	s.populateCommitURLs(commit, owner, repo)
@@ -127,22 +219,60 @@ func (s *Service) CreateGitCommit(ctx context.Context, owner, repo string, in *C
 		return nil, repos.ErrNotFound
 	}
 
-	// Would integrate with git to create commit
-	sha := fmt.Sprintf("commit_%d", time.Now().UnixNano())
+	// Open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, repos.ErrNotFound
+		}
+		return nil, err
+	}
+
 	now := time.Now()
 
 	author := in.Author
 	if author == nil {
 		author = &CommitAuthor{
-			Name:  "Author",
-			Email: "author@example.com",
+			Name:  "GitHome",
+			Email: "noreply@githome.local",
 			Date:  now,
 		}
+	}
+	if author.Date.IsZero() {
+		author.Date = now
 	}
 
 	committer := in.Committer
 	if committer == nil {
 		committer = author
+	}
+	if committer.Date.IsZero() {
+		committer.Date = now
+	}
+
+	// Create commit in git
+	sha, err := gitRepo.CreateCommit(&pkggit.CreateCommitOpts{
+		Message: in.Message,
+		TreeSHA: in.Tree,
+		Parents: in.Parents,
+		Author: pkggit.Signature{
+			Name:  author.Name,
+			Email: author.Email,
+			When:  author.Date,
+		},
+		Committer: pkggit.Signature{
+			Name:  committer.Name,
+			Email: committer.Email,
+			When:  committer.Date,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create commit: %w", err)
+	}
+
+	parents := make([]*TreeRef, 0, len(in.Parents))
+	for _, p := range in.Parents {
+		parents = append(parents, &TreeRef{SHA: p})
 	}
 
 	commit := &GitCommit{
@@ -152,11 +282,7 @@ func (s *Service) CreateGitCommit(ctx context.Context, owner, repo string, in *C
 		Author:    author,
 		Committer: committer,
 		Tree:      &TreeRef{SHA: in.Tree},
-		Parents:   []*TreeRef{},
-	}
-
-	for _, p := range in.Parents {
-		commit.Parents = append(commit.Parents, &TreeRef{SHA: p})
+		Parents:   parents,
 	}
 
 	s.populateCommitURLs(commit, owner, repo)
@@ -173,13 +299,29 @@ func (s *Service) GetRef(ctx context.Context, owner, repo, ref string) (*Referen
 		return nil, repos.ErrNotFound
 	}
 
-	// Would integrate with git to get ref
+	// Open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	gitRef, err := gitRepo.GetRef(ref)
+	if err != nil {
+		if err == pkggit.ErrRefNotFound {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
 	reference := &Reference{
-		Ref:    "refs/" + ref,
+		Ref:    gitRef.Name,
 		NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Ref:%s", ref))),
 		Object: &GitObject{
-			Type: "commit",
-			SHA:  "HEAD",
+			Type: string(gitRef.ObjectType),
+			SHA:  gitRef.SHA,
 		},
 	}
 
@@ -197,8 +339,35 @@ func (s *Service) ListMatchingRefs(ctx context.Context, owner, repo, ref string)
 		return nil, repos.ErrNotFound
 	}
 
-	// Would integrate with git to list matching refs
-	return []*Reference{}, nil
+	// Open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, repos.ErrNotFound
+		}
+		return nil, err
+	}
+
+	gitRefs, err := gitRepo.ListRefs(ref)
+	if err != nil {
+		return nil, err
+	}
+
+	refs := make([]*Reference, 0, len(gitRefs))
+	for _, gitRef := range gitRefs {
+		reference := &Reference{
+			Ref:    gitRef.Name,
+			NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Ref:%s", gitRef.Name))),
+			Object: &GitObject{
+				Type: string(gitRef.ObjectType),
+				SHA:  gitRef.SHA,
+			},
+		}
+		s.populateRefURLs(reference, owner, repo)
+		refs = append(refs, reference)
+	}
+
+	return refs, nil
 }
 
 // CreateRef creates a new reference
@@ -211,13 +380,34 @@ func (s *Service) CreateRef(ctx context.Context, owner, repo string, in *CreateR
 		return nil, repos.ErrNotFound
 	}
 
-	// Would integrate with git to create ref
+	// Open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, repos.ErrNotFound
+		}
+		return nil, err
+	}
+
+	if err := gitRepo.CreateRef(in.Ref, in.SHA); err != nil {
+		if err == pkggit.ErrRefExists {
+			return nil, ErrRefExists
+		}
+		return nil, err
+	}
+
+	// Get the created ref to get full info
+	gitRef, err := gitRepo.GetRef(in.Ref)
+	if err != nil {
+		return nil, err
+	}
+
 	reference := &Reference{
-		Ref:    in.Ref,
+		Ref:    gitRef.Name,
 		NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Ref:%s", in.Ref))),
 		Object: &GitObject{
-			Type: "commit",
-			SHA:  in.SHA,
+			Type: string(gitRef.ObjectType),
+			SHA:  gitRef.SHA,
 		},
 	}
 
@@ -235,13 +425,34 @@ func (s *Service) UpdateRef(ctx context.Context, owner, repo, ref, sha string, f
 		return nil, repos.ErrNotFound
 	}
 
-	// Would integrate with git to update ref
+	// Open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, repos.ErrNotFound
+		}
+		return nil, err
+	}
+
+	if err := gitRepo.UpdateRef(ref, sha, force); err != nil {
+		if err == pkggit.ErrRefNotFound {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Get the updated ref
+	gitRef, err := gitRepo.GetRef(ref)
+	if err != nil {
+		return nil, err
+	}
+
 	reference := &Reference{
-		Ref:    "refs/" + ref,
+		Ref:    gitRef.Name,
 		NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Ref:%s", ref))),
 		Object: &GitObject{
-			Type: "commit",
-			SHA:  sha,
+			Type: string(gitRef.ObjectType),
+			SHA:  gitRef.SHA,
 		},
 	}
 
@@ -259,7 +470,22 @@ func (s *Service) DeleteRef(ctx context.Context, owner, repo, ref string) error 
 		return repos.ErrNotFound
 	}
 
-	// Would integrate with git to delete ref
+	// Open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return repos.ErrNotFound
+		}
+		return err
+	}
+
+	if err := gitRepo.DeleteRef(ref); err != nil {
+		if err == pkggit.ErrRefNotFound {
+			return ErrNotFound
+		}
+		return err
+	}
+
 	return nil
 }
 
@@ -273,13 +499,51 @@ func (s *Service) GetTree(ctx context.Context, owner, repo, sha string, recursiv
 		return nil, repos.ErrNotFound
 	}
 
-	// Would integrate with git to get tree
-	tree := &Tree{
-		SHA:       sha,
-		Tree:      []*TreeEntry{},
-		Truncated: false,
+	// Open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, ErrNotFound
+		}
+		return nil, err
 	}
 
+	var gitTree *pkggit.Tree
+	if recursive {
+		gitTree, err = gitRepo.GetTreeRecursive(sha)
+	} else {
+		gitTree, err = gitRepo.GetTree(sha)
+	}
+	if err != nil {
+		if err == pkggit.ErrNotFound {
+			return nil, ErrNotFound
+		}
+		if err == pkggit.ErrInvalidSHA {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	entries := make([]*TreeEntry, 0, len(gitTree.Entries))
+	for _, e := range gitTree.Entries {
+		entry := &TreeEntry{
+			Path: e.Name,
+			Mode: e.Mode.String(),
+			Type: string(e.Type),
+			SHA:  e.SHA,
+		}
+		if e.Type == pkggit.ObjectBlob {
+			entry.Size = int(e.Size)
+		}
+		entry.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/git/%ss/%s", s.baseURL, owner, repo, e.Type, e.SHA)
+		entries = append(entries, entry)
+	}
+
+	tree := &Tree{
+		SHA:       sha,
+		Tree:      entries,
+		Truncated: gitTree.Truncated,
+	}
 	tree.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/git/trees/%s", s.baseURL, owner, repo, sha)
 	return tree, nil
 }
@@ -294,25 +558,49 @@ func (s *Service) CreateTree(ctx context.Context, owner, repo string, in *Create
 		return nil, repos.ErrNotFound
 	}
 
-	// Would integrate with git to create tree
-	sha := fmt.Sprintf("tree_%d", time.Now().UnixNano())
-	tree := &Tree{
-		SHA:       sha,
-		Tree:      []*TreeEntry{},
-		Truncated: false,
+	// Open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, repos.ErrNotFound
+		}
+		return nil, err
 	}
 
-	for _, entry := range in.Tree {
-		tree.Tree = append(tree.Tree, &TreeEntry{
-			Path: entry.Path,
-			Mode: entry.Mode,
-			Type: entry.Type,
-			SHA:  entry.SHA,
-		})
+	// Convert entries
+	entries := make([]pkggit.TreeEntryInput, 0, len(in.Tree))
+	for _, e := range in.Tree {
+		entry := pkggit.TreeEntryInput{
+			Path: e.Path,
+			Mode: pkggit.ParseFileMode(e.Mode),
+			SHA:  e.SHA,
+		}
+		if e.Content != "" {
+			entry.Content = []byte(e.Content)
+		}
+		switch e.Type {
+		case "blob":
+			entry.Type = pkggit.ObjectBlob
+		case "tree":
+			entry.Type = pkggit.ObjectTree
+		case "commit":
+			entry.Type = pkggit.ObjectCommit
+		default:
+			entry.Type = pkggit.ObjectBlob
+		}
+		entries = append(entries, entry)
 	}
 
-	tree.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/git/trees/%s", s.baseURL, owner, repo, sha)
-	return tree, nil
+	sha, err := gitRepo.CreateTree(&pkggit.CreateTreeOpts{
+		BaseSHA: in.BaseTree,
+		Entries: entries,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create tree: %w", err)
+	}
+
+	// Get the created tree to return full info
+	return s.GetTree(ctx, owner, repo, sha, false)
 }
 
 // GetTag retrieves an annotated tag
@@ -325,24 +613,46 @@ func (s *Service) GetTag(ctx context.Context, owner, repo, sha string) (*Tag, er
 		return nil, repos.ErrNotFound
 	}
 
-	// Would integrate with git to get tag
+	// Open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	gitTag, err := gitRepo.GetTag(sha)
+	if err != nil {
+		if err == pkggit.ErrNotFound {
+			return nil, ErrNotFound
+		}
+		if err == pkggit.ErrInvalidSHA {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
 	tag := &Tag{
 		NodeID:  base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Tag:%s", sha))),
 		SHA:     sha,
-		Tag:     "v1.0.0",
-		Message: "Release v1.0.0",
+		Tag:     gitTag.Name,
+		Message: gitTag.Message,
 		Tagger: &CommitAuthor{
-			Name:  "Tagger",
-			Email: "tagger@example.com",
-			Date:  time.Now(),
+			Name:  gitTag.Tagger.Name,
+			Email: gitTag.Tagger.Email,
+			Date:  gitTag.Tagger.When,
 		},
 		Object: &GitObject{
-			Type: "commit",
-			SHA:  "HEAD",
+			Type: string(gitTag.TargetType),
+			SHA:  gitTag.TargetSHA,
 		},
 	}
 
 	tag.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/git/tags/%s", s.baseURL, owner, repo, sha)
+	if tag.Object != nil {
+		tag.Object.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/git/%ss/%s", s.baseURL, owner, repo, tag.Object.Type, tag.Object.SHA)
+	}
 	return tag, nil
 }
 
@@ -356,16 +666,52 @@ func (s *Service) CreateTag(ctx context.Context, owner, repo string, in *CreateT
 		return nil, repos.ErrNotFound
 	}
 
-	// Would integrate with git to create tag
-	sha := fmt.Sprintf("tag_%d", time.Now().UnixNano())
+	// Open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, repos.ErrNotFound
+		}
+		return nil, err
+	}
 
 	tagger := in.Tagger
 	if tagger == nil {
 		tagger = &CommitAuthor{
-			Name:  "Tagger",
-			Email: "tagger@example.com",
+			Name:  "GitHome",
+			Email: "noreply@githome.local",
 			Date:  time.Now(),
 		}
+	}
+	if tagger.Date.IsZero() {
+		tagger.Date = time.Now()
+	}
+
+	var targetType pkggit.ObjectType
+	switch in.Type {
+	case "commit":
+		targetType = pkggit.ObjectCommit
+	case "tree":
+		targetType = pkggit.ObjectTree
+	case "blob":
+		targetType = pkggit.ObjectBlob
+	default:
+		targetType = pkggit.ObjectCommit
+	}
+
+	sha, err := gitRepo.CreateTag(&pkggit.CreateTagOpts{
+		Name:       in.Tag,
+		TargetSHA:  in.Object,
+		TargetType: targetType,
+		Message:    in.Message,
+		Tagger: pkggit.Signature{
+			Name:  tagger.Name,
+			Email: tagger.Email,
+			When:  tagger.Date,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create tag: %w", err)
 	}
 
 	tag := &Tag{
@@ -381,6 +727,9 @@ func (s *Service) CreateTag(ctx context.Context, owner, repo string, in *CreateT
 	}
 
 	tag.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/git/tags/%s", s.baseURL, owner, repo, sha)
+	if tag.Object != nil {
+		tag.Object.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/git/%ss/%s", s.baseURL, owner, repo, tag.Object.Type, tag.Object.SHA)
+	}
 	return tag, nil
 }
 
@@ -403,9 +752,50 @@ func (s *Service) ListTags(ctx context.Context, owner, repo string, opts *ListOp
 	if opts.PerPage > 100 {
 		opts.PerPage = 100
 	}
+	if opts.Page < 1 {
+		opts.Page = 1
+	}
 
-	// Would integrate with git to list tags
-	return []*LightweightTag{}, nil
+	// Open git repository
+	gitRepo, err := s.openRepo(owner, repo)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return []*LightweightTag{}, nil
+		}
+		return nil, err
+	}
+
+	gitTags, err := gitRepo.ListTags()
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply pagination
+	start := (opts.Page - 1) * opts.PerPage
+	end := start + opts.PerPage
+	if start > len(gitTags) {
+		return []*LightweightTag{}, nil
+	}
+	if end > len(gitTags) {
+		end = len(gitTags)
+	}
+
+	tags := make([]*LightweightTag, 0, end-start)
+	for _, t := range gitTags[start:end] {
+		tag := &LightweightTag{
+			Name:       t.Name,
+			NodeID:     base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Tag:%s", t.Name))),
+			ZipballURL: fmt.Sprintf("%s/%s/%s/archive/refs/tags/%s.zip", s.baseURL, owner, repo, t.Name),
+			TarballURL: fmt.Sprintf("%s/%s/%s/archive/refs/tags/%s.tar.gz", s.baseURL, owner, repo, t.Name),
+			Commit: &CommitRef{
+				SHA: t.CommitSHA,
+				URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/%s", s.baseURL, owner, repo, t.CommitSHA),
+			},
+		}
+		tags = append(tags, tag)
+	}
+
+	return tags, nil
 }
 
 // populateBlobURLs fills in URL fields for a blob

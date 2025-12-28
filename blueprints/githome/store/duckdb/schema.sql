@@ -614,3 +614,18 @@ CREATE TABLE IF NOT EXISTS branch_protections (
     settings_json VARCHAR NOT NULL DEFAULT '{}',
     PRIMARY KEY (repo_id, branch)
 );
+
+-- ============================================================
+-- Git Object Cache
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS git_blobs (
+    repo_id       BIGINT NOT NULL,
+    sha           VARCHAR NOT NULL,
+    node_id       VARCHAR NOT NULL DEFAULT '',
+    size          INTEGER NOT NULL DEFAULT 0,
+    content       VARCHAR NOT NULL DEFAULT '',
+    encoding      VARCHAR NOT NULL DEFAULT 'utf-8',
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (repo_id, sha)
+);
