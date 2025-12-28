@@ -1,0 +1,149 @@
+{{define "content"}}
+<div class="bg-white border-b">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <!-- Repository header (same as repo_home) -->
+        <div class="flex items-center space-x-2">
+            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+            </svg>
+            <a href="/{{.Owner.Username}}" class="text-blue-600 hover:underline">{{.Owner.Username}}</a>
+            <span class="text-gray-400">/</span>
+            <a href="/{{.Owner.Username}}/{{.Repository.Slug}}" class="text-blue-600 hover:underline font-semibold">{{.Repository.Name}}</a>
+        </div>
+
+        <!-- Repository navigation -->
+        <nav class="flex space-x-6 mt-4 border-t -mb-px pt-px">
+            <a href="/{{.Owner.Username}}/{{.Repository.Slug}}" class="flex items-center px-1 py-3 border-b-2 border-transparent hover:border-gray-300 text-sm font-medium text-gray-600 hover:text-gray-900">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+                </svg>
+                Code
+            </a>
+            <a href="/{{.Owner.Username}}/{{.Repository.Slug}}/issues" class="flex items-center px-1 py-3 border-b-2 border-orange-500 text-sm font-medium">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                Issues
+                {{if .Repository.OpenIssueCount}}
+                <span class="ml-1 bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full text-xs">{{.Repository.OpenIssueCount}}</span>
+                {{end}}
+            </a>
+            <a href="/{{.Owner.Username}}/{{.Repository.Slug}}/pulls" class="flex items-center px-1 py-3 border-b-2 border-transparent hover:border-gray-300 text-sm font-medium text-gray-600 hover:text-gray-900">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                Pull requests
+            </a>
+        </nav>
+    </div>
+</div>
+
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <!-- Filters and new issue -->
+    <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center space-x-2">
+            <div class="flex border rounded-md overflow-hidden">
+                <a href="?state=open" class="px-3 py-1.5 text-sm {{if eq .State `open`}}bg-gray-100 font-medium{{else}}hover:bg-gray-50{{end}}">
+                    <svg class="w-4 h-4 inline-block mr-1 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                    </svg>
+                    Open
+                </a>
+                <a href="?state=closed" class="px-3 py-1.5 text-sm border-l {{if eq .State `closed`}}bg-gray-100 font-medium{{else}}hover:bg-gray-50{{end}}">
+                    <svg class="w-4 h-4 inline-block mr-1 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                    </svg>
+                    Closed
+                </a>
+            </div>
+            <button class="flex items-center px-3 py-1.5 border rounded-md text-sm hover:bg-gray-50">
+                Labels
+                <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+            </button>
+            <button class="flex items-center px-3 py-1.5 border rounded-md text-sm hover:bg-gray-50">
+                Milestones
+                <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+            </button>
+        </div>
+        {{if .User}}
+        <a href="/{{.Owner.Username}}/{{.Repository.Slug}}/issues/new" class="px-4 py-1.5 text-sm text-white bg-green-600 hover:bg-green-700 rounded-md">
+            New issue
+        </a>
+        {{end}}
+    </div>
+
+    <!-- Issue list -->
+    <div class="bg-white rounded-lg border divide-y">
+        {{range .Issues}}
+        <div class="p-4 hover:bg-gray-50">
+            <div class="flex items-start">
+                {{if eq .State "open"}}
+                <svg class="w-5 h-5 text-green-600 mt-0.5 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                </svg>
+                {{else}}
+                <svg class="w-5 h-5 text-purple-600 mt-0.5 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                </svg>
+                {{end}}
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center">
+                        <a href="/{{$.Owner.Username}}/{{$.Repository.Slug}}/issues/{{.Number}}" class="font-semibold text-gray-900 hover:text-blue-600">
+                            {{.Title}}
+                        </a>
+                        {{range .Labels}}
+                        <span class="ml-2 px-2 py-0.5 text-xs rounded-full" style="background-color: #{{.Color}}; color: #fff;">{{.Name}}</span>
+                        {{end}}
+                    </div>
+                    <div class="mt-1 text-sm text-gray-500">
+                        #{{.Number}} opened {{timeAgo .CreatedAt}}
+                        {{if .CommentCount}}
+                        <span class="ml-2 flex items-center inline-flex">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                            </svg>
+                            {{.CommentCount}}
+                        </span>
+                        {{end}}
+                    </div>
+                </div>
+                {{if .Assignees}}
+                <div class="flex -space-x-1 ml-4">
+                    {{range .Assignees}}
+                    <img src="https://ui-avatars.com/api/?name={{.}}&size=24&background=random" class="w-6 h-6 rounded-full border-2 border-white">
+                    {{end}}
+                </div>
+                {{end}}
+            </div>
+        </div>
+        {{else}}
+        <div class="p-12 text-center">
+            <svg class="w-12 h-12 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <h3 class="text-lg font-medium text-gray-900 mb-2">No issues yet</h3>
+            <p class="text-gray-500 mb-4">Issues are used to track bugs, features, and tasks.</p>
+            {{if .User}}
+            <a href="/{{.Owner.Username}}/{{.Repository.Slug}}/issues/new" class="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md">
+                Create the first issue
+            </a>
+            {{end}}
+        </div>
+        {{end}}
+    </div>
+
+    <!-- Pagination -->
+    {{if gt .Total 30}}
+    <div class="mt-4 flex justify-center">
+        <nav class="flex items-center space-x-2">
+            <a href="?page=1" class="px-3 py-1 border rounded text-sm hover:bg-gray-50">Previous</a>
+            <a href="?page=2" class="px-3 py-1 border rounded text-sm hover:bg-gray-50">Next</a>
+        </nav>
+    </div>
+    {{end}}
+</div>
+{{end}}
