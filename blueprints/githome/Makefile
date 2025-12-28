@@ -1,49 +1,76 @@
-.PHONY: build run dev test clean install init seed
+.DEFAULT_GOAL := help
+SHELL := /usr/bin/env bash
 
-# Variables
-BINARY_NAME=githome
-BUILD_DIR=./build
-DATA_DIR=./data
+GO      ?= go
+PKG     ?= ./...
+BINARY  ?= $(HOME)/bin/githome
+CMD     ?= ./cmd/githome
+DATA_DIR ?= $(HOME)/data/blueprint/githome
 
-# Build the binary
-build:
-	go build -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/githome
+CGO_ENABLED ?= 1
 
-# Run in development mode
-dev:
-	go run ./cmd/githome serve --dev
+VERSION ?= $(shell git describe --tags --dirty --match "v*" 2>/dev/null || echo "dev")
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+TIME    ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 
-# Run the server
-run:
-	go run ./cmd/githome serve
+LDVARS := -X main.Version=$(VERSION) -X main.Commit=$(COMMIT) -X main.BuildTime=$(TIME)
+GO_LDFLAGS ?= -s -w $(LDVARS)
 
-# Initialize database
-init:
-	go run ./cmd/githome init
+.PHONY: build
+build: ## Build githome binary to $$HOME/bin/githome
+	@mkdir -p $(dir $(BINARY))
+	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
+	@echo "Built: $(BINARY) ($(VERSION))"
 
-# Seed demo data
-seed:
-	go run ./cmd/githome seed
+.PHONY: install
+install: build ## Install githome binary to $$HOME/bin/githome (alias for build)
 
-# Run tests
-test:
-	go test -v ./...
+.PHONY: run
+run: ## Run the server
+	@GOWORK=off $(GO) run $(CMD) serve --dev
 
-# Install to $HOME/bin
-install:
-	go build -o $(HOME)/bin/$(BINARY_NAME) ./cmd/githome
+.PHONY: init
+init: ## Initialize the database
+	@GOWORK=off $(GO) run $(CMD) init
 
-# Clean build artifacts
-clean:
-	rm -rf $(BUILD_DIR)
+.PHONY: seed
+seed: ## Seed the database with sample data
+	@GOWORK=off $(GO) run $(CMD) seed
 
-# Reset data
-reset:
-	rm -rf $(DATA_DIR)
-	go run ./cmd/githome init
-	go run ./cmd/githome seed
+.PHONY: test
+test: ## Run all tests
+	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) test $(PKG)
 
-# Download dependencies
-deps:
-	go mod tidy
-	go mod download
+.PHONY: test-v
+test-v: ## Run all tests with verbose output
+	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) test -v $(PKG)
+
+.PHONY: test-store
+test-store: ## Run store tests only
+	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) test -v ./store/duckdb/...
+
+.PHONY: clean
+clean: ## Remove binary and data directory
+	@rm -f $(BINARY)
+	@rm -rf $(DATA_DIR)
+	@echo "Cleaned: $(BINARY), $(DATA_DIR)"
+
+.PHONY: reset
+reset: clean init seed ## Reset database and reseed
+
+.PHONY: deps
+deps: ## Download dependencies
+	@GOWORK=off $(GO) mod tidy
+	@GOWORK=off $(GO) mod download
+
+.PHONY: help
+help: ## Show available commands
+	@echo ""
+	@echo "GitHome Blueprint - GitHub-style repository hosting"
+	@echo ""
+	@echo "  Binary:   $(BINARY)"
+	@echo "  Data:     $(DATA_DIR)"
+	@echo ""
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
+	  awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+	@echo ""
