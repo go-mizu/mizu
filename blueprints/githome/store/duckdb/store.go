@@ -9,14 +9,24 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/go-mizu/blueprints/githome/feature/git"
+	"github.com/go-mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/blueprints/githome/feature/users"
 )
 
 //go:embed schema.sql
 var schemaDDL string
 
 // Store implements the data access layer using DuckDB.
+// It implements the store.Store interface.
 type Store struct {
 	db *sql.DB
+
+	// Feature stores (lazy initialized)
+	usersStore *UsersStore
+	reposStore *ReposStore
+	gitStore   *GitStore
 }
 
 // New creates a new Store with the given database connection.
@@ -30,6 +40,30 @@ func New(db *sql.DB) (*Store, error) {
 // DB returns the underlying database connection.
 func (s *Store) DB() *sql.DB {
 	return s.db
+}
+
+// Users returns the users store.
+func (s *Store) Users() users.Store {
+	if s.usersStore == nil {
+		s.usersStore = NewUsersStore(s.db)
+	}
+	return s.usersStore
+}
+
+// Repos returns the repos store.
+func (s *Store) Repos() repos.Store {
+	if s.reposStore == nil {
+		s.reposStore = NewReposStore(s.db)
+	}
+	return s.reposStore
+}
+
+// Git returns the git store.
+func (s *Store) Git() git.Store {
+	if s.gitStore == nil {
+		s.gitStore = NewGitStore(s.db)
+	}
+	return s.gitStore
 }
 
 // Ensure initializes the database schema.
