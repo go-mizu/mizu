@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/blueprints/githome/feature/orgs"
 	"github.com/go-mizu/blueprints/githome/feature/users"
+	pkggit "github.com/go-mizu/blueprints/githome/pkg/git"
 )
 
 // Service implements the repos API
@@ -16,16 +20,29 @@ type Service struct {
 	userStore users.Store
 	orgStore  orgs.Store
 	baseURL   string
+	reposDir  string
 }
 
 // NewService creates a new repos service
-func NewService(store Store, userStore users.Store, orgStore orgs.Store, baseURL string) *Service {
+func NewService(store Store, userStore users.Store, orgStore orgs.Store, baseURL, reposDir string) *Service {
 	return &Service{
 		store:     store,
 		userStore: userStore,
 		orgStore:  orgStore,
 		baseURL:   baseURL,
+		reposDir:  reposDir,
 	}
+}
+
+// getRepoPath returns the filesystem path for a repository
+func (s *Service) getRepoPath(owner, repo string) string {
+	return filepath.Join(s.reposDir, owner, repo+".git")
+}
+
+// openRepo opens a git repository
+func (s *Service) openRepo(owner, repo string) (*pkggit.Repository, error) {
+	path := s.getRepoPath(owner, repo)
+	return pkggit.Open(path)
 }
 
 // Create creates a new repository for a user
@@ -499,8 +516,81 @@ func (s *Service) ListContributors(ctx context.Context, owner, repoName string, 
 	if repo == nil {
 		return nil, ErrNotFound
 	}
-	// TODO: Implement contributor tracking
-	return []*Contributor{}, nil
+
+	if opts == nil {
+		opts = &ListOpts{PerPage: 30}
+	}
+	if opts.PerPage == 0 {
+		opts.PerPage = 30
+	}
+	if opts.PerPage > 100 {
+		opts.PerPage = 100
+	}
+
+	// Try to open git repository
+	gitRepo, err := s.openRepo(owner, repoName)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return []*Contributor{}, nil
+		}
+		return nil, err
+	}
+
+	// Get commit log from default branch
+	commits, err := gitRepo.Log(repo.DefaultBranch, 1000)
+	if err != nil {
+		return []*Contributor{}, nil
+	}
+
+	// Aggregate contributions by email
+	contributions := make(map[string]*Contributor)
+	for _, c := range commits {
+		email := c.Author.Email
+		if contrib, exists := contributions[email]; exists {
+			contrib.Contributions++
+		} else {
+			// Try to find user by email
+			user, _ := s.userStore.GetByEmail(ctx, email)
+			contrib := &Contributor{
+				Contributions: 1,
+			}
+			if user != nil {
+				contrib.SimpleUser = user.ToSimple()
+			} else {
+				// Create a placeholder SimpleUser
+				contrib.SimpleUser = &users.SimpleUser{
+					Login:     c.Author.Name,
+					AvatarURL: "",
+					Type:      "User",
+				}
+			}
+			contributions[email] = contrib
+		}
+	}
+
+	// Convert to slice and sort by contributions
+	result := make([]*Contributor, 0, len(contributions))
+	for _, contrib := range contributions {
+		result = append(result, contrib)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Contributions > result[j].Contributions
+	})
+
+	// Apply pagination
+	start := 0
+	if opts.Page > 1 {
+		start = (opts.Page - 1) * opts.PerPage
+	}
+	end := start + opts.PerPage
+	if start > len(result) {
+		return []*Contributor{}, nil
+	}
+	if end > len(result) {
+		end = len(result)
+	}
+
+	return result[start:end], nil
 }
 
 // GetReadme returns the README content
@@ -512,7 +602,16 @@ func (s *Service) GetReadme(ctx context.Context, owner, repoName, ref string) (*
 	if repo == nil {
 		return nil, ErrNotFound
 	}
-	// TODO: Implement file content retrieval from git
+
+	// Try common README filenames
+	readmeNames := []string{"README.md", "README", "README.txt", "readme.md", "Readme.md"}
+	for _, name := range readmeNames {
+		content, err := s.GetContents(ctx, owner, repoName, name, ref)
+		if err == nil && content != nil {
+			return content, nil
+		}
+	}
+
 	return nil, ErrNotFound
 }
 
@@ -525,12 +624,127 @@ func (s *Service) GetContents(ctx context.Context, owner, repoName, path, ref st
 	if repo == nil {
 		return nil, ErrNotFound
 	}
-	// TODO: Implement file content retrieval from git
-	return nil, ErrNotFound
+
+	// Try to open git repository
+	gitRepo, err := s.openRepo(owner, repoName)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Determine ref to use
+	if ref == "" {
+		ref = repo.DefaultBranch
+	}
+
+	// Resolve ref to commit SHA
+	sha, err := gitRepo.ResolveRef(ref)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+
+	// Get commit
+	commit, err := gitRepo.GetCommit(sha)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+
+	// Get tree
+	tree, err := gitRepo.GetTree(commit.TreeSHA)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+
+	// Clean path
+	path = strings.TrimPrefix(path, "/")
+
+	// Navigate to target path
+	if path != "" {
+		parts := strings.Split(path, "/")
+		currentTree := tree
+
+		for i, part := range parts {
+			found := false
+			for _, entry := range currentTree.Entries {
+				if entry.Name == part {
+					found = true
+					if i == len(parts)-1 {
+						// This is the final target
+						if entry.Type == pkggit.ObjectBlob {
+							// It's a file
+							blob, err := gitRepo.GetBlob(entry.SHA)
+							if err != nil {
+								return nil, ErrNotFound
+							}
+
+							content := &Content{
+								Name:        entry.Name,
+								Path:        path,
+								SHA:         entry.SHA,
+								Size:        int(blob.Size),
+								Type:        "file",
+								Content:     base64.StdEncoding.EncodeToString(blob.Content),
+								Encoding:    "base64",
+								URL:         fmt.Sprintf("%s/api/v3/repos/%s/%s/contents/%s", s.baseURL, owner, repoName, path),
+								HTMLURL:     fmt.Sprintf("%s/%s/%s/blob/%s/%s", s.baseURL, owner, repoName, ref, path),
+								GitURL:      fmt.Sprintf("%s/api/v3/repos/%s/%s/git/blobs/%s", s.baseURL, owner, repoName, entry.SHA),
+								DownloadURL: fmt.Sprintf("%s/%s/%s/raw/%s/%s", s.baseURL, owner, repoName, ref, path),
+							}
+							return content, nil
+						} else if entry.Type == pkggit.ObjectTree {
+							// It's a directory - would need to return array
+							subTree, err := gitRepo.GetTree(entry.SHA)
+							if err != nil {
+								return nil, ErrNotFound
+							}
+							currentTree = subTree
+						}
+					} else {
+						// Navigate deeper
+						if entry.Type == pkggit.ObjectTree {
+							subTree, err := gitRepo.GetTree(entry.SHA)
+							if err != nil {
+								return nil, ErrNotFound
+							}
+							currentTree = subTree
+						} else {
+							return nil, ErrNotFound
+						}
+					}
+					break
+				}
+			}
+			if !found {
+				return nil, ErrNotFound
+			}
+		}
+
+		// If we get here for a directory, return first entry info
+		if len(currentTree.Entries) > 0 {
+			return &Content{
+				Name:    filepath.Base(path),
+				Path:    path,
+				Type:    "dir",
+				URL:     fmt.Sprintf("%s/api/v3/repos/%s/%s/contents/%s", s.baseURL, owner, repoName, path),
+				HTMLURL: fmt.Sprintf("%s/%s/%s/tree/%s/%s", s.baseURL, owner, repoName, ref, path),
+			}, nil
+		}
+	}
+
+	// Root directory
+	return &Content{
+		Name:    "",
+		Path:    "",
+		Type:    "dir",
+		URL:     fmt.Sprintf("%s/api/v3/repos/%s/%s/contents", s.baseURL, owner, repoName),
+		HTMLURL: fmt.Sprintf("%s/%s/%s/tree/%s", s.baseURL, owner, repoName, ref),
+	}, nil
 }
 
 // CreateOrUpdateFile creates or updates a file
-func (s *Service) CreateOrUpdateFile(ctx context.Context, owner, repoName, path, message, content, sha, branch string, author *CommitAuthor) (*FileCommit, error) {
+func (s *Service) CreateOrUpdateFile(ctx context.Context, owner, repoName, path, message, contentBase64, sha, branch string, author *CommitAuthor) (*FileCommit, error) {
 	repo, err := s.store.GetByFullName(ctx, owner, repoName)
 	if err != nil {
 		return nil, err
@@ -538,8 +752,119 @@ func (s *Service) CreateOrUpdateFile(ctx context.Context, owner, repoName, path,
 	if repo == nil {
 		return nil, ErrNotFound
 	}
-	// TODO: Implement file creation/update via git
-	return nil, ErrNotFound
+
+	// Try to open git repository
+	gitRepo, err := s.openRepo(owner, repoName)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Determine branch
+	if branch == "" {
+		branch = repo.DefaultBranch
+	}
+
+	// Get current branch ref
+	branchRef, err := gitRepo.GetRef("refs/heads/" + branch)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+
+	// Get current commit
+	currentCommit, err := gitRepo.GetCommit(branchRef.SHA)
+	if err != nil {
+		return nil, err
+	}
+
+	// Decode content
+	contentBytes, err := base64.StdEncoding.DecodeString(contentBase64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base64 content: %w", err)
+	}
+
+	// Create new blob
+	blobSHA, err := gitRepo.CreateBlob(contentBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create new tree with updated file
+	treeOpts := &pkggit.CreateTreeOpts{
+		BaseSHA: currentCommit.TreeSHA,
+		Entries: []pkggit.TreeEntryInput{
+			{
+				Path:    path,
+				Mode:    pkggit.ModeFile,
+				Type:    pkggit.ObjectBlob,
+				SHA:     blobSHA,
+			},
+		},
+	}
+
+	newTreeSHA, err := gitRepo.CreateTree(treeOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Determine author info
+	now := time.Now()
+	authorSig := pkggit.Signature{
+		Name:  "System",
+		Email: "system@githome.local",
+		When:  now,
+	}
+	if author != nil {
+		authorSig.Name = author.Name
+		authorSig.Email = author.Email
+		if !author.Date.IsZero() {
+			authorSig.When = author.Date
+		}
+	}
+
+	// Create commit
+	newCommitSHA, err := gitRepo.CreateCommit(&pkggit.CreateCommitOpts{
+		Message:   message,
+		TreeSHA:   newTreeSHA,
+		Parents:   []string{branchRef.SHA},
+		Author:    authorSig,
+		Committer: authorSig,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Update branch ref
+	if err := gitRepo.UpdateRef("refs/heads/"+branch, newCommitSHA, true); err != nil {
+		return nil, err
+	}
+
+	// Build response
+	fileContent := &Content{
+		Name:     filepath.Base(path),
+		Path:     path,
+		SHA:      blobSHA,
+		Size:     len(contentBytes),
+		Type:     "file",
+		URL:      fmt.Sprintf("%s/api/v3/repos/%s/%s/contents/%s", s.baseURL, owner, repoName, path),
+		HTMLURL:  fmt.Sprintf("%s/%s/%s/blob/%s/%s", s.baseURL, owner, repoName, branch, path),
+		GitURL:   fmt.Sprintf("%s/api/v3/repos/%s/%s/git/blobs/%s", s.baseURL, owner, repoName, blobSHA),
+	}
+
+	commitInfo := &Commit{
+		SHA:     newCommitSHA,
+		Message: message,
+		Author:  author,
+		URL:     fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/%s", s.baseURL, owner, repoName, newCommitSHA),
+		HTMLURL: fmt.Sprintf("%s/%s/%s/commit/%s", s.baseURL, owner, repoName, newCommitSHA),
+	}
+
+	return &FileCommit{
+		Content: fileContent,
+		Commit:  commitInfo,
+	}, nil
 }
 
 // DeleteFile deletes a file
@@ -551,8 +876,95 @@ func (s *Service) DeleteFile(ctx context.Context, owner, repoName, path, message
 	if repo == nil {
 		return nil, ErrNotFound
 	}
-	// TODO: Implement file deletion via git
-	return nil, ErrNotFound
+
+	// Try to open git repository
+	gitRepo, err := s.openRepo(owner, repoName)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Determine branch
+	if branch == "" {
+		branch = repo.DefaultBranch
+	}
+
+	// Get current branch ref
+	branchRef, err := gitRepo.GetRef("refs/heads/" + branch)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+
+	// Get current commit
+	currentCommit, err := gitRepo.GetCommit(branchRef.SHA)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create new tree without the file (empty content means delete)
+	treeOpts := &pkggit.CreateTreeOpts{
+		BaseSHA: currentCommit.TreeSHA,
+		Entries: []pkggit.TreeEntryInput{
+			{
+				Path: path,
+				Mode: pkggit.ModeFile,
+				Type: pkggit.ObjectBlob,
+				// Empty SHA and Content means delete
+			},
+		},
+	}
+
+	newTreeSHA, err := gitRepo.CreateTree(treeOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Determine author info
+	now := time.Now()
+	authorSig := pkggit.Signature{
+		Name:  "System",
+		Email: "system@githome.local",
+		When:  now,
+	}
+	if author != nil {
+		authorSig.Name = author.Name
+		authorSig.Email = author.Email
+		if !author.Date.IsZero() {
+			authorSig.When = author.Date
+		}
+	}
+
+	// Create commit
+	newCommitSHA, err := gitRepo.CreateCommit(&pkggit.CreateCommitOpts{
+		Message:   message,
+		TreeSHA:   newTreeSHA,
+		Parents:   []string{branchRef.SHA},
+		Author:    authorSig,
+		Committer: authorSig,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Update branch ref
+	if err := gitRepo.UpdateRef("refs/heads/"+branch, newCommitSHA, true); err != nil {
+		return nil, err
+	}
+
+	commitInfo := &Commit{
+		SHA:     newCommitSHA,
+		Message: message,
+		Author:  author,
+		URL:     fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/%s", s.baseURL, owner, repoName, newCommitSHA),
+		HTMLURL: fmt.Sprintf("%s/%s/%s/commit/%s", s.baseURL, owner, repoName, newCommitSHA),
+	}
+
+	return &FileCommit{
+		Content: nil, // File was deleted
+		Commit:  commitInfo,
+	}, nil
 }
 
 // IncrementOpenIssues adjusts the open issues count

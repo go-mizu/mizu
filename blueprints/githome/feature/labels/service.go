@@ -6,24 +6,27 @@ import (
 	"fmt"
 
 	"github.com/go-mizu/blueprints/githome/feature/issues"
+	"github.com/go-mizu/blueprints/githome/feature/milestones"
 	"github.com/go-mizu/blueprints/githome/feature/repos"
 )
 
 // Service implements the labels API
 type Service struct {
-	store      Store
-	repoStore  repos.Store
-	issueStore issues.Store
-	baseURL    string
+	store          Store
+	repoStore      repos.Store
+	issueStore     issues.Store
+	milestoneStore milestones.Store
+	baseURL        string
 }
 
 // NewService creates a new labels service
-func NewService(store Store, repoStore repos.Store, issueStore issues.Store, baseURL string) *Service {
+func NewService(store Store, repoStore repos.Store, issueStore issues.Store, milestoneStore milestones.Store, baseURL string) *Service {
 	return &Service{
-		store:      store,
-		repoStore:  repoStore,
-		issueStore: issueStore,
-		baseURL:    baseURL,
+		store:          store,
+		repoStore:      repoStore,
+		issueStore:     issueStore,
+		milestoneStore: milestoneStore,
+		baseURL:        baseURL,
 	}
 }
 
@@ -340,9 +343,50 @@ func (s *Service) ListForMilestone(ctx context.Context, owner, repo string, numb
 		return nil, repos.ErrNotFound
 	}
 
-	// Would need milestone store to look up milestone ID
-	// For now return empty list
-	return []*Label{}, nil
+	// Get milestone by number to verify it exists
+	milestone, err := s.milestoneStore.GetByNumber(ctx, r.ID, number)
+	if err != nil {
+		return nil, err
+	}
+	if milestone == nil {
+		return nil, milestones.ErrNotFound
+	}
+
+	if opts == nil {
+		opts = &ListOpts{PerPage: 100}
+	}
+
+	// Get all issues for this milestone using milestone filter
+	issueOpts := &issues.ListOpts{
+		PerPage:   100,
+		State:     "all",
+		Milestone: fmt.Sprintf("%d", number),
+	}
+	issueList, err := s.issueStore.List(ctx, r.ID, issueOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Aggregate labels from all issues
+	labelMap := make(map[int64]*Label)
+	for _, issue := range issueList {
+		issueLabels, err := s.store.ListForIssue(ctx, issue.ID, opts)
+		if err != nil {
+			continue
+		}
+		for _, label := range issueLabels {
+			labelMap[label.ID] = label
+		}
+	}
+
+	// Convert to slice
+	labels := make([]*Label, 0, len(labelMap))
+	for _, label := range labelMap {
+		s.populateURLs(label, owner, repo)
+		labels = append(labels, label)
+	}
+
+	return labels, nil
 }
 
 // populateURLs fills in the URL fields for a label

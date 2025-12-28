@@ -33,7 +33,7 @@ func setupTestService(t *testing.T) (*pulls.Service, *duckdb.Store, func()) {
 	}
 
 	pullsStore := duckdb.NewPullsStore(db)
-	service := pulls.NewService(pullsStore, store.Repos(), store.Users(), "https://api.example.com")
+	service := pulls.NewService(pullsStore, store.Repos(), store.Users(), "https://api.example.com", "")
 
 	cleanup := func() {
 		store.Close()

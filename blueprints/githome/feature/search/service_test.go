@@ -79,7 +79,9 @@ func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name, 
 func createTestIssue(t *testing.T, db *sql.DB, store *duckdb.Store, repo *repos.Repository, creator *users.User, title, body string) {
 	t.Helper()
 	issuesStore := duckdb.NewIssuesStore(db)
-	issuesSvc := issues.NewService(issuesStore, store.Repos(), store.Users(), "https://api.example.com")
+	orgsStore := duckdb.NewOrgsStore(db)
+	collabStore := duckdb.NewCollaboratorsStore(db)
+	issuesSvc := issues.NewService(issuesStore, store.Repos(), store.Users(), orgsStore, collabStore, "https://api.example.com")
 	_, err := issuesSvc.Create(context.Background(), repo.FullName[:len(repo.FullName)-len(repo.Name)-1], repo.Name, creator.ID, &issues.CreateIn{
 		Title: title,
 		Body:  body,
@@ -92,7 +94,8 @@ func createTestIssue(t *testing.T, db *sql.DB, store *duckdb.Store, repo *repos.
 func createTestLabel(t *testing.T, db *sql.DB, store *duckdb.Store, repo *repos.Repository, name, description string) {
 	t.Helper()
 	labelsStore := duckdb.NewLabelsStore(db)
-	labelsSvc := labels.NewService(labelsStore, store.Repos(), duckdb.NewIssuesStore(db), "https://api.example.com")
+	milestonesStore := duckdb.NewMilestonesStore(db)
+	labelsSvc := labels.NewService(labelsStore, store.Repos(), duckdb.NewIssuesStore(db), milestonesStore, "https://api.example.com")
 	ownerLogin := repo.FullName[:len(repo.FullName)-len(repo.Name)-1]
 	_, err := labelsSvc.Create(context.Background(), ownerLogin, repo.Name, &labels.CreateIn{
 		Name:        name,
@@ -458,7 +461,7 @@ func TestService_Topics_ReturnsMatches(t *testing.T) {
 	repo := createTestRepo(t, store, user, "testrepo", "Test repo")
 
 	// Add topics to the repo
-	_, _ = store.Repos().SetTopics(context.Background(), repo.ID, []string{"golang", "go-library", "testing"})
+	_ = store.Repos().SetTopics(context.Background(), repo.ID, []string{"golang", "go-library", "testing"})
 
 	result, err := service.Topics(context.Background(), "go", nil)
 	if err != nil {

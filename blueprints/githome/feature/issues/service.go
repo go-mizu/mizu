@@ -6,25 +6,31 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-mizu/blueprints/githome/feature/collaborators"
+	"github.com/go-mizu/blueprints/githome/feature/orgs"
 	"github.com/go-mizu/blueprints/githome/feature/repos"
 	"github.com/go-mizu/blueprints/githome/feature/users"
 )
 
 // Service implements the issues API
 type Service struct {
-	store     Store
-	repoStore repos.Store
-	userStore users.Store
-	baseURL   string
+	store            Store
+	repoStore        repos.Store
+	userStore        users.Store
+	orgStore         orgs.Store
+	collaboratorStore collaborators.Store
+	baseURL          string
 }
 
 // NewService creates a new issues service
-func NewService(store Store, repoStore repos.Store, userStore users.Store, baseURL string) *Service {
+func NewService(store Store, repoStore repos.Store, userStore users.Store, orgStore orgs.Store, collaboratorStore collaborators.Store, baseURL string) *Service {
 	return &Service{
-		store:     store,
-		repoStore: repoStore,
-		userStore: userStore,
-		baseURL:   baseURL,
+		store:            store,
+		repoStore:        repoStore,
+		userStore:        userStore,
+		orgStore:         orgStore,
+		collaboratorStore: collaboratorStore,
+		baseURL:          baseURL,
 	}
 }
 
@@ -275,9 +281,52 @@ func (s *Service) ListForOrg(ctx context.Context, org string, opts *ListOpts) ([
 	if opts.PerPage > 100 {
 		opts.PerPage = 100
 	}
+	if opts.State == "" {
+		opts.State = "open"
+	}
 
-	// For org, we need to find org ID first - simplified here
-	return []*Issue{}, nil
+	// Get org by login
+	organization, err := s.orgStore.GetByLogin(ctx, org)
+	if err != nil {
+		return nil, err
+	}
+	if organization == nil {
+		return nil, orgs.ErrNotFound
+	}
+
+	// Get org repos
+	orgRepos, err := s.repoStore.ListByOwner(ctx, organization.ID, &repos.ListOpts{PerPage: 100})
+	if err != nil {
+		return nil, err
+	}
+
+	// Collect issues from all org repos
+	allIssues := make([]*Issue, 0)
+	for _, r := range orgRepos {
+		repoIssues, err := s.store.List(ctx, r.ID, opts)
+		if err != nil {
+			continue
+		}
+		for _, issue := range repoIssues {
+			// Get owner login for URL population
+			parts := r.FullName
+			if parts != "" {
+				ownerLogin := org
+				s.populateURLs(issue, ownerLogin, r.Name)
+			}
+			allIssues = append(allIssues, issue)
+		}
+		if len(allIssues) >= opts.PerPage {
+			break
+		}
+	}
+
+	// Apply pagination
+	if len(allIssues) > opts.PerPage {
+		allIssues = allIssues[:opts.PerPage]
+	}
+
+	return allIssues, nil
 }
 
 // ListForUser returns issues assigned to/created by the authenticated user
@@ -305,8 +354,36 @@ func (s *Service) ListAssignees(ctx context.Context, owner, repo string) ([]*use
 		return nil, repos.ErrNotFound
 	}
 
-	// Return collaborators - simplified, return empty list
-	return []*users.SimpleUser{}, nil
+	assignees := make([]*users.SimpleUser, 0)
+
+	// Add repository owner
+	ownerUser, err := s.userStore.GetByID(ctx, r.OwnerID)
+	if err == nil && ownerUser != nil {
+		assignees = append(assignees, ownerUser.ToSimple())
+	}
+
+	// Add collaborators
+	collabs, err := s.collaboratorStore.List(ctx, r.ID, &collaborators.ListOpts{PerPage: 100})
+	if err == nil {
+		for _, c := range collabs {
+			// Collaborator embeds SimpleUser, so we can use it directly
+			if c.SimpleUser != nil {
+				// Avoid duplicates
+				isDup := false
+				for _, a := range assignees {
+					if a.ID == c.SimpleUser.ID {
+						isDup = true
+						break
+					}
+				}
+				if !isDup {
+					assignees = append(assignees, c.SimpleUser)
+				}
+			}
+		}
+	}
+
+	return assignees, nil
 }
 
 // CheckAssignee checks if a user can be assigned
@@ -327,8 +404,32 @@ func (s *Service) CheckAssignee(ctx context.Context, owner, repo, assignee strin
 		return false, nil
 	}
 
-	// Simplified: any valid user can be assigned
-	return true, nil
+	// Check if user is repo owner
+	if r.OwnerID == user.ID {
+		return true, nil
+	}
+
+	// Check if user is a collaborator
+	collab, err := s.collaboratorStore.Get(ctx, r.ID, user.ID)
+	if err != nil {
+		return false, nil
+	}
+	if collab != nil {
+		return true, nil
+	}
+
+	// Check if user is an org member (for org-owned repos)
+	if r.OwnerType == "Organization" {
+		org, err := s.orgStore.GetByID(ctx, r.OwnerID)
+		if err == nil && org != nil {
+			isMember, _ := s.orgStore.IsMember(ctx, org.ID, user.ID)
+			if isMember {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
 }
 
 // AddAssignees adds assignees to an issue
@@ -440,10 +541,30 @@ func (s *Service) CreateEvent(ctx context.Context, issueID, actorID int64, event
 
 // getAuthorAssociation determines the relationship between user and repo
 func (s *Service) getAuthorAssociation(ctx context.Context, r *repos.Repository, userID int64) string {
+	// Check if owner
 	if r.OwnerID == userID {
 		return "OWNER"
 	}
-	// Simplified - would check collaborators, org membership, etc.
+
+	// Check if collaborator
+	collab, err := s.collaboratorStore.Get(ctx, r.ID, userID)
+	if err == nil && collab != nil {
+		return "COLLABORATOR"
+	}
+
+	// Check if org member (for org-owned repos)
+	if r.OwnerType == "Organization" {
+		org, err := s.orgStore.GetByID(ctx, r.OwnerID)
+		if err == nil && org != nil {
+			isMember, _ := s.orgStore.IsMember(ctx, org.ID, userID)
+			if isMember {
+				return "MEMBER"
+			}
+		}
+	}
+
+	// Check if contributor (has commits) - would need git integration
+	// For now, return NONE as fallback
 	return "NONE"
 }
 
