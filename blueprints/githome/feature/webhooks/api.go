@@ -55,6 +55,8 @@ type Delivery struct {
 	// Full delivery details
 	Request  *DeliveryRequest  `json:"request,omitempty"`
 	Response *DeliveryResponse `json:"response,omitempty"`
+	// Internal
+	HookID int64 `json:"-"`
 }
 
 // DeliveryRequest represents the request of a delivery
