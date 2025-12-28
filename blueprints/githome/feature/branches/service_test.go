@@ -3,13 +3,17 @@ package branches_test
 import (
 	"context"
 	"database/sql"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 
 	"github.com/go-mizu/blueprints/githome/feature/branches"
 	"github.com/go-mizu/blueprints/githome/feature/repos"
 	"github.com/go-mizu/blueprints/githome/feature/users"
+	pkggit "github.com/go-mizu/blueprints/githome/pkg/git"
 	"github.com/go-mizu/blueprints/githome/store/duckdb"
 )
 
@@ -40,6 +44,68 @@ func setupTestService(t *testing.T) (*branches.Service, *duckdb.Store, func()) {
 	}
 
 	return service, store, cleanup
+}
+
+// setupTestServiceWithGit creates a test service with a real git repository
+func setupTestServiceWithGit(t *testing.T) (*branches.Service, *duckdb.Store, string, func()) {
+	t.Helper()
+
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		t.Fatalf("failed to open duckdb: %v", err)
+	}
+
+	store, err := duckdb.New(db)
+	if err != nil {
+		db.Close()
+		t.Fatalf("failed to create store: %v", err)
+	}
+
+	if err := store.Ensure(context.Background()); err != nil {
+		store.Close()
+		t.Fatalf("failed to ensure schema: %v", err)
+	}
+
+	// Create temp directory for git repos
+	reposDir, err := os.MkdirTemp("", "branches-test-*")
+	if err != nil {
+		store.Close()
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+
+	branchesStore := duckdb.NewBranchesStore(db)
+	service := branches.NewService(branchesStore, store.Repos(), "https://api.example.com", reposDir)
+
+	cleanup := func() {
+		store.Close()
+		os.RemoveAll(reposDir)
+	}
+
+	return service, store, reposDir, cleanup
+}
+
+// createGitRepo creates a bare git repository with an initial commit
+func createGitRepo(t *testing.T, reposDir, owner, repoName string) string {
+	t.Helper()
+
+	// Create owner directory
+	ownerDir := filepath.Join(reposDir, owner)
+	if err := os.MkdirAll(ownerDir, 0755); err != nil {
+		t.Fatalf("failed to create owner dir: %v", err)
+	}
+
+	// Create bare repo at owner/repo.git
+	repoPath := filepath.Join(ownerDir, repoName+".git")
+	_, _, err := pkggit.InitWithCommit(repoPath, pkggit.Signature{
+		Name:  "Test Author",
+		Email: "test@example.com",
+		When:  time.Now(),
+	}, "Initial commit")
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	return repoPath
 }
 
 func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *users.User {
@@ -163,7 +229,106 @@ func TestService_Get_WithProtection(t *testing.T) {
 }
 
 func TestService_Rename_Success(t *testing.T) {
-	t.Skip("requires real git repository")
+	service, store, reposDir, cleanup := setupTestServiceWithGit(t)
+	defer cleanup()
+
+	user := createTestUser(t, store, "testowner", "owner@example.com")
+	repo := createTestRepo(t, store, user, "testrepo")
+
+	// Create git repository with main branch
+	createGitRepo(t, reposDir, user.Login, repo.Name)
+
+	// Rename main to master
+	renamed, err := service.Rename(context.Background(), user.Login, repo.Name, "main", "master")
+	if err != nil {
+		t.Fatalf("Rename failed: %v", err)
+	}
+
+	if renamed.Name != "master" {
+		t.Errorf("expected branch name 'master', got %q", renamed.Name)
+	}
+	if renamed.Commit == nil {
+		t.Error("expected commit to be set")
+	}
+	if renamed.Commit.SHA == "" {
+		t.Error("expected commit SHA to be set")
+	}
+
+	// Verify old branch no longer exists
+	_, err = service.Get(context.Background(), user.Login, repo.Name, "main")
+	if err != branches.ErrNotFound {
+		t.Errorf("expected ErrNotFound for old branch, got %v", err)
+	}
+
+	// Verify new branch exists
+	newBranch, err := service.Get(context.Background(), user.Login, repo.Name, "master")
+	if err != nil {
+		t.Fatalf("Get new branch failed: %v", err)
+	}
+	if newBranch.Name != "master" {
+		t.Errorf("expected 'master', got %q", newBranch.Name)
+	}
+}
+
+func TestService_Rename_BranchNotFound(t *testing.T) {
+	service, store, reposDir, cleanup := setupTestServiceWithGit(t)
+	defer cleanup()
+
+	user := createTestUser(t, store, "testowner", "owner@example.com")
+	repo := createTestRepo(t, store, user, "testrepo")
+
+	// Create git repository
+	createGitRepo(t, reposDir, user.Login, repo.Name)
+
+	// Try to rename non-existent branch
+	_, err := service.Rename(context.Background(), user.Login, repo.Name, "nonexistent", "newname")
+	if err != branches.ErrNotFound {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestService_Rename_TargetExists(t *testing.T) {
+	service, store, reposDir, cleanup := setupTestServiceWithGit(t)
+	defer cleanup()
+
+	user := createTestUser(t, store, "testowner", "owner@example.com")
+	repo := createTestRepo(t, store, user, "testrepo")
+
+	// Create git repository with main branch
+	repoPath := createGitRepo(t, reposDir, user.Login, repo.Name)
+
+	// Create a second branch
+	gitRepo, _ := pkggit.Open(repoPath)
+	ref, _ := gitRepo.GetRef("refs/heads/main")
+	_ = gitRepo.CreateRef("refs/heads/develop", ref.SHA)
+
+	// Try to rename main to develop (which already exists)
+	_, err := service.Rename(context.Background(), user.Login, repo.Name, "main", "develop")
+	if err != branches.ErrBranchExists {
+		t.Errorf("expected ErrBranchExists, got %v", err)
+	}
+}
+
+func TestService_Rename_ProtectedBranch(t *testing.T) {
+	service, store, reposDir, cleanup := setupTestServiceWithGit(t)
+	defer cleanup()
+
+	user := createTestUser(t, store, "testowner", "owner@example.com")
+	repo := createTestRepo(t, store, user, "testrepo")
+
+	// Create git repository
+	createGitRepo(t, reposDir, user.Login, repo.Name)
+
+	// Protect the main branch
+	_, _ = service.UpdateProtection(context.Background(), user.Login, repo.Name, "main", &branches.UpdateProtectionIn{
+		EnforceAdmins: true,
+	})
+
+	// Try to rename protected branch
+	_, err := service.Rename(context.Background(), user.Login, repo.Name, "main", "master")
+	if err != branches.ErrProtected {
+		t.Errorf("expected ErrProtected, got %v", err)
+	}
 }
 
 func TestService_Rename_RepoNotFound(t *testing.T) {

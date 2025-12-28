@@ -288,30 +288,243 @@ func TestService_Delete_Success(t *testing.T) {
 	}
 }
 
-// Membership Tests - skipped until membership methods are implemented
+// Membership Tests
 
-func TestService_AddMember_Success(t *testing.T) {
-	t.Skip("AddMember not yet implemented")
+func TestService_SetMembership_Success(t *testing.T) {
+	service, store, cleanup := setupTestService(t)
+	defer cleanup()
+
+	creator := createTestUser(t, store, "creator", "creator@example.com")
+	newMember := createTestUser(t, store, "newmember", "newmember@example.com")
+	org := createTestOrg(t, service, creator.ID, "testorg")
+
+	// Add the new member using SetMembership
+	membership, err := service.SetMembership(context.Background(), org.Login, newMember.Login, "member")
+	if err != nil {
+		t.Fatalf("SetMembership failed: %v", err)
+	}
+
+	if membership.Role != "member" {
+		t.Errorf("expected role 'member', got %q", membership.Role)
+	}
+	if membership.State != "active" {
+		t.Errorf("expected state 'active', got %q", membership.State)
+	}
+	if membership.User == nil {
+		t.Error("expected User to be set")
+	}
+	if membership.Organization == nil {
+		t.Error("expected Organization to be set")
+	}
 }
 
-func TestService_AddMember_OrgNotFound(t *testing.T) {
-	t.Skip("AddMember not yet implemented")
+func TestService_SetMembership_OrgNotFound(t *testing.T) {
+	service, store, cleanup := setupTestService(t)
+	defer cleanup()
+
+	user := createTestUser(t, store, "testuser", "test@example.com")
+
+	_, err := service.SetMembership(context.Background(), "nonexistent", user.Login, "member")
+	if err != orgs.ErrNotFound {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestService_SetMembership_UserNotFound(t *testing.T) {
+	service, store, cleanup := setupTestService(t)
+	defer cleanup()
+
+	creator := createTestUser(t, store, "creator", "creator@example.com")
+	org := createTestOrg(t, service, creator.ID, "testorg")
+
+	_, err := service.SetMembership(context.Background(), org.Login, "nonexistent", "member")
+	if err != users.ErrNotFound {
+		t.Errorf("expected users.ErrNotFound, got %v", err)
+	}
+}
+
+func TestService_SetMembership_UpdateRole(t *testing.T) {
+	service, store, cleanup := setupTestService(t)
+	defer cleanup()
+
+	creator := createTestUser(t, store, "creator", "creator@example.com")
+	member := createTestUser(t, store, "member", "member@example.com")
+	org := createTestOrg(t, service, creator.ID, "testorg")
+
+	// Add as member first
+	_, err := service.SetMembership(context.Background(), org.Login, member.Login, "member")
+	if err != nil {
+		t.Fatalf("SetMembership (add) failed: %v", err)
+	}
+
+	// Update to admin
+	membership, err := service.SetMembership(context.Background(), org.Login, member.Login, "admin")
+	if err != nil {
+		t.Fatalf("SetMembership (update) failed: %v", err)
+	}
+
+	if membership.Role != "admin" {
+		t.Errorf("expected role 'admin', got %q", membership.Role)
+	}
+}
+
+func TestService_GetMembership_Success(t *testing.T) {
+	service, store, cleanup := setupTestService(t)
+	defer cleanup()
+
+	creator := createTestUser(t, store, "creator", "creator@example.com")
+	org := createTestOrg(t, service, creator.ID, "testorg")
+
+	// Creator should be an admin member
+	membership, err := service.GetMembership(context.Background(), org.Login, creator.Login)
+	if err != nil {
+		t.Fatalf("GetMembership failed: %v", err)
+	}
+
+	if membership.Role != "admin" {
+		t.Errorf("expected role 'admin', got %q", membership.Role)
+	}
+	if membership.URL == "" {
+		t.Error("expected URL to be populated")
+	}
 }
 
 func TestService_GetMembership_NotMember(t *testing.T) {
-	t.Skip("membership methods not yet implemented")
+	service, store, cleanup := setupTestService(t)
+	defer cleanup()
+
+	creator := createTestUser(t, store, "creator", "creator@example.com")
+	nonMember := createTestUser(t, store, "nonmember", "nonmember@example.com")
+	org := createTestOrg(t, service, creator.ID, "testorg")
+
+	_, err := service.GetMembership(context.Background(), org.Login, nonMember.Login)
+	if err != orgs.ErrNotMember {
+		t.Errorf("expected ErrNotMember, got %v", err)
+	}
 }
 
 func TestService_RemoveMember_Success(t *testing.T) {
-	t.Skip("membership methods not yet implemented")
+	service, store, cleanup := setupTestService(t)
+	defer cleanup()
+
+	creator := createTestUser(t, store, "creator", "creator@example.com")
+	member := createTestUser(t, store, "member", "member@example.com")
+	org := createTestOrg(t, service, creator.ID, "testorg")
+
+	// Add member
+	_, err := service.SetMembership(context.Background(), org.Login, member.Login, "member")
+	if err != nil {
+		t.Fatalf("SetMembership failed: %v", err)
+	}
+
+	// Remove member
+	err = service.RemoveMember(context.Background(), org.Login, member.Login)
+	if err != nil {
+		t.Fatalf("RemoveMember failed: %v", err)
+	}
+
+	// Verify member is removed
+	_, err = service.GetMembership(context.Background(), org.Login, member.Login)
+	if err != orgs.ErrNotMember {
+		t.Errorf("expected ErrNotMember after removal, got %v", err)
+	}
+}
+
+func TestService_RemoveMember_LastOwner(t *testing.T) {
+	service, store, cleanup := setupTestService(t)
+	defer cleanup()
+
+	creator := createTestUser(t, store, "creator", "creator@example.com")
+	org := createTestOrg(t, service, creator.ID, "testorg")
+
+	// Try to remove the last owner
+	err := service.RemoveMember(context.Background(), org.Login, creator.Login)
+	if err != orgs.ErrLastOwner {
+		t.Errorf("expected ErrLastOwner, got %v", err)
+	}
 }
 
 func TestService_ListMembers(t *testing.T) {
-	t.Skip("membership methods not yet implemented")
+	service, store, cleanup := setupTestService(t)
+	defer cleanup()
+
+	creator := createTestUser(t, store, "creator", "creator@example.com")
+	member1 := createTestUser(t, store, "member1", "member1@example.com")
+	member2 := createTestUser(t, store, "member2", "member2@example.com")
+	org := createTestOrg(t, service, creator.ID, "testorg")
+
+	// Add members
+	_, _ = service.SetMembership(context.Background(), org.Login, member1.Login, "member")
+	_, _ = service.SetMembership(context.Background(), org.Login, member2.Login, "member")
+
+	members, err := service.ListMembers(context.Background(), org.Login, nil)
+	if err != nil {
+		t.Fatalf("ListMembers failed: %v", err)
+	}
+
+	// Should have creator + 2 members = 3
+	if len(members) != 3 {
+		t.Errorf("expected 3 members, got %d", len(members))
+	}
 }
 
 func TestService_ListMembers_Pagination(t *testing.T) {
-	t.Skip("membership methods not yet implemented")
+	service, store, cleanup := setupTestService(t)
+	defer cleanup()
+
+	creator := createTestUser(t, store, "creator", "creator@example.com")
+	org := createTestOrg(t, service, creator.ID, "testorg")
+
+	// Add multiple members
+	for i := 0; i < 5; i++ {
+		member := createTestUser(t, store, "member"+string(rune('a'+i)), "member"+string(rune('a'+i))+"@example.com")
+		_, _ = service.SetMembership(context.Background(), org.Login, member.Login, "member")
+	}
+
+	// Get first page with limit 2
+	members, err := service.ListMembers(context.Background(), org.Login, &orgs.ListMembersOpts{
+		ListOpts: orgs.ListOpts{Page: 1, PerPage: 2},
+	})
+	if err != nil {
+		t.Fatalf("ListMembers failed: %v", err)
+	}
+
+	if len(members) != 2 {
+		t.Errorf("expected 2 members on page 1, got %d", len(members))
+	}
+}
+
+func TestService_IsMember_True(t *testing.T) {
+	service, store, cleanup := setupTestService(t)
+	defer cleanup()
+
+	creator := createTestUser(t, store, "creator", "creator@example.com")
+	org := createTestOrg(t, service, creator.ID, "testorg")
+
+	isMember, err := service.IsMember(context.Background(), org.Login, creator.Login)
+	if err != nil {
+		t.Fatalf("IsMember failed: %v", err)
+	}
+	if !isMember {
+		t.Error("expected creator to be a member")
+	}
+}
+
+func TestService_IsMember_False(t *testing.T) {
+	service, store, cleanup := setupTestService(t)
+	defer cleanup()
+
+	creator := createTestUser(t, store, "creator", "creator@example.com")
+	nonMember := createTestUser(t, store, "nonmember", "nonmember@example.com")
+	org := createTestOrg(t, service, creator.ID, "testorg")
+
+	isMember, err := service.IsMember(context.Background(), org.Login, nonMember.Login)
+	if err != nil {
+		t.Fatalf("IsMember failed: %v", err)
+	}
+	if isMember {
+		t.Error("expected non-member to not be a member")
+	}
 }
 
 // URL Population Tests
@@ -343,5 +556,53 @@ func TestService_PopulateURLs(t *testing.T) {
 // List User's Orgs Tests
 
 func TestService_ListForUser(t *testing.T) {
-	t.Skip("membership methods not yet implemented")
+	service, store, cleanup := setupTestService(t)
+	defer cleanup()
+
+	creator := createTestUser(t, store, "creator", "creator@example.com")
+	otherUser := createTestUser(t, store, "other", "other@example.com")
+
+	// Create orgs where creator is a member
+	createTestOrg(t, service, creator.ID, "org1")
+	createTestOrg(t, service, creator.ID, "org2")
+	createTestOrg(t, service, otherUser.ID, "org3")
+
+	// Add creator to org3
+	_, _ = service.SetMembership(context.Background(), "org3", creator.Login, "member")
+
+	// Creator should be in 3 orgs
+	userOrgs, err := service.ListForUser(context.Background(), creator.Login, nil)
+	if err != nil {
+		t.Fatalf("ListForUser failed: %v", err)
+	}
+
+	if len(userOrgs) != 3 {
+		t.Errorf("expected 3 orgs for user, got %d", len(userOrgs))
+	}
+}
+
+func TestService_ListForUser_UserNotFound(t *testing.T) {
+	service, _, cleanup := setupTestService(t)
+	defer cleanup()
+
+	_, err := service.ListForUser(context.Background(), "nonexistent", nil)
+	if err != users.ErrNotFound {
+		t.Errorf("expected users.ErrNotFound, got %v", err)
+	}
+}
+
+func TestService_ListForUser_NoOrgs(t *testing.T) {
+	service, store, cleanup := setupTestService(t)
+	defer cleanup()
+
+	user := createTestUser(t, store, "lonely", "lonely@example.com")
+
+	userOrgs, err := service.ListForUser(context.Background(), user.Login, nil)
+	if err != nil {
+		t.Fatalf("ListForUser failed: %v", err)
+	}
+
+	if len(userOrgs) != 0 {
+		t.Errorf("expected 0 orgs for user, got %d", len(userOrgs))
+	}
 }
