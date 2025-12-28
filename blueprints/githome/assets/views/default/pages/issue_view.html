@@ -1,0 +1,154 @@
+{{define "content"}}
+<div class="page-responsive">
+  <!-- Repository Header -->
+  <div class="repo-header">
+    <div class="d-flex items-center gap-2">
+      <svg viewBox="0 0 16 16" width="16" height="16" class="text-muted">
+        <path fill="currentColor" d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Z"></path>
+      </svg>
+      <span class="repo-path">
+        <a href="/{{.Owner.Username}}" class="repo-path-item">{{.Owner.Username}}</a>
+        <span class="repo-path-separator">/</span>
+        <a href="/{{.Owner.Username}}/{{.Repository.Name}}" class="repo-path-item">{{.Repository.Name}}</a>
+      </span>
+    </div>
+  </div>
+
+  <!-- Issue Header -->
+  <div class="mb-4">
+    <h1 class="d-flex items-baseline gap-2" style="font-size: 32px; font-weight: 400;">
+      <span>{{.Issue.Title}}</span>
+      <span class="text-muted">#{{.Issue.Number}}</span>
+    </h1>
+    <div class="d-flex items-center gap-2 mt-2">
+      {{if eq .Issue.State "open"}}
+      <span class="state-label state-label-open">
+        <svg viewBox="0 0 16 16" width="16" height="16">
+          <path fill="currentColor" d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"></path>
+          <path fill="currentColor" d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"></path>
+        </svg>
+        Open
+      </span>
+      {{else}}
+      <span class="state-label state-label-closed">
+        <svg viewBox="0 0 16 16" width="16" height="16">
+          <path fill="currentColor" d="M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5Z"></path>
+          <path fill="currentColor" d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-1.5 0a6.5 6.5 0 1 0-13 0 6.5 6.5 0 0 0 13 0Z"></path>
+        </svg>
+        Closed
+      </span>
+      {{end}}
+      <span class="text-muted">
+        {{if .Author}}
+        <a href="/{{.Author.Username}}" class="text-bold">{{.Author.Username}}</a>
+        {{end}}
+        opened this issue
+      </span>
+    </div>
+  </div>
+
+  <div class="page-with-sidebar" style="grid-template-columns: 1fr 296px;">
+    <!-- Main Content -->
+    <div class="page-content">
+      <!-- Issue Body -->
+      <div class="d-flex gap-3 mb-4">
+        <div class="avatar avatar-5 avatar-fallback flex-shrink-0">
+          {{if .Author}}{{firstChar .Author.Username}}{{else}}?{{end}}
+        </div>
+        <div class="box flex-1">
+          <div class="box-header d-flex items-center justify-between">
+            <span>
+              {{if .Author}}
+              <a href="/{{.Author.Username}}" class="text-bold">{{.Author.Username}}</a>
+              {{end}}
+              <span class="text-muted">commented</span>
+            </span>
+          </div>
+          <div class="box-body markdown-body">
+            {{if .Issue.Body}}
+            <p>{{.Issue.Body}}</p>
+            {{else}}
+            <p class="text-muted"><em>No description provided.</em></p>
+            {{end}}
+          </div>
+        </div>
+      </div>
+
+      <!-- Comments -->
+      {{range .Comments}}
+      <div class="d-flex gap-3 mb-4">
+        <div class="avatar avatar-5 avatar-fallback flex-shrink-0">
+          {{firstChar .UserID}}
+        </div>
+        <div class="box flex-1">
+          <div class="box-header d-flex items-center justify-between">
+            <span>
+              <span class="text-bold">{{.UserID}}</span>
+              <span class="text-muted">commented</span>
+            </span>
+          </div>
+          <div class="box-body markdown-body">
+            <p>{{.Body}}</p>
+          </div>
+        </div>
+      </div>
+      {{end}}
+
+      <!-- Add Comment -->
+      {{if $.User}}
+      <div class="d-flex gap-3">
+        <div class="avatar avatar-5 avatar-fallback flex-shrink-0">
+          {{firstChar $.User.Username}}
+        </div>
+        <div class="box flex-1">
+          <div class="box-header">
+            <span class="text-bold">Add a comment</span>
+          </div>
+          <div class="box-body">
+            <form data-api="/api/v1/repos/{{.Owner.Username}}/{{.Repository.Name}}/issues/{{.Issue.Number}}/comments" data-method="POST">
+              <textarea name="body" class="form-control mb-3" rows="5" placeholder="Leave a comment" required></textarea>
+              <div class="d-flex justify-end">
+                <button type="submit" class="btn btn-primary">Comment</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      {{else}}
+      <div class="box">
+        <div class="box-body text-center py-4">
+          <p class="mb-2">Sign in to comment on this issue.</p>
+          <a href="/login" class="btn btn-primary">Sign in</a>
+        </div>
+      </div>
+      {{end}}
+    </div>
+
+    <!-- Sidebar -->
+    <div class="page-sidebar">
+      <div class="mb-4">
+        <h3 class="text-sm text-bold mb-2">Assignees</h3>
+        <p class="text-sm text-muted">No one assigned</p>
+      </div>
+
+      <div class="mb-4">
+        <h3 class="text-sm text-bold mb-2">Labels</h3>
+        {{if .Issue.Labels}}
+        <div class="d-flex flex-wrap gap-1">
+          {{range .Issue.Labels}}
+          <span class="label" style="background-color: {{.Color}}; color: #fff;">{{.Name}}</span>
+          {{end}}
+        </div>
+        {{else}}
+        <p class="text-sm text-muted">None yet</p>
+        {{end}}
+      </div>
+
+      <div class="mb-4">
+        <h3 class="text-sm text-bold mb-2">Milestone</h3>
+        <p class="text-sm text-muted">No milestone</p>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

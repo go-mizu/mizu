@@ -1,0 +1,27 @@
+{{define "content"}}
+<h1 class="auth-title">Sign in to GitHome</h1>
+
+<div class="auth-box">
+  {{if .Error}}
+  <div class="flash flash-error mb-3">{{.Error}}</div>
+  {{end}}
+
+  <form data-auth="login" method="POST" novalidate>
+    <div class="form-group">
+      <label for="email" class="form-label">Email address</label>
+      <input type="email" id="email" name="email" class="form-control" placeholder="you@example.com" required autofocus autocomplete="email">
+    </div>
+
+    <div class="form-group">
+      <label for="password" class="form-label">Password</label>
+      <input type="password" id="password" name="password" class="form-control" placeholder="Enter your password" required autocomplete="current-password">
+    </div>
+
+    <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+  </form>
+</div>
+
+<div class="auth-footer">
+  New to GitHome? <a href="/register">Create an account</a>.
+</div>
+{{end}}
