@@ -1,20 +1,22 @@
-package handler
+package api
 
 import (
 	"net/http"
 
 	"github.com/go-mizu/blueprints/githome/feature/users"
+	"github.com/go-mizu/blueprints/githome/store/duckdb"
 	"github.com/go-mizu/mizu"
 )
 
 // Auth handles authentication endpoints
 type Auth struct {
-	users users.API
+	users  users.API
+	actors *duckdb.ActorsStore
 }
 
 // NewAuth creates a new auth handler
-func NewAuth(users users.API) *Auth {
-	return &Auth{users: users}
+func NewAuth(users users.API, actors *duckdb.ActorsStore) *Auth {
+	return &Auth{users: users, actors: actors}
 }
 
 // Register handles user registration
@@ -40,6 +42,13 @@ func (h *Auth) Register(c *mizu.Ctx) error {
 		default:
 			return InternalError(c, "failed to register user")
 		}
+	}
+
+	// Create actor for the user
+	_, err = h.actors.GetOrCreateForUser(c.Context(), user.ID)
+	if err != nil {
+		// Log but don't fail registration
+		// The actor will be created on first repo creation if needed
 	}
 
 	// Set session cookie
